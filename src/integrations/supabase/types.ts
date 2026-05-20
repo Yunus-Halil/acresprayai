@@ -14,7 +14,204 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      drones: {
+        Row: {
+          battery: number
+          created_at: string
+          id: string
+          model: string
+          name: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          battery?: number
+          created_at?: string
+          id?: string
+          model?: string
+          name: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          battery?: number
+          created_at?: string
+          id?: string
+          model?: string
+          name?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      fields: {
+        Row: {
+          area_hectares: number
+          created_at: string
+          crop: string
+          id: string
+          location: string | null
+          name: string
+          notes: string | null
+          user_id: string
+        }
+        Insert: {
+          area_hectares?: number
+          created_at?: string
+          crop: string
+          id?: string
+          location?: string | null
+          name: string
+          notes?: string | null
+          user_id: string
+        }
+        Update: {
+          area_hectares?: number
+          created_at?: string
+          crop?: string
+          id?: string
+          location?: string | null
+          name?: string
+          notes?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      jobs: {
+        Row: {
+          area_ha: number | null
+          chemical: string | null
+          created_at: string
+          dose_l_ha: number | null
+          drone_id: string | null
+          field_id: string | null
+          id: string
+          notes: string | null
+          scan_id: string | null
+          scheduled_at: string
+          status: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          area_ha?: number | null
+          chemical?: string | null
+          created_at?: string
+          dose_l_ha?: number | null
+          drone_id?: string | null
+          field_id?: string | null
+          id?: string
+          notes?: string | null
+          scan_id?: string | null
+          scheduled_at?: string
+          status?: string
+          type?: string
+          user_id: string
+        }
+        Update: {
+          area_ha?: number | null
+          chemical?: string | null
+          created_at?: string
+          dose_l_ha?: number | null
+          drone_id?: string | null
+          field_id?: string | null
+          id?: string
+          notes?: string | null
+          scan_id?: string | null
+          scheduled_at?: string
+          status?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jobs_drone_id_fkey"
+            columns: ["drone_id"]
+            isOneToOne: false
+            referencedRelation: "drones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobs_scan_id_fkey"
+            columns: ["scan_id"]
+            isOneToOne: false
+            referencedRelation: "scans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          farm_name: string | null
+          full_name: string | null
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          farm_name?: string | null
+          full_name?: string | null
+          id: string
+        }
+        Update: {
+          created_at?: string
+          farm_name?: string | null
+          full_name?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      scans: {
+        Row: {
+          ai_summary: string | null
+          created_at: string
+          detections: Json | null
+          field_id: string | null
+          health_score: number | null
+          id: string
+          image_path: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          ai_summary?: string | null
+          created_at?: string
+          detections?: Json | null
+          field_id?: string | null
+          health_score?: number | null
+          id?: string
+          image_path?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          ai_summary?: string | null
+          created_at?: string
+          detections?: Json | null
+          field_id?: string | null
+          health_score?: number | null
+          id?: string
+          image_path?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scans_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
