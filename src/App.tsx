@@ -5,6 +5,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import Auth from "./pages/Auth.tsx";
+import AppLayout from "./components/app/AppLayout.tsx";
+import Dashboard from "./pages/app/Dashboard.tsx";
+import Fields from "./pages/app/Fields.tsx";
+import Planner from "./pages/app/Planner.tsx";
+import Analyzer from "./pages/app/Analyzer.tsx";
+import Reports from "./pages/app/Reports.tsx";
+import { AuthProvider } from "./lib/auth";
 
 const queryClient = new QueryClient();
 
@@ -14,11 +22,21 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/app" element={<AppLayout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="fields" element={<Fields />} />
+              <Route path="planner" element={<Planner />} />
+              <Route path="analyzer" element={<Analyzer />} />
+              <Route path="reports" element={<Reports />} />
+            </Route>
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
