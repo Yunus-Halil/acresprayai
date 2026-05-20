@@ -44,12 +44,17 @@ export default function Analyzer() {
       const up = await supabase.storage.from("scans").upload(path, file);
       if (up.error) throw up.error;
 
-      const { data: signed } = await supabase.storage.from("scans").createSignedUrl(path, 600);
-      if (!signed?.signedUrl) throw new Error("Could not sign image");
+      // Encode as base64 data URL so the AI gateway doesn't need to fetch from storage
+      const imageDataUrl: string = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result as string);
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
+      });
 
       const field = fields.find(f => f.id === fieldId);
       const { data, error } = await supabase.functions.invoke("analyze-scan", {
-        body: { imageUrl: signed.signedUrl, cropType, fieldName: field?.name },
+        body: { imageUrl: imageDataUrl, cropType, fieldName: field?.name },
       });
       if (error) throw error;
       if ((data as any).error) throw new Error((data as any).error);
