@@ -42,10 +42,10 @@ export const Hero = () => {
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-4">
             <a
-              href="#contact"
+              href="/auth"
               className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3.5 text-base text-primary-foreground hover:bg-primary/90 transition-all hover:shadow-elevated"
             >
-              Start a 12-month pilot
+              Launch app
               <span aria-hidden>→</span>
             </a>
             <a
