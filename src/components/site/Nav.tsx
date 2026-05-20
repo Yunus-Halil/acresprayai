@@ -35,10 +35,10 @@ export const Nav = () => {
           ))}
         </nav>
         <a
-          href="#contact"
+          href="/auth"
           className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Request pilot
+          Open app
           <span aria-hidden>→</span>
         </a>
       </div>
