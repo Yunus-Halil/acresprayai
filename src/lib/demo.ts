@@ -85,3 +85,12 @@ export const DEMO_DRONES = [
   { id: "d3", name: "AGV-03 DJI Mavic 3M", role: "Scanner", status: "idle", battery: 98, signal: 100, location: "Hangar" },
   { id: "d4", name: "AGV-04 DJI Agras T40", role: "Sprayer", status: "in_flight", battery: 71, signal: 88, location: "B-04" },
 ];
+
+export const DEMO_HEALTH_TREND = [
+  { date: "May 01", health: 71 },
+  { date: "May 04", health: 73 },
+  { date: "May 07", health: 70 },
+  { date: "May 10", health: 74 },
+  { date: "May 13", health: 78 },
+  { date: "May 16", health: 81 },
+  { date: "May
