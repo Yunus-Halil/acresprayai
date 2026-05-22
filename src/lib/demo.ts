@@ -1,4 +1,4 @@
-import type { SprayZone } from "@/components/app/Field3D";
+import type { SprayZone, FieldLayout } from "@/components/app/Field3D";
 
 export type DemoField = {
   id: string;
@@ -9,6 +9,7 @@ export type DemoField = {
   health: number;
   notes: string;
   zones: SprayZone[];
+  layout: FieldLayout;
 };
 
 export const DEMO_FIELDS: DemoField[] = [
@@ -20,6 +21,7 @@ export const DEMO_FIELDS: DemoField[] = [
     location: "47.2184N, 2.0411E - Cher, FR",
     health: 78,
     notes: "Aphid pressure in eastern centre. Spray queued for tomorrow 06:12.",
+    layout: "rows",
     zones: [
       { x: 5, z: -2, w: 3.5, d: 3, severity: "high", label: "Aphids 0.42 ha" },
       { x: -6, z: 3, w: 5, d: 3.5, severity: "medium", label: "Septoria 1.1 ha" },
@@ -34,6 +36,7 @@ export const DEMO_FIELDS: DemoField[] = [
     location: "47.2210N, 2.0388E - Cher, FR",
     health: 91,
     notes: "Healthy. Routine NDVI scan completed.",
+    layout: "pivot",
     zones: [
       { x: -4, z: -3, w: 2, d: 2, severity: "low", label: "N deficit 0.08 ha" },
     ],
@@ -46,6 +49,7 @@ export const DEMO_FIELDS: DemoField[] = [
     location: "47.2152N, 2.0460E - Cher, FR",
     health: 64,
     notes: "Powdery mildew spreading. Recommend fungicide within 72h.",
+    layout: "terraced",
     zones: [
       { x: -7, z: -4, w: 4, d: 3.5, severity: "high", label: "Mildew 1.6 ha" },
       { x: 3, z: 2, w: 4, d: 3, severity: "high", label: "Mildew 1.1 ha" },
