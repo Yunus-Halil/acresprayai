@@ -11,7 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
   CalendarClock, Plus, Plane, Play, Battery, Wifi, MapPin, Clock,
-  Droplets, Sparkles, CheckCircle2, Loader2,
+  Droplets, Sparkles, CheckCircle2, Loader2, Pencil, Undo2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import Field3D from "@/components/app/Field3D";
@@ -24,6 +24,12 @@ export default function Planner() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(missions[0]);
   const [form, setForm] = useState({ field: "", drone: "", type: "spray", when: "", chemical: "", dose: "" });
+  const [drawMode, setDrawMode] = useState(false);
+  const [customPaths, setCustomPaths] = useState<Record<string, [number, number][]>>({});
+
+  const currentPath = customPaths[active.id];
+  const setCurrentPath = (wp: [number, number][]) =>
+    setCustomPaths(p => ({ ...p, [active.id]: wp }));
 
   useEffect(() => {
     supabase.from("fields").select("id, name, area_hectares").then(({ data }) => setFields(data ?? []));
@@ -143,7 +149,48 @@ export default function Planner() {
               <Badge variant="outline" className="capitalize">{active.type}</Badge>
             </div>
           </div>
-          <Field3D zones={fieldFor(active.field).zones} height={380} />
+          <div className="relative">
+            <Field3D
+              zones={fieldFor(active.field).zones}
+              waypoints={currentPath}
+              editable={drawMode}
+              onWaypointsChange={setCurrentPath}
+              height={380}
+            />
+            <div className="absolute top-3 right-3 flex gap-2">
+              <Button
+                size="sm"
+                variant={drawMode ? "default" : "secondary"}
+                onClick={() => {
+                  if (!drawMode && !currentPath) setCurrentPath([]);
+                  setDrawMode(d => !d);
+                }}
+              >
+                <Pencil className="h-3 w-3" /> {drawMode ? "Done" : "Draw path"}
+              </Button>
+              {drawMode && currentPath && currentPath.length > 0 && (
+                <Button size="sm" variant="secondary"
+                  onClick={() => setCurrentPath(currentPath.slice(0, -1))}>
+                  <Undo2 className="h-3 w-3" /> Undo
+                </Button>
+              )}
+              {currentPath && (
+                <Button size="sm" variant="secondary"
+                  onClick={() => {
+                    setCustomPaths(p => { const n = { ...p }; delete n[active.id]; return n; });
+                    setDrawMode(false);
+                    toast.success("Reverted to auto path");
+                  }}>
+                  <X className="h-3 w-3" /> Reset
+                </Button>
+              )}
+            </div>
+            {drawMode && (
+              <div className="absolute bottom-3 left-3 right-3 text-[11px] font-mono bg-black/70 text-white px-3 py-1.5 rounded">
+                Click on the field to place waypoints · {currentPath?.length ?? 0} placed · drag to rotate
+              </div>
+            )}
+          </div>
           <div className="p-4 space-y-3 border-t">
             <div className="flex items-center justify-between text-sm">
               <span className="font-mono">{active.drone}</span>
