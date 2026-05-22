@@ -29,7 +29,7 @@ export const CTA = () => {
             ↳ Pilot program · Spring–Fall 2026
           </div>
           <h2 className="mt-6 font-display text-5xl md:text-7xl font-semibold leading-[0.95] text-balance">
-            Bring AgriPulse to your field.
+            Bring Acre Flight AI to your field.
           </h2>
           <p className="mt-8 text-xl text-primary-foreground/70 max-w-2xl">
             We’re onboarding 3 farms for a closed pilot. Free analysis on your first

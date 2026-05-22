@@ -3,7 +3,7 @@ import cropsImg from "@/assets/crops.jpg";
 
 const milestones = [
   { q: "Q2 2026", title: "Prototype", body: "Drone + AI vision pipeline running on a 50-acre test plot." },
-  { q: "Q3 2026", title: "Closed pilot", body: "Three farms across three crop types. Baseline vs. AgriPulse." },
+  { q: "Q3 2026", title: "Closed pilot", body: "Three farms across three crop types. Baseline vs. Acre Flight AI." },
   { q: "Q4 2026", title: "Spray-map API", body: "Open API for drone operators and existing farm equipment." },
   { q: "Q1 2027", title: "Public release", body: "Self-serve onboarding for any farm above 20 acres." },
 ];
