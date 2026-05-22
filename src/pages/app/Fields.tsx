@@ -54,6 +54,7 @@ export default function Fields() {
       health: 70 + ((i * 7) % 25),
       notes: f.notes ?? "Awaiting first AI scan.",
       zones: DEMO_FIELDS[i % DEMO_FIELDS.length].zones,
+      layout: DEMO_FIELDS[i % DEMO_FIELDS.length].layout,
     })),
   ];
 
