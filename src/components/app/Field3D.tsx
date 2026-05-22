@@ -145,6 +145,7 @@ function Drone({ path }: { path: [number, number][] }) {
 }
 
 function WaypointPath({ path }: { path: [number, number][] }) {
+  if (path.length < 2) return null;
   const points = path.map(([x, z]) => new THREE.Vector3(x, 0.05, z));
   return (
     <>
