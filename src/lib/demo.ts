@@ -83,4 +83,5 @@ export const DEMO_DRONES = [
   { id: "d1", name: "AGV-01 DJI Mavic 3M", role: "Scanner", status: "in_flight", battery: 64, signal: 92, location: "B-04" },
   { id: "d2", name: "AGV-02 DJI Agras T30", role: "Sprayer", status: "charging", battery: 38, signal: 100, location: "Hangar" },
   { id: "d3", name: "AGV-03 DJI Mavic 3M", role: "Scanner", status: "idle", battery: 98, signal: 100, location: "Hangar" },
-  { id: "d4", name: "AGV-04 DJ
+  { id: "d4", name: "AGV-04 DJI Agras T40", role: "Sprayer", status: "in_flight", battery: 71, signal: 88, location: "B-04" },
+];
