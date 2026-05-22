@@ -93,4 +93,12 @@ export const DEMO_HEALTH_TREND = [
   { date: "May 10", health: 74 },
   { date: "May 13", health: 78 },
   { date: "May 16", health: 81 },
-  { date: "May
+  { date: "May 19", health: 79 },
+  { date: "May 22", health: 83 },
+];
+
+export const DEMO_SPRAY_HISTORY = [
+  { id: "h1", date: "2026-05-22", field: "B-04 North Quadrant", type: "spray", chemical: "Lambda-cyhalothrin", dose: 0.8, area: 1.72, status: "completed" },
+  { id: "h2", date: "2026-05-21", field: "C-11 South Slope", type: "scan", chemical: "—", dose: 0, area: 22.4, status: "completed" },
+  { id: "h3", date: "2026-05-20", field: "C-11 South Slope", type: "spray", chemical: "Tebuconazole 250 EC", dose: 1.2, area: 3.1, status: "completed" },
+  { id: "h4", date: "2026-05-19", field: "A-02 River Bend", type: "scan", chemical: "—", dose: 0, area: 8.6, status: "completed" },
