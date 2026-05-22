@@ -6,9 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Trash2, Map, Maximize2, Sparkles, Droplets, Leaf } from "lucide-react";
+import { Plus, Trash2, Maximize2, Droplets } from "lucide-react";
 import { toast } from "sonner";
 import Field3D from "@/components/app/Field3D";
 import { DEMO_FIELDS, type DemoField } from "@/lib/demo";
@@ -90,40 +89,79 @@ export default function Fields() {
         {allFields.map(f => {
           const isDemo = f.id.startsWith("demo-");
           const high = f.zones.filter(z => z.severity === "high").length;
+          const med = f.zones.filter(z => z.severity === "medium").length;
+          const low = f.zones.filter(z => z.severity === "low").length;
+          const status = f.health >= 80 ? "Healthy" : f.health >= 60 ? "Needs attention" : "Critical";
+          const statusTone = f.health >= 80 ? "text-emerald-500" : f.health >= 60 ? "text-amber-500" : "text-destructive";
           return (
-            <Card key={f.id} className="overflow-hidden group cursor-pointer hover:shadow-lg transition" onClick={() => setDetail(f)}>
-              <div className="relative h-44 bg-gradient-to-b from-sky-900 to-slate-900">
-                <Field3D zones={f.zones} height={176} />
-                <div className="absolute top-3 left-3 right-3 flex items-start justify-between pointer-events-none">
-                  <Badge variant="outline" className={`bg-background/90 ${healthColor(f.health)}`}>
-                    Health {f.health}
-                  </Badge>
-                  {high > 0 && <Badge className="bg-destructive">{high} critical</Badge>}
+            <Card key={f.id} className="overflow-hidden group cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition" onClick={() => setDetail(f)}>
+              {/* Header band — clear name + status at a glance */}
+              <div className="p-4 flex items-start justify-between gap-3 border-b">
+                <div className="min-w-0">
+                  <div className="font-display text-xl leading-tight truncate">{f.name}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {f.crop} · {f.area_hectares} ha
+                  </div>
                 </div>
-                <div className="absolute bottom-2 right-2 bg-background/80 rounded p-1 pointer-events-none">
-                  <Maximize2 className="h-3 w-3" />
+                <div className="text-right flex-shrink-0">
+                  <div className={`font-display text-3xl leading-none ${statusTone}`}>{f.health}</div>
+                  <div className={`text-[10px] uppercase tracking-wider ${statusTone}`}>{status}</div>
                 </div>
               </div>
-              <div className="p-4 space-y-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="font-display text-lg leading-tight">{f.name}</div>
-                    <div className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">
-                      {f.crop} · {f.area_hectares} ha
-                    </div>
-                  </div>
-                  {!isDemo && (
-                    <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); remove(f.id); }}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+
+              {/* 3D preview */}
+              <div className="relative">
+                <Field3D zones={f.zones} height={180} />
+                <div className="absolute bottom-2 right-2 bg-background/80 backdrop-blur rounded px-1.5 py-1 text-[10px] flex items-center gap-1 pointer-events-none">
+                  <Maximize2 className="h-3 w-3" /> 3D view
+                </div>
+              </div>
+
+              {/* Footer — readable zone breakdown + actions */}
+              <div className="p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  {high > 0 && (
+                    <Badge className="bg-destructive hover:bg-destructive gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-white" /> {high} critical
+                    </Badge>
+                  )}
+                  {med > 0 && (
+                    <Badge variant="outline" className="border-amber-500 text-amber-600 gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> {med} moderate
+                    </Badge>
+                  )}
+                  {low > 0 && (
+                    <Badge variant="outline" className="border-emerald-500 text-emerald-600 gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {low} minor
+                    </Badge>
+                  )}
+                  {f.zones.length === 0 && (
+                    <Badge variant="outline" className="border-emerald-500 text-emerald-600">All clear</Badge>
                   )}
                 </div>
-                <div className="text-xs text-muted-foreground font-mono">{f.location}</div>
-                <Progress value={f.health} className="h-1.5" />
-                <div className="flex gap-3 text-xs pt-1">
-                  <span className="flex items-center gap-1"><Sparkles className="h-3 w-3" /> {f.zones.length} zones</span>
-                  <span className="flex items-center gap-1"><Droplets className="h-3 w-3" /> spray ready</span>
-                  <span className="flex items-center gap-1"><Leaf className="h-3 w-3" /> NDVI 0.{60 + Math.floor(f.health / 10)}</span>
+
+                <div className="grid grid-cols-3 gap-2 text-center pt-1">
+                  <div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">NDVI</div>
+                    <div className="font-display text-base">0.{60 + Math.floor(f.health / 10)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Zones</div>
+                    <div className="font-display text-base">{f.zones.length}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Last scan</div>
+                    <div className="font-display text-base">2h</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-1 border-t">
+                  <div className="text-[10px] text-muted-foreground font-mono truncate">{f.location}</div>
+                  {!isDemo && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0" onClick={(e) => { e.stopPropagation(); remove(f.id); }}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
             </Card>
