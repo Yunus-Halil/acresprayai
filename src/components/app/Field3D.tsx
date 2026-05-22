@@ -168,10 +168,14 @@ export default function Field3D({
   zones,
   waypoints,
   height = 360,
+  editable = false,
+  onWaypointsChange,
 }: {
   zones: SprayZone[];
   waypoints?: [number, number][];
   height?: number;
+  editable?: boolean;
+  onWaypointsChange?: (wp: [number, number][]) => void;
 }) {
   const path = waypoints ?? [
     [-10, -6], [10, -6], [10, -2], [-10, -2], [-10, 2], [10, 2], [10, 6], [-10, 6],
@@ -189,6 +193,21 @@ export default function Field3D({
           <Grid args={[FIELD_W, FIELD_D]} position={[0, 0.01, 0]}
             cellColor="#ffffff" cellThickness={0.4} sectionColor="#ffffff"
             sectionThickness={0.8} fadeDistance={40} fadeStrength={1} infiniteGrid={false} />
+          {editable && (
+            <mesh
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[0, 0.03, 0]}
+              onClick={(e) => {
+                e.stopPropagation();
+                const x = Math.max(-FIELD_W / 2, Math.min(FIELD_W / 2, e.point.x));
+                const z = Math.max(-FIELD_D / 2, Math.min(FIELD_D / 2, e.point.z));
+                onWaypointsChange?.([...(path as [number, number][]), [x, z]]);
+              }}
+            >
+              <planeGeometry args={[FIELD_W, FIELD_D]} />
+              <meshBasicMaterial transparent opacity={0} />
+            </mesh>
+          )}
           <WaypointPath path={path} />
           {zones.map((z, i) => <SprayBox key={i} zone={z} />)}
           <Drone path={path} />
@@ -197,7 +216,7 @@ export default function Field3D({
             minDistance={12}
             maxDistance={40}
             maxPolarAngle={Math.PI / 2.2}
-            autoRotate
+            autoRotate={!editable}
             autoRotateSpeed={0.4}
           />
         </Suspense>
