@@ -112,7 +112,7 @@ export default function Fields() {
 
               {/* 3D preview */}
               <div className="relative">
-                <Field3D zones={f.zones} height={180} />
+                <Field3D zones={f.zones} height={180} layout={f.layout} cropType={f.crop} />
                 <div className="absolute bottom-2 right-2 bg-background/80 backdrop-blur rounded px-1.5 py-1 text-[10px] flex items-center gap-1 pointer-events-none">
                   <Maximize2 className="h-3 w-3" /> 3D view
                 </div>
@@ -180,7 +180,7 @@ export default function Fields() {
                   <Badge variant="outline" className={healthColor(detail.health)}>Health {detail.health}</Badge>
                 </DialogTitle>
               </DialogHeader>
-              <Field3D zones={detail.zones} height={420} />
+              <Field3D zones={detail.zones} height={420} layout={detail.layout} cropType={detail.crop} />
               <div className="grid md:grid-cols-3 gap-3 text-sm">
                 <Card className="p-3">
                   <div className="text-xs text-muted-foreground">Crop</div>
