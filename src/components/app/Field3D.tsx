@@ -100,6 +100,7 @@ function Drone({ path }: { path: [number, number][] }) {
   const propD = useRef<THREE.Mesh>(null);
 
   useFrame(({ clock }) => {
+    if (path.length < 1) return;
     const t = (clock.getElapsedTime() * 0.08) % 1;
     const seg = t * (path.length - 1);
     const i = Math.floor(seg);
