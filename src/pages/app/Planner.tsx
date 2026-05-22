@@ -152,6 +152,8 @@ export default function Planner() {
           <div className="relative">
             <Field3D
               zones={fieldFor(active.field).zones}
+              layout={fieldFor(active.field).layout}
+              cropType={fieldFor(active.field).crop}
               waypoints={currentPath}
               editable={drawMode}
               onWaypointsChange={setCurrentPath}
