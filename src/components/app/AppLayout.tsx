@@ -29,7 +29,7 @@ export default function AppLayout() {
     <div className="min-h-screen flex bg-background">
       <aside className="w-60 border-r bg-[hsl(var(--field))] text-[hsl(var(--primary-foreground))] flex flex-col">
         <div className="p-5 flex items-center gap-2 font-display text-lg border-b border-white/10">
-          <Leaf className="h-5 w-5 text-[hsl(var(--accent))]" /> AgriVision
+          <Leaf className="h-5 w-5 text-[hsl(var(--accent))]" /> AcreSpray AI
         </div>
         <nav className="p-3 flex-1 space-y-1">
           {nav.map(item => (

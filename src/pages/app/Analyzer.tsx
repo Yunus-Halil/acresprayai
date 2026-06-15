@@ -67,7 +67,7 @@ const WAYPOINTS = [
 const PHASES = [
   { label: "Establishing uplink with drone", ms: 600 },
   { label: "Capturing multispectral imagery", ms: 800 },
-  { label: "Running AgriVision AI inference", ms: 1100 },
+  { label: "Running AcreSpray AI AI inference", ms: 1100 },
   { label: "Geo-referencing detections", ms: 600 },
   { label: "Generating precision spray plan", ms: 700 },
 ];
@@ -205,7 +205,7 @@ export default function Analyzer() {
       <header className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-display text-3xl">AI Crop Analyzer</h1>
-          <p className="text-muted-foreground">Upload aerial imagery or run the live drone sample. AgriVision geolocates threats and generates a precision spray plan.</p>
+          <p className="text-muted-foreground">Upload aerial imagery or run the live drone sample. AcreSpray AI geolocates threats and generates a precision spray plan.</p>
         </div>
         <Button variant="outline" onClick={loadSample}>
           <Plane className="h-4 w-4" /> Load sample drone capture
