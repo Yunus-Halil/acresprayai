@@ -306,7 +306,7 @@ export default function Weather() {
               </Button>
             </form>
             <p className="text-[11px] text-muted-foreground mt-3">
-              Address lookup via OpenStreetMap Nominatim. Pinned farms are saved on this device.
+              Address lookup via Open-Meteo geocoding. Pinned farms are saved on this device.
             </p>
           </Card>
 
