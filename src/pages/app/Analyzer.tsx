@@ -298,29 +298,6 @@ export default function Analyzer() {
                 </g>
               ))}
 
-              {/* waypoint path (always visible) */}
-              <polyline
-                points={WAYPOINTS.map(w => `${w.x},${w.y}`).join(" ")}
-                fill="none" stroke="rgb(56,189,248)" strokeOpacity="0.85"
-                strokeWidth="0.4" strokeDasharray="1.2 0.8"
-              />
-              {WAYPOINTS.map((w, i) => (
-                <g key={i}>
-                  <circle cx={w.x} cy={w.y} r="0.9" fill="rgb(56,189,248)" />
-                  <text x={w.x + 1.5} y={w.y + 0.5} fontSize="2" fill="white" opacity="0.85">WP{i+1}</text>
-                </g>
-              ))}
-
-              {/* drone position pulse — at first waypoint when idle, animated to last when scanning */}
-              <g>
-                <circle cx={loading ? 50 : WAYPOINTS[0].x} cy={loading ? 50 : WAYPOINTS[0].y} r="2.5"
-                  fill="none" stroke="rgb(56,189,248)" strokeWidth="0.3" opacity="0.6">
-                  <animate attributeName="r" values="1.5;3.5;1.5" dur="2s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0.8;0.1;0.8" dur="2s" repeatCount="indefinite" />
-                </circle>
-                <circle cx={loading ? 50 : WAYPOINTS[0].x} cy={loading ? 50 : WAYPOINTS[0].y} r="1" fill="rgb(56,189,248)" />
-              </g>
-
               {/* detection boxes — only after analysis */}
               {demoResult?.detections.map((d, i) => (
                 <g key={i}>
