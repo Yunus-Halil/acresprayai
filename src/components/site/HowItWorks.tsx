@@ -15,7 +15,7 @@ const steps = [
   {
     n: "03",
     title: "Decide",
-    body: "Acre Flight AI generates a per-square-meter spray map: when, where, and how much. Reviewable in a single mobile dashboard.",
+    body: "AcreSpray AI generates a per-square-meter spray map: when, where, and how much. Reviewable in a single mobile dashboard.",
   },
   {
     n: "04",

@@ -23,7 +23,7 @@ export const Stats = () => {
           <p className="md:col-span-6 md:col-start-7 text-lg text-muted-foreground leading-relaxed self-end">
             Spraying is done uniformly across fields instead of where it’s needed.
             The root cause isn’t farmer behavior — it’s the absence of accessible,
-            AI-powered precision tools. Acre Flight AI closes that gap.
+            AI-powered precision tools. AcreSpray AI closes that gap.
           </p>
         </div>
 
