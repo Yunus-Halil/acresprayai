@@ -328,7 +328,43 @@ export default function Weather() {
               </div>
               <div>
                 <Label>Address or location</Label>
-                <Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="e.g. 1200 N Main St, Lincoln, NE" />
+                <div className="relative">
+                  <Input
+                    value={form.address}
+                    onChange={e => { setForm({ ...form, address: e.target.value }); setPicked(null); }}
+                    onFocus={() => suggestions.length && setShowSuggest(true)}
+                    onBlur={() => setTimeout(() => setShowSuggest(false), 150)}
+                    placeholder="Start typing a city, ZIP, or place…"
+                    autoComplete="off"
+                  />
+                  {showSuggest && suggestions.length > 0 && (
+                    <ul className="absolute z-[1000] left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg max-h-64 overflow-auto">
+                      {suggestions.map(s => (
+                        <li key={s.id}>
+                          <button
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-start gap-2"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              const label = [s.name, s.admin1, s.country].filter(Boolean).join(", ");
+                              setPicked(s);
+                              setForm(f => ({ ...f, address: label }));
+                              setShowSuggest(false);
+                            }}
+                          >
+                            <MapPin className="h-3.5 w-3.5 mt-0.5 text-muted-foreground flex-shrink-0" />
+                            <span className="truncate">
+                              <span className="font-medium">{s.name}</span>
+                              <span className="text-muted-foreground">
+                                {[s.admin1, s.country].filter(Boolean).length ? `, ${[s.admin1, s.country].filter(Boolean).join(", ")}` : ""}
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
               <Button type="submit" className="w-full" disabled={searching}>
                 {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
