@@ -12,6 +12,7 @@ export type SprayZone = {
   d: number;
   severity: "low" | "medium" | "high";
   label: string;
+  cropType?: string;
 };
 
 const FIELD_W = 24;
@@ -149,7 +150,11 @@ function Crops({ layout, cropType, onHoverCrop }: {
   );
 }
 
-function SprayBox({ zone }: { zone: SprayZone }) {
+function SprayBox({ zone, editable, onClick }: {
+  zone: SprayZone;
+  editable?: boolean;
+  onClick?: () => void;
+}) {
   const ref = useRef<THREE.Mesh>(null);
   useFrame(({ clock }) => {
     if (ref.current) {
@@ -159,8 +164,12 @@ function SprayBox({ zone }: { zone: SprayZone }) {
     }
   });
   const color = sevColor(zone.severity);
+  const labelText = zone.cropType ? `${zone.cropType} · ${zone.label}` : zone.label;
   return (
-    <group position={[zone.x, 0, zone.z]}>
+    <group
+      position={[zone.x, 0, zone.z]}
+      onClick={editable ? (e) => { e.stopPropagation(); onClick?.(); } : undefined}
+    >
       {/* translucent volume */}
       <mesh ref={ref} position={[0, 0.9, 0]}>
         <boxGeometry args={[zone.w, 1.8, zone.d]} />
@@ -177,9 +186,12 @@ function SprayBox({ zone }: { zone: SprayZone }) {
         <meshBasicMaterial color={color} transparent opacity={0.25} />
       </mesh>
       <Html position={[0, 2.2, 0]} center distanceFactor={14}>
-        <div className="px-2 py-1 rounded text-[10px] font-mono whitespace-nowrap text-white shadow-lg"
-          style={{ background: color }}>
-          {zone.label}
+        <div
+          className={`px-2 py-1 rounded text-[10px] font-mono whitespace-nowrap text-white shadow-lg ${editable ? "cursor-pointer hover:ring-2 hover:ring-white" : ""}`}
+          style={{ background: color }}
+          onClick={editable ? (e) => { e.stopPropagation(); onClick?.(); } : undefined}
+        >
+          {labelText}{editable ? " ✎" : ""}
         </div>
       </Html>
     </group>
@@ -268,6 +280,9 @@ export default function Field3D({
   onWaypointsChange,
   layout = "rows",
   cropType = "Crop",
+  editZones = false,
+  onZoneClick,
+  onAddZone,
 }: {
   zones: SprayZone[];
   waypoints?: [number, number][];
@@ -276,6 +291,9 @@ export default function Field3D({
   onWaypointsChange?: (wp: [number, number][]) => void;
   layout?: FieldLayout;
   cropType?: string;
+  editZones?: boolean;
+  onZoneClick?: (index: number) => void;
+  onAddZone?: (x: number, z: number) => void;
 }) {
   const path = waypoints ?? [
     [-10, -6], [10, -6], [10, -2], [-10, -2], [-10, 2], [10, 2], [10, 6], [-10, 6],
@@ -318,15 +336,37 @@ export default function Field3D({
               <meshBasicMaterial transparent opacity={0} />
             </mesh>
           )}
+          {editZones && onAddZone && (
+            <mesh
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[0, 0.04, 0]}
+              onClick={(e) => {
+                e.stopPropagation();
+                const x = Math.max(-FIELD_W / 2 + 1, Math.min(FIELD_W / 2 - 1, e.point.x));
+                const z = Math.max(-FIELD_D / 2 + 1, Math.min(FIELD_D / 2 - 1, e.point.z));
+                onAddZone(x, z);
+              }}
+            >
+              <planeGeometry args={[FIELD_W, FIELD_D]} />
+              <meshBasicMaterial transparent opacity={0} />
+            </mesh>
+          )}
           <WaypointPath path={path} />
-          {zones.map((z, i) => <SprayBox key={i} zone={z} />)}
+          {zones.map((z, i) => (
+            <SprayBox
+              key={i}
+              zone={z}
+              editable={editZones}
+              onClick={() => onZoneClick?.(i)}
+            />
+          ))}
           <Drone path={path} />
           <OrbitControls
             enablePan={false}
             minDistance={6}
             maxDistance={40}
             maxPolarAngle={Math.PI / 2.2}
-            autoRotate={!editable}
+            autoRotate={!editable && !editZones}
             autoRotateSpeed={0.4}
           />
         </Suspense>
