@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useEffect } from "react";
-import { LayoutDashboard, Map, CalendarClock, Sparkles, FileBarChart, Leaf, LogOut, Loader2 } from "lucide-react";
+import { LayoutDashboard, Map, CalendarClock, Sparkles, FileBarChart, Leaf, LogOut, Loader2, Plane } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -10,6 +10,7 @@ const nav = [
   { to: "/app/fields", label: "Fields", icon: Map },
   { to: "/app/planner", label: "Mission Planner", icon: CalendarClock },
   { to: "/app/analyzer", label: "AI Analyzer", icon: Sparkles },
+  { to: "/app/fleet", label: "Drone Fleet", icon: Plane },
   { to: "/app/reports", label: "Reports", icon: FileBarChart },
 ];
 
