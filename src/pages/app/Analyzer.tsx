@@ -66,9 +66,11 @@ const DEMO_ZONES: SprayZone[] = [
   { x: 7, z: 5, w: 2.5, d: 2, severity: "low", label: "Weeds 0.18 ha" },
 ];
 
-const WAYPOINTS = [
-  { x: 8, y: 8 }, { x: 84, y: 20 }, { x: 69, y: 46 },
-  { x: 29, y: 67 }, { x: 92, y: 92 },
+const DEMO_LIKELY_ISSUES = [
+  "Yellow-brown patches on eastern strip suggest early-stage nitrogen deficiency or drought stress.",
+  "Dark-green clustering near centre is consistent with aphid honeydew and sooty mould build-up.",
+  "Lower-left rows show pale speckling typical of Septoria leaf blotch in winter wheat.",
+  "Edge rows show colour drift toward grey — possible compaction or waterlogging from headland turning.",
 ];
 
 const PHASES = [
