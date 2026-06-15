@@ -12,6 +12,7 @@ import Fields from "./pages/app/Fields.tsx";
 import Planner from "./pages/app/Planner.tsx";
 import Analyzer from "./pages/app/Analyzer.tsx";
 import Reports from "./pages/app/Reports.tsx";
+import Fleet from "./pages/app/Fleet.tsx";
 import { AuthProvider } from "./lib/auth";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ const App = () => (
               <Route path="fields" element={<Fields />} />
               <Route path="planner" element={<Planner />} />
               <Route path="analyzer" element={<Analyzer />} />
+              <Route path="fleet" element={<Fleet />} />
               <Route path="reports" element={<Reports />} />
             </Route>
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
