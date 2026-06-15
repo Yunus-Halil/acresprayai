@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
@@ -7,9 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Trash2, Maximize2, Droplets } from "lucide-react";
+import { Plus, Trash2, Maximize2, Droplets, Pencil, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
-import Field3D from "@/components/app/Field3D";
+import Field3D, { type SprayZone } from "@/components/app/Field3D";
 import { DEMO_FIELDS, type DemoField } from "@/lib/demo";
 
 type DBField = { id: string; name: string; crop: string; area_hectares: number; location: string | null; notes: string | null };
@@ -20,6 +20,22 @@ export default function Fields() {
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<DemoField | null>(null);
   const [form, setForm] = useState({ name: "", crop: "Wheat", area_hectares: "", location: "", notes: "" });
+  // per-field local zone overrides (keyed by field id) — persists across the session
+  const [zoneOverrides, setZoneOverrides] = useState<Record<string, SprayZone[]>>(() => {
+    try { return JSON.parse(localStorage.getItem("acrespray.zoneOverrides") ?? "{}"); }
+    catch { return {}; }
+  });
+  const [editingZone, setEditingZone] = useState<{ field: string; index: number } | null>(null);
+  const [zoneForm, setZoneForm] = useState({ cropType: "", label: "", severity: "low" as SprayZone["severity"] });
+
+  const persistOverrides = (next: Record<string, SprayZone[]>) => {
+    setZoneOverrides(next);
+    localStorage.setItem("acrespray.zoneOverrides", JSON.stringify(next));
+  };
+  const zonesFor = (f: DemoField) => zoneOverrides[f.id] ?? f.zones;
+  const updateZones = (fieldId: string, next: SprayZone[]) => {
+    persistOverrides({ ...zoneOverrides, [fieldId]: next });
+  };
 
   const load = async () => {
     const { data } = await supabase.from("fields").select("*").order("created_at", { ascending: false });
@@ -89,9 +105,10 @@ export default function Fields() {
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
         {allFields.map(f => {
           const isDemo = f.id.startsWith("demo-");
-          const high = f.zones.filter(z => z.severity === "high").length;
-          const med = f.zones.filter(z => z.severity === "medium").length;
-          const low = f.zones.filter(z => z.severity === "low").length;
+          const zones = zonesFor(f);
+          const high = zones.filter(z => z.severity === "high").length;
+          const med = zones.filter(z => z.severity === "medium").length;
+          const low = zones.filter(z => z.severity === "low").length;
           const status = f.health >= 80 ? "Healthy" : f.health >= 60 ? "Needs attention" : "Critical";
           const statusTone = f.health >= 80 ? "text-emerald-500" : f.health >= 60 ? "text-amber-500" : "text-destructive";
           return (
@@ -112,7 +129,7 @@ export default function Fields() {
 
               {/* 3D preview */}
               <div className="relative">
-                <Field3D zones={f.zones} height={180} layout={f.layout} cropType={f.crop} />
+                <Field3D zones={zones} height={180} layout={f.layout} cropType={f.crop} />
                 <div className="absolute bottom-2 right-2 bg-background/80 backdrop-blur rounded px-1.5 py-1 text-[10px] flex items-center gap-1 pointer-events-none">
                   <Maximize2 className="h-3 w-3" /> 3D view
                 </div>
@@ -136,7 +153,7 @@ export default function Fields() {
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {low} minor
                     </Badge>
                   )}
-                  {f.zones.length === 0 && (
+                  {zones.length === 0 && (
                     <Badge variant="outline" className="border-emerald-500 text-emerald-600">All clear</Badge>
                   )}
                 </div>
@@ -148,7 +165,7 @@ export default function Fields() {
                   </div>
                   <div>
                     <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Zones</div>
-                    <div className="font-display text-base">{f.zones.length}</div>
+                    <div className="font-display text-base">{zones.length}</div>
                   </div>
                   <div>
                     <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Last scan</div>
@@ -180,7 +197,46 @@ export default function Fields() {
                   <Badge variant="outline" className={healthColor(detail.health)}>Health {detail.health}</Badge>
                 </DialogTitle>
               </DialogHeader>
-              <Field3D zones={detail.zones} height={420} layout={detail.layout} cropType={detail.crop} />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <div className="text-muted-foreground flex items-center gap-1.5">
+                    <Pencil className="h-3 w-3" /> Click any colored patch to edit · click empty ground to add a new patch
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => {
+                      const next = { ...zoneOverrides }; delete next[detail.id]; persistOverrides(next);
+                      toast.success("Farm reset to original layout");
+                    }}>
+                      <RotateCcw className="h-3.5 w-3.5" /> Reset
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => {
+                      updateZones(detail.id, []);
+                      toast.success("All patches cleared — click the field to rebuild");
+                    }}>
+                      <Trash2 className="h-3.5 w-3.5" /> Clear all
+                    </Button>
+                  </div>
+                </div>
+                <Field3D
+                  zones={zonesFor(detail)}
+                  height={420}
+                  layout={detail.layout}
+                  cropType={detail.crop}
+                  editZones
+                  onZoneClick={(idx) => {
+                    const z = zonesFor(detail)[idx];
+                    setZoneForm({ cropType: z.cropType ?? detail.crop, label: z.label, severity: z.severity });
+                    setEditingZone({ field: detail.id, index: idx });
+                  }}
+                  onAddZone={(x, z) => {
+                    const next: SprayZone[] = [
+                      ...zonesFor(detail),
+                      { x, z, w: 3, d: 2.5, severity: "low", label: "New patch", cropType: detail.crop },
+                    ];
+                    updateZones(detail.id, next);
+                  }}
+                />
+              </div>
               <div className="grid md:grid-cols-3 gap-3 text-sm">
                 <Card className="p-3">
                   <div className="text-xs text-muted-foreground">Crop</div>
@@ -189,8 +245,8 @@ export default function Fields() {
                 </Card>
                 <Card className="p-3">
                   <div className="text-xs text-muted-foreground">Detections</div>
-                  <div className="font-display">{detail.zones.length} zones</div>
-                  <div className="text-xs">{detail.zones.filter(z => z.severity === "high").length} critical</div>
+                  <div className="font-display">{zonesFor(detail).length} zones</div>
+                  <div className="text-xs">{zonesFor(detail).filter(z => z.severity === "high").length} critical</div>
                 </Card>
                 <Card className="p-3">
                   <div className="text-xs text-muted-foreground">Recommendation</div>
@@ -204,6 +260,57 @@ export default function Fields() {
                 <Button variant="outline" onClick={() => setDetail(null)}>Close</Button>
               </div>
             </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Zone editor */}
+      <Dialog open={!!editingZone} onOpenChange={(o) => !o && setEditingZone(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Edit patch</DialogTitle></DialogHeader>
+          {editingZone && (
+            <div className="space-y-3">
+              <div>
+                <Label>Crop type</Label>
+                <Input value={zoneForm.cropType} onChange={e => setZoneForm({ ...zoneForm, cropType: e.target.value })} placeholder="e.g. Wheat, Maize, Vineyard" />
+              </div>
+              <div>
+                <Label>Label / note</Label>
+                <Input value={zoneForm.label} onChange={e => setZoneForm({ ...zoneForm, label: e.target.value })} />
+              </div>
+              <div>
+                <Label>Severity</Label>
+                <div className="flex gap-2">
+                  {(["low","medium","high"] as const).map(s => (
+                    <Button key={s} type="button" size="sm"
+                      variant={zoneForm.severity === s ? "default" : "outline"}
+                      onClick={() => setZoneForm({ ...zoneForm, severity: s })}
+                      className="capitalize flex-1">{s}</Button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button className="flex-1" onClick={() => {
+                  const fid = editingZone.field;
+                  const current = zoneOverrides[fid] ?? (allFields.find(f => f.id === fid)?.zones ?? []);
+                  const next = current.map((z, i) => i === editingZone.index
+                    ? { ...z, cropType: zoneForm.cropType, label: zoneForm.label || z.label, severity: zoneForm.severity }
+                    : z);
+                  updateZones(fid, next);
+                  setEditingZone(null);
+                  toast.success("Patch updated");
+                }}>Save</Button>
+                <Button variant="destructive" onClick={() => {
+                  const fid = editingZone.field;
+                  const current = zoneOverrides[fid] ?? (allFields.find(f => f.id === fid)?.zones ?? []);
+                  updateZones(fid, current.filter((_, i) => i !== editingZone.index));
+                  setEditingZone(null);
+                  toast.success("Patch deleted");
+                }}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>
