@@ -345,16 +345,6 @@ export default function Analyzer() {
             )}
           </div>
 
-          {/* Waypoint table */}
-          <div className="p-4 grid grid-cols-5 gap-2 text-[10px] font-mono border-t bg-muted/30">
-            {WAYPOINTS.map((w, i) => (
-              <div key={i} className="space-y-0.5">
-                <div className="text-muted-foreground">WP{i+1}</div>
-                <div>{toGps(w.x, w.y).lat}°</div>
-                <div>{toGps(w.x, w.y).lng}°</div>
-              </div>
-            ))}
-          </div>
         </Card>
 
         {/* RIGHT — controls + results */}
