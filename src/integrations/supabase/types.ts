@@ -18,27 +18,33 @@ export type Database = {
         Row: {
           battery: number
           created_at: string
+          health: number
           id: string
           model: string
           name: string
+          signal: number
           status: string
           user_id: string
         }
         Insert: {
           battery?: number
           created_at?: string
+          health?: number
           id?: string
           model?: string
           name: string
+          signal?: number
           status?: string
           user_id: string
         }
         Update: {
           battery?: number
           created_at?: string
+          health?: number
           id?: string
           model?: string
           name?: string
+          signal?: number
           status?: string
           user_id?: string
         }
