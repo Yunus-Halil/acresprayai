@@ -94,6 +94,7 @@ export default function Analyzer() {
   const [demoResult, setDemoResult] = useState<null | {
     health: number; detections: Detection[]; image: string;
     layout: FieldLayout; cropType: string; zones: SprayZone[]; summary?: string;
+    likelyIssues: string[];
   }>(null);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [scanLine, setScanLine] = useState(0);
@@ -145,6 +146,7 @@ export default function Analyzer() {
       health: 78, detections: DEMO_DETECTIONS, image: sampleAerial,
       layout: "rows", cropType: "Winter Wheat", zones: DEMO_ZONES,
       summary: "Aerial sweep of 14.2 ha completed. Canopy is generally vigorous; localized aphid pressure in the eastern centre and early Septoria on lower-left rows.",
+      likelyIssues: DEMO_LIKELY_ISSUES,
     });
     setPhaseIdx(-1);
     setLoading(false);
@@ -198,6 +200,7 @@ export default function Analyzer() {
       setDemoResult({
         health: a.health_score ?? 70, detections: dets, image: previewUrl!,
         layout: aiLayout, cropType: aiCrop, zones: aiZones, summary: a.summary,
+        likelyIssues: Array.isArray(a.likely_issues) ? a.likely_issues.slice(0, 6).map(String) : [],
       });
       // Persist the scan so it shows up in Reports / history
       await supabase.from("scans").insert({
@@ -215,6 +218,7 @@ export default function Analyzer() {
       setDemoResult({
         health: 78, detections: DEMO_DETECTIONS, image: previewUrl!,
         layout: "rows", cropType: cropType, zones: DEMO_ZONES,
+        likelyIssues: DEMO_LIKELY_ISSUES,
       });
     } finally {
       setLoading(false);
