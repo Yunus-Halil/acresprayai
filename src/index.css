@@ -8,7 +8,7 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Acre Flight AI — deep field green + lime accent + warm cream */
+    /* AcreSpray AI — deep field green + lime accent + warm cream */
     --background: 60 30% 97%;            /* warm cream */
     --foreground: 150 30% 8%;            /* near-black forest */
 

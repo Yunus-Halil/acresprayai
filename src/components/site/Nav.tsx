@@ -21,7 +21,7 @@ export const Nav = () => {
             <span className="absolute inset-0 rounded-full bg-accent animate-pulse-dot" />
             <span className="relative h-2.5 w-2.5 rounded-full bg-accent" />
           </span>
-          <span className="font-display font-semibold tracking-tight text-lg">Acre Flight AI</span>
+          <span className="font-display font-semibold tracking-tight text-lg">AcreSpray AI</span>
         </a>
         <nav className="hidden md:flex items-center gap-8">
           {links.map((l) => (

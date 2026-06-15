@@ -4,7 +4,7 @@ export const Footer = () => {
       <div className="container flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full bg-accent" />
-          <span className="font-display font-semibold">Acre Flight AI</span>
+          <span className="font-display font-semibold">AcreSpray AI</span>
           <span className="font-mono text-xs text-muted-foreground ml-3">
             © 2026 · Pinnacle DSE Capstone
           </span>

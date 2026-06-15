@@ -36,7 +36,7 @@ export const Hero = () => {
             </span>
           </h1>
           <p className="mt-8 max-w-2xl text-lg md:text-xl text-muted-foreground leading-relaxed">
-            Acre Flight AI fuses AI vision, drone imagery, weather and soil data into one
+            AcreSpray AI fuses AI vision, drone imagery, weather and soil data into one
             decision system — telling farmers exactly when, where, and how much to spray.
             <span className="text-foreground"> Cut chemical use by 30%+. Keep yield intact.</span>
           </p>
