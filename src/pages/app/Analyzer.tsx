@@ -17,6 +17,7 @@ import sampleAerial from "@/assets/sample-field-aerial.jpg";
 import closeupPest from "@/assets/closeup-pest.jpg";
 import closeupDisease from "@/assets/closeup-disease.jpg";
 import closeupWeed from "@/assets/closeup-weed.jpg";
+import Field3D, { type FieldLayout, type SprayZone } from "@/components/app/Field3D";
 
 type Detection = {
   type: "pest" | "weed" | "disease" | "nutrient_deficiency";
@@ -59,6 +60,12 @@ const DEMO_DETECTIONS: Detection[] = [
   },
 ];
 
+const DEMO_ZONES: SprayZone[] = [
+  { x: 5, z: -2, w: 3.5, d: 3, severity: "high", label: "Aphids 0.42 ha" },
+  { x: -6, z: 3, w: 5, d: 3.5, severity: "medium", label: "Septoria 1.1 ha" },
+  { x: 7, z: 5, w: 2.5, d: 2, severity: "low", label: "Weeds 0.18 ha" },
+];
+
 const WAYPOINTS = [
   { x: 8, y: 8 }, { x: 84, y: 20 }, { x: 69, y: 46 },
   { x: 29, y: 67 }, { x: 92, y: 92 },
@@ -84,6 +91,7 @@ export default function Analyzer() {
   const [demoMode, setDemoMode] = useState(true);
   const [demoResult, setDemoResult] = useState<null | {
     health: number; detections: Detection[]; image: string;
+    layout: FieldLayout; cropType: string; zones: SprayZone[]; summary?: string;
   }>(null);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [scanLine, setScanLine] = useState(0);
@@ -131,7 +139,11 @@ export default function Analyzer() {
     }
     if (scanRaf.current) cancelAnimationFrame(scanRaf.current);
     setScanLine(0);
-    setDemoResult({ health: 78, detections: DEMO_DETECTIONS, image: sampleAerial });
+    setDemoResult({
+      health: 78, detections: DEMO_DETECTIONS, image: sampleAerial,
+      layout: "rows", cropType: "Winter Wheat", zones: DEMO_ZONES,
+      summary: "Aerial sweep of 14.2 ha completed. Canopy is generally vigorous; localized aphid pressure in the eastern centre and early Septoria on lower-left rows.",
+    });
     setPhaseIdx(-1);
     setLoading(false);
     toast.success("Analysis complete — 3 threats geolocated");
@@ -167,11 +179,41 @@ export default function Analyzer() {
         box: { x: 15 + (i * 22) % 70, y: 20 + (i * 27) % 60, w: 14, h: 14 },
         gps: toGps(15 + (i * 22) % 70 + 7, 20 + (i * 27) % 60 + 7),
       }));
-      setDemoResult({ health: a.health_score ?? 70, detections: dets, image: previewUrl! });
+      const aiLayout: FieldLayout =
+        (["rows", "orchard", "pivot", "terraced"] as const).includes(a.field_layout)
+          ? a.field_layout : "rows";
+      const aiZones: SprayZone[] = Array.isArray(a.spray_zones) && a.spray_zones.length
+        ? a.spray_zones.slice(0, 5).map((z: any) => ({
+            x: Math.max(-12, Math.min(12, Number(z.x) || 0)),
+            z: Math.max(-8, Math.min(8, Number(z.z) || 0)),
+            w: Math.max(1, Math.min(8, Number(z.w) || 2)),
+            d: Math.max(1, Math.min(6, Number(z.d) || 2)),
+            severity: (["low", "medium", "high"].includes(z.severity) ? z.severity : "medium"),
+            label: String(z.label || "Issue zone").slice(0, 40),
+          }))
+        : DEMO_ZONES;
+      const aiCrop = String(a.crop_type || cropType);
+      setDemoResult({
+        health: a.health_score ?? 70, detections: dets, image: previewUrl!,
+        layout: aiLayout, cropType: aiCrop, zones: aiZones, summary: a.summary,
+      });
+      // Persist the scan so it shows up in Reports / history
+      await supabase.from("scans").insert({
+        user_id: user!.id,
+        field_id: fieldId || null,
+        image_path: up.data?.path ?? path,
+        status: "completed",
+        health_score: a.health_score ?? null,
+        detections: { detections: a.detections, zones: aiZones, layout: aiLayout, crop_type: aiCrop } as any,
+        ai_summary: a.summary ?? null,
+      });
       toast.success("Live AI analysis complete");
     } catch (e: any) {
       toast.error(e.message ?? "Analysis failed — using demo data");
-      setDemoResult({ health: 78, detections: DEMO_DETECTIONS, image: previewUrl! });
+      setDemoResult({
+        health: 78, detections: DEMO_DETECTIONS, image: previewUrl!,
+        layout: "rows", cropType: cropType, zones: DEMO_ZONES,
+      });
     } finally {
       setLoading(false);
     }
@@ -378,14 +420,34 @@ export default function Analyzer() {
                         : demoResult.health >= 50 ? <><AlertTriangle className="h-4 w-4 text-amber-500" /> Stressed</>
                         : <><AlertTriangle className="h-4 w-4 text-destructive" /> Critical</>}
                     </div>
-                    <div className="text-xs text-muted-foreground">3 threats · 12.1% affected · NDVI 0.71</div>
+                    <div className="text-xs text-muted-foreground">
+                      {demoResult.cropType} · {demoResult.layout} layout · {demoResult.zones.length} zone{demoResult.zones.length === 1 ? "" : "s"}
+                    </div>
                   </div>
                 </div>
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                  Aerial sweep of 14.2 ha completed in 4 min. Crop canopy is generally vigorous; localized aphid
-                  pressure in the eastern centre warrants priority spot-treatment within 48 h. Septoria signature
-                  detected on lower-left rows — early-stage, recoverable with targeted fungicide.
+                  {demoResult.summary ??
+                    "Aerial sweep complete. Canopy is generally vigorous with localized stress zones flagged below — see the 3D reconstruction for spatial context."}
                 </p>
+              </Card>
+
+              <Card className="overflow-hidden">
+                <div className="p-3 border-b flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 font-mono uppercase tracking-wider">
+                    <Sparkles className="h-3 w-3 text-primary" />
+                    AI-reconstructed 3D field
+                  </div>
+                  <Badge variant="outline" className="capitalize">{demoResult.layout}</Badge>
+                </div>
+                <Field3D
+                  zones={demoResult.zones}
+                  layout={demoResult.layout}
+                  cropType={demoResult.cropType}
+                  height={300}
+                />
+                <div className="p-3 text-[11px] text-muted-foreground border-t">
+                  Layout, crop, and problem zones above are derived from the AI analysis of your image. Drag to orbit · scroll to zoom · hover crops for health.
+                </div>
               </Card>
 
               <Card className="p-5 space-y-3">

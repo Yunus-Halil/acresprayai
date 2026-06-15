@@ -28,6 +28,12 @@ Deno.serve(async (req) => {
           properties: {
             health_score: { type: 'integer', description: '0-100 overall crop health' },
             summary: { type: 'string', description: 'One paragraph summary for the farmer' },
+            crop_type: { type: 'string', description: 'Best guess of crop visible (e.g. Wheat, Maize, Vineyard, Olive grove, Soy)' },
+            field_layout: {
+              type: 'string',
+              enum: ['rows', 'orchard', 'pivot', 'terraced'],
+              description: 'Field structure inferred from the image. rows=row crops (wheat/cereal/maize), orchard=spaced trees/vines, pivot=circular center-pivot irrigation, terraced=stepped/banded slopes.',
+            },
             detections: {
               type: 'array',
               items: {
@@ -42,6 +48,22 @@ Deno.serve(async (req) => {
                 required: ['type', 'label', 'severity', 'coverage_pct', 'recommendation'],
               },
             },
+            spray_zones: {
+              type: 'array',
+              description: 'Up to 5 problem zones positioned on the field. x in -12..12 (left-right), z in -8..8 (back-front), w/d are widths in same units (1-6).',
+              items: {
+                type: 'object',
+                properties: {
+                  x: { type: 'number' },
+                  z: { type: 'number' },
+                  w: { type: 'number' },
+                  d: { type: 'number' },
+                  severity: { type: 'string', enum: ['low', 'medium', 'high'] },
+                  label: { type: 'string' },
+                },
+                required: ['x', 'z', 'w', 'd', 'severity', 'label'],
+              },
+            },
             spray_plan: {
               type: 'object',
               properties: {
@@ -54,7 +76,7 @@ Deno.serve(async (req) => {
               required: ['recommended', 'chemical', 'dose_l_ha', 'target_area_pct', 'notes'],
             },
           },
-          required: ['health_score', 'summary', 'detections', 'spray_plan'],
+          required: ['health_score', 'summary', 'crop_type', 'field_layout', 'detections', 'spray_zones', 'spray_plan'],
         },
       },
     };
@@ -70,12 +92,12 @@ Deno.serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: 'You are AgriPulse, an agronomy AI. Analyze aerial/close-up crop images for pests, weeds, disease, and nutrient stress. Always call report_crop_analysis with conservative, actionable spray recommendations using EU-compliant active ingredients. Prefer spot spraying over blanket treatment.',
+            content: 'You are AcreSpray AI, an agronomy AI. Analyze aerial/close-up crop images for pests, weeds, disease, and nutrient stress. Always call report_crop_analysis with conservative, actionable spray recommendations using EU-compliant active ingredients. Prefer spot spraying over blanket treatment. From the image also infer the field layout (rows for cereals/maize, orchard for spaced trees/vines, pivot for circular center-pivot, terraced for stepped/banded slopes) and the crop type, and place 1-5 spray_zones positioned over the visible problem areas using the coordinate system in the schema.',
           },
           {
             role: 'user',
             content: [
-              { type: 'text', text: `Analyze this crop image. Field: ${fieldName || 'unknown'}. Crop: ${cropType || 'unknown'}. Provide health score, detections, and a precision spray plan.` },
+              { type: 'text', text: `Analyze this crop image. Field: ${fieldName || 'unknown'}. Crop hint: ${cropType || 'unknown'}. Return health, crop_type, field_layout, detections, spray_zones placed where problems are visible, and a spray_plan.` },
               { type: 'image_url', image_url: { url: imageUrl } },
             ],
           },
