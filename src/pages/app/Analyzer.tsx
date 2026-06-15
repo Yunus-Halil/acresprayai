@@ -420,14 +420,34 @@ export default function Analyzer() {
                         : demoResult.health >= 50 ? <><AlertTriangle className="h-4 w-4 text-amber-500" /> Stressed</>
                         : <><AlertTriangle className="h-4 w-4 text-destructive" /> Critical</>}
                     </div>
-                    <div className="text-xs text-muted-foreground">3 threats · 12.1% affected · NDVI 0.71</div>
+                    <div className="text-xs text-muted-foreground">
+                      {demoResult.cropType} · {demoResult.layout} layout · {demoResult.zones.length} zone{demoResult.zones.length === 1 ? "" : "s"}
+                    </div>
                   </div>
                 </div>
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                  Aerial sweep of 14.2 ha completed in 4 min. Crop canopy is generally vigorous; localized aphid
-                  pressure in the eastern centre warrants priority spot-treatment within 48 h. Septoria signature
-                  detected on lower-left rows — early-stage, recoverable with targeted fungicide.
+                  {demoResult.summary ??
+                    "Aerial sweep complete. Canopy is generally vigorous with localized stress zones flagged below — see the 3D reconstruction for spatial context."}
                 </p>
+              </Card>
+
+              <Card className="overflow-hidden">
+                <div className="p-3 border-b flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 font-mono uppercase tracking-wider">
+                    <Sparkles className="h-3 w-3 text-primary" />
+                    AI-reconstructed 3D field
+                  </div>
+                  <Badge variant="outline" className="capitalize">{demoResult.layout}</Badge>
+                </div>
+                <Field3D
+                  zones={demoResult.zones}
+                  layout={demoResult.layout}
+                  cropType={demoResult.cropType}
+                  height={300}
+                />
+                <div className="p-3 text-[11px] text-muted-foreground border-t">
+                  Layout, crop, and problem zones above are derived from the AI analysis of your image. Drag to orbit · scroll to zoom · hover crops for health.
+                </div>
               </Card>
 
               <Card className="p-5 space-y-3">
