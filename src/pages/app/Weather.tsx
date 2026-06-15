@@ -6,10 +6,46 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Cloud, CloudRain, MapPin, Loader2, Trash2, Play, Pause } from "lucide-react";
+import { Cloud, CloudRain, MapPin, Loader2, Trash2, Play, Pause, Sun, CloudSnow, CloudLightning, CloudDrizzle, Wind, Thermometer, Droplets } from "lucide-react";
 import { toast } from "sonner";
 
 type Farm = { id: string; name: string; address: string; lat: number; lng: number };
+
+type DailyForecast = {
+  date: string;
+  tMax: number; tMin: number;
+  precip: number; precipProb: number;
+  wind: number; code: number;
+};
+type CurrentForecast = {
+  temp: number; apparent: number; wind: number; humidity: number; code: number;
+};
+type Forecast = { current: CurrentForecast; daily: DailyForecast[]; units: { temp: string; wind: string; precip: string } };
+
+const WMO: Record<number, { label: string; Icon: any }> = {
+  0: { label: "Clear", Icon: Sun },
+  1: { label: "Mainly clear", Icon: Sun },
+  2: { label: "Partly cloudy", Icon: Cloud },
+  3: { label: "Overcast", Icon: Cloud },
+  45: { label: "Fog", Icon: Cloud },
+  48: { label: "Rime fog", Icon: Cloud },
+  51: { label: "Light drizzle", Icon: CloudDrizzle },
+  53: { label: "Drizzle", Icon: CloudDrizzle },
+  55: { label: "Heavy drizzle", Icon: CloudDrizzle },
+  61: { label: "Light rain", Icon: CloudRain },
+  63: { label: "Rain", Icon: CloudRain },
+  65: { label: "Heavy rain", Icon: CloudRain },
+  71: { label: "Light snow", Icon: CloudSnow },
+  73: { label: "Snow", Icon: CloudSnow },
+  75: { label: "Heavy snow", Icon: CloudSnow },
+  80: { label: "Showers", Icon: CloudRain },
+  81: { label: "Heavy showers", Icon: CloudRain },
+  82: { label: "Violent showers", Icon: CloudRain },
+  95: { label: "Thunderstorm", Icon: CloudLightning },
+  96: { label: "Thunder + hail", Icon: CloudLightning },
+  99: { label: "Severe thunder", Icon: CloudLightning },
+};
+const wmo = (c: number) => WMO[c] ?? { label: "Unknown", Icon: Cloud };
 
 const STORAGE_KEY = "acrespray.farms";
 
@@ -42,6 +78,9 @@ export default function Weather() {
   const [frameIdx, setFrameIdx] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [host, setHost] = useState<string>("");
+  const [selectedFarmId, setSelectedFarmId] = useState<string | null>(null);
+  const [forecast, setForecast] = useState<Forecast | null>(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
 
   // Init map
   useEffect(() => {
@@ -123,26 +162,30 @@ export default function Weather() {
     if (!form.name.trim() || !form.address.trim()) return;
     setSearching(true);
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(form.address)}`;
-      const r = await fetch(url, { headers: { Accept: "application/json" } });
+      const url = `https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=${encodeURIComponent(form.address)}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`Geocoding ${r.status}`);
       const j = await r.json();
-      if (!Array.isArray(j) || !j.length) {
-        toast.error("Address not found — try a more specific location");
+      const hit = j?.results?.[0];
+      if (!hit) {
+        toast.error("Address not found — try a city, ZIP, or more specific location");
         return;
       }
+      const parts = [hit.name, hit.admin1, hit.country].filter(Boolean).join(", ");
       const farm: Farm = {
         id: crypto.randomUUID(),
         name: form.name.trim(),
-        address: j[0].display_name,
-        lat: parseFloat(j[0].lat),
-        lng: parseFloat(j[0].lon),
+        address: parts,
+        lat: Number(hit.latitude),
+        lng: Number(hit.longitude),
       };
       persist([...farms, farm]);
       mapRef.current?.flyTo([farm.lat, farm.lng], 10, { duration: 1.2 });
       setForm({ name: "", address: "" });
+      setSelectedFarmId(farm.id);
       toast.success(`${farm.name} pinned`);
     } catch (err: any) {
-      toast.error("Geocoding failed");
+      toast.error(err?.message ?? "Geocoding failed");
     } finally {
       setSearching(false);
     }
@@ -150,18 +193,67 @@ export default function Weather() {
 
   const removeFarm = (id: string) => {
     persist(farms.filter(f => f.id !== id));
+    if (selectedFarmId === id) { setSelectedFarmId(null); setForecast(null); }
   };
 
   const goTo = (f: Farm) => {
     mapRef.current?.flyTo([f.lat, f.lng], 11, { duration: 1.2 });
     markersRef.current.get(f.id)?.openPopup();
+    setSelectedFarmId(f.id);
   };
+
+  // Auto-select first farm
+  useEffect(() => {
+    if (!selectedFarmId && farms.length) setSelectedFarmId(farms[0].id);
+  }, [farms, selectedFarmId]);
+
+  // Fetch forecast when selected farm changes
+  useEffect(() => {
+    const f = farms.find(x => x.id === selectedFarmId);
+    if (!f) { setForecast(null); return; }
+    let aborted = false;
+    setForecastLoading(true);
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${f.lat}&longitude=${f.lng}` +
+      `&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code` +
+      `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max` +
+      `&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7`;
+    fetch(url)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`Forecast ${r.status}`)))
+      .then(j => {
+        if (aborted) return;
+        const daily: DailyForecast[] = (j.daily?.time ?? []).map((t: string, i: number) => ({
+          date: t,
+          tMax: j.daily.temperature_2m_max[i],
+          tMin: j.daily.temperature_2m_min[i],
+          precip: j.daily.precipitation_sum[i],
+          precipProb: j.daily.precipitation_probability_max?.[i] ?? 0,
+          wind: j.daily.wind_speed_10m_max[i],
+          code: j.daily.weather_code[i],
+        }));
+        setForecast({
+          current: {
+            temp: j.current.temperature_2m,
+            apparent: j.current.apparent_temperature,
+            wind: j.current.wind_speed_10m,
+            humidity: j.current.relative_humidity_2m,
+            code: j.current.weather_code,
+          },
+          daily,
+          units: { temp: "°F", wind: "mph", precip: "in" },
+        });
+      })
+      .catch(e => { if (!aborted) toast.error(e.message ?? "Forecast failed"); })
+      .finally(() => { if (!aborted) setForecastLoading(false); });
+    return () => { aborted = true; };
+  }, [selectedFarmId, farms]);
 
   const currentFrame = frames[frameIdx];
   const frameLabel = currentFrame
     ? new Date(currentFrame.time * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
     : "—";
-  const isNowcast = currentFrame && frameIdx >= frames.findIndex(f => f.time === currentFrame.time && frames.indexOf(f) === frameIdx) && currentFrame.time * 1000 > Date.now();
+  const isNowcast = !!currentFrame && currentFrame.time * 1000 > Date.now();
+  const selectedFarm = farms.find(f => f.id === selectedFarmId) ?? null;
+  const dayLabel = (s: string) => new Date(s + "T00:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 
   return (
     <div className="p-8 space-y-6">
@@ -214,7 +306,7 @@ export default function Weather() {
               </Button>
             </form>
             <p className="text-[11px] text-muted-foreground mt-3">
-              Address lookup via OpenStreetMap Nominatim. Pinned farms are saved on this device.
+              Address lookup via Open-Meteo geocoding. Pinned farms are saved on this device.
             </p>
           </Card>
 
@@ -225,7 +317,7 @@ export default function Weather() {
             ) : (
               <ul className="space-y-2">
                 {farms.map(f => (
-                  <li key={f.id} className="flex items-start gap-2 border rounded p-2 hover:bg-muted/40">
+                  <li key={f.id} className={`flex items-start gap-2 border rounded p-2 hover:bg-muted/40 ${selectedFarmId === f.id ? "border-primary bg-primary/5" : ""}`}>
                     <button className="flex-1 text-left min-w-0" onClick={() => goTo(f)}>
                       <div className="font-medium text-sm truncate">{f.name}</div>
                       <div className="text-[11px] text-muted-foreground truncate">{f.address}</div>
@@ -239,6 +331,66 @@ export default function Weather() {
               </ul>
             )}
           </Card>
+
+          {selectedFarm && (
+            <Card className="p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-display flex items-center gap-2">
+                  <CloudRain className="h-4 w-4" /> Upcoming conditions
+                </h3>
+                <Badge variant="outline" className="text-[10px]">{selectedFarm.name}</Badge>
+              </div>
+              {forecastLoading && !forecast && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading forecast…
+                </div>
+              )}
+              {forecast && (
+                <>
+                  {(() => {
+                    const c = forecast.current; const w = wmo(c.code);
+                    return (
+                      <div className="flex items-center gap-3 border rounded-lg p-3 bg-muted/30">
+                        <w.Icon className="h-10 w-10 text-primary flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-display text-2xl leading-none">{Math.round(c.temp)}{forecast.units.temp}</div>
+                          <div className="text-xs text-muted-foreground">{w.label} · feels {Math.round(c.apparent)}{forecast.units.temp}</div>
+                        </div>
+                        <div className="text-right text-[11px] text-muted-foreground space-y-0.5">
+                          <div className="flex items-center gap-1 justify-end"><Wind className="h-3 w-3" /> {Math.round(c.wind)} {forecast.units.wind}</div>
+                          <div className="flex items-center gap-1 justify-end"><Droplets className="h-3 w-3" /> {c.humidity}%</div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div className="space-y-1.5">
+                    {forecast.daily.slice(0, 7).map((d) => {
+                      const w = wmo(d.code);
+                      const sprayOk = d.precipProb < 30 && d.wind < 12 && d.precip < 0.05;
+                      return (
+                        <div key={d.date} className="flex items-center gap-2 text-xs border rounded px-2 py-1.5">
+                          <div className="w-20 text-muted-foreground">{dayLabel(d.date)}</div>
+                          <w.Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <div className="flex-1 truncate">{w.label}</div>
+                          <div className="flex items-center gap-0.5 w-14 justify-end text-sky-600"><Droplets className="h-3 w-3" /> {d.precipProb}%</div>
+                          <div className="w-20 text-right font-mono">
+                            <span className="font-semibold">{Math.round(d.tMax)}°</span>
+                            <span className="text-muted-foreground"> / {Math.round(d.tMin)}°</span>
+                          </div>
+                          <Badge variant="outline" className={`text-[9px] ${sprayOk ? "border-emerald-500 text-emerald-600" : "border-amber-500 text-amber-600"}`}>
+                            {sprayOk ? "Spray OK" : "Hold"}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Thermometer className="h-3 w-3" /> Forecast via Open-Meteo · spray window assumes &lt;30% precip, wind &lt;12 mph.
+                  </p>
+                </>
+              )}
+            </Card>
+          )}
         </div>
       </div>
     </div>
