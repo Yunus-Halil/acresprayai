@@ -66,9 +66,11 @@ const DEMO_ZONES: SprayZone[] = [
   { x: 7, z: 5, w: 2.5, d: 2, severity: "low", label: "Weeds 0.18 ha" },
 ];
 
-const WAYPOINTS = [
-  { x: 8, y: 8 }, { x: 84, y: 20 }, { x: 69, y: 46 },
-  { x: 29, y: 67 }, { x: 92, y: 92 },
+const DEMO_LIKELY_ISSUES = [
+  "Yellow-brown patches on eastern strip suggest early-stage nitrogen deficiency or drought stress.",
+  "Dark-green clustering near centre is consistent with aphid honeydew and sooty mould build-up.",
+  "Lower-left rows show pale speckling typical of Septoria leaf blotch in winter wheat.",
+  "Edge rows show colour drift toward grey — possible compaction or waterlogging from headland turning.",
 ];
 
 const PHASES = [
@@ -92,6 +94,7 @@ export default function Analyzer() {
   const [demoResult, setDemoResult] = useState<null | {
     health: number; detections: Detection[]; image: string;
     layout: FieldLayout; cropType: string; zones: SprayZone[]; summary?: string;
+    likelyIssues: string[];
   }>(null);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [scanLine, setScanLine] = useState(0);
@@ -143,6 +146,7 @@ export default function Analyzer() {
       health: 78, detections: DEMO_DETECTIONS, image: sampleAerial,
       layout: "rows", cropType: "Winter Wheat", zones: DEMO_ZONES,
       summary: "Aerial sweep of 14.2 ha completed. Canopy is generally vigorous; localized aphid pressure in the eastern centre and early Septoria on lower-left rows.",
+      likelyIssues: DEMO_LIKELY_ISSUES,
     });
     setPhaseIdx(-1);
     setLoading(false);
@@ -196,6 +200,7 @@ export default function Analyzer() {
       setDemoResult({
         health: a.health_score ?? 70, detections: dets, image: previewUrl!,
         layout: aiLayout, cropType: aiCrop, zones: aiZones, summary: a.summary,
+        likelyIssues: Array.isArray(a.likely_issues) ? a.likely_issues.slice(0, 6).map(String) : [],
       });
       // Persist the scan so it shows up in Reports / history
       await supabase.from("scans").insert({
@@ -213,6 +218,7 @@ export default function Analyzer() {
       setDemoResult({
         health: 78, detections: DEMO_DETECTIONS, image: previewUrl!,
         layout: "rows", cropType: cropType, zones: DEMO_ZONES,
+        likelyIssues: DEMO_LIKELY_ISSUES,
       });
     } finally {
       setLoading(false);
@@ -296,29 +302,6 @@ export default function Analyzer() {
                 </g>
               ))}
 
-              {/* waypoint path (always visible) */}
-              <polyline
-                points={WAYPOINTS.map(w => `${w.x},${w.y}`).join(" ")}
-                fill="none" stroke="rgb(56,189,248)" strokeOpacity="0.85"
-                strokeWidth="0.4" strokeDasharray="1.2 0.8"
-              />
-              {WAYPOINTS.map((w, i) => (
-                <g key={i}>
-                  <circle cx={w.x} cy={w.y} r="0.9" fill="rgb(56,189,248)" />
-                  <text x={w.x + 1.5} y={w.y + 0.5} fontSize="2" fill="white" opacity="0.85">WP{i+1}</text>
-                </g>
-              ))}
-
-              {/* drone position pulse — at first waypoint when idle, animated to last when scanning */}
-              <g>
-                <circle cx={loading ? 50 : WAYPOINTS[0].x} cy={loading ? 50 : WAYPOINTS[0].y} r="2.5"
-                  fill="none" stroke="rgb(56,189,248)" strokeWidth="0.3" opacity="0.6">
-                  <animate attributeName="r" values="1.5;3.5;1.5" dur="2s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0.8;0.1;0.8" dur="2s" repeatCount="indefinite" />
-                </circle>
-                <circle cx={loading ? 50 : WAYPOINTS[0].x} cy={loading ? 50 : WAYPOINTS[0].y} r="1" fill="rgb(56,189,248)" />
-              </g>
-
               {/* detection boxes — only after analysis */}
               {demoResult?.detections.map((d, i) => (
                 <g key={i}>
@@ -366,16 +349,6 @@ export default function Analyzer() {
             )}
           </div>
 
-          {/* Waypoint table */}
-          <div className="p-4 grid grid-cols-5 gap-2 text-[10px] font-mono border-t bg-muted/30">
-            {WAYPOINTS.map((w, i) => (
-              <div key={i} className="space-y-0.5">
-                <div className="text-muted-foreground">WP{i+1}</div>
-                <div>{toGps(w.x, w.y).lat}°</div>
-                <div>{toGps(w.x, w.y).lng}°</div>
-              </div>
-            ))}
-          </div>
         </Card>
 
         {/* RIGHT — controls + results */}
@@ -474,6 +447,25 @@ export default function Analyzer() {
                   );
                 })}
               </Card>
+
+              {demoResult.likelyIssues.length > 0 && (
+                <Card className="p-5 space-y-3">
+                  <h3 className="font-display flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" /> Most likely issues
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Inferred from colour, texture, and canopy patterns across the image — flagged for your scout to verify on the ground.
+                  </p>
+                  <ul className="space-y-2">
+                    {demoResult.likelyIssues.map((t, i) => (
+                      <li key={i} className="flex gap-2 text-sm">
+                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                        <span>{t}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              )}
 
               <Card className="p-5 bg-gradient-to-br from-primary/90 to-primary text-primary-foreground">
                 <div className="text-xs uppercase tracking-wider opacity-70 mb-1">Recommended precision spray</div>
