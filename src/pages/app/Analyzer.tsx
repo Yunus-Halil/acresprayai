@@ -448,6 +448,25 @@ export default function Analyzer() {
                 })}
               </Card>
 
+              {demoResult.likelyIssues.length > 0 && (
+                <Card className="p-5 space-y-3">
+                  <h3 className="font-display flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" /> Most likely issues
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Inferred from colour, texture, and canopy patterns across the image — flagged for your scout to verify on the ground.
+                  </p>
+                  <ul className="space-y-2">
+                    {demoResult.likelyIssues.map((t, i) => (
+                      <li key={i} className="flex gap-2 text-sm">
+                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                        <span>{t}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              )}
+
               <Card className="p-5 bg-gradient-to-br from-primary/90 to-primary text-primary-foreground">
                 <div className="text-xs uppercase tracking-wider opacity-70 mb-1">Recommended precision spray</div>
                 <div className="font-display text-xl mb-1">Variable-rate mixed application</div>
