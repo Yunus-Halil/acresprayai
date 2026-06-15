@@ -10,6 +10,7 @@ import { Cloud, CloudRain, MapPin, Loader2, Trash2, Play, Pause, Sun, CloudSnow,
 import { toast } from "sonner";
 
 type Farm = { id: string; name: string; address: string; lat: number; lng: number };
+type Suggestion = { id: number; name: string; admin1?: string; country?: string; latitude: number; longitude: number };
 
 type DailyForecast = {
   date: string;
@@ -74,6 +75,9 @@ export default function Weather() {
   });
   const [form, setForm] = useState({ name: "", address: "" });
   const [searching, setSearching] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [picked, setPicked] = useState<Suggestion | null>(null);
   const [frames, setFrames] = useState<{ time: number; path: string }[]>([]);
   const [frameIdx, setFrameIdx] = useState(0);
   const [playing, setPlaying] = useState(true);
@@ -162,11 +166,14 @@ export default function Weather() {
     if (!form.name.trim() || !form.address.trim()) return;
     setSearching(true);
     try {
-      const url = `https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=${encodeURIComponent(form.address)}`;
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`Geocoding ${r.status}`);
-      const j = await r.json();
-      const hit = j?.results?.[0];
+      let hit: Suggestion | null = picked;
+      if (!hit) {
+        const url = `https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=${encodeURIComponent(form.address)}`;
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`Geocoding ${r.status}`);
+        const j = await r.json();
+        hit = j?.results?.[0] ?? null;
+      }
       if (!hit) {
         toast.error("Address not found — try a city, ZIP, or more specific location");
         return;
@@ -182,6 +189,9 @@ export default function Weather() {
       persist([...farms, farm]);
       mapRef.current?.flyTo([farm.lat, farm.lng], 10, { duration: 1.2 });
       setForm({ name: "", address: "" });
+      setPicked(null);
+      setSuggestions([]);
+      setShowSuggest(false);
       setSelectedFarmId(farm.id);
       toast.success(`${farm.name} pinned`);
     } catch (err: any) {
@@ -195,6 +205,26 @@ export default function Weather() {
     persist(farms.filter(f => f.id !== id));
     if (selectedFarmId === id) { setSelectedFarmId(null); setForecast(null); }
   };
+
+  // Autocomplete (debounced)
+  useEffect(() => {
+    const q = form.address.trim();
+    if (q.length < 2 || picked) { setSuggestions([]); return; }
+    const ctrl = new AbortController();
+    const id = setTimeout(async () => {
+      try {
+        const r = await fetch(
+          `https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&format=json&name=${encodeURIComponent(q)}`,
+          { signal: ctrl.signal }
+        );
+        if (!r.ok) return;
+        const j = await r.json();
+        setSuggestions(j?.results ?? []);
+        setShowSuggest(true);
+      } catch {}
+    }, 250);
+    return () => { clearTimeout(id); ctrl.abort(); };
+  }, [form.address, picked]);
 
   const goTo = (f: Farm) => {
     mapRef.current?.flyTo([f.lat, f.lng], 11, { duration: 1.2 });
@@ -298,7 +328,43 @@ export default function Weather() {
               </div>
               <div>
                 <Label>Address or location</Label>
-                <Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="e.g. 1200 N Main St, Lincoln, NE" />
+                <div className="relative">
+                  <Input
+                    value={form.address}
+                    onChange={e => { setForm({ ...form, address: e.target.value }); setPicked(null); }}
+                    onFocus={() => suggestions.length && setShowSuggest(true)}
+                    onBlur={() => setTimeout(() => setShowSuggest(false), 150)}
+                    placeholder="Start typing a city, ZIP, or place…"
+                    autoComplete="off"
+                  />
+                  {showSuggest && suggestions.length > 0 && (
+                    <ul className="absolute z-[1000] left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg max-h-64 overflow-auto">
+                      {suggestions.map(s => (
+                        <li key={s.id}>
+                          <button
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-start gap-2"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              const label = [s.name, s.admin1, s.country].filter(Boolean).join(", ");
+                              setPicked(s);
+                              setForm(f => ({ ...f, address: label }));
+                              setShowSuggest(false);
+                            }}
+                          >
+                            <MapPin className="h-3.5 w-3.5 mt-0.5 text-muted-foreground flex-shrink-0" />
+                            <span className="truncate">
+                              <span className="font-medium">{s.name}</span>
+                              <span className="text-muted-foreground">
+                                {[s.admin1, s.country].filter(Boolean).length ? `, ${[s.admin1, s.country].filter(Boolean).join(", ")}` : ""}
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
               <Button type="submit" className="w-full" disabled={searching}>
                 {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
