@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { DEMO_HEALTH_TREND, DEMO_SPRAY_HISTORY } from "@/lib/demo";
+import { DemoBadge } from "@/components/app/DemoBadge";
 
 export default function Reports() {
   const [scans, setScans] = useState<any[]>([]);
@@ -26,6 +27,8 @@ export default function Reports() {
     health: s.health_score ?? 0,
   }));
   const chartData = realChart.length > 0 ? realChart : DEMO_HEALTH_TREND;
+  const chartIsDemo = realChart.length === 0;
+  const historyIsDemo = jobs.length === 0;
 
   const historyRows = jobs.length > 0
     ? jobs.map(j => ({
@@ -53,6 +56,18 @@ export default function Reports() {
         <h1 className="font-display text-3xl">Reports</h1>
         <p className="text-muted-foreground">Crop health trends, spray history, and compliance-ready records.</p>
       </header>
+
+      {(chartIsDemo || historyIsDemo) && (
+        <DemoBadge
+          detail={
+            chartIsDemo && historyIsDemo
+              ? "No real scans or jobs yet - the trend and spray history below are sample data for demonstration."
+              : chartIsDemo
+                ? "The crop health trend below is sample data for demonstration - real data will appear once you run AI scans."
+                : "The spray history below is sample data for demonstration - real records will appear once you schedule jobs."
+          }
+        />
+      )}
 
       <div className="grid md:grid-cols-3 gap-4">
         <Card className="p-5"><div className="text-sm text-muted-foreground">Total scans</div><div className="font-display text-3xl">{totalScans}</div></Card>
