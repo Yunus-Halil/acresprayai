@@ -31,6 +31,30 @@ async function authHeader() {
   return data.session?.access_token ? `Bearer ${data.session.access_token}` : "";
 }
 
+// Downscale a drone image client-side so it fits under the edge function body limit
+// while preserving enough detail for photogrammetry (long edge 2400px, JPEG q=0.82).
+// EXIF GPS is lost in canvas re-encoding - WebODM still reconstructs from visual features.
+async function downscaleImage(file: File, maxEdge = 2400, quality = 0.82): Promise<File> {
+  // Skip tiny images
+  if (file.size < 1_500_000) return file;
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) return file;
+  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+  if (scale >= 1) { bitmap.close?.(); return file; }
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) { bitmap.close?.(); return file; }
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+  const blob: Blob | null = await new Promise(res => canvas.toBlob(res, "image/jpeg", quality));
+  if (!blob) return file;
+  const newName = file.name.replace(/\.(png|tiff?|heic|webp)$/i, ".jpg");
+  return new File([blob], newName, { type: "image/jpeg", lastModified: file.lastModified });
+}
+
 export default function Models3D() {
   const { user } = useAuth();
   const [fields, setFields] = useState<Field[]>([]);
@@ -87,6 +111,13 @@ export default function Models3D() {
     const auth = await authHeader();
 
     try {
+      // 0. DOWNSCALE locally - keeps each image well under the edge function body limit
+      //    while preserving feature detail for photogrammetry.
+      const prepared: File[] = [];
+      for (let i = 0; i < files.length; i++) {
+        prepared.push(await downscaleImage(files[i]));
+      }
+
       // 1. INIT
       const initRes = await fetch(`${FN_BASE}/odm-submit`, {
         method: "POST",
@@ -94,7 +125,7 @@ export default function Models3D() {
           Authorization: auth,
           "x-action": "init",
           "x-field-id": fieldId || "",
-          "x-image-count": String(files.length),
+          "x-image-count": String(prepared.length),
         },
       });
       const initJson = await initRes.json();
@@ -103,9 +134,9 @@ export default function Models3D() {
       await loadTasks();
 
       // 2. UPLOAD each image (sequential to stay friendly to ODM)
-      for (let i = 0; i < files.length; i++) {
+      for (let i = 0; i < prepared.length; i++) {
         const fd = new FormData();
-        fd.append("images", files[i], files[i].name);
+        fd.append("images", prepared[i], prepared[i].name);
         const upRes = await fetch(`${FN_BASE}/odm-submit`, {
           method: "POST",
           headers: { Authorization: auth, "x-action": "upload", "x-odm-uuid": odm_uuid },
@@ -115,7 +146,7 @@ export default function Models3D() {
           const j = await upRes.json().catch(() => ({}));
           throw new Error(j.error ?? `Upload failed at image ${i + 1}`);
         }
-        setUploadProgress({ done: i + 1, total: files.length });
+        setUploadProgress({ done: i + 1, total: prepared.length });
       }
 
       // 3. COMMIT
