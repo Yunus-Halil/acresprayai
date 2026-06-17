@@ -108,7 +108,15 @@ Deno.serve(async (req) => {
       if (options) fd.append("options", JSON.stringify(options));
       const cRes = await fetch(odmUrl(`/task/new/commit/${odm_uuid}`), { method: "POST", body: fd });
       const cJson = await cRes.json().catch(() => ({}));
-      if (!cRes.ok || cJson.error) return json({ error: "Commit failed", detail: cJson }, 502);
+      if (!cRes.ok || cJson.error) {
+        const msg = cJson?.error ?? "Commit failed";
+        // Mark the task as failed so the UI stops polling and shows the reason
+        await admin.from("odm_tasks").update({
+          status: "failed",
+          error: typeof msg === "string" ? msg : JSON.stringify(msg),
+        }).eq("id", task.id);
+        return json({ error: msg, detail: cJson }, 502);
+      }
 
       await admin.from("odm_tasks").update({ status: "processing", progress: 0 }).eq("id", task.id);
       return json({ ok: true });

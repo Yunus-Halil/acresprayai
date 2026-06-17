@@ -105,6 +105,7 @@ export default function Models3D() {
   const submit = async () => {
     if (!files.length) return toast.error("Select drone images first");
     if (files.length < 5) return toast.error("Need at least 5 images for reconstruction");
+    if (files.length > 500) return toast.error("Max 500 images per task on our processing node");
 
     setBusy(true);
     setUploadProgress({ done: 0, total: files.length });
