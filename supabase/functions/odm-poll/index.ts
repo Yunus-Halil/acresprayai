@@ -6,11 +6,11 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const ODM_BASE_URL = Deno.env.get("ODM_BASE_URL")!;
-const ODM_AUTH_TOKEN = Deno.env.get("ODM_AUTH_TOKEN")!;
+const ODM_BASE_URL = (Deno.env.get("ODM_BASE_URL") ?? "").trim().replace(/^['"]|['"]$/g, "").replace(/\/$/, "");
+const ODM_AUTH_TOKEN = (Deno.env.get("ODM_AUTH_TOKEN") ?? "").trim().replace(/^['"]|['"]$/g, "");
 
 function odmUrl(path: string) {
-  const u = new URL(path, ODM_BASE_URL);
+  const u = new URL(`${ODM_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
   u.searchParams.set("token", ODM_AUTH_TOKEN);
   return u.toString();
 }
