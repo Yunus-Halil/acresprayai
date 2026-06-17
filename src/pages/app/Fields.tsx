@@ -11,6 +11,7 @@ import { Plus, Trash2, Maximize2, Droplets, Pencil, RotateCcw } from "lucide-rea
 import { toast } from "sonner";
 import Field3D, { type SprayZone } from "@/components/app/Field3D";
 import { DEMO_FIELDS, type DemoField } from "@/lib/demo";
+import { DemoBadge } from "@/components/app/DemoBadge";
 
 type DBField = { id: string; name: string; crop: string; area_hectares: number; location: string | null; notes: string | null };
 
@@ -101,6 +102,13 @@ export default function Fields() {
           </DialogContent>
         </Dialog>
       </header>
+
+      {dbFields.length === 0 && (
+        <DemoBadge detail="No fields added yet - the parcels below are sample data for demonstration. Add a field to replace them with your own." />
+      )}
+      {dbFields.length > 0 && (
+        <DemoBadge detail="Your saved fields are mixed with sample parcels for demonstration. Sample fields are not live measurements." />
+      )}
 
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
         {allFields.map(f => {
