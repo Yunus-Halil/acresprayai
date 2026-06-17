@@ -125,7 +125,7 @@ export default function Fleet() {
       <header className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-display text-3xl">Drone Fleet</h1>
-          <p className="text-muted-foreground">Register a drone with its current battery, Wi-Fi signal and component health — we'll forecast endurance and recall window for the next 60 minutes.</p>
+          <p className="text-muted-foreground">Register a drone with its current battery, Wi-Fi signal and component health - we'll forecast endurance and recall window for the next 60 minutes.</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild><Button><Plus className="h-4 w-4" /> Register drone</Button></DialogTrigger>

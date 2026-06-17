@@ -50,7 +50,7 @@ export default function Planner() {
 
   const launch = (id: string) => {
     setMissions(ms => ms.map(m => m.id === id ? { ...m, status: "in_progress", progress: 5 } : m));
-    toast.success("Mission launched — drone dispatched");
+    toast.success("Mission launched - drone dispatched");
   };
 
   const schedule = (e: React.FormEvent) => {

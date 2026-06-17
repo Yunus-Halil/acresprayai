@@ -175,7 +175,7 @@ export default function Weather() {
         hit = j?.results?.[0] ?? null;
       }
       if (!hit) {
-        toast.error("Address not found — try a city, ZIP, or more specific location");
+        toast.error("Address not found - try a city, ZIP, or more specific location");
         return;
       }
       const parts = [hit.name, hit.admin1, hit.country].filter(Boolean).join(", ");
@@ -280,7 +280,7 @@ export default function Weather() {
   const currentFrame = frames[frameIdx];
   const frameLabel = currentFrame
     ? new Date(currentFrame.time * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-    : "—";
+    : "-";
   const isNowcast = !!currentFrame && currentFrame.time * 1000 > Date.now();
   const selectedFarm = farms.find(f => f.id === selectedFarmId) ?? null;
   const dayLabel = (s: string) => new Date(s + "T00:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
@@ -379,7 +379,7 @@ export default function Weather() {
           <Card className="p-5">
             <h3 className="font-display flex items-center gap-2 mb-3"><Cloud className="h-4 w-4" /> Your pinned farms</h3>
             {farms.length === 0 ? (
-              <div className="text-sm text-muted-foreground text-center py-6">No farms pinned yet — add one above.</div>
+              <div className="text-sm text-muted-foreground text-center py-6">No farms pinned yet - add one above.</div>
             ) : (
               <ul className="space-y-2">
                 {farms.map(f => (

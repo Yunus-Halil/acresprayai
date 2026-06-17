@@ -48,7 +48,7 @@ export default function Dashboard() {
       <header className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-display text-3xl">Operations Dashboard</h1>
-          <p className="text-muted-foreground">Live view of your fleet, fields, and AI advisories — Domaine de la Vallée</p>
+          <p className="text-muted-foreground">Live view of your fleet, fields, and AI advisories - Domaine de la Vallée</p>
         </div>
         <div className="flex gap-2">
           <Link to="/app/analyzer"><Button><Sparkles className="h-4 w-4" /> Run AI scan</Button></Link>
@@ -61,7 +61,7 @@ export default function Dashboard() {
         <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
         <div className="flex-1 text-sm">
           <span className="font-medium">Critical pest signature</span> detected on B-04 North Quadrant.
-          Aphid colony (94% conf.) — spray queued for 06:12 tomorrow.
+          Aphid colony (94% conf.) - spray queued for 06:12 tomorrow.
         </div>
         <Link to="/app/analyzer"><Button size="sm" variant="outline">Review</Button></Link>
       </Card>

@@ -37,7 +37,7 @@ export const Hero = () => {
           </h1>
           <p className="mt-8 max-w-2xl text-lg md:text-xl text-muted-foreground leading-relaxed">
             AcreSpray AI fuses AI vision, drone imagery, weather and soil data into one
-            decision system — telling farmers exactly when, where, and how much to spray.
+            decision system - telling farmers exactly when, where, and how much to spray.
             <span className="text-foreground"> Cut chemical use by 30%+. Keep yield intact.</span>
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-4">

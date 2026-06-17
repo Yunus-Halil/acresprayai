@@ -17,7 +17,7 @@ export const Roadmap = () => {
             12-month plan
           </div>
           <h2 className="mt-4 font-display text-4xl md:text-5xl font-semibold leading-tight text-balance">
-            From prototype to one real farm — in a year.
+            From prototype to one real farm - in a year.
           </h2>
           <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
             We’re not promising the future. We’re shipping it field by field,

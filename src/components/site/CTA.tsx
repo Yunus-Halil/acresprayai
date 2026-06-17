@@ -33,7 +33,7 @@ export const CTA = () => {
           </h2>
           <p className="mt-8 text-xl text-primary-foreground/70 max-w-2xl">
             We’re onboarding 3 farms for a closed pilot. Free analysis on your first
-            100 acres. We share the savings 50/50 — you keep all the yield.
+            100 acres. We share the savings 50/50 - you keep all the yield.
           </p>
 
           <form
