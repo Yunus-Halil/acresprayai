@@ -10,7 +10,7 @@ const steps = [
   {
     n: "02",
     title: "Analyze",
-    body: "Our AI — adapted from medical imaging pattern detection — identifies weed clusters, pest pressure, and crop stress in near real-time.",
+    body: "Our AI - adapted from medical imaging pattern detection - identifies weed clusters, pest pressure, and crop stress in near real-time.",
   },
   {
     n: "03",

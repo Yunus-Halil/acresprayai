@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
             },
             likely_issues: {
               type: 'array',
-              description: '3-6 short observations about what the image suggests could be wrong, inferred from colour, texture, canopy patterns, edges, and irrigation marks — even for a broad/low-resolution farm view. Each item is one sentence in plain language for a farmer.',
+              description: '3-6 short observations about what the image suggests could be wrong, inferred from colour, texture, canopy patterns, edges, and irrigation marks - even for a broad/low-resolution farm view. Each item is one sentence in plain language for a farmer.',
               items: { type: 'string' },
             },
           },
@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: 'You are AcreSpray AI, an agronomy AI. Analyze aerial/close-up crop images for pests, weeds, disease, and nutrient stress. Always call report_crop_analysis with conservative, actionable spray recommendations using EU-compliant active ingredients. Prefer spot spraying over blanket treatment. From the image also infer the field layout (rows for cereals/maize, orchard for spaced trees/vines, pivot for circular center-pivot, terraced for stepped/banded slopes) and the crop type, and place 1-5 spray_zones positioned over the visible problem areas using the coordinate system in the schema. Even on broad or low-resolution farm-scale views where individual leaves are not visible, always produce 3-6 likely_issues by reasoning from colour (yellowing, browning, dark patches, grey waterlogging), texture (bare spots, uneven canopy, stripes), edges, headlands, and irrigation marks — phrased as plausible hypotheses for the farmer to verify.',
+            content: 'You are AcreSpray AI, an agronomy AI. Analyze aerial/close-up crop images for pests, weeds, disease, and nutrient stress. Always call report_crop_analysis with conservative, actionable spray recommendations using EU-compliant active ingredients. Prefer spot spraying over blanket treatment. From the image also infer the field layout (rows for cereals/maize, orchard for spaced trees/vines, pivot for circular center-pivot, terraced for stepped/banded slopes) and the crop type, and place 1-5 spray_zones positioned over the visible problem areas using the coordinate system in the schema. Even on broad or low-resolution farm-scale views where individual leaves are not visible, always produce 3-6 likely_issues by reasoning from colour (yellowing, browning, dark patches, grey waterlogging), texture (bare spots, uneven canopy, stripes), edges, headlands, and irrigation marks - phrased as plausible hypotheses for the farmer to verify.',
           },
           {
             role: 'user',

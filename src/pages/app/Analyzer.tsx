@@ -32,7 +32,7 @@ type Detection = {
   gps: { lat: number; lng: number };
 };
 
-// Field origin (made-up but plausible — central France wheat country)
+// Field origin (made-up but plausible - central France wheat country)
 const ORIGIN = { lat: 47.2184, lng: 2.0411 };
 const toGps = (x: number, y: number) => ({
   lat: +(ORIGIN.lat + (50 - y) * 0.00012).toFixed(5),
@@ -70,7 +70,7 @@ const DEMO_LIKELY_ISSUES = [
   "Yellow-brown patches on eastern strip suggest early-stage nitrogen deficiency or drought stress.",
   "Dark-green clustering near centre is consistent with aphid honeydew and sooty mould build-up.",
   "Lower-left rows show pale speckling typical of Septoria leaf blotch in winter wheat.",
-  "Edge rows show colour drift toward grey — possible compaction or waterlogging from headland turning.",
+  "Edge rows show colour drift toward grey - possible compaction or waterlogging from headland turning.",
 ];
 
 const PHASES = [
@@ -117,7 +117,7 @@ export default function Analyzer() {
     setDemoMode(true);
     setPreviewUrl(sampleAerial);
     setDemoResult(null);
-    toast.success("Sample drone capture loaded — Field B-04, North Quadrant");
+    toast.success("Sample drone capture loaded - Field B-04, North Quadrant");
   };
 
   // start with sample by default
@@ -150,7 +150,7 @@ export default function Analyzer() {
     });
     setPhaseIdx(-1);
     setLoading(false);
-    toast.success("Analysis complete — 3 threats geolocated");
+    toast.success("Analysis complete - 3 threats geolocated");
   };
 
   const runReal = async () => {
@@ -214,7 +214,7 @@ export default function Analyzer() {
       });
       toast.success("Live AI analysis complete");
     } catch (e: any) {
-      toast.error(e.message ?? "Analysis failed — using demo data");
+      toast.error(e.message ?? "Analysis failed - using demo data");
       setDemoResult({
         health: 78, detections: DEMO_DETECTIONS, image: previewUrl!,
         layout: "rows", cropType: cropType, zones: DEMO_ZONES,
@@ -261,7 +261,7 @@ export default function Analyzer() {
       </header>
 
       <div className="grid lg:grid-cols-[1.4fr_1fr] gap-6">
-        {/* LEFT — image + overlay */}
+        {/* LEFT - image + overlay */}
         <Card className="overflow-hidden">
           <div className="p-4 border-b flex items-center justify-between gap-3 flex-wrap text-xs">
             <div className="flex items-center gap-3">
@@ -302,7 +302,7 @@ export default function Analyzer() {
                 </g>
               ))}
 
-              {/* detection boxes — only after analysis */}
+              {/* detection boxes - only after analysis */}
               {demoResult?.detections.map((d, i) => (
                 <g key={i}>
                   <rect
@@ -351,7 +351,7 @@ export default function Analyzer() {
 
         </Card>
 
-        {/* RIGHT — controls + results */}
+        {/* RIGHT - controls + results */}
         <div className="space-y-4">
           <Card className="p-5 space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -400,7 +400,7 @@ export default function Analyzer() {
                 </div>
                 <p className="text-sm leading-relaxed text-muted-foreground">
                   {demoResult.summary ??
-                    "Aerial sweep complete. Canopy is generally vigorous with localized stress zones flagged below — see the 3D reconstruction for spatial context."}
+                    "Aerial sweep complete. Canopy is generally vigorous with localized stress zones flagged below - see the 3D reconstruction for spatial context."}
                 </p>
               </Card>
 
@@ -454,7 +454,7 @@ export default function Analyzer() {
                     <AlertTriangle className="h-4 w-4 text-amber-500" /> Most likely issues
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Inferred from colour, texture, and canopy patterns across the image — flagged for your scout to verify on the ground.
+                    Inferred from colour, texture, and canopy patterns across the image - flagged for your scout to verify on the ground.
                   </p>
                   <ul className="space-y-2">
                     {demoResult.likelyIssues.map((t, i) => (

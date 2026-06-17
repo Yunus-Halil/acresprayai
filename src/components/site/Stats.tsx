@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 const stats = [
   { value: "$20B", label: "Spent on US crop spraying annually", note: "Source: Fermi estimate, 2 M farms × 50% × $20K" },
   { value: "30%+", label: "Pesticide reduction with AI targeting", note: "Maintained or improved yield in field tests" },
-  { value: "$6B", label: "Potential annual savings — US alone", note: "If precision spraying scales nationwide" },
+  { value: "$6B", label: "Potential annual savings - US alone", note: "If precision spraying scales nationwide" },
   { value: "12 mo", label: "From prototype to first farm pilot", note: "Build · test · iterate on real fields" },
 ];
 
@@ -22,7 +22,7 @@ export const Stats = () => {
           </div>
           <p className="md:col-span-6 md:col-start-7 text-lg text-muted-foreground leading-relaxed self-end">
             Spraying is done uniformly across fields instead of where it’s needed.
-            The root cause isn’t farmer behavior — it’s the absence of accessible,
+            The root cause isn’t farmer behavior - it’s the absence of accessible,
             AI-powered precision tools. AcreSpray AI closes that gap.
           </p>
         </div>

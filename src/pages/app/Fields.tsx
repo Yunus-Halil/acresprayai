@@ -20,7 +20,7 @@ export default function Fields() {
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<DemoField | null>(null);
   const [form, setForm] = useState({ name: "", crop: "Wheat", area_hectares: "", location: "", notes: "" });
-  // per-field local zone overrides (keyed by field id) — persists across the session
+  // per-field local zone overrides (keyed by field id) - persists across the session
   const [zoneOverrides, setZoneOverrides] = useState<Record<string, SprayZone[]>>(() => {
     try { return JSON.parse(localStorage.getItem("acrespray.zoneOverrides") ?? "{}"); }
     catch { return {}; }
@@ -113,7 +113,7 @@ export default function Fields() {
           const statusTone = f.health >= 80 ? "text-emerald-500" : f.health >= 60 ? "text-amber-500" : "text-destructive";
           return (
             <Card key={f.id} className="overflow-hidden group cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition" onClick={() => setDetail(f)}>
-              {/* Header band — clear name + status at a glance */}
+              {/* Header band - clear name + status at a glance */}
               <div className="p-4 flex items-start justify-between gap-3 border-b">
                 <div className="min-w-0">
                   <div className="font-display text-xl leading-tight truncate">{f.name}</div>
@@ -135,7 +135,7 @@ export default function Fields() {
                 </div>
               </div>
 
-              {/* Footer — readable zone breakdown + actions */}
+              {/* Footer - readable zone breakdown + actions */}
               <div className="p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   {high > 0 && (
@@ -211,7 +211,7 @@ export default function Fields() {
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => {
                       updateZones(detail.id, []);
-                      toast.success("All patches cleared — click the field to rebuild");
+                      toast.success("All patches cleared - click the field to rebuild");
                     }}>
                       <Trash2 className="h-3.5 w-3.5" /> Clear all
                     </Button>

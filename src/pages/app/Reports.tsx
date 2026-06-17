@@ -31,9 +31,9 @@ export default function Reports() {
     ? jobs.map(j => ({
         id: j.id,
         date: new Date(j.scheduled_at).toLocaleDateString(),
-        field: j.fields?.name ?? "—",
+        field: j.fields?.name ?? "-",
         type: j.type,
-        chemical: j.chemical ?? "—",
+        chemical: j.chemical ?? "-",
         dose: j.dose_l_ha ?? 0,
         area: j.area_ha ?? 0,
         status: j.status,
@@ -60,7 +60,7 @@ export default function Reports() {
         <Card className="p-5">
           <div className="text-sm text-muted-foreground">Chemical applied</div>
           <div className="font-display text-3xl">{totalChemical.toFixed(1)} L</div>
-          <div className="text-xs text-muted-foreground mt-1">vs. {(totalChemical + savedChemical).toFixed(0)} L blanket — saved {savedChemical.toFixed(0)} L</div>
+          <div className="text-xs text-muted-foreground mt-1">vs. {(totalChemical + savedChemical).toFixed(0)} L blanket - saved {savedChemical.toFixed(0)} L</div>
         </Card>
       </div>
 
@@ -99,7 +99,7 @@ export default function Reports() {
                   <TableCell>{h.field}</TableCell>
                   <TableCell className="capitalize">{h.type}</TableCell>
                   <TableCell>{h.chemical}</TableCell>
-                  <TableCell>{h.dose ? `${h.dose} L/ha` : "—"}</TableCell>
+                  <TableCell>{h.dose ? `${h.dose} L/ha` : "-"}</TableCell>
                   <TableCell><Badge variant="outline">{h.status}</Badge></TableCell>
                 </TableRow>
               ))}
