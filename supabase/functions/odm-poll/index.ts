@@ -74,27 +74,52 @@ Deno.serve(async (req) => {
       return json({ status: s, progress });
     }
 
-    // COMPLETED - download all.zip and persist to storage
-    const zipRes = await fetch(odmUrl(`/task/${task.odm_uuid}/download/all.zip`));
-    if (!zipRes.ok || !zipRes.body) {
-      await admin.from("odm_tasks").update({ status: "failed", error: "Download failed" }).eq("id", task.id);
-      return json({ status: "failed", error: "Download failed" }, 502);
-    }
-    const blob = await zipRes.blob();
+    // COMPLETED - stream all.zip directly into storage to avoid buffering
+    // the entire archive in the edge function's memory (causes WORKER_RESOURCE_LIMIT).
     const path = `odm/${user.id}/${task.odm_uuid}/all.zip`;
-    const { error: upErr } = await admin.storage.from("scans").upload(path, blob, {
-      contentType: "application/zip", upsert: true,
-    });
-    if (upErr) {
-      await admin.from("odm_tasks").update({ status: "failed", error: upErr.message }).eq("id", task.id);
-      return json({ status: "failed", error: upErr.message }, 500);
-    }
 
-    await admin.from("odm_tasks").update({
-      status: "completed", progress: 100, output_path: path, error: null,
-    }).eq("id", task.id);
+    // Mark as uploading so the client knows we're transferring
+    await admin.from("odm_tasks").update({ status: "processing", progress: 99 }).eq("id", task.id);
 
-    return json({ status: "completed", progress: 100, output_path: path });
+    // Run the heavy transfer in the background and return immediately.
+    // The next poll tick will see status=completed once the upload finishes.
+    const transfer = (async () => {
+      try {
+        const zipRes = await fetch(odmUrl(`/task/${task.odm_uuid}/download/all.zip`));
+        if (!zipRes.ok || !zipRes.body) {
+          await admin.from("odm_tasks").update({ status: "failed", error: "Download failed" }).eq("id", task.id);
+          return;
+        }
+        // Stream straight to Supabase Storage REST API (no in-memory buffering)
+        const storageUrl = `${Deno.env.get("SUPABASE_URL")}/storage/v1/object/scans/${path}`;
+        const putRes = await fetch(storageUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+            "Content-Type": "application/zip",
+            "x-upsert": "true",
+          },
+          body: zipRes.body,
+          // @ts-ignore - Deno fetch requires duplex when streaming a request body
+          duplex: "half",
+        });
+        if (!putRes.ok) {
+          const t = await putRes.text().catch(() => "");
+          await admin.from("odm_tasks").update({ status: "failed", error: `Storage upload failed: ${t.slice(0, 200)}` }).eq("id", task.id);
+          return;
+        }
+        await admin.from("odm_tasks").update({
+          status: "completed", progress: 100, output_path: path, error: null,
+        }).eq("id", task.id);
+      } catch (e) {
+        await admin.from("odm_tasks").update({ status: "failed", error: String((e as Error)?.message ?? e) }).eq("id", task.id);
+      }
+    })();
+
+    // @ts-ignore - EdgeRuntime is provided by Supabase Edge Functions
+    EdgeRuntime.waitUntil(transfer);
+
+    return json({ status: "processing", progress: 99 });
   } catch (e) {
     return json({ error: String(e?.message ?? e) }, 500);
   }
