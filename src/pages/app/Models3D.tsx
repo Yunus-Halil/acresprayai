@@ -263,8 +263,8 @@ export default function Models3D() {
         <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 p-3 rounded border border-dashed">
           <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <div>
-            Recommended: 30 to 300 overlapping nadir images at 70 to 80 percent overlap. Minimum 5 images.
-            Larger sets give better geometry but take longer to process.
+            Recommended: 30 to 300 overlapping nadir images at 70 to 80 percent overlap.
+            Minimum 5, maximum 500 images per task (processing node limit).
           </div>
         </div>
       </Card>
