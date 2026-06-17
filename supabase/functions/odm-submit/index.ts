@@ -87,6 +87,8 @@ Deno.serve(async (req) => {
         method: "POST",
         headers: { "Content-Type": contentType },
         body: req.body,
+        // @ts-ignore - Deno fetch requires duplex when streaming a request body
+        duplex: "half",
       });
       const upJson = await upRes.json().catch(() => ({}));
       if (!upRes.ok || upJson.error) return json({ error: "Upload failed", detail: upJson }, 502);
