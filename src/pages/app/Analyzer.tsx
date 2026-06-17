@@ -381,6 +381,9 @@ export default function Analyzer() {
 
           {demoResult && (
             <>
+              {demoResult.isDemo && (
+                <DemoBadge detail="This analysis uses sample data for demonstration - not a live AI result on your imagery. Upload an image and run AI analysis for a real result." />
+              )}
               <Card className="p-5">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="relative h-20 w-20">
