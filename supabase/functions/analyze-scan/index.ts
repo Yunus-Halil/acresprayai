@@ -27,8 +27,8 @@ Deno.serve(async (req) => {
           type: 'object',
           properties: {
             health_score: { type: 'integer', description: '0-100 overall crop health' },
-            summary: { type: 'string', description: 'One paragraph summary for the farmer' },
-            crop_type: { type: 'string', description: 'Best guess of crop visible (e.g. Wheat, Maize, Vineyard, Olive grove, Soy)' },
+            summary: { type: 'string', description: 'One paragraph summary for the farmer, written as observations and hypotheses, not assertions. Use hedged language ("may indicate", "could be associated with", "visual variation detected"). Never claim a specific disease, pest, or deficiency unless clearly visible.' },
+            crop_type: { type: 'string', description: 'Best inference of crop visible, or "Unable to determine from imagery alone" if not confidently identifiable. Prefix tentative guesses with "Possibly ".' },
             field_layout: {
               type: 'string',
               enum: ['rows', 'orchard', 'pivot', 'terraced'],
@@ -36,14 +36,15 @@ Deno.serve(async (req) => {
             },
             detections: {
               type: 'array',
+              description: 'Only include detections that are visually defensible from the image. If nothing can be reliably identified, return an empty array. Labels should be observational (e.g. "Yellowing patch", "Bare soil area", "Possible canopy stress") rather than definitive diagnoses unless clearly supported.',
               items: {
                 type: 'object',
                 properties: {
                   type: { type: 'string', enum: ['pest', 'weed', 'disease', 'nutrient_deficiency', 'healthy'] },
-                  label: { type: 'string' },
+                  label: { type: 'string', description: 'Observational label. Use hedged phrasing ("Possible ...", "Visual variation ...") unless the issue is unmistakable in the image.' },
                   severity: { type: 'string', enum: ['low', 'medium', 'high'] },
-                  coverage_pct: { type: 'number' },
-                  recommendation: { type: 'string' },
+                  coverage_pct: { type: 'number', description: 'Approximate visible coverage percentage. Only estimate when the area is clearly bounded in the image; otherwise use a conservative low value and note uncertainty in the recommendation.' },
+                  recommendation: { type: 'string', description: 'Conservative next step. Prefer "Inspect on the ground" or "Additional data would be required" over specific chemical prescriptions unless the issue is clearly supported by the image.' },
                 },
                 required: ['type', 'label', 'severity', 'coverage_pct', 'recommendation'],
               },
@@ -66,6 +67,7 @@ Deno.serve(async (req) => {
             },
             spray_plan: {
               type: 'object',
+              description: 'Only recommend spraying when the image clearly supports it. If evidence is insufficient, set recommended=false, chemical="None - additional data required", dose_l_ha=0, target_area_pct=0, and explain in notes.',
               properties: {
                 recommended: { type: 'boolean' },
                 chemical: { type: 'string' },
@@ -77,7 +79,7 @@ Deno.serve(async (req) => {
             },
             likely_issues: {
               type: 'array',
-              description: '3-6 short observations about what the image suggests could be wrong, inferred from colour, texture, canopy patterns, edges, and irrigation marks - even for a broad/low-resolution farm view. Each item is one sentence in plain language for a farmer.',
+              description: '3-6 short OBSERVATIONS (not diagnoses) about what the image may suggest, inferred from colour, texture, canopy patterns, edges, and irrigation marks. Each item must be phrased as a hypothesis to verify, using language like "May indicate ...", "Could be associated with ...", "Visual variation detected ...", "Unable to determine from imagery alone ...". Never assert a specific disease, pest, or deficiency as fact.',
               items: { type: 'string' },
             },
           },
@@ -97,12 +99,27 @@ Deno.serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: 'You are AcreSpray AI, an agronomy AI. Analyze aerial/close-up crop images for pests, weeds, disease, and nutrient stress. Always call report_crop_analysis with conservative, actionable spray recommendations using EU-compliant active ingredients. Prefer spot spraying over blanket treatment. From the image also infer the field layout (rows for cereals/maize, orchard for spaced trees/vines, pivot for circular center-pivot, terraced for stepped/banded slopes) and the crop type, and place 1-5 spray_zones positioned over the visible problem areas using the coordinate system in the schema. Even on broad or low-resolution farm-scale views where individual leaves are not visible, always produce 3-6 likely_issues by reasoning from colour (yellowing, browning, dark patches, grey waterlogging), texture (bare spots, uneven canopy, stripes), edges, headlands, and irrigation marks - phrased as plausible hypotheses for the farmer to verify.',
+            content: [
+              'You are AcreSpray AI, an agronomy vision assistant. Follow this Accuracy and Reliability Policy strictly:',
+              '',
+              'GOLDEN RULE: If a claim cannot be defended using the image provided, do not state it as fact. Report observations, not assumptions. Quantify only what can be measured from the image. Label everything else as a hypothesis requiring verification.',
+              '',
+              'Never:',
+              '- Claim to identify specific diseases, pests, nutrient deficiencies, weeds, or crop varieties unless directly and unmistakably supported by the image.',
+              '- Invent measurements, coordinates, acreage, savings estimates, chemical recommendations, weather conditions, regulatory status, or confidence scores without a verifiable basis.',
+              '- Present assumptions as facts.',
+              '',
+              'Prefer hedged phrasing: "Visual variation detected", "Potential anomaly observed", "May indicate", "Could be associated with", "Unable to determine from imagery alone", "Additional data would be required".',
+              '',
+              'Be conservative. A limited but defensible observation is better than a detailed claim that cannot be supported. If the image is too broad, blurry, or ambiguous to support a finding, say so and return empty detections / empty spray_zones / recommended=false.',
+              '',
+              'When you do call report_crop_analysis: infer field_layout and crop_type only if visually defensible (otherwise use "Unable to determine from imagery alone"). Place spray_zones only over areas with clear visual anomalies. Never recommend a specific chemical unless the issue is clearly supported by the image - default to inspection / more data instead.',
+            ].join('\n'),
           },
           {
             role: 'user',
             content: [
-              { type: 'text', text: `Analyze this crop image. Field: ${fieldName || 'unknown'}. Crop hint: ${cropType || 'unknown'}. Return health, crop_type, field_layout, detections, spray_zones placed where problems are visible, and a spray_plan.` },
+              { type: 'text', text: `Analyze this crop image conservatively under the Accuracy and Reliability Policy. Field: ${fieldName || 'unknown'}. Crop hint: ${cropType || 'unknown'}. Report only what is visually defensible. Phrase uncertain findings as hypotheses ("may indicate", "could be associated with", "unable to determine from imagery alone"). If evidence is insufficient, return empty detections, empty spray_zones, and recommended=false with an explanation.` },
               { type: 'image_url', image_url: { url: imageUrl } },
             ],
           },
