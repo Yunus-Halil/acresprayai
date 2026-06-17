@@ -10,6 +10,7 @@ import {
   AlertTriangle, CheckCircle2, Battery, Wifi, Activity, CloudSun, Wind, Thermometer,
 } from "lucide-react";
 import { DEMO_FIELDS, DEMO_MISSIONS, DEMO_DRONES } from "@/lib/demo";
+import { DemoBadge } from "@/components/app/DemoBadge";
 
 const TREND = [62, 65, 64, 68, 70, 69, 72, 74, 73, 76, 75, 78, 77, 78];
 
@@ -55,6 +56,8 @@ export default function Dashboard() {
           <Link to="/app/planner"><Button variant="outline">Plan mission</Button></Link>
         </div>
       </header>
+
+      <DemoBadge detail="Fields, missions, and fleet shown here are sample data for demonstration - not live measurements from your operation." />
 
       {/* Live alert banner */}
       <Card className="p-4 border-amber-500/40 bg-amber-500/10 flex items-center gap-3">
