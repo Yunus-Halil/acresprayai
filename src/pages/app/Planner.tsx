@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import Field3D from "@/components/app/Field3D";
 import { DEMO_MISSIONS, DEMO_DRONES, DEMO_FIELDS } from "@/lib/demo";
+import { DemoBadge } from "@/components/app/DemoBadge";
 
 export default function Planner() {
   const { user } = useAuth();
@@ -132,6 +133,8 @@ export default function Planner() {
           </DialogContent>
         </Dialog>
       </header>
+
+      <DemoBadge detail="Missions, drones, and fields shown here are sample data for demonstration - not connected to a live fleet." />
 
       <div className="grid lg:grid-cols-[1.2fr_1fr] gap-4">
         {/* Live 3D view of active mission */}
