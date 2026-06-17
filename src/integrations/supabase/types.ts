@@ -153,6 +153,56 @@ export type Database = {
           },
         ]
       }
+      odm_tasks: {
+        Row: {
+          created_at: string
+          error: string | null
+          field_id: string | null
+          id: string
+          image_count: number
+          odm_uuid: string | null
+          output_path: string | null
+          progress: number
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          field_id?: string | null
+          id?: string
+          image_count?: number
+          odm_uuid?: string | null
+          output_path?: string | null
+          progress?: number
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          field_id?: string | null
+          id?: string
+          image_count?: number
+          odm_uuid?: string | null
+          output_path?: string | null
+          progress?: number
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "odm_tasks_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pilot_signups: {
         Row: {
           created_at: string
