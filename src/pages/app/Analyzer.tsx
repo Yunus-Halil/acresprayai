@@ -18,6 +18,7 @@ import closeupPest from "@/assets/closeup-pest.jpg";
 import closeupDisease from "@/assets/closeup-disease.jpg";
 import closeupWeed from "@/assets/closeup-weed.jpg";
 import Field3D, { type FieldLayout, type SprayZone } from "@/components/app/Field3D";
+import { DemoBadge } from "@/components/app/DemoBadge";
 
 type Detection = {
   type: "pest" | "weed" | "disease" | "nutrient_deficiency";
@@ -95,6 +96,7 @@ export default function Analyzer() {
     health: number; detections: Detection[]; image: string;
     layout: FieldLayout; cropType: string; zones: SprayZone[]; summary?: string;
     likelyIssues: string[];
+    isDemo?: boolean;
   }>(null);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [scanLine, setScanLine] = useState(0);
@@ -147,6 +149,7 @@ export default function Analyzer() {
       layout: "rows", cropType: "Winter Wheat", zones: DEMO_ZONES,
       summary: "Aerial sweep of 14.2 ha completed. Canopy is generally vigorous; localized aphid pressure in the eastern centre and early Septoria on lower-left rows.",
       likelyIssues: DEMO_LIKELY_ISSUES,
+      isDemo: true,
     });
     setPhaseIdx(-1);
     setLoading(false);
@@ -201,6 +204,7 @@ export default function Analyzer() {
         health: a.health_score ?? 70, detections: dets, image: previewUrl!,
         layout: aiLayout, cropType: aiCrop, zones: aiZones, summary: a.summary,
         likelyIssues: Array.isArray(a.likely_issues) ? a.likely_issues.slice(0, 6).map(String) : [],
+        isDemo: false,
       });
       // Persist the scan so it shows up in Reports / history
       await supabase.from("scans").insert({
@@ -219,6 +223,7 @@ export default function Analyzer() {
         health: 78, detections: DEMO_DETECTIONS, image: previewUrl!,
         layout: "rows", cropType: cropType, zones: DEMO_ZONES,
         likelyIssues: DEMO_LIKELY_ISSUES,
+        isDemo: true,
       });
     } finally {
       setLoading(false);
@@ -376,6 +381,9 @@ export default function Analyzer() {
 
           {demoResult && (
             <>
+              {demoResult.isDemo && (
+                <DemoBadge detail="This analysis uses sample data for demonstration - not a live AI result on your imagery. Upload an image and run AI analysis for a real result." />
+              )}
               <Card className="p-5">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="relative h-20 w-20">
