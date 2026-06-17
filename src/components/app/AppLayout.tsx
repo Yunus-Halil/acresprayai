@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useEffect } from "react";
-import { LayoutDashboard, Map, CalendarClock, Sparkles, FileBarChart, Leaf, LogOut, Loader2, Plane, CloudRain } from "lucide-react";
+import { LayoutDashboard, Map, CalendarClock, Sparkles, FileBarChart, Leaf, LogOut, Loader2, Plane, CloudRain, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -12,6 +12,7 @@ const nav = [
   { to: "/app/analyzer", label: "AI Analyzer", icon: Sparkles },
   { to: "/app/fleet", label: "Drone Fleet", icon: Plane },
   { to: "/app/weather", label: "Weather Radar", icon: CloudRain },
+  { to: "/app/models", label: "3D Models", icon: Box },
   { to: "/app/reports", label: "Reports", icon: FileBarChart },
 ];
 
