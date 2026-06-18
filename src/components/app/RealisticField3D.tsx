@@ -356,16 +356,16 @@ function Drone({ path, scanOn, speed }: { path: [number, number][]; scanOn: bool
             <sphereGeometry args={[0.1, 16, 12]} />
             <meshStandardMaterial color="#0a0a0a" metalness={0.9} roughness={0.15} />
           </mesh>
-          <mesh position={[0, 0, 0.07]}>
-            <cylinderGeometry args={[0.045, 0.045, 0.05, 16]} rotateZ={Math.PI/2 as any} />
+          <mesh position={[0, 0, 0.07]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.045, 0.045, 0.05, 16]} />
             <meshStandardMaterial color="#1a8bff" emissive="#1a8bff" emissiveIntensity={0.4} />
           </mesh>
         </group>
         {/* arms + motors + props */}
         {[[ 0.55, 0,  0.35],[-0.55, 0,  0.35],[ 0.55, 0, -0.35],[-0.55, 0, -0.35]].map((p, i) => (
           <group key={i} position={p as any}>
-            <mesh rotation={[0, 0, 0]} castShadow>
-              <cylinderGeometry args={[0.04, 0.04, 0.55, 8]} rotateZ={Math.PI/2 as any} />
+            <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+              <cylinderGeometry args={[0.04, 0.04, 0.55, 8]} />
               <meshStandardMaterial color="#2a2d33" metalness={0.6} roughness={0.4} />
             </mesh>
             <mesh position={[0, 0.06, 0]}>
