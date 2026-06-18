@@ -6,6 +6,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { DEMO_HEALTH_TREND, DEMO_SPRAY_HISTORY } from "@/lib/demo";
 import { DemoBadge } from "@/components/app/DemoBadge";
+import { Button } from "@/components/ui/button";
+import { FileDown, Sparkles } from "lucide-react";
 
 export default function Reports() {
   const [scans, setScans] = useState<any[]>([]);
@@ -56,6 +58,27 @@ export default function Reports() {
         <h1 className="font-display text-3xl">Reports</h1>
         <p className="text-muted-foreground">Crop health trends, spray history, and compliance-ready records.</p>
       </header>
+
+      <Card className="p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-accent/40 bg-gradient-to-br from-card to-card/40">
+        <div className="flex items-start gap-4">
+          <div className="rounded-lg bg-accent/15 text-accent p-3"><Sparkles className="h-5 w-5" /></div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-display text-lg">Sample Field Intelligence Report</h2>
+              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-accent/15 text-accent">Demo · 6 pages</span>
+            </div>
+            <p className="text-sm text-muted-foreground max-w-xl">
+              A fully rendered, audit-grade PDF showing what AcreSpray AI produces for a real field — KPIs, NDVI/NDRE trends,
+              spectral bands, stress heatmap, AI pest detection, soil &amp; water balance, fleet ops, economics, and EU SUR compliance.
+            </p>
+          </div>
+        </div>
+        <Button asChild size="lg" className="shrink-0">
+          <a href="/reports/AcreSpray-AI-Sample-Field-Report.pdf" download>
+            <FileDown className="mr-2 h-4 w-4" /> Download sample PDF
+          </a>
+        </Button>
+      </Card>
 
       {(chartIsDemo || historyIsDemo) && (
         <DemoBadge
