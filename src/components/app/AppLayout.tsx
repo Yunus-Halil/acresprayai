@@ -1,13 +1,14 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useEffect } from "react";
-import { LayoutDashboard, Map, CalendarClock, Sparkles, FileBarChart, Leaf, LogOut, Loader2, Plane, CloudRain, Box } from "lucide-react";
+import { LayoutDashboard, Map, CalendarClock, Sparkles, FileBarChart, Leaf, LogOut, Loader2, Plane, CloudRain, Box, Globe2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 const nav = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/app/fields", label: "Fields", icon: Map },
+  { to: "/app/field-view", label: "Live Field 3D", icon: Globe2 },
   { to: "/app/planner", label: "Mission Planner", icon: CalendarClock },
   { to: "/app/analyzer", label: "AI Analyzer", icon: Sparkles },
   { to: "/app/fleet", label: "Drone Fleet", icon: Plane },
