@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -115,11 +115,17 @@ function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
   return null;
 }
 
-function MouseReadout({ onMove }: { onMove: (lat: number, lng: number, z: number) => void }) {
+function MouseReadout({ coordRef, zoomRef }: { coordRef: { current: HTMLDivElement | null }; zoomRef: { current: HTMLDivElement | null } }) {
   const map = useMap();
+  const write = (lat: number, lng: number, z: number) => {
+    if (coordRef.current) {
+      coordRef.current.textContent = Number.isFinite(lat) ? `${lat.toFixed(6)}, ${lng.toFixed(6)}` : "—, —";
+    }
+    if (zoomRef.current) zoomRef.current.textContent = `Zoom ${Math.round(z)}`;
+  };
   useMapEvents({
-    mousemove: (e) => onMove(e.latlng.lat, e.latlng.lng, map.getZoom()),
-    zoomend: () => onMove(NaN, NaN, map.getZoom()),
+    mousemove: (e) => write(e.latlng.lat, e.latlng.lng, map.getZoom()),
+    zoomend: () => write(NaN, NaN, map.getZoom()),
   });
   return null;
 }
@@ -176,7 +182,13 @@ function AiZonesLayer({
         color, weight: selectedId === z.id ? 3 : 2,
         fillColor: color, fillOpacity: selectedId === z.id ? 0.35 : 0.25,
       });
-      poly.bindTooltip(`${z.name} · ${z.issue}`, { direction: "top", className: "ai-zone-label" });
+      poly.bindTooltip(`${z.name} · ${z.issue}`, {
+        permanent: false,
+        sticky: true,
+        opacity: 1,
+        direction: "top",
+        className: "ai-zone-label",
+      });
       poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onSelect(z.id); });
       group.addLayer(poly);
       if (selectedId === z.id) {
@@ -255,9 +267,8 @@ export default function OrthomosaicViewer() {
   const [analysisErr, setAnalysisErr] = useState<string | null>(null);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [showAiZones, setShowAiZones] = useState(true);
-  const [cursor, setCursor] = useState<{ lat: number; lng: number; z: number }>({
-    lat: NaN, lng: NaN, z: 2,
-  });
+  const cursorCoordRef = useRef<HTMLDivElement | null>(null);
+  const cursorZoomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -410,9 +421,9 @@ export default function OrthomosaicViewer() {
     }
   };
 
-  const updateZoneRing = (id: string, ring: { lat: number; lng: number }[]) => {
+  const updateZoneRing = useCallback((id: string, ring: { lat: number; lng: number }[]) => {
     setAnalysis(a => a ? { ...a, zones: a.zones.map(z => z.id === id ? { ...z, ring } : z) } : a);
-  };
+  }, []);
 
   const deleteZone = (id: string) => {
     setAnalysis(a => a ? { ...a, zones: a.zones.filter(z => z.id !== id) } : a);
@@ -655,7 +666,7 @@ export default function OrthomosaicViewer() {
               />
             )}
             <FitBounds bounds={bounds} />
-            <MouseReadout onMove={(lat, lng, z) => setCursor({ lat, lng, z })} />
+            <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />
             <MapControls fitTo={bounds} />
             {showAiZones && analysis?.zones && analysis.zones.length > 0 && (
               <AiZonesLayer
@@ -851,12 +862,8 @@ export default function OrthomosaicViewer() {
 
       {/* Bottom status bar */}
       <div className="h-7 shrink-0 px-3 flex items-center justify-between text-[11px] text-neutral-400 border-t border-neutral-800 bg-neutral-900">
-        <div className="font-mono">
-          {Number.isFinite(cursor.lat)
-            ? `${cursor.lat.toFixed(6)}, ${cursor.lng.toFixed(6)}`
-            : "—, —"}
-        </div>
-        <div className="font-mono">Zoom {Math.round(cursor.z)}</div>
+        <div ref={cursorCoordRef} className="font-mono">—, —</div>
+        <div ref={cursorZoomRef} className="font-mono">Zoom 15</div>
         <div className="truncate">Orthomosaic tiles via OpenDroneMap</div>
       </div>
 
@@ -872,6 +879,18 @@ export default function OrthomosaicViewer() {
           border-radius: 4px;
         }
         .rp-input:focus { outline: none; border-color: #0284c7; }
+        .ai-zone-label {
+          background: rgba(10,10,10,0.94);
+          color: #f5f5f5;
+          border: 1px solid rgba(245,158,11,0.45);
+          font-size: 11px;
+          padding: 4px 8px;
+          border-radius: 4px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+          white-space: nowrap;
+          pointer-events: none;
+        }
+        .ai-zone-label::before { display: none; }
       `}</style>
     </div>
   );
