@@ -174,6 +174,7 @@ export default function PolygonMap({
           snappable: true,
           snapDistance: 20,
           draggable: true,
+          hideMiddleMarkers: true,
         });
         poly.on("pm:edit pm:markerdragend pm:dragend", () => {
           const latlngs = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
