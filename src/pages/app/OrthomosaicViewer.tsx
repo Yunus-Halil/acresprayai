@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { supabase } from "@/integrations/supabase/client";
+import { Unzip, UnzipInflate } from "fflate";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Search, Eye, EyeOff,
   Layers, Folder, Image as ImageIcon, Mountain, Ruler, Settings,
@@ -96,6 +97,7 @@ export default function OrthomosaicViewer() {
   const [cogUrl, setCogUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState<{ status: string; progress: number } | null>(null);
+  const [extracting, setExtracting] = useState<{ stage: string; pct: number } | null>(null);
 
   const [layers, setLayers] = useState<LayerState>({
     annotations: false, design: false, orthomosaic: true, dsm: false,
@@ -141,6 +143,27 @@ export default function OrthomosaicViewer() {
           timer = window.setTimeout(run, 5000);
           return;
         }
+        if (r.status === 202 && j?.needsExtract) {
+          // Backend can't produce the .tif directly (WebODM Lightning only serves
+          // all.zip and extracting that on the edge OOMs). Stream-extract in the
+          // browser, push the .tif straight to storage, then retry.
+          setPending(null);
+          setErr(null);
+          try {
+            await extractAndUpload(j.zipUrl, j.upload, (stage, pct) => {
+              if (!cancelled) setExtracting({ stage, pct });
+            });
+            if (cancelled) return;
+            setExtracting(null);
+            timer = window.setTimeout(run, 200);
+            return;
+          } catch (e: any) {
+            console.error("[OrthoViewer] client extraction failed", e);
+            setExtracting(null);
+            setErr(`Could not extract orthomosaic in browser: ${e?.message ?? e}`);
+            return;
+          }
+        }
         if (!r.ok || !j?.url) {
           setPending(null);
           setErr(j?.error ?? "Orthomosaic not available yet.");
@@ -178,6 +201,18 @@ export default function OrthomosaicViewer() {
       <div className="h-screen w-screen bg-neutral-950 flex flex-col items-center justify-center gap-3 text-sm text-neutral-200">
         <div className="text-red-400 max-w-md text-center px-6">{err}</div>
         <a href="/app/fields" className="text-sky-400 underline">Back to fields</a>
+      </div>
+    );
+  }
+  if (extracting) {
+    return (
+      <div className="h-screen w-screen bg-neutral-950 flex flex-col items-center justify-center gap-3 text-sm text-neutral-200">
+        <Loader2 className="h-5 w-5 animate-spin text-sky-400" />
+        <div className="text-neutral-300">{extracting.stage}</div>
+        <div className="w-64 h-1.5 bg-neutral-800 rounded overflow-hidden">
+          <div className="h-full bg-sky-500 transition-all" style={{ width: `${Math.max(2, Math.min(100, extracting.pct))}%` }} />
+        </div>
+        <div className="text-xs text-neutral-500">Extracting orthomosaic from the processing archive on this device.</div>
       </div>
     );
   }
