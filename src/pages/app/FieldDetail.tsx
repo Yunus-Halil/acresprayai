@@ -123,8 +123,11 @@ export default function FieldDetail() {
     })();
   }, [tasks]);
 
-  async function uploadOne(odm_uuid: string, file: File, auth: string): Promise<void> {
+  async function uploadOne(odm_uuid: string, file: File): Promise<void> {
     const send = async () => {
+      // Always fetch a fresh token per request - supabase auto-refreshes when near expiry.
+      // This prevents "Invalid Compact JWS" failures partway through long batch uploads.
+      const auth = await authHeader();
       const fd = new FormData();
       fd.append("images", file, file.name);
       const r = await fetch(`${FN_BASE}/odm-submit`, {
@@ -144,9 +147,11 @@ export default function FieldDetail() {
     if (files.length > 500) return toast.error("Max 500 images per scan");
 
     setBusy(true);
-    const auth = await authHeader();
-
     try {
+      // Proactively refresh so we start with a fresh ~1h token.
+      await supabase.auth.refreshSession().catch(() => {});
+      let auth = await authHeader();
+
       // Phase 1: downscale with visible progress
       setPhase("downscaling");
       setPhaseProgress({ done: 0, total: files.length });
@@ -183,7 +188,7 @@ export default function FieldDetail() {
           const i = cursor++;
           if (i >= total) return;
           try {
-            await uploadOne(odm_uuid, prepared[i], auth);
+            await uploadOne(odm_uuid, prepared[i]);
           } catch (e: any) {
             errors.push(e?.message ?? String(e));
           }
@@ -196,6 +201,9 @@ export default function FieldDetail() {
 
       // Phase 4: commit
       setPhase("committing");
+      // Token may have expired during a long upload - refresh before the final call.
+      await supabase.auth.refreshSession().catch(() => {});
+      auth = await authHeader();
       const cRes = await fetch(`${FN_BASE}/odm-submit`, {
         method: "POST",
         headers: { Authorization: auth, "Content-Type": "application/json", "x-action": "commit" },
