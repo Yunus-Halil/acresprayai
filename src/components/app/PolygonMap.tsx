@@ -123,7 +123,7 @@ export default function PolygonMap({
 
     zones.forEach(z => {
       const color = z.color ?? "#84cc16";
-      const poly = L.polygon(z.ring.map(p => [p.lat, p.lng]), {
+      const poly = L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
         color, weight: 2, fillOpacity: 0.2,
       });
       poly.bindTooltip(`${z.name} · ${z.crop}`, { permanent: true, direction: "center", className: "zone-label" });
@@ -133,7 +133,7 @@ export default function PolygonMap({
 
     anomalies.forEach(a => {
       const color = sevColor(a.severity);
-      const poly = L.polygon(a.ring.map(p => [p.lat, p.lng]), {
+      const poly = L.polygon(a.ring.map(p => [p.lat, p.lng] as [number, number]), {
         color, weight: 2, fillOpacity: 0.45, dashArray: "4 4",
       });
       poly.bindTooltip(a.label, { permanent: false, direction: "top" });
