@@ -95,7 +95,12 @@ Deno.serve(async (req) => {
         duplex: "half",
       });
       const upJson = await upRes.json().catch(() => ({}));
-      if (!upRes.ok || upJson.error) return json({ error: "Upload failed", detail: upJson }, 502);
+      if (!upRes.ok || upJson.error) {
+        const msg = typeof upJson?.error === "string" ? upJson.error : "Upload failed";
+        // Bubble the node's max-images limit as a 413 so the client can stop the batch immediately.
+        const isMaxImages = /max images/i.test(msg);
+        return json({ error: msg, detail: upJson, code: isMaxImages ? "max_images" : undefined }, isMaxImages ? 413 : 502);
+      }
       return json({ ok: true });
     }
 
