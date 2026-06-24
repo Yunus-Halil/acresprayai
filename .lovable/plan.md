@@ -1,105 +1,101 @@
 
-# AgriVision — Investor Pitch Walkthrough
+# From mockup to actually working: the core loop
 
-A 5-minute live-demo script mapped to the screens you already built. Keep slides minimal; let the product do the talking.
+Goal: a real farmer flies their spray drone, exports an orthomosaic from their drone software, and the system maps their field, lets them label crop zones, ingests NDVI, flags problems, and produces a spray plan. No fake data in this loop.
 
----
-
-## 1. The Hook (30s) — before opening the app
-
-> "Farmers spray 100% of a field to treat 5% of it. That's billions wasted on chemicals, soil damage, and yield loss. AgriVision flips that ratio."
-
-One sentence problem, one sentence promise. Don't open the laptop yet.
+The mockup pages (Live Field 3D, Fleet Intel, sample PDF) stay as marketing/demo surfaces. The new flow lives alongside them as the real product.
 
 ---
 
-## 2. Dashboard (45s) — "Mission control for a farm"
+## The 5-step user journey
 
-Open `/app`. Point at:
-- **Critical pest alert banner** → "Our AI surfaces the one thing the farmer needs to act on today."
-- **KPI cards with sparklines** → "Live health across every field, not a monthly report."
-- **Weather + spray window** → "We tell them *when* to act, not just *what*."
+```text
+1. Upload orthomosaic (GeoTIFF / large JPG+world file)
+        |
+2. System extracts: bounds, GSD, preview tiles, elevation if present
+        |
+3. Farmer draws polygons on the orthomosaic → labels crop + variety
+   System auto-computes area (ha), perimeter, row direction
+        |
+4. Farmer uploads NDVI orthomosaic (or we derive from multispectral bands)
+   System overlays it on the same georeferenced canvas
+   AI annotates anomalies (low-NDVI clusters, edge stress, pest patterns)
+   Farmer can add/edit annotations
+        |
+5. System generates spray plan per anomaly
+   (chemical, dose L/ha, target polygons, total volume, weather window)
+   Exports as mission file + PDF record
+```
 
-> "This is what a 500-hectare operation looks like in a single glance."
-
----
-
-## 3. Fields (60s) — "Every field, in 3D"
-
-Open `/app/fields`. Hover one card:
-- Big health score + status word → "Instantly readable. Green = sleep well. Red = act today."
-- 3D preview rotating → "That's the actual field. Red boxes are problem zones our drones detected."
-- Zone breakdown badges → "Aphids here, mildew there, weeds over there — with exact hectares."
-
-Click into a field, show **Queue spray for this zone**.
-
-> "The farmer doesn't open a manual. They tap one zone."
-
----
-
-## 4. AI Analyzer (90s) — the "wow" moment
-
-Open `/app/analyzer`. Click **Load sample drone capture** → **Analyze**.
-
-Narrate the 5-phase pipeline as it animates:
-1. "Drone uplinks…"
-2. "12-megapixel multispectral capture…"
-3. "Our vision model runs on-device…"
-4. "Geo-references every detection to GPS…"
-5. "Generates a precision spray plan."
-
-Click a detection close-up:
-> "Aphid colony, 0.42 hectares, severity high, GPS-locked. Three months ago this farmer would've sprayed the whole 14 hectares. Tomorrow at 06:12, our drone sprays 0.42."
-
-**The headline number to land:** *"That's a 97% reduction in chemical for this field."*
+Everything renders in the existing 3D field view — the orthomosaic becomes the ground texture, polygons become the crop zones, NDVI becomes a toggleable overlay, annotations become the spray boxes.
 
 ---
 
-## 5. Mission Planner (60s) — "From insight to action"
+## What gets built
 
-Open `/app/planner`. Click an in-progress mission:
-- 3D field with the drone flying the waypoint path → "Live telemetry. That's a real DJI Agras T40."
-- Toggle **Draw path** → click 3 points on the field → "The agronomist can override the AI route in two seconds for a field they know."
-- Mission queue + fleet panel → "One operator runs a whole fleet from a tablet."
+### Step 1-2: Orthomosaic ingest
+- New page `/app/fields/:id/map` — drag-and-drop orthomosaic upload
+- Storage bucket `orthomosaics` (private, RLS scoped to user)
+- Edge function `ortho-process`: reads GeoTIFF header → extracts bounds (EPSG:4326), GSD (m/px), width/height; generates a web-friendly preview (downscaled JPG) + a small thumbnail; stores metadata
+- New table `orthomosaics`: field_id, storage_path, preview_path, bounds (geography), gsd_m_per_px, width_px, height_px, captured_at, kind ('rgb' | 'ndvi' | 'multispectral')
 
-> "Scan, decide, spray — all in one loop. No software stitched together with email."
+### Step 3: Polygon crop editor
+- Leaflet (or MapLibre) canvas with the orthomosaic as an image overlay at its real bounds
+- Draw tool: click-to-place vertices, close polygon, label with crop type + variety + planting date
+- New table `crop_zones`: field_id, name, crop, variety, polygon (geography), area_ha (computed via PostGIS `ST_Area`), planted_at, notes
+- Area auto-computed server-side from the polygon — that's the "GSD × polygon size" math, done correctly with geodesic area instead of pixel counting
+
+### Step 4: NDVI overlay + AI annotation
+- Same upload flow, marked `kind='ndvi'`. Rendered as a colored overlay (red→yellow→green) on top of the RGB ortho, opacity slider
+- Edge function `analyze-ndvi`: samples NDVI values inside each crop zone polygon → mean, p10, p90, stressed-area %, clusters low-NDVI pixels into anomaly polygons → calls Lovable AI to label likely cause (drought stress, nutrient deficiency, pest pressure, waterlogging) given crop type + values
+- New table `anomalies`: zone_id, polygon, ndvi_mean, severity, ai_label, ai_reasoning, user_label, user_notes, status ('open'|'dismissed'|'sprayed')
+- Farmer can edit AI labels, draw new anomalies manually, dismiss false positives
+
+### Step 5: Spray recommendations
+- Edge function `recommend-spray`: per open anomaly → maps (crop, ai_label, severity) to a chemical class + dose range (small JSON lookup table seeded with common Virginia row crops — corn, soy, wheat, tobacco). Returns chemical, dose L/ha, total volume, target polygon, suggested time-of-day given weather
+- New table `spray_recommendations`: anomaly_id, chemical, dose_l_ha, total_l, target_polygon, weather_window_start/end, status
+- Approve → creates a row in existing `jobs` table → shows up in the Mission Planner
+- PDF export of the spray record (chemical, dose, area, operator, timestamp) for compliance
+
+### 3D field view, real version
+- `RealisticField3D` gets a `fieldId` prop. When present:
+  - Ground plane uses the orthomosaic preview as texture, sized to true bounds
+  - Crop zones extruded as colored regions per crop
+  - NDVI overlay toggle uses the real NDVI image
+  - Anomaly markers replace the mock spray boxes
 
 ---
 
-## 6. The Business (45s) — close strong
+## Technical notes
 
-Three numbers, slow:
-- **−85%** chemical use per treated field
-- **+12%** yield uplift in pilot fields
-- **€340/ha/yr** subscription, drones sold or leased
-
-> "We're not selling software. We're selling a measurable agronomic outcome."
-
-End with the ask: amount, what it funds (more pilots, regulatory, sales team), timeline.
+- **GeoTIFF parsing**: use `geotiff.js` in the edge function (Deno-compatible). Reading the header for bounds + GSD is cheap; we don't need to tile the whole raster server-side for v1 — a downscaled preview JPG is enough to render.
+- **PostGIS**: enable the extension via migration. Polygons stored as `geography(Polygon, 4326)`. Area via `ST_Area(polygon::geography) / 10000` for hectares.
+- **Storage**: one private bucket `orthomosaics`. RLS: users can read/write only paths prefixed with their own `user_id/`.
+- **NDVI from multispectral**: out of scope for v1. v1 expects the farmer's drone software (DJI Terra, Pix4Dfields, DroneDeploy — all standard with spray drones) to export the NDVI ortho directly. We accept it as an upload. Computing NDVI from raw multispectral bands is a v2 backend job.
+- **Lovable AI**: used in `analyze-ndvi` for anomaly labeling. Prompt includes crop type, NDVI stats, anomaly shape/location relative to field. Free Gemini tier.
+- **File size**: orthomosaics can be 200MB-2GB. v1 caps at ~500MB and warns above that; resumable uploads are v2.
 
 ---
 
-## Demo Hygiene
+## What this plan does NOT do (intentionally)
 
-- **Pre-open all 4 tabs** before you start: Dashboard, Fields, Analyzer, Planner. Switching tabs > clicking through navigation.
-- **Hardcode the story**: always use the same field (`B-04 North Quadrant`) so the numbers line up across screens.
-- **Have a backup video** of the Analyzer pipeline in case Wi-Fi or the 3D view stalls.
-- **Don't say "demo data"** — say "this farm in Cher, France" (your demo location). It is a prototype, but the data shape is real.
-- **If asked "is the AI real?"**: yes, the analyze-scan edge function calls a real vision model on uploaded images; the sample run is scripted for reliability on stage.
+- Live drone telemetry / DJI Cloud API — that's the "after this" phase you mentioned
+- Multi-user farm orgs, roles, billing
+- Compliance certifications, audit chain-of-custody
+- Computing NDVI from raw bands
+- Mobile-native app
+
+Those are real things to build later. They don't belong in the first real-loop milestone.
 
 ---
 
-## One-Slide Backup (if they want a deck)
+## Build order (one PR per step, in this order)
 
-| Slide | Content |
-|-------|---------|
-| 1 | Problem: 100% spray for 5% problem. €X waste, soil damage. |
-| 2 | Solution: AI + drones, scan → detect → spray only the zones. |
-| 3 | Product: 4 screenshots (Dashboard, Fields, Analyzer 3D, Planner). |
-| 4 | Traction / pilots / LOIs. |
-| 5 | Market size (precision-ag TAM). |
-| 6 | Business model + unit economics. |
-| 7 | Team. |
-| 8 | Ask. |
+1. PostGIS migration + `orthomosaics` / `crop_zones` / `anomalies` / `spray_recommendations` tables + storage bucket + RLS
+2. Orthomosaic upload UI + `ortho-process` edge function
+3. Polygon editor page (Leaflet + draw tools) + crop labeling
+4. 3D field view wired to real field data (orthomosaic texture + extruded zones)
+5. NDVI upload + overlay + `analyze-ndvi` edge function
+6. Spray recommendations + PDF compliance export
 
-Keep slides as backup — lead with the live product.
+Confirm and I'll start with step 1.
