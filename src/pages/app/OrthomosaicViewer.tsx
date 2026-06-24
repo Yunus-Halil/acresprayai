@@ -269,6 +269,15 @@ export default function OrthomosaicViewer() {
         const tj = j.tilejson;
         const b: any = tj?.bounds;
         if (Array.isArray(b) && b.length === 4) {
+          // TiTiler returns bounds as [west, south, east, north] in WGS84.
+          // Sanity-check: lat ∈ [-90,90], lng ∈ [-180,180]. If we see UTM-style
+          // numbers we bail so the map doesn't fly off to a black void.
+          const [w, s, e, n] = b as number[];
+          console.log("[OrthoViewer] tilejson bounds (W,S,E,N):", w, s, e, n);
+          if (Math.abs(s) > 90 || Math.abs(n) > 90 || Math.abs(w) > 180 || Math.abs(e) > 180) {
+            setErr("Orthomosaic bounds are not in WGS84 (got projected coordinates). Re-process the scan.");
+            return;
+          }
           setBounds([[b[1], b[0]], [b[3], b[2]]] as L.LatLngBoundsExpression);
         } else {
           setErr("Could not load orthomosaic bounds.");
@@ -497,6 +506,8 @@ export default function OrthomosaicViewer() {
                 keepBuffer={8}
                 updateWhenIdle={false}
                 updateWhenZooming={false}
+                bounds={bounds as L.LatLngBoundsExpression}
+                noWrap
                 zIndex={10}
               />
             )}
@@ -511,6 +522,8 @@ export default function OrthomosaicViewer() {
                 keepBuffer={8}
                 updateWhenIdle={false}
                 updateWhenZooming={false}
+                bounds={bounds as L.LatLngBoundsExpression}
+                noWrap
                 zIndex={20}
               />
             )}
