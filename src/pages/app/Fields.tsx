@@ -5,300 +5,145 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Trash2, Maximize2, Droplets, Pencil, RotateCcw, Map as MapIcon } from "lucide-react";
+import { Plus, Trash2, ArrowRight, Leaf, Box } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import Field3D, { type SprayZone } from "@/components/app/Field3D";
 
-type FieldLayout = "rows" | "orchard" | "pivot" | "terraced";
-type FieldRow = {
-  id: string; name: string; crop: string; area_hectares: number;
-  location: string | null; notes: string | null;
-  zones: SprayZone[]; layout: FieldLayout;
-};
-
-type DBField = { id: string; name: string; crop: string; area_hectares: number; location: string | null; notes: string | null };
+type DBField = { id: string; name: string; crop: string; area_hectares: number; location: string | null; notes: string | null; created_at: string };
+type ScanCount = { field_id: string; total: number; completed: number };
 
 export default function Fields() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [dbFields, setDbFields] = useState<DBField[]>([]);
+  const [counts, setCounts] = useState<Record<string, ScanCount>>({});
   const [open, setOpen] = useState(false);
-  const [detail, setDetail] = useState<FieldRow | null>(null);
   const [form, setForm] = useState({ name: "", crop: "Wheat", area_hectares: "", location: "", notes: "" });
-  // per-field local zone overrides (keyed by field id) - persists across the session
-  const [zoneOverrides, setZoneOverrides] = useState<Record<string, SprayZone[]>>(() => {
-    try { return JSON.parse(localStorage.getItem("acrespray.zoneOverrides") ?? "{}"); }
-    catch { return {}; }
-  });
-  const [editingZone, setEditingZone] = useState<{ field: string; index: number } | null>(null);
-  const [zoneForm, setZoneForm] = useState({ cropType: "", label: "", severity: "low" as SprayZone["severity"] });
-
-  const persistOverrides = (next: Record<string, SprayZone[]>) => {
-    setZoneOverrides(next);
-    localStorage.setItem("acrespray.zoneOverrides", JSON.stringify(next));
-  };
-  const zonesFor = (f: FieldRow) => zoneOverrides[f.id] ?? f.zones;
-  const updateZones = (fieldId: string, next: SprayZone[]) => {
-    persistOverrides({ ...zoneOverrides, [fieldId]: next });
-  };
 
   const load = async () => {
-    const { data } = await supabase.from("fields").select("*").order("created_at", { ascending: false });
-    setDbFields((data as DBField[]) ?? []);
+    const [{ data: fields }, { data: tasks }] = await Promise.all([
+      supabase.from("fields").select("*").order("created_at", { ascending: false }),
+      supabase.from("odm_tasks").select("field_id, status"),
+    ]);
+    setDbFields((fields as DBField[]) ?? []);
+    const c: Record<string, ScanCount> = {};
+    for (const t of (tasks ?? []) as { field_id: string; status: string }[]) {
+      if (!t.field_id) continue;
+      c[t.field_id] ??= { field_id: t.field_id, total: 0, completed: 0 };
+      c[t.field_id].total++;
+      if (t.status === "completed") c[t.field_id].completed++;
+    }
+    setCounts(c);
   };
   useEffect(() => { load(); }, []);
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { error } = await supabase.from("fields").insert({
+    const { data, error } = await supabase.from("fields").insert({
       user_id: user!.id, name: form.name, crop: form.crop,
       area_hectares: Number(form.area_hectares) || 0,
       location: form.location || null, notes: form.notes || null,
-    });
+    }).select().single();
     if (error) return toast.error(error.message);
-    toast.success("Field added");
+    toast.success(`Field created — now upload drone images for ${data.name}`);
     setForm({ name: "", crop: "Wheat", area_hectares: "", location: "", notes: "" });
-    setOpen(false); load();
+    setOpen(false);
+    navigate(`/app/fields/${data.id}`);
   };
 
   const remove = async (id: string) => {
+    if (!confirm("Delete this field and all its scans?")) return;
     await supabase.from("fields").delete().eq("id", id);
     load();
   };
-
-  const allFields: FieldRow[] = dbFields.map(f => ({
-    id: f.id,
-    name: f.name,
-    crop: f.crop,
-    area_hectares: Number(f.area_hectares),
-    location: f.location,
-    notes: f.notes,
-    zones: [],
-    layout: "rows",
-  }));
 
   return (
     <div className="p-8 space-y-6">
       <header className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-display text-3xl">Fields</h1>
-          <p className="text-muted-foreground">Your monitored parcels. Click any field to inspect the 3D AI overlay.</p>
+          <p className="text-muted-foreground max-w-2xl">
+            Start by creating a field. Then upload drone images for that field — we'll process them with OpenDroneMap
+            and build a 3D model you can review, scan after scan.
+          </p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button><Plus className="h-4 w-4" /> Add field</Button></DialogTrigger>
+          <DialogTrigger asChild><Button><Plus className="h-4 w-4" /> New field</Button></DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>New field</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>Step 1 · Create a field</DialogTitle>
+              <div className="text-xs text-muted-foreground">After saving, you'll be taken to the field where you can upload drone images.</div>
+            </DialogHeader>
             <form onSubmit={add} className="space-y-3">
-              <div><Label>Name</Label><Input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-              <div><Label>Crop</Label><Input required value={form.crop} onChange={e => setForm({ ...form, crop: e.target.value })} /></div>
-              <div><Label>Area (ha)</Label><Input type="number" step="0.1" required value={form.area_hectares} onChange={e => setForm({ ...form, area_hectares: e.target.value })} /></div>
-              <div><Label>Location</Label><Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></div>
-              <div><Label>Notes</Label><Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
-              <Button type="submit" className="w-full">Save field</Button>
+              <div><Label>Name</Label><Input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="North vineyard" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>Crop</Label><Input required value={form.crop} onChange={e => setForm({ ...form, crop: e.target.value })} /></div>
+                <div><Label>Area (ha)</Label><Input type="number" step="0.1" required value={form.area_hectares} onChange={e => setForm({ ...form, area_hectares: e.target.value })} /></div>
+              </div>
+              <div><Label>Location</Label><Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="optional" /></div>
+              <div><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="optional" /></div>
+              <Button type="submit" className="w-full">Create field & continue <ArrowRight className="h-4 w-4" /></Button>
             </form>
           </DialogContent>
         </Dialog>
       </header>
 
       {dbFields.length === 0 && (
-        <Card className="p-8 text-center text-sm text-muted-foreground">
-          You haven't added any fields yet. Click <strong>Add field</strong> to get started.
+        <Card className="p-10 text-center space-y-3">
+          <Leaf className="h-10 w-10 mx-auto text-primary" />
+          <div className="font-display text-xl">No fields yet</div>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Every scan and 3D model in AcreSpray lives inside a field. Create your first field to start.
+          </p>
+          <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Create your first field</Button>
         </Card>
       )}
 
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {allFields.map(f => {
-          const zones = zonesFor(f);
-          const high = zones.filter(z => z.severity === "high").length;
-          const med = zones.filter(z => z.severity === "medium").length;
-          const low = zones.filter(z => z.severity === "low").length;
+        {dbFields.map(f => {
+          const c = counts[f.id];
           return (
-            <Card key={f.id} className="overflow-hidden group cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition" onClick={() => setDetail(f)}>
-              {/* Header band - clear name + status at a glance */}
-              <div className="p-4 flex items-start justify-between gap-3 border-b">
+            <Card key={f.id} className="p-5 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition group"
+              onClick={() => navigate(`/app/fields/${f.id}`)}>
+              <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-display text-xl leading-tight truncate">{f.name}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {f.crop} · {f.area_hectares} ha
-                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{f.crop} · {f.area_hectares} ha</div>
                 </div>
+                <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0"
+                  onClick={(e) => { e.stopPropagation(); remove(f.id); }}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
               </div>
-
-              {/* 3D preview */}
-              <div className="relative">
-                <Field3D zones={zones} height={180} layout={f.layout} cropType={f.crop} />
-                <div className="absolute bottom-2 right-2 bg-background/80 backdrop-blur rounded px-1.5 py-1 text-[10px] flex items-center gap-1 pointer-events-none">
-                  <Maximize2 className="h-3 w-3" /> 3D view
-                </div>
+              <div className="mt-4 flex items-center gap-2">
+                {c?.total ? (
+                  <>
+                    <Badge variant="outline" className="gap-1">
+                      <Box className="h-3 w-3" /> {c.total} scan{c.total === 1 ? "" : "s"}
+                    </Badge>
+                    {c.completed > 0 && (
+                      <Badge variant="outline" className="border-emerald-500 text-emerald-600">
+                        {c.completed} ready
+                      </Badge>
+                    )}
+                  </>
+                ) : (
+                  <Badge variant="outline" className="border-amber-500 text-amber-600">No scans yet</Badge>
+                )}
               </div>
-
-              {/* Footer - readable zone breakdown + actions */}
-              <div className="p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  {high > 0 && (
-                    <Badge className="bg-destructive hover:bg-destructive gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-white" /> {high} critical
-                    </Badge>
-                  )}
-                  {med > 0 && (
-                    <Badge variant="outline" className="border-amber-500 text-amber-600 gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> {med} moderate
-                    </Badge>
-                  )}
-                  {low > 0 && (
-                    <Badge variant="outline" className="border-emerald-500 text-emerald-600 gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {low} minor
-                    </Badge>
-                  )}
-                  {zones.length === 0 && (
-                    <Badge variant="outline" className="border-muted text-muted-foreground">No scans yet</Badge>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between gap-2 pt-1 border-t">
-                  <div className="text-[10px] text-muted-foreground font-mono truncate">{f.location ?? "No location set"}</div>
-                  <div className="flex gap-1">
-                    <Button variant="outline" size="sm" className="h-7 gap-1" onClick={(e) => { e.stopPropagation(); navigate(`/app/fields/${f.id}/map`); }}>
-                      <MapIcon className="h-3.5 w-3.5" /> Map & analyze
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0" onClick={(e) => { e.stopPropagation(); remove(f.id); }}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
+              <div className="mt-3 pt-3 border-t text-xs text-muted-foreground flex items-center justify-between">
+                <span className="truncate">{f.location ?? "No location set"}</span>
+                <span className="inline-flex items-center gap-1 text-primary opacity-0 group-hover:opacity-100 transition">
+                  Open <ArrowRight className="h-3 w-3" />
+                </span>
               </div>
             </Card>
           );
         })}
       </div>
-
-      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
-        <DialogContent className="max-w-5xl">
-          {detail && (
-            <>
-              <DialogHeader>
-                <DialogTitle>{detail.name}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <div className="text-muted-foreground flex items-center gap-1.5">
-                    <Pencil className="h-3 w-3" /> Click any colored patch to edit · click empty ground to add a new patch
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => {
-                      const next = { ...zoneOverrides }; delete next[detail.id]; persistOverrides(next);
-                      toast.success("Farm reset to original layout");
-                    }}>
-                      <RotateCcw className="h-3.5 w-3.5" /> Reset
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => {
-                      updateZones(detail.id, []);
-                      toast.success("All patches cleared - click the field to rebuild");
-                    }}>
-                      <Trash2 className="h-3.5 w-3.5" /> Clear all
-                    </Button>
-                  </div>
-                </div>
-                <Field3D
-                  zones={zonesFor(detail)}
-                  height={420}
-                  layout={detail.layout}
-                  cropType={detail.crop}
-                  editZones
-                  onZoneClick={(idx) => {
-                    const z = zonesFor(detail)[idx];
-                    setZoneForm({ cropType: z.cropType ?? detail.crop, label: z.label, severity: z.severity });
-                    setEditingZone({ field: detail.id, index: idx });
-                  }}
-                  onAddZone={(x, z) => {
-                    const next: SprayZone[] = [
-                      ...zonesFor(detail),
-                      { x, z, w: 3, d: 2.5, severity: "low", label: "New patch", cropType: detail.crop },
-                    ];
-                    updateZones(detail.id, next);
-                  }}
-                />
-              </div>
-              <div className="grid md:grid-cols-3 gap-3 text-sm">
-                <Card className="p-3">
-                  <div className="text-xs text-muted-foreground">Crop</div>
-                  <div className="font-display">{detail.crop}</div>
-                  <div className="text-xs">{detail.area_hectares} ha · {detail.location}</div>
-                </Card>
-                <Card className="p-3">
-                  <div className="text-xs text-muted-foreground">Detections</div>
-                  <div className="font-display">{zonesFor(detail).length} zones</div>
-                  <div className="text-xs">{zonesFor(detail).filter(z => z.severity === "high").length} critical</div>
-                </Card>
-                <Card className="p-3">
-                  <div className="text-xs text-muted-foreground">Next step</div>
-                  <div className="font-display text-sm leading-tight">Map &amp; analyze</div>
-                  <div className="text-xs">Upload an orthomosaic to begin.</div>
-                </Card>
-              </div>
-              <div className="text-sm text-muted-foreground">{detail.notes ?? "No notes yet."}</div>
-              <div className="flex gap-2">
-                <Button onClick={() => { setDetail(null); navigate(`/app/fields/${detail.id}/map`); }}><MapIcon className="h-4 w-4" /> Open map</Button>
-                <Button variant="outline" onClick={() => setDetail(null)}>Close</Button>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Zone editor */}
-      <Dialog open={!!editingZone} onOpenChange={(o) => !o && setEditingZone(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Edit patch</DialogTitle></DialogHeader>
-          {editingZone && (
-            <div className="space-y-3">
-              <div>
-                <Label>Crop type</Label>
-                <Input value={zoneForm.cropType} onChange={e => setZoneForm({ ...zoneForm, cropType: e.target.value })} placeholder="e.g. Wheat, Maize, Vineyard" />
-              </div>
-              <div>
-                <Label>Label / note</Label>
-                <Input value={zoneForm.label} onChange={e => setZoneForm({ ...zoneForm, label: e.target.value })} />
-              </div>
-              <div>
-                <Label>Severity</Label>
-                <div className="flex gap-2">
-                  {(["low","medium","high"] as const).map(s => (
-                    <Button key={s} type="button" size="sm"
-                      variant={zoneForm.severity === s ? "default" : "outline"}
-                      onClick={() => setZoneForm({ ...zoneForm, severity: s })}
-                      className="capitalize flex-1">{s}</Button>
-                  ))}
-                </div>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button className="flex-1" onClick={() => {
-                  const fid = editingZone.field;
-                  const current = zoneOverrides[fid] ?? (allFields.find(f => f.id === fid)?.zones ?? []);
-                  const next = current.map((z, i) => i === editingZone.index
-                    ? { ...z, cropType: zoneForm.cropType, label: zoneForm.label || z.label, severity: zoneForm.severity }
-                    : z);
-                  updateZones(fid, next);
-                  setEditingZone(null);
-                  toast.success("Patch updated");
-                }}>Save</Button>
-                <Button variant="destructive" onClick={() => {
-                  const fid = editingZone.field;
-                  const current = zoneOverrides[fid] ?? (allFields.find(f => f.id === fid)?.zones ?? []);
-                  updateZones(fid, current.filter((_, i) => i !== editingZone.index));
-                  setEditingZone(null);
-                  toast.success("Patch deleted");
-                }}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
