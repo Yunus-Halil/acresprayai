@@ -317,13 +317,33 @@ Deno.serve(async (req) => {
         }
 
         if (!tifBytes || !matchedUuid) {
+          // ODM didn't give us the .tif directly (WebODM Lightning case).
+          // Hand the extraction off to the browser to avoid the 256 MB edge memory cap:
+          //   1) sign a download URL for the all.zip in the `scans` bucket
+          //   2) mint a signed upload URL for the `orthos` bucket
+          //   3) the client streams the zip, extracts odm_orthophoto.tif, PUTs it back
+          if (task.output_path && task.odm_uuid) {
+            const uploadPath = `${ud.user.id}/${task.odm_uuid}.tif`;
+            const [{ data: zipSigned, error: zipErr }, { data: upSigned, error: upErr }] = await Promise.all([
+              admin.storage.from("scans").createSignedUrl(task.output_path, 60 * 30),
+              admin.storage.from("orthos").createSignedUploadUrl(uploadPath),
+            ]);
+            if (!zipErr && !upErr && zipSigned?.signedUrl && upSigned?.token) {
+              return json({
+                needsExtract: true,
+                zipUrl: zipSigned.signedUrl,
+                upload: { path: uploadPath, token: upSigned.token, bucket: "orthos" },
+                uuid: task.odm_uuid,
+              }, 202);
+            }
+            console.warn("[ortho-url] could not prepare extraction handoff", { zipErr: zipErr?.message, upErr: upErr?.message });
+          }
           console.warn("[ortho-url] no orthophoto found", JSON.stringify({ listed: listed.tasks, triedDownloads, output_path: task.output_path }));
           return json({
-            error: "Processing completed, but the orthophoto cannot be fetched. ODM_BASE_URL is WebODM Lightning (spark*.webodm.net), which only exposes /task/<uuid>/download/all.zip — not individual assets like odm_orthophoto.tif. Extracting it from the stored all.zip exceeds the 256 MB edge function memory cap. Options: (1) switch ODM_BASE_URL to a self-hosted NodeODM/WebODM that exposes per-asset download paths, or (2) run the extraction in a worker outside edge functions.",
+            error: "Processing completed but the orthomosaic file is missing. The processing node did not produce odm_orthophoto.tif (likely insufficient image overlap).",
             odm_tasks: listed.tasks,
             tried: triedDownloads,
             stored_zip: task.output_path,
-            odm_host: new URL(ODM_BASE_URL).host,
           }, 422);
         }
 
