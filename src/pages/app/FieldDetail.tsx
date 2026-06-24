@@ -25,6 +25,7 @@ type Field = {
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
+const UPLOAD_CONCURRENCY = 6;
 
 async function authHeader() {
   const { data } = await supabase.auth.getSession();
@@ -59,9 +60,11 @@ export default function FieldDetail() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  const [phase, setPhase] = useState<"idle" | "downscaling" | "uploading" | "committing">("idle");
+  const [phaseProgress, setPhaseProgress] = useState<{ done: number; total: number } | null>(null);
   const [viewing, setViewing] = useState<Task | null>(null);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  const [orthoAvailable, setOrthoAvailable] = useState<Record<string, boolean>>({});
   const pollRef = useRef<number | null>(null);
 
   const loadField = async () => {
@@ -94,11 +97,45 @@ export default function FieldDetail() {
         body: JSON.stringify({ task_id: t.id }),
       }).catch(() => {})));
       loadTasks();
-    }, 10000);
+    }, 5000);
     return () => {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     };
   }, [tasks]);
+
+  // For completed tasks, probe whether an orthomosaic asset exists
+  useEffect(() => {
+    const completed = tasks.filter(t => t.status === "completed" && t.odm_uuid && !(t.odm_uuid in orthoAvailable));
+    if (!completed.length) return;
+    (async () => {
+      const auth = await authHeader();
+      const updates: Record<string, boolean> = {};
+      await Promise.all(completed.map(async (t) => {
+        try {
+          const r = await fetch(`${FN_BASE}/odm-asset?uuid=${t.odm_uuid}&probe=ortho`, {
+            headers: { Authorization: auth },
+          });
+          const j = await r.json();
+          updates[t.odm_uuid!] = !!j.available;
+        } catch { updates[t.odm_uuid!] = false; }
+      }));
+      setOrthoAvailable(prev => ({ ...prev, ...updates }));
+    })();
+  }, [tasks]);
+
+  async function uploadOne(odm_uuid: string, file: File, auth: string): Promise<void> {
+    const send = async () => {
+      const fd = new FormData();
+      fd.append("images", file, file.name);
+      const r = await fetch(`${FN_BASE}/odm-submit`, {
+        method: "POST",
+        headers: { Authorization: auth, "x-action": "upload", "x-odm-uuid": odm_uuid },
+        body: fd,
+      });
+      if (!r.ok) throw new Error(`${file.name}: ${r.status}`);
+    };
+    try { await send(); } catch { await send(); } // retry once
+  }
 
   const submit = async () => {
     if (!fieldId) return;
@@ -107,13 +144,19 @@ export default function FieldDetail() {
     if (files.length > 500) return toast.error("Max 500 images per scan");
 
     setBusy(true);
-    setUploadProgress({ done: 0, total: files.length });
     const auth = await authHeader();
 
     try {
+      // Phase 1: downscale with visible progress
+      setPhase("downscaling");
+      setPhaseProgress({ done: 0, total: files.length });
       const prepared: File[] = [];
-      for (let i = 0; i < files.length; i++) prepared.push(await downscaleImage(files[i]));
+      for (let i = 0; i < files.length; i++) {
+        prepared.push(await downscaleImage(files[i]));
+        setPhaseProgress({ done: i + 1, total: files.length });
+      }
 
+      // Phase 2: init task on ODM
       const initRes = await fetch(`${FN_BASE}/odm-submit`, {
         method: "POST",
         headers: {
@@ -128,21 +171,31 @@ export default function FieldDetail() {
       const { odm_uuid } = initJson;
       await loadTasks();
 
-      for (let i = 0; i < prepared.length; i++) {
-        const fd = new FormData();
-        fd.append("images", prepared[i], prepared[i].name);
-        const upRes = await fetch(`${FN_BASE}/odm-submit`, {
-          method: "POST",
-          headers: { Authorization: auth, "x-action": "upload", "x-odm-uuid": odm_uuid },
-          body: fd,
-        });
-        if (!upRes.ok) {
-          const j = await upRes.json().catch(() => ({}));
-          throw new Error(j.error ?? `Upload failed at image ${i + 1}`);
+      // Phase 3: parallel uploads with progress + per-file retry
+      setPhase("uploading");
+      let done = 0;
+      setPhaseProgress({ done: 0, total: prepared.length });
+      let cursor = 0;
+      const total = prepared.length;
+      const errors: string[] = [];
+      const worker = async () => {
+        while (true) {
+          const i = cursor++;
+          if (i >= total) return;
+          try {
+            await uploadOne(odm_uuid, prepared[i], auth);
+          } catch (e: any) {
+            errors.push(e?.message ?? String(e));
+          }
+          done++;
+          setPhaseProgress({ done, total });
         }
-        setUploadProgress({ done: i + 1, total: prepared.length });
-      }
+      };
+      await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, worker));
+      if (errors.length) throw new Error(`${errors.length} image upload(s) failed. First: ${errors[0]}`);
 
+      // Phase 4: commit
+      setPhase("committing");
       const cRes = await fetch(`${FN_BASE}/odm-submit`, {
         method: "POST",
         headers: { Authorization: auth, "Content-Type": "application/json", "x-action": "commit" },
@@ -158,7 +211,8 @@ export default function FieldDetail() {
       toast.error(e?.message ?? "Submission failed");
     } finally {
       setBusy(false);
-      setUploadProgress(null);
+      setPhase("idle");
+      setPhaseProgress(null);
     }
   };
 
@@ -190,6 +244,11 @@ export default function FieldDetail() {
       body: JSON.stringify({ task_id: t.id }),
     });
     loadTasks();
+  };
+
+  const openOrthomosaic = (t: Task) => {
+    if (!t.odm_uuid) return;
+    window.open(`/app/orthomosaic/${t.id}`, "_blank", "noopener");
   };
 
   const statusTone = (s: string) =>
@@ -274,10 +333,14 @@ export default function FieldDetail() {
           </div>
         )}
 
-        {uploadProgress && (
+        {phaseProgress && (
           <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">Uploading {uploadProgress.done} / {uploadProgress.total} images to OpenDroneMap...</div>
-            <Progress value={(uploadProgress.done / uploadProgress.total) * 100} />
+            <div className="text-xs text-muted-foreground">
+              {phase === "downscaling" && <>Preparing images {phaseProgress.done} / {phaseProgress.total}…</>}
+              {phase === "uploading" && <>Uploading {phaseProgress.done} / {phaseProgress.total} images to OpenDroneMap…</>}
+              {phase === "committing" && <>Starting reconstruction…</>}
+            </div>
+            <Progress value={(phaseProgress.done / Math.max(1, phaseProgress.total)) * 100} />
           </div>
         )}
 
@@ -338,6 +401,11 @@ export default function FieldDetail() {
             <div className="flex gap-2 mt-3 flex-wrap">
               {t.status === "completed" && (
                 <>
+                  {t.odm_uuid && orthoAvailable[t.odm_uuid] && (
+                    <Button size="sm" onClick={() => openOrthomosaic(t)}>
+                      <MapIcon className="h-3.5 w-3.5" /> View Orthomosaic
+                    </Button>
+                  )}
                   <Button size="sm" onClick={() => openViewer(t)}><Box className="h-3.5 w-3.5" /> View 3D model</Button>
                   <Button size="sm" variant="outline" onClick={() => downloadZip(t)}><Download className="h-3.5 w-3.5" /> Download</Button>
                 </>
