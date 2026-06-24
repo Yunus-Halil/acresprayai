@@ -111,16 +111,27 @@ Deno.serve(async (req) => {
         // so TiTiler can render it via a short-lived signed URL.
         let orthoStored: string | null = null;
         try {
-          const tifRes = await fetch(odmUrl(`/task/${task.odm_uuid}/download/orthophoto.tif`));
-          if (tifRes.ok && tifRes.body) {
-            const { error: tifErr } = await admin.storage.from("orthos").upload(orthoPath, tifRes.body, {
+          const candidates = [
+            "download/orthophoto.tif",
+            "download/odm_orthophoto/odm_orthophoto.tif",
+            "download/odm_orthophoto.tif",
+          ];
+          let tifRes: Response | null = null;
+          for (const p of candidates) {
+            const r = await fetch(odmUrl(`/task/${task.odm_uuid}/${p}`));
+            if (r.ok && r.body) { tifRes = r; break; }
+            try { await r.arrayBuffer(); } catch { /* noop */ }
+            console.warn(`ortho candidate ${p} -> ${r.status}`);
+          }
+          if (tifRes) {
+            const { error: tifErr } = await admin.storage.from("orthos").upload(orthoPath, tifRes.body!, {
               contentType: "image/tiff",
               upsert: true,
             });
             if (!tifErr) orthoStored = orthoPath;
             else console.error("ortho upload failed:", tifErr.message);
           } else {
-            console.warn("orthophoto.tif not available from ODM:", tifRes.status);
+            console.warn("no orthophoto produced for", task.odm_uuid);
           }
         } catch (e) {
           console.error("ortho fetch failed:", (e as Error)?.message);
