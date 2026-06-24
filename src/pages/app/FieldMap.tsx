@@ -202,9 +202,20 @@ export default function FieldMap() {
   };
 
   // --- Drawing ---
-  const onMapClick = (pt: LatLng) => setDraftRing(r => [...r, pt]);
-  const undoVertex = () => setDraftRing(r => r.slice(0, -1));
+  const onDraftComplete = (ring: LatLng[]) => {
+    setDraftRing(ring);
+    setDrawing(false); // exit draw mode; show name/crop form
+    toast.success(`Polygon drawn · ${ring.length} vertices. Name it and save.`);
+  };
   const cancelDraw = () => { setDrawing(false); setDraftRing([]); };
+
+  const onZoneEdit = async (id: string, ring: LatLng[]) => {
+    const poly = ring.map(p => [p.lng, p.lat]);
+    const { error } = await supabase.rpc("update_crop_zone", { p_id: id, p_polygon: poly });
+    if (error) { toast.error(error.message); return; }
+    toast.success("Zone updated");
+    await loadZones();
+  };
 
   const finishZone = async () => {
     if (draftRing.length < 3) { toast.error("Need at least 3 points"); return; }
@@ -400,14 +411,22 @@ export default function FieldMap() {
             zones={zoneShapes}
             anomalies={anomalyShapes}
             drawing={drawing}
-            draftRing={draftRing}
-            onMapClick={onMapClick}
+            onDraftComplete={onDraftComplete}
+            onZoneEdit={onZoneEdit}
           />
           {drawing && (
+            <Card className="p-3 text-xs text-muted-foreground flex items-center gap-3">
+              <Pencil className="h-4 w-4 text-primary" />
+              <div className="flex-1">
+                Click on the map to drop vertices. They <strong>snap</strong> to existing zones and the orthomosaic edge. <strong>Double-click</strong> the last point to finish, or press <kbd className="px-1 rounded bg-muted">Esc</kbd>.
+              </div>
+              <Button size="sm" variant="ghost" onClick={cancelDraw}>Cancel</Button>
+            </Card>
+          )}
+          {!drawing && draftRing.length >= 3 && (
             <Card className="p-3 flex items-end gap-2 flex-wrap">
               <div className="text-xs text-muted-foreground flex-1">
-                {draftRing.length === 0 ? "Click on the map to add polygon vertices" :
-                  `${draftRing.length} vertices · click to add more, then name + finish`}
+                {draftRing.length} vertices captured · name this zone and save
               </div>
               <div className="grid grid-cols-3 gap-2 flex-1 min-w-[400px]">
                 <Input placeholder="Zone name" value={zoneForm.name}
@@ -417,9 +436,8 @@ export default function FieldMap() {
                 <Input placeholder="Variety (opt.)" value={zoneForm.variety}
                   onChange={e => setZoneForm({ ...zoneForm, variety: e.target.value })} />
               </div>
-              <Button size="sm" variant="ghost" onClick={undoVertex} disabled={draftRing.length === 0}>Undo</Button>
-              <Button size="sm" variant="ghost" onClick={cancelDraw}>Cancel</Button>
-              <Button size="sm" onClick={finishZone} disabled={draftRing.length < 3}>Finish</Button>
+              <Button size="sm" variant="ghost" onClick={() => setDraftRing([])}>Discard</Button>
+              <Button size="sm" onClick={finishZone}>Save zone</Button>
             </Card>
           )}
         </div>
