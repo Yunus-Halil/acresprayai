@@ -244,6 +244,19 @@ Deno.serve(async (req) => {
 
     // Lazy backfill: if the ortho hasn't been uploaded yet, pull it now.
     let path = task.ortho_path as string | null;
+
+    // Maybe the client already extracted+uploaded the .tif in a previous call.
+    // Check the `orthos` bucket for the expected path before re-querying ODM.
+    if (!path && task.odm_uuid) {
+      const expected = `${ud.user.id}/${task.odm_uuid}.tif`;
+      const { data: listing } = await admin.storage.from("orthos")
+        .list(ud.user.id, { search: `${task.odm_uuid}.tif` });
+      if (listing?.some((o: any) => o.name === `${task.odm_uuid}.tif`)) {
+        path = expected;
+        await admin.from("odm_tasks").update({ ortho_path: expected }).eq("id", task.id);
+      }
+    }
+
     if (!path) {
       try {
         // 1) Check task status on ODM first - never try to download until completed.
