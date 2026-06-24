@@ -494,8 +494,8 @@ export default function OrthomosaicViewer() {
                 maxNativeZoom={Math.min(20, maxNative)}
                 maxZoom={22}
                 tileSize={256}
-                keepBuffer={1}
-                updateWhenIdle
+                keepBuffer={8}
+                updateWhenIdle={false}
                 updateWhenZooming={false}
                 zIndex={10}
               />
@@ -508,8 +508,8 @@ export default function OrthomosaicViewer() {
                 maxNativeZoom={Math.min(20, maxNative)}
                 maxZoom={22}
                 tileSize={256}
-                keepBuffer={1}
-                updateWhenIdle
+                keepBuffer={8}
+                updateWhenIdle={false}
                 updateWhenZooming={false}
                 zIndex={20}
               />
