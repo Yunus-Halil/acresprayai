@@ -145,6 +145,57 @@ function MapControls({ fitTo }: { fitTo: L.LatLngBoundsExpression | null }) {
   );
 }
 
+// --- AI zones layer ----------------------------------------------------------
+export type AiZone = {
+  id: string;
+  name: string;
+  issue: string;
+  severity: "low" | "medium" | "high";
+  coverage_pct: number;
+  recommendation: { action: string; product?: string; dose?: string; rationale?: string } | null;
+  ring: { lat: number; lng: number }[];
+};
+
+const sevColor = (s: AiZone["severity"]) =>
+  s === "high" ? "#ef4444" : s === "medium" ? "#f59e0b" : "#eab308";
+
+function AiZonesLayer({
+  zones, selectedId, onSelect, onUpdate,
+}: {
+  zones: AiZone[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  onUpdate: (id: string, ring: { lat: number; lng: number }[]) => void;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    const group = L.layerGroup().addTo(map);
+    zones.forEach((z) => {
+      const color = sevColor(z.severity);
+      const poly = L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
+        color, weight: selectedId === z.id ? 3 : 2,
+        fillColor: color, fillOpacity: selectedId === z.id ? 0.35 : 0.25,
+      });
+      poly.bindTooltip(`${z.name} · ${z.issue}`, { direction: "top", className: "ai-zone-label" });
+      poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onSelect(z.id); });
+      group.addLayer(poly);
+      if (selectedId === z.id) {
+        poly.bringToFront();
+        (poly as any).pm.enable({
+          allowSelfIntersection: false, snappable: true, snapDistance: 15,
+          draggable: true, hideMiddleMarkers: false,
+        });
+        poly.on("pm:markerdragend pm:dragend pm:vertexadded pm:vertexremoved", () => {
+          const latlngs = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+          onUpdate(z.id, latlngs);
+        });
+      }
+    });
+    return () => { group.remove(); };
+  }, [map, zones, selectedId, onSelect, onUpdate]);
+  return null;
+}
+
 // --- layer tree ---------------------------------------------------------------
 type LayerState = {
   annotations: boolean;
@@ -194,7 +245,16 @@ export default function OrthomosaicViewer() {
   const [ndviInfo, setNdviInfo] = useState<{ bands: number; index: "ndvi" | "vari"; label: string } | null>(null);
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(true);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<{
+    health_score: number; summary: string;
+    issues: { label: string; severity: string; description: string }[];
+    zones: AiZone[];
+  } | null>(null);
+  const [analysisErr, setAnalysisErr] = useState<string | null>(null);
+  const [selectedZone, setSelectedZone] = useState<string | null>(null);
+  const [showAiZones, setShowAiZones] = useState(true);
   const [cursor, setCursor] = useState<{ lat: number; lng: number; z: number }>({
     lat: NaN, lng: NaN, z: 2,
   });
