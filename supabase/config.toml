@@ -1,1 +1,4 @@
 project_id = "gohofgqtzrvcixnlzhpt"
+
+[functions.ndvi-tile]
+verify_jwt = false
