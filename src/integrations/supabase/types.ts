@@ -310,6 +310,11 @@ export type Database = {
           output_path: string | null
           progress: number
           status: string
+          tiles_baked: boolean
+          tiles_done: number
+          tiles_max_zoom: number | null
+          tiles_min_zoom: number | null
+          tiles_total: number
           updated_at: string
           user_id: string
         }
@@ -324,6 +329,11 @@ export type Database = {
           output_path?: string | null
           progress?: number
           status?: string
+          tiles_baked?: boolean
+          tiles_done?: number
+          tiles_max_zoom?: number | null
+          tiles_min_zoom?: number | null
+          tiles_total?: number
           updated_at?: string
           user_id: string
         }
@@ -338,6 +348,11 @@ export type Database = {
           output_path?: string | null
           progress?: number
           status?: string
+          tiles_baked?: boolean
+          tiles_done?: number
+          tiles_max_zoom?: number | null
+          tiles_min_zoom?: number | null
+          tiles_total?: number
           updated_at?: string
           user_id?: string
         }
