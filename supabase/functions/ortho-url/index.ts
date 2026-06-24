@@ -16,6 +16,16 @@ function odmUrl(path: string) {
   return u.toString();
 }
 
+// NodeODM task status codes
+const ODM_STATUS = { QUEUED: 10, RUNNING: 20, FAILED: 30, COMPLETED: 40, CANCELED: 50 } as const;
+
+// Candidate orthophoto download paths across NodeODM/WebODM versions.
+const ORTHO_PATHS = [
+  "download/orthophoto.tif",
+  "download/odm_orthophoto/odm_orthophoto.tif",
+  "download/odm_orthophoto.tif",
+];
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -54,21 +64,58 @@ Deno.serve(async (req) => {
     if (!path && task.odm_uuid) {
       const orthoPath = `${ud.user.id}/${task.odm_uuid}.tif`;
       try {
-        const tifRes = await fetch(odmUrl(`/task/${task.odm_uuid}/download/orthophoto.tif`));
-        if (tifRes.ok && tifRes.body) {
-          const { error: tifErr } = await admin.storage.from("orthos").upload(orthoPath, tifRes.body, {
-            contentType: "image/tiff",
-            upsert: true,
-          });
-          if (!tifErr) {
-            path = orthoPath;
-            await admin.from("odm_tasks").update({ ortho_path: orthoPath }).eq("id", task.id);
-          } else {
-            return new Response(JSON.stringify({ error: `Upload failed: ${tifErr.message}` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          }
-        } else {
-          return new Response(JSON.stringify({ error: `ODM has no orthophoto (status ${tifRes.status})` }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        // 1) Check task status on ODM first - never try to download until completed.
+        const infoRes = await fetch(odmUrl(`/task/${task.odm_uuid}/info`));
+        const info = await infoRes.json().catch(() => ({}));
+        const code = info?.status?.code as number | undefined;
+        if (code === ODM_STATUS.FAILED || code === ODM_STATUS.CANCELED) {
+          const msg = info?.status?.errorMessage ?? "ODM reported failure";
+          await admin.from("odm_tasks").update({ status: "failed", error: msg }).eq("id", task.id);
+          return new Response(JSON.stringify({ error: `Processing failed: ${msg}` }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
+        if (code !== ODM_STATUS.COMPLETED) {
+          const progress = typeof info?.progress === "number" ? Math.round(info.progress) : 0;
+          const label = code === ODM_STATUS.RUNNING ? "processing" : code === ODM_STATUS.QUEUED ? "queued" : "pending";
+          return new Response(JSON.stringify({ error: `Orthomosaic not ready yet (${label}, ${progress}%)`, status: label, progress }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
+        // 2) Try known orthophoto paths in order.
+        let tifRes: Response | null = null;
+        let triedPaths: string[] = [];
+        for (const p of ORTHO_PATHS) {
+          const u = odmUrl(`/task/${task.odm_uuid}/${p}`);
+          triedPaths.push(p);
+          const r = await fetch(u);
+          if (r.ok && r.body) { tifRes = r; break; }
+          // consume body so we don't leak
+          try { await r.arrayBuffer(); } catch { /* noop */ }
+        }
+
+        if (!tifRes) {
+          // 3) Task is complete but no orthophoto - list assets for diagnostics.
+          let assets: unknown = null;
+          try {
+            const a = await fetch(odmUrl(`/task/${task.odm_uuid}/info`));
+            const aj = await a.json();
+            assets = aj?.imagesCount !== undefined ? { imagesCount: aj.imagesCount } : null;
+          } catch { /* noop */ }
+          console.warn("[ortho-url] no orthophoto for", task.odm_uuid, "tried:", triedPaths);
+          return new Response(JSON.stringify({
+            error: "Processing completed but ODM did not produce an orthomosaic. This usually means the input images had insufficient overlap (need 70-80%).",
+            tried: triedPaths,
+            assets,
+          }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
+        const { error: tifErr } = await admin.storage.from("orthos").upload(orthoPath, tifRes.body!, {
+          contentType: "image/tiff",
+          upsert: true,
+        });
+        if (tifErr) {
+          return new Response(JSON.stringify({ error: `Upload failed: ${tifErr.message}` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        path = orthoPath;
+        await admin.from("odm_tasks").update({ ortho_path: orthoPath }).eq("id", task.id);
       } catch (e) {
         return new Response(JSON.stringify({ error: String((e as Error)?.message ?? e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
