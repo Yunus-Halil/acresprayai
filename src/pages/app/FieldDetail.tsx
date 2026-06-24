@@ -11,6 +11,7 @@ import {
   ArrowLeft, Map as MapIcon, Leaf,
 } from "lucide-react";
 import { toast } from "sonner";
+import { prepareForODM, hasGPS } from "@/lib/imagePrep";
 
 type Task = {
   id: string; field_id: string; odm_uuid: string | null;
@@ -29,26 +30,6 @@ const UPLOAD_CONCURRENCY = 2;
 async function authHeader() {
   const { data } = await supabase.auth.getSession();
   return data.session?.access_token ? `Bearer ${data.session.access_token}` : "";
-}
-
-async function downscaleImage(file: File, maxEdge = 2400, quality = 0.82): Promise<File> {
-  if (file.size < 1_500_000) return file;
-  const bitmap = await createImageBitmap(file).catch(() => null);
-  if (!bitmap) return file;
-  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
-  if (scale >= 1) { bitmap.close?.(); return file; }
-  const w = Math.round(bitmap.width * scale);
-  const h = Math.round(bitmap.height * scale);
-  const canvas = document.createElement("canvas");
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) { bitmap.close?.(); return file; }
-  ctx.drawImage(bitmap, 0, 0, w, h);
-  bitmap.close?.();
-  const blob: Blob | null = await new Promise(res => canvas.toBlob(res, "image/jpeg", quality));
-  if (!blob) return file;
-  const newName = file.name.replace(/\.(png|tiff?|heic|webp)$/i, ".jpg");
-  return new File([blob], newName, { type: "image/jpeg", lastModified: file.lastModified });
 }
 
 export default function FieldDetail() {
@@ -143,6 +124,23 @@ export default function FieldDetail() {
     if (files.length < 5) return toast.error("Need at least 5 images for reconstruction");
     if (files.length > 500) return toast.error("Max 500 images per scan");
 
+    // Pre-flight: sample a few images for GPS EXIF. Without GPS, ODM produces
+    // an ungeoreferenced ortho that lands at lat 0, lng 0 (Atlantic ocean).
+    const sample = files.slice(0, Math.min(5, files.length));
+    const gpsResults = await Promise.all(sample.map(hasGPS));
+    const withGPS = gpsResults.filter(Boolean).length;
+    if (withGPS === 0) {
+      const proceed = window.confirm(
+        "None of the sampled images have GPS EXIF tags.\n\n" +
+        "Without GPS, the orthomosaic will NOT be georeferenced and will not display on the map. " +
+        "Re-export your drone photos with GPS metadata intact (most drones do this by default; some social/cloud apps strip it).\n\n" +
+        "Upload anyway?"
+      );
+      if (!proceed) return;
+    } else if (withGPS < sample.length) {
+      toast.warning(`Only ${withGPS}/${sample.length} sampled images have GPS — orthomosaic accuracy may suffer.`);
+    }
+
     setBusy(true);
     try {
       // Proactively refresh so we start with a fresh ~1h token.
@@ -176,7 +174,7 @@ export default function FieldDetail() {
           const i = cursor++;
           if (i >= total) return;
           try {
-            const prepared = await downscaleImage(files[i]);
+            const prepared = await prepareForODM(files[i]);
             await uploadOne(odm_uuid, prepared);
           } catch (e: any) {
             errors.push(e?.message ?? String(e));
