@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Trash2, ArrowRight, Leaf, Box } from "lucide-react";
+import { Plus, Trash2, ArrowRight, Leaf, Map as MapIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -67,7 +67,7 @@ export default function Fields() {
           <h1 className="font-display text-3xl">Fields</h1>
           <p className="text-muted-foreground max-w-2xl">
             Start by creating a field. Then upload drone images for that field — we'll process them with OpenDroneMap
-            and build a 3D model you can review, scan after scan.
+            and build a tiled orthomosaic you can review, scan after scan.
           </p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
@@ -96,7 +96,7 @@ export default function Fields() {
           <Leaf className="h-10 w-10 mx-auto text-primary" />
           <div className="font-display text-xl">No fields yet</div>
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
-            Every scan and 3D model in AcreSpray lives inside a field. Create your first field to start.
+            Every scan and orthomosaic in AcreSpray lives inside a field. Create your first field to start.
           </p>
           <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Create your first field</Button>
         </Card>
@@ -122,7 +122,7 @@ export default function Fields() {
                 {c?.total ? (
                   <>
                     <Badge variant="outline" className="gap-1">
-                      <Box className="h-3 w-3" /> {c.total} scan{c.total === 1 ? "" : "s"}
+                      <MapIcon className="h-3 w-3" /> {c.total} scan{c.total === 1 ? "" : "s"}
                     </Badge>
                     {c.completed > 0 && (
                       <Badge variant="outline" className="border-emerald-500 text-emerald-600">

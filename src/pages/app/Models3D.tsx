@@ -6,9 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Box, Loader2, AlertCircle, Download, RefreshCcw, Trash2 } from "lucide-react";
+import { Upload, Map as MapIcon, Loader2, AlertCircle, Download, RefreshCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Model3DViewer } from "@/components/app/Model3DViewer";
 
 type Task = {
   id: string;
@@ -29,6 +28,23 @@ const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
 async function authHeader() {
   const { data } = await supabase.auth.getSession();
   return data.session?.access_token ? `Bearer ${data.session.access_token}` : "";
+}
+
+async function uploadOne(odm_uuid: string, file: File): Promise<void> {
+  const send = async () => {
+    const fd = new FormData();
+    fd.append("images", file, file.name);
+    const upRes = await fetch(`${FN_BASE}/odm-submit`, {
+      method: "POST",
+      headers: { Authorization: await authHeader(), "x-action": "upload", "x-odm-uuid": odm_uuid },
+      body: fd,
+    });
+    if (!upRes.ok) {
+      const j = await upRes.json().catch(() => ({}));
+      throw new Error(j.error ?? "Upload failed");
+    }
+  };
+  try { await send(); } catch { await send(); }
 }
 
 // Downscale a drone image client-side so it fits under the edge function body limit
@@ -63,8 +79,6 @@ export default function Models3D() {
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
-  const [viewing, setViewing] = useState<Task | null>(null);
-  const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
 
   const loadFields = async () => {
@@ -109,16 +123,9 @@ export default function Models3D() {
 
     setBusy(true);
     setUploadProgress({ done: 0, total: files.length });
-    const auth = await authHeader();
+    let auth = await authHeader();
 
     try {
-      // 0. DOWNSCALE locally - keeps each image well under the edge function body limit
-      //    while preserving feature detail for photogrammetry.
-      const prepared: File[] = [];
-      for (let i = 0; i < files.length; i++) {
-        prepared.push(await downscaleImage(files[i]));
-      }
-
       // 1. INIT
       const initRes = await fetch(`${FN_BASE}/odm-submit`, {
         method: "POST",
@@ -126,7 +133,7 @@ export default function Models3D() {
           Authorization: auth,
           "x-action": "init",
           "x-field-id": fieldId || "",
-          "x-image-count": String(prepared.length),
+          "x-image-count": String(files.length),
         },
       });
       const initJson = await initRes.json();
@@ -134,23 +141,16 @@ export default function Models3D() {
       const { odm_uuid } = initJson;
       await loadTasks();
 
-      // 2. UPLOAD each image (sequential to stay friendly to ODM)
-      for (let i = 0; i < prepared.length; i++) {
-        const fd = new FormData();
-        fd.append("images", prepared[i], prepared[i].name);
-        const upRes = await fetch(`${FN_BASE}/odm-submit`, {
-          method: "POST",
-          headers: { Authorization: auth, "x-action": "upload", "x-odm-uuid": odm_uuid },
-          body: fd,
-        });
-        if (!upRes.ok) {
-          const j = await upRes.json().catch(() => ({}));
-          throw new Error(j.error ?? `Upload failed at image ${i + 1}`);
-        }
-        setUploadProgress({ done: i + 1, total: prepared.length });
+      // 2. UPLOAD each image sequentially. Prepare one file at a time so large batches don't exhaust browser memory.
+      for (let i = 0; i < files.length; i++) {
+        const prepared = await downscaleImage(files[i]);
+        await uploadOne(odm_uuid, prepared);
+        setUploadProgress({ done: i + 1, total: files.length });
       }
 
       // 3. COMMIT
+      await supabase.auth.refreshSession().catch(() => {});
+      auth = await authHeader();
       const cRes = await fetch(`${FN_BASE}/odm-submit`, {
         method: "POST",
         headers: { Authorization: auth, "Content-Type": "application/json", "x-action": "commit" },
@@ -171,12 +171,9 @@ export default function Models3D() {
     }
   };
 
-  const openViewer = async (t: Task) => {
-    if (!t.output_path) return;
-    setViewing(t);
-    const { data, error } = await supabase.storage.from("scans").createSignedUrl(t.output_path, 60 * 60);
-    if (error) { toast.error(error.message); return; }
-    setSignedUrl(data.signedUrl);
+  const openOrthomosaic = (t: Task) => {
+    if (!t.odm_uuid) return toast.error("Orthomosaic is not available yet");
+    window.open(`/app/orthomosaic/${t.id}`, "_blank", "noopener");
   };
 
   const downloadZip = async (t: Task) => {
@@ -210,9 +207,9 @@ export default function Models3D() {
   return (
     <div className="p-8 space-y-6">
       <header>
-        <h1 className="font-display text-3xl">3D Field Models</h1>
+        <h1 className="font-display text-3xl">Orthomosaic Outputs</h1>
         <p className="text-muted-foreground">
-          Upload a batch of drone images. We send them to our WebODM processing node and build a true 3D model from your field.
+          Upload a batch of drone images. We send them to our WebODM processing node and build a tiled orthomosaic from your field.
           Real processing - times vary from ~10 minutes to several hours depending on image count and detail.
         </p>
       </header>
@@ -223,7 +220,7 @@ export default function Models3D() {
           <div>
             <label className="text-xs uppercase tracking-wider text-muted-foreground">Field (optional)</label>
             <Select value={fieldId} onValueChange={setFieldId}>
-              <SelectTrigger><SelectValue placeholder="Link this model to one of your fields" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Link this orthomosaic to one of your fields" /></SelectTrigger>
               <SelectContent>
                 {fields.length === 0 && <div className="px-3 py-2 text-xs text-muted-foreground">No saved fields - add one in the Fields page first.</div>}
                 {fields.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
@@ -257,7 +254,7 @@ export default function Models3D() {
 
         <Button onClick={submit} disabled={busy || !files.length || !user}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          {busy ? "Submitting..." : "Start 3D reconstruction"}
+          {busy ? "Submitting..." : "Start orthomosaic processing"}
         </Button>
 
         <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 p-3 rounded border border-dashed">
@@ -274,7 +271,7 @@ export default function Models3D() {
         <div className="text-xs uppercase tracking-wider text-muted-foreground">Your reconstructions ({tasks.length})</div>
         {tasks.length === 0 && (
           <Card className="p-8 text-center text-sm text-muted-foreground">
-            No 3D models yet. Upload a batch of drone images above to get started.
+            No orthomosaics yet. Upload a batch of drone images above to get started.
           </Card>
         )}
         {tasks.map(t => (
@@ -282,8 +279,8 @@ export default function Models3D() {
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
                 <div className="font-medium flex items-center gap-2">
-                  <Box className="h-4 w-4 text-primary" />
-                  Model from {t.image_count} image{t.image_count === 1 ? "" : "s"}
+                  <MapIcon className="h-4 w-4 text-primary" />
+                  Orthomosaic from {t.image_count} image{t.image_count === 1 ? "" : "s"}
                 </div>
                 <div className="text-xs text-muted-foreground mt-0.5">
                   Created {new Date(t.created_at).toLocaleString()}
@@ -309,7 +306,7 @@ export default function Models3D() {
             <div className="flex gap-2 mt-3 flex-wrap">
               {t.status === "completed" && (
                 <>
-                  <Button size="sm" onClick={() => openViewer(t)}><Box className="h-3.5 w-3.5" /> View 3D model</Button>
+                  <Button size="sm" onClick={() => openOrthomosaic(t)}><MapIcon className="h-3.5 w-3.5" /> View</Button>
                   <Button size="sm" variant="outline" onClick={() => downloadZip(t)}><Download className="h-3.5 w-3.5" /> Download archive</Button>
                 </>
               )}
@@ -318,15 +315,6 @@ export default function Models3D() {
               )}
               <Button size="sm" variant="ghost" onClick={() => remove(t.id)}><Trash2 className="h-3.5 w-3.5" /> Remove</Button>
             </div>
-
-            {viewing?.id === t.id && signedUrl && (
-              <div className="mt-4">
-                <Model3DViewer zipUrl={signedUrl} height={460} />
-                <div className="text-[11px] text-muted-foreground mt-2">
-                  Drag to orbit · scroll to zoom · right-click to pan. Geometry only - textures available in the downloaded archive.
-                </div>
-              </div>
-            )}
           </Card>
         ))}
       </div>

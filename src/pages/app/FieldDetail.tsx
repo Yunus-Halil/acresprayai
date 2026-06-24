@@ -7,11 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
-  Upload, Box, Loader2, AlertCircle, Download, RefreshCcw, Trash2,
+  Upload, Loader2, AlertCircle, Download, RefreshCcw, Trash2,
   ArrowLeft, Map as MapIcon, Leaf,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Model3DViewer } from "@/components/app/Model3DViewer";
 
 type Task = {
   id: string; field_id: string; odm_uuid: string | null;
@@ -25,7 +24,7 @@ type Field = {
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
-const UPLOAD_CONCURRENCY = 6;
+const UPLOAD_CONCURRENCY = 2;
 
 async function authHeader() {
   const { data } = await supabase.auth.getSession();
@@ -62,8 +61,6 @@ export default function FieldDetail() {
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<"idle" | "downscaling" | "uploading" | "committing">("idle");
   const [phaseProgress, setPhaseProgress] = useState<{ done: number; total: number } | null>(null);
-  const [viewing, setViewing] = useState<Task | null>(null);
-  const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [orthoAvailable, setOrthoAvailable] = useState<Record<string, boolean>>({});
   const pollRef = useRef<number | null>(null);
 
@@ -152,23 +149,14 @@ export default function FieldDetail() {
       await supabase.auth.refreshSession().catch(() => {});
       let auth = await authHeader();
 
-      // Phase 1: downscale with visible progress
-      setPhase("downscaling");
-      setPhaseProgress({ done: 0, total: files.length });
-      const prepared: File[] = [];
-      for (let i = 0; i < files.length; i++) {
-        prepared.push(await downscaleImage(files[i]));
-        setPhaseProgress({ done: i + 1, total: files.length });
-      }
-
-      // Phase 2: init task on ODM
+      // Phase 1: init task on ODM. Do not pre-load all images into memory.
       const initRes = await fetch(`${FN_BASE}/odm-submit`, {
         method: "POST",
         headers: {
           Authorization: auth,
           "x-action": "init",
           "x-field-id": fieldId,
-          "x-image-count": String(prepared.length),
+          "x-image-count": String(files.length),
         },
       });
       const initJson = await initRes.json();
@@ -176,19 +164,20 @@ export default function FieldDetail() {
       const { odm_uuid } = initJson;
       await loadTasks();
 
-      // Phase 3: parallel uploads with progress + per-file retry
+      // Phase 2: upload in tiny batches. Each image is prepared just-in-time and released after upload.
       setPhase("uploading");
       let done = 0;
-      setPhaseProgress({ done: 0, total: prepared.length });
+      setPhaseProgress({ done: 0, total: files.length });
       let cursor = 0;
-      const total = prepared.length;
+      const total = files.length;
       const errors: string[] = [];
       const worker = async () => {
         while (true) {
           const i = cursor++;
           if (i >= total) return;
           try {
-            await uploadOne(odm_uuid, prepared[i]);
+            const prepared = await downscaleImage(files[i]);
+            await uploadOne(odm_uuid, prepared);
           } catch (e: any) {
             errors.push(e?.message ?? String(e));
           }
@@ -199,7 +188,7 @@ export default function FieldDetail() {
       await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, worker));
       if (errors.length) throw new Error(`${errors.length} image upload(s) failed. First: ${errors[0]}`);
 
-      // Phase 4: commit
+      // Phase 3: commit
       setPhase("committing");
       // Token may have expired during a long upload - refresh before the final call.
       await supabase.auth.refreshSession().catch(() => {});
@@ -222,14 +211,6 @@ export default function FieldDetail() {
       setPhase("idle");
       setPhaseProgress(null);
     }
-  };
-
-  const openViewer = async (t: Task) => {
-    if (!t.output_path) return;
-    setViewing(t);
-    const { data, error } = await supabase.storage.from("scans").createSignedUrl(t.output_path, 60 * 60);
-    if (error) { toast.error(error.message); return; }
-    setSignedUrl(data.signedUrl);
   };
 
   const downloadZip = async (t: Task) => {
@@ -308,7 +289,7 @@ export default function FieldDetail() {
             <div className="font-display text-2xl">{active}</div>
           </div>
           <div className="rounded border p-3">
-            <div className="text-xs text-muted-foreground">3D models ready</div>
+            <div className="text-xs text-muted-foreground">Orthomosaics ready</div>
             <div className="font-display text-2xl">{completed}</div>
           </div>
         </div>
@@ -320,7 +301,7 @@ export default function FieldDetail() {
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Step 2</div>
           <h2 className="font-display text-xl">Upload drone images for this field</h2>
           <p className="text-sm text-muted-foreground">
-            Drag a folder of overlapping drone images. We'll send them to OpenDroneMap, build a 3D reconstruction,
+            Drag a folder of overlapping drone images. We'll send them to OpenDroneMap, build an orthomosaic,
             and save the result as a scan tied to <strong>{field.name}</strong>.
           </p>
         </div>
@@ -354,7 +335,7 @@ export default function FieldDetail() {
 
         <Button onClick={submit} disabled={busy || !files.length || !user}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          {busy ? "Submitting..." : "Start scan & 3D reconstruction"}
+          {busy ? "Submitting..." : "Start scan & orthomosaic"}
         </Button>
 
         <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 p-3 rounded border border-dashed">
@@ -382,7 +363,7 @@ export default function FieldDetail() {
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
                 <div className="font-medium flex items-center gap-2">
-                  <Box className="h-4 w-4 text-primary" />
+                  <MapIcon className="h-4 w-4 text-primary" />
                   Scan · {t.image_count} image{t.image_count === 1 ? "" : "s"}
                 </div>
                 <div className="text-xs text-muted-foreground mt-0.5">
@@ -411,10 +392,9 @@ export default function FieldDetail() {
                 <>
                   {t.odm_uuid && orthoAvailable[t.odm_uuid] && (
                     <Button size="sm" onClick={() => openOrthomosaic(t)}>
-                      <MapIcon className="h-3.5 w-3.5" /> View Orthomosaic
+                      <MapIcon className="h-3.5 w-3.5" /> View
                     </Button>
                   )}
-                  <Button size="sm" onClick={() => openViewer(t)}><Box className="h-3.5 w-3.5" /> View 3D model</Button>
                   <Button size="sm" variant="outline" onClick={() => downloadZip(t)}><Download className="h-3.5 w-3.5" /> Download</Button>
                 </>
               )}
@@ -423,15 +403,6 @@ export default function FieldDetail() {
               )}
               <Button size="sm" variant="ghost" onClick={() => removeTask(t.id)}><Trash2 className="h-3.5 w-3.5" /> Remove</Button>
             </div>
-
-            {viewing?.id === t.id && signedUrl && (
-              <div className="mt-4">
-                <Model3DViewer zipUrl={signedUrl} height={460} />
-                <div className="text-[11px] text-muted-foreground mt-2">
-                  Drag to orbit · scroll to zoom · right-click to pan.
-                </div>
-              </div>
-            )}
           </Card>
         ))}
       </div>
