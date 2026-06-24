@@ -37,6 +37,7 @@ type Props = {
   zones: ZoneShape[];
   anomalies?: AnomalyShape[];
   drawing: boolean;
+  draftRing?: LatLng[];
   onDraftComplete?: (ring: LatLng[]) => void;
   onDrawCancel?: () => void;
   onZoneClick?: (id: string) => void;
@@ -48,6 +49,7 @@ const sevColor = (s: AnomalyShape["severity"]) =>
 
 export default function PolygonMap({
   height = 520, center, overlay, ndviOverlay, zones, anomalies = [],
+  draftRing = [],
   drawing, onDraftComplete, onDrawCancel, onZoneClick, onZoneEdit,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -181,7 +183,14 @@ export default function PolygonMap({
       poly.bindTooltip(a.label, { permanent: false, direction: "top" });
       group.addLayer(poly);
     });
-  }, [zones, anomalies, onZoneClick]);
+
+    if (draftRing.length >= 3) {
+      const poly = L.polygon(draftRing.map(p => [p.lat, p.lng] as [number, number]), {
+        color: "#38bdf8", weight: 2, fillOpacity: 0.25, dashArray: "5 5",
+      });
+      group.addLayer(poly);
+    }
+  }, [zones, anomalies, onZoneClick, draftRing]);
 
   return (
     <>
