@@ -106,12 +106,14 @@ export default function OrthomosaicViewer() {
 
   useEffect(() => {
     (async () => {
+      console.log("[OrthoViewer] taskId from route:", taskId);
       const { data: s } = await supabase.auth.getSession();
       if (!s.session) { setErr("Please sign in."); return; }
       setToken(s.session.access_token);
 
       const { data: t } = await supabase.from("odm_tasks")
         .select("odm_uuid, field_id, created_at").eq("id", taskId).maybeSingle();
+      console.log("[OrthoViewer] task row:", t);
       if (!t?.odm_uuid) { setErr("Scan not found"); return; }
       setTask(t as TaskRow);
 
