@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Search, Eye, EyeOff,
   Layers, Folder, Image as ImageIcon, Mountain, Ruler, Settings,
-  Camera, Maximize2, Plus, Minus, Globe, Loader2, MapPin,
+  Camera, Maximize2, Plus, Minus, Loader2, MapPin,
 } from "lucide-react";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -100,7 +100,6 @@ export default function OrthomosaicViewer() {
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
-  const [basemap, setBasemap] = useState<"standard" | "topo">("standard");
   const [cursor, setCursor] = useState<{ lat: number; lng: number; z: number }>({
     lat: NaN, lng: NaN, z: 2,
   });
@@ -141,10 +140,6 @@ export default function OrthomosaicViewer() {
     if (!task?.odm_uuid || !token) return null;
     return `${FN_BASE}/odm-asset?uuid=${task.odm_uuid}&token=${encodeURIComponent(token)}&tile={z}/{x}/{y}`;
   }, [task, token]);
-
-  const osmUrl = basemap === "standard"
-    ? "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-    : "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png";
 
   if (err) {
     return (
@@ -236,23 +231,18 @@ export default function OrthomosaicViewer() {
             center={[0, 0]}
             zoom={2}
             minZoom={2}
-            maxZoom={24}
+              maxZoom={22}
             preferCanvas
             zoomControl={false}
             attributionControl={false}
             style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
           >
-            <TileLayer
-              url={osmUrl}
-              maxNativeZoom={basemap === "standard" ? 19 : 17}
-              maxZoom={24}
-            />
             {layers.orthomosaic && tileUrl && (
               <TileLayer
                 url={tileUrl}
                 opacity={1.0}
-                maxNativeZoom={maxNative}
-                maxZoom={24}
+                maxNativeZoom={Math.min(20, maxNative)}
+                maxZoom={22}
                 tileSize={256}
                 keepBuffer={1}
                 updateWhenIdle
@@ -266,12 +256,6 @@ export default function OrthomosaicViewer() {
 
           {/* Bottom toolbar (left side) */}
           <div className="absolute bottom-12 left-4 z-[1000] flex gap-1.5">
-            <button
-              onClick={() => setBasemap(b => b === "standard" ? "topo" : "standard")}
-              title={`Basemap: ${basemap}`}
-              className="h-9 w-9 grid place-items-center rounded-md bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 border border-neutral-700">
-              <Globe className="h-4 w-4" />
-            </button>
             <button title="Measure"
               onClick={() => setRightOpen(true)}
               className="h-9 w-9 grid place-items-center rounded-md bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 border border-neutral-700">
@@ -335,7 +319,7 @@ export default function OrthomosaicViewer() {
             : "—, —"}
         </div>
         <div className="font-mono">Zoom {Math.round(cursor.z)}</div>
-        <div className="truncate">© OpenStreetMap contributors · Orthomosaic via OpenDroneMap</div>
+        <div className="truncate">Orthomosaic tiles via OpenDroneMap</div>
       </div>
 
       {/* tiny inline styles for the right panel inputs */}
