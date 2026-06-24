@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { MapContainer, TileLayer } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { supabase } from "@/integrations/supabase/client";
@@ -30,7 +30,7 @@ export default function OrthomosaicViewer() {
     return (
       <div className="h-screen flex flex-col items-center justify-center gap-3 text-sm">
         <div className="text-destructive">{err}</div>
-        <Link to="/app/fields" className="text-primary underline">Back to fields</Link>
+        <a href="/app/fields" className="text-primary underline">Back to fields</a>
       </div>
     );
   }
@@ -46,13 +46,13 @@ export default function OrthomosaicViewer() {
 
   return (
     <div className="h-screen w-screen relative">
-      <Link
-        to={-1 as any}
-        onClick={(e) => { e.preventDefault(); window.history.back(); }}
+      <button
+        type="button"
+        onClick={() => window.history.back()}
         className="absolute top-3 left-3 z-[1000] bg-background/90 backdrop-blur px-3 py-1.5 rounded-md border text-sm inline-flex items-center gap-1 shadow"
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Back
-      </Link>
+      </button>
       <MapContainer center={[0, 0]} zoom={2} style={{ height: "100%", width: "100%" }}>
         <TileLayer
           attribution='&copy; OpenStreetMap'
