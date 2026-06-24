@@ -49,6 +49,14 @@ type Props = {
 const sevColor = (s: AnomalyShape["severity"]) =>
   s === "high" ? "#ef4444" : s === "medium" ? "#f59e0b" : "#10b981";
 
+const samePoint = (a: LatLng, b: LatLng) => Math.abs(a.lat - b.lat) < 1e-10 && Math.abs(a.lng - b.lng) < 1e-10;
+const cleanRing = (ring: LatLng[]) => {
+  if (ring.length > 1 && samePoint(ring[0], ring[ring.length - 1])) return ring.slice(0, -1);
+  return ring;
+};
+const polygonRing = (poly: L.Polygon): LatLng[] =>
+  cleanRing((poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng })));
+
 export default function PolygonMap({
   height = 520, center, overlay, ndviOverlay, zones, anomalies = [],
   draftRing = [], selectedZoneId = null, editingZoneId = null,
@@ -83,7 +91,7 @@ export default function PolygonMap({
 
     map.on("pm:create", (e: any) => {
       const layer = e.layer as L.Polygon;
-      const latlngs = (layer.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+      const latlngs = polygonRing(layer);
       // Remove Geoman's temporary layer — parent re-renders the zone after save
       map.removeLayer(layer);
       onDraftCompleteRef.current?.(latlngs);
@@ -97,8 +105,10 @@ export default function PolygonMap({
   // Keep latest callback refs so the persistent map listener uses fresh closures
   const onDraftCompleteRef = useRef(onDraftComplete);
   const onZoneEditRef = useRef(onZoneEdit);
+  const onZoneClickRef = useRef(onZoneClick);
   useEffect(() => { onDraftCompleteRef.current = onDraftComplete; }, [onDraftComplete]);
   useEffect(() => { onZoneEditRef.current = onZoneEdit; }, [onZoneEdit]);
+  useEffect(() => { onZoneClickRef.current = onZoneClick; }, [onZoneClick]);
 
   // Toggle Geoman draw mode based on `drawing` prop
   useEffect(() => {
@@ -161,7 +171,7 @@ export default function PolygonMap({
         color, weight: isSelected || isEditing ? 3 : 2, fillOpacity: isEditing ? 0.15 : 0.2,
       });
       poly.bindTooltip(`${z.name} · ${z.crop}`, { permanent: true, direction: "center", className: "zone-label" });
-      if (onZoneClick) poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onZoneClick(z.id); });
+      poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onZoneClickRef.current?.(z.id); });
 
       group.addLayer(poly);
       if (isEditing) poly.bringToFront();
@@ -176,10 +186,7 @@ export default function PolygonMap({
           draggable: true,
           hideMiddleMarkers: true,
         });
-        poly.on("pm:edit pm:markerdragend pm:dragend", () => {
-          const latlngs = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
-          onZoneEditRef.current?.(z.id, latlngs);
-        });
+        poly.on("pm:markerdragend pm:dragend", () => onZoneEditRef.current?.(z.id, polygonRing(poly)));
       }
 
       zoneLayersRef.current.set(z.id, poly);
@@ -200,7 +207,7 @@ export default function PolygonMap({
       });
       group.addLayer(poly);
     }
-  }, [zones, anomalies, onZoneClick, draftRing, selectedZoneId, editingZoneId]);
+  }, [zones, anomalies, draftRing, selectedZoneId, editingZoneId]);
 
   return (
     <>
