@@ -12,6 +12,7 @@ import {
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
+const TITILER = "https://titiler.xyz";
 
 type TaskRow = { odm_uuid: string | null; field_id: string; created_at: string };
 type FieldRow = { name: string };
@@ -92,6 +93,7 @@ export default function OrthomosaicViewer() {
   const [token, setToken] = useState<string | null>(null);
   const [bounds, setBounds] = useState<L.LatLngBoundsExpression | null>(null);
   const [maxNative, setMaxNative] = useState<number>(20);
+  const [cogUrl, setCogUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const [layers, setLayers] = useState<LayerState>({
@@ -121,30 +123,37 @@ export default function OrthomosaicViewer() {
         .select("name").eq("id", t.field_id).maybeSingle();
       if (f) setField(f as FieldRow);
 
-      // Pull ortho extent so we can fit map bounds
+      // 1) Mint a signed URL to the orthophoto.tif sitting in Supabase Storage.
+      // 2) Hand that URL to TiTiler to get bounds + tiles.
       try {
-        const r = await fetch(
-          `${FN_BASE}/odm-asset?uuid=${t.odm_uuid}&info=ortho`,
-          { headers: { Authorization: `Bearer ${s.session.access_token}` } },
-        );
+        const r = await fetch(`${FN_BASE}/ortho-url?task_id=${t.id ?? taskId}`, {
+          headers: { Authorization: `Bearer ${s.session.access_token}` },
+        });
         const j = await r.json();
-        // TileJSON: bounds = [west, south, east, north]; metadata: bounds.value = same
-        const v: any =
-          (Array.isArray(j?.bounds) && j.bounds.length === 4 && j.bounds) ||
-          (Array.isArray(j?.bounds?.value) && j.bounds.value.length === 4 && j.bounds.value) ||
-          null;
-        if (v) {
-          setBounds([[v[1], v[0]], [v[3], v[2]]] as L.LatLngBoundsExpression);
+        if (!r.ok || !j?.url) {
+          setErr(j?.error ?? "Orthomosaic not available yet.");
+          return;
         }
-        if (typeof j?.maxzoom === "number") setMaxNative(Math.min(20, j.maxzoom));
-      } catch { /* fitBounds is optional */ }
+        setCogUrl(j.url);
+
+        const infoR = await fetch(`${TITILER}/cog/info?url=${encodeURIComponent(j.url)}`);
+        const info = await infoR.json();
+        const b: any = info?.bounds;
+        if (Array.isArray(b) && b.length === 4) {
+          setBounds([[b[1], b[0]], [b[3], b[2]]] as L.LatLngBoundsExpression);
+        }
+        if (typeof info?.maxzoom === "number") setMaxNative(Math.min(22, info.maxzoom));
+      } catch (e) {
+        console.error("[OrthoViewer] info failed", e);
+        setErr("Could not load orthomosaic metadata.");
+      }
     })();
   }, [taskId]);
 
   const tileUrl = useMemo(() => {
-    if (!task?.odm_uuid || !token) return null;
-    return `${FN_BASE}/odm-asset?uuid=${task.odm_uuid}&token=${encodeURIComponent(token)}&tile={z}/{x}/{y}`;
-  }, [task, token]);
+    if (!cogUrl) return null;
+    return `${TITILER}/cog/tiles/{z}/{x}/{y}.png?url=${encodeURIComponent(cogUrl)}`;
+  }, [cogUrl]);
 
   if (err) {
     return (
@@ -154,7 +163,7 @@ export default function OrthomosaicViewer() {
       </div>
     );
   }
-  if (!task || !token) {
+  if (!task || !token || !tileUrl) {
     return (
       <div className="h-screen w-screen bg-neutral-950 flex items-center justify-center text-sm text-neutral-400 gap-2">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading orthomosaic…
