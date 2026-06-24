@@ -388,7 +388,24 @@ Deno.serve(async (req) => {
     if (sErr || !signed?.signedUrl) {
       return json({ error: sErr?.message ?? "sign failed" }, 500);
     }
-    return json({ url: signed.signedUrl, expires_in: SIGNED_TTL });
+
+    // Fetch TileJSON from titiler server-side to avoid browser CORS on titiler.xyz.
+    // The tile URL template embeds the (fresh) signed URL, so Leaflet can request
+    // tiles directly as <img> requests (no CORS preflight on image GETs).
+    let tilejson: any = null;
+    try {
+      const tjUrl = `https://titiler.xyz/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(signed.signedUrl)}&tilesize=256`;
+      const tjRes = await fetch(tjUrl);
+      const tjText = await tjRes.text();
+      try { tilejson = tjText ? JSON.parse(tjText) : null; } catch { tilejson = null; }
+      if (!tjRes.ok) {
+        console.warn("[ortho-url] titiler tilejson failed:", tjRes.status, tjText.slice(0, 400));
+      }
+    } catch (e) {
+      console.warn("[ortho-url] titiler tilejson error:", (e as Error)?.message);
+    }
+
+    return json({ url: signed.signedUrl, expires_in: SIGNED_TTL, tilejson });
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e) }, 500);
   }
