@@ -290,9 +290,9 @@ export default function OrthomosaicViewer() {
               <div className="pt-2 mt-2 border-t border-neutral-800">
                 <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Measurements</div>
                 <Stat label="2D area" value="—" />
-                <Stat label="3D area" value="—" />
+                <Stat label="Area" value="—" />
                 <Stat label="2D perimeter" value="—" />
-                <Stat label="3D perimeter" value="—" />
+                <Stat label="Perimeter" value="—" />
                 <Stat label="Min elevation" value="—" />
                 <Stat label="Max elevation" value="—" />
                 <Stat label="Elevation difference" value="—" />
