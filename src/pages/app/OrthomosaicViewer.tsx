@@ -97,7 +97,6 @@ export default function OrthomosaicViewer() {
   const [layers, setLayers] = useState<LayerState>({
     annotations: false, design: false, orthomosaic: true, dsm: false,
   });
-  const [basemap, setBasemap] = useState<"osm" | "sat">("sat");
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
@@ -107,12 +106,14 @@ export default function OrthomosaicViewer() {
 
   useEffect(() => {
     (async () => {
+      console.log("[OrthoViewer] taskId from route:", taskId);
       const { data: s } = await supabase.auth.getSession();
       if (!s.session) { setErr("Please sign in."); return; }
       setToken(s.session.access_token);
 
       const { data: t } = await supabase.from("odm_tasks")
         .select("odm_uuid, field_id, created_at").eq("id", taskId).maybeSingle();
+      console.log("[OrthoViewer] task row:", t);
       if (!t?.odm_uuid) { setErr("Scan not found"); return; }
       setTask(t as TaskRow);
 
@@ -253,20 +254,12 @@ export default function OrthomosaicViewer() {
                 updateWhenZooming={false}
               />
             )}
-            {/* Basemap underneath so user always sees something */}
-            {basemap === "osm" ? (
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                maxZoom={19}
-                zIndex={0}
-              />
-            ) : (
-              <TileLayer
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                maxZoom={19}
-                zIndex={0}
-              />
-            )}
+            {/* OSM basemap underneath */}
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              maxZoom={19}
+              zIndex={0}
+            />
             <FitBounds bounds={bounds} />
             <MouseReadout onMove={(lat, lng, z) => setCursor({ lat, lng, z })} />
             <MapControls fitTo={bounds} />
