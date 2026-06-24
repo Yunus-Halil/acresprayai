@@ -253,13 +253,20 @@ export default function OrthomosaicViewer() {
         setPending(null);
         setCogUrl(j.url);
 
-        const infoR = await fetch(`${TITILER}/cog/info?url=${encodeURIComponent(j.url)}`);
-        const info = await infoR.json();
-        const b: any = info?.bounds;
+        // Ask TiTiler for a WebMercator TileJSON. It returns:
+        //  - bounds in WGS84 (what Leaflet wants)
+        //  - the canonical tile URL template (path differs across TiTiler versions)
+        //  - min/max native zoom
+        const tjR = await fetch(
+          `${TITILER}/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(j.url)}&tilesize=256`,
+        );
+        const tj = await tjR.json();
+        const b: any = tj?.bounds;
         if (Array.isArray(b) && b.length === 4) {
           setBounds([[b[1], b[0]], [b[3], b[2]]] as L.LatLngBoundsExpression);
         }
-        if (typeof info?.maxzoom === "number") setMaxNative(Math.min(22, info.maxzoom));
+        if (Array.isArray(tj?.tiles) && tj.tiles[0]) setTileTemplate(tj.tiles[0]);
+        if (typeof tj?.maxzoom === "number") setMaxNative(Math.min(22, tj.maxzoom));
       } catch (e) {
         console.error("[OrthoViewer] info failed", e);
         setErr("Could not load orthomosaic metadata.");
