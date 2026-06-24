@@ -37,8 +37,8 @@ Deno.serve(async (req) => {
       .createSignedUrl(task.ortho_path, 60 * 15);
     if (sErr || !signed?.signedUrl) return json({ error: "sign failed" }, 500);
 
-    // 1) Get a PNG preview + bounds from TiTiler.
-    const previewUrl = `https://titiler.xyz/cog/preview.png?url=${encodeURIComponent(signed.signedUrl)}&max_size=1024`;
+    // 1) Get a high-res PNG preview + bounds from TiTiler.
+    const previewUrl = `https://titiler.xyz/cog/preview.png?url=${encodeURIComponent(signed.signedUrl)}&max_size=2048`;
     const tjUrl = `https://titiler.xyz/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(signed.signedUrl)}&tilesize=256`;
 
     const [imgRes, tjRes] = await Promise.all([fetch(previewUrl), fetch(tjUrl)]);
@@ -60,8 +60,25 @@ Deno.serve(async (req) => {
     const key = Deno.env.get("LOVABLE_API_KEY");
     if (!key) return json({ error: "Missing LOVABLE_API_KEY" }, 500);
 
-    const system = `You are an agronomy expert analyzing a drone orthomosaic of a farm field.
-You must return STRICT JSON with this exact schema:
+    const system = `You are a precision-agriculture analyst examining a high-resolution drone orthomosaic of a farm field.
+
+Identify and mark with PRECISE polygon coordinates every distinct issue you can see:
+- Bare soil patches (brown/grey areas with no crop cover)
+- Nutrient deficiency zones (yellowing, pale green areas)
+- Waterlogging (dark patches, standing water, saturated soil)
+- Weed pressure (irregular texture different from crop rows)
+- Crop row gaps or poor establishment
+- Pest/disease damage (discolored or wilted patches)
+- Drought stress (uniform fading/curling)
+
+Rules:
+- Be precise. Do NOT group multiple distinct patches into one zone — each separate patch gets its own polygon.
+- Use the EXACT issue type, not a broad category (e.g. "Nitrogen deficiency" not "stress").
+- Recommend a specific treatment with product type and application rate.
+- Estimate affected area in acres assuming the entire visible field is roughly \`field_acres\` acres (use coverage_pct of the full image area).
+- If the field is genuinely healthy and uniform, return zones: [].
+
+Return STRICT JSON with this exact schema:
 {
   "health_score": 0-100,
   "summary": "1-2 sentence overall assessment",
@@ -72,12 +89,13 @@ You must return STRICT JSON with this exact schema:
       "issue": string,
       "severity": "low"|"medium"|"high",
       "coverage_pct": number,
+      "area_acres": number,
       "recommendation": { "action": "spray"|"irrigate"|"reseed"|"fertilize"|"monitor", "product": string, "dose": string, "rationale": string },
       "polygon": [ [x, y], [x, y], ... ]
     }
   ]
 }
-Polygon coordinates MUST be normalized to the image: x ∈ [0,1] from LEFT edge, y ∈ [0,1] from TOP edge. Use 4-12 vertices per polygon. Only include zones that need attention. If the field is healthy, return zones: [].`;
+Polygon coordinates MUST be normalized to the image: x ∈ [0,1] from LEFT edge, y ∈ [0,1] from TOP edge. Use 4-12 vertices per polygon tight to the patch boundary.`;
 
     const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -90,7 +108,7 @@ Polygon coordinates MUST be normalized to the image: x ∈ [0,1] from LEFT edge,
         messages: [
           { role: "system", content: system },
           { role: "user", content: [
-            { type: "text", text: "Analyze this orthomosaic. Identify stressed zones, drought, pest damage, waterlogging, bare patches. Mark polygons over affected areas." },
+            { type: "text", text: "Analyze this high-resolution orthomosaic. Mark every distinct bare patch, nutrient deficiency, waterlogging, weed cluster, row gap, and stress zone with its own tight polygon. Be specific about issue type and treatment." },
             { type: "image_url", image_url: { url: dataUrl } },
           ]},
         ],
