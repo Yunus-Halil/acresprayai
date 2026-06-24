@@ -97,7 +97,6 @@ export default function OrthomosaicViewer() {
   const [layers, setLayers] = useState<LayerState>({
     annotations: false, design: false, orthomosaic: true, dsm: false,
   });
-  const [basemap, setBasemap] = useState<"osm" | "sat">("sat");
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
@@ -253,20 +252,12 @@ export default function OrthomosaicViewer() {
                 updateWhenZooming={false}
               />
             )}
-            {/* Basemap underneath so user always sees something */}
-            {basemap === "osm" ? (
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                maxZoom={19}
-                zIndex={0}
-              />
-            ) : (
-              <TileLayer
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                maxZoom={19}
-                zIndex={0}
-              />
-            )}
+            {/* OSM basemap underneath */}
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              maxZoom={19}
+              zIndex={0}
+            />
             <FitBounds bounds={bounds} />
             <MouseReadout onMove={(lat, lng, z) => setCursor({ lat, lng, z })} />
             <MapControls fitTo={bounds} />
