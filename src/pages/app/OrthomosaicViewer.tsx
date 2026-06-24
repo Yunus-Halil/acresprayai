@@ -395,6 +395,14 @@ export default function OrthomosaicViewer() {
   const taskName = field?.name ?? "Scan";
   const ts = new Date(task.created_at).toLocaleString();
 
+  // Compute field center from bounds so OSM tiles around the ortho load first
+  // (instead of starting at [0,0] and panning over).
+  const b = bounds as unknown as [[number, number], [number, number]];
+  const center: [number, number] = [
+    (b[0][0] + b[1][0]) / 2,
+    (b[0][1] + b[1][1]) / 2,
+  ];
+
   return (
     <div className="h-screen w-screen flex flex-col bg-neutral-950 text-neutral-200 overflow-hidden">
       {/* Topbar */}
@@ -470,9 +478,9 @@ export default function OrthomosaicViewer() {
         {/* Map */}
         <div className="flex-1 relative bg-neutral-950">
           <MapContainer
-            center={[0, 0]}
-            zoom={2}
-            minZoom={2}
+            center={center}
+            zoom={15}
+            minZoom={1}
               maxZoom={22}
             preferCanvas
             zoomControl={false}
