@@ -15,6 +15,86 @@ const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
 const TITILER = "https://titiler.xyz";
 
+// Streams the all.zip from a signed URL, pulls out odm_orthophoto.tif WITHOUT
+// buffering the full archive in RAM, and PUTs the .tif to a Supabase signed
+// upload URL. Designed for the WebODM Lightning case where the edge function
+// can't extract the orthomosaic itself within its 256 MB memory cap.
+async function extractAndUpload(
+  zipUrl: string,
+  upload: { path: string; token: string; bucket: string },
+  onProgress: (stage: string, pct: number) => void,
+): Promise<void> {
+  onProgress("Downloading processing archive…", 1);
+  const res = await fetch(zipUrl);
+  if (!res.ok || !res.body) throw new Error(`zip download failed (${res.status})`);
+  const totalHeader = res.headers.get("content-length");
+  const total = totalHeader ? Number(totalHeader) : 0;
+
+  const matcher = /odm_orthophoto[\\/]odm_orthophoto\.tif$/i;
+  const fallbackMatcher = /(^|[\\/])orthophoto\.tif$/i;
+
+  const tifBytes = await new Promise<Uint8Array>((resolve, reject) => {
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    let matchedName: string | null = null;
+    let done = false;
+
+    const unz = new Unzip((file) => {
+      if (done) return;
+      const primary = matcher.test(file.name);
+      const fallback = !matchedName && fallbackMatcher.test(file.name);
+      if (!primary && !fallback) return;
+      if (primary) { chunks.length = 0; size = 0; }
+      matchedName = file.name;
+      file.ondata = (err, chunk, final) => {
+        if (done) return;
+        if (err) { done = true; reject(err); return; }
+        chunks.push(chunk);
+        size += chunk.byteLength;
+        if (final && file.name === matchedName) {
+          done = true;
+          const out = new Uint8Array(size);
+          let off = 0;
+          for (const c of chunks) { out.set(c, off); off += c.byteLength; }
+          resolve(out);
+        }
+      };
+      file.start();
+    });
+    unz.register(UnzipInflate);
+
+    const reader = res.body!.getReader();
+    let read = 0;
+    (async () => {
+      try {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          if (done) { try { reader.cancel(); } catch { /* noop */ } return; }
+          const { value, done: rdone } = await reader.read();
+          if (rdone) { unz.push(new Uint8Array(0), true); break; }
+          if (value && value.byteLength) {
+            read += value.byteLength;
+            unz.push(value, false);
+            const pct = total ? Math.min(95, (read / total) * 95) : Math.min(95, (read / (50_000_000)) * 95);
+            onProgress(matchedName ? "Extracting orthomosaic…" : "Downloading processing archive…", pct);
+          }
+        }
+        if (!done) reject(new Error("orthomosaic file not found in archive"));
+      } catch (e) {
+        if (!done) { done = true; reject(e as Error); }
+      }
+    })();
+  });
+
+  onProgress("Uploading orthomosaic…", 96);
+  const blob = new Blob([tifBytes], { type: "image/tiff" });
+  const { error } = await supabase.storage
+    .from(upload.bucket)
+    .uploadToSignedUrl(upload.path, upload.token, blob, { contentType: "image/tiff", upsert: true });
+  if (error) throw error;
+  onProgress("Finalizing…", 100);
+}
+
 type TaskRow = { odm_uuid: string | null; field_id: string; created_at: string };
 type FieldRow = { name: string };
 
