@@ -657,6 +657,14 @@ export default function OrthomosaicViewer() {
             <FitBounds bounds={bounds} />
             <MouseReadout onMove={(lat, lng, z) => setCursor({ lat, lng, z })} />
             <MapControls fitTo={bounds} />
+            {showAiZones && analysis?.zones && analysis.zones.length > 0 && (
+              <AiZonesLayer
+                zones={analysis.zones}
+                selectedId={selectedZone}
+                onSelect={setSelectedZone}
+                onUpdate={updateZoneRing}
+              />
+            )}
           </MapContainer>
 
           {/* NDVI legend */}
@@ -701,29 +709,132 @@ export default function OrthomosaicViewer() {
 
         {/* Right panel */}
         {rightOpen && (
-          <aside className="w-[260px] shrink-0 border-l border-neutral-800 bg-neutral-900 flex flex-col">
+          <aside className="w-[320px] shrink-0 border-l border-neutral-800 bg-neutral-900 flex flex-col">
             <div className="px-3 py-2.5 border-b border-neutral-800 flex items-center justify-between">
-              <div className="text-sm font-medium">Polygon</div>
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-sky-400" />
+                <div className="text-sm font-medium">AI Field Analysis</div>
+              </div>
               <button onClick={() => setRightOpen(false)}
                 className="text-neutral-500 hover:text-neutral-200 text-xs">✕</button>
             </div>
             <div className="p-3 space-y-3 text-xs overflow-auto">
-              <Field label="Name"><input className="rp-input" defaultValue="Untitled zone" /></Field>
-              <Field label="Description"><textarea rows={2} className="rp-input resize-none" /></Field>
-              <Field label="Tags"><input className="rp-input" placeholder="add tags…" /></Field>
-              <Field label="Color">
-                <input type="color" defaultValue="#22c55e" className="h-7 w-12 bg-transparent border border-neutral-700 rounded" />
-              </Field>
-              <div className="pt-2 mt-2 border-t border-neutral-800">
-                <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Measurements</div>
-                <Stat label="2D area" value="—" />
-                <Stat label="Area" value="—" />
-                <Stat label="2D perimeter" value="—" />
-                <Stat label="Perimeter" value="—" />
-                <Stat label="Min elevation" value="—" />
-                <Stat label="Max elevation" value="—" />
-                <Stat label="Elevation difference" value="—" />
-              </div>
+              {!analysis && !analyzing && (
+                <>
+                  <p className="text-neutral-400 leading-relaxed">
+                    Run AI vision over this orthomosaic to detect stress, pests, drought and bare patches,
+                    and auto-draw treatment zones you can edit and export as a flight plan.
+                  </p>
+                  <button onClick={runAnalysis}
+                    className="w-full inline-flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-500 text-white rounded px-3 py-2 text-xs font-medium">
+                    <Sparkles className="h-3.5 w-3.5" /> Analyze field
+                  </button>
+                  {analysisErr && <div className="text-red-400">{analysisErr}</div>}
+                </>
+              )}
+              {analyzing && (
+                <div className="flex flex-col items-center gap-2 py-6 text-neutral-300">
+                  <Loader2 className="h-5 w-5 animate-spin text-sky-400" />
+                  <div>Analyzing imagery…</div>
+                  <div className="text-neutral-500 text-[11px]">This usually takes 10-20 seconds.</div>
+                </div>
+              )}
+              {analysis && (
+                <>
+                  <div className="bg-neutral-950 border border-neutral-800 rounded p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-500">Overall health</div>
+                      <button onClick={runAnalysis} className="text-[10px] text-sky-400 hover:underline">Re-run</button>
+                    </div>
+                    <div className="flex items-end gap-2">
+                      <div className={`text-3xl font-semibold ${analysis.health_score >= 70 ? "text-emerald-400" : analysis.health_score >= 40 ? "text-amber-400" : "text-red-400"}`}>
+                        {analysis.health_score}
+                      </div>
+                      <div className="text-neutral-500 text-[11px] mb-1">/ 100</div>
+                    </div>
+                    <div className="h-1.5 bg-neutral-800 rounded mt-2 overflow-hidden">
+                      <div className={`h-full ${analysis.health_score >= 70 ? "bg-emerald-500" : analysis.health_score >= 40 ? "bg-amber-500" : "bg-red-500"}`}
+                        style={{ width: `${analysis.health_score}%` }} />
+                    </div>
+                    {analysis.summary && (
+                      <div className="text-neutral-300 mt-2 leading-relaxed">{analysis.summary}</div>
+                    )}
+                  </div>
+
+                  {analysis.issues.length > 0 && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1.5">Detected issues</div>
+                      <div className="space-y-1.5">
+                        {analysis.issues.map((iss, i) => (
+                          <div key={i} className="bg-neutral-950 border border-neutral-800 rounded p-2">
+                            <div className="flex items-center gap-1.5">
+                              <AlertTriangle className={`h-3 w-3 ${iss.severity === "high" ? "text-red-400" : iss.severity === "medium" ? "text-amber-400" : "text-yellow-400"}`} />
+                              <div className="font-medium text-neutral-200">{iss.label}</div>
+                              <span className="ml-auto text-[10px] uppercase text-neutral-500">{iss.severity}</span>
+                            </div>
+                            {iss.description && <div className="text-neutral-400 mt-1 leading-relaxed">{iss.description}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-500">Treatment zones ({analysis.zones.length})</div>
+                      <label className="flex items-center gap-1 text-[10px] text-neutral-400 cursor-pointer">
+                        <input type="checkbox" checked={showAiZones} onChange={e => setShowAiZones(e.target.checked)}
+                          className="h-3 w-3 accent-sky-500" />
+                        Show on map
+                      </label>
+                    </div>
+                    {analysis.zones.length === 0 ? (
+                      <div className="text-neutral-500 italic">No treatment zones — field looks healthy.</div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {analysis.zones.map((z) => (
+                          <div key={z.id}
+                            onClick={() => setSelectedZone(z.id)}
+                            className={`bg-neutral-950 border rounded p-2 cursor-pointer ${selectedZone === z.id ? "border-sky-600" : "border-neutral-800 hover:border-neutral-700"}`}>
+                            <div className="flex items-center gap-1.5">
+                              <span className="h-2 w-2 rounded-full" style={{ background: sevColor(z.severity) }} />
+                              <div className="font-medium text-neutral-200 truncate">{z.name}</div>
+                              <span className="ml-auto text-[10px] text-neutral-500 font-mono">{z.coverage_pct}%</span>
+                            </div>
+                            <div className="text-neutral-400 mt-0.5">{z.issue}</div>
+                            {z.recommendation && (
+                              <div className="mt-1.5 pt-1.5 border-t border-neutral-800/70 text-neutral-300">
+                                <span className="text-sky-400 font-medium capitalize">{z.recommendation.action}</span>
+                                {z.recommendation.product && <> · {z.recommendation.product}</>}
+                                {z.recommendation.dose && <span className="text-neutral-500"> · {z.recommendation.dose}</span>}
+                                {z.recommendation.rationale && (
+                                  <div className="text-neutral-500 text-[11px] mt-0.5">{z.recommendation.rationale}</div>
+                                )}
+                              </div>
+                            )}
+                            {selectedZone === z.id && (
+                              <button onClick={(e) => { e.stopPropagation(); deleteZone(z.id); }}
+                                className="mt-1.5 text-[10px] text-red-400 hover:underline">Delete zone</button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {analysis.zones.length > 0 && (
+                    <button onClick={exportFlightPlan}
+                      className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded px-3 py-2 text-xs font-medium">
+                      <Download className="h-3.5 w-3.5" /> Export flight plan (GeoJSON)
+                    </button>
+                  )}
+                  {selectedZone && (
+                    <div className="text-[10px] text-neutral-500 italic">
+                      Tip: drag vertices on the map to reshape the selected zone.
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </aside>
         )}
