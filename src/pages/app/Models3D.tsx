@@ -30,6 +30,23 @@ async function authHeader() {
   return data.session?.access_token ? `Bearer ${data.session.access_token}` : "";
 }
 
+async function uploadOne(odm_uuid: string, file: File): Promise<void> {
+  const send = async () => {
+    const fd = new FormData();
+    fd.append("images", file, file.name);
+    const upRes = await fetch(`${FN_BASE}/odm-submit`, {
+      method: "POST",
+      headers: { Authorization: await authHeader(), "x-action": "upload", "x-odm-uuid": odm_uuid },
+      body: fd,
+    });
+    if (!upRes.ok) {
+      const j = await upRes.json().catch(() => ({}));
+      throw new Error(j.error ?? "Upload failed");
+    }
+  };
+  try { await send(); } catch { await send(); }
+}
+
 // Downscale a drone image client-side so it fits under the edge function body limit
 // while preserving enough detail for photogrammetry (long edge 2400px, JPEG q=0.82).
 // EXIF GPS is lost in canvas re-encoding - WebODM still reconstructs from visual features.
@@ -106,16 +123,9 @@ export default function Models3D() {
 
     setBusy(true);
     setUploadProgress({ done: 0, total: files.length });
-    const auth = await authHeader();
+    let auth = await authHeader();
 
     try {
-      // 0. DOWNSCALE locally - keeps each image well under the edge function body limit
-      //    while preserving feature detail for photogrammetry.
-      const prepared: File[] = [];
-      for (let i = 0; i < files.length; i++) {
-        prepared.push(await downscaleImage(files[i]));
-      }
-
       // 1. INIT
       const initRes = await fetch(`${FN_BASE}/odm-submit`, {
         method: "POST",
@@ -123,7 +133,7 @@ export default function Models3D() {
           Authorization: auth,
           "x-action": "init",
           "x-field-id": fieldId || "",
-          "x-image-count": String(prepared.length),
+          "x-image-count": String(files.length),
         },
       });
       const initJson = await initRes.json();
@@ -131,23 +141,16 @@ export default function Models3D() {
       const { odm_uuid } = initJson;
       await loadTasks();
 
-      // 2. UPLOAD each image (sequential to stay friendly to ODM)
-      for (let i = 0; i < prepared.length; i++) {
-        const fd = new FormData();
-        fd.append("images", prepared[i], prepared[i].name);
-        const upRes = await fetch(`${FN_BASE}/odm-submit`, {
-          method: "POST",
-          headers: { Authorization: auth, "x-action": "upload", "x-odm-uuid": odm_uuid },
-          body: fd,
-        });
-        if (!upRes.ok) {
-          const j = await upRes.json().catch(() => ({}));
-          throw new Error(j.error ?? `Upload failed at image ${i + 1}`);
-        }
-        setUploadProgress({ done: i + 1, total: prepared.length });
+      // 2. UPLOAD each image sequentially. Prepare one file at a time so large batches don't exhaust browser memory.
+      for (let i = 0; i < files.length; i++) {
+        const prepared = await downscaleImage(files[i]);
+        await uploadOne(odm_uuid, prepared);
+        setUploadProgress({ done: i + 1, total: files.length });
       }
 
       // 3. COMMIT
+      await supabase.auth.refreshSession().catch(() => {});
+      auth = await authHeader();
       const cRes = await fetch(`${FN_BASE}/odm-submit`, {
         method: "POST",
         headers: { Authorization: auth, "Content-Type": "application/json", "x-action": "commit" },
