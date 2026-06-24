@@ -176,6 +176,7 @@ export default function OrthomosaicViewer() {
   const [bounds, setBounds] = useState<L.LatLngBoundsExpression | null>(null);
   const [maxNative, setMaxNative] = useState<number>(20);
   const [cogUrl, setCogUrl] = useState<string | null>(null);
+  const [tileTemplate, setTileTemplate] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState<{ status: string; progress: number } | null>(null);
   const [extracting, setExtracting] = useState<{ stage: string; pct: number } | null>(null);
@@ -253,13 +254,20 @@ export default function OrthomosaicViewer() {
         setPending(null);
         setCogUrl(j.url);
 
-        const infoR = await fetch(`${TITILER}/cog/info?url=${encodeURIComponent(j.url)}`);
-        const info = await infoR.json();
-        const b: any = info?.bounds;
+        // Ask TiTiler for a WebMercator TileJSON. It returns:
+        //  - bounds in WGS84 (what Leaflet wants)
+        //  - the canonical tile URL template (path differs across TiTiler versions)
+        //  - min/max native zoom
+        const tjR = await fetch(
+          `${TITILER}/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(j.url)}&tilesize=256`,
+        );
+        const tj = await tjR.json();
+        const b: any = tj?.bounds;
         if (Array.isArray(b) && b.length === 4) {
           setBounds([[b[1], b[0]], [b[3], b[2]]] as L.LatLngBoundsExpression);
         }
-        if (typeof info?.maxzoom === "number") setMaxNative(Math.min(22, info.maxzoom));
+        if (Array.isArray(tj?.tiles) && tj.tiles[0]) setTileTemplate(tj.tiles[0]);
+        if (typeof tj?.maxzoom === "number") setMaxNative(Math.min(22, tj.maxzoom));
       } catch (e) {
         console.error("[OrthoViewer] info failed", e);
         setErr("Could not load orthomosaic metadata.");
@@ -273,9 +281,11 @@ export default function OrthomosaicViewer() {
   }, [taskId]);
 
   const tileUrl = useMemo(() => {
+    // Prefer the URL template TiTiler gave us (correct path + version-agnostic).
+    if (tileTemplate) return tileTemplate;
     if (!cogUrl) return null;
-    return `${TITILER}/cog/tiles/{z}/{x}/{y}.png?url=${encodeURIComponent(cogUrl)}`;
-  }, [cogUrl]);
+    return `${TITILER}/cog/WebMercatorQuad/tiles/{z}/{x}/{y}.png?url=${encodeURIComponent(cogUrl)}&tilesize=256`;
+  }, [tileTemplate, cogUrl]);
 
   if (err) {
     return (
