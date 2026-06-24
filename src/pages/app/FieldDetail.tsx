@@ -24,7 +24,7 @@ type Field = {
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
-const UPLOAD_CONCURRENCY = 6;
+const UPLOAD_CONCURRENCY = 2;
 
 async function authHeader() {
   const { data } = await supabase.auth.getSession();
@@ -149,23 +149,14 @@ export default function FieldDetail() {
       await supabase.auth.refreshSession().catch(() => {});
       let auth = await authHeader();
 
-      // Phase 1: downscale with visible progress
-      setPhase("downscaling");
-      setPhaseProgress({ done: 0, total: files.length });
-      const prepared: File[] = [];
-      for (let i = 0; i < files.length; i++) {
-        prepared.push(await downscaleImage(files[i]));
-        setPhaseProgress({ done: i + 1, total: files.length });
-      }
-
-      // Phase 2: init task on ODM
+      // Phase 1: init task on ODM. Do not pre-load all images into memory.
       const initRes = await fetch(`${FN_BASE}/odm-submit`, {
         method: "POST",
         headers: {
           Authorization: auth,
           "x-action": "init",
           "x-field-id": fieldId,
-          "x-image-count": String(prepared.length),
+          "x-image-count": String(files.length),
         },
       });
       const initJson = await initRes.json();
@@ -173,19 +164,20 @@ export default function FieldDetail() {
       const { odm_uuid } = initJson;
       await loadTasks();
 
-      // Phase 3: parallel uploads with progress + per-file retry
+      // Phase 2: upload in tiny batches. Each image is prepared just-in-time and released after upload.
       setPhase("uploading");
       let done = 0;
-      setPhaseProgress({ done: 0, total: prepared.length });
+      setPhaseProgress({ done: 0, total: files.length });
       let cursor = 0;
-      const total = prepared.length;
+      const total = files.length;
       const errors: string[] = [];
       const worker = async () => {
         while (true) {
           const i = cursor++;
           if (i >= total) return;
           try {
-            await uploadOne(odm_uuid, prepared[i]);
+            const prepared = await downscaleImage(files[i]);
+            await uploadOne(odm_uuid, prepared);
           } catch (e: any) {
             errors.push(e?.message ?? String(e));
           }
@@ -196,7 +188,7 @@ export default function FieldDetail() {
       await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, worker));
       if (errors.length) throw new Error(`${errors.length} image upload(s) failed. First: ${errors[0]}`);
 
-      // Phase 4: commit
+      // Phase 3: commit
       setPhase("committing");
       // Token may have expired during a long upload - refresh before the final call.
       await supabase.auth.refreshSession().catch(() => {});
