@@ -87,7 +87,8 @@ async function extractAndUpload(
   });
 
   onProgress("Uploading orthomosaic…", 96);
-  const blob = new Blob([tifBytes], { type: "image/tiff" });
+  const buf = tifBytes.buffer.slice(tifBytes.byteOffset, tifBytes.byteOffset + tifBytes.byteLength) as ArrayBuffer;
+  const blob = new Blob([buf], { type: "image/tiff" });
   const { error } = await supabase.storage
     .from(upload.bucket)
     .uploadToSignedUrl(upload.path, upload.token, blob, { contentType: "image/tiff", upsert: true });
