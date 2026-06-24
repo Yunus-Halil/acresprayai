@@ -127,9 +127,12 @@ export default function OrthomosaicViewer() {
           { headers: { Authorization: `Bearer ${s.session.access_token}` } },
         );
         const j = await r.json();
-        // NodeODM metadata: bounds.value = [west, south, east, north] (lng/lat)
-        const v = j?.bounds?.value;
-        if (Array.isArray(v) && v.length === 4) {
+        // TileJSON: bounds = [west, south, east, north]; metadata: bounds.value = same
+        const v: any =
+          (Array.isArray(j?.bounds) && j.bounds.length === 4 && j.bounds) ||
+          (Array.isArray(j?.bounds?.value) && j.bounds.value.length === 4 && j.bounds.value) ||
+          null;
+        if (v) {
           setBounds([[v[1], v[0]], [v[3], v[2]]] as L.LatLngBoundsExpression);
         }
         if (typeof j?.maxzoom === "number") setMaxNative(Math.min(20, j.maxzoom));
