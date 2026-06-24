@@ -196,6 +196,11 @@ export default function OrthomosaicViewer() {
     let timer: number | null = null;
     const run = async () => {
       console.log("[OrthoViewer] taskId from route:", taskId);
+      // Always start clean - never reuse cached signed URL / bounds / tile template
+      // across viewer opens. The signed URL has a TTL and stale tiles will 403.
+      setCogUrl(null);
+      setTileTemplate(null);
+      setBounds(null);
       const { data: s } = await supabase.auth.getSession();
       if (!s.session) { setErr("Please sign in."); return; }
       setToken(s.session.access_token);
@@ -213,8 +218,11 @@ export default function OrthomosaicViewer() {
       // 1) Mint a signed URL to the orthophoto.tif sitting in Supabase Storage.
       // 2) Hand that URL to TiTiler to get bounds + tiles.
       try {
-        const r = await fetch(`${FN_BASE}/ortho-url?task_id=${taskId}`, {
+        // Cache-bust so neither the browser nor any intermediate CDN serves a
+        // stale ortho-url response (which would contain an expired signed URL).
+        const r = await fetch(`${FN_BASE}/ortho-url?task_id=${taskId}&_t=${Date.now()}`, {
           headers: { Authorization: `Bearer ${s.session.access_token}` },
+          cache: "no-store",
         });
         const j = await r.json();
         if (cancelled) return;
@@ -253,6 +261,7 @@ export default function OrthomosaicViewer() {
         }
         setPending(null);
         setCogUrl(j.url);
+        console.log("[OrthoViewer] fresh signed URL:", typeof j.url === "string" ? `${j.url.slice(0, 80)}…(${j.url.length} chars)` : j.url);
 
         // The edge function already called TiTiler server-side (titiler.xyz blocks
         // browser CORS). Use the TileJSON it returned. Tile requests themselves are
@@ -265,6 +274,9 @@ export default function OrthomosaicViewer() {
         const b: any = tj?.bounds;
         if (Array.isArray(b) && b.length === 4) {
           setBounds([[b[1], b[0]], [b[3], b[2]]] as L.LatLngBoundsExpression);
+          console.log("[OrthoViewer] bounds:", b);
+        } else {
+          console.warn("[OrthoViewer] tilejson missing bounds:", tj);
         }
         if (Array.isArray(tj?.tiles) && tj.tiles[0]) setTileTemplate(tj.tiles[0]);
         if (typeof tj?.maxzoom === "number") setMaxNative(Math.min(22, tj.maxzoom));
@@ -319,7 +331,7 @@ export default function OrthomosaicViewer() {
       </div>
     );
   }
-  if (!task || !token || !tileUrl) {
+  if (!task || !token || !tileUrl || !bounds) {
     return (
       <div className="h-screen w-screen bg-neutral-950 flex items-center justify-center text-sm text-neutral-400 gap-2">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading orthomosaic…
@@ -425,6 +437,7 @@ export default function OrthomosaicViewer() {
             />
             {layers.orthomosaic && tileUrl && (
               <TileLayer
+                key={tileUrl}
                 url={tileUrl}
                 opacity={1.0}
                 maxNativeZoom={Math.min(20, maxNative)}
