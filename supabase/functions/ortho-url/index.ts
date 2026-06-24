@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { Unzip, UnzipInflate } from "https://esm.sh/fflate@0.8.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -108,6 +109,69 @@ async function fetchOrthophoto(uuid: string) {
   return { response: null, tried };
 }
 
+// WebODM Lightning (spark*.webodm.net) does NOT expose individual asset downloads -
+// only `all.zip`. As a fallback we open the zip we already mirrored into the `scans`
+// bucket and extract `odm_orthophoto/odm_orthophoto.tif`.
+// Stream-extract just `odm_orthophoto/odm_orthophoto.tif` from a zip without ever
+// holding the full archive in memory (edge functions have a tight RAM cap).
+async function extractOrthoFromZipStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array | null> {
+  return await new Promise<Uint8Array | null>((resolve, reject) => {
+    const matcher = /odm_orthophoto[\\/]odm_orthophoto\.tif$/i;
+    const fallbackMatcher = /(^|[\\/])orthophoto\.tif$/i;
+    let matchedChunks: Uint8Array[] | null = null;
+    let matchedSize = 0;
+    let matchedName: string | null = null;
+    let resolved = false;
+
+    const unz = new Unzip((file) => {
+      if (resolved) return;
+      const isPrimary = matcher.test(file.name);
+      const isFallback = !matchedName && fallbackMatcher.test(file.name);
+      if (!isPrimary && !isFallback) return;
+      // Prefer primary - if we previously captured a fallback, replace it.
+      if (isPrimary) {
+        matchedChunks = [];
+        matchedSize = 0;
+      }
+      matchedName = file.name;
+      console.log(`[ortho-url] zip match: ${file.name}`);
+      file.ondata = (err, chunk, final) => {
+        if (resolved) return;
+        if (err) { resolved = true; reject(err); return; }
+        if (!matchedChunks) matchedChunks = [];
+        matchedChunks.push(chunk);
+        matchedSize += chunk.byteLength;
+        if (final && file.name === matchedName) {
+          resolved = true;
+          const out = new Uint8Array(matchedSize);
+          let off = 0;
+          for (const c of matchedChunks) { out.set(c, off); off += c.byteLength; }
+          resolve(out);
+        }
+      };
+      file.start();
+    });
+    unz.register(UnzipInflate);
+
+    const reader = stream.getReader();
+    const pump = async () => {
+      try {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          if (resolved) { try { reader.cancel(); } catch {} return; }
+          const { value, done } = await reader.read();
+          if (done) { unz.push(new Uint8Array(0), true); break; }
+          if (value && value.byteLength) unz.push(value, false);
+        }
+        if (!resolved) resolve(null);
+      } catch (e) {
+        if (!resolved) { resolved = true; reject(e); }
+      }
+    };
+    pump();
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -132,6 +196,37 @@ Deno.serve(async (req) => {
       const listed = await listOdmTasks();
       return json({ tasks: listed.tasks, source: listed.source, error: listed.error });
     }
+    const probeUuid = url.searchParams.get("probe");
+    if (probeUuid) {
+      const paths = [
+        "download/all.zip",
+        "download/odm_orthophoto/odm_orthophoto.tif",
+        "download/orthophoto.tif",
+        "download/odm_orthophoto.tif",
+        "download/odm_orthophoto.tar.gz",
+        "download/orthophoto.png",
+        "download",
+        "output",
+        "assets",
+        "orthophoto/tiles.json",
+        "orthophoto/metadata",
+      ];
+      const results: any[] = [];
+      for (const p of paths) {
+        const path = `/task/${probeUuid}/${p}`;
+        try {
+          const r = await fetch(odmUrl(path), { method: "GET" });
+          const ct = r.headers.get("content-type") ?? "";
+          let body: string | null = null;
+          if (ct.includes("json") || ct.startsWith("text/")) body = (await r.text()).slice(0, 400);
+          else { try { await r.arrayBuffer(); } catch {} }
+          results.push({ p, status: r.status, contentType: ct, body });
+        } catch (e) {
+          results.push({ p, error: String((e as Error)?.message ?? e) });
+        }
+      }
+      return json({ uuid: probeUuid, results });
+    }
     if (!taskId) {
       return json({ error: "Missing task_id" }, 400);
     }
@@ -141,7 +236,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
     const { data: task } = await admin.from("odm_tasks")
-      .select("id, user_id, odm_uuid, ortho_path, status, progress, field_id").eq("id", taskId).maybeSingle();
+      .select("id, user_id, odm_uuid, ortho_path, output_path, status, progress, field_id").eq("id", taskId).maybeSingle();
     if (!task || task.user_id !== ud.user.id) {
       const listed = await listOdmTasks();
       return json({ error: "Scan record not found. ODM task list is included so the completed task can be identified.", odm_tasks: listed.tasks }, 404);
@@ -170,38 +265,70 @@ Deno.serve(async (req) => {
           return json({ error: `Orthomosaic not ready yet (${label}, ${progress}%)`, status: label, progress, odm_tasks: listed.tasks }, 409);
         }
 
-        // 2) Try the requested UUID first, then every completed ODM task. This recovers
-        // from a DB row whose ODM UUID was reset/replaced while the real task completed.
+        // 2) Try downloading the orthophoto directly from ODM (works on self-hosted NodeODM).
         const candidateUuids = new Set<string>();
         if (task.odm_uuid) candidateUuids.add(task.odm_uuid);
         for (const t of listed.tasks) {
           if (t.statusCode === ODM_STATUS.COMPLETED) candidateUuids.add(t.uuid);
         }
 
-        let tifRes: Response | null = null;
+        let tifBytes: Uint8Array | null = null;
         let matchedUuid: string | null = null;
         const triedDownloads: { uuid: string; requests: { url: string; status: number }[] }[] = [];
         for (const uuid of candidateUuids) {
           const result = await fetchOrthophoto(uuid);
           triedDownloads.push({ uuid, requests: result.tried });
           if (result.response) {
-            tifRes = result.response;
+            tifBytes = new Uint8Array(await result.response.arrayBuffer());
             matchedUuid = uuid;
             break;
           }
         }
 
-        if (!tifRes || !matchedUuid) {
-          console.warn("[ortho-url] no orthophoto found after checking completed ODM tasks", JSON.stringify({ listed: listed.tasks, triedDownloads }));
+        // 3) Fallback: extract orthophoto from the all.zip we already stored.
+        //    Required for WebODM Lightning (spark*.webodm.net) which only serves all.zip.
+        // 3) Fallback: extract orthophoto from the all.zip we already stored.
+        //    DISABLED on WebODM Lightning - the unzip exceeds the 256 MB edge memory cap.
+        //    Kept here behind an explicit feature flag so a self-hosted backend with a
+        //    larger worker can enable it later.
+        const allowZipExtract = (Deno.env.get("ORTHO_EXTRACT_FROM_ZIP") ?? "").toLowerCase() === "true";
+        if (!tifBytes && task.output_path && allowZipExtract) {
+          console.log("[ortho-url] direct ODM downloads failed; extracting orthophoto from stored all.zip", task.output_path);
+          const { data: signedZip, error: signErr } = await admin.storage.from("scans")
+            .createSignedUrl(task.output_path, 60 * 10);
+          if (signErr || !signedZip?.signedUrl) {
+            console.warn("[ortho-url] could not sign zip:", signErr?.message);
+          } else {
+            try {
+              const zipRes = await fetch(signedZip.signedUrl);
+              if (!zipRes.ok || !zipRes.body) {
+                console.warn("[ortho-url] zip fetch failed:", zipRes.status);
+              } else {
+                tifBytes = await extractOrthoFromZipStream(zipRes.body);
+                if (tifBytes) {
+                  matchedUuid = task.odm_uuid;
+                  console.log(`[ortho-url] extracted orthophoto: ${tifBytes.byteLength} bytes`);
+                }
+              }
+            } catch (e) {
+              console.error("[ortho-url] streaming unzip failed:", (e as Error)?.message);
+            }
+          }
+        }
+
+        if (!tifBytes || !matchedUuid) {
+          console.warn("[ortho-url] no orthophoto found", JSON.stringify({ listed: listed.tasks, triedDownloads, output_path: task.output_path }));
           return json({
-            error: "Processing completed, but the orthophoto file was not found on any completed ODM task. Review the ODM task list below to identify the correct completed UUID.",
+            error: "Processing completed, but the orthophoto cannot be fetched. ODM_BASE_URL is WebODM Lightning (spark*.webodm.net), which only exposes /task/<uuid>/download/all.zip — not individual assets like odm_orthophoto.tif. Extracting it from the stored all.zip exceeds the 256 MB edge function memory cap. Options: (1) switch ODM_BASE_URL to a self-hosted NodeODM/WebODM that exposes per-asset download paths, or (2) run the extraction in a worker outside edge functions.",
             odm_tasks: listed.tasks,
             tried: triedDownloads,
+            stored_zip: task.output_path,
+            odm_host: new URL(ODM_BASE_URL).host,
           }, 422);
         }
 
         const orthoPath = `${ud.user.id}/${matchedUuid}.tif`;
-        const { error: tifErr } = await admin.storage.from("orthos").upload(orthoPath, tifRes.body!, {
+        const { error: tifErr } = await admin.storage.from("orthos").upload(orthoPath, tifBytes, {
           contentType: "image/tiff",
           upsert: true,
         });
@@ -224,10 +351,11 @@ Deno.serve(async (req) => {
       return json({ error: "No orthomosaic available" }, 404);
     }
 
-    const { data: publicUrl } = admin.storage.from("orthos").getPublicUrl(path);
-    const publicGeoTiffUrl = publicUrl.publicUrl;
-
-    return json({ url: publicGeoTiffUrl, public: true, expires_in: null });
+    const { data: signed, error: sErr } = await admin.storage.from("orthos").createSignedUrl(path, SIGNED_TTL);
+    if (sErr || !signed?.signedUrl) {
+      return json({ error: sErr?.message ?? "sign failed" }, 500);
+    }
+    return json({ url: signed.signedUrl, expires_in: SIGNED_TTL });
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e) }, 500);
   }
