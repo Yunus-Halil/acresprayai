@@ -1766,6 +1766,10 @@ export type Database = {
         Returns: unknown
       }
       unlockrows: { Args: { "": string }; Returns: number }
+      update_crop_zone: {
+        Args: { p_id: string; p_polygon: Json }
+        Returns: undefined
+      }
       updategeometrysrid: {
         Args: {
           catalogn_name: string
