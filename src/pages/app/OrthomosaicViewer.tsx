@@ -8,7 +8,7 @@ import { Unzip, UnzipInflate } from "fflate";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Search, Eye, EyeOff,
   Layers, Folder, Image as ImageIcon, Mountain, Ruler, Settings,
-  Camera, Maximize2, Plus, Minus, Loader2, MapPin,
+  Camera, Maximize2, Plus, Minus, Loader2, MapPin, Activity,
 } from "lucide-react";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -16,6 +16,7 @@ const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
 // Static pre-baked tiles live in the private `tiles` bucket and are streamed
 // through the `tile` edge function. Leaflet loads them as plain <img> GETs.
 const TILE_BASE = `${FN_BASE}/tile`;
+const NDVI_BASE = `${FN_BASE}/ndvi-tile`;
 
 // Streams the all.zip from a signed URL, pulls out odm_orthophoto.tif WITHOUT
 // buffering the full archive in RAM, and PUTs the .tif to a Supabase signed
@@ -146,6 +147,7 @@ type LayerState = {
   annotations: boolean;
   design: boolean;
   orthomosaic: boolean;
+  ndvi: boolean;
   dsm: boolean;
 };
 
@@ -184,8 +186,9 @@ export default function OrthomosaicViewer() {
   const [extracting, setExtracting] = useState<{ stage: string; pct: number } | null>(null);
 
   const [layers, setLayers] = useState<LayerState>({
-    annotations: false, design: false, orthomosaic: true, dsm: false,
+    annotations: false, design: false, orthomosaic: true, ndvi: false, dsm: false,
   });
+  const [ndviInfo, setNdviInfo] = useState<{ bands: number; index: "ndvi" | "vari"; label: string } | null>(null);
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
@@ -308,6 +311,24 @@ export default function OrthomosaicViewer() {
   }, [taskId]);
 
   const tileUrl = tileTemplate;
+  const ndviUrl = task?.odm_uuid ? `${NDVI_BASE}/${taskId}/{z}/{x}/{y}.png` : null;
+
+  // Probe the COG once to figure out NDVI vs VARI and band count for the legend.
+  useEffect(() => {
+    if (!taskId || !token || !tileTemplate) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${NDVI_BASE}/info?task_id=${taskId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const j = await r.json();
+        if (!cancelled && r.ok) setNdviInfo(j);
+      } catch { /* noop */ }
+    })();
+    return () => { cancelled = true; };
+  }, [taskId, token, tileTemplate]);
 
   if (err) {
     return (
@@ -413,6 +434,13 @@ export default function OrthomosaicViewer() {
               <LayerRow label="Orthomosaic" icon={ImageIcon} indent={1}
                 checked={layers.orthomosaic}
                 onToggle={() => setLayers(s => ({ ...s, orthomosaic: !s.orthomosaic }))} />
+              <LayerRow
+                label={ndviInfo?.index === "vari" ? "Vegetation index (VARI)" : "NDVI"}
+                icon={Activity}
+                indent={1}
+                checked={layers.ndvi}
+                onToggle={() => setLayers(s => ({ ...s, ndvi: !s.ndvi }))}
+              />
               <LayerRow label="DSM" icon={Mountain} indent={1}
                 checked={layers.dsm}
                 onToggle={() => setLayers(s => ({ ...s, dsm: !s.dsm }))} />
@@ -472,10 +500,46 @@ export default function OrthomosaicViewer() {
                 zIndex={10}
               />
             )}
+            {layers.ndvi && ndviUrl && (
+              <TileLayer
+                key={`ndvi-${ndviUrl}`}
+                url={ndviUrl}
+                opacity={0.75}
+                maxNativeZoom={Math.min(20, maxNative)}
+                maxZoom={22}
+                tileSize={256}
+                keepBuffer={1}
+                updateWhenIdle
+                updateWhenZooming={false}
+                zIndex={20}
+              />
+            )}
             <FitBounds bounds={bounds} />
             <MouseReadout onMove={(lat, lng, z) => setCursor({ lat, lng, z })} />
             <MapControls fitTo={bounds} />
           </MapContainer>
+
+          {/* NDVI legend */}
+          {layers.ndvi && (
+            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-[1000] bg-neutral-900/95 border border-neutral-700 rounded-md px-3 py-2 text-[11px] text-neutral-200 shadow-lg">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="font-medium">
+                  {ndviInfo?.index === "vari" ? "Vegetation Index (VARI · RGB-derived)" : "NDVI"}
+                </span>
+                {ndviInfo && (
+                  <span className="text-neutral-500 font-mono">{ndviInfo.bands}-band</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-red-400">Stressed</span>
+                <div className="h-2 w-40 rounded"
+                  style={{ background: "linear-gradient(to right,#a50026,#d73027,#f46d43,#fdae61,#fee08b,#d9ef8b,#a6d96a,#66bd63,#1a9850,#006837)" }} />
+                <span className="text-emerald-400">Healthy</span>
+              </div>
+              <div className="text-[10px] text-neutral-500 mt-1 font-mono">−1.0 → +1.0</div>
+            </div>
+          )}
 
           {/* Bottom toolbar (left side) */}
           <div className="absolute bottom-12 left-4 z-[1000] flex gap-1.5">
