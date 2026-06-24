@@ -163,7 +163,11 @@ export default function PolygonMap({
       poly.bindTooltip(`${z.name} · ${z.crop}`, { permanent: true, direction: "center", className: "zone-label" });
       if (onZoneClick) poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onZoneClick(z.id); });
 
-      // Only the explicitly selected zone is editable
+      group.addLayer(poly);
+      if (isEditing) poly.bringToFront();
+
+      // Only the explicitly selected zone is editable. Enable after adding to the map
+      // so Geoman can attach visible vertex handles to the live layer.
       if (isEditing) {
         (poly as any).pm.enable({
           allowSelfIntersection: false,
@@ -177,7 +181,6 @@ export default function PolygonMap({
         });
       }
 
-      group.addLayer(poly);
       zoneLayersRef.current.set(z.id, poly);
     });
 
@@ -205,6 +208,22 @@ export default function PolygonMap({
         .zone-label { background: rgba(0,0,0,0.65); color: white; border: none; font-size: 10px; padding: 2px 6px; border-radius: 3px; box-shadow: none; }
         .zone-label::before { display: none; }
         .leaflet-pm-tooltip { background: rgba(15,23,42,0.92); color: #f1f5f9; border: 1px solid rgba(56,189,248,0.4); font-size: 11px; padding: 4px 8px; border-radius: 4px; }
+        .leaflet-marker-icon.marker-icon {
+          width: 18px !important;
+          height: 18px !important;
+          margin: -9px 0 0 -9px !important;
+          background: #f8fafc;
+          border: 3px solid #0284c7;
+          border-radius: 999px;
+          box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.55), 0 2px 8px rgba(0,0,0,0.45);
+          z-index: 1000 !important;
+        }
+        .leaflet-marker-icon.marker-icon-middle {
+          width: 12px !important;
+          height: 12px !important;
+          margin: -6px 0 0 -6px !important;
+          opacity: 0.9;
+        }
         .marker-icon.leaflet-pm-draggable { cursor: grab; }
       `}</style>
     </>
