@@ -506,6 +506,8 @@ export default function OrthomosaicViewer() {
                 keepBuffer={8}
                 updateWhenIdle={false}
                 updateWhenZooming={false}
+                bounds={bounds as L.LatLngBoundsExpression}
+                noWrap
                 zIndex={10}
               />
             )}
@@ -520,6 +522,8 @@ export default function OrthomosaicViewer() {
                 keepBuffer={8}
                 updateWhenIdle={false}
                 updateWhenZooming={false}
+                bounds={bounds as L.LatLngBoundsExpression}
+                noWrap
                 zIndex={20}
               />
             )}
