@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -13,7 +13,9 @@ import {
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
-const TITILER = "https://titiler.xyz";
+// Static pre-baked tiles live in the private `tiles` bucket and are streamed
+// through the `tile` edge function. Leaflet loads them as plain <img> GETs.
+const TILE_BASE = `${FN_BASE}/tile`;
 
 // Streams the all.zip from a signed URL, pulls out odm_orthophoto.tif WITHOUT
 // buffering the full archive in RAM, and PUTs the .tif to a Supabase signed
@@ -175,8 +177,8 @@ export default function OrthomosaicViewer() {
   const [token, setToken] = useState<string | null>(null);
   const [bounds, setBounds] = useState<L.LatLngBoundsExpression | null>(null);
   const [maxNative, setMaxNative] = useState<number>(20);
-  const [cogUrl, setCogUrl] = useState<string | null>(null);
   const [tileTemplate, setTileTemplate] = useState<string | null>(null);
+  const [baking, setBaking] = useState<{ completed: number; total: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState<{ status: string; progress: number } | null>(null);
   const [extracting, setExtracting] = useState<{ stage: string; pct: number } | null>(null);
@@ -196,9 +198,7 @@ export default function OrthomosaicViewer() {
     let timer: number | null = null;
     const run = async () => {
       console.log("[OrthoViewer] taskId from route:", taskId);
-      // Always start clean - never reuse cached signed URL / bounds / tile template
-      // across viewer opens. The signed URL has a TTL and stale tiles will 403.
-      setCogUrl(null);
+      // Always start clean - never reuse cached bounds / tile template across opens.
       setTileTemplate(null);
       setBounds(null);
       const { data: s } = await supabase.auth.getSession();
@@ -260,26 +260,41 @@ export default function OrthomosaicViewer() {
           return;
         }
         setPending(null);
-        setCogUrl(j.url);
-        console.log("[OrthoViewer] fresh signed URL:", typeof j.url === "string" ? `${j.url.slice(0, 80)}…(${j.url.length} chars)` : j.url);
 
-        // The edge function already called TiTiler server-side (titiler.xyz blocks
-        // browser CORS). Use the TileJSON it returned. Tile requests themselves are
-        // <img> GETs from Leaflet and don't trigger CORS preflight.
+        // Pull bounds from the tilejson the edge function returned (it called
+        // TiTiler server-side to bypass browser CORS).
         const tj = j.tilejson;
-        if (!tj) {
-          setErr("Could not load orthomosaic metadata from the tile server.");
-          return;
-        }
         const b: any = tj?.bounds;
         if (Array.isArray(b) && b.length === 4) {
           setBounds([[b[1], b[0]], [b[3], b[2]]] as L.LatLngBoundsExpression);
-          console.log("[OrthoViewer] bounds:", b);
         } else {
-          console.warn("[OrthoViewer] tilejson missing bounds:", tj);
+          setErr("Could not load orthomosaic bounds.");
+          return;
         }
-        if (Array.isArray(tj?.tiles) && tj.tiles[0]) setTileTemplate(tj.tiles[0]);
         if (typeof tj?.maxzoom === "number") setMaxNative(Math.min(22, tj.maxzoom));
+
+        // Drive the tile baker until it reports done, then point Leaflet at the
+        // static pre-baked tiles served through the `tile` edge function.
+        if (!t.odm_uuid) { setErr("Missing scan id"); return; }
+        while (!cancelled) {
+          const br = await fetch(`${FN_BASE}/bake-tiles?task_id=${taskId}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${s.session.access_token}` },
+          });
+          const bj = await br.json().catch(() => ({}));
+          if (!br.ok) {
+            setErr(bj?.error ?? "Tile baking failed.");
+            return;
+          }
+          if (typeof bj.total === "number") {
+            setBaking({ completed: bj.completed ?? 0, total: bj.total });
+          }
+          if (bj.done) break;
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        if (cancelled) return;
+        setBaking(null);
+        setTileTemplate(`${TILE_BASE}/${t.odm_uuid}/{z}/{x}/{y}.png`);
       } catch (e) {
         console.error("[OrthoViewer] info failed", e);
         setErr("Could not load orthomosaic metadata.");
@@ -292,12 +307,7 @@ export default function OrthomosaicViewer() {
     };
   }, [taskId]);
 
-  const tileUrl = useMemo(() => {
-    // Prefer the URL template TiTiler gave us (correct path + version-agnostic).
-    if (tileTemplate) return tileTemplate;
-    if (!cogUrl) return null;
-    return `${TITILER}/cog/WebMercatorQuad/tiles/{z}/{x}/{y}.png?url=${encodeURIComponent(cogUrl)}&tilesize=256`;
-  }, [tileTemplate, cogUrl]);
+  const tileUrl = tileTemplate;
 
   if (err) {
     return (
@@ -316,6 +326,19 @@ export default function OrthomosaicViewer() {
           <div className="h-full bg-sky-500 transition-all" style={{ width: `${Math.max(2, Math.min(100, extracting.pct))}%` }} />
         </div>
         <div className="text-xs text-neutral-500">Extracting orthomosaic from the processing archive on this device.</div>
+      </div>
+    );
+  }
+  if (baking) {
+    const pct = baking.total ? Math.round((baking.completed / baking.total) * 100) : 0;
+    return (
+      <div className="h-screen w-screen bg-neutral-950 flex flex-col items-center justify-center gap-3 text-sm text-neutral-200">
+        <Loader2 className="h-5 w-5 animate-spin text-sky-400" />
+        <div className="text-neutral-300">Pre-rendering map tiles… {baking.completed} / {baking.total}</div>
+        <div className="w-64 h-1.5 bg-neutral-800 rounded overflow-hidden">
+          <div className="h-full bg-sky-500 transition-all" style={{ width: `${Math.max(2, pct)}%` }} />
+        </div>
+        <div className="text-xs text-neutral-500">One-time bake. Future opens load instantly from cache.</div>
       </div>
     );
   }
