@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Trash2, Maximize2, Droplets, Pencil, RotateCcw } from "lucide-react";
+import { Plus, Trash2, Maximize2, Droplets, Pencil, RotateCcw, Map as MapIcon } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import Field3D, { type SprayZone } from "@/components/app/Field3D";
 import { DEMO_FIELDS, type DemoField } from "@/lib/demo";
@@ -17,6 +18,7 @@ type DBField = { id: string; name: string; crop: string; area_hectares: number; 
 
 export default function Fields() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [dbFields, setDbFields] = useState<DBField[]>([]);
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<DemoField | null>(null);
@@ -183,11 +185,18 @@ export default function Fields() {
 
                 <div className="flex items-center justify-between gap-2 pt-1 border-t">
                   <div className="text-[10px] text-muted-foreground font-mono truncate">{f.location}</div>
-                  {!isDemo && (
-                    <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0" onClick={(e) => { e.stopPropagation(); remove(f.id); }}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
+                  <div className="flex gap-1">
+                    {!isDemo && (
+                      <>
+                        <Button variant="outline" size="sm" className="h-7 gap-1" onClick={(e) => { e.stopPropagation(); navigate(`/app/fields/${f.id}/map`); }}>
+                          <MapIcon className="h-3.5 w-3.5" /> Map & analyze
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0" onClick={(e) => { e.stopPropagation(); remove(f.id); }}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </Card>
