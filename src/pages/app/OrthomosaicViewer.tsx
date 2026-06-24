@@ -176,6 +176,7 @@ export default function OrthomosaicViewer() {
   const [bounds, setBounds] = useState<L.LatLngBoundsExpression | null>(null);
   const [maxNative, setMaxNative] = useState<number>(20);
   const [cogUrl, setCogUrl] = useState<string | null>(null);
+  const [tileTemplate, setTileTemplate] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState<{ status: string; progress: number } | null>(null);
   const [extracting, setExtracting] = useState<{ stage: string; pct: number } | null>(null);
@@ -280,9 +281,11 @@ export default function OrthomosaicViewer() {
   }, [taskId]);
 
   const tileUrl = useMemo(() => {
+    // Prefer the URL template TiTiler gave us (correct path + version-agnostic).
+    if (tileTemplate) return tileTemplate;
     if (!cogUrl) return null;
-    return `${TITILER}/cog/tiles/{z}/{x}/{y}.png?url=${encodeURIComponent(cogUrl)}`;
-  }, [cogUrl]);
+    return `${TITILER}/cog/WebMercatorQuad/tiles/{z}/{x}/{y}.png?url=${encodeURIComponent(cogUrl)}&tilesize=256`;
+  }, [tileTemplate, cogUrl]);
 
   if (err) {
     return (
