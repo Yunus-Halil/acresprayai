@@ -407,6 +407,22 @@ export default function OrthomosaicViewer() {
             attributionControl={false}
             style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
           >
+            {/* Satellite basemap underneath */}
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              attribution="Tiles &copy; Esri"
+              maxNativeZoom={19}
+              maxZoom={22}
+              zIndex={1}
+            />
+            {/* Labels overlay */}
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+              maxNativeZoom={19}
+              maxZoom={22}
+              zIndex={2}
+              opacity={0.85}
+            />
             {layers.orthomosaic && tileUrl && (
               <TileLayer
                 url={tileUrl}
@@ -417,14 +433,9 @@ export default function OrthomosaicViewer() {
                 keepBuffer={1}
                 updateWhenIdle
                 updateWhenZooming={false}
+                zIndex={10}
               />
             )}
-            {/* OSM basemap underneath */}
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              maxZoom={19}
-              zIndex={0}
-            />
             <FitBounds bounds={bounds} />
             <MouseReadout onMove={(lat, lng, z) => setCursor({ lat, lng, z })} />
             <MapControls fitTo={bounds} />
