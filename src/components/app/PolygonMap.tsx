@@ -38,6 +38,8 @@ type Props = {
   anomalies?: AnomalyShape[];
   drawing: boolean;
   draftRing?: LatLng[];
+  selectedZoneId?: string | null;
+  editingZoneId?: string | null;
   onDraftComplete?: (ring: LatLng[]) => void;
   onDrawCancel?: () => void;
   onZoneClick?: (id: string) => void;
@@ -49,7 +51,7 @@ const sevColor = (s: AnomalyShape["severity"]) =>
 
 export default function PolygonMap({
   height = 520, center, overlay, ndviOverlay, zones, anomalies = [],
-  draftRing = [],
+  draftRing = [], selectedZoneId = null, editingZoneId = null,
   drawing, onDraftComplete, onDrawCancel, onZoneClick, onZoneEdit,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -152,24 +154,28 @@ export default function PolygonMap({
     zoneLayersRef.current.clear();
 
     zones.forEach(z => {
-      const color = z.color ?? "#84cc16";
+      const isSelected = z.id === selectedZoneId;
+      const isEditing = z.id === editingZoneId;
+      const color = isEditing ? "#38bdf8" : isSelected ? "#fbbf24" : (z.color ?? "#84cc16");
       const poly = L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
-        color, weight: 2, fillOpacity: 0.2,
+        color, weight: isSelected || isEditing ? 3 : 2, fillOpacity: isEditing ? 0.15 : 0.2,
       });
       poly.bindTooltip(`${z.name} · ${z.crop}`, { permanent: true, direction: "center", className: "zone-label" });
       if (onZoneClick) poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onZoneClick(z.id); });
 
-      // Enable in-place editing (drag vertices, drag whole shape)
-      (poly as any).pm.enable({
-        allowSelfIntersection: false,
-        snappable: true,
-        snapDistance: 20,
-        draggable: true,
-      });
-      poly.on("pm:edit pm:dragend", () => {
-        const latlngs = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
-        onZoneEditRef.current?.(z.id, latlngs);
-      });
+      // Only the explicitly selected zone is editable
+      if (isEditing) {
+        (poly as any).pm.enable({
+          allowSelfIntersection: false,
+          snappable: true,
+          snapDistance: 20,
+          draggable: true,
+        });
+        poly.on("pm:edit pm:markerdragend pm:dragend", () => {
+          const latlngs = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+          onZoneEditRef.current?.(z.id, latlngs);
+        });
+      }
 
       group.addLayer(poly);
       zoneLayersRef.current.set(z.id, poly);
@@ -190,7 +196,7 @@ export default function PolygonMap({
       });
       group.addLayer(poly);
     }
-  }, [zones, anomalies, onZoneClick, draftRing]);
+  }, [zones, anomalies, onZoneClick, draftRing, selectedZoneId, editingZoneId]);
 
   return (
     <>
