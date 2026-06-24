@@ -436,8 +436,10 @@ export default function OrthomosaicViewer() {
             center={[0, 0]}
             zoom={2}
             minZoom={2}
-              maxZoom={22}
+              maxZoom={24}
             preferCanvas
+            fadeAnimation={false}
+            zoomAnimation={false}
             zoomControl={false}
             attributionControl={false}
             style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
@@ -469,8 +471,6 @@ export default function OrthomosaicViewer() {
                 keepBuffer={8}
                 updateWhenIdle={false}
                 updateWhenZooming={false}
-                fadeAnimation={false}
-                zoomAnimation={false}
                 zIndex={10}
               />
             )}
