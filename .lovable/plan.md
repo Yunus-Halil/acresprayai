@@ -1,101 +1,90 @@
+# Field-First Workflow with OpenDroneMap
 
-# From mockup to actually working: the core loop
+Rework the app so every scan lives inside a Field. A Field is created first, then the farmer uploads raw drone images, which are pushed to OpenDroneMap (ODM). ODM outputs an orthomosaic + 3D model + point cloud, which we store and tie to the field's scan history. Zones, anomalies, and spray recs all hang off a specific scan within a field.
 
-Goal: a real farmer flies their spray drone, exports an orthomosaic from their drone software, and the system maps their field, lets them label crop zones, ingests NDVI, flags problems, and produces a spray plan. No fake data in this loop.
-
-The mockup pages (Live Field 3D, Fleet Intel, sample PDF) stay as marketing/demo surfaces. The new flow lives alongside them as the real product.
-
----
-
-## The 5-step user journey
+## New User Flow
 
 ```text
-1. Upload orthomosaic (GeoTIFF / large JPG+world file)
-        |
-2. System extracts: bounds, GSD, preview tiles, elevation if present
-        |
-3. Farmer draws polygons on the orthomosaic → labels crop + variety
-   System auto-computes area (ha), perimeter, row direction
-        |
-4. Farmer uploads NDVI orthomosaic (or we derive from multispectral bands)
-   System overlays it on the same georeferenced canvas
-   AI annotates anomalies (low-NDVI clusters, edge stress, pest patterns)
-   Farmer can add/edit annotations
-        |
-5. System generates spray plan per anomaly
-   (chemical, dose L/ha, target polygons, total volume, weather window)
-   Exports as mission file + PDF record
+1. /app/fields                  -> list of fields (empty state if none)
+2. "New Field"                  -> name, crop type, optional notes
+                                   -> redirect to /app/fields/:id (field detail)
+3. /app/fields/:id              -> field dashboard
+                                     - Boundary section (drawn after first scan, editable)
+                                     - Scans timeline (newest first)
+                                     - "Upload Drone Images" CTA
+4. Upload flow                  -> drag-drop folder of JPG/TIFF
+                                     - creates a Scan row (status=uploading)
+                                     - uploads to storage bucket
+                                     - kicks off ODM task
+                                     - polls status -> processing -> complete
+5. /app/fields/:id/scans/:scanId-> ortho viewer + 3D model + zones + anomalies
+                                     - if first scan, auto-set field boundary from ortho footprint
 ```
 
-Everything renders in the existing 3D field view — the orthomosaic becomes the ground texture, polygons become the crop zones, NDVI becomes a toggleable overlay, annotations become the spray boxes.
+The current loose "FieldMap" page becomes the scan viewer reached via a specific field+scan.
+
+## Data Model Changes
+
+Wipe existing test data. New/updated tables:
+
+- **fields** (extend): add `crop_type`, `notes`, `boundary geometry` already exists; keep but allow null until first scan
+- **scans** (extend): require `field_id NOT NULL`, add `status` (uploading|queued|processing|complete|failed), `odm_task_id`, `image_count`, `captured_at`, `ortho_url`, `model_3d_url`, `point_cloud_url`, `dsm_url`
+- **odm_tasks** (already exists): link to scan via `scan_id`
+- **zones**, **anomalies**, **spray_recommendations**: enforce `scan_id NOT NULL`, and derive `field_id` through scan
+- Storage bucket: `drone-uploads` (private) for raw images, `scan-outputs` (private, signed URLs) for ODM results
+
+## OpenDroneMap Integration
+
+ODM exposes a REST API (NodeODM/WebODM). Two viable hosting options:
+
+1. **WebODM Lightning** (managed SaaS, `webodm.net`) — paid per-task, easiest. Needs `WEBODM_LIGHTNING_TOKEN`.
+2. **Self-hosted NodeODM** — user gives us a URL + token. Needs `NODEODM_URL`, `NODEODM_TOKEN`.
+
+Recommend Lightning to start; let the user swap to self-hosted via secrets later. Either way we hit it from an edge function — never from the browser.
+
+Edge functions to add:
+- `odm-create-task` — receives `scan_id`, signs upload URLs OR streams uploaded files from our bucket to ODM, creates an ODM task, stores `odm_task_id` on the scan
+- `odm-poll-task` — invoked by client polling or cron; checks ODM status, on complete downloads `orthophoto.tif`, `odm_textured_model.glb`, `point_cloud.laz`, writes them to `scan-outputs` bucket, updates scan row
+- `odm-cancel-task` — for the user-cancel button
+
+## Pages / Components
+
+New / changed:
+- `src/pages/app/Fields.tsx` — list of fields, "New Field" dialog
+- `src/pages/app/FieldDetail.tsx` — field dashboard with scan history
+- `src/pages/app/NewScan.tsx` — drone image upload + ODM kickoff
+- `src/pages/app/ScanViewer.tsx` — replaces current `FieldMap.tsx`; loads scan ortho + zones
+- `src/components/app/Model3DViewer.tsx` — render `.glb` from ODM via `@react-three/fiber` + `drei`
+- Sidebar: change "Field Map" to "Fields"
+
+Routes:
+```text
+/app/fields
+/app/fields/:fieldId
+/app/fields/:fieldId/scans/new
+/app/fields/:fieldId/scans/:scanId
+```
+
+## Migration / Wipe
+
+Single migration:
+1. `truncate` anomalies, spray_recommendations, zones (crop_zones), scans, orthomosaics, odm_tasks, fields — cascade
+2. Add new columns + NOT NULL constraints
+3. Add storage buckets via tool
+4. RLS: all tables already user-scoped via field_id → user_id chain; add policies for new columns
+
+## Open Questions for Me to Decide as I Build
+
+- Use WebODM Lightning by default (will need user to add a token via add_secret on first upload). Self-hosted NodeODM as fallback.
+- 3D viewer with `three` + `@react-three/fiber` (lightweight, GLB-friendly).
+- Polling on the client every 10s while scan is in `queued`/`processing`.
+
+## Out of Scope (for now)
+
+- Multi-scan comparison view (NDVI deltas over time) — data model supports it, UI later
+- Mobile capture app
+- Stitching previews before full ODM run
 
 ---
 
-## What gets built
-
-### Step 1-2: Orthomosaic ingest
-- New page `/app/fields/:id/map` — drag-and-drop orthomosaic upload
-- Storage bucket `orthomosaics` (private, RLS scoped to user)
-- Edge function `ortho-process`: reads GeoTIFF header → extracts bounds (EPSG:4326), GSD (m/px), width/height; generates a web-friendly preview (downscaled JPG) + a small thumbnail; stores metadata
-- New table `orthomosaics`: field_id, storage_path, preview_path, bounds (geography), gsd_m_per_px, width_px, height_px, captured_at, kind ('rgb' | 'ndvi' | 'multispectral')
-
-### Step 3: Polygon crop editor
-- Leaflet (or MapLibre) canvas with the orthomosaic as an image overlay at its real bounds
-- Draw tool: click-to-place vertices, close polygon, label with crop type + variety + planting date
-- New table `crop_zones`: field_id, name, crop, variety, polygon (geography), area_ha (computed via PostGIS `ST_Area`), planted_at, notes
-- Area auto-computed server-side from the polygon — that's the "GSD × polygon size" math, done correctly with geodesic area instead of pixel counting
-
-### Step 4: NDVI overlay + AI annotation
-- Same upload flow, marked `kind='ndvi'`. Rendered as a colored overlay (red→yellow→green) on top of the RGB ortho, opacity slider
-- Edge function `analyze-ndvi`: samples NDVI values inside each crop zone polygon → mean, p10, p90, stressed-area %, clusters low-NDVI pixels into anomaly polygons → calls Lovable AI to label likely cause (drought stress, nutrient deficiency, pest pressure, waterlogging) given crop type + values
-- New table `anomalies`: zone_id, polygon, ndvi_mean, severity, ai_label, ai_reasoning, user_label, user_notes, status ('open'|'dismissed'|'sprayed')
-- Farmer can edit AI labels, draw new anomalies manually, dismiss false positives
-
-### Step 5: Spray recommendations
-- Edge function `recommend-spray`: per open anomaly → maps (crop, ai_label, severity) to a chemical class + dose range (small JSON lookup table seeded with common Virginia row crops — corn, soy, wheat, tobacco). Returns chemical, dose L/ha, total volume, target polygon, suggested time-of-day given weather
-- New table `spray_recommendations`: anomaly_id, chemical, dose_l_ha, total_l, target_polygon, weather_window_start/end, status
-- Approve → creates a row in existing `jobs` table → shows up in the Mission Planner
-- PDF export of the spray record (chemical, dose, area, operator, timestamp) for compliance
-
-### 3D field view, real version
-- `RealisticField3D` gets a `fieldId` prop. When present:
-  - Ground plane uses the orthomosaic preview as texture, sized to true bounds
-  - Crop zones extruded as colored regions per crop
-  - NDVI overlay toggle uses the real NDVI image
-  - Anomaly markers replace the mock spray boxes
-
----
-
-## Technical notes
-
-- **GeoTIFF parsing**: use `geotiff.js` in the edge function (Deno-compatible). Reading the header for bounds + GSD is cheap; we don't need to tile the whole raster server-side for v1 — a downscaled preview JPG is enough to render.
-- **PostGIS**: enable the extension via migration. Polygons stored as `geography(Polygon, 4326)`. Area via `ST_Area(polygon::geography) / 10000` for hectares.
-- **Storage**: one private bucket `orthomosaics`. RLS: users can read/write only paths prefixed with their own `user_id/`.
-- **NDVI from multispectral**: out of scope for v1. v1 expects the farmer's drone software (DJI Terra, Pix4Dfields, DroneDeploy — all standard with spray drones) to export the NDVI ortho directly. We accept it as an upload. Computing NDVI from raw multispectral bands is a v2 backend job.
-- **Lovable AI**: used in `analyze-ndvi` for anomaly labeling. Prompt includes crop type, NDVI stats, anomaly shape/location relative to field. Free Gemini tier.
-- **File size**: orthomosaics can be 200MB-2GB. v1 caps at ~500MB and warns above that; resumable uploads are v2.
-
----
-
-## What this plan does NOT do (intentionally)
-
-- Live drone telemetry / DJI Cloud API — that's the "after this" phase you mentioned
-- Multi-user farm orgs, roles, billing
-- Compliance certifications, audit chain-of-custody
-- Computing NDVI from raw bands
-- Mobile-native app
-
-Those are real things to build later. They don't belong in the first real-loop milestone.
-
----
-
-## Build order (one PR per step, in this order)
-
-1. PostGIS migration + `orthomosaics` / `crop_zones` / `anomalies` / `spray_recommendations` tables + storage bucket + RLS
-2. Orthomosaic upload UI + `ortho-process` edge function
-3. Polygon editor page (Leaflet + draw tools) + crop labeling
-4. 3D field view wired to real field data (orthomosaic texture + extruded zones)
-5. NDVI upload + overlay + `analyze-ndvi` edge function
-6. Spray recommendations + PDF compliance export
-
-Confirm and I'll start with step 1.
+Approve and I'll start with the migration + Fields list page, then wire the upload + ODM edge functions.
