@@ -155,12 +155,3 @@ All colors MUST be HSL.
   }
   .text-balance { text-wrap: balance; }
 }
-
-/* Kill Leaflet tile fade for the orthomosaic viewer — no flicker on zoom. */
-.leaflet-tile {
-  transition: none !important;
-  opacity: 1 !important;
-}
-.leaflet-fade-anim .leaflet-tile {
-  transition: none !important;
-}

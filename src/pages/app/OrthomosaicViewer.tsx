@@ -436,10 +436,8 @@ export default function OrthomosaicViewer() {
             center={[0, 0]}
             zoom={2}
             minZoom={2}
-              maxZoom={24}
+              maxZoom={22}
             preferCanvas
-            fadeAnimation={false}
-            zoomAnimation={false}
             zoomControl={false}
             attributionControl={false}
             style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
@@ -466,10 +464,10 @@ export default function OrthomosaicViewer() {
                 url={tileUrl}
                 opacity={1.0}
                 maxNativeZoom={Math.min(20, maxNative)}
-                maxZoom={24}
+                maxZoom={22}
                 tileSize={256}
-                keepBuffer={8}
-                updateWhenIdle={false}
+                keepBuffer={1}
+                updateWhenIdle
                 updateWhenZooming={false}
                 zIndex={10}
               />
