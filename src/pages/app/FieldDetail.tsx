@@ -113,16 +113,27 @@ export default function FieldDetail() {
         headers: { Authorization: auth, "x-action": "upload", "x-odm-uuid": odm_uuid },
         body: fd,
       });
-      if (!r.ok) throw new Error(`${file.name}: ${r.status}`);
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({} as any));
+        const err: any = new Error(j?.error ? `${file.name}: ${j.error}` : `${file.name}: ${r.status}`);
+        err.code = j?.code;
+        err.status = r.status;
+        throw err;
+      }
     };
-    try { await send(); } catch { await send(); } // retry once
+    try { await send(); }
+    catch (e: any) {
+      // Don't retry hard failures from the node (e.g. max images exceeded) - it'll just fail again.
+      if (e?.code === "max_images" || e?.status === 413) throw e;
+      await send();
+    }
   }
 
   const submit = async () => {
     if (!fieldId) return;
     if (!files.length) return toast.error("Select drone images first");
     if (files.length < 5) return toast.error("Need at least 5 images for reconstruction");
-    if (files.length > 500) return toast.error("Max 500 images per scan");
+    if (files.length > 200) return toast.error("Max 200 images per scan (processing node limit)");
 
     // Pre-flight: sample a few images for GPS EXIF. Without GPS, ODM produces
     // an ungeoreferenced ortho that lands at lat 0, lng 0 (Atlantic ocean).
@@ -169,14 +180,22 @@ export default function FieldDetail() {
       let cursor = 0;
       const total = files.length;
       const errors: string[] = [];
+      let aborted: Error | null = null;
       const worker = async () => {
-        while (true) {
+        while (!aborted) {
           const i = cursor++;
           if (i >= total) return;
           try {
             const prepared = await prepareForODM(files[i]);
             await uploadOne(odm_uuid, prepared);
           } catch (e: any) {
+            if (e?.code === "max_images") {
+              aborted = new Error(
+                "Your processing node rejected the batch: max images per task exceeded. " +
+                "Split the scan into smaller batches and try again."
+              );
+              return;
+            }
             errors.push(e?.message ?? String(e));
           }
           done++;
@@ -184,6 +203,7 @@ export default function FieldDetail() {
         }
       };
       await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, worker));
+      if (aborted) throw aborted;
       if (errors.length) throw new Error(`${errors.length} image upload(s) failed. First: ${errors[0]}`);
 
       // Phase 3: commit
@@ -334,7 +354,7 @@ export default function FieldDetail() {
         <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 p-3 rounded border border-dashed">
           <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <div>
-            Recommended: 30–300 overlapping nadir drone images at 70–80% overlap. Min 5, max 500 per scan.
+            Recommended: 30–200 overlapping nadir drone images at 70–80% overlap. Min 5, max 200 per scan (processing-node limit).
           </div>
         </div>
       </Card>
