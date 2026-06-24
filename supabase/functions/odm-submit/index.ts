@@ -48,7 +48,11 @@ Deno.serve(async (req) => {
 
     // ---- INIT ----
     if (action === "init") {
-      const fieldId = req.headers.get("x-field-id") || null;
+      const fieldId = req.headers.get("x-field-id") || "";
+      if (!fieldId) return json({ error: "Missing x-field-id - a scan must be tied to a field" }, 400);
+      // Verify the field belongs to this user
+      const { data: field } = await admin.from("fields").select("id, user_id").eq("id", fieldId).maybeSingle();
+      if (!field || field.user_id !== user.id) return json({ error: "Field not found" }, 404);
       const imageCount = parseInt(req.headers.get("x-image-count") ?? "0", 10);
 
       const fd = new FormData();
