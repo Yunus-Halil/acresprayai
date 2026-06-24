@@ -53,12 +53,30 @@ export default function OrthomosaicViewer() {
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Back
       </button>
-      <MapContainer center={[0, 0]} zoom={2} style={{ height: "100%", width: "100%" }}>
+      <MapContainer
+        center={[0, 0]}
+        zoom={2}
+        minZoom={2}
+        maxZoom={22}
+        preferCanvas
+        style={{ height: "100%", width: "100%" }}
+      >
         <TileLayer
           attribution='&copy; OpenStreetMap'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maxNativeZoom={19}
+          maxZoom={22}
         />
-        <TileLayer url={tileUrl} opacity={0.95} maxNativeZoom={22} maxZoom={24} />
+        <TileLayer
+          url={tileUrl}
+          opacity={0.95}
+          maxNativeZoom={20}
+          maxZoom={22}
+          tileSize={256}
+          keepBuffer={1}
+          updateWhenIdle
+          updateWhenZooming={false}
+        />
       </MapContainer>
     </div>
   );
