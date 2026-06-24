@@ -237,8 +237,13 @@ export default function FieldMap() {
   };
 
   const onZoneClick = (id: string) => {
-    if (editingZoneId) return; // don't change selection mid-edit
-    setSelectedZoneId(prev => prev === id ? null : id);
+    if (editingZoneId === id) return;
+    if (editingZoneId && editingZoneId !== id) {
+      // switch edit target — discard unsaved
+      setPendingRing(null);
+    }
+    setSelectedZoneId(id);
+    setEditingZoneId(id);
   };
 
   const finishZone = async () => {
@@ -449,32 +454,19 @@ export default function FieldMap() {
                 Editing <strong className="text-foreground">{zones.find(z => z.id === editingZoneId)?.name}</strong> — drag vertices or the whole shape. Snapping is on.
                 {pendingRing && <span className="ml-2 text-primary">unsaved changes</span>}
               </div>
+              <Button size="sm" variant="destructive" onClick={() => {
+                const z = zones.find(zz => zz.id === editingZoneId);
+                if (z && confirm(`Delete zone "${z.name}"? This removes its anomalies too.`)) {
+                  deleteZone(z.id);
+                  setEditingZoneId(null);
+                  setSelectedZoneId(null);
+                  setPendingRing(null);
+                }
+              }}><Trash2 className="h-4 w-4" /> Delete</Button>
               <Button size="sm" variant="ghost" onClick={cancelEdit}><X className="h-4 w-4" /> Cancel</Button>
               <Button size="sm" onClick={saveEdit} disabled={!pendingRing}><Save className="h-4 w-4" /> Save</Button>
             </Card>
           )}
-          {selectedZoneId && !editingZoneId && (() => {
-            const z = zones.find(zz => zz.id === selectedZoneId);
-            if (!z) return null;
-            return (
-              <Card className="p-3 flex items-center gap-3">
-                <div className="flex-1 text-xs">
-                  <div className="font-semibold text-sm">{z.name}</div>
-                  <div className="text-muted-foreground">{z.crop}{z.variety ? ` · ${z.variety}` : ""} · {Number(z.area_ha).toFixed(2)} ha</div>
-                </div>
-                <Button size="sm" variant="outline" onClick={() => startEdit(z.id)}>
-                  <Pencil className="h-4 w-4" /> Reshape
-                </Button>
-                <Button size="sm" variant="destructive" onClick={() => {
-                  if (confirm(`Delete zone "${z.name}"? This removes its anomalies too.`)) {
-                    deleteZone(z.id);
-                    setSelectedZoneId(null);
-                  }
-                }}><Trash2 className="h-4 w-4" /> Delete</Button>
-                <Button size="sm" variant="ghost" onClick={() => setSelectedZoneId(null)}><X className="h-4 w-4" /></Button>
-              </Card>
-            );
-          })()}
           {drawing && (
             <Card className="p-3 text-xs text-muted-foreground flex items-center gap-3">
               <Pencil className="h-4 w-4 text-primary" />
