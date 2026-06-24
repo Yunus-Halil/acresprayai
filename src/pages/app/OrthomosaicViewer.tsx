@@ -97,6 +97,7 @@ export default function OrthomosaicViewer() {
   const [layers, setLayers] = useState<LayerState>({
     annotations: false, design: false, orthomosaic: true, dsm: false,
   });
+  const [basemap, setBasemap] = useState<"osm" | "sat">("sat");
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
@@ -126,9 +127,12 @@ export default function OrthomosaicViewer() {
           { headers: { Authorization: `Bearer ${s.session.access_token}` } },
         );
         const j = await r.json();
-        // NodeODM metadata: bounds.value = [west, south, east, north] (lng/lat)
-        const v = j?.bounds?.value;
-        if (Array.isArray(v) && v.length === 4) {
+        // TileJSON: bounds = [west, south, east, north]; metadata: bounds.value = same
+        const v: any =
+          (Array.isArray(j?.bounds) && j.bounds.length === 4 && j.bounds) ||
+          (Array.isArray(j?.bounds?.value) && j.bounds.value.length === 4 && j.bounds.value) ||
+          null;
+        if (v) {
           setBounds([[v[1], v[0]], [v[3], v[2]]] as L.LatLngBoundsExpression);
         }
         if (typeof j?.maxzoom === "number") setMaxNative(Math.min(20, j.maxzoom));
@@ -247,6 +251,20 @@ export default function OrthomosaicViewer() {
                 keepBuffer={1}
                 updateWhenIdle
                 updateWhenZooming={false}
+              />
+            )}
+            {/* Basemap underneath so user always sees something */}
+            {basemap === "osm" ? (
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                maxZoom={19}
+                zIndex={0}
+              />
+            ) : (
+              <TileLayer
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                maxZoom={19}
+                zIndex={0}
               />
             )}
             <FitBounds bounds={bounds} />

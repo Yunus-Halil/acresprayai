@@ -85,11 +85,24 @@ Deno.serve(async (req) => {
       });
     }
     if (info === "ortho") {
-      // NodeODM exposes tile metadata (bounds, minzoom, maxzoom, center)
-      const r = await fetch(odmUrl(`/task/${uuid}/orthophoto/metadata`));
-      const j = await r.json().catch(() => ({}));
+      // Try TileJSON first (most reliable), then fall back to metadata
+      let j: any = {};
+      let status = 200;
+      try {
+        const r1 = await fetch(odmUrl(`/task/${uuid}/orthophoto/tiles.json`));
+        if (r1.ok) {
+          j = await r1.json();
+        } else {
+          const r2 = await fetch(odmUrl(`/task/${uuid}/orthophoto/metadata`));
+          status = r2.status;
+          j = await r2.json().catch(() => ({}));
+        }
+      } catch (e) {
+        j = { error: String((e as Error)?.message ?? e) };
+        status = 500;
+      }
       return new Response(JSON.stringify(j), {
-        status: r.status,
+        status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
