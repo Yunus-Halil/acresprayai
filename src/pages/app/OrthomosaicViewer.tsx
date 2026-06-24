@@ -35,8 +35,9 @@ function MouseReadout({ onMove }: { onMove: (lat: number, lng: number, z: number
   return null;
 }
 
-function MapControls({ onFit }: { onFit: () => void }) {
+function MapControls({ fitTo }: { fitTo: L.LatLngBoundsExpression | null }) {
   const map = useMap();
+  const onFit = () => { if (fitTo) map.fitBounds(fitTo as any, { padding: [40, 40] }); };
   return (
     <div className="absolute bottom-12 right-4 z-[1000] flex flex-col gap-1.5">
       <button onClick={onFit} title="Zoom to fit"
@@ -260,7 +261,7 @@ export default function OrthomosaicViewer() {
             )}
             <FitBounds bounds={bounds} />
             <MouseReadout onMove={(lat, lng, z) => setCursor({ lat, lng, z })} />
-            <MapControls onFit={() => { /* handled below via state */ }} />
+            <MapControls fitTo={bounds} />
           </MapContainer>
 
           {/* Bottom toolbar (left side) */}
