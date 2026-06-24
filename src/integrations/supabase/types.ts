@@ -302,7 +302,7 @@ export type Database = {
         Row: {
           created_at: string
           error: string | null
-          field_id: string | null
+          field_id: string
           id: string
           image_count: number
           odm_uuid: string | null
@@ -315,7 +315,7 @@ export type Database = {
         Insert: {
           created_at?: string
           error?: string | null
-          field_id?: string | null
+          field_id: string
           id?: string
           image_count?: number
           odm_uuid?: string | null
@@ -328,7 +328,7 @@ export type Database = {
         Update: {
           created_at?: string
           error?: string | null
-          field_id?: string | null
+          field_id?: string
           id?: string
           image_count?: number
           odm_uuid?: string | null
@@ -460,7 +460,7 @@ export type Database = {
           ai_summary: string | null
           created_at: string
           detections: Json | null
-          field_id: string | null
+          field_id: string
           health_score: number | null
           id: string
           image_path: string | null
@@ -471,7 +471,7 @@ export type Database = {
           ai_summary?: string | null
           created_at?: string
           detections?: Json | null
-          field_id?: string | null
+          field_id: string
           health_score?: number | null
           id?: string
           image_path?: string | null
@@ -482,7 +482,7 @@ export type Database = {
           ai_summary?: string | null
           created_at?: string
           detections?: Json | null
-          field_id?: string | null
+          field_id?: string
           health_score?: number | null
           id?: string
           image_path?: string | null
