@@ -385,6 +385,69 @@ export default function OrthomosaicViewer() {
   const tileUrl = tileTemplate;
   const ndviUrl = task?.odm_uuid ? `${NDVI_BASE}/${taskId}/{z}/{x}/{y}.png` : null;
 
+  const runAnalysis = async () => {
+    if (!taskId || !token) return;
+    setAnalyzing(true); setAnalysisErr(null);
+    try {
+      const r = await fetch(`${FN_BASE}/analyze-ortho`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ task_id: taskId }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? "Analysis failed");
+      setAnalysis({
+        health_score: j.health_score,
+        summary: j.summary,
+        issues: j.issues ?? [],
+        zones: j.zones ?? [],
+      });
+      setSelectedZone(j.zones?.[0]?.id ?? null);
+    } catch (e: any) {
+      setAnalysisErr(e?.message ?? String(e));
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const updateZoneRing = (id: string, ring: { lat: number; lng: number }[]) => {
+    setAnalysis(a => a ? { ...a, zones: a.zones.map(z => z.id === id ? { ...z, ring } : z) } : a);
+  };
+
+  const deleteZone = (id: string) => {
+    setAnalysis(a => a ? { ...a, zones: a.zones.filter(z => z.id !== id) } : a);
+    if (selectedZone === id) setSelectedZone(null);
+  };
+
+  const exportFlightPlan = () => {
+    if (!analysis) return;
+    const fc = {
+      type: "FeatureCollection",
+      features: analysis.zones.map(z => ({
+        type: "Feature",
+        properties: {
+          name: z.name, issue: z.issue, severity: z.severity,
+          coverage_pct: z.coverage_pct,
+          action: z.recommendation?.action,
+          product: z.recommendation?.product,
+          dose: z.recommendation?.dose,
+        },
+        geometry: {
+          type: "Polygon",
+          coordinates: [[
+            ...z.ring.map(p => [p.lng, p.lat]),
+            [z.ring[0].lng, z.ring[0].lat],
+          ]],
+        },
+      })),
+    };
+    const blob = new Blob([JSON.stringify(fc, null, 2)], { type: "application/geo+json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `flight-plan-${taskId}.geojson`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // Probe the COG once to figure out NDVI vs VARI and band count for the legend.
   useEffect(() => {
     if (!taskId || !token || !tileTemplate) return;
