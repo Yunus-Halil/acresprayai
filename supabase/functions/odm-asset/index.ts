@@ -33,6 +33,7 @@ Deno.serve(async (req) => {
     const probe = url.searchParams.get("probe");
     const tile = url.searchParams.get("tile"); // z/x/y
     const asset = url.searchParams.get("asset"); // raw asset path
+    const info = url.searchParams.get("info"); // "task" | "ortho"
 
     if (!uuid) {
       return new Response(JSON.stringify({ error: "Missing uuid" }), {
@@ -71,6 +72,24 @@ Deno.serve(async (req) => {
       const available = Array.isArray(info?.imagesCount ? info?.availableAssets : info?.availableAssets)
         && (info.availableAssets ?? []).some((a: string) => /orthophoto|orthomosaic/i.test(a));
       return new Response(JSON.stringify({ available }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Info passthrough: ?info=task | ?info=ortho
+    if (info === "task") {
+      const r = await fetch(odmUrl(`/task/${uuid}/info`));
+      const j = await r.json().catch(() => ({}));
+      return new Response(JSON.stringify(j), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (info === "ortho") {
+      // NodeODM exposes tile metadata (bounds, minzoom, maxzoom, center)
+      const r = await fetch(odmUrl(`/task/${uuid}/orthophoto/metadata`));
+      const j = await r.json().catch(() => ({}));
+      return new Response(JSON.stringify(j), {
+        status: r.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
