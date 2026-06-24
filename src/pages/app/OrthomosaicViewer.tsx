@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { supabase } from "@/integrations/supabase/client";
+import { Unzip, UnzipInflate } from "fflate";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Search, Eye, EyeOff,
   Layers, Folder, Image as ImageIcon, Mountain, Ruler, Settings,
@@ -13,6 +14,87 @@ import {
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
 const TITILER = "https://titiler.xyz";
+
+// Streams the all.zip from a signed URL, pulls out odm_orthophoto.tif WITHOUT
+// buffering the full archive in RAM, and PUTs the .tif to a Supabase signed
+// upload URL. Designed for the WebODM Lightning case where the edge function
+// can't extract the orthomosaic itself within its 256 MB memory cap.
+async function extractAndUpload(
+  zipUrl: string,
+  upload: { path: string; token: string; bucket: string },
+  onProgress: (stage: string, pct: number) => void,
+): Promise<void> {
+  onProgress("Downloading processing archive…", 1);
+  const res = await fetch(zipUrl);
+  if (!res.ok || !res.body) throw new Error(`zip download failed (${res.status})`);
+  const totalHeader = res.headers.get("content-length");
+  const total = totalHeader ? Number(totalHeader) : 0;
+
+  const matcher = /odm_orthophoto[\\/]odm_orthophoto\.tif$/i;
+  const fallbackMatcher = /(^|[\\/])orthophoto\.tif$/i;
+
+  const tifBytes = await new Promise<Uint8Array>((resolve, reject) => {
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    let matchedName: string | null = null;
+    let done = false;
+
+    const unz = new Unzip((file) => {
+      if (done) return;
+      const primary = matcher.test(file.name);
+      const fallback = !matchedName && fallbackMatcher.test(file.name);
+      if (!primary && !fallback) return;
+      if (primary) { chunks.length = 0; size = 0; }
+      matchedName = file.name;
+      file.ondata = (err, chunk, final) => {
+        if (done) return;
+        if (err) { done = true; reject(err); return; }
+        chunks.push(chunk);
+        size += chunk.byteLength;
+        if (final && file.name === matchedName) {
+          done = true;
+          const out = new Uint8Array(size);
+          let off = 0;
+          for (const c of chunks) { out.set(c, off); off += c.byteLength; }
+          resolve(out);
+        }
+      };
+      file.start();
+    });
+    unz.register(UnzipInflate);
+
+    const reader = res.body!.getReader();
+    let read = 0;
+    (async () => {
+      try {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          if (done) { try { reader.cancel(); } catch { /* noop */ } return; }
+          const { value, done: rdone } = await reader.read();
+          if (rdone) { unz.push(new Uint8Array(0), true); break; }
+          if (value && value.byteLength) {
+            read += value.byteLength;
+            unz.push(value, false);
+            const pct = total ? Math.min(95, (read / total) * 95) : Math.min(95, (read / (50_000_000)) * 95);
+            onProgress(matchedName ? "Extracting orthomosaic…" : "Downloading processing archive…", pct);
+          }
+        }
+        if (!done) reject(new Error("orthomosaic file not found in archive"));
+      } catch (e) {
+        if (!done) { done = true; reject(e as Error); }
+      }
+    })();
+  });
+
+  onProgress("Uploading orthomosaic…", 96);
+  const buf = tifBytes.buffer.slice(tifBytes.byteOffset, tifBytes.byteOffset + tifBytes.byteLength) as ArrayBuffer;
+  const blob = new Blob([buf], { type: "image/tiff" });
+  const { error } = await supabase.storage
+    .from(upload.bucket)
+    .uploadToSignedUrl(upload.path, upload.token, blob, { contentType: "image/tiff", upsert: true });
+  if (error) throw error;
+  onProgress("Finalizing…", 100);
+}
 
 type TaskRow = { odm_uuid: string | null; field_id: string; created_at: string };
 type FieldRow = { name: string };
@@ -96,6 +178,7 @@ export default function OrthomosaicViewer() {
   const [cogUrl, setCogUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState<{ status: string; progress: number } | null>(null);
+  const [extracting, setExtracting] = useState<{ stage: string; pct: number } | null>(null);
 
   const [layers, setLayers] = useState<LayerState>({
     annotations: false, design: false, orthomosaic: true, dsm: false,
@@ -141,6 +224,27 @@ export default function OrthomosaicViewer() {
           timer = window.setTimeout(run, 5000);
           return;
         }
+        if (r.status === 202 && j?.needsExtract) {
+          // Backend can't produce the .tif directly (WebODM Lightning only serves
+          // all.zip and extracting that on the edge OOMs). Stream-extract in the
+          // browser, push the .tif straight to storage, then retry.
+          setPending(null);
+          setErr(null);
+          try {
+            await extractAndUpload(j.zipUrl, j.upload, (stage, pct) => {
+              if (!cancelled) setExtracting({ stage, pct });
+            });
+            if (cancelled) return;
+            setExtracting(null);
+            timer = window.setTimeout(run, 200);
+            return;
+          } catch (e: any) {
+            console.error("[OrthoViewer] client extraction failed", e);
+            setExtracting(null);
+            setErr(`Could not extract orthomosaic in browser: ${e?.message ?? e}`);
+            return;
+          }
+        }
         if (!r.ok || !j?.url) {
           setPending(null);
           setErr(j?.error ?? "Orthomosaic not available yet.");
@@ -178,6 +282,18 @@ export default function OrthomosaicViewer() {
       <div className="h-screen w-screen bg-neutral-950 flex flex-col items-center justify-center gap-3 text-sm text-neutral-200">
         <div className="text-red-400 max-w-md text-center px-6">{err}</div>
         <a href="/app/fields" className="text-sky-400 underline">Back to fields</a>
+      </div>
+    );
+  }
+  if (extracting) {
+    return (
+      <div className="h-screen w-screen bg-neutral-950 flex flex-col items-center justify-center gap-3 text-sm text-neutral-200">
+        <Loader2 className="h-5 w-5 animate-spin text-sky-400" />
+        <div className="text-neutral-300">{extracting.stage}</div>
+        <div className="w-64 h-1.5 bg-neutral-800 rounded overflow-hidden">
+          <div className="h-full bg-sky-500 transition-all" style={{ width: `${Math.max(2, Math.min(100, extracting.pct))}%` }} />
+        </div>
+        <div className="text-xs text-neutral-500">Extracting orthomosaic from the processing archive on this device.</div>
       </div>
     );
   }
