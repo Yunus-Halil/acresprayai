@@ -132,6 +132,37 @@ Deno.serve(async (req) => {
       const listed = await listOdmTasks();
       return json({ tasks: listed.tasks, source: listed.source, error: listed.error });
     }
+    const probeUuid = url.searchParams.get("probe");
+    if (probeUuid) {
+      const paths = [
+        "download/all.zip",
+        "download/odm_orthophoto/odm_orthophoto.tif",
+        "download/orthophoto.tif",
+        "download/odm_orthophoto.tif",
+        "download/odm_orthophoto.tar.gz",
+        "download/orthophoto.png",
+        "download",
+        "output",
+        "assets",
+        "orthophoto/tiles.json",
+        "orthophoto/metadata",
+      ];
+      const results: any[] = [];
+      for (const p of paths) {
+        const path = `/task/${probeUuid}/${p}`;
+        try {
+          const r = await fetch(odmUrl(path), { method: "GET" });
+          const ct = r.headers.get("content-type") ?? "";
+          let body: string | null = null;
+          if (ct.includes("json") || ct.startsWith("text/")) body = (await r.text()).slice(0, 400);
+          else { try { await r.arrayBuffer(); } catch {} }
+          results.push({ p, status: r.status, contentType: ct, body });
+        } catch (e) {
+          results.push({ p, error: String((e as Error)?.message ?? e) });
+        }
+      }
+      return json({ uuid: probeUuid, results });
+    }
     if (!taskId) {
       return json({ error: "Missing task_id" }, 400);
     }
