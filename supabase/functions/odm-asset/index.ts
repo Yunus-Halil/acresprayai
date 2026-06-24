@@ -106,9 +106,23 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Arbitrary asset passthrough: ?asset=odm_orthophoto/odm_orthophoto.tif
+    // Raw ODM assets can be huge; never proxy orthophotos or files over 10MB to the browser.
     if (asset) {
+      if (/orthophoto|orthomosaic|\.tiff?$/i.test(asset)) {
+        return new Response(JSON.stringify({ error: "Raw orthomosaic downloads are disabled. Use tiled viewing." }), {
+          status: 413,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const r = await fetch(odmUrl(`/task/${uuid}/assets/${asset}`));
+      const len = Number(r.headers.get("Content-Length") ?? 0);
+      if (len > 10_000_000) {
+        await r.body?.cancel();
+        return new Response(JSON.stringify({ error: "Asset is too large for direct browser download. Use tiled viewing." }), {
+          status: 413,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       return new Response(r.body, {
         status: r.status,
         headers: { ...corsHeaders, "Content-Type": r.headers.get("Content-Type") ?? "application/octet-stream" },

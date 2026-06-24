@@ -91,7 +91,7 @@ export default function OrthomosaicViewer() {
   const [field, setField] = useState<FieldRow | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [bounds, setBounds] = useState<L.LatLngBoundsExpression | null>(null);
-  const [maxNative, setMaxNative] = useState<number>(21);
+  const [maxNative, setMaxNative] = useState<number>(20);
   const [err, setErr] = useState<string | null>(null);
 
   const [layers, setLayers] = useState<LayerState>({
@@ -131,7 +131,7 @@ export default function OrthomosaicViewer() {
         if (Array.isArray(v) && v.length === 4) {
           setBounds([[v[1], v[0]], [v[3], v[2]]] as L.LatLngBoundsExpression);
         }
-        if (typeof j?.maxzoom === "number") setMaxNative(Math.min(22, j.maxzoom));
+        if (typeof j?.maxzoom === "number") setMaxNative(Math.min(20, j.maxzoom));
       } catch { /* fitBounds is optional */ }
     })();
   }, [taskId]);

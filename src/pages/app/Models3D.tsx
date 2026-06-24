@@ -204,7 +204,7 @@ export default function Models3D() {
   return (
     <div className="p-8 space-y-6">
       <header>
-        <h1 className="font-display text-3xl">3D Field Models</h1>
+        <h1 className="font-display text-3xl">Orthomosaic Outputs</h1>
         <p className="text-muted-foreground">
           Upload a batch of drone images. We send them to our WebODM processing node and build a tiled orthomosaic from your field.
           Real processing - times vary from ~10 minutes to several hours depending on image count and detail.
@@ -217,7 +217,7 @@ export default function Models3D() {
           <div>
             <label className="text-xs uppercase tracking-wider text-muted-foreground">Field (optional)</label>
             <Select value={fieldId} onValueChange={setFieldId}>
-              <SelectTrigger><SelectValue placeholder="Link this model to one of your fields" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Link this orthomosaic to one of your fields" /></SelectTrigger>
               <SelectContent>
                 {fields.length === 0 && <div className="px-3 py-2 text-xs text-muted-foreground">No saved fields - add one in the Fields page first.</div>}
                 {fields.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
