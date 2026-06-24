@@ -91,11 +91,25 @@ Return STRICT JSON with this exact schema:
       "coverage_pct": number,
       "area_acres": number,
       "recommendation": { "action": "spray"|"irrigate"|"reseed"|"fertilize"|"monitor", "product": string, "dose": string, "rationale": string },
-      "polygon": [ [x, y], [x, y], ... ]
+      "polygon": [ [lat, lng], [lat, lng], ... ]
     }
   ]
 }
-Polygon coordinates MUST be normalized to the image: x ∈ [0,1] from LEFT edge, y ∈ [0,1] from TOP edge. Use 4-12 vertices per polygon tight to the patch boundary.`;
+
+GEOREFERENCING (CRITICAL):
+The orthomosaic image you are looking at is georeferenced. Its pixel extent maps DIRECTLY onto this WGS84 bounding box:
+  north (top edge latitude):  ${north}
+  south (bottom edge latitude): ${south}
+  west  (left edge longitude):  ${west}
+  east  (right edge longitude): ${east}
+
+For every polygon vertex you output:
+  - Return REAL WGS84 [latitude, longitude] pairs (decimal degrees).
+  - latitude MUST be between ${south} and ${north}.
+  - longitude MUST be between ${west} and ${east}.
+  - DO NOT return pixel coordinates. DO NOT return normalized 0–1 values. DO NOT swap lat/lng.
+  - The TOP of the image is north (higher latitude). The LEFT of the image is west (lower longitude).
+  - Use 4–12 vertices per polygon tight to the patch boundary.`;
 
     const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -108,7 +122,7 @@ Polygon coordinates MUST be normalized to the image: x ∈ [0,1] from LEFT edge,
         messages: [
           { role: "system", content: system },
           { role: "user", content: [
-            { type: "text", text: "Analyze this high-resolution orthomosaic. Mark every distinct bare patch, nutrient deficiency, waterlogging, weed cluster, row gap, and stress zone with its own tight polygon. Be specific about issue type and treatment." },
+            { type: "text", text: `Analyze this high-resolution orthomosaic. The image covers WGS84 bounds north=${north}, south=${south}, east=${east}, west=${west}. Return every polygon as [lat, lng] pairs strictly inside that box — never pixel or 0–1 values. Mark each distinct bare patch, nutrient deficiency, waterlogging, weed cluster, row gap, and stress zone with its own tight polygon.` },
             { type: "image_url", image_url: { url: dataUrl } },
           ]},
         ],
@@ -126,14 +140,30 @@ Polygon coordinates MUST be normalized to the image: x ∈ [0,1] from LEFT edge,
     let parsed: any;
     try { parsed = JSON.parse(content); } catch { parsed = { health_score: 0, issues: [], zones: [] }; }
 
-    // 3) Convert normalized polygons to lat/lng using bounds.
-    const toLatLng = (x: number, y: number) => {
-      const cx = Math.max(0, Math.min(1, x));
-      const cy = Math.max(0, Math.min(1, y));
-      return {
-        lng: west + cx * (east - west),
-        lat: north - cy * (north - south),
-      };
+    // 3) Parse polygon vertices. The model is instructed to return [lat, lng] in WGS84
+    // already inside the orthomosaic bounds. We accept that, but also defensively detect
+    // legacy normalized (0–1) output and convert it as a fallback so a single bad response
+    // doesn't anchor zones in the ocean.
+    const inBounds = (lat: number, lng: number) =>
+      lat >= south - 1e-6 && lat <= north + 1e-6 &&
+      lng >= west  - 1e-6 && lng <= east  + 1e-6;
+
+    const parseVertex = (p: any): { lat: number; lng: number } | null => {
+      if (!Array.isArray(p) || p.length !== 2) return null;
+      const [a, b] = p.map(Number);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+      // Preferred: [lat, lng] in WGS84
+      if (inBounds(a, b)) return { lat: a, lng: b };
+      // Tolerate swapped [lng, lat]
+      if (inBounds(b, a)) return { lat: b, lng: a };
+      // Fallback: normalized 0–1 image coords [x, y]
+      if (a >= 0 && a <= 1 && b >= 0 && b <= 1) {
+        return {
+          lng: west + a * (east - west),
+          lat: north - b * (north - south),
+        };
+      }
+      return null;
     };
 
     const zones = Array.isArray(parsed.zones) ? parsed.zones.map((z: any, i: number) => ({
@@ -144,9 +174,7 @@ Polygon coordinates MUST be normalized to the image: x ∈ [0,1] from LEFT edge,
       coverage_pct: Number(z.coverage_pct ?? 0),
       recommendation: z.recommendation ?? null,
       ring: Array.isArray(z.polygon)
-        ? z.polygon
-            .filter((p: any) => Array.isArray(p) && p.length === 2)
-            .map(([x, y]: number[]) => toLatLng(x, y))
+        ? z.polygon.map(parseVertex).filter((v: any): v is { lat: number; lng: number } => !!v)
         : [],
     })).filter((z: any) => z.ring.length >= 3) : [];
 
