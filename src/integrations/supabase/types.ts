@@ -306,6 +306,7 @@ export type Database = {
           id: string
           image_count: number
           odm_uuid: string | null
+          ortho_path: string | null
           output_path: string | null
           progress: number
           status: string
@@ -319,6 +320,7 @@ export type Database = {
           id?: string
           image_count?: number
           odm_uuid?: string | null
+          ortho_path?: string | null
           output_path?: string | null
           progress?: number
           status?: string
@@ -332,6 +334,7 @@ export type Database = {
           id?: string
           image_count?: number
           odm_uuid?: string | null
+          ortho_path?: string | null
           output_path?: string | null
           progress?: number
           status?: string
