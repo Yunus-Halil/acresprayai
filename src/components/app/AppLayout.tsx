@@ -1,9 +1,10 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useEffect } from "react";
-import { LayoutDashboard, Map, CalendarClock, Sparkles, FileBarChart, Leaf, LogOut, Loader2, Plane, CloudRain } from "lucide-react";
+import { LayoutDashboard, Map, CalendarClock, Sparkles, FileBarChart, LogOut, Loader2, Plane, CloudRain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import logo from "@/assets/acrespray-logo.png.asset.json";
 
 const nav = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -31,7 +32,7 @@ export default function AppLayout() {
     <div className="min-h-screen flex bg-background">
       <aside className="w-60 border-r bg-[hsl(var(--field))] text-[hsl(var(--primary-foreground))] flex flex-col">
         <div className="p-5 flex items-center gap-2 font-display text-lg border-b border-white/10">
-          <Leaf className="h-5 w-5 text-[hsl(var(--accent))]" /> AcreSpray AI
+          <img src={logo.url} alt="AcreSpray AI" className="h-7 w-7" /> AcreSpray AI
         </div>
         <nav className="p-3 flex-1 space-y-1">
           {nav.map(item => (
