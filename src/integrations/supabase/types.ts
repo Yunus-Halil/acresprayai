@@ -84,6 +84,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "anomalies_orthomosaic_id_fkey"
+            columns: ["orthomosaic_id"]
+            isOneToOne: false
+            referencedRelation: "orthomosaics_geo"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "anomalies_zone_id_fkey"
             columns: ["zone_id"]
             isOneToOne: false
@@ -661,6 +668,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "anomalies_orthomosaic_id_fkey"
+            columns: ["orthomosaic_id"]
+            isOneToOne: false
+            referencedRelation: "orthomosaics_geo"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "anomalies_zone_id_fkey"
             columns: ["zone_id"]
             isOneToOne: false
@@ -767,6 +781,68 @@ export type Database = {
           type?: string | null
         }
         Relationships: []
+      }
+      orthomosaics_geo: {
+        Row: {
+          captured_at: string | null
+          created_at: string | null
+          east: number | null
+          field_id: string | null
+          gsd_m_per_px: number | null
+          height_px: number | null
+          id: string | null
+          kind: string | null
+          north: number | null
+          south: number | null
+          status: string | null
+          storage_path: string | null
+          user_id: string | null
+          west: number | null
+          width_px: number | null
+        }
+        Insert: {
+          captured_at?: string | null
+          created_at?: string | null
+          east?: never
+          field_id?: string | null
+          gsd_m_per_px?: number | null
+          height_px?: number | null
+          id?: string | null
+          kind?: string | null
+          north?: never
+          south?: never
+          status?: string | null
+          storage_path?: string | null
+          user_id?: string | null
+          west?: never
+          width_px?: number | null
+        }
+        Update: {
+          captured_at?: string | null
+          created_at?: string | null
+          east?: never
+          field_id?: string | null
+          gsd_m_per_px?: number | null
+          height_px?: number | null
+          id?: string | null
+          kind?: string | null
+          north?: never
+          south?: never
+          status?: string | null
+          storage_path?: string | null
+          user_id?: string | null
+          west?: never
+          width_px?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orthomosaics_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {
