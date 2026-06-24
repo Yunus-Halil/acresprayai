@@ -254,14 +254,14 @@ export default function OrthomosaicViewer() {
         setPending(null);
         setCogUrl(j.url);
 
-        // Ask TiTiler for a WebMercator TileJSON. It returns:
-        //  - bounds in WGS84 (what Leaflet wants)
-        //  - the canonical tile URL template (path differs across TiTiler versions)
-        //  - min/max native zoom
-        const tjR = await fetch(
-          `${TITILER}/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(j.url)}&tilesize=256`,
-        );
-        const tj = await tjR.json();
+        // The edge function already called TiTiler server-side (titiler.xyz blocks
+        // browser CORS). Use the TileJSON it returned. Tile requests themselves are
+        // <img> GETs from Leaflet and don't trigger CORS preflight.
+        const tj = j.tilejson;
+        if (!tj) {
+          setErr("Could not load orthomosaic metadata from the tile server.");
+          return;
+        }
         const b: any = tj?.bounds;
         if (Array.isArray(b) && b.length === 4) {
           setBounds([[b[1], b[0]], [b[3], b[2]]] as L.LatLngBoundsExpression);
