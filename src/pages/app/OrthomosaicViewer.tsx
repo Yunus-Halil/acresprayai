@@ -411,10 +411,7 @@ export default function OrthomosaicViewer() {
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution="&copy; OpenStreetMap contributors"
-              maxNativeZoom={19}
-              maxZoom={22}
-              crossOrigin
-              zIndex={1}
+              maxZoom={19}
             />
             {layers.orthomosaic && tileUrl && (
               <TileLayer
