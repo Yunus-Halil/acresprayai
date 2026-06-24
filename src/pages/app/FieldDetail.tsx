@@ -354,7 +354,7 @@ export default function FieldDetail() {
         <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 p-3 rounded border border-dashed">
           <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <div>
-            Recommended: 30–300 overlapping nadir drone images at 70–80% overlap. Min 5, max 500 per scan.
+            Recommended: 30–200 overlapping nadir drone images at 70–80% overlap. Min 5, max 200 per scan (processing-node limit).
           </div>
         </div>
       </Card>
