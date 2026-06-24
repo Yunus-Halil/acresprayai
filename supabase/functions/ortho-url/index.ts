@@ -224,10 +224,11 @@ Deno.serve(async (req) => {
       return json({ error: "No orthomosaic available" }, 404);
     }
 
-    const { data: publicUrl } = admin.storage.from("orthos").getPublicUrl(path);
-    const publicGeoTiffUrl = publicUrl.publicUrl;
-
-    return json({ url: publicGeoTiffUrl, public: true, expires_in: null });
+    const { data: signed, error: sErr } = await admin.storage.from("orthos").createSignedUrl(path, SIGNED_TTL);
+    if (sErr || !signed?.signedUrl) {
+      return json({ error: sErr?.message ?? "sign failed" }, 500);
+    }
+    return json({ url: signed.signedUrl, expires_in: SIGNED_TTL });
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e) }, 500);
   }
