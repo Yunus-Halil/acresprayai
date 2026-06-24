@@ -81,6 +81,7 @@ Deno.serve(async (req) => {
     // Keep the user's id as the first folder so existing read policies allow the
     // frontend to create signed URLs for completed outputs.
     const path = `${user.id}/odm/${task.odm_uuid}/all.zip`;
+    const orthoPath = `${user.id}/${task.odm_uuid}.tif`;
 
     // Mark as uploading so the client knows we're transferring
     await admin.from("odm_tasks").update({ status: "processing", progress: 99 }).eq("id", task.id);
@@ -105,8 +106,32 @@ Deno.serve(async (req) => {
           }).eq("id", task.id);
           return;
         }
+
+        // Also pull the orthophoto GeoTIFF into the public-ish `orthos` bucket
+        // so TiTiler can render it via a short-lived signed URL.
+        let orthoStored: string | null = null;
+        try {
+          const tifRes = await fetch(odmUrl(`/task/${task.odm_uuid}/download/orthophoto.tif`));
+          if (tifRes.ok && tifRes.body) {
+            const { error: tifErr } = await admin.storage.from("orthos").upload(orthoPath, tifRes.body, {
+              contentType: "image/tiff",
+              upsert: true,
+            });
+            if (!tifErr) orthoStored = orthoPath;
+            else console.error("ortho upload failed:", tifErr.message);
+          } else {
+            console.warn("orthophoto.tif not available from ODM:", tifRes.status);
+          }
+        } catch (e) {
+          console.error("ortho fetch failed:", (e as Error)?.message);
+        }
+
         await admin.from("odm_tasks").update({
-          status: "completed", progress: 100, output_path: path, error: null,
+          status: "completed",
+          progress: 100,
+          output_path: path,
+          ortho_path: orthoStored,
+          error: null,
         }).eq("id", task.id);
       } catch (e) {
         await admin.from("odm_tasks").update({ status: "failed", error: String((e as Error)?.message ?? e) }).eq("id", task.id);
