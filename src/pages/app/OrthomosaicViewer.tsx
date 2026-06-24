@@ -126,7 +126,7 @@ export default function OrthomosaicViewer() {
       // 1) Mint a signed URL to the orthophoto.tif sitting in Supabase Storage.
       // 2) Hand that URL to TiTiler to get bounds + tiles.
       try {
-        const r = await fetch(`${FN_BASE}/ortho-url?task_id=${t.id ?? taskId}`, {
+        const r = await fetch(`${FN_BASE}/ortho-url?task_id=${taskId}`, {
           headers: { Authorization: `Bearer ${s.session.access_token}` },
         });
         const j = await r.json();
