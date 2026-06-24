@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { unzipSync, strFromU8 } from "https://esm.sh/fflate@0.8.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -108,6 +109,21 @@ async function fetchOrthophoto(uuid: string) {
   return { response: null, tried };
 }
 
+// WebODM Lightning (spark*.webodm.net) does NOT expose individual asset downloads -
+// only `all.zip`. As a fallback we open the zip we already mirrored into the `scans`
+// bucket and extract `odm_orthophoto/odm_orthophoto.tif`.
+async function extractOrthoFromZip(zipBytes: Uint8Array): Promise<Uint8Array | null> {
+  const entries = unzipSync(zipBytes, {
+    filter: (file) => /odm_orthophoto[\\/]odm_orthophoto\.tif$/i.test(file.name) || /(^|[\\/])orthophoto\.tif$/i.test(file.name),
+  });
+  const names = Object.keys(entries);
+  console.log("[ortho-url] zip entries matched:", names);
+  if (!names.length) return null;
+  // Prefer the canonical path if present
+  const preferred = names.find(n => /odm_orthophoto[\\/]odm_orthophoto\.tif$/i.test(n)) ?? names[0];
+  return entries[preferred];
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -172,7 +188,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
     const { data: task } = await admin.from("odm_tasks")
-      .select("id, user_id, odm_uuid, ortho_path, status, progress, field_id").eq("id", taskId).maybeSingle();
+      .select("id, user_id, odm_uuid, ortho_path, output_path, status, progress, field_id").eq("id", taskId).maybeSingle();
     if (!task || task.user_id !== ud.user.id) {
       const listed = await listOdmTasks();
       return json({ error: "Scan record not found. ODM task list is included so the completed task can be identified.", odm_tasks: listed.tasks }, 404);
@@ -201,38 +217,57 @@ Deno.serve(async (req) => {
           return json({ error: `Orthomosaic not ready yet (${label}, ${progress}%)`, status: label, progress, odm_tasks: listed.tasks }, 409);
         }
 
-        // 2) Try the requested UUID first, then every completed ODM task. This recovers
-        // from a DB row whose ODM UUID was reset/replaced while the real task completed.
+        // 2) Try downloading the orthophoto directly from ODM (works on self-hosted NodeODM).
         const candidateUuids = new Set<string>();
         if (task.odm_uuid) candidateUuids.add(task.odm_uuid);
         for (const t of listed.tasks) {
           if (t.statusCode === ODM_STATUS.COMPLETED) candidateUuids.add(t.uuid);
         }
 
-        let tifRes: Response | null = null;
+        let tifBytes: Uint8Array | null = null;
         let matchedUuid: string | null = null;
         const triedDownloads: { uuid: string; requests: { url: string; status: number }[] }[] = [];
         for (const uuid of candidateUuids) {
           const result = await fetchOrthophoto(uuid);
           triedDownloads.push({ uuid, requests: result.tried });
           if (result.response) {
-            tifRes = result.response;
+            tifBytes = new Uint8Array(await result.response.arrayBuffer());
             matchedUuid = uuid;
             break;
           }
         }
 
-        if (!tifRes || !matchedUuid) {
-          console.warn("[ortho-url] no orthophoto found after checking completed ODM tasks", JSON.stringify({ listed: listed.tasks, triedDownloads }));
+        // 3) Fallback: extract orthophoto from the all.zip we already stored.
+        //    Required for WebODM Lightning (spark*.webodm.net) which only serves all.zip.
+        if (!tifBytes && task.output_path) {
+          console.log("[ortho-url] direct ODM downloads failed; extracting orthophoto from stored all.zip", task.output_path);
+          const { data: zipBlob, error: dlErr } = await admin.storage.from("scans").download(task.output_path);
+          if (dlErr || !zipBlob) {
+            console.warn("[ortho-url] could not download stored zip:", dlErr?.message);
+          } else {
+            const zipBytes = new Uint8Array(await zipBlob.arrayBuffer());
+            console.log(`[ortho-url] stored zip size: ${zipBytes.byteLength} bytes`);
+            try {
+              tifBytes = await extractOrthoFromZip(zipBytes);
+              if (tifBytes) matchedUuid = task.odm_uuid;
+            } catch (e) {
+              console.error("[ortho-url] unzip failed:", (e as Error)?.message);
+            }
+          }
+        }
+
+        if (!tifBytes || !matchedUuid) {
+          console.warn("[ortho-url] no orthophoto found", JSON.stringify({ listed: listed.tasks, triedDownloads, output_path: task.output_path }));
           return json({
-            error: "Processing completed, but the orthophoto file was not found on any completed ODM task. Review the ODM task list below to identify the correct completed UUID.",
+            error: "Completed, but no orthophoto could be retrieved from ODM or the stored archive.",
             odm_tasks: listed.tasks,
             tried: triedDownloads,
+            stored_zip: task.output_path,
           }, 422);
         }
 
         const orthoPath = `${ud.user.id}/${matchedUuid}.tif`;
-        const { error: tifErr } = await admin.storage.from("orthos").upload(orthoPath, tifRes.body!, {
+        const { error: tifErr } = await admin.storage.from("orthos").upload(orthoPath, tifBytes, {
           contentType: "image/tiff",
           upsert: true,
         });
