@@ -91,26 +91,20 @@ export default function FieldMap() {
   const loadOrthos = async () => {
     if (!fieldId) return;
     const { data } = await supabase
-      .from("orthomosaics")
-      .select("id, kind, storage_path, gsd_m_per_px, captured_at, bounds")
+      .from("orthomosaics_geo")
+      .select("*")
       .eq("field_id", fieldId)
       .eq("status", "ready")
       .order("created_at", { ascending: false });
     if (!data) { setOrthos([]); return; }
-
-    // Get bounds as text via a second query (PostGIS geography isn't auto-decoded)
-    const ids = data.map((r: any) => r.id);
-    const { data: bdata } = await supabase.rpc("get_ortho_bounds", { p_ids: ids }).select?.() ?? { data: null };
-    // Fallback: re-query using a view-like select
-    const enriched: Ortho[] = await Promise.all(data.map(async (r: any) => {
-      // Get signed URL
-      const { data: signed } = await supabase.storage.from("orthomosaics").createSignedUrl(r.storage_path, 3600);
-      // Get bounds via raw query (function below). If RPC missing, we just leave zero bounds.
-      const b = (bdata as any[] | null)?.find(x => x.id === r.id);
+    const enriched: Ortho[] = await Promise.all((data as any[]).map(async (r) => {
+      const { data: signed } = await supabase.storage
+        .from("orthomosaics").createSignedUrl(r.storage_path, 3600);
       return {
         id: r.id, kind: r.kind, storage_path: r.storage_path,
         gsd_m_per_px: r.gsd_m_per_px, captured_at: r.captured_at,
-        west: b?.west ?? 0, east: b?.east ?? 0, north: b?.north ?? 0, south: b?.south ?? 0,
+        west: Number(r.west) || 0, east: Number(r.east) || 0,
+        north: Number(r.north) || 0, south: Number(r.south) || 0,
         signed_url: signed?.signedUrl,
       };
     }));
