@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   Upload, Pencil, Loader2, Sparkles, FileDown, ArrowLeft, Trash2,
@@ -483,23 +484,45 @@ export default function FieldMap() {
               <Button size="sm" variant="ghost" onClick={cancelDraw}>Cancel</Button>
             </Card>
           )}
-          {!drawing && draftRing.length >= 3 && (
-            <Card className="p-3 flex items-end gap-2 flex-wrap">
-              <div className="text-xs text-muted-foreground flex-1">
-                {draftRing.length} vertices captured · name this zone and save
+          <Dialog
+            open={!drawing && draftRing.length >= 3}
+            onOpenChange={(open) => { if (!open) setDraftRing([]); }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Name this crop zone</DialogTitle>
+                <DialogDescription>
+                  {draftRing.length} vertices captured. Give the polygon a label so it shows up on the map and in your analysis.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Zone name *</Label>
+                  <Input autoFocus placeholder="e.g. North block" value={zoneForm.name}
+                    onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })}
+                    onKeyDown={e => { if (e.key === "Enter" && zoneForm.name && zoneForm.crop) finishZone(); }} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Crop *</Label>
+                    <Input placeholder="Corn" value={zoneForm.crop}
+                      onChange={e => setZoneForm({ ...zoneForm, crop: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Variety</Label>
+                    <Input placeholder="optional" value={zoneForm.variety}
+                      onChange={e => setZoneForm({ ...zoneForm, variety: e.target.value })} />
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 flex-1 min-w-[400px]">
-                <Input placeholder="Zone name" value={zoneForm.name}
-                  onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} />
-                <Input placeholder="Crop" value={zoneForm.crop}
-                  onChange={e => setZoneForm({ ...zoneForm, crop: e.target.value })} />
-                <Input placeholder="Variety (opt.)" value={zoneForm.variety}
-                  onChange={e => setZoneForm({ ...zoneForm, variety: e.target.value })} />
-              </div>
-              <Button size="sm" variant="ghost" onClick={() => setDraftRing([])}>Discard</Button>
-              <Button size="sm" onClick={finishZone}>Save zone</Button>
-            </Card>
-          )}
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setDraftRing([])}>Discard</Button>
+                <Button onClick={finishZone} disabled={!zoneForm.name || !zoneForm.crop}>
+                  Save zone
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* Side panel */}
