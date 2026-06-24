@@ -12,9 +12,6 @@ import { Plane, Plus, Battery, Wifi, Activity, Trash2, Sparkles, Loader2 } from 
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid } from "recharts";
 import { toast } from "sonner";
 import { z } from "zod";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import FleetIntel from "@/components/app/FleetIntel";
-
 type Drone = {
   id: string; name: string; model: string;
   battery: number; signal: number; health: number; status: string;
@@ -174,13 +171,7 @@ export default function Fleet() {
         </Dialog>
       </header>
 
-      <Tabs defaultValue="forecast" className="w-full">
-        <TabsList>
-          <TabsTrigger value="forecast">Live forecast</TabsTrigger>
-          <TabsTrigger value="intel">Fleet intel</TabsTrigger>
-        </TabsList>
-        <TabsContent value="forecast">
-        <div className="grid lg:grid-cols-[1fr_2fr] gap-6">
+      <div className="grid lg:grid-cols-[1fr_2fr] gap-6">
         {/* Fleet list */}
         <Card className="p-4 space-y-2">
           <div className="text-xs uppercase tracking-wider text-muted-foreground px-2">Fleet ({drones.length})</div>
@@ -275,11 +266,6 @@ export default function Fleet() {
           )}
         </Card>
       </div>
-        </TabsContent>
-        <TabsContent value="intel">
-          <FleetIntel />
-        </TabsContent>
-      </Tabs>
     </div>
   );
 }
