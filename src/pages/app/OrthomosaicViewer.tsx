@@ -407,21 +407,14 @@ export default function OrthomosaicViewer() {
             attributionControl={false}
             style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
           >
-            {/* Satellite basemap underneath */}
+            {/* OSM basemap underneath */}
             <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              attribution="Tiles &copy; Esri"
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution="&copy; OpenStreetMap contributors"
               maxNativeZoom={19}
               maxZoom={22}
+              crossOrigin
               zIndex={1}
-            />
-            {/* Labels overlay */}
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-              maxNativeZoom={19}
-              maxZoom={22}
-              zIndex={2}
-              opacity={0.85}
             />
             {layers.orthomosaic && tileUrl && (
               <TileLayer
