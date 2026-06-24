@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "@geoman-io/leaflet-geoman-free";
+import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
 import type { Bounds, LatLng } from "@/lib/ndvi";
 
 // Fix default icon paths (Vite asset handling)
@@ -35,9 +37,10 @@ type Props = {
   zones: ZoneShape[];
   anomalies?: AnomalyShape[];
   drawing: boolean;
-  draftRing: LatLng[];
-  onMapClick?: (pt: LatLng) => void;
+  onDraftComplete?: (ring: LatLng[]) => void;
+  onDrawCancel?: () => void;
   onZoneClick?: (id: string) => void;
+  onZoneEdit?: (id: string, ring: LatLng[]) => void;
 };
 
 const sevColor = (s: AnomalyShape["severity"]) =>
@@ -45,13 +48,14 @@ const sevColor = (s: AnomalyShape["severity"]) =>
 
 export default function PolygonMap({
   height = 520, center, overlay, ndviOverlay, zones, anomalies = [],
-  drawing, draftRing, onMapClick, onZoneClick,
+  drawing, onDraftComplete, onDrawCancel, onZoneClick, onZoneEdit,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const overlayRef = useRef<L.ImageOverlay | null>(null);
   const ndviRef = useRef<L.ImageOverlay | null>(null);
   const drawnRef = useRef<L.LayerGroup | null>(null);
+  const zoneLayersRef = useRef<Map<string, L.Polygon>>(new Map());
 
   // Init map once
   useEffect(() => {
@@ -61,27 +65,50 @@ export default function PolygonMap({
       maxZoom: 22, attribution: "Tiles © Esri",
     }).addTo(map);
     drawnRef.current = L.layerGroup().addTo(map);
+
+    // Geoman global settings — snapping on by default
+    map.pm.setGlobalOptions({
+      snappable: true,
+      snapDistance: 20,
+      allowSelfIntersection: false,
+      finishOn: "dblclick",
+      templineStyle: { color: "#38bdf8", weight: 2, dashArray: "5 5" },
+      hintlineStyle: { color: "#38bdf8", weight: 1, dashArray: "3 6" },
+      pathOptions: { color: "#38bdf8", weight: 2, fillOpacity: 0.2 },
+    });
+
+    map.on("pm:create", (e: any) => {
+      const layer = e.layer as L.Polygon;
+      const latlngs = (layer.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+      // Remove Geoman's temporary layer — parent re-renders the zone after save
+      map.removeLayer(layer);
+      onDraftCompleteRef.current?.(latlngs);
+    });
+
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Click handler
+  // Keep latest callback refs so the persistent map listener uses fresh closures
+  const onDraftCompleteRef = useRef(onDraftComplete);
+  const onZoneEditRef = useRef(onZoneEdit);
+  useEffect(() => { onDraftCompleteRef.current = onDraftComplete; }, [onDraftComplete]);
+  useEffect(() => { onZoneEditRef.current = onZoneEdit; }, [onZoneEdit]);
+
+  // Toggle Geoman draw mode based on `drawing` prop
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const fn = (e: L.LeafletMouseEvent) => {
-      if (!drawing) return;
-      onMapClick?.({ lat: e.latlng.lat, lng: e.latlng.lng });
-    };
-    map.on("click", fn);
-    return () => { map.off("click", fn); };
-  }, [drawing, onMapClick]);
-
-  // Cursor
-  useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.style.cursor = drawing ? "crosshair" : "";
+    if (drawing) {
+      map.pm.enableDraw("Polygon", {
+        snappable: true,
+        snapDistance: 20,
+        finishOn: "dblclick",
+        allowSelfIntersection: false,
+      });
+    } else {
+      if (map.pm.globalDrawModeEnabled()) map.pm.disableDraw();
     }
   }, [drawing]);
 
@@ -120,6 +147,7 @@ export default function PolygonMap({
     const group = drawnRef.current;
     if (!map || !group) return;
     group.clearLayers();
+    zoneLayersRef.current.clear();
 
     zones.forEach(z => {
       const color = z.color ?? "#84cc16";
@@ -128,7 +156,21 @@ export default function PolygonMap({
       });
       poly.bindTooltip(`${z.name} · ${z.crop}`, { permanent: true, direction: "center", className: "zone-label" });
       if (onZoneClick) poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onZoneClick(z.id); });
+
+      // Enable in-place editing (drag vertices, drag whole shape)
+      (poly as any).pm.enable({
+        allowSelfIntersection: false,
+        snappable: true,
+        snapDistance: 20,
+        draggable: true,
+      });
+      poly.on("pm:edit pm:dragend", () => {
+        const latlngs = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+        onZoneEditRef.current?.(z.id, latlngs);
+      });
+
       group.addLayer(poly);
+      zoneLayersRef.current.set(z.id, poly);
     });
 
     anomalies.forEach(a => {
@@ -139,21 +181,17 @@ export default function PolygonMap({
       poly.bindTooltip(a.label, { permanent: false, direction: "top" });
       group.addLayer(poly);
     });
-
-    if (draftRing.length > 0) {
-      const latlngs = draftRing.map(p => L.latLng(p.lat, p.lng));
-      const line = L.polyline(latlngs, { color: "#38bdf8", weight: 2, dashArray: "5 5" });
-      group.addLayer(line);
-      draftRing.forEach(p => {
-        group.addLayer(L.circleMarker([p.lat, p.lng], { radius: 5, color: "#38bdf8", fillColor: "#0ea5e9", fillOpacity: 1 }));
-      });
-    }
-  }, [zones, anomalies, draftRing, onZoneClick]);
+  }, [zones, anomalies, onZoneClick]);
 
   return (
     <>
       <div ref={containerRef} style={{ height, width: "100%" }} className="rounded-lg overflow-hidden border" />
-      <style>{`.zone-label { background: rgba(0,0,0,0.65); color: white; border: none; font-size: 10px; padding: 2px 6px; border-radius: 3px; box-shadow: none; } .zone-label::before { display: none; }`}</style>
+      <style>{`
+        .zone-label { background: rgba(0,0,0,0.65); color: white; border: none; font-size: 10px; padding: 2px 6px; border-radius: 3px; box-shadow: none; }
+        .zone-label::before { display: none; }
+        .leaflet-pm-tooltip { background: rgba(15,23,42,0.92); color: #f1f5f9; border: 1px solid rgba(56,189,248,0.4); font-size: 11px; padding: 4px 8px; border-radius: 4px; }
+        .marker-icon.leaflet-pm-draggable { cursor: grab; }
+      `}</style>
     </>
   );
 }
