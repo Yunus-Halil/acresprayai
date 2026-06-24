@@ -287,7 +287,12 @@ Deno.serve(async (req) => {
 
         // 3) Fallback: extract orthophoto from the all.zip we already stored.
         //    Required for WebODM Lightning (spark*.webodm.net) which only serves all.zip.
-        if (!tifBytes && task.output_path) {
+        // 3) Fallback: extract orthophoto from the all.zip we already stored.
+        //    DISABLED on WebODM Lightning - the unzip exceeds the 256 MB edge memory cap.
+        //    Kept here behind an explicit feature flag so a self-hosted backend with a
+        //    larger worker can enable it later.
+        const allowZipExtract = (Deno.env.get("ORTHO_EXTRACT_FROM_ZIP") ?? "").toLowerCase() === "true";
+        if (!tifBytes && task.output_path && allowZipExtract) {
           console.log("[ortho-url] direct ODM downloads failed; extracting orthophoto from stored all.zip", task.output_path);
           const { data: signedZip, error: signErr } = await admin.storage.from("scans")
             .createSignedUrl(task.output_path, 60 * 10);
@@ -314,10 +319,11 @@ Deno.serve(async (req) => {
         if (!tifBytes || !matchedUuid) {
           console.warn("[ortho-url] no orthophoto found", JSON.stringify({ listed: listed.tasks, triedDownloads, output_path: task.output_path }));
           return json({
-            error: "Completed, but no orthophoto could be retrieved from ODM or the stored archive.",
+            error: "Processing completed, but the orthophoto cannot be fetched. ODM_BASE_URL is WebODM Lightning (spark*.webodm.net), which only exposes /task/<uuid>/download/all.zip — not individual assets like odm_orthophoto.tif. Extracting it from the stored all.zip exceeds the 256 MB edge function memory cap. Options: (1) switch ODM_BASE_URL to a self-hosted NodeODM/WebODM that exposes per-asset download paths, or (2) run the extraction in a worker outside edge functions.",
             odm_tasks: listed.tasks,
             tried: triedDownloads,
             stored_zip: task.output_path,
+            odm_host: new URL(ODM_BASE_URL).host,
           }, 422);
         }
 
