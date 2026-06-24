@@ -16,6 +16,7 @@ import Fleet from "./pages/app/Fleet.tsx";
 import Weather from "./pages/app/Weather.tsx";
 import Models3D from "./pages/app/Models3D.tsx";
 import FieldMap from "./pages/app/FieldMap.tsx";
+import FieldDetail from "./pages/app/FieldDetail.tsx";
 import { AuthProvider } from "./lib/auth";
 
 const queryClient = new QueryClient();
@@ -33,6 +34,7 @@ const App = () => (
             <Route path="/app" element={<AppLayout />}>
               <Route index element={<Dashboard />} />
               <Route path="fields" element={<Fields />} />
+              <Route path="fields/:id" element={<FieldDetail />} />
               <Route path="fields/:id/map" element={<FieldMap />} />
               <Route path="planner" element={<Planner />} />
               <Route path="analyzer" element={<Analyzer />} />
