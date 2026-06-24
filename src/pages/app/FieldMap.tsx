@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import {
   Upload, Pencil, Loader2, Sparkles, FileDown, ArrowLeft, Trash2,
-  CheckCircle2, AlertTriangle, FlaskConical,
+  CheckCircle2, AlertTriangle, FlaskConical, Save, X,
 } from "lucide-react";
 import PolygonMap, { type AnomalyShape, type ZoneShape } from "@/components/app/PolygonMap";
 import {
@@ -71,6 +71,11 @@ export default function FieldMap() {
   const [drawing, setDrawing] = useState(false);
   const [draftRing, setDraftRing] = useState<LatLng[]>([]);
   const [zoneForm, setZoneForm] = useState({ name: "", crop: "Corn", variety: "" });
+
+  // Selection / edit state
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+  const [pendingRing, setPendingRing] = useState<LatLng[] | null>(null);
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -209,12 +214,30 @@ export default function FieldMap() {
   };
   const cancelDraw = () => { setDrawing(false); setDraftRing([]); };
 
-  const onZoneEdit = async (id: string, ring: LatLng[]) => {
-    const poly = ring.map(p => [p.lng, p.lat]);
-    const { error } = await supabase.rpc("update_crop_zone", { p_id: id, p_polygon: poly });
+  // Geometry change while editing — buffer until user clicks Save
+  const onZoneEdit = (_id: string, ring: LatLng[]) => setPendingRing(ring);
+
+  const startEdit = (id: string) => {
+    setSelectedZoneId(id);
+    setEditingZoneId(id);
+    setPendingRing(null);
+  };
+  const cancelEdit = () => { setEditingZoneId(null); setPendingRing(null); };
+  const saveEdit = async () => {
+    if (!editingZoneId) return;
+    if (!pendingRing) { setEditingZoneId(null); return; }
+    const poly = pendingRing.map(p => [p.lng, p.lat]);
+    const { error } = await supabase.rpc("update_crop_zone", { p_id: editingZoneId, p_polygon: poly });
     if (error) { toast.error(error.message); return; }
     toast.success("Zone updated");
+    setEditingZoneId(null);
+    setPendingRing(null);
     await loadZones();
+  };
+
+  const onZoneClick = (id: string) => {
+    if (editingZoneId) return; // don't change selection mid-edit
+    setSelectedZoneId(prev => prev === id ? null : id);
   };
 
   const finishZone = async () => {
@@ -412,9 +435,45 @@ export default function FieldMap() {
             anomalies={anomalyShapes}
             drawing={drawing}
             draftRing={draftRing}
+            selectedZoneId={selectedZoneId}
+            editingZoneId={editingZoneId}
             onDraftComplete={onDraftComplete}
+            onZoneClick={onZoneClick}
             onZoneEdit={onZoneEdit}
           />
+          {editingZoneId && (
+            <Card className="p-3 flex items-center gap-3 border-primary/40 bg-primary/5">
+              <Pencil className="h-4 w-4 text-primary" />
+              <div className="flex-1 text-xs text-muted-foreground">
+                Editing <strong className="text-foreground">{zones.find(z => z.id === editingZoneId)?.name}</strong> — drag vertices or the whole shape. Snapping is on.
+                {pendingRing && <span className="ml-2 text-primary">unsaved changes</span>}
+              </div>
+              <Button size="sm" variant="ghost" onClick={cancelEdit}><X className="h-4 w-4" /> Cancel</Button>
+              <Button size="sm" onClick={saveEdit} disabled={!pendingRing}><Save className="h-4 w-4" /> Save</Button>
+            </Card>
+          )}
+          {selectedZoneId && !editingZoneId && (() => {
+            const z = zones.find(zz => zz.id === selectedZoneId);
+            if (!z) return null;
+            return (
+              <Card className="p-3 flex items-center gap-3">
+                <div className="flex-1 text-xs">
+                  <div className="font-semibold text-sm">{z.name}</div>
+                  <div className="text-muted-foreground">{z.crop}{z.variety ? ` · ${z.variety}` : ""} · {Number(z.area_ha).toFixed(2)} ha</div>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => startEdit(z.id)}>
+                  <Pencil className="h-4 w-4" /> Reshape
+                </Button>
+                <Button size="sm" variant="destructive" onClick={() => {
+                  if (confirm(`Delete zone "${z.name}"? This removes its anomalies too.`)) {
+                    deleteZone(z.id);
+                    setSelectedZoneId(null);
+                  }
+                }}><Trash2 className="h-4 w-4" /> Delete</Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedZoneId(null)}><X className="h-4 w-4" /></Button>
+              </Card>
+            );
+          })()}
           {drawing && (
             <Card className="p-3 text-xs text-muted-foreground flex items-center gap-3">
               <Pencil className="h-4 w-4 text-primary" />
@@ -522,13 +581,26 @@ export default function FieldMap() {
             </Button>
             <div className="space-y-1.5 max-h-44 overflow-auto">
               {zones.map(z => (
-                <div key={z.id} className="text-xs flex items-center gap-2 p-2 rounded hover:bg-muted/40">
-                  <div className="flex-1">
+                <div key={z.id}
+                  className={`text-xs flex items-center gap-1 p-2 rounded cursor-pointer ${selectedZoneId === z.id ? "bg-primary/10 ring-1 ring-primary/40" : "hover:bg-muted/40"}`}
+                  onClick={() => setSelectedZoneId(z.id)}
+                >
+                  <div className="flex-1 min-w-0">
                     <div className="font-semibold">{z.name}</div>
                     <div className="text-muted-foreground">{z.crop} · {Number(z.area_ha).toFixed(2)} ha</div>
                   </div>
                   <Button size="icon" variant="ghost" className="h-6 w-6"
-                    onClick={() => deleteZone(z.id)}><Trash2 className="h-3 w-3" /></Button>
+                    onClick={(e) => { e.stopPropagation(); startEdit(z.id); }}>
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-6 w-6 hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete zone "${z.name}"?`)) {
+                        deleteZone(z.id);
+                        if (selectedZoneId === z.id) setSelectedZoneId(null);
+                      }
+                    }}><Trash2 className="h-3 w-3" /></Button>
                 </div>
               ))}
               {zones.length === 0 && <div className="text-xs text-muted-foreground italic">No zones drawn yet</div>}
