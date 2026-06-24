@@ -17,6 +17,7 @@ import Weather from "./pages/app/Weather.tsx";
 import Models3D from "./pages/app/Models3D.tsx";
 import FieldMap from "./pages/app/FieldMap.tsx";
 import FieldDetail from "./pages/app/FieldDetail.tsx";
+import OrthomosaicViewer from "./pages/app/OrthomosaicViewer.tsx";
 import { AuthProvider } from "./lib/auth";
 
 const queryClient = new QueryClient();
@@ -43,6 +44,7 @@ const App = () => (
               <Route path="models" element={<Models3D />} />
               <Route path="reports" element={<Reports />} />
             </Route>
+            <Route path="/app/orthomosaic/:taskId" element={<OrthomosaicViewer />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
