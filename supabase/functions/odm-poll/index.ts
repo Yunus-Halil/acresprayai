@@ -74,9 +74,13 @@ Deno.serve(async (req) => {
       return json({ status: s, progress });
     }
 
-    // COMPLETED - stream all.zip directly into storage to avoid buffering
-    // the entire archive in the edge function's memory (causes WORKER_RESOURCE_LIMIT).
-    const path = `odm/${user.id}/${task.odm_uuid}/all.zip`;
+    // COMPLETED - stream all.zip into storage through the service-role client.
+    // Do not manually construct a Storage REST Authorization header here: if the
+    // key is missing/malformed it becomes "Bearer undefined" and Storage returns
+    // "Invalid Compact JWS". The Supabase client handles the auth header safely.
+    // Keep the user's id as the first folder so existing read policies allow the
+    // frontend to create signed URLs for completed outputs.
+    const path = `${user.id}/odm/${task.odm_uuid}/all.zip`;
 
     // Mark as uploading so the client knows we're transferring
     await admin.from("odm_tasks").update({ status: "processing", progress: 99 }).eq("id", task.id);
@@ -90,22 +94,15 @@ Deno.serve(async (req) => {
           await admin.from("odm_tasks").update({ status: "failed", error: "Download failed" }).eq("id", task.id);
           return;
         }
-        // Stream straight to Supabase Storage REST API (no in-memory buffering)
-        const storageUrl = `${Deno.env.get("SUPABASE_URL")}/storage/v1/object/scans/${path}`;
-        const putRes = await fetch(storageUrl, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-            "Content-Type": "application/zip",
-            "x-upsert": "true",
-          },
-          body: zipRes.body,
-          // @ts-ignore - Deno fetch requires duplex when streaming a request body
-          duplex: "half",
+        const { error: uploadError } = await admin.storage.from("scans").upload(path, zipRes.body, {
+          contentType: "application/zip",
+          upsert: true,
         });
-        if (!putRes.ok) {
-          const t = await putRes.text().catch(() => "");
-          await admin.from("odm_tasks").update({ status: "failed", error: `Storage upload failed: ${t.slice(0, 200)}` }).eq("id", task.id);
+        if (uploadError) {
+          await admin.from("odm_tasks").update({
+            status: "failed",
+            error: `Storage upload failed: ${uploadError.message}`,
+          }).eq("id", task.id);
           return;
         }
         await admin.from("odm_tasks").update({
