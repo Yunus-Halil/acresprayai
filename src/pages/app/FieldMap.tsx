@@ -403,7 +403,10 @@ export default function FieldMap() {
     : { lat: 37.5, lng: -78.6 }; // Virginia default
 
   const zoneShapes: ZoneShape[] = zones.map(z => ({
-    id: z.id, name: z.name, crop: z.crop, ring: ringFromGeoJSON(z.geojson),
+    id: z.id,
+    name: z.name,
+    crop: z.crop,
+    ring: z.id === editingZoneId && pendingRing ? pendingRing : ringFromGeoJSON(z.geojson),
   }));
   const anomalyShapes: AnomalyShape[] = anomalies.map(a => ({
     id: a.id, ring: ringFromGeoJSON(a.geojson),
