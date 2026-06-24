@@ -14,11 +14,80 @@ function odmUrl(path: string) {
   u.searchParams.set("token", ODM_AUTH_TOKEN);
   return u.toString();
 }
+
+function safeOdmUrl(path: string) {
+  const u = new URL(`${ODM_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
+  if (ODM_AUTH_TOKEN) u.searchParams.set("token", "[redacted]");
+  return u.toString();
+}
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
 // NodeODM status codes
 const STATUS = { QUEUED: 10, RUNNING: 20, FAILED: 30, COMPLETED: 40, CANCELED: 50 } as const;
+const ORTHO_PATHS = [
+  "download/odm_orthophoto/odm_orthophoto.tif",
+  "download/orthophoto.tif",
+  "download/odm_orthophoto.tif",
+];
+
+type OdmTaskSummary = {
+  uuid: string;
+  statusCode: number | null;
+  status: string | null;
+  progress: number | null;
+  name: string | null;
+  createdAt: string | null;
+};
+
+function readStatusCode(task: any): number | null {
+  const raw = task?.status?.code ?? task?.statusCode ?? task?.status_code ?? task?.code;
+  if (typeof raw === "number") return raw;
+  if (typeof raw === "string" && /^\d+$/.test(raw)) return Number(raw);
+  return null;
+}
+
+function normalizeOdmTasks(payload: any): OdmTaskSummary[] {
+  let raw: any = payload;
+  if (Array.isArray(payload?.tasks)) raw = payload.tasks;
+  else if (Array.isArray(payload?.results)) raw = payload.results;
+  else if (payload?.tasks && typeof payload.tasks === "object") raw = Object.values(payload.tasks);
+  if (!Array.isArray(raw)) return [];
+  return raw.map((task: any) => ({
+    uuid: String(task?.uuid ?? task?.id ?? task?.taskId ?? task?.task_id ?? ""),
+    statusCode: readStatusCode(task),
+    status: typeof task?.status === "string" ? task.status : task?.status?.name ?? task?.status?.label ?? null,
+    progress: typeof task?.progress === "number" ? Math.round(task.progress) : null,
+    name: task?.name ?? task?.options?.name ?? null,
+    createdAt: task?.created_at ?? task?.createdAt ?? task?.dateCreated ?? task?.created ?? null,
+  })).filter((task) => task.uuid);
+}
+
+async function listOdmTasks(): Promise<OdmTaskSummary[]> {
+  for (const path of ["/tasks", "/task/list"]) {
+    const res = await fetch(odmUrl(path));
+    const text = await res.text();
+    let payload: any = null;
+    try { payload = text ? JSON.parse(text) : null; } catch { /* noop */ }
+    console.log(`[odm-poll] GET ${safeOdmUrl(path)} -> ${res.status}`, text.slice(0, 1000));
+    if (!res.ok) continue;
+    const tasks = normalizeOdmTasks(payload);
+    console.log("[odm-poll] ODM tasks:", JSON.stringify(tasks));
+    return tasks;
+  }
+  return [];
+}
+
+async function fetchOrthophoto(uuid: string) {
+  for (const p of ORTHO_PATHS) {
+    const path = `/task/${uuid}/${p}`;
+    const r = await fetch(odmUrl(path));
+    console.warn(`[odm-poll] GET ${safeOdmUrl(path)} -> ${r.status}`);
+    if (r.ok && r.body) return r;
+    try { await r.arrayBuffer(); } catch { /* noop */ }
+  }
+  return null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -107,31 +176,35 @@ Deno.serve(async (req) => {
           return;
         }
 
-        // Also pull the orthophoto GeoTIFF into the public-ish `orthos` bucket
-        // so TiTiler can render it via a short-lived signed URL.
+        // Also pull the orthophoto GeoTIFF into the public `orthos` bucket
+        // so TiTiler can render it from a direct URL.
         let orthoStored: string | null = null;
         try {
-          const candidates = [
-            "download/orthophoto.tif",
-            "download/odm_orthophoto/odm_orthophoto.tif",
-            "download/odm_orthophoto.tif",
-          ];
+          const odmTasks = await listOdmTasks();
+          const candidateUuids = new Set<string>([task.odm_uuid]);
+          for (const t of odmTasks) {
+            if (t.statusCode === STATUS.COMPLETED) candidateUuids.add(t.uuid);
+          }
           let tifRes: Response | null = null;
-          for (const p of candidates) {
-            const r = await fetch(odmUrl(`/task/${task.odm_uuid}/${p}`));
-            if (r.ok && r.body) { tifRes = r; break; }
-            try { await r.arrayBuffer(); } catch { /* noop */ }
-            console.warn(`ortho candidate ${p} -> ${r.status}`);
+          let matchedUuid = task.odm_uuid;
+          for (const uuid of candidateUuids) {
+            const r = await fetchOrthophoto(uuid);
+            if (r) {
+              tifRes = r;
+              matchedUuid = uuid;
+              break;
+            }
           }
           if (tifRes) {
-            const { error: tifErr } = await admin.storage.from("orthos").upload(orthoPath, tifRes.body!, {
+            const storedPath = `${user.id}/${matchedUuid}.tif`;
+            const { error: tifErr } = await admin.storage.from("orthos").upload(storedPath, tifRes.body!, {
               contentType: "image/tiff",
               upsert: true,
             });
-            if (!tifErr) orthoStored = orthoPath;
+            if (!tifErr) orthoStored = storedPath;
             else console.error("ortho upload failed:", tifErr.message);
           } else {
-            console.warn("no orthophoto produced for", task.odm_uuid);
+            console.warn("no orthophoto found after checking completed ODM tasks", JSON.stringify(odmTasks));
           }
         } catch (e) {
           console.error("ortho fetch failed:", (e as Error)?.message);
