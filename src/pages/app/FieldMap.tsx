@@ -411,6 +411,7 @@ export default function FieldMap() {
             zones={zoneShapes}
             anomalies={anomalyShapes}
             drawing={drawing}
+            draftRing={draftRing}
             onDraftComplete={onDraftComplete}
             onZoneEdit={onZoneEdit}
           />
