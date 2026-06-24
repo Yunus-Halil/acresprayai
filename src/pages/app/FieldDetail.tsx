@@ -235,11 +235,6 @@ export default function FieldDetail() {
     loadTasks();
   };
 
-  const openOrthomosaic = (t: Task) => {
-    if (!t.odm_uuid) return;
-    window.open(`/app/orthomosaic/${t.id}`, "_blank", "noopener");
-  };
-
   const statusTone = (s: string) =>
     s === "completed" ? "border-emerald-500 text-emerald-600" :
     s === "failed" ? "border-destructive text-destructive" :
@@ -390,9 +385,11 @@ export default function FieldDetail() {
             <div className="flex gap-2 mt-3 flex-wrap">
               {t.status === "completed" && (
                 <>
-                  {t.odm_uuid && orthoAvailable[t.odm_uuid] && (
-                    <Button size="sm" onClick={() => openOrthomosaic(t)}>
-                      <MapIcon className="h-3.5 w-3.5" /> View
+                  {t.odm_uuid && (
+                    <Button size="sm" asChild>
+                      <a href={`/app/orthomosaic/${t.id}`} target="_blank" rel="noopener noreferrer">
+                        <MapIcon className="h-3.5 w-3.5" /> View orthomosaic
+                      </a>
                     </Button>
                   )}
                   <Button size="sm" variant="outline" onClick={() => downloadZip(t)}><Download className="h-3.5 w-3.5" /> Download</Button>
