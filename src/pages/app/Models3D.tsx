@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, Map as MapIcon, Loader2, AlertCircle, Download, RefreshCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { prepareForODM, hasGPS } from "@/lib/imagePrep";
 
 type Task = {
   id: string;
@@ -45,30 +46,6 @@ async function uploadOne(odm_uuid: string, file: File): Promise<void> {
     }
   };
   try { await send(); } catch { await send(); }
-}
-
-// Downscale a drone image client-side so it fits under the edge function body limit
-// while preserving enough detail for photogrammetry (long edge 2400px, JPEG q=0.82).
-// EXIF GPS is lost in canvas re-encoding - WebODM still reconstructs from visual features.
-async function downscaleImage(file: File, maxEdge = 2400, quality = 0.82): Promise<File> {
-  // Skip tiny images
-  if (file.size < 1_500_000) return file;
-  const bitmap = await createImageBitmap(file).catch(() => null);
-  if (!bitmap) return file;
-  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
-  if (scale >= 1) { bitmap.close?.(); return file; }
-  const w = Math.round(bitmap.width * scale);
-  const h = Math.round(bitmap.height * scale);
-  const canvas = document.createElement("canvas");
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) { bitmap.close?.(); return file; }
-  ctx.drawImage(bitmap, 0, 0, w, h);
-  bitmap.close?.();
-  const blob: Blob | null = await new Promise(res => canvas.toBlob(res, "image/jpeg", quality));
-  if (!blob) return file;
-  const newName = file.name.replace(/\.(png|tiff?|heic|webp)$/i, ".jpg");
-  return new File([blob], newName, { type: "image/jpeg", lastModified: file.lastModified });
 }
 
 export default function Models3D() {
@@ -121,6 +98,22 @@ export default function Models3D() {
     if (files.length < 5) return toast.error("Need at least 5 images for reconstruction");
     if (files.length > 500) return toast.error("Max 500 images per task on our processing node");
 
+    // Pre-flight GPS EXIF check — ungeoreferenced orthos render at (0,0) in the Atlantic.
+    const sample = files.slice(0, Math.min(5, files.length));
+    const gpsResults = await Promise.all(sample.map(hasGPS));
+    const withGPS = gpsResults.filter(Boolean).length;
+    if (withGPS === 0) {
+      const proceed = window.confirm(
+        "None of the sampled images have GPS EXIF tags.\n\n" +
+        "Without GPS, the orthomosaic will NOT be georeferenced and will not display on the map. " +
+        "Re-export your drone photos with GPS metadata intact.\n\n" +
+        "Upload anyway?"
+      );
+      if (!proceed) return;
+    } else if (withGPS < sample.length) {
+      toast.warning(`Only ${withGPS}/${sample.length} sampled images have GPS — accuracy may suffer.`);
+    }
+
     setBusy(true);
     setUploadProgress({ done: 0, total: files.length });
     let auth = await authHeader();
@@ -143,7 +136,7 @@ export default function Models3D() {
 
       // 2. UPLOAD each image sequentially. Prepare one file at a time so large batches don't exhaust browser memory.
       for (let i = 0; i < files.length; i++) {
-        const prepared = await downscaleImage(files[i]);
+        const prepared = await prepareForODM(files[i]);
         await uploadOne(odm_uuid, prepared);
         setUploadProgress({ done: i + 1, total: files.length });
       }
