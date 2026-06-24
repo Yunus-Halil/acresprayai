@@ -15,7 +15,6 @@ import Reports from "./pages/app/Reports.tsx";
 import Fleet from "./pages/app/Fleet.tsx";
 import Weather from "./pages/app/Weather.tsx";
 import Models3D from "./pages/app/Models3D.tsx";
-import FieldView from "./pages/app/FieldView.tsx";
 import FieldMap from "./pages/app/FieldMap.tsx";
 import { AuthProvider } from "./lib/auth";
 
@@ -35,7 +34,6 @@ const App = () => (
               <Route index element={<Dashboard />} />
               <Route path="fields" element={<Fields />} />
               <Route path="fields/:id/map" element={<FieldMap />} />
-              <Route path="field-view" element={<FieldView />} />
               <Route path="planner" element={<Planner />} />
               <Route path="analyzer" element={<Analyzer />} />
               <Route path="fleet" element={<Fleet />} />
