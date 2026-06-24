@@ -464,11 +464,13 @@ export default function OrthomosaicViewer() {
                 url={tileUrl}
                 opacity={1.0}
                 maxNativeZoom={Math.min(20, maxNative)}
-                maxZoom={22}
+                maxZoom={24}
                 tileSize={256}
-                keepBuffer={1}
-                updateWhenIdle
+                keepBuffer={8}
+                updateWhenIdle={false}
                 updateWhenZooming={false}
+                fadeAnimation={false}
+                zoomAnimation={false}
                 zIndex={10}
               />
             )}
