@@ -170,7 +170,7 @@ export default function PolygonMap({
       const poly = L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
         color, weight: isSelected || isEditing ? 3 : 2, fillOpacity: isEditing ? 0.15 : 0.2,
       });
-      poly.bindTooltip(`${z.name} · ${z.crop}`, { permanent: true, direction: "center", className: "zone-label" });
+      poly.bindTooltip(`${z.name} · ${z.crop}`, { permanent: false, sticky: true, opacity: 1, direction: "top", className: "zone-tooltip" });
       poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onZoneClickRef.current?.(z.id); });
 
       group.addLayer(poly);
@@ -197,7 +197,7 @@ export default function PolygonMap({
       const poly = L.polygon(a.ring.map(p => [p.lat, p.lng] as [number, number]), {
         color, weight: 2, fillOpacity: 0.45, dashArray: "4 4",
       });
-      poly.bindTooltip(a.label, { permanent: false, direction: "top" });
+      poly.bindTooltip(a.label, { permanent: false, sticky: true, opacity: 1, direction: "top", className: "zone-tooltip" });
       group.addLayer(poly);
     });
 
@@ -213,8 +213,8 @@ export default function PolygonMap({
     <>
       <div ref={containerRef} style={{ height, width: "100%" }} className="rounded-lg overflow-hidden border" />
       <style>{`
-        .zone-label { background: rgba(0,0,0,0.65); color: white; border: none; font-size: 10px; padding: 2px 6px; border-radius: 3px; box-shadow: none; }
-        .zone-label::before { display: none; }
+        .zone-tooltip { background: rgba(15,23,42,0.92); color: #f8fafc; border: 1px solid rgba(56,189,248,0.3); font-size: 11px; padding: 4px 8px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.35); white-space: nowrap; pointer-events: none; }
+        .zone-tooltip::before { display: none; }
         .leaflet-pm-tooltip { background: rgba(15,23,42,0.92); color: #f1f5f9; border: 1px solid rgba(56,189,248,0.4); font-size: 11px; padding: 4px 8px; border-radius: 4px; }
         .leaflet-marker-icon.marker-icon {
           width: 18px !important;
