@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { unzipSync, strFromU8 } from "https://esm.sh/fflate@0.8.2";
+import { Unzip, UnzipInflate } from "https://esm.sh/fflate@0.8.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -112,16 +112,64 @@ async function fetchOrthophoto(uuid: string) {
 // WebODM Lightning (spark*.webodm.net) does NOT expose individual asset downloads -
 // only `all.zip`. As a fallback we open the zip we already mirrored into the `scans`
 // bucket and extract `odm_orthophoto/odm_orthophoto.tif`.
-async function extractOrthoFromZip(zipBytes: Uint8Array): Promise<Uint8Array | null> {
-  const entries = unzipSync(zipBytes, {
-    filter: (file) => /odm_orthophoto[\\/]odm_orthophoto\.tif$/i.test(file.name) || /(^|[\\/])orthophoto\.tif$/i.test(file.name),
+// Stream-extract just `odm_orthophoto/odm_orthophoto.tif` from a zip without ever
+// holding the full archive in memory (edge functions have a tight RAM cap).
+async function extractOrthoFromZipStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array | null> {
+  return await new Promise<Uint8Array | null>((resolve, reject) => {
+    const matcher = /odm_orthophoto[\\/]odm_orthophoto\.tif$/i;
+    const fallbackMatcher = /(^|[\\/])orthophoto\.tif$/i;
+    let matchedChunks: Uint8Array[] | null = null;
+    let matchedSize = 0;
+    let matchedName: string | null = null;
+    let resolved = false;
+
+    const unz = new Unzip((file) => {
+      if (resolved) return;
+      const isPrimary = matcher.test(file.name);
+      const isFallback = !matchedName && fallbackMatcher.test(file.name);
+      if (!isPrimary && !isFallback) return;
+      // Prefer primary - if we previously captured a fallback, replace it.
+      if (isPrimary) {
+        matchedChunks = [];
+        matchedSize = 0;
+      }
+      matchedName = file.name;
+      console.log(`[ortho-url] zip match: ${file.name}`);
+      file.ondata = (err, chunk, final) => {
+        if (resolved) return;
+        if (err) { resolved = true; reject(err); return; }
+        if (!matchedChunks) matchedChunks = [];
+        matchedChunks.push(chunk);
+        matchedSize += chunk.byteLength;
+        if (final && file.name === matchedName) {
+          resolved = true;
+          const out = new Uint8Array(matchedSize);
+          let off = 0;
+          for (const c of matchedChunks) { out.set(c, off); off += c.byteLength; }
+          resolve(out);
+        }
+      };
+      file.start();
+    });
+    unz.register(UnzipInflate);
+
+    const reader = stream.getReader();
+    const pump = async () => {
+      try {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          if (resolved) { try { reader.cancel(); } catch {} return; }
+          const { value, done } = await reader.read();
+          if (done) { unz.push(new Uint8Array(0), true); break; }
+          if (value && value.byteLength) unz.push(value, false);
+        }
+        if (!resolved) resolve(null);
+      } catch (e) {
+        if (!resolved) { resolved = true; reject(e); }
+      }
+    };
+    pump();
   });
-  const names = Object.keys(entries);
-  console.log("[ortho-url] zip entries matched:", names);
-  if (!names.length) return null;
-  // Prefer the canonical path if present
-  const preferred = names.find(n => /odm_orthophoto[\\/]odm_orthophoto\.tif$/i.test(n)) ?? names[0];
-  return entries[preferred];
 }
 
 Deno.serve(async (req) => {
@@ -241,17 +289,24 @@ Deno.serve(async (req) => {
         //    Required for WebODM Lightning (spark*.webodm.net) which only serves all.zip.
         if (!tifBytes && task.output_path) {
           console.log("[ortho-url] direct ODM downloads failed; extracting orthophoto from stored all.zip", task.output_path);
-          const { data: zipBlob, error: dlErr } = await admin.storage.from("scans").download(task.output_path);
-          if (dlErr || !zipBlob) {
-            console.warn("[ortho-url] could not download stored zip:", dlErr?.message);
+          const { data: signedZip, error: signErr } = await admin.storage.from("scans")
+            .createSignedUrl(task.output_path, 60 * 10);
+          if (signErr || !signedZip?.signedUrl) {
+            console.warn("[ortho-url] could not sign zip:", signErr?.message);
           } else {
-            const zipBytes = new Uint8Array(await zipBlob.arrayBuffer());
-            console.log(`[ortho-url] stored zip size: ${zipBytes.byteLength} bytes`);
             try {
-              tifBytes = await extractOrthoFromZip(zipBytes);
-              if (tifBytes) matchedUuid = task.odm_uuid;
+              const zipRes = await fetch(signedZip.signedUrl);
+              if (!zipRes.ok || !zipRes.body) {
+                console.warn("[ortho-url] zip fetch failed:", zipRes.status);
+              } else {
+                tifBytes = await extractOrthoFromZipStream(zipRes.body);
+                if (tifBytes) {
+                  matchedUuid = task.odm_uuid;
+                  console.log(`[ortho-url] extracted orthophoto: ${tifBytes.byteLength} bytes`);
+                }
+              }
             } catch (e) {
-              console.error("[ortho-url] unzip failed:", (e as Error)?.message);
+              console.error("[ortho-url] streaming unzip failed:", (e as Error)?.message);
             }
           }
         }
