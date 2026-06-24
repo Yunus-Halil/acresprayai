@@ -84,10 +84,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "anomalies_orthomosaic_id_fkey"
+            columns: ["orthomosaic_id"]
+            isOneToOne: false
+            referencedRelation: "orthomosaics_geo"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "anomalies_zone_id_fkey"
             columns: ["zone_id"]
             isOneToOne: false
             referencedRelation: "crop_zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "anomalies_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "crop_zones_geo"
             referencedColumns: ["id"]
           },
         ]
@@ -570,6 +584,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "spray_recommendations_anomaly_id_fkey"
+            columns: ["anomaly_id"]
+            isOneToOne: false
+            referencedRelation: "anomalies_geo"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "spray_recommendations_job_id_fkey"
             columns: ["job_id"]
             isOneToOne: false
@@ -580,6 +601,145 @@ export type Database = {
       }
     }
     Views: {
+      anomalies_geo: {
+        Row: {
+          ai_label: string | null
+          ai_reasoning: string | null
+          area_ha: number | null
+          created_at: string | null
+          geojson: Json | null
+          id: string | null
+          ndvi_mean: number | null
+          ndvi_p10: number | null
+          ndvi_p90: number | null
+          orthomosaic_id: string | null
+          severity: string | null
+          source: string | null
+          status: string | null
+          user_id: string | null
+          user_label: string | null
+          user_notes: string | null
+          zone_id: string | null
+        }
+        Insert: {
+          ai_label?: string | null
+          ai_reasoning?: string | null
+          area_ha?: number | null
+          created_at?: string | null
+          geojson?: never
+          id?: string | null
+          ndvi_mean?: number | null
+          ndvi_p10?: number | null
+          ndvi_p90?: number | null
+          orthomosaic_id?: string | null
+          severity?: string | null
+          source?: string | null
+          status?: string | null
+          user_id?: string | null
+          user_label?: string | null
+          user_notes?: string | null
+          zone_id?: string | null
+        }
+        Update: {
+          ai_label?: string | null
+          ai_reasoning?: string | null
+          area_ha?: number | null
+          created_at?: string | null
+          geojson?: never
+          id?: string | null
+          ndvi_mean?: number | null
+          ndvi_p10?: number | null
+          ndvi_p90?: number | null
+          orthomosaic_id?: string | null
+          severity?: string | null
+          source?: string | null
+          status?: string | null
+          user_id?: string | null
+          user_label?: string | null
+          user_notes?: string | null
+          zone_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anomalies_orthomosaic_id_fkey"
+            columns: ["orthomosaic_id"]
+            isOneToOne: false
+            referencedRelation: "orthomosaics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "anomalies_orthomosaic_id_fkey"
+            columns: ["orthomosaic_id"]
+            isOneToOne: false
+            referencedRelation: "orthomosaics_geo"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "anomalies_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "crop_zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "anomalies_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "crop_zones_geo"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crop_zones_geo: {
+        Row: {
+          area_ha: number | null
+          created_at: string | null
+          crop: string | null
+          field_id: string | null
+          geojson: Json | null
+          id: string | null
+          name: string | null
+          notes: string | null
+          planted_at: string | null
+          user_id: string | null
+          variety: string | null
+        }
+        Insert: {
+          area_ha?: number | null
+          created_at?: string | null
+          crop?: string | null
+          field_id?: string | null
+          geojson?: never
+          id?: string | null
+          name?: string | null
+          notes?: string | null
+          planted_at?: string | null
+          user_id?: string | null
+          variety?: string | null
+        }
+        Update: {
+          area_ha?: number | null
+          created_at?: string | null
+          crop?: string | null
+          field_id?: string | null
+          geojson?: never
+          id?: string | null
+          name?: string | null
+          notes?: string | null
+          planted_at?: string | null
+          user_id?: string | null
+          variety?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crop_zones_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       geography_columns: {
         Row: {
           coord_dimension: number | null
@@ -621,6 +781,68 @@ export type Database = {
           type?: string | null
         }
         Relationships: []
+      }
+      orthomosaics_geo: {
+        Row: {
+          captured_at: string | null
+          created_at: string | null
+          east: number | null
+          field_id: string | null
+          gsd_m_per_px: number | null
+          height_px: number | null
+          id: string | null
+          kind: string | null
+          north: number | null
+          south: number | null
+          status: string | null
+          storage_path: string | null
+          user_id: string | null
+          west: number | null
+          width_px: number | null
+        }
+        Insert: {
+          captured_at?: string | null
+          created_at?: string | null
+          east?: never
+          field_id?: string | null
+          gsd_m_per_px?: number | null
+          height_px?: number | null
+          id?: string | null
+          kind?: string | null
+          north?: never
+          south?: never
+          status?: string | null
+          storage_path?: string | null
+          user_id?: string | null
+          west?: never
+          width_px?: number | null
+        }
+        Update: {
+          captured_at?: string | null
+          created_at?: string | null
+          east?: never
+          field_id?: string | null
+          gsd_m_per_px?: number | null
+          height_px?: number | null
+          id?: string | null
+          kind?: string | null
+          north?: never
+          south?: never
+          status?: string | null
+          storage_path?: string | null
+          user_id?: string | null
+          west?: never
+          width_px?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orthomosaics_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {
@@ -751,6 +973,44 @@ export type Database = {
             }
             Returns: string
           }
+      create_anomaly: {
+        Args: {
+          p_ai_label: string
+          p_ai_reasoning: string
+          p_ndvi_mean: number
+          p_ndvi_p10: number
+          p_ndvi_p90: number
+          p_orthomosaic_id: string
+          p_polygon: Json
+          p_severity: string
+          p_source?: string
+          p_zone_id: string
+        }
+        Returns: string
+      }
+      create_crop_zone: {
+        Args: {
+          p_crop: string
+          p_field_id: string
+          p_name: string
+          p_notes?: string
+          p_planted_at?: string
+          p_polygon: Json
+          p_variety: string
+        }
+        Returns: string
+      }
+      create_spray_recommendation: {
+        Args: {
+          p_anomaly_id: string
+          p_chemical: string
+          p_chemical_class: string
+          p_dose_l_ha: number
+          p_rationale: string
+          p_total_l: number
+        }
+        Returns: string
+      }
       disablelongtransactions: { Args: never; Returns: string }
       dropgeometrycolumn:
         | {
