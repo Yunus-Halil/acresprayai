@@ -95,6 +95,7 @@ export default function OrthomosaicViewer() {
   const [maxNative, setMaxNative] = useState<number>(20);
   const [cogUrl, setCogUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ status: string; progress: number } | null>(null);
 
   const [layers, setLayers] = useState<LayerState>({
     annotations: false, design: false, orthomosaic: true, dsm: false,
@@ -107,7 +108,9 @@ export default function OrthomosaicViewer() {
   });
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    let timer: number | null = null;
+    const run = async () => {
       console.log("[OrthoViewer] taskId from route:", taskId);
       const { data: s } = await supabase.auth.getSession();
       if (!s.session) { setErr("Please sign in."); return; }
@@ -130,10 +133,20 @@ export default function OrthomosaicViewer() {
           headers: { Authorization: `Bearer ${s.session.access_token}` },
         });
         const j = await r.json();
+        if (cancelled) return;
+        if (r.status === 409) {
+          // Still processing - show progress and retry in 5s.
+          setPending({ status: j?.status ?? "processing", progress: j?.progress ?? 0 });
+          setErr(null);
+          timer = window.setTimeout(run, 5000);
+          return;
+        }
         if (!r.ok || !j?.url) {
+          setPending(null);
           setErr(j?.error ?? "Orthomosaic not available yet.");
           return;
         }
+        setPending(null);
         setCogUrl(j.url);
 
         const infoR = await fetch(`${TITILER}/cog/info?url=${encodeURIComponent(j.url)}`);
@@ -147,7 +160,12 @@ export default function OrthomosaicViewer() {
         console.error("[OrthoViewer] info failed", e);
         setErr("Could not load orthomosaic metadata.");
       }
-    })();
+    };
+    run();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
   }, [taskId]);
 
   const tileUrl = useMemo(() => {
@@ -158,8 +176,20 @@ export default function OrthomosaicViewer() {
   if (err) {
     return (
       <div className="h-screen w-screen bg-neutral-950 flex flex-col items-center justify-center gap-3 text-sm text-neutral-200">
-        <div className="text-red-400">{err}</div>
+        <div className="text-red-400 max-w-md text-center px-6">{err}</div>
         <a href="/app/fields" className="text-sky-400 underline">Back to fields</a>
+      </div>
+    );
+  }
+  if (pending) {
+    return (
+      <div className="h-screen w-screen bg-neutral-950 flex flex-col items-center justify-center gap-3 text-sm text-neutral-200">
+        <Loader2 className="h-5 w-5 animate-spin text-sky-400" />
+        <div className="text-neutral-300">
+          {pending.status === "queued" ? "Queued on processing node…" : `Processing… ${pending.progress}%`}
+        </div>
+        <div className="text-xs text-neutral-500">Checking every 5 seconds. This page will load the map automatically when ready.</div>
+        <a href="/app/fields" className="text-sky-400 underline text-xs">Back to fields</a>
       </div>
     );
   }
