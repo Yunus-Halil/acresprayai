@@ -113,7 +113,126 @@ type FieldRow = {
   name: string;
   boundary: BoundaryRing[] | BoundaryRing | null;
   boundary_area_hectares: number | null;
+  settings?: FarmerSettings | null;
 };
+
+// ===================== Farmer settings (per field) =========================
+// Stored as JSON in `fields.settings`. Drives cost calculations and AI prompt.
+export type CustomInput = { name: string; cost: number };
+export type FarmerSettings = {
+  crop_type: string;          // "wheat" | "corn" | ...
+  planting_date: string;      // YYYY-MM-DD or ""
+  harvest_date: string;       // YYYY-MM-DD or ""
+  area_acres_override: number | null;
+  input_costs: {
+    nitrogen_fertilizer: number;
+    phosphorus_fertilizer: number;
+    potassium_fertilizer: number;
+    herbicide: number;
+    fungicide: number;
+    insecticide: number;
+    reseeding: number;
+  };
+  available_inputs: {
+    nitrogen_fertilizer: boolean;
+    phosphorus_fertilizer: boolean;
+    potassium_fertilizer: boolean;
+    herbicide: boolean;
+    fungicide: boolean;
+    insecticide: boolean;
+    reseeding: boolean;
+  };
+  custom_inputs: CustomInput[];
+};
+
+export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
+  crop_type: "",
+  planting_date: "",
+  harvest_date: "",
+  area_acres_override: null,
+  input_costs: {
+    nitrogen_fertilizer: 45,
+    phosphorus_fertilizer: 35,
+    potassium_fertilizer: 30,
+    herbicide: 25,
+    fungicide: 30,
+    insecticide: 20,
+    reseeding: 35,
+  },
+  available_inputs: {
+    nitrogen_fertilizer: true,
+    phosphorus_fertilizer: true,
+    potassium_fertilizer: true,
+    herbicide: true,
+    fungicide: true,
+    insecticide: true,
+    reseeding: true,
+  },
+  custom_inputs: [],
+};
+
+export const INPUT_LABELS: Record<keyof FarmerSettings["input_costs"], string> = {
+  nitrogen_fertilizer: "Nitrogen fertilizer",
+  phosphorus_fertilizer: "Phosphorus fertilizer",
+  potassium_fertilizer: "Potassium fertilizer",
+  herbicide: "Herbicide",
+  fungicide: "Fungicide",
+  insecticide: "Insecticide",
+  reseeding: "Reseeding / seed",
+};
+
+// Maps AI issue_type (canonical key) → farmer input cost key.
+// `null` = no chemical fix.
+export const COST_MAP: Record<string, keyof FarmerSettings["input_costs"] | null> = {
+  bare_soil: "reseeding",
+  nitrogen_deficiency: "nitrogen_fertilizer",
+  phosphorus_deficiency: "phosphorus_fertilizer",
+  potassium_deficiency: "potassium_fertilizer",
+  weed_pressure: "herbicide",
+  disease: "fungicide",
+  pest_damage: "insecticide",
+  waterlogging: null,
+};
+
+// Loose mapping from the AI's free-text `issue` / `recommendation.action` to
+// the canonical COST_MAP key.
+export function issueToCostKey(z: { issue?: string; recommendation?: { action?: string } | null }): string | null {
+  const txt = `${z.issue ?? ""} ${z.recommendation?.action ?? ""}`.toLowerCase();
+  if (/water|drain|saturat|pond/.test(txt)) return "waterlogging";
+  if (/bare|reseed|gap|establish/.test(txt)) return "bare_soil";
+  if (/nitrogen|\bn\s+def/.test(txt)) return "nitrogen_deficiency";
+  if (/phosphor|\bp\s+def/.test(txt)) return "phosphorus_deficiency";
+  if (/potass|\bk\s+def/.test(txt)) return "potassium_deficiency";
+  if (/weed|herbicid/.test(txt)) return "weed_pressure";
+  if (/disease|fung|blight|rust|mildew/.test(txt)) return "disease";
+  if (/pest|insect|aphid|worm|beetle/.test(txt)) return "pest_damage";
+  // Generic recommendation actions.
+  if (/fertili/.test(txt)) return "nitrogen_deficiency";
+  return null;
+}
+
+// Days since planting → coarse growth-stage hint for the AI prompt.
+export function growthStage(crop: string, planting: string): string | null {
+  if (!planting) return null;
+  const days = Math.floor((Date.now() - new Date(planting).getTime()) / 86400000);
+  if (!Number.isFinite(days) || days < 0) return null;
+  const wk = Math.round(days / 7);
+  const c = crop.toLowerCase();
+  // Very rough, just for AI context.
+  if (c === "wheat" || c === "barley" || c === "oats" || c === "rye") {
+    if (wk < 4) return `~${wk} weeks (emergence / tillering)`;
+    if (wk < 10) return `~${wk} weeks (tillering / stem extension)`;
+    if (wk < 16) return `~${wk} weeks (heading / flowering)`;
+    return `~${wk} weeks (grain fill / ripening)`;
+  }
+  if (c === "corn") {
+    if (wk < 4) return `~${wk} weeks (V1–V4)`;
+    if (wk < 10) return `~${wk} weeks (V6–V12)`;
+    if (wk < 14) return `~${wk} weeks (tasseling / silking)`;
+    return `~${wk} weeks (grain fill / dent)`;
+  }
+  return `~${wk} weeks since planting`;
+}
 
 // Boundary may be stored as a single ring (legacy) or as an array of rings
 // (multi-polygon fragmented fields). Always normalize to BoundaryRing[].
