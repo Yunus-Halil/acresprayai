@@ -634,7 +634,7 @@ function AiZonesLayer({
 // plus where AI analysis is allowed to run.
 function BoundaryTool({
   mode, boundary, visible, onCreated, onEdited,
-  onDeleteRing,
+  onDeleteRing, activeIdx, setActiveIdx,
 }: {
   mode: "off" | "draw" | "edit";
   boundary: BoundaryRing[] | null;
@@ -642,6 +642,8 @@ function BoundaryTool({
   onCreated: (ring: BoundaryRing) => void;
   onEdited: (index: number, ring: BoundaryRing) => void;
   onDeleteRing: (index: number) => void;
+  activeIdx: number | null;
+  setActiveIdx: (i: number | null) => void;
 }) {
   const map = useMap();
 
@@ -693,15 +695,26 @@ function BoundaryTool({
     const polys: L.Polygon[] = [];
     boundary.forEach((ring, idx) => {
       if (!ring || ring.length < 3) return;
+      const isActive = idx === activeIdx;
       const poly = L.polygon(ring.map(p => [p.lat, p.lng] as [number, number]), {
-        color: "#22d3ee", weight: 2.5, dashArray: "6 4",
-        fillColor: "#22d3ee", fillOpacity: mode === "edit" ? 0.05 : 0.08,
+        color: isActive ? "#fbbf24" : "#22d3ee",
+        weight: isActive ? 3.5 : 2.5,
+        dashArray: isActive ? undefined : "6 4",
+        fillColor: isActive ? "#fbbf24" : "#22d3ee",
+        fillOpacity: mode === "edit" ? (isActive ? 0.12 : 0.04) : 0.08,
       }).addTo(map);
       poly.bindTooltip(
-        boundary.length > 1 ? `Field boundary · part ${idx + 1}` : "Field boundary",
+        boundary.length > 1
+          ? `Field boundary · part ${idx + 1}${isActive ? " (selected)" : " — click to select"}`
+          : "Field boundary",
         { sticky: true, opacity: 1, className: "ai-zone-label" },
       );
-      if (mode === "edit" || mode === "draw") {
+      // Clicking a ring selects it as the active part for editing/deletion.
+      poly.on("click", (ev: any) => {
+        L.DomEvent.stopPropagation(ev);
+        setActiveIdx(idx);
+      });
+      if ((mode === "edit" || mode === "draw") && isActive) {
         poly.bringToFront();
         try {
           (poly as any).pm.enable({
@@ -714,16 +727,11 @@ function BoundaryTool({
           onEdited(idx, updated);
         };
         poly.on("pm:markerdragend pm:dragend pm:vertexadded pm:vertexremoved pm:edit", handle);
-        // Right-click a ring to delete just that fragment.
-        poly.on("contextmenu", (ev: any) => {
-          L.DomEvent.stopPropagation(ev);
-          if (window.confirm(`Remove this boundary part (${idx + 1})?`)) onDeleteRing(idx);
-        });
       }
       polys.push(poly);
     });
     return () => { polys.forEach(p => { try { p.remove(); } catch { /* noop */ } }); };
-  }, [boundary, visible, mode, map, onEdited, onDeleteRing]);
+  }, [boundary, visible, mode, map, onEdited, onDeleteRing, activeIdx, setActiveIdx]);
 
   return null;
 }
