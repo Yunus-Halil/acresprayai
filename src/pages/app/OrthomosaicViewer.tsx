@@ -826,7 +826,7 @@ export default function OrthomosaicViewer() {
   const [extracting, setExtracting] = useState<{ stage: string; pct: number } | null>(null);
 
   const [layers, setLayers] = useState<LayerState>({
-    annotations: true, design: false, orthomosaic: true, ndvi: false, measurements: true, boundary: true,
+    annotations: true, design: false, orthomosaic: true, ndvi: false, measurements: true, boundary: true, userAnnotations: true,
   });
   const [ndviInfo, setNdviInfo] = useState<{ bands: number; index: "ndvi" | "vari"; label: string } | null>(null);
   type TabKey = "field" | "weather" | "ai" | "planner" | "reports";
