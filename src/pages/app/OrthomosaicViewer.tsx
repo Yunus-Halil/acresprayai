@@ -587,12 +587,13 @@ const sevColor = (s: AiZone["severity"]) =>
   s === "high" ? "#ef4444" : s === "medium" ? "#f59e0b" : "#eab308";
 
 function AiZonesLayer({
-  zones, selectedId, onSelect, onUpdate, boundaryAreaHa,
+  zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa,
 }: {
   zones: AiZone[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onUpdate: (id: string, ring: { lat: number; lng: number }[]) => void;
+  onDelete: (id: string) => void;
   boundaryAreaHa: number | null;
 }) {
   const map = useMap();
@@ -643,11 +644,23 @@ function AiZonesLayer({
             <div style="border-top:1px solid #222;padding-top:8px;font-size:11px;color:#6b7280">
               No specific treatment — monitor and re-scan after weather change.
             </div>`}
+          <button data-aiz-delete="${escapeHtml(z.id)}" style="margin-top:9px;font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.45);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
         </div>
       `;
       poly.bindPopup(html, {
         className: "ai-zone-popup",
         maxWidth: 320, closeButton: true, autoPan: true, autoClose: true, closeOnClick: true,
+      });
+      poly.on("popupopen", (e: any) => {
+        const el = e.popup.getElement() as HTMLElement | null;
+        const btn = el?.querySelector(`[data-aiz-delete="${CSS.escape(z.id)}"]`) as HTMLElement | null;
+        if (!btn) return;
+        btn.onclick = (evt) => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          poly.closePopup();
+          onDelete(z.id);
+        };
       });
       poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onSelect(z.id); poly.openPopup(e.latlng); });
       group.addLayer(poly);
@@ -664,7 +677,7 @@ function AiZonesLayer({
       }
     });
     return () => { group.remove(); };
-  }, [map, zones, selectedId, onSelect, onUpdate, boundaryAreaHa]);
+  }, [map, zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa]);
   return null;
 }
 
@@ -718,8 +731,13 @@ function UserPolyLayer({
       poly.on("popupopen", (e: any) => {
         const el = (e.popup.getElement() as HTMLElement | null);
         if (!el) return;
-        const btn = el.querySelector(`[data-uap-delete="${p.id}"]`) as HTMLElement | null;
-        if (btn) btn.onclick = () => { poly.closePopup(); onDelete(p.id); };
+        const btn = el.querySelector(`[data-uap-delete="${CSS.escape(p.id)}"]`) as HTMLElement | null;
+        if (btn) btn.onclick = (evt) => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          poly.closePopup();
+          onDelete(p.id);
+        };
       });
       poly.on("click", (e: any) => { L.DomEvent.stopPropagation(e); poly.openPopup(e.latlng); });
       group.addLayer(poly);
