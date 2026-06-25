@@ -1329,6 +1329,16 @@ function FieldViewTab(props: {
   taskId: string;
   annotations: Annotation[];
   setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
+  boundary: { lat: number; lng: number }[] | null;
+  boundaryMode: "off" | "draw" | "edit";
+  setBoundaryMode: React.Dispatch<React.SetStateAction<"off" | "draw" | "edit">>;
+  boundaryDirty: boolean;
+  boundarySaving: boolean;
+  saveBoundary: () => void;
+  clearBoundary: () => void;
+  handleBoundaryCreated: (ring: { lat: number; lng: number }[]) => void;
+  handleBoundaryEdited: (ring: { lat: number; lng: number }[]) => void;
+  fieldAreaHa: number | null;
 }) {
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
@@ -1338,6 +1348,9 @@ function FieldViewTab(props: {
     showAiZones, setShowAiZones, selectedZone, setSelectedZone,
     updateZoneRing, deleteZone, exportFlightPlan,
     taskId, annotations, setAnnotations,
+    boundary, boundaryMode, setBoundaryMode, boundaryDirty, boundarySaving,
+    saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited,
+    fieldAreaHa,
   } = props;
 
   const [measureActive, setMeasureActive] = useState(false);
