@@ -2933,11 +2933,14 @@ function buildMission(
     const entry = z.path[0];
     const exit = z.path[z.path.length - 1];
 
-    // TRANSIT: home/prev → zone entry at transit altitude
+    // TRANSIT: home/prev → zone entry at transit altitude, kept INSIDE boundary
+    const transit = routeInsideBoundary(cursor, entry, boundary);
     wps.push({ ...cursor, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
-    wps.push({ ...entry, alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT", zoneId: z.id });
-    transitSegments.push([cursor, entry]);
-    transitDist += distM(cursor, entry);
+    for (let i = 1; i < transit.length; i++) {
+      wps.push({ ...transit[i], alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT", zoneId: z.id });
+    }
+    transitSegments.push(transit);
+    transitDist += polylineLengthM(transit);
 
     // DESCEND + SPRAY ON at zone entry
     wps.push({ ...entry, alt: p.sprayAltM, speed: p.spraySpeed, action: "ALTITUDE_CHANGE", zoneId: z.id });
@@ -2961,10 +2964,14 @@ function buildMission(
 
   // Return to home + land
   if (ordered.length > 0) {
+    const rth = routeInsideBoundary(cursor, p.home, boundary);
     wps.push({ ...cursor, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
+    for (let i = 1; i < rth.length - 1; i++) {
+      wps.push({ ...rth[i], alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT" });
+    }
     wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "RTH" });
-    transitSegments.push([cursor, p.home]);
-    transitDist += distM(cursor, p.home);
+    transitSegments.push(rth);
+    transitDist += polylineLengthM(rth);
   }
   wps.push({ ...p.home, alt: 0, speed: 1, action: "LAND" });
 
