@@ -1078,6 +1078,12 @@ export default function OrthomosaicViewer() {
   const cursorCoordRef = useRef<HTMLDivElement | null>(null);
   const cursorZoomRef = useRef<HTMLDivElement | null>(null);
 
+  // Farmer-defined settings (crop, dates, input costs, available inputs).
+  // Lives in fields.settings (JSON) and gates AI recommendations + cost math.
+  const [settings, setSettings] = useState<FarmerSettings>(DEFAULT_FARMER_SETTINGS);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSavedAt, setSettingsSavedAt] = useState<number | null>(null);
+
   // Load saved annotations whenever the active scan changes.
   useEffect(() => {
     if (!taskId) return;
@@ -1136,10 +1142,20 @@ export default function OrthomosaicViewer() {
       }
 
       const { data: f } = await supabase.from("fields")
-        .select("id, name, boundary, boundary_area_hectares").eq("id", t.field_id).maybeSingle();
+        .select("id, name, boundary, boundary_area_hectares, settings").eq("id", t.field_id).maybeSingle();
       if (f) {
         setField(f as FieldRow);
         setBoundary(normalizeBoundary((f as any).boundary));
+        const saved = (f as any).settings;
+        if (saved && typeof saved === "object") {
+          setSettings({
+            ...DEFAULT_FARMER_SETTINGS,
+            ...saved,
+            input_costs: { ...DEFAULT_FARMER_SETTINGS.input_costs, ...(saved.input_costs ?? {}) },
+            available_inputs: { ...DEFAULT_FARMER_SETTINGS.available_inputs, ...(saved.available_inputs ?? {}) },
+            custom_inputs: Array.isArray(saved.custom_inputs) ? saved.custom_inputs.slice(0, 3) : [],
+          });
+        }
       }
 
       // 1) Mint a signed URL to the orthophoto.tif sitting in Supabase Storage.
