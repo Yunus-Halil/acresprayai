@@ -1895,6 +1895,7 @@ function FieldViewTab(props: {
   saveUserPolygon: (f: { name: string; issue_type: string; color: string; notes: string }) => Promise<void>;
   deleteUserPolygon: (id: string) => Promise<void>;
   clearAnalysis: () => Promise<void>;
+  settings: FarmerSettings;
 }) {
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
@@ -1909,6 +1910,7 @@ function FieldViewTab(props: {
     fieldAreaHa, activeBoundaryIdx, setActiveBoundaryIdx,
     userPolys, userPolyToolActive, setUserPolyToolActive,
     draftUserPoly, setDraftUserPoly, saveUserPolygon, deleteUserPolygon, clearAnalysis,
+    settings,
   } = props;
 
   const [measureActive, setMeasureActive] = useState(false);
