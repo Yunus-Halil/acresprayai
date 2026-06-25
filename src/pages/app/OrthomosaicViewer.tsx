@@ -1212,7 +1212,17 @@ export default function OrthomosaicViewer() {
   }, []);
 
   const deleteZone = (id: string) => {
-    setAnalysis(a => a ? { ...a, zones: a.zones.filter(z => z.id !== id) } : a);
+    setAnalysis(a => {
+      const next = a ? { ...a, zones: a.zones.filter(z => z.id !== id) } : a;
+      // Persist immediately so the deletion survives reload / tab switch.
+      if (next && taskId) {
+        supabase.from("odm_tasks")
+          .update({ ai_analysis: next as any, ai_analysis_at: new Date().toISOString() } as any)
+          .eq("id", taskId)
+          .then(({ error }) => { if (error) console.warn("deleteZone persist failed", error); });
+      }
+      return next;
+    });
     if (selectedZone === id) setSelectedZone(null);
   };
 
@@ -2834,30 +2844,56 @@ function sprayVerdict(h: OwHour, rainNext6h: number): { verdict: Verdict; reason
 
 function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName: string }) {
   const [lat, lng] = center;
-  const [data, setData] = useState<{ current: any; hourly: OwHour[]; daily: OwDay[] } | null>(null);
+  // Cache weather per coarse location for 20 min in localStorage so switching
+  // tabs (or revisiting the field) doesn't re-hit OpenWeather every time.
+  const cacheKey = `acrespray.weather.${lat.toFixed(3)},${lng.toFixed(3)}`;
+  const TTL_MS = 20 * 60 * 1000;
+  const readCache = () => {
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (!raw) return null;
+      const c = JSON.parse(raw);
+      if (!c?.savedAt || Date.now() - c.savedAt > TTL_MS) return null;
+      return c as { savedAt: number; data: { current: any; hourly: OwHour[]; daily: OwDay[] } };
+    } catch { return null; }
+  };
+  const initial = readCache();
+  const [data, setData] = useState<{ current: any; hourly: OwHour[]; daily: OwDay[] } | null>(initial?.data ?? null);
+  const [savedAt, setSavedAt] = useState<number | null>(initial?.savedAt ?? null);
   const [err, setErr] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setErr(null); setData(null);
-      try {
-        const { data: s } = await supabase.auth.getSession();
-        const r = await fetch(`${FN_BASE}/weather?lat=${lat}&lon=${lng}`, {
-          headers: s.session ? { Authorization: `Bearer ${s.session.access_token}` } : {},
-        });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error ?? "Weather unavailable");
-        if (!cancelled) setData(j);
-      } catch (e: any) {
-        if (!cancelled) setErr(e?.message ?? "Weather unavailable");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [lat, lng]);
+  const load = useCallback(async (force = false) => {
+    if (!force) {
+      const c = readCache();
+      if (c) { setData(c.data); setSavedAt(c.savedAt); return; }
+    }
+    setErr(null); setRefreshing(true);
+    try {
+      const { data: s } = await supabase.auth.getSession();
+      const r = await fetch(`${FN_BASE}/weather?lat=${lat}&lon=${lng}`, {
+        headers: s.session ? { Authorization: `Bearer ${s.session.access_token}` } : {},
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? "Weather unavailable");
+      setData(j);
+      const ts = Date.now();
+      setSavedAt(ts);
+      try { localStorage.setItem(cacheKey, JSON.stringify({ savedAt: ts, data: j })); } catch {}
+    } catch (e: any) {
+      setErr(e?.message ?? "Weather unavailable");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [lat, lng, cacheKey]);
 
-  if (err) return (
-    <div className="absolute inset-0 grid place-items-center text-sm text-red-400 p-6 text-center" style={{ background: "#0f0f0f" }}>{err}</div>
+  useEffect(() => { load(false); }, [load]);
+
+  if (err && !data) return (
+    <div className="absolute inset-0 grid place-items-center text-sm text-red-400 p-6 text-center gap-3" style={{ background: "#0f0f0f" }}>
+      <div>{err}</div>
+      <button onClick={() => load(true)} className="px-3 py-1.5 rounded bg-neutral-800 text-neutral-200 text-xs">Retry</button>
+    </div>
   );
   if (!data) return (
     <div className="absolute inset-0 grid place-items-center text-sm text-neutral-400 gap-2" style={{ background: "#0f0f0f" }}>
@@ -2920,9 +2956,16 @@ function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center gap-3">
           <CloudSun className="h-5 w-5 text-[#4CAF50]" />
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-semibold tracking-tight">Weather · {fieldName}</h1>
             <div className="text-xs text-neutral-500 font-mono">{lat.toFixed(4)}, {lng.toFixed(4)} · OpenWeather One Call 3.0</div>
+          </div>
+          <div className="text-[11px] text-neutral-500 text-right">
+            {savedAt && <div>Updated {new Date(savedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>}
+            <button onClick={() => load(true)} disabled={refreshing}
+              className="mt-1 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[11px] inline-flex items-center gap-1 disabled:opacity-50">
+              {refreshing ? <Loader2 className="h-3 w-3 animate-spin" /> : null} Refresh
+            </button>
           </div>
         </div>
 
