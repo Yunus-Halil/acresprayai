@@ -14,8 +14,9 @@ import {
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
   Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
-  CheckCircle2, XCircle, Trash2,
+  CheckCircle2, XCircle, Trash2, Hexagon,
 } from "lucide-react";
+import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
@@ -586,12 +587,13 @@ const sevColor = (s: AiZone["severity"]) =>
   s === "high" ? "#ef4444" : s === "medium" ? "#f59e0b" : "#eab308";
 
 function AiZonesLayer({
-  zones, selectedId, onSelect, onUpdate,
+  zones, selectedId, onSelect, onUpdate, boundaryAreaHa,
 }: {
   zones: AiZone[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onUpdate: (id: string, ring: { lat: number; lng: number }[]) => void;
+  boundaryAreaHa: number | null;
 }) {
   const map = useMap();
   useEffect(() => {
@@ -602,14 +604,52 @@ function AiZonesLayer({
         color, weight: selectedId === z.id ? 3 : 2,
         fillColor: color, fillOpacity: selectedId === z.id ? 0.35 : 0.25,
       });
-      poly.bindTooltip(`${z.name} · ${z.issue}`, {
-        permanent: false,
-        sticky: true,
-        opacity: 1,
-        direction: "top",
+      poly.bindTooltip(`${z.name}`, {
+        permanent: false, sticky: true, opacity: 1, direction: "top",
         className: "ai-zone-label",
       });
-      poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onSelect(z.id); });
+      // Compute area: prefer coverage_pct × boundary area, else geodesic of ring.
+      const ringAreaM2 = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));
+      const m2 = boundaryAreaHa && z.coverage_pct
+        ? (boundaryAreaHa * 10000) * (z.coverage_pct / 100)
+        : ringAreaM2;
+      const acres = (m2 / 4046.8564224).toFixed(2);
+      const ha = (m2 / 10000).toFixed(3);
+      // Rough cost: $25/acre baseline, scaled by severity multiplier.
+      const sevMul = z.severity === "high" ? 1.5 : z.severity === "medium" ? 1.2 : 1.0;
+      const estCost = ((m2 / 4046.8564224) * 25 * sevMul).toFixed(0);
+      const rec = z.recommendation;
+      const sevBadge = `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;background:${color}33;color:${color};border:1px solid ${color}">${z.severity}</span>`;
+      const html = `
+        <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:240px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <div style="font-weight:600;font-size:13px">${escapeHtml(z.name)}</div>
+            ${sevBadge}
+          </div>
+          <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">${escapeHtml(z.issue)}</div>
+          <div style="font-size:11px;color:#9ca3af;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:8px">
+            <div>Area</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${acres} ac</div>
+            <div></div><div style="text-align:right;color:#6b7280;font-family:ui-monospace,monospace">${ha} ha</div>
+            <div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">$${estCost}</div>
+          </div>
+          ${rec ? `
+            <div style="border-top:1px solid #222;padding-top:8px;font-size:11px">
+              <div style="color:#4CAF50;font-weight:600;margin-bottom:3px">Recommended treatment</div>
+              <div style="color:#f0f0f0;margin-bottom:2px">${escapeHtml(rec.action ?? "—")}</div>
+              ${rec.product ? `<div style="color:#9ca3af">Product: <span style="color:#f0f0f0">${escapeHtml(rec.product)}</span></div>` : ""}
+              ${rec.dose ? `<div style="color:#9ca3af">Rate: <span style="color:#f0f0f0">${escapeHtml(rec.dose)}</span></div>` : ""}
+              ${rec.rationale ? `<div style="color:#6b7280;margin-top:4px;font-style:italic">${escapeHtml(rec.rationale)}</div>` : ""}
+            </div>` : `
+            <div style="border-top:1px solid #222;padding-top:8px;font-size:11px;color:#6b7280">
+              No specific treatment — monitor and re-scan after weather change.
+            </div>`}
+        </div>
+      `;
+      poly.bindPopup(html, {
+        className: "ai-zone-popup",
+        maxWidth: 320, closeButton: true, autoPan: true, autoClose: true, closeOnClick: true,
+      });
+      poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onSelect(z.id); poly.openPopup(e.latlng); });
       group.addLayer(poly);
       if (selectedId === z.id) {
         poly.bringToFront();
@@ -624,7 +664,68 @@ function AiZonesLayer({
       }
     });
     return () => { group.remove(); };
-  }, [map, zones, selectedId, onSelect, onUpdate]);
+  }, [map, zones, selectedId, onSelect, onUpdate, boundaryAreaHa]);
+  return null;
+}
+
+function escapeHtml(s: string): string {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as any)[c]);
+}
+
+// ---- User polygon annotations ------------------------------------------------
+export type UserPoly = {
+  id: string;
+  name: string;
+  issue_type: string;
+  color: string;
+  notes: string | null;
+  ring: { lat: number; lng: number }[];
+  area_hectares: number;
+  created_at?: string;
+};
+
+const USER_POLY_COLORS: Record<string, string> = {
+  orange: "#fb923c", red: "#ef4444", yellow: "#facc15",
+};
+const USER_POLY_ISSUES = ["Bare soil", "Waterlogging", "Pest damage", "Weed pressure", "Other"] as const;
+
+function UserPolyLayer({
+  polys, onDelete,
+}: { polys: UserPoly[]; onDelete: (id: string) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const group = L.layerGroup().addTo(map);
+    polys.forEach((p) => {
+      const color = USER_POLY_COLORS[p.color] ?? "#fb923c";
+      const poly = L.polygon(p.ring.map(pt => [pt.lat, pt.lng] as [number, number]), {
+        color, weight: 2, fillColor: color, fillOpacity: 0.18, dashArray: "4 4",
+      });
+      poly.bindTooltip(p.name, { sticky: true, opacity: 1, className: "ai-zone-label", direction: "top" });
+      const acres = (p.area_hectares * 2.4710538147).toFixed(2);
+      const html = `
+        <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:220px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <div style="height:10px;width:10px;border-radius:2px;background:${color}"></div>
+            <div style="font-weight:600;font-size:13px">${escapeHtml(p.name)}</div>
+          </div>
+          <div style="font-size:11px;color:#9ca3af;margin-bottom:6px">${escapeHtml(p.issue_type)}</div>
+          <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">Area: <span style="color:#f0f0f0;font-family:ui-monospace,monospace">${p.area_hectares.toFixed(3)} ha · ${acres} ac</span></div>
+          ${p.notes ? `<div style="font-size:11px;color:#d1d5db;border-top:1px solid #222;padding-top:6px;margin-bottom:8px">${escapeHtml(p.notes)}</div>` : ""}
+          <button data-uap-delete="${p.id}" style="font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
+        </div>
+      `;
+      poly.bindPopup(html, { className: "ai-zone-popup", maxWidth: 300, autoClose: true, closeOnClick: true });
+      poly.on("popupopen", (e: any) => {
+        const el = (e.popup.getElement() as HTMLElement | null);
+        if (!el) return;
+        const btn = el.querySelector(`[data-uap-delete="${p.id}"]`) as HTMLElement | null;
+        if (btn) btn.onclick = () => { poly.closePopup(); onDelete(p.id); };
+      });
+      poly.on("click", (e: any) => { L.DomEvent.stopPropagation(e); poly.openPopup(e.latlng); });
+      group.addLayer(poly);
+    });
+    return () => { group.remove(); };
+  }, [map, polys, onDelete]);
   return null;
 }
 
@@ -744,6 +845,7 @@ type LayerState = {
   ndvi: boolean;
   measurements: boolean;
   boundary: boolean;
+  userAnnotations: boolean;
 };
 
 function LayerRow({
@@ -781,7 +883,7 @@ export default function OrthomosaicViewer() {
   const [extracting, setExtracting] = useState<{ stage: string; pct: number } | null>(null);
 
   const [layers, setLayers] = useState<LayerState>({
-    annotations: true, design: false, orthomosaic: true, ndvi: false, measurements: true, boundary: true,
+    annotations: true, design: false, orthomosaic: true, ndvi: false, measurements: true, boundary: true, userAnnotations: true,
   });
   const [ndviInfo, setNdviInfo] = useState<{ bands: number; index: "ndvi" | "vari"; label: string } | null>(null);
   type TabKey = "field" | "weather" | "ai" | "planner" | "reports";
@@ -800,6 +902,11 @@ export default function OrthomosaicViewer() {
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [showAiZones, setShowAiZones] = useState(true);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  // Database-backed manual polygon annotations (farmer's anomalies).
+  const [userPolys, setUserPolys] = useState<UserPoly[]>([]);
+  // Draft polygon waiting for the metadata form modal.
+  const [draftUserPoly, setDraftUserPoly] = useState<DraftPolygon | null>(null);
+  const [userPolyToolActive, setUserPolyToolActive] = useState(false);
   const [boundary, setBoundary] = useState<BoundaryRing[] | null>(null);
   const [boundaryMode, setBoundaryMode] = useState<"off" | "draw" | "edit">("off");
   const [boundaryDirty, setBoundaryDirty] = useState(false);
@@ -812,6 +919,28 @@ export default function OrthomosaicViewer() {
   useEffect(() => {
     if (!taskId) return;
     setAnnotations(loadAnnotations(taskId));
+  }, [taskId]);
+
+  // Load DB-backed user annotations whenever the active scan changes.
+  useEffect(() => {
+    if (!taskId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("user_annotations")
+        .select("id, name, issue_type, color, notes, ring, area_hectares, created_at")
+        .eq("task_id", taskId)
+        .order("created_at", { ascending: true });
+      if (cancelled) return;
+      if (error) { console.warn("[user_annotations] load failed", error); return; }
+      setUserPolys((data ?? []).map((r: any) => ({
+        id: r.id, name: r.name, issue_type: r.issue_type, color: r.color,
+        notes: r.notes, ring: r.ring as { lat: number; lng: number }[],
+        area_hectares: Number(r.area_hectares ?? 0),
+        created_at: r.created_at,
+      })));
+    })();
+    return () => { cancelled = true; };
   }, [taskId]);
 
   useEffect(() => {
@@ -827,10 +956,21 @@ export default function OrthomosaicViewer() {
       setToken(s.session.access_token);
 
       const { data: t } = await supabase.from("odm_tasks")
-        .select("odm_uuid, field_id, created_at").eq("id", taskId).maybeSingle();
+        .select("odm_uuid, field_id, created_at, ai_analysis, ai_analysis_at").eq("id", taskId).maybeSingle();
       console.log("[OrthoViewer] task row:", t);
       if (!t?.odm_uuid) { setErr("Scan not found"); return; }
       setTask(t as TaskRow);
+
+      // Rehydrate saved AI analysis so treatment zones survive page reloads.
+      const saved = (t as any).ai_analysis;
+      if (saved && typeof saved === "object" && Array.isArray(saved.zones)) {
+        setAnalysis({
+          health_score: Number(saved.health_score ?? 0),
+          summary: String(saved.summary ?? ""),
+          issues: Array.isArray(saved.issues) ? saved.issues : [],
+          zones: saved.zones,
+        });
+      }
 
       const { data: f } = await supabase.from("fields")
         .select("id, name, boundary, boundary_area_hectares").eq("id", t.field_id).maybeSingle();
@@ -959,18 +1099,37 @@ export default function OrthomosaicViewer() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? "Analysis failed");
-      setAnalysis({
+      const payload = {
         health_score: j.health_score,
         summary: j.summary,
         issues: j.issues ?? [],
         zones: j.zones ?? [],
-      });
+      };
+      setAnalysis(payload);
       setSelectedZone(j.zones?.[0]?.id ?? null);
+      // Persist so it survives reloads.
+      try {
+        await supabase.from("odm_tasks")
+          .update({ ai_analysis: payload as any, ai_analysis_at: new Date().toISOString() } as any)
+          .eq("id", taskId);
+      } catch (e) { console.warn("ai_analysis persist failed", e); }
     } catch (e: any) {
       setAnalysisErr(e?.message ?? String(e));
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  const clearAnalysis = async () => {
+    if (!taskId) return;
+    if (!window.confirm("Clear the saved AI analysis for this scan?")) return;
+    setAnalysis(null);
+    setSelectedZone(null);
+    try {
+      await supabase.from("odm_tasks")
+        .update({ ai_analysis: null, ai_analysis_at: null } as any)
+        .eq("id", taskId);
+    } catch (e) { console.warn("ai_analysis clear failed", e); }
   };
 
   // Boundary persistence ------------------------------------------------------
@@ -1084,6 +1243,39 @@ export default function OrthomosaicViewer() {
     const a = document.createElement("a");
     a.href = url; a.download = `flight-plan-${taskId}.geojson`; a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // ---- User annotations CRUD (DB-backed) ------------------------------------
+  const saveUserPolygon = async (form: { name: string; issue_type: string; color: string; notes: string }) => {
+    if (!draftUserPoly || !taskId) return;
+    const { data: s } = await supabase.auth.getSession();
+    if (!s.session) return;
+    const row = {
+      user_id: s.session.user.id,
+      task_id: taskId,
+      field_id: field?.id ?? null,
+      name: form.name.trim() || "Annotation",
+      issue_type: form.issue_type,
+      color: form.color,
+      notes: form.notes.trim() || null,
+      ring: draftUserPoly.ring as any,
+      area_hectares: Number(draftUserPoly.areaHa.toFixed(4)),
+    };
+    const { data, error } = await supabase.from("user_annotations").insert(row).select("*").single();
+    if (error) { console.error(error); return; }
+    setUserPolys(prev => [...prev, {
+      id: data.id, name: data.name, issue_type: data.issue_type, color: data.color,
+      notes: data.notes, ring: data.ring as any, area_hectares: Number(data.area_hectares ?? 0),
+      created_at: data.created_at,
+    }]);
+    setDraftUserPoly(null);
+    setUserPolyToolActive(false);
+  };
+  const deleteUserPolygon = async (id: string) => {
+    if (!window.confirm("Delete this annotation?")) return;
+    const { error } = await supabase.from("user_annotations").delete().eq("id", id);
+    if (error) { console.error(error); return; }
+    setUserPolys(prev => prev.filter(p => p.id !== id));
   };
 
   // Probe the COG once to figure out NDVI vs VARI and band count for the legend.
@@ -1342,13 +1534,34 @@ export default function OrthomosaicViewer() {
             fieldAreaHa={field?.boundary_area_hectares ?? null}
             activeBoundaryIdx={activeBoundaryIdx}
             setActiveBoundaryIdx={setActiveBoundaryIdx}
+            userPolys={userPolys}
+            userPolyToolActive={userPolyToolActive}
+            setUserPolyToolActive={setUserPolyToolActive}
+            draftUserPoly={draftUserPoly}
+            setDraftUserPoly={setDraftUserPoly}
+            saveUserPolygon={saveUserPolygon}
+            deleteUserPolygon={deleteUserPolygon}
+            clearAnalysis={clearAnalysis}
           />
         )}
         {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
         {activeTab === "ai" && (
-          <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr} runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan} />
+          <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr}
+            runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan}
+            clearAnalysis={clearAnalysis} />
         )}
-        {activeTab === "planner" && <PlaceholderTab icon={Plane} title="Flight Planner" body="Generate autonomous flight paths over your treatment zones." />}
+        {activeTab === "planner" && (
+          <PlannerTab
+            analysis={analysis}
+            boundary={boundary}
+            tileUrl={tileUrl}
+            bounds={bounds}
+            maxNative={maxNative}
+            taskId={taskId!}
+            runAnalysis={runAnalysis}
+            setActiveTab={setActiveTab}
+          />
+        )}
         {activeTab === "reports" && <PlaceholderTab icon={FileBarChart} title="Reports" body="Yield, treatment, and scan history reports for this field." />}
       </div>
 
@@ -1424,6 +1637,14 @@ function FieldViewTab(props: {
   fieldAreaHa: number | null;
   activeBoundaryIdx: number | null;
   setActiveBoundaryIdx: React.Dispatch<React.SetStateAction<number | null>>;
+  userPolys: UserPoly[];
+  userPolyToolActive: boolean;
+  setUserPolyToolActive: React.Dispatch<React.SetStateAction<boolean>>;
+  draftUserPoly: DraftPolygon | null;
+  setDraftUserPoly: React.Dispatch<React.SetStateAction<DraftPolygon | null>>;
+  saveUserPolygon: (f: { name: string; issue_type: string; color: string; notes: string }) => Promise<void>;
+  deleteUserPolygon: (id: string) => Promise<void>;
+  clearAnalysis: () => Promise<void>;
 }) {
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
@@ -1436,6 +1657,8 @@ function FieldViewTab(props: {
     boundary, boundaryMode, setBoundaryMode, boundaryDirty, boundarySaving,
     saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited, handleBoundaryDeleteRing,
     fieldAreaHa, activeBoundaryIdx, setActiveBoundaryIdx,
+    userPolys, userPolyToolActive, setUserPolyToolActive,
+    draftUserPoly, setDraftUserPoly, saveUserPolygon, deleteUserPolygon, clearAnalysis,
   } = props;
 
   const [measureActive, setMeasureActive] = useState(false);
@@ -1521,6 +1744,7 @@ function FieldViewTab(props: {
             selectedId={selectedZone}
             onSelect={setSelectedZone}
             onUpdate={updateZoneRing}
+            boundaryAreaHa={fieldAreaHa}
           />
         )}
         <MeasureTool active={measureActive} visible={layers.measurements} onStats={handleStats} />
@@ -1544,6 +1768,15 @@ function FieldViewTab(props: {
           activeIdx={activeBoundaryIdx}
           setActiveIdx={setActiveBoundaryIdx}
         />
+        {layers.userAnnotations && userPolys.length > 0 && (
+          <UserPolyLayer polys={userPolys} onDelete={deleteUserPolygon} />
+        )}
+        {userPolyToolActive && (
+          <UserPolygonTool
+            active={userPolyToolActive}
+            onComplete={(p) => setDraftUserPoly(p)}
+          />
+        )}
       </MapContainer>
 
       {/* Floating icon toolbar */}
@@ -1566,6 +1799,19 @@ function FieldViewTab(props: {
             setBoundaryMode(m => m !== "off" ? "off" : (boundary ? "edit" : "draw"));
             setMeasureActive(false);
             setAnnotateActive(false);
+            setLayersOpen(false);
+            setUserPolyToolActive(false);
+          }}
+        />
+        <ToolButton
+          icon={Hexagon}
+          label="Mark anomaly polygon"
+          active={userPolyToolActive}
+          onClick={() => {
+            setUserPolyToolActive(v => !v);
+            setMeasureActive(false);
+            setAnnotateActive(false);
+            setBoundaryMode("off");
             setLayersOpen(false);
           }}
         />
@@ -1731,6 +1977,9 @@ function FieldViewTab(props: {
           <LayerRow label="AI treatment zones" icon={Sparkles}
             checked={showAiZones}
             onToggle={() => setShowAiZones(!showAiZones)} />
+          <LayerRow label={`Annotations · my polygons (${userPolys.length})`} icon={Hexagon}
+            checked={layers.userAnnotations}
+            onToggle={() => setLayers(s => ({ ...s, userAnnotations: !s.userAnnotations }))} />
         </div>
       )}
 
@@ -1912,9 +2161,121 @@ function FieldViewTab(props: {
               showAiZones={showAiZones} setShowAiZones={setShowAiZones}
               selectedZone={selectedZone} setSelectedZone={setSelectedZone}
               deleteZone={deleteZone} exportFlightPlan={exportFlightPlan}
+              clearAnalysis={clearAnalysis}
             />}
           </div>
         )}
+      </div>
+
+      {/* User-polygon tool hint */}
+      {userPolyToolActive && !draftUserPoly && !layersOpen && (
+        <div className="absolute top-4 left-16 z-[1001] w-72 rounded-md border border-[#222] shadow-2xl p-3 text-[#f0f0f0]"
+             style={{ background: "#161616" }}>
+          <div className="flex items-center gap-2 pb-2 mb-2 border-b border-[#222]">
+            <Hexagon className="h-3.5 w-3.5 text-orange-400" />
+            <div className="text-xs font-medium">Mark anomaly</div>
+            <button onClick={() => setUserPolyToolActive(false)} className="ml-auto text-neutral-500 hover:text-[#f0f0f0]">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="text-[11px] text-neutral-400 leading-relaxed">
+            Click on the map to drop vertices around the area you want to flag.
+            Click the first point to close the shape — a form will pop up to label it.
+          </div>
+        </div>
+      )}
+
+      {/* User polygon metadata form */}
+      {draftUserPoly && (
+        <UserPolyForm
+          draft={draftUserPoly}
+          onCancel={() => { setDraftUserPoly(null); setUserPolyToolActive(false); }}
+          onSave={(form) => saveUserPolygon(form)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---- User polygon save dialog -----------------------------------------------
+function UserPolyForm({
+  draft, onCancel, onSave,
+}: {
+  draft: DraftPolygon;
+  onCancel: () => void;
+  onSave: (f: { name: string; issue_type: string; color: string; notes: string }) => void | Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [issueType, setIssueType] = useState<string>("Bare soil");
+  const [color, setColor] = useState<string>("orange");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try { await onSave({ name, issue_type: issueType, color, notes }); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="absolute inset-0 z-[2000] flex items-center justify-center p-6"
+         style={{ background: "rgba(0,0,0,0.65)" }}
+         onClick={onCancel}>
+      <div className="w-full max-w-md rounded-md border border-[#222] shadow-2xl text-[#f0f0f0]"
+           style={{ background: "#161616" }}
+           onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-3 border-b border-[#222] flex items-center gap-2">
+          <Hexagon className="h-4 w-4 text-orange-400" />
+          <div className="text-sm font-semibold">New annotation</div>
+          <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500 font-mono">
+            {draft.areaHa.toFixed(3)} ha · {(draft.areaHa * 2.4710538147).toFixed(2)} ac
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-neutral-500">Annotation name</label>
+            <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. NW bare patch"
+              onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+              className="mt-1 w-full bg-[#0f0f0f] border border-[#222] focus:border-[#4CAF50] outline-none rounded-sm px-2.5 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-neutral-500">Issue type</label>
+            <select value={issueType} onChange={(e) => setIssueType(e.target.value)}
+              className="mt-1 w-full bg-[#0f0f0f] border border-[#222] focus:border-[#4CAF50] outline-none rounded-sm px-2.5 py-1.5 text-sm">
+              {USER_POLY_ISSUES.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-neutral-500">Color</label>
+            <div className="mt-1 flex items-center gap-2">
+              {(["orange", "red", "yellow"] as const).map(c => (
+                <button key={c} type="button" onClick={() => setColor(c)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border text-xs capitalize ${
+                    color === c ? "border-[#4CAF50] text-[#f0f0f0]" : "border-[#222] text-neutral-400 hover:text-[#f0f0f0]"
+                  }`}>
+                  <span className="h-3 w-3 rounded-sm" style={{ background: USER_POLY_COLORS[c] }} />
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-neutral-500">Notes (optional)</label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+              className="mt-1 w-full bg-[#0f0f0f] border border-[#222] focus:border-[#4CAF50] outline-none rounded-sm px-2.5 py-1.5 text-sm resize-none" />
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-[#222] flex items-center justify-end gap-2">
+          <button onClick={onCancel}
+            className="text-xs border border-[#222] hover:bg-[#1a1a1a] text-neutral-300 rounded-sm px-3 py-1.5">Cancel</button>
+          <button onClick={submit} disabled={!name.trim() || saving}
+            className="inline-flex items-center gap-1.5 text-xs bg-[#4CAF50] hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600 text-black rounded-sm px-3 py-1.5 font-semibold">
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+            Save annotation
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1922,14 +2283,19 @@ function FieldViewTab(props: {
 
 function AnalysisGrid({
   analysis, runAnalysis, showAiZones, setShowAiZones,
-  selectedZone, setSelectedZone, deleteZone, exportFlightPlan,
+  selectedZone, setSelectedZone, deleteZone, exportFlightPlan, clearAnalysis,
 }: any) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3">
       <div className="rounded-sm p-3 border border-[#222]" style={{ background: "#1a1a1a" }}>
         <div className="flex items-center justify-between mb-2">
           <div className="text-[10px] uppercase tracking-wider text-neutral-500">Overall health</div>
-          <button onClick={runAnalysis} className="text-[10px] text-[#4CAF50] hover:underline">Re-run</button>
+          <div className="flex items-center gap-2">
+            <button onClick={runAnalysis} className="text-[10px] text-[#4CAF50] hover:underline">Re-run</button>
+            {clearAnalysis && (
+              <button onClick={clearAnalysis} className="text-[10px] text-red-400 hover:underline">Clear analysis</button>
+            )}
+          </div>
         </div>
         <div className="flex items-end gap-2">
           <div className={`text-4xl font-semibold tabular-nums ${analysis.health_score >= 70 ? "text-[#4CAF50]" : analysis.health_score >= 40 ? "text-yellow-400" : "text-red-400"}`}>
@@ -2014,7 +2380,7 @@ function AnalysisGrid({
   );
 }
 
-function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan }: any) {
+function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan, clearAnalysis }: any) {
   return (
     <div className="absolute inset-0 overflow-auto p-8" style={{ background: "#0f0f0f" }}>
       <div className="max-w-5xl mx-auto">
@@ -2046,11 +2412,350 @@ function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan
             showAiZones={true} setShowAiZones={() => {}}
             selectedZone={null} setSelectedZone={() => {}}
             deleteZone={() => {}} exportFlightPlan={exportFlightPlan}
+            clearAnalysis={clearAnalysis}
           />
         )}
       </div>
     </div>
   );
+}
+
+// =========================== Flight Planner tab ==============================
+// Generates a lawnmower (boustrophedon) spray path over each AI treatment zone
+// that lies inside the field boundary. The boundary is treated as the hard
+// no-fly constraint — every flight line is clipped to (boundary ∩ zone).
+
+type LatLng2 = { lat: number; lng: number };
+
+// --- geometry helpers --------------------------------------------------------
+const M_PER_DEG_LAT = 111_320;
+function mPerDegLng(lat: number) { return M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180); }
+
+function pointInRing(pt: LatLng2, ring: LatLng2[]): boolean {
+  // Ray casting in lng/lat space — fine at these scales.
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i].lng, yi = ring[i].lat;
+    const xj = ring[j].lng, yj = ring[j].lat;
+    const intersect = ((yi > pt.lat) !== (yj > pt.lat)) &&
+      (pt.lng < ((xj - xi) * (pt.lat - yi)) / (yj - yi + 1e-12) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+function pointInAnyRing(pt: LatLng2, rings: LatLng2[][]): boolean {
+  for (const r of rings) if (pointInRing(pt, r)) return true;
+  return false;
+}
+
+// Segment vs polygon ring intersections (returns t-values on the segment [0..1]).
+function segRingIntersections(a: LatLng2, b: LatLng2, ring: LatLng2[]): number[] {
+  const ts: number[] = [];
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const t = segSegT(a, b, ring[j], ring[i]);
+    if (t !== null && t > 1e-9 && t < 1 - 1e-9) ts.push(t);
+  }
+  return ts;
+}
+function segSegT(a: LatLng2, b: LatLng2, c: LatLng2, d: LatLng2): number | null {
+  const x1 = a.lng, y1 = a.lat, x2 = b.lng, y2 = b.lat;
+  const x3 = c.lng, y3 = c.lat, x4 = d.lng, y4 = d.lat;
+  const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (Math.abs(denom) < 1e-14) return null;
+  const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+  const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return t;
+}
+
+function lerp(a: LatLng2, b: LatLng2, t: number): LatLng2 {
+  return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+}
+
+// Clip a straight east-west scan line (a → b) against (boundary ∩ zone) and
+// return a list of contiguous segments that lie inside BOTH.
+function clipLineToBoundaryAndZone(a: LatLng2, b: LatLng2, boundaryRings: LatLng2[][], zoneRing: LatLng2[]): [LatLng2, LatLng2][] {
+  // Collect intersection t-values with every ring (boundary parts + zone).
+  const ts = new Set<number>();
+  ts.add(0); ts.add(1);
+  for (const r of boundaryRings) for (const t of segRingIntersections(a, b, r)) ts.add(t);
+  for (const t of segRingIntersections(a, b, zoneRing)) ts.add(t);
+  const sorted = Array.from(ts).sort((x, y) => x - y);
+  const out: [LatLng2, LatLng2][] = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const tm = (sorted[i] + sorted[i + 1]) / 2;
+    const mid = lerp(a, b, tm);
+    if (pointInAnyRing(mid, boundaryRings) && pointInRing(mid, zoneRing)) {
+      out.push([lerp(a, b, sorted[i]), lerp(a, b, sorted[i + 1])]);
+    }
+  }
+  return out;
+}
+
+function bboxOfRings(rings: LatLng2[][]) {
+  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  for (const r of rings) for (const p of r) {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lng < minLng) minLng = p.lng;
+    if (p.lng > maxLng) maxLng = p.lng;
+  }
+  return { minLat, maxLat, minLng, maxLng };
+}
+
+// Generate the full waypoint list (lawnmower) for a list of zones, clipped to
+// the boundary. Each zone contributes a contiguous sub-path; we connect
+// sub-paths in input order.
+function generateFlightPath(
+  boundary: LatLng2[][],
+  zones: { id: string; ring: LatLng2[] }[],
+  spacingM: number,
+): { perZone: { id: string; path: LatLng2[] }[]; total: LatLng2[]; lengthM: number } {
+  const perZone: { id: string; path: LatLng2[] }[] = [];
+  for (const z of zones) {
+    if (z.ring.length < 3) continue;
+    const bb = bboxOfRings([z.ring]);
+    const midLat = (bb.minLat + bb.maxLat) / 2;
+    const dLat = spacingM / M_PER_DEG_LAT;
+    const leftLng = bb.minLng - 0.0002;
+    const rightLng = bb.maxLng + 0.0002;
+    const path: LatLng2[] = [];
+    let flip = false;
+    for (let lat = bb.minLat + dLat / 2; lat <= bb.maxLat; lat += dLat) {
+      const a = { lat, lng: leftLng };
+      const b = { lat, lng: rightLng };
+      const segs = clipLineToBoundaryAndZone(a, b, boundary, z.ring);
+      if (segs.length === 0) { flip = !flip; continue; }
+      // Sort segments left→right (or right→left on alternate passes).
+      segs.sort((s1, s2) => s1[0].lng - s2[0].lng);
+      const ordered = flip ? segs.slice().reverse().map(s => [s[1], s[0]] as [LatLng2, LatLng2]) : segs;
+      for (const [p1, p2] of ordered) { path.push(p1); path.push(p2); }
+      flip = !flip;
+      void midLat;
+    }
+    if (path.length >= 2) perZone.push({ id: z.id, path });
+  }
+  const total: LatLng2[] = [];
+  for (const z of perZone) total.push(...z.path);
+  // Approximate length (meters).
+  let lengthM = 0;
+  for (let i = 1; i < total.length; i++) {
+    const dLat = (total[i].lat - total[i - 1].lat) * M_PER_DEG_LAT;
+    const dLng = (total[i].lng - total[i - 1].lng) * mPerDegLng(total[i].lat);
+    lengthM += Math.sqrt(dLat * dLat + dLng * dLng);
+  }
+  return { perZone, total, lengthM };
+}
+
+// Mission Planner / QGC ".waypoints" format. Compatible with DJI Pilot 2 via
+// QGC conversion. Each row:
+//   <idx>\t<current>\t<frame>\t<cmd>\t<p1>\t<p2>\t<p3>\t<p4>\t<lat>\t<lng>\t<alt>\t<autocontinue>
+function exportWaypointsFile(points: LatLng2[], altitudeM: number): Blob {
+  const lines: string[] = ["QGC WPL 110"];
+  // Home waypoint (first point as reference)
+  if (points.length === 0) return new Blob([lines.join("\n")], { type: "text/plain" });
+  const home = points[0];
+  lines.push(`0\t1\t0\t16\t0\t0\t0\t0\t${home.lat.toFixed(8)}\t${home.lng.toFixed(8)}\t${altitudeM.toFixed(2)}\t1`);
+  points.forEach((p, i) => {
+    // Cmd 16 = MAV_CMD_NAV_WAYPOINT, frame 3 = MAV_FRAME_GLOBAL_RELATIVE_ALT
+    lines.push(`${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${p.lat.toFixed(8)}\t${p.lng.toFixed(8)}\t${altitudeM.toFixed(2)}\t1`);
+  });
+  return new Blob([lines.join("\n") + "\n"], { type: "text/plain" });
+}
+
+function PlannerTab({
+  analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
+}: {
+  analysis: any;
+  boundary: BoundaryRing[] | null;
+  tileUrl: string;
+  bounds: L.LatLngBoundsExpression | null;
+  maxNative: number;
+  taskId: string;
+  runAnalysis: () => void;
+  setActiveTab: (k: any) => void;
+}) {
+  const [spacingM, setSpacingM] = useState<number>(5);
+  const [altitudeM, setAltitudeM] = useState<number>(15);
+
+  // Filter AI zones to those whose centroid lies inside the boundary.
+  const validZones = (() => {
+    if (!analysis?.zones || !boundary || boundary.length === 0) return [];
+    return (analysis.zones as AiZone[]).filter(z => {
+      if (!z.ring || z.ring.length < 3) return false;
+      const cx = z.ring.reduce((a, p) => a + p.lng, 0) / z.ring.length;
+      const cy = z.ring.reduce((a, p) => a + p.lat, 0) / z.ring.length;
+      return pointInAnyRing({ lat: cy, lng: cx }, boundary as LatLng2[][]);
+    });
+  })();
+
+  const plan = (() => {
+    if (validZones.length === 0 || !boundary) return null;
+    return generateFlightPath(boundary as LatLng2[][], validZones.map(z => ({ id: z.id, ring: z.ring })), spacingM);
+  })();
+
+  const downloadWaypoints = () => {
+    if (!plan || plan.total.length === 0) return;
+    const blob = exportWaypointsFile(plan.total, altitudeM);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `flight-${taskId}.waypoints`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Empty states ------------------------------------------------------------
+  if (!boundary || boundary.length === 0) {
+    return (
+      <div className="absolute inset-0 grid place-items-center text-center p-8" style={{ background: "#0f0f0f" }}>
+        <div className="max-w-md">
+          <Plane className="h-8 w-8 mx-auto mb-3 text-[#4CAF50]" />
+          <h2 className="text-lg font-semibold mb-1">Flight Planner</h2>
+          <p className="text-sm text-neutral-500 mb-4">Define your field boundary first — the planner needs a hard no-fly perimeter before it can lay down flight lines.</p>
+          <button onClick={() => setActiveTab("field")} className="text-xs bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 font-semibold">
+            Go to Field View
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!analysis || analysis.zones.length === 0) {
+    return (
+      <div className="absolute inset-0 grid place-items-center text-center p-8" style={{ background: "#0f0f0f" }}>
+        <div className="max-w-md">
+          <Plane className="h-8 w-8 mx-auto mb-3 text-[#4CAF50]" />
+          <h2 className="text-lg font-semibold mb-1">Flight Planner</h2>
+          <p className="text-sm text-neutral-500 mb-4">Run AI analysis first — the planner generates lawnmower patterns over the detected treatment zones.</p>
+          <button onClick={runAnalysis} className="text-xs bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 font-semibold inline-flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5" /> Analyze field
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="absolute inset-0 flex" style={{ background: "#0f0f0f" }}>
+      {/* Map preview */}
+      <div className="flex-1 relative">
+        <MapContainer
+          bounds={bounds ?? undefined}
+          boundsOptions={{ padding: [40, 40] }}
+          minZoom={1} maxZoom={22} preferCanvas
+          zoomControl={false} attributionControl={false}
+          style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
+        >
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxNativeZoom={19} maxZoom={22} zIndex={1}
+          />
+          {tileUrl && bounds && (
+            <TileLayer
+              key={tileUrl} url={tileUrl}
+              maxNativeZoom={Math.min(20, maxNative)} maxZoom={22}
+              tileSize={256} keepBuffer={4}
+              bounds={bounds} noWrap zIndex={10}
+            />
+          )}
+          <PlannerOverlay boundary={boundary} zones={validZones} plan={plan} />
+        </MapContainer>
+      </div>
+
+      {/* Right control panel */}
+      <div className="w-80 shrink-0 border-l border-[#222] overflow-auto p-4" style={{ background: "#161616" }}>
+        <div className="flex items-center gap-2 mb-4">
+          <Plane className="h-4 w-4 text-[#4CAF50]" />
+          <div className="text-sm font-semibold">Flight Planner</div>
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4" style={{ background: "#0f0f0f" }}>
+          <label className="text-[10px] uppercase tracking-wider text-neutral-500">Line spacing (swath)</label>
+          <div className="flex items-center gap-2 mt-1">
+            <input type="range" min={2} max={20} step={0.5}
+              value={spacingM} onChange={(e) => setSpacingM(Number(e.target.value))}
+              className="flex-1 accent-[#4CAF50]" />
+            <div className="font-mono text-sm w-16 text-right">{spacingM.toFixed(1)} m</div>
+          </div>
+          <label className="text-[10px] uppercase tracking-wider text-neutral-500 mt-3 block">Altitude AGL</label>
+          <div className="flex items-center gap-2 mt-1">
+            <input type="range" min={5} max={120} step={1}
+              value={altitudeM} onChange={(e) => setAltitudeM(Number(e.target.value))}
+              className="flex-1 accent-[#4CAF50]" />
+            <div className="font-mono text-sm w-16 text-right">{altitudeM.toFixed(0)} m</div>
+          </div>
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Plan summary</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
+          <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
+            <span className="font-mono">{validZones.length} of {analysis.zones.length}</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Waypoints</span>
+            <span className="font-mono">{plan?.total.length ?? 0}</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Path length</span>
+            <span className="font-mono">{plan ? (plan.lengthM / 1000).toFixed(2) : "0.00"} km</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Est. flight time</span>
+            <span className="font-mono">{plan ? Math.ceil(plan.lengthM / 5 / 60) : 0} min @ 5 m/s</span></div>
+        </div>
+
+        {validZones.length < analysis.zones.length && (
+          <div className="mb-4 text-[11px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1.5">
+            {analysis.zones.length - validZones.length} zone(s) excluded — centroid outside boundary.
+          </div>
+        )}
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Export</div>
+        <button
+          onClick={downloadWaypoints}
+          disabled={!plan || plan.total.length === 0}
+          className="w-full inline-flex items-center justify-center gap-2 bg-[#4CAF50] hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600 text-black rounded-sm px-3 py-2 text-xs font-semibold mb-2"
+        >
+          <Download className="h-3.5 w-3.5" /> Download .waypoints
+        </button>
+        <p className="text-[10px] text-neutral-500 leading-relaxed">
+          QGC WPL 110 format — load directly in Mission Planner, QGroundControl, or convert
+          for DJI Pilot 2 with the standard waypoint importer.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PlannerOverlay({ boundary, zones, plan }: {
+  boundary: BoundaryRing[];
+  zones: AiZone[];
+  plan: { perZone: { id: string; path: LatLng2[] }[] } | null;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    const group = L.layerGroup().addTo(map);
+    boundary.forEach(ring => {
+      L.polygon(ring.map(p => [p.lat, p.lng] as [number, number]), {
+        color: "#22d3ee", weight: 2, dashArray: "6 4",
+        fillColor: "#22d3ee", fillOpacity: 0.04,
+      }).addTo(group);
+    });
+    zones.forEach(z => {
+      const color = sevColor(z.severity);
+      L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
+        color, weight: 1, fillColor: color, fillOpacity: 0.12,
+      }).addTo(group);
+    });
+    plan?.perZone.forEach(({ path }) => {
+      // Render the lawnmower as a single polyline; each pair-of-points draws a
+      // pass, and the connector to the next pass is a thin dashed segment.
+      const latlngs = path.map(p => [p.lat, p.lng] as [number, number]);
+      L.polyline(latlngs, { color: "#4CAF50", weight: 2, opacity: 0.95 }).addTo(group);
+      // Mark every waypoint with a small dot.
+      path.forEach((p, idx) => {
+        const isTurn = idx === 0 || idx === path.length - 1 || idx % 2 === 0;
+        L.circleMarker([p.lat, p.lng], {
+          radius: isTurn ? 3 : 1.5, color: "#4CAF50", weight: 1, fillColor: "#4CAF50", fillOpacity: 1,
+        }).addTo(group);
+      });
+    });
+    return () => { group.remove(); };
+  }, [map, boundary, zones, plan]);
+  return null;
 }
 
 function PlaceholderTab({ icon: Icon, title, body }: { icon: any; title: string; body: string }) {
@@ -2070,57 +2775,79 @@ function PlaceholderTab({ icon: Icon, title, body }: { icon: any; title: string;
 }
 
 // ---------------------------- Weather tab ------------------------------------
-const WMO_LABEL: Record<number, string> = {
-  0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
-  45: "Fog", 48: "Depositing fog",
-  51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
-  61: "Light rain", 63: "Rain", 65: "Heavy rain",
-  71: "Light snow", 73: "Snow", 75: "Heavy snow",
-  80: "Showers", 81: "Showers", 82: "Heavy showers",
-  95: "Thunderstorm", 96: "Thunderstorm w/ hail", 99: "Thunderstorm w/ hail",
+// OpenWeather One Call 3.0 via the `weather` edge function. Values are normalized
+// (temp °C, wind km/h). We display both °F and °C and mph and km/h.
+type OwHour = {
+  time: number; temp_c: number; humidity: number; wind_kmh: number; gust_kmh: number;
+  wind_dir: number; precip_mm: number; precip_prob: number; clouds: number;
+  code: number; icon: string; desc: string;
 };
-function WeatherGlyph({ code, className }: { code: number; className?: string }) {
-  if (code === 0 || code === 1) return <Sun className={className} />;
-  if (code >= 71 && code <= 77) return <CloudSnow className={className} />;
-  if (code === 45 || code === 48) return <CloudFog className={className} />;
-  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95) return <CloudRain className={className} />;
+type OwDay = {
+  time: number; tmin_c: number; tmax_c: number; humidity: number;
+  wind_kmh: number; gust_kmh: number; precip_mm: number; precip_prob: number;
+  code: number; icon: string; desc: string;
+};
+
+const cToF = (c: number) => (c * 9) / 5 + 32;
+const kmhToMph = (k: number) => k * 0.621371;
+const compass = (deg: number) => {
+  const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  return dirs[Math.round(((deg % 360) / 22.5)) % 16];
+};
+
+function OwGlyph({ icon, code, className }: { icon: string; code: number; className?: string }) {
+  // OpenWeather group ranges: 2xx thunder, 3xx drizzle, 5xx rain, 6xx snow, 7xx atmosphere, 800 clear, 80x clouds
+  if (code >= 200 && code < 300) return <CloudRain className={className} />;
+  if (code >= 300 && code < 600) return <CloudRain className={className} />;
+  if (code >= 600 && code < 700) return <CloudSnow className={className} />;
+  if (code >= 700 && code < 800) return <CloudFog className={className} />;
+  if (code === 800) return <Sun className={className} />;
+  if (icon?.endsWith("d") && code === 801) return <CloudSun className={className} />;
   return <Cloud className={className} />;
 }
 
-type Hour = {
-  time: string; temp: number; wind: number; gust: number; humidity: number;
-  precip: number; precipProb: number; code: number;
-};
-
-// Spray suitability rules — informed by FAA/AAAA pesticide-application guidance.
-function sprayCheck(h: { wind: number; gust: number; humidity: number; precip: number; precipProb: number; temp: number }) {
+// Spray suitability — matches user-specified thresholds.
+// GREEN: wind < 10 mph (16 km/h), no rain next 6h, humidity 40–70%, temp > 50°F (10°C)
+// YELLOW: marginal (one of the soft thresholds borderline)
+// RED: hard limits blown.
+type Verdict = "green" | "yellow" | "red";
+function sprayVerdict(h: OwHour, rainNext6h: number): { verdict: Verdict; reasons: string[] } {
   const reasons: string[] = [];
-  if (h.wind > 15) reasons.push(`Wind ${h.wind.toFixed(0)} km/h above 15 limit`);
-  else if (h.wind < 3) reasons.push(`Wind ${h.wind.toFixed(0)} km/h too calm — inversion risk`);
-  if (h.gust > 20) reasons.push(`Gusts ${h.gust.toFixed(0)} km/h`);
-  if (h.humidity < 40) reasons.push(`Humidity ${h.humidity.toFixed(0)}% — high evaporation`);
-  if (h.precip > 0.2 || h.precipProb > 40) reasons.push(`Rain risk ${h.precipProb}%`);
-  if (h.temp > 30) reasons.push(`Temp ${h.temp.toFixed(0)}°C — drift risk`);
-  if (h.temp < 5) reasons.push(`Temp ${h.temp.toFixed(0)}°C too cold`);
-  return { good: reasons.length === 0, reasons };
+  let verdict: Verdict = "green";
+  const windMph = kmhToMph(h.wind_kmh);
+  const gustMph = kmhToMph(h.gust_kmh);
+  const tempF = cToF(h.temp_c);
+  // Hard limits → RED
+  if (windMph > 10) { reasons.push(`Wind too high: ${windMph.toFixed(0)} mph (limit 10)`); verdict = "red"; }
+  if (gustMph > 15) { reasons.push(`Gusts too high: ${gustMph.toFixed(0)} mph`); verdict = "red"; }
+  if (rainNext6h > 0.5) { reasons.push(`Rain expected in next 6h: ${rainNext6h.toFixed(1)} mm`); verdict = "red"; }
+  if (tempF < 50) { reasons.push(`Temp too cold: ${tempF.toFixed(0)}°F (min 50)`); verdict = "red"; }
+  // Soft → YELLOW
+  if (verdict !== "red") {
+    if (windMph > 8) { reasons.push(`Wind marginal: ${windMph.toFixed(0)} mph`); verdict = "yellow"; }
+    if (h.humidity < 40) { reasons.push(`Humidity low: ${h.humidity}% (target 40–70)`); verdict = "yellow"; }
+    if (h.humidity > 70) { reasons.push(`Humidity high: ${h.humidity}% (target 40–70)`); verdict = "yellow"; }
+    if (tempF > 85) { reasons.push(`Temp warm: ${tempF.toFixed(0)}°F — drift risk`); verdict = "yellow"; }
+  }
+  return { verdict, reasons };
 }
 
 function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName: string }) {
   const [lat, lng] = center;
-  const [data, setData] = useState<any | null>(null);
+  const [data, setData] = useState<{ current: any; hourly: OwHour[]; daily: OwDay[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setErr(null); setData(null);
       try {
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}` +
-          `&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,weather_code,precipitation` +
-          `&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation,precipitation_probability,weather_code` +
-          `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max` +
-          `&forecast_days=5&timezone=auto&wind_speed_unit=kmh`;
-        const r = await fetch(url);
+        const { data: s } = await supabase.auth.getSession();
+        const r = await fetch(`${FN_BASE}/weather?lat=${lat}&lon=${lng}`, {
+          headers: s.session ? { Authorization: `Bearer ${s.session.access_token}` } : {},
+        });
         const j = await r.json();
+        if (!r.ok) throw new Error(j?.error ?? "Weather unavailable");
         if (!cancelled) setData(j);
       } catch (e: any) {
         if (!cancelled) setErr(e?.message ?? "Weather unavailable");
@@ -2130,7 +2857,7 @@ function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName
   }, [lat, lng]);
 
   if (err) return (
-    <div className="absolute inset-0 grid place-items-center text-sm text-red-400" style={{ background: "#0f0f0f" }}>{err}</div>
+    <div className="absolute inset-0 grid place-items-center text-sm text-red-400 p-6 text-center" style={{ background: "#0f0f0f" }}>{err}</div>
   );
   if (!data) return (
     <div className="absolute inset-0 grid place-items-center text-sm text-neutral-400 gap-2" style={{ background: "#0f0f0f" }}>
@@ -2139,54 +2866,54 @@ function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName
   );
 
   const cur = data.current;
-  const now = sprayCheck({
-    wind: cur.wind_speed_10m, gust: cur.wind_gusts_10m,
-    humidity: cur.relative_humidity_2m, precip: cur.precipitation,
-    precipProb: 0, temp: cur.temperature_2m,
-  });
+  const hourly = data.hourly;
+  const daily = data.daily;
 
-  // Build next-24h hourly slice
-  const hourly: Hour[] = [];
-  const nowIdx = data.hourly.time.findIndex((t: string) => new Date(t).getTime() >= Date.now() - 3600_000);
-  for (let i = Math.max(0, nowIdx); i < Math.min(data.hourly.time.length, nowIdx + 24); i++) {
-    hourly.push({
-      time: data.hourly.time[i],
-      temp: data.hourly.temperature_2m[i],
-      wind: data.hourly.wind_speed_10m[i],
-      gust: data.hourly.wind_gusts_10m[i],
-      humidity: data.hourly.relative_humidity_2m[i],
-      precip: data.hourly.precipitation[i],
-      precipProb: data.hourly.precipitation_probability?.[i] ?? 0,
-      code: data.hourly.weather_code[i],
-    });
-  }
+  // Rain in next 6 hours (sum of precip mm)
+  const rainNext6 = hourly.slice(0, 6).reduce((a, h) => a + (h.precip_mm || 0), 0);
 
-  // Find the next good spray window (>= 2 consecutive hours)
-  let nextWindow: { start: Hour; end: Hour } | null = null;
+  // Verdict for "right now" uses current + next-6h rain.
+  const nowHour: OwHour = {
+    time: cur.time, temp_c: cur.temp_c, humidity: cur.humidity,
+    wind_kmh: cur.wind_kmh, gust_kmh: cur.gust_kmh, wind_dir: cur.wind_dir,
+    precip_mm: cur.precip_mm, precip_prob: 0, clouds: cur.clouds,
+    code: cur.code, icon: cur.icon, desc: cur.desc,
+  };
+  const now = sprayVerdict(nowHour, rainNext6);
+
+  // Find best spray windows in the next 72 hours, grouped per day.
+  // A "window" is ≥ 2 consecutive GREEN hours.
+  const windows: { startTs: number; endTs: number; dayLabel: string }[] = [];
   {
     let runStart = -1;
-    for (let i = 0; i < hourly.length; i++) {
-      const ok = sprayCheck(hourly[i]).good;
+    for (let i = 0; i < Math.min(72, hourly.length); i++) {
+      const fwdRain = hourly.slice(i, i + 6).reduce((a, h) => a + (h.precip_mm || 0), 0);
+      const v = sprayVerdict(hourly[i], fwdRain);
+      const ok = v.verdict === "green";
       if (ok && runStart < 0) runStart = i;
-      if ((!ok || i === hourly.length - 1) && runStart >= 0) {
+      if ((!ok || i === Math.min(72, hourly.length) - 1) && runStart >= 0) {
         const end = ok ? i : i - 1;
-        if (end - runStart + 1 >= 2) { nextWindow = { start: hourly[runStart], end: hourly[end] }; break; }
+        if (end - runStart + 1 >= 2) {
+          windows.push({
+            startTs: hourly[runStart].time,
+            endTs: hourly[end].time,
+            dayLabel: new Date(hourly[runStart].time * 1000).toLocaleDateString([], { weekday: "long" }),
+          });
+        }
         runStart = -1;
       }
     }
   }
+  const bestWindows = windows.slice(0, 3);
 
-  const days = data.daily.time.map((t: string, i: number) => ({
-    date: t,
-    code: data.daily.weather_code[i],
-    tmax: data.daily.temperature_2m_max[i],
-    tmin: data.daily.temperature_2m_min[i],
-    precip: data.daily.precipitation_sum[i],
-    wind: data.daily.wind_speed_10m_max[i],
-  }));
+  const fmtHour = (ts: number) => new Date(ts * 1000).toLocaleTimeString([], { hour: "numeric" });
+  const fmtDay = (ts: number) => new Date(ts * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 
-  const fmtHour = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric" });
-  const fmtDay = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  const verdictColor = now.verdict === "green" ? "#4CAF50" : now.verdict === "yellow" ? "#facc15" : "#ef4444";
+  const verdictBorder = now.verdict === "green" ? "border-[#4CAF50]/40" : now.verdict === "yellow" ? "border-yellow-400/40" : "border-red-500/40";
+  const verdictLabel =
+    now.verdict === "green" ? "Good to spray right now" :
+    now.verdict === "yellow" ? "Marginal — proceed with caution" : "Do not spray right now";
 
   return (
     <div className="absolute inset-0 overflow-auto p-8" style={{ background: "#0f0f0f" }}>
@@ -2195,116 +2922,131 @@ function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName
           <CloudSun className="h-5 w-5 text-[#4CAF50]" />
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Weather · {fieldName}</h1>
-            <div className="text-xs text-neutral-500 font-mono">{lat.toFixed(4)}, {lng.toFixed(4)}</div>
+            <div className="text-xs text-neutral-500 font-mono">{lat.toFixed(4)}, {lng.toFixed(4)} · OpenWeather One Call 3.0</div>
           </div>
         </div>
 
-        {/* Current conditions */}
+        {/* Verdict banner */}
+        <div className={`rounded-sm border ${verdictBorder} p-5`} style={{ background: "#1a1a1a" }}>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="h-8 w-8 rounded-full grid place-items-center" style={{ background: verdictColor + "22", border: `1px solid ${verdictColor}` }}>
+              {now.verdict === "green" ? <CheckCircle2 className="h-4 w-4" style={{ color: verdictColor }} />
+                : now.verdict === "yellow" ? <AlertTriangle className="h-4 w-4" style={{ color: verdictColor }} />
+                : <XCircle className="h-4 w-4" style={{ color: verdictColor }} />}
+            </div>
+            <div>
+              <div className="text-base font-semibold" style={{ color: verdictColor }}>{verdictLabel}</div>
+              <div className="text-[11px] text-neutral-500">Wind ≤ 10 mph · No rain 6h · 40–70% RH · Temp ≥ 50°F</div>
+            </div>
+          </div>
+          {now.reasons.length > 0 && (
+            <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-xs text-neutral-400">
+              {now.reasons.map((r, i) => <li key={i}>• {r}</li>)}
+            </ul>
+          )}
+        </div>
+
+        {/* Current + Best windows */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="rounded-sm border border-[#222] p-5 md:col-span-1" style={{ background: "#1a1a1a" }}>
+          <div className="rounded-sm border border-[#222] p-5" style={{ background: "#1a1a1a" }}>
             <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Current</div>
             <div className="flex items-center gap-4">
-              <WeatherGlyph code={cur.weather_code} className="h-12 w-12 text-[#4CAF50]" />
+              <OwGlyph code={cur.code} icon={cur.icon} className="h-12 w-12 text-[#4CAF50]" />
               <div>
-                <div className="text-5xl font-semibold tabular-nums">{Math.round(cur.temperature_2m)}°C</div>
-                <div className="text-xs text-neutral-400">{WMO_LABEL[cur.weather_code] ?? "—"}</div>
-                <div className="text-[11px] text-neutral-500">Feels {Math.round(cur.apparent_temperature)}°</div>
+                <div className="text-4xl font-semibold tabular-nums">{Math.round(cToF(cur.temp_c))}°F</div>
+                <div className="text-xs text-neutral-400">{Math.round(cur.temp_c)}°C · {cur.desc}</div>
+                <div className="text-[11px] text-neutral-500">Feels {Math.round(cToF(cur.feels_c))}°F</div>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2 mt-4 text-xs">
+            <div className="grid grid-cols-2 gap-2 mt-4 text-xs">
               <div className="rounded-sm border border-[#222] p-2" style={{ background: "#0f0f0f" }}>
                 <Wind className="h-3 w-3 text-neutral-500 mb-1" />
                 <div className="text-neutral-500 text-[10px]">Wind</div>
-                <div className="font-mono">{Math.round(cur.wind_speed_10m)} km/h</div>
+                <div className="font-mono">{kmhToMph(cur.wind_kmh).toFixed(0)} mph {compass(cur.wind_dir)}</div>
+                <div className="font-mono text-neutral-500 text-[10px]">{cur.wind_kmh.toFixed(0)} km/h</div>
               </div>
               <div className="rounded-sm border border-[#222] p-2" style={{ background: "#0f0f0f" }}>
                 <Droplets className="h-3 w-3 text-neutral-500 mb-1" />
                 <div className="text-neutral-500 text-[10px]">Humidity</div>
-                <div className="font-mono">{Math.round(cur.relative_humidity_2m)}%</div>
+                <div className="font-mono">{cur.humidity}%</div>
               </div>
               <div className="rounded-sm border border-[#222] p-2" style={{ background: "#0f0f0f" }}>
                 <ThermometerSun className="h-3 w-3 text-neutral-500 mb-1" />
                 <div className="text-neutral-500 text-[10px]">Gust</div>
-                <div className="font-mono">{Math.round(cur.wind_gusts_10m)} km/h</div>
+                <div className="font-mono">{kmhToMph(cur.gust_kmh).toFixed(0)} mph</div>
+              </div>
+              <div className="rounded-sm border border-[#222] p-2" style={{ background: "#0f0f0f" }}>
+                <Cloud className="h-3 w-3 text-neutral-500 mb-1" />
+                <div className="text-neutral-500 text-[10px]">Cloud cover</div>
+                <div className="font-mono">{cur.clouds}%</div>
               </div>
             </div>
           </div>
 
-          {/* Spray window verdict */}
-          <div className={`rounded-sm border p-5 md:col-span-2 ${now.good ? "border-[#4CAF50]/40" : "border-red-500/40"}`}
-               style={{ background: "#1a1a1a" }}>
-            <div className="flex items-center gap-2 mb-3">
-              {now.good
-                ? <CheckCircle2 className="h-5 w-5 text-[#4CAF50]" />
-                : <XCircle className="h-5 w-5 text-red-400" />}
-              <div className="text-base font-semibold">
-                {now.good ? "Good to spray right now" : "Not safe to spray right now"}
-              </div>
-            </div>
-            {now.reasons.length > 0 && (
-              <ul className="space-y-1 text-xs text-neutral-400 mb-3">
-                {now.reasons.map((r, i) => <li key={i}>• {r}</li>)}
-              </ul>
-            )}
-            <div className="text-[11px] text-neutral-500 leading-relaxed mb-3">
-              Targets: wind 3–15 km/h, gusts &lt; 20 km/h, humidity ≥ 40%, no rain within the hour, temperature 5–30°C.
-            </div>
-            {nextWindow ? (
-              <div className="rounded-sm border border-[#4CAF50]/30 p-3" style={{ background: "#0f0f0f" }}>
-                <div className="text-[10px] uppercase tracking-wider text-[#4CAF50]">Next spray window</div>
-                <div className="text-sm font-mono mt-1">
-                  {fmtHour(nextWindow.start.time)} – {fmtHour(nextWindow.end.time)}
-                  <span className="text-neutral-500"> · {new Date(nextWindow.start.time).toLocaleDateString([], { weekday: "short" })}</span>
-                </div>
-              </div>
+          <div className="rounded-sm border border-[#222] p-5 md:col-span-2" style={{ background: "#1a1a1a" }}>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-3">Best spray windows · next 3 days</div>
+            {bestWindows.length === 0 ? (
+              <div className="text-sm text-neutral-500">No GREEN windows of 2+ hours in the next 72 hours. Recheck after weather shifts.</div>
             ) : (
-              <div className="text-xs text-neutral-500">No suitable 2-hour window in the next 24 hours.</div>
+              <div className="space-y-2">
+                {bestWindows.map((w, i) => (
+                  <div key={i} className="flex items-center gap-3 rounded-sm border border-[#4CAF50]/30 p-3" style={{ background: "#0f0f0f" }}>
+                    <CheckCircle2 className="h-4 w-4 text-[#4CAF50]" />
+                    <div className="flex-1">
+                      <div className="text-sm">{w.dayLabel} <span className="text-[#4CAF50] font-mono">{fmtHour(w.startTs)} – {fmtHour(w.endTs)}</span></div>
+                      <div className="text-[11px] text-neutral-500">Ideal: wind/humidity/temp all in range, no rain</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
 
-        {/* Hourly strip */}
+        {/* Hourly 24h strip */}
         <div className="rounded-sm border border-[#222] p-4" style={{ background: "#1a1a1a" }}>
           <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-3">Next 24 hours</div>
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {hourly.map((h, i) => {
-              const ok = sprayCheck(h).good;
+            {hourly.slice(0, 24).map((h, i) => {
+              const fwd = hourly.slice(i, i + 6).reduce((a, x) => a + (x.precip_mm || 0), 0);
+              const v = sprayVerdict(h, fwd).verdict;
+              const dot = v === "green" ? "bg-[#4CAF50]" : v === "yellow" ? "bg-yellow-400" : "bg-red-500";
               return (
-                <div key={i} className={`min-w-[88px] rounded-sm border p-2 text-center ${ok ? "border-[#4CAF50]/30" : "border-[#222]"}`}
-                     style={{ background: "#0f0f0f" }}>
+                <div key={i} className="min-w-[88px] rounded-sm border border-[#222] p-2 text-center" style={{ background: "#0f0f0f" }}>
                   <div className="text-[10px] text-neutral-500">{fmtHour(h.time)}</div>
-                  <WeatherGlyph code={h.code} className="h-5 w-5 mx-auto my-1 text-neutral-300" />
-                  <div className="text-sm font-mono tabular-nums">{Math.round(h.temp)}°</div>
-                  <div className="text-[10px] text-neutral-500 mt-0.5 font-mono">{Math.round(h.wind)} km/h</div>
-                  <div className="text-[10px] text-neutral-500 font-mono">{h.precipProb}%</div>
-                  <div className={`mt-1 h-1 rounded-full ${ok ? "bg-[#4CAF50]" : "bg-red-500/60"}`} />
+                  <OwGlyph code={h.code} icon={h.icon} className="h-5 w-5 mx-auto my-1 text-neutral-300" />
+                  <div className="text-sm font-mono tabular-nums">{Math.round(cToF(h.temp_c))}°F</div>
+                  <div className="text-[10px] text-neutral-500 mt-0.5 font-mono">{kmhToMph(h.wind_kmh).toFixed(0)} mph</div>
+                  <div className="text-[10px] text-neutral-500 font-mono">{h.precip_prob}%</div>
+                  <div className={`mt-1 h-1 rounded-full ${dot}`} />
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* 5-day */}
+        {/* 7-day */}
         <div className="rounded-sm border border-[#222] p-4" style={{ background: "#1a1a1a" }}>
-          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-3">5-day forecast</div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            {days.map((d: any, i: number) => (
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-3">7-day forecast</div>
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+            {daily.slice(0, 7).map((d, i) => (
               <div key={i} className="rounded-sm border border-[#222] p-3" style={{ background: "#0f0f0f" }}>
-                <div className="text-[11px] text-neutral-400">{fmtDay(d.date)}</div>
+                <div className="text-[11px] text-neutral-400">{fmtDay(d.time)}</div>
                 <div className="flex items-center gap-2 mt-1">
-                  <WeatherGlyph code={d.code} className="h-5 w-5 text-neutral-300" />
+                  <OwGlyph code={d.code} icon={d.icon} className="h-5 w-5 text-neutral-300" />
                   <div className="text-sm font-mono">
-                    <span className="text-[#f0f0f0]">{Math.round(d.tmax)}°</span>
-                    <span className="text-neutral-500"> / {Math.round(d.tmin)}°</span>
+                    <span className="text-[#f0f0f0]">{Math.round(cToF(d.tmax_c))}°</span>
+                    <span className="text-neutral-500"> / {Math.round(cToF(d.tmin_c))}°</span>
                   </div>
                 </div>
-                <div className="text-[10px] text-neutral-500 font-mono mt-1">{d.precip.toFixed(1)} mm · {Math.round(d.wind)} km/h</div>
+                <div className="text-[10px] text-neutral-500 font-mono mt-1">{d.precip_prob}% · {kmhToMph(d.wind_kmh).toFixed(0)} mph</div>
+                <div className="text-[10px] text-neutral-600 font-mono">{d.precip_mm.toFixed(1)} mm</div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="text-[10px] text-neutral-600">Data: Open-Meteo · Updated {new Date().toLocaleTimeString()}</div>
+        <div className="text-[10px] text-neutral-600">Data: OpenWeather · Updated {new Date().toLocaleTimeString()}</div>
       </div>
     </div>
   );
