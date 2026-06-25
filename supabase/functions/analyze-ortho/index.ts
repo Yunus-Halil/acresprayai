@@ -209,6 +209,34 @@ Rules:
 - health_score: 100 minus the % of field area with visible issues. Do NOT factor in anything you cannot visually confirm.
 - Tone: direct, honest, conservative. Never overclaim.
 
+ACTIONABILITY GATE (read before flagging anything):
+Before flagging any zone, ask yourself: "Can a farmer actually fix this with a specific treatment?"
+
+NEVER flag these as treatment zones — they are background noise (Tier 3):
+- Minor soil texture variation (every field has this)
+- Small shadows from clouds, trees, or equipment
+- Tractor tracks and wheel lines (these are normal)
+- Field edge irregularities and turning rows
+- Any zone smaller than 0.05 acres
+
+ONLY flag as Tier 1 (full treatment zone) when ALL of these are true:
+- The issue is visually distinct and clearly different from surrounding healthy crop
+- A specific actionable treatment exists (spray, reseed, drain, fertilize)
+- The affected area is at least 0.05 acres — large enough to justify a drone mission
+
+If bare soil patches are scattered everywhere at small scale, do NOT flag each one individually.
+Instead emit a SINGLE Tier 2 watch-list item: "Scattered bare patches across field — recommend overall reseeding assessment" with no polygon.
+
+TIER CLASSIFICATION (MANDATORY on every zone):
+- "tier": 1 — Act now. Large distinct zone (>= 0.05 ac), clear issue, specific treatment. MUST have a polygon. Will be drawn on the map and included in the flight plan.
+- "tier": 2 — Monitor. Small, ambiguous, or scattered. NO polygon. Will appear in a text-only watch list at the bottom of the panel. Use this for general field-level observations.
+- "tier": 3 — Normal variation. Background noise (tractor tracks, minor texture, shadows). DO NOT emit at all. Silently omit.
+
+Output rules:
+- Tier 1 zones MUST include a tight polygon (4–12 vertices).
+- Tier 2 zones MUST set "polygon": []. Put the observation in "what_you_see".
+- Never output a Tier 3 zone. Just leave it out.
+
 DATA-SOURCE LABELLING (MANDATORY for every zone):
 ${hasNDVI
   ? `- NDVI is available. Cross-reference each visual anomaly with the NDVI grid above.
@@ -233,6 +261,7 @@ Return STRICT JSON with this exact schema:
       "what_you_see": string,
       "confidence": "HIGH"|"MEDIUM",
       "severity": "low"|"medium"|"high",
+      "tier": 1|2,
       "coverage_pct": number,
       "area_acres": number,
       "recommendation": { "action": "spray"|"irrigate"|"reseed"|"fertilize"|"monitor", "product": string, "dose": string, "rationale": string } | null,
@@ -343,6 +372,8 @@ ${rings.map((r, ri) => `Part ${ri + 1} vertices (lat, lng):\n${r.map((p, i) => `
     };
     const zones = Array.isArray(parsed.zones) ? parsed.zones.map((z: any, i: number) => {
       const confidence = String(z.confidence ?? "").toUpperCase();
+      const tierRaw = Number(z.tier);
+      const tier = tierRaw === 2 ? 2 : tierRaw === 1 ? 1 : (Array.isArray(z.polygon) && z.polygon.length >= 3 ? 1 : 2);
       return {
         id: `ai-${i}`,
         name: z.name ?? `Zone ${i + 1}`,
@@ -350,6 +381,7 @@ ${rings.map((r, ri) => `Part ${ri + 1} vertices (lat, lng):\n${r.map((p, i) => `
         what_you_see: z.what_you_see ?? "",
         confidence,
         severity: z.severity ?? "medium",
+        tier,
         coverage_pct: Number(z.coverage_pct ?? 0),
         area_acres: Number(z.area_acres ?? 0),
         recommendation: confidence === "HIGH" ? (z.recommendation ?? null) : null,
@@ -358,20 +390,36 @@ ${rings.map((r, ri) => `Part ${ri + 1} vertices (lat, lng):\n${r.map((p, i) => `
           : [],
       };
     }).filter((z: any) => {
-      if (z.ring.length < 3 || !z.issue) return false;
+      if (!z.issue) return false;
       if (z.confidence !== "HIGH" && z.confidence !== "MEDIUM") return false;
+      // Tier 1 = actionable, must have polygon. Tier 2 = watch list, no polygon needed.
+      if (z.tier === 1 && z.ring.length < 3) return false;
       // Hard server-side clip: reject any zone whose centroid is outside the
       // user's defined boundary. The AI is told to stay inside but we enforce.
-      const c = ringCentroid(z.ring);
-      return insideBoundary(c.lat, c.lng);
+      if (z.ring.length >= 3) {
+        const c = ringCentroid(z.ring);
+        if (!insideBoundary(c.lat, c.lng)) return false;
+      }
+      return true;
     }) : [];
+
+    // Split: Tier 1 = real zones on map, Tier 2 = text-only watch list.
+    const tier1 = zones.filter((z: any) => z.tier === 1);
+    const watch_list = zones.filter((z: any) => z.tier === 2).map((z: any) => ({
+      name: z.name,
+      issue: z.issue,
+      what_you_see: z.what_you_see,
+      severity: z.severity,
+      confidence: z.confidence,
+    }));
 
     return json({
       health_score: Number(parsed.health_score ?? 0),
       summary: parsed.summary ?? "",
       multispectral_recommendations: Array.isArray(parsed.multispectral_recommendations) ? parsed.multispectral_recommendations : [],
       issues: Array.isArray(parsed.issues) ? parsed.issues : [],
-      zones,
+      zones: tier1,
+      watch_list,
       bounds: { west, south, east, north },
       data_source: hasNDVI ? "NDVI+RGB" : "RGB",
       band_count: bandCount,
