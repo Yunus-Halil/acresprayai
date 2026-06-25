@@ -1308,10 +1308,13 @@ export default function OrthomosaicViewer() {
     setUserPolyToolActive(false);
   };
   const deleteUserPolygon = async (id: string) => {
-    if (!window.confirm("Delete this annotation?")) return;
-    const { error } = await supabase.from("user_annotations").delete().eq("id", id);
-    if (error) { console.error(error); return; }
+    const existing = userPolys.find(p => p.id === id);
     setUserPolys(prev => prev.filter(p => p.id !== id));
+    const { error } = await supabase.from("user_annotations").delete().eq("id", id);
+    if (error) {
+      console.error(error);
+      if (existing) setUserPolys(prev => prev.some(p => p.id === id) ? prev : [...prev, existing]);
+    }
   };
 
   // Probe the COG once to figure out NDVI vs VARI and band count for the legend.
