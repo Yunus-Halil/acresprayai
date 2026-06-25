@@ -555,6 +555,578 @@ export default function OrthomosaicViewer() {
     (b[0][1] + b[1][1]) / 2,
   ];
 
+  const score = analysis?.health_score;
+  const scoreTone =
+    score == null ? { dot: "#666", text: "text-neutral-500", label: "Not scored" }
+    : score >= 70 ? { dot: "#4CAF50", text: "text-[#4CAF50]", label: `${score}/100 · Healthy` }
+    : score >= 40 ? { dot: "#facc15", text: "text-yellow-400", label: `${score}/100 · Watch` }
+    : { dot: "#ef4444", text: "text-red-400", label: `${score}/100 · Stressed` };
+
+  const TAB_DEFS: { key: TabKey; label: string; icon: any }[] = [
+    { key: "field", label: "Field View", icon: MapIcon },
+    { key: "weather", label: "Weather", icon: CloudSun },
+    { key: "ai", label: "AI Analysis", icon: Bot },
+    { key: "planner", label: "Flight Planner", icon: Plane },
+    { key: "reports", label: "Reports", icon: FileBarChart },
+  ];
+  const openTab = (k: TabKey) => {
+    setOpenTabs(t => t.includes(k) ? t : [...t, k]);
+    setActiveTab(k);
+    setNewTabOpen(false);
+  };
+  const closeTab = (k: TabKey) => {
+    if (k === "field") return; // field view is permanent
+    setOpenTabs(t => {
+      const next = t.filter(x => x !== k);
+      if (activeTab === k) setActiveTab(next[next.length - 1] ?? "field");
+      return next;
+    });
+  };
+
+  return (
+    <div className="h-screen w-screen flex flex-col overflow-hidden font-sans"
+         style={{ background: "#0f0f0f", color: "#f0f0f0" }}>
+      {/* Top status bar: back · field · weather · health */}
+      <div className="h-12 shrink-0 flex items-center gap-4 px-4 border-b border-[#1f1f1f]"
+           style={{ background: "#0f0f0f" }}>
+        <button onClick={() => window.history.back()}
+          className="inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-[#f0f0f0] transition-colors">
+          <ArrowLeft className="h-3.5 w-3.5" /> Back
+        </button>
+        <div className="h-4 w-px bg-[#222]" />
+        <div className="flex items-baseline gap-3 min-w-0">
+          <div className="text-sm font-semibold tracking-tight truncate">{taskName}</div>
+          <div className="text-[11px] text-neutral-500 font-mono">{ts}</div>
+        </div>
+        <div className="ml-auto flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 px-3 h-7 rounded-sm border border-[#222] bg-[#161616] text-xs">
+            <Cloud className="h-3.5 w-3.5 text-neutral-400" />
+            <span className="text-neutral-300">—°C</span>
+            <span className="text-neutral-500">Live weather</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 h-7 rounded-sm border border-[#222] bg-[#161616]">
+            <span className="h-2 w-2 rounded-full" style={{ background: scoreTone.dot }} />
+            <span className={`text-xs font-medium ${scoreTone.text}`}>{scoreTone.label}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Browser-style tab bar */}
+      <div className="h-10 shrink-0 flex items-end pl-2 pr-3 gap-0.5 border-b border-[#1f1f1f] relative"
+           style={{ background: "#141414" }}>
+        {TAB_DEFS.filter(t => openTabs.includes(t.key)).map(t => {
+          const Icon = t.icon;
+          const active = activeTab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`group relative h-9 flex items-center gap-2 pl-3 pr-2 min-w-[140px] max-w-[200px] text-xs border-t border-l border-r rounded-t-md -mb-px transition-colors
+                ${active
+                  ? "border-[#1f1f1f] text-[#f0f0f0]"
+                  : "border-transparent text-neutral-500 hover:text-neutral-300 hover:bg-[#1a1a1a]"}`}
+              style={active ? { background: "#0f0f0f" } : undefined}
+            >
+              {active && (
+                <span className="absolute left-0 right-0 -top-px h-0.5 bg-[#4CAF50] rounded-t" />
+              )}
+              <Icon className={`h-3.5 w-3.5 ${active ? "text-[#4CAF50]" : ""}`} />
+              <span className="truncate flex-1 text-left">{t.label}</span>
+              {t.key !== "field" && (
+                <span
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); closeTab(t.key); }}
+                  className="h-4 w-4 grid place-items-center rounded-sm text-neutral-500 hover:text-[#f0f0f0] hover:bg-[#262626]"
+                >
+                  <X className="h-3 w-3" />
+                </span>
+              )}
+            </button>
+          );
+        })}
+        <div className="relative">
+          <button
+            onClick={() => setNewTabOpen(o => !o)}
+            title="New tab (Ctrl+T)"
+            className="h-7 w-7 ml-1 grid place-items-center rounded-sm text-neutral-500 hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+          {newTabOpen && (
+            <div className="absolute z-[2000] top-9 left-0 w-56 rounded-md border border-[#222] bg-[#161616] shadow-2xl p-1">
+              <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-neutral-500">Open in new tab</div>
+              {TAB_DEFS.filter(t => !openTabs.includes(t.key)).map(t => {
+                const Icon = t.icon;
+                return (
+                  <button key={t.key} onClick={() => openTab(t.key)}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-200 hover:bg-[#1f1f1f] rounded-sm">
+                    <Icon className="h-3.5 w-3.5 text-[#4CAF50]" />
+                    {t.label}
+                  </button>
+                );
+              })}
+              {TAB_DEFS.every(t => openTabs.includes(t.key)) && (
+                <div className="px-2 py-2 text-[11px] text-neutral-500">All tabs are open.</div>
+              )}
+              <div className="border-t border-[#222] mt-1 pt-1 px-2 pb-1 text-[10px] text-neutral-600 font-mono">⌘/Ctrl + T</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 min-h-0 relative">
+        {activeTab === "field" && (
+          <FieldViewTab
+            center={center}
+            bounds={bounds}
+            tileUrl={tileUrl}
+            ndviUrl={ndviUrl}
+            maxNative={maxNative}
+            layers={layers}
+            setLayers={setLayers}
+            ndviInfo={ndviInfo}
+            cursorCoordRef={cursorCoordRef}
+            cursorZoomRef={cursorZoomRef}
+            layersOpen={layersOpen}
+            setLayersOpen={setLayersOpen}
+            drawerOpen={drawerOpen}
+            setDrawerOpen={setDrawerOpen}
+            analysis={analysis}
+            analyzing={analyzing}
+            analysisErr={analysisErr}
+            runAnalysis={runAnalysis}
+            showAiZones={showAiZones}
+            setShowAiZones={setShowAiZones}
+            selectedZone={selectedZone}
+            setSelectedZone={setSelectedZone}
+            updateZoneRing={updateZoneRing}
+            deleteZone={deleteZone}
+            exportFlightPlan={exportFlightPlan}
+          />
+        )}
+        {activeTab === "weather" && <PlaceholderTab icon={CloudSun} title="Weather" body="Live weather and spray windows for this field will appear here." />}
+        {activeTab === "ai" && (
+          <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr} runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan} />
+        )}
+        {activeTab === "planner" && <PlaceholderTab icon={Plane} title="Flight Planner" body="Generate autonomous flight paths over your treatment zones." />}
+        {activeTab === "reports" && <PlaceholderTab icon={FileBarChart} title="Reports" body="Yield, treatment, and scan history reports for this field." />}
+      </div>
+
+      {/* Bottom status bar */}
+      <div className="h-7 shrink-0 px-3 flex items-center gap-4 text-[11px] text-neutral-500 border-t border-[#1f1f1f]"
+           style={{ background: "#0f0f0f" }}>
+        <div ref={cursorCoordRef} className="font-mono">—, —</div>
+        <div ref={cursorZoomRef} className="font-mono">Zoom 15</div>
+        <div className="ml-auto truncate font-mono text-neutral-600">{task.odm_uuid?.slice(0, 8)}</div>
+      </div>
+
+      <style>{`
+        .ai-zone-label {
+          background: #1a1a1a;
+          color: #f0f0f0;
+          border: 1px solid #2a2a2a;
+          border-left: 2px solid #4CAF50;
+          font-size: 11px;
+          padding: 4px 8px;
+          border-radius: 2px;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+          white-space: nowrap;
+          pointer-events: none;
+          font-family: inherit;
+        }
+        .ai-zone-label::before { display: none; }
+        .leaflet-container { background: #0a0a0a; }
+      `}</style>
+    </div>
+  );
+}
+
+// ----------------------------- Field View tab -------------------------------
+function FieldViewTab(props: {
+  center: [number, number];
+  bounds: L.LatLngBoundsExpression;
+  tileUrl: string;
+  ndviUrl: string | null;
+  maxNative: number;
+  layers: LayerState;
+  setLayers: React.Dispatch<React.SetStateAction<LayerState>>;
+  ndviInfo: { bands: number; index: "ndvi" | "vari"; label: string } | null;
+  cursorCoordRef: React.MutableRefObject<HTMLDivElement | null>;
+  cursorZoomRef: React.MutableRefObject<HTMLDivElement | null>;
+  layersOpen: boolean;
+  setLayersOpen: (v: boolean) => void;
+  drawerOpen: boolean;
+  setDrawerOpen: (v: boolean) => void;
+  analysis: any;
+  analyzing: boolean;
+  analysisErr: string | null;
+  runAnalysis: () => void;
+  showAiZones: boolean;
+  setShowAiZones: (v: boolean) => void;
+  selectedZone: string | null;
+  setSelectedZone: (id: string | null) => void;
+  updateZoneRing: (id: string, ring: { lat: number; lng: number }[]) => void;
+  deleteZone: (id: string) => void;
+  exportFlightPlan: () => void;
+}) {
+  const {
+    center, bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
+    cursorCoordRef, cursorZoomRef, layersOpen, setLayersOpen,
+    drawerOpen, setDrawerOpen,
+    analysis, analyzing, analysisErr, runAnalysis,
+    showAiZones, setShowAiZones, selectedZone, setSelectedZone,
+    updateZoneRing, deleteZone, exportFlightPlan,
+  } = props;
+
+  const ToolButton = ({ icon: Icon, label, onClick, active }: any) => (
+    <button
+      onClick={onClick} title={label}
+      className={`h-10 w-10 grid place-items-center rounded-sm border transition-colors
+        ${active
+          ? "bg-[#1a1a1a] border-[#4CAF50] text-[#4CAF50]"
+          : "bg-[#141414]/90 border-[#222] text-neutral-300 hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"}`}
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  );
+
+  return (
+    <div className="absolute inset-0 bg-[#0a0a0a]">
+      <MapContainer
+        center={center}
+        zoom={15}
+        minZoom={1}
+        maxZoom={22}
+        preferCanvas
+        zoomControl={false}
+        attributionControl={false}
+        style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution="&copy; OpenStreetMap contributors"
+          minZoom={1}
+          maxNativeZoom={19}
+          maxZoom={22}
+          zIndex={1}
+        />
+        {layers.orthomosaic && tileUrl && (
+          <TileLayer
+            key={tileUrl}
+            url={tileUrl}
+            opacity={1.0}
+            maxNativeZoom={Math.min(20, maxNative)}
+            maxZoom={22}
+            tileSize={256}
+            keepBuffer={8}
+            updateWhenIdle={false}
+            updateWhenZooming={false}
+            bounds={bounds}
+            noWrap
+            zIndex={10}
+          />
+        )}
+        {layers.ndvi && ndviUrl && (
+          <TileLayer
+            key={`ndvi-${ndviUrl}`}
+            url={ndviUrl}
+            opacity={0.75}
+            maxNativeZoom={Math.min(20, maxNative)}
+            maxZoom={22}
+            tileSize={256}
+            keepBuffer={8}
+            updateWhenIdle={false}
+            updateWhenZooming={false}
+            bounds={bounds}
+            noWrap
+            zIndex={20}
+          />
+        )}
+        <FitBounds bounds={bounds} />
+        <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />
+        <MapControls fitTo={bounds} />
+        {showAiZones && analysis?.zones && analysis.zones.length > 0 && (
+          <AiZonesLayer
+            zones={analysis.zones}
+            selectedId={selectedZone}
+            onSelect={setSelectedZone}
+            onUpdate={updateZoneRing}
+          />
+        )}
+      </MapContainer>
+
+      {/* Floating icon toolbar */}
+      <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-1.5">
+        <ToolButton icon={Layers} label="Layers" active={layersOpen} onClick={() => setLayersOpen(!layersOpen)} />
+        <ToolButton icon={Ruler} label="Measure" />
+        <ToolButton icon={Pencil} label="Annotate" />
+        <ToolButton icon={Settings} label="Settings" />
+      </div>
+
+      {/* Layers popover */}
+      {layersOpen && (
+        <div className="absolute top-4 left-16 z-[1001] w-64 rounded-md border border-[#222] shadow-2xl p-2"
+             style={{ background: "#161616" }}>
+          <div className="flex items-center justify-between px-1.5 pb-2 border-b border-[#222] mb-1">
+            <div className="text-xs font-medium text-[#f0f0f0]">Layers</div>
+            <button onClick={() => setLayersOpen(false)} className="text-neutral-500 hover:text-[#f0f0f0]">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <LayerRow label="Orthomosaic" icon={ImageIcon}
+            checked={layers.orthomosaic}
+            onToggle={() => setLayers(s => ({ ...s, orthomosaic: !s.orthomosaic }))} />
+          <LayerRow
+            label={ndviInfo?.index === "vari" ? "Vegetation index (VARI)" : "NDVI"}
+            icon={Activity}
+            checked={layers.ndvi}
+            onToggle={() => setLayers(s => ({ ...s, ndvi: !s.ndvi }))}
+          />
+          <LayerRow label="DSM" icon={Mountain}
+            checked={layers.dsm}
+            onToggle={() => setLayers(s => ({ ...s, dsm: !s.dsm }))} />
+          <LayerRow label="Annotations" icon={MapPin}
+            checked={layers.annotations}
+            onToggle={() => setLayers(s => ({ ...s, annotations: !s.annotations }))} />
+          <LayerRow label="AI treatment zones" icon={Sparkles}
+            checked={showAiZones}
+            onToggle={() => setShowAiZones(!showAiZones)} />
+        </div>
+      )}
+
+      {/* NDVI legend */}
+      {layers.ndvi && (
+        <div className="absolute bottom-[72px] left-1/2 -translate-x-1/2 z-[1000] rounded-sm border border-[#222] px-3 py-2 text-[11px] shadow-xl"
+             style={{ background: "#161616", color: "#f0f0f0" }}>
+          <div className="flex items-center gap-2 mb-1">
+            <Activity className="h-3.5 w-3.5 text-[#4CAF50]" />
+            <span className="font-medium">
+              {ndviInfo?.index === "vari" ? "Vegetation Index (VARI · RGB-derived)" : "NDVI"}
+            </span>
+            {ndviInfo && <span className="text-neutral-500 font-mono">{ndviInfo.bands}-band</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-red-400">Stressed</span>
+            <div className="h-1.5 w-40"
+              style={{ background: "linear-gradient(to right,#a50026,#d73027,#f46d43,#fdae61,#fee08b,#d9ef8b,#a6d96a,#66bd63,#1a9850,#006837)" }} />
+            <span className="text-[#4CAF50]">Healthy</span>
+          </div>
+        </div>
+      )}
+
+      {/* Slide-up AI drawer */}
+      <div
+        className="absolute bottom-0 left-0 right-0 z-[1100] border-t border-[#222] transition-[max-height] duration-300 ease-out"
+        style={{
+          background: "#0f0f0f",
+          maxHeight: drawerOpen ? "60vh" : 42,
+        }}
+      >
+        <button
+          onClick={() => setDrawerOpen(!drawerOpen)}
+          className="w-full h-[42px] px-4 flex items-center gap-3 text-left hover:bg-[#141414]"
+        >
+          <Sparkles className="h-4 w-4 text-[#4CAF50]" />
+          <div className="text-xs font-medium">
+            Field Health:{" "}
+            <span className={
+              analysis ? (analysis.health_score >= 70 ? "text-[#4CAF50]" : analysis.health_score >= 40 ? "text-yellow-400" : "text-red-400") : "text-neutral-500"
+            }>
+              {analysis ? `${analysis.health_score}/100` : "Not analyzed"}
+            </span>
+          </div>
+          {analysis && (
+            <div className="text-[11px] text-neutral-500 truncate hidden md:block">
+              {analysis.zones.length} treatment zone{analysis.zones.length === 1 ? "" : "s"} · {analysis.issues.length} issue{analysis.issues.length === 1 ? "" : "s"}
+            </div>
+          )}
+          <div className="ml-auto flex items-center gap-2 text-neutral-500">
+            {drawerOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          </div>
+        </button>
+
+        {drawerOpen && (
+          <div className="px-4 pb-4 overflow-auto" style={{ maxHeight: "calc(60vh - 42px)" }}>
+            {!analysis && !analyzing && (
+              <div className="flex items-center gap-3 py-3">
+                <p className="text-xs text-neutral-400 leading-relaxed flex-1">
+                  Run AI vision over this orthomosaic to detect bare patches, waterlogging,
+                  discoloration and row gaps — and auto-draw treatment zones you can export.
+                </p>
+                <button onClick={runAnalysis}
+                  className="inline-flex items-center gap-2 bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 text-xs font-semibold whitespace-nowrap">
+                  <Sparkles className="h-3.5 w-3.5" /> Analyze field
+                </button>
+              </div>
+            )}
+            {analysisErr && <div className="text-red-400 text-xs py-2">{analysisErr}</div>}
+            {analyzing && (
+              <div className="flex items-center gap-2 py-4 text-neutral-300 text-xs">
+                <Loader2 className="h-4 w-4 animate-spin text-[#4CAF50]" />
+                Analyzing imagery…
+              </div>
+            )}
+            {analysis && <AnalysisGrid
+              analysis={analysis} runAnalysis={runAnalysis}
+              showAiZones={showAiZones} setShowAiZones={setShowAiZones}
+              selectedZone={selectedZone} setSelectedZone={setSelectedZone}
+              deleteZone={deleteZone} exportFlightPlan={exportFlightPlan}
+            />}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AnalysisGrid({
+  analysis, runAnalysis, showAiZones, setShowAiZones,
+  selectedZone, setSelectedZone, deleteZone, exportFlightPlan,
+}: any) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3">
+      <div className="rounded-sm p-3 border border-[#222]" style={{ background: "#1a1a1a" }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500">Overall health</div>
+          <button onClick={runAnalysis} className="text-[10px] text-[#4CAF50] hover:underline">Re-run</button>
+        </div>
+        <div className="flex items-end gap-2">
+          <div className={`text-4xl font-semibold tabular-nums ${analysis.health_score >= 70 ? "text-[#4CAF50]" : analysis.health_score >= 40 ? "text-yellow-400" : "text-red-400"}`}>
+            {analysis.health_score}
+          </div>
+          <div className="text-neutral-500 text-xs mb-1.5">/ 100</div>
+        </div>
+        <div className="h-1 bg-[#0f0f0f] mt-2 overflow-hidden">
+          <div className={`h-full ${analysis.health_score >= 70 ? "bg-[#4CAF50]" : analysis.health_score >= 40 ? "bg-yellow-400" : "bg-red-500"}`}
+            style={{ width: `${analysis.health_score}%` }} />
+        </div>
+        {analysis.summary && <div className="text-neutral-300 text-xs mt-3 leading-relaxed">{analysis.summary}</div>}
+        {analysis.zones.length > 0 && (
+          <button onClick={exportFlightPlan}
+            className="mt-3 w-full inline-flex items-center justify-center gap-2 bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 text-xs font-semibold">
+            <Download className="h-3.5 w-3.5" /> Export flight plan
+          </button>
+        )}
+      </div>
+
+      <div className="rounded-sm p-3 border border-[#222] overflow-auto max-h-[42vh]" style={{ background: "#1a1a1a" }}>
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Detected issues ({analysis.issues.length})</div>
+        {analysis.issues.length === 0 ? (
+          <div className="text-xs text-neutral-500 italic">No visible issues.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {analysis.issues.map((iss: any, i: number) => (
+              <div key={i} className="border border-[#222] rounded-sm p-2" style={{ background: "#0f0f0f" }}>
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle className={`h-3 w-3 ${iss.severity === "high" ? "text-red-400" : iss.severity === "medium" ? "text-yellow-400" : "text-neutral-400"}`} />
+                  <div className="font-medium text-xs">{iss.label}</div>
+                  <span className="ml-auto text-[10px] uppercase text-neutral-500">{iss.severity}</span>
+                </div>
+                {iss.description && <div className="text-neutral-400 text-[11px] mt-1 leading-relaxed">{iss.description}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-sm p-3 border border-[#222] overflow-auto max-h-[42vh]" style={{ background: "#1a1a1a" }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500">Treatment zones ({analysis.zones.length})</div>
+          <label className="flex items-center gap-1 text-[10px] text-neutral-400 cursor-pointer">
+            <input type="checkbox" checked={showAiZones} onChange={e => setShowAiZones(e.target.checked)}
+              className="h-3 w-3 accent-[#4CAF50]" />
+            On map
+          </label>
+        </div>
+        {analysis.zones.length === 0 ? (
+          <div className="text-xs text-neutral-500 italic">No treatment zones — field looks healthy.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {analysis.zones.map((z: AiZone) => (
+              <div key={z.id}
+                onClick={() => setSelectedZone(z.id)}
+                className={`border rounded-sm p-2 cursor-pointer transition-colors ${selectedZone === z.id ? "border-[#4CAF50]" : "border-[#222] hover:border-[#333]"}`}
+                style={{ background: "#0f0f0f" }}>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full" style={{ background: sevColor(z.severity) }} />
+                  <div className="font-medium text-xs truncate">{z.name}</div>
+                  <span className="ml-auto text-[10px] text-neutral-500 font-mono">{z.coverage_pct}%</span>
+                </div>
+                <div className="text-neutral-400 text-[11px] mt-0.5">{z.issue}</div>
+                {z.recommendation && (
+                  <div className="mt-1.5 pt-1.5 border-t border-[#222] text-[11px] text-neutral-300">
+                    <span className="text-[#4CAF50] font-medium capitalize">{z.recommendation.action}</span>
+                    {z.recommendation.product && <> · {z.recommendation.product}</>}
+                    {z.recommendation.dose && <span className="text-neutral-500"> · {z.recommendation.dose}</span>}
+                  </div>
+                )}
+                {selectedZone === z.id && (
+                  <button onClick={(e) => { e.stopPropagation(); deleteZone(z.id); }}
+                    className="mt-1.5 text-[10px] text-red-400 hover:underline">Delete zone</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan }: any) {
+  return (
+    <div className="absolute inset-0 overflow-auto p-8" style={{ background: "#0f0f0f" }}>
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-center gap-3 mb-6">
+          <Bot className="h-5 w-5 text-[#4CAF50]" />
+          <h1 className="text-xl font-semibold tracking-tight">AI Field Analysis</h1>
+        </div>
+        {!analysis && !analyzing && (
+          <div className="rounded-sm border border-[#222] p-6" style={{ background: "#1a1a1a" }}>
+            <p className="text-sm text-neutral-400 mb-4 max-w-2xl leading-relaxed">
+              Run conservative RGB vision over this orthomosaic. We only flag what we can confirm visually —
+              bare soil, waterlogging, row gaps, visible discoloration and field boundary issues.
+            </p>
+            <button onClick={runAnalysis}
+              className="inline-flex items-center gap-2 bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-4 py-2 text-sm font-semibold">
+              <Sparkles className="h-4 w-4" /> Analyze field
+            </button>
+            {analysisErr && <div className="text-red-400 text-xs mt-3">{analysisErr}</div>}
+          </div>
+        )}
+        {analyzing && (
+          <div className="flex items-center gap-2 text-sm text-neutral-300">
+            <Loader2 className="h-4 w-4 animate-spin text-[#4CAF50]" /> Analyzing imagery…
+          </div>
+        )}
+        {analysis && (
+          <AnalysisGrid
+            analysis={analysis} runAnalysis={runAnalysis}
+            showAiZones={true} setShowAiZones={() => {}}
+            selectedZone={null} setSelectedZone={() => {}}
+            deleteZone={() => {}} exportFlightPlan={exportFlightPlan}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PlaceholderTab({ icon: Icon, title, body }: { icon: any; title: string; body: string }) {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#0f0f0f" }}>
+      <div className="text-center max-w-md px-6">
+        <div className="inline-flex h-12 w-12 items-center justify-center rounded-sm border border-[#222] mb-4"
+             style={{ background: "#1a1a1a" }}>
+          <Icon className="h-5 w-5 text-[#4CAF50]" />
+        </div>
+        <h2 className="text-lg font-semibold tracking-tight mb-1">{title}</h2>
+        <p className="text-sm text-neutral-500 leading-relaxed">{body}</p>
+        <div className="mt-4 text-[11px] uppercase tracking-wider text-neutral-600">Coming soon</div>
+      </div>
+    </div>
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
