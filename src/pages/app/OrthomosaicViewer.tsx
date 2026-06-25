@@ -550,8 +550,15 @@ export default function OrthomosaicViewer() {
   const [analysisErr, setAnalysisErr] = useState<string | null>(null);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [showAiZones, setShowAiZones] = useState(true);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const cursorCoordRef = useRef<HTMLDivElement | null>(null);
   const cursorZoomRef = useRef<HTMLDivElement | null>(null);
+
+  // Load saved annotations whenever the active scan changes.
+  useEffect(() => {
+    if (!taskId) return;
+    setAnnotations(loadAnnotations(taskId));
+  }, [taskId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -982,9 +989,12 @@ export default function OrthomosaicViewer() {
             updateZoneRing={updateZoneRing}
             deleteZone={deleteZone}
             exportFlightPlan={exportFlightPlan}
+            taskId={taskId!}
+            annotations={annotations}
+            setAnnotations={setAnnotations}
           />
         )}
-        {activeTab === "weather" && <PlaceholderTab icon={CloudSun} title="Weather" body="Live weather and spray windows for this field will appear here." />}
+        {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
         {activeTab === "ai" && (
           <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr} runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan} />
         )}
