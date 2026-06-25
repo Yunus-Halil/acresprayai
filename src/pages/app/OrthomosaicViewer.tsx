@@ -1340,6 +1340,8 @@ export default function OrthomosaicViewer() {
             handleBoundaryEdited={handleBoundaryEdited}
             handleBoundaryDeleteRing={handleBoundaryDeleteRing}
             fieldAreaHa={field?.boundary_area_hectares ?? null}
+            activeBoundaryIdx={activeBoundaryIdx}
+            setActiveBoundaryIdx={setActiveBoundaryIdx}
           />
         )}
         {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
