@@ -106,7 +106,12 @@ async function extractAndUpload(
 }
 
 type TaskRow = { odm_uuid: string | null; field_id: string; created_at: string };
-type FieldRow = { name: string };
+type FieldRow = {
+  id: string;
+  name: string;
+  boundary: { lat: number; lng: number }[] | null;
+  boundary_area_hectares: number | null;
+};
 
 // --- helpers that run inside the MapContainer ---------------------------------
 function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
