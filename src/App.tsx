@@ -9,8 +9,6 @@ import Auth from "./pages/Auth.tsx";
 import AppLayout from "./components/app/AppLayout.tsx";
 import Dashboard from "./pages/app/Dashboard.tsx";
 import Fields from "./pages/app/Fields.tsx";
-import Planner from "./pages/app/Planner.tsx";
-import Analyzer from "./pages/app/Analyzer.tsx";
 import Reports from "./pages/app/Reports.tsx";
 import Fleet from "./pages/app/Fleet.tsx";
 import Weather from "./pages/app/Weather.tsx";
@@ -37,8 +35,6 @@ const App = () => (
               <Route path="fields" element={<Fields />} />
               <Route path="fields/:id" element={<FieldDetail />} />
               <Route path="fields/:id/map" element={<FieldMap />} />
-              <Route path="planner" element={<Planner />} />
-              <Route path="analyzer" element={<Analyzer />} />
               <Route path="fleet" element={<Fleet />} />
               <Route path="weather" element={<Weather />} />
               <Route path="models" element={<Models3D />} />
