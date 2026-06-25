@@ -3203,7 +3203,7 @@ function PlannerTab({
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
-          <Slider2 label="Swath spacing" value={spacingM} setValue={setSpacingM} min={2} max={20} step={0.5} unit="m" />
+          <Slider2 label="Swath spacing" value={spacingM} setValue={setSpacingM} min={3} max={20} step={0.5} unit="m" />
           <Slider2 label="Transit altitude (AGL)" value={transitAltM} setValue={setTransitAltM} min={10} max={120} step={1} unit="m" />
           <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
           <Slider2 label="Transit speed" value={transitSpeed} setValue={setTransitSpeed} min={3} max={20} step={0.5} unit="m/s" />
@@ -3315,7 +3315,7 @@ function PlannerOverlay({ boundary, zones, mission, home, onHomeChange }: {
       // Cyan solid spray pattern (sprayer ON)
       mission.spraySegments.forEach(path => {
         L.polyline(path.map(p => [p.lat, p.lng] as [number, number]), {
-          color: "#22d3ee", weight: 2.5, opacity: 0.95, interactive: false,
+          color: "#22d3ee", weight: 3, opacity: 1, interactive: false,
         }).addTo(group);
       });
       // Markers at SPRAY_ON / SPRAY_OFF (chemical activations)
