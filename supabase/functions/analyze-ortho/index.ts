@@ -22,9 +22,18 @@ Deno.serve(async (req) => {
     if (!ud.user) return json({ error: "Unauthorized" }, 401);
 
     const body = await req.json().catch(() => ({}));
-    const { task_id, boundary } = body as {
+    const { task_id, boundary, field_settings } = body as {
       task_id?: string;
       boundary?: { lat: number; lng: number }[] | { lat: number; lng: number }[][];
+      field_settings?: {
+        crop_type?: string | null;
+        planting_date?: string | null;
+        harvest_date?: string | null;
+        growth_stage?: string | null;
+        available_inputs?: string[];
+        unavailable_inputs?: string[];
+        custom_inputs?: { name: string; cost: number }[];
+      };
     };
     if (!task_id) return json({ error: "Missing task_id" }, 400);
 
