@@ -309,7 +309,7 @@ function AnnotateTool({
   active, mode, color, width, visible, annotations, setAnnotations, taskId,
 }: {
   active: boolean;
-  mode: "pen" | "text";
+  mode: "pen" | "text" | "select";
   color: string;
   width: number;
   visible: boolean;
@@ -325,8 +325,14 @@ function AnnotateTool({
   // While pen is active, hijack map dragging so dragging the mouse draws.
   useEffect(() => {
     if (!active) return;
-    map.dragging.disable();
     const container = map.getContainer();
+    if (mode === "select") {
+      // Select mode keeps map panning enabled; per-marker drag is wired in
+      // the saved-strokes effect.
+      container.style.cursor = "default";
+      return () => { container.style.cursor = ""; };
+    }
+    map.dragging.disable();
     if (mode === "text") {
       // High-contrast "T" cursor so it's visible over satellite & ortho imagery.
       const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'>
@@ -436,7 +442,9 @@ function AnnotateTool({
     };
   }, [active, mode, color, width, map, setAnnotations, taskId]);
 
-  // Saved strokes layer
+  // Saved strokes + text labels layer. Text labels become draggable while the
+  // Select tool is active.
+  const editable = active && mode === "select";
   useEffect(() => {
     if (!visible) return;
     const group = L.layerGroup().addTo(map);
@@ -452,15 +460,46 @@ function AnnotateTool({
       } else if (a.kind === "text") {
         const icon = L.divIcon({
           className: "annotation-text-label",
-          html: `<div style="background:rgba(20,20,20,0.85);border:1px solid ${a.color};color:${a.color};padding:3px 7px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap;font-family:ui-sans-serif,system-ui;">${a.text.replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]!))}</div>`,
+          html: `<div style="background:rgba(20,20,20,0.85);border:1px solid ${a.color};color:${a.color};padding:3px 7px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap;font-family:ui-sans-serif,system-ui;cursor:${editable ? "move" : "default"};box-shadow:${editable ? `0 0 0 1px ${a.color}66` : "none"};">${a.text.replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]!))}</div>`,
           iconSize: undefined as any,
           iconAnchor: [0, 0],
         });
-        L.marker([a.at.lat, a.at.lng], { icon, interactive: false }).addTo(group);
+        const m = L.marker([a.at.lat, a.at.lng], {
+          icon,
+          interactive: editable,
+          draggable: editable,
+        }).addTo(group);
+        if (editable) {
+          m.on("dragend", () => {
+            const ll = m.getLatLng();
+            setAnnotations(prev => {
+              const next = prev.map(x =>
+                x.id === a.id && x.kind === "text"
+                  ? { ...x, at: { lat: ll.lat, lng: ll.lng } }
+                  : x
+              );
+              saveAnnotations(taskId, next);
+              return next;
+            });
+          });
+          m.on("dblclick", (e) => {
+            L.DomEvent.stopPropagation(e);
+            const next = window.prompt("Edit label:", a.text);
+            if (next == null) return;
+            const t = next.trim();
+            setAnnotations(prev => {
+              const out = t
+                ? prev.map(x => x.id === a.id && x.kind === "text" ? { ...x, text: t } : x)
+                : prev.filter(x => x.id !== a.id);
+              saveAnnotations(taskId, out);
+              return out;
+            });
+          });
+        }
       }
     });
     return () => { group.remove(); };
-  }, [annotations, visible, map]);
+  }, [annotations, visible, map, editable, setAnnotations, taskId]);
 
   return null;
 }
