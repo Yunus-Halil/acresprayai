@@ -707,7 +707,7 @@ const sevColor = (s: AiZone["severity"]) =>
   s === "high" ? "#ef4444" : s === "medium" ? "#f59e0b" : "#eab308";
 
 function AiZonesLayer({
-  zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa,
+  zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa, settings,
 }: {
   zones: AiZone[];
   selectedId: string | null;
@@ -715,6 +715,7 @@ function AiZonesLayer({
   onUpdate: (id: string, ring: { lat: number; lng: number }[]) => void;
   onDelete: (id: string) => void;
   boundaryAreaHa: number | null;
+  settings: FarmerSettings;
 }) {
   const map = useMap();
   useEffect(() => {
@@ -752,14 +753,14 @@ function AiZonesLayer({
       const acres = acresNum.toFixed(2);
       const ha = (m2 / 10000).toFixed(3);
       const rec = z.recommendation;
-      const action = String(rec?.action ?? "spray").toLowerCase();
-      // Typical US row-crop input cost per acre, keyed off the AI's action.
-      const ratePerAc =
-        action === "reseed"    ? 28 :
-        action === "fertilize" ? 30 :
-        action === "spray"     ? 25 :
-        action === "irrigate"  ? 10 :
-                                  0;
+      // Cost = farmer's actual per-acre input price × real polygon acreage.
+      // Map AI issue → canonical key → farmer setting key.
+      const costKey = issueToCostKey(z);
+      const inputKey = costKey ? COST_MAP[costKey] : null;
+      const ratePerAc = inputKey ? Number(settings.input_costs[inputKey] ?? 0) : 0;
+      const inputLabel = inputKey ? INPUT_LABELS[inputKey] : null;
+      const noChem = costKey === "waterlogging";
+      const inputAvailable = inputKey ? !!settings.available_inputs[inputKey] : true;
       const estCost = (acresNum * ratePerAc).toFixed(2);
       const acresStr = acresNum.toFixed(3);
       const sevBadge = `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;background:${color}33;color:${color};border:1px solid ${color}">${z.severity}</span>`;
@@ -773,8 +774,14 @@ function AiZonesLayer({
           <div style="font-size:11px;color:#9ca3af;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:8px">
             <div>Area</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${acres} ac</div>
             <div></div><div style="text-align:right;color:#6b7280;font-family:ui-monospace,monospace">${ha} ha</div>
-            <div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">$${estCost}</div>
-            <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${acresStr} ac × $${ratePerAc}/ac = $${estCost}</div>
+            ${noChem
+              ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:11px;border-top:1px solid #222;padding-top:6px;margin-top:2px">Drainage work required — consult agronomist (no chemical fix).</div>`
+              : inputKey
+                ? `<div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">$${estCost}</div>
+                   <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${acresStr} ac × $${ratePerAc.toFixed(2)}/ac ${inputLabel ? `(${escapeHtml(inputLabel)})` : ""} = $${estCost}</div>
+                   ${!inputAvailable ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:10px;text-align:right">⚠ ${escapeHtml(inputLabel ?? "")} marked unavailable in Settings</div>` : ""}`
+                : `<div style="grid-column:1/-1;color:#6b7280;font-size:10px;text-align:right">No cost mapping for this issue type.</div>`
+            }
           </div>
           ${rec ? `
             <div style="border-top:1px solid #222;padding-top:8px;font-size:11px">
