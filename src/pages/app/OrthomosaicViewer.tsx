@@ -970,18 +970,37 @@ export default function OrthomosaicViewer() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? "Analysis failed");
-      setAnalysis({
+      const payload = {
         health_score: j.health_score,
         summary: j.summary,
         issues: j.issues ?? [],
         zones: j.zones ?? [],
-      });
+      };
+      setAnalysis(payload);
       setSelectedZone(j.zones?.[0]?.id ?? null);
+      // Persist so it survives reloads.
+      try {
+        await supabase.from("odm_tasks")
+          .update({ ai_analysis: payload as any, ai_analysis_at: new Date().toISOString() } as any)
+          .eq("id", taskId);
+      } catch (e) { console.warn("ai_analysis persist failed", e); }
     } catch (e: any) {
       setAnalysisErr(e?.message ?? String(e));
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  const clearAnalysis = async () => {
+    if (!taskId) return;
+    if (!window.confirm("Clear the saved AI analysis for this scan?")) return;
+    setAnalysis(null);
+    setSelectedZone(null);
+    try {
+      await supabase.from("odm_tasks")
+        .update({ ai_analysis: null, ai_analysis_at: null } as any)
+        .eq("id", taskId);
+    } catch (e) { console.warn("ai_analysis clear failed", e); }
   };
 
   // Boundary persistence ------------------------------------------------------
