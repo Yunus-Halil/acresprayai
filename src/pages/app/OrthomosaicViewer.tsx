@@ -1977,6 +1977,9 @@ function FieldViewTab(props: {
           <LayerRow label="AI treatment zones" icon={Sparkles}
             checked={showAiZones}
             onToggle={() => setShowAiZones(!showAiZones)} />
+          <LayerRow label={`Annotations · my polygons (${userPolys.length})`} icon={Hexagon}
+            checked={layers.userAnnotations}
+            onToggle={() => setLayers(s => ({ ...s, userAnnotations: !s.userAnnotations }))} />
         </div>
       )}
 
