@@ -586,12 +586,13 @@ const sevColor = (s: AiZone["severity"]) =>
   s === "high" ? "#ef4444" : s === "medium" ? "#f59e0b" : "#eab308";
 
 function AiZonesLayer({
-  zones, selectedId, onSelect, onUpdate,
+  zones, selectedId, onSelect, onUpdate, boundaryAreaHa,
 }: {
   zones: AiZone[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onUpdate: (id: string, ring: { lat: number; lng: number }[]) => void;
+  boundaryAreaHa: number | null;
 }) {
   const map = useMap();
   useEffect(() => {
@@ -602,14 +603,52 @@ function AiZonesLayer({
         color, weight: selectedId === z.id ? 3 : 2,
         fillColor: color, fillOpacity: selectedId === z.id ? 0.35 : 0.25,
       });
-      poly.bindTooltip(`${z.name} · ${z.issue}`, {
-        permanent: false,
-        sticky: true,
-        opacity: 1,
-        direction: "top",
+      poly.bindTooltip(`${z.name}`, {
+        permanent: false, sticky: true, opacity: 1, direction: "top",
         className: "ai-zone-label",
       });
-      poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onSelect(z.id); });
+      // Compute area: prefer coverage_pct × boundary area, else geodesic of ring.
+      const ringAreaM2 = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));
+      const m2 = boundaryAreaHa && z.coverage_pct
+        ? (boundaryAreaHa * 10000) * (z.coverage_pct / 100)
+        : ringAreaM2;
+      const acres = (m2 / 4046.8564224).toFixed(2);
+      const ha = (m2 / 10000).toFixed(3);
+      // Rough cost: $25/acre baseline, scaled by severity multiplier.
+      const sevMul = z.severity === "high" ? 1.5 : z.severity === "medium" ? 1.2 : 1.0;
+      const estCost = ((m2 / 4046.8564224) * 25 * sevMul).toFixed(0);
+      const rec = z.recommendation;
+      const sevBadge = `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;background:${color}33;color:${color};border:1px solid ${color}">${z.severity}</span>`;
+      const html = `
+        <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:240px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <div style="font-weight:600;font-size:13px">${escapeHtml(z.name)}</div>
+            ${sevBadge}
+          </div>
+          <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">${escapeHtml(z.issue)}</div>
+          <div style="font-size:11px;color:#9ca3af;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:8px">
+            <div>Area</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${acres} ac</div>
+            <div></div><div style="text-align:right;color:#6b7280;font-family:ui-monospace,monospace">${ha} ha</div>
+            <div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">$${estCost}</div>
+          </div>
+          ${rec ? `
+            <div style="border-top:1px solid #222;padding-top:8px;font-size:11px">
+              <div style="color:#4CAF50;font-weight:600;margin-bottom:3px">Recommended treatment</div>
+              <div style="color:#f0f0f0;margin-bottom:2px">${escapeHtml(rec.action ?? "—")}</div>
+              ${rec.product ? `<div style="color:#9ca3af">Product: <span style="color:#f0f0f0">${escapeHtml(rec.product)}</span></div>` : ""}
+              ${rec.dose ? `<div style="color:#9ca3af">Rate: <span style="color:#f0f0f0">${escapeHtml(rec.dose)}</span></div>` : ""}
+              ${rec.rationale ? `<div style="color:#6b7280;margin-top:4px;font-style:italic">${escapeHtml(rec.rationale)}</div>` : ""}
+            </div>` : `
+            <div style="border-top:1px solid #222;padding-top:8px;font-size:11px;color:#6b7280">
+              No specific treatment — monitor and re-scan after weather change.
+            </div>`}
+        </div>
+      `;
+      poly.bindPopup(html, {
+        className: "ai-zone-popup",
+        maxWidth: 320, closeButton: true, autoPan: true, autoClose: true, closeOnClick: true,
+      });
+      poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onSelect(z.id); poly.openPopup(e.latlng); });
       group.addLayer(poly);
       if (selectedId === z.id) {
         poly.bringToFront();
@@ -624,8 +663,12 @@ function AiZonesLayer({
       }
     });
     return () => { group.remove(); };
-  }, [map, zones, selectedId, onSelect, onUpdate]);
+  }, [map, zones, selectedId, onSelect, onUpdate, boundaryAreaHa]);
   return null;
+}
+
+function escapeHtml(s: string): string {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as any)[c]);
 }
 
 // --- Field boundary tool ----------------------------------------------------
