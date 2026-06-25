@@ -2856,20 +2856,168 @@ function generateFlightPath(
   return { perZone, total, lengthM };
 }
 
-// Mission Planner / QGC ".waypoints" format. Compatible with DJI Pilot 2 via
-// QGC conversion. Each row:
-//   <idx>\t<current>\t<frame>\t<cmd>\t<p1>\t<p2>\t<p3>\t<p4>\t<lat>\t<lng>\t<alt>\t<autocontinue>
-function exportWaypointsFile(points: LatLng2[], altitudeM: number): Blob {
+// =============================================================================
+// Mission building: full autonomous spray mission with three waypoint phases:
+//   TAKEOFF → TRANSIT (high, fast, sprayer off) → SPRAY (low, slow, sprayer on)
+//   → TRANSIT → ... → RTH → LAND
+// =============================================================================
+export type MissionAction =
+  | "TAKEOFF" | "TRANSIT" | "SPEED_CHANGE" | "ALTITUDE_CHANGE"
+  | "SPRAY_ON" | "SPRAY_WP" | "SPRAY_OFF" | "RTH" | "LAND";
+
+export type MissionWP = {
+  lat: number; lng: number; alt: number; speed: number;
+  action: MissionAction; zoneId?: string;
+};
+
+export type Mission = {
+  waypoints: MissionWP[];
+  transitDistM: number;
+  sprayDistM: number;
+  transitTimeS: number;
+  sprayTimeS: number;
+  sprayOnCount: number;
+  transitSegments: LatLng2[][];   // yellow dashed polylines (between zones)
+  spraySegments: LatLng2[][];     // cyan solid polylines (inside zones)
+  home: LatLng2;
+};
+
+function distM(a: LatLng2, b: LatLng2): number {
+  const dLat = (b.lat - a.lat) * M_PER_DEG_LAT;
+  const dLng = (b.lng - a.lng) * mPerDegLng((a.lat + b.lat) / 2);
+  return Math.sqrt(dLat * dLat + dLng * dLng);
+}
+
+export type MissionParams = {
+  home: LatLng2;
+  transitAltM: number;   // default 30
+  sprayAltM: number;     // default 3
+  transitSpeed: number;  // default 10 m/s
+  spraySpeed: number;    // default 3 m/s
+  spacingM: number;      // swath
+};
+
+function buildMission(
+  boundary: LatLng2[][],
+  zones: { id: string; ring: LatLng2[] }[],
+  p: MissionParams,
+): Mission {
+  const wps: MissionWP[] = [];
+  const transitSegments: LatLng2[][] = [];
+  const spraySegments: LatLng2[][] = [];
+  let transitDist = 0, sprayDist = 0, sprayOnCount = 0;
+
+  // 1) Takeoff at home
+  wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "TAKEOFF" });
+
+  // Build per-zone lawnmower paths, then order zones nearest-first from current pos.
+  const lawnmowers = generateFlightPath(boundary, zones, p.spacingM).perZone
+    .filter(z => z.path.length >= 2);
+
+  let cursor: LatLng2 = p.home;
+  const remaining = lawnmowers.slice();
+  const ordered: { id: string; path: LatLng2[] }[] = [];
+  while (remaining.length) {
+    let best = 0, bestD = Infinity;
+    remaining.forEach((z, i) => {
+      const d = distM(cursor, z.path[0]);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    const next = remaining.splice(best, 1)[0];
+    ordered.push(next);
+    cursor = next.path[next.path.length - 1];
+  }
+
+  cursor = p.home;
+  for (const z of ordered) {
+    const entry = z.path[0];
+    const exit = z.path[z.path.length - 1];
+
+    // TRANSIT: home/prev → zone entry at transit altitude
+    wps.push({ ...cursor, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
+    wps.push({ ...entry, alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT", zoneId: z.id });
+    transitSegments.push([cursor, entry]);
+    transitDist += distM(cursor, entry);
+
+    // DESCEND + SPRAY ON at zone entry
+    wps.push({ ...entry, alt: p.sprayAltM, speed: p.spraySpeed, action: "ALTITUDE_CHANGE", zoneId: z.id });
+    wps.push({ ...entry, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPEED_CHANGE", zoneId: z.id });
+    wps.push({ ...entry, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_ON", zoneId: z.id });
+    sprayOnCount++;
+
+    // Lawnmower spray waypoints
+    for (let i = 0; i < z.path.length; i++) {
+      wps.push({ ...z.path[i], alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_WP", zoneId: z.id });
+      if (i > 0) sprayDist += distM(z.path[i - 1], z.path[i]);
+    }
+    spraySegments.push(z.path);
+
+    // SPRAY OFF + ASCEND
+    wps.push({ ...exit, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF", zoneId: z.id });
+    wps.push({ ...exit, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE", zoneId: z.id });
+
+    cursor = exit;
+  }
+
+  // Return to home + land
+  if (ordered.length > 0) {
+    wps.push({ ...cursor, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
+    wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "RTH" });
+    transitSegments.push([cursor, p.home]);
+    transitDist += distM(cursor, p.home);
+  }
+  wps.push({ ...p.home, alt: 0, speed: 1, action: "LAND" });
+
+  return {
+    waypoints: wps,
+    transitDistM: transitDist,
+    sprayDistM: sprayDist,
+    transitTimeS: transitDist / Math.max(0.1, p.transitSpeed),
+    sprayTimeS: sprayDist / Math.max(0.1, p.spraySpeed),
+    sprayOnCount,
+    transitSegments,
+    spraySegments,
+    home: p.home,
+  };
+}
+
+// QGC WPL 110 / Mission Planner format. Encodes action waypoints with
+// MAVLink-equivalent commands so Mission Planner & DJI converters keep them.
+//   cmd 22  NAV_TAKEOFF
+//   cmd 16  NAV_WAYPOINT
+//   cmd 178 DO_CHANGE_SPEED   (p2 = speed m/s)
+//   cmd 183 DO_SET_SERVO      (p1 = servo #, p2 = PWM; 2000 ON / 1000 OFF)
+//   cmd 20  NAV_RETURN_TO_LAUNCH
+//   cmd 21  NAV_LAND
+function exportMissionFile(m: Mission): Blob {
   const lines: string[] = ["QGC WPL 110"];
-  // Home waypoint (first point as reference)
-  if (points.length === 0) return new Blob([lines.join("\n")], { type: "text/plain" });
-  const home = points[0];
-  lines.push(`0\t1\t0\t16\t0\t0\t0\t0\t${home.lat.toFixed(8)}\t${home.lng.toFixed(8)}\t${altitudeM.toFixed(2)}\t1`);
-  points.forEach((p, i) => {
-    // Cmd 16 = MAV_CMD_NAV_WAYPOINT, frame 3 = MAV_FRAME_GLOBAL_RELATIVE_ALT
-    lines.push(`${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${p.lat.toFixed(8)}\t${p.lng.toFixed(8)}\t${altitudeM.toFixed(2)}\t1`);
-  });
+  const SPRAY_SERVO = 8;
+  const row = (
+    idx: number, current: 0 | 1, frame: number, cmd: number,
+    p1: number, p2: number, p3: number, p4: number,
+    lat: number, lng: number, alt: number,
+  ) => lines.push(
+    `${idx}\t${current}\t${frame}\t${cmd}\t${p1.toFixed(2)}\t${p2.toFixed(2)}\t${p3.toFixed(2)}\t${p4.toFixed(2)}\t${lat.toFixed(8)}\t${lng.toFixed(8)}\t${alt.toFixed(2)}\t1`,
+  );
+  // Home (index 0)
+  row(0, 1, 0, 16, 0, 0, 0, 0, m.home.lat, m.home.lng, m.waypoints[0]?.alt ?? 0);
+  let idx = 1;
+  for (const w of m.waypoints) {
+    if (w.action === "TAKEOFF")          row(idx++, 0, 3, 22,  0, 0, 0, 0, w.lat, w.lng, w.alt);
+    else if (w.action === "SPEED_CHANGE") row(idx++, 0, 3, 178, 1, w.speed, -1, 0, 0, 0, 0);
+    else if (w.action === "SPRAY_ON")     row(idx++, 0, 3, 183, SPRAY_SERVO, 2000, 0, 0, 0, 0, 0);
+    else if (w.action === "SPRAY_OFF")    row(idx++, 0, 3, 183, SPRAY_SERVO, 1000, 0, 0, 0, 0, 0);
+    else if (w.action === "RTH")          row(idx++, 0, 3, 20,  0, 0, 0, 0, w.lat, w.lng, w.alt);
+    else if (w.action === "LAND")         row(idx++, 0, 3, 21,  0, 0, 0, 0, w.lat, w.lng, w.alt);
+    else                                   row(idx++, 0, 3, 16, 0, 0, 0, 0, w.lat, w.lng, w.alt);
+  }
   return new Blob([lines.join("\n") + "\n"], { type: "text/plain" });
+}
+
+function centroidOfRings(rings: LatLng2[][]): LatLng2 {
+  let lat = 0, lng = 0, n = 0;
+  for (const r of rings) for (const p of r) { lat += p.lat; lng += p.lng; n++; }
+  return n > 0 ? { lat: lat / n, lng: lng / n } : { lat: 0, lng: 0 };
 }
 
 function PlannerTab({
@@ -2885,7 +3033,11 @@ function PlannerTab({
   setActiveTab: (k: any) => void;
 }) {
   const [spacingM, setSpacingM] = useState<number>(5);
-  const [altitudeM, setAltitudeM] = useState<number>(15);
+  const [transitAltM, setTransitAltM] = useState<number>(30);
+  const [sprayAltM, setSprayAltM] = useState<number>(3);
+  const [transitSpeed, setTransitSpeed] = useState<number>(10);
+  const [spraySpeed, setSpraySpeed] = useState<number>(3);
+  const [home, setHome] = useState<LatLng2 | null>(null);
 
   // Filter AI zones to those whose centroid lies inside the boundary.
   const validZones = (() => {
@@ -2898,18 +3050,31 @@ function PlannerTab({
     });
   })();
 
-  const plan = (() => {
-    if (validZones.length === 0 || !boundary) return null;
-    return generateFlightPath(boundary as LatLng2[][], validZones.map(z => ({ id: z.id, ring: z.ring })), spacingM);
+  // Default home = centroid of boundary, but only set once so user drags persist.
+  const defaultHome = boundary && boundary.length > 0 ? centroidOfRings(boundary as LatLng2[][]) : null;
+  const effectiveHome = home ?? defaultHome;
+
+  const mission = (() => {
+    if (!boundary || validZones.length === 0 || !effectiveHome) return null;
+    return buildMission(
+      boundary as LatLng2[][],
+      validZones.map(z => ({ id: z.id, ring: z.ring })),
+      { home: effectiveHome, transitAltM, sprayAltM, transitSpeed, spraySpeed, spacingM },
+    );
   })();
 
   const downloadWaypoints = () => {
-    if (!plan || plan.total.length === 0) return;
-    const blob = exportWaypointsFile(plan.total, altitudeM);
+    if (!mission || mission.waypoints.length === 0) return;
+    const blob = exportMissionFile(mission);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `flight-${taskId}.waypoints`; a.click();
+    a.href = url; a.download = `mission-${taskId}.waypoints`; a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const fmtTime = (s: number) => {
+    const m = Math.floor(s / 60); const sec = Math.round(s % 60);
+    return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
   // Empty states ------------------------------------------------------------
@@ -2965,8 +3130,17 @@ function PlannerTab({
               bounds={bounds} noWrap zIndex={10}
             />
           )}
-          <PlannerOverlay boundary={boundary} zones={validZones} plan={plan} />
+          <PlannerOverlay
+            boundary={boundary} zones={validZones}
+            mission={mission} home={effectiveHome}
+            onHomeChange={(p) => setHome(p)}
+          />
         </MapContainer>
+        <div className="absolute top-3 left-3 z-[400] bg-black/70 text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-sm border border-[#222] flex flex-col gap-1">
+          <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Home (drag or click map)</div>
+          <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-dashed border-yellow-400" /> Transit (sprayer off)</div>
+          <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-cyan-400" /> Spray pattern</div>
+        </div>
       </div>
 
       {/* Right control panel */}
@@ -2977,33 +3151,43 @@ function PlannerTab({
         </div>
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
-        <div className="rounded-sm border border-[#222] p-3 mb-4" style={{ background: "#0f0f0f" }}>
-          <label className="text-[10px] uppercase tracking-wider text-neutral-500">Line spacing (swath)</label>
-          <div className="flex items-center gap-2 mt-1">
-            <input type="range" min={2} max={20} step={0.5}
-              value={spacingM} onChange={(e) => setSpacingM(Number(e.target.value))}
-              className="flex-1 accent-[#4CAF50]" />
-            <div className="font-mono text-sm w-16 text-right">{spacingM.toFixed(1)} m</div>
-          </div>
-          <label className="text-[10px] uppercase tracking-wider text-neutral-500 mt-3 block">Altitude AGL</label>
-          <div className="flex items-center gap-2 mt-1">
-            <input type="range" min={5} max={120} step={1}
-              value={altitudeM} onChange={(e) => setAltitudeM(Number(e.target.value))}
-              className="flex-1 accent-[#4CAF50]" />
-            <div className="font-mono text-sm w-16 text-right">{altitudeM.toFixed(0)} m</div>
-          </div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
+          <Slider2 label="Swath spacing" value={spacingM} setValue={setSpacingM} min={2} max={20} step={0.5} unit="m" />
+          <Slider2 label="Transit altitude (AGL)" value={transitAltM} setValue={setTransitAltM} min={10} max={120} step={1} unit="m" />
+          <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
+          <Slider2 label="Transit speed" value={transitSpeed} setValue={setTransitSpeed} min={3} max={20} step={0.5} unit="m/s" />
+          <Slider2 label="Spray speed" value={spraySpeed} setValue={setSpraySpeed} min={1} max={8} step={0.5} unit="m/s" />
         </div>
 
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Plan summary</div>
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Home / Takeoff</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
+          <div className="flex justify-between"><span className="text-neutral-500">Latitude</span>
+            <span className="font-mono">{effectiveHome?.lat.toFixed(6) ?? "—"}</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Longitude</span>
+            <span className="font-mono">{effectiveHome?.lng.toFixed(6) ?? "—"}</span></div>
+          <button onClick={() => setHome(null)} className="text-[10px] text-[#4CAF50] hover:underline">Reset to field centroid</button>
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Mission summary</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
             <span className="font-mono">{validZones.length} of {analysis.zones.length}</span></div>
-          <div className="flex justify-between"><span className="text-neutral-500">Waypoints</span>
-            <span className="font-mono">{plan?.total.length ?? 0}</span></div>
-          <div className="flex justify-between"><span className="text-neutral-500">Path length</span>
-            <span className="font-mono">{plan ? (plan.lengthM / 1000).toFixed(2) : "0.00"} km</span></div>
-          <div className="flex justify-between"><span className="text-neutral-500">Est. flight time</span>
-            <span className="font-mono">{plan ? Math.ceil(plan.lengthM / 5 / 60) : 0} min @ 5 m/s</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Total waypoints</span>
+            <span className="font-mono">{mission?.waypoints.length ?? 0}</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Spray distance</span>
+            <span className="font-mono text-cyan-300">{mission ? (mission.sprayDistM / 1000).toFixed(2) : "0.00"} km</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Transit distance</span>
+            <span className="font-mono text-yellow-300">{mission ? (mission.transitDistM / 1000).toFixed(2) : "0.00"} km</span></div>
+          <div className="border-t border-[#222] my-1.5" />
+          <div className="flex justify-between"><span className="text-neutral-500">Spray time</span>
+            <span className="font-mono text-cyan-300">{mission ? fmtTime(mission.sprayTimeS) : "0:00"}</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Transit time</span>
+            <span className="font-mono text-yellow-300">{mission ? fmtTime(mission.transitTimeS) : "0:00"}</span></div>
+          <div className="flex justify-between font-semibold"><span>Total time</span>
+            <span className="font-mono">{mission ? fmtTime(mission.sprayTimeS + mission.transitTimeS) : "0:00"}</span></div>
+          <div className="border-t border-[#222] my-1.5" />
+          <div className="flex justify-between"><span className="text-neutral-500">Spray activations</span>
+            <span className="font-mono">{mission?.sprayOnCount ?? 0}</span></div>
         </div>
 
         {validZones.length < analysis.zones.length && (
@@ -3015,55 +3199,107 @@ function PlannerTab({
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Export</div>
         <button
           onClick={downloadWaypoints}
-          disabled={!plan || plan.total.length === 0}
+          disabled={!mission || mission.waypoints.length === 0}
           className="w-full inline-flex items-center justify-center gap-2 bg-[#4CAF50] hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600 text-black rounded-sm px-3 py-2 text-xs font-semibold mb-2"
         >
           <Download className="h-3.5 w-3.5" /> Download .waypoints
         </button>
         <p className="text-[10px] text-neutral-500 leading-relaxed">
-          QGC WPL 110 format — load directly in Mission Planner, QGroundControl, or convert
-          for DJI Pilot 2 with the standard waypoint importer.
+          QGC WPL 110 with takeoff, transit (sprayer off), spray (servo ON/OFF on servo 8),
+          RTH and land commands. Load in Mission Planner / QGroundControl, or convert for DJI Pilot 2.
         </p>
       </div>
     </div>
   );
 }
 
-function PlannerOverlay({ boundary, zones, plan }: {
+function Slider2({ label, value, setValue, min, max, step, unit }: {
+  label: string; value: number; setValue: (n: number) => void;
+  min: number; max: number; step: number; unit: string;
+}) {
+  return (
+    <div>
+      <label className="text-[10px] uppercase tracking-wider text-neutral-500">{label}</label>
+      <div className="flex items-center gap-2 mt-1">
+        <input type="range" min={min} max={max} step={step}
+          value={value} onChange={(e) => setValue(Number(e.target.value))}
+          className="flex-1 accent-[#4CAF50]" />
+        <div className="font-mono text-sm w-20 text-right">{value.toFixed(step < 1 ? 1 : 0)} {unit}</div>
+      </div>
+    </div>
+  );
+}
+
+function PlannerOverlay({ boundary, zones, mission, home, onHomeChange }: {
   boundary: BoundaryRing[];
   zones: AiZone[];
-  plan: { perZone: { id: string; path: LatLng2[] }[] } | null;
+  mission: Mission | null;
+  home: LatLng2 | null;
+  onHomeChange: (p: LatLng2) => void;
 }) {
   const map = useMap();
   useEffect(() => {
     const group = L.layerGroup().addTo(map);
+
     boundary.forEach(ring => {
       L.polygon(ring.map(p => [p.lat, p.lng] as [number, number]), {
         color: "#22d3ee", weight: 2, dashArray: "6 4",
-        fillColor: "#22d3ee", fillOpacity: 0.04,
+        fillColor: "#22d3ee", fillOpacity: 0.04, interactive: false,
       }).addTo(group);
     });
     zones.forEach(z => {
       const color = sevColor(z.severity);
       L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
-        color, weight: 1, fillColor: color, fillOpacity: 0.12,
+        color, weight: 1, fillColor: color, fillOpacity: 0.12, interactive: false,
       }).addTo(group);
     });
-    plan?.perZone.forEach(({ path }) => {
-      // Render the lawnmower as a single polyline; each pair-of-points draws a
-      // pass, and the connector to the next pass is a thin dashed segment.
-      const latlngs = path.map(p => [p.lat, p.lng] as [number, number]);
-      L.polyline(latlngs, { color: "#4CAF50", weight: 2, opacity: 0.95 }).addTo(group);
-      // Mark every waypoint with a small dot.
-      path.forEach((p, idx) => {
-        const isTurn = idx === 0 || idx === path.length - 1 || idx % 2 === 0;
-        L.circleMarker([p.lat, p.lng], {
-          radius: isTurn ? 3 : 1.5, color: "#4CAF50", weight: 1, fillColor: "#4CAF50", fillOpacity: 1,
+
+    if (mission) {
+      // Yellow dashed transit segments (sprayer OFF)
+      mission.transitSegments.forEach(seg => {
+        L.polyline(seg.map(p => [p.lat, p.lng] as [number, number]), {
+          color: "#facc15", weight: 2, dashArray: "8 6", opacity: 0.9, interactive: false,
         }).addTo(group);
       });
-    });
-    return () => { group.remove(); };
-  }, [map, boundary, zones, plan]);
+      // Cyan solid spray pattern (sprayer ON)
+      mission.spraySegments.forEach(path => {
+        L.polyline(path.map(p => [p.lat, p.lng] as [number, number]), {
+          color: "#22d3ee", weight: 2.5, opacity: 0.95, interactive: false,
+        }).addTo(group);
+      });
+      // Markers at SPRAY_ON / SPRAY_OFF (chemical activations)
+      mission.waypoints.forEach(w => {
+        if (w.action === "SPRAY_ON" || w.action === "SPRAY_OFF") {
+          L.circleMarker([w.lat, w.lng], {
+            radius: 4, color: "#000", weight: 1,
+            fillColor: w.action === "SPRAY_ON" ? "#22d3ee" : "#94a3b8",
+            fillOpacity: 1, interactive: false,
+          }).addTo(group);
+        }
+      });
+    }
+
+    // Draggable red home pin
+    let homeMarker: L.Marker | null = null;
+    if (home) {
+      const icon = L.divIcon({
+        className: "home-pin",
+        html: `<div style="width:18px;height:18px;border-radius:50%;background:#ef4444;border:3px solid #fff;box-shadow:0 0 0 1px #000,0 2px 8px rgba(0,0,0,.6);"></div>`,
+        iconSize: [18, 18], iconAnchor: [9, 9],
+      });
+      homeMarker = L.marker([home.lat, home.lng], { icon, draggable: true, zIndexOffset: 1000 }).addTo(group);
+      homeMarker.bindTooltip("Home / Takeoff", { permanent: false, direction: "top", offset: [0, -10] });
+      homeMarker.on("dragend", (e) => {
+        const ll = (e.target as L.Marker).getLatLng();
+        onHomeChange({ lat: ll.lat, lng: ll.lng });
+      });
+    }
+    // Click on map sets new home
+    const onClick = (e: L.LeafletMouseEvent) => onHomeChange({ lat: e.latlng.lat, lng: e.latlng.lng });
+    map.on("click", onClick);
+
+    return () => { map.off("click", onClick); group.remove(); };
+  }, [map, boundary, zones, mission, home, onHomeChange]);
   return null;
 }
 
