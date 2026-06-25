@@ -845,6 +845,11 @@ export default function OrthomosaicViewer() {
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [showAiZones, setShowAiZones] = useState(true);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  // Database-backed manual polygon annotations (farmer's anomalies).
+  const [userPolys, setUserPolys] = useState<UserPoly[]>([]);
+  // Draft polygon waiting for the metadata form modal.
+  const [draftUserPoly, setDraftUserPoly] = useState<DraftPolygon | null>(null);
+  const [userPolyToolActive, setUserPolyToolActive] = useState(false);
   const [boundary, setBoundary] = useState<BoundaryRing[] | null>(null);
   const [boundaryMode, setBoundaryMode] = useState<"off" | "draw" | "edit">("off");
   const [boundaryDirty, setBoundaryDirty] = useState(false);
@@ -857,6 +862,28 @@ export default function OrthomosaicViewer() {
   useEffect(() => {
     if (!taskId) return;
     setAnnotations(loadAnnotations(taskId));
+  }, [taskId]);
+
+  // Load DB-backed user annotations whenever the active scan changes.
+  useEffect(() => {
+    if (!taskId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("user_annotations")
+        .select("id, name, issue_type, color, notes, ring, area_hectares, created_at")
+        .eq("task_id", taskId)
+        .order("created_at", { ascending: true });
+      if (cancelled) return;
+      if (error) { console.warn("[user_annotations] load failed", error); return; }
+      setUserPolys((data ?? []).map((r: any) => ({
+        id: r.id, name: r.name, issue_type: r.issue_type, color: r.color,
+        notes: r.notes, ring: r.ring as { lat: number; lng: number }[],
+        area_hectares: Number(r.area_hectares ?? 0),
+        created_at: r.created_at,
+      })));
+    })();
+    return () => { cancelled = true; };
   }, [taskId]);
 
   useEffect(() => {
