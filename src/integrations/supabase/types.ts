@@ -198,6 +198,8 @@ export type Database = {
       fields: {
         Row: {
           area_hectares: number
+          boundary: Json | null
+          boundary_area_hectares: number | null
           created_at: string
           crop: string
           id: string
@@ -208,6 +210,8 @@ export type Database = {
         }
         Insert: {
           area_hectares?: number
+          boundary?: Json | null
+          boundary_area_hectares?: number | null
           created_at?: string
           crop: string
           id?: string
@@ -218,6 +222,8 @@ export type Database = {
         }
         Update: {
           area_hectares?: number
+          boundary?: Json | null
+          boundary_area_hectares?: number | null
           created_at?: string
           crop?: string
           id?: string
