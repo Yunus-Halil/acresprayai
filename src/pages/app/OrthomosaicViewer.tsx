@@ -937,6 +937,12 @@ function FieldViewTab(props: {
     updateZoneRing, deleteZone, exportFlightPlan,
   } = props;
 
+  const [measureActive, setMeasureActive] = useState(false);
+  const [measureStats, setMeasureStats] = useState<MeasureStats>({
+    active: false, finished: false, count: 0, distM: 0, areaM2: 0, liveDistM: 0,
+  });
+  const handleStats = useCallback((s: MeasureStats) => setMeasureStats(s), []);
+
   const ToolButton = ({ icon: Icon, label, onClick, active }: any) => (
     <button
       onClick={onClick} title={label}
@@ -1012,15 +1018,23 @@ function FieldViewTab(props: {
             onUpdate={updateZoneRing}
           />
         )}
+        <MeasureTool active={measureActive} onStats={handleStats} />
       </MapContainer>
 
       {/* Floating icon toolbar */}
       <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-1.5">
-        <ToolButton icon={Layers} label="Layers" active={layersOpen} onClick={() => setLayersOpen(!layersOpen)} />
-        <ToolButton icon={Ruler} label="Measure" />
+        <ToolButton icon={Layers} label="Layers" active={layersOpen}
+          onClick={() => { setLayersOpen(!layersOpen); }} />
+        <ToolButton icon={Ruler} label="Measure" active={measureActive}
+          onClick={() => { setMeasureActive(v => !v); setLayersOpen(false); }} />
         <ToolButton icon={Pencil} label="Annotate" />
         <ToolButton icon={Settings} label="Settings" />
       </div>
+
+      {/* Measure panel */}
+      {(measureActive || measureStats.count > 0) && !layersOpen && (
+        <MeasurePanel stats={measureStats} />
+      )}
 
       {/* Layers popover */}
       {layersOpen && (
