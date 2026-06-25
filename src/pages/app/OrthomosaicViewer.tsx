@@ -1723,7 +1723,15 @@ export default function OrthomosaicViewer() {
 
       {/* Tab content */}
       <div className="flex-1 min-h-0 relative">
-        {activeTab === "field" && (
+        {/* Field View is permanently mounted to preserve the Leaflet map and
+            its layers/geoman state across tab switches. We only hide it. */}
+        <div
+          style={{
+            position: "absolute", inset: 0,
+            visibility: activeTab === "field" ? "visible" : "hidden",
+            pointerEvents: activeTab === "field" ? "auto" : "none",
+          }}
+        >
           <FieldViewTab
             center={center}
             bounds={bounds}
@@ -1774,13 +1782,14 @@ export default function OrthomosaicViewer() {
             saveUserPolygon={saveUserPolygon}
             deleteUserPolygon={deleteUserPolygon}
             clearAnalysis={clearAnalysis}
+            settings={settings}
           />
-        )}
+        </div>
         {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
         {activeTab === "ai" && (
           <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr}
             runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan}
-            clearAnalysis={clearAnalysis} deleteZone={deleteZone} />
+            clearAnalysis={clearAnalysis} deleteZone={deleteZone} settings={settings} />
         )}
         {activeTab === "planner" && (
           <PlannerTab
@@ -1795,6 +1804,15 @@ export default function OrthomosaicViewer() {
           />
         )}
         {activeTab === "reports" && <PlaceholderTab icon={FileBarChart} title="Reports" body="Yield, treatment, and scan history reports for this field." />}
+        {activeTab === "settings" && (
+          <SettingsTab
+            settings={settings}
+            onSave={saveSettings}
+            saving={settingsSaving}
+            savedAt={settingsSavedAt}
+            fieldAreaHa={field?.boundary_area_hectares ?? null}
+          />
+        )}
       </div>
 
       {/* Bottom status bar */}
