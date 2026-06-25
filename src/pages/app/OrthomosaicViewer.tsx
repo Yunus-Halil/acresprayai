@@ -223,16 +223,16 @@ function LayerRow({
 }: { label: string; icon: any; checked: boolean; onToggle: () => void; indent?: number }) {
   return (
     <div
-      className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-neutral-800/70 text-sm text-neutral-200 cursor-pointer"
+      className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[#222] text-sm text-[#f0f0f0] cursor-pointer"
       style={{ paddingLeft: 8 + indent * 14 }}
       onClick={onToggle}
     >
       <input type="checkbox" checked={checked} readOnly
-        className="h-3.5 w-3.5 accent-sky-500" />
-      <Icon className="h-3.5 w-3.5 text-neutral-400" />
+        className="h-3.5 w-3.5 accent-[#4CAF50]" />
+      <Icon className="h-3.5 w-3.5 text-neutral-500" />
       <span className="flex-1 truncate">{label}</span>
       {checked
-        ? <Eye className="h-3.5 w-3.5 text-neutral-400" />
+        ? <Eye className="h-3.5 w-3.5 text-[#4CAF50]" />
         : <EyeOff className="h-3.5 w-3.5 text-neutral-600" />}
     </div>
   );
@@ -256,9 +256,12 @@ export default function OrthomosaicViewer() {
     annotations: false, design: false, orthomosaic: true, ndvi: false, dsm: false,
   });
   const [ndviInfo, setNdviInfo] = useState<{ bands: number; index: "ndvi" | "vari"; label: string } | null>(null);
-  const [search, setSearch] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
+  type TabKey = "field" | "weather" | "ai" | "planner" | "reports";
+  const [activeTab, setActiveTab] = useState<TabKey>("field");
+  const [openTabs, setOpenTabs] = useState<TabKey[]>(["field"]);
+  const [newTabOpen, setNewTabOpen] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<{
     health_score: number; summary: string;
