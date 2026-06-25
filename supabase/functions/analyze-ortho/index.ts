@@ -60,37 +60,52 @@ Deno.serve(async (req) => {
     const key = Deno.env.get("LOVABLE_API_KEY");
     if (!key) return json({ error: "Missing LOVABLE_API_KEY" }, 500);
 
-    const system = `You are a precision-agriculture analyst examining a high-resolution drone orthomosaic of a farm field.
+    const system = `You are a precision-agriculture analyst examining an RGB drone orthomosaic of a farm field.
 
-Identify and mark with PRECISE polygon coordinates every distinct issue you can see:
-- Bare soil patches (brown/grey areas with no crop cover)
-- Nutrient deficiency zones (yellowing, pale green areas)
-- Waterlogging (dark patches, standing water, saturated soil)
-- Weed pressure (irregular texture different from crop rows)
-- Crop row gaps or poor establishment
-- Pest/disease damage (discolored or wilted patches)
-- Drought stress (uniform fading/curling)
+STRICT RULE: Only flag what you can see with HIGH CONFIDENCE in RGB imagery. Never guess. A farmer trusts you with their livelihood.
+
+What you CAN detect in RGB:
+- Bare soil patches (visibly brown/grey with no crop cover)
+- Obvious large-scale visible discoloration (yellowing visible to the naked eye)
+- Waterlogged areas (dark saturated patches, standing water)
+- Crop row gaps or missing establishment (visible breaks in row pattern)
+- Field boundary issues (visible erosion, encroachment)
+
+What you CANNOT detect in RGB and MUST NEVER claim:
+- Nitrogen, phosphorus, or potassium deficiency (requires multispectral NDVI)
+- Disease or pest pressure (requires multispectral or ground truth)
+- Early stress before visible symptoms
+- Soil nutrient levels of any kind
+- Weed species identification
 
 Rules:
-- Be precise. Do NOT group multiple distinct patches into one zone — each separate patch gets its own polygon.
-- Use the EXACT issue type, not a broad category (e.g. "Nitrogen deficiency" not "stress").
-- Recommend a specific treatment with product type and application rate.
-- Estimate affected area in acres assuming the entire visible field is roughly \`field_acres\` acres (use coverage_pct of the full image area).
-- If the field is genuinely healthy and uniform, return zones: [].
+- Allowed issue values ONLY: "Bare soil", "Visible discoloration", "Waterlogging", "Row gap", "Boundary issue".
+- Allowed confidence ONLY: "HIGH" or "MEDIUM". Never flag LOW confidence zones — omit them entirely.
+- "what_you_see" must literally describe pixels (e.g. "Brown soil visible, no crop cover present"). No inference.
+- Only include "recommendation" for HIGH confidence zones. For MEDIUM, set recommendation to null.
+- If multispectral data would improve diagnosis, add a string to "multispectral_recommendations" (e.g. "Multispectral scan recommended to confirm nutrient deficiency").
+- Each distinct patch is its own polygon — do not group.
+- Estimate area in acres from coverage_pct of the full image area.
+- If the field shows no clearly visible issues, return zones: [].
+- health_score: 100 minus the % of field area with visible issues. Do NOT factor in anything you cannot visually confirm.
+- Tone: direct, honest, conservative. Never overclaim.
 
 Return STRICT JSON with this exact schema:
 {
   "health_score": 0-100,
-  "summary": "1-2 sentence overall assessment",
+  "summary": "1-2 sentence honest assessment of what is visually observable",
+  "multispectral_recommendations": [ string ],
   "issues": [ { "label": string, "severity": "low"|"medium"|"high", "description": string } ],
   "zones": [
     {
       "name": string,
-      "issue": string,
+      "issue": "Bare soil"|"Visible discoloration"|"Waterlogging"|"Row gap"|"Boundary issue",
+      "what_you_see": string,
+      "confidence": "HIGH"|"MEDIUM",
       "severity": "low"|"medium"|"high",
       "coverage_pct": number,
       "area_acres": number,
-      "recommendation": { "action": "spray"|"irrigate"|"reseed"|"fertilize"|"monitor", "product": string, "dose": string, "rationale": string },
+      "recommendation": { "action": "spray"|"irrigate"|"reseed"|"fertilize"|"monitor", "product": string, "dose": string, "rationale": string } | null,
       "polygon": [ [lat, lng], [lat, lng], ... ]
     }
   ]
@@ -166,21 +181,33 @@ For every polygon vertex you output:
       return null;
     };
 
-    const zones = Array.isArray(parsed.zones) ? parsed.zones.map((z: any, i: number) => ({
-      id: `ai-${i}`,
-      name: z.name ?? `Zone ${i + 1}`,
-      issue: z.issue ?? "",
-      severity: z.severity ?? "medium",
-      coverage_pct: Number(z.coverage_pct ?? 0),
-      recommendation: z.recommendation ?? null,
-      ring: Array.isArray(z.polygon)
-        ? z.polygon.map(parseVertex).filter((v: any): v is { lat: number; lng: number } => !!v)
-        : [],
-    })).filter((z: any) => z.ring.length >= 3) : [];
+    const ALLOWED_ISSUES = new Set(["Bare soil", "Visible discoloration", "Waterlogging", "Row gap", "Boundary issue"]);
+    const zones = Array.isArray(parsed.zones) ? parsed.zones.map((z: any, i: number) => {
+      const confidence = String(z.confidence ?? "").toUpperCase();
+      return {
+        id: `ai-${i}`,
+        name: z.name ?? `Zone ${i + 1}`,
+        issue: ALLOWED_ISSUES.has(z.issue) ? z.issue : "",
+        what_you_see: z.what_you_see ?? "",
+        confidence,
+        severity: z.severity ?? "medium",
+        coverage_pct: Number(z.coverage_pct ?? 0),
+        area_acres: Number(z.area_acres ?? 0),
+        recommendation: confidence === "HIGH" ? (z.recommendation ?? null) : null,
+        ring: Array.isArray(z.polygon)
+          ? z.polygon.map(parseVertex).filter((v: any): v is { lat: number; lng: number } => !!v)
+          : [],
+      };
+    }).filter((z: any) =>
+      z.ring.length >= 3 &&
+      z.issue &&
+      (z.confidence === "HIGH" || z.confidence === "MEDIUM")
+    ) : [];
 
     return json({
       health_score: Number(parsed.health_score ?? 0),
       summary: parsed.summary ?? "",
+      multispectral_recommendations: Array.isArray(parsed.multispectral_recommendations) ? parsed.multispectral_recommendations : [],
       issues: Array.isArray(parsed.issues) ? parsed.issues : [],
       zones,
       bounds: { west, south, east, north },
