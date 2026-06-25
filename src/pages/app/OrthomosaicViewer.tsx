@@ -1148,6 +1148,7 @@ export default function OrthomosaicViewer() {
         summary: j.summary,
         issues: j.issues ?? [],
         zones: j.zones ?? [],
+        watch_list: j.watch_list ?? [],
         data_source: j.data_source ?? "RGB",
         band_count: j.band_count ?? 3,
         ndvi_cells: j.ndvi_cells ?? [],
