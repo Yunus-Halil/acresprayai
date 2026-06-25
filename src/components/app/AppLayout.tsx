@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useEffect } from "react";
-import { LayoutDashboard, Map, CalendarClock, Sparkles, FileBarChart, LogOut, Loader2, Plane, CloudRain } from "lucide-react";
+import { LayoutDashboard, Map, FileBarChart, LogOut, Loader2, Plane, CloudRain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import logo from "@/assets/acrespray-logo.png.asset.json";
@@ -9,8 +9,6 @@ import logo from "@/assets/acrespray-logo.png.asset.json";
 const nav = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/app/fields", label: "Fields", icon: Map },
-  { to: "/app/planner", label: "Mission Planner", icon: CalendarClock },
-  { to: "/app/analyzer", label: "AI Analyzer", icon: Sparkles },
   { to: "/app/fleet", label: "Drone Fleet", icon: Plane },
   { to: "/app/weather", label: "Weather Radar", icon: CloudRain },
   { to: "/app/reports", label: "Reports", icon: FileBarChart },
