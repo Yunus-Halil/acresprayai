@@ -1274,7 +1274,23 @@ export default function OrthomosaicViewer() {
       const r = await fetch(`${FN_BASE}/analyze-ortho`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: taskId, boundary: validRings }),
+        body: JSON.stringify({
+          task_id: taskId,
+          boundary: validRings,
+          field_settings: {
+            crop_type: settings.crop_type || null,
+            planting_date: settings.planting_date || null,
+            harvest_date: settings.harvest_date || null,
+            growth_stage: growthStage(settings.crop_type, settings.planting_date),
+            available_inputs: Object.entries(settings.available_inputs)
+              .filter(([, on]) => on)
+              .map(([k]) => INPUT_LABELS[k as keyof typeof INPUT_LABELS]),
+            unavailable_inputs: Object.entries(settings.available_inputs)
+              .filter(([, on]) => !on)
+              .map(([k]) => INPUT_LABELS[k as keyof typeof INPUT_LABELS]),
+            custom_inputs: settings.custom_inputs.filter(c => c.name.trim()),
+          },
+        }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? "Analysis failed");
