@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Unzip, UnzipInflate } from "fflate";
 import {
   ArrowLeft, ChevronUp, ChevronDown, Eye, EyeOff,
-  Layers, Image as ImageIcon, Mountain, Ruler, Settings,
+  Layers, Image as ImageIcon, Ruler, Settings,
   Maximize2, Plus, Minus, Loader2, MapPin, Activity,
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
@@ -215,7 +215,6 @@ type LayerState = {
   design: boolean;
   orthomosaic: boolean;
   ndvi: boolean;
-  dsm: boolean;
 };
 
 function LayerRow({
@@ -253,7 +252,7 @@ export default function OrthomosaicViewer() {
   const [extracting, setExtracting] = useState<{ stage: string; pct: number } | null>(null);
 
   const [layers, setLayers] = useState<LayerState>({
-    annotations: false, design: false, orthomosaic: true, ndvi: false, dsm: false,
+    annotations: false, design: false, orthomosaic: true, ndvi: false,
   });
   const [ndviInfo, setNdviInfo] = useState<{ bands: number; index: "ndvi" | "vari"; label: string } | null>(null);
   type TabKey = "field" | "weather" | "ai" | "planner" | "reports";
