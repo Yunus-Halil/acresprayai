@@ -152,6 +152,165 @@ function MapControls({ fitTo }: { fitTo: L.LatLngBoundsExpression | null }) {
   );
 }
 
+// --- Measure tool ------------------------------------------------------------
+// Geodesic polygon area (spherical excess approximation, sufficient for fields).
+function polygonAreaM2(latlngs: L.LatLng[]): number {
+  const R = 6378137;
+  const n = latlngs.length;
+  if (n < 3) return 0;
+  let area = 0;
+  for (let i = 0; i < n; i++) {
+    const p1 = latlngs[i];
+    const p2 = latlngs[(i + 1) % n];
+    area +=
+      ((p2.lng - p1.lng) * Math.PI) / 180 *
+      (2 + Math.sin((p1.lat * Math.PI) / 180) + Math.sin((p2.lat * Math.PI) / 180));
+  }
+  return Math.abs((area * R * R) / 2);
+}
+
+export type MeasureStats = {
+  active: boolean;
+  finished: boolean;
+  count: number;
+  distM: number;
+  areaM2: number;
+  liveDistM: number; // includes preview segment to cursor
+};
+
+function MeasureTool({
+  active, onStats,
+}: { active: boolean; onStats: (s: MeasureStats) => void }) {
+  const map = useMap();
+  const [points, setPoints] = useState<L.LatLng[]>([]);
+  const [cursor, setCursor] = useState<L.LatLng | null>(null);
+  const [finished, setFinished] = useState(false);
+
+  // Disable dblclick zoom while measuring so dblclick finishes the line
+  useEffect(() => {
+    if (active) map.doubleClickZoom.disable();
+    else map.doubleClickZoom.enable();
+  }, [active, map]);
+
+  // Clear everything when tool toggles off
+  useEffect(() => {
+    if (!active) { setPoints([]); setCursor(null); setFinished(false); }
+  }, [active]);
+
+  useMapEvents({
+    click(e) {
+      if (!active) {
+        // "Click anywhere else to clear" once a measurement is shown.
+        if (points.length) { setPoints([]); setCursor(null); setFinished(false); }
+        return;
+      }
+      if (finished) { setPoints([e.latlng]); setFinished(false); setCursor(null); return; }
+      setPoints(p => [...p, e.latlng]);
+    },
+    mousemove(e) {
+      if (active && !finished && points.length > 0) setCursor(e.latlng);
+    },
+    dblclick(e) {
+      if (!active) return;
+      L.DomEvent.stopPropagation(e);
+      L.DomEvent.preventDefault(e as any);
+      setFinished(true);
+      setCursor(null);
+    },
+  });
+
+  // Draw the measurement layer
+  useEffect(() => {
+    const group = L.layerGroup().addTo(map);
+    const live: L.LatLng[] = finished
+      ? points
+      : (cursor && points.length ? [...points, cursor] : points);
+
+    if (finished && points.length >= 3) {
+      L.polygon(points, {
+        color: "#4CAF50", weight: 1, dashArray: "2 4",
+        fillColor: "#4CAF50", fillOpacity: 0.08, interactive: false,
+      }).addTo(group);
+    }
+    if (live.length >= 2) {
+      L.polyline(live, {
+        color: "#4CAF50", weight: 2, dashArray: "6 6",
+        interactive: false, lineCap: "round",
+      }).addTo(group);
+    }
+    points.forEach((p, i) => {
+      L.circleMarker(p, {
+        radius: 4, color: "#4CAF50", weight: 2,
+        fillColor: i === 0 ? "#4CAF50" : "#0f0f0f", fillOpacity: 1,
+        interactive: false,
+      }).addTo(group);
+    });
+    return () => { group.remove(); };
+  }, [points, cursor, finished, map]);
+
+  // Report stats up to parent
+  useEffect(() => {
+    const live = finished ? points : (cursor && points.length ? [...points, cursor] : points);
+    let liveDist = 0;
+    for (let i = 1; i < live.length; i++) liveDist += live[i - 1].distanceTo(live[i]);
+    let finalDist = 0;
+    for (let i = 1; i < points.length; i++) finalDist += points[i - 1].distanceTo(points[i]);
+    onStats({
+      active, finished,
+      count: points.length,
+      distM: finalDist,
+      liveDistM: liveDist,
+      areaM2: finished && points.length >= 3 ? polygonAreaM2(points) : 0,
+    });
+  }, [active, finished, points, cursor, onStats]);
+
+  return null;
+}
+
+function MeasurePanel({ stats }: { stats: MeasureStats }) {
+  if (!stats.active && stats.count === 0) return null;
+  const mToFt = (m: number) => m * 3.28084;
+  const m2ToAcre = (a: number) => a / 4046.8564224;
+  const fmt = (n: number, d = 1) => n.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
+  const dist = stats.finished ? stats.distM : stats.liveDistM;
+  return (
+    <div
+      className="absolute top-4 left-16 z-[1001] w-64 rounded-md border border-[#222] shadow-2xl p-3 text-[#f0f0f0]"
+      style={{ background: "#161616" }}
+    >
+      <div className="flex items-center gap-2 pb-2 mb-2 border-b border-[#222]">
+        <Ruler className="h-3.5 w-3.5 text-[#4CAF50]" />
+        <div className="text-xs font-medium">Measure</div>
+        <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500">
+          {stats.finished ? "Done" : stats.active ? (stats.count === 0 ? "Click to start" : "Dbl-click to finish") : "Click map to clear"}
+        </div>
+      </div>
+      {stats.count === 0 ? (
+        <div className="text-[11px] text-neutral-400 leading-relaxed">
+          Click on the map to drop points. Distance updates live. Double-click to close the shape and reveal area.
+        </div>
+      ) : (
+        <div className="space-y-2 text-xs">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-0.5">
+              {stats.finished ? "Perimeter" : "Distance"}
+            </div>
+            <div className="font-mono tabular-nums text-[#f0f0f0]">{fmt(dist)} m</div>
+            <div className="font-mono tabular-nums text-neutral-500 text-[11px]">{fmt(mToFt(dist), 0)} ft</div>
+          </div>
+          {stats.finished && stats.areaM2 > 0 && (
+            <div className="pt-2 border-t border-[#222]">
+              <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-0.5">Area</div>
+              <div className="font-mono tabular-nums text-[#4CAF50]">{fmt(stats.areaM2 / 10000, 3)} ha</div>
+              <div className="font-mono tabular-nums text-neutral-500 text-[11px]">{fmt(m2ToAcre(stats.areaM2), 3)} ac · {fmt(stats.areaM2, 0)} m²</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- AI zones layer ----------------------------------------------------------
 export type AiZone = {
   id: string;
