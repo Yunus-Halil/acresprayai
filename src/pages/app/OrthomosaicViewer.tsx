@@ -113,7 +113,126 @@ type FieldRow = {
   name: string;
   boundary: BoundaryRing[] | BoundaryRing | null;
   boundary_area_hectares: number | null;
+  settings?: FarmerSettings | null;
 };
+
+// ===================== Farmer settings (per field) =========================
+// Stored as JSON in `fields.settings`. Drives cost calculations and AI prompt.
+export type CustomInput = { name: string; cost: number };
+export type FarmerSettings = {
+  crop_type: string;          // "wheat" | "corn" | ...
+  planting_date: string;      // YYYY-MM-DD or ""
+  harvest_date: string;       // YYYY-MM-DD or ""
+  area_acres_override: number | null;
+  input_costs: {
+    nitrogen_fertilizer: number;
+    phosphorus_fertilizer: number;
+    potassium_fertilizer: number;
+    herbicide: number;
+    fungicide: number;
+    insecticide: number;
+    reseeding: number;
+  };
+  available_inputs: {
+    nitrogen_fertilizer: boolean;
+    phosphorus_fertilizer: boolean;
+    potassium_fertilizer: boolean;
+    herbicide: boolean;
+    fungicide: boolean;
+    insecticide: boolean;
+    reseeding: boolean;
+  };
+  custom_inputs: CustomInput[];
+};
+
+export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
+  crop_type: "",
+  planting_date: "",
+  harvest_date: "",
+  area_acres_override: null,
+  input_costs: {
+    nitrogen_fertilizer: 45,
+    phosphorus_fertilizer: 35,
+    potassium_fertilizer: 30,
+    herbicide: 25,
+    fungicide: 30,
+    insecticide: 20,
+    reseeding: 35,
+  },
+  available_inputs: {
+    nitrogen_fertilizer: true,
+    phosphorus_fertilizer: true,
+    potassium_fertilizer: true,
+    herbicide: true,
+    fungicide: true,
+    insecticide: true,
+    reseeding: true,
+  },
+  custom_inputs: [],
+};
+
+export const INPUT_LABELS: Record<keyof FarmerSettings["input_costs"], string> = {
+  nitrogen_fertilizer: "Nitrogen fertilizer",
+  phosphorus_fertilizer: "Phosphorus fertilizer",
+  potassium_fertilizer: "Potassium fertilizer",
+  herbicide: "Herbicide",
+  fungicide: "Fungicide",
+  insecticide: "Insecticide",
+  reseeding: "Reseeding / seed",
+};
+
+// Maps AI issue_type (canonical key) → farmer input cost key.
+// `null` = no chemical fix.
+export const COST_MAP: Record<string, keyof FarmerSettings["input_costs"] | null> = {
+  bare_soil: "reseeding",
+  nitrogen_deficiency: "nitrogen_fertilizer",
+  phosphorus_deficiency: "phosphorus_fertilizer",
+  potassium_deficiency: "potassium_fertilizer",
+  weed_pressure: "herbicide",
+  disease: "fungicide",
+  pest_damage: "insecticide",
+  waterlogging: null,
+};
+
+// Loose mapping from the AI's free-text `issue` / `recommendation.action` to
+// the canonical COST_MAP key.
+export function issueToCostKey(z: { issue?: string; recommendation?: { action?: string } | null }): string | null {
+  const txt = `${z.issue ?? ""} ${z.recommendation?.action ?? ""}`.toLowerCase();
+  if (/water|drain|saturat|pond/.test(txt)) return "waterlogging";
+  if (/bare|reseed|gap|establish/.test(txt)) return "bare_soil";
+  if (/nitrogen|\bn\s+def/.test(txt)) return "nitrogen_deficiency";
+  if (/phosphor|\bp\s+def/.test(txt)) return "phosphorus_deficiency";
+  if (/potass|\bk\s+def/.test(txt)) return "potassium_deficiency";
+  if (/weed|herbicid/.test(txt)) return "weed_pressure";
+  if (/disease|fung|blight|rust|mildew/.test(txt)) return "disease";
+  if (/pest|insect|aphid|worm|beetle/.test(txt)) return "pest_damage";
+  // Generic recommendation actions.
+  if (/fertili/.test(txt)) return "nitrogen_deficiency";
+  return null;
+}
+
+// Days since planting → coarse growth-stage hint for the AI prompt.
+export function growthStage(crop: string, planting: string): string | null {
+  if (!planting) return null;
+  const days = Math.floor((Date.now() - new Date(planting).getTime()) / 86400000);
+  if (!Number.isFinite(days) || days < 0) return null;
+  const wk = Math.round(days / 7);
+  const c = crop.toLowerCase();
+  // Very rough, just for AI context.
+  if (c === "wheat" || c === "barley" || c === "oats" || c === "rye") {
+    if (wk < 4) return `~${wk} weeks (emergence / tillering)`;
+    if (wk < 10) return `~${wk} weeks (tillering / stem extension)`;
+    if (wk < 16) return `~${wk} weeks (heading / flowering)`;
+    return `~${wk} weeks (grain fill / ripening)`;
+  }
+  if (c === "corn") {
+    if (wk < 4) return `~${wk} weeks (V1–V4)`;
+    if (wk < 10) return `~${wk} weeks (V6–V12)`;
+    if (wk < 14) return `~${wk} weeks (tasseling / silking)`;
+    return `~${wk} weeks (grain fill / dent)`;
+  }
+  return `~${wk} weeks since planting`;
+}
 
 // Boundary may be stored as a single ring (legacy) or as an array of rings
 // (multi-polygon fragmented fields). Always normalize to BoundaryRing[].
@@ -588,7 +707,7 @@ const sevColor = (s: AiZone["severity"]) =>
   s === "high" ? "#ef4444" : s === "medium" ? "#f59e0b" : "#eab308";
 
 function AiZonesLayer({
-  zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa,
+  zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa, settings,
 }: {
   zones: AiZone[];
   selectedId: string | null;
@@ -596,6 +715,7 @@ function AiZonesLayer({
   onUpdate: (id: string, ring: { lat: number; lng: number }[]) => void;
   onDelete: (id: string) => void;
   boundaryAreaHa: number | null;
+  settings: FarmerSettings;
 }) {
   const map = useMap();
   useEffect(() => {
@@ -633,14 +753,14 @@ function AiZonesLayer({
       const acres = acresNum.toFixed(2);
       const ha = (m2 / 10000).toFixed(3);
       const rec = z.recommendation;
-      const action = String(rec?.action ?? "spray").toLowerCase();
-      // Typical US row-crop input cost per acre, keyed off the AI's action.
-      const ratePerAc =
-        action === "reseed"    ? 28 :
-        action === "fertilize" ? 30 :
-        action === "spray"     ? 25 :
-        action === "irrigate"  ? 10 :
-                                  0;
+      // Cost = farmer's actual per-acre input price × real polygon acreage.
+      // Map AI issue → canonical key → farmer setting key.
+      const costKey = issueToCostKey(z);
+      const inputKey = costKey ? COST_MAP[costKey] : null;
+      const ratePerAc = inputKey ? Number(settings.input_costs[inputKey] ?? 0) : 0;
+      const inputLabel = inputKey ? INPUT_LABELS[inputKey] : null;
+      const noChem = costKey === "waterlogging";
+      const inputAvailable = inputKey ? !!settings.available_inputs[inputKey] : true;
       const estCost = (acresNum * ratePerAc).toFixed(2);
       const acresStr = acresNum.toFixed(3);
       const sevBadge = `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;background:${color}33;color:${color};border:1px solid ${color}">${z.severity}</span>`;
@@ -654,8 +774,14 @@ function AiZonesLayer({
           <div style="font-size:11px;color:#9ca3af;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:8px">
             <div>Area</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${acres} ac</div>
             <div></div><div style="text-align:right;color:#6b7280;font-family:ui-monospace,monospace">${ha} ha</div>
-            <div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">$${estCost}</div>
-            <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${acresStr} ac × $${ratePerAc}/ac = $${estCost}</div>
+            ${noChem
+              ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:11px;border-top:1px solid #222;padding-top:6px;margin-top:2px">Drainage work required — consult agronomist (no chemical fix).</div>`
+              : inputKey
+                ? `<div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">$${estCost}</div>
+                   <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${acresStr} ac × $${ratePerAc.toFixed(2)}/ac ${inputLabel ? `(${escapeHtml(inputLabel)})` : ""} = $${estCost}</div>
+                   ${!inputAvailable ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:10px;text-align:right">⚠ ${escapeHtml(inputLabel ?? "")} marked unavailable in Settings</div>` : ""}`
+                : `<div style="grid-column:1/-1;color:#6b7280;font-size:10px;text-align:right">No cost mapping for this issue type.</div>`
+            }
           </div>
           ${rec ? `
             <div style="border-top:1px solid #222;padding-top:8px;font-size:11px">
@@ -930,7 +1056,7 @@ export default function OrthomosaicViewer() {
     annotations: true, design: false, orthomosaic: true, ndvi: false, measurements: true, boundary: true, userAnnotations: true,
   });
   const [ndviInfo, setNdviInfo] = useState<{ bands: number; index: "ndvi" | "vari"; label: string } | null>(null);
-  type TabKey = "field" | "weather" | "ai" | "planner" | "reports";
+  type TabKey = "field" | "weather" | "ai" | "planner" | "reports" | "settings";
   const [activeTab, setActiveTab] = useState<TabKey>("field");
   const [openTabs, setOpenTabs] = useState<TabKey[]>(["field"]);
   const [newTabOpen, setNewTabOpen] = useState(false);
@@ -958,6 +1084,12 @@ export default function OrthomosaicViewer() {
   const [activeBoundaryIdx, setActiveBoundaryIdx] = useState<number | null>(null);
   const cursorCoordRef = useRef<HTMLDivElement | null>(null);
   const cursorZoomRef = useRef<HTMLDivElement | null>(null);
+
+  // Farmer-defined settings (crop, dates, input costs, available inputs).
+  // Lives in fields.settings (JSON) and gates AI recommendations + cost math.
+  const [settings, setSettings] = useState<FarmerSettings>(DEFAULT_FARMER_SETTINGS);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSavedAt, setSettingsSavedAt] = useState<number | null>(null);
 
   // Load saved annotations whenever the active scan changes.
   useEffect(() => {
@@ -1017,10 +1149,20 @@ export default function OrthomosaicViewer() {
       }
 
       const { data: f } = await supabase.from("fields")
-        .select("id, name, boundary, boundary_area_hectares").eq("id", t.field_id).maybeSingle();
+        .select("id, name, boundary, boundary_area_hectares, settings").eq("id", t.field_id).maybeSingle();
       if (f) {
         setField(f as FieldRow);
         setBoundary(normalizeBoundary((f as any).boundary));
+        const saved = (f as any).settings;
+        if (saved && typeof saved === "object") {
+          setSettings({
+            ...DEFAULT_FARMER_SETTINGS,
+            ...saved,
+            input_costs: { ...DEFAULT_FARMER_SETTINGS.input_costs, ...(saved.input_costs ?? {}) },
+            available_inputs: { ...DEFAULT_FARMER_SETTINGS.available_inputs, ...(saved.available_inputs ?? {}) },
+            custom_inputs: Array.isArray(saved.custom_inputs) ? saved.custom_inputs.slice(0, 3) : [],
+          });
+        }
       }
 
       // 1) Mint a signed URL to the orthophoto.tif sitting in Supabase Storage.
@@ -1139,7 +1281,23 @@ export default function OrthomosaicViewer() {
       const r = await fetch(`${FN_BASE}/analyze-ortho`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: taskId, boundary: validRings }),
+        body: JSON.stringify({
+          task_id: taskId,
+          boundary: validRings,
+          field_settings: {
+            crop_type: settings.crop_type || null,
+            planting_date: settings.planting_date || null,
+            harvest_date: settings.harvest_date || null,
+            growth_stage: growthStage(settings.crop_type, settings.planting_date),
+            available_inputs: Object.entries(settings.available_inputs)
+              .filter(([, on]) => on)
+              .map(([k]) => INPUT_LABELS[k as keyof typeof INPUT_LABELS]),
+            unavailable_inputs: Object.entries(settings.available_inputs)
+              .filter(([, on]) => !on)
+              .map(([k]) => INPUT_LABELS[k as keyof typeof INPUT_LABELS]),
+            custom_inputs: settings.custom_inputs.filter(c => c.name.trim()),
+          },
+        }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? "Analysis failed");
@@ -1340,6 +1498,24 @@ export default function OrthomosaicViewer() {
     }
   };
 
+  // ---- Farmer settings save (debounced via explicit Save button) -----------
+  const saveSettings = async (next: FarmerSettings) => {
+    if (!field?.id) return;
+    setSettings(next);
+    setSettingsSaving(true);
+    try {
+      const { error } = await supabase.from("fields")
+        .update({ settings: next as any } as any)
+        .eq("id", field.id);
+      if (error) throw error;
+      setSettingsSavedAt(Date.now());
+    } catch (e) {
+      console.error("[settings] save failed", e);
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
   // Probe the COG once to figure out NDVI vs VARI and band count for the legend.
   useEffect(() => {
     if (!taskId || !token || !tileTemplate) return;
@@ -1445,6 +1621,7 @@ export default function OrthomosaicViewer() {
     { key: "ai", label: "AI Analysis", icon: Bot },
     { key: "planner", label: "Flight Planner", icon: Plane },
     { key: "reports", label: "Reports", icon: FileBarChart },
+    { key: "settings", label: "Settings", icon: Settings },
   ];
   const openTab = (k: TabKey) => {
     setOpenTabs(t => t.includes(k) ? t : [...t, k]);
@@ -1553,7 +1730,15 @@ export default function OrthomosaicViewer() {
 
       {/* Tab content */}
       <div className="flex-1 min-h-0 relative">
-        {activeTab === "field" && (
+        {/* Field View is permanently mounted to preserve the Leaflet map and
+            its layers/geoman state across tab switches. We only hide it. */}
+        <div
+          style={{
+            position: "absolute", inset: 0,
+            visibility: activeTab === "field" ? "visible" : "hidden",
+            pointerEvents: activeTab === "field" ? "auto" : "none",
+          }}
+        >
           <FieldViewTab
             center={center}
             bounds={bounds}
@@ -1604,13 +1789,14 @@ export default function OrthomosaicViewer() {
             saveUserPolygon={saveUserPolygon}
             deleteUserPolygon={deleteUserPolygon}
             clearAnalysis={clearAnalysis}
+            settings={settings}
           />
-        )}
+        </div>
         {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
         {activeTab === "ai" && (
           <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr}
             runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan}
-            clearAnalysis={clearAnalysis} deleteZone={deleteZone} />
+            clearAnalysis={clearAnalysis} deleteZone={deleteZone} settings={settings} />
         )}
         {activeTab === "planner" && (
           <PlannerTab
@@ -1625,6 +1811,15 @@ export default function OrthomosaicViewer() {
           />
         )}
         {activeTab === "reports" && <PlaceholderTab icon={FileBarChart} title="Reports" body="Yield, treatment, and scan history reports for this field." />}
+        {activeTab === "settings" && (
+          <SettingsTab
+            settings={settings}
+            onSave={saveSettings}
+            saving={settingsSaving}
+            savedAt={settingsSavedAt}
+            fieldAreaHa={field?.boundary_area_hectares ?? null}
+          />
+        )}
       </div>
 
       {/* Bottom status bar */}
@@ -1707,6 +1902,7 @@ function FieldViewTab(props: {
   saveUserPolygon: (f: { name: string; issue_type: string; color: string; notes: string }) => Promise<void>;
   deleteUserPolygon: (id: string) => Promise<void>;
   clearAnalysis: () => Promise<void>;
+  settings: FarmerSettings;
 }) {
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
@@ -1721,6 +1917,7 @@ function FieldViewTab(props: {
     fieldAreaHa, activeBoundaryIdx, setActiveBoundaryIdx,
     userPolys, userPolyToolActive, setUserPolyToolActive,
     draftUserPoly, setDraftUserPoly, saveUserPolygon, deleteUserPolygon, clearAnalysis,
+    settings,
   } = props;
 
   const [measureActive, setMeasureActive] = useState(false);
@@ -1808,6 +2005,7 @@ function FieldViewTab(props: {
             onUpdate={updateZoneRing}
             onDelete={deleteZone}
             boundaryAreaHa={fieldAreaHa}
+            settings={settings}
           />
         )}
         <MeasureTool active={measureActive} visible={layers.measurements} onStats={handleStats} />
@@ -3209,6 +3407,188 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between py-1 border-b border-neutral-800/60 last:border-0">
       <span className="text-neutral-400">{label}</span>
       <span className="text-neutral-200 font-mono">{value}</span>
+    </div>
+  );
+}
+
+// =============================== Settings tab ===============================
+const CROP_OPTIONS = [
+  "Wheat", "Corn", "Soybeans", "Cotton", "Rice", "Barley", "Oats", "Sorghum", "Other",
+];
+
+function SettingsTab({
+  settings, onSave, saving, savedAt, fieldAreaHa,
+}: {
+  settings: FarmerSettings;
+  onSave: (s: FarmerSettings) => Promise<void> | void;
+  saving: boolean;
+  savedAt: number | null;
+  fieldAreaHa: number | null;
+}) {
+  const [local, setLocal] = useState<FarmerSettings>(settings);
+  useEffect(() => { setLocal(settings); }, [settings]);
+
+  const update = (patch: Partial<FarmerSettings>) => setLocal(s => ({ ...s, ...patch }));
+  const updateCost = (k: keyof FarmerSettings["input_costs"], v: number) =>
+    setLocal(s => ({ ...s, input_costs: { ...s.input_costs, [k]: v } }));
+  const updateAvail = (k: keyof FarmerSettings["available_inputs"], v: boolean) =>
+    setLocal(s => ({ ...s, available_inputs: { ...s.available_inputs, [k]: v } }));
+  const updateCustom = (i: number, patch: Partial<CustomInput>) =>
+    setLocal(s => {
+      const next = s.custom_inputs.slice();
+      next[i] = { ...next[i], ...patch };
+      return { ...s, custom_inputs: next };
+    });
+  const addCustom = () =>
+    setLocal(s => s.custom_inputs.length >= 3 ? s
+      : { ...s, custom_inputs: [...s.custom_inputs, { name: "", cost: 0 }] });
+  const removeCustom = (i: number) =>
+    setLocal(s => ({ ...s, custom_inputs: s.custom_inputs.filter((_, idx) => idx !== i) }));
+
+  const acresFromBoundary = fieldAreaHa ? fieldAreaHa * 2.4710538 : null;
+  const dirty = JSON.stringify(local) !== JSON.stringify(settings);
+  const gs = growthStage(local.crop_type, local.planting_date);
+
+  const inputCls = "w-full bg-[#0f0f0f] border border-[#222] rounded-sm px-2.5 py-1.5 text-sm text-[#f0f0f0] focus:outline-none focus:border-[#4CAF50]";
+  const labelCls = "text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block";
+
+  return (
+    <div className="absolute inset-0 overflow-y-auto" style={{ background: "#0f0f0f" }}>
+      <div className="max-w-4xl mx-auto p-6 pb-24 space-y-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Field Settings</h1>
+            <p className="text-xs text-neutral-500 mt-1">Drives cost calculations and AI recommendations for this field.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {savedAt && !dirty && !saving && (
+              <span className="text-[11px] text-[#4CAF50]">Saved {new Date(savedAt).toLocaleTimeString()}</span>
+            )}
+            <button
+              disabled={!dirty || saving}
+              onClick={() => onSave(local)}
+              className="text-xs bg-[#4CAF50] hover:bg-[#43a047] disabled:opacity-40 disabled:cursor-not-allowed text-black rounded-sm px-4 py-2 font-semibold inline-flex items-center gap-2"
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              {saving ? "Saving…" : dirty ? "Save changes" : "Saved"}
+            </button>
+          </div>
+        </div>
+
+        {/* Crop info */}
+        <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
+          <h2 className="text-sm font-semibold mb-1">1. Crop Information</h2>
+          <p className="text-[11px] text-neutral-500 mb-4">Used to estimate growth stage and tune AI recommendations.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Crop type</label>
+              <select className={inputCls} value={local.crop_type}
+                onChange={e => update({ crop_type: e.target.value })}>
+                <option value="">— Select crop —</option>
+                {CROP_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Field size (acres)</label>
+              <input
+                type="number" min={0} step="0.01"
+                className={inputCls}
+                placeholder={acresFromBoundary ? acresFromBoundary.toFixed(2) : "Not defined yet"}
+                value={local.area_acres_override ?? ""}
+                onChange={e => update({ area_acres_override: e.target.value === "" ? null : Number(e.target.value) })}
+              />
+              <div className="text-[10px] text-neutral-500 mt-1">
+                {acresFromBoundary
+                  ? `Boundary calc: ${acresFromBoundary.toFixed(2)} ac · leave blank to use this.`
+                  : "Define a boundary on the Field View to auto-fill."}
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Planting date</label>
+              <input type="date" className={inputCls} value={local.planting_date}
+                onChange={e => update({ planting_date: e.target.value })} />
+            </div>
+            <div>
+              <label className={labelCls}>Expected harvest date</label>
+              <input type="date" className={inputCls} value={local.harvest_date}
+                onChange={e => update({ harvest_date: e.target.value })} />
+            </div>
+          </div>
+          {gs && (
+            <div className="mt-3 text-[11px] text-neutral-400">
+              Growth stage estimate: <span className="text-[#4CAF50]">{gs}</span>
+            </div>
+          )}
+        </section>
+
+        {/* Input costs */}
+        <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
+          <h2 className="text-sm font-semibold mb-1">2. Input Costs <span className="text-neutral-500 font-normal">(per acre)</span></h2>
+          <p className="text-[11px] text-neutral-500 mb-4">Uncheck inputs you don't carry — the AI will avoid recommending them.</p>
+          <div className="space-y-2">
+            {(Object.keys(local.input_costs) as (keyof FarmerSettings["input_costs"])[]).map(k => (
+              <div key={k} className="grid grid-cols-[24px_1fr_140px] gap-3 items-center">
+                <input type="checkbox" checked={local.available_inputs[k]}
+                  onChange={e => updateAvail(k, e.target.checked)}
+                  className="h-4 w-4 accent-[#4CAF50]" />
+                <div className={`text-sm ${local.available_inputs[k] ? "text-[#f0f0f0]" : "text-neutral-600 line-through"}`}>
+                  {INPUT_LABELS[k]}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">$</span>
+                  <input type="number" min={0} step="0.01"
+                    className={`${inputCls} pl-5 text-right font-mono`}
+                    value={local.input_costs[k]}
+                    onChange={e => updateCost(k, Number(e.target.value) || 0)}
+                    disabled={!local.available_inputs[k]}
+                  />
+                </div>
+              </div>
+            ))}
+
+            <div className="pt-3 mt-3 border-t border-[#222]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[11px] uppercase tracking-wider text-neutral-500">Custom inputs ({local.custom_inputs.length}/3)</div>
+                <button onClick={addCustom} disabled={local.custom_inputs.length >= 3}
+                  className="text-[11px] text-[#4CAF50] hover:underline disabled:text-neutral-600 disabled:no-underline disabled:cursor-not-allowed inline-flex items-center gap-1">
+                  <Plus className="h-3 w-3" /> Add custom
+                </button>
+              </div>
+              {local.custom_inputs.length === 0 && (
+                <div className="text-[11px] text-neutral-600">No custom inputs.</div>
+              )}
+              {local.custom_inputs.map((c, i) => (
+                <div key={i} className="grid grid-cols-[24px_1fr_140px_28px] gap-3 items-center mb-2">
+                  <span />
+                  <input className={inputCls} placeholder="Custom input name"
+                    value={c.name} onChange={e => updateCustom(i, { name: e.target.value })} />
+                  <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">$</span>
+                    <input type="number" min={0} step="0.01"
+                      className={`${inputCls} pl-5 text-right font-mono`}
+                      value={c.cost} onChange={e => updateCustom(i, { cost: Number(e.target.value) || 0 })} />
+                  </div>
+                  <button onClick={() => removeCustom(i)}
+                    className="h-7 w-7 grid place-items-center rounded-sm text-neutral-500 hover:text-red-400 hover:bg-[#1f1f1f]">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* How it's used */}
+        <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
+          <h2 className="text-sm font-semibold mb-3">3. How these settings are used</h2>
+          <ul className="text-[12px] text-neutral-400 space-y-1.5 list-disc pl-5">
+            <li>Treatment zones detected by AI Analysis are priced as <span className="font-mono text-neutral-200">acres × your per-acre cost</span>.</li>
+            <li>Issues map to inputs via a fixed table (e.g. <span className="text-neutral-300">bare soil → reseeding</span>, <span className="text-neutral-300">nitrogen deficiency → nitrogen fertilizer</span>).</li>
+            <li>The AI is told which inputs you carry — it won't recommend a product you don't have available.</li>
+            <li>Waterlogged zones show "Drainage work required — consult agronomist" instead of a cost.</li>
+          </ul>
+        </section>
+      </div>
     </div>
   );
 }

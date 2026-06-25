@@ -22,9 +22,18 @@ Deno.serve(async (req) => {
     if (!ud.user) return json({ error: "Unauthorized" }, 401);
 
     const body = await req.json().catch(() => ({}));
-    const { task_id, boundary } = body as {
+    const { task_id, boundary, field_settings } = body as {
       task_id?: string;
       boundary?: { lat: number; lng: number }[] | { lat: number; lng: number }[][];
+      field_settings?: {
+        crop_type?: string | null;
+        planting_date?: string | null;
+        harvest_date?: string | null;
+        growth_stage?: string | null;
+        available_inputs?: string[];
+        unavailable_inputs?: string[];
+        custom_inputs?: { name: string; cost: number }[];
+      };
     };
     if (!task_id) return json({ error: "Missing task_id" }, 400);
 
@@ -164,6 +173,25 @@ ${ndviCells.length > 0
 NDVI thresholds: <0.1 = bare soil / no vegetation, <0.3 = severely stressed, 0.3–0.5 = moderately stressed, 0.5–0.7 = moderate, >0.7 = healthy.`
       : `NO MULTISPECTRAL DATA AVAILABLE. Analysis is based on RGB imagery only. Only flag HIGH CONFIDENCE visual anomalies. Never diagnose nutrient deficiency, disease, or any sub-surface condition from RGB alone.`;
 
+    // ---- Farmer-supplied field context (drives recommendations) ------------
+    const fs = field_settings ?? {};
+    const available = (fs.available_inputs ?? []).filter(Boolean);
+    const unavailable = (fs.unavailable_inputs ?? []).filter(Boolean);
+    const custom = (fs.custom_inputs ?? []).filter(c => c?.name?.trim());
+    const fieldContextBlock = `FIELD CONTEXT (from the farmer's Settings tab — RESPECT THESE):
+- Crop: ${fs.crop_type || "not specified"}
+- Planting date: ${fs.planting_date || "not specified"}
+- Expected harvest: ${fs.harvest_date || "not specified"}
+- Growth stage estimate: ${fs.growth_stage || "unknown"}
+- Farmer's AVAILABLE inputs: ${available.length ? available.join(", ") : "not specified — assume standard row-crop inventory"}
+- Farmer's UNAVAILABLE inputs (DO NOT recommend): ${unavailable.length ? unavailable.join(", ") : "none"}
+${custom.length ? `- Custom inputs the farmer also carries: ${custom.map(c => `${c.name} ($${c.cost}/ac)`).join(", ")}` : ""}
+
+RECOMMENDATION RULES:
+- Only recommend treatments that use the farmer's AVAILABLE inputs above.
+- NEVER recommend an unavailable input. If the only correct treatment is unavailable, set recommendation to null and add a string to "multispectral_recommendations" explaining what input the farmer would need.
+- Tailor product/dose language to the crop and growth stage when known.`;
+
     const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
     // base64 encode without blowing the call stack
     let bin = "";
@@ -180,6 +208,8 @@ NDVI thresholds: <0.1 = bare soil / no vegetation, <0.3 = severely stressed, 0.3
 
 DATA SOURCE FOR THIS RUN:
 ${ndviBlock}
+
+${fieldContextBlock}
 
 STRICT RULE: Only flag what you can see with HIGH CONFIDENCE in RGB imagery. Never guess. A farmer trusts you with their livelihood.
 
