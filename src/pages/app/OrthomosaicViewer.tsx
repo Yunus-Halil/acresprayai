@@ -309,7 +309,7 @@ function AnnotateTool({
   active, mode, color, width, visible, annotations, setAnnotations, taskId,
 }: {
   active: boolean;
-  mode: "pen" | "text";
+  mode: "pen" | "text" | "select";
   color: string;
   width: number;
   visible: boolean;
@@ -325,8 +325,14 @@ function AnnotateTool({
   // While pen is active, hijack map dragging so dragging the mouse draws.
   useEffect(() => {
     if (!active) return;
-    map.dragging.disable();
     const container = map.getContainer();
+    if (mode === "select") {
+      // Select mode keeps map panning enabled; per-marker drag is wired in
+      // the saved-strokes effect.
+      container.style.cursor = "default";
+      return () => { container.style.cursor = ""; };
+    }
+    map.dragging.disable();
     if (mode === "text") {
       // High-contrast "T" cursor so it's visible over satellite & ortho imagery.
       const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'>
@@ -436,7 +442,9 @@ function AnnotateTool({
     };
   }, [active, mode, color, width, map, setAnnotations, taskId]);
 
-  // Saved strokes layer
+  // Saved strokes + text labels layer. Text labels become draggable while the
+  // Select tool is active.
+  const editable = active && mode === "select";
   useEffect(() => {
     if (!visible) return;
     const group = L.layerGroup().addTo(map);
@@ -452,15 +460,46 @@ function AnnotateTool({
       } else if (a.kind === "text") {
         const icon = L.divIcon({
           className: "annotation-text-label",
-          html: `<div style="background:rgba(20,20,20,0.85);border:1px solid ${a.color};color:${a.color};padding:3px 7px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap;font-family:ui-sans-serif,system-ui;">${a.text.replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]!))}</div>`,
+          html: `<div style="background:rgba(20,20,20,0.85);border:1px solid ${a.color};color:${a.color};padding:3px 7px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap;font-family:ui-sans-serif,system-ui;cursor:${editable ? "move" : "default"};box-shadow:${editable ? `0 0 0 1px ${a.color}66` : "none"};">${a.text.replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]!))}</div>`,
           iconSize: undefined as any,
           iconAnchor: [0, 0],
         });
-        L.marker([a.at.lat, a.at.lng], { icon, interactive: false }).addTo(group);
+        const m = L.marker([a.at.lat, a.at.lng], {
+          icon,
+          interactive: editable,
+          draggable: editable,
+        }).addTo(group);
+        if (editable) {
+          m.on("dragend", () => {
+            const ll = m.getLatLng();
+            setAnnotations(prev => {
+              const next = prev.map(x =>
+                x.id === a.id && x.kind === "text"
+                  ? { ...x, at: { lat: ll.lat, lng: ll.lng } }
+                  : x
+              );
+              saveAnnotations(taskId, next);
+              return next;
+            });
+          });
+          m.on("dblclick", (e) => {
+            L.DomEvent.stopPropagation(e);
+            const next = window.prompt("Edit label:", a.text);
+            if (next == null) return;
+            const t = next.trim();
+            setAnnotations(prev => {
+              const out = t
+                ? prev.map(x => x.id === a.id && x.kind === "text" ? { ...x, text: t } : x)
+                : prev.filter(x => x.id !== a.id);
+              saveAnnotations(taskId, out);
+              return out;
+            });
+          });
+        }
       }
     });
     return () => { group.remove(); };
-  }, [annotations, visible, map]);
+  }, [annotations, visible, map, editable, setAnnotations, taskId]);
 
   return null;
 }
@@ -1152,7 +1191,7 @@ function FieldViewTab(props: {
 
   const [measureActive, setMeasureActive] = useState(false);
   const [annotateActive, setAnnotateActive] = useState(false);
-  const [annotateMode, setAnnotateMode] = useState<"pen" | "text">("pen");
+  const [annotateMode, setAnnotateMode] = useState<"pen" | "text" | "select">("pen");
   const [annotateColor, setAnnotateColor] = useState<string>("#facc15");
   const [annotateWidth, setAnnotateWidth] = useState<number>(3);
   const [measureStats, setMeasureStats] = useState<MeasureStats>({
@@ -1274,13 +1313,17 @@ function FieldViewTab(props: {
             <Pencil className="h-3.5 w-3.5" style={{ color: annotateColor }} />
             <div className="text-xs font-medium">Annotate</div>
             <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500">
-              {annotateMode === "pen" ? "Drag to draw" : "Click to place"}
+              {annotateMode === "pen"
+                ? "Drag to draw"
+                : annotateMode === "text"
+                  ? "Click to place"
+                  : "Drag labels"}
             </div>
           </div>
 
           {/* mode tabs */}
-          <div className="grid grid-cols-2 gap-1 mb-2">
-            {(["pen", "text"] as const).map(m => (
+          <div className="grid grid-cols-3 gap-1 mb-2">
+            {(["pen", "text", "select"] as const).map(m => (
               <button
                 key={m}
                 onClick={() => setAnnotateMode(m)}
@@ -1290,7 +1333,7 @@ function FieldViewTab(props: {
                     : "bg-[#141414] border-[#222] text-neutral-400 hover:text-[#f0f0f0]"
                 }`}
               >
-                {m === "pen" ? "Pen" : "Text"}
+                {m === "pen" ? "Pen" : m === "text" ? "Text" : "Select"}
               </button>
             ))}
           </div>
@@ -1324,6 +1367,12 @@ function FieldViewTab(props: {
             </div>
           )}
 
+          {annotateMode === "select" && (
+            <div className="mb-2 text-[10px] text-neutral-400 bg-[#1a1a1a] border border-[#222] rounded px-2 py-1.5 leading-relaxed">
+              Drag a label to move it. Double-click to edit or clear its text.
+            </div>
+          )}
+
           {!layers.annotations && (
             <div className="mb-2 text-[10px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1">
               Annotations layer is hidden. Enable it in Layers to see your marks.
@@ -1346,7 +1395,11 @@ function FieldViewTab(props: {
             </div>
             {annotations.length === 0 ? (
               <div className="text-[11px] text-neutral-500 italic py-1">
-                {annotateMode === "pen" ? "Press and drag on the map to draw." : "Click on the map to place a label."}
+                {annotateMode === "pen"
+                  ? "Press and drag on the map to draw."
+                  : annotateMode === "text"
+                    ? "Click on the map to place a label."
+                    : "No labels yet — place one with the Text tool."}
               </div>
             ) : (
               <div className="max-h-48 overflow-y-auto -mr-1 pr-1 space-y-1">
