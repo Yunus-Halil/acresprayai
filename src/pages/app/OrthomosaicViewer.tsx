@@ -1191,7 +1191,7 @@ function FieldViewTab(props: {
 
   const [measureActive, setMeasureActive] = useState(false);
   const [annotateActive, setAnnotateActive] = useState(false);
-  const [annotateMode, setAnnotateMode] = useState<"pen" | "text">("pen");
+  const [annotateMode, setAnnotateMode] = useState<"pen" | "text" | "select">("pen");
   const [annotateColor, setAnnotateColor] = useState<string>("#facc15");
   const [annotateWidth, setAnnotateWidth] = useState<number>(3);
   const [measureStats, setMeasureStats] = useState<MeasureStats>({
@@ -1313,13 +1313,17 @@ function FieldViewTab(props: {
             <Pencil className="h-3.5 w-3.5" style={{ color: annotateColor }} />
             <div className="text-xs font-medium">Annotate</div>
             <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500">
-              {annotateMode === "pen" ? "Drag to draw" : "Click to place"}
+              {annotateMode === "pen"
+                ? "Drag to draw"
+                : annotateMode === "text"
+                  ? "Click to place"
+                  : "Drag labels"}
             </div>
           </div>
 
           {/* mode tabs */}
-          <div className="grid grid-cols-2 gap-1 mb-2">
-            {(["pen", "text"] as const).map(m => (
+          <div className="grid grid-cols-3 gap-1 mb-2">
+            {(["pen", "text", "select"] as const).map(m => (
               <button
                 key={m}
                 onClick={() => setAnnotateMode(m)}
@@ -1329,7 +1333,7 @@ function FieldViewTab(props: {
                     : "bg-[#141414] border-[#222] text-neutral-400 hover:text-[#f0f0f0]"
                 }`}
               >
-                {m === "pen" ? "Pen" : "Text"}
+                {m === "pen" ? "Pen" : m === "text" ? "Text" : "Select"}
               </button>
             ))}
           </div>
@@ -1363,6 +1367,12 @@ function FieldViewTab(props: {
             </div>
           )}
 
+          {annotateMode === "select" && (
+            <div className="mb-2 text-[10px] text-neutral-400 bg-[#1a1a1a] border border-[#222] rounded px-2 py-1.5 leading-relaxed">
+              Drag a label to move it. Double-click to edit or clear its text.
+            </div>
+          )}
+
           {!layers.annotations && (
             <div className="mb-2 text-[10px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1">
               Annotations layer is hidden. Enable it in Layers to see your marks.
@@ -1385,7 +1395,11 @@ function FieldViewTab(props: {
             </div>
             {annotations.length === 0 ? (
               <div className="text-[11px] text-neutral-500 italic py-1">
-                {annotateMode === "pen" ? "Press and drag on the map to draw." : "Click on the map to place a label."}
+                {annotateMode === "pen"
+                  ? "Press and drag on the map to draw."
+                  : annotateMode === "text"
+                    ? "Click on the map to place a label."
+                    : "No labels yet — place one with the Text tool."}
               </div>
             ) : (
               <div className="max-h-48 overflow-y-auto -mr-1 pr-1 space-y-1">
