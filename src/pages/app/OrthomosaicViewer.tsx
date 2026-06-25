@@ -600,6 +600,7 @@ function AiZonesLayer({
   useEffect(() => {
     const group = L.layerGroup().addTo(map);
     const container = map.getContainer();
+    const deletedIds = new Set<string>();
     const handlePopupDelete = (evt: Event) => {
       const btn = (evt.target as HTMLElement | null)?.closest?.("button[data-aiz-delete]") as HTMLButtonElement | null;
       const id = btn?.dataset.aizDelete;
@@ -607,6 +608,8 @@ function AiZonesLayer({
       evt.preventDefault();
       evt.stopPropagation();
       if ("stopImmediatePropagation" in evt) evt.stopImmediatePropagation();
+      if (deletedIds.has(id)) return;
+      deletedIds.add(id);
       map.closePopup();
       onDelete(id);
     };
@@ -715,6 +718,7 @@ function UserPolyLayer({
   useEffect(() => {
     const group = L.layerGroup().addTo(map);
     const container = map.getContainer();
+    const deletedIds = new Set<string>();
     const handlePopupDelete = (evt: Event) => {
       const btn = (evt.target as HTMLElement | null)?.closest?.("button[data-uap-delete]") as HTMLButtonElement | null;
       const id = btn?.dataset.uapDelete;
@@ -722,6 +726,8 @@ function UserPolyLayer({
       evt.preventDefault();
       evt.stopPropagation();
       if ("stopImmediatePropagation" in evt) evt.stopImmediatePropagation();
+      if (deletedIds.has(id)) return;
+      deletedIds.add(id);
       map.closePopup();
       onDelete(id);
     };
