@@ -804,6 +804,7 @@ export default function OrthomosaicViewer() {
   const [boundaryMode, setBoundaryMode] = useState<"off" | "draw" | "edit">("off");
   const [boundaryDirty, setBoundaryDirty] = useState(false);
   const [boundarySaving, setBoundarySaving] = useState(false);
+  const [activeBoundaryIdx, setActiveBoundaryIdx] = useState<number | null>(null);
   const cursorCoordRef = useRef<HTMLDivElement | null>(null);
   const cursorZoomRef = useRef<HTMLDivElement | null>(null);
 
