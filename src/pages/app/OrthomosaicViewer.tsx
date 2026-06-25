@@ -1342,7 +1342,7 @@ function FieldViewTab(props: {
                   <div key={a.id} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[#1a1a1a] group">
                     <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: a.color }} />
                     <span className="text-[11px] truncate flex-1">
-                      {a.kind === "text" ? `“${a.text}”` : `Stroke · ${a.stroke.length} pts`}
+                      {a.kind === "text" ? `"${a.text}"` : `Stroke · ${(a.stroke ?? []).length} pts`}
                     </span>
                     <button
                       onClick={() => {
