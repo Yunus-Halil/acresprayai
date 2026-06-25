@@ -1256,26 +1256,112 @@ function FieldViewTab(props: {
         <MeasurePanel stats={measureStats} />
       )}
       {annotateActive && !layersOpen && (
-        <div className="absolute top-4 left-16 z-[1001] w-64 rounded-md border border-[#222] shadow-2xl p-3 text-[#f0f0f0]"
+        <div className="absolute top-4 left-16 z-[1001] w-72 rounded-md border border-[#222] shadow-2xl p-3 text-[#f0f0f0]"
              style={{ background: "#161616" }}>
           <div className="flex items-center gap-2 pb-2 mb-2 border-b border-[#222]">
-            <Pencil className="h-3.5 w-3.5 text-yellow-400" />
+            <Pencil className="h-3.5 w-3.5" style={{ color: annotateColor }} />
             <div className="text-xs font-medium">Annotate</div>
             <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500">
-              Drag to draw
+              {annotateMode === "pen" ? "Drag to draw" : "Click to place"}
             </div>
           </div>
-          <div className="text-[11px] text-neutral-400 leading-relaxed">
-            Press and drag on the map to draw. Release to save. Click a saved
-            mark to delete it. Toggle the <span className="text-[#f0f0f0]">Annotations</span> layer to hide them.
+
+          {/* mode tabs */}
+          <div className="grid grid-cols-2 gap-1 mb-2">
+            {(["pen", "text"] as const).map(m => (
+              <button
+                key={m}
+                onClick={() => setAnnotateMode(m)}
+                className={`text-[11px] py-1.5 rounded border transition-colors ${
+                  annotateMode === m
+                    ? "bg-[#1a1a1a] border-[#4CAF50] text-[#4CAF50]"
+                    : "bg-[#141414] border-[#222] text-neutral-400 hover:text-[#f0f0f0]"
+                }`}
+              >
+                {m === "pen" ? "Pen" : "Text"}
+              </button>
+            ))}
           </div>
-          {annotations.length > 0 && (
-            <button
-              onClick={() => { if (window.confirm("Clear all annotations on this scan?")) { setAnnotations([]); saveAnnotations(taskId, []); } }}
-              className="mt-2 inline-flex items-center gap-1 text-[10px] text-red-400 hover:underline">
-              <Trash2 className="h-3 w-3" /> Clear all ({annotations.length})
-            </button>
+
+          {/* colors */}
+          <div className="mb-2">
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Color</div>
+            <div className="flex items-center gap-1.5">
+              {["#facc15", "#ef4444", "#22c55e", "#3b82f6", "#a855f7", "#f0f0f0"].map(c => (
+                <button key={c} onClick={() => setAnnotateColor(c)}
+                  className={`h-5 w-5 rounded-full border ${annotateColor === c ? "border-white scale-110" : "border-[#333]"}`}
+                  style={{ background: c }} title={c} />
+              ))}
+              <input type="color" value={annotateColor}
+                onChange={(e) => setAnnotateColor(e.target.value)}
+                className="h-5 w-5 ml-1 bg-transparent border border-[#333] rounded cursor-pointer" />
+            </div>
+          </div>
+
+          {/* width (pen only) */}
+          {annotateMode === "pen" && (
+            <div className="mb-2">
+              <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-neutral-500 mb-1">
+                <span>Stroke</span>
+                <span className="font-mono">{annotateWidth}px</span>
+              </div>
+              <input type="range" min={1} max={10} step={1}
+                value={annotateWidth}
+                onChange={(e) => setAnnotateWidth(Number(e.target.value))}
+                className="w-full accent-[#4CAF50]" />
+            </div>
           )}
+
+          {!layers.annotations && (
+            <div className="mb-2 text-[10px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1">
+              Annotations layer is hidden. Enable it in Layers to see your marks.
+            </div>
+          )}
+
+          {/* list */}
+          <div className="border-t border-[#222] pt-2">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-[10px] uppercase tracking-wider text-neutral-500">
+                Marks ({annotations.length})
+              </div>
+              {annotations.length > 0 && (
+                <button
+                  onClick={() => { if (window.confirm("Clear all annotations on this scan?")) { setAnnotations([]); saveAnnotations(taskId, []); } }}
+                  className="inline-flex items-center gap-1 text-[10px] text-red-400 hover:underline">
+                  <Trash2 className="h-3 w-3" /> Clear all
+                </button>
+              )}
+            </div>
+            {annotations.length === 0 ? (
+              <div className="text-[11px] text-neutral-500 italic py-1">
+                {annotateMode === "pen" ? "Press and drag on the map to draw." : "Click on the map to place a label."}
+              </div>
+            ) : (
+              <div className="max-h-48 overflow-y-auto -mr-1 pr-1 space-y-1">
+                {annotations.slice().reverse().map(a => (
+                  <div key={a.id} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-[#1a1a1a] group">
+                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: a.color }} />
+                    <span className="text-[11px] truncate flex-1">
+                      {a.kind === "text" ? `“${a.text}”` : `Stroke · ${a.stroke.length} pts`}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setAnnotations(prev => {
+                          const next = prev.filter(x => x.id !== a.id);
+                          saveAnnotations(taskId, next);
+                          return next;
+                        });
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-red-400 transition-opacity"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
