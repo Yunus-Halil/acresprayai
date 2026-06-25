@@ -1048,17 +1048,22 @@ function FieldViewTab(props: {
   updateZoneRing: (id: string, ring: { lat: number; lng: number }[]) => void;
   deleteZone: (id: string) => void;
   exportFlightPlan: () => void;
+  taskId: string;
+  annotations: Annotation[];
+  setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
 }) {
   const {
-    center, bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
+    bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
     cursorCoordRef, cursorZoomRef, layersOpen, setLayersOpen,
     drawerOpen, setDrawerOpen,
     analysis, analyzing, analysisErr, runAnalysis,
     showAiZones, setShowAiZones, selectedZone, setSelectedZone,
     updateZoneRing, deleteZone, exportFlightPlan,
+    taskId, annotations, setAnnotations,
   } = props;
 
   const [measureActive, setMeasureActive] = useState(false);
+  const [annotateActive, setAnnotateActive] = useState(false);
   const [measureStats, setMeasureStats] = useState<MeasureStats>({
     active: false, finished: false, count: 0, distM: 0, areaM2: 0, liveDistM: 0,
   });
