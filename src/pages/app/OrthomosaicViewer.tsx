@@ -327,7 +327,19 @@ function AnnotateTool({
     if (!active) return;
     map.dragging.disable();
     const container = map.getContainer();
-    container.style.cursor = mode === "text" ? "text" : "crosshair";
+    if (mode === "text") {
+      // High-contrast "T" cursor so it's visible over satellite & ortho imagery.
+      const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'>
+        <g stroke='black' stroke-width='3' fill='white' font-family='sans-serif' font-weight='800' font-size='18'>
+          <text x='14' y='20' text-anchor='middle' paint-order='stroke'>T</text>
+        </g>
+        <circle cx='14' cy='14' r='1.5' fill='black'/>
+      </svg>`;
+      const url = `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") 14 14, text`;
+      container.style.cursor = url;
+    } else {
+      container.style.cursor = "crosshair";
+    }
 
     if (mode === "text") {
       const onClickText = (e: L.LeafletMouseEvent) => {
