@@ -1188,6 +1188,39 @@ export default function OrthomosaicViewer() {
     URL.revokeObjectURL(url);
   };
 
+  // ---- User annotations CRUD (DB-backed) ------------------------------------
+  const saveUserPolygon = async (form: { name: string; issue_type: string; color: string; notes: string }) => {
+    if (!draftUserPoly || !taskId) return;
+    const { data: s } = await supabase.auth.getSession();
+    if (!s.session) return;
+    const row = {
+      user_id: s.session.user.id,
+      task_id: taskId,
+      field_id: field?.id ?? null,
+      name: form.name.trim() || "Annotation",
+      issue_type: form.issue_type,
+      color: form.color,
+      notes: form.notes.trim() || null,
+      ring: draftUserPoly.ring as any,
+      area_hectares: Number(draftUserPoly.areaHa.toFixed(4)),
+    };
+    const { data, error } = await supabase.from("user_annotations").insert(row).select("*").single();
+    if (error) { console.error(error); return; }
+    setUserPolys(prev => [...prev, {
+      id: data.id, name: data.name, issue_type: data.issue_type, color: data.color,
+      notes: data.notes, ring: data.ring as any, area_hectares: Number(data.area_hectares ?? 0),
+      created_at: data.created_at,
+    }]);
+    setDraftUserPoly(null);
+    setUserPolyToolActive(false);
+  };
+  const deleteUserPolygon = async (id: string) => {
+    if (!window.confirm("Delete this annotation?")) return;
+    const { error } = await supabase.from("user_annotations").delete().eq("id", id);
+    if (error) { console.error(error); return; }
+    setUserPolys(prev => prev.filter(p => p.id !== id));
+  };
+
   // Probe the COG once to figure out NDVI vs VARI and band count for the legend.
   useEffect(() => {
     if (!taskId || !token || !tileTemplate) return;
