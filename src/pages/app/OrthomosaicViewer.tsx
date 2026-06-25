@@ -647,20 +647,20 @@ function AiZonesLayer({
           <button data-aiz-delete="${escapeHtml(z.id)}" style="margin-top:9px;font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.45);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
         </div>
       `;
-      poly.bindPopup(html, {
-        className: "ai-zone-popup",
-        maxWidth: 320, closeButton: true, autoPan: true, autoClose: true, closeOnClick: true,
-      });
-      poly.on("popupopen", (e: any) => {
-        const el = e.popup.getElement() as HTMLElement | null;
-        const btn = el?.querySelector("button[data-aiz-delete]") as HTMLElement | null;
-        if (!btn) return;
-        btn.onclick = (evt) => {
-          evt.preventDefault();
-          evt.stopPropagation();
+      const popupEl = document.createElement("div");
+      popupEl.innerHTML = html;
+      const deleteBtn = popupEl.querySelector("button[data-aiz-delete]") as HTMLButtonElement | null;
+      if (deleteBtn) {
+        L.DomEvent.disableClickPropagation(deleteBtn);
+        L.DomEvent.on(deleteBtn, "click", (evt: Event) => {
+          L.DomEvent.stop(evt);
           poly.closePopup();
           onDelete(z.id);
-        };
+        });
+      }
+      poly.bindPopup(popupEl, {
+        className: "ai-zone-popup",
+        maxWidth: 320, closeButton: true, autoPan: true, autoClose: true, closeOnClick: true,
       });
       poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onSelect(z.id); poly.openPopup(e.latlng); });
       group.addLayer(poly);
@@ -727,18 +727,18 @@ function UserPolyLayer({
           <button data-uap-delete="${p.id}" style="font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
         </div>
       `;
-      poly.bindPopup(html, { className: "ai-zone-popup", maxWidth: 300, autoClose: true, closeOnClick: true });
-      poly.on("popupopen", (e: any) => {
-        const el = (e.popup.getElement() as HTMLElement | null);
-        if (!el) return;
-        const btn = el.querySelector("button[data-uap-delete]") as HTMLElement | null;
-        if (btn) btn.onclick = (evt) => {
-          evt.preventDefault();
-          evt.stopPropagation();
+      const popupEl = document.createElement("div");
+      popupEl.innerHTML = html;
+      const deleteBtn = popupEl.querySelector("button[data-uap-delete]") as HTMLButtonElement | null;
+      if (deleteBtn) {
+        L.DomEvent.disableClickPropagation(deleteBtn);
+        L.DomEvent.on(deleteBtn, "click", (evt: Event) => {
+          L.DomEvent.stop(evt);
           poly.closePopup();
           onDelete(p.id);
-        };
-      });
+        });
+      }
+      poly.bindPopup(popupEl, { className: "ai-zone-popup", maxWidth: 300, autoClose: true, closeOnClick: true });
       poly.on("click", (e: any) => { L.DomEvent.stopPropagation(e); poly.openPopup(e.latlng); });
       group.addLayer(poly);
     });
