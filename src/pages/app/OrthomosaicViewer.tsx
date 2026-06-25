@@ -625,17 +625,23 @@ function AiZonesLayer({
         permanent: false, sticky: true, opacity: 1, direction: "top",
         className: "ai-zone-label",
       });
-      // Compute area: prefer coverage_pct × boundary area, else geodesic of ring.
-      const ringAreaM2 = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));
-      const m2 = boundaryAreaHa && z.coverage_pct
-        ? (boundaryAreaHa * 10000) * (z.coverage_pct / 100)
-        : ringAreaM2;
-      const acres = (m2 / 4046.8564224).toFixed(2);
+      // Real geodesic area of the on-screen polygon — what the farmer actually
+      // pays to treat. No severity multipliers, no AI coverage estimate.
+      const m2 = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));
+      const acresNum = m2 / 4046.8564224;
+      const acres = acresNum.toFixed(2);
       const ha = (m2 / 10000).toFixed(3);
-      // Rough cost: $25/acre baseline, scaled by severity multiplier.
-      const sevMul = z.severity === "high" ? 1.5 : z.severity === "medium" ? 1.2 : 1.0;
-      const estCost = ((m2 / 4046.8564224) * 25 * sevMul).toFixed(0);
       const rec = z.recommendation;
+      const action = String(rec?.action ?? "spray").toLowerCase();
+      // Typical US row-crop input cost per acre, keyed off the AI's action.
+      const ratePerAc =
+        action === "reseed"    ? 28 :
+        action === "fertilize" ? 30 :
+        action === "spray"     ? 25 :
+        action === "irrigate"  ? 10 :
+                                  0;
+      const estCost = (acresNum * ratePerAc).toFixed(2);
+      const acresStr = acresNum.toFixed(3);
       const sevBadge = `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;background:${color}33;color:${color};border:1px solid ${color}">${z.severity}</span>`;
       const html = `
         <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:240px">
@@ -648,6 +654,7 @@ function AiZonesLayer({
             <div>Area</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${acres} ac</div>
             <div></div><div style="text-align:right;color:#6b7280;font-family:ui-monospace,monospace">${ha} ha</div>
             <div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">$${estCost}</div>
+            <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${acresStr} ac × $${ratePerAc}/ac = $${estCost}</div>
           </div>
           ${rec ? `
             <div style="border-top:1px solid #222;padding-top:8px;font-size:11px">
