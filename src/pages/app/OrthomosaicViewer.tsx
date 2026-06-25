@@ -2420,6 +2420,344 @@ function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan
   );
 }
 
+// =========================== Flight Planner tab ==============================
+// Generates a lawnmower (boustrophedon) spray path over each AI treatment zone
+// that lies inside the field boundary. The boundary is treated as the hard
+// no-fly constraint — every flight line is clipped to (boundary ∩ zone).
+
+type LatLng2 = { lat: number; lng: number };
+
+// --- geometry helpers --------------------------------------------------------
+const M_PER_DEG_LAT = 111_320;
+function mPerDegLng(lat: number) { return M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180); }
+
+function pointInRing(pt: LatLng2, ring: LatLng2[]): boolean {
+  // Ray casting in lng/lat space — fine at these scales.
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i].lng, yi = ring[i].lat;
+    const xj = ring[j].lng, yj = ring[j].lat;
+    const intersect = ((yi > pt.lat) !== (yj > pt.lat)) &&
+      (pt.lng < ((xj - xi) * (pt.lat - yi)) / (yj - yi + 1e-12) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+function pointInAnyRing(pt: LatLng2, rings: LatLng2[][]): boolean {
+  for (const r of rings) if (pointInRing(pt, r)) return true;
+  return false;
+}
+
+// Segment vs polygon ring intersections (returns t-values on the segment [0..1]).
+function segRingIntersections(a: LatLng2, b: LatLng2, ring: LatLng2[]): number[] {
+  const ts: number[] = [];
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const t = segSegT(a, b, ring[j], ring[i]);
+    if (t !== null && t > 1e-9 && t < 1 - 1e-9) ts.push(t);
+  }
+  return ts;
+}
+function segSegT(a: LatLng2, b: LatLng2, c: LatLng2, d: LatLng2): number | null {
+  const x1 = a.lng, y1 = a.lat, x2 = b.lng, y2 = b.lat;
+  const x3 = c.lng, y3 = c.lat, x4 = d.lng, y4 = d.lat;
+  const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (Math.abs(denom) < 1e-14) return null;
+  const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+  const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return t;
+}
+
+function lerp(a: LatLng2, b: LatLng2, t: number): LatLng2 {
+  return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+}
+
+// Clip a straight east-west scan line (a → b) against (boundary ∩ zone) and
+// return a list of contiguous segments that lie inside BOTH.
+function clipLineToBoundaryAndZone(a: LatLng2, b: LatLng2, boundaryRings: LatLng2[][], zoneRing: LatLng2[]): [LatLng2, LatLng2][] {
+  // Collect intersection t-values with every ring (boundary parts + zone).
+  const ts = new Set<number>();
+  ts.add(0); ts.add(1);
+  for (const r of boundaryRings) for (const t of segRingIntersections(a, b, r)) ts.add(t);
+  for (const t of segRingIntersections(a, b, zoneRing)) ts.add(t);
+  const sorted = Array.from(ts).sort((x, y) => x - y);
+  const out: [LatLng2, LatLng2][] = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const tm = (sorted[i] + sorted[i + 1]) / 2;
+    const mid = lerp(a, b, tm);
+    if (pointInAnyRing(mid, boundaryRings) && pointInRing(mid, zoneRing)) {
+      out.push([lerp(a, b, sorted[i]), lerp(a, b, sorted[i + 1])]);
+    }
+  }
+  return out;
+}
+
+function bboxOfRings(rings: LatLng2[][]) {
+  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  for (const r of rings) for (const p of r) {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lng < minLng) minLng = p.lng;
+    if (p.lng > maxLng) maxLng = p.lng;
+  }
+  return { minLat, maxLat, minLng, maxLng };
+}
+
+// Generate the full waypoint list (lawnmower) for a list of zones, clipped to
+// the boundary. Each zone contributes a contiguous sub-path; we connect
+// sub-paths in input order.
+function generateFlightPath(
+  boundary: LatLng2[][],
+  zones: { id: string; ring: LatLng2[] }[],
+  spacingM: number,
+): { perZone: { id: string; path: LatLng2[] }[]; total: LatLng2[]; lengthM: number } {
+  const perZone: { id: string; path: LatLng2[] }[] = [];
+  for (const z of zones) {
+    if (z.ring.length < 3) continue;
+    const bb = bboxOfRings([z.ring]);
+    const midLat = (bb.minLat + bb.maxLat) / 2;
+    const dLat = spacingM / M_PER_DEG_LAT;
+    const leftLng = bb.minLng - 0.0002;
+    const rightLng = bb.maxLng + 0.0002;
+    const path: LatLng2[] = [];
+    let flip = false;
+    for (let lat = bb.minLat + dLat / 2; lat <= bb.maxLat; lat += dLat) {
+      const a = { lat, lng: leftLng };
+      const b = { lat, lng: rightLng };
+      const segs = clipLineToBoundaryAndZone(a, b, boundary, z.ring);
+      if (segs.length === 0) { flip = !flip; continue; }
+      // Sort segments left→right (or right→left on alternate passes).
+      segs.sort((s1, s2) => s1[0].lng - s2[0].lng);
+      const ordered = flip ? segs.slice().reverse().map(s => [s[1], s[0]] as [LatLng2, LatLng2]) : segs;
+      for (const [p1, p2] of ordered) { path.push(p1); path.push(p2); }
+      flip = !flip;
+      void midLat;
+    }
+    if (path.length >= 2) perZone.push({ id: z.id, path });
+  }
+  const total: LatLng2[] = [];
+  for (const z of perZone) total.push(...z.path);
+  // Approximate length (meters).
+  let lengthM = 0;
+  for (let i = 1; i < total.length; i++) {
+    const dLat = (total[i].lat - total[i - 1].lat) * M_PER_DEG_LAT;
+    const dLng = (total[i].lng - total[i - 1].lng) * mPerDegLng(total[i].lat);
+    lengthM += Math.sqrt(dLat * dLat + dLng * dLng);
+  }
+  return { perZone, total, lengthM };
+}
+
+// Mission Planner / QGC ".waypoints" format. Compatible with DJI Pilot 2 via
+// QGC conversion. Each row:
+//   <idx>\t<current>\t<frame>\t<cmd>\t<p1>\t<p2>\t<p3>\t<p4>\t<lat>\t<lng>\t<alt>\t<autocontinue>
+function exportWaypointsFile(points: LatLng2[], altitudeM: number): Blob {
+  const lines: string[] = ["QGC WPL 110"];
+  // Home waypoint (first point as reference)
+  if (points.length === 0) return new Blob([lines.join("\n")], { type: "text/plain" });
+  const home = points[0];
+  lines.push(`0\t1\t0\t16\t0\t0\t0\t0\t${home.lat.toFixed(8)}\t${home.lng.toFixed(8)}\t${altitudeM.toFixed(2)}\t1`);
+  points.forEach((p, i) => {
+    // Cmd 16 = MAV_CMD_NAV_WAYPOINT, frame 3 = MAV_FRAME_GLOBAL_RELATIVE_ALT
+    lines.push(`${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${p.lat.toFixed(8)}\t${p.lng.toFixed(8)}\t${altitudeM.toFixed(2)}\t1`);
+  });
+  return new Blob([lines.join("\n") + "\n"], { type: "text/plain" });
+}
+
+function PlannerTab({
+  analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
+}: {
+  analysis: any;
+  boundary: BoundaryRing[] | null;
+  tileUrl: string;
+  bounds: L.LatLngBoundsExpression | null;
+  maxNative: number;
+  taskId: string;
+  runAnalysis: () => void;
+  setActiveTab: (k: any) => void;
+}) {
+  const [spacingM, setSpacingM] = useState<number>(5);
+  const [altitudeM, setAltitudeM] = useState<number>(15);
+
+  // Filter AI zones to those whose centroid lies inside the boundary.
+  const validZones = (() => {
+    if (!analysis?.zones || !boundary || boundary.length === 0) return [];
+    return (analysis.zones as AiZone[]).filter(z => {
+      if (!z.ring || z.ring.length < 3) return false;
+      const cx = z.ring.reduce((a, p) => a + p.lng, 0) / z.ring.length;
+      const cy = z.ring.reduce((a, p) => a + p.lat, 0) / z.ring.length;
+      return pointInAnyRing({ lat: cy, lng: cx }, boundary as LatLng2[][]);
+    });
+  })();
+
+  const plan = (() => {
+    if (validZones.length === 0 || !boundary) return null;
+    return generateFlightPath(boundary as LatLng2[][], validZones.map(z => ({ id: z.id, ring: z.ring })), spacingM);
+  })();
+
+  const downloadWaypoints = () => {
+    if (!plan || plan.total.length === 0) return;
+    const blob = exportWaypointsFile(plan.total, altitudeM);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `flight-${taskId}.waypoints`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Empty states ------------------------------------------------------------
+  if (!boundary || boundary.length === 0) {
+    return (
+      <div className="absolute inset-0 grid place-items-center text-center p-8" style={{ background: "#0f0f0f" }}>
+        <div className="max-w-md">
+          <Plane className="h-8 w-8 mx-auto mb-3 text-[#4CAF50]" />
+          <h2 className="text-lg font-semibold mb-1">Flight Planner</h2>
+          <p className="text-sm text-neutral-500 mb-4">Define your field boundary first — the planner needs a hard no-fly perimeter before it can lay down flight lines.</p>
+          <button onClick={() => setActiveTab("field")} className="text-xs bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 font-semibold">
+            Go to Field View
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!analysis || analysis.zones.length === 0) {
+    return (
+      <div className="absolute inset-0 grid place-items-center text-center p-8" style={{ background: "#0f0f0f" }}>
+        <div className="max-w-md">
+          <Plane className="h-8 w-8 mx-auto mb-3 text-[#4CAF50]" />
+          <h2 className="text-lg font-semibold mb-1">Flight Planner</h2>
+          <p className="text-sm text-neutral-500 mb-4">Run AI analysis first — the planner generates lawnmower patterns over the detected treatment zones.</p>
+          <button onClick={runAnalysis} className="text-xs bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 font-semibold inline-flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5" /> Analyze field
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="absolute inset-0 flex" style={{ background: "#0f0f0f" }}>
+      {/* Map preview */}
+      <div className="flex-1 relative">
+        <MapContainer
+          bounds={bounds ?? undefined}
+          boundsOptions={{ padding: [40, 40] }}
+          minZoom={1} maxZoom={22} preferCanvas
+          zoomControl={false} attributionControl={false}
+          style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
+        >
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxNativeZoom={19} maxZoom={22} zIndex={1}
+          />
+          {tileUrl && bounds && (
+            <TileLayer
+              key={tileUrl} url={tileUrl}
+              maxNativeZoom={Math.min(20, maxNative)} maxZoom={22}
+              tileSize={256} keepBuffer={4}
+              bounds={bounds} noWrap zIndex={10}
+            />
+          )}
+          <PlannerOverlay boundary={boundary} zones={validZones} plan={plan} />
+        </MapContainer>
+      </div>
+
+      {/* Right control panel */}
+      <div className="w-80 shrink-0 border-l border-[#222] overflow-auto p-4" style={{ background: "#161616" }}>
+        <div className="flex items-center gap-2 mb-4">
+          <Plane className="h-4 w-4 text-[#4CAF50]" />
+          <div className="text-sm font-semibold">Flight Planner</div>
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4" style={{ background: "#0f0f0f" }}>
+          <label className="text-[10px] uppercase tracking-wider text-neutral-500">Line spacing (swath)</label>
+          <div className="flex items-center gap-2 mt-1">
+            <input type="range" min={2} max={20} step={0.5}
+              value={spacingM} onChange={(e) => setSpacingM(Number(e.target.value))}
+              className="flex-1 accent-[#4CAF50]" />
+            <div className="font-mono text-sm w-16 text-right">{spacingM.toFixed(1)} m</div>
+          </div>
+          <label className="text-[10px] uppercase tracking-wider text-neutral-500 mt-3 block">Altitude AGL</label>
+          <div className="flex items-center gap-2 mt-1">
+            <input type="range" min={5} max={120} step={1}
+              value={altitudeM} onChange={(e) => setAltitudeM(Number(e.target.value))}
+              className="flex-1 accent-[#4CAF50]" />
+            <div className="font-mono text-sm w-16 text-right">{altitudeM.toFixed(0)} m</div>
+          </div>
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Plan summary</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
+          <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
+            <span className="font-mono">{validZones.length} of {analysis.zones.length}</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Waypoints</span>
+            <span className="font-mono">{plan?.total.length ?? 0}</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Path length</span>
+            <span className="font-mono">{plan ? (plan.lengthM / 1000).toFixed(2) : "0.00"} km</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Est. flight time</span>
+            <span className="font-mono">{plan ? Math.ceil(plan.lengthM / 5 / 60) : 0} min @ 5 m/s</span></div>
+        </div>
+
+        {validZones.length < analysis.zones.length && (
+          <div className="mb-4 text-[11px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1.5">
+            {analysis.zones.length - validZones.length} zone(s) excluded — centroid outside boundary.
+          </div>
+        )}
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Export</div>
+        <button
+          onClick={downloadWaypoints}
+          disabled={!plan || plan.total.length === 0}
+          className="w-full inline-flex items-center justify-center gap-2 bg-[#4CAF50] hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600 text-black rounded-sm px-3 py-2 text-xs font-semibold mb-2"
+        >
+          <Download className="h-3.5 w-3.5" /> Download .waypoints
+        </button>
+        <p className="text-[10px] text-neutral-500 leading-relaxed">
+          QGC WPL 110 format — load directly in Mission Planner, QGroundControl, or convert
+          for DJI Pilot 2 with the standard waypoint importer.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PlannerOverlay({ boundary, zones, plan }: {
+  boundary: BoundaryRing[];
+  zones: AiZone[];
+  plan: { perZone: { id: string; path: LatLng2[] }[] } | null;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    const group = L.layerGroup().addTo(map);
+    boundary.forEach(ring => {
+      L.polygon(ring.map(p => [p.lat, p.lng] as [number, number]), {
+        color: "#22d3ee", weight: 2, dashArray: "6 4",
+        fillColor: "#22d3ee", fillOpacity: 0.04,
+      }).addTo(group);
+    });
+    zones.forEach(z => {
+      const color = sevColor(z.severity);
+      L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
+        color, weight: 1, fillColor: color, fillOpacity: 0.12,
+      }).addTo(group);
+    });
+    plan?.perZone.forEach(({ path }) => {
+      // Render the lawnmower as a single polyline; each pair-of-points draws a
+      // pass, and the connector to the next pass is a thin dashed segment.
+      const latlngs = path.map(p => [p.lat, p.lng] as [number, number]);
+      L.polyline(latlngs, { color: "#4CAF50", weight: 2, opacity: 0.95 }).addTo(group);
+      // Mark every waypoint with a small dot.
+      path.forEach((p, idx) => {
+        const isTurn = idx === 0 || idx === path.length - 1 || idx % 2 === 0;
+        L.circleMarker([p.lat, p.lng], {
+          radius: isTurn ? 3 : 1.5, color: "#4CAF50", weight: 1, fillColor: "#4CAF50", fillOpacity: 1,
+        }).addTo(group);
+      });
+    });
+    return () => { group.remove(); };
+  }, [map, boundary, zones, plan]);
+  return null;
+}
+
 function PlaceholderTab({ icon: Icon, title, body }: { icon: any; title: string; body: string }) {
   return (
     <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#0f0f0f" }}>
