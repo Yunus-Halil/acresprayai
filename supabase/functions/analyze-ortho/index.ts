@@ -21,7 +21,11 @@ Deno.serve(async (req) => {
     const { data: ud } = await supabase.auth.getUser();
     if (!ud.user) return json({ error: "Unauthorized" }, 401);
 
-    const { task_id } = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({}));
+    const { task_id, boundary } = body as {
+      task_id?: string;
+      boundary?: { lat: number; lng: number }[];
+    };
     if (!task_id) return json({ error: "Missing task_id" }, 400);
 
     const admin = createClient(
@@ -47,6 +51,15 @@ Deno.serve(async (req) => {
     const b = tj?.bounds as number[] | undefined;
     if (!b || b.length !== 4) return json({ error: "Missing bounds" }, 500);
     const [west, south, east, north] = b;
+
+    // Validate the user-supplied field boundary. The AI must restrict its
+    // analysis to this polygon — anything outside is not the farmer's field.
+    const hasBoundary =
+      Array.isArray(boundary) && boundary.length >= 3 &&
+      boundary.every(p => typeof p?.lat === "number" && typeof p?.lng === "number");
+    const boundaryWKT = hasBoundary
+      ? `POLYGON((${[...boundary!, boundary![0]].map(p => `${p.lng} ${p.lat}`).join(", ")}))`
+      : null;
 
     const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
     // base64 encode without blowing the call stack
@@ -124,7 +137,15 @@ For every polygon vertex you output:
   - longitude MUST be between ${west} and ${east}.
   - DO NOT return pixel coordinates. DO NOT return normalized 0–1 values. DO NOT swap lat/lng.
   - The TOP of the image is north (higher latitude). The LEFT of the image is west (lower longitude).
-  - Use 4–12 vertices per polygon tight to the patch boundary.`;
+  - Use 4–12 vertices per polygon tight to the patch boundary.
+
+${hasBoundary ? `FIELD BOUNDARY (CRITICAL):
+The farmer has explicitly outlined their field. ONLY analyze pixels inside this WGS84 polygon.
+Ignore everything outside it (roads, neighbouring fields, buildings, treelines, bare access tracks).
+Every output polygon vertex MUST lie inside this boundary.
+Boundary (WKT): ${boundaryWKT}
+Boundary vertices (lat, lng):
+${boundary!.map((p, i) => `  ${i + 1}. ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`).join("\n")}` : `NO field boundary was provided — analyze the entire image conservatively.`}`;
 
     const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",

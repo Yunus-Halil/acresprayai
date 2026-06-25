@@ -8,35 +8,37 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Trash2, ArrowRight, Leaf, Map as MapIcon } from "lucide-react";
+import { Plus, Trash2, ArrowRight, Leaf, MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-type DBField = { id: string; name: string; crop: string; area_hectares: number; location: string | null; notes: string | null; created_at: string };
-type ScanCount = { field_id: string; total: number; completed: number };
+type DBField = {
+  id: string;
+  name: string;
+  crop: string;
+  area_hectares: number;
+  location: string | null;
+  notes: string | null;
+  created_at: string;
+  boundary: unknown | null;
+  boundary_area_hectares: number | null;
+};
+
+const HA_TO_AC = 2.4710538147;
 
 export default function Fields() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [dbFields, setDbFields] = useState<DBField[]>([]);
-  const [counts, setCounts] = useState<Record<string, ScanCount>>({});
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", crop: "Wheat", area_hectares: "", location: "", notes: "" });
 
   const load = async () => {
-    const [{ data: fields }, { data: tasks }] = await Promise.all([
-      supabase.from("fields").select("*").order("created_at", { ascending: false }),
-      supabase.from("odm_tasks").select("field_id, status"),
-    ]);
+    const { data: fields } = await supabase
+      .from("fields")
+      .select("*")
+      .order("created_at", { ascending: false });
     setDbFields((fields as DBField[]) ?? []);
-    const c: Record<string, ScanCount> = {};
-    for (const t of (tasks ?? []) as { field_id: string; status: string }[]) {
-      if (!t.field_id) continue;
-      c[t.field_id] ??= { field_id: t.field_id, total: 0, completed: 0 };
-      c[t.field_id].total++;
-      if (t.status === "completed") c[t.field_id].completed++;
-    }
-    setCounts(c);
   };
   useEffect(() => { load(); }, []);
 
@@ -104,14 +106,18 @@ export default function Fields() {
 
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
         {dbFields.map(f => {
-          const c = counts[f.id];
+          const defined = !!f.boundary;
+          const realHa = Number(f.boundary_area_hectares ?? f.area_hectares ?? 0);
           return (
             <Card key={f.id} className="p-5 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition group"
               onClick={() => navigate(`/app/fields/${f.id}`)}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-display text-xl leading-tight truncate">{f.name}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{f.crop} · {f.area_hectares} ha</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {f.crop} · {realHa.toFixed(2)} ha · {(realHa * HA_TO_AC).toFixed(2)} ac
+                    {defined && <span className="ml-1 text-emerald-500">(measured)</span>}
+                  </div>
                 </div>
                 <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0"
                   onClick={(e) => { e.stopPropagation(); remove(f.id); }}>
@@ -119,19 +125,14 @@ export default function Fields() {
                 </Button>
               </div>
               <div className="mt-4 flex items-center gap-2">
-                {c?.total ? (
-                  <>
-                    <Badge variant="outline" className="gap-1">
-                      <MapIcon className="h-3 w-3" /> {c.total} scan{c.total === 1 ? "" : "s"}
-                    </Badge>
-                    {c.completed > 0 && (
-                      <Badge variant="outline" className="border-emerald-500 text-emerald-600">
-                        {c.completed} ready
-                      </Badge>
-                    )}
-                  </>
+                {defined ? (
+                  <Badge variant="outline" className="gap-1 border-emerald-500 text-emerald-600">
+                    <MapPin className="h-3 w-3" /> Boundary defined
+                  </Badge>
                 ) : (
-                  <Badge variant="outline" className="border-amber-500 text-amber-600">No scans yet</Badge>
+                  <Badge variant="outline" className="border-amber-500 text-amber-600">
+                    Boundary not defined
+                  </Badge>
                 )}
               </div>
               <div className="mt-3 pt-3 border-t text-xs text-muted-foreground flex items-center justify-between">

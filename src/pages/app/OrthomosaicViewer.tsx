@@ -106,7 +106,12 @@ async function extractAndUpload(
 }
 
 type TaskRow = { odm_uuid: string | null; field_id: string; created_at: string };
-type FieldRow = { name: string };
+type FieldRow = {
+  id: string;
+  name: string;
+  boundary: { lat: number; lng: number }[] | null;
+  boundary_area_hectares: number | null;
+};
 
 // --- helpers that run inside the MapContainer ---------------------------------
 function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
@@ -605,6 +610,76 @@ function AiZonesLayer({
   return null;
 }
 
+// --- Field boundary tool ----------------------------------------------------
+// Lets the operator outline their actual farm field on top of the orthomosaic.
+// The polygon persists on `fields.boundary` and drives the field's true area
+// plus where AI analysis is allowed to run.
+function BoundaryTool({
+  mode, boundary, visible, onCreated, onEdited,
+}: {
+  mode: "off" | "draw" | "edit";
+  boundary: { lat: number; lng: number }[] | null;
+  visible: boolean;
+  onCreated: (ring: { lat: number; lng: number }[]) => void;
+  onEdited: (ring: { lat: number; lng: number }[]) => void;
+}) {
+  const map = useMap();
+
+  // Draw mode: enable Geoman polygon draw. On create, capture ring + remove temp layer.
+  useEffect(() => {
+    if (mode !== "draw") return;
+    const pmAny = (map as any).pm;
+    if (!pmAny) return;
+    try {
+      pmAny.enableDraw("Polygon", {
+        snappable: true, snapDistance: 15, allowSelfIntersection: false,
+        templineStyle: { color: "#22d3ee", weight: 2, dashArray: "6 4" },
+        hintlineStyle: { color: "#22d3ee", dashArray: "4 4" },
+        pathOptions: { color: "#22d3ee", weight: 2, fillColor: "#22d3ee", fillOpacity: 0.08 },
+      });
+    } catch { /* noop */ }
+    const handle = (e: any) => {
+      const layer = e.layer as L.Polygon;
+      const ring = (layer.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+      try { layer.remove(); } catch { /* noop */ }
+      try { pmAny.disableDraw(); } catch { /* noop */ }
+      onCreated(ring);
+    };
+    map.on("pm:create", handle);
+    return () => {
+      map.off("pm:create", handle);
+      try { pmAny.disableDraw(); } catch { /* noop */ }
+    };
+  }, [mode, map, onCreated]);
+
+  // Render boundary polygon (with optional editing).
+  useEffect(() => {
+    if (!visible || !boundary || boundary.length < 3) return;
+    const poly = L.polygon(boundary.map(p => [p.lat, p.lng] as [number, number]), {
+      color: "#22d3ee", weight: 2.5, dashArray: "6 4",
+      fillColor: "#22d3ee", fillOpacity: mode === "edit" ? 0.05 : 0.08,
+    }).addTo(map);
+    poly.bindTooltip("Field boundary", { sticky: true, opacity: 1, className: "ai-zone-label" });
+    if (mode === "edit") {
+      poly.bringToFront();
+      try {
+        (poly as any).pm.enable({
+          allowSelfIntersection: false, snappable: true, snapDistance: 15,
+          draggable: true, hideMiddleMarkers: false,
+        });
+      } catch { /* noop */ }
+      const handle = () => {
+        const ring = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+        onEdited(ring);
+      };
+      poly.on("pm:markerdragend pm:dragend pm:vertexadded pm:vertexremoved pm:edit", handle);
+    }
+    return () => { try { poly.remove(); } catch { /* noop */ } };
+  }, [boundary, visible, mode, map, onEdited]);
+
+  return null;
+}
+
 // --- layer tree ---------------------------------------------------------------
 type LayerState = {
   annotations: boolean;
@@ -612,6 +687,7 @@ type LayerState = {
   orthomosaic: boolean;
   ndvi: boolean;
   measurements: boolean;
+  boundary: boolean;
 };
 
 function LayerRow({
@@ -649,7 +725,7 @@ export default function OrthomosaicViewer() {
   const [extracting, setExtracting] = useState<{ stage: string; pct: number } | null>(null);
 
   const [layers, setLayers] = useState<LayerState>({
-    annotations: true, design: false, orthomosaic: true, ndvi: false, measurements: true,
+    annotations: true, design: false, orthomosaic: true, ndvi: false, measurements: true, boundary: true,
   });
   const [ndviInfo, setNdviInfo] = useState<{ bands: number; index: "ndvi" | "vari"; label: string } | null>(null);
   type TabKey = "field" | "weather" | "ai" | "planner" | "reports";
@@ -668,6 +744,10 @@ export default function OrthomosaicViewer() {
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [showAiZones, setShowAiZones] = useState(true);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [boundary, setBoundary] = useState<{ lat: number; lng: number }[] | null>(null);
+  const [boundaryMode, setBoundaryMode] = useState<"off" | "draw" | "edit">("off");
+  const [boundaryDirty, setBoundaryDirty] = useState(false);
+  const [boundarySaving, setBoundarySaving] = useState(false);
   const cursorCoordRef = useRef<HTMLDivElement | null>(null);
   const cursorZoomRef = useRef<HTMLDivElement | null>(null);
 
@@ -696,8 +776,16 @@ export default function OrthomosaicViewer() {
       setTask(t as TaskRow);
 
       const { data: f } = await supabase.from("fields")
-        .select("name").eq("id", t.field_id).maybeSingle();
-      if (f) setField(f as FieldRow);
+        .select("id, name, boundary, boundary_area_hectares").eq("id", t.field_id).maybeSingle();
+      if (f) {
+        setField(f as FieldRow);
+        const b = (f as any).boundary;
+        if (Array.isArray(b) && b.length >= 3 && typeof b[0]?.lat === "number") {
+          setBoundary(b as { lat: number; lng: number }[]);
+        } else {
+          setBoundary(null);
+        }
+      }
 
       // 1) Mint a signed URL to the orthophoto.tif sitting in Supabase Storage.
       // 2) Hand that URL to TiTiler to get bounds + tiles.
@@ -805,12 +893,16 @@ export default function OrthomosaicViewer() {
 
   const runAnalysis = async () => {
     if (!taskId || !token) return;
+    if (!boundary || boundary.length < 3) {
+      setAnalysisErr("Define the field boundary first so the AI only analyzes your farmland.");
+      return;
+    }
     setAnalyzing(true); setAnalysisErr(null);
     try {
       const r = await fetch(`${FN_BASE}/analyze-ortho`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: taskId }),
+        body: JSON.stringify({ task_id: taskId, boundary }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? "Analysis failed");
@@ -825,6 +917,55 @@ export default function OrthomosaicViewer() {
       setAnalysisErr(e?.message ?? String(e));
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  // Boundary persistence ------------------------------------------------------
+  const handleBoundaryCreated = useCallback((ring: { lat: number; lng: number }[]) => {
+    setBoundary(ring);
+    setBoundaryDirty(true);
+    setBoundaryMode("edit");
+  }, []);
+  const handleBoundaryEdited = useCallback((ring: { lat: number; lng: number }[]) => {
+    setBoundary(ring);
+    setBoundaryDirty(true);
+  }, []);
+  const saveBoundary = async () => {
+    if (!field || !boundary || boundary.length < 3) return;
+    setBoundarySaving(true);
+    try {
+      const areaM2 = polygonAreaM2(boundary.map(p => L.latLng(p.lat, p.lng)));
+      const ha = areaM2 / 10000;
+      const { error } = await supabase.from("fields")
+        .update({
+          boundary: boundary as any,
+          boundary_area_hectares: Number(ha.toFixed(4)),
+        } as any)
+        .eq("id", field.id);
+      if (error) throw error;
+      setBoundaryDirty(false);
+      setBoundaryMode("off");
+      setField(prev => prev ? { ...prev, boundary_area_hectares: Number(ha.toFixed(4)) } : prev);
+    } catch (e) {
+      console.error("save boundary failed", e);
+    } finally {
+      setBoundarySaving(false);
+    }
+  };
+  const clearBoundary = async () => {
+    if (!field) return;
+    if (!window.confirm("Remove this field's saved boundary?")) return;
+    setBoundarySaving(true);
+    try {
+      await supabase.from("fields")
+        .update({ boundary: null, boundary_area_hectares: null } as any)
+        .eq("id", field.id);
+      setBoundary(null);
+      setBoundaryDirty(false);
+      setBoundaryMode("off");
+      setField(prev => prev ? { ...prev, boundary_area_hectares: null } : prev);
+    } finally {
+      setBoundarySaving(false);
     }
   };
 
@@ -1109,6 +1250,16 @@ export default function OrthomosaicViewer() {
             taskId={taskId!}
             annotations={annotations}
             setAnnotations={setAnnotations}
+            boundary={boundary}
+            boundaryMode={boundaryMode}
+            setBoundaryMode={setBoundaryMode}
+            boundaryDirty={boundaryDirty}
+            boundarySaving={boundarySaving}
+            saveBoundary={saveBoundary}
+            clearBoundary={clearBoundary}
+            handleBoundaryCreated={handleBoundaryCreated}
+            handleBoundaryEdited={handleBoundaryEdited}
+            fieldAreaHa={field?.boundary_area_hectares ?? null}
           />
         )}
         {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
@@ -1178,6 +1329,16 @@ function FieldViewTab(props: {
   taskId: string;
   annotations: Annotation[];
   setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
+  boundary: { lat: number; lng: number }[] | null;
+  boundaryMode: "off" | "draw" | "edit";
+  setBoundaryMode: React.Dispatch<React.SetStateAction<"off" | "draw" | "edit">>;
+  boundaryDirty: boolean;
+  boundarySaving: boolean;
+  saveBoundary: () => void;
+  clearBoundary: () => void;
+  handleBoundaryCreated: (ring: { lat: number; lng: number }[]) => void;
+  handleBoundaryEdited: (ring: { lat: number; lng: number }[]) => void;
+  fieldAreaHa: number | null;
 }) {
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
@@ -1187,6 +1348,9 @@ function FieldViewTab(props: {
     showAiZones, setShowAiZones, selectedZone, setSelectedZone,
     updateZoneRing, deleteZone, exportFlightPlan,
     taskId, annotations, setAnnotations,
+    boundary, boundaryMode, setBoundaryMode, boundaryDirty, boundarySaving,
+    saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited,
+    fieldAreaHa,
   } = props;
 
   const [measureActive, setMeasureActive] = useState(false);
@@ -1285,6 +1449,13 @@ function FieldViewTab(props: {
           setAnnotations={setAnnotations}
           taskId={taskId}
         />
+        <BoundaryTool
+          mode={boundaryMode}
+          boundary={boundary}
+          visible={layers.boundary}
+          onCreated={handleBoundaryCreated}
+          onEdited={handleBoundaryEdited}
+        />
       </MapContainer>
 
       {/* Floating icon toolbar */}
@@ -1299,6 +1470,17 @@ function FieldViewTab(props: {
           onClick={() => {
             setAnnotateActive(v => !v); setMeasureActive(false); setLayersOpen(false);
           }} />
+        <ToolButton
+          icon={MapPin}
+          label={boundary ? "Edit field boundary" : "Define field boundary"}
+          active={boundaryMode !== "off"}
+          onClick={() => {
+            setBoundaryMode(m => m !== "off" ? "off" : (boundary ? "edit" : "draw"));
+            setMeasureActive(false);
+            setAnnotateActive(false);
+            setLayersOpen(false);
+          }}
+        />
         <ToolButton icon={Settings} label="Settings" />
       </div>
 
@@ -1455,9 +1637,78 @@ function FieldViewTab(props: {
           <LayerRow label="Measurements" icon={Ruler}
             checked={layers.measurements}
             onToggle={() => setLayers(s => ({ ...s, measurements: !s.measurements }))} />
+          <LayerRow label="Field boundary" icon={MapPin}
+            checked={layers.boundary}
+            onToggle={() => setLayers(s => ({ ...s, boundary: !s.boundary }))} />
           <LayerRow label="AI treatment zones" icon={Sparkles}
             checked={showAiZones}
             onToggle={() => setShowAiZones(!showAiZones)} />
+        </div>
+      )}
+
+      {/* Boundary tool panel */}
+      {boundaryMode !== "off" && !layersOpen && (
+        <div className="absolute top-4 left-16 z-[1001] w-72 rounded-md border border-[#222] shadow-2xl p-3 text-[#f0f0f0]"
+             style={{ background: "#161616" }}>
+          <div className="flex items-center gap-2 pb-2 mb-2 border-b border-[#222]">
+            <MapPin className="h-3.5 w-3.5 text-cyan-400" />
+            <div className="text-xs font-medium">Field boundary</div>
+            <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500">
+              {boundaryMode === "draw" ? "Drawing" : boundaryDirty ? "Unsaved" : "Editing"}
+            </div>
+          </div>
+          <div className="text-[11px] text-neutral-400 leading-relaxed mb-3">
+            {boundaryMode === "draw"
+              ? "Click around your farmland to drop vertices. Click the first point to close the shape."
+              : "Drag vertices to adjust the outline. Add or remove points to fine-tune."}
+          </div>
+          {boundary && boundary.length >= 3 && (() => {
+            const m2 = polygonAreaM2(boundary.map(p => L.latLng(p.lat, p.lng)));
+            const ha = m2 / 10000;
+            const ac = m2 / 4046.8564224;
+            return (
+              <div className="mb-3 grid grid-cols-2 gap-2 text-[11px]">
+                <div className="rounded border border-[#222] px-2 py-1.5" style={{ background: "#0f0f0f" }}>
+                  <div className="text-[10px] uppercase text-neutral-500">Hectares</div>
+                  <div className="font-mono text-cyan-400 tabular-nums">{ha.toFixed(3)} ha</div>
+                </div>
+                <div className="rounded border border-[#222] px-2 py-1.5" style={{ background: "#0f0f0f" }}>
+                  <div className="text-[10px] uppercase text-neutral-500">Acres</div>
+                  <div className="font-mono text-cyan-400 tabular-nums">{ac.toFixed(3)} ac</div>
+                </div>
+              </div>
+            );
+          })()}
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              disabled={!boundary || boundary.length < 3 || boundarySaving || !boundaryDirty}
+              onClick={saveBoundary}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#4CAF50] hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600 text-black rounded-sm px-3 py-1.5 text-[11px] font-semibold"
+            >
+              {boundarySaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+              Save boundary
+            </button>
+            <button
+              onClick={() => setBoundaryMode("off")}
+              className="inline-flex items-center justify-center gap-1.5 border border-[#222] hover:bg-[#1a1a1a] text-neutral-300 rounded-sm px-3 py-1.5 text-[11px]"
+            >
+              Done
+            </button>
+            {boundary && (
+              <button
+                onClick={clearBoundary}
+                className="inline-flex items-center justify-center gap-1.5 border border-red-900/50 text-red-400 hover:bg-red-900/20 rounded-sm px-2 py-1.5 text-[11px]"
+                title="Remove boundary"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          {!layers.boundary && (
+            <div className="mt-2 text-[10px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1">
+              Boundary layer is hidden. Toggle it on in Layers to see your outline.
+            </div>
+          )}
         </div>
       )}
 
