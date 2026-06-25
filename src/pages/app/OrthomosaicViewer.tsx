@@ -1594,6 +1594,7 @@ function FieldViewTab(props: {
             selectedId={selectedZone}
             onSelect={setSelectedZone}
             onUpdate={updateZoneRing}
+            boundaryAreaHa={fieldAreaHa}
           />
         )}
         <MeasureTool active={measureActive} visible={layers.measurements} onStats={handleStats} />
