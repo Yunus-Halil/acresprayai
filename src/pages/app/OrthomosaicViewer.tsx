@@ -634,23 +634,30 @@ function AiZonesLayer({
 // plus where AI analysis is allowed to run.
 function BoundaryTool({
   mode, boundary, visible, onCreated, onEdited,
+  onDeleteRing,
 }: {
   mode: "off" | "draw" | "edit";
-  boundary: { lat: number; lng: number }[] | null;
+  boundary: BoundaryRing[] | null;
   visible: boolean;
-  onCreated: (ring: { lat: number; lng: number }[]) => void;
-  onEdited: (ring: { lat: number; lng: number }[]) => void;
+  onCreated: (ring: BoundaryRing) => void;
+  onEdited: (index: number, ring: BoundaryRing) => void;
+  onDeleteRing: (index: number) => void;
 }) {
   const map = useMap();
 
-  // Draw mode: enable Geoman polygon draw. On create, capture ring + remove temp layer.
+  // Draw mode: enable Geoman polygon draw. After each completed polygon we
+  // append it as a new ring and keep draw mode active so fragmented fields can
+  // be outlined in one pass. Map panning stays enabled the whole time.
   useEffect(() => {
     if (mode !== "draw") return;
     const pmAny = (map as any).pm;
     if (!pmAny) return;
+    // Make absolutely sure interactions like pan/zoom are not blocked.
+    try { map.dragging.enable(); map.scrollWheelZoom.enable(); } catch { /* noop */ }
     try {
       pmAny.enableDraw("Polygon", {
         snappable: true, snapDistance: 15, allowSelfIntersection: false,
+        continueDrawing: true,
         templineStyle: { color: "#22d3ee", weight: 2, dashArray: "6 4" },
         hintlineStyle: { color: "#22d3ee", dashArray: "4 4" },
         pathOptions: { color: "#22d3ee", weight: 2, fillColor: "#22d3ee", fillOpacity: 0.08 },
@@ -660,8 +667,17 @@ function BoundaryTool({
       const layer = e.layer as L.Polygon;
       const ring = (layer.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
       try { layer.remove(); } catch { /* noop */ }
-      try { pmAny.disableDraw(); } catch { /* noop */ }
       onCreated(ring);
+      // Re-arm draw so the user can immediately outline another fragment.
+      try {
+        pmAny.enableDraw("Polygon", {
+          snappable: true, snapDistance: 15, allowSelfIntersection: false,
+          continueDrawing: true,
+          templineStyle: { color: "#22d3ee", weight: 2, dashArray: "6 4" },
+          hintlineStyle: { color: "#22d3ee", dashArray: "4 4" },
+          pathOptions: { color: "#22d3ee", weight: 2, fillColor: "#22d3ee", fillOpacity: 0.08 },
+        });
+      } catch { /* noop */ }
     };
     map.on("pm:create", handle);
     return () => {
@@ -670,30 +686,44 @@ function BoundaryTool({
     };
   }, [mode, map, onCreated]);
 
-  // Render boundary polygon (with optional editing).
+  // Render every boundary ring (with optional editing). Each ring is a
+  // separate Leaflet polygon so a fragmented field can have multiple parts.
   useEffect(() => {
-    if (!visible || !boundary || boundary.length < 3) return;
-    const poly = L.polygon(boundary.map(p => [p.lat, p.lng] as [number, number]), {
-      color: "#22d3ee", weight: 2.5, dashArray: "6 4",
-      fillColor: "#22d3ee", fillOpacity: mode === "edit" ? 0.05 : 0.08,
-    }).addTo(map);
-    poly.bindTooltip("Field boundary", { sticky: true, opacity: 1, className: "ai-zone-label" });
-    if (mode === "edit") {
-      poly.bringToFront();
-      try {
-        (poly as any).pm.enable({
-          allowSelfIntersection: false, snappable: true, snapDistance: 15,
-          draggable: true, hideMiddleMarkers: false,
+    if (!visible || !boundary || boundary.length === 0) return;
+    const polys: L.Polygon[] = [];
+    boundary.forEach((ring, idx) => {
+      if (!ring || ring.length < 3) return;
+      const poly = L.polygon(ring.map(p => [p.lat, p.lng] as [number, number]), {
+        color: "#22d3ee", weight: 2.5, dashArray: "6 4",
+        fillColor: "#22d3ee", fillOpacity: mode === "edit" ? 0.05 : 0.08,
+      }).addTo(map);
+      poly.bindTooltip(
+        boundary.length > 1 ? `Field boundary · part ${idx + 1}` : "Field boundary",
+        { sticky: true, opacity: 1, className: "ai-zone-label" },
+      );
+      if (mode === "edit" || mode === "draw") {
+        poly.bringToFront();
+        try {
+          (poly as any).pm.enable({
+            allowSelfIntersection: false, snappable: true, snapDistance: 15,
+            draggable: true, hideMiddleMarkers: false,
+          });
+        } catch { /* noop */ }
+        const handle = () => {
+          const updated = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+          onEdited(idx, updated);
+        };
+        poly.on("pm:markerdragend pm:dragend pm:vertexadded pm:vertexremoved pm:edit", handle);
+        // Right-click a ring to delete just that fragment.
+        poly.on("contextmenu", (ev: any) => {
+          L.DomEvent.stopPropagation(ev);
+          if (window.confirm(`Remove this boundary part (${idx + 1})?`)) onDeleteRing(idx);
         });
-      } catch { /* noop */ }
-      const handle = () => {
-        const ring = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
-        onEdited(ring);
-      };
-      poly.on("pm:markerdragend pm:dragend pm:vertexadded pm:vertexremoved pm:edit", handle);
-    }
-    return () => { try { poly.remove(); } catch { /* noop */ } };
-  }, [boundary, visible, mode, map, onEdited]);
+      }
+      polys.push(poly);
+    });
+    return () => { polys.forEach(p => { try { p.remove(); } catch { /* noop */ } }); };
+  }, [boundary, visible, mode, map, onEdited, onDeleteRing]);
 
   return null;
 }
