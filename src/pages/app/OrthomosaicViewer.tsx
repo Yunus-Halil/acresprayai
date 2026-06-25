@@ -1998,6 +1998,7 @@ function FieldViewTab(props: {
             onUpdate={updateZoneRing}
             onDelete={deleteZone}
             boundaryAreaHa={fieldAreaHa}
+            settings={settings}
           />
         )}
         <MeasureTool active={measureActive} visible={layers.measurements} onStats={handleStats} />
