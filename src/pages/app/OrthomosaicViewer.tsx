@@ -1212,7 +1212,17 @@ export default function OrthomosaicViewer() {
   }, []);
 
   const deleteZone = (id: string) => {
-    setAnalysis(a => a ? { ...a, zones: a.zones.filter(z => z.id !== id) } : a);
+    setAnalysis(a => {
+      const next = a ? { ...a, zones: a.zones.filter(z => z.id !== id) } : a;
+      // Persist immediately so the deletion survives reload / tab switch.
+      if (next && taskId) {
+        supabase.from("odm_tasks")
+          .update({ ai_analysis: next as any, ai_analysis_at: new Date().toISOString() } as any)
+          .eq("id", taskId)
+          .then(({ error }) => { if (error) console.warn("deleteZone persist failed", error); });
+      }
+      return next;
+    });
     if (selectedZone === id) setSelectedZone(null);
   };
 
