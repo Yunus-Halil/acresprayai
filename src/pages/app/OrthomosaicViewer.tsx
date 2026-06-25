@@ -106,12 +106,30 @@ async function extractAndUpload(
 }
 
 type TaskRow = { odm_uuid: string | null; field_id: string; created_at: string };
+type BoundaryRing = { lat: number; lng: number }[];
 type FieldRow = {
   id: string;
   name: string;
-  boundary: { lat: number; lng: number }[] | null;
+  boundary: BoundaryRing[] | BoundaryRing | null;
   boundary_area_hectares: number | null;
 };
+
+// Boundary may be stored as a single ring (legacy) or as an array of rings
+// (multi-polygon fragmented fields). Always normalize to BoundaryRing[].
+function normalizeBoundary(b: unknown): BoundaryRing[] | null {
+  if (!b) return null;
+  if (Array.isArray(b) && b.length > 0) {
+    // Legacy: array of {lat,lng}
+    if (typeof (b as any)[0]?.lat === "number") {
+      return [b as BoundaryRing];
+    }
+    // Already array of rings
+    if (Array.isArray((b as any)[0])) {
+      return (b as any[]).filter(r => Array.isArray(r) && r.length >= 3) as BoundaryRing[];
+    }
+  }
+  return null;
+}
 
 // --- helpers that run inside the MapContainer ---------------------------------
 function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
