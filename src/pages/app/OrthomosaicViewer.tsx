@@ -2283,14 +2283,19 @@ function UserPolyForm({
 
 function AnalysisGrid({
   analysis, runAnalysis, showAiZones, setShowAiZones,
-  selectedZone, setSelectedZone, deleteZone, exportFlightPlan,
+  selectedZone, setSelectedZone, deleteZone, exportFlightPlan, clearAnalysis,
 }: any) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3">
       <div className="rounded-sm p-3 border border-[#222]" style={{ background: "#1a1a1a" }}>
         <div className="flex items-center justify-between mb-2">
           <div className="text-[10px] uppercase tracking-wider text-neutral-500">Overall health</div>
-          <button onClick={runAnalysis} className="text-[10px] text-[#4CAF50] hover:underline">Re-run</button>
+          <div className="flex items-center gap-2">
+            <button onClick={runAnalysis} className="text-[10px] text-[#4CAF50] hover:underline">Re-run</button>
+            {clearAnalysis && (
+              <button onClick={clearAnalysis} className="text-[10px] text-red-400 hover:underline">Clear analysis</button>
+            )}
+          </div>
         </div>
         <div className="flex items-end gap-2">
           <div className={`text-4xl font-semibold tabular-nums ${analysis.health_score >= 70 ? "text-[#4CAF50]" : analysis.health_score >= 40 ? "text-yellow-400" : "text-red-400"}`}>
