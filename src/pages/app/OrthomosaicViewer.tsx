@@ -1181,7 +1181,7 @@ function FieldViewTab(props: {
           onClick={() => {
             setMeasureActive(v => !v); setAnnotateActive(false); setLayersOpen(false);
           }} />
-        <ToolButton icon={Pencil} label={annotateActive ? "Finish (dbl-click)" : "Annotate area"} active={annotateActive}
+        <ToolButton icon={Pencil} label={annotateActive ? "Pen on — drag to draw" : "Pen marker"} active={annotateActive}
           onClick={() => {
             setAnnotateActive(v => !v); setMeasureActive(false); setLayersOpen(false);
           }} />
@@ -1199,12 +1199,12 @@ function FieldViewTab(props: {
             <Pencil className="h-3.5 w-3.5 text-yellow-400" />
             <div className="text-xs font-medium">Annotate</div>
             <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500">
-              Dbl-click to save
+              Drag to draw
             </div>
           </div>
           <div className="text-[11px] text-neutral-400 leading-relaxed">
-            Click on the map to highlight an area. Double-click to save it.
-            Click a saved highlight to delete it. Toggle the <span className="text-[#f0f0f0]">Annotations</span> layer to hide them.
+            Press and drag on the map to draw. Release to save. Click a saved
+            mark to delete it. Toggle the <span className="text-[#f0f0f0]">Annotations</span> layer to hide them.
           </div>
           {annotations.length > 0 && (
             <button
