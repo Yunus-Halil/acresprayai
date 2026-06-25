@@ -578,6 +578,7 @@ export type AiZone = {
   name: string;
   issue: string;
   severity: "low" | "medium" | "high";
+  tier?: 1 | 2;
   coverage_pct: number;
   recommendation: { action: string; product?: string; dose?: string; rationale?: string } | null;
   ring: { lat: number; lng: number }[];
