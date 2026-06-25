@@ -634,7 +634,7 @@ function AiZonesLayer({
 // plus where AI analysis is allowed to run.
 function BoundaryTool({
   mode, boundary, visible, onCreated, onEdited,
-  onDeleteRing,
+  onDeleteRing, activeIdx, setActiveIdx,
 }: {
   mode: "off" | "draw" | "edit";
   boundary: BoundaryRing[] | null;
@@ -642,6 +642,8 @@ function BoundaryTool({
   onCreated: (ring: BoundaryRing) => void;
   onEdited: (index: number, ring: BoundaryRing) => void;
   onDeleteRing: (index: number) => void;
+  activeIdx: number | null;
+  setActiveIdx: (i: number | null) => void;
 }) {
   const map = useMap();
 
@@ -693,15 +695,26 @@ function BoundaryTool({
     const polys: L.Polygon[] = [];
     boundary.forEach((ring, idx) => {
       if (!ring || ring.length < 3) return;
+      const isActive = idx === activeIdx;
       const poly = L.polygon(ring.map(p => [p.lat, p.lng] as [number, number]), {
-        color: "#22d3ee", weight: 2.5, dashArray: "6 4",
-        fillColor: "#22d3ee", fillOpacity: mode === "edit" ? 0.05 : 0.08,
+        color: isActive ? "#fbbf24" : "#22d3ee",
+        weight: isActive ? 3.5 : 2.5,
+        dashArray: isActive ? undefined : "6 4",
+        fillColor: isActive ? "#fbbf24" : "#22d3ee",
+        fillOpacity: mode === "edit" ? (isActive ? 0.12 : 0.04) : 0.08,
       }).addTo(map);
       poly.bindTooltip(
-        boundary.length > 1 ? `Field boundary · part ${idx + 1}` : "Field boundary",
+        boundary.length > 1
+          ? `Field boundary · part ${idx + 1}${isActive ? " (selected)" : " — click to select"}`
+          : "Field boundary",
         { sticky: true, opacity: 1, className: "ai-zone-label" },
       );
-      if (mode === "edit" || mode === "draw") {
+      // Clicking a ring selects it as the active part for editing/deletion.
+      poly.on("click", (ev: any) => {
+        L.DomEvent.stopPropagation(ev);
+        setActiveIdx(idx);
+      });
+      if ((mode === "edit" || mode === "draw") && isActive) {
         poly.bringToFront();
         try {
           (poly as any).pm.enable({
@@ -714,16 +727,11 @@ function BoundaryTool({
           onEdited(idx, updated);
         };
         poly.on("pm:markerdragend pm:dragend pm:vertexadded pm:vertexremoved pm:edit", handle);
-        // Right-click a ring to delete just that fragment.
-        poly.on("contextmenu", (ev: any) => {
-          L.DomEvent.stopPropagation(ev);
-          if (window.confirm(`Remove this boundary part (${idx + 1})?`)) onDeleteRing(idx);
-        });
       }
       polys.push(poly);
     });
     return () => { polys.forEach(p => { try { p.remove(); } catch { /* noop */ } }); };
-  }, [boundary, visible, mode, map, onEdited, onDeleteRing]);
+  }, [boundary, visible, mode, map, onEdited, onDeleteRing, activeIdx, setActiveIdx]);
 
   return null;
 }
@@ -796,6 +804,7 @@ export default function OrthomosaicViewer() {
   const [boundaryMode, setBoundaryMode] = useState<"off" | "draw" | "edit">("off");
   const [boundaryDirty, setBoundaryDirty] = useState(false);
   const [boundarySaving, setBoundarySaving] = useState(false);
+  const [activeBoundaryIdx, setActiveBoundaryIdx] = useState<number | null>(null);
   const cursorCoordRef = useRef<HTMLDivElement | null>(null);
   const cursorZoomRef = useRef<HTMLDivElement | null>(null);
 
@@ -968,7 +977,11 @@ export default function OrthomosaicViewer() {
   // Multi-polygon: each ring is one fragment of the field. Users can keep
   // drawing more rings after the first one is closed.
   const handleBoundaryCreated = useCallback((ring: BoundaryRing) => {
-    setBoundary(prev => (prev ? [...prev, ring] : [ring]));
+    setBoundary(prev => {
+      const next = prev ? [...prev, ring] : [ring];
+      setActiveBoundaryIdx(next.length - 1);
+      return next;
+    });
     setBoundaryDirty(true);
   }, []);
   const handleBoundaryEdited = useCallback((index: number, ring: BoundaryRing) => {
@@ -985,6 +998,11 @@ export default function OrthomosaicViewer() {
       if (!prev) return prev;
       const next = prev.filter((_, i) => i !== index);
       return next.length ? next : null;
+    });
+    setActiveBoundaryIdx(prev => {
+      if (prev === null) return null;
+      if (prev === index) return null;
+      return prev > index ? prev - 1 : prev;
     });
     setBoundaryDirty(true);
   }, []);
@@ -1322,6 +1340,8 @@ export default function OrthomosaicViewer() {
             handleBoundaryEdited={handleBoundaryEdited}
             handleBoundaryDeleteRing={handleBoundaryDeleteRing}
             fieldAreaHa={field?.boundary_area_hectares ?? null}
+            activeBoundaryIdx={activeBoundaryIdx}
+            setActiveBoundaryIdx={setActiveBoundaryIdx}
           />
         )}
         {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
@@ -1402,6 +1422,8 @@ function FieldViewTab(props: {
   handleBoundaryEdited: (index: number, ring: BoundaryRing) => void;
   handleBoundaryDeleteRing: (index: number) => void;
   fieldAreaHa: number | null;
+  activeBoundaryIdx: number | null;
+  setActiveBoundaryIdx: React.Dispatch<React.SetStateAction<number | null>>;
 }) {
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
@@ -1413,7 +1435,7 @@ function FieldViewTab(props: {
     taskId, annotations, setAnnotations,
     boundary, boundaryMode, setBoundaryMode, boundaryDirty, boundarySaving,
     saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited, handleBoundaryDeleteRing,
-    fieldAreaHa,
+    fieldAreaHa, activeBoundaryIdx, setActiveBoundaryIdx,
   } = props;
 
   const [measureActive, setMeasureActive] = useState(false);
@@ -1519,6 +1541,8 @@ function FieldViewTab(props: {
           onCreated={handleBoundaryCreated}
           onEdited={handleBoundaryEdited}
           onDeleteRing={handleBoundaryDeleteRing}
+          activeIdx={activeBoundaryIdx}
+          setActiveIdx={setActiveBoundaryIdx}
         />
       </MapContainer>
 
@@ -1723,9 +1747,14 @@ function FieldViewTab(props: {
           </div>
           <div className="text-[11px] text-neutral-400 leading-relaxed mb-3">
             {boundaryMode === "draw"
-              ? "Click to drop vertices, click the first point to close. Finish one shape and immediately start the next — perfect for fragmented fields. Right-click a part to delete it."
-              : "Drag vertices to adjust each outline. Right-click a part to delete it. Switch to Drawing to add another fragment."}
+              ? "Click to drop vertices, click the first point to close. Finish one shape and immediately start the next — perfect for fragmented fields."
+              : "Click a part to select it, then drag vertices to adjust. Right-click a vertex to remove just that point. Use Delete part to remove only the selected fragment."}
           </div>
+          {boundary && boundary.length > 0 && (
+            <div className="mb-2 text-[10px] uppercase tracking-wider text-neutral-500">
+              Selected: {activeBoundaryIdx === null ? "none — click a part on the map" : `part ${activeBoundaryIdx + 1} of ${boundary.length}`}
+            </div>
+          )}
           {boundaryMode === "edit" && (
             <button
               onClick={() => setBoundaryMode("draw")}
@@ -1773,16 +1802,31 @@ function FieldViewTab(props: {
             >
               Done
             </button>
-            {boundary && (
+          </div>
+          {boundary && boundary.length > 0 && (
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                disabled={activeBoundaryIdx === null}
+                onClick={() => {
+                  if (activeBoundaryIdx === null || !boundary) return;
+                  if (window.confirm(`Remove boundary part ${activeBoundaryIdx + 1}? Other parts stay.`)) {
+                    handleBoundaryDeleteRing(activeBoundaryIdx);
+                  }
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 border border-red-900/50 text-red-400 hover:bg-red-900/20 disabled:opacity-40 disabled:cursor-not-allowed rounded-sm px-2 py-1.5 text-[11px]"
+                title="Delete only the selected part"
+              >
+                <Trash2 className="h-3 w-3" /> Delete part
+              </button>
               <button
                 onClick={clearBoundary}
-                className="inline-flex items-center justify-center gap-1.5 border border-red-900/50 text-red-400 hover:bg-red-900/20 rounded-sm px-2 py-1.5 text-[11px]"
-                title="Remove boundary"
+                className="text-[10px] text-neutral-500 hover:text-red-400 underline"
+                title="Remove every boundary part"
               >
-                <Trash2 className="h-3 w-3" />
+                Clear all
               </button>
-            )}
-          </div>
+            </div>
+          )}
           {!layers.boundary && (
             <div className="mt-2 text-[10px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1">
               Boundary layer is hidden. Toggle it on in Layers to see your outline.
