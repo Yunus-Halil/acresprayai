@@ -672,6 +672,63 @@ function escapeHtml(s: string): string {
   return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as any)[c]);
 }
 
+// ---- User polygon annotations ------------------------------------------------
+export type UserPoly = {
+  id: string;
+  name: string;
+  issue_type: string;
+  color: string;
+  notes: string | null;
+  ring: { lat: number; lng: number }[];
+  area_hectares: number;
+  created_at?: string;
+};
+
+const USER_POLY_COLORS: Record<string, string> = {
+  orange: "#fb923c", red: "#ef4444", yellow: "#facc15",
+};
+const USER_POLY_ISSUES = ["Bare soil", "Waterlogging", "Pest damage", "Weed pressure", "Other"] as const;
+
+function UserPolyLayer({
+  polys, onDelete,
+}: { polys: UserPoly[]; onDelete: (id: string) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const group = L.layerGroup().addTo(map);
+    polys.forEach((p) => {
+      const color = USER_POLY_COLORS[p.color] ?? "#fb923c";
+      const poly = L.polygon(p.ring.map(pt => [pt.lat, pt.lng] as [number, number]), {
+        color, weight: 2, fillColor: color, fillOpacity: 0.18, dashArray: "4 4",
+      });
+      poly.bindTooltip(p.name, { sticky: true, opacity: 1, className: "ai-zone-label", direction: "top" });
+      const acres = (p.area_hectares * 2.4710538147).toFixed(2);
+      const html = `
+        <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:220px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <div style="height:10px;width:10px;border-radius:2px;background:${color}"></div>
+            <div style="font-weight:600;font-size:13px">${escapeHtml(p.name)}</div>
+          </div>
+          <div style="font-size:11px;color:#9ca3af;margin-bottom:6px">${escapeHtml(p.issue_type)}</div>
+          <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">Area: <span style="color:#f0f0f0;font-family:ui-monospace,monospace">${p.area_hectares.toFixed(3)} ha · ${acres} ac</span></div>
+          ${p.notes ? `<div style="font-size:11px;color:#d1d5db;border-top:1px solid #222;padding-top:6px;margin-bottom:8px">${escapeHtml(p.notes)}</div>` : ""}
+          <button data-uap-delete="${p.id}" style="font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
+        </div>
+      `;
+      poly.bindPopup(html, { className: "ai-zone-popup", maxWidth: 300, autoClose: true, closeOnClick: true });
+      poly.on("popupopen", (e: any) => {
+        const el = (e.popup.getElement() as HTMLElement | null);
+        if (!el) return;
+        const btn = el.querySelector(`[data-uap-delete="${p.id}"]`) as HTMLElement | null;
+        if (btn) btn.onclick = () => { poly.closePopup(); onDelete(p.id); };
+      });
+      poly.on("click", (e: any) => { L.DomEvent.stopPropagation(e); poly.openPopup(e.latlng); });
+      group.addLayer(poly);
+    });
+    return () => { group.remove(); };
+  }, [map, polys, onDelete]);
+  return null;
+}
+
 // --- Field boundary tool ----------------------------------------------------
 // Lets the operator outline their actual farm field on top of the orthomosaic.
 // The polygon persists on `fields.boundary` and drives the field's true area
