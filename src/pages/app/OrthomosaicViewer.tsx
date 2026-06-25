@@ -181,8 +181,8 @@ export type MeasureStats = {
 };
 
 function MeasureTool({
-  active, onStats,
-}: { active: boolean; onStats: (s: MeasureStats) => void }) {
+  active, visible, onStats,
+}: { active: boolean; visible: boolean; onStats: (s: MeasureStats) => void }) {
   const map = useMap();
   const [points, setPoints] = useState<L.LatLng[]>([]);
   const [cursor, setCursor] = useState<L.LatLng | null>(null);
@@ -223,6 +223,7 @@ function MeasureTool({
 
   // Draw the measurement layer
   useEffect(() => {
+    if (!visible) return;
     const group = L.layerGroup().addTo(map);
     const live: L.LatLng[] = finished
       ? points
@@ -248,7 +249,7 @@ function MeasureTool({
       }).addTo(group);
     });
     return () => { group.remove(); };
-  }, [points, cursor, finished, map]);
+  }, [points, cursor, finished, map, visible]);
 
   // Report stats up to parent
   useEffect(() => {
@@ -265,6 +266,123 @@ function MeasureTool({
       areaM2: finished && points.length >= 3 ? polygonAreaM2(points) : 0,
     });
   }, [active, finished, points, cursor, onStats]);
+
+  return null;
+}
+
+// --- Annotation tool ---------------------------------------------------------
+// Click to drop vertices, double-click to close. Saved annotations persist in
+// localStorage per-task and re-render whenever the "Annotations" layer is on.
+export type Annotation = {
+  id: string;
+  ring: { lat: number; lng: number }[];
+  color: string;
+  label?: string;
+  createdAt: number;
+};
+
+function loadAnnotations(taskId: string): Annotation[] {
+  try {
+    const raw = localStorage.getItem(`annotations:${taskId}`);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+function saveAnnotations(taskId: string, list: Annotation[]) {
+  try { localStorage.setItem(`annotations:${taskId}`, JSON.stringify(list)); } catch { /* noop */ }
+}
+
+function AnnotateTool({
+  active, visible, annotations, setAnnotations, taskId,
+}: {
+  active: boolean;
+  visible: boolean;
+  annotations: Annotation[];
+  setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
+  taskId: string;
+}) {
+  const map = useMap();
+  const [points, setPoints] = useState<L.LatLng[]>([]);
+  const [cursor, setCursor] = useState<L.LatLng | null>(null);
+
+  useEffect(() => {
+    if (active) map.doubleClickZoom.disable();
+    else map.doubleClickZoom.enable();
+  }, [active, map]);
+
+  useEffect(() => { if (!active) { setPoints([]); setCursor(null); } }, [active]);
+
+  useMapEvents({
+    click(e) {
+      if (!active) return;
+      L.DomEvent.stopPropagation(e);
+      setPoints(p => [...p, e.latlng]);
+    },
+    mousemove(e) { if (active && points.length > 0) setCursor(e.latlng); },
+    dblclick(e) {
+      if (!active) return;
+      L.DomEvent.stopPropagation(e);
+      L.DomEvent.preventDefault(e as any);
+      if (points.length >= 3) {
+        const ann: Annotation = {
+          id: crypto.randomUUID(),
+          ring: points.map(p => ({ lat: p.lat, lng: p.lng })),
+          color: "#facc15",
+          createdAt: Date.now(),
+        };
+        setAnnotations(prev => {
+          const next = [...prev, ann];
+          saveAnnotations(taskId, next);
+          return next;
+        });
+      }
+      setPoints([]);
+      setCursor(null);
+    },
+  });
+
+  // In-progress drawing layer
+  useEffect(() => {
+    if (!active) return;
+    const group = L.layerGroup().addTo(map);
+    const live = cursor && points.length ? [...points, cursor] : points;
+    if (live.length >= 2) {
+      L.polyline(live, { color: "#facc15", weight: 2, dashArray: "6 6", interactive: false }).addTo(group);
+    }
+    points.forEach((p, i) => {
+      L.circleMarker(p, {
+        radius: 4, color: "#facc15", weight: 2,
+        fillColor: i === 0 ? "#facc15" : "#0f0f0f", fillOpacity: 1, interactive: false,
+      }).addTo(group);
+    });
+    return () => { group.remove(); };
+  }, [points, cursor, active, map]);
+
+  // Saved annotations layer
+  useEffect(() => {
+    if (!visible) return;
+    const group = L.layerGroup().addTo(map);
+    annotations.forEach(a => {
+      const poly = L.polygon(a.ring.map(p => [p.lat, p.lng] as [number, number]), {
+        color: a.color, weight: 2, fillColor: a.color, fillOpacity: 0.18,
+      });
+      const tip = a.label ? `${a.label}` : "Annotation · click to delete";
+      poly.bindTooltip(tip, { direction: "top", sticky: true, opacity: 1, className: "ai-zone-label" });
+      poly.on("click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (window.confirm("Delete this annotation?")) {
+          setAnnotations(prev => {
+            const next = prev.filter(x => x.id !== a.id);
+            saveAnnotations(taskId, next);
+            return next;
+          });
+        }
+      });
+      group.addLayer(poly);
+    });
+    return () => { group.remove(); };
+  }, [annotations, visible, map, taskId, setAnnotations]);
 
   return null;
 }
