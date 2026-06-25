@@ -2161,9 +2161,121 @@ function FieldViewTab(props: {
               showAiZones={showAiZones} setShowAiZones={setShowAiZones}
               selectedZone={selectedZone} setSelectedZone={setSelectedZone}
               deleteZone={deleteZone} exportFlightPlan={exportFlightPlan}
+              clearAnalysis={clearAnalysis}
             />}
           </div>
         )}
+      </div>
+
+      {/* User-polygon tool hint */}
+      {userPolyToolActive && !draftUserPoly && !layersOpen && (
+        <div className="absolute top-4 left-16 z-[1001] w-72 rounded-md border border-[#222] shadow-2xl p-3 text-[#f0f0f0]"
+             style={{ background: "#161616" }}>
+          <div className="flex items-center gap-2 pb-2 mb-2 border-b border-[#222]">
+            <Hexagon className="h-3.5 w-3.5 text-orange-400" />
+            <div className="text-xs font-medium">Mark anomaly</div>
+            <button onClick={() => setUserPolyToolActive(false)} className="ml-auto text-neutral-500 hover:text-[#f0f0f0]">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="text-[11px] text-neutral-400 leading-relaxed">
+            Click on the map to drop vertices around the area you want to flag.
+            Click the first point to close the shape — a form will pop up to label it.
+          </div>
+        </div>
+      )}
+
+      {/* User polygon metadata form */}
+      {draftUserPoly && (
+        <UserPolyForm
+          draft={draftUserPoly}
+          onCancel={() => { setDraftUserPoly(null); setUserPolyToolActive(false); }}
+          onSave={(form) => saveUserPolygon(form)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---- User polygon save dialog -----------------------------------------------
+function UserPolyForm({
+  draft, onCancel, onSave,
+}: {
+  draft: DraftPolygon;
+  onCancel: () => void;
+  onSave: (f: { name: string; issue_type: string; color: string; notes: string }) => void | Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [issueType, setIssueType] = useState<string>("Bare soil");
+  const [color, setColor] = useState<string>("orange");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try { await onSave({ name, issue_type: issueType, color, notes }); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="absolute inset-0 z-[2000] flex items-center justify-center p-6"
+         style={{ background: "rgba(0,0,0,0.65)" }}
+         onClick={onCancel}>
+      <div className="w-full max-w-md rounded-md border border-[#222] shadow-2xl text-[#f0f0f0]"
+           style={{ background: "#161616" }}
+           onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-3 border-b border-[#222] flex items-center gap-2">
+          <Hexagon className="h-4 w-4 text-orange-400" />
+          <div className="text-sm font-semibold">New annotation</div>
+          <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500 font-mono">
+            {draft.areaHa.toFixed(3)} ha · {(draft.areaHa * 2.4710538147).toFixed(2)} ac
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-neutral-500">Annotation name</label>
+            <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. NW bare patch"
+              onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+              className="mt-1 w-full bg-[#0f0f0f] border border-[#222] focus:border-[#4CAF50] outline-none rounded-sm px-2.5 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-neutral-500">Issue type</label>
+            <select value={issueType} onChange={(e) => setIssueType(e.target.value)}
+              className="mt-1 w-full bg-[#0f0f0f] border border-[#222] focus:border-[#4CAF50] outline-none rounded-sm px-2.5 py-1.5 text-sm">
+              {USER_POLY_ISSUES.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-neutral-500">Color</label>
+            <div className="mt-1 flex items-center gap-2">
+              {(["orange", "red", "yellow"] as const).map(c => (
+                <button key={c} type="button" onClick={() => setColor(c)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border text-xs capitalize ${
+                    color === c ? "border-[#4CAF50] text-[#f0f0f0]" : "border-[#222] text-neutral-400 hover:text-[#f0f0f0]"
+                  }`}>
+                  <span className="h-3 w-3 rounded-sm" style={{ background: USER_POLY_COLORS[c] }} />
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-neutral-500">Notes (optional)</label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+              className="mt-1 w-full bg-[#0f0f0f] border border-[#222] focus:border-[#4CAF50] outline-none rounded-sm px-2.5 py-1.5 text-sm resize-none" />
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-[#222] flex items-center justify-end gap-2">
+          <button onClick={onCancel}
+            className="text-xs border border-[#222] hover:bg-[#1a1a1a] text-neutral-300 rounded-sm px-3 py-1.5">Cancel</button>
+          <button onClick={submit} disabled={!name.trim() || saving}
+            className="inline-flex items-center gap-1.5 text-xs bg-[#4CAF50] hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600 text-black rounded-sm px-3 py-1.5 font-semibold">
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+            Save annotation
+          </button>
+        </div>
       </div>
     </div>
   );
