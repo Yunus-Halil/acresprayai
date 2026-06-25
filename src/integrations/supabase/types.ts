@@ -306,6 +306,8 @@ export type Database = {
       }
       odm_tasks: {
         Row: {
+          ai_analysis: Json | null
+          ai_analysis_at: string | null
           created_at: string
           error: string | null
           field_id: string
@@ -325,6 +327,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          ai_analysis?: Json | null
+          ai_analysis_at?: string | null
           created_at?: string
           error?: string | null
           field_id: string
@@ -344,6 +348,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          ai_analysis?: Json | null
+          ai_analysis_at?: string | null
           created_at?: string
           error?: string | null
           field_id?: string
@@ -622,6 +628,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_annotations: {
+        Row: {
+          area_hectares: number | null
+          color: string
+          created_at: string
+          field_id: string | null
+          id: string
+          issue_type: string
+          name: string
+          notes: string | null
+          ring: Json
+          task_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          area_hectares?: number | null
+          color?: string
+          created_at?: string
+          field_id?: string | null
+          id?: string
+          issue_type: string
+          name: string
+          notes?: string | null
+          ring: Json
+          task_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          area_hectares?: number | null
+          color?: string
+          created_at?: string
+          field_id?: string | null
+          id?: string
+          issue_type?: string
+          name?: string
+          notes?: string | null
+          ring?: Json
+          task_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {
