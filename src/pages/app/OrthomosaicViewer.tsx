@@ -599,6 +599,18 @@ function AiZonesLayer({
   const map = useMap();
   useEffect(() => {
     const group = L.layerGroup().addTo(map);
+    const container = map.getContainer();
+    const handlePopupDelete = (evt: Event) => {
+      const btn = (evt.target as HTMLElement | null)?.closest?.("button[data-aiz-delete]") as HTMLButtonElement | null;
+      const id = btn?.dataset.aizDelete;
+      if (!id) return;
+      evt.preventDefault();
+      evt.stopPropagation();
+      if ("stopImmediatePropagation" in evt) evt.stopImmediatePropagation();
+      map.closePopup();
+      onDelete(id);
+    };
+    container.addEventListener("pointerdown", handlePopupDelete, true);
     zones.forEach((z) => {
       const color = sevColor(z.severity);
       const poly = L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
@@ -647,18 +659,7 @@ function AiZonesLayer({
           <button data-aiz-delete="${escapeHtml(z.id)}" style="margin-top:9px;font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.45);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
         </div>
       `;
-      const popupEl = document.createElement("div");
-      popupEl.innerHTML = html;
-      const deleteBtn = popupEl.querySelector("button[data-aiz-delete]") as HTMLButtonElement | null;
-      if (deleteBtn) {
-        L.DomEvent.disableClickPropagation(deleteBtn);
-        L.DomEvent.on(deleteBtn, "click", (evt: Event) => {
-          L.DomEvent.stop(evt);
-          poly.closePopup();
-          onDelete(z.id);
-        });
-      }
-      poly.bindPopup(popupEl, {
+      poly.bindPopup(html, {
         className: "ai-zone-popup",
         maxWidth: 320, closeButton: true, autoPan: true, autoClose: true, closeOnClick: true,
       });
@@ -676,7 +677,10 @@ function AiZonesLayer({
         });
       }
     });
-    return () => { group.remove(); };
+    return () => {
+      container.removeEventListener("pointerdown", handlePopupDelete, true);
+      group.remove();
+    };
   }, [map, zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa]);
   return null;
 }
@@ -708,6 +712,18 @@ function UserPolyLayer({
   const map = useMap();
   useEffect(() => {
     const group = L.layerGroup().addTo(map);
+    const container = map.getContainer();
+    const handlePopupDelete = (evt: Event) => {
+      const btn = (evt.target as HTMLElement | null)?.closest?.("button[data-uap-delete]") as HTMLButtonElement | null;
+      const id = btn?.dataset.uapDelete;
+      if (!id) return;
+      evt.preventDefault();
+      evt.stopPropagation();
+      if ("stopImmediatePropagation" in evt) evt.stopImmediatePropagation();
+      map.closePopup();
+      onDelete(id);
+    };
+    container.addEventListener("pointerdown", handlePopupDelete, true);
     polys.forEach((p) => {
       const color = USER_POLY_COLORS[p.color] ?? "#fb923c";
       const poly = L.polygon(p.ring.map(pt => [pt.lat, pt.lng] as [number, number]), {
@@ -727,22 +743,14 @@ function UserPolyLayer({
           <button data-uap-delete="${p.id}" style="font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
         </div>
       `;
-      const popupEl = document.createElement("div");
-      popupEl.innerHTML = html;
-      const deleteBtn = popupEl.querySelector("button[data-uap-delete]") as HTMLButtonElement | null;
-      if (deleteBtn) {
-        L.DomEvent.disableClickPropagation(deleteBtn);
-        L.DomEvent.on(deleteBtn, "click", (evt: Event) => {
-          L.DomEvent.stop(evt);
-          poly.closePopup();
-          onDelete(p.id);
-        });
-      }
-      poly.bindPopup(popupEl, { className: "ai-zone-popup", maxWidth: 300, autoClose: true, closeOnClick: true });
+      poly.bindPopup(html, { className: "ai-zone-popup", maxWidth: 300, autoClose: true, closeOnClick: true });
       poly.on("click", (e: any) => { L.DomEvent.stopPropagation(e); poly.openPopup(e.latlng); });
       group.addLayer(poly);
     });
-    return () => { group.remove(); };
+    return () => {
+      container.removeEventListener("pointerdown", handlePopupDelete, true);
+      group.remove();
+    };
   }, [map, polys, onDelete]);
   return null;
 }
