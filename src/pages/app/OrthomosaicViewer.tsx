@@ -1747,9 +1747,14 @@ function FieldViewTab(props: {
           </div>
           <div className="text-[11px] text-neutral-400 leading-relaxed mb-3">
             {boundaryMode === "draw"
-              ? "Click to drop vertices, click the first point to close. Finish one shape and immediately start the next — perfect for fragmented fields. Right-click a part to delete it."
-              : "Drag vertices to adjust each outline. Right-click a part to delete it. Switch to Drawing to add another fragment."}
+              ? "Click to drop vertices, click the first point to close. Finish one shape and immediately start the next — perfect for fragmented fields."
+              : "Click a part to select it, then drag vertices to adjust. Right-click a vertex to remove just that point. Use Delete part to remove only the selected fragment."}
           </div>
+          {boundary && boundary.length > 0 && (
+            <div className="mb-2 text-[10px] uppercase tracking-wider text-neutral-500">
+              Selected: {activeBoundaryIdx === null ? "none — click a part on the map" : `part ${activeBoundaryIdx + 1} of ${boundary.length}`}
+            </div>
+          )}
           {boundaryMode === "edit" && (
             <button
               onClick={() => setBoundaryMode("draw")}
@@ -1797,16 +1802,31 @@ function FieldViewTab(props: {
             >
               Done
             </button>
-            {boundary && (
+          </div>
+          {boundary && boundary.length > 0 && (
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                disabled={activeBoundaryIdx === null}
+                onClick={() => {
+                  if (activeBoundaryIdx === null || !boundary) return;
+                  if (window.confirm(`Remove boundary part ${activeBoundaryIdx + 1}? Other parts stay.`)) {
+                    handleBoundaryDeleteRing(activeBoundaryIdx);
+                  }
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 border border-red-900/50 text-red-400 hover:bg-red-900/20 disabled:opacity-40 disabled:cursor-not-allowed rounded-sm px-2 py-1.5 text-[11px]"
+                title="Delete only the selected part"
+              >
+                <Trash2 className="h-3 w-3" /> Delete part
+              </button>
               <button
                 onClick={clearBoundary}
-                className="inline-flex items-center justify-center gap-1.5 border border-red-900/50 text-red-400 hover:bg-red-900/20 rounded-sm px-2 py-1.5 text-[11px]"
-                title="Remove boundary"
+                className="text-[10px] text-neutral-500 hover:text-red-400 underline"
+                title="Remove every boundary part"
               >
-                <Trash2 className="h-3 w-3" />
+                Clear all
               </button>
-            )}
-          </div>
+            </div>
+          )}
           {!layers.boundary && (
             <div className="mt-2 text-[10px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1">
               Boundary layer is hidden. Toggle it on in Layers to see your outline.
