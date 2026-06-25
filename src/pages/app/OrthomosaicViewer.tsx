@@ -2856,20 +2856,168 @@ function generateFlightPath(
   return { perZone, total, lengthM };
 }
 
-// Mission Planner / QGC ".waypoints" format. Compatible with DJI Pilot 2 via
-// QGC conversion. Each row:
-//   <idx>\t<current>\t<frame>\t<cmd>\t<p1>\t<p2>\t<p3>\t<p4>\t<lat>\t<lng>\t<alt>\t<autocontinue>
-function exportWaypointsFile(points: LatLng2[], altitudeM: number): Blob {
+// =============================================================================
+// Mission building: full autonomous spray mission with three waypoint phases:
+//   TAKEOFF → TRANSIT (high, fast, sprayer off) → SPRAY (low, slow, sprayer on)
+//   → TRANSIT → ... → RTH → LAND
+// =============================================================================
+export type MissionAction =
+  | "TAKEOFF" | "TRANSIT" | "SPEED_CHANGE" | "ALTITUDE_CHANGE"
+  | "SPRAY_ON" | "SPRAY_WP" | "SPRAY_OFF" | "RTH" | "LAND";
+
+export type MissionWP = {
+  lat: number; lng: number; alt: number; speed: number;
+  action: MissionAction; zoneId?: string;
+};
+
+export type Mission = {
+  waypoints: MissionWP[];
+  transitDistM: number;
+  sprayDistM: number;
+  transitTimeS: number;
+  sprayTimeS: number;
+  sprayOnCount: number;
+  transitSegments: LatLng2[][];   // yellow dashed polylines (between zones)
+  spraySegments: LatLng2[][];     // cyan solid polylines (inside zones)
+  home: LatLng2;
+};
+
+function distM(a: LatLng2, b: LatLng2): number {
+  const dLat = (b.lat - a.lat) * M_PER_DEG_LAT;
+  const dLng = (b.lng - a.lng) * mPerDegLng((a.lat + b.lat) / 2);
+  return Math.sqrt(dLat * dLat + dLng * dLng);
+}
+
+export type MissionParams = {
+  home: LatLng2;
+  transitAltM: number;   // default 30
+  sprayAltM: number;     // default 3
+  transitSpeed: number;  // default 10 m/s
+  spraySpeed: number;    // default 3 m/s
+  spacingM: number;      // swath
+};
+
+function buildMission(
+  boundary: LatLng2[][],
+  zones: { id: string; ring: LatLng2[] }[],
+  p: MissionParams,
+): Mission {
+  const wps: MissionWP[] = [];
+  const transitSegments: LatLng2[][] = [];
+  const spraySegments: LatLng2[][] = [];
+  let transitDist = 0, sprayDist = 0, sprayOnCount = 0;
+
+  // 1) Takeoff at home
+  wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "TAKEOFF" });
+
+  // Build per-zone lawnmower paths, then order zones nearest-first from current pos.
+  const lawnmowers = generateFlightPath(boundary, zones, p.spacingM).perZone
+    .filter(z => z.path.length >= 2);
+
+  let cursor: LatLng2 = p.home;
+  const remaining = lawnmowers.slice();
+  const ordered: { id: string; path: LatLng2[] }[] = [];
+  while (remaining.length) {
+    let best = 0, bestD = Infinity;
+    remaining.forEach((z, i) => {
+      const d = distM(cursor, z.path[0]);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    const next = remaining.splice(best, 1)[0];
+    ordered.push(next);
+    cursor = next.path[next.path.length - 1];
+  }
+
+  cursor = p.home;
+  for (const z of ordered) {
+    const entry = z.path[0];
+    const exit = z.path[z.path.length - 1];
+
+    // TRANSIT: home/prev → zone entry at transit altitude
+    wps.push({ ...cursor, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
+    wps.push({ ...entry, alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT", zoneId: z.id });
+    transitSegments.push([cursor, entry]);
+    transitDist += distM(cursor, entry);
+
+    // DESCEND + SPRAY ON at zone entry
+    wps.push({ ...entry, alt: p.sprayAltM, speed: p.spraySpeed, action: "ALTITUDE_CHANGE", zoneId: z.id });
+    wps.push({ ...entry, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPEED_CHANGE", zoneId: z.id });
+    wps.push({ ...entry, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_ON", zoneId: z.id });
+    sprayOnCount++;
+
+    // Lawnmower spray waypoints
+    for (let i = 0; i < z.path.length; i++) {
+      wps.push({ ...z.path[i], alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_WP", zoneId: z.id });
+      if (i > 0) sprayDist += distM(z.path[i - 1], z.path[i]);
+    }
+    spraySegments.push(z.path);
+
+    // SPRAY OFF + ASCEND
+    wps.push({ ...exit, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF", zoneId: z.id });
+    wps.push({ ...exit, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE", zoneId: z.id });
+
+    cursor = exit;
+  }
+
+  // Return to home + land
+  if (ordered.length > 0) {
+    wps.push({ ...cursor, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
+    wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "RTH" });
+    transitSegments.push([cursor, p.home]);
+    transitDist += distM(cursor, p.home);
+  }
+  wps.push({ ...p.home, alt: 0, speed: 1, action: "LAND" });
+
+  return {
+    waypoints: wps,
+    transitDistM: transitDist,
+    sprayDistM: sprayDist,
+    transitTimeS: transitDist / Math.max(0.1, p.transitSpeed),
+    sprayTimeS: sprayDist / Math.max(0.1, p.spraySpeed),
+    sprayOnCount,
+    transitSegments,
+    spraySegments,
+    home: p.home,
+  };
+}
+
+// QGC WPL 110 / Mission Planner format. Encodes action waypoints with
+// MAVLink-equivalent commands so Mission Planner & DJI converters keep them.
+//   cmd 22  NAV_TAKEOFF
+//   cmd 16  NAV_WAYPOINT
+//   cmd 178 DO_CHANGE_SPEED   (p2 = speed m/s)
+//   cmd 183 DO_SET_SERVO      (p1 = servo #, p2 = PWM; 2000 ON / 1000 OFF)
+//   cmd 20  NAV_RETURN_TO_LAUNCH
+//   cmd 21  NAV_LAND
+function exportMissionFile(m: Mission): Blob {
   const lines: string[] = ["QGC WPL 110"];
-  // Home waypoint (first point as reference)
-  if (points.length === 0) return new Blob([lines.join("\n")], { type: "text/plain" });
-  const home = points[0];
-  lines.push(`0\t1\t0\t16\t0\t0\t0\t0\t${home.lat.toFixed(8)}\t${home.lng.toFixed(8)}\t${altitudeM.toFixed(2)}\t1`);
-  points.forEach((p, i) => {
-    // Cmd 16 = MAV_CMD_NAV_WAYPOINT, frame 3 = MAV_FRAME_GLOBAL_RELATIVE_ALT
-    lines.push(`${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${p.lat.toFixed(8)}\t${p.lng.toFixed(8)}\t${altitudeM.toFixed(2)}\t1`);
-  });
+  const SPRAY_SERVO = 8;
+  const row = (
+    idx: number, current: 0 | 1, frame: number, cmd: number,
+    p1: number, p2: number, p3: number, p4: number,
+    lat: number, lng: number, alt: number,
+  ) => lines.push(
+    `${idx}\t${current}\t${frame}\t${cmd}\t${p1.toFixed(2)}\t${p2.toFixed(2)}\t${p3.toFixed(2)}\t${p4.toFixed(2)}\t${lat.toFixed(8)}\t${lng.toFixed(8)}\t${alt.toFixed(2)}\t1`,
+  );
+  // Home (index 0)
+  row(0, 1, 0, 16, 0, 0, 0, 0, m.home.lat, m.home.lng, m.waypoints[0]?.alt ?? 0);
+  let idx = 1;
+  for (const w of m.waypoints) {
+    if (w.action === "TAKEOFF")          row(idx++, 0, 3, 22,  0, 0, 0, 0, w.lat, w.lng, w.alt);
+    else if (w.action === "SPEED_CHANGE") row(idx++, 0, 3, 178, 1, w.speed, -1, 0, 0, 0, 0);
+    else if (w.action === "SPRAY_ON")     row(idx++, 0, 3, 183, SPRAY_SERVO, 2000, 0, 0, 0, 0, 0);
+    else if (w.action === "SPRAY_OFF")    row(idx++, 0, 3, 183, SPRAY_SERVO, 1000, 0, 0, 0, 0, 0);
+    else if (w.action === "RTH")          row(idx++, 0, 3, 20,  0, 0, 0, 0, w.lat, w.lng, w.alt);
+    else if (w.action === "LAND")         row(idx++, 0, 3, 21,  0, 0, 0, 0, w.lat, w.lng, w.alt);
+    else                                   row(idx++, 0, 3, 16, 0, 0, 0, 0, w.lat, w.lng, w.alt);
+  }
   return new Blob([lines.join("\n") + "\n"], { type: "text/plain" });
+}
+
+function centroidOfRings(rings: LatLng2[][]): LatLng2 {
+  let lat = 0, lng = 0, n = 0;
+  for (const r of rings) for (const p of r) { lat += p.lat; lng += p.lng; n++; }
+  return n > 0 ? { lat: lat / n, lng: lng / n } : { lat: 0, lng: 0 };
 }
 
 function PlannerTab({
