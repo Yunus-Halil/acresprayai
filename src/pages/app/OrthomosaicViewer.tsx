@@ -2933,11 +2933,14 @@ function buildMission(
     const entry = z.path[0];
     const exit = z.path[z.path.length - 1];
 
-    // TRANSIT: home/prev → zone entry at transit altitude
+    // TRANSIT: home/prev → zone entry at transit altitude, kept INSIDE boundary
+    const transit = routeInsideBoundary(cursor, entry, boundary);
     wps.push({ ...cursor, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
-    wps.push({ ...entry, alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT", zoneId: z.id });
-    transitSegments.push([cursor, entry]);
-    transitDist += distM(cursor, entry);
+    for (let i = 1; i < transit.length; i++) {
+      wps.push({ ...transit[i], alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT", zoneId: z.id });
+    }
+    transitSegments.push(transit);
+    transitDist += polylineLengthM(transit);
 
     // DESCEND + SPRAY ON at zone entry
     wps.push({ ...entry, alt: p.sprayAltM, speed: p.spraySpeed, action: "ALTITUDE_CHANGE", zoneId: z.id });
@@ -2961,10 +2964,14 @@ function buildMission(
 
   // Return to home + land
   if (ordered.length > 0) {
+    const rth = routeInsideBoundary(cursor, p.home, boundary);
     wps.push({ ...cursor, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
+    for (let i = 1; i < rth.length - 1; i++) {
+      wps.push({ ...rth[i], alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT" });
+    }
     wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "RTH" });
-    transitSegments.push([cursor, p.home]);
-    transitDist += distM(cursor, p.home);
+    transitSegments.push(rth);
+    transitDist += polylineLengthM(rth);
   }
   wps.push({ ...p.home, alt: 0, speed: 1, action: "LAND" });
 
@@ -3018,6 +3025,50 @@ function centroidOfRings(rings: LatLng2[][]): LatLng2 {
   let lat = 0, lng = 0, n = 0;
   for (const r of rings) for (const p of r) { lat += p.lat; lng += p.lng; n++; }
   return n > 0 ? { lat: lat / n, lng: lng / n } : { lat: 0, lng: 0 };
+}
+
+// --- Transit routing: keep flight paths INSIDE the boundary ------------------
+// If a straight segment from a→b would leave every boundary ring, insert
+// intermediate waypoints via the centroid of the ring containing the endpoint
+// (recursively). This is a simple but effective detour scheme for convex-ish
+// fragmented fields.
+function centroidOfRing(ring: LatLng2[]): LatLng2 {
+  let lat = 0, lng = 0;
+  for (const p of ring) { lat += p.lat; lng += p.lng; }
+  return { lat: lat / ring.length, lng: lng / ring.length };
+}
+function segmentInsideRings(a: LatLng2, b: LatLng2, rings: LatLng2[][], samples = 12): boolean {
+  for (let i = 1; i < samples; i++) {
+    const t = i / samples;
+    if (!pointInAnyRing(lerp(a, b, t), rings)) return false;
+  }
+  return true;
+}
+function ringContaining(p: LatLng2, rings: LatLng2[][]): LatLng2[] | null {
+  for (const r of rings) if (pointInRing(p, r)) return r;
+  return null;
+}
+function routeInsideBoundary(a: LatLng2, b: LatLng2, rings: LatLng2[][], depth = 0): LatLng2[] {
+  if (depth > 4 || segmentInsideRings(a, b, rings)) return [a, b];
+  // Pick a detour anchor that is guaranteed inside the boundary part containing b
+  // (or a, or the overall centroid as a last resort).
+  const anchor =
+    centroidSafe(ringContaining(b, rings)) ||
+    centroidSafe(ringContaining(a, rings)) ||
+    centroidOfRings(rings);
+  // Avoid infinite recursion if anchor equals an endpoint
+  if (distM(a, anchor) < 1 || distM(b, anchor) < 1) return [a, b];
+  const left = routeInsideBoundary(a, anchor, rings, depth + 1);
+  const right = routeInsideBoundary(anchor, b, rings, depth + 1);
+  return [...left, ...right.slice(1)];
+}
+function centroidSafe(ring: LatLng2[] | null): LatLng2 | null {
+  return ring && ring.length >= 3 ? centroidOfRing(ring) : null;
+}
+function polylineLengthM(pts: LatLng2[]): number {
+  let d = 0;
+  for (let i = 1; i < pts.length; i++) d += distM(pts[i - 1], pts[i]);
+  return d;
 }
 
 function PlannerTab({
@@ -3152,7 +3203,7 @@ function PlannerTab({
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
-          <Slider2 label="Swath spacing" value={spacingM} setValue={setSpacingM} min={2} max={20} step={0.5} unit="m" />
+          <Slider2 label="Swath spacing" value={spacingM} setValue={setSpacingM} min={3} max={20} step={0.5} unit="m" />
           <Slider2 label="Transit altitude (AGL)" value={transitAltM} setValue={setTransitAltM} min={10} max={120} step={1} unit="m" />
           <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
           <Slider2 label="Transit speed" value={transitSpeed} setValue={setTransitSpeed} min={3} max={20} step={0.5} unit="m/s" />
@@ -3264,7 +3315,7 @@ function PlannerOverlay({ boundary, zones, mission, home, onHomeChange }: {
       // Cyan solid spray pattern (sprayer ON)
       mission.spraySegments.forEach(path => {
         L.polyline(path.map(p => [p.lat, p.lng] as [number, number]), {
-          color: "#22d3ee", weight: 2.5, opacity: 0.95, interactive: false,
+          color: "#22d3ee", weight: 3, opacity: 1, interactive: false,
         }).addTo(group);
       });
       // Markers at SPRAY_ON / SPRAY_OFF (chemical activations)
