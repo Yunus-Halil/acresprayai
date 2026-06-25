@@ -271,23 +271,34 @@ function MeasureTool({
 }
 
 // --- Annotation tool ---------------------------------------------------------
-// Freehand pen marker: press, drag to draw a stroke, release to save. Strokes
-// persist in localStorage per-task and re-render whenever the "Annotations"
-// layer is on. Click a saved stroke to delete it.
-export type Annotation = {
-  id: string;
-  stroke: { lat: number; lng: number }[];
-  color: string;
-  width: number;
-  createdAt: number;
-};
+// Pen strokes and text labels. Persisted in localStorage per-task. Hidden when
+// the "Annotations" layer is toggled off.
+export type Annotation =
+  | {
+      id: string;
+      kind: "stroke";
+      stroke: { lat: number; lng: number }[];
+      color: string;
+      width: number;
+      createdAt: number;
+    }
+  | {
+      id: string;
+      kind: "text";
+      at: { lat: number; lng: number };
+      text: string;
+      color: string;
+      createdAt: number;
+    };
 
 function loadAnnotations(taskId: string): Annotation[] {
   try {
     const raw = localStorage.getItem(`annotations:${taskId}`);
     if (!raw) return [];
     const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
+    if (!Array.isArray(arr)) return [];
+    // Back-compat: old strokes had no `kind` field.
+    return arr.map((a: any) => (a.kind ? a : { ...a, kind: "stroke" }));
   } catch { return []; }
 }
 function saveAnnotations(taskId: string, list: Annotation[]) {
@@ -295,51 +306,70 @@ function saveAnnotations(taskId: string, list: Annotation[]) {
 }
 
 function AnnotateTool({
-  active, visible, annotations, setAnnotations, taskId,
+  active, mode, color, width, visible, annotations, setAnnotations, taskId,
 }: {
   active: boolean;
+  mode: "pen" | "text";
+  color: string;
+  width: number;
   visible: boolean;
   annotations: Annotation[];
   setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
   taskId: string;
 }) {
   const map = useMap();
-  const drawingRef = useRef<{ pts: L.LatLng[]; line: L.Polyline | null }>({ pts: [], line: null });
+  const drawingRef = useRef<{ pts: L.LatLng[]; line: L.Polyline | null; drawing: boolean }>({
+    pts: [], line: null, drawing: false,
+  });
 
   // While pen is active, hijack map dragging so dragging the mouse draws.
   useEffect(() => {
     if (!active) return;
     map.dragging.disable();
-    map.getContainer().style.cursor = "crosshair";
+    const container = map.getContainer();
+    container.style.cursor = mode === "text" ? "text" : "crosshair";
 
-    const onDown = (e: L.LeafletMouseEvent) => {
-      drawingRef.current.pts = [e.latlng];
-      drawingRef.current.line = L.polyline([e.latlng], {
-        color: "#facc15", weight: 3, opacity: 0.95, lineCap: "round", lineJoin: "round",
-        interactive: false,
-      }).addTo(map);
-    };
-    const onMove = (e: L.LeafletMouseEvent) => {
-      const d = drawingRef.current;
-      if (!d.line) return;
-      const last = d.pts[d.pts.length - 1];
-      // throttle: skip near-duplicate points
-      if (last && last.distanceTo(e.latlng) < 0.5) return;
-      d.pts.push(e.latlng);
-      d.line.addLatLng(e.latlng);
-    };
-    const onUp = () => {
-      const d = drawingRef.current;
-      if (d.line) {
-        try { d.line.remove(); } catch { /* noop */ }
-      }
-      if (d.pts.length >= 2) {
+    if (mode === "text") {
+      const onClickText = (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        const text = window.prompt("Label text:");
+        if (!text || !text.trim()) return;
         const ann: Annotation = {
-          id: crypto.randomUUID(),
+          id: crypto.randomUUID(), kind: "text",
+          at: { lat: e.latlng.lat, lng: e.latlng.lng },
+          text: text.trim(), color, createdAt: Date.now(),
+        };
+        setAnnotations(prev => {
+          const next = [...prev, ann];
+          saveAnnotations(taskId, next);
+          return next;
+        });
+      };
+      map.on("click", onClickText);
+      return () => {
+        map.off("click", onClickText);
+        map.dragging.enable();
+        container.style.cursor = "";
+      };
+    }
+
+    // Pen mode — use pointer events on the container so the line ONLY grows
+    // while the button is held, even if the pointer leaves the map.
+    const toLatLng = (ev: PointerEvent): L.LatLng => {
+      const rect = container.getBoundingClientRect();
+      const pt = L.point(ev.clientX - rect.left, ev.clientY - rect.top);
+      return map.containerPointToLatLng(pt);
+    };
+    const commit = () => {
+      const d = drawingRef.current;
+      if (d.line) { try { d.line.remove(); } catch { /* noop */ } }
+      if (d.pts.length >= 1) {
+        // single-point click → tiny dot stroke
+        if (d.pts.length === 1) d.pts.push(d.pts[0]);
+        const ann: Annotation = {
+          id: crypto.randomUUID(), kind: "stroke",
           stroke: d.pts.map(p => ({ lat: p.lat, lng: p.lng })),
-          color: "#facc15",
-          width: 3,
-          createdAt: Date.now(),
+          color, width, createdAt: Date.now(),
         };
         setAnnotations(prev => {
           const next = [...prev, ann];
@@ -347,51 +377,78 @@ function AnnotateTool({
           return next;
         });
       }
-      drawingRef.current = { pts: [], line: null };
+      drawingRef.current = { pts: [], line: null, drawing: false };
     };
-
-    map.on("mousedown", onDown);
-    map.on("mousemove", onMove);
-    map.on("mouseup", onUp);
+    const onDown = (ev: PointerEvent) => {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      try { container.setPointerCapture(ev.pointerId); } catch { /* noop */ }
+      const ll = toLatLng(ev);
+      drawingRef.current = {
+        pts: [ll], drawing: true,
+        line: L.polyline([ll], {
+          color, weight: width, opacity: 0.95,
+          lineCap: "round", lineJoin: "round", interactive: false,
+        }).addTo(map),
+      };
+    };
+    const onMove = (ev: PointerEvent) => {
+      const d = drawingRef.current;
+      if (!d.drawing || !d.line) return;
+      const ll = toLatLng(ev);
+      const last = d.pts[d.pts.length - 1];
+      if (last && map.latLngToContainerPoint(last).distanceTo(map.latLngToContainerPoint(ll)) < 2) return;
+      d.pts.push(ll);
+      d.line.addLatLng(ll);
+    };
+    const onUp = (ev: PointerEvent) => {
+      if (!drawingRef.current.drawing) return;
+      try { container.releasePointerCapture(ev.pointerId); } catch { /* noop */ }
+      commit();
+    };
+    container.addEventListener("pointerdown", onDown);
+    container.addEventListener("pointermove", onMove);
+    container.addEventListener("pointerup", onUp);
+    container.addEventListener("pointercancel", onUp);
     return () => {
-      map.off("mousedown", onDown);
-      map.off("mousemove", onMove);
-      map.off("mouseup", onUp);
+      container.removeEventListener("pointerdown", onDown);
+      container.removeEventListener("pointermove", onMove);
+      container.removeEventListener("pointerup", onUp);
+      container.removeEventListener("pointercancel", onUp);
       map.dragging.enable();
-      map.getContainer().style.cursor = "";
+      container.style.cursor = "";
       if (drawingRef.current.line) {
         try { drawingRef.current.line.remove(); } catch { /* noop */ }
       }
-      drawingRef.current = { pts: [], line: null };
+      drawingRef.current = { pts: [], line: null, drawing: false };
     };
-  }, [active, map, setAnnotations, taskId]);
+  }, [active, mode, color, width, map, setAnnotations, taskId]);
 
   // Saved strokes layer
   useEffect(() => {
     if (!visible) return;
     const group = L.layerGroup().addTo(map);
     annotations.forEach(a => {
-      const pts = (a.stroke ?? []).map(p => [p.lat, p.lng] as [number, number]);
-      if (pts.length < 2) return;
-      const line = L.polyline(pts, {
-        color: a.color, weight: a.width || 3, opacity: 0.95,
-        lineCap: "round", lineJoin: "round",
-      });
-      line.bindTooltip("Click to delete", { direction: "top", sticky: true, opacity: 1, className: "ai-zone-label" });
-      line.on("click", (e) => {
-        L.DomEvent.stopPropagation(e);
-        if (window.confirm("Delete this annotation?")) {
-          setAnnotations(prev => {
-            const next = prev.filter(x => x.id !== a.id);
-            saveAnnotations(taskId, next);
-            return next;
-          });
-        }
-      });
-      group.addLayer(line);
+      if (a.kind === "stroke") {
+        const pts = (a.stroke ?? []).map(p => [p.lat, p.lng] as [number, number]);
+        if (pts.length < 2) return;
+        const line = L.polyline(pts, {
+          color: a.color, weight: a.width || 3, opacity: 0.95,
+          lineCap: "round", lineJoin: "round",
+        });
+        group.addLayer(line);
+      } else if (a.kind === "text") {
+        const icon = L.divIcon({
+          className: "annotation-text-label",
+          html: `<div style="background:rgba(20,20,20,0.85);border:1px solid ${a.color};color:${a.color};padding:3px 7px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap;font-family:ui-sans-serif,system-ui;">${a.text.replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]!))}</div>`,
+          iconSize: undefined as any,
+          iconAnchor: [0, 0],
+        });
+        L.marker([a.at.lat, a.at.lng], { icon, interactive: false }).addTo(group);
+      }
     });
     return () => { group.remove(); };
-  }, [annotations, visible, map, taskId, setAnnotations]);
+  }, [annotations, visible, map]);
 
   return null;
 }
