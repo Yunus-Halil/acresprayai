@@ -1422,6 +1422,8 @@ function FieldViewTab(props: {
   handleBoundaryEdited: (index: number, ring: BoundaryRing) => void;
   handleBoundaryDeleteRing: (index: number) => void;
   fieldAreaHa: number | null;
+  activeBoundaryIdx: number | null;
+  setActiveBoundaryIdx: React.Dispatch<React.SetStateAction<number | null>>;
 }) {
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
@@ -1433,7 +1435,7 @@ function FieldViewTab(props: {
     taskId, annotations, setAnnotations,
     boundary, boundaryMode, setBoundaryMode, boundaryDirty, boundarySaving,
     saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited, handleBoundaryDeleteRing,
-    fieldAreaHa,
+    fieldAreaHa, activeBoundaryIdx, setActiveBoundaryIdx,
   } = props;
 
   const [measureActive, setMeasureActive] = useState(false);
