@@ -2956,9 +2956,16 @@ function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center gap-3">
           <CloudSun className="h-5 w-5 text-[#4CAF50]" />
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-semibold tracking-tight">Weather · {fieldName}</h1>
             <div className="text-xs text-neutral-500 font-mono">{lat.toFixed(4)}, {lng.toFixed(4)} · OpenWeather One Call 3.0</div>
+          </div>
+          <div className="text-[11px] text-neutral-500 text-right">
+            {savedAt && <div>Updated {new Date(savedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>}
+            <button onClick={() => load(true)} disabled={refreshing}
+              className="mt-1 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[11px] inline-flex items-center gap-1 disabled:opacity-50">
+              {refreshing ? <Loader2 className="h-3 w-3 animate-spin" /> : null} Refresh
+            </button>
           </div>
         </div>
 
