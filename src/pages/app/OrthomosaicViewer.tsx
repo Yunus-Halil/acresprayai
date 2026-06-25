@@ -2844,30 +2844,56 @@ function sprayVerdict(h: OwHour, rainNext6h: number): { verdict: Verdict; reason
 
 function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName: string }) {
   const [lat, lng] = center;
-  const [data, setData] = useState<{ current: any; hourly: OwHour[]; daily: OwDay[] } | null>(null);
+  // Cache weather per coarse location for 20 min in localStorage so switching
+  // tabs (or revisiting the field) doesn't re-hit OpenWeather every time.
+  const cacheKey = `acrespray.weather.${lat.toFixed(3)},${lng.toFixed(3)}`;
+  const TTL_MS = 20 * 60 * 1000;
+  const readCache = () => {
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (!raw) return null;
+      const c = JSON.parse(raw);
+      if (!c?.savedAt || Date.now() - c.savedAt > TTL_MS) return null;
+      return c as { savedAt: number; data: { current: any; hourly: OwHour[]; daily: OwDay[] } };
+    } catch { return null; }
+  };
+  const initial = readCache();
+  const [data, setData] = useState<{ current: any; hourly: OwHour[]; daily: OwDay[] } | null>(initial?.data ?? null);
+  const [savedAt, setSavedAt] = useState<number | null>(initial?.savedAt ?? null);
   const [err, setErr] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setErr(null); setData(null);
-      try {
-        const { data: s } = await supabase.auth.getSession();
-        const r = await fetch(`${FN_BASE}/weather?lat=${lat}&lon=${lng}`, {
-          headers: s.session ? { Authorization: `Bearer ${s.session.access_token}` } : {},
-        });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error ?? "Weather unavailable");
-        if (!cancelled) setData(j);
-      } catch (e: any) {
-        if (!cancelled) setErr(e?.message ?? "Weather unavailable");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [lat, lng]);
+  const load = useCallback(async (force = false) => {
+    if (!force) {
+      const c = readCache();
+      if (c) { setData(c.data); setSavedAt(c.savedAt); return; }
+    }
+    setErr(null); setRefreshing(true);
+    try {
+      const { data: s } = await supabase.auth.getSession();
+      const r = await fetch(`${FN_BASE}/weather?lat=${lat}&lon=${lng}`, {
+        headers: s.session ? { Authorization: `Bearer ${s.session.access_token}` } : {},
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? "Weather unavailable");
+      setData(j);
+      const ts = Date.now();
+      setSavedAt(ts);
+      try { localStorage.setItem(cacheKey, JSON.stringify({ savedAt: ts, data: j })); } catch {}
+    } catch (e: any) {
+      setErr(e?.message ?? "Weather unavailable");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [lat, lng, cacheKey]);
 
-  if (err) return (
-    <div className="absolute inset-0 grid place-items-center text-sm text-red-400 p-6 text-center" style={{ background: "#0f0f0f" }}>{err}</div>
+  useEffect(() => { load(false); }, [load]);
+
+  if (err && !data) return (
+    <div className="absolute inset-0 grid place-items-center text-sm text-red-400 p-6 text-center gap-3" style={{ background: "#0f0f0f" }}>
+      <div>{err}</div>
+      <button onClick={() => load(true)} className="px-3 py-1.5 rounded bg-neutral-800 text-neutral-200 text-xs">Retry</button>
+    </div>
   );
   if (!data) return (
     <div className="absolute inset-0 grid place-items-center text-sm text-neutral-400 gap-2" style={{ background: "#0f0f0f" }}>
