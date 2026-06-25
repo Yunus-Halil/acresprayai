@@ -23,9 +23,11 @@ Deno.serve(async (req) => {
     const r = await fetch(api);
     if (!r.ok) {
       const text = await r.text();
-      // Fall back to weather 2.5 if 3.0 isn't activated on the account.
-      if (r.status === 401 || r.status === 403) {
-        return json({ error: "OpenWeather One Call 3.0 not enabled for this API key. Activate it in your OpenWeather account (free 1000 calls/day).", detail: text }, 502);
+      // Fall back to Open-Meteo (no key required) if One Call 3.0 isn't enabled
+      // on the account, or for any upstream failure.
+      if (r.status === 401 || r.status === 403 || r.status >= 500) {
+        const fb = await openMeteoFallback(lat, lon);
+        if (fb) return json(fb);
       }
       return json({ error: `OpenWeather ${r.status}`, detail: text }, 502);
     }
@@ -78,6 +80,15 @@ Deno.serve(async (req) => {
 
     return json({ tz: d.timezone, tz_offset: d.timezone_offset, current, hourly, daily });
   } catch (e: any) {
+    try {
+      const url = new URL(req.url);
+      const lat = parseFloat(url.searchParams.get("lat") ?? "");
+      const lon = parseFloat(url.searchParams.get("lon") ?? "");
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        const fb = await openMeteoFallback(lat, lon);
+        if (fb) return json(fb);
+      }
+    } catch {}
     return json({ error: e?.message ?? String(e) }, 500);
   }
 });
@@ -87,4 +98,96 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+// ---------- Open-Meteo fallback (free, no key) ----------
+// Maps Open-Meteo to the same normalized shape this function returns.
+async function openMeteoFallback(lat: number, lon: number) {
+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,precipitation,weather_code` +
+    `&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,precipitation_probability,cloud_cover,weather_code` +
+    `&daily=temperature_2m_min,temperature_2m_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,precipitation_sum,precipitation_probability_max,weather_code` +
+    `&wind_speed_unit=kmh&timezone=auto&forecast_days=7`;
+  const r = await fetch(u);
+  if (!r.ok) return null;
+  const d = await r.json();
+  const cc = d.current ?? {};
+  const current = {
+    time: Math.floor(new Date(cc.time).getTime() / 1000),
+    temp_c: cc.temperature_2m,
+    feels_c: cc.apparent_temperature,
+    humidity: cc.relative_humidity_2m,
+    wind_kmh: cc.wind_speed_10m ?? 0,
+    gust_kmh: cc.wind_gusts_10m ?? 0,
+    wind_dir: cc.wind_direction_10m ?? 0,
+    clouds: cc.cloud_cover ?? 0,
+    precip_mm: cc.precipitation ?? 0,
+    code: cc.weather_code ?? 0,
+    icon: wmoIcon(cc.weather_code ?? 0),
+    desc: wmoDesc(cc.weather_code ?? 0),
+  };
+  const H = d.hourly ?? {};
+  const hourly = (H.time ?? []).slice(0, 48).map((t: string, i: number) => ({
+    time: Math.floor(new Date(t).getTime() / 1000),
+    temp_c: H.temperature_2m?.[i],
+    humidity: H.relative_humidity_2m?.[i],
+    wind_kmh: H.wind_speed_10m?.[i] ?? 0,
+    gust_kmh: H.wind_gusts_10m?.[i] ?? 0,
+    wind_dir: H.wind_direction_10m?.[i] ?? 0,
+    precip_mm: H.precipitation?.[i] ?? 0,
+    precip_prob: H.precipitation_probability?.[i] ?? 0,
+    clouds: H.cloud_cover?.[i] ?? 0,
+    code: H.weather_code?.[i] ?? 0,
+    icon: wmoIcon(H.weather_code?.[i] ?? 0),
+    desc: wmoDesc(H.weather_code?.[i] ?? 0),
+  }));
+  const D = d.daily ?? {};
+  const daily = (D.time ?? []).slice(0, 7).map((t: string, i: number) => ({
+    time: Math.floor(new Date(t).getTime() / 1000),
+    tmin_c: D.temperature_2m_min?.[i],
+    tmax_c: D.temperature_2m_max?.[i],
+    humidity: null,
+    wind_kmh: D.wind_speed_10m_max?.[i] ?? 0,
+    gust_kmh: D.wind_gusts_10m_max?.[i] ?? 0,
+    wind_dir: D.wind_direction_10m_dominant?.[i] ?? 0,
+    precip_mm: D.precipitation_sum?.[i] ?? 0,
+    precip_prob: D.precipitation_probability_max?.[i] ?? 0,
+    clouds: 0,
+    code: D.weather_code?.[i] ?? 0,
+    icon: wmoIcon(D.weather_code?.[i] ?? 0),
+    desc: wmoDesc(D.weather_code?.[i] ?? 0),
+  }));
+  return {
+    tz: d.timezone,
+    tz_offset: d.utc_offset_seconds ?? 0,
+    source: "open-meteo",
+    current,
+    hourly,
+    daily,
+  };
+}
+
+function wmoDesc(c: number): string {
+  if (c === 0) return "clear sky";
+  if (c <= 2) return "mainly clear";
+  if (c === 3) return "overcast";
+  if (c <= 48) return "fog";
+  if (c <= 57) return "drizzle";
+  if (c <= 67) return "rain";
+  if (c <= 77) return "snow";
+  if (c <= 82) return "rain showers";
+  if (c <= 86) return "snow showers";
+  return "thunderstorm";
+}
+function wmoIcon(c: number): string {
+  if (c === 0) return "01d";
+  if (c <= 2) return "02d";
+  if (c === 3) return "04d";
+  if (c <= 48) return "50d";
+  if (c <= 57) return "09d";
+  if (c <= 67) return "10d";
+  if (c <= 77) return "13d";
+  if (c <= 82) return "09d";
+  if (c <= 86) return "13d";
+  return "11d";
 }
