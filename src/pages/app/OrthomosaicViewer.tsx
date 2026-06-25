@@ -1079,8 +1079,8 @@ function FieldViewTab(props: {
   return (
     <div className="absolute inset-0 bg-[#0a0a0a]">
       <MapContainer
-        center={center}
-        zoom={15}
+        bounds={bounds}
+        boundsOptions={{ padding: [40, 40] }}
         minZoom={1}
         maxZoom={22}
         preferCanvas
@@ -1139,7 +1139,14 @@ function FieldViewTab(props: {
             onUpdate={updateZoneRing}
           />
         )}
-        <MeasureTool active={measureActive} onStats={handleStats} />
+        <MeasureTool active={measureActive} visible={layers.measurements} onStats={handleStats} />
+        <AnnotateTool
+          active={annotateActive}
+          visible={layers.annotations}
+          annotations={annotations}
+          setAnnotations={setAnnotations}
+          taskId={taskId}
+        />
       </MapContainer>
 
       {/* Floating icon toolbar */}
@@ -1147,14 +1154,42 @@ function FieldViewTab(props: {
         <ToolButton icon={Layers} label="Layers" active={layersOpen}
           onClick={() => { setLayersOpen(!layersOpen); }} />
         <ToolButton icon={Ruler} label="Measure" active={measureActive}
-          onClick={() => { setMeasureActive(v => !v); setLayersOpen(false); }} />
-        <ToolButton icon={Pencil} label="Annotate" />
+          onClick={() => {
+            setMeasureActive(v => !v); setAnnotateActive(false); setLayersOpen(false);
+          }} />
+        <ToolButton icon={Pencil} label={annotateActive ? "Finish (dbl-click)" : "Annotate area"} active={annotateActive}
+          onClick={() => {
+            setAnnotateActive(v => !v); setMeasureActive(false); setLayersOpen(false);
+          }} />
         <ToolButton icon={Settings} label="Settings" />
       </div>
 
       {/* Measure panel */}
-      {(measureActive || measureStats.count > 0) && !layersOpen && (
+      {(measureActive || measureStats.count > 0) && layers.measurements && !layersOpen && (
         <MeasurePanel stats={measureStats} />
+      )}
+      {annotateActive && !layersOpen && (
+        <div className="absolute top-4 left-16 z-[1001] w-64 rounded-md border border-[#222] shadow-2xl p-3 text-[#f0f0f0]"
+             style={{ background: "#161616" }}>
+          <div className="flex items-center gap-2 pb-2 mb-2 border-b border-[#222]">
+            <Pencil className="h-3.5 w-3.5 text-yellow-400" />
+            <div className="text-xs font-medium">Annotate</div>
+            <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500">
+              Dbl-click to save
+            </div>
+          </div>
+          <div className="text-[11px] text-neutral-400 leading-relaxed">
+            Click on the map to highlight an area. Double-click to save it.
+            Click a saved highlight to delete it. Toggle the <span className="text-[#f0f0f0]">Annotations</span> layer to hide them.
+          </div>
+          {annotations.length > 0 && (
+            <button
+              onClick={() => { if (window.confirm("Clear all annotations on this scan?")) { setAnnotations([]); saveAnnotations(taskId, []); } }}
+              className="mt-2 inline-flex items-center gap-1 text-[10px] text-red-400 hover:underline">
+              <Trash2 className="h-3 w-3" /> Clear all ({annotations.length})
+            </button>
+          )}
+        </div>
       )}
 
       {/* Layers popover */}
