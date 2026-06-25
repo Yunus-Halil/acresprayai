@@ -14,8 +14,9 @@ import {
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
   Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
-  CheckCircle2, XCircle, Trash2,
+  CheckCircle2, XCircle, Trash2, Hexagon,
 } from "lucide-react";
+import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
@@ -787,6 +788,7 @@ type LayerState = {
   ndvi: boolean;
   measurements: boolean;
   boundary: boolean;
+  userAnnotations: boolean;
 };
 
 function LayerRow({
