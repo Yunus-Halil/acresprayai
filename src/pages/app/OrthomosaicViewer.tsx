@@ -1637,6 +1637,9 @@ function FieldViewTab(props: {
           <LayerRow label="Measurements" icon={Ruler}
             checked={layers.measurements}
             onToggle={() => setLayers(s => ({ ...s, measurements: !s.measurements }))} />
+          <LayerRow label="Field boundary" icon={MapPin}
+            checked={layers.boundary}
+            onToggle={() => setLayers(s => ({ ...s, boundary: !s.boundary }))} />
           <LayerRow label="AI treatment zones" icon={Sparkles}
             checked={showAiZones}
             onToggle={() => setShowAiZones(!showAiZones)} />
