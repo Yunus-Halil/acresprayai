@@ -617,6 +617,7 @@ type LayerState = {
   orthomosaic: boolean;
   ndvi: boolean;
   measurements: boolean;
+  boundary: boolean;
 };
 
 function LayerRow({
