@@ -8,10 +8,11 @@ import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
 import { supabase } from "@/integrations/supabase/client";
 import { Unzip, UnzipInflate } from "fflate";
 import {
-  ArrowLeft, ChevronLeft, ChevronRight, Search, Eye, EyeOff,
-  Layers, Folder, Image as ImageIcon, Mountain, Ruler, Settings,
-  Camera, Maximize2, Plus, Minus, Loader2, MapPin, Activity,
-  Sparkles, Download, AlertTriangle,
+  ArrowLeft, ChevronUp, ChevronDown, Eye, EyeOff,
+  Layers, Image as ImageIcon, Mountain, Ruler, Settings,
+  Maximize2, Plus, Minus, Loader2, MapPin, Activity,
+  Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
+  FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
 } from "lucide-react";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
