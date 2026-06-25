@@ -1,4 +1,8 @@
-import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
+const corsHeaders: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
 
 // Proxies OpenWeather One Call 3.0 so the API key never leaves the server.
 // Returns a normalized payload: { current, hourly[48], daily[7], tz }.
