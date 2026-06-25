@@ -1140,6 +1140,10 @@ export default function OrthomosaicViewer() {
         summary: j.summary,
         issues: j.issues ?? [],
         zones: j.zones ?? [],
+        data_source: j.data_source ?? "RGB",
+        band_count: j.band_count ?? 3,
+        ndvi_cells: j.ndvi_cells ?? [],
+        disclaimer: j.disclaimer ?? "These zones show anomalies detected from aerial imagery. Ground inspection is recommended to confirm issue type before treatment. AcreSpray AI does not replace professional agronomic advice.",
       };
       setAnalysis(payload);
       setSelectedZone(j.zones?.[0]?.id ?? null);
