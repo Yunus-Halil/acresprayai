@@ -610,6 +610,76 @@ function AiZonesLayer({
   return null;
 }
 
+// --- Field boundary tool ----------------------------------------------------
+// Lets the operator outline their actual farm field on top of the orthomosaic.
+// The polygon persists on `fields.boundary` and drives the field's true area
+// plus where AI analysis is allowed to run.
+function BoundaryTool({
+  mode, boundary, visible, onCreated, onEdited,
+}: {
+  mode: "off" | "draw" | "edit";
+  boundary: { lat: number; lng: number }[] | null;
+  visible: boolean;
+  onCreated: (ring: { lat: number; lng: number }[]) => void;
+  onEdited: (ring: { lat: number; lng: number }[]) => void;
+}) {
+  const map = useMap();
+
+  // Draw mode: enable Geoman polygon draw. On create, capture ring + remove temp layer.
+  useEffect(() => {
+    if (mode !== "draw") return;
+    const pmAny = (map as any).pm;
+    if (!pmAny) return;
+    try {
+      pmAny.enableDraw("Polygon", {
+        snappable: true, snapDistance: 15, allowSelfIntersection: false,
+        templineStyle: { color: "#22d3ee", weight: 2, dashArray: "6 4" },
+        hintlineStyle: { color: "#22d3ee", dashArray: "4 4" },
+        pathOptions: { color: "#22d3ee", weight: 2, fillColor: "#22d3ee", fillOpacity: 0.08 },
+      });
+    } catch { /* noop */ }
+    const handle = (e: any) => {
+      const layer = e.layer as L.Polygon;
+      const ring = (layer.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+      try { layer.remove(); } catch { /* noop */ }
+      try { pmAny.disableDraw(); } catch { /* noop */ }
+      onCreated(ring);
+    };
+    map.on("pm:create", handle);
+    return () => {
+      map.off("pm:create", handle);
+      try { pmAny.disableDraw(); } catch { /* noop */ }
+    };
+  }, [mode, map, onCreated]);
+
+  // Render boundary polygon (with optional editing).
+  useEffect(() => {
+    if (!visible || !boundary || boundary.length < 3) return;
+    const poly = L.polygon(boundary.map(p => [p.lat, p.lng] as [number, number]), {
+      color: "#22d3ee", weight: 2.5, dashArray: "6 4",
+      fillColor: "#22d3ee", fillOpacity: mode === "edit" ? 0.05 : 0.08,
+    }).addTo(map);
+    poly.bindTooltip("Field boundary", { sticky: true, opacity: 1, className: "ai-zone-label" });
+    if (mode === "edit") {
+      poly.bringToFront();
+      try {
+        (poly as any).pm.enable({
+          allowSelfIntersection: false, snappable: true, snapDistance: 15,
+          draggable: true, hideMiddleMarkers: false,
+        });
+      } catch { /* noop */ }
+      const handle = () => {
+        const ring = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+        onEdited(ring);
+      };
+      poly.on("pm:markerdragend pm:dragend pm:vertexadded pm:vertexremoved pm:edit", handle);
+    }
+    return () => { try { poly.remove(); } catch { /* noop */ } };
+  }, [boundary, visible, mode, map, onEdited]);
+
+  return null;
+}
+
 // --- layer tree ---------------------------------------------------------------
 type LayerState = {
   annotations: boolean;
