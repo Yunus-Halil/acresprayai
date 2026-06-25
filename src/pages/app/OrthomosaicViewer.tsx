@@ -1140,6 +1140,9 @@ function FieldViewTab(props: {
 
   const [measureActive, setMeasureActive] = useState(false);
   const [annotateActive, setAnnotateActive] = useState(false);
+  const [annotateMode, setAnnotateMode] = useState<"pen" | "text">("pen");
+  const [annotateColor, setAnnotateColor] = useState<string>("#facc15");
+  const [annotateWidth, setAnnotateWidth] = useState<number>(3);
   const [measureStats, setMeasureStats] = useState<MeasureStats>({
     active: false, finished: false, count: 0, distM: 0, areaM2: 0, liveDistM: 0,
   });
@@ -1223,6 +1226,9 @@ function FieldViewTab(props: {
         <MeasureTool active={measureActive} visible={layers.measurements} onStats={handleStats} />
         <AnnotateTool
           active={annotateActive}
+          mode={annotateMode}
+          color={annotateColor}
+          width={annotateWidth}
           visible={layers.annotations}
           annotations={annotations}
           setAnnotations={setAnnotations}
