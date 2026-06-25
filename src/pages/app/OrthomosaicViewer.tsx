@@ -1229,6 +1229,9 @@ function FieldViewTab(props: {
           <LayerRow label="Annotations" icon={MapPin}
             checked={layers.annotations}
             onToggle={() => setLayers(s => ({ ...s, annotations: !s.annotations }))} />
+          <LayerRow label="Measurements" icon={Ruler}
+            checked={layers.measurements}
+            onToggle={() => setLayers(s => ({ ...s, measurements: !s.measurements }))} />
           <LayerRow label="AI treatment zones" icon={Sparkles}
             checked={showAiZones}
             onToggle={() => setShowAiZones(!showAiZones)} />
