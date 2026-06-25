@@ -578,6 +578,7 @@ export type AiZone = {
   name: string;
   issue: string;
   severity: "low" | "medium" | "high";
+  tier?: 1 | 2;
   coverage_pct: number;
   recommendation: { action: string; product?: string; dose?: string; rationale?: string } | null;
   ring: { lat: number; lng: number }[];
@@ -625,17 +626,23 @@ function AiZonesLayer({
         permanent: false, sticky: true, opacity: 1, direction: "top",
         className: "ai-zone-label",
       });
-      // Compute area: prefer coverage_pct × boundary area, else geodesic of ring.
-      const ringAreaM2 = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));
-      const m2 = boundaryAreaHa && z.coverage_pct
-        ? (boundaryAreaHa * 10000) * (z.coverage_pct / 100)
-        : ringAreaM2;
-      const acres = (m2 / 4046.8564224).toFixed(2);
+      // Real geodesic area of the on-screen polygon — what the farmer actually
+      // pays to treat. No severity multipliers, no AI coverage estimate.
+      const m2 = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));
+      const acresNum = m2 / 4046.8564224;
+      const acres = acresNum.toFixed(2);
       const ha = (m2 / 10000).toFixed(3);
-      // Rough cost: $25/acre baseline, scaled by severity multiplier.
-      const sevMul = z.severity === "high" ? 1.5 : z.severity === "medium" ? 1.2 : 1.0;
-      const estCost = ((m2 / 4046.8564224) * 25 * sevMul).toFixed(0);
       const rec = z.recommendation;
+      const action = String(rec?.action ?? "spray").toLowerCase();
+      // Typical US row-crop input cost per acre, keyed off the AI's action.
+      const ratePerAc =
+        action === "reseed"    ? 28 :
+        action === "fertilize" ? 30 :
+        action === "spray"     ? 25 :
+        action === "irrigate"  ? 10 :
+                                  0;
+      const estCost = (acresNum * ratePerAc).toFixed(2);
+      const acresStr = acresNum.toFixed(3);
       const sevBadge = `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;background:${color}33;color:${color};border:1px solid ${color}">${z.severity}</span>`;
       const html = `
         <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:240px">
@@ -648,6 +655,7 @@ function AiZonesLayer({
             <div>Area</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${acres} ac</div>
             <div></div><div style="text-align:right;color:#6b7280;font-family:ui-monospace,monospace">${ha} ha</div>
             <div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">$${estCost}</div>
+            <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${acresStr} ac × $${ratePerAc}/ac = $${estCost}</div>
           </div>
           ${rec ? `
             <div style="border-top:1px solid #222;padding-top:8px;font-size:11px">
@@ -1140,6 +1148,7 @@ export default function OrthomosaicViewer() {
         summary: j.summary,
         issues: j.issues ?? [],
         zones: j.zones ?? [],
+        watch_list: j.watch_list ?? [],
         data_source: j.data_source ?? "RGB",
         band_count: j.band_count ?? 3,
         ndvi_cells: j.ndvi_cells ?? [],
@@ -2456,6 +2465,26 @@ function AnalysisGrid({
     {analysis?.disclaimer && (
       <div className="mt-3 rounded-sm border border-[#222] p-3 text-[11px] text-neutral-400 leading-relaxed" style={{ background: "#141414" }}>
         ⚠️ {analysis.disclaimer}
+      </div>
+    )}
+    {analysis?.watch_list?.length > 0 && (
+      <div className="mt-3 rounded-sm border border-[#222] p-3" style={{ background: "#141414" }}>
+        <div className="flex items-center gap-2 mb-2">
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500">Watch list</div>
+          <span className="text-[10px] text-neutral-600">monitor — no treatment zone drawn</span>
+        </div>
+        <ul className="space-y-1.5">
+          {analysis.watch_list.map((w: any, i: number) => (
+            <li key={i} className="text-[11px] text-neutral-400 leading-relaxed flex gap-2">
+              <span className="text-neutral-600 mt-0.5">•</span>
+              <span>
+                <span className="text-neutral-200 font-medium">{w.name}</span>
+                {w.issue ? <span className="text-neutral-500"> — {w.issue}</span> : null}
+                {w.what_you_see ? <span className="text-neutral-500">. {w.what_you_see}</span> : null}
+              </span>
+            </li>
+          ))}
+        </ul>
       </div>
     )}
     </div>
