@@ -611,6 +611,7 @@ function AiZonesLayer({
       onDelete(id);
     };
     container.addEventListener("pointerdown", handlePopupDelete, true);
+    container.addEventListener("click", handlePopupDelete, true);
     zones.forEach((z) => {
       const color = sevColor(z.severity);
       const poly = L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
@@ -679,6 +680,7 @@ function AiZonesLayer({
     });
     return () => {
       container.removeEventListener("pointerdown", handlePopupDelete, true);
+      container.removeEventListener("click", handlePopupDelete, true);
       group.remove();
     };
   }, [map, zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa]);
@@ -724,6 +726,7 @@ function UserPolyLayer({
       onDelete(id);
     };
     container.addEventListener("pointerdown", handlePopupDelete, true);
+    container.addEventListener("click", handlePopupDelete, true);
     polys.forEach((p) => {
       const color = USER_POLY_COLORS[p.color] ?? "#fb923c";
       const poly = L.polygon(p.ring.map(pt => [pt.lat, pt.lng] as [number, number]), {
@@ -749,6 +752,7 @@ function UserPolyLayer({
     });
     return () => {
       container.removeEventListener("pointerdown", handlePopupDelete, true);
+      container.removeEventListener("click", handlePopupDelete, true);
       group.remove();
     };
   }, [map, polys, onDelete]);
