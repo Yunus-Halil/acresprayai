@@ -827,10 +827,21 @@ export default function OrthomosaicViewer() {
       setToken(s.session.access_token);
 
       const { data: t } = await supabase.from("odm_tasks")
-        .select("odm_uuid, field_id, created_at").eq("id", taskId).maybeSingle();
+        .select("odm_uuid, field_id, created_at, ai_analysis, ai_analysis_at").eq("id", taskId).maybeSingle();
       console.log("[OrthoViewer] task row:", t);
       if (!t?.odm_uuid) { setErr("Scan not found"); return; }
       setTask(t as TaskRow);
+
+      // Rehydrate saved AI analysis so treatment zones survive page reloads.
+      const saved = (t as any).ai_analysis;
+      if (saved && typeof saved === "object" && Array.isArray(saved.zones)) {
+        setAnalysis({
+          health_score: Number(saved.health_score ?? 0),
+          summary: String(saved.summary ?? ""),
+          issues: Array.isArray(saved.issues) ? saved.issues : [],
+          zones: saved.zones,
+        });
+      }
 
       const { data: f } = await supabase.from("fields")
         .select("id, name, boundary, boundary_area_hectares").eq("id", t.field_id).maybeSingle();
