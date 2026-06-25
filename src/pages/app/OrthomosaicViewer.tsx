@@ -2380,7 +2380,7 @@ function AnalysisGrid({
   );
 }
 
-function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan }: any) {
+function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan, clearAnalysis }: any) {
   return (
     <div className="absolute inset-0 overflow-auto p-8" style={{ background: "#0f0f0f" }}>
       <div className="max-w-5xl mx-auto">
@@ -2412,6 +2412,7 @@ function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan
             showAiZones={true} setShowAiZones={() => {}}
             selectedZone={null} setSelectedZone={() => {}}
             deleteZone={() => {}} exportFlightPlan={exportFlightPlan}
+            clearAnalysis={clearAnalysis}
           />
         )}
       </div>
