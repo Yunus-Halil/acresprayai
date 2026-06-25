@@ -1491,6 +1491,24 @@ export default function OrthomosaicViewer() {
     }
   };
 
+  // ---- Farmer settings save (debounced via explicit Save button) -----------
+  const saveSettings = async (next: FarmerSettings) => {
+    if (!field?.id) return;
+    setSettings(next);
+    setSettingsSaving(true);
+    try {
+      const { error } = await supabase.from("fields")
+        .update({ settings: next as any } as any)
+        .eq("id", field.id);
+      if (error) throw error;
+      setSettingsSavedAt(Date.now());
+    } catch (e) {
+      console.error("[settings] save failed", e);
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
   // Probe the COG once to figure out NDVI vs VARI and band count for the legend.
   useEffect(() => {
     if (!taskId || !token || !tileTemplate) return;
