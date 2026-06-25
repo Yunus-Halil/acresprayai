@@ -41,16 +41,31 @@ Deno.serve(async (req) => {
       .createSignedUrl(task.ortho_path, 60 * 15);
     if (sErr || !signed?.signedUrl) return json({ error: "sign failed" }, 500);
 
-    // 1) Get a high-res PNG preview + bounds from TiTiler.
+    // 1) Get a high-res PNG preview + bounds from TiTiler, and probe band count
+    //    so we know whether real NDVI is available (multispectral, >=4 bands)
+    //    or we are RGB-only and must caveat accordingly.
     const previewUrl = `https://titiler.xyz/cog/preview.png?url=${encodeURIComponent(signed.signedUrl)}&max_size=2048`;
     const tjUrl = `https://titiler.xyz/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(signed.signedUrl)}&tilesize=256`;
+    const infoUrl = `https://titiler.xyz/cog/info?url=${encodeURIComponent(signed.signedUrl)}`;
 
-    const [imgRes, tjRes] = await Promise.all([fetch(previewUrl), fetch(tjUrl)]);
+    const [imgRes, tjRes, infoRes] = await Promise.all([
+      fetch(previewUrl),
+      fetch(tjUrl),
+      fetch(infoUrl),
+    ]);
     if (!imgRes.ok) return json({ error: `Preview fetch failed (${imgRes.status})` }, 500);
     const tj = tjRes.ok ? await tjRes.json() : null;
     const b = tj?.bounds as number[] | undefined;
     if (!b || b.length !== 4) return json({ error: "Missing bounds" }, 500);
     const [west, south, east, north] = b;
+    let bandCount = 3;
+    try {
+      if (infoRes.ok) {
+        const info = await infoRes.json();
+        if (typeof info?.count === "number") bandCount = info.count;
+      }
+    } catch { /* default to RGB */ }
+    const hasNDVI = bandCount >= 4;
 
     // Validate the user-supplied field boundary. May be a single ring (legacy)
     // or an array of rings (fragmented field with multiple parts). The AI must
@@ -72,6 +87,83 @@ Deno.serve(async (req) => {
           : `MULTIPOLYGON(${rings.map(ringToWKT).join(", ")})`)
       : null;
 
+    // 1b) If NDVI is available, sample NDVI statistics across a 3x3 grid of
+    //     the field bbox so the AI gets real numbers, not just pixels.
+    type CellStat = { label: string; mean: number; min: number; max: number; verdict: string };
+    const ndviCells: CellStat[] = [];
+    if (hasNDVI) {
+      const bboxLat = hasBoundary
+        ? {
+            s: Math.min(...rings.flat().map(p => p.lat)),
+            n: Math.max(...rings.flat().map(p => p.lat)),
+            w: Math.min(...rings.flat().map(p => p.lng)),
+            e: Math.max(...rings.flat().map(p => p.lng)),
+          }
+        : { s: south, n: north, w: west, e: east };
+      const rows = ["N", "C", "S"];
+      const cols = ["W", "C", "E"];
+      const features: any[] = [];
+      for (let ri = 0; ri < 3; ri++) {
+        for (let ci = 0; ci < 3; ci++) {
+          const latLo = bboxLat.s + ((2 - ri) / 3) * (bboxLat.n - bboxLat.s);
+          const latHi = bboxLat.s + ((3 - ri) / 3) * (bboxLat.n - bboxLat.s);
+          const lngLo = bboxLat.w + (ci / 3) * (bboxLat.e - bboxLat.w);
+          const lngHi = bboxLat.w + ((ci + 1) / 3) * (bboxLat.e - bboxLat.w);
+          const label = `${rows[ri]}${cols[ci]}`.replace(/^CC$/, "Center");
+          features.push({
+            type: "Feature",
+            properties: { label },
+            geometry: { type: "Polygon", coordinates: [[
+              [lngLo, latLo], [lngHi, latLo], [lngHi, latHi], [lngLo, latHi], [lngLo, latLo],
+            ]]},
+          });
+        }
+      }
+      try {
+        const statsUrl = `https://titiler.xyz/cog/statistics?url=${encodeURIComponent(signed.signedUrl)}&expression=${encodeURIComponent("(b4-b1)/(b4+b1)")}`;
+        const sRes = await fetch(statsUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "FeatureCollection", features }),
+        });
+        if (sRes.ok) {
+          const sJson = await sRes.json();
+          const feats = Array.isArray(sJson?.features) ? sJson.features : [];
+          for (const f of feats) {
+            const label = f?.properties?.label ?? "?";
+            const st = f?.properties?.statistics
+              ? Object.values(f.properties.statistics)[0] as any
+              : null;
+            if (!st || typeof st.mean !== "number") continue;
+            const m = st.mean;
+            const verdict = m < 0.1 ? "bare soil / no vegetation"
+              : m < 0.3 ? "severely stressed"
+              : m < 0.5 ? "moderately stressed"
+              : m < 0.7 ? "moderate health"
+              : "healthy canopy";
+            ndviCells.push({
+              label,
+              mean: +m.toFixed(2),
+              min: +Number(st.min ?? 0).toFixed(2),
+              max: +Number(st.max ?? 0).toFixed(2),
+              verdict,
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("ndvi statistics failed", e);
+      }
+    }
+
+    const ndviBlock = hasNDVI
+      ? `NDVI DATA AVAILABLE for this field (multispectral, ${bandCount} bands).
+Zone statistics (3x3 grid across the field):
+${ndviCells.length > 0
+  ? ndviCells.map(c => `- ${c.label}: mean NDVI ${c.mean} (range ${c.min}..${c.max}) — ${c.verdict}`).join("\n")
+  : "- (statistics unavailable, fall back to image only)"}
+NDVI thresholds: <0.1 = bare soil / no vegetation, <0.3 = severely stressed, 0.3–0.5 = moderately stressed, 0.5–0.7 = moderate, >0.7 = healthy.`
+      : `NO MULTISPECTRAL DATA AVAILABLE. Analysis is based on RGB imagery only. Only flag HIGH CONFIDENCE visual anomalies. Never diagnose nutrient deficiency, disease, or any sub-surface condition from RGB alone.`;
+
     const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
     // base64 encode without blowing the call stack
     let bin = "";
@@ -84,7 +176,10 @@ Deno.serve(async (req) => {
     const key = Deno.env.get("LOVABLE_API_KEY");
     if (!key) return json({ error: "Missing LOVABLE_API_KEY" }, 500);
 
-    const system = `You are a precision-agriculture analyst examining an RGB drone orthomosaic of a farm field.
+    const system = `You are a precision-agriculture analyst examining a drone orthomosaic of a farm field.
+
+DATA SOURCE FOR THIS RUN:
+${ndviBlock}
 
 STRICT RULE: Only flag what you can see with HIGH CONFIDENCE in RGB imagery. Never guess. A farmer trusts you with their livelihood.
 
@@ -113,6 +208,17 @@ Rules:
 - If the field shows no clearly visible issues, return zones: [].
 - health_score: 100 minus the % of field area with visible issues. Do NOT factor in anything you cannot visually confirm.
 - Tone: direct, honest, conservative. Never overclaim.
+
+DATA-SOURCE LABELLING (MANDATORY for every zone):
+${hasNDVI
+  ? `- NDVI is available. Cross-reference each visual anomaly with the NDVI grid above.
+- Label zones as: "NDVI confirmed — [issue type]" when NDVI < 0.5 supports the visual finding.
+- In "what_you_see", quote the NDVI value, e.g. "Mean NDVI 0.24 — indicates severe stress".
+- Confidence MUST be "HIGH" when NDVI and RGB agree; "MEDIUM" when only one signal supports it.
+- You MAY name probable nutrient stress when NDVI < 0.4 AND there is visible discoloration.`
+  : `- NDVI is NOT available. Label every zone as: "Visual anomaly — [what you see]".
+- Confidence MUST be "MEDIUM" or, only for visually obvious anomalies (bare soil, standing water, large row gaps), "HIGH".
+- NEVER diagnose specific nutrient deficiencies, disease names, or sub-surface conditions from RGB alone.`}
 
 Return STRICT JSON with this exact schema:
 {
@@ -267,6 +373,10 @@ ${rings.map((r, ri) => `Part ${ri + 1} vertices (lat, lng):\n${r.map((p, i) => `
       issues: Array.isArray(parsed.issues) ? parsed.issues : [],
       zones,
       bounds: { west, south, east, north },
+      data_source: hasNDVI ? "NDVI+RGB" : "RGB",
+      band_count: bandCount,
+      ndvi_cells: ndviCells,
+      disclaimer: "These zones show anomalies detected from aerial imagery. Ground inspection is recommended to confirm issue type before treatment. AcreSpray AI does not replace professional agronomic advice.",
     });
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e) }, 500);
