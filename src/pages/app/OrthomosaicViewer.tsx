@@ -2467,6 +2467,26 @@ function AnalysisGrid({
         ⚠️ {analysis.disclaimer}
       </div>
     )}
+    {analysis?.watch_list?.length > 0 && (
+      <div className="mt-3 rounded-sm border border-[#222] p-3" style={{ background: "#141414" }}>
+        <div className="flex items-center gap-2 mb-2">
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500">Watch list</div>
+          <span className="text-[10px] text-neutral-600">monitor — no treatment zone drawn</span>
+        </div>
+        <ul className="space-y-1.5">
+          {analysis.watch_list.map((w: any, i: number) => (
+            <li key={i} className="text-[11px] text-neutral-400 leading-relaxed flex gap-2">
+              <span className="text-neutral-600 mt-0.5">•</span>
+              <span>
+                <span className="text-neutral-200 font-medium">{w.name}</span>
+                {w.issue ? <span className="text-neutral-500"> — {w.issue}</span> : null}
+                {w.what_you_see ? <span className="text-neutral-500">. {w.what_you_see}</span> : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
     </div>
   );
 }
