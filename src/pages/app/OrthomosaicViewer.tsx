@@ -587,17 +587,34 @@ const sevColor = (s: AiZone["severity"]) =>
   s === "high" ? "#ef4444" : s === "medium" ? "#f59e0b" : "#eab308";
 
 function AiZonesLayer({
-  zones, selectedId, onSelect, onUpdate, boundaryAreaHa,
+  zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa,
 }: {
   zones: AiZone[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onUpdate: (id: string, ring: { lat: number; lng: number }[]) => void;
+  onDelete: (id: string) => void;
   boundaryAreaHa: number | null;
 }) {
   const map = useMap();
   useEffect(() => {
     const group = L.layerGroup().addTo(map);
+    const container = map.getContainer();
+    const deletedIds = new Set<string>();
+    const handlePopupDelete = (evt: Event) => {
+      const btn = (evt.target as HTMLElement | null)?.closest?.("button[data-aiz-delete]") as HTMLButtonElement | null;
+      const id = btn?.dataset.aizDelete;
+      if (!id) return;
+      evt.preventDefault();
+      evt.stopPropagation();
+      if ("stopImmediatePropagation" in evt) evt.stopImmediatePropagation();
+      if (deletedIds.has(id)) return;
+      deletedIds.add(id);
+      map.closePopup();
+      onDelete(id);
+    };
+    container.addEventListener("pointerdown", handlePopupDelete, true);
+    container.addEventListener("click", handlePopupDelete, true);
     zones.forEach((z) => {
       const color = sevColor(z.severity);
       const poly = L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
@@ -643,6 +660,7 @@ function AiZonesLayer({
             <div style="border-top:1px solid #222;padding-top:8px;font-size:11px;color:#6b7280">
               No specific treatment — monitor and re-scan after weather change.
             </div>`}
+          <button data-aiz-delete="${escapeHtml(z.id)}" style="margin-top:9px;font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.45);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
         </div>
       `;
       poly.bindPopup(html, {
@@ -663,8 +681,12 @@ function AiZonesLayer({
         });
       }
     });
-    return () => { group.remove(); };
-  }, [map, zones, selectedId, onSelect, onUpdate, boundaryAreaHa]);
+    return () => {
+      container.removeEventListener("pointerdown", handlePopupDelete, true);
+      container.removeEventListener("click", handlePopupDelete, true);
+      group.remove();
+    };
+  }, [map, zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa]);
   return null;
 }
 
@@ -695,6 +717,22 @@ function UserPolyLayer({
   const map = useMap();
   useEffect(() => {
     const group = L.layerGroup().addTo(map);
+    const container = map.getContainer();
+    const deletedIds = new Set<string>();
+    const handlePopupDelete = (evt: Event) => {
+      const btn = (evt.target as HTMLElement | null)?.closest?.("button[data-uap-delete]") as HTMLButtonElement | null;
+      const id = btn?.dataset.uapDelete;
+      if (!id) return;
+      evt.preventDefault();
+      evt.stopPropagation();
+      if ("stopImmediatePropagation" in evt) evt.stopImmediatePropagation();
+      if (deletedIds.has(id)) return;
+      deletedIds.add(id);
+      map.closePopup();
+      onDelete(id);
+    };
+    container.addEventListener("pointerdown", handlePopupDelete, true);
+    container.addEventListener("click", handlePopupDelete, true);
     polys.forEach((p) => {
       const color = USER_POLY_COLORS[p.color] ?? "#fb923c";
       const poly = L.polygon(p.ring.map(pt => [pt.lat, pt.lng] as [number, number]), {
@@ -715,16 +753,14 @@ function UserPolyLayer({
         </div>
       `;
       poly.bindPopup(html, { className: "ai-zone-popup", maxWidth: 300, autoClose: true, closeOnClick: true });
-      poly.on("popupopen", (e: any) => {
-        const el = (e.popup.getElement() as HTMLElement | null);
-        if (!el) return;
-        const btn = el.querySelector(`[data-uap-delete="${p.id}"]`) as HTMLElement | null;
-        if (btn) btn.onclick = () => { poly.closePopup(); onDelete(p.id); };
-      });
       poly.on("click", (e: any) => { L.DomEvent.stopPropagation(e); poly.openPopup(e.latlng); });
       group.addLayer(poly);
     });
-    return () => { group.remove(); };
+    return () => {
+      container.removeEventListener("pointerdown", handlePopupDelete, true);
+      container.removeEventListener("click", handlePopupDelete, true);
+      group.remove();
+    };
   }, [map, polys, onDelete]);
   return null;
 }
@@ -1282,10 +1318,13 @@ export default function OrthomosaicViewer() {
     setUserPolyToolActive(false);
   };
   const deleteUserPolygon = async (id: string) => {
-    if (!window.confirm("Delete this annotation?")) return;
-    const { error } = await supabase.from("user_annotations").delete().eq("id", id);
-    if (error) { console.error(error); return; }
+    const existing = userPolys.find(p => p.id === id);
     setUserPolys(prev => prev.filter(p => p.id !== id));
+    const { error } = await supabase.from("user_annotations").delete().eq("id", id);
+    if (error) {
+      console.error(error);
+      if (existing) setUserPolys(prev => prev.some(p => p.id === id) ? prev : [...prev, existing]);
+    }
   };
 
   // Probe the COG once to figure out NDVI vs VARI and band count for the legend.
@@ -1558,7 +1597,7 @@ export default function OrthomosaicViewer() {
         {activeTab === "ai" && (
           <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr}
             runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan}
-            clearAnalysis={clearAnalysis} />
+            clearAnalysis={clearAnalysis} deleteZone={deleteZone} />
         )}
         {activeTab === "planner" && (
           <PlannerTab
@@ -1754,6 +1793,7 @@ function FieldViewTab(props: {
             selectedId={selectedZone}
             onSelect={setSelectedZone}
             onUpdate={updateZoneRing}
+            onDelete={deleteZone}
             boundaryAreaHa={fieldAreaHa}
           />
         )}
@@ -2390,7 +2430,7 @@ function AnalysisGrid({
   );
 }
 
-function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan, clearAnalysis }: any) {
+function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan, clearAnalysis, deleteZone }: any) {
   return (
     <div className="absolute inset-0 overflow-auto p-8" style={{ background: "#0f0f0f" }}>
       <div className="max-w-5xl mx-auto">
@@ -2421,7 +2461,7 @@ function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan
             analysis={analysis} runAnalysis={runAnalysis}
             showAiZones={true} setShowAiZones={() => {}}
             selectedZone={null} setSelectedZone={() => {}}
-            deleteZone={() => {}} exportFlightPlan={exportFlightPlan}
+            deleteZone={deleteZone} exportFlightPlan={exportFlightPlan}
             clearAnalysis={clearAnalysis}
           />
         )}
