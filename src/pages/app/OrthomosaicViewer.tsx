@@ -893,12 +893,16 @@ export default function OrthomosaicViewer() {
 
   const runAnalysis = async () => {
     if (!taskId || !token) return;
+    if (!boundary || boundary.length < 3) {
+      setAnalysisErr("Define the field boundary first so the AI only analyzes your farmland.");
+      return;
+    }
     setAnalyzing(true); setAnalysisErr(null);
     try {
       const r = await fetch(`${FN_BASE}/analyze-ortho`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: taskId }),
+        body: JSON.stringify({ task_id: taskId, boundary }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? "Analysis failed");
@@ -913,6 +917,55 @@ export default function OrthomosaicViewer() {
       setAnalysisErr(e?.message ?? String(e));
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  // Boundary persistence ------------------------------------------------------
+  const handleBoundaryCreated = useCallback((ring: { lat: number; lng: number }[]) => {
+    setBoundary(ring);
+    setBoundaryDirty(true);
+    setBoundaryMode("edit");
+  }, []);
+  const handleBoundaryEdited = useCallback((ring: { lat: number; lng: number }[]) => {
+    setBoundary(ring);
+    setBoundaryDirty(true);
+  }, []);
+  const saveBoundary = async () => {
+    if (!field || !boundary || boundary.length < 3) return;
+    setBoundarySaving(true);
+    try {
+      const areaM2 = polygonAreaM2(boundary.map(p => L.latLng(p.lat, p.lng)));
+      const ha = areaM2 / 10000;
+      const { error } = await supabase.from("fields")
+        .update({
+          boundary: boundary as any,
+          boundary_area_hectares: Number(ha.toFixed(4)),
+        } as any)
+        .eq("id", field.id);
+      if (error) throw error;
+      setBoundaryDirty(false);
+      setBoundaryMode("off");
+      setField(prev => prev ? { ...prev, boundary_area_hectares: Number(ha.toFixed(4)) } : prev);
+    } catch (e) {
+      console.error("save boundary failed", e);
+    } finally {
+      setBoundarySaving(false);
+    }
+  };
+  const clearBoundary = async () => {
+    if (!field) return;
+    if (!window.confirm("Remove this field's saved boundary?")) return;
+    setBoundarySaving(true);
+    try {
+      await supabase.from("fields")
+        .update({ boundary: null, boundary_area_hectares: null } as any)
+        .eq("id", field.id);
+      setBoundary(null);
+      setBoundaryDirty(false);
+      setBoundaryMode("off");
+      setField(prev => prev ? { ...prev, boundary_area_hectares: null } : prev);
+    } finally {
+      setBoundarySaving(false);
     }
   };
 
