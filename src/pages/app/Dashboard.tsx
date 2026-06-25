@@ -15,13 +15,6 @@ type Field = {
 
 const HA_TO_AC = 2.4710538147;
 
-function healthTone(score: number | null) {
-  if (score == null) return { dot: "bg-muted-foreground/40", text: "text-muted-foreground", label: "—" };
-  if (score >= 70) return { dot: "bg-emerald-500", text: "text-emerald-500", label: `${score}` };
-  if (score >= 40) return { dot: "bg-amber-500", text: "text-amber-500", label: `${score}` };
-  return { dot: "bg-red-500", text: "text-red-500", label: `${score}` };
-}
-
 // ----------------------------------------------------------------------------
 export default function Dashboard() {
   const [fields, setFields] = useState<Field[]>([]);
@@ -92,7 +85,6 @@ export default function Dashboard() {
             <ul className="divide-y divide-border">
               {fields.map(f => {
                 const defined = !!f.boundary;
-                const tone = healthTone(null);
                 const area = realArea(f);
                 return (
                   <li key={f.id}>
