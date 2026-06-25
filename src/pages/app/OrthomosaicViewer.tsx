@@ -1319,6 +1319,7 @@ export default function OrthomosaicViewer() {
             clearBoundary={clearBoundary}
             handleBoundaryCreated={handleBoundaryCreated}
             handleBoundaryEdited={handleBoundaryEdited}
+            handleBoundaryDeleteRing={handleBoundaryDeleteRing}
             fieldAreaHa={field?.boundary_area_hectares ?? null}
           />
         )}
@@ -1724,12 +1725,19 @@ function FieldViewTab(props: {
               ? "Click around your farmland to drop vertices. Click the first point to close the shape."
               : "Drag vertices to adjust the outline. Add or remove points to fine-tune."}
           </div>
-          {boundary && boundary.length >= 3 && (() => {
-            const m2 = polygonAreaM2(boundary.map(p => L.latLng(p.lat, p.lng)));
+          {boundary && boundary.length > 0 && (() => {
+            const m2 = boundary.reduce(
+              (sum, ring) =>
+                sum + (ring.length >= 3 ? polygonAreaM2(ring.map(p => L.latLng(p.lat, p.lng))) : 0),
+              0,
+            );
             const ha = m2 / 10000;
             const ac = m2 / 4046.8564224;
             return (
               <div className="mb-3 grid grid-cols-2 gap-2 text-[11px]">
+                <div className="col-span-2 text-[10px] uppercase tracking-wider text-neutral-500">
+                  {boundary.length} part{boundary.length === 1 ? "" : "s"} · total area
+                </div>
                 <div className="rounded border border-[#222] px-2 py-1.5" style={{ background: "#0f0f0f" }}>
                   <div className="text-[10px] uppercase text-neutral-500">Hectares</div>
                   <div className="font-mono text-cyan-400 tabular-nums">{ha.toFixed(3)} ha</div>
@@ -1743,7 +1751,7 @@ function FieldViewTab(props: {
           })()}
           <div className="flex flex-wrap gap-1.5">
             <button
-              disabled={!boundary || boundary.length < 3 || boundarySaving || !boundaryDirty}
+              disabled={!boundary || boundary.length === 0 || boundarySaving || !boundaryDirty}
               onClick={saveBoundary}
               className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#4CAF50] hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600 text-black rounded-sm px-3 py-1.5 text-[11px] font-semibold"
             >
