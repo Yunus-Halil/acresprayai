@@ -271,13 +271,14 @@ function MeasureTool({
 }
 
 // --- Annotation tool ---------------------------------------------------------
-// Click to drop vertices, double-click to close. Saved annotations persist in
-// localStorage per-task and re-render whenever the "Annotations" layer is on.
+// Freehand pen marker: press, drag to draw a stroke, release to save. Strokes
+// persist in localStorage per-task and re-render whenever the "Annotations"
+// layer is on. Click a saved stroke to delete it.
 export type Annotation = {
   id: string;
-  ring: { lat: number; lng: number }[];
+  stroke: { lat: number; lng: number }[];
   color: string;
-  label?: string;
+  width: number;
   createdAt: number;
 };
 
@@ -303,32 +304,41 @@ function AnnotateTool({
   taskId: string;
 }) {
   const map = useMap();
-  const [points, setPoints] = useState<L.LatLng[]>([]);
-  const [cursor, setCursor] = useState<L.LatLng | null>(null);
+  const drawingRef = useRef<{ pts: L.LatLng[]; line: L.Polyline | null }>({ pts: [], line: null });
 
+  // While pen is active, hijack map dragging so dragging the mouse draws.
   useEffect(() => {
-    if (active) map.doubleClickZoom.disable();
-    else map.doubleClickZoom.enable();
-  }, [active, map]);
+    if (!active) return;
+    map.dragging.disable();
+    map.getContainer().style.cursor = "crosshair";
 
-  useEffect(() => { if (!active) { setPoints([]); setCursor(null); } }, [active]);
-
-  useMapEvents({
-    click(e) {
-      if (!active) return;
-      L.DomEvent.stopPropagation(e);
-      setPoints(p => [...p, e.latlng]);
-    },
-    mousemove(e) { if (active && points.length > 0) setCursor(e.latlng); },
-    dblclick(e) {
-      if (!active) return;
-      L.DomEvent.stopPropagation(e);
-      L.DomEvent.preventDefault(e as any);
-      if (points.length >= 3) {
+    const onDown = (e: L.LeafletMouseEvent) => {
+      drawingRef.current.pts = [e.latlng];
+      drawingRef.current.line = L.polyline([e.latlng], {
+        color: "#facc15", weight: 3, opacity: 0.95, lineCap: "round", lineJoin: "round",
+        interactive: false,
+      }).addTo(map);
+    };
+    const onMove = (e: L.LeafletMouseEvent) => {
+      const d = drawingRef.current;
+      if (!d.line) return;
+      const last = d.pts[d.pts.length - 1];
+      // throttle: skip near-duplicate points
+      if (last && last.distanceTo(e.latlng) < 0.5) return;
+      d.pts.push(e.latlng);
+      d.line.addLatLng(e.latlng);
+    };
+    const onUp = () => {
+      const d = drawingRef.current;
+      if (d.line) {
+        try { d.line.remove(); } catch { /* noop */ }
+      }
+      if (d.pts.length >= 2) {
         const ann: Annotation = {
           id: crypto.randomUUID(),
-          ring: points.map(p => ({ lat: p.lat, lng: p.lng })),
+          stroke: d.pts.map(p => ({ lat: p.lat, lng: p.lng })),
           color: "#facc15",
+          width: 3,
           createdAt: Date.now(),
         };
         setAnnotations(prev => {
@@ -337,39 +347,38 @@ function AnnotateTool({
           return next;
         });
       }
-      setPoints([]);
-      setCursor(null);
-    },
-  });
+      drawingRef.current = { pts: [], line: null };
+    };
 
-  // In-progress drawing layer
-  useEffect(() => {
-    if (!active) return;
-    const group = L.layerGroup().addTo(map);
-    const live = cursor && points.length ? [...points, cursor] : points;
-    if (live.length >= 2) {
-      L.polyline(live, { color: "#facc15", weight: 2, dashArray: "6 6", interactive: false }).addTo(group);
-    }
-    points.forEach((p, i) => {
-      L.circleMarker(p, {
-        radius: 4, color: "#facc15", weight: 2,
-        fillColor: i === 0 ? "#facc15" : "#0f0f0f", fillOpacity: 1, interactive: false,
-      }).addTo(group);
-    });
-    return () => { group.remove(); };
-  }, [points, cursor, active, map]);
+    map.on("mousedown", onDown);
+    map.on("mousemove", onMove);
+    map.on("mouseup", onUp);
+    return () => {
+      map.off("mousedown", onDown);
+      map.off("mousemove", onMove);
+      map.off("mouseup", onUp);
+      map.dragging.enable();
+      map.getContainer().style.cursor = "";
+      if (drawingRef.current.line) {
+        try { drawingRef.current.line.remove(); } catch { /* noop */ }
+      }
+      drawingRef.current = { pts: [], line: null };
+    };
+  }, [active, map, setAnnotations, taskId]);
 
-  // Saved annotations layer
+  // Saved strokes layer
   useEffect(() => {
     if (!visible) return;
     const group = L.layerGroup().addTo(map);
     annotations.forEach(a => {
-      const poly = L.polygon(a.ring.map(p => [p.lat, p.lng] as [number, number]), {
-        color: a.color, weight: 2, fillColor: a.color, fillOpacity: 0.18,
+      const pts = (a.stroke ?? []).map(p => [p.lat, p.lng] as [number, number]);
+      if (pts.length < 2) return;
+      const line = L.polyline(pts, {
+        color: a.color, weight: a.width || 3, opacity: 0.95,
+        lineCap: "round", lineJoin: "round",
       });
-      const tip = a.label ? `${a.label}` : "Annotation · click to delete";
-      poly.bindTooltip(tip, { direction: "top", sticky: true, opacity: 1, className: "ai-zone-label" });
-      poly.on("click", (e) => {
+      line.bindTooltip("Click to delete", { direction: "top", sticky: true, opacity: 1, className: "ai-zone-label" });
+      line.on("click", (e) => {
         L.DomEvent.stopPropagation(e);
         if (window.confirm("Delete this annotation?")) {
           setAnnotations(prev => {
@@ -379,7 +388,7 @@ function AnnotateTool({
           });
         }
       });
-      group.addLayer(poly);
+      group.addLayer(line);
     });
     return () => { group.remove(); };
   }, [annotations, visible, map, taskId, setAnnotations]);
