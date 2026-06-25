@@ -13,6 +13,8 @@ import {
   Maximize2, Plus, Minus, Loader2, MapPin, Activity,
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
+  Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
+  CheckCircle2, XCircle, Trash2,
 } from "lucide-react";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
