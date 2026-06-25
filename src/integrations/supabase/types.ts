@@ -206,6 +206,7 @@ export type Database = {
           location: string | null
           name: string
           notes: string | null
+          settings: Json
           user_id: string
         }
         Insert: {
@@ -218,6 +219,7 @@ export type Database = {
           location?: string | null
           name: string
           notes?: string | null
+          settings?: Json
           user_id: string
         }
         Update: {
@@ -230,6 +232,7 @@ export type Database = {
           location?: string | null
           name?: string
           notes?: string | null
+          settings?: Json
           user_id?: string
         }
         Relationships: []
