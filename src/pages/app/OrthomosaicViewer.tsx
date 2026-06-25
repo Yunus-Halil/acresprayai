@@ -480,54 +480,65 @@ export default function OrthomosaicViewer() {
     return () => { cancelled = true; };
   }, [taskId, token, tileTemplate]);
 
+  // Ctrl/Cmd+T opens the new-tab menu
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        setNewTabOpen(o => !o);
+      }
+      if (e.key === "Escape") { setNewTabOpen(false); setLayersOpen(false); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   if (err) {
     return (
-      <div className="h-screen w-screen bg-neutral-950 flex flex-col items-center justify-center gap-3 text-sm text-neutral-200">
+      <div className="h-screen w-screen bg-[#0f0f0f] flex flex-col items-center justify-center gap-3 text-sm text-[#f0f0f0]">
         <div className="text-red-400 max-w-md text-center px-6">{err}</div>
-        <a href="/app/fields" className="text-sky-400 underline">Back to fields</a>
+        <a href="/app/fields" className="text-[#4CAF50] underline">Back to fields</a>
       </div>
     );
   }
   if (extracting) {
     return (
-      <div className="h-screen w-screen bg-neutral-950 flex flex-col items-center justify-center gap-3 text-sm text-neutral-200">
-        <Loader2 className="h-5 w-5 animate-spin text-sky-400" />
-        <div className="text-neutral-300">{extracting.stage}</div>
-        <div className="w-64 h-1.5 bg-neutral-800 rounded overflow-hidden">
-          <div className="h-full bg-sky-500 transition-all" style={{ width: `${Math.max(2, Math.min(100, extracting.pct))}%` }} />
+      <div className="h-screen w-screen bg-[#0f0f0f] flex flex-col items-center justify-center gap-3 text-sm text-[#f0f0f0]">
+        <Loader2 className="h-5 w-5 animate-spin text-[#4CAF50]" />
+        <div>{extracting.stage}</div>
+        <div className="w-64 h-1 bg-[#1a1a1a] overflow-hidden">
+          <div className="h-full bg-[#4CAF50] transition-all" style={{ width: `${Math.max(2, Math.min(100, extracting.pct))}%` }} />
         </div>
-        <div className="text-xs text-neutral-500">Extracting orthomosaic from the processing archive on this device.</div>
+        <div className="text-xs text-neutral-500">Extracting orthomosaic on this device.</div>
       </div>
     );
   }
   if (baking) {
     const pct = baking.total ? Math.round((baking.completed / baking.total) * 100) : 0;
     return (
-      <div className="h-screen w-screen bg-neutral-950 flex flex-col items-center justify-center gap-3 text-sm text-neutral-200">
-        <Loader2 className="h-5 w-5 animate-spin text-sky-400" />
-        <div className="text-neutral-300">Pre-rendering map tiles… {baking.completed} / {baking.total}</div>
-        <div className="w-64 h-1.5 bg-neutral-800 rounded overflow-hidden">
-          <div className="h-full bg-sky-500 transition-all" style={{ width: `${Math.max(2, pct)}%` }} />
+      <div className="h-screen w-screen bg-[#0f0f0f] flex flex-col items-center justify-center gap-3 text-sm text-[#f0f0f0]">
+        <Loader2 className="h-5 w-5 animate-spin text-[#4CAF50]" />
+        <div>Pre-rendering map tiles… {baking.completed} / {baking.total}</div>
+        <div className="w-64 h-1 bg-[#1a1a1a] overflow-hidden">
+          <div className="h-full bg-[#4CAF50] transition-all" style={{ width: `${Math.max(2, pct)}%` }} />
         </div>
-        <div className="text-xs text-neutral-500">One-time bake. Future opens load instantly from cache.</div>
+        <div className="text-xs text-neutral-500">One-time bake. Future opens load instantly.</div>
       </div>
     );
   }
   if (pending) {
     return (
-      <div className="h-screen w-screen bg-neutral-950 flex flex-col items-center justify-center gap-3 text-sm text-neutral-200">
-        <Loader2 className="h-5 w-5 animate-spin text-sky-400" />
-        <div className="text-neutral-300">
-          {pending.status === "queued" ? "Queued on processing node…" : `Processing… ${pending.progress}%`}
-        </div>
-        <div className="text-xs text-neutral-500">Checking every 5 seconds. This page will load the map automatically when ready.</div>
-        <a href="/app/fields" className="text-sky-400 underline text-xs">Back to fields</a>
+      <div className="h-screen w-screen bg-[#0f0f0f] flex flex-col items-center justify-center gap-3 text-sm text-[#f0f0f0]">
+        <Loader2 className="h-5 w-5 animate-spin text-[#4CAF50]" />
+        <div>{pending.status === "queued" ? "Queued on processing node…" : `Processing… ${pending.progress}%`}</div>
+        <div className="text-xs text-neutral-500">Auto-refreshing every 5s.</div>
+        <a href="/app/fields" className="text-[#4CAF50] underline text-xs">Back to fields</a>
       </div>
     );
   }
   if (!task || !token || !tileUrl || !bounds) {
     return (
-      <div className="h-screen w-screen bg-neutral-950 flex items-center justify-center text-sm text-neutral-400 gap-2">
+      <div className="h-screen w-screen bg-[#0f0f0f] flex items-center justify-center text-sm text-neutral-400 gap-2">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading orthomosaic…
       </div>
     );
