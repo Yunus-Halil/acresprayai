@@ -1426,6 +1426,13 @@ function FieldViewTab(props: {
           setAnnotations={setAnnotations}
           taskId={taskId}
         />
+        <BoundaryTool
+          mode={boundaryMode}
+          boundary={boundary}
+          visible={layers.boundary}
+          onCreated={handleBoundaryCreated}
+          onEdited={handleBoundaryEdited}
+        />
       </MapContainer>
 
       {/* Floating icon toolbar */}
