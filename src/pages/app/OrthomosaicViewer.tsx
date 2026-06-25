@@ -776,8 +776,16 @@ export default function OrthomosaicViewer() {
       setTask(t as TaskRow);
 
       const { data: f } = await supabase.from("fields")
-        .select("name").eq("id", t.field_id).maybeSingle();
-      if (f) setField(f as FieldRow);
+        .select("id, name, boundary, boundary_area_hectares").eq("id", t.field_id).maybeSingle();
+      if (f) {
+        setField(f as FieldRow);
+        const b = (f as any).boundary;
+        if (Array.isArray(b) && b.length >= 3 && typeof b[0]?.lat === "number") {
+          setBoundary(b as { lat: number; lng: number }[]);
+        } else {
+          setBoundary(null);
+        }
+      }
 
       // 1) Mint a signed URL to the orthophoto.tif sitting in Supabase Storage.
       // 2) Hand that URL to TiTiler to get bounds + tiles.
