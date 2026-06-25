@@ -744,6 +744,10 @@ export default function OrthomosaicViewer() {
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [showAiZones, setShowAiZones] = useState(true);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [boundary, setBoundary] = useState<{ lat: number; lng: number }[] | null>(null);
+  const [boundaryMode, setBoundaryMode] = useState<"off" | "draw" | "edit">("off");
+  const [boundaryDirty, setBoundaryDirty] = useState(false);
+  const [boundarySaving, setBoundarySaving] = useState(false);
   const cursorCoordRef = useRef<HTMLDivElement | null>(null);
   const cursorZoomRef = useRef<HTMLDivElement | null>(null);
 
