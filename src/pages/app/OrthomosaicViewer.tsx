@@ -1250,6 +1250,16 @@ export default function OrthomosaicViewer() {
             taskId={taskId!}
             annotations={annotations}
             setAnnotations={setAnnotations}
+            boundary={boundary}
+            boundaryMode={boundaryMode}
+            setBoundaryMode={setBoundaryMode}
+            boundaryDirty={boundaryDirty}
+            boundarySaving={boundarySaving}
+            saveBoundary={saveBoundary}
+            clearBoundary={clearBoundary}
+            handleBoundaryCreated={handleBoundaryCreated}
+            handleBoundaryEdited={handleBoundaryEdited}
+            fieldAreaHa={field?.boundary_area_hectares ?? null}
           />
         )}
         {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
