@@ -1140,6 +1140,10 @@ export default function OrthomosaicViewer() {
         summary: j.summary,
         issues: j.issues ?? [],
         zones: j.zones ?? [],
+        data_source: j.data_source ?? "RGB",
+        band_count: j.band_count ?? 3,
+        ndvi_cells: j.ndvi_cells ?? [],
+        disclaimer: j.disclaimer ?? "These zones show anomalies detected from aerial imagery. Ground inspection is recommended to confirm issue type before treatment. AcreSpray AI does not replace professional agronomic advice.",
       };
       setAnalysis(payload);
       setSelectedZone(j.zones?.[0]?.id ?? null);
@@ -2335,8 +2339,30 @@ function AnalysisGrid({
   analysis, runAnalysis, showAiZones, setShowAiZones,
   selectedZone, setSelectedZone, deleteZone, exportFlightPlan, clearAnalysis,
 }: any) {
+  const isNDVI = analysis?.data_source === "NDVI+RGB";
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3">
+    <div className="pt-3">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[10px] font-semibold uppercase tracking-wider border ${
+            isNDVI
+              ? "bg-[#0f2a16] text-[#4CAF50] border-[#4CAF50]/40"
+              : "bg-[#1a1a1a] text-neutral-300 border-[#333]"
+          }`}
+          title={isNDVI
+            ? `Multispectral data detected (${analysis.band_count} bands). NDVI cross-referenced with RGB.`
+            : "RGB imagery only. Specific nutrient deficiencies cannot be diagnosed without multispectral data."}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${isNDVI ? "bg-[#4CAF50]" : "bg-neutral-500"}`} />
+          {isNDVI ? "NDVI + RGB Analysis" : "RGB Analysis Only"}
+        </span>
+        {isNDVI && analysis.ndvi_cells?.length > 0 && (
+          <span className="text-[10px] text-neutral-500">
+            {analysis.ndvi_cells.length} NDVI zones sampled
+          </span>
+        )}
+      </div>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
       <div className="rounded-sm p-3 border border-[#222]" style={{ background: "#1a1a1a" }}>
         <div className="flex items-center justify-between mb-2">
           <div className="text-[10px] uppercase tracking-wider text-neutral-500">Overall health</div>
@@ -2426,6 +2452,12 @@ function AnalysisGrid({
           </div>
         )}
       </div>
+    </div>
+    {analysis?.disclaimer && (
+      <div className="mt-3 rounded-sm border border-[#222] p-3 text-[11px] text-neutral-400 leading-relaxed" style={{ background: "#141414" }}>
+        ⚠️ {analysis.disclaimer}
+      </div>
+    )}
     </div>
   );
 }
