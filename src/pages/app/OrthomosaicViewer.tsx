@@ -1534,13 +1534,34 @@ export default function OrthomosaicViewer() {
             fieldAreaHa={field?.boundary_area_hectares ?? null}
             activeBoundaryIdx={activeBoundaryIdx}
             setActiveBoundaryIdx={setActiveBoundaryIdx}
+            userPolys={userPolys}
+            userPolyToolActive={userPolyToolActive}
+            setUserPolyToolActive={setUserPolyToolActive}
+            draftUserPoly={draftUserPoly}
+            setDraftUserPoly={setDraftUserPoly}
+            saveUserPolygon={saveUserPolygon}
+            deleteUserPolygon={deleteUserPolygon}
+            clearAnalysis={clearAnalysis}
           />
         )}
         {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
         {activeTab === "ai" && (
-          <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr} runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan} />
+          <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr}
+            runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan}
+            clearAnalysis={clearAnalysis} />
         )}
-        {activeTab === "planner" && <PlaceholderTab icon={Plane} title="Flight Planner" body="Generate autonomous flight paths over your treatment zones." />}
+        {activeTab === "planner" && (
+          <PlannerTab
+            analysis={analysis}
+            boundary={boundary}
+            tileUrl={tileUrl}
+            bounds={bounds}
+            maxNative={maxNative}
+            taskId={taskId!}
+            runAnalysis={runAnalysis}
+            setActiveTab={setActiveTab}
+          />
+        )}
         {activeTab === "reports" && <PlaceholderTab icon={FileBarChart} title="Reports" body="Yield, treatment, and scan history reports for this field." />}
       </div>
 
