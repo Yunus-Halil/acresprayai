@@ -1722,9 +1722,17 @@ function FieldViewTab(props: {
           </div>
           <div className="text-[11px] text-neutral-400 leading-relaxed mb-3">
             {boundaryMode === "draw"
-              ? "Click around your farmland to drop vertices. Click the first point to close the shape."
-              : "Drag vertices to adjust the outline. Add or remove points to fine-tune."}
+              ? "Click to drop vertices, click the first point to close. Finish one shape and immediately start the next — perfect for fragmented fields. Right-click a part to delete it."
+              : "Drag vertices to adjust each outline. Right-click a part to delete it. Switch to Drawing to add another fragment."}
           </div>
+          {boundaryMode === "edit" && (
+            <button
+              onClick={() => setBoundaryMode("draw")}
+              className="w-full mb-2 inline-flex items-center justify-center gap-1.5 border border-cyan-700/60 text-cyan-300 hover:bg-cyan-900/20 rounded-sm px-3 py-1.5 text-[11px]"
+            >
+              + Add another part
+            </button>
+          )}
           {boundary && boundary.length > 0 && (() => {
             const m2 = boundary.reduce(
               (sum, ring) =>
