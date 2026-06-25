@@ -3410,3 +3410,185 @@ function Stat({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+// =============================== Settings tab ===============================
+const CROP_OPTIONS = [
+  "Wheat", "Corn", "Soybeans", "Cotton", "Rice", "Barley", "Oats", "Sorghum", "Other",
+];
+
+function SettingsTab({
+  settings, onSave, saving, savedAt, fieldAreaHa,
+}: {
+  settings: FarmerSettings;
+  onSave: (s: FarmerSettings) => Promise<void> | void;
+  saving: boolean;
+  savedAt: number | null;
+  fieldAreaHa: number | null;
+}) {
+  const [local, setLocal] = useState<FarmerSettings>(settings);
+  useEffect(() => { setLocal(settings); }, [settings]);
+
+  const update = (patch: Partial<FarmerSettings>) => setLocal(s => ({ ...s, ...patch }));
+  const updateCost = (k: keyof FarmerSettings["input_costs"], v: number) =>
+    setLocal(s => ({ ...s, input_costs: { ...s.input_costs, [k]: v } }));
+  const updateAvail = (k: keyof FarmerSettings["available_inputs"], v: boolean) =>
+    setLocal(s => ({ ...s, available_inputs: { ...s.available_inputs, [k]: v } }));
+  const updateCustom = (i: number, patch: Partial<CustomInput>) =>
+    setLocal(s => {
+      const next = s.custom_inputs.slice();
+      next[i] = { ...next[i], ...patch };
+      return { ...s, custom_inputs: next };
+    });
+  const addCustom = () =>
+    setLocal(s => s.custom_inputs.length >= 3 ? s
+      : { ...s, custom_inputs: [...s.custom_inputs, { name: "", cost: 0 }] });
+  const removeCustom = (i: number) =>
+    setLocal(s => ({ ...s, custom_inputs: s.custom_inputs.filter((_, idx) => idx !== i) }));
+
+  const acresFromBoundary = fieldAreaHa ? fieldAreaHa * 2.4710538 : null;
+  const dirty = JSON.stringify(local) !== JSON.stringify(settings);
+  const gs = growthStage(local.crop_type, local.planting_date);
+
+  const inputCls = "w-full bg-[#0f0f0f] border border-[#222] rounded-sm px-2.5 py-1.5 text-sm text-[#f0f0f0] focus:outline-none focus:border-[#4CAF50]";
+  const labelCls = "text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block";
+
+  return (
+    <div className="absolute inset-0 overflow-y-auto" style={{ background: "#0f0f0f" }}>
+      <div className="max-w-4xl mx-auto p-6 pb-24 space-y-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Field Settings</h1>
+            <p className="text-xs text-neutral-500 mt-1">Drives cost calculations and AI recommendations for this field.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {savedAt && !dirty && !saving && (
+              <span className="text-[11px] text-[#4CAF50]">Saved {new Date(savedAt).toLocaleTimeString()}</span>
+            )}
+            <button
+              disabled={!dirty || saving}
+              onClick={() => onSave(local)}
+              className="text-xs bg-[#4CAF50] hover:bg-[#43a047] disabled:opacity-40 disabled:cursor-not-allowed text-black rounded-sm px-4 py-2 font-semibold inline-flex items-center gap-2"
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              {saving ? "Saving…" : dirty ? "Save changes" : "Saved"}
+            </button>
+          </div>
+        </div>
+
+        {/* Crop info */}
+        <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
+          <h2 className="text-sm font-semibold mb-1">1. Crop Information</h2>
+          <p className="text-[11px] text-neutral-500 mb-4">Used to estimate growth stage and tune AI recommendations.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Crop type</label>
+              <select className={inputCls} value={local.crop_type}
+                onChange={e => update({ crop_type: e.target.value })}>
+                <option value="">— Select crop —</option>
+                {CROP_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Field size (acres)</label>
+              <input
+                type="number" min={0} step="0.01"
+                className={inputCls}
+                placeholder={acresFromBoundary ? acresFromBoundary.toFixed(2) : "Not defined yet"}
+                value={local.area_acres_override ?? ""}
+                onChange={e => update({ area_acres_override: e.target.value === "" ? null : Number(e.target.value) })}
+              />
+              <div className="text-[10px] text-neutral-500 mt-1">
+                {acresFromBoundary
+                  ? `Boundary calc: ${acresFromBoundary.toFixed(2)} ac · leave blank to use this.`
+                  : "Define a boundary on the Field View to auto-fill."}
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Planting date</label>
+              <input type="date" className={inputCls} value={local.planting_date}
+                onChange={e => update({ planting_date: e.target.value })} />
+            </div>
+            <div>
+              <label className={labelCls}>Expected harvest date</label>
+              <input type="date" className={inputCls} value={local.harvest_date}
+                onChange={e => update({ harvest_date: e.target.value })} />
+            </div>
+          </div>
+          {gs && (
+            <div className="mt-3 text-[11px] text-neutral-400">
+              Growth stage estimate: <span className="text-[#4CAF50]">{gs}</span>
+            </div>
+          )}
+        </section>
+
+        {/* Input costs */}
+        <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
+          <h2 className="text-sm font-semibold mb-1">2. Input Costs <span className="text-neutral-500 font-normal">(per acre)</span></h2>
+          <p className="text-[11px] text-neutral-500 mb-4">Uncheck inputs you don't carry — the AI will avoid recommending them.</p>
+          <div className="space-y-2">
+            {(Object.keys(local.input_costs) as (keyof FarmerSettings["input_costs"])[]).map(k => (
+              <div key={k} className="grid grid-cols-[24px_1fr_140px] gap-3 items-center">
+                <input type="checkbox" checked={local.available_inputs[k]}
+                  onChange={e => updateAvail(k, e.target.checked)}
+                  className="h-4 w-4 accent-[#4CAF50]" />
+                <div className={`text-sm ${local.available_inputs[k] ? "text-[#f0f0f0]" : "text-neutral-600 line-through"}`}>
+                  {INPUT_LABELS[k]}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">$</span>
+                  <input type="number" min={0} step="0.01"
+                    className={`${inputCls} pl-5 text-right font-mono`}
+                    value={local.input_costs[k]}
+                    onChange={e => updateCost(k, Number(e.target.value) || 0)}
+                    disabled={!local.available_inputs[k]}
+                  />
+                </div>
+              </div>
+            ))}
+
+            <div className="pt-3 mt-3 border-t border-[#222]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[11px] uppercase tracking-wider text-neutral-500">Custom inputs ({local.custom_inputs.length}/3)</div>
+                <button onClick={addCustom} disabled={local.custom_inputs.length >= 3}
+                  className="text-[11px] text-[#4CAF50] hover:underline disabled:text-neutral-600 disabled:no-underline disabled:cursor-not-allowed inline-flex items-center gap-1">
+                  <Plus className="h-3 w-3" /> Add custom
+                </button>
+              </div>
+              {local.custom_inputs.length === 0 && (
+                <div className="text-[11px] text-neutral-600">No custom inputs.</div>
+              )}
+              {local.custom_inputs.map((c, i) => (
+                <div key={i} className="grid grid-cols-[24px_1fr_140px_28px] gap-3 items-center mb-2">
+                  <span />
+                  <input className={inputCls} placeholder="Custom input name"
+                    value={c.name} onChange={e => updateCustom(i, { name: e.target.value })} />
+                  <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">$</span>
+                    <input type="number" min={0} step="0.01"
+                      className={`${inputCls} pl-5 text-right font-mono`}
+                      value={c.cost} onChange={e => updateCustom(i, { cost: Number(e.target.value) || 0 })} />
+                  </div>
+                  <button onClick={() => removeCustom(i)}
+                    className="h-7 w-7 grid place-items-center rounded-sm text-neutral-500 hover:text-red-400 hover:bg-[#1f1f1f]">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* How it's used */}
+        <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
+          <h2 className="text-sm font-semibold mb-3">3. How these settings are used</h2>
+          <ul className="text-[12px] text-neutral-400 space-y-1.5 list-disc pl-5">
+            <li>Treatment zones detected by AI Analysis are priced as <span className="font-mono text-neutral-200">acres × your per-acre cost</span>.</li>
+            <li>Issues map to inputs via a fixed table (e.g. <span className="text-neutral-300">bare soil → reseeding</span>, <span className="text-neutral-300">nitrogen deficiency → nitrogen fertilizer</span>).</li>
+            <li>The AI is told which inputs you carry — it won't recommend a product you don't have available.</li>
+            <li>Waterlogged zones show "Drainage work required — consult agronomist" instead of a cost.</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  );
+}
