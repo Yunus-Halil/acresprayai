@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Cloud, CloudRain, Sun, CloudSnow, CloudFog, MapPin, ArrowUpRight } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 
 type Field = { id: string; name: string; area_hectares: number | null };
 type Scan = { id: string; field_id: string; created_at: string; health_score: number | null };
@@ -27,70 +27,6 @@ function formatWhen(iso: string | null) {
   return d.toLocaleDateString();
 }
 
-// --- Weather widget (Open-Meteo, no API key required) -----------------------
-type Weather = {
-  temp: number;
-  feels: number;
-  code: number;
-  wind: number;
-  city: string;
-};
-
-const WMO_LABEL: Record<number, string> = {
-  0: "Clear", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
-  45: "Fog", 48: "Fog",
-  51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
-  61: "Light rain", 63: "Rain", 65: "Heavy rain",
-  71: "Light snow", 73: "Snow", 75: "Heavy snow",
-  80: "Showers", 81: "Showers", 82: "Heavy showers",
-  95: "Thunderstorm", 96: "Thunderstorm", 99: "Thunderstorm",
-};
-
-function WeatherIcon({ code, className }: { code: number; className?: string }) {
-  if (code === 0 || code === 1) return <Sun className={className} />;
-  if (code >= 71 && code <= 77) return <CloudSnow className={className} />;
-  if (code === 45 || code === 48) return <CloudFog className={className} />;
-  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95) return <CloudRain className={className} />;
-  return <Cloud className={className} />;
-}
-
-function useWeather() {
-  const [weather, setWeather] = useState<Weather | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!("geolocation" in navigator)) { setError("Location unavailable"); return; }
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      try {
-        const { latitude, longitude } = pos.coords;
-        const r = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
-          `&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m`
-        );
-        const j = await r.json();
-        // Reverse-geocode for city label
-        let city = "Your area";
-        try {
-          const g = await fetch(`https://geocoding-api.open-meteo.com/v1/reverse?latitude=${latitude}&longitude=${longitude}&count=1`);
-          const gj = await g.json();
-          city = gj?.results?.[0]?.name ?? city;
-        } catch { /* ignore */ }
-        setWeather({
-          temp: j.current.temperature_2m,
-          feels: j.current.apparent_temperature,
-          code: j.current.weather_code,
-          wind: j.current.wind_speed_10m,
-          city,
-        });
-      } catch (e: any) {
-        setError(e?.message ?? "Weather unavailable");
-      }
-    }, () => setError("Location denied"));
-  }, []);
-
-  return { weather, error };
-}
-
 // ----------------------------------------------------------------------------
 export default function Dashboard() {
   const [fields, setFields] = useState<Field[]>([]);
@@ -108,8 +44,6 @@ export default function Dashboard() {
       setLoading(false);
     })();
   }, []);
-
-  const { weather, error: weatherError } = useWeather();
 
   const perField = useMemo(() => {
     const map = new Map<string, { latest: Scan | null; latestHealth: Scan | null }>();
@@ -144,7 +78,7 @@ export default function Dashboard() {
       <header className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-display text-3xl tracking-tight">Operations Dashboard</h1>
-          <p className="text-muted-foreground text-sm">A snapshot of your fields, scans, and field weather.</p>
+          <p className="text-muted-foreground text-sm">A snapshot of your fields and scans.</p>
         </div>
       </header>
 
@@ -179,9 +113,9 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         {/* Field list */}
-        <Card className="p-6 lg:col-span-2">
+        <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-lg">Fields</h2>
             <Link to="/app/fields" className="text-xs text-muted-foreground inline-flex items-center gap-1 hover:text-foreground">
@@ -219,41 +153,6 @@ export default function Dashboard() {
                 );
               })}
             </ul>
-          )}
-        </Card>
-
-        {/* Weather widget */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-lg">Weather</h2>
-            {weather && (
-              <div className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                <MapPin className="h-3 w-3" /> {weather.city}
-              </div>
-            )}
-          </div>
-          {weatherError && <p className="text-sm text-muted-foreground">{weatherError}</p>}
-          {!weather && !weatherError && <p className="text-sm text-muted-foreground">Detecting your location…</p>}
-          {weather && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <WeatherIcon code={weather.code} className="h-12 w-12 text-primary" />
-                <div>
-                  <div className="font-display text-5xl tabular-nums">{Math.round(weather.temp)}°</div>
-                  <div className="text-xs text-muted-foreground">{WMO_LABEL[weather.code] ?? "—"}</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded-md border border-border/60 px-3 py-2">
-                  <div className="text-muted-foreground">Feels like</div>
-                  <div className="font-mono tabular-nums">{Math.round(weather.feels)}°C</div>
-                </div>
-                <div className="rounded-md border border-border/60 px-3 py-2">
-                  <div className="text-muted-foreground">Wind</div>
-                  <div className="font-mono tabular-nums">{Math.round(weather.wind)} km/h</div>
-                </div>
-              </div>
-            </div>
           )}
         </Card>
       </div>

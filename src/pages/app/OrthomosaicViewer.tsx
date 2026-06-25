@@ -13,6 +13,8 @@ import {
   Maximize2, Plus, Minus, Loader2, MapPin, Activity,
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
+  Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
+  CheckCircle2, XCircle, Trash2,
 } from "lucide-react";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -179,8 +181,8 @@ export type MeasureStats = {
 };
 
 function MeasureTool({
-  active, onStats,
-}: { active: boolean; onStats: (s: MeasureStats) => void }) {
+  active, visible, onStats,
+}: { active: boolean; visible: boolean; onStats: (s: MeasureStats) => void }) {
   const map = useMap();
   const [points, setPoints] = useState<L.LatLng[]>([]);
   const [cursor, setCursor] = useState<L.LatLng | null>(null);
@@ -221,6 +223,7 @@ function MeasureTool({
 
   // Draw the measurement layer
   useEffect(() => {
+    if (!visible) return;
     const group = L.layerGroup().addTo(map);
     const live: L.LatLng[] = finished
       ? points
@@ -246,7 +249,7 @@ function MeasureTool({
       }).addTo(group);
     });
     return () => { group.remove(); };
-  }, [points, cursor, finished, map]);
+  }, [points, cursor, finished, map, visible]);
 
   // Report stats up to parent
   useEffect(() => {
@@ -263,6 +266,123 @@ function MeasureTool({
       areaM2: finished && points.length >= 3 ? polygonAreaM2(points) : 0,
     });
   }, [active, finished, points, cursor, onStats]);
+
+  return null;
+}
+
+// --- Annotation tool ---------------------------------------------------------
+// Click to drop vertices, double-click to close. Saved annotations persist in
+// localStorage per-task and re-render whenever the "Annotations" layer is on.
+export type Annotation = {
+  id: string;
+  ring: { lat: number; lng: number }[];
+  color: string;
+  label?: string;
+  createdAt: number;
+};
+
+function loadAnnotations(taskId: string): Annotation[] {
+  try {
+    const raw = localStorage.getItem(`annotations:${taskId}`);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+function saveAnnotations(taskId: string, list: Annotation[]) {
+  try { localStorage.setItem(`annotations:${taskId}`, JSON.stringify(list)); } catch { /* noop */ }
+}
+
+function AnnotateTool({
+  active, visible, annotations, setAnnotations, taskId,
+}: {
+  active: boolean;
+  visible: boolean;
+  annotations: Annotation[];
+  setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
+  taskId: string;
+}) {
+  const map = useMap();
+  const [points, setPoints] = useState<L.LatLng[]>([]);
+  const [cursor, setCursor] = useState<L.LatLng | null>(null);
+
+  useEffect(() => {
+    if (active) map.doubleClickZoom.disable();
+    else map.doubleClickZoom.enable();
+  }, [active, map]);
+
+  useEffect(() => { if (!active) { setPoints([]); setCursor(null); } }, [active]);
+
+  useMapEvents({
+    click(e) {
+      if (!active) return;
+      L.DomEvent.stopPropagation(e);
+      setPoints(p => [...p, e.latlng]);
+    },
+    mousemove(e) { if (active && points.length > 0) setCursor(e.latlng); },
+    dblclick(e) {
+      if (!active) return;
+      L.DomEvent.stopPropagation(e);
+      L.DomEvent.preventDefault(e as any);
+      if (points.length >= 3) {
+        const ann: Annotation = {
+          id: crypto.randomUUID(),
+          ring: points.map(p => ({ lat: p.lat, lng: p.lng })),
+          color: "#facc15",
+          createdAt: Date.now(),
+        };
+        setAnnotations(prev => {
+          const next = [...prev, ann];
+          saveAnnotations(taskId, next);
+          return next;
+        });
+      }
+      setPoints([]);
+      setCursor(null);
+    },
+  });
+
+  // In-progress drawing layer
+  useEffect(() => {
+    if (!active) return;
+    const group = L.layerGroup().addTo(map);
+    const live = cursor && points.length ? [...points, cursor] : points;
+    if (live.length >= 2) {
+      L.polyline(live, { color: "#facc15", weight: 2, dashArray: "6 6", interactive: false }).addTo(group);
+    }
+    points.forEach((p, i) => {
+      L.circleMarker(p, {
+        radius: 4, color: "#facc15", weight: 2,
+        fillColor: i === 0 ? "#facc15" : "#0f0f0f", fillOpacity: 1, interactive: false,
+      }).addTo(group);
+    });
+    return () => { group.remove(); };
+  }, [points, cursor, active, map]);
+
+  // Saved annotations layer
+  useEffect(() => {
+    if (!visible) return;
+    const group = L.layerGroup().addTo(map);
+    annotations.forEach(a => {
+      const poly = L.polygon(a.ring.map(p => [p.lat, p.lng] as [number, number]), {
+        color: a.color, weight: 2, fillColor: a.color, fillOpacity: 0.18,
+      });
+      const tip = a.label ? `${a.label}` : "Annotation · click to delete";
+      poly.bindTooltip(tip, { direction: "top", sticky: true, opacity: 1, className: "ai-zone-label" });
+      poly.on("click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (window.confirm("Delete this annotation?")) {
+          setAnnotations(prev => {
+            const next = prev.filter(x => x.id !== a.id);
+            saveAnnotations(taskId, next);
+            return next;
+          });
+        }
+      });
+      group.addLayer(poly);
+    });
+    return () => { group.remove(); };
+  }, [annotations, visible, map, taskId, setAnnotations]);
 
   return null;
 }
@@ -374,6 +494,7 @@ type LayerState = {
   design: boolean;
   orthomosaic: boolean;
   ndvi: boolean;
+  measurements: boolean;
 };
 
 function LayerRow({
@@ -411,7 +532,7 @@ export default function OrthomosaicViewer() {
   const [extracting, setExtracting] = useState<{ stage: string; pct: number } | null>(null);
 
   const [layers, setLayers] = useState<LayerState>({
-    annotations: false, design: false, orthomosaic: true, ndvi: false,
+    annotations: true, design: false, orthomosaic: true, ndvi: false, measurements: true,
   });
   const [ndviInfo, setNdviInfo] = useState<{ bands: number; index: "ndvi" | "vari"; label: string } | null>(null);
   type TabKey = "field" | "weather" | "ai" | "planner" | "reports";
@@ -429,8 +550,15 @@ export default function OrthomosaicViewer() {
   const [analysisErr, setAnalysisErr] = useState<string | null>(null);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [showAiZones, setShowAiZones] = useState(true);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const cursorCoordRef = useRef<HTMLDivElement | null>(null);
   const cursorZoomRef = useRef<HTMLDivElement | null>(null);
+
+  // Load saved annotations whenever the active scan changes.
+  useEffect(() => {
+    if (!taskId) return;
+    setAnnotations(loadAnnotations(taskId));
+  }, [taskId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -861,9 +989,12 @@ export default function OrthomosaicViewer() {
             updateZoneRing={updateZoneRing}
             deleteZone={deleteZone}
             exportFlightPlan={exportFlightPlan}
+            taskId={taskId!}
+            annotations={annotations}
+            setAnnotations={setAnnotations}
           />
         )}
-        {activeTab === "weather" && <PlaceholderTab icon={CloudSun} title="Weather" body="Live weather and spray windows for this field will appear here." />}
+        {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
         {activeTab === "ai" && (
           <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr} runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan} />
         )}
@@ -927,17 +1058,22 @@ function FieldViewTab(props: {
   updateZoneRing: (id: string, ring: { lat: number; lng: number }[]) => void;
   deleteZone: (id: string) => void;
   exportFlightPlan: () => void;
+  taskId: string;
+  annotations: Annotation[];
+  setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
 }) {
   const {
-    center, bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
+    bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
     cursorCoordRef, cursorZoomRef, layersOpen, setLayersOpen,
     drawerOpen, setDrawerOpen,
     analysis, analyzing, analysisErr, runAnalysis,
     showAiZones, setShowAiZones, selectedZone, setSelectedZone,
     updateZoneRing, deleteZone, exportFlightPlan,
+    taskId, annotations, setAnnotations,
   } = props;
 
   const [measureActive, setMeasureActive] = useState(false);
+  const [annotateActive, setAnnotateActive] = useState(false);
   const [measureStats, setMeasureStats] = useState<MeasureStats>({
     active: false, finished: false, count: 0, distM: 0, areaM2: 0, liveDistM: 0,
   });
@@ -958,8 +1094,8 @@ function FieldViewTab(props: {
   return (
     <div className="absolute inset-0 bg-[#0a0a0a]">
       <MapContainer
-        center={center}
-        zoom={15}
+        bounds={bounds}
+        boundsOptions={{ padding: [40, 40] }}
         minZoom={1}
         maxZoom={22}
         preferCanvas
@@ -1018,7 +1154,14 @@ function FieldViewTab(props: {
             onUpdate={updateZoneRing}
           />
         )}
-        <MeasureTool active={measureActive} onStats={handleStats} />
+        <MeasureTool active={measureActive} visible={layers.measurements} onStats={handleStats} />
+        <AnnotateTool
+          active={annotateActive}
+          visible={layers.annotations}
+          annotations={annotations}
+          setAnnotations={setAnnotations}
+          taskId={taskId}
+        />
       </MapContainer>
 
       {/* Floating icon toolbar */}
@@ -1026,14 +1169,42 @@ function FieldViewTab(props: {
         <ToolButton icon={Layers} label="Layers" active={layersOpen}
           onClick={() => { setLayersOpen(!layersOpen); }} />
         <ToolButton icon={Ruler} label="Measure" active={measureActive}
-          onClick={() => { setMeasureActive(v => !v); setLayersOpen(false); }} />
-        <ToolButton icon={Pencil} label="Annotate" />
+          onClick={() => {
+            setMeasureActive(v => !v); setAnnotateActive(false); setLayersOpen(false);
+          }} />
+        <ToolButton icon={Pencil} label={annotateActive ? "Finish (dbl-click)" : "Annotate area"} active={annotateActive}
+          onClick={() => {
+            setAnnotateActive(v => !v); setMeasureActive(false); setLayersOpen(false);
+          }} />
         <ToolButton icon={Settings} label="Settings" />
       </div>
 
       {/* Measure panel */}
-      {(measureActive || measureStats.count > 0) && !layersOpen && (
+      {(measureActive || measureStats.count > 0) && layers.measurements && !layersOpen && (
         <MeasurePanel stats={measureStats} />
+      )}
+      {annotateActive && !layersOpen && (
+        <div className="absolute top-4 left-16 z-[1001] w-64 rounded-md border border-[#222] shadow-2xl p-3 text-[#f0f0f0]"
+             style={{ background: "#161616" }}>
+          <div className="flex items-center gap-2 pb-2 mb-2 border-b border-[#222]">
+            <Pencil className="h-3.5 w-3.5 text-yellow-400" />
+            <div className="text-xs font-medium">Annotate</div>
+            <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500">
+              Dbl-click to save
+            </div>
+          </div>
+          <div className="text-[11px] text-neutral-400 leading-relaxed">
+            Click on the map to highlight an area. Double-click to save it.
+            Click a saved highlight to delete it. Toggle the <span className="text-[#f0f0f0]">Annotations</span> layer to hide them.
+          </div>
+          {annotations.length > 0 && (
+            <button
+              onClick={() => { if (window.confirm("Clear all annotations on this scan?")) { setAnnotations([]); saveAnnotations(taskId, []); } }}
+              className="mt-2 inline-flex items-center gap-1 text-[10px] text-red-400 hover:underline">
+              <Trash2 className="h-3 w-3" /> Clear all ({annotations.length})
+            </button>
+          )}
+        </div>
       )}
 
       {/* Layers popover */}
@@ -1058,6 +1229,9 @@ function FieldViewTab(props: {
           <LayerRow label="Annotations" icon={MapPin}
             checked={layers.annotations}
             onToggle={() => setLayers(s => ({ ...s, annotations: !s.annotations }))} />
+          <LayerRow label="Measurements" icon={Ruler}
+            checked={layers.measurements}
+            onToggle={() => setLayers(s => ({ ...s, measurements: !s.measurements }))} />
           <LayerRow label="AI treatment zones" icon={Sparkles}
             checked={showAiZones}
             onToggle={() => setShowAiZones(!showAiZones)} />
@@ -1293,6 +1467,247 @@ function PlaceholderTab({ icon: Icon, title, body }: { icon: any; title: string;
         <h2 className="text-lg font-semibold tracking-tight mb-1">{title}</h2>
         <p className="text-sm text-neutral-500 leading-relaxed">{body}</p>
         <div className="mt-4 text-[11px] uppercase tracking-wider text-neutral-600">Coming soon</div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------- Weather tab ------------------------------------
+const WMO_LABEL: Record<number, string> = {
+  0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+  45: "Fog", 48: "Depositing fog",
+  51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
+  61: "Light rain", 63: "Rain", 65: "Heavy rain",
+  71: "Light snow", 73: "Snow", 75: "Heavy snow",
+  80: "Showers", 81: "Showers", 82: "Heavy showers",
+  95: "Thunderstorm", 96: "Thunderstorm w/ hail", 99: "Thunderstorm w/ hail",
+};
+function WeatherGlyph({ code, className }: { code: number; className?: string }) {
+  if (code === 0 || code === 1) return <Sun className={className} />;
+  if (code >= 71 && code <= 77) return <CloudSnow className={className} />;
+  if (code === 45 || code === 48) return <CloudFog className={className} />;
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95) return <CloudRain className={className} />;
+  return <Cloud className={className} />;
+}
+
+type Hour = {
+  time: string; temp: number; wind: number; gust: number; humidity: number;
+  precip: number; precipProb: number; code: number;
+};
+
+// Spray suitability rules — informed by FAA/AAAA pesticide-application guidance.
+function sprayCheck(h: { wind: number; gust: number; humidity: number; precip: number; precipProb: number; temp: number }) {
+  const reasons: string[] = [];
+  if (h.wind > 15) reasons.push(`Wind ${h.wind.toFixed(0)} km/h above 15 limit`);
+  else if (h.wind < 3) reasons.push(`Wind ${h.wind.toFixed(0)} km/h too calm — inversion risk`);
+  if (h.gust > 20) reasons.push(`Gusts ${h.gust.toFixed(0)} km/h`);
+  if (h.humidity < 40) reasons.push(`Humidity ${h.humidity.toFixed(0)}% — high evaporation`);
+  if (h.precip > 0.2 || h.precipProb > 40) reasons.push(`Rain risk ${h.precipProb}%`);
+  if (h.temp > 30) reasons.push(`Temp ${h.temp.toFixed(0)}°C — drift risk`);
+  if (h.temp < 5) reasons.push(`Temp ${h.temp.toFixed(0)}°C too cold`);
+  return { good: reasons.length === 0, reasons };
+}
+
+function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName: string }) {
+  const [lat, lng] = center;
+  const [data, setData] = useState<any | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}` +
+          `&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,weather_code,precipitation` +
+          `&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation,precipitation_probability,weather_code` +
+          `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max` +
+          `&forecast_days=5&timezone=auto&wind_speed_unit=kmh`;
+        const r = await fetch(url);
+        const j = await r.json();
+        if (!cancelled) setData(j);
+      } catch (e: any) {
+        if (!cancelled) setErr(e?.message ?? "Weather unavailable");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [lat, lng]);
+
+  if (err) return (
+    <div className="absolute inset-0 grid place-items-center text-sm text-red-400" style={{ background: "#0f0f0f" }}>{err}</div>
+  );
+  if (!data) return (
+    <div className="absolute inset-0 grid place-items-center text-sm text-neutral-400 gap-2" style={{ background: "#0f0f0f" }}>
+      <Loader2 className="h-4 w-4 animate-spin" /> Loading weather…
+    </div>
+  );
+
+  const cur = data.current;
+  const now = sprayCheck({
+    wind: cur.wind_speed_10m, gust: cur.wind_gusts_10m,
+    humidity: cur.relative_humidity_2m, precip: cur.precipitation,
+    precipProb: 0, temp: cur.temperature_2m,
+  });
+
+  // Build next-24h hourly slice
+  const hourly: Hour[] = [];
+  const nowIdx = data.hourly.time.findIndex((t: string) => new Date(t).getTime() >= Date.now() - 3600_000);
+  for (let i = Math.max(0, nowIdx); i < Math.min(data.hourly.time.length, nowIdx + 24); i++) {
+    hourly.push({
+      time: data.hourly.time[i],
+      temp: data.hourly.temperature_2m[i],
+      wind: data.hourly.wind_speed_10m[i],
+      gust: data.hourly.wind_gusts_10m[i],
+      humidity: data.hourly.relative_humidity_2m[i],
+      precip: data.hourly.precipitation[i],
+      precipProb: data.hourly.precipitation_probability?.[i] ?? 0,
+      code: data.hourly.weather_code[i],
+    });
+  }
+
+  // Find the next good spray window (>= 2 consecutive hours)
+  let nextWindow: { start: Hour; end: Hour } | null = null;
+  {
+    let runStart = -1;
+    for (let i = 0; i < hourly.length; i++) {
+      const ok = sprayCheck(hourly[i]).good;
+      if (ok && runStart < 0) runStart = i;
+      if ((!ok || i === hourly.length - 1) && runStart >= 0) {
+        const end = ok ? i : i - 1;
+        if (end - runStart + 1 >= 2) { nextWindow = { start: hourly[runStart], end: hourly[end] }; break; }
+        runStart = -1;
+      }
+    }
+  }
+
+  const days = data.daily.time.map((t: string, i: number) => ({
+    date: t,
+    code: data.daily.weather_code[i],
+    tmax: data.daily.temperature_2m_max[i],
+    tmin: data.daily.temperature_2m_min[i],
+    precip: data.daily.precipitation_sum[i],
+    wind: data.daily.wind_speed_10m_max[i],
+  }));
+
+  const fmtHour = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric" });
+  const fmtDay = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+
+  return (
+    <div className="absolute inset-0 overflow-auto p-8" style={{ background: "#0f0f0f" }}>
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex items-center gap-3">
+          <CloudSun className="h-5 w-5 text-[#4CAF50]" />
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Weather · {fieldName}</h1>
+            <div className="text-xs text-neutral-500 font-mono">{lat.toFixed(4)}, {lng.toFixed(4)}</div>
+          </div>
+        </div>
+
+        {/* Current conditions */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-sm border border-[#222] p-5 md:col-span-1" style={{ background: "#1a1a1a" }}>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Current</div>
+            <div className="flex items-center gap-4">
+              <WeatherGlyph code={cur.weather_code} className="h-12 w-12 text-[#4CAF50]" />
+              <div>
+                <div className="text-5xl font-semibold tabular-nums">{Math.round(cur.temperature_2m)}°C</div>
+                <div className="text-xs text-neutral-400">{WMO_LABEL[cur.weather_code] ?? "—"}</div>
+                <div className="text-[11px] text-neutral-500">Feels {Math.round(cur.apparent_temperature)}°</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mt-4 text-xs">
+              <div className="rounded-sm border border-[#222] p-2" style={{ background: "#0f0f0f" }}>
+                <Wind className="h-3 w-3 text-neutral-500 mb-1" />
+                <div className="text-neutral-500 text-[10px]">Wind</div>
+                <div className="font-mono">{Math.round(cur.wind_speed_10m)} km/h</div>
+              </div>
+              <div className="rounded-sm border border-[#222] p-2" style={{ background: "#0f0f0f" }}>
+                <Droplets className="h-3 w-3 text-neutral-500 mb-1" />
+                <div className="text-neutral-500 text-[10px]">Humidity</div>
+                <div className="font-mono">{Math.round(cur.relative_humidity_2m)}%</div>
+              </div>
+              <div className="rounded-sm border border-[#222] p-2" style={{ background: "#0f0f0f" }}>
+                <ThermometerSun className="h-3 w-3 text-neutral-500 mb-1" />
+                <div className="text-neutral-500 text-[10px]">Gust</div>
+                <div className="font-mono">{Math.round(cur.wind_gusts_10m)} km/h</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Spray window verdict */}
+          <div className={`rounded-sm border p-5 md:col-span-2 ${now.good ? "border-[#4CAF50]/40" : "border-red-500/40"}`}
+               style={{ background: "#1a1a1a" }}>
+            <div className="flex items-center gap-2 mb-3">
+              {now.good
+                ? <CheckCircle2 className="h-5 w-5 text-[#4CAF50]" />
+                : <XCircle className="h-5 w-5 text-red-400" />}
+              <div className="text-base font-semibold">
+                {now.good ? "Good to spray right now" : "Not safe to spray right now"}
+              </div>
+            </div>
+            {now.reasons.length > 0 && (
+              <ul className="space-y-1 text-xs text-neutral-400 mb-3">
+                {now.reasons.map((r, i) => <li key={i}>• {r}</li>)}
+              </ul>
+            )}
+            <div className="text-[11px] text-neutral-500 leading-relaxed mb-3">
+              Targets: wind 3–15 km/h, gusts &lt; 20 km/h, humidity ≥ 40%, no rain within the hour, temperature 5–30°C.
+            </div>
+            {nextWindow ? (
+              <div className="rounded-sm border border-[#4CAF50]/30 p-3" style={{ background: "#0f0f0f" }}>
+                <div className="text-[10px] uppercase tracking-wider text-[#4CAF50]">Next spray window</div>
+                <div className="text-sm font-mono mt-1">
+                  {fmtHour(nextWindow.start.time)} – {fmtHour(nextWindow.end.time)}
+                  <span className="text-neutral-500"> · {new Date(nextWindow.start.time).toLocaleDateString([], { weekday: "short" })}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-neutral-500">No suitable 2-hour window in the next 24 hours.</div>
+            )}
+          </div>
+        </div>
+
+        {/* Hourly strip */}
+        <div className="rounded-sm border border-[#222] p-4" style={{ background: "#1a1a1a" }}>
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-3">Next 24 hours</div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {hourly.map((h, i) => {
+              const ok = sprayCheck(h).good;
+              return (
+                <div key={i} className={`min-w-[88px] rounded-sm border p-2 text-center ${ok ? "border-[#4CAF50]/30" : "border-[#222]"}`}
+                     style={{ background: "#0f0f0f" }}>
+                  <div className="text-[10px] text-neutral-500">{fmtHour(h.time)}</div>
+                  <WeatherGlyph code={h.code} className="h-5 w-5 mx-auto my-1 text-neutral-300" />
+                  <div className="text-sm font-mono tabular-nums">{Math.round(h.temp)}°</div>
+                  <div className="text-[10px] text-neutral-500 mt-0.5 font-mono">{Math.round(h.wind)} km/h</div>
+                  <div className="text-[10px] text-neutral-500 font-mono">{h.precipProb}%</div>
+                  <div className={`mt-1 h-1 rounded-full ${ok ? "bg-[#4CAF50]" : "bg-red-500/60"}`} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 5-day */}
+        <div className="rounded-sm border border-[#222] p-4" style={{ background: "#1a1a1a" }}>
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-3">5-day forecast</div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            {days.map((d: any, i: number) => (
+              <div key={i} className="rounded-sm border border-[#222] p-3" style={{ background: "#0f0f0f" }}>
+                <div className="text-[11px] text-neutral-400">{fmtDay(d.date)}</div>
+                <div className="flex items-center gap-2 mt-1">
+                  <WeatherGlyph code={d.code} className="h-5 w-5 text-neutral-300" />
+                  <div className="text-sm font-mono">
+                    <span className="text-[#f0f0f0]">{Math.round(d.tmax)}°</span>
+                    <span className="text-neutral-500"> / {Math.round(d.tmin)}°</span>
+                  </div>
+                </div>
+                <div className="text-[10px] text-neutral-500 font-mono mt-1">{d.precip.toFixed(1)} mm · {Math.round(d.wind)} km/h</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="text-[10px] text-neutral-600">Data: Open-Meteo · Updated {new Date().toLocaleTimeString()}</div>
       </div>
     </div>
   );
