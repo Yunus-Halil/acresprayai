@@ -1389,15 +1389,16 @@ function FieldViewTab(props: {
   taskId: string;
   annotations: Annotation[];
   setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
-  boundary: { lat: number; lng: number }[] | null;
+  boundary: BoundaryRing[] | null;
   boundaryMode: "off" | "draw" | "edit";
   setBoundaryMode: React.Dispatch<React.SetStateAction<"off" | "draw" | "edit">>;
   boundaryDirty: boolean;
   boundarySaving: boolean;
   saveBoundary: () => void;
   clearBoundary: () => void;
-  handleBoundaryCreated: (ring: { lat: number; lng: number }[]) => void;
-  handleBoundaryEdited: (ring: { lat: number; lng: number }[]) => void;
+  handleBoundaryCreated: (ring: BoundaryRing) => void;
+  handleBoundaryEdited: (index: number, ring: BoundaryRing) => void;
+  handleBoundaryDeleteRing: (index: number) => void;
   fieldAreaHa: number | null;
 }) {
   const {
@@ -1409,7 +1410,7 @@ function FieldViewTab(props: {
     updateZoneRing, deleteZone, exportFlightPlan,
     taskId, annotations, setAnnotations,
     boundary, boundaryMode, setBoundaryMode, boundaryDirty, boundarySaving,
-    saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited,
+    saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited, handleBoundaryDeleteRing,
     fieldAreaHa,
   } = props;
 
@@ -1515,6 +1516,7 @@ function FieldViewTab(props: {
           visible={layers.boundary}
           onCreated={handleBoundaryCreated}
           onEdited={handleBoundaryEdited}
+          onDeleteRing={handleBoundaryDeleteRing}
         />
       </MapContainer>
 
