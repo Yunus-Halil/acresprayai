@@ -1576,7 +1576,7 @@ export default function OrthomosaicViewer() {
         {activeTab === "ai" && (
           <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr}
             runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan}
-            clearAnalysis={clearAnalysis} />
+            clearAnalysis={clearAnalysis} deleteZone={deleteZone} />
         )}
         {activeTab === "planner" && (
           <PlannerTab
@@ -2409,7 +2409,7 @@ function AnalysisGrid({
   );
 }
 
-function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan, clearAnalysis }: any) {
+function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan, clearAnalysis, deleteZone }: any) {
   return (
     <div className="absolute inset-0 overflow-auto p-8" style={{ background: "#0f0f0f" }}>
       <div className="max-w-5xl mx-auto">
@@ -2440,7 +2440,7 @@ function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan
             analysis={analysis} runAnalysis={runAnalysis}
             showAiZones={true} setShowAiZones={() => {}}
             selectedZone={null} setSelectedZone={() => {}}
-            deleteZone={() => {}} exportFlightPlan={exportFlightPlan}
+            deleteZone={deleteZone} exportFlightPlan={exportFlightPlan}
             clearAnalysis={clearAnalysis}
           />
         )}
