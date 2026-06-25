@@ -827,12 +827,7 @@ export default function OrthomosaicViewer() {
         .select("id, name, boundary, boundary_area_hectares").eq("id", t.field_id).maybeSingle();
       if (f) {
         setField(f as FieldRow);
-        const b = (f as any).boundary;
-        if (Array.isArray(b) && b.length >= 3 && typeof b[0]?.lat === "number") {
-          setBoundary(b as { lat: number; lng: number }[]);
-        } else {
-          setBoundary(null);
-        }
+        setBoundary(normalizeBoundary((f as any).boundary));
       }
 
       // 1) Mint a signed URL to the orthophoto.tif sitting in Supabase Storage.
@@ -969,20 +964,37 @@ export default function OrthomosaicViewer() {
   };
 
   // Boundary persistence ------------------------------------------------------
-  const handleBoundaryCreated = useCallback((ring: { lat: number; lng: number }[]) => {
-    setBoundary(ring);
+  // Multi-polygon: each ring is one fragment of the field. Users can keep
+  // drawing more rings after the first one is closed.
+  const handleBoundaryCreated = useCallback((ring: BoundaryRing) => {
+    setBoundary(prev => (prev ? [...prev, ring] : [ring]));
     setBoundaryDirty(true);
-    setBoundaryMode("edit");
   }, []);
-  const handleBoundaryEdited = useCallback((ring: { lat: number; lng: number }[]) => {
-    setBoundary(ring);
+  const handleBoundaryEdited = useCallback((index: number, ring: BoundaryRing) => {
+    setBoundary(prev => {
+      if (!prev) return prev;
+      const next = prev.slice();
+      next[index] = ring;
+      return next;
+    });
+    setBoundaryDirty(true);
+  }, []);
+  const handleBoundaryDeleteRing = useCallback((index: number) => {
+    setBoundary(prev => {
+      if (!prev) return prev;
+      const next = prev.filter((_, i) => i !== index);
+      return next.length ? next : null;
+    });
     setBoundaryDirty(true);
   }, []);
   const saveBoundary = async () => {
-    if (!field || !boundary || boundary.length < 3) return;
+    if (!field || !boundary || boundary.length === 0) return;
     setBoundarySaving(true);
     try {
-      const areaM2 = polygonAreaM2(boundary.map(p => L.latLng(p.lat, p.lng)));
+      const areaM2 = boundary.reduce(
+        (sum, ring) => sum + polygonAreaM2(ring.map(p => L.latLng(p.lat, p.lng))),
+        0,
+      );
       const ha = areaM2 / 10000;
       const { error } = await supabase.from("fields")
         .update({
