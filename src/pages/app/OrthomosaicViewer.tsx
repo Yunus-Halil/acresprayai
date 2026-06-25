@@ -1646,6 +1646,72 @@ function FieldViewTab(props: {
         </div>
       )}
 
+      {/* Boundary tool panel */}
+      {boundaryMode !== "off" && !layersOpen && (
+        <div className="absolute top-4 left-16 z-[1001] w-72 rounded-md border border-[#222] shadow-2xl p-3 text-[#f0f0f0]"
+             style={{ background: "#161616" }}>
+          <div className="flex items-center gap-2 pb-2 mb-2 border-b border-[#222]">
+            <MapPin className="h-3.5 w-3.5 text-cyan-400" />
+            <div className="text-xs font-medium">Field boundary</div>
+            <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500">
+              {boundaryMode === "draw" ? "Drawing" : boundaryDirty ? "Unsaved" : "Editing"}
+            </div>
+          </div>
+          <div className="text-[11px] text-neutral-400 leading-relaxed mb-3">
+            {boundaryMode === "draw"
+              ? "Click around your farmland to drop vertices. Click the first point to close the shape."
+              : "Drag vertices to adjust the outline. Add or remove points to fine-tune."}
+          </div>
+          {boundary && boundary.length >= 3 && (() => {
+            const m2 = polygonAreaM2(boundary.map(p => L.latLng(p.lat, p.lng)));
+            const ha = m2 / 10000;
+            const ac = m2 / 4046.8564224;
+            return (
+              <div className="mb-3 grid grid-cols-2 gap-2 text-[11px]">
+                <div className="rounded border border-[#222] px-2 py-1.5" style={{ background: "#0f0f0f" }}>
+                  <div className="text-[10px] uppercase text-neutral-500">Hectares</div>
+                  <div className="font-mono text-cyan-400 tabular-nums">{ha.toFixed(3)} ha</div>
+                </div>
+                <div className="rounded border border-[#222] px-2 py-1.5" style={{ background: "#0f0f0f" }}>
+                  <div className="text-[10px] uppercase text-neutral-500">Acres</div>
+                  <div className="font-mono text-cyan-400 tabular-nums">{ac.toFixed(3)} ac</div>
+                </div>
+              </div>
+            );
+          })()}
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              disabled={!boundary || boundary.length < 3 || boundarySaving || !boundaryDirty}
+              onClick={saveBoundary}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#4CAF50] hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600 text-black rounded-sm px-3 py-1.5 text-[11px] font-semibold"
+            >
+              {boundarySaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+              Save boundary
+            </button>
+            <button
+              onClick={() => setBoundaryMode("off")}
+              className="inline-flex items-center justify-center gap-1.5 border border-[#222] hover:bg-[#1a1a1a] text-neutral-300 rounded-sm px-3 py-1.5 text-[11px]"
+            >
+              Done
+            </button>
+            {boundary && (
+              <button
+                onClick={clearBoundary}
+                className="inline-flex items-center justify-center gap-1.5 border border-red-900/50 text-red-400 hover:bg-red-900/20 rounded-sm px-2 py-1.5 text-[11px]"
+                title="Remove boundary"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          {!layers.boundary && (
+            <div className="mt-2 text-[10px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1">
+              Boundary layer is hidden. Toggle it on in Layers to see your outline.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* NDVI legend */}
       {layers.ndvi && (
         <div className="absolute bottom-[72px] left-1/2 -translate-x-1/2 z-[1000] rounded-sm border border-[#222] px-3 py-2 text-[11px] shadow-xl"
