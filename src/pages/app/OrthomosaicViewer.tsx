@@ -3020,6 +3020,50 @@ function centroidOfRings(rings: LatLng2[][]): LatLng2 {
   return n > 0 ? { lat: lat / n, lng: lng / n } : { lat: 0, lng: 0 };
 }
 
+// --- Transit routing: keep flight paths INSIDE the boundary ------------------
+// If a straight segment from a→b would leave every boundary ring, insert
+// intermediate waypoints via the centroid of the ring containing the endpoint
+// (recursively). This is a simple but effective detour scheme for convex-ish
+// fragmented fields.
+function centroidOfRing(ring: LatLng2[]): LatLng2 {
+  let lat = 0, lng = 0;
+  for (const p of ring) { lat += p.lat; lng += p.lng; }
+  return { lat: lat / ring.length, lng: lng / ring.length };
+}
+function segmentInsideRings(a: LatLng2, b: LatLng2, rings: LatLng2[][], samples = 12): boolean {
+  for (let i = 1; i < samples; i++) {
+    const t = i / samples;
+    if (!pointInAnyRing(lerp(a, b, t), rings)) return false;
+  }
+  return true;
+}
+function ringContaining(p: LatLng2, rings: LatLng2[][]): LatLng2[] | null {
+  for (const r of rings) if (pointInRing(p, r)) return r;
+  return null;
+}
+function routeInsideBoundary(a: LatLng2, b: LatLng2, rings: LatLng2[][], depth = 0): LatLng2[] {
+  if (depth > 4 || segmentInsideRings(a, b, rings)) return [a, b];
+  // Pick a detour anchor that is guaranteed inside the boundary part containing b
+  // (or a, or the overall centroid as a last resort).
+  const anchor =
+    centroidSafe(ringContaining(b, rings)) ||
+    centroidSafe(ringContaining(a, rings)) ||
+    centroidOfRings(rings);
+  // Avoid infinite recursion if anchor equals an endpoint
+  if (distM(a, anchor) < 1 || distM(b, anchor) < 1) return [a, b];
+  const left = routeInsideBoundary(a, anchor, rings, depth + 1);
+  const right = routeInsideBoundary(anchor, b, rings, depth + 1);
+  return [...left, ...right.slice(1)];
+}
+function centroidSafe(ring: LatLng2[] | null): LatLng2 | null {
+  return ring && ring.length >= 3 ? centroidOfRing(ring) : null;
+}
+function polylineLengthM(pts: LatLng2[]): number {
+  let d = 0;
+  for (let i = 1; i < pts.length; i++) d += distM(pts[i - 1], pts[i]);
+  return d;
+}
+
 function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
 }: {
