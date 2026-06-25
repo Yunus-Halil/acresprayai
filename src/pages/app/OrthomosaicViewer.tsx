@@ -1541,6 +1541,8 @@ function FieldViewTab(props: {
           onCreated={handleBoundaryCreated}
           onEdited={handleBoundaryEdited}
           onDeleteRing={handleBoundaryDeleteRing}
+          activeIdx={activeBoundaryIdx}
+          setActiveIdx={setActiveBoundaryIdx}
         />
       </MapContainer>
 
