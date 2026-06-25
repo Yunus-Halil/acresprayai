@@ -106,12 +106,30 @@ async function extractAndUpload(
 }
 
 type TaskRow = { odm_uuid: string | null; field_id: string; created_at: string };
+type BoundaryRing = { lat: number; lng: number }[];
 type FieldRow = {
   id: string;
   name: string;
-  boundary: { lat: number; lng: number }[] | null;
+  boundary: BoundaryRing[] | BoundaryRing | null;
   boundary_area_hectares: number | null;
 };
+
+// Boundary may be stored as a single ring (legacy) or as an array of rings
+// (multi-polygon fragmented fields). Always normalize to BoundaryRing[].
+function normalizeBoundary(b: unknown): BoundaryRing[] | null {
+  if (!b) return null;
+  if (Array.isArray(b) && b.length > 0) {
+    // Legacy: array of {lat,lng}
+    if (typeof (b as any)[0]?.lat === "number") {
+      return [b as BoundaryRing];
+    }
+    // Already array of rings
+    if (Array.isArray((b as any)[0])) {
+      return (b as any[]).filter(r => Array.isArray(r) && r.length >= 3) as BoundaryRing[];
+    }
+  }
+  return null;
+}
 
 // --- helpers that run inside the MapContainer ---------------------------------
 function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
@@ -616,23 +634,30 @@ function AiZonesLayer({
 // plus where AI analysis is allowed to run.
 function BoundaryTool({
   mode, boundary, visible, onCreated, onEdited,
+  onDeleteRing,
 }: {
   mode: "off" | "draw" | "edit";
-  boundary: { lat: number; lng: number }[] | null;
+  boundary: BoundaryRing[] | null;
   visible: boolean;
-  onCreated: (ring: { lat: number; lng: number }[]) => void;
-  onEdited: (ring: { lat: number; lng: number }[]) => void;
+  onCreated: (ring: BoundaryRing) => void;
+  onEdited: (index: number, ring: BoundaryRing) => void;
+  onDeleteRing: (index: number) => void;
 }) {
   const map = useMap();
 
-  // Draw mode: enable Geoman polygon draw. On create, capture ring + remove temp layer.
+  // Draw mode: enable Geoman polygon draw. After each completed polygon we
+  // append it as a new ring and keep draw mode active so fragmented fields can
+  // be outlined in one pass. Map panning stays enabled the whole time.
   useEffect(() => {
     if (mode !== "draw") return;
     const pmAny = (map as any).pm;
     if (!pmAny) return;
+    // Make absolutely sure interactions like pan/zoom are not blocked.
+    try { map.dragging.enable(); map.scrollWheelZoom.enable(); } catch { /* noop */ }
     try {
       pmAny.enableDraw("Polygon", {
         snappable: true, snapDistance: 15, allowSelfIntersection: false,
+        continueDrawing: true,
         templineStyle: { color: "#22d3ee", weight: 2, dashArray: "6 4" },
         hintlineStyle: { color: "#22d3ee", dashArray: "4 4" },
         pathOptions: { color: "#22d3ee", weight: 2, fillColor: "#22d3ee", fillOpacity: 0.08 },
@@ -642,8 +667,17 @@ function BoundaryTool({
       const layer = e.layer as L.Polygon;
       const ring = (layer.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
       try { layer.remove(); } catch { /* noop */ }
-      try { pmAny.disableDraw(); } catch { /* noop */ }
       onCreated(ring);
+      // Re-arm draw so the user can immediately outline another fragment.
+      try {
+        pmAny.enableDraw("Polygon", {
+          snappable: true, snapDistance: 15, allowSelfIntersection: false,
+          continueDrawing: true,
+          templineStyle: { color: "#22d3ee", weight: 2, dashArray: "6 4" },
+          hintlineStyle: { color: "#22d3ee", dashArray: "4 4" },
+          pathOptions: { color: "#22d3ee", weight: 2, fillColor: "#22d3ee", fillOpacity: 0.08 },
+        });
+      } catch { /* noop */ }
     };
     map.on("pm:create", handle);
     return () => {
@@ -652,30 +686,44 @@ function BoundaryTool({
     };
   }, [mode, map, onCreated]);
 
-  // Render boundary polygon (with optional editing).
+  // Render every boundary ring (with optional editing). Each ring is a
+  // separate Leaflet polygon so a fragmented field can have multiple parts.
   useEffect(() => {
-    if (!visible || !boundary || boundary.length < 3) return;
-    const poly = L.polygon(boundary.map(p => [p.lat, p.lng] as [number, number]), {
-      color: "#22d3ee", weight: 2.5, dashArray: "6 4",
-      fillColor: "#22d3ee", fillOpacity: mode === "edit" ? 0.05 : 0.08,
-    }).addTo(map);
-    poly.bindTooltip("Field boundary", { sticky: true, opacity: 1, className: "ai-zone-label" });
-    if (mode === "edit") {
-      poly.bringToFront();
-      try {
-        (poly as any).pm.enable({
-          allowSelfIntersection: false, snappable: true, snapDistance: 15,
-          draggable: true, hideMiddleMarkers: false,
+    if (!visible || !boundary || boundary.length === 0) return;
+    const polys: L.Polygon[] = [];
+    boundary.forEach((ring, idx) => {
+      if (!ring || ring.length < 3) return;
+      const poly = L.polygon(ring.map(p => [p.lat, p.lng] as [number, number]), {
+        color: "#22d3ee", weight: 2.5, dashArray: "6 4",
+        fillColor: "#22d3ee", fillOpacity: mode === "edit" ? 0.05 : 0.08,
+      }).addTo(map);
+      poly.bindTooltip(
+        boundary.length > 1 ? `Field boundary · part ${idx + 1}` : "Field boundary",
+        { sticky: true, opacity: 1, className: "ai-zone-label" },
+      );
+      if (mode === "edit" || mode === "draw") {
+        poly.bringToFront();
+        try {
+          (poly as any).pm.enable({
+            allowSelfIntersection: false, snappable: true, snapDistance: 15,
+            draggable: true, hideMiddleMarkers: false,
+          });
+        } catch { /* noop */ }
+        const handle = () => {
+          const updated = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
+          onEdited(idx, updated);
+        };
+        poly.on("pm:markerdragend pm:dragend pm:vertexadded pm:vertexremoved pm:edit", handle);
+        // Right-click a ring to delete just that fragment.
+        poly.on("contextmenu", (ev: any) => {
+          L.DomEvent.stopPropagation(ev);
+          if (window.confirm(`Remove this boundary part (${idx + 1})?`)) onDeleteRing(idx);
         });
-      } catch { /* noop */ }
-      const handle = () => {
-        const ring = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
-        onEdited(ring);
-      };
-      poly.on("pm:markerdragend pm:dragend pm:vertexadded pm:vertexremoved pm:edit", handle);
-    }
-    return () => { try { poly.remove(); } catch { /* noop */ } };
-  }, [boundary, visible, mode, map, onEdited]);
+      }
+      polys.push(poly);
+    });
+    return () => { polys.forEach(p => { try { p.remove(); } catch { /* noop */ } }); };
+  }, [boundary, visible, mode, map, onEdited, onDeleteRing]);
 
   return null;
 }
@@ -744,7 +792,7 @@ export default function OrthomosaicViewer() {
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [showAiZones, setShowAiZones] = useState(true);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [boundary, setBoundary] = useState<{ lat: number; lng: number }[] | null>(null);
+  const [boundary, setBoundary] = useState<BoundaryRing[] | null>(null);
   const [boundaryMode, setBoundaryMode] = useState<"off" | "draw" | "edit">("off");
   const [boundaryDirty, setBoundaryDirty] = useState(false);
   const [boundarySaving, setBoundarySaving] = useState(false);
@@ -779,12 +827,7 @@ export default function OrthomosaicViewer() {
         .select("id, name, boundary, boundary_area_hectares").eq("id", t.field_id).maybeSingle();
       if (f) {
         setField(f as FieldRow);
-        const b = (f as any).boundary;
-        if (Array.isArray(b) && b.length >= 3 && typeof b[0]?.lat === "number") {
-          setBoundary(b as { lat: number; lng: number }[]);
-        } else {
-          setBoundary(null);
-        }
+        setBoundary(normalizeBoundary((f as any).boundary));
       }
 
       // 1) Mint a signed URL to the orthophoto.tif sitting in Supabase Storage.
@@ -893,7 +936,8 @@ export default function OrthomosaicViewer() {
 
   const runAnalysis = async () => {
     if (!taskId || !token) return;
-    if (!boundary || boundary.length < 3) {
+    const validRings = (boundary ?? []).filter(r => r.length >= 3);
+    if (validRings.length === 0) {
       setAnalysisErr("Define the field boundary first so the AI only analyzes your farmland.");
       return;
     }
@@ -902,7 +946,7 @@ export default function OrthomosaicViewer() {
       const r = await fetch(`${FN_BASE}/analyze-ortho`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: taskId, boundary }),
+        body: JSON.stringify({ task_id: taskId, boundary: validRings }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? "Analysis failed");
@@ -921,20 +965,37 @@ export default function OrthomosaicViewer() {
   };
 
   // Boundary persistence ------------------------------------------------------
-  const handleBoundaryCreated = useCallback((ring: { lat: number; lng: number }[]) => {
-    setBoundary(ring);
+  // Multi-polygon: each ring is one fragment of the field. Users can keep
+  // drawing more rings after the first one is closed.
+  const handleBoundaryCreated = useCallback((ring: BoundaryRing) => {
+    setBoundary(prev => (prev ? [...prev, ring] : [ring]));
     setBoundaryDirty(true);
-    setBoundaryMode("edit");
   }, []);
-  const handleBoundaryEdited = useCallback((ring: { lat: number; lng: number }[]) => {
-    setBoundary(ring);
+  const handleBoundaryEdited = useCallback((index: number, ring: BoundaryRing) => {
+    setBoundary(prev => {
+      if (!prev) return prev;
+      const next = prev.slice();
+      next[index] = ring;
+      return next;
+    });
+    setBoundaryDirty(true);
+  }, []);
+  const handleBoundaryDeleteRing = useCallback((index: number) => {
+    setBoundary(prev => {
+      if (!prev) return prev;
+      const next = prev.filter((_, i) => i !== index);
+      return next.length ? next : null;
+    });
     setBoundaryDirty(true);
   }, []);
   const saveBoundary = async () => {
-    if (!field || !boundary || boundary.length < 3) return;
+    if (!field || !boundary || boundary.length === 0) return;
     setBoundarySaving(true);
     try {
-      const areaM2 = polygonAreaM2(boundary.map(p => L.latLng(p.lat, p.lng)));
+      const areaM2 = boundary.reduce(
+        (sum, ring) => sum + polygonAreaM2(ring.map(p => L.latLng(p.lat, p.lng))),
+        0,
+      );
       const ha = areaM2 / 10000;
       const { error } = await supabase.from("fields")
         .update({
@@ -1259,6 +1320,7 @@ export default function OrthomosaicViewer() {
             clearBoundary={clearBoundary}
             handleBoundaryCreated={handleBoundaryCreated}
             handleBoundaryEdited={handleBoundaryEdited}
+            handleBoundaryDeleteRing={handleBoundaryDeleteRing}
             fieldAreaHa={field?.boundary_area_hectares ?? null}
           />
         )}
@@ -1329,15 +1391,16 @@ function FieldViewTab(props: {
   taskId: string;
   annotations: Annotation[];
   setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
-  boundary: { lat: number; lng: number }[] | null;
+  boundary: BoundaryRing[] | null;
   boundaryMode: "off" | "draw" | "edit";
   setBoundaryMode: React.Dispatch<React.SetStateAction<"off" | "draw" | "edit">>;
   boundaryDirty: boolean;
   boundarySaving: boolean;
   saveBoundary: () => void;
   clearBoundary: () => void;
-  handleBoundaryCreated: (ring: { lat: number; lng: number }[]) => void;
-  handleBoundaryEdited: (ring: { lat: number; lng: number }[]) => void;
+  handleBoundaryCreated: (ring: BoundaryRing) => void;
+  handleBoundaryEdited: (index: number, ring: BoundaryRing) => void;
+  handleBoundaryDeleteRing: (index: number) => void;
   fieldAreaHa: number | null;
 }) {
   const {
@@ -1349,7 +1412,7 @@ function FieldViewTab(props: {
     updateZoneRing, deleteZone, exportFlightPlan,
     taskId, annotations, setAnnotations,
     boundary, boundaryMode, setBoundaryMode, boundaryDirty, boundarySaving,
-    saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited,
+    saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited, handleBoundaryDeleteRing,
     fieldAreaHa,
   } = props;
 
@@ -1455,6 +1518,7 @@ function FieldViewTab(props: {
           visible={layers.boundary}
           onCreated={handleBoundaryCreated}
           onEdited={handleBoundaryEdited}
+          onDeleteRing={handleBoundaryDeleteRing}
         />
       </MapContainer>
 
@@ -1659,15 +1723,30 @@ function FieldViewTab(props: {
           </div>
           <div className="text-[11px] text-neutral-400 leading-relaxed mb-3">
             {boundaryMode === "draw"
-              ? "Click around your farmland to drop vertices. Click the first point to close the shape."
-              : "Drag vertices to adjust the outline. Add or remove points to fine-tune."}
+              ? "Click to drop vertices, click the first point to close. Finish one shape and immediately start the next — perfect for fragmented fields. Right-click a part to delete it."
+              : "Drag vertices to adjust each outline. Right-click a part to delete it. Switch to Drawing to add another fragment."}
           </div>
-          {boundary && boundary.length >= 3 && (() => {
-            const m2 = polygonAreaM2(boundary.map(p => L.latLng(p.lat, p.lng)));
+          {boundaryMode === "edit" && (
+            <button
+              onClick={() => setBoundaryMode("draw")}
+              className="w-full mb-2 inline-flex items-center justify-center gap-1.5 border border-cyan-700/60 text-cyan-300 hover:bg-cyan-900/20 rounded-sm px-3 py-1.5 text-[11px]"
+            >
+              + Add another part
+            </button>
+          )}
+          {boundary && boundary.length > 0 && (() => {
+            const m2 = boundary.reduce(
+              (sum, ring) =>
+                sum + (ring.length >= 3 ? polygonAreaM2(ring.map(p => L.latLng(p.lat, p.lng))) : 0),
+              0,
+            );
             const ha = m2 / 10000;
             const ac = m2 / 4046.8564224;
             return (
               <div className="mb-3 grid grid-cols-2 gap-2 text-[11px]">
+                <div className="col-span-2 text-[10px] uppercase tracking-wider text-neutral-500">
+                  {boundary.length} part{boundary.length === 1 ? "" : "s"} · total area
+                </div>
                 <div className="rounded border border-[#222] px-2 py-1.5" style={{ background: "#0f0f0f" }}>
                   <div className="text-[10px] uppercase text-neutral-500">Hectares</div>
                   <div className="font-mono text-cyan-400 tabular-nums">{ha.toFixed(3)} ha</div>
@@ -1681,7 +1760,7 @@ function FieldViewTab(props: {
           })()}
           <div className="flex flex-wrap gap-1.5">
             <button
-              disabled={!boundary || boundary.length < 3 || boundarySaving || !boundaryDirty}
+              disabled={!boundary || boundary.length === 0 || boundarySaving || !boundaryDirty}
               onClick={saveBoundary}
               className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#4CAF50] hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600 text-black rounded-sm px-3 py-1.5 text-[11px] font-semibold"
             >

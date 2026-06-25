@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { task_id, boundary } = body as {
       task_id?: string;
-      boundary?: { lat: number; lng: number }[];
+      boundary?: { lat: number; lng: number }[] | { lat: number; lng: number }[][];
     };
     if (!task_id) return json({ error: "Missing task_id" }, 400);
 
@@ -52,13 +52,24 @@ Deno.serve(async (req) => {
     if (!b || b.length !== 4) return json({ error: "Missing bounds" }, 500);
     const [west, south, east, north] = b;
 
-    // Validate the user-supplied field boundary. The AI must restrict its
-    // analysis to this polygon — anything outside is not the farmer's field.
-    const hasBoundary =
-      Array.isArray(boundary) && boundary.length >= 3 &&
-      boundary.every(p => typeof p?.lat === "number" && typeof p?.lng === "number");
+    // Validate the user-supplied field boundary. May be a single ring (legacy)
+    // or an array of rings (fragmented field with multiple parts). The AI must
+    // restrict its analysis to the union of these polygons.
+    const isRing = (r: unknown): r is { lat: number; lng: number }[] =>
+      Array.isArray(r) && r.length >= 3 &&
+      r.every((p: any) => typeof p?.lat === "number" && typeof p?.lng === "number");
+    let rings: { lat: number; lng: number }[][] = [];
+    if (Array.isArray(boundary) && boundary.length > 0) {
+      if (isRing(boundary)) rings = [boundary];
+      else rings = (boundary as any[]).filter(isRing);
+    }
+    const hasBoundary = rings.length > 0;
+    const ringToWKT = (r: { lat: number; lng: number }[]) =>
+      `((${[...r, r[0]].map(p => `${p.lng} ${p.lat}`).join(", ")}))`;
     const boundaryWKT = hasBoundary
-      ? `POLYGON((${[...boundary!, boundary![0]].map(p => `${p.lng} ${p.lat}`).join(", ")}))`
+      ? (rings.length === 1
+          ? `POLYGON${ringToWKT(rings[0])}`
+          : `MULTIPOLYGON(${rings.map(ringToWKT).join(", ")})`)
       : null;
 
     const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
@@ -140,12 +151,11 @@ For every polygon vertex you output:
   - Use 4–12 vertices per polygon tight to the patch boundary.
 
 ${hasBoundary ? `FIELD BOUNDARY (CRITICAL):
-The farmer has explicitly outlined their field. ONLY analyze pixels inside this WGS84 polygon.
-Ignore everything outside it (roads, neighbouring fields, buildings, treelines, bare access tracks).
-Every output polygon vertex MUST lie inside this boundary.
+The farmer has explicitly outlined their field as ${rings.length} part${rings.length === 1 ? "" : "s"}. ONLY analyze pixels inside the union of these WGS84 polygons.
+Ignore EVERYTHING outside (roads, neighbouring fields, buildings, treelines, bare access tracks, woodland, hedgerows).
+Every output polygon vertex MUST lie strictly inside one of these parts. Reject any candidate zone whose center is outside.
 Boundary (WKT): ${boundaryWKT}
-Boundary vertices (lat, lng):
-${boundary!.map((p, i) => `  ${i + 1}. ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`).join("\n")}` : `NO field boundary was provided — analyze the entire image conservatively.`}`;
+${rings.map((r, ri) => `Part ${ri + 1} vertices (lat, lng):\n${r.map((p, i) => `  ${i + 1}. ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`).join("\n")}`).join("\n")}` : `NO field boundary was provided — analyze the entire image conservatively.`}`;
 
     const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -184,6 +194,21 @@ ${boundary!.map((p, i) => `  ${i + 1}. ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`
       lat >= south - 1e-6 && lat <= north + 1e-6 &&
       lng >= west  - 1e-6 && lng <= east  + 1e-6;
 
+    // Point-in-polygon (ray casting) for clipping zones to the boundary union.
+    const pointInRing = (lat: number, lng: number, ring: { lat: number; lng: number }[]) => {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i].lng, yi = ring[i].lat;
+        const xj = ring[j].lng, yj = ring[j].lat;
+        const intersect = ((yi > lat) !== (yj > lat)) &&
+          (lng < ((xj - xi) * (lat - yi)) / ((yj - yi) || 1e-12) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    };
+    const insideBoundary = (lat: number, lng: number) =>
+      !hasBoundary || rings.some(r => pointInRing(lat, lng, r));
+
     const parseVertex = (p: any): { lat: number; lng: number } | null => {
       if (!Array.isArray(p) || p.length !== 2) return null;
       const [a, b] = p.map(Number);
@@ -203,6 +228,13 @@ ${boundary!.map((p, i) => `  ${i + 1}. ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`
     };
 
     const ALLOWED_ISSUES = new Set(["Bare soil", "Visible discoloration", "Waterlogging", "Row gap", "Boundary issue"]);
+    const ringCentroid = (r: { lat: number; lng: number }[]) => {
+      const n = r.length || 1;
+      return {
+        lat: r.reduce((s, p) => s + p.lat, 0) / n,
+        lng: r.reduce((s, p) => s + p.lng, 0) / n,
+      };
+    };
     const zones = Array.isArray(parsed.zones) ? parsed.zones.map((z: any, i: number) => {
       const confidence = String(z.confidence ?? "").toUpperCase();
       return {
@@ -219,11 +251,14 @@ ${boundary!.map((p, i) => `  ${i + 1}. ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`
           ? z.polygon.map(parseVertex).filter((v: any): v is { lat: number; lng: number } => !!v)
           : [],
       };
-    }).filter((z: any) =>
-      z.ring.length >= 3 &&
-      z.issue &&
-      (z.confidence === "HIGH" || z.confidence === "MEDIUM")
-    ) : [];
+    }).filter((z: any) => {
+      if (z.ring.length < 3 || !z.issue) return false;
+      if (z.confidence !== "HIGH" && z.confidence !== "MEDIUM") return false;
+      // Hard server-side clip: reject any zone whose centroid is outside the
+      // user's defined boundary. The AI is told to stay inside but we enforce.
+      const c = ringCentroid(z.ring);
+      return insideBoundary(c.lat, c.lng);
+    }) : [];
 
     return json({
       health_score: Number(parsed.health_score ?? 0),
