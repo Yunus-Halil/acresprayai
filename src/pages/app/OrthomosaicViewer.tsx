@@ -936,7 +936,8 @@ export default function OrthomosaicViewer() {
 
   const runAnalysis = async () => {
     if (!taskId || !token) return;
-    if (!boundary || boundary.length < 3) {
+    const validRings = (boundary ?? []).filter(r => r.length >= 3);
+    if (validRings.length === 0) {
       setAnalysisErr("Define the field boundary first so the AI only analyzes your farmland.");
       return;
     }
@@ -945,7 +946,7 @@ export default function OrthomosaicViewer() {
       const r = await fetch(`${FN_BASE}/analyze-ortho`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: taskId, boundary }),
+        body: JSON.stringify({ task_id: taskId, boundary: validRings }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? "Analysis failed");
