@@ -1768,6 +1768,15 @@ function FieldViewTab(props: {
           activeIdx={activeBoundaryIdx}
           setActiveIdx={setActiveBoundaryIdx}
         />
+        {layers.userAnnotations && userPolys.length > 0 && (
+          <UserPolyLayer polys={userPolys} onDelete={deleteUserPolygon} />
+        )}
+        {userPolyToolActive && (
+          <UserPolygonTool
+            active={userPolyToolActive}
+            onComplete={(p) => setDraftUserPoly(p)}
+          />
+        )}
       </MapContainer>
 
       {/* Floating icon toolbar */}
@@ -1790,6 +1799,19 @@ function FieldViewTab(props: {
             setBoundaryMode(m => m !== "off" ? "off" : (boundary ? "edit" : "draw"));
             setMeasureActive(false);
             setAnnotateActive(false);
+            setLayersOpen(false);
+            setUserPolyToolActive(false);
+          }}
+        />
+        <ToolButton
+          icon={Hexagon}
+          label="Mark anomaly polygon"
+          active={userPolyToolActive}
+          onClick={() => {
+            setUserPolyToolActive(v => !v);
+            setMeasureActive(false);
+            setAnnotateActive(false);
+            setBoundaryMode("off");
             setLayersOpen(false);
           }}
         />
