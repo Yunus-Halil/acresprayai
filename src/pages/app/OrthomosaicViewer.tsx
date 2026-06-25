@@ -1637,6 +1637,14 @@ function FieldViewTab(props: {
   fieldAreaHa: number | null;
   activeBoundaryIdx: number | null;
   setActiveBoundaryIdx: React.Dispatch<React.SetStateAction<number | null>>;
+  userPolys: UserPoly[];
+  userPolyToolActive: boolean;
+  setUserPolyToolActive: React.Dispatch<React.SetStateAction<boolean>>;
+  draftUserPoly: DraftPolygon | null;
+  setDraftUserPoly: React.Dispatch<React.SetStateAction<DraftPolygon | null>>;
+  saveUserPolygon: (f: { name: string; issue_type: string; color: string; notes: string }) => Promise<void>;
+  deleteUserPolygon: (id: string) => Promise<void>;
+  clearAnalysis: () => Promise<void>;
 }) {
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
@@ -1649,6 +1657,8 @@ function FieldViewTab(props: {
     boundary, boundaryMode, setBoundaryMode, boundaryDirty, boundarySaving,
     saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited, handleBoundaryDeleteRing,
     fieldAreaHa, activeBoundaryIdx, setActiveBoundaryIdx,
+    userPolys, userPolyToolActive, setUserPolyToolActive,
+    draftUserPoly, setDraftUserPoly, saveUserPolygon, deleteUserPolygon, clearAnalysis,
   } = props;
 
   const [measureActive, setMeasureActive] = useState(false);
