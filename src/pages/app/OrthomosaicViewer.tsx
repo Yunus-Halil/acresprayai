@@ -977,7 +977,11 @@ export default function OrthomosaicViewer() {
   // Multi-polygon: each ring is one fragment of the field. Users can keep
   // drawing more rings after the first one is closed.
   const handleBoundaryCreated = useCallback((ring: BoundaryRing) => {
-    setBoundary(prev => (prev ? [...prev, ring] : [ring]));
+    setBoundary(prev => {
+      const next = prev ? [...prev, ring] : [ring];
+      setActiveBoundaryIdx(next.length - 1);
+      return next;
+    });
     setBoundaryDirty(true);
   }, []);
   const handleBoundaryEdited = useCallback((index: number, ring: BoundaryRing) => {
@@ -994,6 +998,11 @@ export default function OrthomosaicViewer() {
       if (!prev) return prev;
       const next = prev.filter((_, i) => i !== index);
       return next.length ? next : null;
+    });
+    setActiveBoundaryIdx(prev => {
+      if (prev === null) return null;
+      if (prev === index) return null;
+      return prev > index ? prev - 1 : prev;
     });
     setBoundaryDirty(true);
   }, []);
