@@ -653,7 +653,7 @@ function AiZonesLayer({
       });
       poly.on("popupopen", (e: any) => {
         const el = e.popup.getElement() as HTMLElement | null;
-        const btn = el?.querySelector(`[data-aiz-delete="${CSS.escape(z.id)}"]`) as HTMLElement | null;
+        const btn = el?.querySelector("button[data-aiz-delete]") as HTMLElement | null;
         if (!btn) return;
         btn.onclick = (evt) => {
           evt.preventDefault();
@@ -731,7 +731,7 @@ function UserPolyLayer({
       poly.on("popupopen", (e: any) => {
         const el = (e.popup.getElement() as HTMLElement | null);
         if (!el) return;
-        const btn = el.querySelector(`[data-uap-delete="${CSS.escape(p.id)}"]`) as HTMLElement | null;
+        const btn = el.querySelector("button[data-uap-delete]") as HTMLElement | null;
         if (btn) btn.onclick = (evt) => {
           evt.preventDefault();
           evt.stopPropagation();
@@ -1772,6 +1772,7 @@ function FieldViewTab(props: {
             selectedId={selectedZone}
             onSelect={setSelectedZone}
             onUpdate={updateZoneRing}
+            onDelete={deleteZone}
             boundaryAreaHa={fieldAreaHa}
           />
         )}
