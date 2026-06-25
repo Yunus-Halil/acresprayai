@@ -209,6 +209,8 @@ RECOMMENDATION RULES:
 DATA SOURCE FOR THIS RUN:
 ${ndviBlock}
 
+${fieldContextBlock}
+
 STRICT RULE: Only flag what you can see with HIGH CONFIDENCE in RGB imagery. Never guess. A farmer trusts you with their livelihood.
 
 What you CAN detect in RGB:
