@@ -1470,6 +1470,17 @@ function FieldViewTab(props: {
           onClick={() => {
             setAnnotateActive(v => !v); setMeasureActive(false); setLayersOpen(false);
           }} />
+        <ToolButton
+          icon={MapPin}
+          label={boundary ? "Edit field boundary" : "Define field boundary"}
+          active={boundaryMode !== "off"}
+          onClick={() => {
+            setBoundaryMode(m => m !== "off" ? "off" : (boundary ? "edit" : "draw"));
+            setMeasureActive(false);
+            setAnnotateActive(false);
+            setLayersOpen(false);
+          }}
+        />
         <ToolButton icon={Settings} label="Settings" />
       </div>
 
