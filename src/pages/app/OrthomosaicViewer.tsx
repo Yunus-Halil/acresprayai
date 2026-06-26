@@ -3326,6 +3326,44 @@ function PlannerTab({
   const defaultHome = boundary && boundary.length > 0 ? centroidOfRings(boundary as LatLng2[][]) : null;
   const effectiveHome = home ?? defaultHome;
 
+  // ---- Coverage-max spacing ----------------------------------------------
+  // The largest row spacing that still guarantees at least one sweep line
+  // passes through every anomaly zone. Computed in the same rotated frame
+  // buildFieldSweep uses (field's principal axis), so it matches the actual
+  // pattern that gets generated. If any zone is narrower than this, it can
+  // be missed entirely.
+  const coverageMaxM = (() => {
+    if (!boundary || boundary.length === 0 || validZones.length === 0) return null;
+    const fieldCenter = centroidOfRings(boundary as LatLng2[][]);
+    const theta = principalAxisAngle(boundary as LatLng2[][]);
+    const cF = Math.cos(-theta), sF = Math.sin(-theta);
+    const rot = (p: LatLng2) => rotateLL(p, fieldCenter, cF, sF);
+    let minHeightM = Infinity;
+    for (const z of validZones) {
+      const rr = z.ring.map(rot);
+      let lo = Infinity, hi = -Infinity;
+      for (const p of rr) { if (p.lat < lo) lo = p.lat; if (p.lat > hi) hi = p.lat; }
+      const h = (hi - lo) * M_PER_DEG_LAT;
+      if (h < minHeightM) minHeightM = h;
+    }
+    if (!isFinite(minHeightM) || minHeightM <= 0) return null;
+    // Floor by 0.5 m so the slider always lands inside, not exactly on the edge.
+    return Math.max(1, Math.floor(minHeightM * 2) / 2 - 0.5);
+  })();
+
+  // Auto-set spacing once we know the coverage max: pick the largest swath
+  // that (a) covers every anomaly and (b) doesn't exceed the drone's effective
+  // swath. User can drag past either threshold afterward — the slider warns.
+  const autoSetRef = useRef(false);
+  useEffect(() => {
+    if (autoSetRef.current) return;
+    if (coverageMaxM == null) return;
+    const droneSwath = spec.spray_swath_m > 0 ? spec.spray_swath_m : Infinity;
+    const optimal = Math.max(3, Math.min(15, Math.floor(Math.min(coverageMaxM, droneSwath))));
+    setSpacingM(optimal);
+    autoSetRef.current = true;
+  }, [coverageMaxM, spec.spray_swath_m]);
+
   const mission = (() => {
     if (!boundary || validZones.length === 0 || !effectiveHome) return null;
     return buildMission(
@@ -3520,19 +3558,35 @@ function PlannerTab({
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
-          <Slider2
-            label="Swath spacing"
-            value={spacingM}
-            setValue={setSpacingM}
-            min={3}
-            max={15}
-            step={1}
-            unit="m"
-            maxSafe={spec.spray_swath_m > 0 ? Math.max(3, Math.round(spec.spray_swath_m)) : undefined}
-            warning={spec.spray_swath_m > 0
-              ? `Above ${droneModelKey}'s ${spec.spray_swath_m} m swath — gaps between passes likely.`
-              : undefined}
-          />
+          {(() => {
+            const droneSwath = spec.spray_swath_m > 0 ? Math.round(spec.spray_swath_m) : null;
+            const coverage = coverageMaxM != null ? Math.floor(coverageMaxM) : null;
+            // The slider's "safe" threshold is the tighter of the two caps so
+            // the green tick marks the largest spacing that's both within the
+            // drone swath AND guarantees anomaly coverage.
+            const candidates = [droneSwath, coverage].filter((v): v is number => v != null && v >= 3);
+            const maxSafe = candidates.length ? Math.min(...candidates) : undefined;
+            const warning = spacingM > (coverage ?? Infinity)
+              ? `Above ${coverage} m — some anomalies are narrower than this and will be missed.`
+              : (droneSwath && spacingM > droneSwath)
+                ? `Above ${droneModelKey}'s ${spec.spray_swath_m} m swath — gaps between passes likely.`
+                : undefined;
+            return (
+              <Slider2
+                label="Swath spacing"
+                value={spacingM}
+                setValue={(n) => { autoSetRef.current = true; setSpacingM(n); }}
+                min={3} max={15} step={1} unit="m"
+                maxSafe={maxSafe}
+                warning={warning}
+              />
+            );
+          })()}
+          {coverageMaxM != null && (
+            <div className="text-[10px] text-neutral-500 -mt-1">
+              Auto-fit covers every anomaly up to <span className="text-[#4CAF50] font-mono">{Math.floor(coverageMaxM)} m</span> spacing.
+            </div>
+          )}
           <Slider2 label="Transit altitude (AGL)" value={transitAltM} setValue={setTransitAltM} min={10} max={120} step={1} unit="m" />
           <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
           <Slider2 label="Transit speed" value={transitSpeed} setValue={setTransitSpeed} min={3} max={20} step={0.5} unit="m/s" />
