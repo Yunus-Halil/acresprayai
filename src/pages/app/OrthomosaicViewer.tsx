@@ -3220,7 +3220,7 @@ function PlannerTab({
   onSaveSettings: (s: FarmerSettings) => Promise<void> | void;
   center: [number, number];
 }) {
-  const [spacingM, setSpacingM] = useState<number>(5);
+  const [spacingM, setSpacingM] = useState<number>(15);
   const [transitAltM, setTransitAltM] = useState<number>(30);
   const [sprayAltM, setSprayAltM] = useState<number>(3);
   const [transitSpeed, setTransitSpeed] = useState<number>(10);
@@ -3323,15 +3323,16 @@ function PlannerTab({
   // Auto-set spacing once we know the coverage max: pick the largest swath
   // that (a) covers every anomaly and (b) doesn't exceed the drone's effective
   // swath. User can drag past either threshold afterward — the slider warns.
+  // Default to the widest practical spacing: 15 m. Only tighten if anomaly
+  // coverage requires it. User can still drag past either limit afterward.
   const autoSetRef = useRef(false);
   useEffect(() => {
     if (autoSetRef.current) return;
     if (coverageMaxM == null) return;
-    const droneSwath = spec.spray_swath_m > 0 ? spec.spray_swath_m : Infinity;
-    const optimal = Math.max(3, Math.min(15, Math.floor(Math.min(coverageMaxM, droneSwath))));
+    const optimal = Math.max(3, Math.min(15, Math.floor(coverageMaxM)));
     setSpacingM(optimal);
     autoSetRef.current = true;
-  }, [coverageMaxM, spec.spray_swath_m]);
+  }, [coverageMaxM]);
 
   const mission = (() => {
     if (!boundary || validZones.length === 0 || !effectiveHome) return null;
@@ -3528,25 +3529,21 @@ function PlannerTab({
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
           {(() => {
-            const droneSwath = spec.spray_swath_m > 0 ? Math.round(spec.spray_swath_m) : null;
             const coverage = coverageMaxM != null ? Math.floor(coverageMaxM) : null;
-            // The slider's "safe" threshold is the tighter of the two caps so
-            // the green tick marks the largest spacing that's both within the
-            // drone swath AND guarantees anomaly coverage.
-            const candidates = [droneSwath, coverage].filter((v): v is number => v != null && v >= 3);
-            const maxSafe = candidates.length ? Math.min(...candidates) : undefined;
+            // Recommended spacing: 15 m, tightened only if anomaly coverage demands it.
+            const recommended = Math.max(3, Math.min(15, coverage ?? 15));
             const warning = spacingM > (coverage ?? Infinity)
               ? `Above ${coverage} m — some anomalies are narrower than this and will be missed.`
-              : (droneSwath && spacingM > droneSwath)
-                ? `Above ${droneModelKey}'s ${spec.spray_swath_m} m swath — gaps between passes likely.`
+              : spacingM > 15
+                ? `Above the 15 m recommended spacing — passes may get sparse over wider anomalies.`
                 : undefined;
             return (
               <Slider2
-                label="Swath spacing"
+                label={`Swath spacing  ·  recommended ${recommended} m`}
                 value={spacingM}
                 setValue={(n) => { autoSetRef.current = true; setSpacingM(n); }}
-                min={3} max={15} step={1} unit="m"
-                maxSafe={maxSafe}
+                min={3} max={25} step={1} unit="m"
+                maxSafe={recommended}
                 warning={warning}
               />
             );
