@@ -3207,7 +3207,7 @@ function polylineLengthM(pts: LatLng2[]): number {
 
 function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
-  settings, onSaveSettings, center,
+  settings, onSaveSettings, center, userPolys,
 }: {
   analysis: any;
   boundary: BoundaryRing[] | null;
@@ -3220,6 +3220,7 @@ function PlannerTab({
   settings: FarmerSettings;
   onSaveSettings: (s: FarmerSettings) => Promise<void> | void;
   center: [number, number];
+  userPolys: UserPoly[];
 }) {
   const [spacingM, setSpacingM] = useState<number>(15);
   const [transitAltM, setTransitAltM] = useState<number>(30);
@@ -3281,10 +3282,17 @@ function PlannerTab({
     } catch { return null; }
   })();
 
-  // Filter AI zones to those whose centroid lies inside the boundary.
+  // Combine AI treatment zones + farmer-drawn manual annotations into a single
+  // list of polygons the planner will lawnmower over. Both are filtered to
+  // those whose centroid lies inside the field boundary.
+  const aiZonesRaw: { id: string; ring: LatLng2[] }[] = (analysis?.zones ?? []) as AiZone[];
+  const userZonesRaw: { id: string; ring: LatLng2[] }[] = (userPolys ?? [])
+    .filter(u => u.ring && u.ring.length >= 3)
+    .map(u => ({ id: `user:${u.id}`, ring: u.ring }));
+  const allZonesRaw = [...aiZonesRaw, ...userZonesRaw];
   const validZones = (() => {
-    if (!analysis?.zones || !boundary || boundary.length === 0) return [];
-    return (analysis.zones as AiZone[]).filter(z => {
+    if (!boundary || boundary.length === 0) return [];
+    return allZonesRaw.filter(z => {
       if (!z.ring || z.ring.length < 3) return false;
       const cx = z.ring.reduce((a, p) => a + p.lng, 0) / z.ring.length;
       const cy = z.ring.reduce((a, p) => a + p.lat, 0) / z.ring.length;
