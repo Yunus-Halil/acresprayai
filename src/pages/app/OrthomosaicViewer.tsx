@@ -3468,13 +3468,13 @@ function PlannerTab({
       </div>
     );
   }
-  if (!analysis || analysis.zones.length === 0) {
+  if (allZonesRaw.length === 0) {
     return (
       <div className="absolute inset-0 grid place-items-center text-center p-8" style={{ background: "#0f0f0f" }}>
         <div className="max-w-md">
           <Plane className="h-8 w-8 mx-auto mb-3 text-[#4CAF50]" />
           <h2 className="text-lg font-semibold mb-1">Flight Planner</h2>
-          <p className="text-sm text-neutral-500 mb-4">Run AI analysis first — the planner generates lawnmower patterns over the detected treatment zones.</p>
+          <p className="text-sm text-neutral-500 mb-4">Run AI analysis or draw a manual anomaly first — the planner generates lawnmower patterns over treatment zones.</p>
           <button onClick={runAnalysis} className="text-xs bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 font-semibold inline-flex items-center gap-2">
             <Sparkles className="h-3.5 w-3.5" /> Analyze field
           </button>
@@ -3650,7 +3650,7 @@ function PlannerTab({
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Mission summary</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
-            <span className="font-mono">{validZones.length} of {analysis.zones.length}</span></div>
+            <span className="font-mono">{validZones.length} of {allZonesRaw.length} <span className="text-neutral-600">(AI {aiZonesRaw.length} · marks {userZonesRaw.length})</span></span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Total waypoints</span>
             <span className="font-mono">{mission?.waypoints.length ?? 0}</span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Spray distance</span>
@@ -3718,9 +3718,9 @@ function PlannerTab({
           </div>
         )}
 
-        {validZones.length < analysis.zones.length && (
+        {validZones.length < allZonesRaw.length && (
           <div className="mb-4 text-[11px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1.5">
-            {analysis.zones.length - validZones.length} zone(s) excluded — centroid outside boundary.
+            {allZonesRaw.length - validZones.length} zone(s) excluded — centroid outside boundary.
           </div>
         )}
 
