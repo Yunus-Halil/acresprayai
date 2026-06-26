@@ -3545,6 +3545,7 @@ function PlannerTab({
             onHomeChange={(p) => setHome(p)}
             swapPoint={swapPoint}
           />
+          <DroneSimMarker sim={simState} />
         </MapContainer>
         <div className="absolute top-3 left-3 z-[400] bg-black/70 text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Home (drag or click map)</div>
