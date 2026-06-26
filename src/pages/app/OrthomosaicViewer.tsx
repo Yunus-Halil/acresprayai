@@ -3230,7 +3230,18 @@ function PlannerTab({
     return () => { cancelled = true; };
   }, []);
 
-  const fp = settings.flight_plan;
+  // Local mirror of flight_plan so slider drags don't hit the DB on every tick.
+  // We persist on a 600ms idle debounce.
+  const [fp, setFp] = useState<FarmerSettings["flight_plan"]>(settings.flight_plan);
+  useEffect(() => { setFp(settings.flight_plan); }, [settings.flight_plan]);
+  useEffect(() => {
+    if (JSON.stringify(fp) === JSON.stringify(settings.flight_plan)) return;
+    const t = setTimeout(() => {
+      onSaveSettings({ ...settings, flight_plan: fp });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [fp]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const activeDrone = drones.find(d => d.id === fp.drone_id) ?? null;
   const droneModelKey = activeDrone?.model ?? "Custom";
   const baseSpec = DRONE_SPECS[droneModelKey] ?? fp.custom_specs;
@@ -3238,7 +3249,7 @@ function PlannerTab({
   const spec: DroneSpec = isCustom ? fp.custom_specs : baseSpec;
 
   const updateFlightPlan = (patch: Partial<FarmerSettings["flight_plan"]>) =>
-    onSaveSettings({ ...settings, flight_plan: { ...fp, ...patch } });
+    setFp(prev => ({ ...prev, ...patch }));
 
   // ---- Weather (read planner-side from the same 20-min localStorage cache
   // the Weather tab writes). Falls back to "no weather data".
