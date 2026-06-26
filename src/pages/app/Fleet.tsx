@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Slider } from "@/components/ui/slider";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plane, Plus, Battery, Wifi, Activity, Trash2, Sparkles, Loader2 } from "lucide-react";
@@ -15,29 +17,52 @@ import { z } from "zod";
 type Drone = {
   id: string; name: string; model: string;
   battery: number; signal: number; health: number; status: string;
+  serial?: string | null; notes?: string | null; specs?: any;
 };
 
-const MODELS = [
-  { id: "DJI Mavic 3M",   role: "Scanner",  drainPerMin: 1.55, range_m: 1500 },
-  { id: "DJI Agras T25",  role: "Sprayer",  drainPerMin: 3.80, range_m: 1200 },
-  { id: "DJI Agras T30",  role: "Sprayer",  drainPerMin: 4.20, range_m: 1200 },
-  { id: "DJI Agras T40",  role: "Sprayer",  drainPerMin: 4.85, range_m: 1500 },
-  { id: "Parrot Anafi USA", role: "Scanner", drainPerMin: 1.30, range_m: 4000 },
-  { id: "XAG P100",       role: "Sprayer",  drainPerMin: 5.10, range_m: 1000 },
-  { id: "XAG V40",        role: "Sprayer",  drainPerMin: 4.40, range_m: 1000 },
-  { id: "Custom",         role: "Sprayer",  drainPerMin: 4.50, range_m: 1200 },
-];
+const DRONE_SPECS: Record<string, {
+  role: string; drainPerMin: number; range_m: number;
+  weight: string; tank: string; swath: string; maxSpeed: string;
+  flightTime: string; sprayRate: string; wingspan: string;
+  maxPayload: string; ip: string;
+}> = {
+  "DJI Agras T40": {
+    role: "Sprayer", drainPerMin: 4.85, range_m: 1500,
+    weight: "65.5 kg (loaded)", tank: "40 L", swath: "9 m", maxSpeed: "10 m/s",
+    flightTime: "17 min (full load)", sprayRate: "24 L/min",
+    wingspan: "2.8 m folded → 6.2 m deployed", maxPayload: "50 kg", ip: "IP67",
+  },
+  "DJI Agras T25": {
+    role: "Sprayer", drainPerMin: 3.80, range_m: 1200,
+    weight: "42 kg (loaded)", tank: "25 L", swath: "7 m", maxSpeed: "10 m/s",
+    flightTime: "15 min (full load)", sprayRate: "10.8 L/min",
+    wingspan: "2.2 m folded → 4.7 m deployed", maxPayload: "30 kg", ip: "IP67",
+  },
+  "XAG P100 Pro": {
+    role: "Sprayer", drainPerMin: 5.10, range_m: 1000,
+    weight: "75 kg (loaded)", tank: "50 L", swath: "10 m", maxSpeed: "12 m/s",
+    flightTime: "18 min (full load)", sprayRate: "28 L/min",
+    wingspan: "3.2 m folded", maxPayload: "60 kg", ip: "IP67",
+  },
+  "XAG V40": {
+    role: "Sprayer", drainPerMin: 4.40, range_m: 1000,
+    weight: "52 kg (loaded)", tank: "40 L", swath: "8 m", maxSpeed: "10 m/s",
+    flightTime: "16 min", sprayRate: "20 L/min",
+    wingspan: "2.6 m folded", maxPayload: "45 kg", ip: "IP67",
+  },
+};
+const MODEL_IDS = Object.keys(DRONE_SPECS);
 
 const schema = z.object({
   name: z.string().trim().min(2, "Name too short").max(40),
   model: z.string().min(1),
   battery: z.number().int().min(0).max(100),
-  signal: z.number().int().min(0).max(100),
-  health: z.number().int().min(0).max(100),
+  serial: z.string().trim().max(60).optional(),
+  notes: z.string().trim().max(500).optional(),
 });
 
 function forecast(d: Drone) {
-  const m = MODELS.find(x => x.id === d.model) ?? MODELS[0];
+  const m = DRONE_SPECS[d.model] ?? DRONE_SPECS[MODEL_IDS[0]];
   // adjust drain by component health: a less healthy drone drains faster
   const drain = m.drainPerMin * (1 + (100 - d.health) / 100);
   // signal degrades roughly with distance flown; assume 25 m/s outbound speed
@@ -73,13 +98,14 @@ export default function Fleet() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<Drone | null>(null);
   const [form, setForm] = useState({
-    name: "", model: MODELS[0].id, battery: 100, signal: 100, health: 100,
+    name: "", model: MODEL_IDS[0], battery: 100, serial: "", notes: "",
   });
+  const selectedSpec = DRONE_SPECS[form.model];
 
   const load = async () => {
     setLoading(true);
     const { data } = await supabase.from("drones")
-      .select("id, name, model, battery, signal, health, status")
+      .select("id, name, model, battery, signal, health, status, serial, notes, specs")
       .order("created_at", { ascending: false });
     setDrones((data as any) ?? []);
     if (data?.length) setActive(prev => prev ?? (data[0] as any));
@@ -90,27 +116,34 @@ export default function Fleet() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsed = schema.safeParse({
-      ...form,
-      battery: Number(form.battery), signal: Number(form.signal), health: Number(form.health),
+      name: form.name,
+      model: form.model,
+      battery: Number(form.battery),
+      serial: form.serial || undefined,
+      notes: form.notes || undefined,
     });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0].message);
       return;
     }
+    const spec = DRONE_SPECS[parsed.data.model];
     const { data, error } = await supabase.from("drones").insert({
       user_id: user!.id,
       name: parsed.data.name,
       model: parsed.data.model,
       battery: parsed.data.battery,
-      signal: parsed.data.signal,
-      health: parsed.data.health,
+      signal: 100,
+      health: 100,
       status: "idle",
-    }).select().single();
+      serial: parsed.data.serial ?? null,
+      notes: parsed.data.notes ?? null,
+      specs: spec as any,
+    } as any).select().single();
     if (error) { toast.error(error.message); return; }
     toast.success("Drone added · forecasting telemetry");
     setActive(data as any);
     setOpen(false);
-    setForm({ name: "", model: MODELS[0].id, battery: 100, signal: 100, health: 100 });
+    setForm({ name: "", model: MODEL_IDS[0], battery: 100, serial: "", notes: "" });
     load();
   };
 
@@ -131,43 +164,78 @@ export default function Fleet() {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild><Button><Plus className="h-4 w-4" /> Register drone</Button></DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle>New drone</DialogTitle></DialogHeader>
-            <form onSubmit={submit} className="space-y-3">
+            <form onSubmit={submit} className="space-y-4">
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <Label>Call sign</Label>
+                  <Input required maxLength={40} value={form.name}
+                    onChange={e => setForm({ ...form, name: e.target.value })}
+                    placeholder="e.g. AGV-01" />
+                </div>
+                <div>
+                  <Label>Model</Label>
+                  <Select value={form.model} onValueChange={v => setForm({ ...form, model: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {MODEL_IDS.map(id => (
+                        <SelectItem key={id} value={id}>{id}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div>
-                <Label>Call sign</Label>
-                <Input required maxLength={40} value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  placeholder="e.g. AGV-04" />
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground">Manufacturer specs</Label>
+                  <Badge variant="outline" className="text-[10px]">Auto-filled · read only</Badge>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { k: "Tank", v: selectedSpec.tank },
+                    { k: "Swath", v: selectedSpec.swath },
+                    { k: "Max speed", v: selectedSpec.maxSpeed },
+                    { k: "Flight time", v: selectedSpec.flightTime },
+                    { k: "Spray rate", v: selectedSpec.sprayRate },
+                    { k: "Weight", v: selectedSpec.weight },
+                    { k: "Wingspan", v: selectedSpec.wingspan },
+                    { k: "IP rating", v: selectedSpec.ip },
+                  ].map(s => (
+                    <div key={s.k} className="rounded-md border bg-muted/30 p-2">
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{s.k}</div>
+                      <div className="text-xs font-medium leading-tight mt-0.5">{s.v}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
+
               <div>
-                <Label>Model</Label>
-                <Select value={form.model} onValueChange={v => setForm({ ...form, model: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {MODELS.map(m => (
-                      <SelectItem key={m.id} value={m.id}>{m.id} · {m.role}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Serial number <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input maxLength={60} value={form.serial}
+                  onChange={e => setForm({ ...form, serial: e.target.value })}
+                  placeholder="e.g. T40-2024-001847" />
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <Label>Battery %</Label>
-                  <Input type="number" min={0} max={100} value={form.battery}
-                    onChange={e => setForm({ ...form, battery: Number(e.target.value) })} />
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2"><Battery className="h-3.5 w-3.5" /> Current battery</Label>
+                  <span className="font-display text-lg tabular-nums">{form.battery}%</span>
                 </div>
-                <div>
-                  <Label>Wi-Fi %</Label>
-                  <Input type="number" min={0} max={100} value={form.signal}
-                    onChange={e => setForm({ ...form, signal: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <Label>Health %</Label>
-                  <Input type="number" min={0} max={100} value={form.health}
-                    onChange={e => setForm({ ...form, health: Number(e.target.value) })} />
-                </div>
+                <Slider min={0} max={100} step={1} value={[form.battery]}
+                  onValueChange={([v]) => setForm({ ...form, battery: v })}
+                  className="mt-2" />
+                <p className="text-[11px] text-muted-foreground mt-1">The only field that changes per flight - update this before each mission.</p>
               </div>
+
+              <div>
+                <Label>Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Textarea rows={2} maxLength={500} value={form.notes}
+                  onChange={e => setForm({ ...form, notes: e.target.value })}
+                  placeholder="Maintenance log, hangar location, etc." />
+              </div>
+
               <Button type="submit" className="w-full">Save & forecast</Button>
             </form>
           </DialogContent>
