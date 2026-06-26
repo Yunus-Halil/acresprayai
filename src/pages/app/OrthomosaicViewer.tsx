@@ -4888,3 +4888,244 @@ function SettingsTab({
     </div>
   );
 }
+
+// ============= Log Flight (Spray Log) modal ==============================
+// Captures the audit-trail record after a real mission is flown. Writes a
+// row to public.flight_logs and updates the drone's stored battery so the
+// planner pre-fills "Pre-flight battery" with the last known landed value.
+function LogFlightModal({
+  open, onOpenChange, fieldId, scanId, droneId, droneName,
+  batteryStart, zones, totalAcres, estLiters, onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  fieldId: string | null;
+  scanId: string;
+  droneId: string | null;
+  droneName: string | null;
+  batteryStart: number;
+  zones: { id: string; label: string; issue: string | null; acres: number }[];
+  totalAcres: number;
+  estLiters: number | null;
+  onSaved: () => void | Promise<void>;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [dateFlown, setDateFlown] = useState(today);
+  const [batteryEnd, setBatteryEnd] = useState<number>(25);
+  const [refills, setRefills] = useState<number>(0);
+  const [completed, setCompleted] = useState<Set<string>>(() => new Set(zones.map(z => z.id)));
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Reset whenever the modal is reopened so the zone list / starting battery
+  // reflect the current mission.
+  useEffect(() => {
+    if (!open) return;
+    setDateFlown(today);
+    setBatteryEnd(Math.max(0, Math.min(batteryStart, 25)));
+    setRefills(0);
+    setCompleted(new Set(zones.map(z => z.id)));
+    setNotes("");
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleZone = (id: string) => {
+    setCompleted(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const acresDone = zones
+    .filter(z => completed.has(z.id))
+    .reduce((a, z) => a + z.acres, 0);
+  const coverageRatio = totalAcres > 0 ? Math.min(1, acresDone / totalAcres) : 1;
+  const litersDone = estLiters != null ? estLiters * (refills + 1) * coverageRatio : null;
+
+  const save = async () => {
+    if (!fieldId || saving) return;
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: "Not signed in", description: "Please log in to save flight logs." });
+        setSaving(false);
+        return;
+      }
+      const row = {
+        user_id: user.id,
+        field_id: fieldId,
+        scan_id: scanId,
+        drone_id: droneId,
+        date_flown: dateFlown,
+        battery_start: batteryStart,
+        battery_end: batteryEnd,
+        tank_refills: refills,
+        zones_completed: Array.from(completed),
+        acres_treated: +acresDone.toFixed(2),
+        liters_applied: litersDone != null ? +litersDone.toFixed(2) : null,
+        notes: notes.trim() || null,
+      };
+      const { error } = await supabase.from("flight_logs").insert(row);
+      if (error) throw error;
+
+      // Update drone battery so next planner session pre-fills with landed %.
+      if (droneId) {
+        await supabase.from("drones").update({ battery: batteryEnd }).eq("id", droneId);
+      }
+      toast({ title: "Flight logged", description: `${acresDone.toFixed(2)} ac recorded for ${dateFlown}.` });
+      await onSaved();
+      onOpenChange(false);
+    } catch (e: any) {
+      toast({ title: "Couldn't save flight log", description: e?.message ?? String(e), variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-[#0f0f0f] border-[#1f1f1f] text-neutral-200 max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <CheckCircle2 className="h-4 w-4 text-[#4CAF50]" />
+            Mission Complete — Log Flight
+          </DialogTitle>
+          <p className="text-[11px] text-neutral-500 mt-1">
+            This becomes part of the spray log — a timestamped record for compliance and audit.
+          </p>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Date */}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Date flown</div>
+            <input
+              type="date"
+              value={dateFlown}
+              max={today}
+              onChange={e => setDateFlown(e.target.value)}
+              className="w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200"
+            />
+          </div>
+
+          {/* Battery */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-[10px] uppercase tracking-wider text-neutral-500">Battery used</div>
+              <div className="text-[11px] font-mono text-neutral-400">
+                Started {batteryStart}% → Landed <span className="text-neutral-100">{batteryEnd}%</span>
+              </div>
+            </div>
+            <input
+              type="range" min={0} max={100} step={1}
+              value={batteryEnd}
+              onChange={e => setBatteryEnd(Number(e.target.value))}
+              className={`w-full ${batteryEnd < 20 ? "accent-red-500" : "accent-[#4CAF50]"}`}
+            />
+            {batteryEnd < 20 && (
+              <div className="mt-1 text-[10px] text-red-400">Landed below 20% — pushing the battery limit.</div>
+            )}
+          </div>
+
+          {/* Tank refills */}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Tank refills</div>
+            <div className="flex gap-2">
+              {[0, 1, 2, 3].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setRefills(n)}
+                  className={`flex-1 py-1.5 text-xs font-mono rounded-sm border transition-colors ${
+                    refills === n
+                      ? "bg-[#4CAF50] text-black border-[#4CAF50]"
+                      : "bg-[#0a0a0a] border-[#222] text-neutral-400 hover:border-[#333]"
+                  }`}
+                >
+                  {n === 3 ? "3+" : n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Zones completed */}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Zones completed</div>
+            {zones.length === 0 ? (
+              <div className="text-[11px] text-neutral-500 italic">No zones in this mission.</div>
+            ) : (
+              <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
+                {zones.map((z, i) => {
+                  const done = completed.has(z.id);
+                  return (
+                    <label
+                      key={z.id}
+                      className="flex items-center gap-2 text-[12px] bg-[#0a0a0a] border border-[#1a1a1a] rounded-sm px-2 py-1.5 cursor-pointer hover:border-[#2a2a2a]"
+                    >
+                      <input
+                        type="checkbox" checked={done}
+                        onChange={() => toggleZone(z.id)}
+                        className="accent-[#4CAF50]"
+                      />
+                      <span className="flex-1 truncate">
+                        Zone {i + 1} — {z.issue ?? z.label}
+                      </span>
+                      <span className="font-mono text-neutral-500">{z.acres.toFixed(2)} ac</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <div className="mt-2 text-[11px] text-neutral-500 flex justify-between">
+              <span>Treated</span>
+              <span className="font-mono text-neutral-300">
+                {acresDone.toFixed(2)} ac
+                {litersDone != null && <> · {litersDone.toFixed(1)} L (est.)</>}
+              </span>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Pilot notes (optional)</div>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              rows={3}
+              placeholder="Wind picked up over zone 2, skipped the back corner…"
+              className="w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-[12px] text-neutral-200 placeholder:text-neutral-600 resize-none"
+            />
+          </div>
+
+          {droneName && (
+            <div className="text-[10px] text-neutral-500">
+              Will update <span className="text-neutral-400">{droneName}</span>'s stored battery to {batteryEnd}%.
+            </div>
+          )}
+          {!fieldId && (
+            <div className="text-[10px] text-amber-400">
+              Field reference missing — cannot save without a field.
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <button
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+            className="px-3 py-1.5 text-xs rounded-sm border border-[#222] text-neutral-400 hover:bg-[#1a1a1a]"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={saving || !fieldId}
+            className="px-3 py-1.5 text-xs font-semibold rounded-sm bg-[#4CAF50] hover:bg-[#43a047] text-black disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save Flight Log"}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
