@@ -3682,6 +3682,95 @@ function PlannerTab({
         </div>
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Mission summary</div>
+        {mission && simTimeline.total > 0 && (
+          <div className="mb-4">
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
+              <span>Simulation</span>
+              <span className="font-mono text-neutral-400 normal-case tracking-normal">
+                {fmtTime(simT)} / {fmtTime(simTimeline.total)}
+              </span>
+            </div>
+            <div className="rounded-sm border border-[#222] p-3 space-y-3" style={{ background: "#0f0f0f" }}>
+              {/* Progress scrubber */}
+              <div className="relative">
+                <input
+                  type="range" min={0} max={simTimeline.total} step={0.1} value={simT}
+                  onChange={(e) => { setSimT(parseFloat(e.target.value)); }}
+                  className="w-full accent-[#4CAF50]"
+                />
+                {/* Spray-segment heatmap under the scrubber */}
+                <div className="relative h-1.5 -mt-1 rounded-sm overflow-hidden bg-[#1a1a1a]">
+                  {simTimeline.segs.filter(s => s.spray).map((s, i) => (
+                    <div key={i}
+                      className="absolute top-0 bottom-0 bg-cyan-400/70"
+                      style={{
+                        left: `${(s.tStart / simTimeline.total) * 100}%`,
+                        width: `${Math.max(0.3, ((s.tEnd - s.tStart) / simTimeline.total) * 100)}%`,
+                      }}
+                    />
+                  ))}
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-white"
+                    style={{ left: `${(simT / Math.max(0.001, simTimeline.total)) * 100}%` }}
+                  />
+                </div>
+              </div>
+              {/* Transport controls */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (simT >= simTimeline.total) setSimT(0);
+                    setSimPlaying(p => !p);
+                  }}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 text-xs font-semibold"
+                >
+                  {simPlaying
+                    ? (<><Pause className="h-3.5 w-3.5" /> Pause</>)
+                    : (<><Play className="h-3.5 w-3.5" /> {simT > 0 && simT < simTimeline.total ? "Resume" : "Play"}</>)}
+                </button>
+                <button
+                  onClick={() => { setSimPlaying(false); setSimT(0); }}
+                  className="inline-flex items-center justify-center gap-1 border border-[#222] hover:border-[#333] text-neutral-300 rounded-sm px-2.5 py-2 text-xs"
+                  title="Reset"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {/* Speed selector */}
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 flex items-center gap-1.5">
+                  <FastForward className="h-3 w-3" /> Playback speed
+                </div>
+                <div className="grid grid-cols-6 gap-1">
+                  {[1, 2, 4, 8, 16, 32].map(m => (
+                    <button key={m}
+                      onClick={() => setSimSpeed(m)}
+                      className={`text-[11px] font-mono py-1 rounded-sm border ${
+                        simSpeed === m
+                          ? "bg-[#4CAF50] text-black border-[#4CAF50]"
+                          : "bg-[#1a1a1a] text-neutral-400 border-[#222] hover:border-[#333]"
+                      }`}
+                    >{m}×</button>
+                  ))}
+                </div>
+              </div>
+              {/* Status readout */}
+              <div className="flex items-center justify-between text-[11px] pt-1 border-t border-[#222]">
+                <span className="text-neutral-500">Status</span>
+                <span className={`font-mono inline-flex items-center gap-1.5 ${
+                  simState?.spraying ? "text-cyan-300" : simPlaying ? "text-yellow-300" : "text-neutral-400"
+                }`}>
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                    simState?.spraying
+                      ? "bg-cyan-400 animate-pulse"
+                      : simPlaying ? "bg-yellow-400" : "bg-neutral-500"
+                  }`} />
+                  {simT >= simTimeline.total ? "Landed" : simState?.spraying ? "Spraying" : simPlaying ? "Transit" : "Idle"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
             <span className="font-mono">{validZones.length} of {allZonesRaw.length} <span className="text-neutral-600">(AI {aiZonesRaw.length} · marks {userZonesRaw.length})</span></span></div>
