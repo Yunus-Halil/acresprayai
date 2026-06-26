@@ -3681,7 +3681,6 @@ function PlannerTab({
           <button onClick={() => setHome(null)} className="text-[10px] text-[#4CAF50] hover:underline">Reset to field centroid</button>
         </div>
 
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Mission summary</div>
         {mission && simTimeline.total > 0 && (
           <div className="mb-4">
             <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
@@ -3771,6 +3770,7 @@ function PlannerTab({
             </div>
           </div>
         )}
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Mission summary</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
             <span className="font-mono">{validZones.length} of {allZonesRaw.length} <span className="text-neutral-600">(AI {aiZonesRaw.length} · marks {userZonesRaw.length})</span></span></div>
