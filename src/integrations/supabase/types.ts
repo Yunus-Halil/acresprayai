@@ -167,7 +167,10 @@ export type Database = {
           id: string
           model: string
           name: string
+          notes: string | null
+          serial: string | null
           signal: number
+          specs: Json | null
           status: string
           user_id: string
         }
@@ -178,7 +181,10 @@ export type Database = {
           id?: string
           model?: string
           name: string
+          notes?: string | null
+          serial?: string | null
           signal?: number
+          specs?: Json | null
           status?: string
           user_id: string
         }
@@ -189,7 +195,10 @@ export type Database = {
           id?: string
           model?: string
           name?: string
+          notes?: string | null
+          serial?: string | null
           signal?: number
+          specs?: Json | null
           status?: string
           user_id?: string
         }
