@@ -1699,11 +1699,10 @@ export default function OrthomosaicViewer() {
           <div className="text-[11px] text-neutral-500 font-mono">{ts}</div>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 px-3 h-7 rounded-sm border border-[#222] bg-[#161616] text-xs">
-            <Cloud className="h-3.5 w-3.5 text-neutral-400" />
-            <span className="text-neutral-300">—°C</span>
-            <span className="text-neutral-500">Live weather</span>
-          </div>
+          <HeaderWeather center={center} onClick={() => {
+            if (!openTabs.includes("weather")) setOpenTabs(t => [...t, "weather"]);
+            setActiveTab("weather");
+          }} />
           <div className="flex items-center gap-2 px-3 h-7 rounded-sm border border-[#222] bg-[#161616]">
             <span className="h-2 w-2 rounded-full" style={{ background: scoreTone.dot }} />
             <span className={`text-xs font-medium ${scoreTone.text}`}>{scoreTone.label}</span>
@@ -4383,6 +4382,58 @@ function PlaceholderTab({ icon: Icon, title, body }: { icon: any; title: string;
 // ---------------------------- Weather tab ------------------------------------
 // OpenWeather One Call 3.0 via the `weather` edge function. Values are normalized
 // (temp °C, wind km/h). We display both °F and °C and mph and km/h.
+
+// Compact live-weather pill rendered in the top status bar. Uses the same
+// 20-min localStorage cache as <WeatherTab/> so opening Weather doesn't re-fetch.
+function HeaderWeather({ center, onClick }: { center: [number, number]; onClick: () => void }) {
+  const [lat, lng] = center;
+  const cacheKey = `acrespray.weather.${lat.toFixed(3)},${lng.toFixed(3)}`;
+  const TTL_MS = 20 * 60 * 1000;
+  const [cur, setCur] = useState<{ temp_c: number; desc: string; code: number; icon: string } | null>(null);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) {
+          const c = JSON.parse(raw);
+          if (c?.savedAt && Date.now() - c.savedAt < TTL_MS && c?.data?.current) {
+            if (!cancelled) setCur(c.data.current);
+            return;
+          }
+        }
+        const { data: s } = await supabase.auth.getSession();
+        const r = await fetch(`${FN_BASE}/weather?lat=${lat}&lon=${lng}`, {
+          headers: s.session ? { Authorization: `Bearer ${s.session.access_token}` } : {},
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error ?? "weather error");
+        try { localStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), data: j })); } catch {}
+        if (!cancelled) setCur(j.current);
+      } catch {
+        if (!cancelled) setErr(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [cacheKey, lat, lng]);
+
+  const tempF = cur ? Math.round((cur.temp_c * 9) / 5 + 32) : null;
+  return (
+    <button
+      onClick={onClick}
+      title="Open Weather tab"
+      className="hidden sm:flex items-center gap-2 px-3 h-7 rounded-sm border border-[#222] bg-[#161616] hover:bg-[#1c1c1c] text-xs transition-colors"
+    >
+      {cur ? <OwGlyph code={cur.code} icon={cur.icon} className="h-3.5 w-3.5 text-neutral-400" />
+           : <Cloud className="h-3.5 w-3.5 text-neutral-400" />}
+      <span className="text-neutral-200 tabular-nums">{tempF != null ? `${tempF}°F` : err ? "—" : "…"}</span>
+      <span className="text-neutral-500">{cur?.desc ?? (err ? "Weather unavailable" : "Live weather")}</span>
+    </button>
+  );
+}
+
 type OwHour = {
   time: number; temp_c: number; humidity: number; wind_kmh: number; gust_kmh: number;
   wind_dir: number; precip_mm: number; precip_prob: number; clouds: number;
