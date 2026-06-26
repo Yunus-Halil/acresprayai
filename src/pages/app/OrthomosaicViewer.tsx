@@ -18,6 +18,9 @@ import {
   Play, Pause, RotateCcw, FastForward,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
