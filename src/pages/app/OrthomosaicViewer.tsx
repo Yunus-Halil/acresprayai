@@ -3655,12 +3655,13 @@ function Slider2({ label, value, setValue, min, max, step, unit }: {
   );
 }
 
-function PlannerOverlay({ boundary, zones, mission, home, onHomeChange }: {
+function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoint }: {
   boundary: BoundaryRing[];
   zones: AiZone[];
   mission: Mission | null;
   home: LatLng2 | null;
   onHomeChange: (p: LatLng2) => void;
+  swapPoint: LatLng2 | null;
 }) {
   const map = useMap();
   useEffect(() => {
@@ -3736,12 +3737,25 @@ function PlannerOverlay({ boundary, zones, mission, home, onHomeChange }: {
         onHomeChange({ lat: ll.lat, lng: ll.lng });
       });
     }
+
+    // Yellow battery-swap pin (only when mission needs >1 battery)
+    if (swapPoint) {
+      const icon = L.divIcon({
+        className: "swap-pin",
+        html: `<div style="width:16px;height:16px;border-radius:50%;background:#facc15;border:2px solid #000;box-shadow:0 0 0 1px #fff,0 2px 6px rgba(0,0,0,.6);"></div>`,
+        iconSize: [16, 16], iconAnchor: [8, 8],
+      });
+      L.marker([swapPoint.lat, swapPoint.lng], { icon, interactive: true, zIndexOffset: 900 })
+        .addTo(group)
+        .bindTooltip("Battery swap", { permanent: true, direction: "top", offset: [0, -10], className: "mission-endpoint-label" });
+    }
+
     // Click on map sets new home
     const onClick = (e: L.LeafletMouseEvent) => onHomeChange({ lat: e.latlng.lat, lng: e.latlng.lng });
     map.on("click", onClick);
 
     return () => { map.off("click", onClick); group.remove(); };
-  }, [map, boundary, zones, mission, home, onHomeChange]);
+  }, [map, boundary, zones, mission, home, onHomeChange, swapPoint]);
   return null;
 }
 
