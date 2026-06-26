@@ -1,0 +1,1 @@
+ALTER TABLE public.drones ADD COLUMN IF NOT EXISTS specs jsonb, ADD COLUMN IF NOT EXISTS serial text, ADD COLUMN IF NOT EXISTS notes text;
