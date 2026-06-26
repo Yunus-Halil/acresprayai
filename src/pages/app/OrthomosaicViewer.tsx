@@ -3983,6 +3983,12 @@ function PlannerTab({
           </div>
         )}
 
+        {battery && activeDrone && Math.round(battery.batteryPercent) > preFlightBattery && (
+          <div className="mb-4 text-[11px] text-yellow-300 bg-yellow-950/40 border border-yellow-700/50 rounded px-2 py-2 leading-relaxed">
+            ⚠️ Insufficient battery — mission requires ~{Math.round(battery.batteryPercent)}% but drone starts at {preFlightBattery}%. Consider splitting into 2 flights.
+          </div>
+        )}
+
         {validZones.length < allZonesRaw.length && (
           <div className="mb-4 text-[11px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1.5">
             {allZonesRaw.length - validZones.length} zone(s) excluded — centroid outside boundary.
