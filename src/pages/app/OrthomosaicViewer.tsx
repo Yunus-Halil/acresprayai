@@ -4089,8 +4089,10 @@ function PlannerTab({
           mission ? (mission.sprayDistM * spacingM) / 4046.8564224 : 0
         }
         estLiters={
-          mission && spec.spray_rate_lpm > 0
-            ? (mission.sprayTimeS / 60) * spec.spray_rate_lpm
+          // Single-tank estimate at the configured load. Modal multiplies by
+          // (refills + 1) once the pilot reports how many times they refilled.
+          spec.tank_l > 0
+            ? +(spec.tank_l * (Math.max(0, Math.min(100, fp.tank_load_pct)) / 100)).toFixed(2)
             : null
         }
         onSaved={async () => {
