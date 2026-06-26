@@ -8,8 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Cloud, CloudRain, MapPin, Loader2, Trash2, Play, Pause, Sun, CloudSnow, CloudLightning, CloudDrizzle, Wind, Thermometer, Droplets } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
-type Farm = { id: string; name: string; address: string; lat: number; lng: number };
+type Farm = { id: string; name: string; address: string; lat: number; lng: number; source?: "field" | "manual" };
 type Suggestion = { id: number; name: string; admin1?: string; country?: string; latitude: number; longitude: number };
 
 type DailyForecast = {
@@ -65,6 +66,27 @@ const farmIcon = L.divIcon({
   iconAnchor: [11, 22],
 });
 
+// Compute centroid (simple average of vertices) of a GeoJSON Polygon / MultiPolygon
+// or Feature wrapping one. Returns null if no usable coordinates.
+function boundaryCentroid(b: any): [number, number] | null {
+  if (!b) return null;
+  const geom = b.type === "Feature" ? b.geometry : b;
+  if (!geom?.type) return null;
+  const rings: number[][][] =
+    geom.type === "Polygon" ? geom.coordinates :
+    geom.type === "MultiPolygon" ? geom.coordinates.flat() : [];
+  let sx = 0, sy = 0, n = 0;
+  for (const ring of rings) {
+    for (const pt of ring) {
+      if (Array.isArray(pt) && pt.length >= 2 && Number.isFinite(pt[0]) && Number.isFinite(pt[1])) {
+        sx += pt[0]; sy += pt[1]; n++;
+      }
+    }
+  }
+  if (!n) return null;
+  return [sy / n, sx / n]; // [lat, lng]  (GeoJSON is [lng, lat])
+}
+
 export default function Weather() {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -85,6 +107,7 @@ export default function Weather() {
   const [selectedFarmId, setSelectedFarmId] = useState<string | null>(null);
   const [forecast, setForecast] = useState<Forecast | null>(null);
   const [forecastLoading, setForecastLoading] = useState(false);
+  const [autoLoading, setAutoLoading] = useState(false);
 
   // Init map
   useEffect(() => {
@@ -155,6 +178,76 @@ export default function Weather() {
       markersRef.current.set(f.id, m);
     });
   }, [farms]);
+
+  // Auto-pin farms from the user's actual fields. A field becomes a pin when
+  // either (a) it has a defined boundary (we use the polygon centroid) or
+  // (b) it has a free-text `location` we can geocode. Manual pins are left
+  // alone; field-sourced pins are keyed by `field:<id>` so re-runs dedupe.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setAutoLoading(true);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data: rows, error } = await supabase
+          .from("fields")
+          .select("id,name,location,boundary")
+          .eq("user_id", user.id);
+        if (error) throw error;
+        if (!rows?.length) return;
+
+        // Existing pins keyed by stable id (manual or field:<id>)
+        const existing = new Map(farms.map(f => [f.id, f]));
+        const additions: Farm[] = [];
+
+        for (const row of rows) {
+          const key = `field:${row.id}`;
+          if (existing.has(key)) continue;
+          // 1) Boundary centroid (preferred — no network call)
+          const c = boundaryCentroid(row.boundary);
+          if (c) {
+            additions.push({
+              id: key, name: row.name,
+              address: row.location ?? "Defined boundary",
+              lat: c[0], lng: c[1], source: "field",
+            });
+            continue;
+          }
+          // 2) Geocode the location string
+          if (row.location && row.location.trim()) {
+            try {
+              const r = await fetch(
+                `https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=${encodeURIComponent(row.location)}`
+              );
+              const j = await r.json();
+              const hit = j?.results?.[0];
+              if (hit) {
+                additions.push({
+                  id: key, name: row.name,
+                  address: [hit.name, hit.admin1, hit.country].filter(Boolean).join(", "),
+                  lat: Number(hit.latitude), lng: Number(hit.longitude), source: "field",
+                });
+              }
+            } catch {}
+          }
+        }
+
+        if (cancelled || !additions.length) return;
+        const next = [...farms, ...additions];
+        setFarms(next);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        toast.success(`Auto-pinned ${additions.length} farm${additions.length === 1 ? "" : "s"} from your fields`);
+      } catch (e: any) {
+        if (!cancelled) toast.error(e?.message ?? "Couldn't auto-pin fields");
+      } finally {
+        if (!cancelled) setAutoLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // Intentionally only run once on mount; manual changes shouldn't retrigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const persist = (next: Farm[]) => {
     setFarms(next);
@@ -292,7 +385,10 @@ export default function Weather() {
           <h1 className="font-display text-3xl flex items-center gap-2">
             <CloudRain className="h-7 w-7" /> Weather Radar
           </h1>
-          <p className="text-muted-foreground">Live precipitation radar across the continental US. Pin your farms by address to track storms over your fields.</p>
+          <p className="text-muted-foreground">
+            Live precipitation radar. Your defined fields are auto-pinned — add extra locations by address below.
+            {autoLoading && <span className="ml-2 inline-flex items-center gap-1 text-xs"><Loader2 className="h-3 w-3 animate-spin" /> syncing fields…</span>}
+          </p>
         </div>
       </header>
 
