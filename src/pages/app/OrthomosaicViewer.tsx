@@ -1699,11 +1699,10 @@ export default function OrthomosaicViewer() {
           <div className="text-[11px] text-neutral-500 font-mono">{ts}</div>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 px-3 h-7 rounded-sm border border-[#222] bg-[#161616] text-xs">
-            <Cloud className="h-3.5 w-3.5 text-neutral-400" />
-            <span className="text-neutral-300">—°C</span>
-            <span className="text-neutral-500">Live weather</span>
-          </div>
+          <HeaderWeather center={center} onClick={() => {
+            if (!openTabs.includes("weather")) setOpenTabs(t => [...t, "weather"]);
+            setActiveTab("weather");
+          }} />
           <div className="flex items-center gap-2 px-3 h-7 rounded-sm border border-[#222] bg-[#161616]">
             <span className="h-2 w-2 rounded-full" style={{ background: scoreTone.dot }} />
             <span className={`text-xs font-medium ${scoreTone.text}`}>{scoreTone.label}</span>
