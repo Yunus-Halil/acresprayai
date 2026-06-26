@@ -3230,6 +3230,14 @@ function PlannerTab({
   const [spraySpeed, setSpraySpeed] = useState<number>(3);
   const [home, setHome] = useState<LatLng2 | null>(null);
 
+  // ---- Simulation playback ---------------------------------------------
+  // Animates a virtual drone along the planned mission. Spray pulse appears
+  // when the current segment is sprayer-ON. Speed multiplier lets users
+  // fast-forward through long missions.
+  const [simPlaying, setSimPlaying] = useState(false);
+  const [simSpeed, setSimSpeed] = useState<number>(8);  // realtime * multiplier
+  const [simT, setSimT] = useState(0);
+
   // ---- Drone fleet ------------------------------------------------------
   type FleetDrone = { id: string; name: string; model: string; battery: number; status: string };
   const [drones, setDrones] = useState<FleetDrone[]>([]);
