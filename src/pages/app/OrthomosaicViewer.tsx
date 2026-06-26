@@ -1848,6 +1848,7 @@ export default function OrthomosaicViewer() {
             bounds={bounds}
             maxNative={maxNative}
             taskId={taskId!}
+            fieldId={field?.id ?? null}
             runAnalysis={runAnalysis}
             setActiveTab={setActiveTab}
             settings={settings}
