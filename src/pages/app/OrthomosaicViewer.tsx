@@ -3230,6 +3230,11 @@ function PlannerTab({
   const [spraySpeed, setSpraySpeed] = useState<number>(3);
   const [home, setHome] = useState<LatLng2 | null>(null);
 
+  // Pre-flight battery — user can simulate "what if I launch at 60%?" without
+  // leaving the planner. Defaults to the active drone's stored battery; if no
+  // drone is registered, the slider is hidden and a placeholder is shown.
+  const [preFlightBattery, setPreFlightBattery] = useState<number>(100);
+
   // ---- Simulation playback ---------------------------------------------
   // Animates a virtual drone along the planned mission. Spray pulse appears
   // when the current segment is sprayer-ON. Speed multiplier lets users
@@ -3264,6 +3269,9 @@ function PlannerTab({
   }, [fp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeDrone = drones.find(d => d.id === fp.drone_id) ?? null;
+  useEffect(() => {
+    if (activeDrone) setPreFlightBattery(activeDrone.battery);
+  }, [activeDrone?.id, activeDrone?.battery]);
   const droneModelKey = activeDrone?.model ?? "Custom";
   const baseSpec = DRONE_SPECS[droneModelKey] ?? fp.custom_specs;
   const isCustom = !DRONE_SPECS[droneModelKey] || droneModelKey === "Custom";
@@ -3611,6 +3619,37 @@ function PlannerTab({
           <div className="text-sm font-semibold">Flight Planner</div>
         </div>
 
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pre-flight battery</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4" style={{ background: "#0f0f0f" }}>
+          {drones.length === 0 ? (
+            <div className="text-[11px] text-neutral-600 italic leading-relaxed">
+              Register a drone in <span className="text-neutral-400">Fleet</span> to enable battery simulation
+            </div>
+          ) : !activeDrone ? (
+            <div className="text-[11px] text-neutral-500 leading-relaxed">
+              Select an active drone below to simulate pre-flight battery.
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] text-neutral-500">Launch with</span>
+                <span className={`font-mono text-sm ${preFlightBattery < 30 ? "text-red-400" : preFlightBattery < 60 ? "text-yellow-300" : "text-[#4CAF50]"}`}>
+                  {preFlightBattery}%
+                </span>
+              </div>
+              <input
+                type="range" min={0} max={100} step={1}
+                value={preFlightBattery}
+                onChange={(e) => setPreFlightBattery(Number(e.target.value))}
+                className="w-full accent-[#4CAF50]"
+              />
+              <div className="text-[10px] text-neutral-600 mt-1">
+                Stored: {activeDrone.battery}% — adjust to simulate a partial charge.
+              </div>
+            </>
+          )}
+        </div>
+
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
           {(() => {
@@ -3941,6 +3980,12 @@ function PlannerTab({
           <div className="mb-4 text-[11px] text-red-400 bg-red-950/40 border border-red-800/50 rounded px-2 py-2 leading-relaxed">
             <div className="font-semibold mb-0.5">Mission requires {battery.batteriesNeeded} batteries</div>
             Plan a landing zone near the yellow swap pin on the map between passes.
+          </div>
+        )}
+
+        {battery && activeDrone && Math.round(battery.batteryPercent) > preFlightBattery && (
+          <div className="mb-4 text-[11px] text-yellow-300 bg-yellow-950/40 border border-yellow-700/50 rounded px-2 py-2 leading-relaxed">
+            ⚠️ Insufficient battery — mission requires ~{Math.round(battery.batteryPercent)}% but drone starts at {preFlightBattery}%. Consider splitting into 2 flights.
           </div>
         )}
 

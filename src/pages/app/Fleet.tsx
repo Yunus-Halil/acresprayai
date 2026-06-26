@@ -10,7 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plane, Plus, Battery, Wifi, Activity, Trash2, Sparkles, Loader2 } from "lucide-react";
+import { Plane, Plus, Battery, Trash2, Sparkles, Loader2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid } from "recharts";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -63,26 +63,14 @@ const schema = z.object({
 
 function forecast(d: Drone) {
   const m = DRONE_SPECS[d.model] ?? DRONE_SPECS[MODEL_IDS[0]];
-  // adjust drain by component health: a less healthy drone drains faster
-  const drain = m.drainPerMin * (1 + (100 - d.health) / 100);
-  // signal degrades roughly with distance flown; assume 25 m/s outbound speed
-  const out: { t: number; battery: number; signal: number }[] = [];
+  const drain = m.drainPerMin;
+  const out: { t: number; battery: number }[] = [];
   for (let t = 0; t <= 60; t++) {
-    const flownM = t * 60 * 25; // m flown after t minutes outbound
-    // exponential signal falloff; tail noise
-    const distFactor = Math.min(1, flownM / (m.range_m * 1.4));
-    const sig = Math.max(0, d.signal * (1 - Math.pow(distFactor, 1.8)));
     const bat = Math.max(0, d.battery - drain * t);
-    out.push({
-      t,
-      battery: +bat.toFixed(1),
-      signal: +(sig + (Math.random() - 0.5) * 2).toFixed(1),
-    });
+    out.push({ t, battery: +bat.toFixed(1) });
   }
-  // Time to safe-return threshold (battery=25%, signal=20%)
   const tBatLow = out.find(p => p.battery <= 25)?.t ?? null;
-  const tSigLow = out.find(p => p.signal <= 20)?.t ?? null;
-  const recallAt = [tBatLow, tSigLow].filter((v): v is number => v !== null).sort((a, b) => a - b)[0] ?? null;
+  const recallAt = tBatLow;
   return { series: out, recallAt, role: m.role };
 }
 
@@ -160,7 +148,7 @@ export default function Fleet() {
       <header className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-display text-3xl">Drone Fleet</h1>
-          <p className="text-muted-foreground">Register a drone with its current battery, Wi-Fi signal and component health - we'll forecast endurance and recall window for the next 60 minutes.</p>
+          <p className="text-muted-foreground">Register a drone with its current battery — we'll forecast endurance and the safe-recall window for the next 60 minutes.</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild><Button><Plus className="h-4 w-4" /> Register drone</Button></DialogTrigger>
@@ -266,8 +254,6 @@ export default function Fleet() {
               </div>
               <div className="grid grid-cols-3 gap-2 text-[11px] mt-2">
                 <div className="flex items-center gap-1"><Battery className="h-3 w-3" /> {d.battery}%</div>
-                <div className="flex items-center gap-1"><Wifi className="h-3 w-3" /> {d.signal}%</div>
-                <div className="flex items-center gap-1"><Activity className="h-3 w-3" /> {d.health}%</div>
               </div>
             </button>
           ))}
@@ -325,13 +311,12 @@ export default function Fleet() {
                       <ReferenceLine x={f.recallAt} stroke="hsl(var(--accent))" strokeDasharray="2 4" label={{ value: "Recall", fontSize: 10, fill: "hsl(var(--accent))" }} />
                     )}
                     <Line type="monotone" dataKey="battery" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Battery" />
-                    <Line type="monotone" dataKey="signal" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} name="Wi-Fi" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
 
               <p className="text-xs text-muted-foreground mt-3">
-                Forecast based on the {active.model}'s typical draw, current battery {active.battery}%, signal {active.signal}%, and component health {active.health}% (lower health drains faster). Recall is triggered by whichever metric crosses its safety threshold first.
+                Forecast based on the {active.model}'s typical draw at current battery {active.battery}%. Recall is triggered when battery reaches the 25% safety threshold.
               </p>
             </>
           )}
