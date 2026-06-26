@@ -1848,6 +1848,9 @@ export default function OrthomosaicViewer() {
             taskId={taskId!}
             runAnalysis={runAnalysis}
             setActiveTab={setActiveTab}
+            settings={settings}
+            onSaveSettings={saveSettings}
+            center={center}
           />
         )}
         {activeTab === "reports" && <PlaceholderTab icon={FileBarChart} title="Reports" body="Yield, treatment, and scan history reports for this field." />}
