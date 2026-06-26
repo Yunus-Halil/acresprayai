@@ -3297,6 +3297,98 @@ function PlannerTab({
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
+  // ---- Battery / endurance estimation ------------------------------------
+  // Formula per spec: base flight time × wind × altitude × payload × temp.
+  // Wind only counts as a headwind when blowing into the dominant pass axis;
+  // a crosswind gets half the penalty, a tailwind helps a little.
+  const battery = (() => {
+    if (!mission) return null;
+    const totalDistM = mission.sprayDistM + mission.transitDistM;
+    const totalTimeS = mission.sprayTimeS + mission.transitTimeS;
+    if (totalDistM < 1 || totalTimeS < 1) return null;
+    const cruiseMs = totalDistM / totalTimeS;        // weighted real cruise
+    const baseFlightMin = totalTimeS / 60;
+
+    // Pass axis bearing (deg from north, 0–180) — from first spray segment.
+    let passBearing: number | null = null;
+    const firstPass = mission.spraySegments?.[0];
+    if (firstPass && firstPass.length >= 2) {
+      const a = firstPass[0], b = firstPass[firstPass.length - 1];
+      const dy = b.lat - a.lat, dx = (b.lng - a.lng) * Math.cos((a.lat * Math.PI) / 180);
+      let deg = (Math.atan2(dx, dy) * 180) / Math.PI;
+      if (deg < 0) deg += 360;
+      passBearing = deg % 180;
+    }
+
+    let windFactor = 1, windKind: "headwind" | "crosswind" | "tailwind" | "calm" = "calm";
+    if (wx && wx.wind_ms > 0.3) {
+      // wx.wind_dir is "from" direction. Wind vector heads to (dir+180).
+      const windTo = (wx.wind_dir + 180) % 360;
+      let rel = passBearing != null ? Math.abs(((windTo - passBearing + 540) % 360) - 180) : 90;
+      // rel: 0 = perfectly aligned with pass direction (tailwind on outbound),
+      // 180 = directly against. We don't know which way each pass flies, but
+      // a boustrophedon spends ~half each direction, so the head- and tail-
+      // wind components on alternating rows wash out. Net effect: only the
+      // *cross* component truly disappears, the *along* component fights you
+      // on every other row. Apply full penalty when aligned, half on cross.
+      const alignment = Math.abs(Math.cos((rel * Math.PI) / 180)); // 0=cross, 1=along
+      const penalty = wx.wind_ms * 0.02 * (0.5 + 0.5 * alignment);
+      windFactor = 1 + penalty;
+      windKind = alignment > 0.7 ? "headwind" : alignment > 0.3 ? "crosswind" : "tailwind";
+    }
+
+    // Weighted avg altitude (spray vs transit) — the formula is per-meter AGL.
+    const avgAlt = (sprayAltM * mission.sprayTimeS + transitAltM * mission.transitTimeS) / totalTimeS;
+    const altitudeFactor = 1 + avgAlt * 0.001;
+
+    const tankLoad = Math.max(0, Math.min(100, fp.tank_load_pct)) / 100;
+    const payloadFactor = 1 + tankLoad * 0.15;
+
+    const tempC = wx?.temp_c ?? 20;
+    const tempFactor = tempC < 15 ? 1 + (15 - tempC) * 0.01 : 1.0;
+
+    const estimatedFlightMin = baseFlightMin * windFactor * altitudeFactor * payloadFactor * tempFactor;
+    const batteryPercent = (estimatedFlightMin / Math.max(1, spec.max_flight_min)) * 100;
+    const batteriesNeeded = Math.max(1, Math.ceil(batteryPercent / 80));
+
+    const pct = (f: number) => `${f >= 1 ? "+" : ""}${((f - 1) * 100).toFixed(0)}%`;
+    const recommendedTankL = spec.tank_l > 0 ? +(spec.tank_l * tankLoad).toFixed(1) : 0;
+
+    return {
+      baseFlightMin, estimatedFlightMin, batteryPercent, batteriesNeeded,
+      windPctLabel: pct(windFactor), windKind, windMs: wx?.wind_ms ?? 0,
+      altPctLabel: pct(altitudeFactor), avgAlt,
+      payloadPctLabel: pct(payloadFactor),
+      tempPctLabel: pct(tempFactor), tempC,
+      cruiseMs, recommendedTankL,
+    };
+  })();
+
+  // Midpoint along the mission path — surfaced as a yellow pin when a battery
+  // swap is required, so the pilot can see where they'll be when the first
+  // pack runs out.
+  const swapPoint: LatLng2 | null = (() => {
+    if (!mission || !battery || battery.batteriesNeeded <= 1) return null;
+    // Walk waypoints in order; halt at fraction (battery 1 exhausts at ~80%
+    // of estimated time of *that* battery).
+    const wps = mission.waypoints;
+    if (wps.length < 2) return null;
+    const target = (mission.sprayDistM + mission.transitDistM) * (1 / battery.batteriesNeeded);
+    let acc = 0;
+    for (let i = 1; i < wps.length; i++) {
+      const seg = distM(wps[i - 1], wps[i]);
+      if (acc + seg >= target) {
+        const t = (target - acc) / Math.max(0.01, seg);
+        return {
+          lat: wps[i - 1].lat + (wps[i].lat - wps[i - 1].lat) * t,
+          lng: wps[i - 1].lng + (wps[i].lng - wps[i - 1].lng) * t,
+        };
+      }
+      acc += seg;
+    }
+    return null;
+  })();
+
   // Empty states ------------------------------------------------------------
   if (!boundary || boundary.length === 0) {
     return (
