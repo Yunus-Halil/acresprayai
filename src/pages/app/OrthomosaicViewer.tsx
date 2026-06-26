@@ -3782,7 +3782,7 @@ function Slider2({ label, value, setValue, min, max, step, unit, maxSafe, warnin
 
 function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoint }: {
   boundary: BoundaryRing[];
-  zones: AiZone[];
+  zones: { ring: { lat: number; lng: number }[]; severity?: AiZone["severity"] }[];
   mission: Mission | null;
   home: LatLng2 | null;
   onHomeChange: (p: LatLng2) => void;
@@ -3799,7 +3799,7 @@ function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoin
       }).addTo(group);
     });
     zones.forEach(z => {
-      const color = sevColor(z.severity);
+      const color = sevColor(z.severity ?? "medium");
       L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
         color, weight: 1, fillColor: color, fillOpacity: 0.12, interactive: false,
       }).addTo(group);
