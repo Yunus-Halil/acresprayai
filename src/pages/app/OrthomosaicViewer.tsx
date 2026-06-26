@@ -3797,6 +3797,7 @@ function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoin
   onHomeChange: (p: LatLng2) => void;
   swapPoint: LatLng2 | null;
 }) {
+  // (moved below — DroneSimMarker + simulation helpers live just after this fn)
   const map = useMap();
   useEffect(() => {
     const group = L.layerGroup().addTo(map);
