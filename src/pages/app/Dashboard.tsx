@@ -18,6 +18,8 @@ const HA_TO_AC = 2.4710538147;
 // ----------------------------------------------------------------------------
 export default function Dashboard() {
   const [fields, setFields] = useState<Field[]>([]);
+  const [flightCounts, setFlightCounts] = useState<Record<string, number>>({});
+  const [lastFlight, setLastFlight] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,7 +28,22 @@ export default function Dashboard() {
         .from("fields")
         .select("id, name, area_hectares, boundary, boundary_area_hectares")
         .order("created_at", { ascending: false });
-      setFields((f.data as Field[]) ?? []);
+      const list = (f.data as Field[]) ?? [];
+      setFields(list);
+
+      // Pull flight logs so each field row can show "Flights logged" / last flown
+      const logs = await supabase
+        .from("flight_logs")
+        .select("field_id, date_flown")
+        .order("date_flown", { ascending: false });
+      const counts: Record<string, number> = {};
+      const last: Record<string, string> = {};
+      ((logs.data as { field_id: string; date_flown: string }[]) ?? []).forEach(l => {
+        counts[l.field_id] = (counts[l.field_id] ?? 0) + 1;
+        if (!last[l.field_id]) last[l.field_id] = l.date_flown;
+      });
+      setFlightCounts(counts);
+      setLastFlight(last);
       setLoading(false);
     })();
   }, []);
@@ -36,6 +53,10 @@ export default function Dashboard() {
   const totalAreaHa = useMemo(
     () => fields.reduce((a, f) => a + realArea(f), 0),
     [fields],
+  );
+  const totalFlights = useMemo(
+    () => Object.values(flightCounts).reduce((a, n) => a + n, 0),
+    [flightCounts],
   );
 
   return (
@@ -48,7 +69,7 @@ export default function Dashboard() {
       </header>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="p-5">
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Total fields</div>
           <div className="font-display text-4xl mt-1 tabular-nums">{fields.length}</div>
@@ -65,6 +86,11 @@ export default function Dashboard() {
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Boundaries defined</div>
           <div className="font-display text-4xl mt-1 tabular-nums">{definedCount}<span className="text-base text-muted-foreground ml-1">/ {fields.length || 0}</span></div>
           <div className="text-xs text-muted-foreground mt-1">Draw the field outline in the orthomosaic viewer to unlock AI analysis.</div>
+        </Card>
+        <Card className="p-5">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Spray logs</div>
+          <div className="font-display text-4xl mt-1 tabular-nums">{totalFlights}</div>
+          <div className="text-xs text-muted-foreground mt-1">Completed missions logged across all fields.</div>
         </Card>
       </div>
 
@@ -86,6 +112,8 @@ export default function Dashboard() {
               {fields.map(f => {
                 const defined = !!f.boundary;
                 const area = realArea(f);
+                const flown = flightCounts[f.id] ?? 0;
+                const lastDate = lastFlight[f.id];
                 return (
                   <li key={f.id}>
                     <Link to={`/app/fields/${f.id}`} className="flex items-center gap-3 py-3 hover:bg-muted/30 rounded-md px-2 -mx-2 transition-colors">
@@ -96,6 +124,14 @@ export default function Dashboard() {
                           {area ? `${area.toFixed(2)} ha · ${(area * HA_TO_AC).toFixed(2)} ac` : "—"}
                           {defined && <span className="ml-2 text-emerald-500">(measured)</span>}
                         </div>
+                      </div>
+                      <div className="text-right text-xs tabular-nums">
+                        <div className={flown > 0 ? "text-foreground" : "text-muted-foreground"}>
+                          {flown} {flown === 1 ? "flight" : "flights"} logged
+                        </div>
+                        {lastDate && (
+                          <div className="text-[10px] text-muted-foreground">last {lastDate}</div>
+                        )}
                       </div>
                       <Badge variant="outline" className={defined ? "border-emerald-500 text-emerald-500" : "text-muted-foreground"}>
                         {defined ? "Boundary set" : "Not defined"}

@@ -246,6 +246,79 @@ export type Database = {
         }
         Relationships: []
       }
+      flight_logs: {
+        Row: {
+          acres_treated: number | null
+          battery_end: number | null
+          battery_start: number | null
+          created_at: string
+          date_flown: string
+          drone_id: string | null
+          field_id: string
+          id: string
+          liters_applied: number | null
+          notes: string | null
+          scan_id: string | null
+          tank_refills: number
+          user_id: string
+          zones_completed: Json
+        }
+        Insert: {
+          acres_treated?: number | null
+          battery_end?: number | null
+          battery_start?: number | null
+          created_at?: string
+          date_flown?: string
+          drone_id?: string | null
+          field_id: string
+          id?: string
+          liters_applied?: number | null
+          notes?: string | null
+          scan_id?: string | null
+          tank_refills?: number
+          user_id: string
+          zones_completed?: Json
+        }
+        Update: {
+          acres_treated?: number | null
+          battery_end?: number | null
+          battery_start?: number | null
+          created_at?: string
+          date_flown?: string
+          drone_id?: string | null
+          field_id?: string
+          id?: string
+          liters_applied?: number | null
+          notes?: string | null
+          scan_id?: string | null
+          tank_refills?: number
+          user_id?: string
+          zones_completed?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flight_logs_drone_id_fkey"
+            columns: ["drone_id"]
+            isOneToOne: false
+            referencedRelation: "drones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flight_logs_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flight_logs_scan_id_fkey"
+            columns: ["scan_id"]
+            isOneToOne: false
+            referencedRelation: "odm_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
           area_ha: number | null
