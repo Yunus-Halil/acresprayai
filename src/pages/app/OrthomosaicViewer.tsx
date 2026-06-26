@@ -1852,6 +1852,7 @@ export default function OrthomosaicViewer() {
             settings={settings}
             onSaveSettings={saveSettings}
             center={center}
+            userPolys={userPolys}
           />
         )}
         {activeTab === "reports" && <PlaceholderTab icon={FileBarChart} title="Reports" body="Yield, treatment, and scan history reports for this field." />}
