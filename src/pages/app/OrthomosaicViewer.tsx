@@ -3650,19 +3650,41 @@ function PlannerTab({
   );
 }
 
-function Slider2({ label, value, setValue, min, max, step, unit }: {
+function Slider2({ label, value, setValue, min, max, step, unit, maxSafe, warning }: {
   label: string; value: number; setValue: (n: number) => void;
   min: number; max: number; step: number; unit: string;
+  // Optional "max-safe" threshold rendered as a green tick on the track.
+  // Values above it are highlighted amber and `warning` is shown below.
+  maxSafe?: number;
+  warning?: string;
 }) {
+  const over = maxSafe != null && value > maxSafe;
+  const tickPct = maxSafe != null
+    ? Math.max(0, Math.min(100, ((maxSafe - min) / Math.max(0.0001, max - min)) * 100))
+    : null;
   return (
     <div>
       <label className="text-[10px] uppercase tracking-wider text-neutral-500">{label}</label>
       <div className="flex items-center gap-2 mt-1">
-        <input type="range" min={min} max={max} step={step}
-          value={value} onChange={(e) => setValue(Number(e.target.value))}
-          className="flex-1 accent-[#4CAF50]" />
-        <div className="font-mono text-sm w-20 text-right">{value.toFixed(step < 1 ? 1 : 0)} {unit}</div>
+        <div className="relative flex-1">
+          <input type="range" min={min} max={max} step={step}
+            value={value} onChange={(e) => setValue(Number(e.target.value))}
+            className={`w-full ${over ? "accent-amber-400" : "accent-[#4CAF50]"}`} />
+          {tickPct != null && (
+            <div
+              className="pointer-events-none absolute -top-0.5 h-3 w-px bg-[#4CAF50]"
+              style={{ left: `${tickPct}%` }}
+              title={`Max safe: ${maxSafe!.toFixed(step < 1 ? 1 : 0)} ${unit}`}
+            />
+          )}
+        </div>
+        <div className={`font-mono text-sm w-20 text-right ${over ? "text-amber-400" : ""}`}>
+          {value.toFixed(step < 1 ? 1 : 0)} {unit}
+        </div>
       </div>
+      {over && warning && (
+        <div className="mt-1 text-[10px] text-amber-400/80 leading-snug">{warning}</div>
+      )}
     </div>
   );
 }
