@@ -3356,6 +3356,30 @@ function PlannerTab({
     );
   })();
 
+  // ---- Simulation timeline (rebuilt whenever the mission changes) -------
+  const simTimeline = useMemo(() => buildSimTimeline(mission), [mission]);
+  // Reset playhead when the mission changes shape.
+  useEffect(() => { setSimT(0); setSimPlaying(false); }, [simTimeline.total]);
+  // RAF loop — advances simT by (dt * simSpeed). Stops at the end.
+  useEffect(() => {
+    if (!simPlaying || simTimeline.total <= 0) return;
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      setSimT(prev => {
+        const next = prev + dt * simSpeed;
+        if (next >= simTimeline.total) { setSimPlaying(false); return simTimeline.total; }
+        return next;
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [simPlaying, simSpeed, simTimeline.total]);
+  const simState = simPosAt(simTimeline, simT);
+
   const downloadWaypoints = () => {
     if (!mission || mission.waypoints.length === 0) return;
     const blob = exportMissionFile(mission);
