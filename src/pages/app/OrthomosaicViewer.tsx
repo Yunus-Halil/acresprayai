@@ -3209,7 +3209,7 @@ function polylineLengthM(pts: LatLng2[]): number {
 
 function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
-  settings, onSaveSettings, center, userPolys,
+  settings, onSaveSettings, center, userPolys, fieldId,
 }: {
   analysis: any;
   boundary: BoundaryRing[] | null;
@@ -3217,6 +3217,7 @@ function PlannerTab({
   bounds: L.LatLngBoundsExpression | null;
   maxNative: number;
   taskId: string;
+  fieldId: string | null;
   runAnalysis: () => void;
   setActiveTab: (k: any) => void;
   settings: FarmerSettings;
