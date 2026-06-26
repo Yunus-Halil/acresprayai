@@ -3323,16 +3323,9 @@ function PlannerTab({
   // Auto-set spacing once we know the coverage max: pick the largest swath
   // that (a) covers every anomaly and (b) doesn't exceed the drone's effective
   // swath. User can drag past either threshold afterward — the slider warns.
-  // Default to the widest practical spacing: 15 m. Only tighten if anomaly
-  // coverage requires it. User can still drag past either limit afterward.
+  // Default spacing is always 15 m — wider passes still hit every anomaly
+  // because each zone gets its own lawnmower. User can drag tighter if needed.
   const autoSetRef = useRef(false);
-  useEffect(() => {
-    if (autoSetRef.current) return;
-    if (coverageMaxM == null) return;
-    const optimal = Math.max(3, Math.min(15, Math.floor(coverageMaxM)));
-    setSpacingM(optimal);
-    autoSetRef.current = true;
-  }, [coverageMaxM]);
 
   const mission = (() => {
     if (!boundary || validZones.length === 0 || !effectiveHome) return null;
@@ -3529,14 +3522,10 @@ function PlannerTab({
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
           {(() => {
-            const coverage = coverageMaxM != null ? Math.floor(coverageMaxM) : null;
-            // Recommended spacing: 15 m, tightened only if anomaly coverage demands it.
-            const recommended = Math.max(3, Math.min(15, coverage ?? 15));
-            const warning = spacingM > (coverage ?? Infinity)
-              ? `Above ${coverage} m — some anomalies are narrower than this and will be missed.`
-              : spacingM > 15
-                ? `Above the 15 m recommended spacing — passes may get sparse over wider anomalies.`
-                : undefined;
+            const recommended = 15;
+            const warning = spacingM > 15
+              ? `Above the 15 m recommended spacing — passes may get sparse over wider anomalies.`
+              : undefined;
             return (
               <Slider2
                 label={`Swath spacing  ·  recommended ${recommended} m`}
@@ -3548,11 +3537,9 @@ function PlannerTab({
               />
             );
           })()}
-          {coverageMaxM != null && (
-            <div className="text-[10px] text-neutral-500 -mt-1">
-              Auto-fit covers every anomaly up to <span className="text-[#4CAF50] font-mono">{Math.floor(coverageMaxM)} m</span> spacing.
-            </div>
-          )}
+          <div className="text-[10px] text-neutral-500 -mt-1">
+            Each anomaly zone gets its own lawnmower, so wider spacing still covers every zone.
+          </div>
           <Slider2 label="Transit altitude (AGL)" value={transitAltM} setValue={setTransitAltM} min={10} max={120} step={1} unit="m" />
           <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
           <Slider2 label="Transit speed" value={transitSpeed} setValue={setTransitSpeed} min={3} max={20} step={0.5} unit="m/s" />
