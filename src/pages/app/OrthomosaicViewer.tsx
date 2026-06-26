@@ -3446,12 +3446,16 @@ function PlannerTab({
             boundary={boundary} zones={validZones}
             mission={mission} home={effectiveHome}
             onHomeChange={(p) => setHome(p)}
+            swapPoint={swapPoint}
           />
         </MapContainer>
         <div className="absolute top-3 left-3 z-[400] bg-black/70 text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Home (drag or click map)</div>
           <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-dashed border-yellow-400" /> Transit (sprayer off)</div>
           <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-cyan-400" /> Spray pattern</div>
+          {swapPoint && (
+            <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-yellow-400 border border-black" /> Battery swap</div>
+          )}
         </div>
       </div>
 
@@ -3469,6 +3473,66 @@ function PlannerTab({
           <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
           <Slider2 label="Transit speed" value={transitSpeed} setValue={setTransitSpeed} min={3} max={20} step={0.5} unit="m/s" />
           <Slider2 label="Spray speed" value={spraySpeed} setValue={setSpraySpeed} min={1} max={8} step={0.5} unit="m/s" />
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Drone</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-3" style={{ background: "#0f0f0f" }}>
+          {drones.length === 0 ? (
+            <div className="text-[11px] text-neutral-400 leading-relaxed">
+              No drones in your fleet yet. Register one on the <span className="text-[#4CAF50]">Fleet</span> page to get accurate battery estimates.
+            </div>
+          ) : (
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-neutral-500">Active drone</label>
+              <select
+                value={fp.drone_id ?? ""}
+                onChange={(e) => updateFlightPlan({ drone_id: e.target.value || null })}
+                className="mt-1 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-xs text-[#f0f0f0] focus:outline-none focus:border-[#4CAF50]"
+              >
+                <option value="">— Select drone —</option>
+                {drones.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} · {d.model}{d.status !== "idle" ? ` · ${d.status.replace("_", " ")}` : ""}
+                  </option>
+                ))}
+              </select>
+              {activeDrone && (
+                <div className="mt-2 text-[10px] text-neutral-500 font-mono">
+                  Battery now: <span className="text-neutral-300">{activeDrone.battery}%</span> · Spec: {spec.tank_l}L / {spec.max_flight_min} min / {spec.max_speed_ms} m/s
+                </div>
+              )}
+            </div>
+          )}
+          {isCustom && (
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#1f1f1f]">
+              <div className="col-span-2 text-[10px] uppercase tracking-wider text-neutral-500">Custom specs</div>
+              <label className="text-[10px] text-neutral-500">Tank (L)
+                <input type="number" min={0} step={1} value={fp.custom_specs.tank_l}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, tank_l: Number(e.target.value) || 0 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+              <label className="text-[10px] text-neutral-500">Payload (kg)
+                <input type="number" min={0} step={1} value={fp.custom_specs.payload_kg}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, payload_kg: Number(e.target.value) || 0 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+              <label className="text-[10px] text-neutral-500">Flight time (min)
+                <input type="number" min={1} step={1} value={fp.custom_specs.max_flight_min}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_flight_min: Number(e.target.value) || 1 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+              <label className="text-[10px] text-neutral-500">Max speed (m/s)
+                <input type="number" min={1} step={0.5} value={fp.custom_specs.max_speed_ms}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_speed_ms: Number(e.target.value) || 1 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+            </div>
+          )}
+          <div className="pt-2 border-t border-[#1f1f1f]">
+            <Slider2 label="Tank load" value={fp.tank_load_pct}
+              setValue={(n) => updateFlightPlan({ tank_load_pct: n })}
+              min={0} max={100} step={5} unit="%" />
+          </div>
         </div>
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Home / Takeoff</div>
@@ -3501,6 +3565,55 @@ function PlannerTab({
           <div className="flex justify-between"><span className="text-neutral-500">Spray activations</span>
             <span className="font-mono">{mission?.sprayOnCount ?? 0}</span></div>
         </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
+          <span>Battery / endurance</span>
+          {!wx && <span className="text-[10px] text-neutral-600 normal-case font-normal tracking-normal">No weather — open Weather tab</span>}
+        </div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
+          {!battery ? (
+            <div className="text-[11px] text-neutral-500">Generate a mission to see battery estimate.</div>
+          ) : (
+            <>
+              <div className="flex justify-between"><span className="text-neutral-500">Est. flight time</span>
+                <span className="font-mono">{battery.estimatedFlightMin.toFixed(1)} min</span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Battery used</span>
+                <span className={`font-mono ${battery.batteryPercent > 80 ? "text-red-400" : battery.batteryPercent > 60 ? "text-yellow-300" : "text-[#4CAF50]"}`}>
+                  {Math.round(battery.batteryPercent)}% of {spec.max_flight_min} min
+                </span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Batteries needed</span>
+                <span className={`font-mono ${battery.batteriesNeeded > 1 ? "text-red-400" : "text-[#4CAF50]"}`}>{battery.batteriesNeeded}</span></div>
+              <div className="border-t border-[#222] my-1.5" />
+              <div className="flex justify-between"><span className="text-neutral-500">Wind impact</span>
+                <span className="font-mono">
+                  {battery.windPctLabel}
+                  <span className="text-neutral-500"> ({battery.windKind}{battery.windMs > 0 ? ` ${battery.windMs.toFixed(1)} m/s` : ""})</span>
+                </span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Altitude impact</span>
+                <span className="font-mono">{battery.altPctLabel} <span className="text-neutral-500">(avg {battery.avgAlt.toFixed(0)} m AGL)</span></span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Payload impact</span>
+                <span className="font-mono">{battery.payloadPctLabel} <span className="text-neutral-500">({fp.tank_load_pct}% tank)</span></span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Temp impact</span>
+                <span className="font-mono">{battery.tempPctLabel} <span className="text-neutral-500">({battery.tempC.toFixed(0)}°C)</span></span></div>
+              {spec.tank_l > 0 && (
+                <>
+                  <div className="border-t border-[#222] my-1.5" />
+                  <div className="flex justify-between"><span className="text-neutral-500">Tank capacity</span>
+                    <span className="font-mono">{droneModelKey} — {spec.tank_l} L</span></div>
+                  <div className="flex justify-between"><span className="text-neutral-500">Recommended load</span>
+                    <span className="font-mono text-[#4CAF50]">{battery.recommendedTankL} L</span></div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        {battery && battery.batteriesNeeded > 1 && (
+          <div className="mb-4 text-[11px] text-red-400 bg-red-950/40 border border-red-800/50 rounded px-2 py-2 leading-relaxed">
+            <div className="font-semibold mb-0.5">Mission requires {battery.batteriesNeeded} batteries</div>
+            Plan a landing zone near the yellow swap pin on the map between passes.
+          </div>
+        )}
 
         {validZones.length < analysis.zones.length && (
           <div className="mb-4 text-[11px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1.5">
