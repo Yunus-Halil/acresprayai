@@ -1852,6 +1852,7 @@ export default function OrthomosaicViewer() {
             settings={settings}
             onSaveSettings={saveSettings}
             center={center}
+            userPolys={userPolys}
           />
         )}
         {activeTab === "reports" && <PlaceholderTab icon={FileBarChart} title="Reports" body="Yield, treatment, and scan history reports for this field." />}
@@ -3206,7 +3207,7 @@ function polylineLengthM(pts: LatLng2[]): number {
 
 function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
-  settings, onSaveSettings, center,
+  settings, onSaveSettings, center, userPolys,
 }: {
   analysis: any;
   boundary: BoundaryRing[] | null;
@@ -3219,6 +3220,7 @@ function PlannerTab({
   settings: FarmerSettings;
   onSaveSettings: (s: FarmerSettings) => Promise<void> | void;
   center: [number, number];
+  userPolys: UserPoly[];
 }) {
   const [spacingM, setSpacingM] = useState<number>(15);
   const [transitAltM, setTransitAltM] = useState<number>(30);
@@ -3280,10 +3282,19 @@ function PlannerTab({
     } catch { return null; }
   })();
 
-  // Filter AI zones to those whose centroid lies inside the boundary.
+  // Combine AI treatment zones + farmer-drawn manual annotations into a single
+  // list of polygons the planner will lawnmower over. Both are filtered to
+  // those whose centroid lies inside the field boundary.
+  type PlannerZone = { id: string; ring: LatLng2[]; severity: AiZone["severity"]; source: "ai" | "user" };
+  const aiZonesRaw: PlannerZone[] = ((analysis?.zones ?? []) as AiZone[])
+    .map(z => ({ id: z.id, ring: z.ring, severity: z.severity, source: "ai" as const }));
+  const userZonesRaw: PlannerZone[] = (userPolys ?? [])
+    .filter(u => u.ring && u.ring.length >= 3)
+    .map(u => ({ id: `user:${u.id}`, ring: u.ring, severity: "medium" as const, source: "user" as const }));
+  const allZonesRaw: PlannerZone[] = [...aiZonesRaw, ...userZonesRaw];
   const validZones = (() => {
-    if (!analysis?.zones || !boundary || boundary.length === 0) return [];
-    return (analysis.zones as AiZone[]).filter(z => {
+    if (!boundary || boundary.length === 0) return [];
+    return allZonesRaw.filter(z => {
       if (!z.ring || z.ring.length < 3) return false;
       const cx = z.ring.reduce((a, p) => a + p.lng, 0) / z.ring.length;
       const cy = z.ring.reduce((a, p) => a + p.lat, 0) / z.ring.length;
@@ -3457,13 +3468,13 @@ function PlannerTab({
       </div>
     );
   }
-  if (!analysis || analysis.zones.length === 0) {
+  if (allZonesRaw.length === 0) {
     return (
       <div className="absolute inset-0 grid place-items-center text-center p-8" style={{ background: "#0f0f0f" }}>
         <div className="max-w-md">
           <Plane className="h-8 w-8 mx-auto mb-3 text-[#4CAF50]" />
           <h2 className="text-lg font-semibold mb-1">Flight Planner</h2>
-          <p className="text-sm text-neutral-500 mb-4">Run AI analysis first — the planner generates lawnmower patterns over the detected treatment zones.</p>
+          <p className="text-sm text-neutral-500 mb-4">Run AI analysis or draw a manual anomaly first — the planner generates lawnmower patterns over treatment zones.</p>
           <button onClick={runAnalysis} className="text-xs bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 font-semibold inline-flex items-center gap-2">
             <Sparkles className="h-3.5 w-3.5" /> Analyze field
           </button>
@@ -3639,7 +3650,7 @@ function PlannerTab({
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Mission summary</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
-            <span className="font-mono">{validZones.length} of {analysis.zones.length}</span></div>
+            <span className="font-mono">{validZones.length} of {allZonesRaw.length} <span className="text-neutral-600">(AI {aiZonesRaw.length} · marks {userZonesRaw.length})</span></span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Total waypoints</span>
             <span className="font-mono">{mission?.waypoints.length ?? 0}</span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Spray distance</span>
@@ -3707,9 +3718,9 @@ function PlannerTab({
           </div>
         )}
 
-        {validZones.length < analysis.zones.length && (
+        {validZones.length < allZonesRaw.length && (
           <div className="mb-4 text-[11px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1.5">
-            {analysis.zones.length - validZones.length} zone(s) excluded — centroid outside boundary.
+            {allZonesRaw.length - validZones.length} zone(s) excluded — centroid outside boundary.
           </div>
         )}
 
@@ -3771,7 +3782,7 @@ function Slider2({ label, value, setValue, min, max, step, unit, maxSafe, warnin
 
 function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoint }: {
   boundary: BoundaryRing[];
-  zones: AiZone[];
+  zones: { ring: { lat: number; lng: number }[]; severity?: AiZone["severity"] }[];
   mission: Mission | null;
   home: LatLng2 | null;
   onHomeChange: (p: LatLng2) => void;
@@ -3788,7 +3799,7 @@ function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoin
       }).addTo(group);
     });
     zones.forEach(z => {
-      const color = sevColor(z.severity);
+      const color = sevColor(z.severity ?? "medium");
       L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
         color, weight: 1, fillColor: color, fillOpacity: 0.12, interactive: false,
       }).addTo(group);
