@@ -3230,6 +3230,11 @@ function PlannerTab({
   const [spraySpeed, setSpraySpeed] = useState<number>(3);
   const [home, setHome] = useState<LatLng2 | null>(null);
 
+  // Pre-flight battery — user can simulate "what if I launch at 60%?" without
+  // leaving the planner. Defaults to the active drone's stored battery; if no
+  // drone is registered, the slider is hidden and a placeholder is shown.
+  const [preFlightBattery, setPreFlightBattery] = useState<number>(100);
+
   // ---- Simulation playback ---------------------------------------------
   // Animates a virtual drone along the planned mission. Spray pulse appears
   // when the current segment is sprayer-ON. Speed multiplier lets users
@@ -3264,6 +3269,9 @@ function PlannerTab({
   }, [fp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeDrone = drones.find(d => d.id === fp.drone_id) ?? null;
+  useEffect(() => {
+    if (activeDrone) setPreFlightBattery(activeDrone.battery);
+  }, [activeDrone?.id, activeDrone?.battery]);
   const droneModelKey = activeDrone?.model ?? "Custom";
   const baseSpec = DRONE_SPECS[droneModelKey] ?? fp.custom_specs;
   const isCustom = !DRONE_SPECS[droneModelKey] || droneModelKey === "Custom";
