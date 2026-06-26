@@ -3800,20 +3800,76 @@ function PlannerTab({
                   ))}
                 </div>
               </div>
-              {/* Status readout */}
-              <div className="flex items-center justify-between text-[11px] pt-1 border-t border-[#222]">
-                <span className="text-neutral-500">Status</span>
-                <span className={`font-mono inline-flex items-center gap-1.5 ${
-                  simState?.spraying ? "text-cyan-300" : simPlaying ? "text-yellow-300" : "text-neutral-400"
-                }`}>
-                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${
-                    simState?.spraying
-                      ? "bg-cyan-400 animate-pulse"
-                      : simPlaying ? "bg-yellow-400" : "bg-neutral-500"
-                  }`} />
-                  {simT >= simTimeline.total ? "Landed" : simState?.spraying ? "Spraying" : simPlaying ? "Transit" : "Idle"}
-                </span>
-              </div>
+              {/* Status readout — phase-tinted dot for scan-at-a-glance */}
+              {(() => {
+                const phase = liveStats?.phase ?? "idle";
+                const styleByPhase: Record<string, { text: string; dot: string; label: string; pulse: boolean }> = {
+                  spraying: { text: "text-green-300",   dot: "bg-green-400",   label: "Spraying", pulse: true  },
+                  transit:  { text: "text-yellow-300",  dot: "bg-yellow-400",  label: "Transit",  pulse: false },
+                  rth:      { text: "text-red-400",     dot: "bg-red-500",     label: "RTH",      pulse: true  },
+                  landed:   { text: "text-neutral-400", dot: "bg-neutral-500", label: "Landed",   pulse: false },
+                  idle:     { text: "text-neutral-400", dot: "bg-neutral-500", label: "Idle",     pulse: false },
+                };
+                const s = styleByPhase[phase];
+                return (
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-[#222]">
+                    <span className="text-neutral-500">Status</span>
+                    <span className={`font-mono inline-flex items-center gap-1.5 ${s.text}`}>
+                      <span className={`inline-block w-2 h-2 rounded-full ${s.dot} ${s.pulse ? "animate-pulse" : ""}`} />
+                      {s.label}
+                    </span>
+                  </div>
+                );
+              })()}
+              {/* Live telemetry — battery / tank / distance tick down as the
+                  drone flies. Hidden until the user hits play so the panel
+                  doesn't show 100% / 0 km when nothing's happening. */}
+              {liveStats && (simT > 0 || simPlaying) && (
+                <div className="space-y-2 pt-2 border-t border-[#222]">
+                  {/* Battery */}
+                  <div>
+                    <div className="flex justify-between text-[10px] mb-0.5">
+                      <span className="text-neutral-500 uppercase tracking-wider">Battery</span>
+                      <span className={`font-mono ${liveStats.batteryRemaining < 20 ? "text-red-400" : liveStats.batteryRemaining < 40 ? "text-yellow-300" : "text-green-300"}`}>
+                        {liveStats.batteryRemaining.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-sm overflow-hidden bg-[#1a1a1a]">
+                      <div className={`h-full transition-[width] duration-150 ${
+                        liveStats.batteryRemaining < 20 ? "bg-red-500"
+                        : liveStats.batteryRemaining < 40 ? "bg-yellow-400"
+                        : "bg-green-500"
+                      }`} style={{ width: `${liveStats.batteryRemaining}%` }} />
+                    </div>
+                  </div>
+                  {/* Spray tank */}
+                  <div>
+                    <div className="flex justify-between text-[10px] mb-0.5">
+                      <span className="text-neutral-500 uppercase tracking-wider">Spray tank</span>
+                      <span className="font-mono text-cyan-300">
+                        {liveStats.tankRemaining.toFixed(1)}% <span className="text-neutral-600">of {liveStats.tankStart.toFixed(0)}%</span>
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-sm overflow-hidden bg-[#1a1a1a]">
+                      <div className="h-full bg-cyan-400 transition-[width] duration-150"
+                        style={{ width: `${(liveStats.tankRemaining / Math.max(1, liveStats.tankStart)) * 100}%` }} />
+                    </div>
+                  </div>
+                  {/* Distance */}
+                  <div className="flex justify-between text-[11px] pt-0.5">
+                    <span className="text-neutral-500">Distance flown</span>
+                    <span className="font-mono text-neutral-300">
+                      {(liveStats.distCovered / 1000).toFixed(2)} <span className="text-neutral-600">/ {(liveStats.totalDist / 1000).toFixed(2)} km</span>
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-neutral-500">Sprayed</span>
+                    <span className="font-mono text-cyan-300">
+                      {(liveStats.sprayCovered / 1000).toFixed(2)} <span className="text-neutral-600">/ {(liveStats.totalSprayDist / 1000).toFixed(2)} km</span>
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
