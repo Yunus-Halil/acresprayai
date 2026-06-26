@@ -2874,36 +2874,38 @@ type Pass = {
   segs: { a: LatLng2; b: LatLng2; spray: boolean; zoneId?: string }[];
 };
 
-// Build a self-contained lawnmower inside each treatment zone. Returns one
-// Pass[] per zone so buildMission can order zones by nearest neighbour and
-// stitch them together with straight transits at altitude.
+// Per-zone parallel lawnmower: each anomaly zone gets its OWN compact set of
+// parallel spray passes, all rotated to the FIELD's principal axis so every
+// zone's rows are parallel to every other zone's. Passes are clipped to
+// (boundary ∩ zone) so they only exist where the drone actually sprays —
+// no full-width rows, no skipped rows, no diagonal jumps across the field.
+// Adjacent passes inside a zone alternate direction (boustrophedon) for tight
+// U-turns at the zone edge; buildMission then bridges zones with a single
+// straight transit at altitude.
 function buildFieldSweep(
   boundary: LatLng2[][],
   zones: { id: string; ring: LatLng2[] }[],
   spacingM: number,
 ): Pass[][] {
-  if (!boundary.length) return [];
-  // One fragment per boundary polygon — the disjoint sections of the field
-  // (e.g. split by a hedgerow) are stitched together by buildMission with
-  // straight transit lines at altitude.
-  const fragments: Pass[][] = [];
-  // Rotate everything to the FIELD's principal axis so rows run along its
-  // long edge (matches how a farmer would mow it).
+  if (!boundary.length || !zones.length) return [];
   const fieldCenter = centroidOfRings(boundary);
   const theta = principalAxisAngle(boundary);
   const cF = Math.cos(-theta), sF = Math.sin(-theta);
   const cI = Math.cos(theta),  sI = Math.sin(theta);
   const rot   = (p: LatLng2) => rotateLL(p, fieldCenter, cF, sF);
   const unrot = (p: LatLng2) => rotateLL(p, fieldCenter, cI, sI);
-  const rotZones = zones.map(z => ({ id: z.id, ring: z.ring.map(rot) }));
-
+  const rotBoundary = boundary.map(r => r.map(rot));
   const spacing = Math.max(2, spacingM);
-  for (const polyRing of boundary) {
-    const rotRing = polyRing.map(rot);
+
+  const fragments: Pass[][] = [];
+  for (const zone of zones) {
+    const rotRing = zone.ring.map(rot);
     const bb = bboxOfRings([rotRing]);
-    const widthM = (bb.maxLat - bb.minLat) * M_PER_DEG_LAT;
-    const passCount = Math.max(1, Math.ceil(widthM / spacing));
-    const step = widthM / passCount;
+    const heightM = (bb.maxLat - bb.minLat) * M_PER_DEG_LAT;
+    if (heightM < 0.5) continue;
+    // Number of parallel rows fitting inside this zone at the given swath.
+    const passCount = Math.max(1, Math.round(heightM / spacing));
+    const step = heightM / passCount;
     const dLat = step / M_PER_DEG_LAT;
     const padLng = (bb.maxLng - bb.minLng) * 0.05 + 0.0002;
 
@@ -2914,62 +2916,29 @@ function buildFieldSweep(
       const a = { lat: y, lng: bb.minLng - padLng };
       const b = { lat: y, lng: bb.maxLng + padLng };
 
-      // Collect every t-value where the sweep line crosses the field boundary
-      // OR any anomaly zone. Each sub-interval between consecutive events has
-      // a constant (inside-boundary?, inside-zone?) classification.
-      const ts = new Set<number>([0, 1]);
-      for (const t of segRingIntersections(a, b, rotRing)) ts.add(t);
-      for (const z of rotZones) for (const t of segRingIntersections(a, b, z.ring)) ts.add(t);
-      const sorted = Array.from(ts).sort((x, y) => x - y);
-
+      // Sweep line × zone ring → spray intervals inside the zone.
+      const zts = [0, 1, ...segRingIntersections(a, b, rotRing)]
+        .filter(t => t >= 0 && t <= 1).sort((x, y) => x - y);
+      // Build spray sub-segments clipped to (zone ∩ boundary).
       const segs: Pass["segs"] = [];
-      for (let k = 0; k < sorted.length - 1; k++) {
-        const t0 = sorted[k], t1 = sorted[k + 1];
+      for (let k = 0; k < zts.length - 1; k++) {
+        const t0 = zts[k], t1 = zts[k + 1];
         if (t1 - t0 < 1e-9) continue;
         const mid = lerp(a, b, (t0 + t1) / 2);
         if (!pointInRing(mid, rotRing)) continue;
-        // Which (if any) zone owns this sub-segment?
-        let zoneId: string | undefined;
-        for (const z of rotZones) {
-          if (pointInRing(mid, z.ring)) { zoneId = z.id; break; }
-        }
+        // Must also be inside the field boundary (drop slivers outside).
+        if (!rotBoundary.some(r => pointInRing(mid, r))) continue;
         const pa = unrot(lerp(a, b, t0));
         const pb = unrot(lerp(a, b, t1));
-        segs.push({ a: pa, b: pb, spray: !!zoneId, zoneId });
+        segs.push({ a: pa, b: pb, spray: true, zoneId: zone.id });
       }
-
-      // Merge adjacent sub-segs that share the same spray/zone classification
-      // so the export gets clean polylines, not micro-segments.
-      const merged: Pass["segs"] = [];
-      for (const s of segs) {
-        const last = merged[merged.length - 1];
-        if (last && last.spray === s.spray && last.zoneId === s.zoneId
-            && distM(last.b, s.a) < 0.5) {
-          last.b = s.b;
-        } else {
-          merged.push({ ...s });
-        }
-      }
-
-      // Only keep passes that actually cross an anomaly. Passes through fully
-      // healthy ground are dropped entirely — buildMission will bridge the
-      // remaining spray passes with straight transits at altitude, so the
-      // drone never sweeps healthy areas.
-      const sprayCount = merged.filter(s => s.spray).length;
-      if (!sprayCount) continue;
-      // Trim leading/trailing transit segs — keep transits only between two
-      // spray segs on the same pass (rare, when one row crosses two zones).
-      let lo = 0, hi = merged.length - 1;
-      while (lo <= hi && !merged[lo].spray) lo++;
-      while (hi >= lo && !merged[hi].spray) hi--;
-      const trimmed = merged.slice(lo, hi + 1);
-      if (!trimmed.length) continue;
+      if (!segs.length) continue;
       if (flip) {
-        trimmed.reverse();
-        for (const s of trimmed) { const t = s.a; s.a = s.b; s.b = t; }
+        segs.reverse();
+        for (const s of segs) { const t = s.a; s.a = s.b; s.b = t; }
       }
       flip = !flip;
-      passes.push({ segs: trimmed });
+      passes.push({ segs });
     }
     if (passes.length) fragments.push(passes);
   }
