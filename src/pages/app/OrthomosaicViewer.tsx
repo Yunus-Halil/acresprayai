@@ -3285,11 +3285,13 @@ function PlannerTab({
   // Combine AI treatment zones + farmer-drawn manual annotations into a single
   // list of polygons the planner will lawnmower over. Both are filtered to
   // those whose centroid lies inside the field boundary.
-  const aiZonesRaw: { id: string; ring: LatLng2[] }[] = (analysis?.zones ?? []) as AiZone[];
-  const userZonesRaw: { id: string; ring: LatLng2[] }[] = (userPolys ?? [])
+  type PlannerZone = { id: string; ring: LatLng2[]; severity: AiZone["severity"]; source: "ai" | "user" };
+  const aiZonesRaw: PlannerZone[] = ((analysis?.zones ?? []) as AiZone[])
+    .map(z => ({ id: z.id, ring: z.ring, severity: z.severity, source: "ai" as const }));
+  const userZonesRaw: PlannerZone[] = (userPolys ?? [])
     .filter(u => u.ring && u.ring.length >= 3)
-    .map(u => ({ id: `user:${u.id}`, ring: u.ring }));
-  const allZonesRaw = [...aiZonesRaw, ...userZonesRaw];
+    .map(u => ({ id: `user:${u.id}`, ring: u.ring, severity: "medium" as const, source: "user" as const }));
+  const allZonesRaw: PlannerZone[] = [...aiZonesRaw, ...userZonesRaw];
   const validZones = (() => {
     if (!boundary || boundary.length === 0) return [];
     return allZonesRaw.filter(z => {
