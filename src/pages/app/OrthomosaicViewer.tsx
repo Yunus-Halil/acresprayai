@@ -3522,9 +3522,30 @@ function PlannerTab({
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
           {(() => {
-            const recommended = 15;
-            const warning = spacingM > 15
-              ? `Above the 15 m recommended spacing — passes may get sparse over wider anomalies.`
+            // Home-aware recommended swath.
+            // Wider spacing = fewer passes = fewer long returns to/from home.
+            // The farther the home pin is from the field, the more each extra
+            // pass costs in connector flight, so the recommendation widens.
+            // Coverage (every anomaly hit) and the drone's physical swath
+            // remain hard caps.
+            const base = 15;
+            let rec = base;
+            if (effectiveHome && boundary && boundary.length > 0) {
+              const c = centroidOfRings(boundary as LatLng2[][]);
+              const dHome = distM(effectiveHome, c); // meters
+              // +1 m of spacing per 60 m home-to-field distance, ±5 m band.
+              const adj = Math.round(Math.max(-5, Math.min(8, (dHome - 60) / 60)));
+              rec = base + adj;
+            }
+            // Never recommend wider than the narrowest anomaly can tolerate.
+            if (coverageMaxM && rec > coverageMaxM) rec = Math.floor(coverageMaxM);
+            // Never recommend wider than the active drone's effective swath.
+            const droneSwath = spec?.spray_swath_m && spec.spray_swath_m > 0 ? spec.spray_swath_m : null;
+            if (droneSwath && rec > droneSwath) rec = Math.floor(droneSwath);
+            rec = Math.max(5, Math.min(22, rec));
+            const recommended = rec;
+            const warning = spacingM > recommended
+              ? `Above the ${recommended} m recommended spacing for this home position — extra passes mean longer returns and possible gaps over narrow anomalies.`
               : undefined;
             return (
               <Slider2
