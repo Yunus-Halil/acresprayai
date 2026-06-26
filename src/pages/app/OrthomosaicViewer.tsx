@@ -4949,7 +4949,7 @@ function LogFlightModal({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        toast({ title: "Not signed in", description: "Please log in to save flight logs." });
+        toast.error("Not signed in", { description: "Please log in to save flight logs." });
         setSaving(false);
         return;
       }
@@ -4974,11 +4974,11 @@ function LogFlightModal({
       if (droneId) {
         await supabase.from("drones").update({ battery: batteryEnd }).eq("id", droneId);
       }
-      toast({ title: "Flight logged", description: `${acresDone.toFixed(2)} ac recorded for ${dateFlown}.` });
+      toast.success("Flight logged", { description: `${acresDone.toFixed(2)} ac recorded for ${dateFlown}.` });
       await onSaved();
       onOpenChange(false);
     } catch (e: any) {
-      toast({ title: "Couldn't save flight log", description: e?.message ?? String(e), variant: "destructive" });
+      toast.error("Couldn't save flight log", { description: e?.message ?? String(e) });
     } finally {
       setSaving(false);
     }
