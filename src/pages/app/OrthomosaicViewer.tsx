@@ -3388,11 +3388,28 @@ function PlannerOverlay({ boundary, zones, mission, home, onHomeChange }: {
     });
 
     if (mission) {
-      // Yellow dashed transit segments (sprayer OFF)
-      mission.transitSegments.forEach(seg => {
+      // Transit segments (sprayer OFF). First = home → start (RED),
+      // last = end → home (GREEN), in-between row connectors = yellow dashed.
+      const lastIdx = mission.transitSegments.length - 1;
+      mission.transitSegments.forEach((seg, i) => {
+        const isStart = i === 0;
+        const isEnd = i === lastIdx && lastIdx > 0;
+        const color = isStart ? "#ef4444" : isEnd ? "#22c55e" : "#facc15";
+        const weight = isStart || isEnd ? 4 : 2;
         L.polyline(seg.map(p => [p.lat, p.lng] as [number, number]), {
-          color: "#facc15", weight: 2, dashArray: "8 6", opacity: 0.9, interactive: false,
+          color, weight, dashArray: isStart || isEnd ? undefined : "8 6",
+          opacity: 1, interactive: false,
         }).addTo(group);
+        // Endpoint marker at the serpentine start / end
+        if (isStart || isEnd) {
+          const pt = isStart ? seg[seg.length - 1] : seg[0];
+          L.circleMarker([pt.lat, pt.lng], {
+            radius: 7, color: "#000", weight: 2,
+            fillColor: color, fillOpacity: 1, interactive: false,
+          }).addTo(group).bindTooltip(isStart ? "START" : "END", {
+            permanent: true, direction: "top", offset: [0, -8], className: "mission-endpoint-label",
+          });
+        }
       });
       // Cyan solid spray pattern (sprayer ON)
       mission.spraySegments.forEach(path => {
