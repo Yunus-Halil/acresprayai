@@ -3619,6 +3619,37 @@ function PlannerTab({
           <div className="text-sm font-semibold">Flight Planner</div>
         </div>
 
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pre-flight battery</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4" style={{ background: "#0f0f0f" }}>
+          {drones.length === 0 ? (
+            <div className="text-[11px] text-neutral-600 italic leading-relaxed">
+              Register a drone in <span className="text-neutral-400">Fleet</span> to enable battery simulation
+            </div>
+          ) : !activeDrone ? (
+            <div className="text-[11px] text-neutral-500 leading-relaxed">
+              Select an active drone below to simulate pre-flight battery.
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] text-neutral-500">Launch with</span>
+                <span className={`font-mono text-sm ${preFlightBattery < 30 ? "text-red-400" : preFlightBattery < 60 ? "text-yellow-300" : "text-[#4CAF50]"}`}>
+                  {preFlightBattery}%
+                </span>
+              </div>
+              <input
+                type="range" min={0} max={100} step={1}
+                value={preFlightBattery}
+                onChange={(e) => setPreFlightBattery(Number(e.target.value))}
+                className="w-full accent-[#4CAF50]"
+              />
+              <div className="text-[10px] text-neutral-600 mt-1">
+                Stored: {activeDrone.battery}% — adjust to simulate a partial charge.
+              </div>
+            </>
+          )}
+        </div>
+
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
           {(() => {
