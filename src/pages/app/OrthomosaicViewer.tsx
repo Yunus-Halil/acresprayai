@@ -2837,12 +2837,13 @@ function bboxOfRings(rings: LatLng2[][]) {
   return { minLat, maxLat, minLng, maxLng };
 }
 
-// Per-zone lawnmower: each AI treatment zone gets its own contained
-// boustrophedon pattern inside its bounding box (rotated to the zone's own
-// principal axis so rows run along the long edge). The healthy area in
-// between gets zero passes — buildMission stitches zones together with
-// straight transit lines at altitude. Each zone's pass count is capped by
-// area so a 0.05 ac patch gets 1–2 lines, not 40.
+// Field-wide lawnmower: a single boustrophedon pattern covers the entire
+// field boundary (rotated to the field's own principal axis so rows run
+// along the long edge). Each pass is then split into sub-segments — spray
+// ON where the pass crosses an AI treatment zone, transit (sprayer OFF,
+// transit altitude/speed) everywhere else inside the boundary. The drone
+// enters from the home edge, runs straight transits across healthy ground,
+// and only drops to spray altitude when it's over an anomaly.
 
 // --- rotation / principal axis helpers --------------------------------------
 function rotateLL(p: LatLng2, center: LatLng2, cosA: number, sinA: number): LatLng2 {
@@ -2876,33 +2877,33 @@ type Pass = {
 // Build a self-contained lawnmower inside each treatment zone. Returns one
 // Pass[] per zone so buildMission can order zones by nearest neighbour and
 // stitch them together with straight transits at altitude.
-function buildZoneLawnmowers(
+function buildFieldSweep(
   boundary: LatLng2[][],
   zones: { id: string; ring: LatLng2[] }[],
   spacingM: number,
 ): Pass[][] {
-  return zones.map(z => {
-    const areaAc = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng))) / 4046.8564224;
-    const center = centroidOfRings([z.ring]);
-    // Rotate to the zone's own principal axis so rows run along its long edge.
-    const theta = principalAxisAngle([z.ring]);
-    const cF = Math.cos(-theta), sF = Math.sin(-theta);
-    const cI = Math.cos(theta), sI = Math.sin(theta);
-    const rot = (p: LatLng2) => rotateLL(p, center, cF, sF);
-    const unrot = (p: LatLng2) => rotateLL(p, center, cI, sI);
-    const rotRing = z.ring.map(rot);
-    const bb = bboxOfRings([rotRing]);
-    // bbox extents in meters. Rows step along the short (lat/y) axis.
-    const widthM = (bb.maxLat - bb.minLat) * M_PER_DEG_LAT;
+  if (!boundary.length) return [];
+  // One fragment per boundary polygon — the disjoint sections of the field
+  // (e.g. split by a hedgerow) are stitched together by buildMission with
+  // straight transit lines at altitude.
+  const fragments: Pass[][] = [];
+  // Rotate everything to the FIELD's principal axis so rows run along its
+  // long edge (matches how a farmer would mow it).
+  const fieldCenter = centroidOfRings(boundary);
+  const theta = principalAxisAngle(boundary);
+  const cF = Math.cos(-theta), sF = Math.sin(-theta);
+  const cI = Math.cos(theta),  sI = Math.sin(theta);
+  const rot   = (p: LatLng2) => rotateLL(p, fieldCenter, cF, sF);
+  const unrot = (p: LatLng2) => rotateLL(p, fieldCenter, cI, sI);
+  const rotZones = zones.map(z => ({ id: z.id, ring: z.ring.map(rot) }));
 
-    // Pass count: tiny zones get 1–2 passes through the center, medium up to
-    // 5, large scales naturally. User's swath slider sets the target spacing
-    // but we floor at 3 m and never exceed the area-based cap.
-    const cap = areaAc < 0.1 ? 2 : areaAc < 0.5 ? 5 : 999;
-    const targetSpacing = Math.max(3, spacingM);
-    const rawCount = Math.max(1, Math.ceil(widthM / targetSpacing));
-    const passCount = Math.min(cap, rawCount);
-    const step = widthM / passCount; // meters between rows (centers passes in bbox)
+  const spacing = Math.max(2, spacingM);
+  for (const polyRing of boundary) {
+    const rotRing = polyRing.map(rot);
+    const bb = bboxOfRings([rotRing]);
+    const widthM = (bb.maxLat - bb.minLat) * M_PER_DEG_LAT;
+    const passCount = Math.max(1, Math.ceil(widthM / spacing));
+    const step = widthM / passCount;
     const dLat = step / M_PER_DEG_LAT;
     const padLng = (bb.maxLng - bb.minLng) * 0.05 + 0.0002;
 
@@ -2912,33 +2913,55 @@ function buildZoneLawnmowers(
       const y = bb.minLat + dLat * (i + 0.5);
       const a = { lat: y, lng: bb.minLng - padLng };
       const b = { lat: y, lng: bb.maxLng + padLng };
-      const ts = new Set<number>();
+
+      // Collect every t-value where the sweep line crosses the field boundary
+      // OR any anomaly zone. Each sub-interval between consecutive events has
+      // a constant (inside-boundary?, inside-zone?) classification.
+      const ts = new Set<number>([0, 1]);
       for (const t of segRingIntersections(a, b, rotRing)) ts.add(t);
+      for (const z of rotZones) for (const t of segRingIntersections(a, b, z.ring)) ts.add(t);
       const sorted = Array.from(ts).sort((x, y) => x - y);
+
       const segs: Pass["segs"] = [];
       for (let k = 0; k < sorted.length - 1; k++) {
-        const tm = (sorted[k] + sorted[k + 1]) / 2;
-        if (!pointInRing(lerp(a, b, tm), rotRing)) continue;
-        const pa = unrot(lerp(a, b, sorted[k]));
-        const pb = unrot(lerp(a, b, sorted[k + 1]));
-        // Drop sub-segments whose midpoint falls outside the user's field
-        // boundary (zone may bleed slightly past it).
-        if (boundary.length) {
-          const midWorld = { lat: (pa.lat + pb.lat) / 2, lng: (pa.lng + pb.lng) / 2 };
-          if (!pointInAnyRing(midWorld, boundary)) continue;
+        const t0 = sorted[k], t1 = sorted[k + 1];
+        if (t1 - t0 < 1e-9) continue;
+        const mid = lerp(a, b, (t0 + t1) / 2);
+        if (!pointInRing(mid, rotRing)) continue;
+        // Which (if any) zone owns this sub-segment?
+        let zoneId: string | undefined;
+        for (const z of rotZones) {
+          if (pointInRing(mid, z.ring)) { zoneId = z.id; break; }
         }
-        segs.push({ a: pa, b: pb, spray: true, zoneId: z.id });
+        const pa = unrot(lerp(a, b, t0));
+        const pb = unrot(lerp(a, b, t1));
+        segs.push({ a: pa, b: pb, spray: !!zoneId, zoneId });
       }
-      if (!segs.length) continue;
+
+      // Merge adjacent sub-segs that share the same spray/zone classification
+      // so the export gets clean polylines, not micro-segments.
+      const merged: Pass["segs"] = [];
+      for (const s of segs) {
+        const last = merged[merged.length - 1];
+        if (last && last.spray === s.spray && last.zoneId === s.zoneId
+            && distM(last.b, s.a) < 0.5) {
+          last.b = s.b;
+        } else {
+          merged.push({ ...s });
+        }
+      }
+
+      if (!merged.length) continue;
       if (flip) {
-        segs.reverse();
-        for (const s of segs) { const t = s.a; s.a = s.b; s.b = t; }
+        merged.reverse();
+        for (const s of merged) { const t = s.a; s.a = s.b; s.b = t; }
       }
       flip = !flip;
-      passes.push({ segs });
+      passes.push({ segs: merged });
     }
-    return passes;
-  }).filter(p => p.length > 0);
+    if (passes.length) fragments.push(passes);
+  }
+  return fragments;
 }
 
 // =============================================================================
@@ -2995,10 +3018,11 @@ function buildMission(
   // 1) Takeoff at home
   wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "TAKEOFF" });
 
-  // Build per-zone lawnmower passes — one set per AI treatment zone. The
-  // healthy area in between gets zero passes; buildMission's connector logic
-  // bridges each zone with a single straight transit at altitude.
-  const fragments = buildZoneLawnmowers(boundary, zones, p.spacingM);
+  // Build a single field-wide lawnmower whose passes are split into spray
+  // (over anomaly zones) and transit (over healthy ground) sub-segments.
+  // Disjoint boundary polygons each become one fragment so buildMission can
+  // bridge them with a straight transit at altitude.
+  const fragments = buildFieldSweep(boundary, zones, p.spacingM);
 
   // Order fragments by nearest endpoint to the running exit point, and for
   // each fragment pick the orientation (forward/reverse pass order × flip
