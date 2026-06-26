@@ -2781,25 +2781,6 @@ function lerp(a: LatLng2, b: LatLng2, t: number): LatLng2 {
   return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
 }
 
-// Clip a straight east-west scan line (a → b) against (boundary ∩ zone) and
-// return a list of contiguous segments that lie inside BOTH.
-function clipLineToBoundaryAndZone(a: LatLng2, b: LatLng2, boundaryRings: LatLng2[][], zoneRing: LatLng2[]): [LatLng2, LatLng2][] {
-  // Collect intersection t-values with every ring (boundary parts + zone).
-  const ts = new Set<number>();
-  ts.add(0); ts.add(1);
-  for (const r of boundaryRings) for (const t of segRingIntersections(a, b, r)) ts.add(t);
-  for (const t of segRingIntersections(a, b, zoneRing)) ts.add(t);
-  const sorted = Array.from(ts).sort((x, y) => x - y);
-  const out: [LatLng2, LatLng2][] = [];
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const tm = (sorted[i] + sorted[i + 1]) / 2;
-    const mid = lerp(a, b, tm);
-    if (pointInAnyRing(mid, boundaryRings) && pointInRing(mid, zoneRing)) {
-      out.push([lerp(a, b, sorted[i]), lerp(a, b, sorted[i + 1])]);
-    }
-  }
-  return out;
-}
 
 function bboxOfRings(rings: LatLng2[][]) {
   let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
