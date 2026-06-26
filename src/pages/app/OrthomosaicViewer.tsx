@@ -15,6 +15,7 @@ import {
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
   Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
   CheckCircle2, XCircle, Trash2, Hexagon,
+  Play, Pause, RotateCcw, FastForward,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
 
