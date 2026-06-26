@@ -2951,13 +2951,25 @@ function buildFieldSweep(
         }
       }
 
-      if (!merged.length) continue;
+      // Only keep passes that actually cross an anomaly. Passes through fully
+      // healthy ground are dropped entirely — buildMission will bridge the
+      // remaining spray passes with straight transits at altitude, so the
+      // drone never sweeps healthy areas.
+      const sprayCount = merged.filter(s => s.spray).length;
+      if (!sprayCount) continue;
+      // Trim leading/trailing transit segs — keep transits only between two
+      // spray segs on the same pass (rare, when one row crosses two zones).
+      let lo = 0, hi = merged.length - 1;
+      while (lo <= hi && !merged[lo].spray) lo++;
+      while (hi >= lo && !merged[hi].spray) hi--;
+      const trimmed = merged.slice(lo, hi + 1);
+      if (!trimmed.length) continue;
       if (flip) {
-        merged.reverse();
-        for (const s of merged) { const t = s.a; s.a = s.b; s.b = t; }
+        trimmed.reverse();
+        for (const s of trimmed) { const t = s.a; s.a = s.b; s.b = t; }
       }
       flip = !flip;
-      passes.push({ segs: merged });
+      passes.push({ segs: trimmed });
     }
     if (passes.length) fragments.push(passes);
   }
