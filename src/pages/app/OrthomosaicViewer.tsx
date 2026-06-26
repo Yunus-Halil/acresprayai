@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -15,6 +15,7 @@ import {
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
   Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
   CheckCircle2, XCircle, Trash2, Hexagon,
+  Play, Pause, RotateCcw, FastForward,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
 
@@ -3229,6 +3230,14 @@ function PlannerTab({
   const [spraySpeed, setSpraySpeed] = useState<number>(3);
   const [home, setHome] = useState<LatLng2 | null>(null);
 
+  // ---- Simulation playback ---------------------------------------------
+  // Animates a virtual drone along the planned mission. Spray pulse appears
+  // when the current segment is sprayer-ON. Speed multiplier lets users
+  // fast-forward through long missions.
+  const [simPlaying, setSimPlaying] = useState(false);
+  const [simSpeed, setSimSpeed] = useState<number>(8);  // realtime * multiplier
+  const [simT, setSimT] = useState(0);
+
   // ---- Drone fleet ------------------------------------------------------
   type FleetDrone = { id: string; name: string; model: string; battery: number; status: string };
   const [drones, setDrones] = useState<FleetDrone[]>([]);
@@ -3346,6 +3355,30 @@ function PlannerTab({
       { home: effectiveHome, transitAltM, sprayAltM, transitSpeed, spraySpeed, spacingM },
     );
   })();
+
+  // ---- Simulation timeline (rebuilt whenever the mission changes) -------
+  const simTimeline = useMemo(() => buildSimTimeline(mission), [mission]);
+  // Reset playhead when the mission changes shape.
+  useEffect(() => { setSimT(0); setSimPlaying(false); }, [simTimeline.total]);
+  // RAF loop — advances simT by (dt * simSpeed). Stops at the end.
+  useEffect(() => {
+    if (!simPlaying || simTimeline.total <= 0) return;
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      setSimT(prev => {
+        const next = prev + dt * simSpeed;
+        if (next >= simTimeline.total) { setSimPlaying(false); return simTimeline.total; }
+        return next;
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [simPlaying, simSpeed, simTimeline.total]);
+  const simState = simPosAt(simTimeline, simT);
 
   const downloadWaypoints = () => {
     if (!mission || mission.waypoints.length === 0) return;
@@ -3512,6 +3545,7 @@ function PlannerTab({
             onHomeChange={(p) => setHome(p)}
             swapPoint={swapPoint}
           />
+          <DroneSimMarker sim={simState} />
         </MapContainer>
         <div className="absolute top-3 left-3 z-[400] bg-black/70 text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Home (drag or click map)</div>
@@ -3647,6 +3681,95 @@ function PlannerTab({
           <button onClick={() => setHome(null)} className="text-[10px] text-[#4CAF50] hover:underline">Reset to field centroid</button>
         </div>
 
+        {mission && simTimeline.total > 0 && (
+          <div className="mb-4">
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
+              <span>Simulation</span>
+              <span className="font-mono text-neutral-400 normal-case tracking-normal">
+                {fmtTime(simT)} / {fmtTime(simTimeline.total)}
+              </span>
+            </div>
+            <div className="rounded-sm border border-[#222] p-3 space-y-3" style={{ background: "#0f0f0f" }}>
+              {/* Progress scrubber */}
+              <div className="relative">
+                <input
+                  type="range" min={0} max={simTimeline.total} step={0.1} value={simT}
+                  onChange={(e) => { setSimT(parseFloat(e.target.value)); }}
+                  className="w-full accent-[#4CAF50]"
+                />
+                {/* Spray-segment heatmap under the scrubber */}
+                <div className="relative h-1.5 -mt-1 rounded-sm overflow-hidden bg-[#1a1a1a]">
+                  {simTimeline.segs.filter(s => s.spray).map((s, i) => (
+                    <div key={i}
+                      className="absolute top-0 bottom-0 bg-cyan-400/70"
+                      style={{
+                        left: `${(s.tStart / simTimeline.total) * 100}%`,
+                        width: `${Math.max(0.3, ((s.tEnd - s.tStart) / simTimeline.total) * 100)}%`,
+                      }}
+                    />
+                  ))}
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-white"
+                    style={{ left: `${(simT / Math.max(0.001, simTimeline.total)) * 100}%` }}
+                  />
+                </div>
+              </div>
+              {/* Transport controls */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (simT >= simTimeline.total) setSimT(0);
+                    setSimPlaying(p => !p);
+                  }}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 text-xs font-semibold"
+                >
+                  {simPlaying
+                    ? (<><Pause className="h-3.5 w-3.5" /> Pause</>)
+                    : (<><Play className="h-3.5 w-3.5" /> {simT > 0 && simT < simTimeline.total ? "Resume" : "Play"}</>)}
+                </button>
+                <button
+                  onClick={() => { setSimPlaying(false); setSimT(0); }}
+                  className="inline-flex items-center justify-center gap-1 border border-[#222] hover:border-[#333] text-neutral-300 rounded-sm px-2.5 py-2 text-xs"
+                  title="Reset"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {/* Speed selector */}
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 flex items-center gap-1.5">
+                  <FastForward className="h-3 w-3" /> Playback speed
+                </div>
+                <div className="grid grid-cols-6 gap-1">
+                  {[1, 2, 4, 8, 16, 32].map(m => (
+                    <button key={m}
+                      onClick={() => setSimSpeed(m)}
+                      className={`text-[11px] font-mono py-1 rounded-sm border ${
+                        simSpeed === m
+                          ? "bg-[#4CAF50] text-black border-[#4CAF50]"
+                          : "bg-[#1a1a1a] text-neutral-400 border-[#222] hover:border-[#333]"
+                      }`}
+                    >{m}×</button>
+                  ))}
+                </div>
+              </div>
+              {/* Status readout */}
+              <div className="flex items-center justify-between text-[11px] pt-1 border-t border-[#222]">
+                <span className="text-neutral-500">Status</span>
+                <span className={`font-mono inline-flex items-center gap-1.5 ${
+                  simState?.spraying ? "text-cyan-300" : simPlaying ? "text-yellow-300" : "text-neutral-400"
+                }`}>
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                    simState?.spraying
+                      ? "bg-cyan-400 animate-pulse"
+                      : simPlaying ? "bg-yellow-400" : "bg-neutral-500"
+                  }`} />
+                  {simT >= simTimeline.total ? "Landed" : simState?.spraying ? "Spraying" : simPlaying ? "Transit" : "Idle"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Mission summary</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
@@ -3788,6 +3911,7 @@ function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoin
   onHomeChange: (p: LatLng2) => void;
   swapPoint: LatLng2 | null;
 }) {
+  // (moved below — DroneSimMarker + simulation helpers live just after this fn)
   const map = useMap();
   useEffect(() => {
     const group = L.layerGroup().addTo(map);
@@ -3881,6 +4005,118 @@ function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoin
 
     return () => { map.off("click", onClick); group.remove(); };
   }, [map, boundary, zones, mission, home, onHomeChange, swapPoint]);
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Mission playback: build a flat timeline of positional segments with the
+// sprayer-state at each moment, then drive a draggable map marker.
+// ---------------------------------------------------------------------------
+type SimSeg = {
+  from: LatLng2; to: LatLng2; dist: number; speed: number;
+  spray: boolean; tStart: number; tEnd: number;
+};
+export type SimTimeline = { segs: SimSeg[]; total: number };
+
+function buildSimTimeline(m: Mission | null): SimTimeline {
+  if (!m) return { segs: [], total: 0 };
+  const segs: SimSeg[] = [];
+  let t = 0;
+  let sprayOn = false;
+  let prev: MissionWP | null = null;
+  for (const wp of m.waypoints) {
+    if (wp.action === "SPRAY_ON") { sprayOn = true; continue; }
+    if (wp.action === "SPRAY_OFF") { sprayOn = false; continue; }
+    if (wp.action === "SPEED_CHANGE" || wp.action === "ALTITUDE_CHANGE") continue;
+    if (!prev) { prev = wp; continue; }
+    const d = distM(prev, wp);
+    if (d < 0.1) { prev = wp; continue; }
+    const speed = Math.max(0.5, wp.speed || prev.speed || 5);
+    const dur = d / speed;
+    segs.push({ from: prev, to: wp, dist: d, speed, spray: sprayOn, tStart: t, tEnd: t + dur });
+    t += dur;
+    prev = wp;
+  }
+  return { segs, total: t };
+}
+
+function simPosAt(tl: SimTimeline, t: number): { pos: LatLng2; spraying: boolean } | null {
+  if (!tl.segs.length) return null;
+  if (t <= 0) {
+    const s = tl.segs[0];
+    return { pos: s.from, spraying: s.spray };
+  }
+  if (t >= tl.total) {
+    const s = tl.segs[tl.segs.length - 1];
+    return { pos: s.to, spraying: false };
+  }
+  // Linear scan — N is small (hundreds of segments at most).
+  for (const s of tl.segs) {
+    if (t <= s.tEnd) {
+      const f = (t - s.tStart) / Math.max(0.0001, s.tEnd - s.tStart);
+      return {
+        pos: {
+          lat: s.from.lat + (s.to.lat - s.from.lat) * f,
+          lng: s.from.lng + (s.to.lng - s.from.lng) * f,
+        },
+        spraying: s.spray,
+      };
+    }
+  }
+  return null;
+}
+
+function DroneSimMarker({ sim }: { sim: { pos: LatLng2; spraying: boolean } | null }) {
+  const map = useMap();
+  const markerRef = useRef<L.Marker | null>(null);
+
+  // Inject the spray pulse keyframe once per page.
+  useEffect(() => {
+    if (document.getElementById("sim-spray-style")) return;
+    const s = document.createElement("style");
+    s.id = "sim-spray-style";
+    s.textContent = `
+      @keyframes simSprayPulse { 0% { transform: scale(.5); opacity: .75 } 100% { transform: scale(2.6); opacity: 0 } }
+      .sim-drone-icon { pointer-events: none; }
+    `;
+    document.head.appendChild(s);
+  }, []);
+
+  useEffect(() => {
+    if (!sim) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      return;
+    }
+    const pulse = sim.spraying
+      ? `<span style="position:absolute;inset:-10px;border-radius:50%;background:#22d3ee;opacity:.5;animation:simSprayPulse 1s ease-out infinite;"></span>
+         <span style="position:absolute;inset:-10px;border-radius:50%;background:#22d3ee;opacity:.5;animation:simSprayPulse 1s ease-out .5s infinite;"></span>`
+      : "";
+    const ring = sim.spraying
+      ? "0 0 0 2px #22d3ee, 0 0 14px 2px rgba(34,211,238,.6)"
+      : "0 0 0 2px #4CAF50";
+    const html = `
+      <div style="position:relative;width:24px;height:24px;display:flex;align-items:center;justify-content:center;">
+        ${pulse}
+        <div style="position:relative;width:24px;height:24px;border-radius:50%;background:#fff;border:2px solid #000;box-shadow:${ring},0 2px 8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+        </div>
+      </div>`;
+    const icon = L.divIcon({
+      className: "sim-drone-icon", html,
+      iconSize: [24, 24], iconAnchor: [12, 12],
+    });
+    if (!markerRef.current) {
+      markerRef.current = L.marker([sim.pos.lat, sim.pos.lng], {
+        icon, interactive: false, zIndexOffset: 2000, keyboard: false,
+      }).addTo(map);
+    } else {
+      markerRef.current.setLatLng([sim.pos.lat, sim.pos.lng]);
+      markerRef.current.setIcon(icon);
+    }
+  }, [map, sim]);
+
+  useEffect(() => () => { markerRef.current?.remove(); markerRef.current = null; }, []);
   return null;
 }
 
