@@ -3196,6 +3196,7 @@ function polylineLengthM(pts: LatLng2[]): number {
 
 function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
+  settings, onSaveSettings, center,
 }: {
   analysis: any;
   boundary: BoundaryRing[] | null;
@@ -3205,6 +3206,9 @@ function PlannerTab({
   taskId: string;
   runAnalysis: () => void;
   setActiveTab: (k: any) => void;
+  settings: FarmerSettings;
+  onSaveSettings: (s: FarmerSettings) => Promise<void> | void;
+  center: [number, number];
 }) {
   const [spacingM, setSpacingM] = useState<number>(5);
   const [transitAltM, setTransitAltM] = useState<number>(30);
@@ -3212,6 +3216,48 @@ function PlannerTab({
   const [transitSpeed, setTransitSpeed] = useState<number>(10);
   const [spraySpeed, setSpraySpeed] = useState<number>(3);
   const [home, setHome] = useState<LatLng2 | null>(null);
+
+  // ---- Drone fleet ------------------------------------------------------
+  type FleetDrone = { id: string; name: string; model: string; battery: number; status: string };
+  const [drones, setDrones] = useState<FleetDrone[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("drones")
+        .select("id, name, model, battery, status").order("created_at", { ascending: false });
+      if (!cancelled) setDrones((data as any) ?? []);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const fp = settings.flight_plan;
+  const activeDrone = drones.find(d => d.id === fp.drone_id) ?? null;
+  const droneModelKey = activeDrone?.model ?? "Custom";
+  const baseSpec = DRONE_SPECS[droneModelKey] ?? fp.custom_specs;
+  const isCustom = !DRONE_SPECS[droneModelKey] || droneModelKey === "Custom";
+  const spec: DroneSpec = isCustom ? fp.custom_specs : baseSpec;
+
+  const updateFlightPlan = (patch: Partial<FarmerSettings["flight_plan"]>) =>
+    onSaveSettings({ ...settings, flight_plan: { ...fp, ...patch } });
+
+  // ---- Weather (read planner-side from the same 20-min localStorage cache
+  // the Weather tab writes). Falls back to "no weather data".
+  const wxCacheKey = `acrespray.weather.${center[0].toFixed(3)},${center[1].toFixed(3)}`;
+  const wx = (() => {
+    try {
+      const raw = localStorage.getItem(wxCacheKey);
+      if (!raw) return null;
+      const c = JSON.parse(raw);
+      if (!c?.data?.current) return null;
+      const cur = c.data.current;
+      return {
+        wind_ms: (cur.wind_kmh ?? 0) / 3.6,
+        wind_dir: cur.wind_dir ?? 0,    // meteorological "from" direction in degrees
+        temp_c: cur.temp_c ?? 20,
+        savedAt: c.savedAt as number,
+      };
+    } catch { return null; }
+  })();
 
   // Filter AI zones to those whose centroid lies inside the boundary.
   const validZones = (() => {
