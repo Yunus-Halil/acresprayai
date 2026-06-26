@@ -3068,109 +3068,83 @@ function buildMission(
   // 1) Takeoff at home
   wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "TAKEOFF" });
 
-  // Build per-fragment lawnmower passes — one set per boundary polygon.
-  const fragments = buildFieldLawnmower(boundary, zones, p.spacingM)
-    .filter(f => f.length > 0);
+  // -------- Simple per-zone horizontal lawnmower ----------------------------
+  // For each treatment zone: compute its bbox, generate horizontal (constant
+  // latitude) passes spaced by `spacingM`, sweep boustrophedon. Between zones
+  // fly a single straight line at transit altitude. No field-wide grid, no
+  // boundary clipping, no diagonal cuts.
+  let prev: LatLng2 = p.home;
 
-  // Order fragments by nearest endpoint to the running exit point, and for
-  // each fragment pick the orientation (forward/reverse pass order × flip
-  // every pass) that minimises the inter-fragment hop. Result: drone enters
-  // each fragment from the side closest to its previous position, never
-  // cuts diagonally across the field, and the gap between separate field
-  // sections is bridged by a single straight transit at altitude.
-  const orderedPasses: Pass[] = [];
-  const remaining = fragments.slice();
-  let runningExit: LatLng2 = p.home;
+  // Order zones greedily by nearest centroid to the running exit point so
+  // inter-zone transits are short and predictable.
+  const remaining = zones.slice();
+  const orderedZones: typeof zones = [];
+  let cursor: LatLng2 = p.home;
   while (remaining.length) {
-    let bestIdx = -1, bestDist = Infinity, bestRev = false, bestFlip = false;
-    remaining.forEach((frag, idx) => {
-      const first = frag[0], last = frag[frag.length - 1];
-      if (!first.segs.length || !last.segs.length) return;
-      const candidates: { rev: boolean; flip: boolean; pt: LatLng2 }[] = [
-        { rev: false, flip: false, pt: first.segs[0].a },
-        { rev: false, flip: true,  pt: first.segs[first.segs.length - 1].b },
-        { rev: true,  flip: false, pt: last.segs[0].a },
-        { rev: true,  flip: true,  pt: last.segs[last.segs.length - 1].b },
-      ];
-      for (const c of candidates) {
-        const d = distM(runningExit, c.pt);
-        if (d < bestDist) { bestDist = d; bestIdx = idx; bestRev = c.rev; bestFlip = c.flip; }
-      }
+    let bestIdx = 0, bestD = Infinity;
+    remaining.forEach((z, idx) => {
+      const c = centroidOfRings([z.ring]);
+      const d = distM(cursor, c);
+      if (d < bestD) { bestD = d; bestIdx = idx; }
     });
-    if (bestIdx < 0) break;
-    const frag = remaining.splice(bestIdx, 1)[0];
-    if (bestRev) frag.reverse();
-    if (bestFlip) {
-      for (const pass of frag) {
-        pass.segs.reverse();
-        for (const s of pass.segs) { const t = s.a; s.a = s.b; s.b = t; }
-      }
-    }
-    orderedPasses.push(...frag);
-    const lastPass = frag[frag.length - 1];
-    runningExit = lastPass.segs[lastPass.segs.length - 1].b;
+    const z = remaining.splice(bestIdx, 1)[0];
+    orderedZones.push(z);
+    cursor = centroidOfRings([z.ring]);
   }
 
-  let prev: LatLng2 | null = null;
-  let sprayOn = false;
+  for (const zone of orderedZones) {
+    if (!zone.ring || zone.ring.length < 3) continue;
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    for (const pt of zone.ring) {
+      if (pt.lat < minLat) minLat = pt.lat;
+      if (pt.lat > maxLat) maxLat = pt.lat;
+      if (pt.lng < minLng) minLng = pt.lng;
+      if (pt.lng > maxLng) maxLng = pt.lng;
+    }
 
-  for (const pass of orderedPasses) {
-    for (const seg of pass.segs) {
-      // Connector from previous pass end (or home/takeoff) to this segment's start.
-      // The drone never makes sharp diagonal jumps — it transitions at transit
-      // altitude between rows.
-      const connectorFrom = prev ?? p.home;
-      if (distM(connectorFrom, seg.a) > 0.5) {
-        if (sprayOn) {
-          wps.push({ ...connectorFrom, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF" });
-          sprayOn = false;
-        }
-        wps.push({ ...connectorFrom, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
-        wps.push({ ...connectorFrom, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
-        wps.push({ ...seg.a, alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT" });
-        transitSegments.push([connectorFrom, seg.a]);
-        transitDist += distM(connectorFrom, seg.a);
-      }
+    const zoneHeightM = (maxLat - minLat) * M_PER_DEG_LAT;
+    const passCount = Math.max(1, Math.round(zoneHeightM / p.spacingM));
 
-      if (seg.spray) {
-        // Enter spray: descend, slow, sprayer ON.
-        if (!sprayOn) {
-          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "ALTITUDE_CHANGE", zoneId: seg.zoneId });
-          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPEED_CHANGE", zoneId: seg.zoneId });
-          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_ON", zoneId: seg.zoneId });
-          sprayOn = true;
-          sprayOnCount++;
-        }
-        wps.push({ ...seg.b, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_WP", zoneId: seg.zoneId });
-        spraySegments.push([seg.a, seg.b]);
-        sprayDist += distM(seg.a, seg.b);
-      } else {
-        // Transit through a healthy section of the same pass — sprayer OFF, speed up.
-        if (sprayOn) {
-          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF" });
-          sprayOn = false;
-        }
-        wps.push({ ...seg.a, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
-        wps.push({ ...seg.a, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
-        wps.push({ ...seg.b, alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT" });
-        transitSegments.push([seg.a, seg.b]);
-        transitDist += distM(seg.a, seg.b);
+    // Straight transit from previous position to zone entry corner.
+    const entry: LatLng2 = { lat: maxLat, lng: minLng };
+    if (distM(prev, entry) > 0.5) {
+      wps.push({ ...prev, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
+      wps.push({ ...entry, alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT" });
+      transitSegments.push([prev, entry]);
+      transitDist += distM(prev, entry);
+    }
+
+    for (let i = 0; i < passCount; i++) {
+      const lat = passCount === 1
+        ? (minLat + maxLat) / 2
+        : maxLat - (i / (passCount - 1)) * (maxLat - minLat);
+      const fromLng = i % 2 === 0 ? minLng : maxLng;
+      const toLng   = i % 2 === 0 ? maxLng : minLng;
+      const a: LatLng2 = { lat, lng: fromLng };
+      const b: LatLng2 = { lat, lng: toLng };
+
+      // Descend + sprayer ON at line start
+      wps.push({ ...a, alt: p.sprayAltM, speed: p.spraySpeed, action: "ALTITUDE_CHANGE", zoneId: zone.id });
+      wps.push({ ...a, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_ON", zoneId: zone.id });
+      wps.push({ ...b, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_WP", zoneId: zone.id });
+      wps.push({ ...b, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF", zoneId: zone.id });
+      spraySegments.push([a, b]);
+      sprayDist += distM(a, b);
+      sprayOnCount++;
+
+      // Climb between passes (but not after the last pass)
+      if (i < passCount - 1) {
+        wps.push({ ...b, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
       }
-      prev = seg.b;
+      prev = b;
     }
   }
 
-  // Close out sprayer + RTH + land
-  if (prev && sprayOn) {
-    wps.push({ ...prev, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF" });
-    sprayOn = false;
-  }
-  if (prev) {
-    // Straight-line RTH at transit altitude — no obstacles up there.
+  // Straight-line RTH at transit altitude.
+  if (distM(prev, p.home) > 0.5) {
     wps.push({ ...prev, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
     wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "RTH" });
-    const rth: LatLng2[] = [prev, p.home];
-    transitSegments.push(rth);
+    transitSegments.push([prev, p.home]);
     transitDist += distM(prev, p.home);
   }
   wps.push({ ...p.home, alt: 0, speed: 1, action: "LAND" });
