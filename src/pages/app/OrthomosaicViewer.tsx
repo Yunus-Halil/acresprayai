@@ -3380,53 +3380,6 @@ function PlannerTab({
   }, [simPlaying, simSpeed, simTimeline.total]);
   const simState = simPosAt(simTimeline, simT);
 
-  // ---- Live telemetry during playback ------------------------------------
-  // Battery drains linearly over mission time (scaled to the estimated draw),
-  // spray tank drains in proportion to spray distance covered, and distance
-  // counters tick up segment-by-segment so the readout feels like real
-  // telemetry instead of a static summary.
-  const liveStats = useMemo(() => {
-    if (!mission || simTimeline.total <= 0) return null;
-    const totalDist = mission.sprayDistM + mission.transitDistM;
-    const totalSprayDist = Math.max(0.01, mission.sprayDistM);
-    let segIdx = -1;
-    let distCovered = 0;
-    let sprayCovered = 0;
-    for (let i = 0; i < simTimeline.segs.length; i++) {
-      const s = simTimeline.segs[i];
-      if (simT >= s.tEnd) {
-        distCovered += s.dist;
-        if (s.spray) sprayCovered += s.dist;
-      } else if (simT > s.tStart) {
-        const f = (simT - s.tStart) / Math.max(0.0001, s.tEnd - s.tStart);
-        distCovered += s.dist * f;
-        if (s.spray) sprayCovered += s.dist * f;
-        segIdx = i;
-        break;
-      } else { segIdx = i; break; }
-    }
-    if (segIdx === -1) segIdx = simTimeline.segs.length - 1;
-    const cur = simTimeline.segs[segIdx];
-    const lastIdx = simTimeline.segs.length - 1;
-    const landed = simT >= simTimeline.total;
-    const isRth = !landed && segIdx === lastIdx && cur && !cur.spray;
-    const phase: "idle" | "spraying" | "transit" | "rth" | "landed" =
-      landed ? "landed"
-      : !simPlaying && simT === 0 ? "idle"
-      : cur?.spray ? "spraying"
-      : isRth ? "rth"
-      : "transit";
-    const drawPct = battery?.batteryPercent ?? 0;  // % consumed over whole mission
-    const elapsedFrac = Math.min(1, simT / simTimeline.total);
-    const batteryRemaining = Math.max(0, 100 - elapsedFrac * drawPct);
-    const tankStart = Math.max(0, Math.min(100, fp.tank_load_pct || 100));
-    const tankRemaining = Math.max(0, tankStart * (1 - sprayCovered / totalSprayDist));
-    return {
-      phase, distCovered, totalDist, sprayCovered, totalSprayDist,
-      batteryRemaining, batteryStart: 100, tankRemaining, tankStart,
-    };
-  }, [simT, simTimeline, mission, battery, fp.tank_load_pct, simPlaying]);
-
   const downloadWaypoints = () => {
     if (!mission || mission.waypoints.length === 0) return;
     const blob = exportMissionFile(mission);
