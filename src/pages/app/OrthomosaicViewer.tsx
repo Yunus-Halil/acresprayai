@@ -129,16 +129,17 @@ export type DroneSpec = {
   payload_kg: number;      // max payload incl. tank
   max_flight_min: number;  // realistic single-battery flight time
   max_speed_ms: number;    // max horizontal speed
+  spray_swath_m: number;   // effective spray swath width at typical AGL (0 = non-sprayer)
 };
 export const DRONE_SPECS: Record<string, DroneSpec> = {
-  "DJI Agras T40":   { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 10 },
-  "DJI Agras T30":   { tank_l: 30, payload_kg: 40, max_flight_min: 18, max_speed_ms: 10 },
-  "DJI Agras T25":   { tank_l: 20, payload_kg: 25, max_flight_min: 18, max_speed_ms: 10 },
-  "XAG P100":        { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 13.8 },
-  "XAG V40":         { tank_l: 16, payload_kg: 20, max_flight_min: 18, max_speed_ms: 13.8 },
-  "DJI Mavic 3M":    { tank_l: 0,  payload_kg: 0,  max_flight_min: 43, max_speed_ms: 21 },
-  "Parrot Anafi USA":{ tank_l: 0,  payload_kg: 0,  max_flight_min: 32, max_speed_ms: 14.7 },
-  "Custom":          { tank_l: 30, payload_kg: 40, max_flight_min: 20, max_speed_ms: 10 },
+  "DJI Agras T40":   { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 9   },
+  "DJI Agras T30":   { tank_l: 30, payload_kg: 40, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 6.5 },
+  "DJI Agras T25":   { tank_l: 20, payload_kg: 25, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 5   },
+  "XAG P100":        { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 13.8, spray_swath_m: 7   },
+  "XAG V40":         { tank_l: 16, payload_kg: 20, max_flight_min: 18, max_speed_ms: 13.8, spray_swath_m: 5   },
+  "DJI Mavic 3M":    { tank_l: 0,  payload_kg: 0,  max_flight_min: 43, max_speed_ms: 21,   spray_swath_m: 0   },
+  "Parrot Anafi USA":{ tank_l: 0,  payload_kg: 0,  max_flight_min: 32, max_speed_ms: 14.7, spray_swath_m: 0   },
+  "Custom":          { tank_l: 30, payload_kg: 40, max_flight_min: 20, max_speed_ms: 10,   spray_swath_m: 6   },
 };
 
 export type FarmerSettings = {
@@ -3479,7 +3480,19 @@ function PlannerTab({
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
-          <Slider2 label="Swath spacing" value={spacingM} setValue={setSpacingM} min={3} max={15} step={1} unit="m" />
+          <Slider2
+            label="Swath spacing"
+            value={spacingM}
+            setValue={setSpacingM}
+            min={3}
+            max={15}
+            step={1}
+            unit="m"
+            maxSafe={spec.spray_swath_m > 0 ? Math.max(3, Math.round(spec.spray_swath_m)) : undefined}
+            warning={spec.spray_swath_m > 0
+              ? `Above ${droneModelKey}'s ${spec.spray_swath_m} m swath — gaps between passes likely.`
+              : undefined}
+          />
           <Slider2 label="Transit altitude (AGL)" value={transitAltM} setValue={setTransitAltM} min={10} max={120} step={1} unit="m" />
           <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
           <Slider2 label="Transit speed" value={transitSpeed} setValue={setTransitSpeed} min={3} max={20} step={0.5} unit="m/s" />
@@ -3649,19 +3662,41 @@ function PlannerTab({
   );
 }
 
-function Slider2({ label, value, setValue, min, max, step, unit }: {
+function Slider2({ label, value, setValue, min, max, step, unit, maxSafe, warning }: {
   label: string; value: number; setValue: (n: number) => void;
   min: number; max: number; step: number; unit: string;
+  // Optional "max-safe" threshold rendered as a green tick on the track.
+  // Values above it are highlighted amber and `warning` is shown below.
+  maxSafe?: number;
+  warning?: string;
 }) {
+  const over = maxSafe != null && value > maxSafe;
+  const tickPct = maxSafe != null
+    ? Math.max(0, Math.min(100, ((maxSafe - min) / Math.max(0.0001, max - min)) * 100))
+    : null;
   return (
     <div>
       <label className="text-[10px] uppercase tracking-wider text-neutral-500">{label}</label>
       <div className="flex items-center gap-2 mt-1">
-        <input type="range" min={min} max={max} step={step}
-          value={value} onChange={(e) => setValue(Number(e.target.value))}
-          className="flex-1 accent-[#4CAF50]" />
-        <div className="font-mono text-sm w-20 text-right">{value.toFixed(step < 1 ? 1 : 0)} {unit}</div>
+        <div className="relative flex-1">
+          <input type="range" min={min} max={max} step={step}
+            value={value} onChange={(e) => setValue(Number(e.target.value))}
+            className={`w-full ${over ? "accent-amber-400" : "accent-[#4CAF50]"}`} />
+          {tickPct != null && (
+            <div
+              className="pointer-events-none absolute -top-0.5 h-3 w-px bg-[#4CAF50]"
+              style={{ left: `${tickPct}%` }}
+              title={`Max safe: ${maxSafe!.toFixed(step < 1 ? 1 : 0)} ${unit}`}
+            />
+          )}
+        </div>
+        <div className={`font-mono text-sm w-20 text-right ${over ? "text-amber-400" : ""}`}>
+          {value.toFixed(step < 1 ? 1 : 0)} {unit}
+        </div>
       </div>
+      {over && warning && (
+        <div className="mt-1 text-[10px] text-amber-400/80 leading-snug">{warning}</div>
+      )}
     </div>
   );
 }
