@@ -2781,25 +2781,6 @@ function lerp(a: LatLng2, b: LatLng2, t: number): LatLng2 {
   return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
 }
 
-// Clip a straight east-west scan line (a → b) against (boundary ∩ zone) and
-// return a list of contiguous segments that lie inside BOTH.
-function clipLineToBoundaryAndZone(a: LatLng2, b: LatLng2, boundaryRings: LatLng2[][], zoneRing: LatLng2[]): [LatLng2, LatLng2][] {
-  // Collect intersection t-values with every ring (boundary parts + zone).
-  const ts = new Set<number>();
-  ts.add(0); ts.add(1);
-  for (const r of boundaryRings) for (const t of segRingIntersections(a, b, r)) ts.add(t);
-  for (const t of segRingIntersections(a, b, zoneRing)) ts.add(t);
-  const sorted = Array.from(ts).sort((x, y) => x - y);
-  const out: [LatLng2, LatLng2][] = [];
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const tm = (sorted[i] + sorted[i + 1]) / 2;
-    const mid = lerp(a, b, tm);
-    if (pointInAnyRing(mid, boundaryRings) && pointInRing(mid, zoneRing)) {
-      out.push([lerp(a, b, sorted[i]), lerp(a, b, sorted[i + 1])]);
-    }
-  }
-  return out;
-}
 
 function bboxOfRings(rings: LatLng2[][]) {
   let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
@@ -2812,48 +2793,112 @@ function bboxOfRings(rings: LatLng2[][]) {
   return { minLat, maxLat, minLng, maxLng };
 }
 
-// Generate the full waypoint list (lawnmower) for a list of zones, clipped to
-// the boundary. Each zone contributes a contiguous sub-path; we connect
-// sub-paths in input order.
-function generateFlightPath(
+// Field-wide lawnmower: one continuous parallel-line pattern that covers the
+// entire boundary, aligned to the field's longest axis (PCA principal axis).
+// Each scanline is clipped to the boundary; sub-segments are then split by
+// zone intersections so the planner can toggle the sprayer ON inside zones
+// and treat the rest as pure transit. This is how real ag spray drones fly:
+// the drone doesn't think in zones — it thinks in passes. Zones just
+// determine when the pump fires.
+
+// --- rotation / principal axis helpers --------------------------------------
+function rotateLL(p: LatLng2, center: LatLng2, cosA: number, sinA: number): LatLng2 {
+  const mLng = mPerDegLng(center.lat);
+  const x = (p.lng - center.lng) * mLng;
+  const y = (p.lat - center.lat) * M_PER_DEG_LAT;
+  const xr = x * cosA - y * sinA;
+  const yr = x * sinA + y * cosA;
+  return { lng: center.lng + xr / mLng, lat: center.lat + yr / M_PER_DEG_LAT };
+}
+function principalAxisAngle(rings: LatLng2[][]): number {
+  let cx = 0, cy = 0, n = 0;
+  for (const r of rings) for (const p of r) { cx += p.lng; cy += p.lat; n++; }
+  if (n === 0) return 0;
+  cx /= n; cy /= n;
+  const mLng = mPerDegLng(cy);
+  let sxx = 0, syy = 0, sxy = 0;
+  for (const r of rings) for (const p of r) {
+    const x = (p.lng - cx) * mLng;
+    const y = (p.lat - cy) * M_PER_DEG_LAT;
+    sxx += x * x; syy += y * y; sxy += x * y;
+  }
+  // Angle of the largest-eigenvalue eigenvector (long axis direction).
+  return 0.5 * Math.atan2(2 * sxy, sxx - syy);
+}
+
+type Pass = {
+  segs: { a: LatLng2; b: LatLng2; spray: boolean; zoneId?: string }[];
+};
+
+// Build the field-wide lawnmower in world (lat/lng) space.
+function buildFieldLawnmower(
   boundary: LatLng2[][],
   zones: { id: string; ring: LatLng2[] }[],
   spacingM: number,
-): { perZone: { id: string; path: LatLng2[] }[]; total: LatLng2[]; lengthM: number } {
-  const perZone: { id: string; path: LatLng2[] }[] = [];
-  for (const z of zones) {
-    if (z.ring.length < 3) continue;
-    const bb = bboxOfRings([z.ring]);
-    const midLat = (bb.minLat + bb.maxLat) / 2;
-    const dLat = spacingM / M_PER_DEG_LAT;
-    const leftLng = bb.minLng - 0.0002;
-    const rightLng = bb.maxLng + 0.0002;
-    const path: LatLng2[] = [];
-    let flip = false;
-    for (let lat = bb.minLat + dLat / 2; lat <= bb.maxLat; lat += dLat) {
-      const a = { lat, lng: leftLng };
-      const b = { lat, lng: rightLng };
-      const segs = clipLineToBoundaryAndZone(a, b, boundary, z.ring);
-      if (segs.length === 0) { flip = !flip; continue; }
-      // Sort segments left→right (or right→left on alternate passes).
-      segs.sort((s1, s2) => s1[0].lng - s2[0].lng);
-      const ordered = flip ? segs.slice().reverse().map(s => [s[1], s[0]] as [LatLng2, LatLng2]) : segs;
-      for (const [p1, p2] of ordered) { path.push(p1); path.push(p2); }
-      flip = !flip;
-      void midLat;
+): Pass[] {
+  if (!boundary.length) return [];
+  const center = centroidOfRings(boundary);
+  const theta = principalAxisAngle(boundary);
+  // Rotate the world so the principal (long) axis is along +x (east/lng).
+  // Forward rotation by -theta; inverse rotation by +theta.
+  const cF = Math.cos(-theta), sF = Math.sin(-theta);
+  const cI = Math.cos(theta), sI = Math.sin(theta);
+  const rot = (p: LatLng2) => rotateLL(p, center, cF, sF);
+  const unrot = (p: LatLng2) => rotateLL(p, center, cI, sI);
+
+  const rotBoundary = boundary.map(r => r.map(rot));
+  const rotZones = zones.map(z => ({ id: z.id, ring: z.ring.map(rot) }));
+  const bb = bboxOfRings(rotBoundary);
+  const dLat = spacingM / M_PER_DEG_LAT; // pass spacing along the short axis (y in rotated frame)
+  const padLng = (bb.maxLng - bb.minLng) * 0.05 + 0.0002;
+
+  const passes: Pass[] = [];
+  let flip = false;
+  for (let y = bb.minLat + dLat / 2; y <= bb.maxLat; y += dLat) {
+    const a = { lat: y, lng: bb.minLng - padLng };
+    const b = { lat: y, lng: bb.maxLng + padLng };
+
+    // 1) Clip scanline to the boundary (in rotated frame).
+    const bts = new Set<number>([0, 1]);
+    for (const r of rotBoundary) for (const t of segRingIntersections(a, b, r)) bts.add(t);
+    const bSorted = Array.from(bts).sort((x, y) => x - y);
+    const boundarySegs: [LatLng2, LatLng2][] = [];
+    for (let i = 0; i < bSorted.length - 1; i++) {
+      const tm = (bSorted[i] + bSorted[i + 1]) / 2;
+      if (pointInAnyRing(lerp(a, b, tm), rotBoundary)) {
+        boundarySegs.push([lerp(a, b, bSorted[i]), lerp(a, b, bSorted[i + 1])]);
+      }
     }
-    if (path.length >= 2) perZone.push({ id: z.id, path });
+    if (boundarySegs.length === 0) continue;
+
+    // 2) For each in-boundary segment, split by zone-ring intersections and
+    //    classify each sub-segment as spray (midpoint inside any zone) or transit.
+    const segs: Pass["segs"] = [];
+    for (const [sa, sb] of boundarySegs) {
+      const zts = new Set<number>([0, 1]);
+      for (const z of rotZones) for (const t of segRingIntersections(sa, sb, z.ring)) zts.add(t);
+      const zSorted = Array.from(zts).sort((x, y) => x - y);
+      for (let i = 0; i < zSorted.length - 1; i++) {
+        const t1 = zSorted[i], t2 = zSorted[i + 1];
+        if (t2 - t1 < 1e-9) continue;
+        const mid = lerp(sa, sb, (t1 + t2) / 2);
+        let inZone: string | undefined;
+        for (const z of rotZones) if (pointInRing(mid, z.ring)) { inZone = z.id; break; }
+        const pa = lerp(sa, sb, t1);
+        const pb = lerp(sa, sb, t2);
+        segs.push({ a: unrot(pa), b: unrot(pb), spray: !!inZone, zoneId: inZone });
+      }
+    }
+
+    // 3) Boustrophedon: reverse every other pass so the drone snakes back and forth.
+    if (flip) {
+      segs.reverse();
+      for (const s of segs) { const t = s.a; s.a = s.b; s.b = t; }
+    }
+    flip = !flip;
+    passes.push({ segs });
   }
-  const total: LatLng2[] = [];
-  for (const z of perZone) total.push(...z.path);
-  // Approximate length (meters).
-  let lengthM = 0;
-  for (let i = 1; i < total.length; i++) {
-    const dLat = (total[i].lat - total[i - 1].lat) * M_PER_DEG_LAT;
-    const dLng = (total[i].lng - total[i - 1].lng) * mPerDegLng(total[i].lat);
-    lengthM += Math.sqrt(dLat * dLat + dLng * dLng);
-  }
-  return { perZone, total, lengthM };
+  return passes;
 }
 
 // =============================================================================
@@ -2910,62 +2955,67 @@ function buildMission(
   // 1) Takeoff at home
   wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "TAKEOFF" });
 
-  // Build per-zone lawnmower paths, then order zones nearest-first from current pos.
-  const lawnmowers = generateFlightPath(boundary, zones, p.spacingM).perZone
-    .filter(z => z.path.length >= 2);
+  // Build ONE continuous field-wide lawnmower, with each pass already split
+  // into spray / transit sub-segments based on zone membership.
+  const passes = buildFieldLawnmower(boundary, zones, p.spacingM);
 
-  let cursor: LatLng2 = p.home;
-  const remaining = lawnmowers.slice();
-  const ordered: { id: string; path: LatLng2[] }[] = [];
-  while (remaining.length) {
-    let best = 0, bestD = Infinity;
-    remaining.forEach((z, i) => {
-      const d = distM(cursor, z.path[0]);
-      if (d < bestD) { bestD = d; best = i; }
-    });
-    const next = remaining.splice(best, 1)[0];
-    ordered.push(next);
-    cursor = next.path[next.path.length - 1];
+  let prev: LatLng2 | null = null;
+  let sprayOn = false;
+
+  for (const pass of passes) {
+    for (const seg of pass.segs) {
+      // Connector from previous pass end (or home/takeoff) to this segment's start.
+      // The drone never makes sharp diagonal jumps — it transitions at transit
+      // altitude between rows.
+      const connectorFrom = prev ?? p.home;
+      if (distM(connectorFrom, seg.a) > 0.5) {
+        if (sprayOn) {
+          wps.push({ ...connectorFrom, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF" });
+          sprayOn = false;
+        }
+        wps.push({ ...connectorFrom, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
+        wps.push({ ...connectorFrom, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
+        wps.push({ ...seg.a, alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT" });
+        transitSegments.push([connectorFrom, seg.a]);
+        transitDist += distM(connectorFrom, seg.a);
+      }
+
+      if (seg.spray) {
+        // Enter spray: descend, slow, sprayer ON.
+        if (!sprayOn) {
+          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "ALTITUDE_CHANGE", zoneId: seg.zoneId });
+          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPEED_CHANGE", zoneId: seg.zoneId });
+          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_ON", zoneId: seg.zoneId });
+          sprayOn = true;
+          sprayOnCount++;
+        }
+        wps.push({ ...seg.b, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_WP", zoneId: seg.zoneId });
+        spraySegments.push([seg.a, seg.b]);
+        sprayDist += distM(seg.a, seg.b);
+      } else {
+        // Transit through a healthy section of the same pass — sprayer OFF, speed up.
+        if (sprayOn) {
+          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF" });
+          sprayOn = false;
+        }
+        wps.push({ ...seg.a, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
+        wps.push({ ...seg.a, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
+        wps.push({ ...seg.b, alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT" });
+        transitSegments.push([seg.a, seg.b]);
+        transitDist += distM(seg.a, seg.b);
+      }
+      prev = seg.b;
+    }
   }
 
-  cursor = p.home;
-  for (const z of ordered) {
-    const entry = z.path[0];
-    const exit = z.path[z.path.length - 1];
-
-    // TRANSIT: home/prev → zone entry at transit altitude, kept INSIDE boundary
-    const transit = routeInsideBoundary(cursor, entry, boundary);
-    wps.push({ ...cursor, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
-    for (let i = 1; i < transit.length; i++) {
-      wps.push({ ...transit[i], alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT", zoneId: z.id });
-    }
-    transitSegments.push(transit);
-    transitDist += polylineLengthM(transit);
-
-    // DESCEND + SPRAY ON at zone entry
-    wps.push({ ...entry, alt: p.sprayAltM, speed: p.spraySpeed, action: "ALTITUDE_CHANGE", zoneId: z.id });
-    wps.push({ ...entry, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPEED_CHANGE", zoneId: z.id });
-    wps.push({ ...entry, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_ON", zoneId: z.id });
-    sprayOnCount++;
-
-    // Lawnmower spray waypoints
-    for (let i = 0; i < z.path.length; i++) {
-      wps.push({ ...z.path[i], alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_WP", zoneId: z.id });
-      if (i > 0) sprayDist += distM(z.path[i - 1], z.path[i]);
-    }
-    spraySegments.push(z.path);
-
-    // SPRAY OFF + ASCEND
-    wps.push({ ...exit, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF", zoneId: z.id });
-    wps.push({ ...exit, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE", zoneId: z.id });
-
-    cursor = exit;
+  // Close out sprayer + RTH + land
+  if (prev && sprayOn) {
+    wps.push({ ...prev, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF" });
+    sprayOn = false;
   }
-
-  // Return to home + land
-  if (ordered.length > 0) {
-    const rth = routeInsideBoundary(cursor, p.home, boundary);
-    wps.push({ ...cursor, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
+  if (prev) {
+    wps.push({ ...prev, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
+    const rth = routeInsideBoundary(prev, p.home, boundary);
     for (let i = 1; i < rth.length - 1; i++) {
       wps.push({ ...rth[i], alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT" });
     }
