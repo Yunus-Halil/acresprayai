@@ -2959,6 +2959,38 @@ function buildMission(
   // into spray / transit sub-segments based on zone membership.
   const passes = buildFieldLawnmower(boundary, zones, p.spacingM);
 
+  // Reorder passes so the mission starts from the pass + endpoint closest to
+  // home. This avoids a long diagonal cut across the field on takeoff.
+  if (passes.length > 0) {
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    passes.forEach((pass, i) => {
+      if (!pass.segs.length) return;
+      const startPt = pass.segs[0].a;
+      const endPt = pass.segs[pass.segs.length - 1].b;
+      const d = Math.min(distM(p.home, startPt), distM(p.home, endPt));
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    });
+    // If the closest pass sits in the far half of the grid, reverse the whole
+    // pass order so the drone walks the serpentine toward the far side.
+    if (bestIdx > passes.length / 2) {
+      passes.reverse();
+    }
+    // Flip every pass's direction (preserving boustrophedon) if the first
+    // pass's far end is actually the one nearer home.
+    const first = passes[0];
+    if (first && first.segs.length) {
+      const startPt = first.segs[0].a;
+      const endPt = first.segs[first.segs.length - 1].b;
+      if (distM(p.home, endPt) < distM(p.home, startPt)) {
+        for (const pass of passes) {
+          pass.segs.reverse();
+          for (const s of pass.segs) { const t = s.a; s.a = s.b; s.b = t; }
+        }
+      }
+    }
+  }
+
   let prev: LatLng2 | null = null;
   let sprayOn = false;
 
