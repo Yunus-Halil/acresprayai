@@ -3277,6 +3277,31 @@ function PlannerTab({
   useEffect(() => {
     if (activeDrone) setPreFlightBattery(activeDrone.battery);
   }, [activeDrone?.id, activeDrone?.battery]);
+
+  // ---- Spray log / "Mark as Flown" -------------------------------------
+  // Fetches the most recent flight_log for this scan so we can show the
+  // compliance summary ("X acres treated · Y L applied · logged DATE")
+  // directly under the export button, and so the modal opens pre-filled
+  // for repeat flights.
+  type FlightLogRow = {
+    id: string; date_flown: string; battery_start: number | null;
+    battery_end: number | null; tank_refills: number;
+    zones_completed: string[]; acres_treated: number | null;
+    liters_applied: number | null; notes: string | null;
+  };
+  const [logOpen, setLogOpen] = useState(false);
+  const [lastLog, setLastLog] = useState<FlightLogRow | null>(null);
+  const refreshLastLog = useCallback(async () => {
+    if (!taskId) return;
+    const { data } = await supabase.from("flight_logs")
+      .select("id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes")
+      .eq("scan_id", taskId)
+      .order("date_flown", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setLastLog((data as FlightLogRow | null) ?? null);
+  }, [taskId]);
+  useEffect(() => { void refreshLastLog(); }, [refreshLastLog]);
   const droneModelKey = activeDrone?.model ?? "Custom";
   const baseSpec = DRONE_SPECS[droneModelKey] ?? fp.custom_specs;
   const isCustom = !DRONE_SPECS[droneModelKey] || droneModelKey === "Custom";
