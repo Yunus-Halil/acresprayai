@@ -1193,6 +1193,14 @@ export default function OrthomosaicViewer() {
             input_costs: { ...DEFAULT_FARMER_SETTINGS.input_costs, ...(saved.input_costs ?? {}) },
             available_inputs: { ...DEFAULT_FARMER_SETTINGS.available_inputs, ...(saved.available_inputs ?? {}) },
             custom_inputs: Array.isArray(saved.custom_inputs) ? saved.custom_inputs.slice(0, 3) : [],
+            flight_plan: {
+              ...DEFAULT_FARMER_SETTINGS.flight_plan,
+              ...(saved.flight_plan ?? {}),
+              custom_specs: {
+                ...DEFAULT_FARMER_SETTINGS.flight_plan.custom_specs,
+                ...(saved.flight_plan?.custom_specs ?? {}),
+              },
+            },
           });
         }
       }
