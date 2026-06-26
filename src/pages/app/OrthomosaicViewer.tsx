@@ -3894,6 +3894,118 @@ function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoin
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Mission playback: build a flat timeline of positional segments with the
+// sprayer-state at each moment, then drive a draggable map marker.
+// ---------------------------------------------------------------------------
+type SimSeg = {
+  from: LatLng2; to: LatLng2; dist: number; speed: number;
+  spray: boolean; tStart: number; tEnd: number;
+};
+export type SimTimeline = { segs: SimSeg[]; total: number };
+
+function buildSimTimeline(m: Mission | null): SimTimeline {
+  if (!m) return { segs: [], total: 0 };
+  const segs: SimSeg[] = [];
+  let t = 0;
+  let sprayOn = false;
+  let prev: MissionWP | null = null;
+  for (const wp of m.waypoints) {
+    if (wp.action === "SPRAY_ON") { sprayOn = true; continue; }
+    if (wp.action === "SPRAY_OFF") { sprayOn = false; continue; }
+    if (wp.action === "SPEED_CHANGE" || wp.action === "ALTITUDE_CHANGE") continue;
+    if (!prev) { prev = wp; continue; }
+    const d = distM(prev, wp);
+    if (d < 0.1) { prev = wp; continue; }
+    const speed = Math.max(0.5, wp.speed || prev.speed || 5);
+    const dur = d / speed;
+    segs.push({ from: prev, to: wp, dist: d, speed, spray: sprayOn, tStart: t, tEnd: t + dur });
+    t += dur;
+    prev = wp;
+  }
+  return { segs, total: t };
+}
+
+function simPosAt(tl: SimTimeline, t: number): { pos: LatLng2; spraying: boolean } | null {
+  if (!tl.segs.length) return null;
+  if (t <= 0) {
+    const s = tl.segs[0];
+    return { pos: s.from, spraying: s.spray };
+  }
+  if (t >= tl.total) {
+    const s = tl.segs[tl.segs.length - 1];
+    return { pos: s.to, spraying: false };
+  }
+  // Linear scan — N is small (hundreds of segments at most).
+  for (const s of tl.segs) {
+    if (t <= s.tEnd) {
+      const f = (t - s.tStart) / Math.max(0.0001, s.tEnd - s.tStart);
+      return {
+        pos: {
+          lat: s.from.lat + (s.to.lat - s.from.lat) * f,
+          lng: s.from.lng + (s.to.lng - s.from.lng) * f,
+        },
+        spraying: s.spray,
+      };
+    }
+  }
+  return null;
+}
+
+function DroneSimMarker({ sim }: { sim: { pos: LatLng2; spraying: boolean } | null }) {
+  const map = useMap();
+  const markerRef = useRef<L.Marker | null>(null);
+
+  // Inject the spray pulse keyframe once per page.
+  useEffect(() => {
+    if (document.getElementById("sim-spray-style")) return;
+    const s = document.createElement("style");
+    s.id = "sim-spray-style";
+    s.textContent = `
+      @keyframes simSprayPulse { 0% { transform: scale(.5); opacity: .75 } 100% { transform: scale(2.6); opacity: 0 } }
+      .sim-drone-icon { pointer-events: none; }
+    `;
+    document.head.appendChild(s);
+  }, []);
+
+  useEffect(() => {
+    if (!sim) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      return;
+    }
+    const pulse = sim.spraying
+      ? `<span style="position:absolute;inset:-10px;border-radius:50%;background:#22d3ee;opacity:.5;animation:simSprayPulse 1s ease-out infinite;"></span>
+         <span style="position:absolute;inset:-10px;border-radius:50%;background:#22d3ee;opacity:.5;animation:simSprayPulse 1s ease-out .5s infinite;"></span>`
+      : "";
+    const ring = sim.spraying
+      ? "0 0 0 2px #22d3ee, 0 0 14px 2px rgba(34,211,238,.6)"
+      : "0 0 0 2px #4CAF50";
+    const html = `
+      <div style="position:relative;width:24px;height:24px;display:flex;align-items:center;justify-content:center;">
+        ${pulse}
+        <div style="position:relative;width:24px;height:24px;border-radius:50%;background:#fff;border:2px solid #000;box-shadow:${ring},0 2px 8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+        </div>
+      </div>`;
+    const icon = L.divIcon({
+      className: "sim-drone-icon", html,
+      iconSize: [24, 24], iconAnchor: [12, 12],
+    });
+    if (!markerRef.current) {
+      markerRef.current = L.marker([sim.pos.lat, sim.pos.lng], {
+        icon, interactive: false, zIndexOffset: 2000, keyboard: false,
+      }).addTo(map);
+    } else {
+      markerRef.current.setLatLng([sim.pos.lat, sim.pos.lng]);
+      markerRef.current.setIcon(icon);
+    }
+  }, [map, sim]);
+
+  useEffect(() => () => { markerRef.current?.remove(); markerRef.current = null; }, []);
+  return null;
+}
+
 function PlaceholderTab({ icon: Icon, title, body }: { icon: any; title: string; body: string }) {
   return (
     <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#0f0f0f" }}>
