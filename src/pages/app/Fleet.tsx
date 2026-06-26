@@ -308,7 +308,7 @@ export default function Fleet() {
                     />
                     <ReferenceLine y={25} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: "Min safe battery", fontSize: 10, fill: "hsl(var(--destructive))" }} />
                     {f.recallAt != null && (
-                      <ReferenceLine x={f.recallAt} stroke="hsl(var(--accent))" strokeDasharray="2 4" label={{ value: "Recall", fontSize: 10, fill: "hsl(var(--accent))" }} />
+                      <ReferenceLine x={f.recallAt} stroke="#fb923c" strokeWidth={2} strokeDasharray="2 4" label={{ value: "Recall", fontSize: 10, fill: "#fb923c", position: "insideTopRight" }} />
                     )}
                     <Line type="monotone" dataKey="battery" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Battery" />
                   </LineChart>
