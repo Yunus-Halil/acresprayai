@@ -3068,46 +3068,53 @@ function buildMission(
   // 1) Takeoff at home
   wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "TAKEOFF" });
 
-  // Build ONE continuous field-wide lawnmower, with each pass already split
-  // into spray / transit sub-segments based on zone membership.
-  const passes = buildFieldLawnmower(boundary, zones, p.spacingM);
+  // Build per-fragment lawnmower passes — one set per boundary polygon.
+  const fragments = buildFieldLawnmower(boundary, zones, p.spacingM)
+    .filter(f => f.length > 0);
 
-  // Reorder passes so the mission starts from the pass + endpoint closest to
-  // home. This avoids a long diagonal cut across the field on takeoff.
-  if (passes.length > 0) {
-    let bestIdx = 0;
-    let bestDist = Infinity;
-    passes.forEach((pass, i) => {
-      if (!pass.segs.length) return;
-      const startPt = pass.segs[0].a;
-      const endPt = pass.segs[pass.segs.length - 1].b;
-      const d = Math.min(distM(p.home, startPt), distM(p.home, endPt));
-      if (d < bestDist) { bestDist = d; bestIdx = i; }
+  // Order fragments by nearest endpoint to the running exit point, and for
+  // each fragment pick the orientation (forward/reverse pass order × flip
+  // every pass) that minimises the inter-fragment hop. Result: drone enters
+  // each fragment from the side closest to its previous position, never
+  // cuts diagonally across the field, and the gap between separate field
+  // sections is bridged by a single straight transit at altitude.
+  const orderedPasses: Pass[] = [];
+  const remaining = fragments.slice();
+  let runningExit: LatLng2 = p.home;
+  while (remaining.length) {
+    let bestIdx = -1, bestDist = Infinity, bestRev = false, bestFlip = false;
+    remaining.forEach((frag, idx) => {
+      const first = frag[0], last = frag[frag.length - 1];
+      if (!first.segs.length || !last.segs.length) return;
+      const candidates: { rev: boolean; flip: boolean; pt: LatLng2 }[] = [
+        { rev: false, flip: false, pt: first.segs[0].a },
+        { rev: false, flip: true,  pt: first.segs[first.segs.length - 1].b },
+        { rev: true,  flip: false, pt: last.segs[0].a },
+        { rev: true,  flip: true,  pt: last.segs[last.segs.length - 1].b },
+      ];
+      for (const c of candidates) {
+        const d = distM(runningExit, c.pt);
+        if (d < bestDist) { bestDist = d; bestIdx = idx; bestRev = c.rev; bestFlip = c.flip; }
+      }
     });
-    // If the closest pass sits in the far half of the grid, reverse the whole
-    // pass order so the drone walks the serpentine toward the far side.
-    if (bestIdx > passes.length / 2) {
-      passes.reverse();
-    }
-    // Flip every pass's direction (preserving boustrophedon) if the first
-    // pass's far end is actually the one nearer home.
-    const first = passes[0];
-    if (first && first.segs.length) {
-      const startPt = first.segs[0].a;
-      const endPt = first.segs[first.segs.length - 1].b;
-      if (distM(p.home, endPt) < distM(p.home, startPt)) {
-        for (const pass of passes) {
-          pass.segs.reverse();
-          for (const s of pass.segs) { const t = s.a; s.a = s.b; s.b = t; }
-        }
+    if (bestIdx < 0) break;
+    const frag = remaining.splice(bestIdx, 1)[0];
+    if (bestRev) frag.reverse();
+    if (bestFlip) {
+      for (const pass of frag) {
+        pass.segs.reverse();
+        for (const s of pass.segs) { const t = s.a; s.a = s.b; s.b = t; }
       }
     }
+    orderedPasses.push(...frag);
+    const lastPass = frag[frag.length - 1];
+    runningExit = lastPass.segs[lastPass.segs.length - 1].b;
   }
 
   let prev: LatLng2 | null = null;
   let sprayOn = false;
 
-  for (const pass of passes) {
+  for (const pass of orderedPasses) {
     for (const seg of pass.segs) {
       // Connector from previous pass end (or home/takeoff) to this segment's start.
       // The drone never makes sharp diagonal jumps — it transitions at transit
