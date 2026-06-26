@@ -3046,14 +3046,12 @@ function buildMission(
     sprayOn = false;
   }
   if (prev) {
+    // Straight-line RTH at transit altitude — no obstacles up there.
     wps.push({ ...prev, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
-    const rth = routeInsideBoundary(prev, p.home, boundary);
-    for (let i = 1; i < rth.length - 1; i++) {
-      wps.push({ ...rth[i], alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT" });
-    }
     wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "RTH" });
+    const rth: LatLng2[] = [prev, p.home];
     transitSegments.push(rth);
-    transitDist += polylineLengthM(rth);
+    transitDist += distM(prev, p.home);
   }
   wps.push({ ...p.home, alt: 0, speed: 1, action: "LAND" });
 
