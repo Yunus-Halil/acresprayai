@@ -4033,11 +4033,74 @@ function PlannerTab({
         >
           <Download className="h-3.5 w-3.5" /> Download .waypoints
         </button>
+        <button
+          onClick={() => setLogOpen(true)}
+          disabled={!mission || mission.waypoints.length === 0 || !fieldId}
+          className="w-full inline-flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-[#222] disabled:opacity-50 text-neutral-200 border border-[#2a2a2a] rounded-sm px-3 py-2 text-xs font-semibold mb-2"
+        >
+          <CheckCircle2 className="h-3.5 w-3.5 text-[#4CAF50]" /> Mark as Flown
+        </button>
+
+        {lastLog && (
+          <div className="mb-3 text-[11px] bg-[#0f1a12] border border-[#1f3a25] rounded px-2 py-2 leading-relaxed">
+            <div className="flex items-center gap-1.5 text-[#4CAF50] font-semibold mb-0.5">
+              <CheckCircle2 className="h-3 w-3" /> Spray log
+            </div>
+            <div className="text-neutral-300 font-mono">
+              {(lastLog.acres_treated ?? 0).toFixed(2)} ac treated
+              {lastLog.liters_applied != null && <> · {lastLog.liters_applied.toFixed(1)} L applied (est.)</>}
+            </div>
+            <div className="text-neutral-500">
+              logged {lastLog.date_flown}
+              {lastLog.battery_end != null && lastLog.battery_start != null && (
+                <> · battery {lastLog.battery_start}% → {lastLog.battery_end}%</>
+              )}
+            </div>
+          </div>
+        )}
+
         <p className="text-[10px] text-neutral-500 leading-relaxed">
           QGC WPL 110 with takeoff, transit (sprayer off), spray (servo ON/OFF on servo 8),
           RTH and land commands. Load in Mission Planner / QGroundControl, or convert for DJI Pilot 2.
         </p>
       </div>
+
+      <LogFlightModal
+        open={logOpen}
+        onOpenChange={setLogOpen}
+        fieldId={fieldId}
+        scanId={taskId}
+        droneId={fp.drone_id ?? null}
+        droneName={activeDrone?.name ?? null}
+        batteryStart={preFlightBattery}
+        zones={validZones.map(z => {
+          const ai = (analysis?.zones ?? []).find((a: AiZone) => a.id === z.id);
+          const m2 = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));
+          const acres = (m2 / 4046.8564224);
+          return {
+            id: z.id,
+            label: ai?.name ?? (z.source === "user" ? "Manual annotation" : "Zone"),
+            issue: ai?.issue ?? null,
+            acres,
+          };
+        })}
+        totalAcres={
+          // Sprayed acres = sprayed distance × effective swath
+          mission ? (mission.sprayDistM * spacingM) / 4046.8564224 : 0
+        }
+        estLiters={
+          mission && spec.spray_rate_lpm > 0
+            ? (mission.sprayTimeS / 60) * spec.spray_rate_lpm
+            : null
+        }
+        onSaved={async () => {
+          await refreshLastLog();
+          // refresh drone roster so the planner picks up the new battery level
+          const { data } = await supabase.from("drones")
+            .select("id, name, model, battery, status").order("created_at", { ascending: false });
+          setDrones((data as any) ?? []);
+        }}
+      />
     </div>
   );
 }
