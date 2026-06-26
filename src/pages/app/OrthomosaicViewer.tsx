@@ -119,6 +119,28 @@ type FieldRow = {
 // ===================== Farmer settings (per field) =========================
 // Stored as JSON in `fields.settings`. Drives cost calculations and AI prompt.
 export type CustomInput = { name: string; cost: number };
+
+// ----- Drone specs (for flight battery estimation) ------------------------
+// Keyed by `drones.model` string in the fleet table. "Custom" lets the user
+// enter their own. Specs intentionally conservative — typical real-world,
+// not marketing numbers.
+export type DroneSpec = {
+  tank_l: number;          // spray tank capacity in litres
+  payload_kg: number;      // max payload incl. tank
+  max_flight_min: number;  // realistic single-battery flight time
+  max_speed_ms: number;    // max horizontal speed
+};
+export const DRONE_SPECS: Record<string, DroneSpec> = {
+  "DJI Agras T40":   { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 10 },
+  "DJI Agras T30":   { tank_l: 30, payload_kg: 40, max_flight_min: 18, max_speed_ms: 10 },
+  "DJI Agras T25":   { tank_l: 20, payload_kg: 25, max_flight_min: 18, max_speed_ms: 10 },
+  "XAG P100":        { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 13.8 },
+  "XAG V40":         { tank_l: 16, payload_kg: 20, max_flight_min: 18, max_speed_ms: 13.8 },
+  "DJI Mavic 3M":    { tank_l: 0,  payload_kg: 0,  max_flight_min: 43, max_speed_ms: 21 },
+  "Parrot Anafi USA":{ tank_l: 0,  payload_kg: 0,  max_flight_min: 32, max_speed_ms: 14.7 },
+  "Custom":          { tank_l: 30, payload_kg: 40, max_flight_min: 20, max_speed_ms: 10 },
+};
+
 export type FarmerSettings = {
   crop_type: string;          // "wheat" | "corn" | ...
   planting_date: string;      // YYYY-MM-DD or ""
@@ -143,6 +165,11 @@ export type FarmerSettings = {
     reseeding: boolean;
   };
   custom_inputs: CustomInput[];
+  flight_plan: {
+    drone_id: string | null;     // fleet drone.id; null = none selected yet
+    tank_load_pct: number;       // 0-100, how full the tank is for this mission
+    custom_specs: DroneSpec;     // active only when drone model is "Custom" / unknown
+  };
 };
 
 export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
@@ -169,6 +196,11 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
     reseeding: true,
   },
   custom_inputs: [],
+  flight_plan: {
+    drone_id: null,
+    tank_load_pct: 80,
+    custom_specs: DRONE_SPECS["Custom"],
+  },
 };
 
 export const INPUT_LABELS: Record<keyof FarmerSettings["input_costs"], string> = {
