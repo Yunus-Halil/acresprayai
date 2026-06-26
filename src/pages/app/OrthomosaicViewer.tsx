@@ -2883,48 +2883,58 @@ function buildZoneLawnmowers(
 ): Pass[][] {
   return zones.map(z => {
     const areaAc = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng))) / 4046.8564224;
-    // Strictly horizontal passes (constant latitude). No rotation — passes
-    // always run east↔west across the zone's bbox, clipped to the zone polygon.
-    const bb = bboxOfRings([z.ring]);
-    const zoneHeightM = (bb.maxLat - bb.minLat) * M_PER_DEG_LAT;
+    const center = centroidOfRings([z.ring]);
+    // Rotate to the zone's own principal axis so rows run along its long edge.
+    const theta = principalAxisAngle([z.ring]);
+    const cF = Math.cos(-theta), sF = Math.sin(-theta);
+    const cI = Math.cos(theta), sI = Math.sin(theta);
+    const rot = (p: LatLng2) => rotateLL(p, center, cF, sF);
+    const unrot = (p: LatLng2) => rotateLL(p, center, cI, sI);
+    const rotRing = z.ring.map(rot);
+    const bb = bboxOfRings([rotRing]);
+    // bbox extents in meters. Rows step along the short (lat/y) axis.
+    const widthM = (bb.maxLat - bb.minLat) * M_PER_DEG_LAT;
 
+    // Pass count: tiny zones get 1–2 passes through the center, medium up to
+    // 5, large scales naturally. User's swath slider sets the target spacing
+    // but we floor at 3 m and never exceed the area-based cap.
     const cap = areaAc < 0.1 ? 2 : areaAc < 0.5 ? 5 : 999;
     const targetSpacing = Math.max(3, spacingM);
-    const rawCount = Math.max(2, Math.ceil(zoneHeightM / targetSpacing));
+    const rawCount = Math.max(1, Math.ceil(widthM / targetSpacing));
     const passCount = Math.min(cap, rawCount);
+    const step = widthM / passCount; // meters between rows (centers passes in bbox)
+    const dLat = step / M_PER_DEG_LAT;
     const padLng = (bb.maxLng - bb.minLng) * 0.05 + 0.0002;
 
     const passes: Pass[] = [];
+    let flip = false;
     for (let i = 0; i < passCount; i++) {
-      // Top-to-bottom, evenly spaced. Endpoints of the formula match the spec.
-      const lat = passCount === 1
-        ? (bb.minLat + bb.maxLat) / 2
-        : bb.maxLat - (i / (passCount - 1)) * (bb.maxLat - bb.minLat);
-      const a: LatLng2 = { lat, lng: bb.minLng - padLng };
-      const b: LatLng2 = { lat, lng: bb.maxLng + padLng };
-
-      // Clip the horizontal line to the zone polygon.
-      const ts = new Set<number>([0, 1]);
-      for (const t of segRingIntersections(a, b, z.ring)) ts.add(t);
+      const y = bb.minLat + dLat * (i + 0.5);
+      const a = { lat: y, lng: bb.minLng - padLng };
+      const b = { lat: y, lng: bb.maxLng + padLng };
+      const ts = new Set<number>();
+      for (const t of segRingIntersections(a, b, rotRing)) ts.add(t);
       const sorted = Array.from(ts).sort((x, y) => x - y);
       const segs: Pass["segs"] = [];
       for (let k = 0; k < sorted.length - 1; k++) {
         const tm = (sorted[k] + sorted[k + 1]) / 2;
-        const mid = lerp(a, b, tm);
-        if (!pointInRing(mid, z.ring)) continue;
-        const pa = lerp(a, b, sorted[k]);
-        const pb = lerp(a, b, sorted[k + 1]);
-        // Force exact constant latitude (no floating-point drift).
-        pa.lat = lat; pb.lat = lat;
-        if (boundary.length && !pointInAnyRing(mid, boundary)) continue;
+        if (!pointInRing(lerp(a, b, tm), rotRing)) continue;
+        const pa = unrot(lerp(a, b, sorted[k]));
+        const pb = unrot(lerp(a, b, sorted[k + 1]));
+        // Drop sub-segments whose midpoint falls outside the user's field
+        // boundary (zone may bleed slightly past it).
+        if (boundary.length) {
+          const midWorld = { lat: (pa.lat + pb.lat) / 2, lng: (pa.lng + pb.lng) / 2 };
+          if (!pointInAnyRing(midWorld, boundary)) continue;
+        }
         segs.push({ a: pa, b: pb, spray: true, zoneId: z.id });
       }
       if (!segs.length) continue;
-      // Alternate direction every other pass (boustrophedon).
-      if (i % 2 === 1) {
+      if (flip) {
         segs.reverse();
         for (const s of segs) { const t = s.a; s.a = s.b; s.b = t; }
       }
+      flip = !flip;
       passes.push({ segs });
     }
     return passes;
