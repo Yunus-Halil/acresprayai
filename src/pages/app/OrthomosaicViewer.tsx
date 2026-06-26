@@ -2874,12 +2874,21 @@ type Pass = {
   segs: { a: LatLng2; b: LatLng2; spray: boolean; zoneId?: string }[];
 };
 
-// Build the field-wide lawnmower in world (lat/lng) space.
+// Build the field-wide lawnmower in world (lat/lng) space, grouped by
+// boundary fragment. Each fragment is clipped independently so the planner
+// can route a straight inter-fragment transit (across the tree gap, etc.)
+// instead of weaving diagonally through the unioned bbox.
+//
+// After grid generation, per-zone pass capping kicks in: tiny zones don't
+// need 40 spray lines — they get 1–2 passes through the center. Larger zones
+// scale up. Passes that fall outside the cap are demoted to transit so the
+// drone still flies the field-wide lawnmower (no sharp jumps) but the
+// sprayer only fires on the chosen passes.
 function buildFieldLawnmower(
   boundary: LatLng2[][],
   zones: { id: string; ring: LatLng2[] }[],
   spacingM: number,
-): Pass[] {
+): Pass[][] {
   if (!boundary.length) return [];
   const center = centroidOfRings(boundary);
   const theta = principalAxisAngle(boundary);
@@ -2890,59 +2899,119 @@ function buildFieldLawnmower(
   const rot = (p: LatLng2) => rotateLL(p, center, cF, sF);
   const unrot = (p: LatLng2) => rotateLL(p, center, cI, sI);
 
-  const rotBoundary = boundary.map(r => r.map(rot));
   const rotZones = zones.map(z => ({ id: z.id, ring: z.ring.map(rot) }));
-  const bb = bboxOfRings(rotBoundary);
-  const dLat = spacingM / M_PER_DEG_LAT; // pass spacing along the short axis (y in rotated frame)
-  const padLng = (bb.maxLng - bb.minLng) * 0.05 + 0.0002;
+  const dLat = spacingM / M_PER_DEG_LAT; // pass spacing along the short axis (y)
 
-  const passes: Pass[] = [];
-  let flip = false;
-  for (let y = bb.minLat + dLat / 2; y <= bb.maxLat; y += dLat) {
-    const a = { lat: y, lng: bb.minLng - padLng };
-    const b = { lat: y, lng: bb.maxLng + padLng };
+  const fragments: Pass[][] = boundary.map(ring => {
+    const rotRing = ring.map(rot);
+    const bb = bboxOfRings([rotRing]);
+    const padLng = (bb.maxLng - bb.minLng) * 0.05 + 0.0002;
+    const fragPasses: Pass[] = [];
+    let flip = false;
+    for (let y = bb.minLat + dLat / 2; y <= bb.maxLat; y += dLat) {
+      const a = { lat: y, lng: bb.minLng - padLng };
+      const b = { lat: y, lng: bb.maxLng + padLng };
+      // Clip scanline to this fragment.
+      const bts = new Set<number>([0, 1]);
+      for (const t of segRingIntersections(a, b, rotRing)) bts.add(t);
+      const bSorted = Array.from(bts).sort((x, y) => x - y);
+      const boundarySegs: [LatLng2, LatLng2][] = [];
+      for (let i = 0; i < bSorted.length - 1; i++) {
+        const tm = (bSorted[i] + bSorted[i + 1]) / 2;
+        if (pointInRing(lerp(a, b, tm), rotRing)) {
+          boundarySegs.push([lerp(a, b, bSorted[i]), lerp(a, b, bSorted[i + 1])]);
+        }
+      }
+      if (!boundarySegs.length) continue;
 
-    // 1) Clip scanline to the boundary (in rotated frame).
-    const bts = new Set<number>([0, 1]);
-    for (const r of rotBoundary) for (const t of segRingIntersections(a, b, r)) bts.add(t);
-    const bSorted = Array.from(bts).sort((x, y) => x - y);
-    const boundarySegs: [LatLng2, LatLng2][] = [];
-    for (let i = 0; i < bSorted.length - 1; i++) {
-      const tm = (bSorted[i] + bSorted[i + 1]) / 2;
-      if (pointInAnyRing(lerp(a, b, tm), rotBoundary)) {
-        boundarySegs.push([lerp(a, b, bSorted[i]), lerp(a, b, bSorted[i + 1])]);
+      // Split each in-boundary segment by zone-ring intersections and tag
+      // each sub-segment as spray (midpoint inside a zone) or transit.
+      const segs: Pass["segs"] = [];
+      for (const [sa, sb] of boundarySegs) {
+        const zts = new Set<number>([0, 1]);
+        for (const z of rotZones) for (const t of segRingIntersections(sa, sb, z.ring)) zts.add(t);
+        const zSorted = Array.from(zts).sort((x, y) => x - y);
+        for (let i = 0; i < zSorted.length - 1; i++) {
+          const t1 = zSorted[i], t2 = zSorted[i + 1];
+          if (t2 - t1 < 1e-9) continue;
+          const mid = lerp(sa, sb, (t1 + t2) / 2);
+          let inZone: string | undefined;
+          for (const z of rotZones) if (pointInRing(mid, z.ring)) { inZone = z.id; break; }
+          const pa = lerp(sa, sb, t1);
+          const pb = lerp(sa, sb, t2);
+          segs.push({ a: unrot(pa), b: unrot(pb), spray: !!inZone, zoneId: inZone });
+        }
+      }
+      // Boustrophedon: reverse every other pass.
+      if (flip) {
+        segs.reverse();
+        for (const s of segs) { const t = s.a; s.a = s.b; s.b = t; }
+      }
+      flip = !flip;
+      fragPasses.push({ segs });
+    }
+    return fragPasses;
+  });
+
+  applyZonePassCap(fragments, zones);
+  return fragments;
+}
+
+// Cap how many passes actually fire the sprayer per zone, based on zone area.
+// Excess passes are demoted to transit (sprayer OFF) — the drone still flies
+// them as part of the field-wide lawnmower so the path stays smooth, but the
+// pump only triggers on the centermost N passes.
+function applyZonePassCap(
+  fragments: Pass[][],
+  zones: { id: string; ring: LatLng2[] }[],
+): void {
+  type Entry = { fi: number; pi: number; si: number; mid: LatLng2 };
+  const byZone = new Map<string, Entry[]>();
+  fragments.forEach((frag, fi) => {
+    frag.forEach((pass, pi) => {
+      pass.segs.forEach((s, si) => {
+        if (s.spray && s.zoneId) {
+          const mid = { lat: (s.a.lat + s.b.lat) / 2, lng: (s.a.lng + s.b.lng) / 2 };
+          const arr = byZone.get(s.zoneId) ?? [];
+          arr.push({ fi, pi, si, mid });
+          byZone.set(s.zoneId, arr);
+        }
+      });
+    });
+  });
+
+  for (const z of zones) {
+    const entries = byZone.get(z.id);
+    if (!entries || !entries.length) continue;
+    const areaAc = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng))) / 4046.8564224;
+    const cap = areaAc < 0.1 ? 2 : areaAc < 0.5 ? 5 : Infinity;
+
+    // Unique pass keys touching this zone.
+    const passKeys = Array.from(new Set(entries.map(e => `${e.fi}:${e.pi}`)));
+    if (passKeys.length <= cap) continue;
+
+    const centroid = centroidOfRings([z.ring]);
+    const passDist = new Map<string, number>();
+    for (const e of entries) {
+      const key = `${e.fi}:${e.pi}`;
+      const d = distM(e.mid, centroid);
+      const cur = passDist.get(key);
+      if (cur == null || d < cur) passDist.set(key, d);
+    }
+    const keep = new Set(
+      Array.from(passDist.entries())
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, cap)
+        .map(([k]) => k),
+    );
+    for (const e of entries) {
+      if (!keep.has(`${e.fi}:${e.pi}`)) {
+        const s = fragments[e.fi][e.pi].segs[e.si];
+        s.spray = false;
+        s.zoneId = undefined;
       }
     }
-    if (boundarySegs.length === 0) continue;
-
-    // 2) For each in-boundary segment, split by zone-ring intersections and
-    //    classify each sub-segment as spray (midpoint inside any zone) or transit.
-    const segs: Pass["segs"] = [];
-    for (const [sa, sb] of boundarySegs) {
-      const zts = new Set<number>([0, 1]);
-      for (const z of rotZones) for (const t of segRingIntersections(sa, sb, z.ring)) zts.add(t);
-      const zSorted = Array.from(zts).sort((x, y) => x - y);
-      for (let i = 0; i < zSorted.length - 1; i++) {
-        const t1 = zSorted[i], t2 = zSorted[i + 1];
-        if (t2 - t1 < 1e-9) continue;
-        const mid = lerp(sa, sb, (t1 + t2) / 2);
-        let inZone: string | undefined;
-        for (const z of rotZones) if (pointInRing(mid, z.ring)) { inZone = z.id; break; }
-        const pa = lerp(sa, sb, t1);
-        const pb = lerp(sa, sb, t2);
-        segs.push({ a: unrot(pa), b: unrot(pb), spray: !!inZone, zoneId: inZone });
-      }
-    }
-
-    // 3) Boustrophedon: reverse every other pass so the drone snakes back and forth.
-    if (flip) {
-      segs.reverse();
-      for (const s of segs) { const t = s.a; s.a = s.b; s.b = t; }
-    }
-    flip = !flip;
-    passes.push({ segs });
   }
-  return passes;
 }
 
 // =============================================================================
