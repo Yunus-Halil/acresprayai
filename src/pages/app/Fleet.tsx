@@ -19,10 +19,13 @@ type Drone = {
 
 const MODELS = [
   { id: "DJI Mavic 3M",   role: "Scanner",  drainPerMin: 1.55, range_m: 1500 },
+  { id: "DJI Agras T25",  role: "Sprayer",  drainPerMin: 3.80, range_m: 1200 },
   { id: "DJI Agras T30",  role: "Sprayer",  drainPerMin: 4.20, range_m: 1200 },
   { id: "DJI Agras T40",  role: "Sprayer",  drainPerMin: 4.85, range_m: 1500 },
   { id: "Parrot Anafi USA", role: "Scanner", drainPerMin: 1.30, range_m: 4000 },
   { id: "XAG P100",       role: "Sprayer",  drainPerMin: 5.10, range_m: 1000 },
+  { id: "XAG V40",        role: "Sprayer",  drainPerMin: 4.40, range_m: 1000 },
+  { id: "Custom",         role: "Sprayer",  drainPerMin: 4.50, range_m: 1200 },
 ];
 
 const schema = z.object({

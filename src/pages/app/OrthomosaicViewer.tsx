@@ -119,6 +119,28 @@ type FieldRow = {
 // ===================== Farmer settings (per field) =========================
 // Stored as JSON in `fields.settings`. Drives cost calculations and AI prompt.
 export type CustomInput = { name: string; cost: number };
+
+// ----- Drone specs (for flight battery estimation) ------------------------
+// Keyed by `drones.model` string in the fleet table. "Custom" lets the user
+// enter their own. Specs intentionally conservative — typical real-world,
+// not marketing numbers.
+export type DroneSpec = {
+  tank_l: number;          // spray tank capacity in litres
+  payload_kg: number;      // max payload incl. tank
+  max_flight_min: number;  // realistic single-battery flight time
+  max_speed_ms: number;    // max horizontal speed
+};
+export const DRONE_SPECS: Record<string, DroneSpec> = {
+  "DJI Agras T40":   { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 10 },
+  "DJI Agras T30":   { tank_l: 30, payload_kg: 40, max_flight_min: 18, max_speed_ms: 10 },
+  "DJI Agras T25":   { tank_l: 20, payload_kg: 25, max_flight_min: 18, max_speed_ms: 10 },
+  "XAG P100":        { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 13.8 },
+  "XAG V40":         { tank_l: 16, payload_kg: 20, max_flight_min: 18, max_speed_ms: 13.8 },
+  "DJI Mavic 3M":    { tank_l: 0,  payload_kg: 0,  max_flight_min: 43, max_speed_ms: 21 },
+  "Parrot Anafi USA":{ tank_l: 0,  payload_kg: 0,  max_flight_min: 32, max_speed_ms: 14.7 },
+  "Custom":          { tank_l: 30, payload_kg: 40, max_flight_min: 20, max_speed_ms: 10 },
+};
+
 export type FarmerSettings = {
   crop_type: string;          // "wheat" | "corn" | ...
   planting_date: string;      // YYYY-MM-DD or ""
@@ -143,6 +165,11 @@ export type FarmerSettings = {
     reseeding: boolean;
   };
   custom_inputs: CustomInput[];
+  flight_plan: {
+    drone_id: string | null;     // fleet drone.id; null = none selected yet
+    tank_load_pct: number;       // 0-100, how full the tank is for this mission
+    custom_specs: DroneSpec;     // active only when drone model is "Custom" / unknown
+  };
 };
 
 export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
@@ -169,6 +196,11 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
     reseeding: true,
   },
   custom_inputs: [],
+  flight_plan: {
+    drone_id: null,
+    tank_load_pct: 80,
+    custom_specs: DRONE_SPECS["Custom"],
+  },
 };
 
 export const INPUT_LABELS: Record<keyof FarmerSettings["input_costs"], string> = {
@@ -1161,6 +1193,14 @@ export default function OrthomosaicViewer() {
             input_costs: { ...DEFAULT_FARMER_SETTINGS.input_costs, ...(saved.input_costs ?? {}) },
             available_inputs: { ...DEFAULT_FARMER_SETTINGS.available_inputs, ...(saved.available_inputs ?? {}) },
             custom_inputs: Array.isArray(saved.custom_inputs) ? saved.custom_inputs.slice(0, 3) : [],
+            flight_plan: {
+              ...DEFAULT_FARMER_SETTINGS.flight_plan,
+              ...(saved.flight_plan ?? {}),
+              custom_specs: {
+                ...DEFAULT_FARMER_SETTINGS.flight_plan.custom_specs,
+                ...(saved.flight_plan?.custom_specs ?? {}),
+              },
+            },
           });
         }
       }
@@ -1808,6 +1848,9 @@ export default function OrthomosaicViewer() {
             taskId={taskId!}
             runAnalysis={runAnalysis}
             setActiveTab={setActiveTab}
+            settings={settings}
+            onSaveSettings={saveSettings}
+            center={center}
           />
         )}
         {activeTab === "reports" && <PlaceholderTab icon={FileBarChart} title="Reports" body="Yield, treatment, and scan history reports for this field." />}
@@ -3153,6 +3196,7 @@ function polylineLengthM(pts: LatLng2[]): number {
 
 function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
+  settings, onSaveSettings, center,
 }: {
   analysis: any;
   boundary: BoundaryRing[] | null;
@@ -3162,6 +3206,9 @@ function PlannerTab({
   taskId: string;
   runAnalysis: () => void;
   setActiveTab: (k: any) => void;
+  settings: FarmerSettings;
+  onSaveSettings: (s: FarmerSettings) => Promise<void> | void;
+  center: [number, number];
 }) {
   const [spacingM, setSpacingM] = useState<number>(5);
   const [transitAltM, setTransitAltM] = useState<number>(30);
@@ -3169,6 +3216,59 @@ function PlannerTab({
   const [transitSpeed, setTransitSpeed] = useState<number>(10);
   const [spraySpeed, setSpraySpeed] = useState<number>(3);
   const [home, setHome] = useState<LatLng2 | null>(null);
+
+  // ---- Drone fleet ------------------------------------------------------
+  type FleetDrone = { id: string; name: string; model: string; battery: number; status: string };
+  const [drones, setDrones] = useState<FleetDrone[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("drones")
+        .select("id, name, model, battery, status").order("created_at", { ascending: false });
+      if (!cancelled) setDrones((data as any) ?? []);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Local mirror of flight_plan so slider drags don't hit the DB on every tick.
+  // We persist on a 600ms idle debounce.
+  const [fp, setFp] = useState<FarmerSettings["flight_plan"]>(settings.flight_plan);
+  useEffect(() => { setFp(settings.flight_plan); }, [settings.flight_plan]);
+  useEffect(() => {
+    if (JSON.stringify(fp) === JSON.stringify(settings.flight_plan)) return;
+    const t = setTimeout(() => {
+      onSaveSettings({ ...settings, flight_plan: fp });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [fp]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const activeDrone = drones.find(d => d.id === fp.drone_id) ?? null;
+  const droneModelKey = activeDrone?.model ?? "Custom";
+  const baseSpec = DRONE_SPECS[droneModelKey] ?? fp.custom_specs;
+  const isCustom = !DRONE_SPECS[droneModelKey] || droneModelKey === "Custom";
+  const spec: DroneSpec = isCustom ? fp.custom_specs : baseSpec;
+
+  const updateFlightPlan = (patch: Partial<FarmerSettings["flight_plan"]>) =>
+    setFp(prev => ({ ...prev, ...patch }));
+
+  // ---- Weather (read planner-side from the same 20-min localStorage cache
+  // the Weather tab writes). Falls back to "no weather data".
+  const wxCacheKey = `acrespray.weather.${center[0].toFixed(3)},${center[1].toFixed(3)}`;
+  const wx = (() => {
+    try {
+      const raw = localStorage.getItem(wxCacheKey);
+      if (!raw) return null;
+      const c = JSON.parse(raw);
+      if (!c?.data?.current) return null;
+      const cur = c.data.current;
+      return {
+        wind_ms: (cur.wind_kmh ?? 0) / 3.6,
+        wind_dir: cur.wind_dir ?? 0,    // meteorological "from" direction in degrees
+        temp_c: cur.temp_c ?? 20,
+        savedAt: c.savedAt as number,
+      };
+    } catch { return null; }
+  })();
 
   // Filter AI zones to those whose centroid lies inside the boundary.
   const validZones = (() => {
@@ -3207,6 +3307,98 @@ function PlannerTab({
     const m = Math.floor(s / 60); const sec = Math.round(s % 60);
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
+
+  // ---- Battery / endurance estimation ------------------------------------
+  // Formula per spec: base flight time × wind × altitude × payload × temp.
+  // Wind only counts as a headwind when blowing into the dominant pass axis;
+  // a crosswind gets half the penalty, a tailwind helps a little.
+  const battery = (() => {
+    if (!mission) return null;
+    const totalDistM = mission.sprayDistM + mission.transitDistM;
+    const totalTimeS = mission.sprayTimeS + mission.transitTimeS;
+    if (totalDistM < 1 || totalTimeS < 1) return null;
+    const cruiseMs = totalDistM / totalTimeS;        // weighted real cruise
+    const baseFlightMin = totalTimeS / 60;
+
+    // Pass axis bearing (deg from north, 0–180) — from first spray segment.
+    let passBearing: number | null = null;
+    const firstPass = mission.spraySegments?.[0];
+    if (firstPass && firstPass.length >= 2) {
+      const a = firstPass[0], b = firstPass[firstPass.length - 1];
+      const dy = b.lat - a.lat, dx = (b.lng - a.lng) * Math.cos((a.lat * Math.PI) / 180);
+      let deg = (Math.atan2(dx, dy) * 180) / Math.PI;
+      if (deg < 0) deg += 360;
+      passBearing = deg % 180;
+    }
+
+    let windFactor = 1, windKind: "headwind" | "crosswind" | "tailwind" | "calm" = "calm";
+    if (wx && wx.wind_ms > 0.3) {
+      // wx.wind_dir is "from" direction. Wind vector heads to (dir+180).
+      const windTo = (wx.wind_dir + 180) % 360;
+      let rel = passBearing != null ? Math.abs(((windTo - passBearing + 540) % 360) - 180) : 90;
+      // rel: 0 = perfectly aligned with pass direction (tailwind on outbound),
+      // 180 = directly against. We don't know which way each pass flies, but
+      // a boustrophedon spends ~half each direction, so the head- and tail-
+      // wind components on alternating rows wash out. Net effect: only the
+      // *cross* component truly disappears, the *along* component fights you
+      // on every other row. Apply full penalty when aligned, half on cross.
+      const alignment = Math.abs(Math.cos((rel * Math.PI) / 180)); // 0=cross, 1=along
+      const penalty = wx.wind_ms * 0.02 * (0.5 + 0.5 * alignment);
+      windFactor = 1 + penalty;
+      windKind = alignment > 0.7 ? "headwind" : alignment > 0.3 ? "crosswind" : "tailwind";
+    }
+
+    // Weighted avg altitude (spray vs transit) — the formula is per-meter AGL.
+    const avgAlt = (sprayAltM * mission.sprayTimeS + transitAltM * mission.transitTimeS) / totalTimeS;
+    const altitudeFactor = 1 + avgAlt * 0.001;
+
+    const tankLoad = Math.max(0, Math.min(100, fp.tank_load_pct)) / 100;
+    const payloadFactor = 1 + tankLoad * 0.15;
+
+    const tempC = wx?.temp_c ?? 20;
+    const tempFactor = tempC < 15 ? 1 + (15 - tempC) * 0.01 : 1.0;
+
+    const estimatedFlightMin = baseFlightMin * windFactor * altitudeFactor * payloadFactor * tempFactor;
+    const batteryPercent = (estimatedFlightMin / Math.max(1, spec.max_flight_min)) * 100;
+    const batteriesNeeded = Math.max(1, Math.ceil(batteryPercent / 80));
+
+    const pct = (f: number) => `${f >= 1 ? "+" : ""}${((f - 1) * 100).toFixed(0)}%`;
+    const recommendedTankL = spec.tank_l > 0 ? +(spec.tank_l * tankLoad).toFixed(1) : 0;
+
+    return {
+      baseFlightMin, estimatedFlightMin, batteryPercent, batteriesNeeded,
+      windPctLabel: pct(windFactor), windKind, windMs: wx?.wind_ms ?? 0,
+      altPctLabel: pct(altitudeFactor), avgAlt,
+      payloadPctLabel: pct(payloadFactor),
+      tempPctLabel: pct(tempFactor), tempC,
+      cruiseMs, recommendedTankL,
+    };
+  })();
+
+  // Midpoint along the mission path — surfaced as a yellow pin when a battery
+  // swap is required, so the pilot can see where they'll be when the first
+  // pack runs out.
+  const swapPoint: LatLng2 | null = (() => {
+    if (!mission || !battery || battery.batteriesNeeded <= 1) return null;
+    // Walk waypoints in order; halt at fraction (battery 1 exhausts at ~80%
+    // of estimated time of *that* battery).
+    const wps = mission.waypoints;
+    if (wps.length < 2) return null;
+    const target = (mission.sprayDistM + mission.transitDistM) * (1 / battery.batteriesNeeded);
+    let acc = 0;
+    for (let i = 1; i < wps.length; i++) {
+      const seg = distM(wps[i - 1], wps[i]);
+      if (acc + seg >= target) {
+        const t = (target - acc) / Math.max(0.01, seg);
+        return {
+          lat: wps[i - 1].lat + (wps[i].lat - wps[i - 1].lat) * t,
+          lng: wps[i - 1].lng + (wps[i].lng - wps[i - 1].lng) * t,
+        };
+      }
+      acc += seg;
+    }
+    return null;
+  })();
 
   // Empty states ------------------------------------------------------------
   if (!boundary || boundary.length === 0) {
@@ -3265,12 +3457,16 @@ function PlannerTab({
             boundary={boundary} zones={validZones}
             mission={mission} home={effectiveHome}
             onHomeChange={(p) => setHome(p)}
+            swapPoint={swapPoint}
           />
         </MapContainer>
         <div className="absolute top-3 left-3 z-[400] bg-black/70 text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Home (drag or click map)</div>
           <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-dashed border-yellow-400" /> Transit (sprayer off)</div>
           <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-cyan-400" /> Spray pattern</div>
+          {swapPoint && (
+            <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-yellow-400 border border-black" /> Battery swap</div>
+          )}
         </div>
       </div>
 
@@ -3288,6 +3484,66 @@ function PlannerTab({
           <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
           <Slider2 label="Transit speed" value={transitSpeed} setValue={setTransitSpeed} min={3} max={20} step={0.5} unit="m/s" />
           <Slider2 label="Spray speed" value={spraySpeed} setValue={setSpraySpeed} min={1} max={8} step={0.5} unit="m/s" />
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Drone</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-3" style={{ background: "#0f0f0f" }}>
+          {drones.length === 0 ? (
+            <div className="text-[11px] text-neutral-400 leading-relaxed">
+              No drones in your fleet yet. Register one on the <span className="text-[#4CAF50]">Fleet</span> page to get accurate battery estimates.
+            </div>
+          ) : (
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-neutral-500">Active drone</label>
+              <select
+                value={fp.drone_id ?? ""}
+                onChange={(e) => updateFlightPlan({ drone_id: e.target.value || null })}
+                className="mt-1 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-xs text-[#f0f0f0] focus:outline-none focus:border-[#4CAF50]"
+              >
+                <option value="">— Select drone —</option>
+                {drones.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} · {d.model}{d.status !== "idle" ? ` · ${d.status.replace("_", " ")}` : ""}
+                  </option>
+                ))}
+              </select>
+              {activeDrone && (
+                <div className="mt-2 text-[10px] text-neutral-500 font-mono">
+                  Battery now: <span className="text-neutral-300">{activeDrone.battery}%</span> · Spec: {spec.tank_l}L / {spec.max_flight_min} min / {spec.max_speed_ms} m/s
+                </div>
+              )}
+            </div>
+          )}
+          {isCustom && (
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#1f1f1f]">
+              <div className="col-span-2 text-[10px] uppercase tracking-wider text-neutral-500">Custom specs</div>
+              <label className="text-[10px] text-neutral-500">Tank (L)
+                <input type="number" min={0} step={1} value={fp.custom_specs.tank_l}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, tank_l: Number(e.target.value) || 0 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+              <label className="text-[10px] text-neutral-500">Payload (kg)
+                <input type="number" min={0} step={1} value={fp.custom_specs.payload_kg}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, payload_kg: Number(e.target.value) || 0 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+              <label className="text-[10px] text-neutral-500">Flight time (min)
+                <input type="number" min={1} step={1} value={fp.custom_specs.max_flight_min}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_flight_min: Number(e.target.value) || 1 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+              <label className="text-[10px] text-neutral-500">Max speed (m/s)
+                <input type="number" min={1} step={0.5} value={fp.custom_specs.max_speed_ms}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_speed_ms: Number(e.target.value) || 1 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+            </div>
+          )}
+          <div className="pt-2 border-t border-[#1f1f1f]">
+            <Slider2 label="Tank load" value={fp.tank_load_pct}
+              setValue={(n) => updateFlightPlan({ tank_load_pct: n })}
+              min={0} max={100} step={5} unit="%" />
+          </div>
         </div>
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Home / Takeoff</div>
@@ -3320,6 +3576,55 @@ function PlannerTab({
           <div className="flex justify-between"><span className="text-neutral-500">Spray activations</span>
             <span className="font-mono">{mission?.sprayOnCount ?? 0}</span></div>
         </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
+          <span>Battery / endurance</span>
+          {!wx && <span className="text-[10px] text-neutral-600 normal-case font-normal tracking-normal">No weather — open Weather tab</span>}
+        </div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
+          {!battery ? (
+            <div className="text-[11px] text-neutral-500">Generate a mission to see battery estimate.</div>
+          ) : (
+            <>
+              <div className="flex justify-between"><span className="text-neutral-500">Est. flight time</span>
+                <span className="font-mono">{battery.estimatedFlightMin.toFixed(1)} min</span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Battery used</span>
+                <span className={`font-mono ${battery.batteryPercent > 80 ? "text-red-400" : battery.batteryPercent > 60 ? "text-yellow-300" : "text-[#4CAF50]"}`}>
+                  {Math.round(battery.batteryPercent)}% of {spec.max_flight_min} min
+                </span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Batteries needed</span>
+                <span className={`font-mono ${battery.batteriesNeeded > 1 ? "text-red-400" : "text-[#4CAF50]"}`}>{battery.batteriesNeeded}</span></div>
+              <div className="border-t border-[#222] my-1.5" />
+              <div className="flex justify-between"><span className="text-neutral-500">Wind impact</span>
+                <span className="font-mono">
+                  {battery.windPctLabel}
+                  <span className="text-neutral-500"> ({battery.windKind}{battery.windMs > 0 ? ` ${battery.windMs.toFixed(1)} m/s` : ""})</span>
+                </span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Altitude impact</span>
+                <span className="font-mono">{battery.altPctLabel} <span className="text-neutral-500">(avg {battery.avgAlt.toFixed(0)} m AGL)</span></span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Payload impact</span>
+                <span className="font-mono">{battery.payloadPctLabel} <span className="text-neutral-500">({fp.tank_load_pct}% tank)</span></span></div>
+              <div className="flex justify-between"><span className="text-neutral-500">Temp impact</span>
+                <span className="font-mono">{battery.tempPctLabel} <span className="text-neutral-500">({battery.tempC.toFixed(0)}°C)</span></span></div>
+              {spec.tank_l > 0 && (
+                <>
+                  <div className="border-t border-[#222] my-1.5" />
+                  <div className="flex justify-between"><span className="text-neutral-500">Tank capacity</span>
+                    <span className="font-mono">{droneModelKey} — {spec.tank_l} L</span></div>
+                  <div className="flex justify-between"><span className="text-neutral-500">Recommended load</span>
+                    <span className="font-mono text-[#4CAF50]">{battery.recommendedTankL} L</span></div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        {battery && battery.batteriesNeeded > 1 && (
+          <div className="mb-4 text-[11px] text-red-400 bg-red-950/40 border border-red-800/50 rounded px-2 py-2 leading-relaxed">
+            <div className="font-semibold mb-0.5">Mission requires {battery.batteriesNeeded} batteries</div>
+            Plan a landing zone near the yellow swap pin on the map between passes.
+          </div>
+        )}
 
         {validZones.length < analysis.zones.length && (
           <div className="mb-4 text-[11px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1.5">
@@ -3361,12 +3666,13 @@ function Slider2({ label, value, setValue, min, max, step, unit }: {
   );
 }
 
-function PlannerOverlay({ boundary, zones, mission, home, onHomeChange }: {
+function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoint }: {
   boundary: BoundaryRing[];
   zones: AiZone[];
   mission: Mission | null;
   home: LatLng2 | null;
   onHomeChange: (p: LatLng2) => void;
+  swapPoint: LatLng2 | null;
 }) {
   const map = useMap();
   useEffect(() => {
@@ -3442,12 +3748,25 @@ function PlannerOverlay({ boundary, zones, mission, home, onHomeChange }: {
         onHomeChange({ lat: ll.lat, lng: ll.lng });
       });
     }
+
+    // Yellow battery-swap pin (only when mission needs >1 battery)
+    if (swapPoint) {
+      const icon = L.divIcon({
+        className: "swap-pin",
+        html: `<div style="width:16px;height:16px;border-radius:50%;background:#facc15;border:2px solid #000;box-shadow:0 0 0 1px #fff,0 2px 6px rgba(0,0,0,.6);"></div>`,
+        iconSize: [16, 16], iconAnchor: [8, 8],
+      });
+      L.marker([swapPoint.lat, swapPoint.lng], { icon, interactive: true, zIndexOffset: 900 })
+        .addTo(group)
+        .bindTooltip("Battery swap", { permanent: true, direction: "top", offset: [0, -10], className: "mission-endpoint-label" });
+    }
+
     // Click on map sets new home
     const onClick = (e: L.LeafletMouseEvent) => onHomeChange({ lat: e.latlng.lat, lng: e.latlng.lng });
     map.on("click", onClick);
 
     return () => { map.off("click", onClick); group.remove(); };
-  }, [map, boundary, zones, mission, home, onHomeChange]);
+  }, [map, boundary, zones, mission, home, onHomeChange, swapPoint]);
   return null;
 }
 
