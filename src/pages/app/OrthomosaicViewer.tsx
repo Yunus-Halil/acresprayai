@@ -2897,6 +2897,7 @@ function buildFieldSweep(
   boundary: LatLng2[][],
   zones: { id: string; ring: LatLng2[] }[],
   spacingM: number,
+  repeats: number = 1,
 ): Pass[][] {
   if (!boundary.length || !zones.length) return [];
   const fieldCenter = centroidOfRings(boundary);
@@ -2953,7 +2954,29 @@ function buildFieldSweep(
     }
     if (passes.length) fragments.push(passes);
   }
-  return fragments;
+  // Repeat each fragment's pass set `repeats` times. Every repeat reverses the
+  // pass order so the drone continues from where the previous pass left off
+  // (no long jump back to the start of the zone). This lets users do double /
+  // triple coverage in a single mission without re-planning.
+  const r = Math.max(1, Math.floor(repeats));
+  if (r === 1) return fragments;
+  return fragments.map(frag => {
+    const out: Pass[] = [];
+    for (let i = 0; i < r; i++) {
+      const slice = frag.map(pass => ({
+        segs: pass.segs.map(s => ({ ...s })),
+      }));
+      if (i % 2 === 1) {
+        slice.reverse();
+        for (const pass of slice) {
+          pass.segs.reverse();
+          for (const s of pass.segs) { const t = s.a; s.a = s.b; s.b = t; }
+        }
+      }
+      out.push(...slice);
+    }
+    return out;
+  });
 }
 
 // =============================================================================
@@ -2995,6 +3018,7 @@ export type MissionParams = {
   transitSpeed: number;  // default 10 m/s
   spraySpeed: number;    // default 3 m/s
   spacingM: number;      // swath
+  repeats?: number;      // how many times to re-cover each zone (1 = once)
 };
 
 function buildMission(
@@ -3014,7 +3038,7 @@ function buildMission(
   // (over anomaly zones) and transit (over healthy ground) sub-segments.
   // Disjoint boundary polygons each become one fragment so buildMission can
   // bridge them with a straight transit at altitude.
-  const fragments = buildFieldSweep(boundary, zones, p.spacingM);
+  const fragments = buildFieldSweep(boundary, zones, p.spacingM, p.repeats ?? 1);
 
   // Order fragments by nearest endpoint to the running exit point, and for
   // each fragment pick the orientation (forward/reverse pass order × flip
@@ -3238,6 +3262,10 @@ function PlannerTab({
   const [sprayAltM, setSprayAltM] = useState<number>(3);
   const [transitSpeed, setTransitSpeed] = useState<number>(10);
   const [spraySpeed, setSpraySpeed] = useState<number>(3);
+  // How many times the drone re-covers each anomaly zone. 1 = single pass set,
+  // 2 = double coverage (e.g. heavy infestation), 3 = triple. Linearly scales
+  // spray distance, time, and tank/battery usage.
+  const [repeats, setRepeats] = useState<number>(1);
   const [home, setHome] = useState<LatLng2 | null>(null);
 
   // Pre-flight battery — user can simulate "what if I launch at 60%?" without
@@ -3383,19 +3411,41 @@ function PlannerTab({
     return Math.max(1, Math.floor(minHeightM * 2) / 2 - 0.5);
   })();
 
-  // Auto-set spacing once we know the coverage max: pick the largest swath
-  // that (a) covers every anomaly and (b) doesn't exceed the drone's effective
-  // swath. User can drag past either threshold afterward — the slider warns.
-  // Default spacing is always 15 m — wider passes still hit every anomaly
-  // because each zone gets its own lawnmower. User can drag tighter if needed.
-  const autoSetRef = useRef(false);
+  // ---- Recommended spacing -----------------------------------------------
+  // Home-aware: wider spacing = fewer passes = fewer long returns to/from
+  // home, so the recommendation widens as the home pin moves away from the
+  // field. Capped by both the coverage-max (every anomaly must still be hit)
+  // and the active drone's physical spray swath.
+  const recommendedSpacing = (() => {
+    const base = 15;
+    let rec = base;
+    if (effectiveHome && boundary && boundary.length > 0) {
+      const c = centroidOfRings(boundary as LatLng2[][]);
+      const dHome = distM(effectiveHome, c);
+      const adj = Math.round(Math.max(-5, Math.min(8, (dHome - 60) / 60)));
+      rec = base + adj;
+    }
+    if (coverageMaxM && rec > coverageMaxM) rec = Math.floor(coverageMaxM);
+    const droneSwath = spec?.spray_swath_m && spec.spray_swath_m > 0 ? spec.spray_swath_m : null;
+    if (droneSwath && rec > droneSwath) rec = Math.floor(droneSwath);
+    return Math.max(5, Math.min(22, rec));
+  })();
+
+  // Auto-snap spacing to the recommended value until the user manually moves
+  // the slider. Re-applies whenever the recommendation changes (e.g. home pin
+  // moves, drone changes, zones recomputed).
+  const userTouchedSpacingRef = useRef(false);
+  useEffect(() => {
+    if (userTouchedSpacingRef.current) return;
+    if (spacingM !== recommendedSpacing) setSpacingM(recommendedSpacing);
+  }, [recommendedSpacing]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const mission = (() => {
     if (!boundary || validZones.length === 0 || !effectiveHome) return null;
     return buildMission(
       boundary as LatLng2[][],
       validZones.map(z => ({ id: z.id, ring: z.ring })),
-      { home: effectiveHome, transitAltM, sprayAltM, transitSpeed, spraySpeed, spacingM },
+      { home: effectiveHome, transitAltM, sprayAltM, transitSpeed, spraySpeed, spacingM, repeats },
     );
   })();
 
@@ -3688,44 +3738,41 @@ function PlannerTab({
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
           {(() => {
-            // Home-aware recommended swath.
-            // Wider spacing = fewer passes = fewer long returns to/from home.
-            // The farther the home pin is from the field, the more each extra
-            // pass costs in connector flight, so the recommendation widens.
-            // Coverage (every anomaly hit) and the drone's physical swath
-            // remain hard caps.
-            const base = 15;
-            let rec = base;
-            if (effectiveHome && boundary && boundary.length > 0) {
-              const c = centroidOfRings(boundary as LatLng2[][]);
-              const dHome = distM(effectiveHome, c); // meters
-              // +1 m of spacing per 60 m home-to-field distance, ±5 m band.
-              const adj = Math.round(Math.max(-5, Math.min(8, (dHome - 60) / 60)));
-              rec = base + adj;
-            }
-            // Never recommend wider than the narrowest anomaly can tolerate.
-            if (coverageMaxM && rec > coverageMaxM) rec = Math.floor(coverageMaxM);
-            // Never recommend wider than the active drone's effective swath.
-            const droneSwath = spec?.spray_swath_m && spec.spray_swath_m > 0 ? spec.spray_swath_m : null;
-            if (droneSwath && rec > droneSwath) rec = Math.floor(droneSwath);
-            rec = Math.max(5, Math.min(22, rec));
-            const recommended = rec;
+            const recommended = recommendedSpacing;
+            const atRec = spacingM === recommended;
             const warning = spacingM > recommended
               ? `Above the ${recommended} m recommended spacing for this home position — extra passes mean longer returns and possible gaps over narrow anomalies.`
               : undefined;
             return (
-              <Slider2
-                label={`Swath spacing  ·  recommended ${recommended} m`}
-                value={spacingM}
-                setValue={(n) => { autoSetRef.current = true; setSpacingM(n); }}
-                min={3} max={25} step={1} unit="m"
-                maxSafe={recommended}
-                warning={warning}
-              />
+              <>
+                <Slider2
+                  label={`Swath spacing  ·  recommended ${recommended} m${atRec ? "  ·  auto" : ""}`}
+                  value={spacingM}
+                  setValue={(n) => { userTouchedSpacingRef.current = true; setSpacingM(n); }}
+                  min={3} max={25} step={1} unit="m"
+                  maxSafe={recommended}
+                  warning={warning}
+                />
+                {!atRec && (
+                  <button
+                    type="button"
+                    onClick={() => { userTouchedSpacingRef.current = false; setSpacingM(recommended); }}
+                    className="text-[10px] text-[#4CAF50] hover:underline -mt-1"
+                  >
+                    ↺ Reset to recommended ({recommended} m)
+                  </button>
+                )}
+              </>
             );
           })()}
+          <Slider2
+            label={`Spray coverage  ·  ${repeats}× pass${repeats > 1 ? "es" : ""}`}
+            value={repeats}
+            setValue={setRepeats}
+            min={1} max={4} step={1} unit="×"
+          />
           <div className="text-[10px] text-neutral-500 -mt-1">
-            Each anomaly zone gets its own lawnmower, so wider spacing still covers every zone.
+            Each anomaly zone gets its own lawnmower. Increase pass count for heavy infestation — multiplies tank, time, and battery usage.
           </div>
           <Slider2 label="Transit altitude (AGL)" value={transitAltM} setValue={setTransitAltM} min={10} max={120} step={1} unit="m" />
           <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
