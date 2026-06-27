@@ -3738,44 +3738,41 @@ function PlannerTab({
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
           {(() => {
-            // Home-aware recommended swath.
-            // Wider spacing = fewer passes = fewer long returns to/from home.
-            // The farther the home pin is from the field, the more each extra
-            // pass costs in connector flight, so the recommendation widens.
-            // Coverage (every anomaly hit) and the drone's physical swath
-            // remain hard caps.
-            const base = 15;
-            let rec = base;
-            if (effectiveHome && boundary && boundary.length > 0) {
-              const c = centroidOfRings(boundary as LatLng2[][]);
-              const dHome = distM(effectiveHome, c); // meters
-              // +1 m of spacing per 60 m home-to-field distance, ±5 m band.
-              const adj = Math.round(Math.max(-5, Math.min(8, (dHome - 60) / 60)));
-              rec = base + adj;
-            }
-            // Never recommend wider than the narrowest anomaly can tolerate.
-            if (coverageMaxM && rec > coverageMaxM) rec = Math.floor(coverageMaxM);
-            // Never recommend wider than the active drone's effective swath.
-            const droneSwath = spec?.spray_swath_m && spec.spray_swath_m > 0 ? spec.spray_swath_m : null;
-            if (droneSwath && rec > droneSwath) rec = Math.floor(droneSwath);
-            rec = Math.max(5, Math.min(22, rec));
-            const recommended = rec;
+            const recommended = recommendedSpacing;
+            const atRec = spacingM === recommended;
             const warning = spacingM > recommended
               ? `Above the ${recommended} m recommended spacing for this home position — extra passes mean longer returns and possible gaps over narrow anomalies.`
               : undefined;
             return (
-              <Slider2
-                label={`Swath spacing  ·  recommended ${recommended} m`}
-                value={spacingM}
-                setValue={(n) => { autoSetRef.current = true; setSpacingM(n); }}
-                min={3} max={25} step={1} unit="m"
-                maxSafe={recommended}
-                warning={warning}
-              />
+              <>
+                <Slider2
+                  label={`Swath spacing  ·  recommended ${recommended} m${atRec ? "  ·  auto" : ""}`}
+                  value={spacingM}
+                  setValue={(n) => { userTouchedSpacingRef.current = true; setSpacingM(n); }}
+                  min={3} max={25} step={1} unit="m"
+                  maxSafe={recommended}
+                  warning={warning}
+                />
+                {!atRec && (
+                  <button
+                    type="button"
+                    onClick={() => { userTouchedSpacingRef.current = false; setSpacingM(recommended); }}
+                    className="text-[10px] text-[#4CAF50] hover:underline -mt-1"
+                  >
+                    ↺ Reset to recommended ({recommended} m)
+                  </button>
+                )}
+              </>
             );
           })()}
+          <Slider2
+            label={`Spray coverage  ·  ${repeats}× pass${repeats > 1 ? "es" : ""}`}
+            value={repeats}
+            setValue={setRepeats}
+            min={1} max={4} step={1} unit="×"
+          />
           <div className="text-[10px] text-neutral-500 -mt-1">
-            Each anomaly zone gets its own lawnmower, so wider spacing still covers every zone.
+            Each anomaly zone gets its own lawnmower. Increase pass count for heavy infestation — multiplies tank, time, and battery usage.
           </div>
           <Slider2 label="Transit altitude (AGL)" value={transitAltM} setValue={setTransitAltM} min={10} max={120} step={1} unit="m" />
           <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
