@@ -3411,12 +3411,34 @@ function PlannerTab({
     return Math.max(1, Math.floor(minHeightM * 2) / 2 - 0.5);
   })();
 
-  // Auto-set spacing once we know the coverage max: pick the largest swath
-  // that (a) covers every anomaly and (b) doesn't exceed the drone's effective
-  // swath. User can drag past either threshold afterward — the slider warns.
-  // Default spacing is always 15 m — wider passes still hit every anomaly
-  // because each zone gets its own lawnmower. User can drag tighter if needed.
-  const autoSetRef = useRef(false);
+  // ---- Recommended spacing -----------------------------------------------
+  // Home-aware: wider spacing = fewer passes = fewer long returns to/from
+  // home, so the recommendation widens as the home pin moves away from the
+  // field. Capped by both the coverage-max (every anomaly must still be hit)
+  // and the active drone's physical spray swath.
+  const recommendedSpacing = (() => {
+    const base = 15;
+    let rec = base;
+    if (effectiveHome && boundary && boundary.length > 0) {
+      const c = centroidOfRings(boundary as LatLng2[][]);
+      const dHome = distM(effectiveHome, c);
+      const adj = Math.round(Math.max(-5, Math.min(8, (dHome - 60) / 60)));
+      rec = base + adj;
+    }
+    if (coverageMaxM && rec > coverageMaxM) rec = Math.floor(coverageMaxM);
+    const droneSwath = spec?.spray_swath_m && spec.spray_swath_m > 0 ? spec.spray_swath_m : null;
+    if (droneSwath && rec > droneSwath) rec = Math.floor(droneSwath);
+    return Math.max(5, Math.min(22, rec));
+  })();
+
+  // Auto-snap spacing to the recommended value until the user manually moves
+  // the slider. Re-applies whenever the recommendation changes (e.g. home pin
+  // moves, drone changes, zones recomputed).
+  const userTouchedSpacingRef = useRef(false);
+  useEffect(() => {
+    if (userTouchedSpacingRef.current) return;
+    if (spacingM !== recommendedSpacing) setSpacingM(recommendedSpacing);
+  }, [recommendedSpacing]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const mission = (() => {
     if (!boundary || validZones.length === 0 || !effectiveHome) return null;
