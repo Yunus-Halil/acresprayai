@@ -3848,6 +3848,30 @@ function PlannerTab({
           <Slider2 label="Spray speed" value={spraySpeed} setValue={setSpraySpeed} min={1} max={8} step={0.5} unit="m/s" />
         </div>
 
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Maneuverability</div>
+        <div className={`rounded-sm border p-3 mb-4 text-xs space-y-2 ${maneuver.ok ? "border-[#1f3a1f]" : "border-amber-900/60"}`}
+             style={{ background: maneuver.ok ? "#0c1a0c" : "#1a140a" }}>
+          <div className="flex items-center justify-between">
+            <span className={`font-medium ${maneuver.ok ? "text-[#4CAF50]" : "text-amber-300"}`}>
+              {maneuver.ok ? "✓ Flyable by " : "⚠ Adjusting for "} {droneModelKey}
+            </span>
+            <span className="font-mono text-[10px] text-neutral-500">
+              U-turn need {maneuver.rUturnNeeded.toFixed(1)} m · bank {maneuver.rBankTransit.toFixed(1)} m
+            </span>
+          </div>
+          {!maneuver.ok && maneuver.issues.map((m, i) => (
+            <div key={i} className="text-[11px] text-amber-200/80 leading-relaxed">• {m}</div>
+          ))}
+          {autoFixNote && (
+            <div className="text-[11px] text-[#4CAF50] leading-relaxed pt-1 border-t border-[#1f1f1f]">
+              {autoFixNote}
+            </div>
+          )}
+          <div className="text-[10px] text-neutral-500 leading-relaxed">
+            Min turn radius {spec.min_turn_radius_m} m · climb {spec.climb_rate_ms} m/s. Spacing &amp; transit speed are auto-tuned so every U-turn fits within the drone's physical limits.
+          </div>
+        </div>
+
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Drone</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-3" style={{ background: "#0f0f0f" }}>
           {drones.length === 0 ? (
