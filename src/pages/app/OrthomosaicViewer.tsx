@@ -2916,7 +2916,12 @@ function buildFieldSweep(
     const heightM = (bb.maxLat - bb.minLat) * M_PER_DEG_LAT;
     if (heightM < 0.5) continue;
     // Number of parallel rows fitting inside this zone at the given swath.
-    const passCount = Math.max(1, Math.round(heightM / spacing));
+    // Multiplying by `repeats` interleaves extra rows BETWEEN the base rows,
+    // producing visibly denser coverage (not duplicate lines on top of each
+    // other). 2× = halved spacing, 3× = third spacing, etc.
+    const r = Math.max(1, Math.floor(repeats));
+    const basePasses = Math.max(1, Math.round(heightM / spacing));
+    const passCount = basePasses * r;
     const step = heightM / passCount;
     const dLat = step / M_PER_DEG_LAT;
     const padLng = (bb.maxLng - bb.minLng) * 0.05 + 0.0002;
@@ -2954,29 +2959,7 @@ function buildFieldSweep(
     }
     if (passes.length) fragments.push(passes);
   }
-  // Repeat each fragment's pass set `repeats` times. Every repeat reverses the
-  // pass order so the drone continues from where the previous pass left off
-  // (no long jump back to the start of the zone). This lets users do double /
-  // triple coverage in a single mission without re-planning.
-  const r = Math.max(1, Math.floor(repeats));
-  if (r === 1) return fragments;
-  return fragments.map(frag => {
-    const out: Pass[] = [];
-    for (let i = 0; i < r; i++) {
-      const slice = frag.map(pass => ({
-        segs: pass.segs.map(s => ({ ...s })),
-      }));
-      if (i % 2 === 1) {
-        slice.reverse();
-        for (const pass of slice) {
-          pass.segs.reverse();
-          for (const s of pass.segs) { const t = s.a; s.a = s.b; s.b = t; }
-        }
-      }
-      out.push(...slice);
-    }
-    return out;
-  });
+  return fragments;
 }
 
 // =============================================================================
