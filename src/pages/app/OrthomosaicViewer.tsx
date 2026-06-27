@@ -3262,6 +3262,10 @@ function PlannerTab({
   const [sprayAltM, setSprayAltM] = useState<number>(3);
   const [transitSpeed, setTransitSpeed] = useState<number>(10);
   const [spraySpeed, setSpraySpeed] = useState<number>(3);
+  // How many times the drone re-covers each anomaly zone. 1 = single pass set,
+  // 2 = double coverage (e.g. heavy infestation), 3 = triple. Linearly scales
+  // spray distance, time, and tank/battery usage.
+  const [repeats, setRepeats] = useState<number>(1);
   const [home, setHome] = useState<LatLng2 | null>(null);
 
   // Pre-flight battery — user can simulate "what if I launch at 60%?" without
@@ -3419,7 +3423,7 @@ function PlannerTab({
     return buildMission(
       boundary as LatLng2[][],
       validZones.map(z => ({ id: z.id, ring: z.ring })),
-      { home: effectiveHome, transitAltM, sprayAltM, transitSpeed, spraySpeed, spacingM },
+      { home: effectiveHome, transitAltM, sprayAltM, transitSpeed, spraySpeed, spacingM, repeats },
     );
   })();
 
