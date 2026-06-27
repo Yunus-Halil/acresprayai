@@ -1005,25 +1005,30 @@ function BoundaryTool({
     boundary.forEach((ring, idx) => {
       if (!ring || ring.length < 3) return;
       const isActive = idx === activeIdx;
+      const editable = mode === "edit" || mode === "draw";
       const poly = L.polygon(ring.map(p => [p.lat, p.lng] as [number, number]), {
         color: isActive ? "#fbbf24" : "#22d3ee",
         weight: isActive ? 3.5 : 2.5,
         dashArray: isActive ? undefined : "6 4",
         fillColor: isActive ? "#fbbf24" : "#22d3ee",
         fillOpacity: mode === "edit" ? (isActive ? 0.12 : 0.04) : 0.08,
+        // When not editing the boundary, let clicks pass through to AI zones,
+        // user annotations, and drawing tools underneath.
+        interactive: editable,
       }).addTo(map);
-      poly.bindTooltip(
-        boundary.length > 1
-          ? `Field boundary · part ${idx + 1}${isActive ? " (selected)" : " — click to select"}`
-          : "Field boundary",
-        { sticky: true, opacity: 1, className: "ai-zone-label" },
-      );
-      // Clicking a ring selects it as the active part for editing/deletion.
-      poly.on("click", (ev: any) => {
-        L.DomEvent.stopPropagation(ev);
-        setActiveIdx(idx);
-      });
-      if ((mode === "edit" || mode === "draw") && isActive) {
+      if (editable) {
+        poly.bindTooltip(
+          boundary.length > 1
+            ? `Field boundary · part ${idx + 1}${isActive ? " (selected)" : " — click to select"}`
+            : "Field boundary",
+          { sticky: true, opacity: 1, className: "ai-zone-label" },
+        );
+        poly.on("click", (ev: any) => {
+          L.DomEvent.stopPropagation(ev);
+          setActiveIdx(idx);
+        });
+      }
+      if (editable && isActive) {
         poly.bringToFront();
         try {
           (poly as any).pm.enable({
