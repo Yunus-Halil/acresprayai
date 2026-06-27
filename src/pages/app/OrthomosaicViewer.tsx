@@ -135,16 +135,18 @@ export type DroneSpec = {
   max_flight_min: number;  // realistic single-battery flight time
   max_speed_ms: number;    // max horizontal speed
   spray_swath_m: number;   // effective spray swath width at typical AGL (0 = non-sprayer)
+  min_turn_radius_m: number; // tightest physically achievable horizontal turn radius
+  climb_rate_ms: number;     // max sustained vertical climb rate
 };
 export const DRONE_SPECS: Record<string, DroneSpec> = {
-  "DJI Agras T40":   { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 9   },
-  "DJI Agras T30":   { tank_l: 30, payload_kg: 40, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 6.5 },
-  "DJI Agras T25":   { tank_l: 20, payload_kg: 25, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 5   },
-  "XAG P100":        { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 13.8, spray_swath_m: 7   },
-  "XAG V40":         { tank_l: 16, payload_kg: 20, max_flight_min: 18, max_speed_ms: 13.8, spray_swath_m: 5   },
-  "DJI Mavic 3M":    { tank_l: 0,  payload_kg: 0,  max_flight_min: 43, max_speed_ms: 21,   spray_swath_m: 0   },
-  "Parrot Anafi USA":{ tank_l: 0,  payload_kg: 0,  max_flight_min: 32, max_speed_ms: 14.7, spray_swath_m: 0   },
-  "Custom":          { tank_l: 30, payload_kg: 40, max_flight_min: 20, max_speed_ms: 10,   spray_swath_m: 6   },
+  "DJI Agras T40":   { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 9,   min_turn_radius_m: 4,   climb_rate_ms: 6 },
+  "DJI Agras T30":   { tank_l: 30, payload_kg: 40, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 6.5, min_turn_radius_m: 3.5, climb_rate_ms: 6 },
+  "DJI Agras T25":   { tank_l: 20, payload_kg: 25, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 5,   min_turn_radius_m: 3,   climb_rate_ms: 6 },
+  "XAG P100":        { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 13.8, spray_swath_m: 7,   min_turn_radius_m: 4.5, climb_rate_ms: 5 },
+  "XAG V40":         { tank_l: 16, payload_kg: 20, max_flight_min: 18, max_speed_ms: 13.8, spray_swath_m: 5,   min_turn_radius_m: 3.5, climb_rate_ms: 5 },
+  "DJI Mavic 3M":    { tank_l: 0,  payload_kg: 0,  max_flight_min: 43, max_speed_ms: 21,   spray_swath_m: 0,   min_turn_radius_m: 1,   climb_rate_ms: 8 },
+  "Parrot Anafi USA":{ tank_l: 0,  payload_kg: 0,  max_flight_min: 32, max_speed_ms: 14.7, spray_swath_m: 0,   min_turn_radius_m: 1,   climb_rate_ms: 4 },
+  "Custom":          { tank_l: 30, payload_kg: 40, max_flight_min: 20, max_speed_ms: 10,   spray_swath_m: 6,   min_turn_radius_m: 3,   climb_rate_ms: 5 },
 };
 
 export type FarmerSettings = {
