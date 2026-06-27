@@ -3428,6 +3428,86 @@ function PlannerTab({
     if (spacingM !== recommendedSpacing) setSpacingM(recommendedSpacing);
   }, [recommendedSpacing]);  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---- Maneuverability check ---------------------------------------------
+  // Verifies the current pattern (spacing + speeds + altitude deltas) is
+  // physically flyable by the active drone:
+  //   1. U-turn radius at row ends must be ≥ drone's tightest physical
+  //      turn radius (spec.min_turn_radius_m). Required radius = spacing / 2.
+  //   2. Bank-limited turn radius at transit speed (r = v² / (g·tan 25°))
+  //      must also fit inside spacing / 2 — otherwise the drone overshoots.
+  //   3. The climb between spray and transit altitude must be sustainable
+  //      at the spec'd climb rate within the row-end distance available.
+  const G = 9.81;
+  const BANK_RAD = (25 * Math.PI) / 180;
+  const maneuver = (() => {
+    const rUturnNeeded = spacingM / 2;
+    const rBankTransit = (transitSpeed * transitSpeed) / (G * Math.tan(BANK_RAD));
+    const altDelta = Math.abs(transitAltM - sprayAltM);
+    const climbTimeS = altDelta / Math.max(0.5, spec.climb_rate_ms);
+    const climbHorizM = climbTimeS * transitSpeed;
+    const failPhysical = rUturnNeeded < spec.min_turn_radius_m;
+    const failBank = rUturnNeeded < rBankTransit;
+    const failClimb = climbHorizM > spacingM * 4;  // need a comfortable runway
+    const issues: string[] = [];
+    if (failPhysical) issues.push(
+      `Spacing ${spacingM} m forces a ${rUturnNeeded.toFixed(1)} m U-turn — tighter than the ${spec.min_turn_radius_m} m physical minimum for this drone.`);
+    if (failBank) issues.push(
+      `Transit speed ${transitSpeed} m/s needs a ${rBankTransit.toFixed(1)} m banked turn radius — wider than the ${rUturnNeeded.toFixed(1)} m available between rows.`);
+    if (failClimb) issues.push(
+      `${altDelta.toFixed(0)} m climb at ${spec.climb_rate_ms} m/s needs ~${climbHorizM.toFixed(0)} m of horizontal runway — more than the row-end space allows.`);
+    return { ok: issues.length === 0, issues, rUturnNeeded, rBankTransit, climbHorizM };
+  })();
+
+  // ---- Auto-fix ----------------------------------------------------------
+  // When the pattern fails maneuverability, nudge parameters until it passes:
+  //   • bank-limited fail → drop transit speed to v = sqrt(spacing/2 · g·tan25°)
+  //   • physical-radius fail → widen spacing to 2 · min_turn_radius_m
+  //   • climb fail → drop transit/spray altitude delta by raising spray alt
+  // Records what changed so the UI can report the auto-adjustment.
+  const [autoFixNote, setAutoFixNote] = useState<string | null>(null);
+  const fixingRef = useRef(false);
+  useEffect(() => {
+    if (maneuver.ok) { setAutoFixNote(null); return; }
+    if (fixingRef.current) return;
+    fixingRef.current = true;
+    const fixes: string[] = [];
+
+    // 1) Widen spacing if drone physically can't U-turn at current spacing.
+    let newSpacing = spacingM;
+    const minSpacing = Math.ceil(spec.min_turn_radius_m * 2);
+    if (spacingM / 2 < spec.min_turn_radius_m && newSpacing < minSpacing) {
+      newSpacing = Math.min(25, minSpacing);
+      fixes.push(`spacing → ${newSpacing} m`);
+    }
+
+    // 2) Cap transit speed by bank-limited radius for the (possibly new) spacing.
+    let newTransit = transitSpeed;
+    const vMax = Math.sqrt((newSpacing / 2) * G * Math.tan(BANK_RAD));
+    if (vMax < transitSpeed) {
+      newTransit = Math.max(3, Math.floor(vMax * 2) / 2);
+      fixes.push(`transit speed → ${newTransit} m/s`);
+    }
+
+    // 3) Reduce climb runway by trimming the altitude delta.
+    let newSprayAlt = sprayAltM;
+    const altDelta = Math.abs(transitAltM - sprayAltM);
+    const climbHoriz = (altDelta / Math.max(0.5, spec.climb_rate_ms)) * newTransit;
+    if (climbHoriz > newSpacing * 4) {
+      const allowedDelta = (newSpacing * 4) * spec.climb_rate_ms / Math.max(1, newTransit);
+      newSprayAlt = Math.max(1, Math.round((transitAltM - allowedDelta) * 2) / 2);
+      if (newSprayAlt !== sprayAltM) fixes.push(`spray altitude → ${newSprayAlt} m`);
+    }
+
+    if (fixes.length) {
+      if (newSpacing !== spacingM) { userTouchedSpacingRef.current = true; setSpacingM(newSpacing); }
+      if (newTransit !== transitSpeed) setTransitSpeed(newTransit);
+      if (newSprayAlt !== sprayAltM) setSprayAltM(newSprayAlt);
+      setAutoFixNote(`Auto-adjusted: ${fixes.join(" · ")}`);
+    }
+    // Release after a tick so subsequent renders re-check the fixed values.
+    setTimeout(() => { fixingRef.current = false; }, 50);
+  }, [maneuver.ok, spacingM, transitSpeed, sprayAltM, transitAltM, spec.min_turn_radius_m, spec.climb_rate_ms]);
+
   const mission = (() => {
     if (!boundary || validZones.length === 0 || !effectiveHome) return null;
     return buildMission(
