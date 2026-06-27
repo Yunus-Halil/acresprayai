@@ -31,7 +31,7 @@ export default function Fields() {
   const navigate = useNavigate();
   const [dbFields, setDbFields] = useState<DBField[]>([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", crop: "Wheat", area_hectares: "", location: "", notes: "" });
+  const [form, setForm] = useState({ name: "", location: "", notes: "" });
 
   const load = async () => {
     const { data: fields } = await supabase
@@ -45,13 +45,13 @@ export default function Fields() {
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
     const { data, error } = await supabase.from("fields").insert({
-      user_id: user!.id, name: form.name, crop: form.crop,
-      area_hectares: Number(form.area_hectares) || 0,
+      user_id: user!.id, name: form.name, crop: "",
+      area_hectares: 0,
       location: form.location || null, notes: form.notes || null,
     }).select().single();
     if (error) return toast.error(error.message);
     toast.success(`Field created — now upload drone images for ${data.name}`);
-    setForm({ name: "", crop: "Wheat", area_hectares: "", location: "", notes: "" });
+    setForm({ name: "", location: "", notes: "" });
     setOpen(false);
     navigate(`/app/fields/${data.id}`);
   };
@@ -81,12 +81,9 @@ export default function Fields() {
             </DialogHeader>
             <form onSubmit={add} className="space-y-3">
               <div><Label>Name</Label><Input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="North vineyard" /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><Label>Crop</Label><Input required value={form.crop} onChange={e => setForm({ ...form, crop: e.target.value })} /></div>
-                <div><Label>Area (ha)</Label><Input type="number" step="0.1" required value={form.area_hectares} onChange={e => setForm({ ...form, area_hectares: e.target.value })} /></div>
-              </div>
               <div><Label>Location</Label><Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="optional" /></div>
               <div><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="optional" /></div>
+              <p className="text-xs text-muted-foreground">Crop and field size are set later — crop in Settings, size measured from your boundary.</p>
               <Button type="submit" className="w-full">Create field & continue <ArrowRight className="h-4 w-4" /></Button>
             </form>
           </DialogContent>
