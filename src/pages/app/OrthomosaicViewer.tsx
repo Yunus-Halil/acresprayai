@@ -2897,6 +2897,7 @@ function buildFieldSweep(
   boundary: LatLng2[][],
   zones: { id: string; ring: LatLng2[] }[],
   spacingM: number,
+  repeats: number = 1,
 ): Pass[][] {
   if (!boundary.length || !zones.length) return [];
   const fieldCenter = centroidOfRings(boundary);
@@ -2953,7 +2954,29 @@ function buildFieldSweep(
     }
     if (passes.length) fragments.push(passes);
   }
-  return fragments;
+  // Repeat each fragment's pass set `repeats` times. Every repeat reverses the
+  // pass order so the drone continues from where the previous pass left off
+  // (no long jump back to the start of the zone). This lets users do double /
+  // triple coverage in a single mission without re-planning.
+  const r = Math.max(1, Math.floor(repeats));
+  if (r === 1) return fragments;
+  return fragments.map(frag => {
+    const out: Pass[] = [];
+    for (let i = 0; i < r; i++) {
+      const slice = frag.map(pass => ({
+        segs: pass.segs.map(s => ({ ...s })),
+      }));
+      if (i % 2 === 1) {
+        slice.reverse();
+        for (const pass of slice) {
+          pass.segs.reverse();
+          for (const s of pass.segs) { const t = s.a; s.a = s.b; s.b = t; }
+        }
+      }
+      out.push(...slice);
+    }
+    return out;
+  });
 }
 
 // =============================================================================
@@ -2995,6 +3018,7 @@ export type MissionParams = {
   transitSpeed: number;  // default 10 m/s
   spraySpeed: number;    // default 3 m/s
   spacingM: number;      // swath
+  repeats?: number;      // how many times to re-cover each zone (1 = once)
 };
 
 function buildMission(
@@ -3014,7 +3038,7 @@ function buildMission(
   // (over anomaly zones) and transit (over healthy ground) sub-segments.
   // Disjoint boundary polygons each become one fragment so buildMission can
   // bridge them with a straight transit at altitude.
-  const fragments = buildFieldSweep(boundary, zones, p.spacingM);
+  const fragments = buildFieldSweep(boundary, zones, p.spacingM, p.repeats ?? 1);
 
   // Order fragments by nearest endpoint to the running exit point, and for
   // each fragment pick the orientation (forward/reverse pass order × flip
