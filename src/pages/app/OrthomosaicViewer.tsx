@@ -3805,12 +3805,27 @@ function PlannerTab({
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
+          <button
+            type="button"
+            onClick={() => {
+              userTouchedSpacingRef.current = false;
+              setSpacingM(recommendedSpacing);
+              setRepeats(1);
+              setTransitAltM(30);
+              setSprayAltM(3);
+              setTransitSpeed(10);
+              setSpraySpeed(3);
+            }}
+            className="w-full rounded-sm border border-[#4CAF50]/40 bg-[#4CAF50]/10 hover:bg-[#4CAF50]/20 text-[#4CAF50] text-[11px] font-medium py-2 transition"
+          >
+            ✨ Generate recommended flight plan
+          </button>
+          <div className="text-[10px] text-neutral-500 -mt-1">
+            Auto-configures spacing, altitude, and speed to cover every anomaly with the shortest safe path for your home position.
+          </div>
           {(() => {
             const recommended = recommendedSpacing;
             const atRec = spacingM === recommended;
-            const warning = spacingM > recommended
-              ? `Above the ${recommended} m recommended spacing for this home position — extra passes mean longer returns and possible gaps over narrow anomalies.`
-              : undefined;
             return (
               <>
                 <Slider2
@@ -3818,8 +3833,6 @@ function PlannerTab({
                   value={spacingM}
                   setValue={(n) => { userTouchedSpacingRef.current = true; setSpacingM(n); }}
                   min={3} max={25} step={1} unit="m"
-                  maxSafe={recommended}
-                  warning={warning}
                 />
                 {!atRec && (
                   <button
