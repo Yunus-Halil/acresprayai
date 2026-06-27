@@ -3323,7 +3323,10 @@ function PlannerTab({
   const droneModelKey = activeDrone?.model ?? "Custom";
   const baseSpec = DRONE_SPECS[droneModelKey] ?? fp.custom_specs;
   const isCustom = !DRONE_SPECS[droneModelKey] || droneModelKey === "Custom";
-  const spec: DroneSpec = isCustom ? fp.custom_specs : baseSpec;
+  // Merge defaults so older saved custom_specs (missing newer fields like
+  // min_turn_radius_m / climb_rate_ms) still pass maneuverability checks.
+  const SPEC_DEFAULTS = DRONE_SPECS["Custom"];
+  const spec: DroneSpec = { ...SPEC_DEFAULTS, ...(isCustom ? fp.custom_specs : baseSpec) };
 
   const updateFlightPlan = (patch: Partial<FarmerSettings["flight_plan"]>) =>
     setFp(prev => ({ ...prev, ...patch }));
