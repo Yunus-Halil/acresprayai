@@ -416,9 +416,15 @@ export default function ReportsTab({
             </p>
           </div>
           <div className="text-right">
-            <div className="text-[10px] uppercase tracking-wider text-neutral-500">Savings</div>
-            <div className="text-3xl font-semibold text-[#4CAF50] tabular-nums">{savingsPct}%</div>
-            <div className="text-[11px] text-neutral-500">vs. full-field</div>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500">
+              {isPostFlight ? "Savings" : "Targeted"}
+            </div>
+            <div className="text-3xl font-semibold text-[#4CAF50] tabular-nums">
+              {isPostFlight ? `${savingsPct}%` : `${targetedAcres.toFixed(2)} ac`}
+            </div>
+            <div className="text-[11px] text-neutral-500">
+              {isPostFlight ? "vs. full-field" : `of ${fieldAcres.toFixed(2)} ac total`}
+            </div>
           </div>
         </header>
 
