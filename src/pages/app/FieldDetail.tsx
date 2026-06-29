@@ -429,3 +429,44 @@ export default function FieldDetail() {
     </div>
   );
 }
+
+function FieldNameEditor({ name, onSave }: { name: string; onSave: (n: string) => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(name);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setVal(name); }, [name]);
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-2 min-w-0">
+        <h1 className="font-display text-3xl truncate">{name}</h1>
+        <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 opacity-60 hover:opacity-100"
+          onClick={() => setEditing(true)} aria-label="Rename field">
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+  const commit = async () => {
+    const v = val.trim();
+    if (!v || v === name) { setEditing(false); setVal(name); return; }
+    setBusy(true);
+    try { await onSave(v); setEditing(false); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <input
+        autoFocus value={val} disabled={busy}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setEditing(false); setVal(name); } }}
+        className="font-display text-3xl bg-transparent border-b border-primary outline-none min-w-0 flex-1"
+      />
+      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={commit} disabled={busy} aria-label="Save">
+        <Check className="h-4 w-4 text-emerald-500" />
+      </Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(false); setVal(name); }} disabled={busy} aria-label="Cancel">
+        <X className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
