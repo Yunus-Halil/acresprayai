@@ -18,6 +18,7 @@ import {
   Play, Pause, RotateCcw, FastForward,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
+import ReportsTab from "@/components/app/ReportsTab";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
