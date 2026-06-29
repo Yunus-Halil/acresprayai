@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
   Upload, Loader2, AlertCircle, Download, RefreshCcw, Trash2,
-  ArrowLeft, Map as MapIcon, Leaf,
+  ArrowLeft, Leaf, Pencil, Check, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { prepareForODM, hasGPS } from "@/lib/imagePrep";
@@ -280,16 +280,21 @@ export default function FieldDetail() {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Leaf className="h-5 w-5 text-primary" />
-              <h1 className="font-display text-3xl truncate">{field.name}</h1>
+              <FieldNameEditor
+                name={field.name}
+                onSave={async (newName) => {
+                  const { error } = await supabase.from("fields").update({ name: newName }).eq("id", field.id);
+                  if (error) { toast.error(error.message); return; }
+                  setField({ ...field, name: newName });
+                  toast.success("Field renamed");
+                }}
+              />
             </div>
             <div className="text-sm text-muted-foreground mt-1">
               {field.crop} · {field.area_hectares} ha{field.location ? ` · ${field.location}` : ""}
             </div>
             {field.notes && <div className="text-sm mt-2 max-w-2xl">{field.notes}</div>}
           </div>
-          <Button variant="outline" onClick={() => navigate(`/app/fields/${field.id}/map`)}>
-            <MapIcon className="h-4 w-4" /> Map & zones
-          </Button>
         </div>
 
         <div className="grid grid-cols-3 gap-3 mt-5 text-sm">
