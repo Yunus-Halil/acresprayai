@@ -152,3 +152,36 @@ export default function Fields() {
     </div>
   );
 }
+
+function InlineRename({ name, onSave }: { name: string; onSave: (n: string) => Promise<void> | void }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(name);
+  useEffect(() => { setVal(name); }, [name]);
+  const stop = (e: React.SyntheticEvent) => { e.stopPropagation(); };
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-1.5 min-w-0">
+        <div className="font-display text-xl leading-tight truncate">{name}</div>
+        <button onClick={(e) => { stop(e); setEditing(true); }}
+          className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition p-1" aria-label="Rename">
+          <Pencil className="h-3 w-3" />
+        </button>
+      </div>
+    );
+  }
+  const commit = async () => {
+    const v = val.trim();
+    if (!v || v === name) { setEditing(false); setVal(name); return; }
+    await onSave(v); setEditing(false);
+  };
+  return (
+    <div className="flex items-center gap-1 min-w-0" onClick={stop}>
+      <input autoFocus value={val} onChange={e => setVal(e.target.value)}
+        onClick={stop}
+        onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setEditing(false); setVal(name); } }}
+        className="font-display text-xl leading-tight bg-transparent border-b border-primary outline-none min-w-0 flex-1" />
+      <button onClick={(e) => { stop(e); commit(); }} className="p-1" aria-label="Save"><Check className="h-3.5 w-3.5 text-emerald-500" /></button>
+      <button onClick={(e) => { stop(e); setEditing(false); setVal(name); }} className="p-1" aria-label="Cancel"><X className="h-3.5 w-3.5" /></button>
+    </div>
+  );
+}
