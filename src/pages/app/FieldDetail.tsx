@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
   Upload, Loader2, AlertCircle, Download, RefreshCcw, Trash2,
-  ArrowLeft, Leaf, Pencil, Check, X,
+  ArrowLeft, Leaf, Pencil, Check, X, Map as MapIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { prepareForODM, hasGPS } from "@/lib/imagePrep";
