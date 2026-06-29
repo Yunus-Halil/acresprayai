@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Trash2, ArrowRight, Leaf, MapPin } from "lucide-react";
+import { Plus, Trash2, ArrowRight, Leaf, MapPin, Pencil, Check, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -62,6 +62,13 @@ export default function Fields() {
     load();
   };
 
+  const rename = async (id: string, name: string) => {
+    const { error } = await supabase.from("fields").update({ name }).eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    setDbFields(prev => prev.map(f => f.id === id ? { ...f, name } : f));
+    toast.success("Field renamed");
+  };
+
   return (
     <div className="p-8 space-y-6">
       <header className="flex items-end justify-between flex-wrap gap-3">
@@ -110,7 +117,7 @@ export default function Fields() {
               onClick={() => navigate(`/app/fields/${f.id}`)}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="font-display text-xl leading-tight truncate">{f.name}</div>
+                  <InlineRename name={f.name} onSave={(n) => rename(f.id, n)} />
                   <div className="text-xs text-muted-foreground mt-0.5">
                     {f.crop} · {realHa.toFixed(2)} ha · {(realHa * HA_TO_AC).toFixed(2)} ac
                     {defined && <span className="ml-1 text-emerald-500">(measured)</span>}
