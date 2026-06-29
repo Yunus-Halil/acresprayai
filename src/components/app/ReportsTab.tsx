@@ -244,10 +244,11 @@ export default function ReportsTab({
       // Headline savings callout
       pdf.setFillColor(76, 175, 80);
       pdf.roundedRect(M, y, W - 2 * M, 56, 6, 6, "F");
-      pdf.setTextColor(255); pdf.setFont("helvetica", "bold"); pdf.setFontSize(26);
-      pdf.text(`${savingsPct}% less chemical`, M + 16, y + 30);
+      pdf.setTextColor(255); pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(isPostFlight ? 26 : 20);
+      pdf.text(headlineBig, M + 16, y + 30);
       pdf.setFontSize(10); pdf.setFont("helvetica", "normal");
-      pdf.text("vs. full-field spraying", M + 16, y + 46);
+      pdf.text(headlineSub, M + 16, y + 46);
       y += 70;
 
       // Treatment zones
