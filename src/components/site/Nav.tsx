@@ -3,9 +3,9 @@ import logo from "@/assets/acrespray-logo.png.asset.json";
 
 const links = [
   { label: "How it works", href: "#how" },
+  { label: "Features", href: "#features" },
   { label: "Impact", href: "#impact" },
   { label: "For", href: "#personas" },
-  { label: "Roadmap", href: "#roadmap" },
 ];
 
 export const Nav = () => {
