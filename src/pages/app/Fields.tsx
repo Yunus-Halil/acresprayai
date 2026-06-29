@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Trash2, ArrowRight, Leaf, MapPin } from "lucide-react";
+import { Plus, Trash2, ArrowRight, Leaf, MapPin, Pencil, Check, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -62,6 +62,13 @@ export default function Fields() {
     load();
   };
 
+  const rename = async (id: string, name: string) => {
+    const { error } = await supabase.from("fields").update({ name }).eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    setDbFields(prev => prev.map(f => f.id === id ? { ...f, name } : f));
+    toast.success("Field renamed");
+  };
+
   return (
     <div className="p-8 space-y-6">
       <header className="flex items-end justify-between flex-wrap gap-3">
@@ -110,7 +117,7 @@ export default function Fields() {
               onClick={() => navigate(`/app/fields/${f.id}`)}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="font-display text-xl leading-tight truncate">{f.name}</div>
+                  <InlineRename name={f.name} onSave={(n) => rename(f.id, n)} />
                   <div className="text-xs text-muted-foreground mt-0.5">
                     {f.crop} · {realHa.toFixed(2)} ha · {(realHa * HA_TO_AC).toFixed(2)} ac
                     {defined && <span className="ml-1 text-emerald-500">(measured)</span>}
@@ -142,6 +149,39 @@ export default function Fields() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function InlineRename({ name, onSave }: { name: string; onSave: (n: string) => Promise<void> | void }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(name);
+  useEffect(() => { setVal(name); }, [name]);
+  const stop = (e: React.SyntheticEvent) => { e.stopPropagation(); };
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-1.5 min-w-0">
+        <div className="font-display text-xl leading-tight truncate">{name}</div>
+        <button onClick={(e) => { stop(e); setEditing(true); }}
+          className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition p-1" aria-label="Rename">
+          <Pencil className="h-3 w-3" />
+        </button>
+      </div>
+    );
+  }
+  const commit = async () => {
+    const v = val.trim();
+    if (!v || v === name) { setEditing(false); setVal(name); return; }
+    await onSave(v); setEditing(false);
+  };
+  return (
+    <div className="flex items-center gap-1 min-w-0" onClick={stop}>
+      <input autoFocus value={val} onChange={e => setVal(e.target.value)}
+        onClick={stop}
+        onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setEditing(false); setVal(name); } }}
+        className="font-display text-xl leading-tight bg-transparent border-b border-primary outline-none min-w-0 flex-1" />
+      <button onClick={(e) => { stop(e); commit(); }} className="p-1" aria-label="Save"><Check className="h-3.5 w-3.5 text-emerald-500" /></button>
+      <button onClick={(e) => { stop(e); setEditing(false); setVal(name); }} className="p-1" aria-label="Cancel"><X className="h-3.5 w-3.5" /></button>
     </div>
   );
 }

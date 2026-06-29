@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
   Upload, Loader2, AlertCircle, Download, RefreshCcw, Trash2,
-  ArrowLeft, Map as MapIcon, Leaf,
+  ArrowLeft, Leaf, Pencil, Check, X, Map as MapIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { prepareForODM, hasGPS } from "@/lib/imagePrep";
@@ -280,16 +280,21 @@ export default function FieldDetail() {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Leaf className="h-5 w-5 text-primary" />
-              <h1 className="font-display text-3xl truncate">{field.name}</h1>
+              <FieldNameEditor
+                name={field.name}
+                onSave={async (newName) => {
+                  const { error } = await supabase.from("fields").update({ name: newName }).eq("id", field.id);
+                  if (error) { toast.error(error.message); return; }
+                  setField({ ...field, name: newName });
+                  toast.success("Field renamed");
+                }}
+              />
             </div>
             <div className="text-sm text-muted-foreground mt-1">
               {field.crop} · {field.area_hectares} ha{field.location ? ` · ${field.location}` : ""}
             </div>
             {field.notes && <div className="text-sm mt-2 max-w-2xl">{field.notes}</div>}
           </div>
-          <Button variant="outline" onClick={() => navigate(`/app/fields/${field.id}/map`)}>
-            <MapIcon className="h-4 w-4" /> Map & zones
-          </Button>
         </div>
 
         <div className="grid grid-cols-3 gap-3 mt-5 text-sm">
@@ -421,6 +426,47 @@ export default function FieldDetail() {
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+function FieldNameEditor({ name, onSave }: { name: string; onSave: (n: string) => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(name);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setVal(name); }, [name]);
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-2 min-w-0">
+        <h1 className="font-display text-3xl truncate">{name}</h1>
+        <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 opacity-60 hover:opacity-100"
+          onClick={() => setEditing(true)} aria-label="Rename field">
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+  const commit = async () => {
+    const v = val.trim();
+    if (!v || v === name) { setEditing(false); setVal(name); return; }
+    setBusy(true);
+    try { await onSave(v); setEditing(false); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <input
+        autoFocus value={val} disabled={busy}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setEditing(false); setVal(name); } }}
+        className="font-display text-3xl bg-transparent border-b border-primary outline-none min-w-0 flex-1"
+      />
+      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={commit} disabled={busy} aria-label="Save">
+        <Check className="h-4 w-4 text-emerald-500" />
+      </Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(false); setVal(name); }} disabled={busy} aria-label="Cancel">
+        <X className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
