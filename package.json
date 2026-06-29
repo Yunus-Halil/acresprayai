@@ -58,6 +58,7 @@
     "fflate": "^0.8.3",
     "framer-motion": "^12.38.0",
     "geotiff": "^3.0.5",
+    "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
