@@ -4,25 +4,27 @@ import html2canvas from "html2canvas";
 import { Loader2, Download, FileText, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import turfArea from "@turf/area";
+import { polygon as turfPolygon } from "@turf/helpers";
 import {
   type FarmerSettings, type AiZone,
   INPUT_LABELS, COST_MAP, issueToCostKey,
 } from "@/pages/app/OrthomosaicViewer";
 
-// ---- pure-JS geodesic area for a ring of {lat,lng} points (no Leaflet dep)
+// ---- Real geodesic area for a ring of {lat,lng} points using turf.
+// Turf expects GeoJSON [lng, lat] and a closed ring.
 function ringAreaM2(ring: { lat: number; lng: number }[]): number {
-  const R = 6378137;
-  const n = ring.length;
-  if (n < 3) return 0;
-  let a = 0;
-  for (let i = 0; i < n; i++) {
-    const p1 = ring[i], p2 = ring[(i + 1) % n];
-    a += ((p2.lng - p1.lng) * Math.PI) / 180 *
-         (2 + Math.sin((p1.lat * Math.PI) / 180) + Math.sin((p2.lat * Math.PI) / 180));
+  if (!ring || ring.length < 3) return 0;
+  const coords = ring.map(p => [p.lng, p.lat] as [number, number]);
+  const first = coords[0], last = coords[coords.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) coords.push(first);
+  try {
+    return turfArea(turfPolygon([coords]));
+  } catch {
+    return 0;
   }
-  return Math.abs((a * R * R) / 2);
 }
-const M2_TO_AC = 1 / 4046.8564224;
+const M2_TO_AC = 1 / 4047; // square meters → acres
 const HA_TO_AC = 2.4710538147;
 
 type FieldRow = { id: string; name: string; boundary_area_hectares: number | null };
