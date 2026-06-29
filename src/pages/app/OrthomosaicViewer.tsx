@@ -18,6 +18,7 @@ import {
   Play, Pause, RotateCcw, FastForward,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
+import ReportsTab from "@/components/app/ReportsTab";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -1136,6 +1137,42 @@ export default function OrthomosaicViewer() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSavedAt, setSettingsSavedAt] = useState<number | null>(null);
 
+  // Lightweight copies of fleet + last-flight data for the Reports tab so it
+  // doesn't depend on the PlannerTab being mounted.
+  type ParentDrone = { id: string; name: string; model: string; battery: number };
+  type ParentFlightLog = {
+    id: string; date_flown: string;
+    battery_start: number | null; battery_end: number | null;
+    tank_refills: number; zones_completed: string[] | null;
+    acres_treated: number | null; liters_applied: number | null;
+    notes: string | null;
+  };
+  const [parentDrones, setParentDrones] = useState<ParentDrone[]>([]);
+  const [parentLastLog, setParentLastLog] = useState<ParentFlightLog | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("drones")
+        .select("id, name, model, battery").order("created_at");
+      if (!cancelled) setParentDrones((data as ParentDrone[] | null) ?? []);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (!taskId) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("flight_logs")
+        .select("id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes")
+        .eq("scan_id", taskId)
+        .order("date_flown", { ascending: false })
+        .limit(1).maybeSingle();
+      if (!cancelled) setParentLastLog((data as ParentFlightLog | null) ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [taskId, activeTab]);
+  const parentActiveDrone = parentDrones.find(d => d.id === settings.flight_plan.drone_id) ?? null;
+
   // Load saved annotations whenever the active scan changes.
   useEffect(() => {
     if (!taskId) return;
@@ -1785,6 +1822,7 @@ export default function OrthomosaicViewer() {
         {/* Field View is permanently mounted to preserve the Leaflet map and
             its layers/geoman state across tab switches. We only hide it. */}
         <div
+          id="field-view-capture"
           style={{
             position: "absolute", inset: 0,
             visibility: activeTab === "field" ? "visible" : "hidden",
@@ -1867,7 +1905,17 @@ export default function OrthomosaicViewer() {
             userPolys={userPolys}
           />
         )}
-        {activeTab === "reports" && <PlaceholderTab icon={FileBarChart} title="Reports" body="Yield, treatment, and scan history reports for this field." />}
+        {activeTab === "reports" && (
+          <ReportsTab
+            field={field ? { id: field.id, name: field.name, boundary_area_hectares: field.boundary_area_hectares ?? null } : null}
+            task={{ id: taskId!, created_at: task.created_at }}
+            analysis={analysis}
+            settings={settings}
+            activeDrone={parentActiveDrone}
+            lastLog={parentLastLog}
+            setActiveTab={setActiveTab}
+          />
+        )}
         {activeTab === "settings" && (
           <SettingsTab
             settings={settings}
