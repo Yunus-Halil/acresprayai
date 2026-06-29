@@ -1,26 +1,26 @@
 import { motion } from "framer-motion";
-import fieldMap from "@/assets/field-map.jpg";
+import orthoAnomaly from "@/assets/landing/image-16.png.asset.json";
 
 const steps = [
   {
     n: "01",
-    title: "Scan",
-    body: "Drones sweep your field capturing multi-spectral and thermal imagery. Soil and weather telemetry stream in alongside.",
+    title: "Upload drone imagery",
+    body: "Drag a batch of nadir photos into a field. We stitch them into a georeferenced orthomosaic on our processing node — no GIS software required.",
   },
   {
     n: "02",
-    title: "Analyze",
-    body: "Our AI - adapted from medical imaging pattern detection - identifies weed clusters, pest pressure, and crop stress in near real-time.",
+    title: "AI field analysis",
+    body: "Gemini Vision scores overall health 0–100, flags bare soil, discoloration, weed pressure, and draws WGS84 treatment zones with recommended products and rates.",
   },
   {
     n: "03",
-    title: "Decide",
-    body: "AcreSpray AI generates a per-square-meter spray map: when, where, and how much. Reviewable in a single mobile dashboard.",
+    title: "Auto flight plan",
+    body: "One click builds a flyable lawnmower mission scoped to anomaly zones — validated against your drone's turn radius and climb rate, with battery swap points if needed.",
   },
   {
     n: "04",
-    title: "Spray",
-    body: "GPS-guided equipment treats only the highlighted zones. Average treat-area: 8–15% of the field instead of 100%.",
+    title: "Fly, log, repeat",
+    body: "Export .waypoints for DJI Pilot 2 or Mission Planner. Watch a virtual drone simulate the flight, then log the completed mission for compliance and battery sync.",
   },
 ];
 
@@ -51,8 +51,8 @@ export const HowItWorks = () => {
               className="relative aspect-square rounded-sm overflow-hidden border border-primary-foreground/20"
             >
               <img
-                src={fieldMap}
-                alt="Top-down field map showing detected weed zones"
+                src={orthoAnomaly.url}
+                alt="AcreSpray orthomosaic with AI-detected anomaly zones overlaid on a real field"
                 width={1280}
                 height={1280}
                 loading="lazy"
@@ -61,11 +61,11 @@ export const HowItWorks = () => {
               <div className="absolute inset-0 bg-gradient-to-tr from-primary/40 via-transparent to-transparent" />
               <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
                 <div>
-                  <div className="font-mono text-[10px] uppercase tracking-widest text-accent">Live scan</div>
-                  <div className="font-display text-2xl">Field A-019</div>
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-accent">Live orthomosaic</div>
+                  <div className="font-display text-2xl">AI-detected zones</div>
                 </div>
                 <div className="font-mono text-xs text-primary-foreground/70">
-                  47 / 412 zones flagged
+                  4 treatment zones · 0.04 ac
                 </div>
               </div>
             </motion.div>
