@@ -109,6 +109,25 @@ export default function ReportsTab({
     ? Math.max(0, Math.min(100, Math.round((1 - totalLitres / fullFieldLitres) * 100)))
     : 0;
 
+  // Pre-flight vs post-flight framing.
+  // Post-flight = a mission has been logged for this field.
+  const isPostFlight = !!lastLog;
+  const targetedAcres = isPostFlight
+    ? zoneRows.filter(z => z.flown).reduce((s, z) => s + z.acres, 0)
+    : treatedAcres;
+  const untreatedPct = fieldAcres > 0
+    ? Math.max(0, Math.min(100, (1 - targetedAcres / fieldAcres) * 100))
+    : 0;
+  const untreatedPctLabel = untreatedPct >= 99.95
+    ? untreatedPct.toFixed(2)
+    : untreatedPct >= 10 ? untreatedPct.toFixed(1) : untreatedPct.toFixed(2);
+  const headlineBig = isPostFlight
+    ? `${savingsPct}% less chemical`
+    : `${untreatedPctLabel}% of field stays unsprayed`;
+  const headlineSub = isPostFlight
+    ? "vs. full-field spraying"
+    : `Targeting ${targetedAcres.toFixed(2)} ac of ${fieldAcres.toFixed(2)} ac total`;
+
   // ---- Mission stats from last flight log ----
   const battStart = lastLog?.battery_start ?? null;
   const battEnd = lastLog?.battery_end ?? null;
