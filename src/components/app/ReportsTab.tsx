@@ -4,25 +4,27 @@ import html2canvas from "html2canvas";
 import { Loader2, Download, FileText, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import turfArea from "@turf/area";
+import { polygon as turfPolygon } from "@turf/helpers";
 import {
   type FarmerSettings, type AiZone,
   INPUT_LABELS, COST_MAP, issueToCostKey,
 } from "@/pages/app/OrthomosaicViewer";
 
-// ---- pure-JS geodesic area for a ring of {lat,lng} points (no Leaflet dep)
+// ---- Real geodesic area for a ring of {lat,lng} points using turf.
+// Turf expects GeoJSON [lng, lat] and a closed ring.
 function ringAreaM2(ring: { lat: number; lng: number }[]): number {
-  const R = 6378137;
-  const n = ring.length;
-  if (n < 3) return 0;
-  let a = 0;
-  for (let i = 0; i < n; i++) {
-    const p1 = ring[i], p2 = ring[(i + 1) % n];
-    a += ((p2.lng - p1.lng) * Math.PI) / 180 *
-         (2 + Math.sin((p1.lat * Math.PI) / 180) + Math.sin((p2.lat * Math.PI) / 180));
+  if (!ring || ring.length < 3) return 0;
+  const coords = ring.map(p => [p.lng, p.lat] as [number, number]);
+  const first = coords[0], last = coords[coords.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) coords.push(first);
+  try {
+    return turfArea(turfPolygon([coords]));
+  } catch {
+    return 0;
   }
-  return Math.abs((a * R * R) / 2);
 }
-const M2_TO_AC = 1 / 4046.8564224;
+const M2_TO_AC = 1 / 4047; // square meters → acres
 const HA_TO_AC = 2.4710538147;
 
 type FieldRow = { id: string; name: string; boundary_area_hectares: number | null };
@@ -106,6 +108,25 @@ export default function ReportsTab({
   const savingsPct = fullFieldLitres > 0
     ? Math.max(0, Math.min(100, Math.round((1 - totalLitres / fullFieldLitres) * 100)))
     : 0;
+
+  // Pre-flight vs post-flight framing.
+  // Post-flight = a mission has been logged for this field.
+  const isPostFlight = !!lastLog;
+  const targetedAcres = isPostFlight
+    ? zoneRows.filter(z => z.flown).reduce((s, z) => s + z.acres, 0)
+    : treatedAcres;
+  const untreatedPct = fieldAcres > 0
+    ? Math.max(0, Math.min(100, (1 - targetedAcres / fieldAcres) * 100))
+    : 0;
+  const untreatedPctLabel = untreatedPct >= 99.95
+    ? untreatedPct.toFixed(2)
+    : untreatedPct >= 10 ? untreatedPct.toFixed(1) : untreatedPct.toFixed(2);
+  const headlineBig = isPostFlight
+    ? `${savingsPct}% less chemical`
+    : `${untreatedPctLabel}% of field stays unsprayed`;
+  const headlineSub = isPostFlight
+    ? "vs. full-field spraying"
+    : `Targeting ${targetedAcres.toFixed(2)} ac of ${fieldAcres.toFixed(2)} ac total`;
 
   // ---- Mission stats from last flight log ----
   const battStart = lastLog?.battery_start ?? null;
@@ -223,10 +244,11 @@ export default function ReportsTab({
       // Headline savings callout
       pdf.setFillColor(76, 175, 80);
       pdf.roundedRect(M, y, W - 2 * M, 56, 6, 6, "F");
-      pdf.setTextColor(255); pdf.setFont("helvetica", "bold"); pdf.setFontSize(26);
-      pdf.text(`${savingsPct}% less chemical`, M + 16, y + 30);
+      pdf.setTextColor(255); pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(isPostFlight ? 26 : 20);
+      pdf.text(headlineBig, M + 16, y + 30);
       pdf.setFontSize(10); pdf.setFont("helvetica", "normal");
-      pdf.text("vs. full-field spraying", M + 16, y + 46);
+      pdf.text(headlineSub, M + 16, y + 46);
       y += 70;
 
       // Treatment zones
@@ -394,9 +416,15 @@ export default function ReportsTab({
             </p>
           </div>
           <div className="text-right">
-            <div className="text-[10px] uppercase tracking-wider text-neutral-500">Savings</div>
-            <div className="text-3xl font-semibold text-[#4CAF50] tabular-nums">{savingsPct}%</div>
-            <div className="text-[11px] text-neutral-500">vs. full-field</div>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500">
+              {isPostFlight ? "Savings" : "Targeted"}
+            </div>
+            <div className="text-3xl font-semibold text-[#4CAF50] tabular-nums">
+              {isPostFlight ? `${savingsPct}%` : `${targetedAcres.toFixed(2)} ac`}
+            </div>
+            <div className="text-[11px] text-neutral-500">
+              {isPostFlight ? "vs. full-field" : `of ${fieldAcres.toFixed(2)} ac total`}
+            </div>
           </div>
         </header>
 
