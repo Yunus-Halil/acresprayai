@@ -56,7 +56,7 @@ function MiniMap({ task, boundary }: { task: Task; boundary: Ring[] | null }) {
     const map = L.map(ref.current, {
       zoomControl: false, attributionControl: false, dragging: false,
       scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false,
-      touchZoom: false, tap: false,
+      touchZoom: false,
     });
     const tl = L.tileLayer(`${TILE_BASE}/${task.odm_uuid}/{z}/{x}/{y}.png`, { maxZoom: 22 });
     tl.addTo(map);
@@ -90,8 +90,8 @@ function CompareMap({ a, b, boundary }: { a: Task; b: Task; boundary: Ring[] | n
     if (!ref.current || !a.odm_uuid || !b.odm_uuid) return;
     const map = L.map(ref.current, { zoomControl: true, attributionControl: false });
     // Bottom layer (older = a): ortho + ndvi
-    const bottomPane = map.createPane("histBottom"); bottomPane.style.zIndex = "300";
-    const topPane = map.createPane("histTop"); topPane.style.zIndex = "400";
+    const bottomPane = map.createPane("histBottom") as HTMLElement; bottomPane.style.zIndex = "300";
+    const topPane = map.createPane("histTop") as HTMLElement; topPane.style.zIndex = "400";
     topPaneRef.current = topPane;
     L.tileLayer(`${TILE_BASE}/${a.odm_uuid}/{z}/{x}/{y}.png`, { pane: "histBottom", maxZoom: 22 }).addTo(map);
     L.tileLayer(`${NDVI_BASE}/${a.id}/{z}/{x}/{y}.png`, { pane: "histBottom", maxZoom: 22, opacity: 0.7 }).addTo(map);
