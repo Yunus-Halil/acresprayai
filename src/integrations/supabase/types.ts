@@ -204,6 +204,67 @@ export type Database = {
         }
         Relationships: []
       }
+      field_reports: {
+        Row: {
+          created_at: string
+          field_id: string | null
+          flight_log_id: string | null
+          generated_at: string
+          id: string
+          pilot_name: string | null
+          scan_id: string | null
+          storage_path: string
+          summary: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          field_id?: string | null
+          flight_log_id?: string | null
+          generated_at?: string
+          id?: string
+          pilot_name?: string | null
+          scan_id?: string | null
+          storage_path: string
+          summary?: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          field_id?: string | null
+          flight_log_id?: string | null
+          generated_at?: string
+          id?: string
+          pilot_name?: string | null
+          scan_id?: string | null
+          storage_path?: string
+          summary?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "field_reports_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "field_reports_flight_log_id_fkey"
+            columns: ["flight_log_id"]
+            isOneToOne: false
+            referencedRelation: "flight_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "field_reports_scan_id_fkey"
+            columns: ["scan_id"]
+            isOneToOne: false
+            referencedRelation: "odm_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fields: {
         Row: {
           area_hectares: number
