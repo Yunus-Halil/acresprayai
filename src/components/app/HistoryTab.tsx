@@ -84,7 +84,7 @@ function CompareMap({ a, b, boundary }: { a: Task; b: Task; boundary: Ring[] | n
   const ref = useRef<HTMLDivElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [pct, setPct] = useState(50);
-  const topPaneRef = useRef<HTMLDivElement | null>(null);
+  const topPaneRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!ref.current || !a.odm_uuid || !b.odm_uuid) return;
