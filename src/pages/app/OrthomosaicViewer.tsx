@@ -1821,6 +1821,7 @@ export default function OrthomosaicViewer() {
         {/* Field View is permanently mounted to preserve the Leaflet map and
             its layers/geoman state across tab switches. We only hide it. */}
         <div
+          id="field-view-capture"
           style={{
             position: "absolute", inset: 0,
             visibility: activeTab === "field" ? "visible" : "hidden",
@@ -1903,7 +1904,17 @@ export default function OrthomosaicViewer() {
             userPolys={userPolys}
           />
         )}
-        {activeTab === "reports" && <PlaceholderTab icon={FileBarChart} title="Reports" body="Yield, treatment, and scan history reports for this field." />}
+        {activeTab === "reports" && (
+          <ReportsTab
+            field={field ? { id: field.id, name: field.name, boundary_area_hectares: field.boundary_area_hectares ?? null } : null}
+            task={{ id: taskId!, created_at: task.created_at }}
+            analysis={analysis}
+            settings={settings}
+            activeDrone={parentActiveDrone}
+            lastLog={parentLastLog}
+            setActiveTab={setActiveTab}
+          />
+        )}
         {activeTab === "settings" && (
           <SettingsTab
             settings={settings}
