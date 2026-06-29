@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import heroImg from "@/assets/hero-drone.jpg";
+import heroImg from "@/assets/landing/hero-flight-plan.png.asset.json";
 
 export const Hero = () => {
   return (
@@ -64,8 +64,8 @@ export const Hero = () => {
           className="mt-20 relative rounded-lg overflow-hidden shadow-elevated border border-border"
         >
           <img
-            src={heroImg}
-            alt="AI drone scanning a crop field with a glowing detection grid"
+            src={heroImg.url}
+            alt="AcreSpray flight planner showing a generated spray mission over a real orthomosaic"
             width={1920}
             height={1080}
             className="w-full h-auto block"
