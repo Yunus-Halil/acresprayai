@@ -11,6 +11,16 @@ import {
   INPUT_LABELS, COST_MAP, issueToCostKey,
 } from "@/pages/app/OrthomosaicViewer";
 
+// ---- Unit conversion helpers (litres are the canonical storage unit). ----
+const L_TO_GAL = 0.264172;
+function fmtVol(litres: number, system: FarmerSettings["unit_system"], digits = 1) {
+  if (system === "imperial") return `${(litres * L_TO_GAL).toFixed(digits)} gal`;
+  return `${litres.toFixed(digits)} L`;
+}
+function unitLabel(system: FarmerSettings["unit_system"]) {
+  return system === "imperial" ? "gal" : "L";
+}
+
 // ---- Real geodesic area for a ring of {lat,lng} points using turf.
 // Turf expects GeoJSON [lng, lat] and a closed ring.
 function ringAreaM2(ring: { lat: number; lng: number }[]): number {
@@ -70,6 +80,9 @@ export default function ReportsTab({
   const [refillsIn, setRefillsIn] = useState<string>("");
   const [litersIn, setLitersIn] = useState<string>("");
   const [notesIn, setNotesIn] = useState<string>("");
+
+  const unit = settings.unit_system ?? "imperial";
+  const isImperial = unit === "imperial";
 
   // Whenever the logged-flight backing data changes, re-prefill the editable
   // fields. Pilot can still type over any of them.
@@ -158,7 +171,12 @@ export default function ReportsTab({
   const battStart = numOrNull(battStartIn);
   const battEnd = numOrNull(battEndIn);
   const tankRefills = numOrNull(refillsIn) ?? 0;
-  const litersApplied = numOrNull(litersIn);
+  // The "Volume applied" input is shown in whichever units the user picked,
+  // but everything downstream (DB row, PDF math) is normalised back to L.
+  const volumeAppliedRaw = numOrNull(litersIn);
+  const litersApplied = volumeAppliedRaw == null
+    ? null
+    : (isImperial ? volumeAppliedRaw / L_TO_GAL : volumeAppliedRaw);
   const pilotNotes = notesIn;
 
   // ---- PDF generation ----
