@@ -3381,7 +3381,7 @@ function PlannerTab({
   }, [activeDrone?.id, activeDrone?.battery]);
 
   // ---- Spray log / "Mark as Flown" -------------------------------------
-  // Fetches the most recent flight_log for this scan so we can show the
+  // Fetches the most recent flight_log for this field so we can show the
   // compliance summary ("X acres treated · Y L applied · logged DATE")
   // directly under the export button, and so the modal opens pre-filled
   // for repeat flights.
@@ -3394,15 +3394,16 @@ function PlannerTab({
   const [logOpen, setLogOpen] = useState(false);
   const [lastLog, setLastLog] = useState<FlightLogRow | null>(null);
   const refreshLastLog = useCallback(async () => {
-    if (!taskId) return;
-    const { data } = await supabase.from("flight_logs")
+    if (!fieldId && !taskId) return;
+    let q = supabase.from("flight_logs")
       .select("id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes")
-      .eq("scan_id", taskId)
-      .order("date_flown", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+    q = fieldId ? q.eq("field_id", fieldId) : q.eq("scan_id", taskId);
+    const { data } = await q;
     setLastLog((data as FlightLogRow | null) ?? null);
-  }, [taskId]);
+  }, [fieldId, taskId]);
   useEffect(() => { void refreshLastLog(); }, [refreshLastLog]);
   const droneModelKey = activeDrone?.model ?? "Custom";
   const baseSpec = DRONE_SPECS[droneModelKey] ?? fp.custom_specs;
