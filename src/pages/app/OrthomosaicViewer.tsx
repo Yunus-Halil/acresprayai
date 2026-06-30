@@ -140,6 +140,26 @@ export type DroneSpec = {
   min_turn_radius_m: number; // tightest physically achievable horizontal turn radius
   climb_rate_ms: number;     // max sustained vertical climb rate
 };
+
+export type LastFlownMission = {
+  id: string;
+  // "flight_logs" means `id` exists in public.flight_logs. "field_snapshot"
+  // is the denormalized fallback stored on fields.settings when the detailed
+  // log insert fails, so Reports can still prefill without violating FKs.
+  source?: "flight_logs" | "field_snapshot";
+  field_id?: string | null;
+  scan_id?: string | null;
+  drone_id?: string | null;
+  date_flown: string;
+  battery_start: number | null;
+  battery_end: number | null;
+  tank_refills: number;
+  zones_completed: string[] | null;
+  acres_treated: number | null;
+  liters_applied: number | null;
+  notes: string | null;
+  created_at?: string | null;
+};
 export const DRONE_SPECS: Record<string, DroneSpec> = {
   "DJI Agras T40":   { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 9,   min_turn_radius_m: 4,   climb_rate_ms: 6 },
   "DJI Agras T30":   { tank_l: 30, payload_kg: 40, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 6.5, min_turn_radius_m: 3.5, climb_rate_ms: 6 },
@@ -183,6 +203,10 @@ export type FarmerSettings = {
     tank_load_pct: number;       // 0-100, how full the tank is for this mission
     custom_specs: DroneSpec;     // active only when drone model is "Custom" / unknown
   };
+  // Denormalized copy of the latest completed mission for this field. The
+  // canonical record is still public.flight_logs; this snapshot makes the
+  // Reports tab resilient across tab switches and avoids scan-only lookups.
+  last_flown_mission?: LastFlownMission | null;
 };
 
 export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
@@ -215,6 +239,7 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
     tank_load_pct: 80,
     custom_specs: DRONE_SPECS["Custom"],
   },
+  last_flown_mission: null,
 };
 
 export const INPUT_LABELS: Record<keyof FarmerSettings["input_costs"], string> = {
@@ -1145,13 +1170,7 @@ export default function OrthomosaicViewer() {
   // Lightweight copies of fleet + last-flight data for the Reports tab so it
   // doesn't depend on the PlannerTab being mounted.
   type ParentDrone = { id: string; name: string; model: string; battery: number };
-  type ParentFlightLog = {
-    id: string; date_flown: string;
-    battery_start: number | null; battery_end: number | null;
-    tank_refills: number; zones_completed: string[] | null;
-    acres_treated: number | null; liters_applied: number | null;
-    notes: string | null;
-  };
+  type ParentFlightLog = LastFlownMission;
   const [parentDrones, setParentDrones] = useState<ParentDrone[]>([]);
   const [parentLastLog, setParentLastLog] = useState<ParentFlightLog | null>(null);
   useEffect(() => {
@@ -1168,15 +1187,19 @@ export default function OrthomosaicViewer() {
     if (!fid) return;
     let cancelled = false;
     (async () => {
-      const { data } = await supabase.from("flight_logs")
-        .select("id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes")
+      const { data, error } = await supabase.from("flight_logs")
+        .select("id, field_id, scan_id, drone_id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes, created_at")
         .eq("field_id", fid)
-        .order("date_flown", { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(1).maybeSingle();
-      if (!cancelled) setParentLastLog((data as ParentFlightLog | null) ?? null);
+      if (cancelled) return;
+      if (error) console.warn("[flight_logs] field lookup failed", error);
+      const savedSnapshot = settings.last_flown_mission;
+      const dbLog = data ? ({ ...(data as ParentFlightLog), source: "flight_logs" as const }) : null;
+      setParentLastLog(dbLog ?? savedSnapshot ?? null);
     })();
     return () => { cancelled = true; };
-  }, [field?.id, activeTab]);
+  }, [field?.id, activeTab, settings.last_flown_mission?.id]);
   const parentActiveDrone = parentDrones.find(d => d.id === settings.flight_plan.drone_id) ?? null;
 
   // Load saved annotations whenever the active scan changes.
@@ -1908,6 +1931,7 @@ export default function OrthomosaicViewer() {
             setActiveTab={setActiveTab}
             settings={settings}
             onSaveSettings={saveSettings}
+            onFlightLogged={setParentLastLog}
             center={center}
             userPolys={userPolys}
           />
@@ -3290,7 +3314,7 @@ function polylineLengthM(pts: LatLng2[]): number {
 
 function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
-  settings, onSaveSettings, center, userPolys, fieldId,
+  settings, onSaveSettings, onFlightLogged, center, userPolys, fieldId,
 }: {
   analysis: any;
   boundary: BoundaryRing[] | null;
@@ -3303,6 +3327,7 @@ function PlannerTab({
   setActiveTab: (k: any) => void;
   settings: FarmerSettings;
   onSaveSettings: (s: FarmerSettings) => Promise<void> | void;
+  onFlightLogged: (log: LastFlownMission) => void;
   center: [number, number];
   userPolys: UserPoly[];
 }) {
@@ -3361,7 +3386,7 @@ function PlannerTab({
   }, [activeDrone?.id, activeDrone?.battery]);
 
   // ---- Spray log / "Mark as Flown" -------------------------------------
-  // Fetches the most recent flight_log for this scan so we can show the
+  // Fetches the most recent flight_log for this field so we can show the
   // compliance summary ("X acres treated · Y L applied · logged DATE")
   // directly under the export button, and so the modal opens pre-filled
   // for repeat flights.
@@ -3374,15 +3399,23 @@ function PlannerTab({
   const [logOpen, setLogOpen] = useState(false);
   const [lastLog, setLastLog] = useState<FlightLogRow | null>(null);
   const refreshLastLog = useCallback(async () => {
-    if (!taskId) return;
-    const { data } = await supabase.from("flight_logs")
-      .select("id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes")
-      .eq("scan_id", taskId)
-      .order("date_flown", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    if (!fieldId && !taskId) return;
+    const selectCols = "id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes";
+    const { data } = fieldId
+      ? await supabase.from("flight_logs")
+          .select(selectCols)
+          .eq("field_id", fieldId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : await supabase.from("flight_logs")
+          .select(selectCols)
+          .eq("scan_id", taskId as string)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
     setLastLog((data as FlightLogRow | null) ?? null);
-  }, [taskId]);
+  }, [fieldId, taskId]);
   useEffect(() => { void refreshLastLog(); }, [refreshLastLog]);
   const droneModelKey = activeDrone?.model ?? "Custom";
   const baseSpec = DRONE_SPECS[droneModelKey] ?? fp.custom_specs;
@@ -4316,7 +4349,9 @@ function PlannerTab({
             ? +(spec.tank_l * (Math.max(0, Math.min(100, fp.tank_load_pct)) / 100)).toFixed(2)
             : null
         }
-        onSaved={async () => {
+        onSaved={async (log) => {
+          onFlightLogged(log);
+          await onSaveSettings({ ...settings, flight_plan: fp, last_flown_mission: log });
           await refreshLastLog();
           // refresh drone roster so the planner picks up the new battery level
           const { data } = await supabase.from("drones")
@@ -5201,7 +5236,7 @@ function LogFlightModal({
   zones: { id: string; label: string; issue: string | null; acres: number }[];
   totalAcres: number;
   estLiters: number | null;
-  onSaved: () => void | Promise<void>;
+  onSaved: (log: LastFlownMission) => void | Promise<void>;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [dateFlown, setDateFlown] = useState(today);
@@ -5246,8 +5281,9 @@ function LogFlightModal({
         setSaving(false);
         return;
       }
-      const row = {
-        user_id: user.id,
+      const snapshotBase: LastFlownMission = {
+        id: `field-snapshot-${fieldId}-${Date.now()}`,
+        source: "field_snapshot",
         field_id: fieldId,
         scan_id: scanId,
         drone_id: droneId,
@@ -5259,16 +5295,44 @@ function LogFlightModal({
         acres_treated: +acresDone.toFixed(2),
         liters_applied: litersDone != null ? +litersDone.toFixed(2) : null,
         notes: notes.trim() || null,
+        created_at: new Date().toISOString(),
       };
-      const { error } = await supabase.from("flight_logs").insert(row);
-      if (error) throw error;
+      const row = {
+        user_id: user.id,
+        field_id: snapshotBase.field_id,
+        scan_id: snapshotBase.scan_id,
+        drone_id: snapshotBase.drone_id,
+        date_flown: snapshotBase.date_flown,
+        battery_start: snapshotBase.battery_start,
+        battery_end: snapshotBase.battery_end,
+        tank_refills: snapshotBase.tank_refills,
+        zones_completed: snapshotBase.zones_completed,
+        acres_treated: snapshotBase.acres_treated,
+        liters_applied: snapshotBase.liters_applied,
+        notes: snapshotBase.notes,
+      };
+      const { data: inserted, error } = await supabase.from("flight_logs")
+        .insert(row)
+        .select("id, field_id, scan_id, drone_id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes, created_at")
+        .single();
+      if (error) {
+        // Keep the user flow unblocked: the field-level snapshot is what the
+        // Reports tab actually needs. We still surface the database issue in
+        // console for debugging, but do not lose the mission values.
+        console.warn("[flight_logs] insert failed; using field snapshot fallback", error);
+      }
 
       // Update drone battery so next planner session pre-fills with landed %.
       if (droneId) {
         await supabase.from("drones").update({ battery: batteryEnd }).eq("id", droneId);
       }
-      toast.success("Flight logged", { description: `${acresDone.toFixed(2)} ac recorded for ${dateFlown}.` });
-      await onSaved();
+      const savedLog: LastFlownMission = inserted
+        ? { ...(inserted as LastFlownMission), source: "flight_logs" }
+        : snapshotBase;
+      toast.success(inserted ? "Flight logged" : "Mission saved to field", {
+        description: `${acresDone.toFixed(2)} ac recorded for ${dateFlown}.`,
+      });
+      await onSaved(savedLog);
       onOpenChange(false);
     } catch (e: any) {
       toast.error("Couldn't save flight log", { description: e?.message ?? String(e) });
