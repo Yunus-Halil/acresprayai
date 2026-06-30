@@ -341,13 +341,13 @@ export default function ReportsTab({
       } else {
         for (const b of buckets.values()) {
           pdf.setTextColor(30); pdf.text(b.label, M, y);
-          pdf.text(`${b.litres.toFixed(1)} L`, W - M, y, { align: "right" });
+          pdf.text(fmtVol(b.litres, unit), W - M, y, { align: "right" });
           y += 14;
         }
         pdf.setDrawColor(235); pdf.line(M, y - 4, W - M, y - 4);
         pdf.setFont("helvetica", "bold");
         pdf.text("Total applied", M, y);
-        pdf.text(`${totalLitres.toFixed(1)} L`, W - M, y, { align: "right" });
+        pdf.text(fmtVol(totalLitres, unit), W - M, y, { align: "right" });
         y += 14;
         pdf.setFont("helvetica", "normal"); pdf.setTextColor(76, 175, 80);
         pdf.text("Chemical saved vs full-field spray", M, y);
@@ -367,7 +367,7 @@ export default function ReportsTab({
          "Tank refills", String(tankRefills)],
         ["Battery start", battStart != null ? `${battStart}%` : "—",
          "Landed", battEnd != null ? `${battEnd}%` : "—"],
-        ["Litres applied (logged)", litersApplied != null ? `${Number(litersApplied).toFixed(1)} L` : "—",
+        [`Volume applied (logged)`, litersApplied != null ? fmtVol(litersApplied, unit) : "—",
          "Zones flown", `${zoneRows.filter(z => z.flown).length} / ${zoneRows.length}`],
       ];
       for (const [k1, v1, k2, v2] of stats) {
