@@ -5281,8 +5281,9 @@ function LogFlightModal({
         setSaving(false);
         return;
       }
-      const row = {
-        user_id: user.id,
+      const snapshotBase: LastFlownMission = {
+        id: `field-snapshot-${fieldId}-${Date.now()}`,
+        source: "field_snapshot",
         field_id: fieldId,
         scan_id: scanId,
         drone_id: droneId,
@@ -5294,19 +5295,44 @@ function LogFlightModal({
         acres_treated: +acresDone.toFixed(2),
         liters_applied: litersDone != null ? +litersDone.toFixed(2) : null,
         notes: notes.trim() || null,
+        created_at: new Date().toISOString(),
+      };
+      const row = {
+        user_id: user.id,
+        field_id: snapshotBase.field_id,
+        scan_id: snapshotBase.scan_id,
+        drone_id: snapshotBase.drone_id,
+        date_flown: snapshotBase.date_flown,
+        battery_start: snapshotBase.battery_start,
+        battery_end: snapshotBase.battery_end,
+        tank_refills: snapshotBase.tank_refills,
+        zones_completed: snapshotBase.zones_completed,
+        acres_treated: snapshotBase.acres_treated,
+        liters_applied: snapshotBase.liters_applied,
+        notes: snapshotBase.notes,
       };
       const { data: inserted, error } = await supabase.from("flight_logs")
         .insert(row)
         .select("id, field_id, scan_id, drone_id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes, created_at")
         .single();
-      if (error) throw error;
+      if (error) {
+        // Keep the user flow unblocked: the field-level snapshot is what the
+        // Reports tab actually needs. We still surface the database issue in
+        // console for debugging, but do not lose the mission values.
+        console.warn("[flight_logs] insert failed; using field snapshot fallback", error);
+      }
 
       // Update drone battery so next planner session pre-fills with landed %.
       if (droneId) {
         await supabase.from("drones").update({ battery: batteryEnd }).eq("id", droneId);
       }
-      toast.success("Flight logged", { description: `${acresDone.toFixed(2)} ac recorded for ${dateFlown}.` });
-      await onSaved(inserted as LastFlownMission);
+      const savedLog: LastFlownMission = inserted
+        ? { ...(inserted as LastFlownMission), source: "flight_logs" }
+        : snapshotBase;
+      toast.success(inserted ? "Flight logged" : "Mission saved to field", {
+        description: `${acresDone.toFixed(2)} ac recorded for ${dateFlown}.`,
+      });
+      await onSaved(savedLog);
       onOpenChange(false);
     } catch (e: any) {
       toast.error("Couldn't save flight log", { description: e?.message ?? String(e) });
