@@ -1195,7 +1195,8 @@ export default function OrthomosaicViewer() {
       if (cancelled) return;
       if (error) console.warn("[flight_logs] field lookup failed", error);
       const savedSnapshot = settings.last_flown_mission;
-      setParentLastLog((data as ParentFlightLog | null) ?? savedSnapshot ?? null);
+      const dbLog = data ? ({ ...(data as ParentFlightLog), source: "flight_logs" as const }) : null;
+      setParentLastLog(dbLog ?? savedSnapshot ?? null);
     })();
     return () => { cancelled = true; };
   }, [field?.id, activeTab, settings.last_flown_mission?.id]);
