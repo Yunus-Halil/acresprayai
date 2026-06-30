@@ -156,6 +156,9 @@ export type FarmerSettings = {
   planting_date: string;      // YYYY-MM-DD or ""
   harvest_date: string;       // YYYY-MM-DD or ""
   area_acres_override: number | null;
+  // Display unit system. "metric" = litres, "imperial" = US gallons.
+  // Stored once per field and consumed by ReportsTab / PlannerTab.
+  unit_system: "metric" | "imperial";
   input_costs: {
     nitrogen_fertilizer: number;
     phosphorus_fertilizer: number;
@@ -187,6 +190,7 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
   planting_date: "",
   harvest_date: "",
   area_acres_override: null,
+  unit_system: "imperial",
   input_costs: {
     nitrogen_fertilizer: 45,
     phosphorus_fertilizer: 35,
