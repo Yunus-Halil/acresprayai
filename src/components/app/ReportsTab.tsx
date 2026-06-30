@@ -61,6 +61,28 @@ export default function ReportsTab({
   const [generating, setGenerating] = useState(false);
   const [reports, setReports] = useState<ReportRow[]>([]);
 
+  // ---- Editable mission fields. Prefilled from the last logged flight when
+  //      available, but always overridable so the pilot can double-check / fix
+  //      numbers before the report is generated.
+  const [missionDate, setMissionDate] = useState<string>("");
+  const [battStartIn, setBattStartIn] = useState<string>("");
+  const [battEndIn, setBattEndIn] = useState<string>("");
+  const [refillsIn, setRefillsIn] = useState<string>("");
+  const [litersIn, setLitersIn] = useState<string>("");
+  const [notesIn, setNotesIn] = useState<string>("");
+
+  // Whenever the logged-flight backing data changes, re-prefill the editable
+  // fields. Pilot can still type over any of them.
+  useEffect(() => {
+    setMissionDate(lastLog?.date_flown ?? "");
+    setBattStartIn(lastLog?.battery_start != null ? String(lastLog.battery_start) : "");
+    setBattEndIn(lastLog?.battery_end != null ? String(lastLog.battery_end) : "");
+    setRefillsIn(lastLog?.tank_refills != null ? String(lastLog.tank_refills) : "0");
+    setLitersIn(lastLog?.liters_applied != null ? String(lastLog.liters_applied) : "");
+    setNotesIn(lastLog?.notes ?? "");
+  }, [lastLog?.id, lastLog?.date_flown, lastLog?.battery_start, lastLog?.battery_end,
+      lastLog?.tank_refills, lastLog?.liters_applied, lastLog?.notes]);
+
   const loadReports = useCallback(async () => {
     if (!field?.id) return;
     const { data } = await supabase
@@ -128,18 +150,22 @@ export default function ReportsTab({
     ? "vs. full-field spraying"
     : `Targeting ${targetedAcres.toFixed(2)} ac of ${fieldAcres.toFixed(2)} ac total`;
 
-  // ---- Mission stats from last flight log ----
-  const battStart = lastLog?.battery_start ?? null;
-  const battEnd = lastLog?.battery_end ?? null;
-  const tankRefills = lastLog?.tank_refills ?? 0;
-  const litersApplied = lastLog?.liters_applied ?? null;
-  const missionDate = lastLog?.date_flown ?? null;
-  const pilotNotes = lastLog?.notes ?? "";
+  // ---- Mission stats from the editable inputs (prefilled from last log). ----
+  const numOrNull = (s: string) => {
+    const t = s.trim(); if (!t) return null;
+    const n = Number(t); return Number.isFinite(n) ? n : null;
+  };
+  const battStart = numOrNull(battStartIn);
+  const battEnd = numOrNull(battEndIn);
+  const tankRefills = numOrNull(refillsIn) ?? 0;
+  const litersApplied = numOrNull(litersIn);
+  const pilotNotes = notesIn;
 
   // ---- PDF generation ----
   const generate = async () => {
     if (!field) { toast.error("Define a field boundary first."); return; }
     if (!pilotName.trim()) { toast.error("Enter a pilot name first."); return; }
+    if (!missionDate) { toast.error("Enter the mission date first."); return; }
     setGenerating(true);
     let restored = false;
     const capRoot = document.getElementById("field-view-capture");
