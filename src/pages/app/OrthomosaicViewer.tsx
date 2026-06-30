@@ -5081,6 +5081,27 @@ function SettingsTab({
               <input type="date" className={inputCls} value={local.harvest_date}
                 onChange={e => update({ harvest_date: e.target.value })} />
             </div>
+            <div className="sm:col-span-2">
+              <label className={labelCls}>Units</label>
+              <div className="inline-flex rounded-sm border border-[#222] bg-[#0f0f0f] overflow-hidden">
+                {([
+                  { v: "imperial", label: "Imperial (acres · gal)" },
+                  { v: "metric",   label: "Metric (hectares · L)" },
+                ] as const).map(o => (
+                  <button
+                    key={o.v}
+                    type="button"
+                    onClick={() => update({ unit_system: o.v })}
+                    className={`px-3 py-1.5 text-xs ${local.unit_system === o.v
+                      ? "bg-[#4CAF50] text-black font-semibold"
+                      : "text-neutral-400 hover:text-neutral-200"}`}
+                  >{o.label}</button>
+                ))}
+              </div>
+              <div className="text-[10px] text-neutral-500 mt-1">
+                Controls how chemical volumes are displayed on reports and the planner.
+              </div>
+            </div>
           </div>
           {gs && (
             <div className="mt-3 text-[11px] text-neutral-400">
