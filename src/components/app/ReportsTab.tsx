@@ -565,7 +565,7 @@ export default function ReportsTab({
 
           <button
             onClick={generate}
-            disabled={generating || !field}
+            disabled={generating || !field || !missionDate || !pilotName.trim()}
             className="w-full h-10 rounded bg-[#4CAF50] hover:bg-[#43a047] text-white text-sm font-medium inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {generating
