@@ -426,6 +426,7 @@ export default function ReportsTab({
         zones_flown: zoneRows.filter(z => z.flown).length,
         drone: activeDrone ? { name: activeDrone.name, model: activeDrone.model } : null,
         mission_date: missionDate,
+        flight_log_id: lastLog?.id ?? null,
       };
       const ins = await supabase.from("field_reports").insert({
         user_id: uid,
