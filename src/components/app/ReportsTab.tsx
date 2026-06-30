@@ -452,6 +452,24 @@ export default function ReportsTab({
     }
   };
 
+  // ---- Auto-generate when a freshly-logged mission lands on this tab. ----
+  // Fires once per flight_log_id, only if the pilot name + mission date are
+  // already filled and we haven't archived a report for this log yet.
+  useEffect(() => {
+    const logId = lastLog?.id;
+    if (!logId || !field || generating) return;
+    if (!pilotName.trim() || !missionDate) return;
+    if (autoGenRef.current.has(logId)) return;
+    // Skip if a report for this flight log was already archived previously.
+    if (reports.some(r => (r.summary as any)?.flight_log_id === logId)) {
+      autoGenRef.current.add(logId);
+      return;
+    }
+    autoGenRef.current.add(logId);
+    void generate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastLog?.id, field?.id, missionDate, pilotName, reports]);
+
   const openArchived = async (r: ReportRow) => {
     const { data, error } = await supabase.storage.from("field-reports")
       .createSignedUrl(r.storage_path, 60 * 10);
