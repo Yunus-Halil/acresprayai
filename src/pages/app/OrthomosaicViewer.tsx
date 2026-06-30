@@ -143,6 +143,10 @@ export type DroneSpec = {
 
 export type LastFlownMission = {
   id: string;
+  // "flight_logs" means `id` exists in public.flight_logs. "field_snapshot"
+  // is the denormalized fallback stored on fields.settings when the detailed
+  // log insert fails, so Reports can still prefill without violating FKs.
+  source?: "flight_logs" | "field_snapshot";
   field_id?: string | null;
   scan_id?: string | null;
   drone_id?: string | null;
