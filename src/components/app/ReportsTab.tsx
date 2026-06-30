@@ -91,10 +91,17 @@ export default function ReportsTab({
     setBattStartIn(lastLog?.battery_start != null ? String(lastLog.battery_start) : "");
     setBattEndIn(lastLog?.battery_end != null ? String(lastLog.battery_end) : "");
     setRefillsIn(lastLog?.tank_refills != null ? String(lastLog.tank_refills) : "0");
-    setLitersIn(lastLog?.liters_applied != null ? String(lastLog.liters_applied) : "");
+    setLitersIn(
+      lastLog?.liters_applied != null
+        ? String(+(isImperial
+            ? Number(lastLog.liters_applied) * L_TO_GAL
+            : Number(lastLog.liters_applied)
+          ).toFixed(2))
+        : ""
+    );
     setNotesIn(lastLog?.notes ?? "");
   }, [lastLog?.id, lastLog?.date_flown, lastLog?.battery_start, lastLog?.battery_end,
-      lastLog?.tank_refills, lastLog?.liters_applied, lastLog?.notes]);
+      lastLog?.tank_refills, lastLog?.liters_applied, lastLog?.notes, isImperial]);
 
   const loadReports = useCallback(async () => {
     if (!field?.id) return;
