@@ -1166,13 +1166,7 @@ export default function OrthomosaicViewer() {
   // Lightweight copies of fleet + last-flight data for the Reports tab so it
   // doesn't depend on the PlannerTab being mounted.
   type ParentDrone = { id: string; name: string; model: string; battery: number };
-  type ParentFlightLog = {
-    id: string; date_flown: string;
-    battery_start: number | null; battery_end: number | null;
-    tank_refills: number; zones_completed: string[] | null;
-    acres_treated: number | null; liters_applied: number | null;
-    notes: string | null;
-  };
+  type ParentFlightLog = LastFlownMission;
   const [parentDrones, setParentDrones] = useState<ParentDrone[]>([]);
   const [parentLastLog, setParentLastLog] = useState<ParentFlightLog | null>(null);
   useEffect(() => {
@@ -1189,15 +1183,18 @@ export default function OrthomosaicViewer() {
     if (!fid) return;
     let cancelled = false;
     (async () => {
-      const { data } = await supabase.from("flight_logs")
-        .select("id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes")
+      const { data, error } = await supabase.from("flight_logs")
+        .select("id, field_id, scan_id, drone_id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes, created_at")
         .eq("field_id", fid)
-        .order("date_flown", { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(1).maybeSingle();
-      if (!cancelled) setParentLastLog((data as ParentFlightLog | null) ?? null);
+      if (cancelled) return;
+      if (error) console.warn("[flight_logs] field lookup failed", error);
+      const savedSnapshot = settings.last_flown_mission;
+      setParentLastLog((data as ParentFlightLog | null) ?? savedSnapshot ?? null);
     })();
     return () => { cancelled = true; };
-  }, [field?.id, activeTab]);
+  }, [field?.id, activeTab, settings.last_flown_mission?.id]);
   const parentActiveDrone = parentDrones.find(d => d.id === settings.flight_plan.drone_id) ?? null;
 
   // Load saved annotations whenever the active scan changes.
