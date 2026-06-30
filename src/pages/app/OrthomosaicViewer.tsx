@@ -1164,18 +1164,19 @@ export default function OrthomosaicViewer() {
     return () => { cancelled = true; };
   }, []);
   useEffect(() => {
-    if (!taskId) return;
+    const fid = field?.id;
+    if (!fid) return;
     let cancelled = false;
     (async () => {
       const { data } = await supabase.from("flight_logs")
         .select("id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes")
-        .eq("scan_id", taskId)
+        .eq("field_id", fid)
         .order("date_flown", { ascending: false })
         .limit(1).maybeSingle();
       if (!cancelled) setParentLastLog((data as ParentFlightLog | null) ?? null);
     })();
     return () => { cancelled = true; };
-  }, [taskId, activeTab]);
+  }, [field?.id, activeTab]);
   const parentActiveDrone = parentDrones.find(d => d.id === settings.flight_plan.drone_id) ?? null;
 
   // Load saved annotations whenever the active scan changes.
