@@ -476,10 +476,81 @@ export default function ReportsTab({
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">AI zones</div>
               <div className="text-neutral-200">{zoneRows.length} ({zoneRows.filter(z => z.flown).length} flown)</div>
             </div>
-            <div>
-              <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Mission date</div>
-              <div className="text-neutral-200">{missionDate ?? "Not flown yet"}</div>
+          </div>
+
+          {/* ---- Mission details: required before generating. Prefilled from
+                  the last logged flight so the pilot can double-check / edit. ---- */}
+          <div className="pt-3 border-t border-[#1f1f1f] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] uppercase tracking-wider text-neutral-500">Mission details</div>
+              {lastLog && (
+                <div className="text-[10px] text-neutral-500">Prefilled from logged flight · editable</div>
+              )}
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">
+                  Mission date <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={missionDate}
+                  onChange={e => setMissionDate(e.target.value)}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Battery start (%)</label>
+                <input
+                  type="number" min={0} max={100} placeholder="e.g. 100"
+                  value={battStartIn}
+                  onChange={e => setBattStartIn(e.target.value)}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Battery landed (%)</label>
+                <input
+                  type="number" min={0} max={100} placeholder="e.g. 32"
+                  value={battEndIn}
+                  onChange={e => setBattEndIn(e.target.value)}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Tank refills</label>
+                <input
+                  type="number" min={0} step={1} placeholder="0"
+                  value={refillsIn}
+                  onChange={e => setRefillsIn(e.target.value)}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Litres applied</label>
+                <input
+                  type="number" min={0} step={0.1} placeholder="e.g. 12.5"
+                  value={litersIn}
+                  onChange={e => setLitersIn(e.target.value)}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Pilot notes</label>
+                <textarea
+                  value={notesIn}
+                  onChange={e => setNotesIn(e.target.value)}
+                  rows={2}
+                  placeholder="Wind picked up around 3pm, refilled tank between zones 3 and 4…"
+                  className="w-full px-3 py-2 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50] resize-none"
+                />
+              </div>
+            </div>
+            {!lastLog && (
+              <div className="text-[11px] text-neutral-500">
+                No flight logged for this scan yet — fill in the numbers manually, or log the mission from the Planner to auto-fill.
+              </div>
+            )}
           </div>
 
           <div>
