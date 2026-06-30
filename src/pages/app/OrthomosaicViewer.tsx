@@ -5223,7 +5223,7 @@ function LogFlightModal({
   zones: { id: string; label: string; issue: string | null; acres: number }[];
   totalAcres: number;
   estLiters: number | null;
-  onSaved: () => void | Promise<void>;
+  onSaved: (log: LastFlownMission) => void | Promise<void>;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [dateFlown, setDateFlown] = useState(today);
@@ -5282,7 +5282,10 @@ function LogFlightModal({
         liters_applied: litersDone != null ? +litersDone.toFixed(2) : null,
         notes: notes.trim() || null,
       };
-      const { error } = await supabase.from("flight_logs").insert(row);
+      const { data: inserted, error } = await supabase.from("flight_logs")
+        .insert(row)
+        .select("id, field_id, scan_id, drone_id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes, created_at")
+        .single();
       if (error) throw error;
 
       // Update drone battery so next planner session pre-fills with landed %.
@@ -5290,7 +5293,7 @@ function LogFlightModal({
         await supabase.from("drones").update({ battery: batteryEnd }).eq("id", droneId);
       }
       toast.success("Flight logged", { description: `${acresDone.toFixed(2)} ac recorded for ${dateFlown}.` });
-      await onSaved();
+      await onSaved(inserted as LastFlownMission);
       onOpenChange(false);
     } catch (e: any) {
       toast.error("Couldn't save flight log", { description: e?.message ?? String(e) });
