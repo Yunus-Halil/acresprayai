@@ -83,6 +83,8 @@ export default function ReportsTab({
   const unit = settings.unit_system ?? "imperial";
   const isImperial = unit === "imperial";
   const effectiveLastLog = fetchedLastLog ?? lastLog ?? settings.last_flown_mission ?? null;
+  const effectiveFlightLogId = effectiveLastLog?.source === "field_snapshot" ? null : (effectiveLastLog?.id ?? null);
+  const effectiveMissionRecordId = effectiveLastLog?.id ?? null;
 
   // Reports owns its own latest-log lookup. Parent props are still useful for
   // instant updates, but this makes the tab simply fetch the newest completed
@@ -100,7 +102,7 @@ export default function ReportsTab({
         .maybeSingle();
       if (cancelled) return;
       if (error) console.warn("[ReportsTab] latest flight log lookup failed", error);
-      setFetchedLastLog((data as FlightLogRow | null) ?? null);
+      setFetchedLastLog(data ? ({ ...(data as FlightLogRow), source: "flight_logs" }) : null);
     })();
     return () => { cancelled = true; };
   }, [field?.id]);
