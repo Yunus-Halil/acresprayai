@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { Loader2, Download, FileText, Sparkles } from "lucide-react";
@@ -70,6 +70,9 @@ export default function ReportsTab({
   const [pilotName, setPilotName] = useState<string>(() => localStorage.getItem("acrespray.pilot_name") ?? "");
   const [generating, setGenerating] = useState(false);
   const [reports, setReports] = useState<ReportRow[]>([]);
+  // Tracks which flight_log_ids we've already auto-generated a report for in
+  // this session, so re-mounting the Reports tab doesn't trigger duplicates.
+  const autoGenRef = useRef<Set<string>>(new Set());
 
   // ---- Editable mission fields. Prefilled from the last logged flight when
   //      available, but always overridable so the pilot can double-check / fix
@@ -423,6 +426,7 @@ export default function ReportsTab({
         zones_flown: zoneRows.filter(z => z.flown).length,
         drone: activeDrone ? { name: activeDrone.name, model: activeDrone.model } : null,
         mission_date: missionDate,
+        flight_log_id: lastLog?.id ?? null,
       };
       const ins = await supabase.from("field_reports").insert({
         user_id: uid,
@@ -448,6 +452,24 @@ export default function ReportsTab({
       setGenerating(false);
     }
   };
+
+  // ---- Auto-generate when a freshly-logged mission lands on this tab. ----
+  // Fires once per flight_log_id, only if the pilot name + mission date are
+  // already filled and we haven't archived a report for this log yet.
+  useEffect(() => {
+    const logId = lastLog?.id;
+    if (!logId || !field || generating) return;
+    if (!pilotName.trim() || !missionDate) return;
+    if (autoGenRef.current.has(logId)) return;
+    // Skip if a report for this flight log was already archived previously.
+    if (reports.some(r => (r.summary as any)?.flight_log_id === logId)) {
+      autoGenRef.current.add(logId);
+      return;
+    }
+    autoGenRef.current.add(logId);
+    void generate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastLog?.id, field?.id, missionDate, pilotName, reports]);
 
   const openArchived = async (r: ReportRow) => {
     const { data, error } = await supabase.storage.from("field-reports")
