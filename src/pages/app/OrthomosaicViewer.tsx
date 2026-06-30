@@ -140,6 +140,22 @@ export type DroneSpec = {
   min_turn_radius_m: number; // tightest physically achievable horizontal turn radius
   climb_rate_ms: number;     // max sustained vertical climb rate
 };
+
+export type LastFlownMission = {
+  id: string;
+  field_id?: string | null;
+  scan_id?: string | null;
+  drone_id?: string | null;
+  date_flown: string;
+  battery_start: number | null;
+  battery_end: number | null;
+  tank_refills: number;
+  zones_completed: string[] | null;
+  acres_treated: number | null;
+  liters_applied: number | null;
+  notes: string | null;
+  created_at?: string | null;
+};
 export const DRONE_SPECS: Record<string, DroneSpec> = {
   "DJI Agras T40":   { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 9,   min_turn_radius_m: 4,   climb_rate_ms: 6 },
   "DJI Agras T30":   { tank_l: 30, payload_kg: 40, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 6.5, min_turn_radius_m: 3.5, climb_rate_ms: 6 },
@@ -183,6 +199,10 @@ export type FarmerSettings = {
     tank_load_pct: number;       // 0-100, how full the tank is for this mission
     custom_specs: DroneSpec;     // active only when drone model is "Custom" / unknown
   };
+  // Denormalized copy of the latest completed mission for this field. The
+  // canonical record is still public.flight_logs; this snapshot makes the
+  // Reports tab resilient across tab switches and avoids scan-only lookups.
+  last_flown_mission?: LastFlownMission | null;
 };
 
 export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
@@ -215,6 +235,7 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
     tank_load_pct: 80,
     custom_specs: DRONE_SPECS["Custom"],
   },
+  last_flown_mission: null,
 };
 
 export const INPUT_LABELS: Record<keyof FarmerSettings["input_costs"], string> = {
