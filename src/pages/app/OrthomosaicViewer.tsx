@@ -3396,12 +3396,12 @@ function PlannerTab({
   const refreshLastLog = useCallback(async () => {
     if (!fieldId && !taskId) return;
     let q = supabase.from("flight_logs")
-      .select("id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes")
+      .select("id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes");
+    q = fieldId ? q.eq("field_id", fieldId) : q.eq("scan_id", taskId);
+    const { data } = await q
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    q = fieldId ? q.eq("field_id", fieldId) : q.eq("scan_id", taskId);
-    const { data } = await q;
     setLastLog((data as FlightLogRow | null) ?? null);
   }, [fieldId, taskId]);
   useEffect(() => { void refreshLastLog(); }, [refreshLastLog]);
