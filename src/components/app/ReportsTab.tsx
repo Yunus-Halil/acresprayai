@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import turfArea from "@turf/area";
 import { polygon as turfPolygon } from "@turf/helpers";
 import {
-  type FarmerSettings, type AiZone,
+  type FarmerSettings, type AiZone, type LastFlownMission,
   INPUT_LABELS, COST_MAP, issueToCostKey,
 } from "@/pages/app/OrthomosaicViewer";
 
@@ -41,13 +41,7 @@ type FieldRow = { id: string; name: string; boundary_area_hectares: number | nul
 type TaskRow = { id: string; created_at: string };
 type Analysis = { health_score: number; zones: AiZone[] } | null;
 type DroneRow = { id: string; name: string; model: string; battery: number };
-type FlightLogRow = {
-  id: string; date_flown: string;
-  battery_start: number | null; battery_end: number | null;
-  tank_refills: number; zones_completed: string[] | null;
-  acres_treated: number | null; liters_applied: number | null;
-  notes: string | null;
-};
+type FlightLogRow = LastFlownMission;
 type ReportRow = {
   id: string; generated_at: string; pilot_name: string | null;
   storage_path: string; summary: any;
@@ -70,6 +64,7 @@ export default function ReportsTab({
   const [pilotName, setPilotName] = useState<string>(() => localStorage.getItem("acrespray.pilot_name") ?? "");
   const [generating, setGenerating] = useState(false);
   const [reports, setReports] = useState<ReportRow[]>([]);
+  const [fetchedLastLog, setFetchedLastLog] = useState<FlightLogRow | null>(null);
   // Tracks which flight_log_ids we've already auto-generated a report for in
   // this session, so re-mounting the Reports tab doesn't trigger duplicates.
   const autoGenRef = useRef<Set<string>>(new Set());
@@ -86,25 +81,47 @@ export default function ReportsTab({
 
   const unit = settings.unit_system ?? "imperial";
   const isImperial = unit === "imperial";
+  const effectiveLastLog = fetchedLastLog ?? lastLog ?? settings.last_flown_mission ?? null;
+
+  // Reports owns its own latest-log lookup. Parent props are still useful for
+  // instant updates, but this makes the tab simply fetch the newest completed
+  // mission for the field whenever it opens/remounts.
+  useEffect(() => {
+    if (!field?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("flight_logs")
+        .select("id, field_id, scan_id, drone_id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes, created_at")
+        .eq("field_id", field.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) console.warn("[ReportsTab] latest flight log lookup failed", error);
+      setFetchedLastLog((data as FlightLogRow | null) ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [field?.id]);
 
   // Whenever the logged-flight backing data changes, re-prefill the editable
   // fields. Pilot can still type over any of them.
   useEffect(() => {
-    setMissionDate(lastLog?.date_flown ?? "");
-    setBattStartIn(lastLog?.battery_start != null ? String(lastLog.battery_start) : "");
-    setBattEndIn(lastLog?.battery_end != null ? String(lastLog.battery_end) : "");
-    setRefillsIn(lastLog?.tank_refills != null ? String(lastLog.tank_refills) : "0");
+    setMissionDate(effectiveLastLog?.date_flown ?? "");
+    setBattStartIn(effectiveLastLog?.battery_start != null ? String(effectiveLastLog.battery_start) : "");
+    setBattEndIn(effectiveLastLog?.battery_end != null ? String(effectiveLastLog.battery_end) : "");
+    setRefillsIn(effectiveLastLog?.tank_refills != null ? String(effectiveLastLog.tank_refills) : "0");
     setLitersIn(
-      lastLog?.liters_applied != null
+      effectiveLastLog?.liters_applied != null
         ? String(+(isImperial
-            ? Number(lastLog.liters_applied) * L_TO_GAL
-            : Number(lastLog.liters_applied)
+            ? Number(effectiveLastLog.liters_applied) * L_TO_GAL
+            : Number(effectiveLastLog.liters_applied)
           ).toFixed(2))
         : ""
     );
-    setNotesIn(lastLog?.notes ?? "");
-  }, [lastLog?.id, lastLog?.date_flown, lastLog?.battery_start, lastLog?.battery_end,
-      lastLog?.tank_refills, lastLog?.liters_applied, lastLog?.notes, isImperial]);
+    setNotesIn(effectiveLastLog?.notes ?? "");
+  }, [effectiveLastLog?.id, effectiveLastLog?.date_flown, effectiveLastLog?.battery_start, effectiveLastLog?.battery_end,
+      effectiveLastLog?.tank_refills, effectiveLastLog?.liters_applied, effectiveLastLog?.notes, isImperial]);
 
   const loadReports = useCallback(async () => {
     if (!field?.id) return;
