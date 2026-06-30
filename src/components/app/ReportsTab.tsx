@@ -552,9 +552,11 @@ export default function ReportsTab({
                 />
               </div>
               <div>
-                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Litres applied</label>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">
+                  Volume applied ({unitLabel(unit)})
+                </label>
                 <input
-                  type="number" min={0} step={0.1} placeholder="e.g. 12.5"
+                  type="number" min={0} step={0.1} placeholder={isImperial ? "e.g. 3.3" : "e.g. 12.5"}
                   value={litersIn}
                   onChange={e => setLitersIn(e.target.value)}
                   className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
