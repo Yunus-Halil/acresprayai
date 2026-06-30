@@ -1926,6 +1926,7 @@ export default function OrthomosaicViewer() {
             setActiveTab={setActiveTab}
             settings={settings}
             onSaveSettings={saveSettings}
+            onFlightLogged={setParentLastLog}
             center={center}
             userPolys={userPolys}
           />
@@ -3308,7 +3309,7 @@ function polylineLengthM(pts: LatLng2[]): number {
 
 function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
-  settings, onSaveSettings, center, userPolys, fieldId,
+  settings, onSaveSettings, onFlightLogged, center, userPolys, fieldId,
 }: {
   analysis: any;
   boundary: BoundaryRing[] | null;
@@ -3321,6 +3322,7 @@ function PlannerTab({
   setActiveTab: (k: any) => void;
   settings: FarmerSettings;
   onSaveSettings: (s: FarmerSettings) => Promise<void> | void;
+  onFlightLogged: (log: LastFlownMission) => void;
   center: [number, number];
   userPolys: UserPoly[];
 }) {
@@ -4334,7 +4336,9 @@ function PlannerTab({
             ? +(spec.tank_l * (Math.max(0, Math.min(100, fp.tank_load_pct)) / 100)).toFixed(2)
             : null
         }
-        onSaved={async () => {
+        onSaved={async (log) => {
+          onFlightLogged(log);
+          await onSaveSettings({ ...settings, flight_plan: fp, last_flown_mission: log });
           await refreshLastLog();
           // refresh drone roster so the planner picks up the new battery level
           const { data } = await supabase.from("drones")
