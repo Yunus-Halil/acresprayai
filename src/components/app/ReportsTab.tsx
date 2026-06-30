@@ -143,7 +143,7 @@ export default function ReportsTab({
   const zoneRows = zones.map(z => {
     const m2 = ringAreaM2(z.ring);
     const ac = m2 * M2_TO_AC;
-    const flown = !!lastLog?.zones_completed?.includes(z.id);
+    const flown = !!effectiveLastLog?.zones_completed?.includes(z.id);
     const costKey = issueToCostKey(z);
     const inputKey = costKey ? COST_MAP[costKey] : null;
     return { id: z.id, name: z.name, issue: z.issue, severity: z.severity,
@@ -173,7 +173,7 @@ export default function ReportsTab({
 
   // Pre-flight vs post-flight framing.
   // Post-flight = a mission has been logged for this field.
-  const isPostFlight = !!lastLog;
+  const isPostFlight = !!effectiveLastLog;
   const targetedAcres = isPostFlight
     ? zoneRows.filter(z => z.flown).reduce((s, z) => s + z.acres, 0)
     : treatedAcres;
@@ -443,13 +443,13 @@ export default function ReportsTab({
         zones_flown: zoneRows.filter(z => z.flown).length,
         drone: activeDrone ? { name: activeDrone.name, model: activeDrone.model } : null,
         mission_date: missionDate,
-        flight_log_id: lastLog?.id ?? null,
+        flight_log_id: effectiveLastLog?.id ?? null,
       };
       const ins = await supabase.from("field_reports").insert({
         user_id: uid,
         field_id: field.id,
         scan_id: task.id,
-        flight_log_id: lastLog?.id ?? null,
+        flight_log_id: effectiveLastLog?.id ?? null,
         pilot_name: pilotName.trim(),
         storage_path: storagePath,
         summary,
@@ -474,7 +474,7 @@ export default function ReportsTab({
   // Fires once per flight_log_id, only if the pilot name + mission date are
   // already filled and we haven't archived a report for this log yet.
   useEffect(() => {
-    const logId = lastLog?.id;
+    const logId = effectiveLastLog?.id;
     if (!logId || !field || generating) return;
     if (!pilotName.trim() || !missionDate) return;
     if (autoGenRef.current.has(logId)) return;
@@ -486,7 +486,7 @@ export default function ReportsTab({
     autoGenRef.current.add(logId);
     void generate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastLog?.id, field?.id, missionDate, pilotName, reports]);
+  }, [effectiveLastLog?.id, field?.id, missionDate, pilotName, reports]);
 
   const openArchived = async (r: ReportRow) => {
     const { data, error } = await supabase.storage.from("field-reports")
@@ -547,7 +547,7 @@ export default function ReportsTab({
           <div className="pt-3 border-t border-[#1f1f1f] space-y-3">
             <div className="flex items-center justify-between">
               <div className="text-[10px] uppercase tracking-wider text-neutral-500">Mission details</div>
-              {lastLog && (
+              {effectiveLastLog && (
                 <div className="text-[10px] text-neutral-500">Prefilled from logged flight · editable</div>
               )}
             </div>
@@ -612,7 +612,7 @@ export default function ReportsTab({
                 />
               </div>
             </div>
-            {!lastLog && (
+            {!effectiveLastLog && (
               <div className="text-[11px] text-neutral-500">
                 No flight logged for this scan yet — fill in the numbers manually, or log the mission from the Planner to auto-fill.
               </div>
