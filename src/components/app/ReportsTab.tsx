@@ -618,7 +618,7 @@ export default function ReportsTab({
             </div>
             {!effectiveLastLog && (
               <div className="text-[11px] text-neutral-500">
-                No flight logged for this scan yet — fill in the numbers manually, or log the mission from the Planner to auto-fill.
+                No flight logged for this field yet — fill in the numbers manually, or log the mission from the Planner to auto-fill.
               </div>
             )}
           </div>
