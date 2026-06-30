@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { Loader2, Download, FileText, Sparkles } from "lucide-react";
@@ -70,6 +70,9 @@ export default function ReportsTab({
   const [pilotName, setPilotName] = useState<string>(() => localStorage.getItem("acrespray.pilot_name") ?? "");
   const [generating, setGenerating] = useState(false);
   const [reports, setReports] = useState<ReportRow[]>([]);
+  // Tracks which flight_log_ids we've already auto-generated a report for in
+  // this session, so re-mounting the Reports tab doesn't trigger duplicates.
+  const autoGenRef = useRef<Set<string>>(new Set());
 
   // ---- Editable mission fields. Prefilled from the last logged flight when
   //      available, but always overridable so the pilot can double-check / fix
