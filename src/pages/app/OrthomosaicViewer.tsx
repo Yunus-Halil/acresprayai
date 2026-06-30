@@ -3395,13 +3395,20 @@ function PlannerTab({
   const [lastLog, setLastLog] = useState<FlightLogRow | null>(null);
   const refreshLastLog = useCallback(async () => {
     if (!fieldId && !taskId) return;
-    let q = supabase.from("flight_logs")
-      .select("id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes");
-    q = fieldId ? q.eq("field_id", fieldId) : q.eq("scan_id", taskId);
-    const { data } = await q
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const selectCols = "id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes";
+    const { data } = fieldId
+      ? await supabase.from("flight_logs")
+          .select(selectCols)
+          .eq("field_id", fieldId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : await supabase.from("flight_logs")
+          .select(selectCols)
+          .eq("scan_id", taskId as string)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
     setLastLog((data as FlightLogRow | null) ?? null);
   }, [fieldId, taskId]);
   useEffect(() => { void refreshLastLog(); }, [refreshLastLog]);
