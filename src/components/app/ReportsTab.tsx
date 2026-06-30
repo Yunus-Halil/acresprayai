@@ -51,6 +51,16 @@ type ReportRow = {
   storage_path: string; summary: any;
 };
 
+function newestMission(...logs: Array<FlightLogRow | null | undefined>): FlightLogRow | null {
+  const valid = logs.filter(Boolean) as FlightLogRow[];
+  if (!valid.length) return null;
+  return valid.sort((a, b) => {
+    const at = new Date(a.created_at ?? a.date_flown).getTime();
+    const bt = new Date(b.created_at ?? b.date_flown).getTime();
+    return bt - at;
+  })[0];
+}
+
 type Props = {
   field: FieldRow | null;
   task: TaskRow;
@@ -82,7 +92,7 @@ export default function ReportsTab({
 
   const unit = settings.unit_system ?? "imperial";
   const isImperial = unit === "imperial";
-  const effectiveLastLog = fetchedLastLog ?? lastLog ?? settings.last_flown_mission ?? null;
+  const effectiveLastLog = newestMission(fetchedLastLog, lastLog, settings.last_flown_mission);
   const effectiveFlightLogId = effectiveLastLog?.source === "field_snapshot" ? null : (effectiveLastLog?.id ?? null);
   const effectiveMissionRecordId = effectiveLastLog?.id ?? null;
 
