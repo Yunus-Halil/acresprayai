@@ -11,6 +11,16 @@ import {
   INPUT_LABELS, COST_MAP, issueToCostKey,
 } from "@/pages/app/OrthomosaicViewer";
 
+// ---- Unit conversion helpers (litres are the canonical storage unit). ----
+const L_TO_GAL = 0.264172;
+function fmtVol(litres: number, system: FarmerSettings["unit_system"], digits = 1) {
+  if (system === "imperial") return `${(litres * L_TO_GAL).toFixed(digits)} gal`;
+  return `${litres.toFixed(digits)} L`;
+}
+function unitLabel(system: FarmerSettings["unit_system"]) {
+  return system === "imperial" ? "gal" : "L";
+}
+
 // ---- Real geodesic area for a ring of {lat,lng} points using turf.
 // Turf expects GeoJSON [lng, lat] and a closed ring.
 function ringAreaM2(ring: { lat: number; lng: number }[]): number {
@@ -71,6 +81,9 @@ export default function ReportsTab({
   const [litersIn, setLitersIn] = useState<string>("");
   const [notesIn, setNotesIn] = useState<string>("");
 
+  const unit = settings.unit_system ?? "imperial";
+  const isImperial = unit === "imperial";
+
   // Whenever the logged-flight backing data changes, re-prefill the editable
   // fields. Pilot can still type over any of them.
   useEffect(() => {
@@ -78,10 +91,17 @@ export default function ReportsTab({
     setBattStartIn(lastLog?.battery_start != null ? String(lastLog.battery_start) : "");
     setBattEndIn(lastLog?.battery_end != null ? String(lastLog.battery_end) : "");
     setRefillsIn(lastLog?.tank_refills != null ? String(lastLog.tank_refills) : "0");
-    setLitersIn(lastLog?.liters_applied != null ? String(lastLog.liters_applied) : "");
+    setLitersIn(
+      lastLog?.liters_applied != null
+        ? String(+(isImperial
+            ? Number(lastLog.liters_applied) * L_TO_GAL
+            : Number(lastLog.liters_applied)
+          ).toFixed(2))
+        : ""
+    );
     setNotesIn(lastLog?.notes ?? "");
   }, [lastLog?.id, lastLog?.date_flown, lastLog?.battery_start, lastLog?.battery_end,
-      lastLog?.tank_refills, lastLog?.liters_applied, lastLog?.notes]);
+      lastLog?.tank_refills, lastLog?.liters_applied, lastLog?.notes, isImperial]);
 
   const loadReports = useCallback(async () => {
     if (!field?.id) return;
@@ -158,7 +178,12 @@ export default function ReportsTab({
   const battStart = numOrNull(battStartIn);
   const battEnd = numOrNull(battEndIn);
   const tankRefills = numOrNull(refillsIn) ?? 0;
-  const litersApplied = numOrNull(litersIn);
+  // The "Volume applied" input is shown in whichever units the user picked,
+  // but everything downstream (DB row, PDF math) is normalised back to L.
+  const volumeAppliedRaw = numOrNull(litersIn);
+  const litersApplied = volumeAppliedRaw == null
+    ? null
+    : (isImperial ? volumeAppliedRaw / L_TO_GAL : volumeAppliedRaw);
   const pilotNotes = notesIn;
 
   // ---- PDF generation ----
@@ -316,13 +341,13 @@ export default function ReportsTab({
       } else {
         for (const b of buckets.values()) {
           pdf.setTextColor(30); pdf.text(b.label, M, y);
-          pdf.text(`${b.litres.toFixed(1)} L`, W - M, y, { align: "right" });
+          pdf.text(fmtVol(b.litres, unit), W - M, y, { align: "right" });
           y += 14;
         }
         pdf.setDrawColor(235); pdf.line(M, y - 4, W - M, y - 4);
         pdf.setFont("helvetica", "bold");
         pdf.text("Total applied", M, y);
-        pdf.text(`${totalLitres.toFixed(1)} L`, W - M, y, { align: "right" });
+        pdf.text(fmtVol(totalLitres, unit), W - M, y, { align: "right" });
         y += 14;
         pdf.setFont("helvetica", "normal"); pdf.setTextColor(76, 175, 80);
         pdf.text("Chemical saved vs full-field spray", M, y);
@@ -342,7 +367,7 @@ export default function ReportsTab({
          "Tank refills", String(tankRefills)],
         ["Battery start", battStart != null ? `${battStart}%` : "—",
          "Landed", battEnd != null ? `${battEnd}%` : "—"],
-        ["Litres applied (logged)", litersApplied != null ? `${Number(litersApplied).toFixed(1)} L` : "—",
+        [`Volume applied (logged)`, litersApplied != null ? fmtVol(litersApplied, unit) : "—",
          "Zones flown", `${zoneRows.filter(z => z.flown).length} / ${zoneRows.length}`],
       ];
       for (const [k1, v1, k2, v2] of stats) {
@@ -527,9 +552,11 @@ export default function ReportsTab({
                 />
               </div>
               <div>
-                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Litres applied</label>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">
+                  Volume applied ({unitLabel(unit)})
+                </label>
                 <input
-                  type="number" min={0} step={0.1} placeholder="e.g. 12.5"
+                  type="number" min={0} step={0.1} placeholder={isImperial ? "e.g. 3.3" : "e.g. 12.5"}
                   value={litersIn}
                   onChange={e => setLitersIn(e.target.value)}
                   className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
