@@ -61,6 +61,28 @@ export default function ReportsTab({
   const [generating, setGenerating] = useState(false);
   const [reports, setReports] = useState<ReportRow[]>([]);
 
+  // ---- Editable mission fields. Prefilled from the last logged flight when
+  //      available, but always overridable so the pilot can double-check / fix
+  //      numbers before the report is generated.
+  const [missionDate, setMissionDate] = useState<string>("");
+  const [battStartIn, setBattStartIn] = useState<string>("");
+  const [battEndIn, setBattEndIn] = useState<string>("");
+  const [refillsIn, setRefillsIn] = useState<string>("");
+  const [litersIn, setLitersIn] = useState<string>("");
+  const [notesIn, setNotesIn] = useState<string>("");
+
+  // Whenever the logged-flight backing data changes, re-prefill the editable
+  // fields. Pilot can still type over any of them.
+  useEffect(() => {
+    setMissionDate(lastLog?.date_flown ?? "");
+    setBattStartIn(lastLog?.battery_start != null ? String(lastLog.battery_start) : "");
+    setBattEndIn(lastLog?.battery_end != null ? String(lastLog.battery_end) : "");
+    setRefillsIn(lastLog?.tank_refills != null ? String(lastLog.tank_refills) : "0");
+    setLitersIn(lastLog?.liters_applied != null ? String(lastLog.liters_applied) : "");
+    setNotesIn(lastLog?.notes ?? "");
+  }, [lastLog?.id, lastLog?.date_flown, lastLog?.battery_start, lastLog?.battery_end,
+      lastLog?.tank_refills, lastLog?.liters_applied, lastLog?.notes]);
+
   const loadReports = useCallback(async () => {
     if (!field?.id) return;
     const { data } = await supabase
@@ -128,18 +150,22 @@ export default function ReportsTab({
     ? "vs. full-field spraying"
     : `Targeting ${targetedAcres.toFixed(2)} ac of ${fieldAcres.toFixed(2)} ac total`;
 
-  // ---- Mission stats from last flight log ----
-  const battStart = lastLog?.battery_start ?? null;
-  const battEnd = lastLog?.battery_end ?? null;
-  const tankRefills = lastLog?.tank_refills ?? 0;
-  const litersApplied = lastLog?.liters_applied ?? null;
-  const missionDate = lastLog?.date_flown ?? null;
-  const pilotNotes = lastLog?.notes ?? "";
+  // ---- Mission stats from the editable inputs (prefilled from last log). ----
+  const numOrNull = (s: string) => {
+    const t = s.trim(); if (!t) return null;
+    const n = Number(t); return Number.isFinite(n) ? n : null;
+  };
+  const battStart = numOrNull(battStartIn);
+  const battEnd = numOrNull(battEndIn);
+  const tankRefills = numOrNull(refillsIn) ?? 0;
+  const litersApplied = numOrNull(litersIn);
+  const pilotNotes = notesIn;
 
   // ---- PDF generation ----
   const generate = async () => {
     if (!field) { toast.error("Define a field boundary first."); return; }
     if (!pilotName.trim()) { toast.error("Enter a pilot name first."); return; }
+    if (!missionDate) { toast.error("Enter the mission date first."); return; }
     setGenerating(true);
     let restored = false;
     const capRoot = document.getElementById("field-view-capture");
@@ -450,10 +476,81 @@ export default function ReportsTab({
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">AI zones</div>
               <div className="text-neutral-200">{zoneRows.length} ({zoneRows.filter(z => z.flown).length} flown)</div>
             </div>
-            <div>
-              <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Mission date</div>
-              <div className="text-neutral-200">{missionDate ?? "Not flown yet"}</div>
+          </div>
+
+          {/* ---- Mission details: required before generating. Prefilled from
+                  the last logged flight so the pilot can double-check / edit. ---- */}
+          <div className="pt-3 border-t border-[#1f1f1f] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] uppercase tracking-wider text-neutral-500">Mission details</div>
+              {lastLog && (
+                <div className="text-[10px] text-neutral-500">Prefilled from logged flight · editable</div>
+              )}
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">
+                  Mission date <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={missionDate}
+                  onChange={e => setMissionDate(e.target.value)}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Battery start (%)</label>
+                <input
+                  type="number" min={0} max={100} placeholder="e.g. 100"
+                  value={battStartIn}
+                  onChange={e => setBattStartIn(e.target.value)}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Battery landed (%)</label>
+                <input
+                  type="number" min={0} max={100} placeholder="e.g. 32"
+                  value={battEndIn}
+                  onChange={e => setBattEndIn(e.target.value)}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Tank refills</label>
+                <input
+                  type="number" min={0} step={1} placeholder="0"
+                  value={refillsIn}
+                  onChange={e => setRefillsIn(e.target.value)}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Litres applied</label>
+                <input
+                  type="number" min={0} step={0.1} placeholder="e.g. 12.5"
+                  value={litersIn}
+                  onChange={e => setLitersIn(e.target.value)}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Pilot notes</label>
+                <textarea
+                  value={notesIn}
+                  onChange={e => setNotesIn(e.target.value)}
+                  rows={2}
+                  placeholder="Wind picked up around 3pm, refilled tank between zones 3 and 4…"
+                  className="w-full px-3 py-2 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50] resize-none"
+                />
+              </div>
+            </div>
+            {!lastLog && (
+              <div className="text-[11px] text-neutral-500">
+                No flight logged for this scan yet — fill in the numbers manually, or log the mission from the Planner to auto-fill.
+              </div>
+            )}
           </div>
 
           <div>
@@ -468,7 +565,7 @@ export default function ReportsTab({
 
           <button
             onClick={generate}
-            disabled={generating || !field}
+            disabled={generating || !field || !missionDate || !pilotName.trim()}
             className="w-full h-10 rounded bg-[#4CAF50] hover:bg-[#43a047] text-white text-sm font-medium inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {generating
