@@ -1,3 +1,6 @@
+// Generated from the live schema with:
+//   npx supabase gen types typescript --project-id iftkcpcwxnpbllyfadit
+// Do not edit by hand.
 export type Json =
   | string
   | number
@@ -10,7 +13,32 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.15"
+  }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -459,6 +487,8 @@ export type Database = {
           field_id: string
           id: string
           image_count: number
+          mirror_attempts: number
+          mirror_started_at: string | null
           odm_uuid: string | null
           ortho_path: string | null
           output_path: string | null
@@ -466,10 +496,14 @@ export type Database = {
           status: string
           tiles_baked: boolean
           tiles_done: number
+          tiles_failed: number
           tiles_max_zoom: number | null
           tiles_min_zoom: number | null
+          tiles_plan_locked: boolean
           tiles_total: number
           updated_at: string
+          upload_expected: number | null
+          upload_received: number
           user_id: string
         }
         Insert: {
@@ -480,6 +514,8 @@ export type Database = {
           field_id: string
           id?: string
           image_count?: number
+          mirror_attempts?: number
+          mirror_started_at?: string | null
           odm_uuid?: string | null
           ortho_path?: string | null
           output_path?: string | null
@@ -487,10 +523,14 @@ export type Database = {
           status?: string
           tiles_baked?: boolean
           tiles_done?: number
+          tiles_failed?: number
           tiles_max_zoom?: number | null
           tiles_min_zoom?: number | null
+          tiles_plan_locked?: boolean
           tiles_total?: number
           updated_at?: string
+          upload_expected?: number | null
+          upload_received?: number
           user_id: string
         }
         Update: {
@@ -501,6 +541,8 @@ export type Database = {
           field_id?: string
           id?: string
           image_count?: number
+          mirror_attempts?: number
+          mirror_started_at?: string | null
           odm_uuid?: string | null
           ortho_path?: string | null
           output_path?: string | null
@@ -508,10 +550,14 @@ export type Database = {
           status?: string
           tiles_baked?: boolean
           tiles_done?: number
+          tiles_failed?: number
           tiles_max_zoom?: number | null
           tiles_min_zoom?: number | null
+          tiles_plan_locked?: boolean
           tiles_total?: number
           updated_at?: string
+          upload_expected?: number | null
+          upload_received?: number
           user_id?: string
         }
         Relationships: [
@@ -2137,6 +2183,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
