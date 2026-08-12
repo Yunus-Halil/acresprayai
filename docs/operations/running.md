@@ -70,7 +70,7 @@ sufficient to provision a fresh project. See
 
 ## Test coverage
 
-149 tests, all passing.
+167 tests, all passing.
 
 ### Pure logic
 
@@ -79,6 +79,7 @@ sufficient to provision a fresh project. See
 | `src/test/geo.test.ts` | 28 | Geodesic area against known metre-sized squares in both hemispheres, winding independence, point-in-polygon, segment intersection, principal axis, rotation invariants, interior-point finding on concave rings, in-boundary routing |
 | `src/test/mission.test.ts` | 24 | Sweep clipping to `boundary ∩ zone`, row counts, repeat interleaving, boustrophedon alternation, balanced sprayer on/off, altitude and speed per phase, distance-to-time derivation, QGC command encoding |
 | `src/test/farmerSettings.test.ts` | 27 | Issue-to-cost mapping, growth stage with an injectable clock, legacy settings migration, boundary normalisation, drone spec resolution and aliases, spec-sheet coherence |
+| `src/test/scanUpload.test.ts` | 18 | Resume sends only unaccepted images; a failing image does not abort the batch; transient retry; `name:size:lastModified` checkpoint keying; stale and mismatched checkpoints; `max_images` aborts immediately; 4xx not retried; commit failure keeps the checkpoint; pause and resume |
 
 ### Edge function contracts
 

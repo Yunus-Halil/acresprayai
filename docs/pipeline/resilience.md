@@ -117,6 +117,10 @@ On a metered rural connection this was the difference between using the product 
 
 - Each image retries independently, 4 attempts with exponential backoff
 - One image failing does **not** abort the run; failures are reported so they can be retried
+- A 4xx rejection of a single image (corrupt file, unsupported format) is **not** retried — it
+  would be rejected identically every time — but the rest of the batch continues. This is
+  separate from run-level resumability: an image the node refuses is permanent for that image
+  and still resumable for the batch
 - Progress is checkpointed to `localStorage` after every accepted image
 - An interrupted batch resumes: only images not already accepted are re-sent
 - The upload can be paused deliberately, and resumed later

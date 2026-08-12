@@ -72,10 +72,30 @@ export type UploadProgress = {
   retrying?: boolean;
 };
 
+/**
+ * A run-level failure. `resumable` says whether pressing Start again will make
+ * progress — it is about the batch, not about whether any single request is
+ * worth retrying.
+ */
 export class UploadError extends Error {
   constructor(message: string, readonly resumable: boolean) {
     super(message);
     this.name = "UploadError";
+  }
+}
+
+/**
+ * This particular image will be rejected the same way every time (a corrupt
+ * file, an unsupported format). Retrying it just spends the farmer's data for
+ * nothing, so the attempt loop stops — but the rest of the batch continues.
+ *
+ * Distinct from UploadError.resumable, which describes the run. An image the
+ * node refuses is permanent for that image and still resumable for the batch.
+ */
+class ImageRejected extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ImageRejected";
   }
 }
 
@@ -111,12 +131,16 @@ async function uploadOne(
           false,
         );
       }
-      // 4xx other than rate limiting is a real rejection of this image.
+      // 4xx other than rate limiting is a real rejection of this image, and it
+      // will be rejected identically on every retry.
       if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) {
-        throw new UploadError(`${file.name}: ${msg}`, true);
+        throw new ImageRejected(`${file.name}: ${msg}`);
       }
       lastErr = new Error(`${file.name}: ${msg}`);
     } catch (e) {
+      // Neither a run-level abort nor a permanent per-image rejection is worth
+      // another attempt.
+      if (e instanceof ImageRejected) throw e;
       if (e instanceof UploadError && !e.resumable) throw e;
       lastErr = e;
     }
@@ -238,8 +262,12 @@ export async function uploadScan(opts: {
   });
   const cJson = await cRes.json().catch(() => ({}));
   if (!cRes.ok) {
+    // The checkpoint is deliberately NOT cleared: every image is already on the
+    // node, so retrying should start processing, not re-upload the batch. Lead
+    // with that reassurance rather than the raw upstream message.
     throw new UploadError(
-      cJson?.error ?? "The processing node would not start this scan. Your images are uploaded — retry to start it.",
+      `Could not start processing: ${cJson?.error ?? `HTTP ${cRes.status}`}. ` +
+      `Your images are uploaded — retry to start the scan without re-sending them.`,
       true,
     );
   }
