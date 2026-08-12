@@ -33,15 +33,46 @@ the fallback is not a hole.
 | `all.zip` for browser-side extraction | 30 minutes |
 | Archived report PDF | 10 minutes |
 
-## Reproducibility gap
+## Provisioning
 
-> **Only the `scans` bucket is created by a migration.**
+All four buckets and their object policies are created by migrations. A fresh project can be
+provisioned from this repository with `supabase db push`.
 
-`orthos`, `tiles` and `field-reports` were created through the Supabase dashboard. A fresh
-project **cannot** be provisioned from this repository alone — those three buckets and their
-object policies must be recreated by hand, or captured in a new migration.
+| Bucket | Created in | Policies |
+|---|---|---|
+| `scans` | `20260520165803` | Owner-scoped SELECT/INSERT/DELETE, plus UPDATE from `20260629155456` |
+| `orthos` | `20260812140000` | Owner-scoped SELECT/INSERT/UPDATE/DELETE |
+| `tiles` | `20260812140000` | `service_role` only — see below |
+| `field-reports` | `20260812140000` | Owner-scoped SELECT/INSERT/UPDATE/DELETE |
 
-This is worth closing before anyone tries to stand up a second environment.
+Every owner-scoped policy uses the same predicate:
+
+```sql
+bucket_id = '<bucket>' AND (storage.foldername(name))[1] = auth.uid()::text
+```
+
+`20260812140000` is idempotent — bucket inserts are `ON CONFLICT DO NOTHING` and every policy is
+dropped before being recreated — so it is safe to run against the existing project.
+
+### Why `tiles` has no authenticated policy
+
+Deliberate. Authenticated users never touch that bucket directly: `bake-tiles` writes with the
+service-role key, and the `tile` function reads with it, rebuilding the object path from the
+*verified owner* of the scan rather than from caller input. A direct-read policy would widen the
+surface for no benefit.
+
+### Historical note
+
+Object policies for `orthos` and `field-reports` already existed in earlier migrations
+(`20260624045526`, `20260629155456`, `20260629183542`) — only the **bucket rows** were missing,
+which is why the dashboard-created project worked while a fresh one would not.
+
+`20260812140000` also closed a real gap: the `field-reports` UPDATE policy had `USING` but no
+`WITH CHECK`, so a user could update one of their own objects into another user's folder.
+
+There are also inert policies referencing a bucket named `orthomosaics` (migration
+`20260624020628`) from an earlier iteration. No code references that bucket and it is not
+created anywhere; the policies are harmless but misleading.
 
 ## Third-party exposure
 

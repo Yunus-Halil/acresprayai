@@ -64,7 +64,9 @@ supabase db push                    # migrations
 supabase functions deploy odm-poll  # per function
 ```
 
-Buckets `orthos`, `tiles` and `field-reports` must exist and are **not** created by migrations.
+All four storage buckets and their object policies are created by migrations, so `db push` is
+sufficient to provision a fresh project. See
+[architecture/storage.md](../architecture/storage.md).
 
 ## Test coverage
 

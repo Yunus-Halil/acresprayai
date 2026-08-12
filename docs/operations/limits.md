@@ -83,10 +83,11 @@ including inside the AI prompt. For most of the world these are the wrong defaul
 
 `select("*")` with no range. Fine at current scale; will need attention as scan counts grow.
 
-### Storage buckets are not fully in migrations
+### Inert policies for a dead bucket
 
-Only `scans` is created by SQL. A fresh environment cannot be provisioned from the repo alone —
-see [architecture/storage.md](../architecture/storage.md).
+Migration `20260624020628` declares object policies for a bucket named `orthomosaics`, from an
+earlier iteration. No code references it and the bucket is never created, so the policies are
+inert — but they are misleading when auditing storage access. Safe to drop.
 
 ## Deployment cleanup outstanding
 
