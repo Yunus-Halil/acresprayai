@@ -17,7 +17,7 @@ Browser (React SPA)
                                │
                                ├─► OpenDroneMap node   (photogrammetry)
                                ├─► titiler.xyz         (COG → tiles / stats / preview)
-                               ├─► ai.gateway.lovable.dev  (Gemini 2.5 Flash vision)
+                               ├─► vision model    (OpenAI-compatible endpoint)
                                └─► OpenWeather → Open-Meteo fallback
 ```
 
@@ -36,13 +36,16 @@ Browser (React SPA)
 | `recharts` | Fleet endurance chart |
 | `zod` | Form validation |
 
+**There are no Lovable dependencies.** Auth is native Supabase OAuth, images are ordinary Vite
+asset imports under `src/assets/`, and the vision provider is set by environment variable.
+
 ## External services
 
 | Service | Purpose | Failure impact |
 |---|---|---|
 | **OpenDroneMap node** | Photogrammetry. Configured by `ODM_BASE_URL` + `ODM_AUTH_TOKEN`. Either self-hosted NodeODM or WebODM Lightning. | No new scans can be processed. Existing scans unaffected. |
 | **titiler.xyz** | Renders the GeoTIFF into tiles, previews and zonal statistics. Public, free, not operated by us. | **Every map in the product breaks simultaneously.** See [operations/limits.md](../operations/limits.md). |
-| **ai.gateway.lovable.dev** | Gemini 2.5 Flash vision. `LOVABLE_API_KEY`. | AI analysis unavailable; everything else works. |
+| **Vision model provider** | Gemini 2.5 Flash by default, via any OpenAI-compatible `/chat/completions` endpoint. Configured with `AI_API_KEY`, `AI_GATEWAY_URL`, `AI_MODEL`. | AI analysis unavailable; everything else works. |
 | **OpenWeather / Open-Meteo** | Forecast. `OPENWEATHER_API_KEY` optional — Open-Meteo needs no key and is the automatic fallback. | Weather tab empty; planner loses wind/temperature derating. |
 
 ## Repository layout
@@ -85,7 +88,7 @@ src/
 │   ├── site/                     landing page sections
 │   └── ui/                       shadcn/Radix primitives (library code, unmodified)
 ├── integrations/supabase/        generated client + database types
-└── test/                         80 unit tests
+└── test/                         unit, edge-contract and smoke tests
 
 supabase/
 ├── functions/
@@ -102,7 +105,7 @@ supabase/
 │   ├── ndvi-tile/                render vegetation index tiles
 │   ├── analyze-ortho/            the vision model call
 │   └── weather/                  normalised forecast proxy
-└── migrations/                   24 SQL migrations
+└── migrations/                   25 SQL migrations
 ```
 
 ## Workspace composition

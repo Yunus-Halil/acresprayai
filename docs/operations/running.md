@@ -38,7 +38,9 @@ Never in the repo. Set with `supabase secrets set`.
 |---|---|
 | `ODM_BASE_URL` | Processing node base URL |
 | `ODM_AUTH_TOKEN` | Processing node token |
-| `LOVABLE_API_KEY` | AI gateway key for `analyze-ortho` |
+| `AI_API_KEY` | Vision provider key for `analyze-ortho` |
+| `AI_GATEWAY_URL` | Optional. Any OpenAI-compatible `/chat/completions` endpoint. Defaults to Google's OpenAI-compatible endpoint |
+| `AI_MODEL` | Optional. Defaults to `gemini-2.5-flash`; use `google/gemini-2.5-flash` on OpenRouter |
 | `OPENWEATHER_API_KEY` | Optional — falls back to Open-Meteo |
 | `ORTHO_EXTRACT_FROM_ZIP` | `"true"` only on a worker with more than 256 MB |
 
@@ -56,6 +58,13 @@ verify_jwt = false
 
 Both verify the token themselves; see [architecture/auth.md](../architecture/auth.md). Every other
 function relies on the platform gate **and** re-checks ownership.
+
+### Google sign-in
+
+Enable the Google provider in the Supabase project's auth settings with a client ID and secret
+from Google Cloud Console, and list `https://<project-ref>.supabase.co/auth/v1/callback` as an
+authorised redirect URI. Sign-in uses `supabase.auth.signInWithOAuth` directly — there is no
+third-party auth shim.
 
 ## Deploying
 

@@ -1,9 +1,9 @@
 import { motion } from "framer-motion";
 import { Bot, Plane, CloudSun, Map } from "lucide-react";
-import analysis from "@/assets/landing/image-20.png.asset.json";
-import planner from "@/assets/landing/image-18.png.asset.json";
-import flight from "@/assets/landing/image-17.png.asset.json";
-import weather from "@/assets/landing/image-19.png.asset.json";
+import analysis from "@/assets/landing/image-20.png";
+import planner from "@/assets/landing/image-18.png";
+import flight from "@/assets/landing/image-17.png";
+import weather from "@/assets/landing/image-19.png";
 
 const features = [
   {
@@ -13,7 +13,7 @@ const features = [
     body: "Upload an orthomosaic, get an overall crop health score, a ranked list of detected issues, and per-zone treatment recommendations with product, rate, and estimated cost.",
     cta: "Run AI on a field",
     href: "/auth",
-    img: analysis.url,
+    img: analysis,
     side: "right" as const,
   },
   {
@@ -23,7 +23,7 @@ const features = [
     body: "Generate recommended swath, altitude, and speed for your drone — auto-tuned to fit physical turn radius and climb rate. Export .waypoints for DJI Pilot 2 or Mission Planner.",
     cta: "Plan a flight",
     href: "/auth",
-    img: planner.url,
+    img: planner,
     side: "left" as const,
   },
   {
@@ -33,7 +33,7 @@ const features = [
     body: "Takeoff, transit (yellow), spray-on (cyan), and return-to-home (red) rendered on the live orthomosaic. Play a virtual drone simulation at up to 32× speed with live battery and tank telemetry.",
     cta: "Track a flight",
     href: "/auth",
-    img: flight.url,
+    img: flight,
     side: "right" as const,
   },
   {
@@ -43,7 +43,7 @@ const features = [
     body: "Live conditions and a 7-day forecast at your field centroid, plus a Best Spray Windows finder that hunts for the next 3-day slots where wind, humidity, temperature, and rain all line up.",
     cta: "Check the weather",
     href: "/auth",
-    img: weather.url,
+    img: weather,
     side: "left" as const,
   },
 ];

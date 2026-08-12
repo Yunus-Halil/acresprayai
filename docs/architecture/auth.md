@@ -4,7 +4,8 @@
 
 - **Email + password** via `supabase.auth.signUp` / `signInWithPassword`. Signup collects full
   name and farm name into user metadata and requires email confirmation.
-- **Google OAuth** via `@lovable.dev/cloud-auth-js`, redirecting to `/app`.
+- **Google OAuth** via `supabase.auth.signInWithOAuth`, redirecting to `/app`. Requires the
+  Google provider enabled in the project's auth settings.
 - A Postgres trigger on `auth.users` creates a `profiles` row automatically on signup.
 
 Sessions persist in `localStorage` and auto-refresh. `AppLayout` guards every `/app/*` route and

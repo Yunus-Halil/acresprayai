@@ -61,11 +61,12 @@ that treats only those patches instead of the whole field.
 | Backend | Supabase — Postgres + PostGIS, Auth, Storage, Deno Edge Functions |
 | Photogrammetry | OpenDroneMap (NodeODM / WebODM Lightning) |
 | Tile rendering | TiTiler (public `titiler.xyz`) |
-| Vision model | `google/gemini-2.5-flash` via the Lovable AI gateway |
+| Vision model | Gemini 2.5 Flash by default, via any OpenAI-compatible endpoint |
 | Weather | OpenWeather One Call 3.0, falling back to Open-Meteo |
 | Edge functions | 9 |
 | Tables | 14 (8 active, 6 dormant) |
-| Tests | 80, across geometry / missions / settings |
+| Platform deps | None — no Lovable, no vendor lock-in |
+| Tests | 180 — pure logic, edge-function contracts, upload resume, workspace smoke |
 
 ## Conventions used in these docs
 

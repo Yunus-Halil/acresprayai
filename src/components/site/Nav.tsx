@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import logo from "@/assets/acrespray-logo.png.asset.json";
+import logo from "@/assets/acrespray-logo.png";
 
 const links = [
   { label: "How it works", href: "#how" },
@@ -18,7 +18,7 @@ export const Nav = () => {
     >
       <div className="container flex h-16 items-center justify-between">
         <a href="#" className="flex items-center gap-2 group">
-          <img src={logo.url} alt="AcreSpray AI" className="h-8 w-8" />
+          <img src={logo} alt="AcreSpray AI" className="h-8 w-8" />
           <span className="font-display font-semibold tracking-tight text-lg">AcreSpray AI</span>
         </a>
         <nav className="hidden md:flex items-center gap-8">

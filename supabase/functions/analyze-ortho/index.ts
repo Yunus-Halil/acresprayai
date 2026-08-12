@@ -207,8 +207,17 @@ RECOMMENDATION RULES:
     const dataUrl = `data:image/png;base64,${btoa(bin)}`;
 
     // 2) Ask Gemini vision for a structured agronomy report.
-    const key = Deno.env.get("LOVABLE_API_KEY");
-    if (!key) return json({ error: "Missing LOVABLE_API_KEY" }, 500);
+    // Provider-agnostic, as long as the endpoint speaks the OpenAI
+    // /chat/completions shape. Defaults to Google's OpenAI-compatible endpoint;
+    // OpenRouter and the old Lovable gateway also work by setting AI_GATEWAY_URL
+    // and AI_MODEL. Model naming differs between them — Google wants
+    // "gemini-2.5-flash", OpenRouter and Lovable want "google/gemini-2.5-flash" —
+    // which is why the model is configurable rather than hardcoded.
+    const key = Deno.env.get("AI_API_KEY");
+    if (!key) return json({ error: "AI is not configured (missing AI_API_KEY)" }, 500);
+    const aiUrl = Deno.env.get("AI_GATEWAY_URL")
+      ?? "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+    const aiModel = Deno.env.get("AI_MODEL") ?? "gemini-2.5-flash";
 
     const system = `You are a precision-agriculture analyst examining a drone orthomosaic of a farm field.
 
@@ -328,14 +337,14 @@ Every output polygon vertex MUST lie strictly inside one of these parts. Reject 
 Boundary (WKT): ${boundaryWKT}
 ${rings.map((r, ri) => `Part ${ri + 1} vertices (lat, lng):\n${r.map((p, i) => `  ${i + 1}. ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`).join("\n")}`).join("\n")}` : `NO field boundary was provided — analyze the entire image conservatively.`}`;
 
-    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const aiRes = await fetch(aiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${key}`,
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: aiModel,
         messages: [
           { role: "system", content: system },
           { role: "user", content: [
@@ -349,8 +358,8 @@ ${rings.map((r, ri) => `Part ${ri + 1} vertices (lat, lng):\n${r.map((p, i) => `
     if (!aiRes.ok) {
       const t = await aiRes.text();
       if (aiRes.status === 429) return json({ error: "AI rate limit, retry shortly" }, 429);
-      if (aiRes.status === 402) return json({ error: "AI credits exhausted" }, 402);
-      return json({ error: `AI gateway ${aiRes.status}: ${t.slice(0, 300)}` }, 500);
+      if (aiRes.status === 402) return json({ error: "AI provider reports no remaining credit" }, 402);
+      return json({ error: `AI provider returned ${aiRes.status}: ${t.slice(0, 300)}` }, 500);
     }
     const aiData = await aiRes.json();
     const content = aiData?.choices?.[0]?.message?.content ?? "{}";

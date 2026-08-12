@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import orthoAnomaly from "@/assets/landing/image-16.png.asset.json";
+import orthoAnomaly from "@/assets/landing/image-16.png";
 
 const steps = [
   {
@@ -51,7 +51,7 @@ export const HowItWorks = () => {
               className="relative aspect-square rounded-sm overflow-hidden border border-primary-foreground/20"
             >
               <img
-                src={orthoAnomaly.url}
+                src={orthoAnomaly}
                 alt="AcreSpray orthomosaic with AI-detected anomaly zones overlaid on a real field"
                 width={1280}
                 height={1280}

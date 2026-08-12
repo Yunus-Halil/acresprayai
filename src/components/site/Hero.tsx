@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import heroImg from "@/assets/landing/hero-flight-plan.png.asset.json";
+import heroImg from "@/assets/landing/hero-flight-plan.png";
 
 export const Hero = () => {
   return (
@@ -69,7 +69,7 @@ export const Hero = () => {
           className="mt-20 relative rounded-lg overflow-hidden shadow-elevated border border-border"
         >
           <img
-            src={heroImg.url}
+            src={heroImg}
             alt="AcreSpray flight planner showing a generated spray mission over a real orthomosaic"
             width={1920}
             height={1080}

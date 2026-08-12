@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,9 +46,18 @@ export default function Auth() {
     }
   };
 
+  // Native Supabase OAuth. This redirects the browser, so `error` only fires if
+  // the redirect could not be started at all.
+  //
+  // Requires the Google provider to be enabled in the Supabase project's auth
+  // settings, with a client ID/secret from Google Cloud Console and
+  // <project>.supabase.co/auth/v1/callback listed as an authorised redirect URI.
   const google = async () => {
-    const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: `${window.location.origin}/app` });
-    if (res.error) toast.error("Google sign-in failed");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/app` },
+    });
+    if (error) toast.error(error.message ?? "Google sign-in failed");
   };
 
   return (

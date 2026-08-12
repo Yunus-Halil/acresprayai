@@ -1,7 +1,11 @@
 # AI analysis — the exact contract
 
-One function, `analyze-ortho`. One model: `google/gemini-2.5-flash` through the Lovable AI
-gateway.
+One function, `analyze-ortho`, calling any endpoint that speaks the OpenAI
+`/chat/completions` shape. Defaults to Gemini 2.5 Flash via Google's OpenAI-compatible endpoint;
+`AI_GATEWAY_URL`, `AI_MODEL` and `AI_API_KEY` point it elsewhere (OpenRouter, for instance).
+
+Model naming differs between providers — Google wants `gemini-2.5-flash`, OpenRouter wants
+`google/gemini-2.5-flash` — which is why the model is configurable rather than hardcoded.
 
 A field boundary is **required** — the UI refuses to run without one, so the model never analyses
 a neighbour's land.
