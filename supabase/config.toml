@@ -1,4 +1,4 @@
-project_id = "gohofgqtzrvcixnlzhpt"
+project_id = "iftkcpcwxnpbllyfadit"
 
 # Leaflet requests tiles as plain <img> GETs, which cannot carry an
 # Authorization header. Both tile endpoints therefore opt out of the platform's

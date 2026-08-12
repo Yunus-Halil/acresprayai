@@ -15,8 +15,16 @@ Deno.serve(async (req) => {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
       return json({ error: "lat/lon required" }, 400);
     }
+    // OpenWeather is the preferred source but genuinely optional: Open-Meteo
+    // needs no key and no account. With no key configured, go straight there
+    // rather than failing — a deployment without an OpenWeather subscription
+    // should still get a forecast, which is what the docs have always promised.
     const key = Deno.env.get("OPENWEATHER_API_KEY");
-    if (!key) return json({ error: "OPENWEATHER_API_KEY not configured" }, 500);
+    if (!key) {
+      const fb = await openMeteoFallback(lat, lon);
+      if (fb) return json(fb);
+      return json({ error: "No weather provider available" }, 502);
+    }
 
     const api = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}` +
       `&units=metric&exclude=minutely,alerts&appid=${key}`;
