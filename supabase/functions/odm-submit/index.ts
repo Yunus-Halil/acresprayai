@@ -69,6 +69,8 @@ Deno.serve(async (req) => {
         odm_uuid: initJson.uuid,
         status: "uploading",
         image_count: imageCount,
+        upload_expected: imageCount,
+        upload_received: 0,
       }).select().single();
       if (error) return json({ error: error.message }, 500);
 
@@ -82,7 +84,7 @@ Deno.serve(async (req) => {
 
       // Verify the task belongs to this user
       const { data: task } = await admin.from("odm_tasks")
-        .select("id, user_id").eq("odm_uuid", odmUuid).maybeSingle();
+        .select("id, user_id, upload_received").eq("odm_uuid", odmUuid).maybeSingle();
       if (!task || task.user_id !== user.id) return json({ error: "Forbidden" }, 403);
 
       // Forward the original multipart body verbatim
@@ -101,6 +103,11 @@ Deno.serve(async (req) => {
         const isMaxImages = /max images/i.test(msg);
         return json({ error: msg, detail: upJson, code: isMaxImages ? "max_images" : undefined }, isMaxImages ? 413 : 502);
       }
+      // Server-side count of images the node has accepted. Lets a stalled
+      // 'uploading' scan be diagnosed without trusting the browser's checkpoint.
+      await admin.from("odm_tasks")
+        .update({ upload_received: (task.upload_received ?? 0) + 1 })
+        .eq("id", task.id);
       return json({ ok: true });
     }
 

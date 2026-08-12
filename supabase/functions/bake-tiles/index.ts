@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { fetchResilient, jsonSafe } from "../_shared/net.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +15,7 @@ const MIN_Z = 10;
 const MAX_Z_CAP = 20;
 const BATCH_PER_INVOCATION = 220; // tiles per HTTP call (keeps us well under 150s)
 const CONCURRENCY = 12;
+const TITILER = "https://titiler.xyz";
 
 function lon2tileX(lon: number, z: number) {
   return Math.floor(((lon + 180) / 360) * 2 ** z);
@@ -57,6 +59,8 @@ Deno.serve(async (req) => {
 
     const url = new URL(req.url);
     const taskId = url.searchParams.get("task_id");
+    // ?rebake=1 clears the completion latch so a map with holes can be repaired.
+    const rebake = url.searchParams.get("rebake") === "1";
     if (!taskId) return json({ error: "Missing task_id" }, 400);
 
     const admin = createClient(
@@ -65,40 +69,70 @@ Deno.serve(async (req) => {
     );
 
     const { data: task } = await admin.from("odm_tasks")
-      .select("id, user_id, odm_uuid, ortho_path, tiles_baked, tiles_done, tiles_total, tiles_min_zoom, tiles_max_zoom")
+      .select("id, user_id, odm_uuid, ortho_path, tiles_baked, tiles_done, tiles_total, tiles_failed, tiles_min_zoom, tiles_max_zoom, tiles_plan_locked")
       .eq("id", taskId).maybeSingle();
     if (!task || task.user_id !== ud.user.id) return json({ error: "Not found" }, 404);
     if (!task.odm_uuid || !task.ortho_path) return json({ error: "Orthomosaic not ready" }, 409);
 
+    if (rebake) {
+      await admin.from("odm_tasks").update({
+        tiles_baked: false, tiles_done: 0, tiles_failed: 0, tiles_plan_locked: false,
+      }).eq("id", task.id);
+      task.tiles_baked = false;
+      task.tiles_done = 0;
+      task.tiles_failed = 0;
+      task.tiles_plan_locked = false;
+    }
+
     if (task.tiles_baked) {
-      return json({ done: true, completed: task.tiles_done, total: task.tiles_total });
+      return json({ done: true, completed: task.tiles_done, total: task.tiles_total, failed: 0 });
     }
 
     // Mint a fresh signed URL for the COG so TiTiler can read it.
     const { data: signed, error: sErr } = await admin.storage
       .from("orthos").createSignedUrl(task.ortho_path, SIGNED_TTL);
-    if (sErr || !signed?.signedUrl) return json({ error: sErr?.message ?? "sign failed" }, 500);
+    if (sErr || !signed?.signedUrl) return json({ error: sErr?.message ?? "Could not sign the orthomosaic" }, 500);
     const cogUrl = signed.signedUrl;
 
-    // Get bounds + native max zoom from TiTiler once.
-    const tjRes = await fetch(`https://titiler.xyz/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(cogUrl)}&tilesize=256`);
-    if (!tjRes.ok) return json({ error: `tilejson failed (${tjRes.status})` }, 502);
-    const tj = await tjRes.json();
-    const b = tj?.bounds;
-    if (!Array.isArray(b) || b.length !== 4) return json({ error: "tilejson missing bounds" }, 502);
-    const maxNative = Math.min(MAX_Z_CAP, typeof tj?.maxzoom === "number" ? Math.ceil(tj.maxzoom) : MAX_Z_CAP);
-    const minZ = MIN_Z;
-    const maxZ = Math.max(minZ, maxNative);
+    // ---- Determine the tile plan ------------------------------------------
+    // The zoom range is frozen on the first pass. Re-deriving it from TiTiler on
+    // every invocation made the tile list non-deterministic: if maxzoom came
+    // back different, `total` changed, the counters reset, and the resume index
+    // pointed at the wrong tile - silently skipping some and leaving holes.
+    let minZ: number;
+    let maxZ: number;
+    let bounds: [number, number, number, number] | null = null;
 
-    const list = buildTileList([b[0], b[1], b[2], b[3]], minZ, maxZ);
+    const tjRes = await fetchResilient(
+      `${TITILER}/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(cogUrl)}&tilesize=256`,
+      { timeoutMs: 30_000, attempts: 3, label: "bake:tilejson" },
+    );
+    if (!tjRes.ok) return json({ error: `Tile service unavailable (${tjRes.status}). Try again shortly.` }, 503);
+    const tj = await jsonSafe<{ bounds?: number[]; maxzoom?: number }>(tjRes);
+    const b = tj?.bounds;
+    if (!Array.isArray(b) || b.length !== 4) {
+      return json({ error: "The orthomosaic has no usable geographic bounds. Re-process this scan." }, 422);
+    }
+    bounds = [b[0], b[1], b[2], b[3]];
+
+    if (task.tiles_plan_locked && task.tiles_min_zoom != null && task.tiles_max_zoom != null) {
+      minZ = task.tiles_min_zoom;
+      maxZ = task.tiles_max_zoom;
+    } else {
+      const maxNative = Math.min(MAX_Z_CAP, typeof tj?.maxzoom === "number" ? Math.ceil(tj.maxzoom) : MAX_Z_CAP);
+      minZ = MIN_Z;
+      maxZ = Math.max(minZ, maxNative);
+    }
+
+    const list = buildTileList(bounds, minZ, maxZ);
     const total = list.length;
 
-    // Initialize counters on first call.
-    if (!task.tiles_total || task.tiles_total !== total) {
+    if (!task.tiles_plan_locked || task.tiles_total !== total) {
       await admin.from("odm_tasks").update({
         tiles_total: total,
         tiles_min_zoom: minZ,
         tiles_max_zoom: maxZ,
+        tiles_plan_locked: true,
         tiles_done: Math.min(task.tiles_done ?? 0, total),
       }).eq("id", task.id);
     }
@@ -108,47 +142,93 @@ Deno.serve(async (req) => {
     const batch = list.slice(startIdx, endIdx);
 
     let cursor = 0;
-    let completedInBatch = 0;
+    let failed = 0;
+    // Workers complete out of order, so progress must be tracked by INDEX, not by
+    // a success count: advancing the cursor by "number succeeded" would step over
+    // tiles that failed and re-do ones that didn't. The cursor may only advance
+    // to the first unresolved tile.
+    let firstFailedOffset = batch.length;
+    const noteFailure = (offset: number) => {
+      failed++;
+      if (offset < firstFailedOffset) firstFailedOffset = offset;
+    };
 
     const worker = async () => {
       while (true) {
         const i = cursor++;
         if (i >= batch.length) return;
         const { z, x, y } = batch[i];
-        const tileUrl = `https://titiler.xyz/cog/tiles/WebMercatorQuad/${z}/${x}/${y}.png?url=${encodeURIComponent(cogUrl)}`;
+        const tileUrl = `${TITILER}/cog/tiles/WebMercatorQuad/${z}/${x}/${y}.png?url=${encodeURIComponent(cogUrl)}`;
         try {
-          const r = await fetch(tileUrl);
+          const r = await fetchResilient(tileUrl, { timeoutMs: 20_000, attempts: 3, label: "bake:tile" });
+          if (r.status === 404 || r.status === 204) {
+            // Genuinely outside the imagery footprint. Nothing to store, and the
+            // tile endpoint serves a transparent pixel for these.
+            await r.body?.cancel().catch(() => {});
+            continue;
+          }
           if (!r.ok) {
-            // Skip out-of-coverage tiles - count as done but don't store.
-            completedInBatch++;
+            await r.body?.cancel().catch(() => {});
+            noteFailure(i);
             continue;
           }
           const bytes = new Uint8Array(await r.arrayBuffer());
-          if (bytes.byteLength === 0) { completedInBatch++; continue; }
-          const path = `${task.odm_uuid}/${z}/${x}/${y}.png`;
+          if (bytes.byteLength === 0) continue;
+          // User-scoped key: the `tile` function rebuilds this path from the
+          // verified owner, so tiles can never be read cross-tenant.
+          const path = `${task.user_id}/${task.odm_uuid}/${z}/${x}/${y}.png`;
           const { error: upErr } = await admin.storage.from("tiles").upload(path, bytes, {
             contentType: "image/png",
             upsert: true,
           });
-          if (upErr) console.warn(`[bake-tiles] upload failed ${path}:`, upErr.message);
-          completedInBatch++;
+          if (upErr) {
+            console.warn(`[bake-tiles] upload failed ${path}: ${upErr.message}`);
+            noteFailure(i);
+          }
         } catch (e) {
-          console.warn(`[bake-tiles] tile ${z}/${x}/${y} error:`, (e as Error)?.message);
-          completedInBatch++;
+          console.warn(`[bake-tiles] tile ${z}/${x}/${y} error: ${(e as Error)?.message}`);
+          noteFailure(i);
         }
       }
     };
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-    const newDone = startIdx + completedInBatch;
-    const done = newDone >= total;
+    // Re-doing a handful of already-stored tiles is free (upsert); skipping one
+    // is a permanent hole. So on any failure the cursor rewinds to it.
+    let advanced = firstFailedOffset;
+
+    // Poison-tile guard: if a tile fails every retry on several consecutive
+    // passes the cursor would never move and the client would loop forever.
+    // After a few stalls, step over it. One transparent tile beats a hung bake.
+    const priorStalls = advanced === 0 ? (task.tiles_failed ?? 0) : 0;
+    if (advanced === 0) {
+      if (priorStalls >= 3) {
+        const t = batch[0];
+        console.error(`[bake-tiles] skipping unresolvable tile ${t.z}/${t.x}/${t.y} after ${priorStalls} stalled passes`);
+        advanced = 1;
+      }
+    }
+
+    const newDone = startIdx + advanced;
+    const reachedEnd = newDone >= total;
+    // A pass with unresolved tiles never marks the bake complete, so the client
+    // keeps driving and the holes get filled rather than latched over.
+    const done = reachedEnd && failed === 0;
+
     await admin.from("odm_tasks").update({
       tiles_done: newDone,
+      // Doubles as the stall counter when no progress was made.
+      tiles_failed: advanced === 0 ? priorStalls + 1 : failed,
       tiles_baked: done,
     }).eq("id", task.id);
 
-    return json({ done, completed: newDone, total, batch: batch.length, minZ, maxZ });
+    return json({
+      done, completed: newDone, total, failed,
+      batch: batch.length, minZ, maxZ,
+      // Tells the client to keep going even though the cursor barely moved.
+      retrying: failed > 0 && !done,
+    });
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e) }, 500);
   }

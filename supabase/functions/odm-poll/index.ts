@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { fetchResilient, fetchStream, isTransient, jsonSafe } from "../_shared/net.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,7 +15,6 @@ function odmUrl(path: string) {
   u.searchParams.set("token", ODM_AUTH_TOKEN);
   return u.toString();
 }
-
 function safeOdmUrl(path: string) {
   const u = new URL(`${ODM_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`);
   if (ODM_AUTH_TOKEN) u.searchParams.set("token", "[redacted]");
@@ -31,60 +31,24 @@ const ORTHO_PATHS = [
   "download/odm_orthophoto.tif",
 ];
 
-type OdmTaskSummary = {
-  uuid: string;
-  statusCode: number | null;
-  status: string | null;
-  progress: number | null;
-  name: string | null;
-  createdAt: string | null;
-};
+// A mirror lease older than this is assumed dead (the edge instance was recycled
+// mid-transfer) and may be reclaimed by the next poll. Generous, because a large
+// all.zip legitimately takes a while.
+const LEASE_STALE_MS = 15 * 60_000;
+// Consecutive transient failures tolerated before the scan is really marked failed.
+const MAX_MIRROR_ATTEMPTS = 4;
 
-function readStatusCode(task: any): number | null {
-  const raw = task?.status?.code ?? task?.statusCode ?? task?.status_code ?? task?.code;
-  if (typeof raw === "number") return raw;
-  if (typeof raw === "string" && /^\d+$/.test(raw)) return Number(raw);
-  return null;
-}
-
-function normalizeOdmTasks(payload: any): OdmTaskSummary[] {
-  let raw: any = payload;
-  if (Array.isArray(payload?.tasks)) raw = payload.tasks;
-  else if (Array.isArray(payload?.results)) raw = payload.results;
-  else if (payload?.tasks && typeof payload.tasks === "object") raw = Object.values(payload.tasks);
-  if (!Array.isArray(raw)) return [];
-  return raw.map((task: any) => ({
-    uuid: String(task?.uuid ?? task?.id ?? task?.taskId ?? task?.task_id ?? ""),
-    statusCode: readStatusCode(task),
-    status: typeof task?.status === "string" ? task.status : task?.status?.name ?? task?.status?.label ?? null,
-    progress: typeof task?.progress === "number" ? Math.round(task.progress) : null,
-    name: task?.name ?? task?.options?.name ?? null,
-    createdAt: task?.created_at ?? task?.createdAt ?? task?.dateCreated ?? task?.created ?? null,
-  })).filter((task) => task.uuid);
-}
-
-async function listOdmTasks(): Promise<OdmTaskSummary[]> {
-  for (const path of ["/tasks", "/task/list"]) {
-    const res = await fetch(odmUrl(path));
-    const text = await res.text();
-    let payload: any = null;
-    try { payload = text ? JSON.parse(text) : null; } catch { /* noop */ }
-    console.log(`[odm-poll] GET ${safeOdmUrl(path)} -> ${res.status}`, text.slice(0, 1000));
-    if (!res.ok) continue;
-    const tasks = normalizeOdmTasks(payload);
-    console.log("[odm-poll] ODM tasks:", JSON.stringify(tasks));
-    return tasks;
-  }
-  return [];
-}
-
-async function fetchOrthophoto(uuid: string) {
+async function fetchOrthophoto(uuid: string): Promise<Response | null> {
   for (const p of ORTHO_PATHS) {
     const path = `/task/${uuid}/${p}`;
-    const r = await fetch(odmUrl(path));
-    console.warn(`[odm-poll] GET ${safeOdmUrl(path)} -> ${r.status}`);
-    if (r.ok && r.body) return r;
-    try { await r.arrayBuffer(); } catch { /* noop */ }
+    try {
+      const r = await fetchStream(odmUrl(path), 120_000, "odm-poll:ortho");
+      console.warn(`[odm-poll] GET ${safeOdmUrl(path)} -> ${r.status}`);
+      if (r.ok && r.body) return r;
+      await r.body?.cancel().catch(() => {});
+    } catch (e) {
+      console.warn(`[odm-poll] ${safeOdmUrl(path)} failed: ${(e as Error)?.message}`);
+    }
   }
   return null;
 }
@@ -110,7 +74,8 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { task_id } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const { task_id, retry } = body as { task_id?: string; retry?: boolean };
     if (!task_id) return json({ error: "Missing task_id" }, 400);
 
     const { data: task, error: tErr } = await admin.from("odm_tasks")
@@ -118,23 +83,72 @@ Deno.serve(async (req) => {
     if (tErr || !task) return json({ error: "Task not found" }, 404);
     if (task.user_id !== user.id) return json({ error: "Forbidden" }, 403);
 
-    // Already completed - return cached info
+    // Explicit user-driven retry: clear the failure and let the flow below
+    // re-evaluate from whatever ODM currently reports.
+    if (retry && (task.status === "failed" || task.status === "mirroring")) {
+      await admin.from("odm_tasks").update({
+        status: task.odm_uuid ? "processing" : "uploading",
+        error: null,
+        mirror_attempts: 0,
+        mirror_started_at: null,
+      }).eq("id", task.id);
+      task.status = task.odm_uuid ? "processing" : "uploading";
+      task.error = null;
+      task.mirror_attempts = 0;
+    }
+
+    // Terminal / no-op states.
     if (task.status === "completed" && task.output_path) {
       return json({ status: "completed", progress: 100, output_path: task.output_path });
     }
-    if (task.status === "failed") return json({ status: "failed", error: task.error });
+    if (task.status === "failed") {
+      return json({ status: "failed", error: task.error, retryable: true });
+    }
     if (!task.odm_uuid) return json({ status: task.status, progress: task.progress });
 
-    // Ask ODM for status
-    const infoRes = await fetch(odmUrl(`/task/${task.odm_uuid}/info`));
-    const info = await infoRes.json();
-    const code = info?.status?.code as number | undefined;
+    // Another worker is mirroring. Report progress and leave it alone unless its
+    // lease has gone stale, in which case fall through and try to reclaim it.
+    if (task.status === "mirroring") {
+      const startedAt = task.mirror_started_at ? Date.parse(task.mirror_started_at) : 0;
+      const stale = !startedAt || Date.now() - startedAt > LEASE_STALE_MS;
+      if (!stale) {
+        return json({ status: "mirroring", progress: task.progress ?? 99 });
+      }
+      console.warn(`[odm-poll] reclaiming stale mirror lease for ${task.id}`);
+    }
+
+    // ---- Ask ODM where the reconstruction is up to -------------------------
+    let info: Record<string, unknown> | null = null;
+    try {
+      const infoRes = await fetchResilient(odmUrl(`/task/${task.odm_uuid}/info`), {
+        timeoutMs: 20_000, attempts: 3, label: "odm-poll:info",
+      });
+      info = await jsonSafe(infoRes);
+      if (!infoRes.ok || !info) {
+        // Upstream is unhappy but the scan itself is fine. Report the last known
+        // state and let the client poll again rather than failing the scan.
+        return json({
+          status: task.status, progress: task.progress,
+          upstream: `processing node returned ${infoRes.status}`,
+        });
+      }
+    } catch (e) {
+      return json({
+        status: task.status, progress: task.progress,
+        upstream: `processing node unreachable: ${(e as Error)?.message}`,
+      });
+    }
+
+    const status = info?.status as { code?: number; errorMessage?: string } | undefined;
+    const code = status?.code;
     const progress = typeof info?.progress === "number" ? info.progress : task.progress;
 
     if (code === STATUS.FAILED || code === STATUS.CANCELED) {
-      const errMsg = info?.status?.errorMessage ?? "ODM reported failure";
+      // A reconstruction failure is genuinely permanent - retrying the same
+      // images produces the same result. Surface why.
+      const errMsg = status?.errorMessage ?? "The processing node could not reconstruct this scan";
       await admin.from("odm_tasks").update({ status: "failed", error: errMsg, progress }).eq("id", task.id);
-      return json({ status: "failed", error: errMsg });
+      return json({ status: "failed", error: errMsg, retryable: false });
     }
 
     if (code !== STATUS.COMPLETED) {
@@ -143,90 +157,121 @@ Deno.serve(async (req) => {
       return json({ status: s, progress });
     }
 
-    // COMPLETED - stream all.zip into storage through the service-role client.
-    // Do not manually construct a Storage REST Authorization header here: if the
-    // key is missing/malformed it becomes "Bearer undefined" and Storage returns
-    // "Invalid Compact JWS". The Supabase client handles the auth header safely.
-    // Keep the user's id as the first folder so existing read policies allow the
-    // frontend to create signed URLs for completed outputs.
-    const path = `${user.id}/odm/${task.odm_uuid}/all.zip`;
-    const orthoPath = `${user.id}/${task.odm_uuid}.tif`;
+    // ---- COMPLETED: claim the transfer lease -------------------------------
+    // A conditional UPDATE is the whole concurrency control. The client polls
+    // every 5s and a large transfer runs for minutes, so without this every tick
+    // started another full download+upload of the same multi-gigabyte archive.
+    const staleCutoff = new Date(Date.now() - LEASE_STALE_MS).toISOString();
+    const { data: claimed } = await admin.from("odm_tasks")
+      .update({
+        status: "mirroring",
+        progress: 99,
+        mirror_started_at: new Date().toISOString(),
+      })
+      .eq("id", task.id)
+      .or(`status.in.(queued,processing,uploading),and(status.eq.mirroring,mirror_started_at.lt.${staleCutoff})`)
+      .select("id, mirror_attempts");
 
-    // Mark as uploading so the client knows we're transferring
-    await admin.from("odm_tasks").update({ status: "processing", progress: 99 }).eq("id", task.id);
+    if (!claimed?.length) {
+      // Someone else got there first. Perfectly normal with concurrent pollers.
+      return json({ status: "mirroring", progress: 99 });
+    }
+    const attemptNo = (claimed[0].mirror_attempts ?? 0) + 1;
 
-    // Run the heavy transfer in the background and return immediately.
-    // The next poll tick will see status=completed once the upload finishes.
-    const transfer = (async () => {
+    const zipPath = `${user.id}/odm/${task.odm_uuid}/all.zip`;
+
+    const releaseTransient = async (reason: string) => {
+      // Hand the lease back so the next poll retries, unless we've burned the
+      // whole budget - only then is it a real failure the user needs to see.
+      if (attemptNo >= MAX_MIRROR_ATTEMPTS) {
+        await admin.from("odm_tasks").update({
+          status: "failed",
+          error: `${reason} (after ${attemptNo} attempts)`,
+          mirror_started_at: null,
+          mirror_attempts: attemptNo,
+        }).eq("id", task.id);
+      } else {
+        console.warn(`[odm-poll] transient mirror failure ${attemptNo}/${MAX_MIRROR_ATTEMPTS}: ${reason}`);
+        await admin.from("odm_tasks").update({
+          status: "processing",
+          mirror_started_at: null,
+          mirror_attempts: attemptNo,
+        }).eq("id", task.id);
+      }
+    };
+
+    const transfer = async () => {
       try {
-        const zipRes = await fetch(odmUrl(`/task/${task.odm_uuid}/download/all.zip`));
-        if (!zipRes.ok || !zipRes.body) {
-          await admin.from("odm_tasks").update({ status: "failed", error: "Download failed" }).eq("id", task.id);
-          return;
-        }
-        const { error: uploadError } = await admin.storage.from("scans").upload(path, zipRes.body, {
-          contentType: "application/zip",
-          upsert: true,
-        });
-        if (uploadError) {
-          await admin.from("odm_tasks").update({
-            status: "failed",
-            error: `Storage upload failed: ${uploadError.message}`,
-          }).eq("id", task.id);
-          return;
+        // 1) Mirror the full archive. Skip if a previous attempt already did it.
+        if (!task.output_path) {
+          const zipRes = await fetchStream(
+            odmUrl(`/task/${task.odm_uuid}/download/all.zip`), 240_000, "odm-poll:zip",
+          );
+          if (!zipRes.ok || !zipRes.body) {
+            await zipRes.body?.cancel().catch(() => {});
+            await releaseTransient(`Could not download results from the processing node (${zipRes.status})`);
+            return;
+          }
+          const { error: uploadError } = await admin.storage.from("scans").upload(zipPath, zipRes.body, {
+            contentType: "application/zip",
+            upsert: true,
+          });
+          if (uploadError) {
+            await releaseTransient(`Storage upload failed: ${uploadError.message}`);
+            return;
+          }
         }
 
-        // Also pull the orthophoto GeoTIFF into the public `orthos` bucket
-        // so TiTiler can render it from a direct URL.
-        let orthoStored: string | null = null;
-        try {
-          const odmTasks = await listOdmTasks();
-          const candidateUuids = new Set<string>([task.odm_uuid]);
-          for (const t of odmTasks) {
-            if (t.statusCode === STATUS.COMPLETED) candidateUuids.add(t.uuid);
-          }
-          let tifRes: Response | null = null;
-          let matchedUuid = task.odm_uuid;
-          for (const uuid of candidateUuids) {
-            const r = await fetchOrthophoto(uuid);
-            if (r) {
-              tifRes = r;
-              matchedUuid = uuid;
-              break;
+        // 2) Pull the orthophoto GeoTIFF so TiTiler can render it.
+        //    ONLY this scan's own uuid: the node is shared across tenants, so a
+        //    "any completed task" fallback would store another farm's imagery.
+        //    A miss here is NOT fatal - ortho-url can back-fill later, including
+        //    via the browser-side zip extraction path.
+        let orthoStored: string | null = task.ortho_path ?? null;
+        if (!orthoStored) {
+          try {
+            const tifRes = await fetchOrthophoto(task.odm_uuid);
+            if (tifRes?.body) {
+              const storedPath = `${user.id}/${task.odm_uuid}.tif`;
+              const { error: tifErr } = await admin.storage.from("orthos").upload(storedPath, tifRes.body, {
+                contentType: "image/tiff",
+                upsert: true,
+              });
+              if (!tifErr) orthoStored = storedPath;
+              else console.error("[odm-poll] ortho upload failed:", tifErr.message);
+            } else {
+              console.warn(`[odm-poll] no orthophoto asset on ODM for ${task.odm_uuid}; ortho-url will back-fill`);
             }
+          } catch (e) {
+            console.error("[odm-poll] ortho fetch failed:", (e as Error)?.message);
           }
-          if (tifRes) {
-            const storedPath = `${user.id}/${matchedUuid}.tif`;
-            const { error: tifErr } = await admin.storage.from("orthos").upload(storedPath, tifRes.body!, {
-              contentType: "image/tiff",
-              upsert: true,
-            });
-            if (!tifErr) orthoStored = storedPath;
-            else console.error("ortho upload failed:", tifErr.message);
-          } else {
-            console.warn("no orthophoto found after checking completed ODM tasks", JSON.stringify(odmTasks));
-          }
-        } catch (e) {
-          console.error("ortho fetch failed:", (e as Error)?.message);
         }
 
         await admin.from("odm_tasks").update({
           status: "completed",
           progress: 100,
-          output_path: path,
+          output_path: zipPath,
           ortho_path: orthoStored,
           error: null,
+          mirror_started_at: null,
+          mirror_attempts: 0,
         }).eq("id", task.id);
       } catch (e) {
-        await admin.from("odm_tasks").update({ status: "failed", error: String((e as Error)?.message ?? e) }).eq("id", task.id);
+        const msg = String((e as Error)?.message ?? e);
+        if (isTransient(e)) await releaseTransient(msg);
+        else {
+          await admin.from("odm_tasks").update({
+            status: "failed", error: msg, mirror_started_at: null,
+          }).eq("id", task.id);
+        }
       }
-    })();
+    };
 
-    // @ts-ignore - EdgeRuntime is provided by Supabase Edge Functions
-    EdgeRuntime.waitUntil(transfer);
+    // @ts-expect-error EdgeRuntime is provided by the Supabase Edge runtime
+    EdgeRuntime.waitUntil(transfer());
 
-    return json({ status: "processing", progress: 99 });
+    return json({ status: "mirroring", progress: 99 });
   } catch (e) {
-    return json({ error: String(e?.message ?? e) }, 500);
+    return json({ error: String((e as Error)?.message ?? e) }, 500);
   }
 });
