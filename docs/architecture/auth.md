@@ -57,8 +57,20 @@ sit in a shared cache.
 
 ## Failure responses
 
-Ownership failures and missing rows both return the same **404**. Distinguishing them would let
-a caller probe which scan ids exist.
+Ownership failures and missing rows return the same **404** from every function. Distinguishing
+them would let a caller probe which scan ids exist by watching status codes.
+
+`odm-poll` used to return 404 for a missing scan but 403 for someone else's, which was exactly
+that oracle. It is now uniform, and `src/test/edge/tenancy.test.ts` asserts the property across
+every function so it cannot regress:
+
+- Identical status **and body** for an unowned row versus a nonexistent one
+- No storage read or write performed on a row the caller does not own
+- 401 for an unauthenticated caller, with no storage access
+
+The one deliberate exception is shape, not information: `ndvi-tile` serves a transparent pixel
+for states an *owner* can legitimately hit (orthomosaic not ready), while still returning 404
+when the caller has no claim to the scan.
 
 ## Known exposure
 

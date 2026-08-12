@@ -85,7 +85,8 @@ Deno.serve(async (req) => {
       // Verify the task belongs to this user
       const { data: task } = await admin.from("odm_tasks")
         .select("id, user_id, upload_received").eq("odm_uuid", odmUuid).maybeSingle();
-      if (!task || task.user_id !== user.id) return json({ error: "Forbidden" }, 403);
+      // Same 404 whether the scan is missing or someone else's - no existence oracle.
+      if (!task || task.user_id !== user.id) return json({ error: "Scan not found" }, 404);
 
       // Forward the original multipart body verbatim
       const contentType = req.headers.get("content-type") ?? "";
@@ -118,7 +119,8 @@ Deno.serve(async (req) => {
 
       const { data: task } = await admin.from("odm_tasks")
         .select("id, user_id").eq("odm_uuid", odm_uuid).maybeSingle();
-      if (!task || task.user_id !== user.id) return json({ error: "Forbidden" }, 403);
+      // Same 404 whether the scan is missing or someone else's - no existence oracle.
+      if (!task || task.user_id !== user.id) return json({ error: "Scan not found" }, 404);
 
       const fd = new FormData();
       if (options) fd.append("options", JSON.stringify(options));

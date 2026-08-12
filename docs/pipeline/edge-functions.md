@@ -141,6 +141,11 @@ transparent PNG so Leaflet does not paint broken-tile icons. `Cache-Control: pri
 - `/ndvi-tile/info?task_id=` → `{ bands, expression, index, label }`
 - `/ndvi-tile/{task_id}/{z}/{x}/{y}.png?token=` → a coloured tile
 
+Failure handling distinguishes two cases. A caller with no claim to the scan gets **404**,
+matching `tile` rather than being quietly served a blank. States an owner can legitimately hit —
+orthomosaic not ready, tile service unhappy — get a transparent pixel so the map does not fill
+with broken tiles.
+
 Band count decides the maths:
 
 | Bands | Index | Expression |

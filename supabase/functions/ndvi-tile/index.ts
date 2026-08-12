@@ -32,26 +32,41 @@ function expressionFor(bands: number): { expression: string; index: "ndvi" | "va
   return { expression: "(b2-b1)/(b2+b1-b3)", index: "vari", label: "VARI (G-R)/(G+R-B)" };
 }
 
+// Why the failures are distinguished:
+//   `denied`     the caller does not own this scan (or it does not exist - the
+//                two are deliberately indistinguishable). Answered with 404, to
+//                match the `tile` endpoint rather than quietly serving a blank.
+//   `unavailable` a legitimate transient state for the owner: the orthomosaic
+//                isn't ready yet, or the tile service is unhappy. Answered with
+//                a transparent pixel so the map doesn't fill with broken tiles.
+type ResolveFailure = { error: string; status: number; reason: "denied" | "unavailable" };
+
 // Verifies the caller owns the scan, then resolves (and memoises) its COG.
 // The ownership check runs before the cache lookup so a cached entry can never
 // be served to a different user.
 async function resolveTaskCog(
   taskId: string,
   userId: string,
-): Promise<Cached & { taskId: string } | { error: string; status: number }> {
+): Promise<Cached & { taskId: string } | ResolveFailure> {
   const task = await taskById(taskId);
   // Identical response for "no such scan" and "not yours" - no existence probe.
-  if (!task || task.userId !== userId) return { error: "Scan not found", status: 404 };
+  if (!task || task.userId !== userId) {
+    return { error: "Scan not found", status: 404, reason: "denied" };
+  }
 
   const now = Date.now();
   const hit = cache.get(taskId);
   if (hit && hit.expires > now + 60_000) return { ...hit, taskId };
 
-  if (!task.orthoPath) return { error: "Orthomosaic not ready", status: 404 };
+  if (!task.orthoPath) {
+    return { error: "Orthomosaic not ready", status: 409, reason: "unavailable" };
+  }
 
   const { data: signed, error: sErr } = await admin.storage.from("orthos")
     .createSignedUrl(task.orthoPath, SIGNED_TTL);
-  if (sErr || !signed?.signedUrl) return { error: "Could not sign orthomosaic URL", status: 500 };
+  if (sErr || !signed?.signedUrl) {
+    return { error: "Could not sign orthomosaic URL", status: 500, reason: "unavailable" };
+  }
 
   // Probe band count once.
   let bands = 3;
@@ -98,9 +113,12 @@ Deno.serve(async (req) => {
 
     const r = await resolveTaskCog(taskId, userId);
     if ("error" in r) {
+      // Refuse outright when the caller has no claim to the scan; serve a
+      // transparent pixel only for states an owner can legitimately hit.
+      if (r.reason === "denied") return json({ error: r.error }, r.status);
       return new Response(EMPTY_PNG, {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "image/png", "Cache-Control": "public, max-age=30" },
+        headers: { ...corsHeaders, "Content-Type": "image/png", "Cache-Control": "private, max-age=30" },
       });
     }
     const { expression } = expressionFor(r.bands);

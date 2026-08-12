@@ -80,8 +80,10 @@ Deno.serve(async (req) => {
 
     const { data: task, error: tErr } = await admin.from("odm_tasks")
       .select("*").eq("id", task_id).maybeSingle();
-    if (tErr || !task) return json({ error: "Task not found" }, 404);
-    if (task.user_id !== user.id) return json({ error: "Forbidden" }, 403);
+    // Identical response whether the scan is missing or belongs to someone else.
+    // Returning 404 for one and 403 for the other made this an existence oracle:
+    // a caller could enumerate which scan ids exist by watching the status code.
+    if (tErr || !task || task.user_id !== user.id) return json({ error: "Scan not found" }, 404);
 
     // Explicit user-driven retry: clear the failure and let the flow below
     // re-evaluate from whatever ODM currently reports.

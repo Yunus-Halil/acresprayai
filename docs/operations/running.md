@@ -70,23 +70,37 @@ sufficient to provision a fresh project. See
 
 ## Test coverage
 
-80 tests, all passing.
+149 tests, all passing.
+
+### Pure logic
 
 | File | Tests | Covers |
 |---|---|---|
 | `src/test/geo.test.ts` | 28 | Geodesic area against known metre-sized squares in both hemispheres, winding independence, point-in-polygon, segment intersection, principal axis, rotation invariants, interior-point finding on concave rings, in-boundary routing |
 | `src/test/mission.test.ts` | 24 | Sweep clipping to `boundary ∩ zone`, row counts, repeat interleaving, boustrophedon alternation, balanced sprayer on/off, altitude and speed per phase, distance-to-time derivation, QGC command encoding |
 | `src/test/farmerSettings.test.ts` | 27 | Issue-to-cost mapping, growth stage with an injectable clock, legacy settings migration, boundary normalisation, drone spec resolution and aliases, spec-sheet coherence |
-| `src/test/example.test.ts` | 1 | Placeholder |
+
+### Edge function contracts
+
+These run the **real function code**. `vitest.config.ts` aliases the `https://esm.sh` imports to
+local mocks, and `src/test/edge/harness.ts` stubs `Deno.env` / `Deno.serve` / `EdgeRuntime` and
+provides an in-memory Supabase client. The database mock implements the slice of PostgREST the
+functions use — including the `.or()` filter string the mirror lease depends on, since the lease
+*is* that filter.
+
+| File | Tests | Covers |
+|---|---|---|
+| `src/test/edge/odm-poll.test.ts` | 15 | Status mapping, upstream unreachability, HTML error pages, lease claim and release, concurrent poller exclusion, stale-lease reclaim, idempotent re-mirroring, the 4-attempt transient budget, explicit retry, cross-tenant isolation |
+| `src/test/edge/bake-tiles.test.ts` | 14 | User-scoped keys, cursor held by a failed tile, never reporting done with failures, storage-failure accounting, resume from cursor, frozen zoom plan, poison-tile guard, rebake, upstream 503 and missing bounds |
+| `src/test/edge/tile.test.ts` | 12 | Token via header or query, path rebuilt from the verified owner, legacy fallback only after ownership, path-parsing rejection, transparent-pixel misses, private caching |
+| `src/test/edge/tenancy.test.ts` | 21 | Across all seven functions: identical response for unowned versus nonexistent, no storage touched for a foreign row, 401 unauthenticated, 404 never 403 |
+
+Run just the edge tests with `npx vitest run src/test/edge`.
 
 ### Not covered
 
-No component or integration tests. The workspace, planner UI, PDF generation and every edge
-function are untested. The highest-value additions would be:
-
-1. Edge function contract tests, especially the `odm-poll` lease logic
-2. An integration test for the upload resume path
-3. A smoke test that the workspace renders with a mocked scan
+No component or integration tests. The workspace UI, planner UI and PDF generation are untested,
+as is `analyze-ortho`'s prompt construction and response normalisation.
 
 ## Verifying a change to the pipeline
 
