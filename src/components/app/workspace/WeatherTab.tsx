@@ -54,6 +54,10 @@ import {
   MeasurePanel, MeasureTool, MouseReadout, USER_POLY_ISSUES, UserPolyLayer,
   escapeHtml, loadAnnotations, saveAnnotations, sevColor,
 } from "./layers";
+import {
+  type Forecast, cToF as wxCToF, fetchWeather, kmhToMph as wxKmhToMph,
+  readCachedWeather,
+} from "@/lib/weather";
 
 
 export function PlaceholderTab({ icon: Icon, title, body }: { icon: any; title: string; body: string }) {
@@ -80,37 +84,17 @@ export function PlaceholderTab({ icon: Icon, title, body }: { icon: any; title: 
 // 20-min localStorage cache as <WeatherTab/> so opening Weather doesn't re-fetch.
 export function HeaderWeather({ center, onClick }: { center: [number, number]; onClick: () => void }) {
   const [lat, lng] = center;
-  const cacheKey = `acrespray.weather.${lat.toFixed(3)},${lng.toFixed(3)}`;
-  const TTL_MS = 20 * 60 * 1000;
   const [cur, setCur] = useState<{ temp_c: number; desc: string; code: number; icon: string } | null>(null);
   const [err, setErr] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const raw = localStorage.getItem(cacheKey);
-        if (raw) {
-          const c = JSON.parse(raw);
-          if (c?.savedAt && Date.now() - c.savedAt < TTL_MS && c?.data?.current) {
-            if (!cancelled) setCur(c.data.current);
-            return;
-          }
-        }
-        const { data: s } = await supabase.auth.getSession();
-        const r = await fetch(`${FN_BASE}/weather?lat=${lat}&lon=${lng}`, {
-          headers: s.session ? { Authorization: `Bearer ${s.session.access_token}` } : {},
-        });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error ?? "weather error");
-        try { localStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), data: j })); } catch {}
-        if (!cancelled) setCur(j.current);
-      } catch {
-        if (!cancelled) setErr(true);
-      }
-    })();
+    // Shares the cache with the Weather tab, so opening that tab costs nothing.
+    fetchWeather(lat, lng)
+      .then(c => { if (!cancelled) setCur(c.data.current); })
+      .catch(() => { if (!cancelled) setErr(true); });
     return () => { cancelled = true; };
-  }, [cacheKey, lat, lng]);
+  }, [lat, lng]);
 
   const tempF = cur ? Math.round((cur.temp_c * 9) / 5 + 32) : null;
   return (
@@ -184,48 +168,27 @@ export function sprayVerdict(h: OwHour, rainNext6h: number): { verdict: Verdict;
 
 export function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName: string }) {
   const [lat, lng] = center;
-  // Cache weather per coarse location for 20 min in localStorage so switching
-  // tabs (or revisiting the field) doesn't re-hit OpenWeather every time.
-  const cacheKey = `acrespray.weather.${lat.toFixed(3)},${lng.toFixed(3)}`;
-  const TTL_MS = 20 * 60 * 1000;
-  const readCache = () => {
-    try {
-      const raw = localStorage.getItem(cacheKey);
-      if (!raw) return null;
-      const c = JSON.parse(raw);
-      if (!c?.savedAt || Date.now() - c.savedAt > TTL_MS) return null;
-      return c as { savedAt: number; data: { current: any; hourly: OwHour[]; daily: OwDay[] } };
-    } catch { return null; }
-  };
-  const initial = readCache();
-  const [data, setData] = useState<{ current: any; hourly: OwHour[]; daily: OwDay[] } | null>(initial?.data ?? null);
+  // Fetching and caching live in @/lib/weather so this tab, the standalone
+  // Weather screen and the planner all share one normalisation path and one
+  // cache entry. See the note on wxCacheKey before changing anything there.
+  const initial = readCachedWeather(lat, lng);
+  const [data, setData] = useState<Forecast | null>(initial?.data ?? null);
   const [savedAt, setSavedAt] = useState<number | null>(initial?.savedAt ?? null);
   const [err, setErr] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async (force = false) => {
-    if (!force) {
-      const c = readCache();
-      if (c) { setData(c.data); setSavedAt(c.savedAt); return; }
-    }
     setErr(null); setRefreshing(true);
     try {
-      const { data: s } = await supabase.auth.getSession();
-      const r = await fetch(`${FN_BASE}/weather?lat=${lat}&lon=${lng}`, {
-        headers: s.session ? { Authorization: `Bearer ${s.session.access_token}` } : {},
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error ?? "Weather unavailable");
-      setData(j);
-      const ts = Date.now();
-      setSavedAt(ts);
-      try { localStorage.setItem(cacheKey, JSON.stringify({ savedAt: ts, data: j })); } catch {}
-    } catch (e: any) {
-      setErr(e?.message ?? "Weather unavailable");
+      const c = await fetchWeather(lat, lng, { force });
+      setData(c.data);
+      setSavedAt(c.savedAt);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Weather unavailable");
     } finally {
       setRefreshing(false);
     }
-  }, [lat, lng, cacheKey]);
+  }, [lat, lng]);
 
   useEffect(() => { load(false); }, [load]);
 

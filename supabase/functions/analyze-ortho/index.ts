@@ -33,6 +33,8 @@ Deno.serve(async (req) => {
         available_inputs?: string[];
         unavailable_inputs?: string[];
         custom_inputs?: { name: string; cost: number }[];
+        /** ISO 4217. The farmer's prices are in their own currency, not USD. */
+        currency?: string | null;
       };
     };
     if (!task_id) return json({ error: "Missing task_id" }, 400);
@@ -178,6 +180,9 @@ NDVI thresholds: <0.1 = bare soil / no vegetation, <0.3 = severely stressed, 0.3
     const available = (fs.available_inputs ?? []).filter(Boolean);
     const unavailable = (fs.unavailable_inputs ?? []).filter(Boolean);
     const custom = (fs.custom_inputs ?? []).filter(c => c?.name?.trim());
+    // Restricted to an ISO 4217 shape: this string is interpolated into the
+    // prompt, so it must not be a channel for free text.
+    const currency = /^[A-Z]{3}$/.test(String(fs.currency ?? "")) ? String(fs.currency) : "USD";
     const fieldContextBlock = `FIELD CONTEXT (from the farmer's Settings tab — RESPECT THESE):
 - Crop: ${fs.crop_type || "not specified"}
 - Planting date: ${fs.planting_date || "not specified"}
@@ -185,7 +190,8 @@ NDVI thresholds: <0.1 = bare soil / no vegetation, <0.3 = severely stressed, 0.3
 - Growth stage estimate: ${fs.growth_stage || "unknown"}
 - Farmer's AVAILABLE inputs: ${available.length ? available.join(", ") : "not specified — assume standard row-crop inventory"}
 - Farmer's UNAVAILABLE inputs (DO NOT recommend): ${unavailable.length ? unavailable.join(", ") : "none"}
-${custom.length ? `- Custom inputs the farmer also carries: ${custom.map(c => `${c.name} ($${c.cost}/ac)`).join(", ")}` : ""}
+${custom.length ? `- Custom inputs the farmer also carries: ${custom.map(c => `${c.name} (${c.cost} ${currency}/ac)`).join(", ")}` : ""}
+- Prices above are in ${currency}. Never restate a cost in any other currency.
 
 RECOMMENDATION RULES:
 - Only recommend treatments that use the farmer's AVAILABLE inputs above.

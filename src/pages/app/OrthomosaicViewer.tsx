@@ -504,6 +504,7 @@ export default function OrthomosaicViewer() {
               .filter(([, on]) => !on)
               .map(([k]) => INPUT_LABELS[k as keyof typeof INPUT_LABELS]),
             custom_inputs: settings.custom_inputs.filter(c => c.name.trim()),
+            currency: settings.currency ?? "USD",
           },
         }),
       });

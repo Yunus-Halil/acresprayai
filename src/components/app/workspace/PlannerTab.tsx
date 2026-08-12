@@ -56,6 +56,7 @@ import {
 } from "./layers";
 // Lives in SettingsTab.tsx purely because of where the file split fell.
 import { LogFlightModal } from "./SettingsTab";
+import { readCachedWeather } from "@/lib/weather";
 
 
 export function PlannerTab({
@@ -182,21 +183,16 @@ export function PlannerTab({
   // Left as-is deliberately: fixing it is a behaviour change, not a file move.
   // ---- Weather (read planner-side from the same 20-min localStorage cache
   // the Weather tab writes). Falls back to "no weather data".
-  const wxCacheKey = `acrespray.weather.${center[0].toFixed(3)},${center[1].toFixed(3)}`;
   const wx = (() => {
-    try {
-      const raw = localStorage.getItem(wxCacheKey);
-      if (!raw) return null;
-      const c = JSON.parse(raw);
-      if (!c?.data?.current) return null;
-      const cur = c.data.current;
-      return {
-        wind_ms: (cur.wind_kmh ?? 0) / 3.6,
-        wind_dir: cur.wind_dir ?? 0,    // meteorological "from" direction in degrees
-        temp_c: cur.temp_c ?? 20,
-        savedAt: c.savedAt as number,
-      };
-    } catch { return null; }
+    const c = readCachedWeather(center[0], center[1]);
+    if (!c?.data?.current) return null;
+    const cur = c.data.current;
+    return {
+      wind_ms: (cur.wind_kmh ?? 0) / 3.6,
+      wind_dir: cur.wind_dir ?? 0,    // meteorological "from" direction in degrees
+      temp_c: cur.temp_c ?? 20,
+      savedAt: c.savedAt,
+    };
   })();
 
   // Combine AI treatment zones + farmer-drawn manual annotations into a single

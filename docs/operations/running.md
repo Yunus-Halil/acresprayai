@@ -70,7 +70,7 @@ sufficient to provision a fresh project. See
 
 ## Test coverage
 
-167 tests, all passing.
+180 tests, all passing.
 
 ### Pure logic
 
@@ -78,7 +78,7 @@ sufficient to provision a fresh project. See
 |---|---|---|
 | `src/test/geo.test.ts` | 28 | Geodesic area against known metre-sized squares in both hemispheres, winding independence, point-in-polygon, segment intersection, principal axis, rotation invariants, interior-point finding on concave rings, in-boundary routing |
 | `src/test/mission.test.ts` | 24 | Sweep clipping to `boundary ∩ zone`, row counts, repeat interleaving, boustrophedon alternation, balanced sprayer on/off, altitude and speed per phase, distance-to-time derivation, QGC command encoding |
-| `src/test/farmerSettings.test.ts` | 27 | Issue-to-cost mapping, growth stage with an injectable clock, legacy settings migration, boundary normalisation, drone spec resolution and aliases, spec-sheet coherence |
+| `src/test/farmerSettings.test.ts` | 35 | Issue-to-cost mapping, growth stage with an injectable clock, legacy settings migration, boundary normalisation, drone spec resolution and aliases, spec-sheet coherence |
 | `src/test/scanUpload.test.ts` | 18 | Resume sends only unaccepted images; a failing image does not abort the batch; transient retry; `name:size:lastModified` checkpoint keying; stale and mismatched checkpoints; `max_images` aborts immediately; 4xx not retried; commit failure keeps the checkpoint; pause and resume |
 
 ### Edge function contracts
@@ -102,6 +102,10 @@ Run just the edge tests with `npx vitest run src/test/edge`.
 
 No component or integration tests. The workspace UI, planner UI and PDF generation are untested,
 as is `analyze-ortho`'s prompt construction and response normalisation.
+
+`src/test/workspace.smoke.test.tsx` (5 tests) covers the workspace shell: load sequence, tab-bar
+render with only the default tab mounted, progress and error states, tile-bake driving, and
+non-WGS84 rejection.
 
 ## Verifying a change to the pipeline
 

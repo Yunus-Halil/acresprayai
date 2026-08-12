@@ -16,7 +16,8 @@ Everything here is true of the current build. Do not assume otherwise from the U
 - **No cross-field reporting.** Reports are per-scan, inside the workspace.
 - **No team or multi-user accounts.** Every row belongs to exactly one user.
 - **No billing, quotas or usage limits.**
-- **No internationalisation.** English only, hardcoded. No i18n library is present.
+- **No internationalisation.** English only, hardcoded. No i18n library is present. Currency is
+  configurable per field; language and units are not.
 - **No server-side scheduler.** Recovery is driven by a client polling — see
   [pipeline/resilience.md](../pipeline/resilience.md).
 
@@ -66,9 +67,13 @@ will reject a batch that exceeds it (surfaced as a 413 that aborts the run immed
 
 ### Weather reaches the planner via a cache
 
-The planner reads the same 20-minute `localStorage` entry the Weather tab writes. If the tab has
-never been opened for that location, battery estimates run without wind or temperature
-adjustment. There is no error — the numbers are simply less accurate.
+All three weather consumers — the Weather tab, the standalone `/app/weather` screen and the
+planner — now share one client (`src/lib/weather.ts`), one normalisation path through the
+`weather` edge function, and one 20-minute `localStorage` entry.
+
+The planner still *reads* rather than fetches: if nothing has populated the cache for that
+location, battery estimates run without wind or temperature adjustment. There is no error — the
+numbers are simply less accurate.
 
 ### Boundary is required for AI analysis
 
@@ -76,12 +81,17 @@ By design. Without it the model would be reading neighbouring land.
 
 ### Defaults are US-centric
 
-`unit_system` defaults to `imperial`, costs are per-acre, and currency is a hardcoded `$`
-including inside the AI prompt. For most of the world these are the wrong defaults.
+`unit_system` defaults to `imperial` and costs are per-acre. Currency is now a per-field setting
+(`FarmerSettings.currency`, ISO 4217) formatted through `Intl.NumberFormat` and threaded into the
+AI prompt — but it still **defaults** to USD, and the app remains English-only with no i18n
+library. Switching currency relabels; it never converts, since the farmer types prices in their
+own currency.
 
-### All list queries are unpaginated
+### Pagination is partial
 
-`select("*")` with no range. Fine at current scale; will need attention as scan counts grow.
+The field list and scan history page 24 rows at a time with a "load more" control
+(`src/lib/pagination.ts`). Other reads — flight logs, annotations, archived reports — are still
+unbounded `select("*")`. Fine at current scale.
 
 ### Inert policies for a dead bucket
 

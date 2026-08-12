@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   COST_MAP,
+  CURRENCIES,
   DEFAULT_FARMER_SETTINGS,
   INPUT_LABELS,
+  currencySymbol,
+  formatMoney,
   growthStage,
   issueToCostKey,
   mergeFarmerSettings,
@@ -62,6 +65,61 @@ describe("issueToCostKey", () => {
       expect(INPUT_LABELS[inputKey]).toBeTruthy();
       expect(DEFAULT_FARMER_SETTINGS.input_costs[inputKey]).toBeGreaterThan(0);
       expect(DEFAULT_FARMER_SETTINGS.available_inputs[inputKey]).toBeDefined();
+    }
+  });
+});
+
+describe("currency", () => {
+  it("defaults to USD", () => {
+    expect(DEFAULT_FARMER_SETTINGS.currency).toBe("USD");
+    expect(mergeFarmerSettings({}).currency).toBe("USD");
+  });
+
+  it("backfills currency on a settings blob saved before the field existed", () => {
+    const legacy = { crop_type: "wheat", input_costs: { herbicide: 30 } };
+    expect(mergeFarmerSettings(legacy).currency).toBe("USD");
+  });
+
+  it("keeps a stored currency", () => {
+    expect(mergeFarmerSettings({ currency: "KES" }).currency).toBe("KES");
+  });
+
+  it("formats an amount in the given currency", () => {
+    // Exact symbol placement and separators are locale-dependent, so assert on
+    // content rather than an exact string.
+    const usd = formatMoney(1234.5, "USD");
+    expect(usd).toMatch(/1[,.\s]?234/);
+    expect(usd).toMatch(/\$|USD/);
+
+    const eur = formatMoney(45, "EUR");
+    expect(eur).toMatch(/€|EUR/);
+  });
+
+  it("switching currency relabels rather than converting", () => {
+    // The farmer types prices in their own currency, so 45 stays 45.
+    const inUsd = formatMoney(45, "USD");
+    const inKes = formatMoney(45, "KES");
+    expect(inUsd).toMatch(/45/);
+    expect(inKes).toMatch(/45/);
+    expect(inUsd).not.toBe(inKes);
+  });
+
+  it("degrades gracefully on an unknown currency instead of throwing in a render", () => {
+    expect(() => formatMoney(10, "NOTACURRENCY")).not.toThrow();
+    expect(formatMoney(10, "NOTACURRENCY")).toContain("10");
+  });
+
+  it("exposes a symbol for prefixing numeric inputs", () => {
+    expect(currencySymbol("USD")).toMatch(/\$|USD/);
+    expect(currencySymbol("GBP")).toMatch(/£|GBP/);
+    expect(() => currencySymbol("NOPE")).not.toThrow();
+  });
+
+  it("offers currencies as valid ISO 4217 codes", () => {
+    expect(CURRENCIES.length).toBeGreaterThan(5);
+    for (const c of CURRENCIES) {
+      expect(c.code, c.label).toMatch(/^[A-Z]{3}$/);
+      expect(c.label).toBeTruthy();
     }
   });
 });

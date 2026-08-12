@@ -16,6 +16,7 @@ import {
   MAX_IMAGES, MIN_IMAGES, UploadError, type UploadProgress,
   clearCheckpoint, readCheckpoint, uploadScan,
 } from "@/lib/scanUpload";
+import { PAGE_SIZE, appendPage, hasMore, pageRange } from "@/lib/pagination";
 
 type Task = {
   id: string; field_id: string; odm_uuid: string | null;
@@ -50,6 +51,8 @@ export default function FieldDetail() {
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [resumable, setResumable] = useState<{ done: number; total: number } | null>(null);
   const [orthoAvailable, setOrthoAvailable] = useState<Record<string, boolean>>({});
+  const [taskPage, setTaskPage] = useState(0);
+  const [tasksHasMore, setTasksHasMore] = useState(false);
   const pollRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -66,11 +69,24 @@ export default function FieldDetail() {
     if (error || !data) { toast.error("Field not found"); navigate("/app/fields"); return; }
     setField(data as Field);
   };
-  const loadTasks = async () => {
+  // Scan history grows one row per flight forever, so it pages. `reload` keeps
+  // the pages already on screen and refreshes them in place — the poller calls
+  // this every 5s and must not collapse the list back to page one.
+  const loadTasks = async (opts: { page?: number; reload?: boolean } = {}) => {
     if (!fieldId) return;
+    const targetPage = opts.reload ? 0 : opts.page ?? 0;
+    const span = opts.reload
+      // Refresh every page currently visible in one request.
+      ? [0, (taskPage + 1) * PAGE_SIZE - 1] as [number, number]
+      : pageRange(targetPage);
     const { data } = await supabase.from("odm_tasks").select("*")
-      .eq("field_id", fieldId).order("created_at", { ascending: false });
-    setTasks((data as Task[]) ?? []);
+      .eq("field_id", fieldId)
+      .order("created_at", { ascending: false })
+      .range(span[0], span[1]);
+    const rows = (data as Task[]) ?? [];
+    setTasks(prev => (opts.reload || targetPage === 0 ? rows : appendPage(prev, rows)));
+    setTasksHasMore(hasMore(rows, span[1] - span[0] + 1));
+    if (!opts.reload) setTaskPage(targetPage);
   };
   useEffect(() => { loadField(); loadTasks(); }, [fieldId]);
 
@@ -89,7 +105,7 @@ export default function FieldDetail() {
         headers: { "Content-Type": "application/json", Authorization: auth },
         body: JSON.stringify({ task_id: t.id }),
       }).catch(() => {})));
-      loadTasks();
+      loadTasks({ reload: true });
     }, 5000);
     return () => {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -426,8 +442,17 @@ export default function FieldDetail() {
               )}
               <Button size="sm" variant="ghost" onClick={() => removeTask(t.id)}><Trash2 className="h-3.5 w-3.5" /> Remove</Button>
             </div>
+
           </Card>
         ))}
+
+        {tasksHasMore && (
+          <div className="flex justify-center pt-1">
+            <Button variant="outline" size="sm" onClick={() => loadTasks({ page: taskPage + 1 })}>
+              Load older scans
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

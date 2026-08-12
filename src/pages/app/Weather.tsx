@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Cloud, CloudRain, MapPin, Loader2, Trash2, Play, Pause, Sun, CloudSnow, CloudLightning, CloudDrizzle, Wind, Thermometer, Droplets } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { cToF, fetchWeather, kmhToMph, mmToIn } from "@/lib/weather";
 
 type Farm = { id: string; name: string; address: string; lat: number; lng: number; source?: "field" | "manual" };
 type Suggestion = { id: number; name: string; admin1?: string; country?: string; latitude: number; longitude: number };
@@ -336,36 +337,35 @@ export default function Weather() {
     if (!f) { setForecast(null); return; }
     let aborted = false;
     setForecastLoading(true);
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${f.lat}&longitude=${f.lng}` +
-      `&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code` +
-      `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max` +
-      `&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7`;
-    fetch(url)
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`Forecast ${r.status}`)))
-      .then(j => {
+    // Routed through the `weather` edge function rather than calling a provider
+    // from the browser: one normalisation path and one cache for the whole app,
+    // and the OpenWeather key stays server-side. The edge function answers in
+    // metric; this screen presents imperial, so convert at the boundary.
+    fetchWeather(f.lat, f.lng)
+      .then(({ data }) => {
         if (aborted) return;
-        const daily: DailyForecast[] = (j.daily?.time ?? []).map((t: string, i: number) => ({
-          date: t,
-          tMax: j.daily.temperature_2m_max[i],
-          tMin: j.daily.temperature_2m_min[i],
-          precip: j.daily.precipitation_sum[i],
-          precipProb: j.daily.precipitation_probability_max?.[i] ?? 0,
-          wind: j.daily.wind_speed_10m_max[i],
-          code: j.daily.weather_code[i],
+        const daily: DailyForecast[] = (data.daily ?? []).map(d => ({
+          date: new Date(d.time * 1000).toISOString().slice(0, 10),
+          tMax: cToF(d.tmax_c),
+          tMin: cToF(d.tmin_c),
+          precip: mmToIn(d.precip_mm ?? 0),
+          precipProb: d.precip_prob ?? 0,
+          wind: kmhToMph(d.wind_kmh ?? 0),
+          code: d.code,
         }));
         setForecast({
           current: {
-            temp: j.current.temperature_2m,
-            apparent: j.current.apparent_temperature,
-            wind: j.current.wind_speed_10m,
-            humidity: j.current.relative_humidity_2m,
-            code: j.current.weather_code,
+            temp: cToF(data.current.temp_c),
+            apparent: cToF(data.current.feels_c ?? data.current.temp_c),
+            wind: kmhToMph(data.current.wind_kmh ?? 0),
+            humidity: data.current.humidity,
+            code: data.current.code,
           },
           daily,
           units: { temp: "°F", wind: "mph", precip: "in" },
         });
       })
-      .catch(e => { if (!aborted) toast.error(e.message ?? "Forecast failed"); })
+      .catch(e => { if (!aborted) toast.error(e?.message ?? "Forecast failed"); })
       .finally(() => { if (!aborted) setForecastLoading(false); });
     return () => { aborted = true; };
   }, [selectedFarmId, farms]);

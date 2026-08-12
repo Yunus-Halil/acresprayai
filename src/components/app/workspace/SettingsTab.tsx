@@ -29,7 +29,7 @@ import {
 } from "@/lib/droneSpecs";
 import {
   type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
-  COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS,
+  COST_MAP, CURRENCIES, DEFAULT_FARMER_SETTINGS, INPUT_LABELS, currencySymbol,
   growthStage, issueToCostKey, mergeFarmerSettings, normalizeBoundary,
 } from "@/lib/farmerSettings";
 import {
@@ -207,7 +207,25 @@ export function SettingsTab({
         {/* Input costs */}
         <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
           <h2 className="text-sm font-semibold mb-1">2. Input Costs <span className="text-neutral-500 font-normal">(per acre)</span></h2>
-          <p className="text-[11px] text-neutral-500 mb-4">Uncheck inputs you don't carry — the AI will avoid recommending them.</p>
+          <p className="text-[11px] text-neutral-500 mb-3">Uncheck inputs you don't carry — the AI will avoid recommending them.</p>
+
+          {/* Currency relabels, it never converts: these are the prices you
+              typed, in the currency you actually buy in. */}
+          <div className="flex items-center gap-3 mb-4 pb-3 border-b border-[#222]">
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500">Currency</label>
+            <select
+              className={`${inputCls} w-56`}
+              value={local.currency ?? "USD"}
+              onChange={e => setLocal(s => ({ ...s, currency: e.target.value }))}
+            >
+              {CURRENCIES.map(c => (
+                <option key={c.code} value={c.code}>{c.code} — {c.label}</option>
+              ))}
+            </select>
+            <span className="text-[11px] text-neutral-600">
+              Changes the label only — your prices are not converted.
+            </span>
+          </div>
           <div className="space-y-2">
             {(Object.keys(local.input_costs) as (keyof FarmerSettings["input_costs"])[]).map(k => (
               <div key={k} className="grid grid-cols-[24px_1fr_140px] gap-3 items-center">
@@ -218,7 +236,7 @@ export function SettingsTab({
                   {INPUT_LABELS[k]}
                 </div>
                 <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">$</span>
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">{currencySymbol(local.currency)}</span>
                   <input type="number" min={0} step="0.01"
                     className={`${inputCls} pl-5 text-right font-mono`}
                     value={local.input_costs[k]}
@@ -246,7 +264,7 @@ export function SettingsTab({
                   <input className={inputCls} placeholder="Custom input name"
                     value={c.name} onChange={e => updateCustom(i, { name: e.target.value })} />
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">$</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">{currencySymbol(local.currency)}</span>
                     <input type="number" min={0} step="0.01"
                       className={`${inputCls} pl-5 text-right font-mono`}
                       value={c.cost} onChange={e => updateCustom(i, { cost: Number(e.target.value) || 0 })} />

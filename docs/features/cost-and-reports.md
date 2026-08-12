@@ -82,8 +82,20 @@ When a freshly logged mission lands on the Reports tab and the pilot name and mi
 already filled, a report generates once automatically. A module-level `Set` keyed on
 `flight_log_id` prevents re-triggering during the Field-view screenshot flip.
 
-## Known gap
+## Currency
 
-Currency is a hardcoded `$` — including inside the AI prompt. Unit system covers volume and area
-but not money. For use outside the US this needs a currency field on `FarmerSettings` and
-formatting through `Intl.NumberFormat`.
+`FarmerSettings.currency` is an ISO 4217 code, defaulting to `USD`. All money is formatted through
+`Intl.NumberFormat` (`formatMoney` / `currencySymbol` in `src/lib/farmerSettings.ts`), which
+handles symbol placement — several supported currencies put the symbol after the number, and some
+have no minor unit.
+
+The code is also sent to `analyze-ortho` and interpolated into the prompt, so the model states
+costs in the farmer's own currency. It is validated against `/^[A-Z]{3}$/` server-side, because
+that string reaches the prompt.
+
+**Switching currency relabels; it never converts.** The farmer types their own local per-acre
+prices, so a stored `45` means 45 of whatever they selected. Converting on switch would silently
+rewrite their pricing.
+
+Reports render savings as a percentage and a volume, not a monetary figure, so the PDF is
+currency-independent.

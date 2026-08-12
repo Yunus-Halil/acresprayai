@@ -67,6 +67,6 @@ the two always describe the same aircraft.
 Standalone forecast screen with saved locations, place search, current conditions and a 7-day
 outlook.
 
-Note this screen calls Open-Meteo directly from the browser, whereas the workspace's Weather tab
-goes through the `weather` edge function. Two implementations of the same idea — a consolidation
-opportunity.
+Forecasts come from the shared client in `src/lib/weather.ts`, which routes through the `weather`
+edge function and shares its 20-minute cache with the workspace Weather tab and the flight
+planner. The edge function answers in metric; this screen converts to imperial for display.

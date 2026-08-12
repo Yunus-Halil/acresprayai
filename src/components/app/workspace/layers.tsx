@@ -29,7 +29,7 @@ import {
 } from "@/lib/droneSpecs";
 import {
   type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
-  COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS,
+  COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS, formatMoney,
   growthStage, issueToCostKey, mergeFarmerSettings, normalizeBoundary,
 } from "@/lib/farmerSettings";
 import {
@@ -532,7 +532,11 @@ export function AiZonesLayer({
       const inputLabel = inputKey ? INPUT_LABELS[inputKey] : null;
       const noChem = costKey === "waterlogging";
       const inputAvailable = inputKey ? !!settings.available_inputs[inputKey] : true;
-      const estCost = (acresNum * ratePerAc).toFixed(2);
+      // Money renders in the field's own currency. Intl handles symbol
+      // placement, which is not always a prefix.
+      const cur = settings.currency ?? "USD";
+      const estCost = formatMoney(acresNum * ratePerAc, cur);
+      const ratePerAcStr = formatMoney(ratePerAc, cur);
       const acresStr = acresNum.toFixed(3);
       const sevBadge = `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;background:${color}33;color:${color};border:1px solid ${color}">${z.severity}</span>`;
       const html = `
@@ -548,8 +552,8 @@ export function AiZonesLayer({
             ${noChem
               ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:11px;border-top:1px solid #222;padding-top:6px;margin-top:2px">Drainage work required — consult agronomist (no chemical fix).</div>`
               : inputKey
-                ? `<div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">$${estCost}</div>
-                   <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${acresStr} ac × $${ratePerAc.toFixed(2)}/ac ${inputLabel ? `(${escapeHtml(inputLabel)})` : ""} = $${estCost}</div>
+                ? `<div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${escapeHtml(estCost)}</div>
+                   <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${acresStr} ac × ${escapeHtml(ratePerAcStr)}/ac ${inputLabel ? `(${escapeHtml(inputLabel)})` : ""} = ${escapeHtml(estCost)}</div>
                    ${!inputAvailable ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:10px;text-align:right">⚠ ${escapeHtml(inputLabel ?? "")} marked unavailable in Settings</div>` : ""}`
                 : `<div style="grid-column:1/-1;color:#6b7280;font-size:10px;text-align:right">No cost mapping for this issue type.</div>`
             }

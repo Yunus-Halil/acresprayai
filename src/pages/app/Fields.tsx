@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Plus, Trash2, ArrowRight, Leaf, MapPin, Pencil, Check, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { PAGE_SIZE, appendPage, hasMore, pageRange } from "@/lib/pagination";
 
 type DBField = {
   id: string;
@@ -32,13 +33,25 @@ export default function Fields() {
   const [dbFields, setDbFields] = useState<DBField[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", location: "", notes: "" });
+  const [page, setPage] = useState(0);
+  const [more, setMore] = useState(false);
 
-  const load = async () => {
+  // Paged rather than fetching every field: a contractor managing many parcels
+  // should not pay to download all of them to see the first screenful.
+  const load = async (opts: { page?: number; reload?: boolean } = {}) => {
+    const targetPage = opts.reload ? 0 : opts.page ?? 0;
+    const span = opts.reload
+      ? [0, (page + 1) * PAGE_SIZE - 1] as [number, number]
+      : pageRange(targetPage);
     const { data: fields } = await supabase
       .from("fields")
       .select("*")
-      .order("created_at", { ascending: false });
-    setDbFields((fields as DBField[]) ?? []);
+      .order("created_at", { ascending: false })
+      .range(span[0], span[1]);
+    const rows = (fields as DBField[]) ?? [];
+    setDbFields(prev => (opts.reload || targetPage === 0 ? rows : appendPage(prev, rows)));
+    setMore(hasMore(rows, span[1] - span[0] + 1));
+    if (!opts.reload) setPage(targetPage);
   };
   useEffect(() => { load(); }, []);
 
@@ -59,7 +72,7 @@ export default function Fields() {
   const remove = async (id: string) => {
     if (!confirm("Delete this field and all its scans?")) return;
     await supabase.from("fields").delete().eq("id", id);
-    load();
+    load({ reload: true });
   };
 
   const rename = async (id: string, name: string) => {
@@ -149,6 +162,14 @@ export default function Fields() {
           );
         })}
       </div>
+
+      {more && (
+        <div className="flex justify-center">
+          <Button variant="outline" size="sm" onClick={() => load({ page: page + 1 })}>
+            Load more fields
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

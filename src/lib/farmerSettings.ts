@@ -35,6 +35,14 @@ export type FarmerSettings = {
   area_acres_override: number | null;
   // Display unit system. "metric" = litres, "imperial" = US gallons.
   unit_system: "metric" | "imperial";
+  /**
+   * ISO 4217 code the farmer's input prices are denominated in.
+   *
+   * Changing this RELABELS, it does not convert. The farmer types their own
+   * local per-acre prices, so a stored 45 means 45 of whatever they picked —
+   * converting on switch would silently rewrite their pricing.
+   */
+  currency: string;
   input_costs: {
     nitrogen_fertilizer: number;
     phosphorus_fertilizer: number;
@@ -71,6 +79,7 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
   harvest_date: "",
   area_acres_override: null,
   unit_system: "imperial",
+  currency: "USD",
   input_costs: {
     nitrogen_fertilizer: 45,
     phosphorus_fertilizer: 35,
@@ -120,6 +129,58 @@ export function mergeFarmerSettings(saved: unknown): FarmerSettings {
       },
     },
   };
+}
+
+/**
+ * Currencies offered in Settings. Not exhaustive by design — a short list of
+ * the places AcreSpray is aimed at beats a 180-entry dropdown. Any valid ISO
+ * 4217 code stored on a field still formats correctly.
+ */
+export const CURRENCIES: { code: string; label: string }[] = [
+  { code: "USD", label: "US Dollar" },
+  { code: "EUR", label: "Euro" },
+  { code: "GBP", label: "Pound Sterling" },
+  { code: "BRL", label: "Brazilian Real" },
+  { code: "INR", label: "Indian Rupee" },
+  { code: "KES", label: "Kenyan Shilling" },
+  { code: "NGN", label: "Nigerian Naira" },
+  { code: "ZAR", label: "South African Rand" },
+  { code: "AUD", label: "Australian Dollar" },
+  { code: "CAD", label: "Canadian Dollar" },
+  { code: "UAH", label: "Ukrainian Hryvnia" },
+  { code: "TRY", label: "Turkish Lira" },
+];
+
+/**
+ * Format an amount in the field's currency.
+ *
+ * `Intl.NumberFormat` handles symbol placement, grouping and decimal digits per
+ * locale — several of these currencies put the symbol after the number, and
+ * some have no minor unit at all. Falls back to the plain code if the runtime
+ * rejects the currency, so a bad value degrades to "45.00 XYZ" rather than
+ * throwing inside a render.
+ */
+export function formatMoney(amount: number, currency = "USD", maximumFractionDigits = 2): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(maximumFractionDigits)} ${currency}`;
+  }
+}
+
+/** Just the symbol, for prefixing a bare numeric input. */
+export function currencySymbol(currency = "USD"): string {
+  try {
+    const parts = new Intl.NumberFormat(undefined, { style: "currency", currency })
+      .formatToParts(0);
+    return parts.find(p => p.type === "currency")?.value ?? currency;
+  } catch {
+    return currency;
+  }
 }
 
 export const INPUT_LABELS: Record<keyof FarmerSettings["input_costs"], string> = {
