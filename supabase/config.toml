@@ -1,4 +1,11 @@
 project_id = "gohofgqtzrvcixnlzhpt"
 
+# Leaflet requests tiles as plain <img> GETs, which cannot carry an
+# Authorization header. Both tile endpoints therefore opt out of the platform's
+# JWT gate and verify the session token themselves (header OR ?token=), plus an
+# ownership check against odm_tasks. See supabase/functions/_shared/tileAuth.ts.
 [functions.ndvi-tile]
+verify_jwt = false
+
+[functions.tile]
 verify_jwt = false

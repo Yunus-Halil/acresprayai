@@ -35,10 +35,15 @@ export const Hero = () => {
               </svg>
             </span>
           </h1>
+          {/* Claims here must match what the product actually asserts. The AI
+              analysis is deliberately conservative — on RGB-only imagery it
+              refuses to diagnose nutrient deficiency, disease or pest pressure —
+              so the copy promises targeting, not agronomic outcomes. */}
           <p className="mt-8 max-w-2xl text-lg md:text-xl text-muted-foreground leading-relaxed">
-            AcreSpray AI fuses AI vision, drone imagery, weather and soil data into one
-            decision system - telling farmers exactly when, where, and how much to spray.
-            <span className="text-foreground"> Cut chemical use by 30%+. Keep yield intact.</span>
+            AcreSpray AI turns your drone imagery into an orthomosaic, flags the
+            patches that look wrong, and builds the spray mission to treat just
+            those patches.
+            <span className="text-foreground"> Treat acres, not fields.</span>
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-4">
             <a

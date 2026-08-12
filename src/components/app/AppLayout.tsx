@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useEffect } from "react";
-import { LayoutDashboard, Map, FileBarChart, LogOut, Loader2, Plane, CloudRain } from "lucide-react";
+import { LayoutDashboard, Map, LogOut, Loader2, Plane, CloudRain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import logo from "@/assets/acrespray-logo.png.asset.json";
@@ -11,8 +11,9 @@ const nav = [
   { to: "/app/fields", label: "Fields", icon: Map },
   { to: "/app/fleet", label: "Drone Fleet", icon: Plane },
   { to: "/app/weather", label: "Weather Radar", icon: CloudRain },
-  { to: "/app/reports", label: "Reports", icon: FileBarChart },
 ];
+// Reports live per-scan, inside the orthomosaic viewer's Reports tab - there is
+// no cross-field reporting page.
 
 export default function AppLayout() {
   const { user, loading, signOut } = useAuth();

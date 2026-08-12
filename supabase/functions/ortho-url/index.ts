@@ -38,54 +38,6 @@ const ORTHO_PATHS = [
   "download/odm_orthophoto.tif",
 ];
 
-type OdmTaskSummary = {
-  uuid: string;
-  statusCode: number | null;
-  status: string | null;
-  progress: number | null;
-  name: string | null;
-  createdAt: string | null;
-};
-
-function readStatusCode(task: any): number | null {
-  const raw = task?.status?.code ?? task?.statusCode ?? task?.status_code ?? task?.code;
-  if (typeof raw === "number") return raw;
-  if (typeof raw === "string" && /^\d+$/.test(raw)) return Number(raw);
-  return null;
-}
-
-function normalizeOdmTasks(payload: any): OdmTaskSummary[] {
-  let raw: any = payload;
-  if (Array.isArray(payload?.tasks)) raw = payload.tasks;
-  else if (Array.isArray(payload?.results)) raw = payload.results;
-  else if (payload?.tasks && typeof payload.tasks === "object") raw = Object.values(payload.tasks);
-  if (!Array.isArray(raw)) return [];
-
-  return raw.map((task: any) => ({
-    uuid: String(task?.uuid ?? task?.id ?? task?.taskId ?? task?.task_id ?? ""),
-    statusCode: readStatusCode(task),
-    status: typeof task?.status === "string" ? task.status : task?.status?.name ?? task?.status?.label ?? null,
-    progress: typeof task?.progress === "number" ? Math.round(task.progress) : null,
-    name: task?.name ?? task?.options?.name ?? null,
-    createdAt: task?.created_at ?? task?.createdAt ?? task?.dateCreated ?? task?.created ?? null,
-  })).filter((task) => task.uuid);
-}
-
-async function listOdmTasks(): Promise<{ tasks: OdmTaskSummary[]; source: string; error?: string }> {
-  for (const path of ["/tasks", "/task/list"]) {
-    const res = await fetch(odmUrl(path));
-    const text = await res.text();
-    let payload: any = null;
-    try { payload = text ? JSON.parse(text) : null; } catch { /* noop */ }
-    console.log(`[ortho-url] GET ${safeOdmUrl(path)} -> ${res.status}`, text.slice(0, 1000));
-    if (!res.ok) continue;
-    const tasks = normalizeOdmTasks(payload);
-    console.log("[ortho-url] ODM tasks:", JSON.stringify(tasks));
-    return { tasks, source: path };
-  }
-  return { tasks: [], source: "/tasks", error: "Could not list ODM tasks" };
-}
-
 async function getOdmInfo(uuid: string) {
   const path = `/task/${uuid}/info`;
   const res = await fetch(odmUrl(path));
@@ -191,42 +143,6 @@ Deno.serve(async (req) => {
 
     const url = new URL(req.url);
     const taskId = url.searchParams.get("task_id");
-    const debug = url.searchParams.get("debug");
-    if (debug === "tasks") {
-      const listed = await listOdmTasks();
-      return json({ tasks: listed.tasks, source: listed.source, error: listed.error });
-    }
-    const probeUuid = url.searchParams.get("probe");
-    if (probeUuid) {
-      const paths = [
-        "download/all.zip",
-        "download/odm_orthophoto/odm_orthophoto.tif",
-        "download/orthophoto.tif",
-        "download/odm_orthophoto.tif",
-        "download/odm_orthophoto.tar.gz",
-        "download/orthophoto.png",
-        "download",
-        "output",
-        "assets",
-        "orthophoto/tiles.json",
-        "orthophoto/metadata",
-      ];
-      const results: any[] = [];
-      for (const p of paths) {
-        const path = `/task/${probeUuid}/${p}`;
-        try {
-          const r = await fetch(odmUrl(path), { method: "GET" });
-          const ct = r.headers.get("content-type") ?? "";
-          let body: string | null = null;
-          if (ct.includes("json") || ct.startsWith("text/")) body = (await r.text()).slice(0, 400);
-          else { try { await r.arrayBuffer(); } catch {} }
-          results.push({ p, status: r.status, contentType: ct, body });
-        } catch (e) {
-          results.push({ p, error: String((e as Error)?.message ?? e) });
-        }
-      }
-      return json({ uuid: probeUuid, results });
-    }
     if (!taskId) {
       return json({ error: "Missing task_id" }, 400);
     }
@@ -237,9 +153,9 @@ Deno.serve(async (req) => {
     );
     const { data: task } = await admin.from("odm_tasks")
       .select("id, user_id, odm_uuid, ortho_path, output_path, status, progress, field_id").eq("id", taskId).maybeSingle();
+    // Never disclose whether the row exists for someone else - same 404 either way.
     if (!task || task.user_id !== ud.user.id) {
-      const listed = await listOdmTasks();
-      return json({ error: "Scan record not found. ODM task list is included so the completed task can be identified.", odm_tasks: listed.tasks }, 404);
+      return json({ error: "Scan not found." }, 404);
     }
 
     // Lazy backfill: if the ortho hasn't been uploaded yet, pull it now.
@@ -263,38 +179,33 @@ Deno.serve(async (req) => {
         const currentInfo = task.odm_uuid ? await getOdmInfo(task.odm_uuid) : null;
         const info = currentInfo?.info ?? {};
         const code = info?.status?.code as number | undefined;
-        const listed = await listOdmTasks();
 
         if (code === ODM_STATUS.FAILED || code === ODM_STATUS.CANCELED) {
           const msg = info?.status?.errorMessage ?? "ODM reported failure";
           if (task.status !== "completed") {
             await admin.from("odm_tasks").update({ status: "failed", error: msg }).eq("id", task.id);
-            return json({ error: `Processing failed: ${msg}`, odm_tasks: listed.tasks }, 409);
+            return json({ error: `Processing failed: ${msg}` }, 409);
           }
         }
         if (code !== ODM_STATUS.COMPLETED && task.status !== "completed") {
           const progress = typeof info?.progress === "number" ? Math.round(info.progress) : 0;
           const label = code === ODM_STATUS.RUNNING ? "processing" : code === ODM_STATUS.QUEUED ? "queued" : "pending";
-          return json({ error: `Orthomosaic not ready yet (${label}, ${progress}%)`, status: label, progress, odm_tasks: listed.tasks }, 409);
+          return json({ error: `Orthomosaic not ready yet (${label}, ${progress}%)`, status: label, progress }, 409);
         }
 
         // 2) Try downloading the orthophoto directly from ODM (works on self-hosted NodeODM).
-        const candidateUuids = new Set<string>();
-        if (task.odm_uuid) candidateUuids.add(task.odm_uuid);
-        for (const t of listed.tasks) {
-          if (t.statusCode === ODM_STATUS.COMPLETED) candidateUuids.add(t.uuid);
-        }
-
+        //    ONLY ever pull this scan's own ODM uuid. The processing node is shared by
+        //    every tenant, so falling back to "any completed task on the node" would
+        //    attach another farm's orthomosaic to this scan.
         let tifBytes: Uint8Array | null = null;
         let matchedUuid: string | null = null;
-        const triedDownloads: { uuid: string; requests: { url: string; status: number }[] }[] = [];
-        for (const uuid of candidateUuids) {
-          const result = await fetchOrthophoto(uuid);
-          triedDownloads.push({ uuid, requests: result.tried });
+        let triedDownloads: { url: string; status: number }[] = [];
+        if (task.odm_uuid) {
+          const result = await fetchOrthophoto(task.odm_uuid);
+          triedDownloads = result.tried;
           if (result.response) {
             tifBytes = new Uint8Array(await result.response.arrayBuffer());
-            matchedUuid = uuid;
-            break;
+            matchedUuid = task.odm_uuid;
           }
         }
 
@@ -351,12 +262,9 @@ Deno.serve(async (req) => {
             }
             console.warn("[ortho-url] could not prepare extraction handoff", { zipErr: zipErr?.message, upErr: upErr?.message });
           }
-          console.warn("[ortho-url] no orthophoto found", JSON.stringify({ listed: listed.tasks, triedDownloads, output_path: task.output_path }));
+          console.warn("[ortho-url] no orthophoto found", JSON.stringify({ uuid: task.odm_uuid, triedDownloads, output_path: task.output_path }));
           return json({
             error: "Processing completed but the orthomosaic file is missing. The processing node did not produce odm_orthophoto.tif (likely insufficient image overlap).",
-            odm_tasks: listed.tasks,
-            tried: triedDownloads,
-            stored_zip: task.output_path,
           }, 422);
         }
 
@@ -366,7 +274,7 @@ Deno.serve(async (req) => {
           upsert: true,
         });
         if (tifErr) {
-          return json({ error: `Upload failed: ${tifErr.message}`, odm_tasks: listed.tasks }, 500);
+          return json({ error: `Upload failed: ${tifErr.message}` }, 500);
         }
         path = orthoPath;
         await admin.from("odm_tasks").update({

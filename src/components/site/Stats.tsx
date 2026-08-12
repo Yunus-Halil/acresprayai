@@ -1,10 +1,15 @@
 import { motion } from "framer-motion";
 
+// Every figure here must be either measured by the product or labelled as the
+// estimate it is. "30% pesticide reduction / yield maintained in field tests"
+// used to sit in this list: AcreSpray has run no such trials, and the analysis
+// engine will not even claim a nutrient diagnosis from RGB imagery. Replaced
+// with what the product genuinely does and honest, sourced framing for the rest.
 const stats = [
-  { value: "$20B", label: "Spent on US crop spraying annually", note: "Source: Fermi estimate, 2 M farms × 50% × $20K" },
-  { value: "30%+", label: "Pesticide reduction with AI targeting", note: "Maintained or improved yield in field tests" },
-  { value: "$6B", label: "Potential annual savings - US alone", note: "If precision spraying scales nationwide" },
-  { value: "12 mo", label: "From prototype to first farm pilot", note: "Build · test · iterate on real fields" },
+  { value: "$20B", label: "Spent on US crop spraying annually", note: "Order-of-magnitude estimate · not a measured figure" },
+  { value: "100%", label: "Of the field sprayed today, needed or not", note: "Uniform application is the standard practice we target" },
+  { value: "0.05 ac", label: "Smallest patch we will flag for treatment", note: "Below this the analysis reports it as background variation" },
+  { value: "Pilot", label: "Stage — running on real fields, not simulated", note: "Build · test · iterate with early farms" },
 ];
 
 export const Stats = () => {
@@ -21,9 +26,9 @@ export const Stats = () => {
             </h2>
           </div>
           <p className="md:col-span-6 md:col-start-7 text-lg text-muted-foreground leading-relaxed self-end">
-            Spraying is done uniformly across fields instead of where it’s needed.
-            The root cause isn’t farmer behavior - it’s the absence of accessible,
-            AI-powered precision tools. AcreSpray AI closes that gap.
+            Spraying is done uniformly across fields instead of where it’s needed,
+            largely because per-patch targeting has needed equipment and analysis
+            most farms don’t have. AcreSpray AI puts that on a drone you already own.
           </p>
         </div>
 

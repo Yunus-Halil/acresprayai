@@ -61,7 +61,10 @@ export default function Auth() {
           </Link>
           <div className="space-y-4 max-w-md">
             <h1 className="font-display text-4xl leading-tight">Precision spraying, powered by AI.</h1>
-            <p className="opacity-80">Cut chemical use by 30%. Catch pests 7 days earlier. Run your fields like a quant fund runs a portfolio.</p>
+            {/* Keep in step with the landing page: the product targets treatment
+                to specific patches; it does not promise a reduction figure or
+                early pest detection, neither of which it measures. */}
+            <p className="opacity-80">Fly your field, find the patches that need treating, and send the drone back to spray only those.</p>
           </div>
         </div>
       </div>

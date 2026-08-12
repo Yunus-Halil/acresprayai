@@ -9,7 +9,7 @@ import { polygon as turfPolygon } from "@turf/helpers";
 import {
   type FarmerSettings, type AiZone, type LastFlownMission,
   INPUT_LABELS, COST_MAP, issueToCostKey,
-} from "@/pages/app/OrthomosaicViewer";
+} from "@/lib/farmerSettings";
 
 // ---- Unit conversion helpers (litres are the canonical storage unit). ----
 const L_TO_GAL = 0.264172;

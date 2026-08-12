@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { admin, ownerOfOdmUuid, readToken, userIdFromToken } from "../_shared/tileAuth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,49 +6,66 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
-// Tiny public proxy that streams pre-baked tiles from the private `tiles`
-// bucket. URL shape: /tile/{odmUuid}/{z}/{x}/{y}.png
-// Leaflet hits this with plain <img> GETs - no auth, cached aggressively.
-const admin = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
-
+// Streams pre-baked tiles out of the private `tiles` bucket.
+// URL shape: /tile/{odmUuid}/{z}/{x}/{y}.png?token=<session jwt>
+//
+// The caller only ever names the ODM uuid; the storage key is rebuilt here from
+// the *verified* owner of that task, so a caller can never reach another
+// tenant's objects by crafting a path.
 const EMPTY_PNG = Uint8Array.from(atob(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 ), c => c.charCodeAt(0));
+
+// Out-of-coverage cells return a transparent pixel so Leaflet doesn't paint
+// broken-tile icons across the map.
+const blank = (maxAge: number) => new Response(EMPTY_PNG, {
+  status: 200,
+  headers: { ...corsHeaders, "Content-Type": "image/png", "Cache-Control": `public, max-age=${maxAge}` },
+});
+
+const deny = (status: number, message: string) => new Response(
+  JSON.stringify({ error: message }),
+  { status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
     const url = new URL(req.url);
-    // Strip the "/tile" or "/functions/v1/tile" prefix - whatever's left is the path inside the bucket.
-    const m = url.pathname.match(/tile\/(.+\.png)$/);
-    if (!m) return new Response("bad path", { status: 400, headers: corsHeaders });
-    const objectPath = m[1];
+    const m = url.pathname.match(/tile\/([0-9a-f-]{36})\/(\d+)\/(\d+)\/(\d+)\.png$/i);
+    if (!m) return deny(400, "Bad tile path");
+    const [, odmUuid, z, x, y] = m;
 
-    const { data, error } = await admin.storage.from("tiles").download(objectPath);
-    if (error || !data) {
-      // Return a 1x1 transparent PNG so Leaflet doesn't show broken-tile icons
-      // for out-of-coverage cells.
-      return new Response(EMPTY_PNG, {
-        status: 200,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "image/png",
-          "Cache-Control": "public, max-age=300",
-        },
-      });
+    const userId = await userIdFromToken(readToken(req, url));
+    if (!userId) return deny(401, "Unauthorized");
+
+    const owner = await ownerOfOdmUuid(odmUuid);
+    // Same response whether the scan is missing or belongs to someone else, so
+    // the endpoint can't be used to probe which uuids exist.
+    if (!owner || owner !== userId) return deny(404, "Scan not found");
+
+    // Tiles baked before ownership scoping live at the un-prefixed key.
+    const candidates = [
+      `${owner}/${odmUuid}/${z}/${x}/${y}.png`,
+      `${odmUuid}/${z}/${x}/${y}.png`,
+    ];
+    for (const objectPath of candidates) {
+      const { data } = await admin.storage.from("tiles").download(objectPath);
+      if (data) {
+        return new Response(data.stream(), {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "image/png",
+            // Tiles are immutable per scan, but the response is user-scoped -
+            // keep it out of shared caches.
+            "Cache-Control": "private, max-age=31536000, immutable",
+          },
+        });
+      }
     }
-    return new Response(data.stream(), {
-      status: 200,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "image/png",
-        "Cache-Control": "public, max-age=31536000, immutable",
-      },
-    });
+    return blank(300);
   } catch (e) {
-    return new Response(String((e as Error)?.message ?? e), { status: 500, headers: corsHeaders });
+    return deny(500, String((e as Error)?.message ?? e));
   }
 });

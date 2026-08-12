@@ -1,15 +1,10 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { admin, readToken, taskById, userIdFromToken } from "../_shared/tileAuth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, range",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
-
-const admin = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
 
 const TITILER = "https://titiler.xyz";
 const SIGNED_TTL = 60 * 60 * 6; // 6h
@@ -37,17 +32,25 @@ function expressionFor(bands: number): { expression: string; index: "ndvi" | "va
   return { expression: "(b2-b1)/(b2+b1-b3)", index: "vari", label: "VARI (G-R)/(G+R-B)" };
 }
 
-async function resolveTaskCog(taskId: string): Promise<Cached & { taskId: string } | { error: string; status: number }> {
+// Verifies the caller owns the scan, then resolves (and memoises) its COG.
+// The ownership check runs before the cache lookup so a cached entry can never
+// be served to a different user.
+async function resolveTaskCog(
+  taskId: string,
+  userId: string,
+): Promise<Cached & { taskId: string } | { error: string; status: number }> {
+  const task = await taskById(taskId);
+  // Identical response for "no such scan" and "not yours" - no existence probe.
+  if (!task || task.userId !== userId) return { error: "Scan not found", status: 404 };
+
   const now = Date.now();
   const hit = cache.get(taskId);
   if (hit && hit.expires > now + 60_000) return { ...hit, taskId };
 
-  const { data: t, error } = await admin.from("odm_tasks")
-    .select("ortho_path").eq("id", taskId).maybeSingle();
-  if (error || !t?.ortho_path) return { error: "Orthomosaic not ready", status: 404 };
+  if (!task.orthoPath) return { error: "Orthomosaic not ready", status: 404 };
 
   const { data: signed, error: sErr } = await admin.storage.from("orthos")
-    .createSignedUrl(t.ortho_path as string, SIGNED_TTL);
+    .createSignedUrl(task.orthoPath, SIGNED_TTL);
   if (sErr || !signed?.signedUrl) return { error: "Could not sign orthomosaic URL", status: 500 };
 
   // Probe band count once.
@@ -71,12 +74,17 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const path = url.pathname.replace(/^.*\/ndvi-tile/, "");
 
+    // Leaflet can't set headers on <img> requests, so the session JWT may also
+    // arrive as ?token=. Either way it is verified before anything is served.
+    const userId = await userIdFromToken(readToken(req, url));
+    if (!userId) return json({ error: "Unauthorized" }, 401);
+
     // ---- INFO endpoint -----------------------------------------------------
     // GET /ndvi-tile/info?task_id=...
     if (path.startsWith("/info")) {
       const taskId = url.searchParams.get("task_id");
       if (!taskId) return json({ error: "task_id required" }, 400);
-      const r = await resolveTaskCog(taskId);
+      const r = await resolveTaskCog(taskId, userId);
       if ("error" in r) return json({ error: r.error }, r.status);
       const expr = expressionFor(r.bands);
       return json({ bands: r.bands, ...expr });
@@ -88,7 +96,7 @@ Deno.serve(async (req) => {
     if (!m) return new Response("bad path", { status: 400, headers: corsHeaders });
     const [, taskId, z, x, y] = m;
 
-    const r = await resolveTaskCog(taskId);
+    const r = await resolveTaskCog(taskId, userId);
     if ("error" in r) {
       return new Response(EMPTY_PNG, {
         status: 200,
@@ -116,8 +124,8 @@ Deno.serve(async (req) => {
       headers: {
         ...corsHeaders,
         "Content-Type": "image/png",
-        // Tiles are deterministic per task; long cache is fine.
-        "Cache-Control": "public, max-age=86400",
+        // Deterministic per task, but user-scoped - never let a shared cache hold it.
+        "Cache-Control": "private, max-age=86400",
       },
     });
   } catch (e) {

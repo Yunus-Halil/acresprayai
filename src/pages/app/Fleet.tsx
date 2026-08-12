@@ -14,44 +14,15 @@ import { Plane, Plus, Battery, Trash2, Sparkles, Loader2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid } from "recharts";
 import { toast } from "sonner";
 import { z } from "zod";
+import {
+  DRONE_SPECS, MODEL_IDS, drainPerMin, resolveDroneSpec, roleLabel, specSheet,
+} from "@/lib/droneSpecs";
+
 type Drone = {
   id: string; name: string; model: string;
   battery: number; signal: number; health: number; status: string;
   serial?: string | null; notes?: string | null; specs?: any;
 };
-
-const DRONE_SPECS: Record<string, {
-  role: string; drainPerMin: number; range_m: number;
-  weight: string; tank: string; swath: string; maxSpeed: string;
-  flightTime: string; sprayRate: string; wingspan: string;
-  maxPayload: string; ip: string;
-}> = {
-  "DJI Agras T40": {
-    role: "Sprayer", drainPerMin: 4.85, range_m: 1500,
-    weight: "65.5 kg (loaded)", tank: "40 L", swath: "9 m", maxSpeed: "10 m/s",
-    flightTime: "17 min (full load)", sprayRate: "24 L/min",
-    wingspan: "2.8 m folded → 6.2 m deployed", maxPayload: "50 kg", ip: "IP67",
-  },
-  "DJI Agras T25": {
-    role: "Sprayer", drainPerMin: 3.80, range_m: 1200,
-    weight: "42 kg (loaded)", tank: "25 L", swath: "7 m", maxSpeed: "10 m/s",
-    flightTime: "15 min (full load)", sprayRate: "10.8 L/min",
-    wingspan: "2.2 m folded → 4.7 m deployed", maxPayload: "30 kg", ip: "IP67",
-  },
-  "XAG P100 Pro": {
-    role: "Sprayer", drainPerMin: 5.10, range_m: 1000,
-    weight: "75 kg (loaded)", tank: "50 L", swath: "10 m", maxSpeed: "12 m/s",
-    flightTime: "18 min (full load)", sprayRate: "28 L/min",
-    wingspan: "3.2 m folded", maxPayload: "60 kg", ip: "IP67",
-  },
-  "XAG V40": {
-    role: "Sprayer", drainPerMin: 4.40, range_m: 1000,
-    weight: "52 kg (loaded)", tank: "40 L", swath: "8 m", maxSpeed: "10 m/s",
-    flightTime: "16 min", sprayRate: "20 L/min",
-    wingspan: "2.6 m folded", maxPayload: "45 kg", ip: "IP67",
-  },
-};
-const MODEL_IDS = Object.keys(DRONE_SPECS);
 
 const schema = z.object({
   name: z.string().trim().min(2, "Name too short").max(40),
@@ -61,17 +32,19 @@ const schema = z.object({
   notes: z.string().trim().max(500).optional(),
 });
 
+// Straight-line depletion from the drone's current charge. `drainPerMin` is
+// derived from the same `max_flight_min` the flight planner budgets against, so
+// this forecast and the planner's battery estimate describe one aircraft.
 function forecast(d: Drone) {
-  const m = DRONE_SPECS[d.model] ?? DRONE_SPECS[MODEL_IDS[0]];
-  const drain = m.drainPerMin;
+  const { spec } = resolveDroneSpec(d.model);
+  const drain = drainPerMin(spec);
   const out: { t: number; battery: number }[] = [];
   for (let t = 0; t <= 60; t++) {
     const bat = Math.max(0, d.battery - drain * t);
     out.push({ t, battery: +bat.toFixed(1) });
   }
-  const tBatLow = out.find(p => p.battery <= 25)?.t ?? null;
-  const recallAt = tBatLow;
-  return { series: out, recallAt, role: m.role };
+  const recallAt = out.find(p => p.battery <= 25)?.t ?? null;
+  return { series: out, recallAt, role: roleLabel(spec) };
 }
 
 const statusColor = (s: string) =>
@@ -181,16 +154,7 @@ export default function Fleet() {
                   <Badge variant="outline" className="text-[10px]">Auto-filled · read only</Badge>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { k: "Tank", v: selectedSpec.tank },
-                    { k: "Swath", v: selectedSpec.swath },
-                    { k: "Max speed", v: selectedSpec.maxSpeed },
-                    { k: "Flight time", v: selectedSpec.flightTime },
-                    { k: "Spray rate", v: selectedSpec.sprayRate },
-                    { k: "Weight", v: selectedSpec.weight },
-                    { k: "Wingspan", v: selectedSpec.wingspan },
-                    { k: "IP rating", v: selectedSpec.ip },
-                  ].map(s => (
+                  {specSheet(selectedSpec).map(s => (
                     <div key={s.k} className="rounded-md border bg-muted/30 p-2">
                       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{s.k}</div>
                       <div className="text-xs font-medium leading-tight mt-0.5">{s.v}</div>

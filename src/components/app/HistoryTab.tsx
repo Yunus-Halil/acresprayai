@@ -14,7 +14,10 @@ const TILE_BASE = `${FN_BASE}/tile`;
 const NDVI_BASE = `${FN_BASE}/ndvi-tile`;
 
 type Ring = { lat: number; lng: number }[];
-type AiZone = { id?: string; polygon: { lat: number; lng: number }[]; severity?: string };
+// Persisted AI zones store their outline as `ring` (see AiZone in
+// OrthomosaicViewer). `polygon` is only the wire shape the model returns before
+// analyze-ortho normalises it - it is never what lands in odm_tasks.ai_analysis.
+type AiZone = { id?: string; ring?: Ring; severity?: string };
 type AiAnalysis = { zones?: AiZone[] } | null;
 type Task = {
   id: string;
@@ -26,7 +29,7 @@ type Task = {
 };
 type FlightLog = { id: string; scan_id: string | null; date_flown: string };
 
-function polyAcres(poly: { lat: number; lng: number }[]) {
+export function polyAcres(poly: { lat: number; lng: number }[] | undefined) {
   if (!poly || poly.length < 3) return 0;
   try {
     const ring = poly.map(p => [p.lng, p.lat]) as [number, number][];
@@ -49,16 +52,16 @@ function boundsFromRings(rings: Ring[] | null): L.LatLngBoundsExpression | null 
   return [[minLat, minLng], [maxLat, maxLng]];
 }
 
-function MiniMap({ task, boundary }: { task: Task; boundary: Ring[] | null }) {
+function MiniMap({ task, boundary, token }: { task: Task; boundary: Ring[] | null; token: string | null }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (!ref.current || !task.odm_uuid) return;
+    if (!ref.current || !task.odm_uuid || !token) return;
     const map = L.map(ref.current, {
       zoomControl: false, attributionControl: false, dragging: false,
       scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false,
       touchZoom: false,
     });
-    const tl = L.tileLayer(`${TILE_BASE}/${task.odm_uuid}/{z}/{x}/{y}.png`, { maxZoom: 22 });
+    const tl = L.tileLayer(`${TILE_BASE}/${task.odm_uuid}/{z}/{x}/{y}.png?token=${token}`, { maxZoom: 22 });
     tl.addTo(map);
     const b = boundsFromRings(boundary);
     if (b) map.fitBounds(b, { padding: [4, 4] });
@@ -66,41 +69,42 @@ function MiniMap({ task, boundary }: { task: Task; boundary: Ring[] | null }) {
     // Overlay AI zones if present
     const zones = task.ai_analysis?.zones ?? [];
     for (const z of zones) {
-      if (!z.polygon || z.polygon.length < 3) continue;
+      if (!z.ring || z.ring.length < 3) continue;
       const color = z.severity === "high" ? "#ef4444" : z.severity === "medium" ? "#f59e0b" : "#facc15";
-      L.polygon(z.polygon.map(p => [p.lat, p.lng]) as any, {
+      L.polygon(z.ring.map(p => [p.lat, p.lng]) as any, {
         color, weight: 1.5, fillOpacity: 0.35, interactive: false,
       }).addTo(map);
     }
     return () => { map.remove(); };
-  }, [task.id, task.odm_uuid, boundary]);
+  }, [task.id, task.odm_uuid, boundary, token]);
   if (!task.odm_uuid) {
     return <div className="h-40 rounded bg-[#0a0a0a] border border-[#1f1f1f] flex items-center justify-center text-xs text-neutral-600">No orthomosaic</div>;
   }
   return <div ref={ref} className="h-40 rounded bg-[#0a0a0a] border border-[#1f1f1f] overflow-hidden" />;
 }
 
-function CompareMap({ a, b, boundary }: { a: Task; b: Task; boundary: Ring[] | null }) {
+function CompareMap({ a, b, boundary, token }: { a: Task; b: Task; boundary: Ring[] | null; token: string | null }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [pct, setPct] = useState(50);
   const topPaneRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    if (!ref.current || !a.odm_uuid || !b.odm_uuid) return;
+    if (!ref.current || !a.odm_uuid || !b.odm_uuid || !token) return;
     const map = L.map(ref.current, { zoomControl: true, attributionControl: false });
     // Bottom layer (older = a): ortho + ndvi
     const bottomPane = map.createPane("histBottom") as HTMLElement; bottomPane.style.zIndex = "300";
     const topPane = map.createPane("histTop") as HTMLElement; topPane.style.zIndex = "400";
     topPaneRef.current = topPane;
-    L.tileLayer(`${TILE_BASE}/${a.odm_uuid}/{z}/{x}/{y}.png`, { pane: "histBottom", maxZoom: 22 }).addTo(map);
-    L.tileLayer(`${NDVI_BASE}/${a.id}/{z}/{x}/{y}.png`, { pane: "histBottom", maxZoom: 22, opacity: 0.7 }).addTo(map);
-    L.tileLayer(`${TILE_BASE}/${b.odm_uuid}/{z}/{x}/{y}.png`, { pane: "histTop", maxZoom: 22 }).addTo(map);
-    L.tileLayer(`${NDVI_BASE}/${b.id}/{z}/{x}/{y}.png`, { pane: "histTop", maxZoom: 22, opacity: 0.7 }).addTo(map);
+    const q = `?token=${token}`;
+    L.tileLayer(`${TILE_BASE}/${a.odm_uuid}/{z}/{x}/{y}.png${q}`, { pane: "histBottom", maxZoom: 22 }).addTo(map);
+    L.tileLayer(`${NDVI_BASE}/${a.id}/{z}/{x}/{y}.png${q}`, { pane: "histBottom", maxZoom: 22, opacity: 0.7 }).addTo(map);
+    L.tileLayer(`${TILE_BASE}/${b.odm_uuid}/{z}/{x}/{y}.png${q}`, { pane: "histTop", maxZoom: 22 }).addTo(map);
+    L.tileLayer(`${NDVI_BASE}/${b.id}/{z}/{x}/{y}.png${q}`, { pane: "histTop", maxZoom: 22, opacity: 0.7 }).addTo(map);
     const bb = boundsFromRings(boundary);
     if (bb) map.fitBounds(bb, { padding: [20, 20] });
     return () => { map.remove(); topPaneRef.current = null; };
-  }, [a.id, b.id, a.odm_uuid, b.odm_uuid, boundary]);
+  }, [a.id, b.id, a.odm_uuid, b.odm_uuid, boundary, token]);
 
   useEffect(() => {
     if (topPaneRef.current) topPaneRef.current.style.clipPath = `inset(0 0 0 ${pct}%)`;
@@ -163,6 +167,13 @@ export default function HistoryTab({
   const [logs, setLogs] = useState<Record<string, FlightLog>>({});
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string[]>([]);
+  // Tile endpoints authenticate via ?token= because Leaflet loads them as <img>.
+  const [token, setToken] = useState<string | null>(null);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setToken(data.session?.access_token ?? null));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setToken(s?.access_token ?? null));
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!fieldId) { setLoading(false); return; }
@@ -201,7 +212,7 @@ export default function HistoryTab({
     for (const t of tasks) {
       const zones = t.ai_analysis?.zones ?? [];
       let stressed = 0;
-      for (const z of zones) stressed += polyAcres(z.polygon);
+      for (const z of zones) stressed += polyAcres(z.ring);
       m.set(t.id, { zones: zones.length, stressed });
     }
     return m;
@@ -278,7 +289,7 @@ export default function HistoryTab({
                     )}
                   </div>
 
-                  <div className="mt-3"><MiniMap task={t} boundary={boundary} /></div>
+                  <div className="mt-3"><MiniMap task={t} boundary={boundary} token={token} /></div>
 
                   <div className="mt-3 space-y-1 text-xs text-neutral-400">
                     <div><span className="text-neutral-100">{s.zones}</span> zone{s.zones === 1 ? "" : "s"} found</div>
@@ -317,7 +328,7 @@ export default function HistoryTab({
                 <X className="h-3 w-3" /> Clear
               </Button>
             </div>
-            <CompareMap a={a} b={b} boundary={boundary} />
+            <CompareMap a={a} b={b} boundary={boundary} token={token} />
             <Card className="p-4 bg-[#111] border-[#1f1f1f]">
               {aStress > 0 ? (
                 <div className="text-sm text-neutral-200">

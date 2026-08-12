@@ -21,6 +21,26 @@ import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygon
 import ReportsTab from "@/components/app/ReportsTab";
 import HistoryTab from "@/components/app/HistoryTab";
 import {
+  type DroneSpec, DRONE_SPECS, resolveDroneSpec,
+} from "@/lib/droneSpecs";
+import {
+  type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
+  COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS,
+  growthStage, issueToCostKey, mergeFarmerSettings, normalizeBoundary,
+} from "@/lib/farmerSettings";
+import {
+  type LatLng2,
+  M_PER_DEG_LAT,
+  bboxOfRings, centroidOfRings, centroidSafe, distM, lerp, mPerDegLng,
+  pointInAnyRing, pointInRing, polygonAreaM2, polylineLengthM,
+  principalAxisAngle, ringContaining, ringsAreaM2, rotateLL,
+  routeInsideBoundary, segRingIntersections, segSegT, segmentInsideRings,
+} from "@/lib/geo";
+import {
+  type Mission, type MissionAction, type MissionParams, type MissionWP,
+  buildFieldSweep, buildMission, exportMissionFile,
+} from "@/lib/mission";
+import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
@@ -31,6 +51,12 @@ const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
 // through the `tile` edge function. Leaflet loads them as plain <img> GETs.
 const TILE_BASE = `${FN_BASE}/tile`;
 const NDVI_BASE = `${FN_BASE}/ndvi-tile`;
+
+// Bounds on the load loops. An unbounded retry is indistinguishable from a hang
+// to the person looking at it, so every wait ends in something actionable.
+const MAX_WAIT_ATTEMPTS = 40;          // ~15 min of backed-off polling
+const MAX_BAKE_PASSES = 400;           // far above a legitimate bake
+const MAX_STALLED_BAKE_PASSES = 8;     // consecutive passes with zero progress
 
 // Streams the all.zip from a signed URL, pulls out odm_orthophoto.tif WITHOUT
 // buffering the full archive in RAM, and PUTs the .tif to a Supabase signed
@@ -123,204 +149,19 @@ type FieldRow = {
   settings?: FarmerSettings | null;
 };
 
-// ===================== Farmer settings (per field) =========================
-// Stored as JSON in `fields.settings`. Drives cost calculations and AI prompt.
-export type CustomInput = { name: string; cost: number };
-
-// ----- Drone specs (for flight battery estimation) ------------------------
-// Keyed by `drones.model` string in the fleet table. "Custom" lets the user
-// enter their own. Specs intentionally conservative — typical real-world,
-// not marketing numbers.
-export type DroneSpec = {
-  tank_l: number;          // spray tank capacity in litres
-  payload_kg: number;      // max payload incl. tank
-  max_flight_min: number;  // realistic single-battery flight time
-  max_speed_ms: number;    // max horizontal speed
-  spray_swath_m: number;   // effective spray swath width at typical AGL (0 = non-sprayer)
-  min_turn_radius_m: number; // tightest physically achievable horizontal turn radius
-  climb_rate_ms: number;     // max sustained vertical climb rate
-};
-
-export type LastFlownMission = {
-  id: string;
-  // "flight_logs" means `id` exists in public.flight_logs. "field_snapshot"
-  // is the denormalized fallback stored on fields.settings when the detailed
-  // log insert fails, so Reports can still prefill without violating FKs.
-  source?: "flight_logs" | "field_snapshot";
-  field_id?: string | null;
-  scan_id?: string | null;
-  drone_id?: string | null;
-  date_flown: string;
-  battery_start: number | null;
-  battery_end: number | null;
-  tank_refills: number;
-  zones_completed: string[] | null;
-  acres_treated: number | null;
-  liters_applied: number | null;
-  notes: string | null;
-  created_at?: string | null;
-};
-export const DRONE_SPECS: Record<string, DroneSpec> = {
-  "DJI Agras T40":   { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 9,   min_turn_radius_m: 4,   climb_rate_ms: 6 },
-  "DJI Agras T30":   { tank_l: 30, payload_kg: 40, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 6.5, min_turn_radius_m: 3.5, climb_rate_ms: 6 },
-  "DJI Agras T25":   { tank_l: 20, payload_kg: 25, max_flight_min: 18, max_speed_ms: 10,   spray_swath_m: 5,   min_turn_radius_m: 3,   climb_rate_ms: 6 },
-  "XAG P100":        { tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 13.8, spray_swath_m: 7,   min_turn_radius_m: 4.5, climb_rate_ms: 5 },
-  "XAG V40":         { tank_l: 16, payload_kg: 20, max_flight_min: 18, max_speed_ms: 13.8, spray_swath_m: 5,   min_turn_radius_m: 3.5, climb_rate_ms: 5 },
-  "DJI Mavic 3M":    { tank_l: 0,  payload_kg: 0,  max_flight_min: 43, max_speed_ms: 21,   spray_swath_m: 0,   min_turn_radius_m: 1,   climb_rate_ms: 8 },
-  "Parrot Anafi USA":{ tank_l: 0,  payload_kg: 0,  max_flight_min: 32, max_speed_ms: 14.7, spray_swath_m: 0,   min_turn_radius_m: 1,   climb_rate_ms: 4 },
-  "Custom":          { tank_l: 30, payload_kg: 40, max_flight_min: 20, max_speed_ms: 10,   spray_swath_m: 6,   min_turn_radius_m: 3,   climb_rate_ms: 5 },
-};
-
-export type FarmerSettings = {
-  crop_type: string;          // "wheat" | "corn" | ...
-  planting_date: string;      // YYYY-MM-DD or ""
-  harvest_date: string;       // YYYY-MM-DD or ""
-  area_acres_override: number | null;
-  // Display unit system. "metric" = litres, "imperial" = US gallons.
-  // Stored once per field and consumed by ReportsTab / PlannerTab.
-  unit_system: "metric" | "imperial";
-  input_costs: {
-    nitrogen_fertilizer: number;
-    phosphorus_fertilizer: number;
-    potassium_fertilizer: number;
-    herbicide: number;
-    fungicide: number;
-    insecticide: number;
-    reseeding: number;
-  };
-  available_inputs: {
-    nitrogen_fertilizer: boolean;
-    phosphorus_fertilizer: boolean;
-    potassium_fertilizer: boolean;
-    herbicide: boolean;
-    fungicide: boolean;
-    insecticide: boolean;
-    reseeding: boolean;
-  };
-  custom_inputs: CustomInput[];
-  flight_plan: {
-    drone_id: string | null;     // fleet drone.id; null = none selected yet
-    tank_load_pct: number;       // 0-100, how full the tank is for this mission
-    custom_specs: DroneSpec;     // active only when drone model is "Custom" / unknown
-  };
-  // Denormalized copy of the latest completed mission for this field. The
-  // canonical record is still public.flight_logs; this snapshot makes the
-  // Reports tab resilient across tab switches and avoids scan-only lookups.
-  last_flown_mission?: LastFlownMission | null;
-};
-
-export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
-  crop_type: "",
-  planting_date: "",
-  harvest_date: "",
-  area_acres_override: null,
-  unit_system: "imperial",
-  input_costs: {
-    nitrogen_fertilizer: 45,
-    phosphorus_fertilizer: 35,
-    potassium_fertilizer: 30,
-    herbicide: 25,
-    fungicide: 30,
-    insecticide: 20,
-    reseeding: 35,
-  },
-  available_inputs: {
-    nitrogen_fertilizer: true,
-    phosphorus_fertilizer: true,
-    potassium_fertilizer: true,
-    herbicide: true,
-    fungicide: true,
-    insecticide: true,
-    reseeding: true,
-  },
-  custom_inputs: [],
-  flight_plan: {
-    drone_id: null,
-    tank_load_pct: 80,
-    custom_specs: DRONE_SPECS["Custom"],
-  },
-  last_flown_mission: null,
-};
-
-export const INPUT_LABELS: Record<keyof FarmerSettings["input_costs"], string> = {
-  nitrogen_fertilizer: "Nitrogen fertilizer",
-  phosphorus_fertilizer: "Phosphorus fertilizer",
-  potassium_fertilizer: "Potassium fertilizer",
-  herbicide: "Herbicide",
-  fungicide: "Fungicide",
-  insecticide: "Insecticide",
-  reseeding: "Reseeding / seed",
-};
-
-// Maps AI issue_type (canonical key) → farmer input cost key.
-// `null` = no chemical fix.
-export const COST_MAP: Record<string, keyof FarmerSettings["input_costs"] | null> = {
-  bare_soil: "reseeding",
-  nitrogen_deficiency: "nitrogen_fertilizer",
-  phosphorus_deficiency: "phosphorus_fertilizer",
-  potassium_deficiency: "potassium_fertilizer",
-  weed_pressure: "herbicide",
-  disease: "fungicide",
-  pest_damage: "insecticide",
-  waterlogging: null,
-};
-
-// Loose mapping from the AI's free-text `issue` / `recommendation.action` to
-// the canonical COST_MAP key.
-export function issueToCostKey(z: { issue?: string; recommendation?: { action?: string } | null }): string | null {
-  const txt = `${z.issue ?? ""} ${z.recommendation?.action ?? ""}`.toLowerCase();
-  if (/water|drain|saturat|pond/.test(txt)) return "waterlogging";
-  if (/bare|reseed|gap|establish/.test(txt)) return "bare_soil";
-  if (/nitrogen|\bn\s+def/.test(txt)) return "nitrogen_deficiency";
-  if (/phosphor|\bp\s+def/.test(txt)) return "phosphorus_deficiency";
-  if (/potass|\bk\s+def/.test(txt)) return "potassium_deficiency";
-  if (/weed|herbicid/.test(txt)) return "weed_pressure";
-  if (/disease|fung|blight|rust|mildew/.test(txt)) return "disease";
-  if (/pest|insect|aphid|worm|beetle/.test(txt)) return "pest_damage";
-  // Generic recommendation actions.
-  if (/fertili/.test(txt)) return "nitrogen_deficiency";
-  return null;
-}
-
-// Days since planting → coarse growth-stage hint for the AI prompt.
-export function growthStage(crop: string, planting: string): string | null {
-  if (!planting) return null;
-  const days = Math.floor((Date.now() - new Date(planting).getTime()) / 86400000);
-  if (!Number.isFinite(days) || days < 0) return null;
-  const wk = Math.round(days / 7);
-  const c = crop.toLowerCase();
-  // Very rough, just for AI context.
-  if (c === "wheat" || c === "barley" || c === "oats" || c === "rye") {
-    if (wk < 4) return `~${wk} weeks (emergence / tillering)`;
-    if (wk < 10) return `~${wk} weeks (tillering / stem extension)`;
-    if (wk < 16) return `~${wk} weeks (heading / flowering)`;
-    return `~${wk} weeks (grain fill / ripening)`;
-  }
-  if (c === "corn") {
-    if (wk < 4) return `~${wk} weeks (V1–V4)`;
-    if (wk < 10) return `~${wk} weeks (V6–V12)`;
-    if (wk < 14) return `~${wk} weeks (tasseling / silking)`;
-    return `~${wk} weeks (grain fill / dent)`;
-  }
-  return `~${wk} weeks since planting`;
-}
-
-// Boundary may be stored as a single ring (legacy) or as an array of rings
-// (multi-polygon fragmented fields). Always normalize to BoundaryRing[].
-function normalizeBoundary(b: unknown): BoundaryRing[] | null {
-  if (!b) return null;
-  if (Array.isArray(b) && b.length > 0) {
-    // Legacy: array of {lat,lng}
-    if (typeof (b as any)[0]?.lat === "number") {
-      return [b as BoundaryRing];
-    }
-    // Already array of rings
-    if (Array.isArray((b as any)[0])) {
-      return (b as any[]).filter(r => Array.isArray(r) && r.length >= 3) as BoundaryRing[];
-    }
-  }
-  return null;
-}
+// Field configuration, drone capability data, geometry and mission building now
+// live in `src/lib/*` so they can be unit-tested and imported without pulling in
+// this component. Re-exported from here for modules that still import them by
+// this path.
+export type {
+  AiZone, CustomInput, FarmerSettings, LastFlownMission,
+} from "@/lib/farmerSettings";
+export {
+  COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS, growthStage, issueToCostKey,
+} from "@/lib/farmerSettings";
+export type { DroneSpec } from "@/lib/droneSpecs";
+export { DRONE_SPECS } from "@/lib/droneSpecs";
+export type { Mission, MissionAction, MissionParams, MissionWP } from "@/lib/mission";
 
 // --- helpers that run inside the MapContainer ---------------------------------
 function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
@@ -369,22 +210,6 @@ function MapControls({ fitTo }: { fitTo: L.LatLngBoundsExpression | null }) {
 }
 
 // --- Measure tool ------------------------------------------------------------
-// Geodesic polygon area (spherical excess approximation, sufficient for fields).
-function polygonAreaM2(latlngs: L.LatLng[]): number {
-  const R = 6378137;
-  const n = latlngs.length;
-  if (n < 3) return 0;
-  let area = 0;
-  for (let i = 0; i < n; i++) {
-    const p1 = latlngs[i];
-    const p2 = latlngs[(i + 1) % n];
-    area +=
-      ((p2.lng - p1.lng) * Math.PI) / 180 *
-      (2 + Math.sin((p1.lat * Math.PI) / 180) + Math.sin((p2.lat * Math.PI) / 180));
-  }
-  return Math.abs((area * R * R) / 2);
-}
-
 export type MeasureStats = {
   active: boolean;
   finished: boolean;
@@ -763,17 +588,6 @@ function MeasurePanel({ stats }: { stats: MeasureStats }) {
 }
 
 // --- AI zones layer ----------------------------------------------------------
-export type AiZone = {
-  id: string;
-  name: string;
-  issue: string;
-  severity: "low" | "medium" | "high";
-  tier?: 1 | 2;
-  coverage_pct: number;
-  recommendation: { action: string; product?: string; dose?: string; rationale?: string } | null;
-  ring: { lat: number; lng: number }[];
-};
-
 const sevColor = (s: AiZone["severity"]) =>
   s === "high" ? "#ef4444" : s === "medium" ? "#f59e0b" : "#eab308";
 
@@ -1160,6 +974,16 @@ export default function OrthomosaicViewer() {
   const [activeBoundaryIdx, setActiveBoundaryIdx] = useState<number | null>(null);
   const cursorCoordRef = useRef<HTMLDivElement | null>(null);
   const cursorZoomRef = useRef<HTMLDivElement | null>(null);
+  // Bounded wait for a scan that isn't ready yet, plus a nonce so the retry
+  // button can re-run the whole load sequence.
+  const waitAttempts = useRef(0);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const retryLoad = useCallback(() => {
+    waitAttempts.current = 0;
+    setErr(null);
+    setPending(null);
+    setReloadNonce(n => n + 1);
+  }, []);
 
   // Farmer-defined settings (crop, dates, input costs, available inputs).
   // Lives in fields.settings (JSON) and gates AI recommendations + cost math.
@@ -1264,24 +1088,8 @@ export default function OrthomosaicViewer() {
       if (f) {
         setField(f as FieldRow);
         setBoundary(normalizeBoundary((f as any).boundary));
-        const saved = (f as any).settings;
-        if (saved && typeof saved === "object") {
-          setSettings({
-            ...DEFAULT_FARMER_SETTINGS,
-            ...saved,
-            input_costs: { ...DEFAULT_FARMER_SETTINGS.input_costs, ...(saved.input_costs ?? {}) },
-            available_inputs: { ...DEFAULT_FARMER_SETTINGS.available_inputs, ...(saved.available_inputs ?? {}) },
-            custom_inputs: Array.isArray(saved.custom_inputs) ? saved.custom_inputs.slice(0, 3) : [],
-            flight_plan: {
-              ...DEFAULT_FARMER_SETTINGS.flight_plan,
-              ...(saved.flight_plan ?? {}),
-              custom_specs: {
-                ...DEFAULT_FARMER_SETTINGS.flight_plan.custom_specs,
-                ...(saved.flight_plan?.custom_specs ?? {}),
-              },
-            },
-          });
-        }
+        const saved = (f as { settings?: unknown }).settings;
+        if (saved && typeof saved === "object") setSettings(mergeFarmerSettings(saved));
       }
 
       // 1) Mint a signed URL to the orthophoto.tif sitting in Supabase Storage.
@@ -1293,13 +1101,27 @@ export default function OrthomosaicViewer() {
           headers: { Authorization: `Bearer ${s.session.access_token}` },
           cache: "no-store",
         });
-        const j = await r.json();
+        const j = await r.json().catch(() => ({}));
         if (cancelled) return;
         if (r.status === 409) {
-          // Still processing - show progress and retry in 5s.
+          // Still processing. Back off rather than hammering every 5s forever,
+          // and stop at a bounded number of attempts with a retry the user can
+          // press - an unbounded loop looks identical to a hang.
+          waitAttempts.current += 1;
+          if (waitAttempts.current > MAX_WAIT_ATTEMPTS) {
+            setPending(null);
+            setErr(
+              `This scan still isn't ready (${j?.status ?? "processing"}${
+                typeof j?.progress === "number" ? `, ${Math.round(j.progress)}%` : ""
+              }). Large scans can take hours — reopen this page later, or retry now.`,
+            );
+            return;
+          }
           setPending({ status: j?.status ?? "processing", progress: j?.progress ?? 0 });
           setErr(null);
-          timer = window.setTimeout(run, 5000);
+          // 5s for the first minute, easing to 30s.
+          const delay = Math.min(30_000, 5000 * 1.25 ** Math.max(0, waitAttempts.current - 12));
+          timer = window.setTimeout(run, delay);
           return;
         }
         if (r.status === 202 && j?.needsExtract) {
@@ -1354,21 +1176,45 @@ export default function OrthomosaicViewer() {
         // Drive the tile baker until it reports done, then point Leaflet at the
         // static pre-baked tiles served through the `tile` edge function.
         if (!t.odm_uuid) { setErr("Missing scan id"); return; }
+        // Drive the baker until it reports done. It only reports done when every
+        // tile actually stored, so a pass with failures loops back and retries
+        // exactly those tiles instead of leaving holes in the map.
+        let bakePasses = 0;
+        let stalledPasses = 0;
+        let lastCompleted = -1;
         while (!cancelled) {
+          bakePasses += 1;
           const br = await fetch(`${FN_BASE}/bake-tiles?task_id=${taskId}`, {
             method: "POST",
             headers: { Authorization: `Bearer ${s.session.access_token}` },
           });
           const bj = await br.json().catch(() => ({}));
           if (!br.ok) {
-            setErr(bj?.error ?? "Tile baking failed.");
+            // 503 is the tile service being briefly unavailable - worth waiting out.
+            if (br.status === 503 && bakePasses < MAX_BAKE_PASSES) {
+              await new Promise((r) => setTimeout(r, 3000));
+              continue;
+            }
+            setErr(bj?.error ?? "Could not build the map tiles for this scan.");
             return;
           }
           if (typeof bj.total === "number") {
             setBaking({ completed: bj.completed ?? 0, total: bj.total });
           }
           if (bj.done) break;
-          await new Promise((r) => setTimeout(r, 250));
+
+          // Guard against a baker that can neither finish nor progress.
+          if (bj.completed === lastCompleted) stalledPasses += 1;
+          else { stalledPasses = 0; lastCompleted = bj.completed ?? -1; }
+          if (stalledPasses >= MAX_STALLED_BAKE_PASSES || bakePasses > MAX_BAKE_PASSES) {
+            setErr(
+              `Map tiles stopped building at ${bj.completed ?? 0} of ${bj.total ?? "?"}. ` +
+              `The tile service may be having trouble — retry in a moment.`,
+            );
+            return;
+          }
+          // Ease off when the baker is retrying failures rather than advancing.
+          await new Promise((r) => setTimeout(r, bj.retrying ? 2000 : 250));
         }
         if (cancelled) return;
         setBaking(null);
@@ -1383,10 +1229,24 @@ export default function OrthomosaicViewer() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [taskId]);
+    // reloadNonce lets the retry button re-run the whole sequence.
+  }, [taskId, reloadNonce]);
 
-  const tileUrl = tileTemplate;
-  const ndviUrl = task?.odm_uuid ? `${NDVI_BASE}/${taskId}/{z}/{x}/{y}.png` : null;
+  // Keep the access token fresh. Tile URLs embed it (Leaflet's <img> requests
+  // can't send headers), so when supabase silently refreshes the session the
+  // template has to change with it or tiles start 401-ing after ~1h. The
+  // TileLayers are keyed on the URL, so they remount with the new token.
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      if (s?.access_token) setToken(s.access_token);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const tileUrl = tileTemplate && token ? `${tileTemplate}?token=${token}` : null;
+  const ndviUrl = task?.odm_uuid && token
+    ? `${NDVI_BASE}/${taskId}/{z}/{x}/{y}.png?token=${token}`
+    : null;
 
   const runAnalysis = async () => {
     if (!taskId || !token) return;
@@ -1667,9 +1527,19 @@ export default function OrthomosaicViewer() {
 
   if (err) {
     return (
-      <div className="h-screen w-screen bg-[#0f0f0f] flex flex-col items-center justify-center gap-3 text-sm text-[#f0f0f0]">
+      <div className="h-screen w-screen bg-[#0f0f0f] flex flex-col items-center justify-center gap-4 text-sm text-[#f0f0f0]">
         <div className="text-red-400 max-w-md text-center px-6">{err}</div>
-        <a href="/app/fields" className="text-[#4CAF50] underline">Back to fields</a>
+        <div className="flex items-center gap-4">
+          {/* Every failure state here is retryable - none of them are the end of
+              the road, and the page should never dead-end the farmer. */}
+          <button
+            onClick={retryLoad}
+            className="px-3 py-1.5 rounded border border-[#4CAF50] text-[#4CAF50] hover:bg-[#4CAF50]/10 transition-colors"
+          >
+            Try again
+          </button>
+          <a href="/app/fields" className="text-[#4CAF50] underline">Back to fields</a>
+        </div>
       </div>
     );
   }
@@ -2879,438 +2749,11 @@ function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFlightPlan
 // that lies inside the field boundary. The boundary is treated as the hard
 // no-fly constraint — every flight line is clipped to (boundary ∩ zone).
 
-type LatLng2 = { lat: number; lng: number };
-
-// --- geometry helpers --------------------------------------------------------
-const M_PER_DEG_LAT = 111_320;
-function mPerDegLng(lat: number) { return M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180); }
-
-function pointInRing(pt: LatLng2, ring: LatLng2[]): boolean {
-  // Ray casting in lng/lat space — fine at these scales.
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i].lng, yi = ring[i].lat;
-    const xj = ring[j].lng, yj = ring[j].lat;
-    const intersect = ((yi > pt.lat) !== (yj > pt.lat)) &&
-      (pt.lng < ((xj - xi) * (pt.lat - yi)) / (yj - yi + 1e-12) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-function pointInAnyRing(pt: LatLng2, rings: LatLng2[][]): boolean {
-  for (const r of rings) if (pointInRing(pt, r)) return true;
-  return false;
-}
-
-// Segment vs polygon ring intersections (returns t-values on the segment [0..1]).
-function segRingIntersections(a: LatLng2, b: LatLng2, ring: LatLng2[]): number[] {
-  const ts: number[] = [];
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const t = segSegT(a, b, ring[j], ring[i]);
-    if (t !== null && t > 1e-9 && t < 1 - 1e-9) ts.push(t);
-  }
-  return ts;
-}
-function segSegT(a: LatLng2, b: LatLng2, c: LatLng2, d: LatLng2): number | null {
-  const x1 = a.lng, y1 = a.lat, x2 = b.lng, y2 = b.lat;
-  const x3 = c.lng, y3 = c.lat, x4 = d.lng, y4 = d.lat;
-  const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-  if (Math.abs(denom) < 1e-14) return null;
-  const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
-  const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
-  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
-  return t;
-}
-
-function lerp(a: LatLng2, b: LatLng2, t: number): LatLng2 {
-  return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
-}
+// Geometry (`@/lib/geo`) and the sweep/mission builders (`@/lib/mission`) are
+// imported at the top of this file — see those modules for the maths and
+// `src/test/` for their unit tests.
 
 
-function bboxOfRings(rings: LatLng2[][]) {
-  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-  for (const r of rings) for (const p of r) {
-    if (p.lat < minLat) minLat = p.lat;
-    if (p.lat > maxLat) maxLat = p.lat;
-    if (p.lng < minLng) minLng = p.lng;
-    if (p.lng > maxLng) maxLng = p.lng;
-  }
-  return { minLat, maxLat, minLng, maxLng };
-}
-
-// Field-wide lawnmower: a single boustrophedon pattern covers the entire
-// field boundary (rotated to the field's own principal axis so rows run
-// along the long edge). Each pass is then split into sub-segments — spray
-// ON where the pass crosses an AI treatment zone, transit (sprayer OFF,
-// transit altitude/speed) everywhere else inside the boundary. The drone
-// enters from the home edge, runs straight transits across healthy ground,
-// and only drops to spray altitude when it's over an anomaly.
-
-// --- rotation / principal axis helpers --------------------------------------
-function rotateLL(p: LatLng2, center: LatLng2, cosA: number, sinA: number): LatLng2 {
-  const mLng = mPerDegLng(center.lat);
-  const x = (p.lng - center.lng) * mLng;
-  const y = (p.lat - center.lat) * M_PER_DEG_LAT;
-  const xr = x * cosA - y * sinA;
-  const yr = x * sinA + y * cosA;
-  return { lng: center.lng + xr / mLng, lat: center.lat + yr / M_PER_DEG_LAT };
-}
-function principalAxisAngle(rings: LatLng2[][]): number {
-  let cx = 0, cy = 0, n = 0;
-  for (const r of rings) for (const p of r) { cx += p.lng; cy += p.lat; n++; }
-  if (n === 0) return 0;
-  cx /= n; cy /= n;
-  const mLng = mPerDegLng(cy);
-  let sxx = 0, syy = 0, sxy = 0;
-  for (const r of rings) for (const p of r) {
-    const x = (p.lng - cx) * mLng;
-    const y = (p.lat - cy) * M_PER_DEG_LAT;
-    sxx += x * x; syy += y * y; sxy += x * y;
-  }
-  // Angle of the largest-eigenvalue eigenvector (long axis direction).
-  return 0.5 * Math.atan2(2 * sxy, sxx - syy);
-}
-
-type Pass = {
-  segs: { a: LatLng2; b: LatLng2; spray: boolean; zoneId?: string }[];
-};
-
-// Per-zone parallel lawnmower: each anomaly zone gets its OWN compact set of
-// parallel spray passes, all rotated to the FIELD's principal axis so every
-// zone's rows are parallel to every other zone's. Passes are clipped to
-// (boundary ∩ zone) so they only exist where the drone actually sprays —
-// no full-width rows, no skipped rows, no diagonal jumps across the field.
-// Adjacent passes inside a zone alternate direction (boustrophedon) for tight
-// U-turns at the zone edge; buildMission then bridges zones with a single
-// straight transit at altitude.
-function buildFieldSweep(
-  boundary: LatLng2[][],
-  zones: { id: string; ring: LatLng2[] }[],
-  spacingM: number,
-  repeats: number = 1,
-): Pass[][] {
-  if (!boundary.length || !zones.length) return [];
-  const fieldCenter = centroidOfRings(boundary);
-  const theta = principalAxisAngle(boundary);
-  const cF = Math.cos(-theta), sF = Math.sin(-theta);
-  const cI = Math.cos(theta),  sI = Math.sin(theta);
-  const rot   = (p: LatLng2) => rotateLL(p, fieldCenter, cF, sF);
-  const unrot = (p: LatLng2) => rotateLL(p, fieldCenter, cI, sI);
-  const rotBoundary = boundary.map(r => r.map(rot));
-  const spacing = Math.max(2, spacingM);
-
-  const fragments: Pass[][] = [];
-  for (const zone of zones) {
-    const rotRing = zone.ring.map(rot);
-    const bb = bboxOfRings([rotRing]);
-    const heightM = (bb.maxLat - bb.minLat) * M_PER_DEG_LAT;
-    if (heightM < 0.5) continue;
-    // Number of parallel rows fitting inside this zone at the given swath.
-    // Multiplying by `repeats` interleaves extra rows BETWEEN the base rows,
-    // producing visibly denser coverage (not duplicate lines on top of each
-    // other). 2× = halved spacing, 3× = third spacing, etc.
-    const r = Math.max(1, Math.floor(repeats));
-    const basePasses = Math.max(1, Math.round(heightM / spacing));
-    const passCount = basePasses * r;
-    const step = heightM / passCount;
-    const dLat = step / M_PER_DEG_LAT;
-    const padLng = (bb.maxLng - bb.minLng) * 0.05 + 0.0002;
-
-    const passes: Pass[] = [];
-    let flip = false;
-    for (let i = 0; i < passCount; i++) {
-      const y = bb.minLat + dLat * (i + 0.5);
-      const a = { lat: y, lng: bb.minLng - padLng };
-      const b = { lat: y, lng: bb.maxLng + padLng };
-
-      // Sweep line × zone ring → spray intervals inside the zone.
-      const zts = [0, 1, ...segRingIntersections(a, b, rotRing)]
-        .filter(t => t >= 0 && t <= 1).sort((x, y) => x - y);
-      // Build spray sub-segments clipped to (zone ∩ boundary).
-      const segs: Pass["segs"] = [];
-      for (let k = 0; k < zts.length - 1; k++) {
-        const t0 = zts[k], t1 = zts[k + 1];
-        if (t1 - t0 < 1e-9) continue;
-        const mid = lerp(a, b, (t0 + t1) / 2);
-        if (!pointInRing(mid, rotRing)) continue;
-        // Must also be inside the field boundary (drop slivers outside).
-        if (!rotBoundary.some(r => pointInRing(mid, r))) continue;
-        const pa = unrot(lerp(a, b, t0));
-        const pb = unrot(lerp(a, b, t1));
-        segs.push({ a: pa, b: pb, spray: true, zoneId: zone.id });
-      }
-      if (!segs.length) continue;
-      if (flip) {
-        segs.reverse();
-        for (const s of segs) { const t = s.a; s.a = s.b; s.b = t; }
-      }
-      flip = !flip;
-      passes.push({ segs });
-    }
-    if (passes.length) fragments.push(passes);
-  }
-  return fragments;
-}
-
-// =============================================================================
-// Mission building: full autonomous spray mission with three waypoint phases:
-//   TAKEOFF → TRANSIT (high, fast, sprayer off) → SPRAY (low, slow, sprayer on)
-//   → TRANSIT → ... → RTH → LAND
-// =============================================================================
-export type MissionAction =
-  | "TAKEOFF" | "TRANSIT" | "SPEED_CHANGE" | "ALTITUDE_CHANGE"
-  | "SPRAY_ON" | "SPRAY_WP" | "SPRAY_OFF" | "RTH" | "LAND";
-
-export type MissionWP = {
-  lat: number; lng: number; alt: number; speed: number;
-  action: MissionAction; zoneId?: string;
-};
-
-export type Mission = {
-  waypoints: MissionWP[];
-  transitDistM: number;
-  sprayDistM: number;
-  transitTimeS: number;
-  sprayTimeS: number;
-  sprayOnCount: number;
-  transitSegments: LatLng2[][];   // yellow dashed polylines (between zones)
-  spraySegments: LatLng2[][];     // cyan solid polylines (inside zones)
-  home: LatLng2;
-};
-
-function distM(a: LatLng2, b: LatLng2): number {
-  const dLat = (b.lat - a.lat) * M_PER_DEG_LAT;
-  const dLng = (b.lng - a.lng) * mPerDegLng((a.lat + b.lat) / 2);
-  return Math.sqrt(dLat * dLat + dLng * dLng);
-}
-
-export type MissionParams = {
-  home: LatLng2;
-  transitAltM: number;   // default 30
-  sprayAltM: number;     // default 3
-  transitSpeed: number;  // default 10 m/s
-  spraySpeed: number;    // default 3 m/s
-  spacingM: number;      // swath
-  repeats?: number;      // how many times to re-cover each zone (1 = once)
-};
-
-function buildMission(
-  boundary: LatLng2[][],
-  zones: { id: string; ring: LatLng2[] }[],
-  p: MissionParams,
-): Mission {
-  const wps: MissionWP[] = [];
-  const transitSegments: LatLng2[][] = [];
-  const spraySegments: LatLng2[][] = [];
-  let transitDist = 0, sprayDist = 0, sprayOnCount = 0;
-
-  // 1) Takeoff at home
-  wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "TAKEOFF" });
-
-  // Build a single field-wide lawnmower whose passes are split into spray
-  // (over anomaly zones) and transit (over healthy ground) sub-segments.
-  // Disjoint boundary polygons each become one fragment so buildMission can
-  // bridge them with a straight transit at altitude.
-  const fragments = buildFieldSweep(boundary, zones, p.spacingM, p.repeats ?? 1);
-
-  // Order fragments by nearest endpoint to the running exit point, and for
-  // each fragment pick the orientation (forward/reverse pass order × flip
-  // every pass) that minimises the inter-fragment hop. Result: drone enters
-  // each fragment from the side closest to its previous position, never
-  // cuts diagonally across the field, and the gap between separate field
-  // sections is bridged by a single straight transit at altitude.
-  const orderedPasses: Pass[] = [];
-  const remaining = fragments.slice();
-  let runningExit: LatLng2 = p.home;
-  while (remaining.length) {
-    let bestIdx = -1, bestDist = Infinity, bestRev = false, bestFlip = false;
-    remaining.forEach((frag, idx) => {
-      const first = frag[0], last = frag[frag.length - 1];
-      if (!first.segs.length || !last.segs.length) return;
-      const candidates: { rev: boolean; flip: boolean; pt: LatLng2 }[] = [
-        { rev: false, flip: false, pt: first.segs[0].a },
-        { rev: false, flip: true,  pt: first.segs[first.segs.length - 1].b },
-        { rev: true,  flip: false, pt: last.segs[0].a },
-        { rev: true,  flip: true,  pt: last.segs[last.segs.length - 1].b },
-      ];
-      for (const c of candidates) {
-        const d = distM(runningExit, c.pt);
-        if (d < bestDist) { bestDist = d; bestIdx = idx; bestRev = c.rev; bestFlip = c.flip; }
-      }
-    });
-    if (bestIdx < 0) break;
-    const frag = remaining.splice(bestIdx, 1)[0];
-    if (bestRev) frag.reverse();
-    if (bestFlip) {
-      for (const pass of frag) {
-        pass.segs.reverse();
-        for (const s of pass.segs) { const t = s.a; s.a = s.b; s.b = t; }
-      }
-    }
-    orderedPasses.push(...frag);
-    const lastPass = frag[frag.length - 1];
-    runningExit = lastPass.segs[lastPass.segs.length - 1].b;
-  }
-
-  let prev: LatLng2 | null = null;
-  let sprayOn = false;
-
-  for (const pass of orderedPasses) {
-    for (const seg of pass.segs) {
-      // Connector from previous pass end (or home/takeoff) to this segment's start.
-      // The drone never makes sharp diagonal jumps — it transitions at transit
-      // altitude between rows.
-      const connectorFrom = prev ?? p.home;
-      if (distM(connectorFrom, seg.a) > 0.5) {
-        if (sprayOn) {
-          wps.push({ ...connectorFrom, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF" });
-          sprayOn = false;
-        }
-        wps.push({ ...connectorFrom, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
-        wps.push({ ...connectorFrom, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
-        wps.push({ ...seg.a, alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT" });
-        transitSegments.push([connectorFrom, seg.a]);
-        transitDist += distM(connectorFrom, seg.a);
-      }
-
-      if (seg.spray) {
-        // Enter spray: descend, slow, sprayer ON.
-        if (!sprayOn) {
-          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "ALTITUDE_CHANGE", zoneId: seg.zoneId });
-          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPEED_CHANGE", zoneId: seg.zoneId });
-          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_ON", zoneId: seg.zoneId });
-          sprayOn = true;
-          sprayOnCount++;
-        }
-        wps.push({ ...seg.b, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_WP", zoneId: seg.zoneId });
-        spraySegments.push([seg.a, seg.b]);
-        sprayDist += distM(seg.a, seg.b);
-      } else {
-        // Transit through a healthy section of the same pass — sprayer OFF, speed up.
-        if (sprayOn) {
-          wps.push({ ...seg.a, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF" });
-          sprayOn = false;
-        }
-        wps.push({ ...seg.a, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
-        wps.push({ ...seg.a, alt: p.transitAltM, speed: p.transitSpeed, action: "SPEED_CHANGE" });
-        wps.push({ ...seg.b, alt: p.transitAltM, speed: p.transitSpeed, action: "TRANSIT" });
-        transitSegments.push([seg.a, seg.b]);
-        transitDist += distM(seg.a, seg.b);
-      }
-      prev = seg.b;
-    }
-  }
-
-  // Close out sprayer + RTH + land
-  if (prev && sprayOn) {
-    wps.push({ ...prev, alt: p.sprayAltM, speed: p.spraySpeed, action: "SPRAY_OFF" });
-    sprayOn = false;
-  }
-  if (prev) {
-    // Straight-line RTH at transit altitude — no obstacles up there.
-    wps.push({ ...prev, alt: p.transitAltM, speed: p.transitSpeed, action: "ALTITUDE_CHANGE" });
-    wps.push({ ...p.home, alt: p.transitAltM, speed: p.transitSpeed, action: "RTH" });
-    const rth: LatLng2[] = [prev, p.home];
-    transitSegments.push(rth);
-    transitDist += distM(prev, p.home);
-  }
-  wps.push({ ...p.home, alt: 0, speed: 1, action: "LAND" });
-
-  return {
-    waypoints: wps,
-    transitDistM: transitDist,
-    sprayDistM: sprayDist,
-    transitTimeS: transitDist / Math.max(0.1, p.transitSpeed),
-    sprayTimeS: sprayDist / Math.max(0.1, p.spraySpeed),
-    sprayOnCount,
-    transitSegments,
-    spraySegments,
-    home: p.home,
-  };
-}
-
-// QGC WPL 110 / Mission Planner format. Encodes action waypoints with
-// MAVLink-equivalent commands so Mission Planner & DJI converters keep them.
-//   cmd 22  NAV_TAKEOFF
-//   cmd 16  NAV_WAYPOINT
-//   cmd 178 DO_CHANGE_SPEED   (p2 = speed m/s)
-//   cmd 183 DO_SET_SERVO      (p1 = servo #, p2 = PWM; 2000 ON / 1000 OFF)
-//   cmd 20  NAV_RETURN_TO_LAUNCH
-//   cmd 21  NAV_LAND
-function exportMissionFile(m: Mission): Blob {
-  const lines: string[] = ["QGC WPL 110"];
-  const SPRAY_SERVO = 8;
-  const row = (
-    idx: number, current: 0 | 1, frame: number, cmd: number,
-    p1: number, p2: number, p3: number, p4: number,
-    lat: number, lng: number, alt: number,
-  ) => lines.push(
-    `${idx}\t${current}\t${frame}\t${cmd}\t${p1.toFixed(2)}\t${p2.toFixed(2)}\t${p3.toFixed(2)}\t${p4.toFixed(2)}\t${lat.toFixed(8)}\t${lng.toFixed(8)}\t${alt.toFixed(2)}\t1`,
-  );
-  // Home (index 0)
-  row(0, 1, 0, 16, 0, 0, 0, 0, m.home.lat, m.home.lng, m.waypoints[0]?.alt ?? 0);
-  let idx = 1;
-  for (const w of m.waypoints) {
-    if (w.action === "TAKEOFF")          row(idx++, 0, 3, 22,  0, 0, 0, 0, w.lat, w.lng, w.alt);
-    else if (w.action === "SPEED_CHANGE") row(idx++, 0, 3, 178, 1, w.speed, -1, 0, 0, 0, 0);
-    else if (w.action === "SPRAY_ON")     row(idx++, 0, 3, 183, SPRAY_SERVO, 2000, 0, 0, 0, 0, 0);
-    else if (w.action === "SPRAY_OFF")    row(idx++, 0, 3, 183, SPRAY_SERVO, 1000, 0, 0, 0, 0, 0);
-    else if (w.action === "RTH")          row(idx++, 0, 3, 20,  0, 0, 0, 0, w.lat, w.lng, w.alt);
-    else if (w.action === "LAND")         row(idx++, 0, 3, 21,  0, 0, 0, 0, w.lat, w.lng, w.alt);
-    else                                   row(idx++, 0, 3, 16, 0, 0, 0, 0, w.lat, w.lng, w.alt);
-  }
-  return new Blob([lines.join("\n") + "\n"], { type: "text/plain" });
-}
-
-function centroidOfRings(rings: LatLng2[][]): LatLng2 {
-  let lat = 0, lng = 0, n = 0;
-  for (const r of rings) for (const p of r) { lat += p.lat; lng += p.lng; n++; }
-  return n > 0 ? { lat: lat / n, lng: lng / n } : { lat: 0, lng: 0 };
-}
-
-// --- Transit routing: keep flight paths INSIDE the boundary ------------------
-// If a straight segment from a→b would leave every boundary ring, insert
-// intermediate waypoints via the centroid of the ring containing the endpoint
-// (recursively). This is a simple but effective detour scheme for convex-ish
-// fragmented fields.
-function centroidOfRing(ring: LatLng2[]): LatLng2 {
-  let lat = 0, lng = 0;
-  for (const p of ring) { lat += p.lat; lng += p.lng; }
-  return { lat: lat / ring.length, lng: lng / ring.length };
-}
-function segmentInsideRings(a: LatLng2, b: LatLng2, rings: LatLng2[][], samples = 12): boolean {
-  for (let i = 1; i < samples; i++) {
-    const t = i / samples;
-    if (!pointInAnyRing(lerp(a, b, t), rings)) return false;
-  }
-  return true;
-}
-function ringContaining(p: LatLng2, rings: LatLng2[][]): LatLng2[] | null {
-  for (const r of rings) if (pointInRing(p, r)) return r;
-  return null;
-}
-function routeInsideBoundary(a: LatLng2, b: LatLng2, rings: LatLng2[][], depth = 0): LatLng2[] {
-  if (depth > 4 || segmentInsideRings(a, b, rings)) return [a, b];
-  // Pick a detour anchor that is guaranteed inside the boundary part containing b
-  // (or a, or the overall centroid as a last resort).
-  const anchor =
-    centroidSafe(ringContaining(b, rings)) ||
-    centroidSafe(ringContaining(a, rings)) ||
-    centroidOfRings(rings);
-  // Avoid infinite recursion if anchor equals an endpoint
-  if (distM(a, anchor) < 1 || distM(b, anchor) < 1) return [a, b];
-  const left = routeInsideBoundary(a, anchor, rings, depth + 1);
-  const right = routeInsideBoundary(anchor, b, rings, depth + 1);
-  return [...left, ...right.slice(1)];
-}
-function centroidSafe(ring: LatLng2[] | null): LatLng2 | null {
-  return ring && ring.length >= 3 ? centroidOfRing(ring) : null;
-}
-function polylineLengthM(pts: LatLng2[]): number {
-  let d = 0;
-  for (let i = 1; i < pts.length; i++) d += distM(pts[i - 1], pts[i]);
-  return d;
-}
 
 function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
