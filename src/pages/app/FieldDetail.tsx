@@ -13,8 +13,8 @@ import {
 import { toast } from "sonner";
 import { hasGPS } from "@/lib/imagePrep";
 import {
-  MAX_IMAGES, MIN_IMAGES, UploadError, type UploadProgress,
-  clearCheckpoint, readCheckpoint, uploadScan,
+  MAX_IMAGES, MIN_IMAGES, UploadError, type NodeCapabilities, type UploadProgress,
+  clearCheckpoint, effectiveMaxImages, fetchNodeCapabilities, readCheckpoint, uploadScan,
 } from "@/lib/scanUpload";
 import { PAGE_SIZE, appendPage, hasMore, pageRange } from "@/lib/pagination";
 
@@ -51,6 +51,7 @@ export default function FieldDetail() {
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [resumable, setResumable] = useState<{ done: number; total: number } | null>(null);
   const [orthoAvailable, setOrthoAvailable] = useState<Record<string, boolean>>({});
+  const [caps, setCaps] = useState<NodeCapabilities | null>(null);
   const [taskPage, setTaskPage] = useState(0);
   const [tasksHasMore, setTasksHasMore] = useState(false);
   const pollRef = useRef<number | null>(null);
@@ -62,6 +63,9 @@ export default function FieldDetail() {
     const c = readCheckpoint(fieldId);
     setResumable(c ? { done: c.done.length, total: c.total } : null);
   }, [fieldId, busy]);
+
+  useEffect(() => { void fetchNodeCapabilities().then(setCaps); }, []);
+  const maxImages = effectiveMaxImages(caps);
 
   const loadField = async () => {
     if (!fieldId) return;
@@ -136,7 +140,13 @@ export default function FieldDetail() {
     if (!fieldId) return;
     if (!files.length) return toast.error("Select drone images first");
     if (files.length < MIN_IMAGES) return toast.error(`Need at least ${MIN_IMAGES} images for reconstruction`);
-    if (files.length > MAX_IMAGES) return toast.error(`Max ${MAX_IMAGES} images per scan (processing node limit)`);
+    if (files.length > maxImages) {
+      return toast.error(
+        `Your processing node accepts ${maxImages} images per scan. ` +
+        `Split this into smaller batches — uploading more would waste data on images it will reject.`,
+        { duration: 9000 },
+      );
+    }
 
     // Pre-flight: sample a few images for GPS EXIF. Without GPS, ODM produces
     // an ungeoreferenced ortho that lands at lat 0, lng 0 (Atlantic ocean).
@@ -363,9 +373,12 @@ export default function FieldDetail() {
         <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 p-3 rounded border border-dashed">
           <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <div>
-            Recommended: 30–{MAX_IMAGES} overlapping nadir drone images at 70–80% overlap.
-            Min {MIN_IMAGES}, max {MAX_IMAGES} per scan (processing-node limit).
-            Uploads resume where they stopped, so a dropped connection costs you nothing.
+            Recommended: overlapping nadir drone images at 70–80% overlap.
+            Min {MIN_IMAGES}, max <strong>{maxImages}</strong> per scan
+            {caps?.online
+              ? " — read live from your processing node, so it matches what it will actually accept."
+              : " (node unreachable; showing our default ceiling)."}
+            {" "}Uploads resume where they stopped, so a dropped connection costs you nothing.
           </div>
         </div>
       </Card>

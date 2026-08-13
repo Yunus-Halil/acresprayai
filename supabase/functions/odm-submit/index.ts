@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { fetchResilient, jsonSafe } from "../_shared/net.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,6 +46,36 @@ Deno.serve(async (req) => {
     );
 
     const action = req.headers.get("x-action") ?? "";
+
+    // ---- CAPABILITIES ----
+    // The node's image cap is not a constant: it scales with the account's
+    // credits and plan. Hardcoding it client-side means a farmer selects more
+    // images than the node will take, uploads right up to the ceiling, and only
+    // then gets rejected - having already spent the data. Ask the node instead.
+    if (action === "capabilities") {
+      try {
+        const r = await fetchResilient(odmUrl("/info"), {
+          timeoutMs: 15_000, attempts: 2, label: "odm-submit:info",
+        });
+        const info = await jsonSafe<{
+          maxImages?: number; maxParallelTasks?: number;
+          taskQueueCount?: number; version?: string; engineVersion?: string;
+        }>(r);
+        if (!r.ok || !info) {
+          return json({ error: "Processing node unreachable", online: false }, 502);
+        }
+        return json({
+          online: true,
+          maxImages: typeof info.maxImages === "number" ? info.maxImages : null,
+          maxParallelTasks: info.maxParallelTasks ?? null,
+          queueCount: info.taskQueueCount ?? null,
+          version: info.version ?? null,
+          engineVersion: info.engineVersion ?? null,
+        });
+      } catch (e) {
+        return json({ error: String((e as Error)?.message ?? e), online: false }, 502);
+      }
+    }
 
     // ---- INIT ----
     if (action === "init") {

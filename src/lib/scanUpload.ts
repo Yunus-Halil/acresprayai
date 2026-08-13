@@ -17,7 +17,52 @@ const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
 
 export const MIN_IMAGES = 5;
+/**
+ * Absolute client-side ceiling. The *real* limit is whatever the processing node
+ * reports (see `fetchNodeCapabilities`) — it scales with the account's credits
+ * and plan, so it cannot be a constant here. This is only a sanity bound for
+ * when the node can't be reached.
+ */
 export const MAX_IMAGES = 200;
+
+export type NodeCapabilities = {
+  online: boolean;
+  maxImages: number | null;
+  maxParallelTasks: number | null;
+  queueCount: number | null;
+  version: string | null;
+  engineVersion: string | null;
+};
+
+/**
+ * Ask the processing node what it will actually accept.
+ *
+ * Without this the UI advertises a limit the node may not honour, and a farmer
+ * uploads right up to the node's real ceiling before being rejected — having
+ * already spent the data on every image that landed. Returns null when the node
+ * cannot be reached, in which case the caller should fall back to MAX_IMAGES.
+ */
+export async function fetchNodeCapabilities(): Promise<NodeCapabilities | null> {
+  try {
+    const res = await fetch(`${FN_BASE}/odm-submit`, {
+      method: "POST",
+      headers: { Authorization: await authHeader(), "x-action": "capabilities" },
+    });
+    const j = await res.json().catch(() => null);
+    if (!res.ok || !j?.online) return null;
+    return j as NodeCapabilities;
+  } catch {
+    return null;
+  }
+}
+
+/** The limit to enforce right now, given what the node reported. */
+export function effectiveMaxImages(caps: NodeCapabilities | null): number {
+  const nodeMax = caps?.maxImages;
+  return typeof nodeMax === "number" && nodeMax > 0
+    ? Math.min(nodeMax, MAX_IMAGES)
+    : MAX_IMAGES;
+}
 const CONCURRENCY = 2;
 const PER_IMAGE_ATTEMPTS = 4;
 const BASE_BACKOFF_MS = 800;
