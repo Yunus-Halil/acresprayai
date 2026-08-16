@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
       const imageCount = parseInt(req.headers.get("x-image-count") ?? "0", 10);
 
       const fd = new FormData();
-      fd.append("name", `acrespray-${Date.now()}`);
+      fd.append("name", `swathwise-${Date.now()}`);
       const initRes = await fetch(odmUrl("/task/new/init"), { method: "POST", body: fd });
       const initJson = await initRes.json();
       if (!initRes.ok || !initJson.uuid) {

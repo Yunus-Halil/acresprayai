@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 
 // Every figure here must be either measured by the product or labelled as the
 // estimate it is. "30% pesticide reduction / yield maintained in field tests"
-// used to sit in this list: AcreSpray has run no such trials, and the analysis
+// used to sit in this list: SwathWise has run no such trials, and the analysis
 // engine will not even claim a nutrient diagnosis from RGB imagery. Replaced
 // with what the product genuinely does and honest, sourced framing for the rest.
 const stats = [
@@ -28,7 +28,7 @@ export const Stats = () => {
           <p className="md:col-span-6 md:col-start-7 text-lg text-muted-foreground leading-relaxed self-end">
             Spraying is done uniformly across fields instead of where it’s needed,
             largely because per-patch targeting has needed equipment and analysis
-            most farms don’t have. AcreSpray AI puts that on a drone you already own.
+            most farms don’t have. SwathWise puts that on a drone you already own.
           </p>
         </div>
 

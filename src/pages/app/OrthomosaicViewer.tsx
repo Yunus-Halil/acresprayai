@@ -519,7 +519,7 @@ export default function OrthomosaicViewer() {
         data_source: j.data_source ?? "RGB",
         band_count: j.band_count ?? 3,
         ndvi_cells: j.ndvi_cells ?? [],
-        disclaimer: j.disclaimer ?? "These zones show anomalies detected from aerial imagery. Ground inspection is recommended to confirm issue type before treatment. AcreSpray AI does not replace professional agronomic advice.",
+        disclaimer: j.disclaimer ?? "These zones show anomalies detected from aerial imagery. Ground inspection is recommended to confirm issue type before treatment. SwathWise does not replace professional agronomic advice.",
       };
       setAnalysis(payload);
       setSelectedZone(j.zones?.[0]?.id ?? null);

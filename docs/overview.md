@@ -2,13 +2,13 @@
 
 ## What the product does
 
-AcreSpray AI is a web application for farmers and agricultural drone operators. The job it does:
+SwathWise is a web application for farmers and agricultural drone operators. The job it does:
 
 1. A farmer flies a drone over their field and gets a folder of overlapping photographs.
-2. AcreSpray turns those into a single georeferenced aerial image — an **orthomosaic**.
+2. SwathWise turns those into a single georeferenced aerial image — an **orthomosaic**.
 3. The farmer draws the exact outline of their land on that image.
 4. A vision model examines the imagery and flags patches that look wrong.
-5. AcreSpray generates a flyable spray mission that treats **only those patches**.
+5. SwathWise generates a flyable spray mission that treats **only those patches**.
 
 The end products a user walks away with:
 

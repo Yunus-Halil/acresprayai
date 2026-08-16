@@ -9,6 +9,7 @@
 // server-side and falls back to Open-Meteo itself. Storage units are metric
 // (°C, km/h, mm); presentation converts.
 import { supabase } from "@/integrations/supabase/client";
+import { storageKey } from "@/lib/storage";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
@@ -39,7 +40,7 @@ export type CachedForecast = { savedAt: number; data: Forecast };
 // derate its battery estimate for wind and temperature. Changing the shape or
 // the rounding without updating PlannerTab silently drops that derating.
 export const wxCacheKey = (lat: number, lng: number) =>
-  `acrespray.weather.${lat.toFixed(3)},${lng.toFixed(3)}`;
+  storageKey("weather", `${lat.toFixed(3)},${lng.toFixed(3)}`);
 
 /** Cached forecast for a location, or null when absent or stale. */
 export function readCachedWeather(lat: number, lng: number): CachedForecast | null {

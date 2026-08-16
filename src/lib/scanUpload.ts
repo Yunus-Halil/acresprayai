@@ -12,6 +12,7 @@
 // stopped rather than starting over.
 import { supabase } from "@/integrations/supabase/client";
 import { prepareForODM } from "@/lib/imagePrep";
+import { storageKey } from "@/lib/storage";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
@@ -78,7 +79,7 @@ type Checkpoint = {
   savedAt: number;
 };
 
-const ckptKey = (fieldId: string) => `acrespray.upload.${fieldId}`;
+const ckptKey = (fieldId: string) => storageKey("upload", fieldId);
 /** Files have no stable id across page loads; name+size+mtime is close enough. */
 const fileKey = (f: File) => `${f.name}:${f.size}:${f.lastModified}`;
 

@@ -469,7 +469,7 @@ ${rings.map((r, ri) => `Part ${ri + 1} vertices (lat, lng):\n${r.map((p, i) => `
       data_source: hasNDVI ? "NDVI+RGB" : "RGB",
       band_count: bandCount,
       ndvi_cells: ndviCells,
-      disclaimer: "These zones show anomalies detected from aerial imagery. Ground inspection is recommended to confirm issue type before treatment. AcreSpray AI does not replace professional agronomic advice.",
+      disclaimer: "These zones show anomalies detected from aerial imagery. Ground inspection is recommended to confirm issue type before treatment. SwathWise does not replace professional agronomic advice.",
     });
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e) }, 500);

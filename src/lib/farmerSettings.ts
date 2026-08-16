@@ -133,7 +133,7 @@ export function mergeFarmerSettings(saved: unknown): FarmerSettings {
 
 /**
  * Currencies offered in Settings. Not exhaustive by design — a short list of
- * the places AcreSpray is aimed at beats a 180-entry dropdown. Any valid ISO
+ * the places SwathWise is aimed at beats a 180-entry dropdown. Any valid ISO
  * 4217 code stored on a field still formats correctly.
  */
 export const CURRENCIES: { code: string; label: string }[] = [

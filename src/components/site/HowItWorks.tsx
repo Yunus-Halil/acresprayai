@@ -52,7 +52,7 @@ export const HowItWorks = () => {
             >
               <img
                 src={orthoAnomaly}
-                alt="AcreSpray orthomosaic with AI-detected anomaly zones overlaid on a real field"
+                alt="SwathWise orthomosaic with AI-detected anomaly zones overlaid on a real field"
                 width={1280}
                 height={1280}
                 loading="lazy"

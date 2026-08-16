@@ -40,7 +40,7 @@ export const Hero = () => {
               refuses to diagnose nutrient deficiency, disease or pest pressure —
               so the copy promises targeting, not agronomic outcomes. */}
           <p className="mt-8 max-w-2xl text-lg md:text-xl text-muted-foreground leading-relaxed">
-            AcreSpray AI turns your drone imagery into an orthomosaic, flags the
+            SwathWise turns your drone imagery into an orthomosaic, flags the
             patches that look wrong, and builds the spray mission to treat just
             those patches.
             <span className="text-foreground"> Treat acres, not fields.</span>
@@ -70,7 +70,7 @@ export const Hero = () => {
         >
           <img
             src={heroImg}
-            alt="AcreSpray flight planner showing a generated spray mission over a real orthomosaic"
+            alt="SwathWise flight planner showing a generated spray mission over a real orthomosaic"
             width={1920}
             height={1080}
             className="w-full h-auto block"

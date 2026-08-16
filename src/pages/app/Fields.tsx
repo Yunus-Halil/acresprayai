@@ -115,7 +115,7 @@ export default function Fields() {
           <Leaf className="h-10 w-10 mx-auto text-primary" />
           <div className="font-display text-xl">No fields yet</div>
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
-            Every scan and orthomosaic in AcreSpray lives inside a field. Create your first field to start.
+            Every scan and orthomosaic in SwathWise lives inside a field. Create your first field to start.
           </p>
           <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Create your first field</Button>
         </Card>

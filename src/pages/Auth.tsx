@@ -65,7 +65,7 @@ export default function Auth() {
       <div className="hidden lg:flex relative bg-[hsl(var(--field))] grid-bg-dark overflow-hidden">
         <div className="relative z-10 p-12 flex flex-col justify-between text-[hsl(var(--primary-foreground))]">
           <Link to="/" className="flex items-center gap-2 font-display text-xl">
-            <Leaf className="h-5 w-5 text-[hsl(var(--accent))]" /> AcreSpray AI
+            <Leaf className="h-5 w-5 text-[hsl(var(--accent))]" /> SwathWise
           </Link>
           <div className="space-y-4 max-w-md">
             <h1 className="font-display text-4xl leading-tight">Precision spraying, powered by AI.</h1>
@@ -80,7 +80,7 @@ export default function Auth() {
         <Card className="w-full max-w-md p-8 space-y-6">
           <div>
             <h2 className="font-display text-2xl">{mode === "signin" ? "Welcome back" : "Start your trial"}</h2>
-            <p className="text-sm text-muted-foreground">{mode === "signin" ? "Sign in to your AcreSpray AI cockpit." : "Create an account to monitor your first field."}</p>
+            <p className="text-sm text-muted-foreground">{mode === "signin" ? "Sign in to your SwathWise cockpit." : "Create an account to monitor your first field."}</p>
           </div>
 
           <Button type="button" variant="outline" className="w-full" onClick={google}>

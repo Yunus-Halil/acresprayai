@@ -1,12 +1,12 @@
-import logo from "@/assets/acrespray-logo.png";
+import logo from "@/assets/swathwise-logo.png";
 
 export const Footer = () => {
   return (
     <footer className="border-t border-border py-12 bg-background">
       <div className="container flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
         <div className="flex items-center gap-2">
-          <img src={logo} alt="AcreSpray AI" className="h-6 w-6" />
-          <span className="font-display font-semibold">AcreSpray AI</span>
+          <img src={logo} alt="SwathWise" className="h-6 w-6" />
+          <span className="font-display font-semibold">SwathWise</span>
           <span className="font-mono text-xs text-muted-foreground ml-3">
             © 2026 · Pinnacle DSE Capstone
           </span>

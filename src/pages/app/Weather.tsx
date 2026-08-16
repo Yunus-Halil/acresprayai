@@ -10,6 +10,7 @@ import { Cloud, CloudRain, MapPin, Loader2, Trash2, Play, Pause, Sun, CloudSnow,
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { cToF, fetchWeather, kmhToMph, mmToIn } from "@/lib/weather";
+import { storageKey } from "@/lib/storage";
 
 type Farm = { id: string; name: string; address: string; lat: number; lng: number; source?: "field" | "manual" };
 type Suggestion = { id: number; name: string; admin1?: string; country?: string; latitude: number; longitude: number };
@@ -50,7 +51,7 @@ const WMO: Record<number, { label: string; Icon: any }> = {
 };
 const wmo = (c: number) => WMO[c] ?? { label: "Unknown", Icon: Cloud };
 
-const STORAGE_KEY = "acrespray.farms";
+const STORAGE_KEY = storageKey("farms");
 
 // Fix default marker icons (Leaflet + bundlers)
 delete (L.Icon.Default.prototype as any)._getIconUrl;

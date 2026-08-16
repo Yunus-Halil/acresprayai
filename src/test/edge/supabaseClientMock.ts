@@ -6,7 +6,7 @@
 // harness calls `vi.resetModules()` before importing a function (so its own
 // module-level singletons and caches reset), which would otherwise hand the
 // function a fresh, empty copy of this module.
-const KEY = "__acrespray_mock_supabase_client__";
+const KEY = "__swathwise_mock_supabase_client__";
 
 export function __setMockClient(client: unknown) {
   (globalThis as Record<string, unknown>)[KEY] = client;

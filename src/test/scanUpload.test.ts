@@ -30,6 +30,7 @@ import {
   MAX_IMAGES, MIN_IMAGES, UploadError,
   clearCheckpoint, readCheckpoint, uploadScan,
 } from "@/lib/scanUpload";
+import { migrateLegacyStorage } from "@/lib/storage";
 
 // --- helpers ----------------------------------------------------------------
 
@@ -247,9 +248,9 @@ describe("uploadScan · resume", () => {
     installFetch(scenario({ fail: new Map([["IMG_4.jpg", { status: 500 }]]) }));
     await uploadScan({ fieldId: FIELD, files: makeFiles(6), onProgress: noop }).catch(() => {});
 
-    const raw = JSON.parse(localStorage.getItem(`acrespray.upload.${FIELD}`)!);
+    const raw = JSON.parse(localStorage.getItem(`swathwise.upload.${FIELD}`)!);
     raw.savedAt = Date.now() - 2 * 86_400_000;
-    localStorage.setItem(`acrespray.upload.${FIELD}`, JSON.stringify(raw));
+    localStorage.setItem(`swathwise.upload.${FIELD}`, JSON.stringify(raw));
 
     expect(readCheckpoint(FIELD)).toBeNull();
   });
@@ -387,5 +388,55 @@ describe("uploadScan · batch bounds", () => {
   it("exposes the node's limits as constants the UI can enforce", () => {
     expect(MIN_IMAGES).toBe(5);
     expect(MAX_IMAGES).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("legacy storage migration (AcreSpray -> SwathWise rename)", () => {
+  it("carries an in-flight upload checkpoint across the rename", async () => {
+    // The checkpoint is what stops a dropped connection from re-sending images
+    // that already landed. Orphaning it on a rename would silently cost a farmer
+    // their whole upload allowance for that batch.
+    const ckpt = { odmUuid: "u", taskId: "t", fieldId: FIELD, done: ["a", "b"], total: 9, savedAt: Date.now() };
+    localStorage.setItem(`acrespray.upload.${FIELD}`, JSON.stringify(ckpt));
+
+    migrateLegacyStorage();
+
+    expect(readCheckpoint(FIELD)?.done).toEqual(["a", "b"]);
+    expect(localStorage.getItem(`acrespray.upload.${FIELD}`)).toBeNull();
+  });
+
+  it("carries other saved preferences across", () => {
+    localStorage.setItem("acrespray.pilot_name", "Yunus");
+    localStorage.setItem("acrespray.farms", '[{"id":"1"}]');
+
+    migrateLegacyStorage();
+
+    expect(localStorage.getItem("swathwise.pilot_name")).toBe("Yunus");
+    expect(localStorage.getItem("swathwise.farms")).toBe('[{"id":"1"}]');
+  });
+
+  it("never overwrites a value already saved under the new name", () => {
+    localStorage.setItem("acrespray.pilot_name", "old");
+    localStorage.setItem("swathwise.pilot_name", "current");
+
+    migrateLegacyStorage();
+
+    expect(localStorage.getItem("swathwise.pilot_name")).toBe("current");
+    expect(localStorage.getItem("acrespray.pilot_name")).toBeNull();
+  });
+
+  it("is idempotent and safe to run on every boot", () => {
+    localStorage.setItem("acrespray.pilot_name", "Yunus");
+    migrateLegacyStorage();
+    expect(() => { migrateLegacyStorage(); migrateLegacyStorage(); }).not.toThrow();
+    expect(localStorage.getItem("swathwise.pilot_name")).toBe("Yunus");
+  });
+
+  it("leaves unrelated keys alone", () => {
+    localStorage.setItem("some-other-app.thing", "keep me");
+    migrateLegacyStorage();
+    expect(localStorage.getItem("some-other-app.thing")).toBe("keep me");
   });
 });
