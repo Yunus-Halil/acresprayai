@@ -19,9 +19,8 @@ export const PilotCTA = () => (
       </div>
 
       <div className="justify-self-start">
-        {/* During the pilot, creating an account is how you apply. */}
         <a
-          href="/auth"
+          href="/apply"
           className="inline-flex items-center gap-2.5 whitespace-nowrap rounded bg-sw-bright px-8 py-4 text-[17px] font-semibold text-[#0c100b] transition-colors hover:bg-sw-bright-hi sm:px-[34px] sm:py-[18px]"
         >
           Apply to Pilot <span className="font-plex">→</span>

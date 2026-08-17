@@ -1,9 +1,9 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
-import { useEffect } from "react";
-import { LayoutDashboard, Map, LogOut, Loader2, Plane, CloudRain } from "lucide-react";
+import { LayoutDashboard, Map, LogOut, Plane, CloudRain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import RequireAuth from "@/components/RequireAuth";
 import logo from "@/assets/swathwise-logo.png";
 
 const nav = [
@@ -16,16 +16,16 @@ const nav = [
 // no cross-field reporting page.
 
 export default function AppLayout() {
-  const { user, loading, signOut } = useAuth();
-  const navigate = useNavigate();
+  return (
+    <RequireAuth>
+      <AppShell />
+    </RequireAuth>
+  );
+}
 
-  useEffect(() => {
-    if (!loading && !user) navigate("/auth", { replace: true });
-  }, [loading, user, navigate]);
-
-  if (loading || !user) {
-    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
-  }
+function AppShell() {
+  // RequireAuth guarantees a user by the time this renders.
+  const { user, signOut } = useAuth();
 
   return (
     <div className="min-h-screen flex bg-background">

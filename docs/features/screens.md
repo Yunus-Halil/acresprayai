@@ -2,8 +2,10 @@
 
 | Route | Screen | What the user does |
 |---|---|---|
-| `/` | Landing page | Marketing sections plus a waitlist email capture writing to `pilot_signups` |
+| `/` | Landing page | Marketing sections, ending in the pilot call to action |
+| `/apply` | Pilot application | The detailed application form — see [pilot-applications.md](pilot-applications.md) |
 | `/auth` | Sign in / sign up | Email+password or Google |
+| `/admin/pilot-applications` | Pilot pipeline | Every application, newest first. Signed in **and** on the admin allowlist |
 | `/app` | Operations dashboard | KPI row and field list |
 | `/app/fields` | Fields | Create, rename inline, delete fields |
 | `/app/fields/:id` | Field detail | Upload images, watch progress, browse and recover scans |
@@ -11,7 +13,10 @@
 | `/app/weather` | Weather radar | Saved locations, current conditions, 7-day outlook |
 | `/app/orthomosaic/:taskId` | Workspace | Everything else — see [workspace.md](workspace.md) |
 
-`/app/*` routes render inside `AppLayout`, which holds the sidebar and the auth guard. The
+`/app/*` routes render inside `AppLayout`, which holds the sidebar and wraps its shell in
+`RequireAuth`. `/admin/pilot-applications` uses the same `RequireAuth` guard directly — but
+note that guard only proves someone is signed in; the allowlist that actually protects
+applicants is enforced server-side by the `pilot-applications` function. The
 workspace deliberately sits outside that shell and opens full-screen in a new tab.
 
 ## Dashboard — `/app`

@@ -8,9 +8,16 @@
   Google provider enabled in the project's auth settings.
 - A Postgres trigger on `auth.users` creates a `profiles` row automatically on signup.
 
-Sessions persist in `localStorage` and auto-refresh. `AppLayout` guards every `/app/*` route and
-redirects to `/auth` when there is no user. The workspace route sits outside that shell and
+Sessions persist in `localStorage` and auto-refresh. `RequireAuth` is the one route guard:
+`AppLayout` wraps its shell in it for every `/app/*` route, and `/admin/pilot-applications` uses
+it directly. It redirects to `/auth` when there is no user, and deliberately waits rather than
+redirecting while the session is still restoring. The workspace route sits outside that shell and
 checks the session itself.
+
+**`RequireAuth` proves someone is signed in, not that they may see any particular data.** Every
+customer of the product has an account. Anything sensitive still authorises server-side —
+`/admin/pilot-applications` renders for any signed-in user, but its data comes from a function
+that returns 403 to anyone off the admin allowlist.
 
 ## Authorisation model
 
@@ -20,6 +27,7 @@ checks the session itself.
 | Storage objects | Bucket policies keyed on the first path segment being the user's id |
 | Edge functions (JSON) | `Authorization: Bearer <jwt>` → `auth.getUser()` → explicit `user_id` comparison against the target row |
 | Map tile endpoints | JWT via header **or** `?token=`, then ownership lookup against `odm_tasks`; the storage key is rebuilt server-side from the verified owner |
+| Pilot applications | JWT, then an **email allowlist** (`PILOT_ADMIN_EMAILS`) — these rows have no owner to compare against |
 
 ## The service-role rule
 

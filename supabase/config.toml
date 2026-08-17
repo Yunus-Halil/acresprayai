@@ -9,3 +9,10 @@ verify_jwt = false
 
 [functions.tile]
 verify_jwt = false
+
+# Pilot applicants are not signed in - that is the whole point of the form. The
+# platform gate is therefore off; the RLS insert policy on pilot_applications
+# and the shared validator are what constrain what can be submitted. The
+# matching read endpoint, pilot-applications, keeps the gate on.
+[functions.pilot-apply]
+verify_jwt = false

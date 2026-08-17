@@ -36,6 +36,7 @@ export default {
           bright: "#4faa39",
           "bright-hi": "#67c94f",
           transit: "#c3c8b8",
+          error: "#a8321f",
           "on-dark": "#9aa192",
           "on-dark-faint": "#7a8a72",
         },

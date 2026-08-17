@@ -42,6 +42,10 @@ Never in the repo. Set with `supabase secrets set`.
 | `AI_GATEWAY_URL` | Optional. Any OpenAI-compatible `/chat/completions` endpoint. Defaults to Google's OpenAI-compatible endpoint |
 | `AI_MODEL` | Optional. Defaults to `gemini-2.5-flash`; use `google/gemini-2.5-flash` on OpenRouter |
 | `OPENWEATHER_API_KEY` | Optional — falls back to Open-Meteo |
+| `RESEND_API_KEY` | Pilot application notification email. Without it applications still save, but nothing is sent |
+| `PILOT_NOTIFY_TO` | Optional — where notifications go. Defaults to `yunus@swathwise.com` |
+| `PILOT_NOTIFY_FROM` | Optional — sender. Defaults to Resend's shared `onboarding@resend.dev`, which only delivers to the Resend account's own address |
+| `PILOT_ADMIN_EMAILS` | Optional — comma-separated allowlist for `/admin/pilot-applications`. Defaults to `yunus@swathwise.com` |
 | `ORTHO_EXTRACT_FROM_ZIP` | `"true"` only on a worker with more than 256 MB |
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are injected by the platform.

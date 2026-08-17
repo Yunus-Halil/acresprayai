@@ -99,6 +99,40 @@ written but not surfaced anywhere in the UI.
 `email`. Landing-page waitlist. Insert-only for anon; **nobody can read it back** through the
 API (the select policy is `USING (false)`).
 
+> The landing page no longer has a form writing to this table — the rebuild in `8a8cdc2`
+> replaced it with the fuller pilot application below. The table and its rows are untouched.
+
+### `pilot_applications`
+
+The detailed pilot application, behind `/apply`. Fourteen answer columns in three groups:
+
+| Group | Columns |
+|---|---|
+| Contact | `full_name`, `email`, `phone`, `farm_name`, `role` |
+| The land | `location`, `acreage_range`, `crops`, `has_boundary_survey` |
+| Equipment and timing | `drone_status`, `drone_model`, `availability` |
+| Free text | `referral_source`, `notes` |
+
+Plus `id` and `created_at`.
+
+This holds more personal information about a farmer than anything else in the schema, so it is
+`pilot_signups` tightened rather than copied:
+
+- **Insert-only for anon**, and the `WITH CHECK` does real validation — required fields present,
+  lengths bounded, email matching a pattern. Same move migration `20260629155456` made for
+  `pilot_signups`.
+- **No readable SELECT policy for any role.** Not anon, not `authenticated`. Both denies are
+  explicit `USING (false)` rather than relying on the absence of a policy, so granting read
+  access later has to be a deliberate act that deletes one of them. A signed-up customer must
+  not be able to enumerate other applicants' phone numbers.
+- `CHECK` constraints mirror the option lists in
+  [`_shared/pilotApplication.ts`](../../supabase/functions/_shared/pilotApplication.ts). The
+  database will not store a value the form cannot produce, and `drone_model` is only storable
+  alongside `drone_status = 'Have a spray drone'`.
+
+Reads go through the `pilot-applications` edge function. See
+[features/pilot-applications.md](../features/pilot-applications.md).
+
 ## Dormant tables
 
 `scans`, `jobs`, `orthomosaics`, `crop_zones`, `anomalies`, `spray_recommendations`.

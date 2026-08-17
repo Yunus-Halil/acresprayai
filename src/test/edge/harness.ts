@@ -139,8 +139,12 @@ export type SupabaseMock = {
     /** Paths that should fail on upload, to simulate a storage blip. */
     failUploads: Set<string>;
   };
-  /** Set the user `auth.getUser()` resolves to. null = unauthenticated. */
-  setUser: (id: string | null) => void;
+  /**
+   * Set the user `auth.getUser()` resolves to. null = unauthenticated.
+   * The email matters for endpoints that authorise on an allowlist rather than
+   * row ownership, such as `pilot-applications`.
+   */
+  setUser: (id: string | null, email?: string) => void;
 };
 
 export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
@@ -149,6 +153,7 @@ export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
   const calls: StorageCall[] = [];
   const failUploads = new Set<string>();
   let userId: string | null = "user-1";
+  let userEmail: string | undefined;
 
   const matchRow = (row: Row, eqs: [string, unknown][], orFilter: string | null) => {
     for (const [k, v] of eqs) if (row[k] !== v) return false;
@@ -206,7 +211,7 @@ export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
     from: (t: string) => queryBuilder(t),
     auth: {
       getUser: () => Promise.resolve({
-        data: { user: userId ? { id: userId } : null },
+        data: { user: userId ? { id: userId, email: userEmail } : null },
         error: null,
       }),
     },
@@ -253,7 +258,7 @@ export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
     client,
     tables,
     storage: { objects, calls, failUploads },
-    setUser: (id) => { userId = id; },
+    setUser: (id, email) => { userId = id; userEmail = email; },
   };
 }
 

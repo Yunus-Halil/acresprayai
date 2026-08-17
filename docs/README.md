@@ -46,6 +46,7 @@ that treats only those patches instead of the whole field.
 | [features/mission-planner.md](features/mission-planner.md) | Sweep geometry, flight physics, battery model |
 | [features/cost-and-reports.md](features/cost-and-reports.md) | Cost mapping and PDF report generation |
 | [features/export-formats.md](features/export-formats.md) | GeoJSON and QGC WPL 110 waypoint output |
+| [features/pilot-applications.md](features/pilot-applications.md) | The pilot application form, its table, and how applications reach you |
 
 ### Operations
 | Document | Covers |
@@ -63,10 +64,11 @@ that treats only those patches instead of the whole field.
 | Tile rendering | TiTiler (public `titiler.xyz`) |
 | Vision model | Gemini 2.5 Flash by default, via any OpenAI-compatible endpoint |
 | Weather | OpenWeather One Call 3.0, falling back to Open-Meteo |
-| Edge functions | 9 |
-| Tables | 14 (8 active, 6 dormant) |
+| Transactional email | Resend (pilot application notifications) |
+| Edge functions | 11 |
+| Tables | 15 (9 active, 6 dormant) |
 | Platform deps | None — no Lovable, no vendor lock-in |
-| Tests | 180 — pure logic, edge-function contracts, upload resume, workspace smoke |
+| Tests | 272 — pure logic, edge-function contracts, upload resume, workspace smoke, form and RLS contracts |
 
 ## Conventions used in these docs
 

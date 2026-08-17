@@ -6,6 +6,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import Auth from "./pages/Auth.tsx";
+import PilotApply from "./pages/PilotApply.tsx";
+import PilotApplications from "./pages/admin/PilotApplications.tsx";
+import RequireAuth from "./components/RequireAuth.tsx";
 import AppLayout from "./components/app/AppLayout.tsx";
 import Dashboard from "./pages/app/Dashboard.tsx";
 import Fields from "./pages/app/Fields.tsx";
@@ -27,6 +30,11 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/apply" element={<PilotApply />} />
+            <Route
+              path="/admin/pilot-applications"
+              element={<RequireAuth><PilotApplications /></RequireAuth>}
+            />
             <Route path="/app" element={<AppLayout />}>
               <Route index element={<Dashboard />} />
               <Route path="fields" element={<Fields />} />

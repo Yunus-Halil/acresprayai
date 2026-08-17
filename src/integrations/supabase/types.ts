@@ -482,6 +482,7 @@ export type Database = {
         Row: {
           ai_analysis: Json | null
           ai_analysis_at: string | null
+          band_mapping: Json | null
           created_at: string
           error: string | null
           field_id: string
@@ -509,6 +510,7 @@ export type Database = {
         Insert: {
           ai_analysis?: Json | null
           ai_analysis_at?: string | null
+          band_mapping?: Json | null
           created_at?: string
           error?: string | null
           field_id: string
@@ -536,6 +538,7 @@ export type Database = {
         Update: {
           ai_analysis?: Json | null
           ai_analysis_at?: string | null
+          band_mapping?: Json | null
           created_at?: string
           error?: string | null
           field_id?: string
@@ -637,6 +640,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      pilot_applications: {
+        Row: {
+          acreage_range: string
+          availability: string
+          created_at: string
+          crops: string
+          drone_model: string | null
+          drone_status: string
+          email: string
+          farm_name: string
+          full_name: string
+          has_boundary_survey: string | null
+          id: string
+          location: string
+          notes: string | null
+          phone: string | null
+          referral_source: string | null
+          role: string
+        }
+        Insert: {
+          acreage_range: string
+          availability: string
+          created_at?: string
+          crops: string
+          drone_model?: string | null
+          drone_status: string
+          email: string
+          farm_name: string
+          full_name: string
+          has_boundary_survey?: string | null
+          id?: string
+          location: string
+          notes?: string | null
+          phone?: string | null
+          referral_source?: string | null
+          role: string
+        }
+        Update: {
+          acreage_range?: string
+          availability?: string
+          created_at?: string
+          crops?: string
+          drone_model?: string | null
+          drone_status?: string
+          email?: string
+          farm_name?: string
+          full_name?: string
+          has_boundary_survey?: string | null
+          id?: string
+          location?: string
+          notes?: string | null
+          phone?: string | null
+          referral_source?: string | null
+          role?: string
+        }
+        Relationships: []
       }
       pilot_signups: {
         Row: {

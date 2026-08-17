@@ -1,14 +1,16 @@
 # Edge functions
 
-Nine Deno functions in `supabase/functions/`. All answer `OPTIONS` with permissive CORS headers.
-All except the two tile endpoints require a `Bearer` JWT and re-verify ownership before touching
-anything.
+Eleven Deno functions in `supabase/functions/`. All answer `OPTIONS` with permissive CORS headers.
+All except the two tile endpoints and `pilot-apply` require a `Bearer` JWT and re-verify
+ownership before touching anything.
 
 Shared modules live in `_shared/`:
 
 - **`net.ts`** — `fetchResilient` (timeout + backoff), `jsonSafe`, `isTransient`, `HttpError`
 - **`tileAuth.ts`** — token extraction (header or `?token=`), memoised user and owner lookups
 - **`cors.ts`** — shared CORS headers
+- **`email.ts`** — plain-text send via Resend. Best effort: returns a result, never throws
+- **`pilotApplication.ts`** — the pilot form's fields, options and validation, shared with the browser
 
 ---
 
@@ -186,6 +188,47 @@ reason.
 
 The entire AI capability of the product. See [features/ai-analysis.md](../features/ai-analysis.md)
 for the full contract.
+
+---
+
+## `pilot-apply` — accept a pilot application
+
+**Auth:** `verify_jwt = false`. Applicants are not signed in. **Body:** the form's fields.
+
+Validates with the shared `_shared/pilotApplication.ts` validator — the same one the browser
+runs, but this copy is the authority — then inserts with the service-role key and sends the
+notification email.
+
+| Status | Meaning |
+|---|---|
+| 200 | Saved. Body carries `id` and `notified: true \| false` |
+| 422 | Validation failed; body carries per-field `errors` |
+| 405 | Not a POST |
+| 500 | The insert failed. Nothing was saved and nothing was sent |
+
+Email is **best effort and never fails the request**: an application saved but not emailed is
+recoverable from the admin view, one lost to a mail provider's bad minute is not.
+
+The form posts here rather than inserting through PostgREST so that the notification cannot be
+skipped. See [features/pilot-applications.md](../features/pilot-applications.md).
+
+---
+
+## `pilot-applications` — read the pilot pipeline
+
+**Auth:** JWT required, **plus** an email allowlist (`PILOT_ADMIN_EMAILS`).
+
+`pilot_applications` has no readable SELECT policy for any role, so this is the only way rows
+come back out. Returns up to 500, newest first, `Cache-Control: private, no-store`.
+
+| Status | Meaning |
+|---|---|
+| 200 | Rows |
+| 401 | No token, or a token resolving to nobody |
+| 403 | Signed in but not on the allowlist |
+
+403 rather than the uniform 404 used elsewhere: that 404 exists to stop a caller probing which
+scan ids exist, and there is no id to probe here.
 
 ---
 
