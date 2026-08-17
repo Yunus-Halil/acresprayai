@@ -138,6 +138,54 @@ All colors MUST be HSL.
     background: hsl(var(--accent));
     color: hsl(var(--accent-foreground));
   }
+
+  /* Anchor nav on the landing page. */
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+}
+
+/* --- Landing page motion ---------------------------------------------------
+   Ported from the Claude Design project "Swathwise farmer design concept".
+
+   The hero animation is one 16s loop with strictly linear timing: it is a
+   machine following a plan, so nothing eases. The percentages below are
+   positions in that single loop, which is why the spray segments have such
+   specific numbers - each one lights up at the moment the route draw reaches
+   it. Editing the route path means re-timing sw-s1..sw-s7.
+
+   Everything here is gated on prefers-reduced-motion at the bottom.        */
+@layer utilities {
+  /* Rises on load. Callers set animation-delay to stagger. */
+  .sw-load { opacity: 0; animation: sw-rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  .sw-load-lg { opacity: 0; animation: sw-rise-big 1s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  /* Rises when scrolled into view; .sw-in is added by an IntersectionObserver. */
+  .sw-reveal { opacity: 0; }
+  .sw-reveal.sw-in { animation: sw-rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+}
+
+@keyframes sw-rise { from { opacity: 0; transform: translateY(36px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes sw-rise-big { from { opacity: 0; transform: translateY(64px); } to { opacity: 1; transform: translateY(0); } }
+
+/* 1. field boundary draws on   2. treatment zones fade in */
+@keyframes sw-b { 0% { stroke-dashoffset: 1; } 8%, 100% { stroke-dashoffset: 0; } }
+@keyframes sw-z { 0%, 9% { opacity: 0; } 14%, 100% { opacity: 1; } }
+/* 3. boustrophedon route draws on, then each in-zone segment overdraws */
+@keyframes sw-r { 0%, 15% { stroke-dashoffset: 1; } 45%, 100% { stroke-dashoffset: 0; } }
+@keyframes sw-s1 { 0%, 15.6% { stroke-dashoffset: 1; } 16.6%, 100% { stroke-dashoffset: 0; } }
+@keyframes sw-s2 { 0%, 21.9% { stroke-dashoffset: 1; } 22.9%, 100% { stroke-dashoffset: 0; } }
+@keyframes sw-s3 { 0%, 24.2% { stroke-dashoffset: 1; } 25.2%, 100% { stroke-dashoffset: 0; } }
+@keyframes sw-s4 { 0%, 28.5% { stroke-dashoffset: 1; } 29.6%, 100% { stroke-dashoffset: 0; } }
+@keyframes sw-s5 { 0%, 34.7% { stroke-dashoffset: 1; } 35.8%, 100% { stroke-dashoffset: 0; } }
+@keyframes sw-s6 { 0%, 38.5% { stroke-dashoffset: 1; } 39.5%, 100% { stroke-dashoffset: 0; } }
+@keyframes sw-s7 { 0%, 42.5% { stroke-dashoffset: 1; } 43.5%, 100% { stroke-dashoffset: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Show the completed mission, hide the travelling marker. Nothing is lost
+     except the drawing-on; the finished path is the informative state. */
+  [data-sw-anim] * { animation: none !important; }
+  [data-sw-marker] { display: none !important; }
+  .sw-load, .sw-load-lg, .sw-reveal { opacity: 1 !important; animation: none !important; }
 }
 
 @layer utilities {

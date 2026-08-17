@@ -13,7 +13,32 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        grotesk: ['"Space Grotesk"', "sans-serif"],
+        plex: ['"IBM Plex Mono"', "monospace"],
+      },
       colors: {
+        // Landing page palette. The marketing site is a field-equipment
+        // instrument panel, not the app chrome, so it carries its own literal
+        // colours rather than the app's HSL tokens.
+        sw: {
+          paper: "#f4f3ec",
+          card: "#fbfaf4",
+          ink: "#141712",
+          muted: "#4b5044",
+          faint: "#6b6f64",
+          line: "#e2e1d6",
+          rule: "#d8d6c8",
+          edge: "#c9c7b8",
+          panel: "#101410",
+          green: "#2f7a24",
+          "green-deep": "#256119",
+          bright: "#4faa39",
+          "bright-hi": "#67c94f",
+          transit: "#c3c8b8",
+          "on-dark": "#9aa192",
+          "on-dark-faint": "#7a8a72",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
