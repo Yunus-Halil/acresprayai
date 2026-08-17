@@ -16,7 +16,11 @@ a neighbour's land.
 2. The **WGS84 bounding box** (north, south, east, west), with explicit instructions that polygon
    vertices must be real lat/lng inside that box — not pixel coordinates, not normalised 0–1
    values.
-3. The **band count**, which determines what it is allowed to conclude.
+3. The **spectral band count**, which determines what it is allowed to conclude. Counting raw
+   bands is not enough: ODM writes RGB orthos as RGBA, so a bare count of 4 would unlock the
+   multispectral permissions below and let the model quote NDVI values computed from an alpha
+   channel. `_shared/bands.ts` excludes alpha via GDAL's `colorinterp` and under-claims when
+   ambiguous.
 4. If 4+ bands: **real NDVI statistics** sampled by TiTiler over a 3×3 grid of the field bbox —
    mean, min, max per cell, each labelled with a verdict band.
 5. The **field boundary** as WKT plus an explicit vertex list, with instructions to ignore roads,

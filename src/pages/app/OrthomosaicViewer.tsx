@@ -174,7 +174,10 @@ export default function OrthomosaicViewer() {
   const [layers, setLayers] = useState<LayerState>({
     annotations: true, design: false, orthomosaic: true, ndvi: false, measurements: true, boundary: true, userAnnotations: true,
   });
-  const [ndviInfo, setNdviInfo] = useState<{ bands: number; index: "ndvi" | "vari"; label: string } | null>(null);
+  const [ndviInfo, setNdviInfo] = useState<{
+    bands: number; spectralBands?: number; hasAlpha?: boolean; hasNDVI?: boolean;
+    reason?: string; index: "ndvi" | "vari"; label: string;
+  } | null>(null);
   type TabKey = "field" | "weather" | "ai" | "planner" | "reports" | "history" | "settings";
   const [activeTab, setActiveTab] = useState<TabKey>("field");
   const [openTabs, setOpenTabs] = useState<TabKey[]>(["field"]);
@@ -863,10 +866,14 @@ export default function OrthomosaicViewer() {
       {/* Top status bar: back · field · weather · health */}
       <div className="h-12 shrink-0 flex items-center gap-4 px-4 border-b border-[#1f1f1f]"
            style={{ background: "#0f0f0f" }}>
-        <button onClick={() => window.history.back()}
+        {/* This view opens with target="_blank", so the tab has no history and
+            window.history.back() silently did nothing. Link to the parent field
+            instead: a real destination that works in a new tab or an old one,
+            and supports middle-click. */}
+        <a href={task.field_id ? `/app/fields/${task.field_id}` : "/app/fields"}
           className="inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-[#f0f0f0] transition-colors">
-          <ArrowLeft className="h-3.5 w-3.5" /> Back
-        </button>
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to field
+        </a>
         <div className="h-4 w-px bg-[#222]" />
         <div className="flex items-baseline gap-3 min-w-0">
           <div className="text-sm font-semibold tracking-tight truncate">{taskName}</div>

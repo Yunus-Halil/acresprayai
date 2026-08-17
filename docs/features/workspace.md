@@ -26,7 +26,7 @@ Each independently toggleable:
 | Layer | Contents |
 |---|---|
 | Orthomosaic | The pre-baked tiles |
-| NDVI / VARI | Vegetation-index overlay, with a legend naming which index is in use and the band count behind it |
+| NDVI / VARI | Vegetation-index overlay. The legend names which index is actually in use and the **spectral** band count behind it — see the note below |
 | Boundary | The field outline |
 | AI zones | Treatment polygons, colour-coded by severity, labelled with real acreage and estimated cost |
 | Manual annotations | Farmer-drawn polygons |
@@ -61,6 +61,19 @@ farmer.
 | **Reports** | PDF generation and the archive of previous reports. See [cost-and-reports.md](cost-and-reports.md). |
 | **History** | Every scan for this field as a card with mini-map, zone count and stressed acreage. Select two for a draggable swipe comparison and a percentage change in stressed area. |
 | **Settings** | Crop type, planting and harvest dates, unit system, per-acre input costs, which inputs the farmer actually has, up to three custom inputs, drone selection and tank load. |
+
+### Why the index label matters
+
+ODM writes `odm_orthophoto.tif` as **RGBA** for ordinary RGB drone imagery, so a
+naive band count reports 4 and looks multispectral. Computing NDVI from that gives
+`(alpha − red)/(alpha + red)` — alpha is constant inside the footprint, so the result
+is a smooth function of red painted with a red-yellow-green colormap. It resembles
+NDVI and means nothing.
+
+`supabase/functions/_shared/bands.ts` therefore counts only **spectral** bands, using
+GDAL's `colorinterp` to exclude alpha, and under-claims when the evidence is ambiguous.
+The legend shows the spectral count with `+α` when an alpha mask is present, and says
+"VARI, not NDVI" whenever the overlay is the visible-light proxy.
 
 ## Coupling to know about
 

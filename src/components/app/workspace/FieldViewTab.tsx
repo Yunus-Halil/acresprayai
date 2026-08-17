@@ -66,7 +66,10 @@ export function FieldViewTab(props: {
   maxNative: number;
   layers: LayerState;
   setLayers: React.Dispatch<React.SetStateAction<LayerState>>;
-  ndviInfo: { bands: number; index: "ndvi" | "vari"; label: string } | null;
+  ndviInfo: {
+    bands: number; spectralBands?: number; hasAlpha?: boolean; hasNDVI?: boolean;
+    reason?: string; index: "ndvi" | "vari"; label: string;
+  } | null;
   cursorCoordRef: React.MutableRefObject<HTMLDivElement | null>;
   cursorZoomRef: React.MutableRefObject<HTMLDivElement | null>;
   layersOpen: boolean;
@@ -427,7 +430,7 @@ export function FieldViewTab(props: {
             checked={layers.orthomosaic}
             onToggle={() => setLayers(s => ({ ...s, orthomosaic: !s.orthomosaic }))} />
           <LayerRow
-            label={ndviInfo?.index === "vari" ? "Vegetation index (VARI)" : "NDVI"}
+            label={ndviInfo?.index === "vari" ? "Vegetation index (VARI, not NDVI)" : "NDVI"}
             icon={Activity}
             checked={layers.ndvi}
             onToggle={() => setLayers(s => ({ ...s, ndvi: !s.ndvi }))}
@@ -560,7 +563,12 @@ export function FieldViewTab(props: {
             <span className="font-medium">
               {ndviInfo?.index === "vari" ? "Vegetation Index (VARI · RGB-derived)" : "NDVI"}
             </span>
-            {ndviInfo && <span className="text-neutral-500 font-mono">{ndviInfo.bands}-band</span>}
+            {ndviInfo && (
+              <span className="text-neutral-500 font-mono" title={ndviInfo.reason ?? ""}>
+                {ndviInfo.spectralBands ?? ndviInfo.bands}-band
+                {ndviInfo.hasAlpha ? " +α" : ""}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-red-400">Stressed</span>

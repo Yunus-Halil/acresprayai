@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
+import { analyseBands } from "../_shared/bands.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -69,14 +70,17 @@ Deno.serve(async (req) => {
     const b = tj?.bounds as number[] | undefined;
     if (!b || b.length !== 4) return json({ error: "Missing bounds" }, 500);
     const [west, south, east, north] = b;
-    let bandCount = 3;
+    // Counting bands is not enough: an ODM RGB ortho is RGBA, so a bare count
+    // of 4 would unlock the multispectral permissions below - letting the model
+    // quote NDVI values and name nutrient stress computed from an alpha channel.
+    // See _shared/bands.ts.
+    let bands = analyseBands(null);
     try {
-      if (infoRes.ok) {
-        const info = await infoRes.json();
-        if (typeof info?.count === "number") bandCount = info.count;
-      }
-    } catch { /* default to RGB */ }
-    const hasNDVI = bandCount >= 4;
+      if (infoRes.ok) bands = analyseBands(await infoRes.json());
+    } catch { /* keep the conservative RGB default */ }
+    const bandCount = bands.total;
+    const hasNDVI = bands.hasNDVI;
+    console.log(`[analyze-ortho] ${task_id}: ${bands.reason}`);
 
     // Validate the user-supplied field boundary. May be a single ring (legacy)
     // or an array of rings (fragmented field with multiple parts). The AI must
@@ -167,7 +171,7 @@ Deno.serve(async (req) => {
     }
 
     const ndviBlock = hasNDVI
-      ? `NDVI DATA AVAILABLE for this field (multispectral, ${bandCount} bands).
+      ? `NDVI DATA AVAILABLE for this field (multispectral, ${bands.spectral} spectral bands of ${bandCount}).
 Zone statistics (3x3 grid across the field):
 ${ndviCells.length > 0
   ? ndviCells.map(c => `- ${c.label}: mean NDVI ${c.mean} (range ${c.min}..${c.max}) — ${c.verdict}`).join("\n")

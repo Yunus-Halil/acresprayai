@@ -1,4 +1,5 @@
 import { admin, readToken, taskById, userIdFromToken } from "../_shared/tileAuth.ts";
+import { type BandAnalysis, analyseBands, expressionFor } from "../_shared/bands.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,7 +11,7 @@ const TITILER = "https://titiler.xyz";
 const SIGNED_TTL = 60 * 60 * 6; // 6h
 
 // Per-instance memory cache so we don't re-mint a signed URL on every tile.
-type Cached = { url: string; bands: number; expires: number };
+type Cached = { url: string; bands: BandAnalysis; expires: number };
 const cache = new Map<string, Cached>();
 
 const EMPTY_PNG = Uint8Array.from(atob(
@@ -21,16 +22,6 @@ const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), {
   status,
   headers: { ...corsHeaders, "Content-Type": "application/json" },
 });
-
-// Pick the NDVI-style expression for TiTiler based on band count.
-// - 4+ bands  -> assume RGB+NIR, real NDVI = (NIR - Red)/(NIR + Red)
-// - 3 bands   -> RGB only, fake it with VARI = (G - R)/(G + R - B)
-function expressionFor(bands: number): { expression: string; index: "ndvi" | "vari"; label: string } {
-  if (bands >= 4) {
-    return { expression: "(b4-b1)/(b4+b1)", index: "ndvi", label: "NDVI (NIR-R)/(NIR+R)" };
-  }
-  return { expression: "(b2-b1)/(b2+b1-b3)", index: "vari", label: "VARI (G-R)/(G+R-B)" };
-}
 
 // Why the failures are distinguished:
 //   `denied`     the caller does not own this scan (or it does not exist - the
@@ -68,15 +59,14 @@ async function resolveTaskCog(
     return { error: "Could not sign orthomosaic URL", status: 500, reason: "unavailable" };
   }
 
-  // Probe band count once.
-  let bands = 3;
+  // Probe the bands once. Counting them is not enough - see _shared/bands.ts
+  // for why an ODM RGBA ortho reports 4 bands without carrying any NIR.
+  let bands = analyseBands(null);
   try {
     const r = await fetch(`${TITILER}/cog/info?url=${encodeURIComponent(signed.signedUrl)}`);
-    if (r.ok) {
-      const info = await r.json();
-      if (typeof info?.count === "number") bands = info.count;
-    }
-  } catch { /* fall through with bands=3 */ }
+    if (r.ok) bands = analyseBands(await r.json());
+  } catch { /* fall through with the conservative RGB default */ }
+  console.log(`[ndvi-tile] ${taskId}: ${bands.reason}`);
 
   const entry: Cached = { url: signed.signedUrl, bands, expires: now + (SIGNED_TTL - 600) * 1000 };
   cache.set(taskId, entry);
@@ -102,7 +92,14 @@ Deno.serve(async (req) => {
       const r = await resolveTaskCog(taskId, userId);
       if ("error" in r) return json({ error: r.error }, r.status);
       const expr = expressionFor(r.bands);
-      return json({ bands: r.bands, ...expr });
+      return json({
+        bands: r.bands.total,
+        spectralBands: r.bands.spectral,
+        hasAlpha: r.bands.hasAlpha,
+        hasNDVI: r.bands.hasNDVI,
+        reason: r.bands.reason,
+        ...expr,
+      });
     }
 
     // ---- TILE endpoint -----------------------------------------------------
