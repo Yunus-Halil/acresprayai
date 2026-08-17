@@ -47,17 +47,22 @@ export async function userIdFromToken(token: string | null): Promise<string | nu
   return userId;
 }
 
-type TaskOwner = { userId: string; odmUuid: string | null; orthoPath: string | null };
+type TaskOwner = {
+  userId: string; odmUuid: string | null; orthoPath: string | null;
+  /** Resolved band roles, cached per scan. See _shared/bands.ts. */
+  bandMapping: unknown | null;
+};
 
 /** Look up a task by its primary key. Returns null when the row doesn't exist. */
 export async function taskById(taskId: string): Promise<TaskOwner | null> {
   const { data } = await admin.from("odm_tasks")
-    .select("user_id, odm_uuid, ortho_path").eq("id", taskId).maybeSingle();
+    .select("user_id, odm_uuid, ortho_path, band_mapping").eq("id", taskId).maybeSingle();
   if (!data?.user_id) return null;
   return {
     userId: data.user_id as string,
     odmUuid: (data.odm_uuid as string | null) ?? null,
     orthoPath: (data.ortho_path as string | null) ?? null,
+    bandMapping: (data as Record<string, unknown>).band_mapping ?? null,
   };
 }
 

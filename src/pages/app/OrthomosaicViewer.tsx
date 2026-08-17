@@ -176,8 +176,10 @@ export default function OrthomosaicViewer() {
   });
   const [ndviInfo, setNdviInfo] = useState<{
     bands: number; spectralBands?: number; hasAlpha?: boolean; hasNDVI?: boolean;
-    ambiguousMultispectral?: boolean; redBand?: number | null; nirBand?: number | null;
-    reason?: string; index: "ndvi" | "vari"; label: string;
+    ambiguousMultispectral?: boolean;
+    roles?: Partial<Record<"red" | "green" | "blue" | "nir" | "rededge", number>>;
+    method?: string; available?: string[]; fingerprint?: string;
+    reason?: string; index: "ndvi" | "ndre" | "vari"; label: string;
   } | null>(null);
   type TabKey = "field" | "weather" | "ai" | "planner" | "reports" | "history" | "settings";
   const [activeTab, setActiveTab] = useState<TabKey>("field");
@@ -477,8 +479,12 @@ export default function OrthomosaicViewer() {
   }, []);
 
   const tileUrl = tileTemplate && token ? `${tileTemplate}?token=${token}` : null;
+  // The fingerprint identifies the resolved band mapping. Embedding it means a
+  // corrected mapping yields a different URL, so the browser's 24h tile cache
+  // cannot keep serving tiles rendered with the old expression.
   const ndviUrl = task?.odm_uuid && token
     ? `${NDVI_BASE}/${taskId}/{z}/{x}/{y}.png?token=${token}`
+      + (ndviInfo?.fingerprint ? `&v=${encodeURIComponent(ndviInfo.fingerprint)}` : "")
     : null;
 
   const runAnalysis = async () => {

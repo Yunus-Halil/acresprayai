@@ -68,8 +68,10 @@ export function FieldViewTab(props: {
   setLayers: React.Dispatch<React.SetStateAction<LayerState>>;
   ndviInfo: {
     bands: number; spectralBands?: number; hasAlpha?: boolean; hasNDVI?: boolean;
-    ambiguousMultispectral?: boolean; redBand?: number | null; nirBand?: number | null;
-    reason?: string; index: "ndvi" | "vari"; label: string;
+    ambiguousMultispectral?: boolean;
+    roles?: Partial<Record<"red" | "green" | "blue" | "nir" | "rededge", number>>;
+    method?: string; available?: string[]; fingerprint?: string;
+    reason?: string; index: "ndvi" | "ndre" | "vari"; label: string;
   } | null;
   cursorCoordRef: React.MutableRefObject<HTMLDivElement | null>;
   cursorZoomRef: React.MutableRefObject<HTMLDivElement | null>;
@@ -431,7 +433,11 @@ export function FieldViewTab(props: {
             checked={layers.orthomosaic}
             onToggle={() => setLayers(s => ({ ...s, orthomosaic: !s.orthomosaic }))} />
           <LayerRow
-            label={ndviInfo?.index === "vari" ? "Vegetation index (VARI, not NDVI)" : "NDVI"}
+            label={
+              ndviInfo?.index === "ndvi" ? "NDVI"
+              : ndviInfo?.index === "ndre" ? "NDRE"
+              : "Vegetation index (VARI, not NDVI)"
+            }
             icon={Activity}
             checked={layers.ndvi}
             onToggle={() => setLayers(s => ({ ...s, ndvi: !s.ndvi }))}
@@ -575,7 +581,12 @@ export function FieldViewTab(props: {
                     would otherwise silently render as VARI, looking identical to
                     an ordinary RGB scan. Say so instead. */}
                 {ndviInfo.ambiguousMultispectral ? " · bands unlabelled" : ""}
-                {ndviInfo.hasNDVI && ndviInfo.nirBand ? ` · NIR b${ndviInfo.nirBand}` : ""}
+                {/* Naming the resolved bands and how they were found lets the
+                    mapping be sanity-checked against the camera's datasheet. */}
+                {ndviInfo.hasNDVI && ndviInfo.roles?.nir && ndviInfo.roles?.red
+                  ? ` · NIR b${ndviInfo.roles.nir} / red b${ndviInfo.roles.red}`
+                  : ""}
+                {ndviInfo.method && ndviInfo.method !== "unresolved" ? ` · via ${ndviInfo.method}` : ""}
               </span>
             )}
           </div>

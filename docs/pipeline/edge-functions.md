@@ -146,14 +146,23 @@ matching `tile` rather than being quietly served a blank. States an owner can le
 orthomosaic not ready, tile service unhappy — get a transparent pixel so the map does not fill
 with broken tiles.
 
-Band count decides the maths:
+Band **roles** decide the maths — never band count or band order. See
+[Band resolution](../features/ai-analysis.md#band-resolution); the short version is that ODM
+writes RGB orthos as RGBA, and no two multispectral sensors agree on band order, so both must be
+resolved rather than assumed.
 
-| Bands | Index | Expression |
-|---|---|---|
-| 4+ (multispectral, NIR present) | True NDVI | `(b4-b1)/(b4+b1)` |
-| 3 (ordinary RGB) | VARI — a visible-light proxy, **not** NDVI | `(b2-b1)/(b2+b1-b3)` |
+`/info` reports the resolved roles, the method used (`descriptions`, `colorinterp`, `convention`,
+`profile`, `unresolved`), which indices are available, and a `fingerprint`.
 
-Rendered by TiTiler with `rescale=-1,1` and the `rdylgn` colormap.
+The resolved mapping is stored on `odm_tasks.band_mapping`, so TiTiler is probed once per scan
+rather than on every cold start. Setting that column to null forces a re-probe.
+
+Tiles are rendered by TiTiler with `rescale=-1,1` and the `rdylgn` colormap. `?index=` selects
+between the available indices (`ndvi`, `ndre`, `vari`), defaulting to NDVI.
+
+**Tile URLs embed the fingerprint.** Tiles are cached `private, max-age=86400`, so without it a
+corrected mapping would keep serving day-old tiles rendered with the previous expression, and the
+fix would never reach the person looking at the map.
 
 Ownership is checked **before** the memoised COG lookup, so a cached entry can never be served to
 a different user.

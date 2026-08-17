@@ -40,34 +40,44 @@ a neighbour's land.
 
 ## Band resolution
 
-Two assumptions would each produce a confident, wrong index.
+Three assumptions would each produce a confident, wrong index.
 
 **Counting bands is not detecting NIR.** ODM writes `odm_orthophoto.tif` as RGBA for ordinary RGB
 imagery, so `count >= 4` reports "multispectral" for a plain camera drone. NDVI then evaluates
 `(alpha − red)/(alpha + red)`; alpha is constant inside the footprint, so the result is a smooth
 function of red painted with a red-yellow-green colormap.
 
-**Band order is not standardised.**
+**Band order is not standardised** — and ODM's output depends on what it was fed, not only on the
+sensor:
 
-| Camera | Band order | Red | NIR |
+| Arrangement | Bands | Red | NIR |
 |---|---|---|---|
-| Generic RGB+NIR | R, G, B, NIR | b1 | b4 |
-| DJI Mavic 3M | G, R, RedEdge, NIR | **b2** | b4 |
+| Red + NIR pair (observed from an M3M upload) | Red, NIR, alpha | b1 | b2 |
+| Generic RGB + NIR | R, G, B, NIR | b1 | b4 |
+| DJI Mavic 3M (full) | G, R, RedEdge, NIR | **b2** | b4 |
 | MicaSense RedEdge | B, G, R, NIR, RedEdge | **b3** | b4 |
-| Parrot Sequoia | G, R, RedEdge, NIR | **b2** | b4 |
 
-Hardcoding `(b4-b1)/(b4+b1)` yields GNDVI on a Mavic 3M and nonsense on a MicaSense — both
-labelled "NDVI".
+**Red edge is neither red nor NIR.** It sits at ~730 nm between them and is matched separately.
 
-`supabase/functions/_shared/bands.ts` resolves roles in order: GDAL band descriptions first
-(what ODM writes for multispectral input), then `colorinterp` for RGB, then the RGB+NIR
-convention when exactly one unlabelled spectral band remains. "Red edge" is never matched as red
-or as NIR.
+`supabase/functions/_shared/bands.ts` resolves roles in order, recording which method succeeded:
 
-When roles cannot be resolved it reports `ambiguousMultispectral` and falls back to VARI rather
-than guessing. The map legend shows this in amber as "bands unlabelled", so genuinely
-multispectral imagery that could not be interpreted is visible rather than silently rendered as
-though it were an ordinary RGB scan.
+1. **`descriptions`** — GDAL band descriptions, which ODM writes for multispectral input
+2. **`colorinterp`** — GDAL colour interpretation, for the RGB roles
+3. **`convention`** — RGB named plus exactly one spare spectral band, which is taken as NIR
+4. **`profile`** — a `SENSOR_PROFILES` table entry matched on spectral band count, and on a camera
+   hint where one is available. Applied only when descriptions are absent, and only when the count
+   matches exactly one profile: four spectral bands is shared by generic RGB+NIR and the M3M
+   arrangement, which disagree about red, so without a hint that stays unresolved
+5. **`unresolved`** — no NDVI claim is made
+
+When unresolved it falls back to VARI, labelled as a visible-light proxy, and the legend shows
+"bands unlabelled" in amber. A VARI labelled VARI is honest; an NDVI computed from the wrong bands
+is not.
+
+Indices are declared as data in `INDEX_DEFS` with their band requirements, so NDRE
+`(NIR−RedEdge)/(NIR+RedEdge)` — which holds discrimination in dense canopy where NDVI saturates —
+is a second expression over the same mapping rather than a parallel code path. It is computed and
+offered whenever a red edge band resolves; only the UI selector is still to come.
 
 ## What the model is forbidden from claiming
 

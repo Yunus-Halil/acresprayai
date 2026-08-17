@@ -1,5 +1,5 @@
 import { admin, readToken, taskById, userIdFromToken } from "../_shared/tileAuth.ts";
-import { type BandAnalysis, analyseBands, expressionFor } from "../_shared/bands.ts";
+import { type BandAnalysis, type VegetationIndex, analyseBands, expressionFor } from "../_shared/bands.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -59,14 +59,20 @@ async function resolveTaskCog(
     return { error: "Could not sign orthomosaic URL", status: 500, reason: "unavailable" };
   }
 
-  // Probe the bands once. Counting them is not enough - see _shared/bands.ts
-  // for why an ODM RGBA ortho reports 4 bands without carrying any NIR.
-  let bands = analyseBands(null);
-  try {
-    const r = await fetch(`${TITILER}/cog/info?url=${encodeURIComponent(signed.signedUrl)}`);
-    if (r.ok) bands = analyseBands(await r.json());
-  } catch { /* fall through with the conservative RGB default */ }
-  console.log(`[ndvi-tile] ${taskId}: ${bands.reason}`);
+  // Band roles are a property of the file and never change for a given scan,
+  // so they are resolved once and stored on the row. The per-instance memo
+  // above still avoids re-signing the URL; this avoids re-probing TiTiler on
+  // every cold start. Clearing odm_tasks.band_mapping forces a re-probe.
+  let bands = task.bandMapping as BandAnalysis | null;
+  if (!bands?.fingerprint) {
+    bands = analyseBands(null);
+    try {
+      const r = await fetch(`${TITILER}/cog/info?url=${encodeURIComponent(signed.signedUrl)}`);
+      if (r.ok) bands = analyseBands(await r.json());
+    } catch { /* fall through with the conservative RGB default */ }
+    console.log(`[ndvi-tile] ${taskId}: ${bands.reason}`);
+    await admin.from("odm_tasks").update({ band_mapping: bands }).eq("id", taskId);
+  }
 
   const entry: Cached = { url: signed.signedUrl, bands, expires: now + (SIGNED_TTL - 600) * 1000 };
   cache.set(taskId, entry);
@@ -98,8 +104,12 @@ Deno.serve(async (req) => {
         hasAlpha: r.bands.hasAlpha,
         hasNDVI: r.bands.hasNDVI,
         ambiguousMultispectral: r.bands.ambiguousMultispectral,
-        redBand: r.bands.red ?? null,
-        nirBand: r.bands.nir ?? null,
+        // Which physical band each role resolved to, and how it was determined,
+        // so the legend can say not just which index is shown but why.
+        roles: r.bands.roles,
+        method: r.bands.method,
+        available: r.bands.available,
+        fingerprint: r.bands.fingerprint,
         reason: r.bands.reason,
         ...expr,
       });
@@ -121,7 +131,8 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "image/png", "Cache-Control": "private, max-age=30" },
       });
     }
-    const { expression } = expressionFor(r.bands);
+    const requested = url.searchParams.get("index") as VegetationIndex | null;
+    const { expression } = expressionFor(r.bands, requested ?? "ndvi");
     const tu = new URL(`${TITILER}/cog/tiles/WebMercatorQuad/${z}/${x}/${y}.png`);
     tu.searchParams.set("url", r.url);
     tu.searchParams.set("expression", expression);
