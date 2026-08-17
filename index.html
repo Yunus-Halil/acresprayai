@@ -6,7 +6,16 @@
     <title>SwathWise. AI Precision Crop Spraying</title>
     <meta name="description" content="SwathWise turns your drone imagery into an orthomosaic, flags the patches that look wrong, and builds the spray mission to treat just those patches.">
     <meta name="author" content="SwathWise" />
-    <link rel="icon" href="/favicon.png" type="image/png" />
+    <!-- Pointed at the source asset, not /favicon.png, so Vite emits it with a
+         content hash. Browsers cache favicons far more aggressively than page
+         assets - often past a hard refresh - so replacing the bytes behind a
+         fixed URL leaves the old mark in everyone's tab indefinitely. A hashed
+         URL changes whenever the image does, which is the same reason the NDVI
+         tile URLs carry a band-mapping fingerprint.
+         public/favicon.png is kept in step as a fallback for crawlers that
+         fetch that path blindly rather than reading this tag. -->
+    <link rel="icon" href="/src/assets/swathwise-logo.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/src/assets/swathwise-logo.png" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
