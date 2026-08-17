@@ -40,14 +40,18 @@ export const WhySection = () => (
       </h2>
     </Reveal>
 
+    {/* The only route capture we have is portrait, so it sits centred at its
+        own aspect on the dark panel rather than stretched or cropped to a
+        band - cropping would cut off START and END, which is the mission. */}
     <Reveal className="mt-12 sm:mt-16">
       <Shot
-        src="/screens/flight-planner.png"
-        alt="SwathWise flight planner over a stitched orthomosaic"
+        src="/screens/mission-route.jpg"
+        alt="SwathWise flight planner: a spray mission over a stitched orthomosaic, start to end"
         caption="FLIGHT PLANNER · MISSION SIMULATION"
         status={<span className="text-sw-bright-hi">● SPRAYING</span>}
         padding="p-2.5"
         className="shadow-[0_40px_80px_-32px_rgba(20,23,18,0.45)]"
+        imgClassName="mx-auto max-h-[700px] w-auto max-w-full"
       />
     </Reveal>
 
@@ -75,12 +79,12 @@ export const WhySection = () => (
               <Screenshot
                 src="/screens/mission-summary.png"
                 alt="Mission summary with battery and spray estimates"
-                className="h-[300px] object-cover object-top sm:h-[460px]"
+                className="h-[300px] w-full object-cover object-top sm:h-[460px]"
               />
               <Screenshot
-                src="/screens/ortho-route.png"
-                alt="Stitched orthomosaic with planned route"
-                className="h-[300px] object-cover sm:h-[460px]"
+                src="/screens/mission-route.jpg"
+                alt="Stitched orthomosaic with the planned route"
+                className="h-[300px] w-full object-cover sm:h-[460px]"
               />
             </div>
           </Frame>

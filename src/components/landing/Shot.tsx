@@ -34,7 +34,7 @@ export const Screenshot = ({ src, alt, className = "" }: ScreenshotProps) => {
       loading="lazy"
       decoding="async"
       onError={() => setMissing(true)}
-      className={`block w-full rounded ${className}`}
+      className={`block rounded ${className}`}
     />
   );
 };
@@ -74,7 +74,7 @@ export const Shot = ({
   caption,
   status,
   className = "",
-  imgClassName = "",
+  imgClassName = "w-full",
   padding,
 }: ScreenshotProps & Omit<FrameProps, "children"> & { imgClassName?: string }) => (
   <Frame caption={caption} status={status} className={className} padding={padding}>
