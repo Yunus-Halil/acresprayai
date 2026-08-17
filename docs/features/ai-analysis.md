@@ -12,15 +12,15 @@ a neighbour's land.
 
 ## What the model is given
 
-1. A **2048 px PNG preview** of the orthomosaic rendered by TiTiler.
+1. A **2048 px PNG preview** of the orthomosaic rendered by TiTiler, requested as an explicit
+   true-colour composite when band roles are known. TiTiler otherwise renders the first three
+   bands, which on a MicaSense (blue, green, red, …) is a false-colour image — and this preview
+   is the only thing the model actually sees.
 2. The **WGS84 bounding box** (north, south, east, west), with explicit instructions that polygon
    vertices must be real lat/lng inside that box — not pixel coordinates, not normalised 0–1
    values.
-3. The **spectral band count**, which determines what it is allowed to conclude. Counting raw
-   bands is not enough: ODM writes RGB orthos as RGBA, so a bare count of 4 would unlock the
-   multispectral permissions below and let the model quote NDVI values computed from an alpha
-   channel. `_shared/bands.ts` excludes alpha via GDAL's `colorinterp` and under-claims when
-   ambiguous.
+3. The **resolved band roles**, which determine what it is allowed to conclude. See
+   [Band resolution](#band-resolution) — neither the count nor the order can be assumed.
 4. If 4+ bands: **real NDVI statistics** sampled by TiTiler over a 3×3 grid of the field bbox —
    mean, min, max per cell, each labelled with a verdict band.
 5. The **field boundary** as WKT plus an explicit vertex list, with instructions to ignore roads,
@@ -37,6 +37,37 @@ a neighbour's land.
 | 0.3 – 0.5 | moderately stressed |
 | 0.5 – 0.7 | moderate health |
 | > 0.7 | healthy canopy |
+
+## Band resolution
+
+Two assumptions would each produce a confident, wrong index.
+
+**Counting bands is not detecting NIR.** ODM writes `odm_orthophoto.tif` as RGBA for ordinary RGB
+imagery, so `count >= 4` reports "multispectral" for a plain camera drone. NDVI then evaluates
+`(alpha − red)/(alpha + red)`; alpha is constant inside the footprint, so the result is a smooth
+function of red painted with a red-yellow-green colormap.
+
+**Band order is not standardised.**
+
+| Camera | Band order | Red | NIR |
+|---|---|---|---|
+| Generic RGB+NIR | R, G, B, NIR | b1 | b4 |
+| DJI Mavic 3M | G, R, RedEdge, NIR | **b2** | b4 |
+| MicaSense RedEdge | B, G, R, NIR, RedEdge | **b3** | b4 |
+| Parrot Sequoia | G, R, RedEdge, NIR | **b2** | b4 |
+
+Hardcoding `(b4-b1)/(b4+b1)` yields GNDVI on a Mavic 3M and nonsense on a MicaSense — both
+labelled "NDVI".
+
+`supabase/functions/_shared/bands.ts` resolves roles in order: GDAL band descriptions first
+(what ODM writes for multispectral input), then `colorinterp` for RGB, then the RGB+NIR
+convention when exactly one unlabelled spectral band remains. "Red edge" is never matched as red
+or as NIR.
+
+When roles cannot be resolved it reports `ambiguousMultispectral` and falls back to VARI rather
+than guessing. The map legend shows this in amber as "bands unlabelled", so genuinely
+multispectral imagery that could not be interpreted is visible rather than silently rendered as
+though it were an ordinary RGB scan.
 
 ## What the model is forbidden from claiming
 

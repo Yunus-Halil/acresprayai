@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
-import { analyseBands } from "../_shared/bands.ts";
+import { analyseBands, expressionFor, previewBands } from "../_shared/bands.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -56,24 +56,14 @@ Deno.serve(async (req) => {
     // 1) Get a high-res PNG preview + bounds from TiTiler, and probe band count
     //    so we know whether real NDVI is available (multispectral, >=4 bands)
     //    or we are RGB-only and must caveat accordingly.
-    const previewUrl = `https://titiler.xyz/cog/preview.png?url=${encodeURIComponent(signed.signedUrl)}&max_size=2048`;
     const tjUrl = `https://titiler.xyz/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(signed.signedUrl)}&tilesize=256`;
     const infoUrl = `https://titiler.xyz/cog/info?url=${encodeURIComponent(signed.signedUrl)}`;
 
-    const [imgRes, tjRes, infoRes] = await Promise.all([
-      fetch(previewUrl),
-      fetch(tjUrl),
-      fetch(infoUrl),
-    ]);
-    if (!imgRes.ok) return json({ error: `Preview fetch failed (${imgRes.status})` }, 500);
-    const tj = tjRes.ok ? await tjRes.json() : null;
-    const b = tj?.bounds as number[] | undefined;
-    if (!b || b.length !== 4) return json({ error: "Missing bounds" }, 500);
-    const [west, south, east, north] = b;
-    // Counting bands is not enough: an ODM RGB ortho is RGBA, so a bare count
-    // of 4 would unlock the multispectral permissions below - letting the model
-    // quote NDVI values and name nutrient stress computed from an alpha channel.
-    // See _shared/bands.ts.
+    // Probe the bands FIRST: the preview has to know which bands are red, green
+    // and blue. On a MicaSense (blue, green, red, ...) TiTiler's default of
+    // "first three bands" renders a false-colour image, and this preview is the
+    // only thing the vision model actually sees.
+    const infoRes = await fetch(infoUrl);
     let bands = analyseBands(null);
     try {
       if (infoRes.ok) bands = analyseBands(await infoRes.json());
@@ -81,6 +71,17 @@ Deno.serve(async (req) => {
     const bandCount = bands.total;
     const hasNDVI = bands.hasNDVI;
     console.log(`[analyze-ortho] ${task_id}: ${bands.reason}`);
+
+    const rgb = previewBands(bands);
+    const previewUrl = `https://titiler.xyz/cog/preview.png?url=${encodeURIComponent(signed.signedUrl)}&max_size=2048`
+      + (rgb ? rgb.map(b => `&bidx=${b}`).join("") : "");
+
+    const [imgRes, tjRes] = await Promise.all([fetch(previewUrl), fetch(tjUrl)]);
+    if (!imgRes.ok) return json({ error: `Preview fetch failed (${imgRes.status})` }, 500);
+    const tj = tjRes.ok ? await tjRes.json() : null;
+    const b = tj?.bounds as number[] | undefined;
+    if (!b || b.length !== 4) return json({ error: "Missing bounds" }, 500);
+    const [west, south, east, north] = b;
 
     // Validate the user-supplied field boundary. May be a single ring (legacy)
     // or an array of rings (fragmented field with multiple parts). The AI must
@@ -135,7 +136,9 @@ Deno.serve(async (req) => {
         }
       }
       try {
-        const statsUrl = `https://titiler.xyz/cog/statistics?url=${encodeURIComponent(signed.signedUrl)}&expression=${encodeURIComponent("(b4-b1)/(b4+b1)")}`;
+        // Same resolved indices as the map overlay - never assumed positions.
+        const ndviExpr = expressionFor(bands).expression;
+        const statsUrl = `https://titiler.xyz/cog/statistics?url=${encodeURIComponent(signed.signedUrl)}&expression=${encodeURIComponent(ndviExpr)}`;
         const sRes = await fetch(statsUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -176,6 +176,7 @@ export default function OrthomosaicViewer() {
   });
   const [ndviInfo, setNdviInfo] = useState<{
     bands: number; spectralBands?: number; hasAlpha?: boolean; hasNDVI?: boolean;
+    ambiguousMultispectral?: boolean; redBand?: number | null; nirBand?: number | null;
     reason?: string; index: "ndvi" | "vari"; label: string;
   } | null>(null);
   type TabKey = "field" | "weather" | "ai" | "planner" | "reports" | "history" | "settings";

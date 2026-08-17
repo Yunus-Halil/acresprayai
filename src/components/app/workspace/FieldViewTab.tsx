@@ -68,6 +68,7 @@ export function FieldViewTab(props: {
   setLayers: React.Dispatch<React.SetStateAction<LayerState>>;
   ndviInfo: {
     bands: number; spectralBands?: number; hasAlpha?: boolean; hasNDVI?: boolean;
+    ambiguousMultispectral?: boolean; redBand?: number | null; nirBand?: number | null;
     reason?: string; index: "ndvi" | "vari"; label: string;
   } | null;
   cursorCoordRef: React.MutableRefObject<HTMLDivElement | null>;
@@ -564,9 +565,17 @@ export function FieldViewTab(props: {
               {ndviInfo?.index === "vari" ? "Vegetation Index (VARI · RGB-derived)" : "NDVI"}
             </span>
             {ndviInfo && (
-              <span className="text-neutral-500 font-mono" title={ndviInfo.reason ?? ""}>
+              <span
+                className={ndviInfo.ambiguousMultispectral ? "text-amber-500 font-mono" : "text-neutral-500 font-mono"}
+                title={ndviInfo.reason ?? ""}
+              >
                 {ndviInfo.spectralBands ?? ndviInfo.bands}-band
                 {ndviInfo.hasAlpha ? " +α" : ""}
+                {/* Multispectral imagery whose band roles could not be resolved
+                    would otherwise silently render as VARI, looking identical to
+                    an ordinary RGB scan. Say so instead. */}
+                {ndviInfo.ambiguousMultispectral ? " · bands unlabelled" : ""}
+                {ndviInfo.hasNDVI && ndviInfo.nirBand ? ` · NIR b${ndviInfo.nirBand}` : ""}
               </span>
             )}
           </div>

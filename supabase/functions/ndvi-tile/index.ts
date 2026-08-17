@@ -97,6 +97,9 @@ Deno.serve(async (req) => {
         spectralBands: r.bands.spectral,
         hasAlpha: r.bands.hasAlpha,
         hasNDVI: r.bands.hasNDVI,
+        ambiguousMultispectral: r.bands.ambiguousMultispectral,
+        redBand: r.bands.red ?? null,
+        nirBand: r.bands.nir ?? null,
         reason: r.bands.reason,
         ...expr,
       });
