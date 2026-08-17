@@ -1,9 +1,10 @@
 import { Wordmark } from "./Wordmark";
+import { CONTACT_EMAIL } from "./copy";
 
 const LINKS = [
   { label: "About", href: "#why" },
   { label: "Pricing", href: "#pilot" },
-  { label: "Contact", href: "#pilot" },
+  { label: "Contact", href: `mailto:${CONTACT_EMAIL}` },
 ];
 
 export const LandingFooter = () => (

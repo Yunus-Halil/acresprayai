@@ -7,15 +7,14 @@
  *    mobile app, and no autonomous flight - SwathWise emits a waypoint file a
  *    human loads into a flight controller. No invented metrics or savings
  *    percentages.
- * 2. No social proof until it is approved in writing. The hero deliberately
- *    carries a factual export-format block where a testimonial would sit.
+ * 2. No social proof until it is approved in writing. There is no testimonial
+ *    on this page, and an unapproved one is not better than none.
  */
 
 export const PILOT_BADGE = "PILOT PROGRAM · 10 FARMS · Q3–Q4 2026 · FREE USAGE";
 
-/** What a mission actually exports as. Stands in for a testimonial. */
-export const EXPORT_SPEC =
-  "MISSIONS EXPORT AS QGC WPL 110 WAYPOINT FILES. ZONES AS GEOJSON. RUNS ON ARDUPILOT AND NON-DJI HARDWARE.";
+/** The one address the site hands out. Used by the footer and the pilot band. */
+export const CONTACT_EMAIL = "yunus@swathwise.com";
 
 export const FEATURES = [
   {

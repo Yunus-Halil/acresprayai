@@ -1,5 +1,5 @@
 import { Reveal } from "./Reveal";
-import { PILOT_BADGE } from "./copy";
+import { CONTACT_EMAIL, PILOT_BADGE } from "./copy";
 
 export const PilotCTA = () => (
   <Reveal className="relative mx-auto mt-20 max-w-[1200px] px-5 pb-20 sm:mt-[100px] sm:px-10 sm:pb-[100px]">
@@ -18,13 +18,24 @@ export const PilotCTA = () => (
         </p>
       </div>
 
-      {/* During the pilot, creating an account is how you apply. */}
-      <a
-        href="/auth"
-        className="inline-flex items-center gap-2.5 justify-self-start whitespace-nowrap rounded bg-sw-bright px-8 py-4 text-[17px] font-semibold text-[#0c100b] transition-colors hover:bg-sw-bright-hi sm:px-[34px] sm:py-[18px]"
-      >
-        Apply to Pilot <span className="font-plex">→</span>
-      </a>
+      <div className="justify-self-start">
+        {/* During the pilot, creating an account is how you apply. */}
+        <a
+          href="/auth"
+          className="inline-flex items-center gap-2.5 whitespace-nowrap rounded bg-sw-bright px-8 py-4 text-[17px] font-semibold text-[#0c100b] transition-colors hover:bg-sw-bright-hi sm:px-[34px] sm:py-[18px]"
+        >
+          Apply to Pilot <span className="font-plex">→</span>
+        </a>
+        <p className="m-0 mt-4 font-plex text-[11px] tracking-[0.08em] text-sw-on-dark-faint">
+          OR EMAIL{" "}
+          <a
+            href={`mailto:${CONTACT_EMAIL}`}
+            className="text-sw-bright-hi underline-offset-4 hover:underline"
+          >
+            {CONTACT_EMAIL.toUpperCase()}
+          </a>
+        </p>
+      </div>
     </section>
   </Reveal>
 );
