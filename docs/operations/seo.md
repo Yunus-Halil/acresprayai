@@ -23,14 +23,28 @@ not a metadata change.
 
 ## Which host is canonical
 
-**`https://www.swathwise.com/`** — because that is what Vercel actually serves. The bare apex
-308-redirects to `www`, and Google is explicit that a canonical must not point at a URL that
-redirects; doing so is a conflicting signal.
+**`https://swathwise.com/`** — the bare apex. Every canonical, `og:url`, `og:image`, sitemap
+entry and the `SITE` constant in `src/components/Seo.tsx` name it.
 
-If the bare apex is preferred instead, this is a two-part change and both parts are required:
-set the apex as the primary domain in Vercel so `www` redirects to it, **then** flip
-`index.html`, `public/sitemap.xml`, `public/robots.txt` and the `SITE` constant in
-`src/components/Seo.tsx` back. Doing only one leaves the canonical pointing at a redirect again.
+This only holds if Vercel serves the apex directly. It is a **two-part setting** and both halves
+have to agree:
+
+1. In Vercel → Project → Settings → Domains, `swathwise.com` must be the primary domain, with
+   `www.swathwise.com` set to redirect to it — not the other way round.
+2. The metadata in this repo names the apex.
+
+Get those out of step and the canonical points at a URL that 308-redirects, which Google treats
+as a conflicting signal and generally resolves by ignoring the tag. The redirect is configured at
+Vercel's domain layer, not in `vercel.json`; adding a rule there to force it would fight the
+domain setting rather than fix it.
+
+Check with:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code} -> %{redirect_url}
+' https://swathwise.com/
+# want: 200 (and www.swathwise.com giving 308 -> https://swathwise.com/)
+```
 
 ## The homepage tags
 
@@ -38,8 +52,8 @@ set the apex as the primary domain in Vercel so `www` redirects to it, **then** 
 |---|---|
 | `<title>` | SwathWise — Precision spray missions from drone imagery *(55 chars)* |
 | `description` | Upload drone images, get a stitched map of your farm, and let AI find the crops that need spraying — with flight plans ready for your drone. *(140 chars)* |
-| `canonical` / `og:url` | `https://www.swathwise.com/` |
-| `og:image` / `twitter:image` | `https://www.swathwise.com/share-card.png` (1200×630) |
+| `canonical` / `og:url` | `https://swathwise.com/` |
+| `og:image` / `twitter:image` | `https://swathwise.com/share-card.png` (1200×630) |
 | `twitter:card` | `summary_large_image` |
 
 Kept under 60 and 155 characters respectively so neither is truncated in a result.
@@ -89,10 +103,10 @@ otherwise index an empty page under the homepage's title. `robots.txt` stops the
 ## Verifying a deploy
 
 ```bash
-curl -s https://www.swathwise.com/ | grep -E '<title>|og:image|canonical'
-curl -s https://www.swathwise.com/robots.txt
-curl -s https://www.swathwise.com/sitemap.xml
-curl -sI https://www.swathwise.com/share-card.png | head -3   # expect 200 image/png
+curl -s https://swathwise.com/ | grep -E '<title>|og:image|canonical'
+curl -s https://swathwise.com/robots.txt
+curl -s https://swathwise.com/sitemap.xml
+curl -sI https://swathwise.com/share-card.png | head -3   # expect 200 image/png
 ```
 
 Then paste the URL into <https://www.opengraph.xyz> or a Slack message to yourself. A preview

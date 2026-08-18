@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-const SITE = "https://www.swathwise.com";
+const SITE = "https://swathwise.com";
 
 type SeoProps = {
   /** Full <title>. Keep under ~60 characters or Google truncates it. */

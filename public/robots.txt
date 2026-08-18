@@ -12,4 +12,4 @@ Disallow: /app/
 Disallow: /admin/
 Disallow: /auth
 
-Sitemap: https://www.swathwise.com/sitemap.xml
+Sitemap: https://swathwise.com/sitemap.xml
