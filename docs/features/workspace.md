@@ -59,8 +59,34 @@ farmer.
 | **AI** | Runs the analysis; shows health score, summary, per-zone findings with confidence and recommended action, the Tier 2 watch list, the NDVI grid readout, and the disclaimer. Zones can be deleted individually. |
 | **Planner** | Mission generation, physics validation, battery estimation, flight simulation. See [mission-planner.md](mission-planner.md). |
 | **Reports** | PDF generation and the archive of previous reports. See [cost-and-reports.md](cost-and-reports.md). |
-| **History** | Every scan for this field as a card with mini-map, zone count and stressed acreage. Select two for a draggable swipe comparison and a percentage change in stressed area. |
+| **History** | Every scan for this field as a card with mini-map, zone count and stressed acreage. Select two for a draggable swipe comparison and a percentage change in stressed area. Also a scan timelapse — see below. |
 | **Settings** | Crop type, planting and harvest dates, unit system, per-acre input costs, which inputs the farmer actually has, up to three custom inputs, drone selection and tank load. |
+
+### The scan timelapse
+
+Below the scan cards, once a field has **two or more** completed scans with baked tiles, a
+timeline appears: drag it, or press play, and the map crossfades through every scan in date
+order. A scan still processing, or one whose tiles never finished baking, is excluded rather
+than played as an empty frame.
+
+Every scan's tile layer is mounted at once and only the opacities change. The two scans either
+side of the playhead split opacity between them — 30% of the way across shows the older at 70%
+and the newer at 30% — so the two always sum to 1 and the map never dips to blank.
+
+**No re-registration, and that is deliberate.** Each layer is drawn exactly as flown, at its own
+native extent. Nothing is aligned, scored for overlap, or cropped to a common boundary, and the
+map is framed on the *field* outline rather than on any one scan. Two flights at different
+altitudes or covering slightly different ground will visibly disagree at the edges, and showing
+that honestly is better than a transform that quietly implies the two frames are comparable
+pixel-for-pixel.
+
+A true frame-aligned timelapse — matching extents across scans, warping to a common grid — is a
+known future improvement. It is a real piece of photogrammetry work, not a tweak to this
+control, and it is not attempted here.
+
+Read-only throughout: it queries the `odm_tasks` rows the tab already loaded and reuses the
+`tile` endpoint exactly as the Field view does, with the same `?token=` ownership path. It
+writes nothing.
 
 ### Why the index label matters
 

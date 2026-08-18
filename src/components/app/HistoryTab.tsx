@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, Clock, FileBarChart, Plane, ChevronsLeftRight, X } from "lucide-react";
 import { area as turfArea } from "@turf/area";
 import { polygon as turfPolygon } from "@turf/helpers";
+import Timelapse from "@/components/app/Timelapse";
+import { isPlayable } from "@/lib/timelapse";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
@@ -26,6 +28,8 @@ type Task = {
   created_at: string;
   image_count: number;
   ai_analysis: AiAnalysis;
+  /** Only a fully baked scan has tiles to fade to. */
+  tiles_baked: boolean | null;
 };
 type FlightLog = { id: string; scan_id: string | null; date_flown: string };
 
@@ -182,7 +186,7 @@ export default function HistoryTab({
       setLoading(true);
       const { data: ts } = await supabase
         .from("odm_tasks")
-        .select("id, odm_uuid, status, created_at, image_count, ai_analysis")
+        .select("id, odm_uuid, status, created_at, image_count, ai_analysis, tiles_baked")
         .eq("field_id", fieldId)
         .order("created_at", { ascending: true });
       if (cancelled) return;
@@ -217,6 +221,13 @@ export default function HistoryTab({
     }
     return m;
   }, [tasks]);
+
+  // Scans with something to actually render. A scan still processing, or one
+  // whose tiles never finished baking, would fade to a blank frame.
+  const playable = useMemo(
+    () => tasks.filter(isPlayable),
+    [tasks],
+  );
 
   const toggle = (id: string) => {
     setSelected(s => {
@@ -318,6 +329,10 @@ export default function HistoryTab({
               );
             })}
           </div>
+        )}
+
+        {playable.length >= 2 && (
+          <Timelapse scans={playable} boundary={boundary} token={token} />
         )}
 
         {a && b && (
