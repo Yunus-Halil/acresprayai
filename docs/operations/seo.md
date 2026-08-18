@@ -21,14 +21,25 @@ That is an acceptable trade today: the only links anyone shares are `/` and `/ap
 sell the same thing. Making per-route previews real needs pre-rendering, which is a build change,
 not a metadata change.
 
+## Which host is canonical
+
+**`https://www.swathwise.com/`** — because that is what Vercel actually serves. The bare apex
+308-redirects to `www`, and Google is explicit that a canonical must not point at a URL that
+redirects; doing so is a conflicting signal.
+
+If the bare apex is preferred instead, this is a two-part change and both parts are required:
+set the apex as the primary domain in Vercel so `www` redirects to it, **then** flip
+`index.html`, `public/sitemap.xml`, `public/robots.txt` and the `SITE` constant in
+`src/components/Seo.tsx` back. Doing only one leaves the canonical pointing at a redirect again.
+
 ## The homepage tags
 
 | Tag | Value |
 |---|---|
 | `<title>` | SwathWise — Precision spray missions from drone imagery *(55 chars)* |
 | `description` | Upload drone images, get a stitched map of your farm, and let AI find the crops that need spraying — with flight plans ready for your drone. *(140 chars)* |
-| `canonical` / `og:url` | `https://swathwise.com/` |
-| `og:image` / `twitter:image` | `https://swathwise.com/share-card.png` (1200×630) |
+| `canonical` / `og:url` | `https://www.swathwise.com/` |
+| `og:image` / `twitter:image` | `https://www.swathwise.com/share-card.png` (1200×630) |
 | `twitter:card` | `summary_large_image` |
 
 Kept under 60 and 155 characters respectively so neither is truncated in a result.
@@ -78,10 +89,10 @@ otherwise index an empty page under the homepage's title. `robots.txt` stops the
 ## Verifying a deploy
 
 ```bash
-curl -s https://swathwise.com/ | grep -E '<title>|og:image|canonical'
-curl -s https://swathwise.com/robots.txt
-curl -s https://swathwise.com/sitemap.xml
-curl -sI https://swathwise.com/share-card.png | head -3   # expect 200 image/png
+curl -s https://www.swathwise.com/ | grep -E '<title>|og:image|canonical'
+curl -s https://www.swathwise.com/robots.txt
+curl -s https://www.swathwise.com/sitemap.xml
+curl -sI https://www.swathwise.com/share-card.png | head -3   # expect 200 image/png
 ```
 
 Then paste the URL into <https://www.opengraph.xyz> or a Slack message to yourself. A preview
