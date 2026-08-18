@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import RequireAuth from "@/components/RequireAuth";
 import logo from "@/assets/swathwise-logo.png";
+import Seo from "@/components/Seo";
 
 const nav = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -18,6 +19,10 @@ const nav = [
 export default function AppLayout() {
   return (
     <RequireAuth>
+      {/* Signed-in surfaces carry farmer data and have no business in a
+          search index. robots.txt disallows them too; this covers the case
+          of a crawler that reached the URL from a link anyway. */}
+      <Seo title="SwathWise" noindex />
       <AppShell />
     </RequireAuth>
   );

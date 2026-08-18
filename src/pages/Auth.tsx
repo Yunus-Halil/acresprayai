@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Leaf, Loader2 } from "lucide-react";
+import Seo from "@/components/Seo";
 
 export default function Auth() {
   const nav = useNavigate();
@@ -62,6 +63,7 @@ export default function Auth() {
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
+      <Seo title="Sign in — SwathWise" noindex />
       <div className="hidden lg:flex relative bg-[hsl(var(--field))] grid-bg-dark overflow-hidden">
         <div className="relative z-10 p-12 flex flex-col justify-between text-[hsl(var(--primary-foreground))]">
           <Link to="/" className="flex items-center gap-2 font-display text-xl">

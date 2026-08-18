@@ -59,6 +59,7 @@ import PlannerTab from "@/components/app/workspace/PlannerTab";
 import WeatherTab, { HeaderWeather } from "@/components/app/workspace/WeatherTab";
 import SettingsTab from "@/components/app/workspace/SettingsTab";
 import { loadAnnotations } from "@/components/app/workspace/layers";
+import Seo from "@/components/Seo";
 
 // Endpoints and load-loop bounds live in ./workspace/constants, imported above.
 
@@ -870,6 +871,7 @@ export default function OrthomosaicViewer() {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden font-sans"
          style={{ background: "#0f0f0f", color: "#f0f0f0" }}>
+      <Seo title="SwathWise" noindex />
       {/* Top status bar: back · field · weather · health */}
       <div className="h-12 shrink-0 flex items-center gap-4 px-4 border-b border-[#1f1f1f]"
            style={{ background: "#0f0f0f" }}>

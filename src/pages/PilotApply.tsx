@@ -12,6 +12,7 @@ import {
   showsDroneModel,
   validate,
 } from "@/lib/pilotApplication";
+import Seo from "@/components/Seo";
 
 type Values = Record<string, string>;
 type Errors = Partial<Record<string, string>>;
@@ -131,6 +132,11 @@ export default function PilotApply() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-sw-paper font-grotesk text-sw-ink">
+      <Seo
+        title="Apply to the SwathWise pilot — 10 farms, free usage"
+        description="Ten farms, free usage, this season. Tell us about your land and what you fly — it takes about two minutes."
+        path="/apply"
+      />
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 opacity-[0.045]"

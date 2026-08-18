@@ -1,14 +1,15 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
+# swathwise.com
+#
+# Public marketing pages are open to everything. The signed-in surfaces are not:
+# the SPA rewrite means /app/* and /admin/* return 200 with the app shell rather
+# than a 404, so without these rules a crawler that found the URL could index an
+# empty shell under the homepage's title. The pages themselves also emit
+# <meta name="robots" content="noindex"> - see src/components/Seo.tsx.
 
 User-agent: *
 Allow: /
+Disallow: /app/
+Disallow: /admin/
+Disallow: /auth
+
+Sitemap: https://swathwise.com/sitemap.xml

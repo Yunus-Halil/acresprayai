@@ -53,6 +53,7 @@ that treats only those patches instead of the whole field.
 |---|---|
 | [operations/running.md](operations/running.md) | Commands, configuration, secrets, test coverage |
 | [operations/limits.md](operations/limits.md) | What is not built, and constraints to design around |
+| [operations/seo.md](operations/seo.md) | Titles, link-preview cards, robots, sitemap, indexability |
 
 ## Quick facts
 

@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:share-card": "node scripts/build-share-card.cjs"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",
@@ -101,6 +102,7 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
     "jsdom": "^20.0.3",
+    "pngjs": "^7.0.0",
     "postcss": "^8.5.6",
     "supabase": "^2.114.0",
     "tailwindcss": "^3.4.17",

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import Seo from "@/components/Seo";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
@@ -72,6 +73,7 @@ export default function PilotApplications() {
 
   return (
     <div className="min-h-screen bg-background p-6 sm:p-10">
+      <Seo title="Pilot applications — SwathWise" noindex />
       <header className="mb-8">
         <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           Pilot programme
