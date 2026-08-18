@@ -60,6 +60,7 @@ import WeatherTab, { HeaderWeather } from "@/components/app/workspace/WeatherTab
 import SettingsTab from "@/components/app/workspace/SettingsTab";
 import { loadAnnotations } from "@/components/app/workspace/layers";
 import Seo from "@/components/Seo";
+import { useNdviLayerDefault } from "@/lib/ndviLayer";
 
 // Endpoints and load-loop bounds live in ./workspace/constants, imported above.
 
@@ -752,6 +753,12 @@ export default function OrthomosaicViewer() {
     })();
     return () => { cancelled = true; };
   }, [taskId, token, tileTemplate]);
+
+  // Real NDVI is worth showing unasked; the RGB-derived VARI proxy is not.
+  // See src/lib/ndviLayer.ts - applied once per scan, then the toggle is the
+  // farmer's.
+  useNdviLayerDefault(taskId, ndviInfo, (visible) =>
+    setLayers(l => (l.ndvi === visible ? l : { ...l, ndvi: visible })));
 
   // Ctrl/Cmd+T opens the new-tab menu
   useEffect(() => {

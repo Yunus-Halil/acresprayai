@@ -26,7 +26,7 @@ Each independently toggleable:
 | Layer | Contents |
 |---|---|
 | Orthomosaic | The pre-baked tiles |
-| NDVI / VARI | Vegetation-index overlay. The legend names which index is actually in use and the **spectral** band count behind it — see the note below |
+| NDVI / VARI | Vegetation-index overlay. **On by default for real NDVI, off for the VARI proxy** — see below. The legend names which index is actually in use and the **spectral** band count behind it |
 | Boundary | The field outline |
 | AI zones | Treatment polygons, colour-coded by severity, labelled with real acreage and estimated cost |
 | Manual annotations | Farmer-drawn polygons |
@@ -87,6 +87,32 @@ control, and it is not attempted here.
 Read-only throughout: it queries the `odm_tasks` rows the tab already loaded and reuses the
 `tile` endpoint exactly as the Field view does, with the same `?token=` ownership path. It
 writes nothing.
+
+### Which layers start visible
+
+Orthomosaic, boundary, annotations and measurements start on. The vegetation-index layer is the
+one that varies:
+
+| The scan is serving | Layer starts |
+|---|---|
+| NDVI — a NIR band identified by name | **visible** |
+| NDRE — a red-edge band identified by name | **visible** |
+| VARI — the RGB proxy | hidden |
+| VARI because band resolution failed | hidden |
+
+Real NDVI is a calibrated signal and worth putting in front of the farmer unasked. VARI is a
+visible-light proxy computed from RGB — explicitly not NDVI, and less reliable — so it stays
+something the farmer opts into rather than the default view of their field. A scan whose bands
+could not be resolved falls back to VARI and is treated the same way, because the honest position
+there is that we could not identify a NIR band, not that we found one.
+
+The decision reads the `index` that `ndvi-tile/info` reports it is actually serving, so it asks
+the same question the tiles answer rather than counting bands a second time and risking a
+disagreement. See [`src/lib/ndviLayer.ts`](../../src/lib/ndviLayer.ts).
+
+**It is only a default.** It applies once when a scan loads, and the toggle is entirely manual
+after that — turn it off on a multispectral scan and a re-run of the info fetch will not turn it
+back on. Opening a different scan applies the rule again. There is no stored per-user preference.
 
 ### Why the index label matters
 
