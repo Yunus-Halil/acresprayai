@@ -53,9 +53,11 @@ import {
 import { FN_BASE, NDVI_BASE, TILE_BASE } from "./constants";
 import {
   type Annotation, type LayerState, type MeasureStats, type UserPoly,
-  AiZonesLayer, AnnotateTool, BoundaryTool, FitBounds, LayerRow, MapControls,
+  type BasemapId,
+  AiZonesLayer, AnnotateTool, BasemapLayer, BasemapToggle, BoundaryTool, FitBounds,
+  LayerRow, MapControls,
   MeasurePanel, MeasureTool, MouseReadout, USER_POLY_ISSUES, UserPolyLayer,
-  escapeHtml, loadAnnotations, saveAnnotations, sevColor,
+  escapeHtml, loadAnnotations, loadBasemap, saveAnnotations, saveBasemap, sevColor,
 } from "./layers";
 // Lives in SettingsTab.tsx purely because of where the file split fell.
 import { LogFlightModal } from "./SettingsTab";
@@ -81,6 +83,7 @@ export function PlannerTab({
   center: [number, number];
   userPolys: UserPoly[];
 }) {
+  const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const [spacingM, setSpacingM] = useState<number>(15);
   const [transitAltM, setTransitAltM] = useState<number>(30);
   const [sprayAltM, setSprayAltM] = useState<number>(3);
@@ -626,10 +629,7 @@ export function PlannerTab({
           zoomControl={false} attributionControl={false}
           style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
         >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maxNativeZoom={19} maxZoom={22} zIndex={1}
-          />
+          <BasemapLayer id={basemap} />
           {tileUrl && bounds && (
             <TileLayer
               key={tileUrl} url={tileUrl}
@@ -643,6 +643,11 @@ export function PlannerTab({
             mission={mission} home={effectiveHome}
             onHomeChange={(p) => setHome(p)}
             swapPoint={swapPoint}
+          />
+          <BasemapToggle
+            value={basemap}
+            onChange={(id) => { setBasemap(id); saveBasemap(id); }}
+            className="absolute bottom-4 right-4 z-[1000]"
           />
           <DroneSimMarker sim={simState} />
         </MapContainer>

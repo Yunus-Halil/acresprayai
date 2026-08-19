@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
     let bounds: [number, number, number, number] | null = null;
 
     const tjRes = await fetchResilient(
-      `${TITILER}/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(cogUrl)}&tilesize=256`,
+      `${TITILER}/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(cogUrl)}&tilesize=256&nodata=0`,
       { timeoutMs: 30_000, attempts: 3, label: "bake:tilejson" },
     );
     if (!tjRes.ok) return json({ error: `Tile service unavailable (${tjRes.status}). Try again shortly.` }, 503);
@@ -153,12 +153,21 @@ Deno.serve(async (req) => {
       if (offset < firstFailedOffset) firstFailedOffset = offset;
     };
 
+    // `nodata=0` is what keeps the black collar out of the baked tiles. An ODM
+    // orthophoto is a rectangle with the flight footprint in the middle and
+    // zeroes everywhere else; without this, TiTiler has no reason to think 0 is
+    // special and bakes it as opaque black, which then sits over the basemap as
+    // a hard rectangle around the field. With it, the collar becomes alpha 0.
+    //
+    // The trade is that a genuinely pure-black pixel inside the footprint also
+    // goes transparent. On real crop imagery that is close to nonexistent, and
+    // a stray transparent pixel is far cheaper than burying the whole basemap.
     const worker = async () => {
       while (true) {
         const i = cursor++;
         if (i >= batch.length) return;
         const { z, x, y } = batch[i];
-        const tileUrl = `${TITILER}/cog/tiles/WebMercatorQuad/${z}/${x}/${y}.png?url=${encodeURIComponent(cogUrl)}`;
+        const tileUrl = `${TITILER}/cog/tiles/WebMercatorQuad/${z}/${x}/${y}.png?url=${encodeURIComponent(cogUrl)}&nodata=0`;
         try {
           const r = await fetchResilient(tileUrl, { timeoutMs: 20_000, attempts: 3, label: "bake:tile" });
           if (r.status === 404 || r.status === 204) {

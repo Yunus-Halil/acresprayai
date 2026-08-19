@@ -14,7 +14,7 @@ import {
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
   Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
-  CheckCircle2, XCircle, Trash2, Hexagon,
+  CheckCircle2, XCircle, Trash2, Hexagon, Satellite,
   Play, Pause, RotateCcw, FastForward, History,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
@@ -72,6 +72,89 @@ export function MouseReadout({ coordRef, zoomRef }: { coordRef: { current: HTMLD
     zoomend: () => write(NaN, NaN, map.getZoom()),
   });
   return null;
+}
+
+// ---- Basemap -------------------------------------------------------------
+// The layer under everything else. Satellite is the default because this is a
+// farm tool: a grower recognises their own field from the imagery, whereas a
+// street map of open farmland is often a near-empty page with one road on it.
+
+export type BasemapId = "satellite" | "street";
+
+export const BASEMAPS: Record<BasemapId, {
+  label: string; url: string; attribution: string; maxNativeZoom: number;
+}> = {
+  satellite: {
+    label: "Satellite",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution: "Tiles &copy; Esri",
+    // Esri World Imagery serves past 19 in much of the world, but not
+    // everywhere; capping here means we upscale rather than show blank tiles.
+    maxNativeZoom: 19,
+  },
+  street: {
+    label: "Street",
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: "&copy; OpenStreetMap contributors",
+    maxNativeZoom: 19,
+  },
+};
+
+const BASEMAP_KEY = "swathwise.basemap";
+
+/** Remembered across sessions — a grower who prefers one rarely wants the other. */
+export function loadBasemap(): BasemapId {
+  try {
+    const v = localStorage.getItem(BASEMAP_KEY);
+    if (v === "satellite" || v === "street") return v;
+  } catch { /* private mode / storage disabled */ }
+  return "satellite";
+}
+
+export function saveBasemap(id: BasemapId): void {
+  try { localStorage.setItem(BASEMAP_KEY, id); } catch { /* noop */ }
+}
+
+export function BasemapLayer({ id }: { id: BasemapId }) {
+  const b = BASEMAPS[id];
+  return (
+    <TileLayer
+      // Keyed so switching swaps the layer instead of mutating one in place,
+      // which would leave the previous provider's tiles on screen mid-pan.
+      key={id}
+      url={b.url}
+      attribution={b.attribution}
+      minZoom={1}
+      maxNativeZoom={b.maxNativeZoom}
+      maxZoom={22}
+      zIndex={1}
+    />
+  );
+}
+
+/**
+ * Sits above MapControls in the bottom-right stack by default. Maps without
+ * that stack (the planner) pass their own placement rather than leaving a gap
+ * where the zoom buttons would have been.
+ */
+export function BasemapToggle({
+  value, onChange, className = "absolute bottom-[13.5rem] right-4 z-[1000]",
+}: { value: BasemapId; onChange: (id: BasemapId) => void; className?: string }) {
+  const next: BasemapId = value === "satellite" ? "street" : "satellite";
+  return (
+    <div className={className}>
+      <button
+        onClick={() => onChange(next)}
+        title={`Switch to ${BASEMAPS[next].label.toLowerCase()} view`}
+        className="h-9 px-2.5 inline-flex items-center gap-1.5 rounded-md bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 border border-neutral-700 text-[11px] font-medium"
+      >
+        {value === "satellite"
+          ? <Satellite className="h-4 w-4 text-[#4CAF50]" />
+          : <MapIcon className="h-4 w-4 text-[#4CAF50]" />}
+        {BASEMAPS[value].label}
+      </button>
+    </div>
+  );
 }
 
 export function MapControls({ fitTo }: { fitTo: L.LatLngBoundsExpression | null }) {

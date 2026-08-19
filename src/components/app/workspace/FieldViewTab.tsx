@@ -50,9 +50,11 @@ import {
 import { FN_BASE, NDVI_BASE, TILE_BASE } from "./constants";
 import {
   type Annotation, type LayerState, type MeasureStats, type UserPoly,
-  AiZonesLayer, AnnotateTool, BoundaryTool, FitBounds, LayerRow, MapControls,
+  type BasemapId,
+  AiZonesLayer, AnnotateTool, BasemapLayer, BasemapToggle, BoundaryTool, FitBounds,
+  LayerRow, MapControls,
   MeasurePanel, MeasureTool, MouseReadout, USER_POLY_ISSUES, UserPolyLayer,
-  escapeHtml, loadAnnotations, saveAnnotations, sevColor,
+  escapeHtml, loadAnnotations, loadBasemap, saveAnnotations, saveBasemap, sevColor,
   USER_POLY_COLORS,
 } from "./layers";
 import { AnalysisGrid } from "./AiTab";
@@ -116,6 +118,7 @@ export function FieldViewTab(props: {
   clearAnalysis: () => Promise<void>;
   settings: FarmerSettings;
 }) {
+  const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
     cursorCoordRef, cursorZoomRef, layersOpen, setLayersOpen,
@@ -166,14 +169,7 @@ export function FieldViewTab(props: {
         attributionControl={false}
         style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
       >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap contributors"
-          minZoom={1}
-          maxNativeZoom={19}
-          maxZoom={22}
-          zIndex={1}
-        />
+        <BasemapLayer id={basemap} />
         {layers.orthomosaic && tileUrl && (
           <TileLayer
             key={tileUrl}
@@ -209,6 +205,7 @@ export function FieldViewTab(props: {
         <FitBounds bounds={bounds} />
         <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />
         <MapControls fitTo={bounds} />
+        <BasemapToggle value={basemap} onChange={(id) => { setBasemap(id); saveBasemap(id); }} />
         {showAiZones && analysis?.zones && analysis.zones.length > 0 && (
           <AiZonesLayer
             zones={analysis.zones}
