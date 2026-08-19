@@ -34,7 +34,15 @@ export type GeoRasterSpec = {
   pixelWidthDeg: number;
   /** Pixel height in degrees of latitude (positive; the raster runs south). */
   pixelHeightDeg: number;
-  /** Value marking "no data". Written to GDAL_NODATA so readers skip it. */
+  /**
+   * Value marking "no data", written to GDAL_NODATA so readers skip it.
+   *
+   * Omit it entirely when the raster has no such pixels. Declaring a NoData
+   * value that never appears in the data is worse than declaring none: it tells
+   * a reader to treat a sentinel specially while every pixel is real, which
+   * invites the reader and the writer to disagree about what an ordinary value
+   * like 0 means.
+   */
   noData?: number;
 };
 
@@ -73,7 +81,6 @@ export function writeGeoTiffFloat32(spec: GeoRasterSpec): GeoTiffBundle {
   if (pixels.length !== width * height) {
     throw new Error(`geotiff: expected ${width * height} pixels, got ${pixels.length}`);
   }
-  const noData = spec.noData ?? -9999;
   const stripBytes = width * height * 4;
 
   // GeoKeyDirectory: version 1.1.0, then one entry per key, keys ascending.
@@ -103,8 +110,12 @@ export function writeGeoTiffFloat32(spec: GeoRasterSpec): GeoTiffBundle {
     // to its geographic position. Deliberately corner, unlike the .tfw above.
     { tag: TAG.ModelTiepoint, type: TYPE.DOUBLE, values: [0, 0, 0, spec.originLng, spec.originLat, 0] },
     { tag: TAG.GeoKeyDirectory, type: TYPE.SHORT, values: geoKeys },
-    { tag: TAG.GdalNoData, type: TYPE.ASCII, values: String(noData) },
   ];
+  // Only claim a NoData value when the caller actually writes one. Tag 42113 is
+  // the highest tag we emit, so appending keeps the IFD sorted.
+  if (spec.noData !== undefined) {
+    entries.push({ tag: TAG.GdalNoData, type: TYPE.ASCII, values: String(spec.noData) });
+  }
 
   const ifdOffset = 8;
   const ifdBytes = 2 + entries.length * 12 + 4;
@@ -180,6 +191,8 @@ export type ReadGeoTiff = {
   pixelWidthDeg: number;
   pixelHeightDeg: number;
   epsg: number | null;
+  /** The declared NoData sentinel, or null when the raster declares none. */
+  noData: number | null;
   pixels: Float32Array;
 };
 
@@ -229,12 +242,26 @@ export function readGeoTiffFloat32(tiff: Uint8Array): ReadGeoTiff {
     }
   }
 
+  // GDAL_NODATA is ASCII, so it is read as text rather than through num().
+  let noData: number | null = null;
+  const nd = tags.get(TAG.GdalNoData);
+  if (nd) {
+    let text = "";
+    for (let i = 0; i < nd.count; i++) {
+      const c = tiff[nd.offset + i];
+      if (c === 0) break;
+      text += String.fromCharCode(c);
+    }
+    const parsed = Number(text);
+    noData = isFinite(parsed) ? parsed : null;
+  }
+
   const stripOffset = num(TAG.StripOffsets);
   const pixels = new Float32Array(width * height);
   for (let i = 0; i < pixels.length; i++) pixels[i] = view.getFloat32(stripOffset + i * 4, true);
 
   return {
-    width, height, epsg, pixels,
+    width, height, epsg, noData, pixels,
     pixelWidthDeg: num(TAG.ModelPixelScale, 0),
     pixelHeightDeg: num(TAG.ModelPixelScale, 1),
     originLng: num(TAG.ModelTiepoint, 3),

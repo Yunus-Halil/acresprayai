@@ -134,9 +134,37 @@ same pathway.
 - Boundary: one polygon feature per boundary ring, outer rings wound clockwise and explicitly
   closed. A counter-clockwise outer ring reads as a *hole*, which imports as an empty field with
   no error.
-- Rx raster: single-band float32, uncompressed, north-up, EPSG:4326. Pixel values are L/ha and
-  `0` means *do not spray*. Cells take a rate only where the pixel centre is inside both a zone
-  and the boundary; overlapping zones resolve to the higher rate.
+- Rx raster: single-band float32, uncompressed, north-up, EPSG:4326. Pixel values are L/ha.
+  Cells take a rate only where the pixel centre is inside both a zone and the boundary;
+  overlapping zones resolve to the higher rate.
+
+### What a pixel value means
+
+Three genuinely different states, and conflating any two is an agronomic error rather than a
+formatting choice:
+
+| Value | Meaning |
+|---|---|
+| NoData | Not part of the prescription. Not applicable. |
+| `0` | Part of the prescription, rate zero — fly it, do not spray it. |
+| `> 0` | Apply at this rate, in L/ha. |
+
+We previously declared a NoData sentinel of `-9999` and then never wrote it, so `0` silently
+carried both of the first two meanings: outside-the-field and inside-but-untreated were the same
+number, and the NoData declaration was decorative. `PrescriptionFill` in `src/lib/djiAgras.ts`
+now makes the choice explicit:
+
+- **`zero-untreated` (default)** — every cell is a real rate, most of them `0`, and **no NoData
+  value is declared at all**. Chosen purely on risk asymmetry: if the controller ignores
+  `GDAL_NODATA`, a `-9999` cell is read as a rate, and a large negative rate is an unknown
+  failure mode in the field. A `0` cell degrades to "don't spray" under every interpretation.
+- **`nodata-outside`** — `-9999` outside the boundary, `0` inside the boundary but outside every
+  zone, rate inside zones. Strictly more informative, and the semantically correct answer *if*
+  the controller honours NoData.
+
+**Which one DJI actually wants is untested.** Both are implemented and neither is asserted to be
+correct. The writer now refuses to declare a sentinel it does not write, in either direction, so
+the ambiguity cannot come back by accident. Flip the default only on hardware evidence.
 - Resolution targets 1 m/px, coarsened automatically to stay under DJI's 10 MB prescription cap.
 - Georeferencing is written twice on purpose: GeoTIFF `ModelTiepointTag` (outer corner of the
   top-left pixel) and the `.tfw` (**centre** of that same pixel). The half-pixel difference

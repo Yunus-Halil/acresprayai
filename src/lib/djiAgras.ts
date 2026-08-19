@@ -55,6 +55,43 @@ export const AGRAS_IMPORT_STEPS = {
   note: `Rates are written in ${RX_RATE_UNIT}. Selecting a different source unit on the controller will mis-dose the field without any warning.`,
 } as const;
 
+/**
+ * What a pixel value MEANS in the Rx raster.
+ *
+ * There are three genuinely different states a cell can be in, and conflating
+ * any two of them is a real agronomic error rather than a formatting choice:
+ *
+ *   NoData  — this cell is not part of the prescription. Not applicable.
+ *   0       — this cell IS part of the prescription, and the rate is zero.
+ *             An explicit instruction: fly it, do not spray it.
+ *   > 0     — apply at this rate, in L/ha.
+ *
+ * We previously declared a NoData sentinel of -9999 and then never wrote it,
+ * so 0 silently carried both of the first two meanings — outside-the-field and
+ * inside-but-untreated were the same number. That is exactly the accidental
+ * semantics this type exists to prevent.
+ *
+ * WHICH ONE DJI WANTS IS UNTESTED. Both policies are implemented and neither is
+ * asserted to be correct:
+ *
+ * `zero-untreated` (default) — every cell in the raster is a real rate, most of
+ *   them 0, and NO NoData value is declared. Chosen as the default purely on
+ *   risk asymmetry: if the controller ignores GDAL_NODATA, a -9999 cell is read
+ *   as a rate, and a large negative rate is an unknown failure mode in the
+ *   field. A 0 cell degrades to "don't spray" under every interpretation.
+ *
+ * `nodata-outside` — -9999 outside the field boundary, 0 inside the boundary
+ *   but outside every zone, rate inside zones. Strictly more informative and
+ *   the semantically correct answer if the controller honours NoData.
+ *
+ * Flip the default only once a captured package or a hardware test says which
+ * the aircraft actually expects.
+ */
+export type PrescriptionFill = "zero-untreated" | "nodata-outside";
+
+/** Sentinel used by `nodata-outside`. Never written under `zero-untreated`. */
+export const RX_NODATA = -9999;
+
 /** A treatment zone with the numeric dose the Rx raster is built from. */
 export type RateZone = {
   id: string;
@@ -72,6 +109,8 @@ export type AgrasPackageInput = {
   when?: Date;
   /** Raster extension. See RxExtension — defaults to the observed `.tiff`. */
   rxExtension?: RxExtension;
+  /** Pixel-value semantics. See PrescriptionFill — defaults to `zero-untreated`. */
+  fill?: PrescriptionFill;
 };
 
 export type AgrasPackage = {
@@ -133,6 +172,14 @@ export type AgrasVerification = {
   zoneCount: number;
   treatedPixelCount: number;
   rateRange: { min: number; max: number };
+  /** Pixel-value semantics actually written. */
+  fill: PrescriptionFill;
+  /** Declared GDAL_NODATA, or null when the raster declares none. */
+  declaredNoData: number | null;
+  /** Every distinct pixel value and how many cells carry it, rate-ascending. */
+  valueHistogram: { value: number; count: number }[];
+  untreatedPixelCount: number;
+  noDataPixelCount: number;
 };
 
 /**
@@ -184,9 +231,25 @@ function rasterizeZones(
   grid: ReturnType<typeof planGrid>,
   boundary: LatLng2[][],
   zones: RateZone[],
-): { pixels: Float32Array; treated: number; min: number; max: number } {
-  const pixels = new Float32Array(grid.width * grid.height);   // 0 = do not spray
-  let treated = 0, min = Infinity, max = 0;
+  fill: PrescriptionFill,
+): { pixels: Float32Array; treated: number; untreated: number; noData: number; min: number; max: number } {
+  const pixels = new Float32Array(grid.width * grid.height);
+
+  if (fill === "nodata-outside") {
+    // Start everything as "not part of the prescription", then promote cells
+    // inside the field to an explicit zero. This is the only pass that has to
+    // touch every cell, which is why the other policy skips it entirely.
+    pixels.fill(RX_NODATA);
+    for (let y = 0; y < grid.height; y++) {
+      const lat = grid.originLat - (y + 0.5) * grid.pixelHeightDeg;
+      for (let x = 0; x < grid.width; x++) {
+        const lng = grid.originLng + (x + 0.5) * grid.pixelWidthDeg;
+        if (pointInAnyRing({ lat, lng }, boundary)) pixels[y * grid.width + x] = 0;
+      }
+    }
+  }
+  // Under "zero-untreated" the Float32Array is already zero-filled, and zero is
+  // the intended meaning for every cell we do not burn a rate into.
 
   for (const zone of zones) {
     if (!(zone.rateLha > 0) || zone.ring.length < 3) continue;
@@ -203,19 +266,27 @@ function rasterizeZones(
         const lng = grid.originLng + (x + 0.5) * grid.pixelWidthDeg;
         const pt = { lat, lng };
         if (!pointInRing(pt, zone.ring)) continue;
+        // The boundary is the hard perimeter: a zone spilling outside it must
+        // not produce a rate, under either fill policy.
         if (!pointInAnyRing(pt, boundary)) continue;
         const i = y * grid.width + x;
-        if (pixels[i] === 0) treated++;
-        if (zone.rateLha > pixels[i]) pixels[i] = zone.rateLha;
+        // Overlapping zones resolve to the HIGHER rate. Both were flagged as
+        // needing treatment and the controller offers the same Max choice, so
+        // under-dosing an overlap would silently contradict the plan.
+        const current = pixels[i] === RX_NODATA ? 0 : pixels[i];
+        if (zone.rateLha > current) pixels[i] = zone.rateLha;
       }
     }
   }
 
+  let treated = 0, untreated = 0, noData = 0, min = Infinity, max = 0;
   for (let i = 0; i < pixels.length; i++) {
     const v = pixels[i];
-    if (v > 0) { if (v < min) min = v; if (v > max) max = v; }
+    if (v === RX_NODATA && fill === "nodata-outside") { noData++; continue; }
+    if (v > 0) { treated++; if (v < min) min = v; if (v > max) max = v; }
+    else untreated++;
   }
-  return { pixels, treated, min: treated ? min : 0, max };
+  return { pixels, treated, untreated, noData, min: treated ? min : 0, max };
 }
 
 /**
@@ -238,8 +309,9 @@ export function buildAgrasPackage(input: AgrasPackageInput): AgrasPackage {
   }
 
   const rxExt = input.rxExtension ?? DEFAULT_RX_EXTENSION;
+  const fill: PrescriptionFill = input.fill ?? "zero-untreated";
   const grid = planGrid(boundary, input.targetResolutionM ?? 1);
-  const burn = rasterizeZones(grid, boundary, zones);
+  const burn = rasterizeZones(grid, boundary, zones, fill);
   if (burn.treated === 0) {
     throw new Error(
       "Agras export: no raster cell fell inside both a zone and the boundary — " +
@@ -268,9 +340,10 @@ export function buildAgrasPackage(input: AgrasPackageInput): AgrasPackage {
     originLat: grid.originLat,
     pixelWidthDeg: grid.pixelWidthDeg,
     pixelHeightDeg: grid.pixelHeightDeg,
-    // 0 means "do not spray here", which is a real instruction rather than an
-    // absence, so the nodata sentinel is a value we never actually write.
-    noData: -9999,
+    // Declared ONLY when the raster actually contains the sentinel. Under
+    // "zero-untreated" every cell is a real rate and no NoData tag is written,
+    // so a reader can never mistake an ordinary 0 for an absence.
+    noData: fill === "nodata-outside" ? RX_NODATA : undefined,
   };
   const rx = writeGeoTiffFloat32(rasterSpec);
 
@@ -283,7 +356,7 @@ export function buildAgrasPackage(input: AgrasPackageInput): AgrasPackage {
     [`DJI/Rx/${RX_BASENAME}.tfw`]: new TextEncoder().encode(rx.tfw),
   };
 
-  const verification = verifyAgrasPackage(files, boundary, zones, rxExt);
+  const verification = verifyAgrasPackage(files, boundary, zones, rxExt, fill);
 
   return {
     // Flat slash-separated keys rather than a nested object: fflate's nested
@@ -305,6 +378,7 @@ export function verifyAgrasPackage(
   boundary: LatLng2[][],
   zones: RateZone[],
   rxExtension: RxExtension = DEFAULT_RX_EXTENSION,
+  fill: PrescriptionFill = "zero-untreated",
 ): AgrasVerification {
   const shp = files[`DJI/Shapefile/${SHAPE_BASENAME}.shp`];
   const dbf = files[`DJI/Shapefile/${SHAPE_BASENAME}.dbf`];
@@ -354,11 +428,36 @@ export function verifyAgrasPackage(
     throw new Error("Agras export: raster extent does not cover the field boundary");
   }
 
-  let treated = 0, min = Infinity, max = 0;
-  for (const v of raster.pixels) {
-    if (v > 0) { treated++; if (v < min) min = v; if (v > max) max = v; }
+  // Histogram the readback rather than trusting the burn counters — this is the
+  // only place that proves the values survived the float32 round trip intact.
+  const counts = new Map<number, number>();
+  for (const v of raster.pixels) counts.set(v, (counts.get(v) ?? 0) + 1);
+  const valueHistogram = [...counts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => a.value - b.value);
+
+  let treated = 0, untreated = 0, noDataCount = 0, min = Infinity, max = 0;
+  for (const { value, count } of valueHistogram) {
+    if (fill === "nodata-outside" && value === RX_NODATA) { noDataCount += count; continue; }
+    if (value > 0) { treated += count; if (value < min) min = value; if (value > max) max = value; }
+    else untreated += count;
   }
   if (treated === 0) throw new Error("Agras export: raster read back with no treated cells");
+
+  // The declared sentinel and the policy must agree. A NoData tag on a raster
+  // that never uses it is what made 0 ambiguous in the first place.
+  if (fill === "nodata-outside") {
+    if (raster.noData !== RX_NODATA) {
+      throw new Error(`Agras export: fill is nodata-outside but raster declares NoData ${raster.noData}`);
+    }
+    if (noDataCount === 0) {
+      throw new Error("Agras export: NoData declared but no cell carries it");
+    }
+  } else if (raster.noData !== null) {
+    throw new Error(
+      `Agras export: fill is ${fill} so no NoData should be declared, but raster declares ${raster.noData}`,
+    );
+  }
 
   return {
     boundaryAreaM2Source: areaSource,
@@ -369,5 +468,10 @@ export function verifyAgrasPackage(
     zoneCount: zones.length,
     treatedPixelCount: treated,
     rateRange: { min: treated ? min : 0, max },
+    fill,
+    declaredNoData: raster.noData,
+    valueHistogram,
+    untreatedPixelCount: untreated,
+    noDataPixelCount: noDataCount,
   };
 }
