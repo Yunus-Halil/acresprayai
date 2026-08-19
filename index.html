@@ -14,16 +14,29 @@
     <meta name="author" content="SwathWise" />
     <link rel="canonical" href="https://swathwise.com/" />
 
-    <!-- Pointed at the source asset, not /favicon.png, so Vite emits it with a
-         content hash. Browsers cache favicons far more aggressively than page
-         assets - often past a hard refresh - so replacing the bytes behind a
-         fixed URL leaves the old mark in everyone's tab indefinitely. A hashed
-         URL changes whenever the image does, which is the same reason the NDVI
-         tile URLs carry a band-mapping fingerprint.
-         public/favicon.png is kept in step as a fallback for crawlers that
-         fetch that path blindly rather than reading this tag. -->
-    <link rel="icon" href="/src/assets/swathwise-logo.png" type="image/png" />
-    <link rel="apple-touch-icon" href="/src/assets/swathwise-logo.png" />
+    <!-- Two kinds of icon URL, on purpose.
+
+         The PNGs point at source assets so Vite emits them content-hashed.
+         Browsers cache favicons far more aggressively than page assets - often
+         past a hard refresh - so replacing the bytes behind a fixed URL leaves
+         the old mark in everyone's tab indefinitely. A hashed URL changes
+         whenever the image does, same reasoning as the band-mapping
+         fingerprint in the NDVI tile URLs.
+
+         /favicon.ico cannot play that game: browsers and search-engine icon
+         crawlers request it blindly, without reading this head, so being at a
+         known fixed path IS the job. It is also the file the SPA rewrite in
+         vercel.json would otherwise answer with index.html - a 200 carrying
+         HTML where an icon was asked for, which fails as an icon while looking
+         healthy to anything that only checks the status code.
+
+         Sizes are generated from the one source mark by
+         scripts/build-favicons.cjs; see that file for why the mark is cropped
+         and put on a solid ground rather than shipped as-is. -->
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/src/assets/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/src/assets/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/src/assets/apple-touch-icon.png" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

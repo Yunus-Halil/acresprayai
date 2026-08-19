@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:share-card": "node scripts/build-share-card.cjs"
+    "build:share-card": "node scripts/build-share-card.cjs",
+    "build:favicons": "node scripts/build-favicons.cjs"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",
