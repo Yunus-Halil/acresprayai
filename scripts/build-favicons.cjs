@@ -7,13 +7,12 @@
  * drift is invisible until someone notices the tab icon disagrees with the
  * home-screen icon. Same reasoning as scripts/build-share-card.cjs.
  *
- * WHAT IT FIXES. The source mark is a 1024x1024 green glyph on transparency
- * with ~35% of its own padding baked in. Handing that to a browser as a 16 px
- * tab icon wastes most of the pixels on margin and leaves the glyph sitting on
- * whatever colour the tab bar happens to be - which for a dark theme is dark
- * green on near-black. So the mark is cropped to its ink, re-margined, and
- * composited onto the brand paper, giving a tile that reads the same in a light
- * tab, a dark tab, and an iOS home screen.
+ * WHAT IT FIXES. The source mark is a 1024x1024 green glyph carrying ~35% of
+ * its own padding. Handing that to a browser as a 16 px tab icon spends most of
+ * the pixels on margin, so the mark is cropped to its ink and re-margined to a
+ * known fraction. That is the whole transform: the background stays
+ * transparent, so the mark sits on whatever the tab bar, home screen or search
+ * result puts behind it.
  *
  * Run with: node scripts/build-favicons.cjs
  */
@@ -24,7 +23,6 @@ const { PNG } = require("pngjs");
 const repo = path.resolve(__dirname, "..");
 const SRC = path.join(repo, "src/assets/swathwise-logo.png");
 
-const PAPER = [0xf4, 0xf3, 0xec];   // same ground as the share card
 /** Fraction of the tile left as margin on the tighter axis. */
 const MARGIN = 0.08;
 
@@ -49,18 +47,19 @@ const ink = (() => {
 })();
 
 /**
- * Render the mark into an opaque `size` x `size` RGBA tile.
+ * Render the mark into a transparent `size` x `size` RGBA tile.
  *
  * Box-samples the source rather than point-sampling it: at 16 px each output
  * pixel covers roughly 40 source pixels, and taking one of them turns a smooth
  * curve into a staircase.
+ *
+ * Coverage becomes ALPHA rather than being flattened against a background.
+ * That is what keeps the edges anti-aliased against whatever the icon is
+ * eventually drawn on, instead of against a ground guessed here.
  */
 function tile(size) {
+  // pngjs zero-fills, which is transparent black — exactly the ground we want.
   const png = new PNG({ width: size, height: size });
-  for (let i = 0; i < png.data.length; i += 4) {
-    png.data[i] = PAPER[0]; png.data[i + 1] = PAPER[1]; png.data[i + 2] = PAPER[2];
-    png.data[i + 3] = 255;
-  }
 
   // Fit the ink box inside the margin, preserving aspect.
   const box = size * (1 - 2 * MARGIN);
@@ -88,12 +87,13 @@ function tile(size) {
       }
       if (!n || a === 0) continue;
       const alpha = a / n;
+      // Un-premultiply: r/g/b were accumulated weighted by source alpha, so
+      // dividing by the alpha total recovers the mark's own colour rather than
+      // a version darkened toward whatever it was averaged against.
       const src = [r / a, g / a, b / a];
       const o = (size * (offY + y) + (offX + x)) << 2;
-      for (let c = 0; c < 3; c++) {
-        png.data[o + c] = Math.round(PAPER[c] * (1 - alpha) + src[c] * alpha);
-      }
-      png.data[o + 3] = 255;
+      for (let c = 0; c < 3; c++) png.data[o + c] = Math.round(src[c]);
+      png.data[o + 3] = Math.round(alpha * 255);
     }
   }
   return png;

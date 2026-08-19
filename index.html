@@ -31,8 +31,9 @@
          healthy to anything that only checks the status code.
 
          Sizes are generated from the one source mark by
-         scripts/build-favicons.cjs; see that file for why the mark is cropped
-         and put on a solid ground rather than shipped as-is. -->
+         scripts/build-favicons.cjs, which crops it to its ink and re-margins
+         it. The background stays transparent, so the mark takes whatever is
+         behind it rather than carrying a ground we picked. -->
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" type="image/png" sizes="32x32" href="/src/assets/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/src/assets/favicon-16.png" />
