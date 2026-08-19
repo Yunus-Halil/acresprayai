@@ -137,8 +137,19 @@ Deno.serve(async (req) => {
     tu.searchParams.set("url", r.url);
     tu.searchParams.set("expression", expression);
     tu.searchParams.set("rescale", "-1,1");
-    tu.searchParams.set("colormap_name", "rdylgn");
     tu.searchParams.set("nodata", "0");
+    // ?raw=1 omits the colormap, so TiTiler returns an 8-bit GREYSCALE ramp of
+    // the same -1..1 rescale. That is cleanly invertible client side:
+    //
+    //     index = -1 + (grey / 255) * 2      (precision ~0.008)
+    //
+    // The colormapped default is NOT invertible — rdylgn is non-monotonic in
+    // RGB, so two different index values can share a colour. Anything that
+    // needs NUMBERS rather than a picture must pass raw=1; sampling the default
+    // tiles looks like it yields NDVI and does not.
+    if (url.searchParams.get("raw") !== "1") {
+      tu.searchParams.set("colormap_name", "rdylgn");
+    }
 
     const tr = await fetch(tu.toString());
     if (!tr.ok) {
