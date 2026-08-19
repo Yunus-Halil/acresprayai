@@ -67,6 +67,29 @@ export type FarmerSettings = {
     tank_load_pct: number;       // 0-100, how full the tank is for this mission
     custom_specs: DroneSpec;     // active only when the model is unknown/"Custom"
   };
+  /**
+   * Target application rate in litres per hectare, per zone severity.
+   *
+   * This is the ONLY numeric dose anywhere in the model. The AI's
+   * `recommendation.dose` is free prose written for a human, and the servo PWM
+   * values in the .waypoints export are a binary pump open/close — neither can
+   * drive a variable-rate prescription. These three numbers are what the DJI
+   * Agras Rx raster is built from, so they are agronomy the operator owns, not
+   * something inferred. Defaults are conservative starting points to be tuned
+   * per crop and product.
+   */
+  spray_rates_lha: {
+    low: number;
+    medium: number;
+    high: number;
+  };
+  /**
+   * Per-zone rate overrides in L/ha, keyed by zone id. Takes precedence over
+   * the severity default. Zones that are never touched stay absent rather than
+   * being written out at their default, so changing a severity default still
+   * moves every zone the farmer has not explicitly pinned.
+   */
+  zone_rate_overrides: Record<string, number>;
   // Denormalized copy of the latest completed mission for this field. The
   // canonical record is still public.flight_logs; this snapshot makes the
   // Reports tab resilient across tab switches.
@@ -104,6 +127,8 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
     tank_load_pct: 80,
     custom_specs: DRONE_SPECS["Custom"],
   },
+  spray_rates_lha: { low: 15, medium: 25, high: 40 },
+  zone_rate_overrides: {},
   last_flown_mission: null,
 };
 
@@ -120,6 +145,10 @@ export function mergeFarmerSettings(saved: unknown): FarmerSettings {
     input_costs: { ...DEFAULT_FARMER_SETTINGS.input_costs, ...(s.input_costs ?? {}) },
     available_inputs: { ...DEFAULT_FARMER_SETTINGS.available_inputs, ...(s.available_inputs ?? {}) },
     custom_inputs: Array.isArray(s.custom_inputs) ? s.custom_inputs.slice(0, 3) : [],
+    spray_rates_lha: { ...DEFAULT_FARMER_SETTINGS.spray_rates_lha, ...(s.spray_rates_lha ?? {}) },
+    zone_rate_overrides: (s.zone_rate_overrides && typeof s.zone_rate_overrides === "object")
+      ? s.zone_rate_overrides
+      : {},
     flight_plan: {
       ...DEFAULT_FARMER_SETTINGS.flight_plan,
       ...(s.flight_plan ?? {}),
@@ -129,6 +158,20 @@ export function mergeFarmerSettings(saved: unknown): FarmerSettings {
       },
     },
   };
+}
+
+/**
+ * Target rate for one zone, in L/ha: an explicit per-zone override if the
+ * farmer has pinned one, otherwise the severity default. Kept here rather than
+ * in the exporter so the planner UI and the DJI package always agree.
+ */
+export function resolveZoneRateLha(
+  zone: { id: string; severity: AiZone["severity"] },
+  settings: FarmerSettings,
+): number {
+  const override = settings.zone_rate_overrides?.[zone.id];
+  if (typeof override === "number" && isFinite(override) && override > 0) return override;
+  return settings.spray_rates_lha[zone.severity];
 }
 
 /**

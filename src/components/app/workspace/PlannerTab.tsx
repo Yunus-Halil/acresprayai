@@ -31,6 +31,7 @@ import {
   type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
   COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS,
   growthStage, issueToCostKey, mergeFarmerSettings, normalizeBoundary,
+  resolveZoneRateLha,
 } from "@/lib/farmerSettings";
 import {
   type LatLng2,
@@ -44,6 +45,10 @@ import {
   type Mission, type MissionAction, type MissionParams, type MissionWP,
   buildFieldSweep, buildMission, exportMissionFile,
 } from "@/lib/mission";
+import { buildAgrasPackage } from "@/lib/djiAgras";
+import {
+  MAX_CONSUMER_WAYPOINTS, WaypointLimitError, buildWpmlKmz, missionToWpmlWaypoints,
+} from "@/lib/wpml";
 import {
   type BoundaryRing, type FieldRow, type TaskRow,
 } from "./types";
@@ -126,6 +131,18 @@ export function PlannerTab({
     }, 600);
     return () => clearTimeout(t);
   }, [fp]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Per-severity target rates in L/ha, mirrored locally so typing does not hit
+  // the DB on every keystroke. Same 600ms idle debounce as flight_plan above.
+  const [rates, setRates] = useState<FarmerSettings["spray_rates_lha"]>(settings.spray_rates_lha);
+  useEffect(() => { setRates(settings.spray_rates_lha); }, [settings.spray_rates_lha]);
+  useEffect(() => {
+    if (JSON.stringify(rates) === JSON.stringify(settings.spray_rates_lha)) return;
+    const t = setTimeout(() => {
+      onSaveSettings({ ...settings, spray_rates_lha: rates });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [rates]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeDrone = drones.find(d => d.id === fp.drone_id) ?? null;
   useEffect(() => {
@@ -386,13 +403,81 @@ export function PlannerTab({
   }, [simPlaying, simSpeed, simTimeline.total]);
   const simState = simPosAt(simTimeline, simT);
 
-  const downloadWaypoints = () => {
-    if (!mission || mission.waypoints.length === 0) return;
-    const blob = exportMissionFile(mission);
+  const saveBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `mission-${taskId}.waypoints`; a.click();
+    a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadWaypoints = () => {
+    if (!mission || mission.waypoints.length === 0) return;
+    saveBlob(exportMissionFile(mission), `mission-${taskId}.waypoints`);
+  };
+
+  // ---- DJI exports -------------------------------------------------------
+  // Both hang off the same mission model the .waypoints exporter uses — the
+  // zones and boundary below are the very objects fed to buildMission, not
+  // anything re-parsed out of our own output.
+  const zonesWithRates = validZones.map(z => ({
+    id: z.id,
+    ring: z.ring,
+    severity: z.severity,
+    rateLha: resolveZoneRateLha(z, { ...settings, spray_rates_lha: rates }),
+  }));
+
+  // Consumer routes drop the pump commands, so the count differs from the
+  // .waypoints row count. Shown before export so the cap is never a surprise.
+  const consumerWaypointCount = mission ? missionToWpmlWaypoints(mission).length : 0;
+  const overWaypointCap = consumerWaypointCount > MAX_CONSUMER_WAYPOINTS;
+
+  const downloadAgrasPackage = () => {
+    if (!boundary || zonesWithRates.length === 0) return;
+    try {
+      const pkg = buildAgrasPackage({
+        boundary: boundary as LatLng2[][],
+        zones: zonesWithRates,
+      });
+      saveBlob(pkg.zip, `dji-agras-${taskId}.zip`);
+      const v = pkg.verification;
+      toast.success("DJI Agras package ready", {
+        description:
+          `${pkg.raster.width}×${pkg.raster.height} px at ${pkg.raster.resolutionM.toFixed(2)} m/px · ` +
+          `${v.rateRange.min}–${v.rateRange.max} L/ha · boundary verified to ` +
+          `${v.boundaryAreaErrorPct.toFixed(3)}%`,
+      });
+    } catch (e) {
+      toast.error("Agras export failed", { description: (e as Error).message });
+    }
+  };
+
+  const downloadKmz = () => {
+    if (!mission) return;
+    try {
+      const pkg = buildWpmlKmz(mission, {
+        author: "SwathWise",
+        createTimeMs: Date.now(),
+        // Derived from the mission the operator actually planned rather than
+        // hardcoded: cruise between rows is the transit speed, the route runs
+        // at spray speed, and climb-out matches the transit altitude.
+        transitSpeed,
+        autoFlightSpeed: spraySpeed,
+        takeOffSecurityHeightM: transitAltM,
+        finishAction: "goHome",
+        exitOnRCLost: "executeLostAction",
+        executeRCLostAction: "goBack",
+      });
+      saveBlob(pkg.kmz, `mission-${taskId}.kmz`);
+      toast.success("WPML route ready", {
+        description: `${pkg.waypointCount} waypoints · wpmz/template.kml + wpmz/waylines.wpml`,
+      });
+    } catch (e) {
+      if (e instanceof WaypointLimitError) {
+        toast.error("Too many waypoints for a consumer drone", { description: e.message });
+      } else {
+        toast.error("WPML export failed", { description: (e as Error).message });
+      }
+    }
   };
 
   const fmtTime = (s: number) => {
@@ -1027,6 +1112,61 @@ export function PlannerTab({
           </div>
         )}
 
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">
+          Application rate
+        </div>
+        <div className="rounded-sm border border-[#1f3a1f] p-3 mb-4 text-xs">
+          <div className="grid grid-cols-3 gap-2">
+            {(["low", "medium", "high"] as const).map(sev => (
+              <label key={sev} className="block">
+                <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-neutral-500">
+                  <span className="h-2 w-2 rounded-full" style={{ background: sevColor(sev) }} />
+                  {sev}
+                </span>
+                <input
+                  type="number" min={0} max={200} step={0.5}
+                  value={rates[sev]}
+                  onChange={e => setRates({ ...rates, [sev]: Math.max(0, Number(e.target.value)) })}
+                  className="mt-1 w-full bg-[#0f0f0f] border border-[#2a2a2a] rounded-sm px-1.5 py-1 font-mono text-xs text-neutral-200"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-2 text-[10px] text-neutral-500 leading-relaxed">
+            Litres per hectare, by zone severity. This is the dose the DJI prescription raster is
+            built from — the .waypoints export only carries a pump on/off, so it has no rate to
+            inherit. Set it from your product label, not from the AI's written recommendation.
+          </div>
+          {zonesWithRates.length > 0 && (
+            <div className="mt-2 border-t border-[#1f3a1f] pt-2 space-y-1">
+              {zonesWithRates.map((z, i) => (
+                <div key={z.id} className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ background: sevColor(z.severity) }} />
+                  <span className="text-[11px] text-neutral-400 truncate flex-1">
+                    Zone {i + 1}
+                    {settings.zone_rate_overrides?.[z.id] != null && (
+                      <span className="text-neutral-600"> · pinned</span>
+                    )}
+                  </span>
+                  <input
+                    type="number" min={0} max={200} step={0.5}
+                    value={z.rateLha}
+                    onChange={e => {
+                      const v = Math.max(0, Number(e.target.value));
+                      onSaveSettings({
+                        ...settings,
+                        zone_rate_overrides: { ...settings.zone_rate_overrides, [z.id]: v },
+                      });
+                    }}
+                    className="w-16 bg-[#0f0f0f] border border-[#2a2a2a] rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-right text-neutral-200"
+                  />
+                  <span className="text-[10px] text-neutral-600 w-8">L/ha</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Export</div>
         <button
           onClick={downloadWaypoints}
@@ -1035,6 +1175,27 @@ export function PlannerTab({
         >
           <Download className="h-3.5 w-3.5" /> Download .waypoints
         </button>
+        <button
+          onClick={downloadAgrasPackage}
+          disabled={!boundary || zonesWithRates.length === 0}
+          className="w-full inline-flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-[#222] disabled:opacity-50 text-neutral-200 border border-[#2a2a2a] rounded-sm px-3 py-2 text-xs font-semibold mb-2"
+        >
+          <Download className="h-3.5 w-3.5 text-[#4CAF50]" /> DJI Agras package (.zip)
+        </button>
+        <button
+          onClick={downloadKmz}
+          disabled={!mission || consumerWaypointCount === 0 || overWaypointCap}
+          className="w-full inline-flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-[#222] disabled:opacity-50 text-neutral-200 border border-[#2a2a2a] rounded-sm px-3 py-2 text-xs font-semibold mb-2"
+        >
+          <Download className="h-3.5 w-3.5 text-[#4CAF50]" /> Consumer drone route (.kmz)
+        </button>
+        {overWaypointCap && (
+          <div className="mb-2 text-[11px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1.5 leading-relaxed">
+            This mission needs {consumerWaypointCount} waypoints — consumer drone export supports up
+            to {MAX_CONSUMER_WAYPOINTS}. Widen the row spacing, drop the pass count, or export for
+            Agras instead.
+          </div>
+        )}
         <button
           onClick={() => setLogOpen(true)}
           disabled={!mission || mission.waypoints.length === 0 || !fieldId}
@@ -1062,8 +1223,17 @@ export function PlannerTab({
         )}
 
         <p className="text-[10px] text-neutral-500 leading-relaxed">
-          QGC WPL 110 with takeoff, transit (sprayer off), spray (servo ON/OFF on servo 8),
-          RTH and land commands. Load in Mission Planner / QGroundControl, or convert for DJI Pilot 2.
+          <b className="text-neutral-400">.waypoints</b> — QGC WPL 110 with takeoff, transit
+          (sprayer off), spray (servo ON/OFF on servo 8), RTH and land. Load in Mission Planner or
+          QGroundControl.
+          <br />
+          <b className="text-neutral-400">Agras .zip</b> — unzip onto the card so <code>DJI/</code>
+          sits at the root, then import on the controller with Map Source “Other” and Source Unit
+          “ha”. Boundary shapefile plus a prescription raster in L/ha, both WGS84.
+          <br />
+          <b className="text-neutral-400">.kmz</b> — DJI WPML route (wpmz/template.kml +
+          waylines.wpml). Built to DJI’s published spec, but not yet confirmed against consumer
+          aircraft — check it imports before relying on it in the field.
         </p>
       </div>
 
