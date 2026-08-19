@@ -74,7 +74,12 @@ export default function PolygonMap({
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, { zoomControl: true }).setView([center.lat, center.lng], 17);
     L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-      maxZoom: 22, attribution: "Tiles © Esri",
+      // Esri answers HTTP 200 with a "Map data not yet available" placeholder
+      // past local coverage, so without a native cap the map fills with that
+      // label instead of ground. Upscale from 18 rather than request tiles that
+      // do not exist. (The workspace maps probe Esri for the real depth; this
+      // one-off boundary picker takes the safe constant instead.)
+      maxNativeZoom: 18, maxZoom: 22, attribution: "Tiles © Esri",
     }).addTo(map);
     drawnRef.current = L.layerGroup().addTo(map);
 

@@ -115,17 +115,90 @@ export function saveBasemap(id: BasemapId): void {
   try { localStorage.setItem(BASEMAP_KEY, id); } catch { /* noop */ }
 }
 
+// Esri serves a "Map data not yet available" PLACEHOLDER IMAGE with HTTP 200 for
+// tiles past local coverage — not a 404 — so `tileerror` never fires and Leaflet
+// has no way to know it is painting a label instead of ground. Coverage depth
+// varies by region and farmland is usually the shallow end: 19 is fine over a
+// city and produces that placeholder over open fields.
+//
+// A fixed cap is therefore either blurry everywhere or broken somewhere. So ask
+// Esri what it actually has for the field we are looking at, once, and let
+// Leaflet upscale beyond that instead of requesting tiles that do not exist.
+const ESRI_TILEMAP =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tilemap";
+/** Esri's imagery is essentially universal at this depth. Safe floor. */
+const SATELLITE_SAFE_NATIVE = 17;
+const SATELLITE_MAX_PROBE = 21;
+
+/** Slippy-map tile containing a coordinate at a given zoom. */
+function tileForLatLng(lat: number, lng: number, z: number): { x: number; y: number } {
+  const n = 2 ** z;
+  const rad = (lat * Math.PI) / 180;
+  return {
+    x: Math.floor(((lng + 180) / 360) * n),
+    y: Math.floor(((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * n),
+  };
+}
+
+// Answers are per-field and never change, so one probe per area per session.
+const esriDepthCache = new Map<string, number>();
+
+function useEsriMaxNativeZoom(active: boolean): number {
+  const map = useMap();
+  const [depth, setDepth] = useState(SATELLITE_SAFE_NATIVE);
+
+  useEffect(() => {
+    if (!active) return;
+    const c = map.getCenter();
+    // ~0.01° buckets: one probe covers a whole farm, not one per pan.
+    const key = `${c.lat.toFixed(2)},${c.lng.toFixed(2)}`;
+    const cached = esriDepthCache.get(key);
+    if (cached !== undefined) { setDepth(cached); return; }
+
+    let cancelled = false;
+    (async () => {
+      // Walk down from the deepest plausible level and stop at the first that
+      // reports real coverage.
+      for (let z = SATELLITE_MAX_PROBE; z > SATELLITE_SAFE_NATIVE; z--) {
+        if (cancelled) return;
+        const { x, y } = tileForLatLng(c.lat, c.lng, z);
+        try {
+          const r = await fetch(`${ESRI_TILEMAP}/${z}/${y}/${x}/1/1`);
+          if (!r.ok) continue;
+          const j = await r.json() as { data?: number[] };
+          if (Array.isArray(j?.data) && j.data[0] === 1) {
+            if (!cancelled) { esriDepthCache.set(key, z); setDepth(z); }
+            return;
+          }
+        } catch {
+          // Offline or blocked. The safe floor still renders a usable map,
+          // which matters more here than an extra zoom level of sharpness.
+          return;
+        }
+      }
+      if (!cancelled) esriDepthCache.set(key, SATELLITE_SAFE_NATIVE);
+    })();
+    return () => { cancelled = true; };
+  }, [active, map]);
+
+  return depth;
+}
+
 export function BasemapLayer({ id }: { id: BasemapId }) {
   const b = BASEMAPS[id];
+  const esriDepth = useEsriMaxNativeZoom(id === "satellite");
+  // Street tiles 404 cleanly past 19, so their fixed cap is honest already.
+  const maxNativeZoom = id === "satellite" ? esriDepth : b.maxNativeZoom;
   return (
     <TileLayer
-      // Keyed so switching swaps the layer instead of mutating one in place,
-      // which would leave the previous provider's tiles on screen mid-pan.
-      key={id}
+      // Keyed on the resolved depth as well as the provider: Leaflet reads
+      // maxNativeZoom when the layer is created, so a probe that lands after
+      // mount has to remount the layer to take effect.
+      key={`${id}-${maxNativeZoom}`}
       url={b.url}
       attribution={b.attribution}
       minZoom={1}
-      maxNativeZoom={b.maxNativeZoom}
+      maxNativeZoom={maxNativeZoom}
       maxZoom={22}
       zIndex={1}
     />
