@@ -160,12 +160,25 @@ describe("DJI Agras package", () => {
   it("lays out DJI/Shapefile and DJI/Rx with the expected members", () => {
     expect(Object.keys(pkg.files).sort()).toEqual([
       "DJI/Rx/spot_treatment.tfw",
-      "DJI/Rx/spot_treatment.tif",
+      "DJI/Rx/spot_treatment.tiff",
       "DJI/Shapefile/field_boundary.dbf",
       "DJI/Shapefile/field_boundary.prj",
       "DJI/Shapefile/field_boundary.shp",
       "DJI/Shapefile/field_boundary.shx",
     ]);
+  });
+
+  it("defaults the raster to .tiff, as PIX4D and the DJI folder spec both describe", () => {
+    expect(Object.keys(pkg.files)).toContain("DJI/Rx/spot_treatment.tiff");
+    expect(Object.keys(pkg.files)).not.toContain("DJI/Rx/spot_treatment.tif");
+  });
+
+  it("can still emit .tif if a captured package turns out to want it", () => {
+    const alt = buildAgrasPackage({ boundary: [FIELD], zones, when: WHEN, rxExtension: "tif" });
+    expect(Object.keys(alt.files)).toContain("DJI/Rx/spot_treatment.tif");
+    // The world file keeps its name either way — that is the whole ambiguity.
+    expect(Object.keys(alt.files)).toContain("DJI/Rx/spot_treatment.tfw");
+    expect(alt.verification.epsg).toBe(4326);
   });
 
   it("keeps the boundary area within a rounding error of the source", () => {
@@ -184,7 +197,7 @@ describe("DJI Agras package", () => {
   });
 
   it("burns each zone rate into the raster and leaves the rest at zero", () => {
-    const read = readGeoTiffFloat32(pkg.files["DJI/Rx/spot_treatment.tif"]);
+    const read = readGeoTiffFloat32(pkg.files["DJI/Rx/spot_treatment.tiff"]);
     const values = new Set(Array.from(read.pixels));
     expect(values).toEqual(new Set([0, 25, 40]));
     expect(pkg.verification.rateRange).toEqual({ min: 25, max: 40 });
@@ -294,6 +307,54 @@ describe("WPML .kmz export", () => {
   it("declares the same height reference the planner works in", () => {
     const xml = new TextDecoder().decode(buildWpmlKmz(mission, opts).files["wpmz/waylines.wpml"]);
     expect(xml).toContain("<wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode>");
+  });
+
+  it("keeps waylines.wpml to missionConfig + Folder, like DJI's example", () => {
+    const pkg = buildWpmlKmz(mission, opts);
+    const wayline = new TextDecoder().decode(pkg.files["wpmz/waylines.wpml"]);
+    const template = new TextDecoder().decode(pkg.files["wpmz/template.kml"]);
+    // The file-creation block belongs to template.kml, not the execution file.
+    expect(wayline).not.toContain("<wpml:author>");
+    expect(wayline).not.toContain("<wpml:createTime>");
+    expect(template).toContain("<wpml:author>SwathWise</wpml:author>");
+    expect(template).toContain("<wpml:createTime>");
+  });
+
+  it("orders Folder children the way DJI's published example does", () => {
+    const xml = new TextDecoder().decode(buildWpmlKmz(mission, opts).files["wpmz/waylines.wpml"]);
+    const order = ["templateId", "executeHeightMode", "waylineId", "autoFlightSpeed"]
+      .map(t => xml.indexOf(`<wpml:${t}>`));
+    expect(order.every(i => i > -1)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("omits useStraightLine, which DJI's example also omits for this turn mode", () => {
+    const xml = new TextDecoder().decode(buildWpmlKmz(mission, opts).files["wpmz/waylines.wpml"]);
+    expect(xml).not.toContain("useStraightLine");
+  });
+
+  it("carries no spray vocabulary — DJI documents none for WPML", () => {
+    const pkg = buildWpmlKmz(mission, opts);
+    for (const name of ["wpmz/waylines.wpml", "wpmz/template.kml"]) {
+      const xml = new TextDecoder().decode(pkg.files[name]).toLowerCase();
+      for (const invented of ["spray", "pump", "spreader", "flowrate", "dosage"]) {
+        expect(xml).not.toContain(invented);
+      }
+    }
+  });
+
+  it("emits droneInfo and payloadInfo only when the caller supplies them", () => {
+    const bare = new TextDecoder().decode(buildWpmlKmz(mission, opts).files["wpmz/waylines.wpml"]);
+    expect(bare).not.toContain("droneInfo");
+    expect(bare).not.toContain("payloadInfo");
+
+    const identified = new TextDecoder().decode(buildWpmlKmz(mission, {
+      ...opts,
+      drone: { enumValue: 67, subEnumValue: 0 },
+      payload: { enumValue: 52, positionIndex: 0 },
+    }).files["wpmz/waylines.wpml"]);
+    expect(identified).toContain("<wpml:droneEnumValue>67</wpml:droneEnumValue>");
+    expect(identified).toContain("<wpml:payloadEnumValue>52</wpml:payloadEnumValue>");
   });
 
   it("fails loudly past the consumer waypoint cap rather than truncating", () => {

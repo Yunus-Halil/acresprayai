@@ -95,7 +95,7 @@ Unzips to the layout the Agras controller reads off an SD card:
 ```
 DJI/
 ├── Shapefile/  field_boundary.shp .shx .dbf .prj
-└── Rx/         spot_treatment.tif .tfw
+└── Rx/         spot_treatment.tiff .tfw
 ```
 
 The **shapefile carries the boundary**; the **rate lives in the raster**. That split is confirmed
@@ -114,7 +114,19 @@ same pathway.
   between those two conventions is deliberate, not a bug.
 
 Import on the controller with **Map Source = "Other"** and **Source Unit = "ha"** regardless of
-what units you authored in.
+what units you authored in. Note the unit is chosen by the operator at import time rather than
+read out of the file — **we write L/ha**, and picking a different unit there silently mis-doses
+the field.
+
+### Why `.tiff` and not `.tif`
+
+The generic world-file rule derives the sidecar name from the first, last and trailing letters of
+the raster extension, which pairs `.tiff` with `.tfwf` — sound in the abstract, and we briefly
+shipped `.tif` on that basis. It was wrong. Two independent descriptions of *this* pathway (the
+original DJI folder spec and PIX4Dfields, who ship into it successfully) both say `.tiff` next to
+`.tfw`, and vendor importers routinely match a literal basename rather than implementing the
+generic rule. `rxExtension` on `buildAgrasPackage` flips it back to `.tif` in one argument if a
+captured package ever says otherwise.
 
 ### What DJI does not publish
 
@@ -127,8 +139,14 @@ DJI documents the folder layout and the import settings but **not** a `.dbf` att
   `ID`/`VRA_Rate`/`Type` schema could not be corroborated against any DJI source.
 - Single-band numeric is a strong inference — the controller asks for a *unit* and offers
   *Average* resampling, neither of which means anything over a legend-mapped RGB image — but
-  float32 vs. scaled integer is unverified. `RX_BASENAME` and `writeGeoTiffFloat32` in
-  `src/lib/djiAgras.ts` are the two places to change if hardware testing disagrees.
+  float32 vs. scaled integer is unverified. `writeGeoTiffFloat32` in `src/lib/djiAgras.ts` is the
+  place to change if hardware testing disagrees.
+
+**Settling this is cheap.** A PIX4Dfields trial exports exactly this `DJI/Shapefile` + `DJI/Rx`
+package from any field; unzipping one export answers extension naming, band count, data type and
+the DBF field list at once, from a vendor whose output is known to import. DJI SmartFarm Web, or a
+dealer/operator who has flown a variable-rate job, are the fallbacks. Diff the metadata against
+ours byte-for-byte.
 
 ## DJI WPML route — `mission-{taskId}.kmz`
 
@@ -145,18 +163,47 @@ skeletons, and it is `wpml:missionConfig` / `flyToWaylineMode` / `exitOnRCLost` 
 `globalTransitionalSpeed` — not `MissionConfig` / `flyToMode` / `exitOnGpsLost` /
 `executeRtkSpeed`. Those wrong names are asserted *against* in the tests.
 
-Payload commands are dropped (a camera drone has no pump) and co-located points collapse, so the
-waypoint count is lower than the `.waypoints` row count. `executeHeightMode` is
-`relativeToStartPoint` to match the planner's AGL altitudes — `EGM96` would fly the route at
-height above the geoid instead.
+The output tracks DJI's published examples closely, including three things that look like
+omissions and are not:
+
+- `waylines.wpml` carries only `missionConfig` and `Folder` under `Document`. The
+  author/createTime block lives in `template.kml`, which is the document a human edits.
+- `Folder` children are ordered `templateId`, `executeHeightMode`, `waylineId`,
+  `autoFlightSpeed` — DJI's order, since schema validation can be order-sensitive.
+- No `useStraightLine`. It is required only for certain turn modes, and DJI's example omits it
+  alongside `toPointAndStopWithDiscontinuityCurvature`, where the aircraft stops at each point and
+  there is no curve to straighten.
+
+**No spray vocabulary, deliberately.** Both of DJI's published WPML examples are camera/survey
+missions — gimbal rotation and `takePhoto` on an M30-class airframe. Neither documents a single
+agriculture actuator: no pump rate, no spray on/off, no spreader. So this exporter emits pure
+navigation. Inventing plausible `wpml:` spray tags would produce a file that looks right and does
+nothing. On Agras the rate travels in the prescription raster instead, which is consistent with
+that silence. A test asserts no spray/pump/spreader/dosage strings appear in either document.
+
+Payload commands are therefore dropped (a camera drone has no pump) and co-located points
+collapse, so the waypoint count is lower than the `.waypoints` row count. `executeHeightMode` is
+`relativeToStartPoint` to match the planner's AGL altitudes — DJI's example shows `WGS84`, but
+that is a documented alternative and using it would fly the route at height above the ellipsoid
+instead.
+
+`droneInfo` and `payloadInfo` are emitted only when a caller supplies the enum values. DJI's
+examples carry both, but the values are per-airframe and we have no authoritative table for
+consumer models — a wrong enum is worse than an absent one.
 
 Missions over **200 waypoints throw `WaypointLimitError`** rather than truncating; the planner
 disables the button and shows the count before you click.
 
 **Unverified:** WPML is documented as a DJI Pilot 2 / enterprise pathway. We could not confirm
 that consumer DJI Fly aircraft (Mini / Air / non-enterprise Mavic) ingest `.kmz` waypoint files at
-all. `droneInfo` is emitted only when a caller supplies the enum values, since we have no
-authoritative table for consumer airframes.
+all.
+
+Sources for everything above: DJI's `dji-sdk/Cloud-API-Doc` repo
+([overview](https://github.com/dji-sdk/Cloud-API-Doc/blob/master/docs/en/60.api-reference/00.dji-wpml/10.overview.md),
+[template.kml](https://github.com/dji-sdk/Cloud-API-Doc/blob/master/docs/en/60.api-reference/00.dji-wpml/20.template-kml.md),
+[waylines.wpml](https://github.com/dji-sdk/Cloud-API-Doc/blob/master/docs/en/60.api-reference/00.dji-wpml/30.waylines-wpml.md)),
+[PIX4Dfields' Agras export guide](https://support.pix4d.com/hc/en-us/articles/360019956578), and the
+[DJI SmartFarm Web user guide](https://support.dji.com/help/content?customId=01700009100&spaceId=17&re=US&lang=en).
 
 ## Testing
 

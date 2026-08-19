@@ -3,7 +3,7 @@
 //
 //   DJI/
 //   ├── Shapefile/  field_boundary.shp .shx .dbf .prj
-//   └── Rx/         spot_treatment.tif  .tfw
+//   └── Rx/         spot_treatment.tiff .tfw
 //
 // WHAT IS AND IS NOT CONFIRMED
 // ----------------------------
@@ -22,8 +22,8 @@
 //   - the raster's bit depth. Single-band numeric is a strong inference — the
 //     controller asks for a *unit* and offers *Average* resampling, neither of
 //     which is meaningful over a legend-mapped RGB image — but float32 vs
-//     scaled-integer is unverified. `RX_BASENAME`/`writeGeoTiffFloat32` are the
-//     two places to change if hardware testing says otherwise.
+//     scaled-integer is unverified. `writeGeoTiffFloat32` is the place to change
+//     if hardware testing says otherwise, and `rxExtension` covers .tiff/.tif.
 import {
   M_PER_DEG_LAT, bboxOfRings, mPerDegLng, pointInAnyRing, pointInRing,
   ringsAreaM2, type LatLng2,
@@ -50,6 +50,8 @@ export type AgrasPackageInput = {
   targetResolutionM?: number;
   /** Stamped into the .dbf date header. Injectable so tests stay deterministic. */
   when?: Date;
+  /** Raster extension. See RxExtension — defaults to the observed `.tiff`. */
+  rxExtension?: RxExtension;
 };
 
 export type AgrasPackage = {
@@ -65,11 +67,27 @@ export type AgrasPackage = {
 const MAX_RASTER_PIXELS = 2_000_000;
 
 const SHAPE_BASENAME = "field_boundary";
-// `.tif` + `.tfw`, not `.tiff` + `.tfw`. The world-file convention takes the
-// first, last and final letters of the raster extension, so `.tiff` properly
-// pairs with `.tfwf` and a reader looking for a sidecar may simply not find it.
-// DJI's own support text says ".tif or .tfw", so this is also what they name.
 const RX_BASENAME = "spot_treatment";
+
+/**
+ * Raster extension for the Rx map.
+ *
+ * `.tiff`, not `.tif`. The generic world-file convention derives the sidecar
+ * name from the first, last and trailing letters of the raster extension, which
+ * would pair `.tiff` with `.tfwf` rather than `.tfw` — that argues for `.tif`
+ * in the abstract, and we shipped `.tif` on exactly that reasoning.
+ *
+ * It was the wrong call. Two independent descriptions of THIS pathway — the
+ * original DJI folder spec and PIX4Dfields, who ship into it successfully —
+ * both say `.tiff` alongside `.tfw`. Vendor importers routinely match a literal
+ * basename instead of implementing the generic rule, so the abstract convention
+ * loses to two observations of the concrete one.
+ *
+ * Still unsettled until a real captured package is diffed against ours, hence
+ * `rxExtension` on the input rather than a bare constant.
+ */
+export type RxExtension = "tiff" | "tif";
+const DEFAULT_RX_EXTENSION: RxExtension = "tiff";
 
 /**
  * Attribute schema for the boundary shapefile.
@@ -199,6 +217,7 @@ export function buildAgrasPackage(input: AgrasPackageInput): AgrasPackage {
     throw new Error("Agras export: every zone has a zero application rate — set a rate before exporting");
   }
 
+  const rxExt = input.rxExtension ?? DEFAULT_RX_EXTENSION;
   const grid = planGrid(boundary, input.targetResolutionM ?? 1);
   const burn = rasterizeZones(grid, boundary, zones);
   if (burn.treated === 0) {
@@ -240,11 +259,11 @@ export function buildAgrasPackage(input: AgrasPackageInput): AgrasPackage {
     [`DJI/Shapefile/${SHAPE_BASENAME}.shx`]: shape.shx,
     [`DJI/Shapefile/${SHAPE_BASENAME}.dbf`]: shape.dbf,
     [`DJI/Shapefile/${SHAPE_BASENAME}.prj`]: shape.prj,
-    [`DJI/Rx/${RX_BASENAME}.tif`]: rx.tiff,
+    [`DJI/Rx/${RX_BASENAME}.${rxExt}`]: rx.tiff,
     [`DJI/Rx/${RX_BASENAME}.tfw`]: new TextEncoder().encode(rx.tfw),
   };
 
-  const verification = verifyAgrasPackage(files, boundary, zones);
+  const verification = verifyAgrasPackage(files, boundary, zones, rxExt);
 
   return {
     // Flat slash-separated keys rather than a nested object: fflate's nested
@@ -265,10 +284,11 @@ export function verifyAgrasPackage(
   files: Record<string, Uint8Array>,
   boundary: LatLng2[][],
   zones: RateZone[],
+  rxExtension: RxExtension = DEFAULT_RX_EXTENSION,
 ): AgrasVerification {
   const shp = files[`DJI/Shapefile/${SHAPE_BASENAME}.shp`];
   const dbf = files[`DJI/Shapefile/${SHAPE_BASENAME}.dbf`];
-  const tif = files[`DJI/Rx/${RX_BASENAME}.tif`];
+  const tif = files[`DJI/Rx/${RX_BASENAME}.${rxExtension}`];
   if (!shp || !dbf || !tif) throw new Error("Agras export: package is missing a required file");
 
   const read = readPolygonShapefile(shp);

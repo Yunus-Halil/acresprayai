@@ -14,6 +14,16 @@
 //      `globalTransitionalSpeed`, not `MissionConfig` / `flyToMode` /
 //      `exitOnGpsLost` / `executeRtkSpeed`.
 //
+// NO SPRAY VOCABULARY HERE, DELIBERATELY. Both of DJI's published WPML examples
+// are camera/survey missions — gimbal rotation and takePhoto actions on an
+// M30-class airframe. Neither page documents a single agriculture actuator: no
+// pump rate, no spray on/off, no spreader. So this module emits pure navigation
+// and nothing payload-shaped. Inventing plausible `wpml:` spray tags would
+// produce a file that looks right and does nothing. On Agras the rate travels in
+// the prescription raster (see djiAgras.ts), which is consistent with that
+// silence. If Agras spray routes ever do need actuator actions, the vocabulary
+// has to come from a real Agras-generated .kmz, not from us.
+//
 // UNVERIFIED: we could not confirm that consumer DJI Fly aircraft (Mini / Air /
 // non-enterprise Mavic) ingest .kmz waypoint files at all. WPML is documented as
 // a DJI Pilot 2 / enterprise pathway. Treat this exporter as confirmed-correct
@@ -46,12 +56,14 @@ export type WpmlOptions = {
   exitOnRCLost?: "goContinue" | "executeLostAction";
   executeRCLostAction?: "goBack" | "landing" | "hover";
   /**
-   * Aircraft/payload identity. DJI documents `droneInfo` as part of
-   * missionConfig, but the enum values are per-airframe and we have no
-   * authoritative table for consumer models, so it is emitted only when the
-   * caller supplies it rather than guessed at.
+   * Aircraft identity. DJI's own examples carry `droneInfo` in both files, but
+   * the enum values are per-airframe and we have no authoritative table for
+   * consumer models, so it is emitted only when the caller supplies it rather
+   * than guessed at. A wrong enum is worse than an absent one.
    */
   drone?: { enumValue: number; subEnumValue: number };
+  /** Payload identity, same reasoning as `drone`. */
+  payload?: { enumValue: number; positionIndex: number };
 };
 
 export class WaypointLimitError extends Error {
@@ -115,6 +127,14 @@ function missionConfig(o: WpmlOptions): string {
       `      <wpml:droneEnumValue>${o.drone.enumValue}</wpml:droneEnumValue>`,
       `      <wpml:droneSubEnumValue>${o.drone.subEnumValue}</wpml:droneSubEnumValue>`,
       `    </wpml:droneInfo>`,
+    );
+  }
+  if (o.payload) {
+    lines.push(
+      `    <wpml:payloadInfo>`,
+      `      <wpml:payloadEnumValue>${o.payload.enumValue}</wpml:payloadEnumValue>`,
+      `      <wpml:payloadPositionIndex>${o.payload.positionIndex}</wpml:payloadPositionIndex>`,
+      `    </wpml:payloadInfo>`,
     );
   }
   return `  <wpml:missionConfig>\n${lines.join("\n")}\n  </wpml:missionConfig>`;
@@ -186,9 +206,10 @@ export function buildWaylinesWpml(wps: WpmlWaypoint[], o: WpmlOptions): string {
     `        <wpml:waypointTurnMode>toPointAndStopWithDiscontinuityCurvature</wpml:waypointTurnMode>`,
     `        <wpml:waypointTurnDampingDist>0</wpml:waypointTurnDampingDist>`,
     `      </wpml:waypointTurnParam>`,
-    // Lawnmower rows must be flown as straight lines; curved joins would cut
-    // the corners of the pattern and leave gaps between passes.
-    `      <wpml:useStraightLine>1</wpml:useStraightLine>`,
+    // No useStraightLine here. It is documented as required only for certain
+    // turn modes, and DJI's own waylines example omits it alongside exactly this
+    // mode — the aircraft stops at each point, so there is no curve to
+    // straighten. Matching the published example beats adding a defensible tag.
     `    </Placemark>`,
   ].join("\n")).join("\n");
 
@@ -196,14 +217,17 @@ export function buildWaylinesWpml(wps: WpmlWaypoint[], o: WpmlOptions): string {
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<kml xmlns="${KML_NS}" xmlns:wpml="${WPML_NS}">`,
     `<Document>`,
-    `  <wpml:author>${esc(o.author ?? "SwathWise")}</wpml:author>`,
-    `  <wpml:createTime>${o.createTimeMs}</wpml:createTime>`,
-    `  <wpml:updateTime>${o.createTimeMs}</wpml:updateTime>`,
+    // No author/createTime/updateTime here. DJI's published waylines example
+    // carries only missionConfig and Folder under Document — the file-creation
+    // block belongs to template.kml, which is the document a human edits.
     missionConfig(o),
     `  <Folder>`,
+    // Element order follows DJI's example exactly: templateId, then
+    // executeHeightMode, then waylineId, then autoFlightSpeed. XML schema
+    // validation can be order-sensitive and we have no reason to reorder it.
     `    <wpml:templateId>0</wpml:templateId>`,
-    `    <wpml:waylineId>0</wpml:waylineId>`,
     `    <wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode>`,
+    `    <wpml:waylineId>0</wpml:waylineId>`,
     `    <wpml:autoFlightSpeed>${clamp(o.autoFlightSpeed, 0, 15).toFixed(1)}</wpml:autoFlightSpeed>`,
     placemarks,
     `  </Folder>`,
