@@ -35,6 +35,26 @@ import {
 import { readGeoTiffFloat32, writeGeoTiffFloat32, type GeoRasterSpec } from "./geotiff";
 import { zipSync } from "fflate";
 
+/**
+ * The unit the Rx raster values are written in.
+ *
+ * SAFETY-RELEVANT. The raster does not describe its own unit — the Agras
+ * operator picks one on the controller at import time. If they pick something
+ * other than this, the field is mis-dosed and nothing warns them: the import
+ * succeeds, the aircraft flies, and the rate is wrong. Every surface that hands
+ * a grower this package must state the unit and the controller settings, so
+ * these constants exist to keep the UI, the docs and the exporter from drifting
+ * apart.
+ */
+export const RX_RATE_UNIT = "L/ha";
+
+/** What the operator must select on the controller. Corroborated by PIX4D. */
+export const AGRAS_IMPORT_STEPS = {
+  mapSource: "Other",
+  sourceUnit: "ha",
+  note: `Rates are written in ${RX_RATE_UNIT}. Selecting a different source unit on the controller will mis-dose the field without any warning.`,
+} as const;
+
 /** A treatment zone with the numeric dose the Rx raster is built from. */
 export type RateZone = {
   id: string;

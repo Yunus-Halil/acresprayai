@@ -45,10 +45,8 @@ import {
   type Mission, type MissionAction, type MissionParams, type MissionWP,
   buildFieldSweep, buildMission, exportMissionFile,
 } from "@/lib/mission";
-import { buildAgrasPackage } from "@/lib/djiAgras";
-import {
-  MAX_CONSUMER_WAYPOINTS, WaypointLimitError, buildWpmlKmz, missionToWpmlWaypoints,
-} from "@/lib/wpml";
+import { AGRAS_IMPORT_STEPS, RX_RATE_UNIT } from "@/lib/djiAgras";
+import { type ExportContext, userFacingExporters } from "@/lib/exporters";
 import {
   type BoundaryRing, type FieldRow, type TaskRow,
 } from "./types";
@@ -410,15 +408,10 @@ export function PlannerTab({
     URL.revokeObjectURL(url);
   };
 
-  const downloadWaypoints = () => {
-    if (!mission || mission.waypoints.length === 0) return;
-    saveBlob(exportMissionFile(mission), `mission-${taskId}.waypoints`);
-  };
-
-  // ---- DJI exports -------------------------------------------------------
-  // Both hang off the same mission model the .waypoints exporter uses — the
-  // zones and boundary below are the very objects fed to buildMission, not
-  // anything re-parsed out of our own output.
+  // ---- Exports -----------------------------------------------------------
+  // Driven entirely by the registry in src/lib/exporters.ts. Which formats a
+  // grower is offered is decided there, not here — the WPML route exporter is
+  // still built and tested, but marked experimental and so never listed.
   const zonesWithRates = validZones.map(z => ({
     id: z.id,
     ring: z.ring,
@@ -426,57 +419,25 @@ export function PlannerTab({
     rateLha: resolveZoneRateLha(z, { ...settings, spray_rates_lha: rates }),
   }));
 
-  // Consumer routes drop the pump commands, so the count differs from the
-  // .waypoints row count. Shown before export so the cap is never a surprise.
-  const consumerWaypointCount = mission ? missionToWpmlWaypoints(mission).length : 0;
-  const overWaypointCap = consumerWaypointCount > MAX_CONSUMER_WAYPOINTS;
-
-  const downloadAgrasPackage = () => {
-    if (!boundary || zonesWithRates.length === 0) return;
-    try {
-      const pkg = buildAgrasPackage({
-        boundary: boundary as LatLng2[][],
-        zones: zonesWithRates,
-      });
-      saveBlob(pkg.zip, `dji-agras-${taskId}.zip`);
-      const v = pkg.verification;
-      toast.success("DJI Agras package ready", {
-        description:
-          `${pkg.raster.width}×${pkg.raster.height} px at ${pkg.raster.resolutionM.toFixed(2)} m/px · ` +
-          `${v.rateRange.min}–${v.rateRange.max} L/ha · boundary verified to ` +
-          `${v.boundaryAreaErrorPct.toFixed(3)}%`,
-      });
-    } catch (e) {
-      toast.error("Agras export failed", { description: (e as Error).message });
-    }
+  const exportCtx: ExportContext = {
+    taskId,
+    mission,
+    boundary: (boundary as LatLng2[][] | null) ?? null,
+    zones: zonesWithRates,
+    transitSpeed,
+    spraySpeed,
+    transitAltM,
   };
 
-  const downloadKmz = () => {
-    if (!mission) return;
+  const runExport = (exporter: ReturnType<typeof userFacingExporters>[number]) => {
+    const blocked = exporter.blockedReason(exportCtx);
+    if (blocked) { toast.error(blocked); return; }
     try {
-      const pkg = buildWpmlKmz(mission, {
-        author: "SwathWise",
-        createTimeMs: Date.now(),
-        // Derived from the mission the operator actually planned rather than
-        // hardcoded: cruise between rows is the transit speed, the route runs
-        // at spray speed, and climb-out matches the transit altitude.
-        transitSpeed,
-        autoFlightSpeed: spraySpeed,
-        takeOffSecurityHeightM: transitAltM,
-        finishAction: "goHome",
-        exitOnRCLost: "executeLostAction",
-        executeRCLostAction: "goBack",
-      });
-      saveBlob(pkg.kmz, `mission-${taskId}.kmz`);
-      toast.success("WPML route ready", {
-        description: `${pkg.waypointCount} waypoints · wpmz/template.kml + wpmz/waylines.wpml`,
-      });
+      const out = exporter.build(exportCtx);
+      saveBlob(out.blob, out.filename);
+      toast.success(`${exporter.label} ready`, { description: out.detail });
     } catch (e) {
-      if (e instanceof WaypointLimitError) {
-        toast.error("Too many waypoints for a consumer drone", { description: e.message });
-      } else {
-        toast.error("WPML export failed", { description: (e as Error).message });
-      }
+      toast.error(`${exporter.label} failed`, { description: (e as Error).message });
     }
   };
 
@@ -1029,22 +990,32 @@ export function PlannerTab({
             </div>
           </div>
         )}
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Mission summary</div>
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">
+          Mission estimate
+        </div>
+        {/* The Agras re-plans its own lines on the aircraft from the boundary and
+            Rx map, so these figures describe our pattern, not the one it flies.
+            Close enough to plan a day around; not a guarantee. Say so. */}
+        <div className="mb-2 text-[10px] text-neutral-500 leading-relaxed">
+          Estimated from our own flight pattern. An Agras plans its own lines on the aircraft, so
+          the figures it reports will differ — use these to plan tank loads, batteries and time,
+          not as a guarantee.
+        </div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
             <span className="font-mono">{validZones.length} of {allZonesRaw.length} <span className="text-neutral-600">(AI {aiZonesRaw.length} · marks {userZonesRaw.length})</span></span></div>
-          <div className="flex justify-between"><span className="text-neutral-500">Total waypoints</span>
+          <div className="flex justify-between"><span className="text-neutral-500">Waypoints (our pattern)</span>
             <span className="font-mono">{mission?.waypoints.length ?? 0}</span></div>
-          <div className="flex justify-between"><span className="text-neutral-500">Spray distance</span>
+          <div className="flex justify-between"><span className="text-neutral-500">Est. spray distance</span>
             <span className="font-mono text-cyan-300">{mission ? (mission.sprayDistM / 1000).toFixed(2) : "0.00"} km</span></div>
-          <div className="flex justify-between"><span className="text-neutral-500">Transit distance</span>
+          <div className="flex justify-between"><span className="text-neutral-500">Est. transit distance</span>
             <span className="font-mono text-yellow-300">{mission ? (mission.transitDistM / 1000).toFixed(2) : "0.00"} km</span></div>
           <div className="border-t border-[#222] my-1.5" />
-          <div className="flex justify-between"><span className="text-neutral-500">Spray time</span>
+          <div className="flex justify-between"><span className="text-neutral-500">Est. spray time</span>
             <span className="font-mono text-cyan-300">{mission ? fmtTime(mission.sprayTimeS) : "0:00"}</span></div>
-          <div className="flex justify-between"><span className="text-neutral-500">Transit time</span>
+          <div className="flex justify-between"><span className="text-neutral-500">Est. transit time</span>
             <span className="font-mono text-yellow-300">{mission ? fmtTime(mission.transitTimeS) : "0:00"}</span></div>
-          <div className="flex justify-between font-semibold"><span>Total time</span>
+          <div className="flex justify-between font-semibold"><span>Est. total time</span>
             <span className="font-mono">{mission ? fmtTime(mission.sprayTimeS + mission.transitTimeS) : "0:00"}</span></div>
           <div className="border-t border-[#222] my-1.5" />
           <div className="flex justify-between"><span className="text-neutral-500">Spray activations</span>
@@ -1052,7 +1023,7 @@ export function PlannerTab({
         </div>
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
-          <span>Battery / endurance</span>
+          <span>Battery / endurance (estimated)</span>
           {!wx && <span className="text-[10px] text-neutral-600 normal-case font-normal tracking-normal">No weather — open Weather tab</span>}
         </div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
@@ -1062,11 +1033,11 @@ export function PlannerTab({
             <>
               <div className="flex justify-between"><span className="text-neutral-500">Est. flight time</span>
                 <span className="font-mono">{battery.estimatedFlightMin.toFixed(1)} min</span></div>
-              <div className="flex justify-between"><span className="text-neutral-500">Battery used</span>
+              <div className="flex justify-between"><span className="text-neutral-500">Est. battery used</span>
                 <span className={`font-mono ${battery.batteryPercent > 80 ? "text-red-400" : battery.batteryPercent > 60 ? "text-yellow-300" : "text-[#4CAF50]"}`}>
                   {Math.round(battery.batteryPercent)}% of {spec.max_flight_min} min
                 </span></div>
-              <div className="flex justify-between"><span className="text-neutral-500">Batteries needed</span>
+              <div className="flex justify-between"><span className="text-neutral-500">Est. batteries needed</span>
                 <span className={`font-mono ${battery.batteriesNeeded > 1 ? "text-red-400" : "text-[#4CAF50]"}`}>{battery.batteriesNeeded}</span></div>
               <div className="border-t border-[#222] my-1.5" />
               <div className="flex justify-between"><span className="text-neutral-500">Wind impact</span>
@@ -1168,34 +1139,47 @@ export function PlannerTab({
         </div>
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Export</div>
-        <button
-          onClick={downloadWaypoints}
-          disabled={!mission || mission.waypoints.length === 0}
-          className="w-full inline-flex items-center justify-center gap-2 bg-[#4CAF50] hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600 text-black rounded-sm px-3 py-2 text-xs font-semibold mb-2"
-        >
-          <Download className="h-3.5 w-3.5" /> Download .waypoints
-        </button>
-        <button
-          onClick={downloadAgrasPackage}
-          disabled={!boundary || zonesWithRates.length === 0}
-          className="w-full inline-flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-[#222] disabled:opacity-50 text-neutral-200 border border-[#2a2a2a] rounded-sm px-3 py-2 text-xs font-semibold mb-2"
-        >
-          <Download className="h-3.5 w-3.5 text-[#4CAF50]" /> DJI Agras package (.zip)
-        </button>
-        <button
-          onClick={downloadKmz}
-          disabled={!mission || consumerWaypointCount === 0 || overWaypointCap}
-          className="w-full inline-flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-[#222] disabled:opacity-50 text-neutral-200 border border-[#2a2a2a] rounded-sm px-3 py-2 text-xs font-semibold mb-2"
-        >
-          <Download className="h-3.5 w-3.5 text-[#4CAF50]" /> Consumer drone route (.kmz)
-        </button>
-        {overWaypointCap && (
-          <div className="mb-2 text-[11px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1.5 leading-relaxed">
-            This mission needs {consumerWaypointCount} waypoints — consumer drone export supports up
-            to {MAX_CONSUMER_WAYPOINTS}. Widen the row spacing, drop the pass count, or export for
-            Agras instead.
+        {userFacingExporters().map((exp, i) => {
+          const blocked = exp.blockedReason(exportCtx);
+          return (
+            <div key={exp.id} className="mb-2">
+              <button
+                onClick={() => runExport(exp)}
+                disabled={!!blocked}
+                title={blocked ?? exp.description}
+                className={`w-full inline-flex items-center justify-center gap-2 rounded-sm px-3 py-2 text-xs font-semibold ${
+                  i === 0
+                    ? "bg-[#4CAF50] hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600 text-black"
+                    : "bg-[#1a1a1a] hover:bg-[#222] disabled:opacity-50 text-neutral-200 border border-[#2a2a2a]"
+                }`}
+              >
+                <Download className={`h-3.5 w-3.5 ${i === 0 ? "" : "text-[#4CAF50]"}`} />
+                {exp.label}
+              </button>
+              <div className="mt-1 text-[10px] text-neutral-500 leading-relaxed">
+                {blocked ?? exp.description}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Safety-relevant, not a nicety. The raster carries no unit of its own —
+            the operator picks one on the controller, and picking the wrong one
+            mis-doses the field with no warning anywhere in the chain. */}
+        <div className="mb-3 mt-3 text-[11px] text-amber-200/90 bg-amber-950/30 border border-amber-700/40 rounded px-2 py-2 leading-relaxed">
+          <div className="font-semibold text-amber-300 mb-1 flex items-center gap-1.5">
+            <AlertTriangle className="h-3 w-3" /> On the Agras controller, select exactly:
           </div>
-        )}
+          <div className="font-mono text-[11px] text-neutral-200">
+            Map Source: {AGRAS_IMPORT_STEPS.mapSource}
+            <br />
+            Source unit: {AGRAS_IMPORT_STEPS.sourceUnit}
+          </div>
+          <div className="mt-1 text-amber-200/70">
+            We write rates in <b>{RX_RATE_UNIT}</b>. The file does not state its own unit, so a
+            different selection here mis-doses the field without any warning.
+          </div>
+        </div>
         <button
           onClick={() => setLogOpen(true)}
           disabled={!mission || mission.waypoints.length === 0 || !fieldId}
@@ -1223,17 +1207,14 @@ export function PlannerTab({
         )}
 
         <p className="text-[10px] text-neutral-500 leading-relaxed">
-          <b className="text-neutral-400">.waypoints</b> — QGC WPL 110 with takeoff, transit
-          (sprayer off), spray (servo ON/OFF on servo 8), RTH and land. Load in Mission Planner or
-          QGroundControl.
-          <br />
           <b className="text-neutral-400">Agras .zip</b> — unzip onto the card so <code>DJI/</code>
-          sits at the root, then import on the controller with Map Source “Other” and Source Unit
-          “ha”. Boundary shapefile plus a prescription raster in L/ha, both WGS84.
+          sits at the root. Boundary shapefile plus a prescription raster, both WGS84. The aircraft
+          plans its own flight lines from these; the pattern below is our estimate of what it will
+          fly, not a route we hand it.
           <br />
-          <b className="text-neutral-400">.kmz</b> — DJI WPML route (wpmz/template.kml +
-          waylines.wpml). Built to DJI’s published spec, but not yet confirmed against consumer
-          aircraft — check it imports before relying on it in the field.
+          <b className="text-neutral-400">.waypoints</b> — QGC WPL 110 with takeoff, transit
+          (sprayer off), spray (servo ON/OFF on servo 8), RTH and land. For Mission Planner or
+          QGroundControl. Agras cannot read it.
         </p>
       </div>
 

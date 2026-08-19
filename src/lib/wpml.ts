@@ -2,6 +2,25 @@
 // `wpmz/waylines.wpml`, for camera drones that fly ordered waypoints and have
 // no spray payload.
 //
+// ┌───────────────────────────────────────────────────────────────────────────┐
+// │ EXPERIMENTAL — NOT REGISTERED AS A USER-FACING EXPORT.                     │
+// │                                                                           │
+// │ Deliberately kept, deliberately parked. See src/lib/exporters.ts, where    │
+// │ this is marked `status: "experimental"` and therefore never reaches the    │
+// │ export menu. Do not re-register it without hardware evidence.              │
+// │                                                                           │
+// │ Why parked: DJI Fly — the app consumer aircraft use (Air 3S, Mini,         │
+// │ non-enterprise Mavic) — ships no route-import function at all. The known   │
+// │ workarounds sideload a .kmz into the app's private storage, which Android  │
+// │ 11+ scoped storage blocks. So there is no confirmed path by which a        │
+// │ consumer pilot could load this file even though the file itself matches    │
+// │ DJI's published spec.                                                     │
+// │                                                                           │
+// │ Also note WPML is the wrong shape for Agras entirely: an Agras is handed a │
+// │ FIELD (boundary + optional Rx map) and plans its own lines on the          │
+// │ aircraft. It is not handed a route. See djiAgras.ts, the shipping path.    │
+// └───────────────────────────────────────────────────────────────────────────┘
+//
 // SPEC PROVENANCE: namespaces, element names and allowed values below are taken
 // from DJI's published WPML reference (dji-sdk/Cloud-API-Doc,
 // docs/en/60.api-reference/00.dji-wpml/). Two details are worth stating because
@@ -64,6 +83,13 @@ export type WpmlOptions = {
   drone?: { enumValue: number; subEnumValue: number };
   /** Payload identity, same reasoning as `drone`. */
   payload?: { enumValue: number; positionIndex: number };
+  /**
+   * Auxiliary files placed under `wpmz/res/` — DJI's example use is AI
+   * Spot-Check reference photos. The folder is optional and we generate no
+   * resources of our own, so it is omitted entirely unless a caller passes
+   * something rather than being emitted empty.
+   */
+  resources?: Record<string, Uint8Array>;
 };
 
 export class WaypointLimitError extends Error {
@@ -257,6 +283,9 @@ export function buildWpmlKmz(m: Mission, o: WpmlOptions): WpmlPackage {
     "wpmz/template.kml": enc.encode(buildTemplateKml(wps, o)),
     "wpmz/waylines.wpml": enc.encode(buildWaylinesWpml(wps, o)),
   };
+  for (const [name, data] of Object.entries(o.resources ?? {})) {
+    files[`wpmz/res/${name.replace(/^\/+/, "")}`] = data;
+  }
 
   const verification = verifyWpmlKmz(files, wps);
   return {

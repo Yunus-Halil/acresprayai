@@ -6,7 +6,10 @@ import {
   WGS84_ESRI_WKT, readDbf, readPolygonShapefile, writePolygonShapefile,
 } from "@/lib/shapefile";
 import { readGeoTiffFloat32, worldFile, writeGeoTiffFloat32 } from "@/lib/geotiff";
-import { buildAgrasPackage } from "@/lib/djiAgras";
+import { AGRAS_IMPORT_STEPS, RX_RATE_UNIT, buildAgrasPackage } from "@/lib/djiAgras";
+import {
+  type ExportContext, EXPORTERS, exporterById, userFacingExporters,
+} from "@/lib/exporters";
 import {
   MAX_CONSUMER_WAYPOINTS, WaypointLimitError, buildWpmlKmz,
   missionToWpmlWaypoints, readKmzEntries,
@@ -371,5 +374,100 @@ describe("WPML .kmz export", () => {
     expect(needed).toBeGreaterThan(MAX_CONSUMER_WAYPOINTS);
     expect(() => buildWpmlKmz(dense, opts)).toThrow(WaypointLimitError);
     expect(() => buildWpmlKmz(dense, opts)).toThrow(new RegExp(`needs ${needed} waypoints`));
+  });
+});
+
+describe("export registry", () => {
+  const mission = buildMission(
+    [FIELD],
+    [{ id: "a", ring: ZONE_A }],
+    {
+      home: { lat: LAT, lng: LNG },
+      transitAltM: 30, sprayAltM: 3, transitSpeed: 10, spraySpeed: 3, spacingM: 25,
+    },
+  );
+  const ctx: ExportContext = {
+    taskId: "t1",
+    mission,
+    boundary: [FIELD],
+    zones: [{ id: "a", ring: ZONE_A, rateLha: 25 }],
+    transitSpeed: 10, spraySpeed: 3, transitAltM: 30,
+  };
+
+  it("leads with the Agras package — an Agras is handed a field, not a route", () => {
+    expect(userFacingExporters()[0].id).toBe("agras-rx");
+  });
+
+  it("keeps the WPML route exporter built and tested but off the menu", () => {
+    // Parked, not deleted: still registered, still buildable, never offered.
+    const wpml = exporterById("wpml-kmz");
+    expect(wpml).toBeDefined();
+    expect(wpml!.status).toBe("experimental");
+    expect(userFacingExporters().map(e => e.id)).not.toContain("wpml-kmz");
+    expect(wpml!.build(ctx).filename).toBe("mission-t1.kmz");
+  });
+
+  it("requires a stated reason for anything not shipping", () => {
+    for (const e of EXPORTERS.filter(x => x.status !== "shipping")) {
+      expect(e.caveat && e.caveat.length > 40).toBe(true);
+    }
+  });
+
+  it("names the controller settings in the Agras export detail", () => {
+    const out = exporterById("agras-rx")!.build(ctx);
+    expect(out.filename).toBe("dji-agras-t1.zip");
+    expect(out.detail).toContain(RX_RATE_UNIT);
+    expect(out.detail).toContain(AGRAS_IMPORT_STEPS.mapSource);
+    expect(out.detail).toContain(AGRAS_IMPORT_STEPS.sourceUnit);
+  });
+
+  it("blocks rather than throws when the mission is not exportable yet", () => {
+    const agras = exporterById("agras-rx")!;
+    expect(agras.blockedReason(ctx)).toBeNull();
+    expect(agras.blockedReason({ ...ctx, boundary: null })).toMatch(/boundary/i);
+    expect(agras.blockedReason({ ...ctx, zones: [] })).toMatch(/zones/i);
+    expect(agras.blockedReason({
+      ...ctx, zones: [{ id: "a", ring: ZONE_A, rateLha: 0 }],
+    })).toMatch(/rate/i);
+    expect(exporterById("waypoints")!.blockedReason({ ...ctx, mission: null })).toMatch(/mission/i);
+  });
+
+  it("every shipping exporter produces a non-empty file", () => {
+    for (const e of userFacingExporters()) {
+      expect(e.blockedReason(ctx)).toBeNull();
+      expect(e.build(ctx).blob.size).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("WPML res/ folder", () => {
+  const mission = buildMission(
+    [FIELD],
+    [{ id: "a", ring: ZONE_A }],
+    {
+      home: { lat: LAT, lng: LNG },
+      transitAltM: 30, sprayAltM: 3, transitSpeed: 10, spraySpeed: 3, spacingM: 25,
+    },
+  );
+  const opts = {
+    createTimeMs: 1_755_561_600_000,
+    transitSpeed: 10, autoFlightSpeed: 3, takeOffSecurityHeightM: 30,
+  };
+
+  it("omits res/ entirely when there are no resources, rather than emitting it empty", () => {
+    const pkg = buildWpmlKmz(mission, opts);
+    expect(Object.keys(pkg.files).some(k => k.startsWith("wpmz/res/"))).toBe(false);
+  });
+
+  it("places supplied resources under wpmz/res/", () => {
+    const pkg = buildWpmlKmz(mission, {
+      ...opts,
+      resources: { "ref.jpg": new Uint8Array([1, 2, 3]) },
+    });
+    expect(pkg.files["wpmz/res/ref.jpg"]).toEqual(new Uint8Array([1, 2, 3]));
+    const entries = readKmzEntries(zipSync(pkg.files));
+    expect(Object.keys(entries).sort()).toEqual([
+      "wpmz/res/ref.jpg", "wpmz/template.kml", "wpmz/waylines.wpml",
+    ]);
   });
 });

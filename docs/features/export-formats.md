@@ -3,15 +3,43 @@
 Every format here is open and readable by tools other than ours. A farmer's data and flight plans
 leave the system in formats other software can open — this is deliberate.
 
-| Export | File | Target |
-|---|---|---|
-| Treatment zones | `flight-plan-{taskId}.geojson` | Any GIS |
-| Flight mission | `mission-{taskId}.waypoints` | Mission Planner / QGroundControl |
-| DJI Agras package | `dji-agras-{taskId}.zip` | Agras T-series via SD card |
-| DJI WPML route | `mission-{taskId}.kmz` | DJI Pilot 2 |
+| Export | File | Target | Status |
+|---|---|---|---|
+| DJI Agras field + Rx | `dji-agras-{taskId}.zip` | Agras T-series via SD card | **shipping (primary)** |
+| Flight mission | `mission-{taskId}.waypoints` | Mission Planner / QGroundControl | shipping |
+| Treatment zones | `flight-plan-{taskId}.geojson` | Any GIS | shipping |
+| DJI WPML route | `mission-{taskId}.kmz` | DJI Pilot 2 | **experimental — not offered** |
 
-All four are generated from the same in-memory mission model (boundary rings + zone polygons +
+All are generated from the same in-memory mission model (boundary rings + zone polygons +
 planner parameters). Nothing re-parses another exporter's output.
+
+`src/lib/exporters.ts` is the registry. Whether a format reaches a grower is one `status` field
+there, not a button somewhere in a 1400-line component — the planner renders
+`userFacingExporters()` and knows nothing else about which formats exist.
+
+## What the aircraft actually want
+
+This is the single fact that shapes everything below, and we got it wrong initially.
+
+**Enterprise DJI aircraft** (M30 / M300 / M350 / Mavic 3E) fly a **route** you hand them, as
+WPML `.kmz`.
+
+**Agras does not work that way.** You hand an Agras a **field** — a boundary polygon plus an
+optional prescription (Rx) map — and the controller plans its own flight lines *on the aircraft*.
+It accepts KML, KMZ, SHP and ZIP and decompresses them itself. There is no waypoint route to give
+it. That is also why DJI's published WPML spec contains zero spray or pump vocabulary: on Agras,
+the route file is not where spray lives.
+
+So **our flight lines were never the export deliverable.** They are how we *simulate* — path
+length, spray vs. transit time, battery draw, swaps needed. That simulation is the actual value,
+because a grower can do it from home while DJI's own planner requires standing in the field. What
+has to travel to the aircraft is the treatment plan: zones, per-zone rates, boundary.
+
+Two consequences run through the rest of this document:
+
+- The Agras package is the primary export. The WPML route exporter is parked (see below).
+- Every time/battery figure we show is an **estimate of our pattern**, not of the lines the
+  aircraft will actually fly. The UI says so; so should anything else that surfaces them.
 
 ## Treatment zones — GeoJSON
 
@@ -46,7 +74,8 @@ Coordinates are GeoJSON order — `[longitude, latitude]` — while the internal
 
 ## Flight mission — QGC WPL 110
 
-Downloads as `mission-{taskId}.waypoints`. Tab-separated Mission Planner format.
+Downloads as `mission-{taskId}.waypoints`. Tab-separated Mission Planner format. For ground-station
+software — **an Agras cannot read this**; it wants the field package instead.
 
 Line 1 is the header `QGC WPL 110`. Index 0 is the home row, flagged current. Actions are encoded
 with MAVLink-equivalent commands so Mission Planner and DJI converters preserve them rather than
@@ -113,10 +142,22 @@ same pathway.
   top-left pixel) and the `.tfw` (**centre** of that same pixel). The half-pixel difference
   between those two conventions is deliberate, not a bug.
 
-Import on the controller with **Map Source = "Other"** and **Source Unit = "ha"** regardless of
-what units you authored in. Note the unit is chosen by the operator at import time rather than
-read out of the file — **we write L/ha**, and picking a different unit there silently mis-doses
-the field.
+### Units are a safety issue, not a formatting detail
+
+The raster **does not describe its own unit.** The Agras operator selects one on the controller at
+import time:
+
+```
+Map Source:   Other
+Source unit:  ha
+```
+
+We write **L/ha**. If the operator picks something else, the import succeeds, the aircraft flies,
+and the field is mis-dosed — nothing anywhere in the chain warns them.
+
+`RX_RATE_UNIT` and `AGRAS_IMPORT_STEPS` in `src/lib/djiAgras.ts` are the single source for this
+string, consumed by the export toast, the planner's amber callout above the export buttons, and
+this document, so the three cannot drift apart. Treat any change to them as a safety change.
 
 ### Why `.tiff` and not `.tif`
 
@@ -148,11 +189,27 @@ the DBF field list at once, from a vendor whose output is known to import. DJI S
 dealer/operator who has flown a variable-rate job, are the fallbacks. Diff the metadata against
 ours byte-for-byte.
 
-## DJI WPML route — `mission-{taskId}.kmz`
+## DJI WPML route — `mission-{taskId}.kmz` — PARKED
+
+**Experimental. Registered but not offered to growers** (`status: "experimental"` in
+`src/lib/exporters.ts`). Kept and tested rather than deleted, because the file itself is correct
+against DJI's spec and re-enabling it is one field if hardware evidence ever appears.
+
+Why it is parked — two independent reasons:
+
+1. **No confirmed delivery path to a consumer aircraft.** DJI Fly — the app Air 3S, Mini and
+   non-enterprise Mavic use — ships no route-import function at all. The known workarounds
+   sideload a `.kmz` into the app's private storage, which Android 11+ scoped storage blocks. The
+   file matches the spec; the way to get it onto the aircraft does not exist.
+2. **Agras cannot use it either.** An Agras wants a field, not a route. See above.
+
+Do not re-register it without evidence from real hardware.
 
 A zip with `wpmz/template.kml` and `wpmz/waylines.wpml` at the archive root — no wrapping folder,
-and no standalone `wpmz/` directory entry. Namespaces and element names follow DJI's published
-WPML reference (`dji-sdk/Cloud-API-Doc`, `docs/en/60.api-reference/00.dji-wpml/`):
+and no standalone `wpmz/` directory entry. An optional `wpmz/res/` folder (DJI's example use is AI
+Spot-Check reference photos) is emitted only when a caller supplies resources, never as an empty
+directory. Namespaces and element names follow DJI's published WPML reference
+(`dji-sdk/Cloud-API-Doc`, `docs/en/60.api-reference/00.dji-wpml/`):
 
 ```xml
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2">
@@ -194,9 +251,21 @@ consumer models — a wrong enum is worse than an absent one.
 Missions over **200 waypoints throw `WaypointLimitError`** rather than truncating; the planner
 disables the button and shows the count before you click.
 
-**Unverified:** WPML is documented as a DJI Pilot 2 / enterprise pathway. We could not confirm
-that consumer DJI Fly aircraft (Mini / Air / non-enterprise Mavic) ingest `.kmz` waypoint files at
-all.
+## Still unverified — flag, do not resolve by inference
+
+Three open questions. None should be hardened into an assertion until a real package settles it:
+
+1. **Rx raster bit depth** — float32 vs. scaled integer. The "Source unit: ha" prompt implies a
+   numeric single band rather than an RGB legend, which supports single-band, but not the type.
+2. **The boundary shapefile DBF schema** — no published spec found anywhere.
+3. **Whether current T40/T50 firmware can *also* ingest a full route** rather than only a
+   boundary. The one forum source found concerned an older MG-1P and does not settle current
+   behaviour.
+
+All three are answered at once by obtaining one real, known-good Agras Rx package and diffing it
+against our output on: file extensions, band count, data type, CRS declaration, DBF field list.
+Cheapest route is a **PIX4Dfields trial**, which exports exactly this `DJI/Shapefile` + `DJI/Rx`
+structure. Fallbacks: DJI SmartFarm Web, or a dealer/operator who has flown a variable-rate job.
 
 Sources for everything above: DJI's `dji-sdk/Cloud-API-Doc` repo
 ([overview](https://github.com/dji-sdk/Cloud-API-Doc/blob/master/docs/en/60.api-reference/00.dji-wpml/10.overview.md),
@@ -211,8 +280,11 @@ Sources for everything above: DJI's `dji-sdk/Cloud-API-Doc` repo
 indexing, exactly one takeoff / RTH / land, servo rows carrying channel 8 with valid PWM, speed
 rows carrying the configured speed, and the coordinate decimal precision.
 
-`src/test/djiExport.test.ts` covers the binary formats by **round-tripping them**, not by checking
-files exist. The shapefile and GeoTIFF are re-parsed by readers in the same modules and asserted
+`src/test/djiExport.test.ts` also asserts the registry's shape: that the Agras package leads, that
+the WPML exporter stays registered-but-unlisted, and that anything not shipping carries a written
+reason. Those tests are what stop the descope quietly reversing.
+
+The same file covers the binary formats by **round-tripping them**, not by checking files exist. The shapefile and GeoTIFF are re-parsed by readers in the same modules and asserted
 on: enclosed area survives to within a rounding error, ring winding is clockwise, the raster
 covers the boundary extent, EPSG:4326 is declared in the GeoKeyDirectory, the `.tfw` sits half a
 pixel off the tiepoint, and burned rates match the source zones. `buildAgrasPackage` runs the same
