@@ -165,10 +165,14 @@ now makes the choice explicit:
 **Which one DJI actually wants is untested.** Both are implemented and neither is asserted to be
 correct. The writer now refuses to declare a sentinel it does not write, in either direction, so
 the ambiguity cannot come back by accident. Flip the default only on hardware evidence.
+
+### Resolution and georeferencing
+
 - Resolution targets 1 m/px, coarsened automatically to stay under DJI's 10 MB prescription cap.
 - Georeferencing is written twice on purpose: GeoTIFF `ModelTiepointTag` (outer corner of the
   top-left pixel) and the `.tfw` (**centre** of that same pixel). The half-pixel difference
-  between those two conventions is deliberate, not a bug.
+  between those two conventions is deliberate, not a bug, and a test asserts it holds in both
+  axes with the right sign.
 
 ### Units are a safety issue, not a formatting detail
 
