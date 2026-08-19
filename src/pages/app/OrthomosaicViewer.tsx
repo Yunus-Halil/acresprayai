@@ -14,7 +14,7 @@ import {
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
   Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
-  CheckCircle2, XCircle, Trash2, Hexagon,
+  CheckCircle2, XCircle, Trash2, Hexagon, Grid3x3,
   Play, Pause, RotateCcw, FastForward, History,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
@@ -56,6 +56,7 @@ import type { Annotation, LayerState, UserPoly } from "@/components/app/workspac
 import FieldViewTab from "@/components/app/workspace/FieldViewTab";
 import AiTab from "@/components/app/workspace/AiTab";
 import PlannerTab from "@/components/app/workspace/PlannerTab";
+import TreatmentTab from "@/components/app/workspace/TreatmentTab";
 import WeatherTab, { HeaderWeather } from "@/components/app/workspace/WeatherTab";
 import SettingsTab from "@/components/app/workspace/SettingsTab";
 import { loadAnnotations } from "@/components/app/workspace/layers";
@@ -183,7 +184,7 @@ export default function OrthomosaicViewer() {
     method?: string; available?: string[]; fingerprint?: string;
     reason?: string; index: "ndvi" | "ndre" | "vari"; label: string;
   } | null>(null);
-  type TabKey = "field" | "weather" | "ai" | "planner" | "reports" | "history" | "settings";
+  type TabKey = "field" | "weather" | "ai" | "treatment" | "planner" | "reports" | "history" | "settings";
   const [activeTab, setActiveTab] = useState<TabKey>("field");
   const [openTabs, setOpenTabs] = useState<TabKey[]>(["field"]);
   const [newTabOpen, setNewTabOpen] = useState(false);
@@ -856,6 +857,7 @@ export default function OrthomosaicViewer() {
     { key: "field", label: "Field View", icon: MapIcon },
     { key: "weather", label: "Weather", icon: CloudSun },
     { key: "ai", label: "AI Analysis", icon: Bot },
+    { key: "treatment", label: "Treatment Grid", icon: Grid3x3 },
     { key: "planner", label: "Flight Planner", icon: Plane },
     { key: "reports", label: "Reports", icon: FileBarChart },
     { key: "history", label: "History", icon: History },
@@ -1040,6 +1042,18 @@ export default function OrthomosaicViewer() {
           <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr}
             runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan}
             clearAnalysis={clearAnalysis} deleteZone={deleteZone} settings={settings} />
+        )}
+        {activeTab === "treatment" && (
+          <TreatmentTab
+            boundary={boundary}
+            tileUrl={tileUrl}
+            bounds={bounds}
+            maxNative={maxNative}
+            fieldId={field?.id ?? null}
+            spec={resolveDroneSpec(parentActiveDrone?.model, settings.flight_plan.custom_specs).spec}
+            settings={settings}
+            setActiveTab={setActiveTab}
+          />
         )}
         {activeTab === "planner" && (
           <PlannerTab
