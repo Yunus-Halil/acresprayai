@@ -125,11 +125,19 @@ export function pesticideLitres(zones: { areaM2: number; rateLha: number }[]): n
 /**
  * Conditions for a specific moment, from a forecast that may not reach it.
  *
- * Open-Meteo returns a bounded window — typically about a fortnight of daily
- * entries and a few days of hourly. A mission scheduled past the end of it gets
- * `available: false` and the CURRENT conditions clearly labelled as such,
- * rather than the last day in the array silently standing in for a date three
- * weeks out.
+ * UNITS. Every `time` in a Forecast is UNIX SECONDS, not milliseconds — the
+ * weather edge function divides by 1000 on the way out, and every other
+ * consumer multiplies by 1000 on the way in. Comparing them directly against
+ * `Date.getTime()` silently matches nothing, so every lookup falls through to
+ * "current" and the UI reports the forecast as unavailable while cheerfully
+ * displaying real wind and temperature. That is exactly the bug this comment
+ * exists to stop happening twice.
+ *
+ * COVERAGE. The function requests `forecast_days=7` and keeps 48 hourly
+ * entries. So: hourly resolution for two days, daily for a week, nothing
+ * beyond. A mission past that gets `available: false` and current conditions
+ * clearly labelled — rather than the last day in the array standing in for a
+ * date it does not describe.
  */
 export function conditionsAt(
   forecast: Forecast | null,
@@ -141,9 +149,11 @@ export function conditionsAt(
     return { summary: "No weather data for this location", available: false, basis: "none", wind_ms: null, temp_c: null };
   }
 
-  // Hourly is the right resolution for a spray window; fall back to the day.
-  const HOUR = 3_600_000;
-  const hour = forecast.hourly?.find(h => Math.abs(h.time - at) <= HOUR / 2);
+  const MS = 1000;
+  const HALF_HOUR = 30 * 60 * MS;
+
+  // Hourly is the right resolution for a spray window.
+  const hour = forecast.hourly?.find(h => Math.abs(h.time * MS - at) <= HALF_HOUR);
   if (hour) {
     const ms = (hour.wind_kmh ?? 0) / 3.6;
     return {
@@ -152,8 +162,11 @@ export function conditionsAt(
     };
   }
 
-  const DAY = 86_400_000;
-  const day = forecast.daily?.find(d => Math.abs(d.time - at) < DAY / 2);
+  // Then the day. Matched on calendar DATE rather than a hours-apart window:
+  // a daily entry is stamped at midnight, so "within 12 hours" mis-buckets an
+  // evening mission into the following day.
+  const wanted = localDate(at);
+  const day = forecast.daily?.find(d => utcDate(d.time * MS) === wanted);
   if (day) {
     const ms = (day.wind_kmh ?? 0) / 3.6;
     const mid = (day.tmin_c + day.tmax_c) / 2;
@@ -165,10 +178,31 @@ export function conditionsAt(
 
   const cur = forecast.current;
   const ms = (cur.wind_kmh ?? 0) / 3.6;
+  const past = at < Date.now();
   return {
-    summary: `Forecast unavailable for this date — currently ${fmt.windText(ms)} wind, ${fmt.tempText(cur.temp_c)}, ${cur.desc}`,
+    summary: past
+      ? `That date is in the past — showing current conditions: ${fmt.windText(ms)} wind, ${fmt.tempText(cur.temp_c)}, ${cur.desc}`
+      : `Beyond the 7-day forecast — showing current conditions: ${fmt.windText(ms)} wind, ${fmt.tempText(cur.temp_c)}, ${cur.desc}`,
     available: false, basis: "current", wind_ms: ms, temp_c: cur.temp_c,
   };
+}
+
+/** Local calendar date of a timestamp, YYYY-MM-DD — the day the operator picked. */
+function localDate(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/**
+ * Calendar date a daily forecast entry stands for.
+ *
+ * Open-Meteo returns daily stamps as bare "YYYY-MM-DD", which the edge function
+ * parses as UTC midnight — so reading it back in UTC recovers the date that was
+ * meant, whatever the viewer's zone.
+ */
+function utcDate(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
 }
 
 /**

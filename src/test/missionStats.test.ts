@@ -155,10 +155,17 @@ describe("flight conditions", () => {
     windText: (ms: number) => `${(ms * 2.237).toFixed(0)} mph`,
     tempText: (c: number) => `${(c * 9 / 5 + 32).toFixed(0)}°F`,
   };
-  const at = new Date("2026-08-20T15:00:00Z").getTime();
+  // Every `time` in a Forecast is UNIX SECONDS. These fixtures say so
+  // explicitly, because an earlier version of this file used milliseconds and
+  // so agreed with a bug instead of catching it: nothing ever matched, every
+  // lookup fell through to "current", and the UI announced the forecast as
+  // unavailable while displaying real wind and temperature.
+  const atMs = new Date("2026-08-21T15:00:00Z").getTime();
+  const secs = (ms: number) => Math.floor(ms / 1000);
+
   const forecast = (over: Partial<Forecast> = {}): Forecast => ({
     current: {
-      time: at, temp_c: 20, feels_c: 20, humidity: 50, wind_kmh: 10, gust_kmh: 15,
+      time: secs(atMs), temp_c: 20, feels_c: 20, humidity: 50, wind_kmh: 10, gust_kmh: 15,
       wind_dir: 180, clouds: 10, precip_mm: 0, code: 0, icon: "sun", desc: "clear",
     },
     hourly: [], daily: [], ...over,
@@ -167,29 +174,45 @@ describe("flight conditions", () => {
   it("uses the forecast hour covering the scheduled time", () => {
     const c = conditionsAt(forecast({
       hourly: [{
-        time: at, temp_c: 25, feels_c: 25, humidity: 40, wind_kmh: 20, gust_kmh: 25,
+        time: secs(atMs), temp_c: 25, feels_c: 25, humidity: 40, wind_kmh: 20, gust_kmh: 25,
         wind_dir: 90, clouds: 0, precip_mm: 0, code: 0, icon: "sun", desc: "sunny",
         precip_prob: 5,
       }],
-    }), at, fmt);
+    }), atMs, fmt);
     expect(c.available).toBe(true);
     expect(c.basis).toBe("forecast");
     expect(c.summary).toContain("sunny");
   });
 
+  it("reads the forecast timestamps as SECONDS, not milliseconds", () => {
+    // The regression guard. An hour stamped in seconds must match a scheduled
+    // time in milliseconds; treating the two as the same scale matches nothing.
+    const c = conditionsAt(forecast({
+      hourly: [{
+        time: secs(atMs), temp_c: 25, feels_c: 25, humidity: 40, wind_kmh: 20, gust_kmh: 25,
+        wind_dir: 90, clouds: 0, precip_mm: 0, code: 0, icon: "sun", desc: "sunny",
+        precip_prob: 5,
+      }],
+    }), atMs, fmt);
+    expect(c.basis).toBe("forecast");
+    expect(c.wind_ms).toBeCloseTo(20 / 3.6, 6);
+  });
+
   it("says the forecast is unavailable rather than inventing one", () => {
-    // A mission three weeks out is past Open-Meteo's window. Showing the last
-    // day in the array as though it described that date is the failure mode
-    // this guards: a pilot can act on a fabricated number.
-    const far = at + 21 * 86_400_000;
+    // A mission three weeks out is past the 7-day window. Letting the last day
+    // in the array stand in for that date is the failure this guards: a pilot
+    // can act on a fabricated number.
+    const far = atMs + 21 * 86_400_000;
     const c = conditionsAt(forecast(), far, fmt);
     expect(c.available).toBe(false);
     expect(c.basis).toBe("current");
-    expect(c.summary).toMatch(/forecast unavailable/i);
+    expect(c.summary).toMatch(/beyond the 7-day forecast/i);
+    // And it still says what it DID find, clearly labelled as current.
+    expect(c.summary).toMatch(/current conditions/i);
   });
 
   it("reports nothing at all when the location has no weather cached", () => {
-    const c = conditionsAt(null, at, fmt);
+    const c = conditionsAt(null, atMs, fmt);
     expect(c.available).toBe(false);
     expect(c.basis).toBe("none");
     expect(c.wind_ms).toBeNull();
@@ -198,13 +221,27 @@ describe("flight conditions", () => {
   it("falls back to the day when there is no matching hour", () => {
     const c = conditionsAt(forecast({
       daily: [{
-        time: at, tmin_c: 12, tmax_c: 24, humidity: 50, wind_kmh: 14, gust_kmh: 20,
-        wind_dir: 180, precip_mm: 0, precip_prob: 10, clouds: 20,
-        code: 1, icon: "cloud", desc: "partly cloudy",
+        time: secs(Date.UTC(2026, 7, 21)), tmin_c: 12, tmax_c: 24, humidity: 50,
+        wind_kmh: 14, gust_kmh: 20, wind_dir: 180, precip_mm: 0, precip_prob: 10,
+        clouds: 20, code: 1, icon: "cloud", desc: "partly cloudy",
       }],
-    }), at, fmt);
+    }), new Date(2026, 7, 21, 9, 0).getTime(), fmt);
     expect(c.available).toBe(true);
     expect(c.summary).toContain("partly cloudy");
+  });
+
+  it("does not hand an evening mission the next day's forecast", () => {
+    // Daily entries are stamped at midnight. A "within 12 hours" match would
+    // pull tomorrow's weather for a 21:00 job tonight.
+    const c = conditionsAt(forecast({
+      daily: [{
+        time: secs(Date.UTC(2026, 7, 22)), tmin_c: 5, tmax_c: 9, humidity: 90,
+        wind_kmh: 40, gust_kmh: 60, wind_dir: 180, precip_mm: 12, precip_prob: 95,
+        clouds: 100, code: 65, icon: "rain", desc: "heavy rain",
+      }],
+    }), new Date(2026, 7, 21, 21, 0).getTime(), fmt);
+    expect(c.summary).not.toContain("heavy rain");
+    expect(c.available).toBe(false);
   });
 });
 
