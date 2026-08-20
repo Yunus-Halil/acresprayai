@@ -632,13 +632,20 @@ export function PlannerTab({
         </MapContainer>
         {/* Top-right of the plan display, alongside the map's own controls. */}
         <div className="absolute top-3 right-3 z-[500]">
+          {/* Deliberately NOT disabled when there is no plan. A disabled button
+              that only explains itself in a title attribute is a button that
+              does nothing for a reason nobody can see — say the reason out loud
+              instead. */}
           <button
-            onClick={() => setScheduleOpen(true)}
-            disabled={!mission}
-            title={mission
-              ? "Put this plan on the schedule"
-              : "Mark at least one treatment zone to generate a plan first"}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-sm text-xs font-semibold transition-colors bg-[#4CAF50] hover:bg-[#43a047] text-black disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => {
+              if (!mission) {
+                toast.error("Mark at least one treatment zone first — there is no flight plan to schedule yet.");
+                return;
+              }
+              setScheduleOpen(true);
+            }}
+            title="Put this plan on the schedule"
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-sm text-xs font-semibold transition-colors bg-[#4CAF50] hover:bg-[#43a047] text-black"
           >
             <CalendarDays className="h-3.5 w-3.5" /> Schedule
           </button>
