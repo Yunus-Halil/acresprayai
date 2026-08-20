@@ -11,6 +11,8 @@
 // of lib/dronePhysics.ts. The widget says so rather than letting three
 // confident decimal places imply otherwise.
 import { useMemo } from "react";
+import { fmtLengthCm, fmtMass } from "@/lib/units";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { ChevronDown, ChevronUp, Droplets, Info } from "lucide-react";
 import type { DronePhysicsConfig } from "@/lib/dronePhysics";
 import {
@@ -99,6 +101,7 @@ export function TankDynamicsWidget({
   open: boolean;
   onToggle: () => void;
 }) {
+  const units = useUnitSystem();
   const sample = useMemo(
     () => (profile ? sampleTankAt(profile, simT) : null),
     [profile, simT],
@@ -106,9 +109,13 @@ export function TankDynamicsWidget({
 
   if (!profile) return null;
 
+  // The physics works in kg and cm; that is no reason to make a grower in Iowa
+  // convert in their head. Display follows the unit setting, the model does not.
   const payloadKg = (sample?.litres ?? 0) * cfg.fluidDensityKgPerL;
+  const payloadText = fmtMass(payloadKg, units).text;
   const cog = sample?.cogOffsetCm ?? 0;
-  const cogLabel = `${cog >= 0 ? "+" : "−"}${Math.abs(cog).toFixed(1)} cm ${cog >= 0 ? "aft" : "fwd"}`;
+  const cogShown = fmtLengthCm(Math.abs(cog), units);
+  const cogLabel = `${cog >= 0 ? "+" : "−"}${cogShown.text} ${cog >= 0 ? "aft" : "fwd"}`;
 
   return (
     <div className="rounded-md border border-[#222] overflow-hidden"
@@ -120,7 +127,7 @@ export function TankDynamicsWidget({
         <Droplets className="h-3 w-3" style={{ color: LIQUID }} />
         <span>Tank dynamics</span>
         <span className="ml-auto font-mono normal-case tracking-normal text-neutral-500">
-          {payloadKg.toFixed(1)} kg
+          {payloadText}
         </span>
         {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
       </button>
@@ -129,7 +136,7 @@ export function TankDynamicsWidget({
         <div className="px-3 pb-3 flex items-center gap-3">
           <TankLiquidVisual sample={sample} cfg={cfg} />
           <div className="text-[11px] space-y-1.5 min-w-[128px]">
-            <Metric label="Payload" value={`${payloadKg.toFixed(1)} kg`} />
+            <Metric label="Payload" value={payloadText} />
             <Metric label="CoG offset" value={cogLabel}
               warn={Math.abs(cog) > cfg.sloshMaxOffsetCm * 0.7} />
             <Metric label="Amp draw" value={`${(sample?.amps ?? 0).toFixed(1)} A`} />

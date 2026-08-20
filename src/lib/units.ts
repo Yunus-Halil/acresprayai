@@ -164,14 +164,30 @@ export const altitudeToM = (shown: number, sys: UnitSystem): number =>
 /**
  * Speed from metres per second.
  *
- * Metric keeps m/s rather than converting to km/h: the flight planner's own
- * physics, the drone specs and the DJI parameters are all in m/s, and showing
- * a pilot a different number from the one the aircraft takes is how a wrong
- * speed gets flown.
+ * Metric keeps m/s — the planner's physics, the drone specs and the DJI
+ * parameters are all m/s. Imperial gets MPH rather than ft/s: this product is
+ * aimed at US operators, and mph is the number they think in.
+ *
+ * What is DISPLAYED and what is EXPORTED are deliberately different. Everything
+ * stored and everything written into a mission file stays m/s; only the screen
+ * changes. A unit conversion that reached the export would put a wrong speed on
+ * an aircraft.
  */
 export function fmtSpeed(ms: number, sys: UnitSystem): Measure {
-  return sys === "metric" ? measure(ms, "m/s", 1) : measure(ms / M_PER_FT, "ft/s", 1);
+  return sys === "metric" ? measure(ms, "m/s", 1) : measure(ms / MS_PER_MPH, "mph", 1);
 }
+
+/** Exactly one mile per hour, in m/s. */
+export const MS_PER_MPH = M_PER_MILE / 3600;
+
+export const speedUnit = (sys: UnitSystem): string => (sys === "metric" ? "m/s" : "mph");
+
+export const speedValue = (ms: number, sys: UnitSystem): number =>
+  sys === "metric" ? ms : ms / MS_PER_MPH;
+
+/** Back to m/s, for a speed the operator TYPED or dragged in their own units. */
+export const speedToMs = (shown: number, sys: UnitSystem): number =>
+  sys === "metric" ? shown : shown * MS_PER_MPH;
 
 /** Wind and ground speed, where mph is what an imperial user expects. */
 export function fmtWindSpeed(ms: number, sys: UnitSystem): Measure {
@@ -187,6 +203,20 @@ export function fmtTemp(celsius: number, sys: UnitSystem): Measure {
     ? measure(celsius, "°C", 0)
     : measure(celsius * 9 / 5 + 32, "°F", 0);
 }
+
+/**
+ * A short length held in centimetres — centre-of-gravity offsets and the like.
+ *
+ * Inches for imperial. The physics works in cm; that is no reason to make a
+ * grower in Iowa do the conversion in their head.
+ */
+export function fmtLengthCm(cm: number, sys: UnitSystem): Measure {
+  return sys === "metric"
+    ? measure(cm, "cm", 1)
+    : measure(cm / 2.54, "in", 1);
+}
+
+export const lengthCmUnit = (sys: UnitSystem): string => (sys === "metric" ? "cm" : "in");
 
 export function fmtMass(kg: number, sys: UnitSystem): Measure {
   return sys === "metric" ? measure(kg, "kg", 1) : measure(kg / KG_PER_LB, "lb", 1);

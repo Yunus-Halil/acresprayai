@@ -72,7 +72,8 @@ import ScheduleMissionModal from "./ScheduleMissionModal";
 // aircraft's own spec-sheet numbers and the values the DJI parameters take, and
 // a pilot cross-checking against either should see the same figure here.
 import {
-  fmtAltitude, fmtAreaAc, fmtDistance, fmtVolume, rateToLha, rateUnit, rateValue,
+  altitudeToM, altitudeUnit, altitudeValue, fmtAltitude, fmtAreaAc, fmtDistance,
+  fmtSpeed, fmtVolume, rateToLha, rateUnit, rateValue, speedToMs, speedUnit, speedValue,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 
@@ -129,6 +130,8 @@ export function PlannerTab({
   userPolys: UserPoly[];
 }) {
   const units = useUnitSystem();
+  /** Slider values are shown to one decimal; the stored SI value keeps full precision. */
+  const round1 = (n: number) => Math.round(n * 10) / 10;
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [sideTab, setSideTab] = useState<"setup" | "mission">("setup");
   const [tankOpen, setTankOpen] = useState(true);
@@ -363,11 +366,11 @@ export function PlannerTab({
     const failClimb = climbHorizM > spacingM * 4;  // need a comfortable runway
     const issues: string[] = [];
     if (failPhysical) issues.push(
-      `Spacing ${spacingM} m forces a ${rUturnNeeded.toFixed(1)} m U-turn — tighter than the ${spec.min_turn_radius_m} m physical minimum for this drone.`);
+      `Spacing ${fmtAltitude(spacingM, units).text} forces a ${fmtAltitude(rUturnNeeded, units).text} U-turn — tighter than the ${fmtAltitude(spec.min_turn_radius_m, units).text} physical minimum for this drone.`);
     if (failBank) issues.push(
-      `Transit speed ${transitSpeed} m/s needs a ${rBankTransit.toFixed(1)} m banked turn radius — wider than the ${rUturnNeeded.toFixed(1)} m available between rows.`);
+      `Transit speed ${fmtSpeed(transitSpeed, units).text} needs a ${fmtAltitude(rBankTransit, units).text} banked turn radius — wider than the ${fmtAltitude(rUturnNeeded, units).text} available between rows.`);
     if (failClimb) issues.push(
-      `${altDelta.toFixed(0)} m climb at ${spec.climb_rate_ms} m/s needs ~${climbHorizM.toFixed(0)} m of horizontal runway — more than the row-end space allows.`);
+      `${fmtAltitude(altDelta, units).text} climb at ${fmtSpeed(spec.climb_rate_ms, units).text} needs ~${fmtAltitude(climbHorizM, units).text} of horizontal runway — more than the row-end space allows.`);
     return { ok: issues.length === 0, issues, rUturnNeeded, rBankTransit, climbHorizM };
   })();
 
@@ -398,7 +401,7 @@ export function PlannerTab({
     const vMax = Math.sqrt((newSpacing / 2) * G * Math.tan(BANK_RAD));
     if (vMax < transitSpeed) {
       newTransit = Math.max(3, Math.floor(vMax * 2) / 2);
-      fixes.push(`transit speed → ${newTransit} m/s`);
+      fixes.push(`transit speed → ${fmtSpeed(newTransit, units).text}`);
     }
 
     // 3) Reduce climb runway by trimming the altitude delta.
@@ -985,10 +988,11 @@ export function PlannerTab({
             return (
               <>
                 <Slider2
-                  label={`Swath spacing  ·  recommended ${recommended} m${atRec ? "  ·  auto" : ""}`}
-                  value={spacingM}
-                  setValue={(n) => { userTouchedSpacingRef.current = true; setSpacingM(n); }}
-                  min={3} max={25} step={1} unit="m"
+                  label={`Swath spacing  ·  recommended ${fmtAltitude(recommended, units).text}${atRec ? "  ·  auto" : ""}`}
+                  value={round1(altitudeValue(spacingM, units))}
+                  setValue={(n) => { userTouchedSpacingRef.current = true; setSpacingM(altitudeToM(n, units)); }}
+                  min={round1(altitudeValue(3, units))} max={round1(altitudeValue(25, units))}
+                  step={units === "metric" ? 1 : 2} unit={altitudeUnit(units)}
                 />
                 {!atRec && (
                   <button
@@ -996,7 +1000,7 @@ export function PlannerTab({
                     onClick={() => { userTouchedSpacingRef.current = false; setSpacingM(recommended); }}
                     className="text-[10px] text-[#4CAF50] hover:underline -mt-1"
                   >
-                    ↺ Reset to recommended ({recommended} m)
+                    ↺ Reset to recommended ({fmtAltitude(recommended, units).text})
                   </button>
                 )}
               </>
@@ -1021,7 +1025,7 @@ export function PlannerTab({
             className="w-full flex items-center justify-between text-[10px] uppercase tracking-wider text-neutral-500 hover:text-neutral-300 transition-colors pt-2 border-t border-[#1f1f1f]">
             <span>Advanced flight dynamics</span>
             <span className="inline-flex items-center gap-1.5 normal-case tracking-normal font-mono text-neutral-600">
-              {!advancedOpen && `${transitAltM}/${sprayAltM} m · ${transitSpeed}/${spraySpeed} m/s`}
+              {!advancedOpen && `${round1(altitudeValue(transitAltM, units))}/${round1(altitudeValue(sprayAltM, units))} ${altitudeUnit(units)} · ${round1(speedValue(transitSpeed, units))}/${round1(speedValue(spraySpeed, units))} ${speedUnit(units)}`}
               {advancedOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </span>
           </button>
@@ -1058,7 +1062,7 @@ export function PlannerTab({
               </select>
               {activeDrone && (
                 <div className="mt-2 text-[10px] text-neutral-500 font-mono">
-                  Battery now: <span className="text-neutral-300">{activeDrone.battery}%</span> · Spec: {fmtVolume(spec.tank_l, units, 0).text} / {spec.max_flight_min} min / {spec.max_speed_ms} m/s
+                  Battery now: <span className="text-neutral-300">{activeDrone.battery}%</span> · Spec: {fmtVolume(spec.tank_l, units, 0).text} / {spec.max_flight_min} min / {fmtSpeed(spec.max_speed_ms, units).text}
                 </div>
               )}
             </div>
@@ -1171,7 +1175,7 @@ export function PlannerTab({
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
           <span>Maneuverability</span>
           <InfoTip>
-            Min turn radius {spec.min_turn_radius_m} m · climb {spec.climb_rate_ms} m/s. Spacing and
+            Min turn radius {fmtAltitude(spec.min_turn_radius_m, units).text} · climb {fmtSpeed(spec.climb_rate_ms, units).text}. Spacing and
             transit speed are auto-tuned so every U-turn fits within the drone&rsquo;s physical limits.
           </InfoTip>
         </div>
@@ -1182,7 +1186,7 @@ export function PlannerTab({
               {maneuver.ok ? "✓ Flyable by " : "⚠ Adjusting for "} {droneModelKey}
             </span>
             <span className="font-mono text-[10px] text-neutral-500">
-              U-turn need {maneuver.rUturnNeeded.toFixed(1)} m · bank {maneuver.rBankTransit.toFixed(1)} m
+              U-turn need {fmtAltitude(maneuver.rUturnNeeded, units).text} · bank {fmtAltitude(maneuver.rBankTransit, units).text}
             </span>
           </div>
           {!maneuver.ok && maneuver.issues.map((m, i) => (

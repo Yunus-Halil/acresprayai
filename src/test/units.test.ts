@@ -8,8 +8,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   AC_PER_HA, KG_PER_LB, L_PER_US_GAL, M2_PER_ACRE, M_PER_FT,
   altitudeToM, altitudeValue, areaUnit, costOfAreaHa, costPerAreaUnit,
-  costPerAreaToPerAcre, costPerAreaValue, fmtAltitude, fmtArea, fmtAreaHa, fmtMass, fmtRate, fmtSpeed,
-  fmtTemp, fmtVolume, fmtWindSpeed, rateToLha, rateUnit, rateValue, volumeValue,
+  MS_PER_MPH, costPerAreaToPerAcre, costPerAreaValue, fmtAltitude, fmtLengthCm, fmtArea, fmtAreaHa, fmtMass, fmtRate, fmtSpeed,
+  fmtTemp, fmtVolume, fmtWindSpeed, rateToLha, rateUnit, rateValue, speedToMs,
+  speedUnit, speedValue, volumeValue,
 } from "@/lib/units";
 
 describe("conversion factors are the exact defined ones", () => {
@@ -82,12 +83,23 @@ describe("altitude", () => {
 });
 
 describe("speed", () => {
-  it("keeps m/s for metric, because that is what the aircraft takes", () => {
-    // The planner's physics, the drone specs and the DJI parameters are all
-    // m/s. Showing a pilot km/h while the aircraft eats m/s is how a wrong
-    // speed gets flown.
+  it("keeps m/s for metric and gives imperial mph, not ft/s", () => {
+    // US ag operators think in mph. The planner's physics and the DJI
+    // parameters stay m/s regardless — only the screen changes.
     expect(fmtSpeed(6, "metric").text).toBe("6.0 m/s");
-    expect(fmtSpeed(6, "imperial").value).toBeCloseTo(19.685, 3);
+    expect(fmtSpeed(MS_PER_MPH, "imperial").value).toBeCloseTo(1, 9);
+    expect(fmtSpeed(6, "imperial").unit).toBe("mph");
+  });
+
+  it("round-trips a speed the operator dragged in their own units", () => {
+    // The altitude and speed sliders are inputs. If display and entry disagree,
+    // a saved plan drifts every time somebody opens it — and this particular
+    // number ends up on an aircraft.
+    for (const ms of [1, 3, 6.5, 10, 20]) {
+      expect(speedToMs(speedValue(ms, "imperial"), "imperial")).toBeCloseTo(ms, 9);
+      expect(speedToMs(speedValue(ms, "metric"), "metric")).toBeCloseTo(ms, 9);
+    }
+    expect(speedUnit("imperial")).toBe("mph");
   });
 
   it("uses km/h and mph for wind, which is read not flown", () => {
@@ -97,6 +109,11 @@ describe("speed", () => {
 });
 
 describe("temperature and mass", () => {
+  it("gives inches for a centimetre length", () => {
+    expect(fmtLengthCm(2.54, "imperial").value).toBeCloseTo(1, 9);
+    expect(fmtLengthCm(5, "metric").text).toBe("5.0 cm");
+  });
+
   it("converts at the reference points", () => {
     expect(fmtTemp(0, "imperial").value).toBe(32);
     expect(fmtTemp(100, "imperial").value).toBe(212);
