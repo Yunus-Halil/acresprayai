@@ -62,7 +62,7 @@ import {
 // Lives in SettingsTab.tsx purely because of where the file split fell.
 import { LogFlightModal } from "./SettingsTab";
 import { readCachedWeather } from "@/lib/weather";
-import { computeMissionStats, planRefills } from "@/lib/missionStats";
+import { computeMissionStats, pesticideLitres, planRefills } from "@/lib/missionStats";
 import { physicsFor } from "@/lib/dronePhysics";
 import { buildTankProfile, sampleTankAt } from "@/lib/tankProfile";
 import TankDynamicsWidget from "./TankDynamicsWidget";
@@ -497,19 +497,6 @@ export function PlannerTab({
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [simPlaying, simSpeed, simTimeline.total]);
-  // Tank state across the whole mission, built once per plan rather than
-  // stepped live — the scrubber can jump to a moment that was never played, and
-  // slosh is stateful, so it has to be precomputed to answer that honestly.
-  const tankPhysics = useMemo(() => physicsFor(droneModelKey), [droneModelKey]);
-  const tankProfile = useMemo(() => {
-    if (!simTimeline.segs.length || simTimeline.total <= 0) return null;
-    return buildTankProfile(simTimeline.segs, simTimeline.total, {
-      config: tankPhysics,
-      startLitres: tankPhysics.tankCapacityL * (Math.max(0, Math.min(100, fp.tank_load_pct)) / 100),
-      flowLpm: spec.spray_rate_lpm > 0 ? spec.spray_rate_lpm : undefined,
-      tempC: wx?.temp_c,
-    });
-  }, [simTimeline, tankPhysics, fp.tank_load_pct, spec.spray_rate_lpm, wx?.temp_c]);
 
   const simState = simPosAt(simTimeline, simT);
 
@@ -539,6 +526,47 @@ export function PlannerTab({
       ? z.rateLha
       : resolveZoneRateLha(z, { ...settings, spray_rates_lha: rates }),
   }));
+
+  /**
+   * Chemical the marked zones need. Defined here because BOTH the tank physics
+   * and the refill plan consume it, and computeMissionStats derives its own
+   * from the identical call — one number, three readers, no drift.
+   */
+  const requiredLitres = useMemo(
+    () => pesticideLitres(zonesWithRates.map(z => ({
+      areaM2: z.areaM2 ?? polygonAreaM2(z.ring), rateLha: z.rateLha,
+    }))),
+    [zonesWithRates],
+  );
+
+  // Tank state across the whole mission, built once per plan rather than
+  // stepped live — the scrubber can jump to a moment that was never played, and
+  // slosh is stateful, so it has to be precomputed to answer that honestly.
+  const tankPhysics = useMemo(() => physicsFor(droneModelKey), [droneModelKey]);
+  const tankProfile = useMemo(() => {
+    if (!simTimeline.segs.length || simTimeline.total <= 0) return null;
+    return buildTankProfile(simTimeline.segs, simTimeline.total, {
+      config: tankPhysics,
+      startLitres: tankPhysics.tankCapacityL * (Math.max(0, Math.min(100, fp.tank_load_pct)) / 100),
+      // Flow is set by the PRESCRIPTION and ground speed, not by the pump
+      // running flat out. spray_rate_lpm is the pump's nominal MAXIMUM: using
+      // it directly drained a T40 at 24 L/min over every spray leg and had the
+      // Tank Dynamics widget reading "0.0 lb aboard" while the telemetry two
+      // panels down correctly showed 8.7 gal remaining. Two tank models, one
+      // aircraft. Derive the real flow, and cap it at what the pump can
+      // actually deliver.
+      flowLpm: (() => {
+        const sprayMin = (mission?.sprayTimeS ?? 0) / 60;
+        const needed = requiredLitres;
+        if (!(sprayMin > 0) || !(needed > 0)) return undefined;
+        const implied = needed / sprayMin;
+        return spec.spray_rate_lpm > 0 ? Math.min(implied, spec.spray_rate_lpm) : implied;
+      })(),
+      tempC: wx?.temp_c,
+    });
+  }, [simTimeline, tankPhysics, fp.tank_load_pct, spec.spray_rate_lpm, wx?.temp_c,
+      mission?.sprayTimeS, requiredLitres]);
+
 
   const exportCtx: ExportContext = {
     taskId,
@@ -607,7 +635,6 @@ export function PlannerTab({
   // What the job actually needs, and how many trips back to the nurse tank.
   // Memoised: `refillPoints` and the live telemetry both depend on it, and the
   // overlay redraws every map layer when its deps change identity.
-  const requiredLitres = battery?.stats.pesticideAmountLiters ?? 0;
   const refill = useMemo(
     () => planRefills(requiredLitres, spec.tank_l, fp.tank_load_pct),
     [requiredLitres, spec.tank_l, fp.tank_load_pct],

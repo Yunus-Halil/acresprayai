@@ -1,5 +1,6 @@
 import { Reveal } from "./Reveal";
-import { Shot } from "./Shot";
+import { Frame } from "./Shot";
+import { SimVideo } from "./SimVideo";
 
 /**
  * The flagship shot: the flight planner mid-simulation, tank dynamics live.
@@ -48,15 +49,22 @@ export const CockpitSection = () => (
       </Reveal>
 
       <Reveal className="mt-12 sm:mt-16">
-        <Shot
-          src="/screens/flight-planner-tank.png"
-          alt="SwathWise flight planner mid-simulation: spray passes over an orthomosaic, a battery-swap marker on the route, and the live tank dynamics readout showing payload, centre-of-gravity offset and amp draw"
+        <Frame
           caption="FLIGHT PLANNER · TANK DYNAMICS · LIVE SIMULATION"
-          status={<span className="text-sw-bright-hi">● 88.2 LB ABOARD</span>}
+          status={<span className="text-sw-bright-hi">● RECORDED IN-APP, 32× SPEED</span>}
           padding="p-2.5"
           className="shadow-[0_40px_90px_-30px_rgba(0,0,0,0.7)]"
-          imgClassName="mx-auto max-h-[760px] w-auto max-w-full"
-        />
+        >
+          <SimVideo
+            poster="/video/cockpit-sim-poster.jpg"
+            sources={[
+              { src: "/video/cockpit-sim.webm", type: "video/webm" },
+              { src: "/video/cockpit-sim.mp4", type: "video/mp4" },
+            ]}
+            label="The SwathWise flight planner running a mission simulation: the aircraft flying its spray passes over the orthomosaic while the tank dynamics panel, battery, spray tank and distance readouts update in step"
+            className="mx-auto w-full"
+          />
+        </Frame>
       </Reveal>
 
       <div className="mt-14 grid gap-x-10 gap-y-9 sm:mt-16 sm:grid-cols-2 lg:grid-cols-4">

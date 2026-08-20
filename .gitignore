@@ -30,3 +30,9 @@ dist-ssr
 
 # Supabase CLI local state (linked project ref, etc.)
 supabase/.temp/
+
+# Raw screen-capture masters. The encoded web derivatives in public/video/ are
+# committed; the multi-megabyte sources are not — once a binary that size is in
+# the history it is there forever, and nothing served needs it.
+# See public/video/README.md for the encode commands.
+src/test/videos/
