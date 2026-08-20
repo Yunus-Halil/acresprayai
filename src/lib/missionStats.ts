@@ -242,8 +242,8 @@ export function conditionsAt(
   const past = at < Date.now();
   return {
     summary: past
-      ? `That date is in the past — showing current conditions: ${fmt.windText(ms)} wind, ${fmt.tempText(cur.temp_c)}, ${cur.desc}`
-      : `Beyond the 7-day forecast — showing current conditions: ${fmt.windText(ms)} wind, ${fmt.tempText(cur.temp_c)}, ${cur.desc}`,
+      ? `That date is in the past, showing current conditions: ${fmt.windText(ms)} wind, ${fmt.tempText(cur.temp_c)}, ${cur.desc}`
+      : `Beyond the 7-day forecast, showing current conditions: ${fmt.windText(ms)} wind, ${fmt.tempText(cur.temp_c)}, ${cur.desc}`,
     available: false, basis: "current", wind_ms: ms, temp_c: cur.temp_c,
   };
 }

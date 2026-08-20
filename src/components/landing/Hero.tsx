@@ -24,7 +24,7 @@ export const Hero = () => (
       {/* Every clause is a capability that ships, and each one is a thing a
           grower loses money on: chemical put where it was not needed, a trip
           back for a battery nobody counted, a tank that ran dry mid-pass, a
-          prescription the aircraft could not fly. No savings percentage — we
+          prescription the aircraft could not fly. No savings percentage, we
           have not measured one, and an invented number is the fastest way to
           lose a farmer who checks. */}
       <p
@@ -32,8 +32,8 @@ export const Hero = () => (
         style={{ animationDelay: "0.28s" }}
       >
         Turn drone photos into a map of your field, mark the ground that actually needs
-        treating, and get a prescription your Agras can fly — with the chemical, the
-        batteries and every tank refill worked out before you leave the shed.
+        treating, and get a prescription your Agras can fly. The chemical, the batteries
+        and every tank refill are worked out before you leave the shed.
       </p>
 
       <ul

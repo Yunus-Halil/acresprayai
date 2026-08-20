@@ -143,7 +143,7 @@ export function AnalysisGrid({
           </label>
         </div>
         {analysis.zones.length === 0 ? (
-          <div className="text-xs text-neutral-500 italic">No treatment zones — field looks healthy.</div>
+          <div className="text-xs text-neutral-500 italic">No treatment zones, field looks healthy.</div>
         ) : (
           <div className="space-y-1.5">
             {analysis.zones.map((z: AiZone) => (
@@ -183,7 +183,7 @@ export function AnalysisGrid({
       <div className="mt-3 rounded-sm border border-[#222] p-3" style={{ background: "#141414" }}>
         <div className="flex items-center gap-2 mb-2">
           <div className="text-[10px] uppercase tracking-wider text-neutral-500">Watch list</div>
-          <span className="text-[10px] text-neutral-600">monitor — no treatment zone drawn</span>
+          <span className="text-[10px] text-neutral-600">monitor, no treatment zone drawn</span>
         </div>
         <ul className="space-y-1.5">
           {analysis.watch_list.map((w: any, i: number) => (
@@ -191,7 +191,7 @@ export function AnalysisGrid({
               <span className="text-neutral-600 mt-0.5">•</span>
               <span>
                 <span className="text-neutral-200 font-medium">{w.name}</span>
-                {w.issue ? <span className="text-neutral-500"> — {w.issue}</span> : null}
+                {w.issue ? <span className="text-neutral-500">, {w.issue}</span> : null}
                 {w.what_you_see ? <span className="text-neutral-500">. {w.what_you_see}</span> : null}
               </span>
             </li>
@@ -214,7 +214,7 @@ export function AiTab({ analysis, analyzing, analysisErr, runAnalysis, exportFli
         {!analysis && !analyzing && (
           <div className="rounded-sm border border-[#222] p-6" style={{ background: "#1a1a1a" }}>
             <p className="text-sm text-neutral-400 mb-4 max-w-2xl leading-relaxed">
-              Run conservative RGB vision over this orthomosaic. We only flag what we can confirm visually —
+              Run conservative RGB vision over this orthomosaic. We only flag what we can confirm visually ,
               bare soil, waterlogging, row gaps, visible discoloration and field boundary issues.
             </p>
             <button onClick={runAnalysis}

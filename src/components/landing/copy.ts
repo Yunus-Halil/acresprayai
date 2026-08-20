@@ -53,7 +53,7 @@ export const STEPS = [
   {
     num: "03",
     title: "Get valuable insights",
-    body: "Get flight plans, reports, and weather data — everything you need to spray only where it counts.",
+    body: "Get flight plans, reports, and weather data: everything you need to spray only where it counts.",
   },
 ];
 
@@ -61,7 +61,7 @@ export const AUDIENCES = [
   {
     label: "FARMERS",
     title: "Run your own fields",
-    body: "Scout, plan, and spray with one tool. No degree required — if you can use a browser, you can use SwathWise.",
+    body: "Scout, plan, and spray with one tool. No degree required. If you can use a browser, you can use SwathWise.",
   },
   {
     label: "GOVERNMENTS",

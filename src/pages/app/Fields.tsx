@@ -66,7 +66,7 @@ export default function Fields() {
       location: form.location || null, notes: form.notes || null,
     }).select().single();
     if (error) return toast.error(error.message);
-    toast.success(`Field created — now upload drone images for ${data.name}`);
+    toast.success(`Field created, now upload drone images for ${data.name}`);
     setForm({ name: "", location: "", notes: "" });
     setOpen(false);
     navigate(`/app/fields/${data.id}`);
@@ -91,7 +91,7 @@ export default function Fields() {
         <div>
           <h1 className="font-display text-3xl">Fields</h1>
           <p className="text-muted-foreground max-w-2xl">
-            Start by creating a field. Then upload drone images for that field — we'll process them with OpenDroneMap
+            Start by creating a field. Then upload drone images for that field. We'll process them with OpenDroneMap
             and build a tiled orthomosaic you can review, scan after scan.
           </p>
         </div>
@@ -106,7 +106,7 @@ export default function Fields() {
               <div><Label>Name</Label><Input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="North vineyard" /></div>
               <div><Label>Location</Label><Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="optional" /></div>
               <div><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="optional" /></div>
-              <p className="text-xs text-muted-foreground">Crop and field size are set later — crop in Settings, size measured from your boundary.</p>
+              <p className="text-xs text-muted-foreground">Crop and field size are set later, crop in Settings, size measured from your boundary.</p>
               <Button type="submit" className="w-full">Create field & continue <ArrowRight className="h-4 w-4" /></Button>
             </form>
           </DialogContent>

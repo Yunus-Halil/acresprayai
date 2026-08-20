@@ -49,11 +49,11 @@ export function GridAnomaliesLayer({ zones }: { zones: GridZone[] }) {
             <div>Cells</div><div style="color:#f0f0f0;font-family:ui-monospace,monospace">${z.cellCount}</div>
             ${z.matchScore !== null
               ? `<div>Match score</div><div style="color:#f0f0f0;font-family:ui-monospace,monospace">${z.matchScore.toFixed(2)}</div>
-                 <div style="grid-column:1/-1;color:#6b7280;font-size:10px">Similarity to the operator's marked examples when last scored — not a detection confidence.</div>`
-              : `<div style="grid-column:1/-1;color:#6b7280;font-size:10px">Hand-painted — no model score attached.</div>`}
+                 <div style="grid-column:1/-1;color:#6b7280;font-size:10px">Similarity to the operator's marked examples when last scored, not a detection confidence.</div>`
+              : `<div style="grid-column:1/-1;color:#6b7280;font-size:10px">Hand-painted, no model score attached.</div>`}
           </div>
           <div style="font-size:10px;color:#6b7280;border-top:1px solid #222;padding-top:6px">
-            Edit the cells in the <span style="color:#f59e0b">Treatment Grid</span> tab — this shape follows them.
+            Edit the cells in the <span style="color:#f59e0b">Treatment Grid</span> tab. This shape follows them.
           </div>
         </div>`;
       poly.bindPopup(html, { className: "ai-zone-popup", maxWidth: 300, autoClose: true, closeOnClick: true });

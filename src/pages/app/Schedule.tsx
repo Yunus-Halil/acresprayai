@@ -108,7 +108,7 @@ export default function Schedule() {
       </div>
       <p className="text-sm text-muted-foreground mb-6">
         Upcoming spray missions. Each entry keeps the estimates as they stood when it was
-        scheduled — editing a field later will not rewrite what you committed to.
+        scheduled, editing a field later will not rewrite what you committed to.
       </p>
 
       <Card className="p-4 md:p-5">
@@ -212,7 +212,7 @@ export default function Schedule() {
                       <AlertTriangle className="h-4 w-4 shrink-0" />
                       <span>
                         No snapshot stored for this mission. It was scheduled before the
-                        snapshot columns existed — the date, field and drone are correct,
+                        snapshot columns existed. The date, field and drone are correct,
                         but the estimates were not captured.
                       </span>
                     </div>

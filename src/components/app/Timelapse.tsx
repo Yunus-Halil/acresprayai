@@ -129,7 +129,7 @@ export default function Timelapse({
         <div>
           <div className="text-[11px] uppercase tracking-wider text-neutral-500">Timelapse</div>
           <p className="mt-1 text-xs text-neutral-500">
-            Every scan in order. Layers are shown as flown — extents are not aligned.
+            Every scan in order. Layers are shown as flown, extents are not aligned.
           </p>
         </div>
         <div className="flex items-center gap-2">

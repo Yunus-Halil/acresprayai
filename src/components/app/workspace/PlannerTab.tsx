@@ -288,7 +288,7 @@ export function PlannerTab({
         if (cancelled || !r) return;
         if (r.stale) {
           setGridZonesNote(
-            "The treatment grid was built for an older boundary — open the Treatment Grid tab to migrate it before it can feed this plan.",
+            "The treatment grid was built for an older boundary, open the Treatment Grid tab to migrate it before it can feed this plan.",
           );
         } else {
           setGridZones(r.zones);
@@ -408,11 +408,11 @@ export function PlannerTab({
     const failClimb = climbHorizM > spacingM * 4;  // need a comfortable runway
     const issues: string[] = [];
     if (failPhysical) issues.push(
-      `Spacing ${fmtAltitude(spacingM, units).text} forces a ${fmtAltitude(rUturnNeeded, units).text} U-turn — tighter than the ${fmtAltitude(spec.min_turn_radius_m, units).text} physical minimum for this drone.`);
+      `Spacing ${fmtAltitude(spacingM, units).text} forces a ${fmtAltitude(rUturnNeeded, units).text} U-turn, tighter than the ${fmtAltitude(spec.min_turn_radius_m, units).text} physical minimum for this drone.`);
     if (failBank) issues.push(
-      `Transit speed ${fmtSpeed(transitSpeed, units).text} needs a ${fmtAltitude(rBankTransit, units).text} banked turn radius — wider than the ${fmtAltitude(rUturnNeeded, units).text} available between rows.`);
+      `Transit speed ${fmtSpeed(transitSpeed, units).text} needs a ${fmtAltitude(rBankTransit, units).text} banked turn radius, wider than the ${fmtAltitude(rUturnNeeded, units).text} available between rows.`);
     if (failClimb) issues.push(
-      `${fmtAltitude(altDelta, units).text} climb at ${fmtSpeed(spec.climb_rate_ms, units).text} needs ~${fmtAltitude(climbHorizM, units).text} of horizontal runway — more than the row-end space allows.`);
+      `${fmtAltitude(altDelta, units).text} climb at ${fmtSpeed(spec.climb_rate_ms, units).text} needs ~${fmtAltitude(climbHorizM, units).text} of horizontal runway, more than the row-end space allows.`);
     return { ok: issues.length === 0, issues, rUturnNeeded, rBankTransit, climbHorizM };
   })();
 
@@ -782,7 +782,7 @@ export function PlannerTab({
         <div className="max-w-md">
           <Plane className="h-8 w-8 mx-auto mb-3 text-[#4CAF50]" />
           <h2 className="text-lg font-semibold mb-1">Flight Planner</h2>
-          <p className="text-sm text-neutral-500 mb-4">Define your field boundary first — the planner needs a hard no-fly perimeter before it can lay down flight lines.</p>
+          <p className="text-sm text-neutral-500 mb-4">Define your field boundary first. The planner needs a hard no-fly perimeter before it can lay down flight lines.</p>
           <button onClick={() => setActiveTab("field")} className="text-xs bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 font-semibold">
             Go to Field View
           </button>
@@ -796,7 +796,7 @@ export function PlannerTab({
         <div className="max-w-md">
           <Plane className="h-8 w-8 mx-auto mb-3 text-[#4CAF50]" />
           <h2 className="text-lg font-semibold mb-1">Flight Planner</h2>
-          <p className="text-sm text-neutral-500 mb-4">Run AI analysis or draw a manual anomaly first — the planner generates lawnmower patterns over treatment zones.</p>
+          <p className="text-sm text-neutral-500 mb-4">Run AI analysis or draw a manual anomaly first. The planner generates lawnmower patterns over treatment zones.</p>
           <button onClick={runAnalysis} className="text-xs bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 font-semibold inline-flex items-center gap-2">
             <Sparkles className="h-3.5 w-3.5" /> Analyze field
           </button>
@@ -843,12 +843,12 @@ export function PlannerTab({
         <div className="absolute top-3 right-3 z-[500]">
           {/* Deliberately NOT disabled when there is no plan. A disabled button
               that only explains itself in a title attribute is a button that
-              does nothing for a reason nobody can see — say the reason out loud
+              does nothing for a reason nobody can see, say the reason out loud
               instead. */}
           <button
             onClick={() => {
               if (!mission) {
-                toast.error("Mark at least one treatment zone first — there is no flight plan to schedule yet.");
+                toast.error("Mark at least one treatment zone first. There is no flight plan to schedule yet.");
                 return;
               }
               setScheduleOpen(true);
@@ -861,7 +861,7 @@ export function PlannerTab({
         </div>
         {/* Tank dynamics, top-centre: it describes what the aircraft is
             carrying at this instant, so it belongs beside the map it is flying
-            over rather than down a sidebar. Collapsible — it is reference, not
+            over rather than down a sidebar. Collapsible, it is reference, not
             a control. */}
         {tankProfile && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[500] w-[300px]">
@@ -1044,7 +1044,7 @@ export function PlannerTab({
 
       {/* scanId is null, NOT taskId. `jobs.scan_id` is a foreign key onto
           `scans`, the older single-image table; this workspace runs on
-          `odm_tasks`, and the two are independent — both keyed to a field,
+          `odm_tasks`, and the two are independent, both keyed to a field,
           neither referencing the other. So there is no scan id to give, and the
           odm_task id goes to flight_plan_id instead, which carries no
           constraint and is what links the calendar entry back to this plan. */}
@@ -1075,7 +1075,7 @@ export function PlannerTab({
         </div>
 
         {/* Two tabs, not one scroll. Setup is what you touch before a job;
-            Mission is what the job tells you back. Nothing was cut — deep
+            Mission is what the job tells you back. Nothing was cut, deep
             control is the point, the fix is grouping. */}
         <div className="grid grid-cols-2 gap-1 mb-4 rounded-sm border border-[#222] p-1" style={{ background: "#0f0f0f" }}>
           {([["setup", "Config & Hardware"], ["mission", "Telemetry & Export"]] as const).map(([k, label]) => (
@@ -1115,7 +1115,7 @@ export function PlannerTab({
                 className="w-full accent-[#4CAF50]"
               />
               <div className="text-[10px] text-neutral-600 mt-1">
-                Stored: {activeDrone.battery}% — adjust to simulate a partial charge.
+                Stored: {activeDrone.battery}%, adjust to simulate a partial charge.
               </div>
             </>
           )}
@@ -1169,12 +1169,12 @@ export function PlannerTab({
             min={1} max={4} step={1} unit="×"
           />
           <div className="text-[10px] text-neutral-500 -mt-1">
-            Each anomaly zone gets its own lawnmower. Increase pass count for heavy infestation — multiplies tank, time, and battery usage.
+            Each anomaly zone gets its own lawnmower. Increase pass count for heavy infestation, multiplies tank, time, and battery usage.
           </div>
           {/* Altitude and speed matter, but not every job: the recommended plan
               sets them, and an operator who wants them digs exactly one level.
               Spacing and coverage stay out front because those are the two that
-              change per field. Nothing is removed — only folded. */}
+              change per field. Nothing is removed, only folded. */}
           <button type="button"
             onClick={() => setAdvancedOpen(v => !v)}
             aria-expanded={advancedOpen}
@@ -1209,7 +1209,7 @@ export function PlannerTab({
                 onChange={(e) => updateFlightPlan({ drone_id: e.target.value || null })}
                 className="mt-1 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-xs text-[#f0f0f0] focus:outline-none focus:border-[#4CAF50]"
               >
-                <option value="">— Select drone —</option>
+                <option value="">, Select drone ,</option>
                 {drones.map(d => (
                   <option key={d.id} value={d.id}>
                     {d.name} · {d.model}{d.status !== "idle" ? ` · ${d.status.replace("_", " ")}` : ""}
@@ -1258,9 +1258,9 @@ export function PlannerTab({
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Home / Takeoff</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           <div className="flex justify-between"><span className="text-neutral-500">Latitude</span>
-            <span className="font-mono">{effectiveHome?.lat.toFixed(6) ?? "—"}</span></div>
+            <span className="font-mono">{effectiveHome?.lat.toFixed(6) ?? "-"}</span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Longitude</span>
-            <span className="font-mono">{effectiveHome?.lng.toFixed(6) ?? "—"}</span></div>
+            <span className="font-mono">{effectiveHome?.lng.toFixed(6) ?? "-"}</span></div>
           <button onClick={() => setHome(null)} className="text-[10px] text-[#4CAF50] hover:underline">Reset to field centroid</button>
         </div>
 
@@ -1286,7 +1286,7 @@ export function PlannerTab({
           </div>
           <div className="mt-2 text-[10px] text-neutral-500 leading-relaxed">
             Litres per hectare, by zone severity. This is the dose the DJI prescription raster is
-            built from — the .waypoints export only carries a pump on/off, so it has no rate to
+            built from, the .waypoints export only carries a pump on/off, so it has no rate to
             inherit. Set it from your product label, not from the AI's written recommendation.
           </div>
           {zonesWithRates.length > 0 && (
@@ -1378,7 +1378,7 @@ export function PlannerTab({
             <p className="m-0 text-neutral-300">
               This job needs {fmtVolume(refill.requiredLitres, units).text} but the tank
               carries {fmtVolume(refill.perLoadLitres, units).text} at {fp.tank_load_pct}% fill.
-              The aircraft runs dry {refill.refills === 1 ? "once" : `${refill.refills} times`} —
+              The aircraft runs dry {refill.refills === 1 ? "once" : `${refill.refills} times`} ,
               marked on the map in cyan. Plan the nurse tank around{" "}
               {refill.loads} load{refill.loads === 1 ? "" : "s"}.
             </p>
@@ -1386,7 +1386,7 @@ export function PlannerTab({
         )}
         {refill.refills === 0 && refill.requiredLitres > 0 && (
           <div className="text-[10px] text-neutral-500 mb-3 leading-relaxed">
-            One tank covers this job — {fmtVolume(refill.leftoverLitres, units).text} to spare.
+            One tank covers this job, {fmtVolume(refill.leftoverLitres, units).text} to spare.
           </div>
         )}
         {gridZonesNote && (
@@ -1403,7 +1403,7 @@ export function PlannerTab({
             Close enough to plan a day around; not a guarantee. Say so. */}
         <div className="mb-2 text-[10px] text-neutral-500 leading-relaxed">
           Estimated from our own flight pattern. An Agras plans its own lines on the aircraft, so
-          the figures it reports will differ — use these to plan tank loads, batteries and time,
+          the figures it reports will differ, use these to plan tank loads, batteries and time,
           not as a guarantee.
         </div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
@@ -1442,7 +1442,7 @@ export function PlannerTab({
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
           <span>Battery / endurance (estimated)</span>
-          {!wx && <span className="text-[10px] text-neutral-600 normal-case font-normal tracking-normal">No weather — open Weather tab</span>}
+          {!wx && <span className="text-[10px] text-neutral-600 normal-case font-normal tracking-normal">No weather, open Weather tab</span>}
         </div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           {!battery ? (
@@ -1473,7 +1473,7 @@ export function PlannerTab({
                 <>
                   <div className="border-t border-[#222] my-1.5" />
                   <div className="flex justify-between"><span className="text-neutral-500">Tank capacity</span>
-                    <span className="font-mono">{droneModelKey} — {fmtVolume(spec.tank_l, units, 0).text}</span></div>
+                    <span className="font-mono">{droneModelKey}, {fmtVolume(spec.tank_l, units, 0).text}</span></div>
                   <div className="flex justify-between"><span className="text-neutral-500">Recommended load</span>
                     <span className="font-mono text-[#4CAF50]">{fmtVolume(battery.recommendedTankL, units, 1).text}</span></div>
                 </>
@@ -1491,25 +1491,25 @@ export function PlannerTab({
 
         {battery && activeDrone && Math.round(battery.batteryPercent) > preFlightBattery && (
           <div className="mb-4 text-[11px] text-yellow-300 bg-yellow-950/40 border border-yellow-700/50 rounded px-2 py-2 leading-relaxed">
-            ⚠️ Insufficient battery — mission requires ~{Math.round(battery.batteryPercent)}% but drone starts at {preFlightBattery}%. Consider splitting into 2 flights.
+            ⚠️ Insufficient battery, mission requires ~{Math.round(battery.batteryPercent)}% but drone starts at {preFlightBattery}%. Consider splitting into 2 flights.
           </div>
         )}
 
         {validZones.length < allZonesRaw.length && (
           <div className="mb-4 text-[11px] text-yellow-400/80 bg-yellow-900/20 border border-yellow-700/40 rounded px-2 py-1.5">
-            {allZonesRaw.length - validZones.length} zone(s) excluded — centroid outside boundary.
+            {allZonesRaw.length - validZones.length} zone(s) excluded, centroid outside boundary.
           </div>
         )}
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
           <span>Export</span>
           <InfoTip>
-            <b className="text-neutral-400">Agras .zip</b> — unzip onto the card so <code>DJI/</code>
+            <b className="text-neutral-400">Agras .zip</b>, unzip onto the card so <code>DJI/</code>
             sits at the root. Boundary shapefile plus a prescription raster, both WGS84. The aircraft
             plans its own flight lines from these; the pattern below is our estimate of what it will
             fly, not a route we hand it.
             <br />
-            <b className="text-neutral-400">.waypoints</b> — QGC WPL 110 with takeoff, transit
+            <b className="text-neutral-400">.waypoints</b>, QGC WPL 110 with takeoff, transit
             (sprayer off), spray (servo ON/OFF on servo 8), RTH and land. For Mission Planner or
             QGroundControl. Agras cannot read it.
           </InfoTip>
@@ -1775,7 +1775,7 @@ export function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, s
       });
       L.marker([p.lat, p.lng], { icon, interactive: true, zIndexOffset: 880 })
         .addTo(group)
-        .bindTooltip(`Tank empty — refill ${i + 1}`, {
+        .bindTooltip(`Tank empty, refill ${i + 1}`, {
           permanent: false, direction: "top", offset: [0, -10],
         });
     });

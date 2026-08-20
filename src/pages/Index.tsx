@@ -13,8 +13,8 @@ import Seo from "@/components/Seo";
 const Index = () => (
   <main className="relative min-h-screen overflow-hidden bg-sw-paper font-grotesk text-sw-ink">
     <Seo
-      title="SwathWise — Precision spray missions from drone imagery"
-      description="Upload drone images, get a stitched map of your farm, and let AI find the crops that need spraying — with flight plans ready for your drone."
+      title="SwathWise: Precision spray missions from drone imagery"
+      description="Upload drone images, get a stitched map of your farm, and let AI find the crops that need spraying, with flight plans ready for your drone."
       path="/"
     />
     {/* Faint ink grid, fading out below the hero. */}

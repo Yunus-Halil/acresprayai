@@ -155,7 +155,7 @@ export function SettingsTab({
               <label className={labelCls}>Crop type</label>
               <select className={inputCls} value={local.crop_type}
                 onChange={e => update({ crop_type: e.target.value })}>
-                <option value="">— Select crop —</option>
+                <option value="">, Select crop ,</option>
                 {CROP_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -202,7 +202,7 @@ export function SettingsTab({
                 ))}
               </div>
               <div className="text-[10px] text-neutral-500 mt-1">
-                Applies everywhere — areas, volumes, rates, altitudes, speeds and
+                Applies everywhere, areas, volumes, rates, altitudes, speeds and
                 temperatures across the whole app. Display only: your stored figures
                 never change, so switching can never alter a dose or a bill.
               </div>
@@ -218,7 +218,7 @@ export function SettingsTab({
         {/* Input costs */}
         <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
           <h2 className="text-sm font-semibold mb-1">2. Input Costs <span className="text-neutral-500 font-normal">(per {units === "metric" ? "hectare" : "acre"})</span></h2>
-          <p className="text-[11px] text-neutral-500 mb-3">Uncheck inputs you don't carry — the AI will avoid recommending them.</p>
+          <p className="text-[11px] text-neutral-500 mb-3">Uncheck inputs you don't carry. The AI will avoid recommending them.</p>
 
           {/* Currency relabels, it never converts: these are the prices you
               typed, in the currency you actually buy in. */}
@@ -230,11 +230,11 @@ export function SettingsTab({
               onChange={e => setLocal(s => ({ ...s, currency: e.target.value }))}
             >
               {CURRENCIES.map(c => (
-                <option key={c.code} value={c.code}>{c.code} — {c.label}</option>
+                <option key={c.code} value={c.code}>{c.code}, {c.label}</option>
               ))}
             </select>
             <span className="text-[11px] text-neutral-600">
-              Changes the label only — your prices are not converted.
+              Changes the label only, your prices are not converted.
             </span>
           </div>
           <div className="space-y-2">
@@ -250,7 +250,7 @@ export function SettingsTab({
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">{currencySymbol(local.currency)}</span>
                   {/* Shown in the viewer's units, ALWAYS stored per acre.
                       This is an input, not a readout, so the conversion has to
-                      run in both directions — otherwise the first edit a metric
+                      run in both directions, otherwise the first edit a metric
                       farmer makes multiplies that price by 2.47. */}
                   <input type="number" min={0} step="0.01"
                     className={`${inputCls} pl-5 pr-9 text-right font-mono`}
@@ -303,8 +303,8 @@ export function SettingsTab({
           <ul className="text-[12px] text-neutral-400 space-y-1.5 list-disc pl-5">
             <li>Treatment zones detected by AI Analysis are priced as <span className="font-mono text-neutral-200">{units === "metric" ? "hectares × your per-hectare cost" : "acres × your per-acre cost"}</span>.</li>
             <li>Issues map to inputs via a fixed table (e.g. <span className="text-neutral-300">bare soil → reseeding</span>, <span className="text-neutral-300">nitrogen deficiency → nitrogen fertilizer</span>).</li>
-            <li>The AI is told which inputs you carry — it won't recommend a product you don't have available.</li>
-            <li>Waterlogged zones show "Drainage work required — consult agronomist" instead of a cost.</li>
+            <li>The AI is told which inputs you carry. It won't recommend a product you don't have available.</li>
+            <li>Waterlogged zones show "Drainage work required, consult agronomist" instead of a cost.</li>
           </ul>
         </section>
       </div>
@@ -441,10 +441,10 @@ export function LogFlightModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <CheckCircle2 className="h-4 w-4 text-[#4CAF50]" />
-            Mission Complete — Log Flight
+            Mission Complete, Log Flight
           </DialogTitle>
           <p className="text-[11px] text-neutral-500 mt-1">
-            This becomes part of the spray log — a timestamped record for compliance and audit.
+            This becomes part of the spray log, a timestamped record for compliance and audit.
           </p>
         </DialogHeader>
 
@@ -476,7 +476,7 @@ export function LogFlightModal({
               className={`w-full ${batteryEnd < 20 ? "accent-red-500" : "accent-[#4CAF50]"}`}
             />
             {batteryEnd < 20 && (
-              <div className="mt-1 text-[10px] text-red-400">Landed below 20% — pushing the battery limit.</div>
+              <div className="mt-1 text-[10px] text-red-400">Landed below 20%, pushing the battery limit.</div>
             )}
           </div>
 
@@ -520,7 +520,7 @@ export function LogFlightModal({
                         className="accent-[#4CAF50]"
                       />
                       <span className="flex-1 truncate">
-                        Zone {i + 1} — {z.issue ?? z.label}
+                        Zone {i + 1}, {z.issue ?? z.label}
                       </span>
                       <span className="font-mono text-neutral-500">{z.acres.toFixed(2)} ac</span>
                     </label>
@@ -556,7 +556,7 @@ export function LogFlightModal({
           )}
           {!fieldId && (
             <div className="text-[10px] text-amber-400">
-              Field reference missing — cannot save without a field.
+              Field reference missing, cannot save without a field.
             </div>
           )}
         </div>

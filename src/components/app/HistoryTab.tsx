@@ -356,7 +356,7 @@ export default function HistoryTab({
                   {delta < 0 && <span className="text-neutral-500"> after treatment</span>}
                 </div>
               ) : (
-                <div className="text-sm text-neutral-400">No stressed area detected in the older scan — nothing to compare against.</div>
+                <div className="text-sm text-neutral-400">No stressed area detected in the older scan. Nothing to compare against.</div>
               )}
             </Card>
           </div>

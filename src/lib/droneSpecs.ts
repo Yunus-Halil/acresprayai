@@ -80,7 +80,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     spray_swath_m: 0, spray_rate_lpm: 0,
     min_turn_radius_m: 1, climb_rate_ms: 8,
     range_m: 6000, weight_kg: 0.95,
-    wingspan: "0.38 m unfolded", ip: "—",
+    wingspan: "0.38 m unfolded", ip: "-",
   },
   "Parrot Anafi USA": {
     role: "survey",
@@ -96,7 +96,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     spray_swath_m: 6, spray_rate_lpm: 12,
     min_turn_radius_m: 3, climb_rate_ms: 5,
     range_m: 1000, weight_kg: 50,
-    wingspan: "—", ip: "—",
+    wingspan: "-", ip: "-",
   },
 };
 
@@ -155,11 +155,11 @@ export function drainPerMin(spec: DroneSpec): number {
 export function specSheet(spec: DroneSpec): { k: string; v: string }[] {
   const sprayer = spec.role === "sprayer";
   return [
-    { k: "Tank", v: sprayer ? `${spec.tank_l} L` : "—" },
-    { k: "Swath", v: sprayer ? `${spec.spray_swath_m} m` : "—" },
+    { k: "Tank", v: sprayer ? `${spec.tank_l} L` : "-" },
+    { k: "Swath", v: sprayer ? `${spec.spray_swath_m} m` : "-" },
     { k: "Max speed", v: `${spec.max_speed_ms} m/s` },
     { k: "Flight time", v: `${spec.max_flight_min} min${sprayer ? " (full load)" : ""}` },
-    { k: "Spray rate", v: sprayer ? `${spec.spray_rate_lpm} L/min` : "—" },
+    { k: "Spray rate", v: sprayer ? `${spec.spray_rate_lpm} L/min` : "-" },
     { k: "Weight", v: `${spec.weight_kg} kg${sprayer ? " (loaded)" : ""}` },
     { k: "Wingspan", v: spec.wingspan },
     { k: "IP rating", v: spec.ip },

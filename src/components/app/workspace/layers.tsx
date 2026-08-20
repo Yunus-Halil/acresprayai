@@ -67,7 +67,7 @@ export function MouseReadout({ coordRef, zoomRef }: { coordRef: { current: HTMLD
   const map = useMap();
   const write = (lat: number, lng: number, z: number) => {
     if (coordRef.current) {
-      coordRef.current.textContent = Number.isFinite(lat) ? `${lat.toFixed(6)}, ${lng.toFixed(6)}` : "—, —";
+      coordRef.current.textContent = Number.isFinite(lat) ? `${lat.toFixed(6)}, ${lng.toFixed(6)}` : ",, ,";
     }
     if (zoomRef.current) zoomRef.current.textContent = `Zoom ${Math.round(z)}`;
   };
@@ -626,7 +626,7 @@ export function MeasurePanel({ stats }: { stats: MeasureStats }) {
               <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-0.5">Area</div>
               {/* The measuring tool keeps BOTH readings — it is the one place
                   a farmer cross-checks against a neighbour's or a contract's
-                  units — but the chosen system leads. */}
+                  units, but the chosen system leads. */}
               <div className="font-mono tabular-nums text-[#4CAF50]">{fmtArea(stats.areaM2, units).text}</div>
               <div className="font-mono tabular-nums text-neutral-500 text-[11px]">
                 {fmtArea(stats.areaM2, units === "metric" ? "imperial" : "metric").text} · {fmt(stats.areaM2, 0)} m²
@@ -722,7 +722,7 @@ export function AiZonesLayer({
           <div style="font-size:11px;color:#9ca3af;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:8px">
             <div>Area</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${areaText}</div>
             ${noChem
-              ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:11px;border-top:1px solid #222;padding-top:6px;margin-top:2px">Drainage work required — consult agronomist (no chemical fix).</div>`
+              ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:11px;border-top:1px solid #222;padding-top:6px;margin-top:2px">Drainage work required, consult agronomist (no chemical fix).</div>`
               : inputKey
                 ? `<div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${escapeHtml(estCost)}</div>
                    <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${shownArea.value.toFixed(3)} ${shownArea.unit} × ${escapeHtml(shownRate)}${costPerAreaUnit(units)} ${inputLabel ? `(${escapeHtml(inputLabel)})` : ""} = ${escapeHtml(estCost)}</div>
@@ -733,13 +733,13 @@ export function AiZonesLayer({
           ${rec ? `
             <div style="border-top:1px solid #222;padding-top:8px;font-size:11px">
               <div style="color:#4CAF50;font-weight:600;margin-bottom:3px">Recommended treatment</div>
-              <div style="color:#f0f0f0;margin-bottom:2px">${escapeHtml(rec.action ?? "—")}</div>
+              <div style="color:#f0f0f0;margin-bottom:2px">${escapeHtml(rec.action ?? "-")}</div>
               ${rec.product ? `<div style="color:#9ca3af">Product: <span style="color:#f0f0f0">${escapeHtml(rec.product)}</span></div>` : ""}
               ${rec.dose ? `<div style="color:#9ca3af">Rate: <span style="color:#f0f0f0">${escapeHtml(rec.dose)}</span></div>` : ""}
               ${rec.rationale ? `<div style="color:#6b7280;margin-top:4px;font-style:italic">${escapeHtml(rec.rationale)}</div>` : ""}
             </div>` : `
             <div style="border-top:1px solid #222;padding-top:8px;font-size:11px;color:#6b7280">
-              No specific treatment — monitor and re-scan after weather change.
+              No specific treatment, monitor and re-scan after weather change.
             </div>`}
           <button data-aiz-delete="${escapeHtml(z.id)}" style="margin-top:9px;font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.45);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
         </div>
@@ -949,7 +949,7 @@ export function BoundaryTool({
       if (editable) {
         poly.bindTooltip(
           boundary.length > 1
-            ? `Field boundary · part ${idx + 1}${isActive ? " (selected)" : " — click to select"}`
+            ? `Field boundary · part ${idx + 1}${isActive ? " (selected)" : ", click to select"}`
             : "Field boundary",
           { sticky: true, opacity: 1, className: "ai-zone-label" },
         );

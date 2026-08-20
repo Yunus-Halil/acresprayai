@@ -142,7 +142,7 @@ export function TankDynamicsWidget({
             <Metric label="Amp draw" value={`${(sample?.amps ?? 0).toFixed(1)} A`} />
             <div className="flex items-start gap-1 pt-1 border-t border-[#222] text-[9px] text-neutral-600 leading-snug">
               <Info className="h-2.5 w-2.5 mt-[1px] shrink-0" />
-              <span>Structured estimate — coefficients are unverified, not datasheet figures.</span>
+              <span>Structured estimate, coefficients are unverified, not datasheet figures.</span>
             </div>
           </div>
         </div>

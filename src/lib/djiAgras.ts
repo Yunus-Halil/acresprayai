@@ -308,7 +308,7 @@ export function buildAgrasPackage(input: AgrasPackageInput): AgrasPackage {
 
   const bad = zones.filter(z => !(z.rateLha > 0));
   if (bad.length === zones.length) {
-    throw new Error("Agras export: every zone has a zero application rate — set a rate before exporting");
+    throw new Error("Agras export: every zone has a zero application rate, set a rate before exporting");
   }
 
   const rxExt = input.rxExtension ?? DEFAULT_RX_EXTENSION;
@@ -317,7 +317,7 @@ export function buildAgrasPackage(input: AgrasPackageInput): AgrasPackage {
   const burn = rasterizeZones(grid, boundary, zones, fill);
   if (burn.treated === 0) {
     throw new Error(
-      "Agras export: no raster cell fell inside both a zone and the boundary — " +
+      "Agras export: no raster cell fell inside both a zone and the boundary, " +
       "the prescription would be empty",
     );
   }

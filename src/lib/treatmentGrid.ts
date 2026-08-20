@@ -363,7 +363,7 @@ export function buildTreatmentGrid(
         swathM: definition.swathM,
         message:
           `This plot is about ${w.toFixed(1)} m wide, narrower than the ${definition.swathM.toFixed(1)} m swath. ` +
-          `Treating it will overspray onto whatever borders it — no cell can fit inside it alone.`,
+          `Treating it will overspray onto whatever borders it, no cell can fit inside it alone.`,
       });
     }
   });

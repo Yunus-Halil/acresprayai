@@ -105,7 +105,7 @@ export function HeaderWeather({ center, onClick }: { center: [number, number]; o
     >
       {cur ? <OwGlyph code={cur.code} icon={cur.icon} className="h-3.5 w-3.5 text-neutral-400" />
            : <Cloud className="h-3.5 w-3.5 text-neutral-400" />}
-      <span className="text-neutral-200 tabular-nums">{tempF != null ? `${tempF}°F` : err ? "—" : "…"}</span>
+      <span className="text-neutral-200 tabular-nums">{tempF != null ? `${tempF}°F` : err ? "-" : "…"}</span>
       <span className="text-neutral-500">{cur?.desc ?? (err ? "Weather unavailable" : "Live weather")}</span>
     </button>
   );
@@ -161,7 +161,7 @@ export function sprayVerdict(h: OwHour, rainNext6h: number): { verdict: Verdict;
     if (windMph > 8) { reasons.push(`Wind marginal: ${windMph.toFixed(0)} mph`); verdict = "yellow"; }
     if (h.humidity < 40) { reasons.push(`Humidity low: ${h.humidity}% (target 40–70)`); verdict = "yellow"; }
     if (h.humidity > 70) { reasons.push(`Humidity high: ${h.humidity}% (target 40–70)`); verdict = "yellow"; }
-    if (tempF > 85) { reasons.push(`Temp warm: ${tempF.toFixed(0)}°F — drift risk`); verdict = "yellow"; }
+    if (tempF > 85) { reasons.push(`Temp warm: ${tempF.toFixed(0)}°F, drift risk`); verdict = "yellow"; }
   }
   return { verdict, reasons };
 }
@@ -252,7 +252,7 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
   const verdictBorder = now.verdict === "green" ? "border-[#4CAF50]/40" : now.verdict === "yellow" ? "border-yellow-400/40" : "border-red-500/40";
   const verdictLabel =
     now.verdict === "green" ? "Good to spray right now" :
-    now.verdict === "yellow" ? "Marginal — proceed with caution" : "Do not spray right now";
+    now.verdict === "yellow" ? "Marginal, proceed with caution" : "Do not spray right now";
 
   return (
     <div className="absolute inset-0 overflow-auto p-8" style={{ background: "#0f0f0f" }}>

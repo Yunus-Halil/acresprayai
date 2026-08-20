@@ -135,7 +135,7 @@ export function ScheduleMissionModal({
       toast.success(
         snapshotStored
           ? "Mission scheduled"
-          : "Mission scheduled — estimates not stored (run the pending migration)",
+          : "Mission scheduled, estimates not stored (run the pending migration)",
       );
       onOpenChange(false);
       onScheduled();
@@ -166,7 +166,7 @@ export function ScheduleMissionModal({
             <input className={inputCls} value={label} onChange={e => setLabel(e.target.value)}
               placeholder="Field name or access point" />
             <div className="text-[10px] text-neutral-600 mt-1 font-mono">
-              {center.lat.toFixed(5)}, {center.lng.toFixed(5)} — from the field boundary
+              {center.lat.toFixed(5)}, {center.lng.toFixed(5)}, from the field boundary
             </div>
           </div>
 
@@ -176,7 +176,7 @@ export function ScheduleMissionModal({
               onChange={e => setDroneId(e.target.value || null)}>
               <option value="">No drone assigned</option>
               {drones.map(d => (
-                <option key={d.id} value={d.id}>{d.name || d.model} — {d.model}</option>
+                <option key={d.id} value={d.id}>{d.name || d.model}, {d.model}</option>
               ))}
             </select>
             <div className="text-[10px] text-neutral-600 mt-1">

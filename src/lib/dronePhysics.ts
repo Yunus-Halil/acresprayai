@@ -267,7 +267,7 @@ export type DriftVerdict = { level: "ok" | "caution" | "unsafe"; message: string
 export function driftRisk(windMs: number, gustMs?: number): DriftVerdict {
   const gust = gustMs ?? windMs;
   if (windMs >= DRIFT_UNSAFE_MS || gust >= DRIFT_UNSAFE_MS + 2) {
-    return { level: "unsafe", message: "Sustained wind is past the 12 mph drift advisory — spray will not stay on target." };
+    return { level: "unsafe", message: "Sustained wind is past the 12 mph drift advisory, spray will not stay on target." };
   }
   if (windMs >= DRIFT_CAUTION_MS) {
     return { level: "caution", message: "Wind is in the 10–12 mph drift band. Check the product label before flying." };

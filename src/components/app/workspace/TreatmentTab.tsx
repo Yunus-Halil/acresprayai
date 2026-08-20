@@ -159,7 +159,7 @@ export function TreatmentTab({
           if (plan.moved > 0 || plan.detection) dirty.current = true;
           if (plan.decided > 0) {
             setMigrationNote(
-              `Boundary changed — kept ${plan.moved} of ${plan.decided} decided cell${plan.decided === 1 ? "" : "s"}` +
+              `Boundary changed, kept ${plan.moved} of ${plan.decided} decided cell${plan.decided === 1 ? "" : "s"}` +
               (plan.lost ? ` (${plan.lost} now outside the field).` : "."),
             );
           }
@@ -298,7 +298,7 @@ export function TreatmentTab({
     ? "The grid has not been built yet."
     : labels.wanted.length < MIN_MARKS_PER_CLASS || labels.unwanted.length < MIN_MARKS_PER_CLASS
       ? `Needs ${MIN_MARKS_PER_CLASS} cells marked treated and ${MIN_MARKS_PER_CLASS} explicitly ` +
-        `skipped (Assign › Skip) to learn from — currently ${labels.wanted.length} treated, ` +
+        `skipped (Assign › Skip) to learn from, currently ${labels.wanted.length} treated, ` +
         `${labels.unwanted.length} skipped. Cells never touched don't count as examples.`
       : !tileUrl
         ? "The orthomosaic tiles are still loading."
@@ -322,7 +322,7 @@ export function TreatmentTab({
     );
     if (!resolutionSufficient(cellPx)) {
       setFindError(
-        `The imagery is too coarse to measure these cells — about ${Math.floor(cellPx * cellPx)} ` +
+        `The imagery is too coarse to measure these cells, about ${Math.floor(cellPx * cellPx)} ` +
         `pixels per cell where at least 30 are needed. Use a larger cell size, or re-bake the ` +
         `scan at a deeper zoom.`,
       );
@@ -366,8 +366,8 @@ export function TreatmentTab({
       if (sep && sep.verdict !== "clear") {
         extras.push(
           sep.verdict === "indistinguishable"
-            ? "your treated and skipped examples look alike to the imagery — treat these suggestions sceptically"
-            : "the examples are only weakly distinguishable — review each suggestion",
+            ? "your treated and skipped examples look alike to the imagery, treat these suggestions sceptically"
+            : "the examples are only weakly distinguishable, review each suggestion",
         );
       }
       setFindNote(extras.length ? extras.join(". ") + "." : null);
@@ -531,7 +531,7 @@ export function TreatmentTab({
             <div className="border-t border-[#222] pt-1.5 mt-0.5 text-neutral-500 font-mono">
               {render.painted.toLocaleString()}/{render.visible.toLocaleString()} drawn · {render.cellPx.toFixed(1)} px/cell
               {render.level === "sparse" && (
-                <div className="text-yellow-500/90 normal-case">Zoom in — only assigned cells drawn at this scale</div>
+                <div className="text-yellow-500/90 normal-case">Zoom in, only assigned cells drawn at this scale</div>
               )}
               {render.level === "fill" && (
                 <div className="text-neutral-600 normal-case">Cell borders hidden at this scale</div>
@@ -577,7 +577,7 @@ export function TreatmentTab({
             <p className="text-neutral-300 mb-2">
               Only <span className="font-mono">{pendingMigration.moved}</span> of{" "}
               <span className="font-mono">{pendingMigration.decided}</span> painted cells still
-              fall inside the new boundary — {pendingMigration.lost} would be lost. Nothing has
+              fall inside the new boundary, {pendingMigration.lost} would be lost. Nothing has
               been deleted yet.
             </p>
             <div className="flex gap-1.5">
@@ -723,7 +723,7 @@ export function TreatmentTab({
             )}
             {paintAction === "skip" && (
               <div className="text-[10px] text-neutral-500 leading-relaxed mb-1">
-                Marks cells as deliberately not sprayed — which is a decision, and reads
+                Marks cells as deliberately not sprayed, which is a decision, and reads
                 differently from a cell nobody has looked at yet.
               </div>
             )}
@@ -745,7 +745,7 @@ export function TreatmentTab({
                   {USER_POLY_ISSUES.map(i => <option key={i} value={i}>{i}</option>)}
                 </select>
                 <div className="text-[10px] text-neutral-600 mt-1 leading-relaxed">
-                  Tags the cells you paint. Optional — untagged ground shows as
+                  Tags the cells you paint. Optional, untagged ground shows as
                   Unclassified in the anomaly views, never a guessed category.
                 </div>
               </div>
@@ -785,7 +785,7 @@ export function TreatmentTab({
         <button
           onClick={runOutlierScan}
           disabled={finding || !grid || !tileUrl}
-          title="Flag cells that stand out from the field's own baseline — no marked examples needed"
+          title="Flag cells that stand out from the field's own baseline, no marked examples needed"
           className="w-full mb-3 text-xs rounded-sm px-2 py-2 border inline-flex items-center justify-center gap-1.5 transition-colors border-[#333] text-neutral-300 hover:bg-white/5 disabled:opacity-45 disabled:cursor-not-allowed"
         >
           {finding
@@ -819,7 +819,7 @@ export function TreatmentTab({
                 <>
                   <div className="text-[11px] text-neutral-300 mb-2">
                     Accepting all adds <span className="font-mono">{fmtArea(t.areaM2, units).text}</span> at{" "}
-                    <span className="font-mono">{fmtRate(rateLha, units).text}</span> —{" "}
+                    <span className="font-mono">{fmtRate(rateLha, units).text}</span> ,{" "}
                     <span className="font-mono">{fmtVolume(t.volumeL, units).text}</span> more chemical.
                   </div>
                   <div className="flex gap-1.5 mb-2">
@@ -842,14 +842,14 @@ export function TreatmentTab({
                   </div>
                   <div className="text-[10px] text-neutral-500 leading-relaxed">
                     Or one at a time: click a dashed cell to accept it, or paint it with
-                    Assign › Skip to reject — a rejection also teaches the next run.
+                    Assign › Skip to reject. A rejection also teaches the next run.
                   </div>
                 </>
               );
             })() : (
               <div className="text-[11px] text-neutral-400 leading-relaxed">
                 {candidateMode === "outliers"
-                  ? "Nothing undecided stands far enough from the field's own baseline. That is a real result — this field looks uniform to the imagery."
+                  ? "Nothing undecided stands far enough from the field's own baseline. That is a real result: this field looks uniform to the imagery."
                   : "Nothing undecided scored close enough to your treated examples. Mark a few more cells of each kind and run it again."}
               </div>
             )}
@@ -897,7 +897,7 @@ export function TreatmentTab({
                   )}
                   {selectedCell.clipped && (
                     <div className="col-span-2 text-[10px] text-neutral-600 mt-1">
-                      Edge cell — volume is billed on the clipped area, not a full cell.
+                      Edge cell, volume is billed on the clipped area, not a full cell.
                     </div>
                   )}
                   <div className="col-span-2 text-[10px] text-neutral-600 mt-1">
@@ -926,7 +926,7 @@ export function TreatmentTab({
               } />
               {Math.abs(totals.fieldAreaHa - boundaryHa) / Math.max(boundaryHa, 1e-9) > 0.02 && (
                 <div className="text-[10px] text-neutral-600 mt-2 leading-relaxed">
-                  Grid covers {fmtAreaHa(totals.fieldAreaHa, units).text} of a {fmtAreaHa(boundaryHa, units).text} boundary —
+                  Grid covers {fmtAreaHa(totals.fieldAreaHa, units).text} of a {fmtAreaHa(boundaryHa, units).text} boundary ,
                   the difference is edge slivers too small to treat.
                 </div>
               )}
@@ -943,7 +943,7 @@ export function TreatmentTab({
                 ? <><Save className="h-3 w-3" /> Saved</>
                 : <><Info className="h-3 w-3" /> Changes save automatically</>}
           </span>
-          {!fieldId && <span className="text-yellow-600">No field — not saved</span>}
+          {!fieldId && <span className="text-yellow-600">No field, not saved</span>}
         </div>
         {saveError && (
           <div className="rounded-sm border border-red-900/60 bg-red-950/30 p-2.5 mb-3 text-[10px] text-red-300 leading-relaxed">

@@ -167,7 +167,7 @@ export async function stitchTiles(
     data = ctx.getImageData(0, 0, canvas.width, canvas.height);
   } catch {
     throw new Error(
-      "The imagery could not be read back — the tile server did not allow cross-origin sampling.",
+      "The imagery could not be read back. The tile server did not allow cross-origin sampling.",
     );
   }
 

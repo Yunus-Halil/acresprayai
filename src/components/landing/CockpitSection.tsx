@@ -72,7 +72,7 @@ export const CockpitSection = () => (
           <Spec
             value="Slosh"
             label="FLUID DYNAMICS"
-            detail="Liquid does not teleport. Pitch into a turn and the tank leans, the centre of gravity moves, and the motors pay for it — modelled continuously, not as an on/off state."
+            detail="Liquid does not teleport. Pitch into a turn and the tank leans, the centre of gravity moves, and the motors pay for it, modelled continuously rather than as an on/off state."
           />
         </Reveal>
         <Reveal>
@@ -101,7 +101,7 @@ export const CockpitSection = () => (
       <Reveal className="mt-14 border-t border-white/10 pt-6 sm:mt-16">
         <p className="m-0 max-w-[720px] font-plex text-[11px] leading-[1.9] tracking-[0.03em] text-sw-on-dark-faint">
           Endurance, slosh and centre-of-gravity figures are engineering estimates for
-          planning, not certified flight-dynamics data — the app labels them as such
+          planning, not certified flight-dynamics data. The app labels them as such
           wherever it shows them. We would rather you trusted the number you can check
           than the number that sounds best.
         </p>

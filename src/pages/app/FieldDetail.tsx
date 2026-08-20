@@ -146,7 +146,7 @@ export default function FieldDetail() {
     if (files.length > maxImages) {
       return toast.error(
         `Your processing node accepts ${maxImages} images per scan. ` +
-        `Split this into smaller batches — uploading more would waste data on images it will reject.`,
+        `Split this into smaller batches, uploading more would waste data on images it will reject.`,
         { duration: 9000 },
       );
     }
@@ -165,7 +165,7 @@ export default function FieldDetail() {
       );
       if (!proceed) return;
     } else if (withGPS < sample.length) {
-      toast.warning(`Only ${withGPS}/${sample.length} sampled images have GPS — orthomosaic accuracy may suffer.`);
+      toast.warning(`Only ${withGPS}/${sample.length} sampled images have GPS, orthomosaic accuracy may suffer.`);
     }
 
     setBusy(true);
@@ -181,7 +181,7 @@ export default function FieldDetail() {
           if (p.done === 1) void loadTasks();
         },
       });
-      toast.success("Scan submitted — reconstruction has started. This takes 10 minutes to several hours.");
+      toast.success("Scan submitted, reconstruction has started. This takes 10 minutes to several hours.");
       setFiles([]);
       loadTasks();
     } catch (e) {
@@ -199,7 +199,7 @@ export default function FieldDetail() {
 
   const pauseUpload = () => {
     abortRef.current?.abort();
-    toast.info("Upload paused. Your progress is saved — press Start again to resume.");
+    toast.info("Upload paused. Your progress is saved, press Start again to resume.");
   };
 
   const discardResume = () => {
@@ -338,7 +338,7 @@ export default function FieldDetail() {
             <div className="space-y-1.5">
               <div>
                 <strong>{resumable.done} of {resumable.total} images</strong> from an interrupted upload are already
-                on the processing node. Select the same images and press Start — only the missing ones will be sent.
+                on the processing node. Select the same images and press Start, only the missing ones will be sent.
               </div>
               <button onClick={discardResume} className="underline text-muted-foreground hover:text-foreground">
                 Discard saved progress and start fresh
@@ -379,7 +379,7 @@ export default function FieldDetail() {
             Recommended: overlapping nadir drone images at 70–80% overlap.
             Min {MIN_IMAGES}, max <strong>{maxImages}</strong> per scan
             {caps?.online
-              ? " — read live from your processing node, so it matches what it will actually accept."
+              ? ", read live from your processing node, so it matches what it will actually accept."
               : " (node unreachable; showing our default ceiling)."}
             {" "}Uploads resume where they stopped, so a dropped connection costs you nothing.
           </div>
@@ -418,7 +418,7 @@ export default function FieldDetail() {
               <div className="mt-2 text-xs text-destructive">
                 {t.error ?? "This scan failed."}
                 <div className="text-muted-foreground mt-1">
-                  Retrying picks up from wherever it stopped — your uploaded images are still on the node.
+                  Retrying picks up from wherever it stopped, your uploaded images are still on the node.
                 </div>
               </div>
             )}
@@ -430,7 +430,7 @@ export default function FieldDetail() {
                   {t.status === "uploading" && "Waiting for images…"}
                   {t.status === "queued" && "Queued on the processing node…"}
                   {t.status === "processing" && `Reconstructing · ${Math.round(t.progress)}%`}
-                  {t.status === "mirroring" && "Saving results — nearly there…"}
+                  {t.status === "mirroring" && "Saving results, nearly there…"}
                 </div>
               </div>
             )}

@@ -276,7 +276,7 @@ export default function ReportsTab({
       const scanDate = new Date(task.created_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
       const missionDateNice = missionDate
         ? new Date(missionDate + "T00:00").toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })
-        : "—";
+        : "-";
 
       // Header
       pdf.setFont("helvetica", "bold"); pdf.setTextColor(76, 175, 80);
@@ -294,12 +294,12 @@ export default function ReportsTab({
       pdf.setFontSize(9); pdf.setTextColor(110); pdf.setFont("helvetica", "bold");
       const meta: [string, string][] = [
         ["FIELD", field.name],
-        ["CROP TYPE", settings.crop_type ? settings.crop_type.replace(/_/g, " ") : "—"],
+        ["CROP TYPE", settings.crop_type ? settings.crop_type.replace(/_/g, " ") : "-"],
         ["TOTAL AREA", fmtAreaAc(fieldAcres, unit).text],
         ["SCAN DATE", scanDate],
         ["MISSION DATE", missionDateNice],
         ["PILOT", pilotName.trim()],
-        ["DRONE", activeDrone ? `${activeDrone.name} · ${activeDrone.model}` : "— Not assigned —"],
+        ["DRONE", activeDrone ? `${activeDrone.name} · ${activeDrone.model}` : ", Not assigned ,"],
       ];
       const labelW = 90;
       for (const [k, v] of meta) {
@@ -322,7 +322,7 @@ export default function ReportsTab({
         y += imgH + 12;
       } else {
         pdf.setFontSize(9); pdf.setTextColor(150);
-        pdf.text("Map preview unavailable — tiles could not be captured.", M, y + 4);
+        pdf.text("Map preview unavailable: tiles could not be captured.", M, y + 4);
         y += 24;
       }
       pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 14;
@@ -343,7 +343,7 @@ export default function ReportsTab({
       pdf.setFontSize(10); pdf.setTextColor(30); pdf.setFont("helvetica", "normal");
       if (zoneRows.length === 0) {
         pdf.setTextColor(150);
-        pdf.text("No AI zones — run an analysis first.", M, y); y += 16;
+        pdf.text("No AI zones. Run an analysis first.", M, y); y += 16;
       } else {
         for (const z of zoneRows) {
           pdf.setTextColor(30); pdf.setFont("helvetica", "bold");
@@ -398,11 +398,11 @@ export default function ReportsTab({
       pdf.setFont("helvetica", "normal"); pdf.setFontSize(10); pdf.setTextColor(30);
       const colW = (W - 2 * M) / 2;
       const stats: [string, string, string, string][] = [
-        ["Spray distance", treatedAcres > 0 ? `${fmtAreaAc(treatedAcres, unit).text} sprayed` : "—",
+        ["Spray distance", treatedAcres > 0 ? `${fmtAreaAc(treatedAcres, unit).text} sprayed` : "-",
          "Tank refills", String(tankRefills)],
-        ["Battery start", battStart != null ? `${battStart}%` : "—",
-         "Landed", battEnd != null ? `${battEnd}%` : "—"],
-        [`Volume applied (logged)`, litersApplied != null ? fmtVol(litersApplied, unit) : "—",
+        ["Battery start", battStart != null ? `${battStart}%` : "-",
+         "Landed", battEnd != null ? `${battEnd}%` : "-"],
+        [`Volume applied (logged)`, litersApplied != null ? fmtVol(litersApplied, unit) : "-",
          "Zones flown", `${zoneRows.filter(z => z.flown).length} / ${zoneRows.length}`],
       ];
       for (const [k1, v1, k2, v2] of stats) {
@@ -419,7 +419,7 @@ export default function ReportsTab({
       pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
       pdf.text("PILOT NOTES", M, y); y += 12;
       pdf.setFont("helvetica", "normal"); pdf.setFontSize(10); pdf.setTextColor(30);
-      const notes = pilotNotes?.trim() || "—";
+      const notes = pilotNotes?.trim() || ",";
       const wrapped = pdf.splitTextToSize(notes, W - 2 * M);
       pdf.text(wrapped, M, y);
       y += wrapped.length * 12 + 10;
@@ -538,7 +538,7 @@ export default function ReportsTab({
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div>
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Field</div>
-              <div className="text-neutral-200">{field?.name ?? "—"}</div>
+              <div className="text-neutral-200">{field?.name ?? "-"}</div>
             </div>
             <div>
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Total area</div>
@@ -546,7 +546,7 @@ export default function ReportsTab({
             </div>
             <div>
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Crop</div>
-              <div className="text-neutral-200">{settings.crop_type ? settings.crop_type.replace(/_/g, " ") : "—"}</div>
+              <div className="text-neutral-200">{settings.crop_type ? settings.crop_type.replace(/_/g, " ") : "-"}</div>
             </div>
             <div>
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Drone</div>
@@ -630,7 +630,7 @@ export default function ReportsTab({
             </div>
             {!effectiveLastLog && (
               <div className="text-[11px] text-neutral-500">
-                No flight logged for this field yet — fill in the numbers manually, or log the mission from the Planner to auto-fill.
+                No flight logged for this field yet, fill in the numbers manually, or log the mission from the Planner to auto-fill.
               </div>
             )}
           </div>

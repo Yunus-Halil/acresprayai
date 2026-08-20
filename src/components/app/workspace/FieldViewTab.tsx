@@ -321,7 +321,7 @@ export function FieldViewTab(props: {
           onClick={() => {
             setMeasureActive(v => !v); setAnnotateActive(false); setLayersOpen(false);
           }} />
-        <ToolButton icon={Pencil} label={annotateActive ? "Pen on — drag to draw" : "Pen marker"} active={annotateActive}
+        <ToolButton icon={Pencil} label={annotateActive ? "Pen on, drag to draw" : "Pen marker"} active={annotateActive}
           onClick={() => {
             setAnnotateActive(v => !v); setMeasureActive(false); setLayersOpen(false);
           }} />
@@ -453,7 +453,7 @@ export function FieldViewTab(props: {
                   ? "Press and drag on the map to draw."
                   : annotateMode === "text"
                     ? "Click on the map to place a label."
-                    : "No labels yet — place one with the Text tool."}
+                    : "No labels yet, place one with the Text tool."}
               </div>
             ) : (
               <div className="max-h-48 overflow-y-auto -mr-1 pr-1 space-y-1">
@@ -529,7 +529,7 @@ export function FieldViewTab(props: {
             onToggle={() => setLayers(s => ({ ...s, gridZones: !s.gridZones }))} />
           {gridZoneLoad?.stale && (
             <div className="pl-6 text-[10px] text-amber-500/90 leading-relaxed">
-              Built for an older boundary — open the Treatment Grid tab to migrate it.
+              Built for an older boundary, open the Treatment Grid tab to migrate it.
             </div>
           )}
           {!!gridZoneLoad?.zones.length && (
@@ -558,12 +558,12 @@ export function FieldViewTab(props: {
           </div>
           <div className="text-[11px] text-neutral-400 leading-relaxed mb-3">
             {boundaryMode === "draw"
-              ? "Click to drop vertices, click the first point to close. Finish one shape and immediately start the next — perfect for fragmented fields."
+              ? "Click to drop vertices, click the first point to close. Finish one shape and immediately start the next, perfect for fragmented fields."
               : "Click a part to select it, then drag vertices to adjust. Right-click a vertex to remove just that point. Use Delete part to remove only the selected fragment."}
           </div>
           {boundary && boundary.length > 0 && (
             <div className="mb-2 text-[10px] uppercase tracking-wider text-neutral-500">
-              Selected: {activeBoundaryIdx === null ? "none — click a part on the map" : `part ${activeBoundaryIdx + 1} of ${boundary.length}`}
+              Selected: {activeBoundaryIdx === null ? "none, click a part on the map" : `part ${activeBoundaryIdx + 1} of ${boundary.length}`}
             </div>
           )}
           {boundaryMode === "edit" && (
@@ -721,7 +721,7 @@ export function FieldViewTab(props: {
               <div className="flex items-center gap-3 py-3">
                 <p className="text-xs text-neutral-400 leading-relaxed flex-1">
                   Run AI vision over this orthomosaic to detect bare patches, waterlogging,
-                  discoloration and row gaps — and auto-draw treatment zones you can export.
+                  discoloration and row gaps, and auto-draw treatment zones you can export.
                 </p>
                 <button onClick={runAnalysis}
                   className="inline-flex items-center gap-2 bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 text-xs font-semibold whitespace-nowrap">
@@ -760,7 +760,7 @@ export function FieldViewTab(props: {
           </div>
           <div className="text-[11px] text-neutral-400 leading-relaxed">
             Click on the map to drop vertices around the area you want to flag.
-            Click the first point to close the shape — a form will pop up to label it.
+            Click the first point to close the shape. A form will pop up to label it.
           </div>
         </div>
       )}

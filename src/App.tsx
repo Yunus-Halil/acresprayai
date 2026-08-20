@@ -46,7 +46,7 @@ const App = () => (
             </Route>
             {/* Gated like the rest of /app. The viewer already refused to
                 load without a session, but it did so with a dead-end "Please
-                sign in." instead of sending the user to the login page — and
+                sign in." instead of sending the user to the login page, and
                 it was the only /app route outside the guard. Data was never
                 exposed (RLS), this is consistency and defence in depth. */}
             <Route

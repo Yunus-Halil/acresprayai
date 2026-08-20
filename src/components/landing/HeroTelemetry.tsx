@@ -144,7 +144,7 @@ export const HeroTelemetry = () => {
       </div>
 
       <div className="mt-4 border-t border-white/10 pt-3 font-plex text-[9px] leading-[1.8] text-sw-on-dark-faint">
-        Computed live by the same tank-dynamics and endurance model the planner runs — the
+        Computed live by the same tank-dynamics and endurance model the planner runs. The
         payload drains as it sprays, current falls as the aircraft lightens, and the fluid
         leans through every turn. Engineering estimates for planning, not certified flight data.
       </div>

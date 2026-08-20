@@ -287,13 +287,13 @@ export async function uploadScan(opts: {
 
   if (aborted) { clearCheckpoint(fieldId); throw aborted; }
   if (signal?.aborted) {
-    throw new UploadError("Upload paused. Your progress is saved — start it again to resume.", true);
+    throw new UploadError("Upload paused. Your progress is saved, start it again to resume.", true);
   }
   if (failures.length) {
     // Progress is checkpointed, so retrying re-sends only what is missing.
     throw new UploadError(
       `${failures.length} of ${files.length} images could not be uploaded. ` +
-      `Your progress is saved — retry to send just the missing ones. First error: ${failures[0].message}`,
+      `Your progress is saved, retry to send just the missing ones. First error: ${failures[0].message}`,
       true,
     );
   }
@@ -313,7 +313,7 @@ export async function uploadScan(opts: {
     // with that reassurance rather than the raw upstream message.
     throw new UploadError(
       `Could not start processing: ${cJson?.error ?? `HTTP ${cRes.status}`}. ` +
-      `Your images are uploaded — retry to start the scan without re-sending them.`,
+      `Your images are uploaded, retry to start the scan without re-sending them.`,
       true,
     );
   }

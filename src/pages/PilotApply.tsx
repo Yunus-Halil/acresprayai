@@ -133,8 +133,8 @@ export default function PilotApply() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-sw-paper font-grotesk text-sw-ink">
       <Seo
-        title="Apply to the SwathWise pilot — 10 farms, free usage"
-        description="Ten farms, free usage, this season. Tell us about your land and what you fly — it takes about two minutes."
+        title="Apply to the SwathWise pilot, 10 farms, free usage"
+        description="Ten farms, free usage, this season. Tell us about your land and what you fly. It takes about two minutes."
         path="/apply"
       />
       <div
@@ -166,7 +166,7 @@ export default function PilotApply() {
               Apply to the pilot.
             </h1>
             <p className="mt-4 max-w-[560px] text-[17px] leading-[1.55] text-sw-muted">
-              Ten farms, free usage, this season. Tell us about your land and what you fly — it
+              Ten farms, free usage, this season. Tell us about your land and what you fly. It
               takes about two minutes, and we read every one.
             </p>
 
@@ -440,7 +440,7 @@ const Confirmation = () => (
   <div className="mt-16 max-w-[560px] border-l-2 border-sw-bright pl-6">
     <div className="font-plex text-xs tracking-[0.1em] text-sw-green">APPLICATION RECEIVED</div>
     <h1 className="mt-4 text-[clamp(30px,5vw,44px)] font-semibold leading-[1.05] tracking-[-0.03em]">
-      Thanks — we'll be in touch within a few days.
+      Thanks, we'll be in touch within a few days.
     </h1>
     <p className="mt-4 text-[17px] leading-[1.55] text-sw-muted">
       Nothing else to do for now. If anything changes about your fields or your timing, reply to

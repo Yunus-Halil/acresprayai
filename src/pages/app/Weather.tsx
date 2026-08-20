@@ -387,7 +387,7 @@ export default function Weather() {
             <CloudRain className="h-7 w-7" /> Weather Radar
           </h1>
           <p className="text-muted-foreground">
-            Live precipitation radar. Your defined fields are auto-pinned — add extra locations by address below.
+            Live precipitation radar. Your defined fields are auto-pinned, add extra locations by address below.
             {autoLoading && <span className="ml-2 inline-flex items-center gap-1 text-xs"><Loader2 className="h-3 w-3 animate-spin" /> syncing fields…</span>}
           </p>
         </div>

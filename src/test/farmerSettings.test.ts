@@ -262,9 +262,12 @@ describe("drone specs", () => {
     }
   });
 
-  it("shows dashes rather than zeroes for survey drones", () => {
+  it("shows a placeholder rather than zeroes for survey drones", () => {
+    // A survey airframe has no tank, and "0 L" would read as a real spec.
+    // The placeholder is a plain hyphen: em dashes were removed from all
+    // user-facing text, and this value is user-facing.
     const sheet = specSheet(DRONE_SPECS["DJI Mavic 3M"]);
-    expect(sheet.find(r => r.k === "Tank")?.v).toBe("—");
-    expect(sheet.find(r => r.k === "Swath")?.v).toBe("—");
+    expect(sheet.find(r => r.k === "Tank")?.v).toBe("-");
+    expect(sheet.find(r => r.k === "Swath")?.v).toBe("-");
   });
 });

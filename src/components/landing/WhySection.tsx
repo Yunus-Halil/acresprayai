@@ -58,7 +58,7 @@ export const WhySection = () => (
     <div className="mt-16 flex flex-col gap-16 sm:mt-[90px] sm:gap-[90px]">
       <Row
         title="Real-time intelligence"
-        body="Get instant insights on crop health. AI draws treatment zones on your field, sizes each one in acres, and estimates what it will cost to treat — before anything flies."
+        body="Get instant insights on crop health. AI draws treatment zones on your field, sizes each one in acres, and estimates what it will cost to treat, before anything flies."
         footnote="ZONE AREA · EST. COST · RECOMMENDED TREATMENT"
         media={
           <Shot
@@ -103,7 +103,7 @@ export const WhySection = () => (
       <Row
         mediaFirst
         title="Costs on every acre"
-        body="Tell SwathWise what inputs you carry and what they cost per acre. Every treatment zone the AI finds is priced against your numbers — and it never recommends a product you don't have."
+        body="Tell SwathWise what inputs you carry and what they cost per acre. Every treatment zone the AI finds is priced against your numbers, and it never recommends a product you don't have."
         footnote="ACRES × YOUR PER-ACRE COST"
         media={
           <Shot src="/screens/field-settings.png" alt="Field settings with per-acre input costs" />

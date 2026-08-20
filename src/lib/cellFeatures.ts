@@ -249,7 +249,7 @@ export function samplingVerdict(result: SampleResult): {
     return {
       ok: false,
       message:
-        `The imagery is too coarse for this grid — cells hold about ${result.medianPixels} pixels ` +
+        `The imagery is too coarse for this grid, cells hold about ${result.medianPixels} pixels ` +
         `and we need at least ${MIN_PIXELS_PER_CELL}. Re-bake this scan at a higher zoom, or use ` +
         `a larger cell size.`,
     };

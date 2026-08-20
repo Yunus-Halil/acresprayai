@@ -116,7 +116,7 @@ export const EXPORTERS: Exporter[] = [
       "No confirmed path onto a consumer aircraft. DJI Fly ships no route-import function, " +
       "and the known workarounds sideload into the app's private storage, which Android 11+ " +
       "blocks. The file matches DJI's published spec; the delivery method does not exist. " +
-      "Agras cannot use it either — it wants a field, not a route.",
+      "Agras cannot use it either: it wants a field, not a route.",
     blockedReason: hasMission,
     build(ctx) {
       const pkg = buildWpmlKmz(ctx.mission!, {

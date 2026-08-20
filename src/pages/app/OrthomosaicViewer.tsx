@@ -360,7 +360,7 @@ export default function OrthomosaicViewer() {
             setErr(
               `This scan still isn't ready (${j?.status ?? "processing"}${
                 typeof j?.progress === "number" ? `, ${Math.round(j.progress)}%` : ""
-              }). Large scans can take hours — reopen this page later, or retry now.`,
+              }). Large scans can take hours, reopen this page later, or retry now.`,
             );
             return;
           }
@@ -456,7 +456,7 @@ export default function OrthomosaicViewer() {
           if (stalledPasses >= MAX_STALLED_BAKE_PASSES || bakePasses > MAX_BAKE_PASSES) {
             setErr(
               `Map tiles stopped building at ${bj.completed ?? 0} of ${bj.total ?? "?"}. ` +
-              `The tile service may be having trouble — retry in a moment.`,
+              `The tile service may be having trouble, retry in a moment.`,
             );
             return;
           }
@@ -560,8 +560,8 @@ export default function OrthomosaicViewer() {
       const zoneCount = payload.zones.length;
       toast.success(
         zoneCount === 0
-          ? "Analysis complete — no treatment zones found."
-          : `Analysis complete — ${zoneCount} treatment zone${zoneCount === 1 ? "" : "s"}.`,
+          ? "Analysis complete, no treatment zones found."
+          : `Analysis complete, ${zoneCount} treatment zone${zoneCount === 1 ? "" : "s"}.`,
         { action: { label: "View", onClick: () => openTab("ai") } },
       );
       // Persist so it survives reloads.
@@ -573,7 +573,7 @@ export default function OrthomosaicViewer() {
     } catch (e: any) {
       const msg = e?.message ?? String(e);
       setAnalysisErr(msg);
-      toast.error(`Analysis failed — ${msg}`, {
+      toast.error(`Analysis failed, ${msg}`, {
         action: { label: "Retry", onClick: () => { void runAnalysis(); } },
       });
     } finally {
@@ -1151,7 +1151,7 @@ export default function OrthomosaicViewer() {
       {/* Bottom status bar */}
       <div className="h-7 shrink-0 px-3 flex items-center gap-4 text-[11px] text-neutral-500 border-t border-[#1f1f1f]"
            style={{ background: "#0f0f0f" }}>
-        <div ref={cursorCoordRef} className="font-mono">—, —</div>
+        <div ref={cursorCoordRef} className="font-mono">,, ,</div>
         <div ref={cursorZoomRef} className="font-mono">Zoom 15</div>
         <div className="ml-auto truncate font-mono text-neutral-600">{task.odm_uuid?.slice(0, 8)}</div>
       </div>

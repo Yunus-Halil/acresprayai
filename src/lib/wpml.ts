@@ -101,7 +101,7 @@ export class WaypointLimitError extends Error {
   constructor(readonly needed: number, readonly limit = MAX_CONSUMER_WAYPOINTS) {
     super(
       `This mission needs ${needed} waypoints. Consumer drone export supports up to ` +
-      `${limit} — widen the row spacing to reduce passes, cut the pass count, or ` +
+      `${limit}, widen the row spacing to reduce passes, cut the pass count, or ` +
       `export for DJI Agras instead.`,
     );
     this.name = "WaypointLimitError";

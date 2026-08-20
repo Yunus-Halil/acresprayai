@@ -208,12 +208,12 @@ export function fitShrunkenCentroid(
     verdict === "clear"
       ? `The marked cells separate cleanly on ${used} of ${featureNames.length} measurements.`
       : verdict === "weak"
-        ? `These two sets only partly separate — the match will be rough. Mark a few more cells, ` +
+        ? `These two sets only partly separate, so the match will be rough. Mark a few more cells, ` +
           `especially ones you are confident about.`
         : used === 0
           ? `The cells you marked look alike to every measurement we take. Try marking examples ` +
             `that differ more obviously.`
-          : `We cannot tell your two sets apart reliably — a match now would look confident and ` +
+          : `We cannot tell your two sets apart reliably. A match now would look confident and ` +
             `be mostly guesswork. Mark more contrasting examples.`;
 
   return {
