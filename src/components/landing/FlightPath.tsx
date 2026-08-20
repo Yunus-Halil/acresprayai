@@ -1,3 +1,6 @@
+import { FIELD_POLY, ROUTE_POINTS, ZONE_POLYS } from "@/lib/heroTelemetry";
+import { HeroTelemetry } from "./HeroTelemetry";
+
 /**
  * The hero centrepiece: one spray mission, drawn the way the product builds it.
  *
@@ -11,17 +14,16 @@
  * the segment timings are tied to this exact geometry.
  */
 
-const FIELD = "70,70 780,45 1050,110 1045,450 420,478 75,430";
+// Geometry is shared with lib/heroTelemetry.ts, which runs the real flight
+// model over these exact shapes. One source, two readers: the drone cannot be
+// drawn inside a zone while the instruments say it is in transit.
+const FIELD = FIELD_POLY.map(([x, y]) => `${x},${y}`).join(" ");
 
-const ROUTE =
-  "M90,120 L1010,120 L1010,170 L90,170 L90,220 L1010,220 L1010,270 L90,270 " +
-  "L90,320 L1010,320 L1010,370 L90,370 L90,420 L1010,420";
+const ROUTE = ROUTE_POINTS
+  .map(([x, y], i) => `${i === 0 ? "M" : "L"}${x},${y}`)
+  .join(" ");
 
-const ZONES = [
-  "205,95 350,88 462,102 470,185 438,238 210,232 196,150",
-  "620,238 900,232 912,300 895,345 628,342 612,285",
-  "436,344 592,338 598,438 448,446",
-];
+const ZONES = ZONE_POLYS.map(z => z.map(([x, y]) => `${x},${y}`).join(" "));
 
 /** Route segments that fall inside a treatment zone, with the keyframe that
  *  fires as the route draw passes each one. */
@@ -40,7 +42,7 @@ const LOOP = "16s linear infinite";
 export const FlightPath = () => (
   <div
     data-sw-anim="true"
-    className="sw-load-lg mt-10 rounded-lg border border-sw-rule bg-sw-card sm:mt-16"
+    className="sw-load-lg mt-10 overflow-hidden rounded-lg border border-sw-rule bg-sw-card sm:mt-16"
     style={{ animationDelay: "0.55s" }}
   >
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-sw-line px-4 py-3.5 font-plex text-[10px] tracking-[0.08em] text-sw-faint sm:px-5 sm:text-[11px]">
@@ -151,5 +153,7 @@ export const FlightPath = () => (
         </circle>
       </svg>
     </div>
+
+    <HeroTelemetry />
   </div>
 );
