@@ -57,6 +57,7 @@ import FieldViewTab from "@/components/app/workspace/FieldViewTab";
 import AiTab from "@/components/app/workspace/AiTab";
 import PlannerTab from "@/components/app/workspace/PlannerTab";
 import TreatmentTab from "@/components/app/workspace/TreatmentTab";
+import AnalyzeFieldButton from "@/components/app/workspace/AnalyzeFieldButton";
 import WeatherTab, { HeaderWeather } from "@/components/app/workspace/WeatherTab";
 import SettingsTab from "@/components/app/workspace/SettingsTab";
 import { loadAnnotations } from "@/components/app/workspace/layers";
@@ -490,11 +491,21 @@ export default function OrthomosaicViewer() {
       + (ndviInfo?.fingerprint ? `&v=${encodeURIComponent(ndviInfo.fingerprint)}` : "")
     : null;
 
+  // Analysis can now be started from the top bar, which is visible on every
+  // tab — so its outcome has to be visible from every tab too. Both existing
+  // inline error displays live somewhere that can be closed: one inside Field
+  // View's collapsed drawer, one inside a tab that is not open by default.
+  // Reporting only there is how "nothing happened" becomes the user experience
+  // of a failure. The inline displays stay; this adds a toast alongside them.
   const runAnalysis = async () => {
     if (!taskId || !token) return;
     const validRings = (boundary ?? []).filter(r => r.length >= 3);
     if (validRings.length === 0) {
-      setAnalysisErr("Define the field boundary first so the AI only analyzes your farmland.");
+      const msg = "Define the field boundary first so the AI only analyzes your farmland.";
+      setAnalysisErr(msg);
+      toast.error(msg, {
+        action: { label: "Draw boundary", onClick: () => setActiveTab("field") },
+      });
       return;
     }
     setAnalyzing(true); setAnalysisErr(null);
@@ -536,6 +547,15 @@ export default function OrthomosaicViewer() {
       };
       setAnalysis(payload);
       setSelectedZone(j.zones?.[0]?.id ?? null);
+      // Zero zones is a real and unremarkable result — a healthy field — but
+      // silence would read as a failed run, so it gets said out loud.
+      const zoneCount = payload.zones.length;
+      toast.success(
+        zoneCount === 0
+          ? "Analysis complete — no treatment zones found."
+          : `Analysis complete — ${zoneCount} treatment zone${zoneCount === 1 ? "" : "s"}.`,
+        { action: { label: "View", onClick: () => openTab("ai") } },
+      );
       // Persist so it survives reloads.
       try {
         await supabase.from("odm_tasks")
@@ -543,7 +563,11 @@ export default function OrthomosaicViewer() {
           .eq("id", taskId);
       } catch (e) { console.warn("ai_analysis persist failed", e); }
     } catch (e: any) {
-      setAnalysisErr(e?.message ?? String(e));
+      const msg = e?.message ?? String(e);
+      setAnalysisErr(msg);
+      toast.error(`Analysis failed — ${msg}`, {
+        action: { label: "Retry", onClick: () => { void runAnalysis(); } },
+      });
     } finally {
       setAnalyzing(false);
     }
@@ -881,7 +905,7 @@ export default function OrthomosaicViewer() {
     <div className="h-screen w-screen flex flex-col overflow-hidden font-sans"
          style={{ background: "#0f0f0f", color: "#f0f0f0" }}>
       <Seo title="SwathWise" noindex />
-      {/* Top status bar: back · field · weather · health */}
+      {/* Top status bar: back · field · weather · analyze · health */}
       <div className="h-12 shrink-0 flex items-center gap-4 px-4 border-b border-[#1f1f1f]"
            style={{ background: "#0f0f0f" }}>
         {/* This view opens with target="_blank", so the tab has no history and
@@ -902,6 +926,15 @@ export default function OrthomosaicViewer() {
             if (!openTabs.includes("weather")) setOpenTabs(t => [...t, "weather"]);
             setActiveTab("weather");
           }} />
+
+          {/* Always visible, on every tab, whatever any drawer is doing.
+              See AnalyzeFieldButton.tsx for why it had to exist. */}
+          <AnalyzeFieldButton
+            hasAnalysis={!!analysis}
+            analyzing={analyzing}
+            onRun={runAnalysis}
+          />
+
           <div className="flex items-center gap-2 px-3 h-7 rounded-sm border border-[#222] bg-[#161616]">
             <span className="h-2 w-2 rounded-full" style={{ background: scoreTone.dot }} />
             <span className={`text-xs font-medium ${scoreTone.text}`}>{scoreTone.label}</span>
