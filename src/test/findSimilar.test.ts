@@ -7,7 +7,8 @@ import {
 } from "@/lib/treatmentGrid";
 import { type RasterSource, extractCellFeatures } from "@/lib/cellFeatures";
 import {
-  SIMILARITY_THRESHOLD, candidateTotals, findSimilarCells, labelsFromGrid,
+  OUTLIER_Z_THRESHOLD, SIMILARITY_THRESHOLD, candidateTotals, findSimilarCells,
+  labelsFromGrid, scanOutliers,
 } from "@/lib/findSimilar";
 import {
   MAX_TILES, resolutionSufficient, tileCorner, tileCount, tileOf, tileRangeFor,
@@ -35,7 +36,12 @@ function noise(x: number, y: number): number {
   return (((h ^ (h >>> 16)) >>> 0) / 4294967295) * 2 - 1;
 }
 
-function syntheticRaster(opts: { holeBand?: [number, number] } = {}): RasterSource {
+/** Fractional-rect regions painted solid white — bare-soil stand-ins. */
+type WhitePatch = { x0: number; x1: number; y0: number; y1: number };
+
+function syntheticRaster(
+  opts: { holeBand?: [number, number]; whitePatches?: WhitePatch[] } = {},
+): RasterSource {
   const px = 4;
   const width = Math.round(120 * px), height = Math.round(90 * px);
   const rgba = new Uint8ClampedArray(width * height * 4);
@@ -47,8 +53,15 @@ function syntheticRaster(opts: { holeBand?: [number, number] } = {}): RasterSour
       const t = x < third ? 0 : x < 2 * third ? (x - third) / third : 1;
       const j = noise(x, y) * 8;
       for (let c = 0; c < 3; c++) rgba[o + c] = BARE[c] + (CANOPY[c] - BARE[c]) * t + j;
-      const frac = x / width;
-      const inHole = opts.holeBand && frac >= opts.holeBand[0] && frac < opts.holeBand[1];
+      const fx = x / width, fy = y / height;
+      for (const w of opts.whitePatches ?? []) {
+        if (fx >= w.x0 && fx < w.x1 && fy >= w.y0 && fy < w.y1) {
+          rgba[o] = 235 + noise(x, y) * 6;
+          rgba[o + 1] = 228 + noise(x + 7, y) * 6;
+          rgba[o + 2] = 205 + noise(x, y + 7) * 6;
+        }
+      }
+      const inHole = opts.holeBand && fx >= opts.holeBand[0] && fx < opts.holeBand[1];
       rgba[o + 3] = inHole ? 0 : 255;   // alpha 0 = no imagery, like a cloud gap
     }
   }
@@ -258,5 +271,116 @@ describe("tile arithmetic for the raster", () => {
     // Four times the pixels the statistics need is bandwidth, not accuracy.
     const { cellPx } = zoomForSampling(BOUNDS, 6, 22);
     expect(cellPx).toBeLessThan(40);
+  });
+});
+
+describe("visually distinct anomaly types — the case that forced kNN", () => {
+  // White patches sit in the canopy (east) side: nothing like the bare band.
+  const PATCHES = [
+    { x0: 0.75, x1: 0.85, y0: 0.1, y1: 0.3 },
+    { x0: 0.8, x1: 0.9, y0: 0.6, y1: 0.85 },
+  ];
+  const patchedSampling = extractCellFeatures(
+    GRID.cells, syntheticRaster({ whitePatches: PATCHES }), null,
+  );
+  const inPatch = (c: { centroid: LatLng2 }) => {
+    const fx = (c.centroid.lng - WEST) / (EAST - WEST);
+    const SOUTH = Math.min(...FIELD.map(p => p.lat));
+    const NORTH = Math.max(...FIELD.map(p => p.lat));
+    const fy = 1 - (c.centroid.lat - SOUTH) / (NORTH - SOUTH);
+    return PATCHES.some(w =>
+      fx >= w.x0 + 0.02 && fx < w.x1 - 0.02 && fy >= w.y0 + 0.05 && fy < w.y1 - 0.05);
+  };
+  const whiteCells = GRID.cells.filter(inPatch);
+
+  it("has enough white cells for the fixture to mean anything", () => {
+    expect(whiteCells.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("surfaces BOTH example groups' lookalikes, not an average of them", () => {
+    // Positives: two bare-band cells AND one white cell. Under a single
+    // averaged centroid these blend into a point resembling neither, and the
+    // remaining white cells score ambiguous — the exact miss reported from the
+    // field. Per-example kNN must pull in both neighbourhoods.
+    const labels: Record<string, CellRate> = {};
+    for (const c of bareCells.slice(0, 2)) labels[c.id] = treated;
+    labels[whiteCells[0].id] = treated;
+    for (const c of canopyCells.filter(c => !inPatch(c)).slice(0, 3)) labels[c.id] = skipped;
+
+    const r = findSimilarCells(gridWith(labels), patchedSampling);
+    expect(r.ready).toBe(true);
+    const ids = new Set(r.candidates.map(c => c.cellId));
+    const whiteHits = whiteCells.filter(c => !labels[c.id] && ids.has(c.id));
+    const bareHits = bareCells.filter(c => !labels[c.id] && ids.has(c.id));
+    expect(whiteHits.length).toBeGreaterThanOrEqual(2);   // the previously-missed group
+    expect(bareHits.length).toBeGreaterThan(bareCells.length / 2);
+  });
+
+  it("flags white patches even with only bare examples — the vote is relative", () => {
+    // A finding, not the planned assertion: this test originally expected the
+    // white patches to be MISSED without a white example, documenting the old
+    // centroid limitation. Under kNN they are caught anyway, because the vote
+    // asks "nearer the anomaly examples or the healthy negatives?" — and white
+    // ground is far from healthy canopy on nearly every feature. That is the
+    // outcome the field report wanted. The outlier scan remains the guarantee
+    // for the zero-example case; this is the bonus, pinned so a future scoring
+    // change that quietly loses it fails a test instead of a farmer.
+    const labels: Record<string, CellRate> = {};
+    for (const c of bareCells.slice(0, 3)) labels[c.id] = treated;
+    for (const c of canopyCells.filter(c => !inPatch(c)).slice(0, 3)) labels[c.id] = skipped;
+
+    const r = findSimilarCells(gridWith(labels), patchedSampling);
+    const ids = new Set(r.candidates.map(c => c.cellId));
+    const whiteHits = whiteCells.filter(c => ids.has(c.id));
+    expect(whiteHits.length).toBeGreaterThanOrEqual(whiteCells.length / 2);
+  });
+});
+
+describe("the outlier scan", () => {
+  it("flags a bright patch on an otherwise uniform field with ZERO examples", () => {
+    // A fresh field, nothing painted: the scan must catch what a human sees at
+    // a glance — bright bare ground against green canopy.
+    const uniform = syntheticRaster({ whitePatches: [{ x0: 0.4, x1: 0.5, y0: 0.4, y1: 0.6 }] });
+    // Make the base field uniform canopy by sampling only the east two thirds?
+    // Simpler: run on the standard three-band field — the white patch must
+    // still be the STRONGEST outlier because nothing else is that bright.
+    const sampling = extractCellFeatures(GRID.cells, uniform, null);
+    const r = scanOutliers(GRID, sampling);
+    expect(r.candidates.length).toBeGreaterThan(0);
+    const top = r.candidates[0];
+    const cell = GRID.cells.find(c => c.id === top.cellId)!;
+    const fx = (cell.centroid.lng - WEST) / (EAST - WEST);
+    expect(fx).toBeGreaterThan(0.38);
+    expect(fx).toBeLessThan(0.52);
+    expect(top.z).toBeGreaterThanOrEqual(OUTLIER_Z_THRESHOLD);
+    expect(top.feature.length).toBeGreaterThan(0);         // says WHY, not just that
+  });
+
+  it("never flags cells the operator already decided", () => {
+    const sampling = extractCellFeatures(
+      GRID.cells, syntheticRaster({ whitePatches: [{ x0: 0.4, x1: 0.5, y0: 0.4, y1: 0.6 }] }), null,
+    );
+    const first = scanOutliers(GRID, sampling);
+    expect(first.candidates.length).toBeGreaterThan(0);
+    const decided = gridWith(Object.fromEntries(first.candidates.map(c => [c.cellId, treated])));
+    const second = scanOutliers(decided, sampling);
+    const decidedIds = new Set(first.candidates.map(c => c.cellId));
+    expect(second.candidates.some(c => decidedIds.has(c.cellId))).toBe(false);
+  });
+
+  it("excludes unusable imagery rather than scoring holes as anomalies", () => {
+    const sampling = extractCellFeatures(
+      GRID.cells, syntheticRaster({ holeBand: [0.05, 0.2] }), null,
+    );
+    const r = scanOutliers(GRID, sampling);
+    expect(r.unscored.length).toBeGreaterThan(0);
+    const flagged = new Set(r.candidates.map(c => c.cellId));
+    for (const id of r.unscored) expect(flagged.has(id)).toBe(false);
+  });
+
+  it("declines to scan a field too small to have a baseline", () => {
+    const few = { ...GRID, cells: GRID.cells.slice(0, 5) };
+    const sampling = extractCellFeatures(few.cells, syntheticRaster(), null);
+    expect(scanOutliers(few, sampling).candidates).toHaveLength(0);
   });
 });

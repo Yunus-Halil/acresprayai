@@ -17,7 +17,7 @@ import { MapContainer, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  AlertTriangle, Brush, Grid3x3, Info, Loader2, MousePointer, Save, Sparkles, Trash2, X,
+  AlertTriangle, Brush, Grid3x3, Info, Loader2, MousePointer, Save, Search, Sparkles, Trash2, X,
 } from "lucide-react";
 import { type FarmerSettings } from "@/lib/farmerSettings";
 import { type DroneSpec } from "@/lib/droneSpecs";
@@ -29,8 +29,10 @@ import {
 } from "@/lib/treatmentGrid";
 import { GridStoreTooLargeError, applyStored, packGrid } from "@/lib/treatmentGridStore";
 import { extractCellFeatures, samplingVerdict } from "@/lib/cellFeatures";
-import { applyMatch } from "@/lib/matchCells";
-import { candidateTotals, findSimilarCells, labelsFromGrid } from "@/lib/findSimilar";
+import {
+  OUTLIER_Z_THRESHOLD, applyScores, candidateTotals, findSimilarCells, labelsFromGrid,
+  scanOutliers,
+} from "@/lib/findSimilar";
 import { MIN_MARKS_PER_CLASS } from "@/lib/matchCells";
 import { resolutionSufficient, stitchTiles } from "@/lib/orthoRaster";
 import { type MigrationPlan, applyMigration, planMigration } from "@/lib/gridMigrate";
@@ -82,6 +84,11 @@ export function TreatmentTab({
   // says different things for them.
   const [finding, setFinding] = useState(false);
   const [candidates, setCandidates] = useState<Map<CellId, number> | null>(null);
+  // Which run produced the live candidates. The two carry different numbers —
+  // a similarity to examples versus a deviation from the field's own baseline
+  // — and the review card must not present one as the other.
+  const [candidateMode, setCandidateMode] = useState<"similar" | "outliers">("similar");
+  const [outlierDrivers, setOutlierDrivers] = useState<string | null>(null);
   const [findNote, setFindNote] = useState<string | null>(null);
   const [findError, setFindError] = useState<string | null>(null);
   // A boundary edit that would cost real decisions parks here until the
@@ -297,51 +304,65 @@ export function TreatmentTab({
         ? "The orthomosaic tiles are still loading."
         : null;
 
+  /**
+   * Stitch the ortho tiles and extract per-cell features — the shared front
+   * half of both detection modes. Returns null after setting a user-facing
+   * error, so callers just bail.
+   */
+  const sampleField = async () => {
+    if (!grid || !tileUrl) return null;
+    const bb = bboxOfRings(rings);
+    const template = (z: number, x: number, y: number) =>
+      tileUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
+    const { raster, missingTiles, cellPx } = await stitchTiles(
+      template,
+      { north: bb.maxLat, south: bb.minLat, east: bb.maxLng, west: bb.minLng },
+      grid.cellSizeM,
+      Math.min(20, maxNative),
+    );
+    if (!resolutionSufficient(cellPx)) {
+      setFindError(
+        `The imagery is too coarse to measure these cells — about ${Math.floor(cellPx * cellPx)} ` +
+        `pixels per cell where at least 30 are needed. Use a larger cell size, or re-bake the ` +
+        `scan at a deeper zoom.`,
+      );
+      return null;
+    }
+    const sampling = extractCellFeatures(grid.cells, raster, null);
+    const verdict = samplingVerdict(sampling);
+    if (!verdict.ok) { setFindError(verdict.message); return null; }
+    return { sampling, missingTiles };
+  };
+
   const runFindSimilar = async () => {
     if (!grid || !tileUrl || findDisabledReason || pendingRef.current) return;
     setFinding(true);
     setFindError(null);
     setFindNote(null);
+    setOutlierDrivers(null);
     setCandidates(null);
     try {
-      const bb = bboxOfRings(rings);
-      // The tile URL is a Leaflet template; the stitcher fills the slots.
-      const template = (z: number, x: number, y: number) =>
-        tileUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
-      const { raster, missingTiles, cellPx } = await stitchTiles(
-        template,
-        { north: bb.maxLat, south: bb.minLat, east: bb.maxLng, west: bb.minLng },
-        grid.cellSizeM,
-        Math.min(20, maxNative),
-      );
-      if (!resolutionSufficient(cellPx)) {
-        setFindError(
-          `The imagery is too coarse to measure these cells — about ${Math.floor(cellPx * cellPx)} ` +
-          `pixels per cell where at least 30 are needed. Use a larger cell size, or re-bake the ` +
-          `scan at a deeper zoom.`,
-        );
-        return;
-      }
-      const sampling = extractCellFeatures(grid.cells, raster, null);
-      const verdict = samplingVerdict(sampling);
-      if (!verdict.ok) { setFindError(verdict.message); return; }
+      const sampled = await sampleField();
+      if (!sampled) return;
+      const { sampling, missingTiles } = sampled;
 
       const result = findSimilarCells(grid, sampling);
       if (!result.ready) { setFindError(result.message); return; }
 
       // Detection provenance: every scored cell keeps its score, on the
-      // existing detection field, via the path built for this (86ee4e9).
-      // Rates are untouched — scoring is never assigning.
-      if (result.preview) {
+      // existing detection field. Rates are untouched — scoring is never
+      // assigning. Model version marks these as kNN scores, not centroid ones.
+      if (result.scores.size) {
         dirty.current = true;
-        setGrid(g => (g ? applyMatch(g, result.preview!, new Date().toISOString()) : g));
+        setGrid(g => (g ? applyScores(g, result.scores, new Date().toISOString()) : g));
       }
 
+      setCandidateMode("similar");
       setCandidates(new Map(result.candidates.map(c => [c.cellId, c.score])));
       const extras: string[] = [];
       if (result.unscored.length) extras.push(`${result.unscored.length} cell(s) had unusable imagery and were not scored`);
       if (missingTiles) extras.push(`${missingTiles} imagery tile(s) failed to load`);
-      const sep = result.preview?.classifier.separability;
+      const sep = result.separability;
       if (sep && sep.verdict !== "clear") {
         extras.push(
           sep.verdict === "indistinguishable"
@@ -349,6 +370,55 @@ export function TreatmentTab({
             : "the examples are only weakly distinguishable — review each suggestion",
         );
       }
+      setFindNote(extras.length ? extras.join(". ") + "." : null);
+    } catch (e) {
+      setFindError((e as Error)?.message ?? String(e));
+    } finally {
+      setFinding(false);
+    }
+  };
+
+  /**
+   * The unsupervised mode: no examples, just "what does not look like this
+   * field?" — the scan that catches an anomaly type nobody has painted yet.
+   * Writes NO detection scores: an outlier z is a deviation from baseline, not
+   * a similarity, and storing it under the same field would conflate the two.
+   */
+  const runOutlierScan = async () => {
+    if (!grid || !tileUrl || pendingRef.current) return;
+    setFinding(true);
+    setFindError(null);
+    setFindNote(null);
+    setOutlierDrivers(null);
+    setCandidates(null);
+    try {
+      const sampled = await sampleField();
+      if (!sampled) return;
+      const { sampling, missingTiles } = sampled;
+
+      const result = scanOutliers(grid, sampling);
+      setCandidateMode("outliers");
+      setCandidates(new Map(result.candidates.map(c => [c.cellId, c.z])));
+
+      // The honest per-mode reasoning: which measurements drove the flags.
+      if (result.candidates.length) {
+        const byFeature = new Map<string, number>();
+        for (const c of result.candidates) {
+          byFeature.set(c.feature, (byFeature.get(c.feature) ?? 0) + 1);
+        }
+        const drivers = [...byFeature.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([f, n]) => `${f} (${n})`)
+          .join(", ");
+        const top = result.candidates[0];
+        setOutlierDrivers(
+          `Flagged at ≥ ${OUTLIER_Z_THRESHOLD}× the field's typical deviation from median. Driven by: ${drivers}. ` +
+          `Strongest: ${top.feature} at ${top.z.toFixed(1)}×.`,
+        );
+      }
+      const extras: string[] = [];
+      if (result.unscored.length) extras.push(`${result.unscored.length} cell(s) had unusable imagery and were not scored`);
+      if (missingTiles) extras.push(`${missingTiles} imagery tile(s) failed to load`);
       setFindNote(extras.length ? extras.join(". ") + "." : null);
     } catch (e) {
       setFindError((e as Error)?.message ?? String(e));
@@ -710,6 +780,19 @@ export function TreatmentTab({
             {findDisabledReason}
           </div>
         )}
+        {/* The unsupervised sibling: needs no examples at all, so it is the
+            first thing to run on a fresh field. */}
+        <button
+          onClick={runOutlierScan}
+          disabled={finding || !grid || !tileUrl}
+          title="Flag cells that stand out from the field's own baseline — no marked examples needed"
+          className="w-full mb-3 text-xs rounded-sm px-2 py-2 border inline-flex items-center justify-center gap-1.5 transition-colors border-[#333] text-neutral-300 hover:bg-white/5 disabled:opacity-45 disabled:cursor-not-allowed"
+        >
+          {finding
+            ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sampling imagery…</>
+            : <><Search className="h-3.5 w-3.5" /> Scan for outliers</>}
+        </button>
+
         {findError && (
           <div className="rounded-sm border border-red-900/60 bg-red-950/30 p-2.5 mb-3 text-[10px] text-red-300 leading-relaxed">
             {findError}
@@ -723,8 +806,8 @@ export function TreatmentTab({
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[10px] uppercase tracking-wider text-amber-400">
                 {candidates.size > 0
-                  ? `${candidates.size} suggested cell${candidates.size === 1 ? "" : "s"}`
-                  : "No similar cells found"}
+                  ? `${candidates.size} ${candidateMode === "outliers" ? "outlier" : "suggested"} cell${candidates.size === 1 ? "" : "s"}`
+                  : candidateMode === "outliers" ? "No outliers found" : "No similar cells found"}
               </span>
               <button onClick={() => { setCandidates(null); setFindNote(null); }}
                 aria-label="Dismiss suggestions"
@@ -765,8 +848,14 @@ export function TreatmentTab({
               );
             })() : (
               <div className="text-[11px] text-neutral-400 leading-relaxed">
-                Nothing undecided scored close enough to your treated examples. Mark a few
-                more cells of each kind and run it again.
+                {candidateMode === "outliers"
+                  ? "Nothing undecided stands far enough from the field's own baseline. That is a real result — this field looks uniform to the imagery."
+                  : "Nothing undecided scored close enough to your treated examples. Mark a few more cells of each kind and run it again."}
+              </div>
+            )}
+            {outlierDrivers && candidateMode === "outliers" && (
+              <div className="text-[10px] text-neutral-400 leading-relaxed mt-2 pt-2 border-t border-amber-900/40">
+                {outlierDrivers}
               </div>
             )}
             {findNote && (
