@@ -1,0 +1,254 @@
+// Mission stats — the numbers a pilot packs a truck from.
+//
+// The property that matters most is that ONE function produces them. The
+// planner shows them live and the calendar freezes a copy; if those could ever
+// disagree, the way you find out is a pilot bringing two batteries for a job
+// that needed three.
+import { describe, it, expect } from "vitest";
+import {
+  USABLE_BATTERY_PCT, computeMissionStats, conditionsAt, pesticideLitres,
+} from "@/lib/missionStats";
+import { dayKey, groupByDay, monthGrid, monthRangeISO } from "@/lib/schedule";
+import type { ScheduledMission } from "@/lib/schedule";
+import { DRONE_SPECS } from "@/lib/droneSpecs";
+import type { Mission } from "@/lib/mission";
+import type { Forecast } from "@/lib/weather";
+
+const SPEC = { ...DRONE_SPECS["DJI Agras T30"] };
+
+/** A straight north-south spray leg, so the wind geometry is predictable. */
+const missionOf = (over: Partial<Mission> = {}): Mission => ({
+  waypoints: [],
+  transitDistM: 200, sprayDistM: 1800,
+  transitTimeS: 20, sprayTimeS: 600,
+  sprayOnCount: 1,
+  transitSegments: [],
+  spraySegments: [[{ lat: 40.000, lng: -100 }, { lat: 40.010, lng: -100 }]],
+  home: { lat: 40, lng: -100 },
+  ...over,
+});
+
+const base = {
+  mission: missionOf(),
+  spec: SPEC,
+  sprayAltM: 3,
+  transitAltM: 30,
+  tankLoadPct: 80,
+  zones: [{ areaM2: 20_000, rateLha: 25 }],
+  wx: null,
+};
+
+describe("chemical volume", () => {
+  it("scales with marked-zone area", () => {
+    const one = pesticideLitres([{ areaM2: 10_000, rateLha: 20 }]);
+    const two = pesticideLitres([{ areaM2: 20_000, rateLha: 20 }]);
+    expect(one).toBeCloseTo(20, 9);       // 1 ha at 20 L/ha
+    expect(two).toBeCloseTo(40, 9);
+  });
+
+  it("treats each zone at its own rate rather than one blended figure", () => {
+    // The whole point of marking zones separately is that they can differ.
+    const mixed = pesticideLitres([
+      { areaM2: 10_000, rateLha: 10 },
+      { areaM2: 10_000, rateLha: 30 },
+    ]);
+    expect(mixed).toBeCloseTo(40, 9);
+  });
+
+  it("ignores zones with no area or no rate instead of counting them as zero-cost", () => {
+    expect(pesticideLitres([
+      { areaM2: 0, rateLha: 20 },
+      { areaM2: 10_000, rateLha: 0 },
+      { areaM2: 10_000, rateLha: 20 },
+    ])).toBeCloseTo(20, 9);
+  });
+
+  it("reports chemical even when there is no flyable route", () => {
+    // The chemical figure comes from the marked GROUND, not the plan, so it
+    // still stands when the route could not be built.
+    const s = computeMissionStats({ ...base, mission: null });
+    expect(s.pesticideAmountLiters).toBeCloseTo(50, 9);
+    expect(s.flightTimeMinutes).toBe(0);
+    expect(s.batteriesNeeded).toBe(0);
+  });
+});
+
+describe("battery count", () => {
+  it("never packs a single battery to more than its usable fraction", () => {
+    const s = computeMissionStats(base);
+    const perBattery = SPEC.max_flight_min * (USABLE_BATTERY_PCT / 100);
+    expect(s.batteriesNeeded).toBe(Math.max(1, Math.ceil(s.flightTimeMinutes / perBattery)));
+  });
+
+  it("always packs at least one", () => {
+    const s = computeMissionStats({
+      ...base,
+      mission: missionOf({ sprayDistM: 5, sprayTimeS: 2, transitDistM: 1, transitTimeS: 1 }),
+    });
+    expect(s.batteriesNeeded).toBeGreaterThanOrEqual(1);
+  });
+
+  it("needs more batteries for a longer job", () => {
+    const short = computeMissionStats(base);
+    const long = computeMissionStats({
+      ...base,
+      mission: missionOf({ sprayDistM: 18_000, sprayTimeS: 6_000 }),
+    });
+    expect(long.flightTimeMinutes).toBeGreaterThan(short.flightTimeMinutes);
+    expect(long.batteriesNeeded).toBeGreaterThan(short.batteriesNeeded);
+  });
+
+  it("needs more batteries from a drone with less endurance", () => {
+    const tough = computeMissionStats(base);
+    const weak = computeMissionStats({ ...base, spec: { ...SPEC, max_flight_min: 6 } });
+    expect(weak.batteriesNeeded).toBeGreaterThan(tough.batteriesNeeded);
+  });
+});
+
+describe("changing the drone", () => {
+  it("changes the estimate without mutating the flight plan", () => {
+    // The schedule form re-estimates as the operator tries drones. If that
+    // mutated the plan, backing out of the form would leave the planner showing
+    // numbers for an aircraft nobody picked.
+    const mission = missionOf();
+    const before = JSON.stringify(mission);
+
+    const a = computeMissionStats({ ...base, mission });
+    const b = computeMissionStats({ ...base, mission, spec: { ...SPEC, max_flight_min: 9 } });
+
+    expect(JSON.stringify(mission)).toBe(before);
+    expect(a.flightTimeMinutes).toBeCloseTo(b.flightTimeMinutes, 9);  // same route
+    expect(b.batteriesNeeded).not.toBe(a.batteriesNeeded);            // different aircraft
+  });
+
+  it("leaves the input zones untouched", () => {
+    const zones = [{ areaM2: 20_000, rateLha: 25 }];
+    const snapshot = JSON.stringify(zones);
+    computeMissionStats({ ...base, zones });
+    expect(JSON.stringify(zones)).toBe(snapshot);
+  });
+});
+
+describe("weather derating", () => {
+  it("costs endurance when the wind is there and none when it is not", () => {
+    const calm = computeMissionStats(base);
+    const windy = computeMissionStats({
+      ...base, wx: { wind_ms: 8, wind_dir: 180, temp_c: 20 },
+    });
+    expect(windy.flightTimeMinutes).toBeGreaterThan(calm.flightTimeMinutes);
+    expect(calm.derating.windFactor).toBe(1);
+    expect(calm.derating.windKind).toBe("calm");
+  });
+
+  it("penalises cold, and does not reward heat", () => {
+    const cold = computeMissionStats({ ...base, wx: { wind_ms: 0, wind_dir: 0, temp_c: 0 } });
+    const mild = computeMissionStats({ ...base, wx: { wind_ms: 0, wind_dir: 0, temp_c: 20 } });
+    const hot = computeMissionStats({ ...base, wx: { wind_ms: 0, wind_dir: 0, temp_c: 35 } });
+    expect(cold.derating.tempFactor).toBeGreaterThan(1);
+    expect(mild.derating.tempFactor).toBe(1);
+    expect(hot.derating.tempFactor).toBe(1);
+  });
+});
+
+describe("flight conditions", () => {
+  const fmt = {
+    windText: (ms: number) => `${(ms * 2.237).toFixed(0)} mph`,
+    tempText: (c: number) => `${(c * 9 / 5 + 32).toFixed(0)}°F`,
+  };
+  const at = new Date("2026-08-20T15:00:00Z").getTime();
+  const forecast = (over: Partial<Forecast> = {}): Forecast => ({
+    current: {
+      time: at, temp_c: 20, feels_c: 20, humidity: 50, wind_kmh: 10, gust_kmh: 15,
+      wind_dir: 180, clouds: 10, precip_mm: 0, code: 0, icon: "sun", desc: "clear",
+    },
+    hourly: [], daily: [], ...over,
+  });
+
+  it("uses the forecast hour covering the scheduled time", () => {
+    const c = conditionsAt(forecast({
+      hourly: [{
+        time: at, temp_c: 25, feels_c: 25, humidity: 40, wind_kmh: 20, gust_kmh: 25,
+        wind_dir: 90, clouds: 0, precip_mm: 0, code: 0, icon: "sun", desc: "sunny",
+        precip_prob: 5,
+      }],
+    }), at, fmt);
+    expect(c.available).toBe(true);
+    expect(c.basis).toBe("forecast");
+    expect(c.summary).toContain("sunny");
+  });
+
+  it("says the forecast is unavailable rather than inventing one", () => {
+    // A mission three weeks out is past Open-Meteo's window. Showing the last
+    // day in the array as though it described that date is the failure mode
+    // this guards: a pilot can act on a fabricated number.
+    const far = at + 21 * 86_400_000;
+    const c = conditionsAt(forecast(), far, fmt);
+    expect(c.available).toBe(false);
+    expect(c.basis).toBe("current");
+    expect(c.summary).toMatch(/forecast unavailable/i);
+  });
+
+  it("reports nothing at all when the location has no weather cached", () => {
+    const c = conditionsAt(null, at, fmt);
+    expect(c.available).toBe(false);
+    expect(c.basis).toBe("none");
+    expect(c.wind_ms).toBeNull();
+  });
+
+  it("falls back to the day when there is no matching hour", () => {
+    const c = conditionsAt(forecast({
+      daily: [{
+        time: at, tmin_c: 12, tmax_c: 24, humidity: 50, wind_kmh: 14, gust_kmh: 20,
+        wind_dir: 180, precip_mm: 0, precip_prob: 10, clouds: 20,
+        code: 1, icon: "cloud", desc: "partly cloudy",
+      }],
+    }), at, fmt);
+    expect(c.available).toBe(true);
+    expect(c.summary).toContain("partly cloudy");
+  });
+});
+
+describe("calendar shaping", () => {
+  const mission = (id: string, iso: string): ScheduledMission => ({
+    id, fieldId: "f", scanId: null, flightPlanId: null, scheduledAt: iso,
+    location: null, droneId: null, status: "scheduled", chemical: null,
+    notes: null, stats: null, createdAt: iso,
+  });
+
+  it("always draws six rows, so the grid does not resize between months", () => {
+    // A calendar that changes height as you page through it is one that gets
+    // mis-clicked.
+    for (const m of [0, 1, 5, 11]) expect(monthGrid(2026, m)).toHaveLength(42);
+  });
+
+  it("covers the first of the month and borrows the surrounding days", () => {
+    const grid = monthGrid(2026, 7);            // August 2026
+    expect(grid.some(d => d.getMonth() === 7 && d.getDate() === 1)).toBe(true);
+    expect(grid[0].getDay()).toBe(0);           // weeks start Sunday by default
+  });
+
+  it("stacks several missions on one day instead of letting the last win", () => {
+    const g = groupByDay([
+      mission("b", "2026-08-20T16:00:00Z"),
+      mission("a", "2026-08-20T09:00:00Z"),
+      mission("c", "2026-08-21T09:00:00Z"),
+    ]);
+    const day = g.get(dayKey("2026-08-20T09:00:00Z"))!;
+    expect(day).toHaveLength(2);
+    expect(day.map(m => m.id)).toEqual(["a", "b"]);   // and in time order
+  });
+
+  it("buckets by the viewer's local day, not UTC's", () => {
+    // A 23:00 local mission must not land on tomorrow's cell because UTC has
+    // already rolled over.
+    const local = new Date(2026, 7, 20, 23, 30);
+    expect(dayKey(local)).toBe("2026-08-20");
+  });
+
+  it("asks the database for exactly the span the grid can show", () => {
+    const { fromISO, toISO } = monthRangeISO(2026, 7);
+    const grid = monthGrid(2026, 7);
+    expect(new Date(fromISO).getTime()).toBe(grid[0].getTime());
+    expect(new Date(toISO).getTime()).toBeGreaterThan(grid[41].getTime());
+  });
+});

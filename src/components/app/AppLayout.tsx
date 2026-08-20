@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
-import { LayoutDashboard, Map, LogOut, Plane, CloudRain } from "lucide-react";
+import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import RequireAuth from "@/components/RequireAuth";
@@ -12,6 +12,7 @@ const nav = [
   { to: "/app/fields", label: "Fields", icon: Map },
   { to: "/app/fleet", label: "Drone Fleet", icon: Plane },
   { to: "/app/weather", label: "Weather Radar", icon: CloudRain },
+  { to: "/app/schedule", label: "Schedule", icon: CalendarDays },
 ];
 // Reports live per-scan, inside the orthomosaic viewer's Reports tab - there is
 // no cross-field reporting page.

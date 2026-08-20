@@ -14,6 +14,7 @@ import Dashboard from "./pages/app/Dashboard.tsx";
 import Fields from "./pages/app/Fields.tsx";
 import Fleet from "./pages/app/Fleet.tsx";
 import Weather from "./pages/app/Weather.tsx";
+import Schedule from "./pages/app/Schedule";
 import FieldDetail from "./pages/app/FieldDetail.tsx";
 import OrthomosaicViewer from "./pages/app/OrthomosaicViewer.tsx";
 import { AuthProvider } from "./lib/auth";
@@ -41,6 +42,7 @@ const App = () => (
               <Route path="fields/:id" element={<FieldDetail />} />
               <Route path="fleet" element={<Fleet />} />
               <Route path="weather" element={<Weather />} />
+              <Route path="schedule" element={<Schedule />} />
             </Route>
             <Route path="/app/orthomosaic/:taskId" element={<OrthomosaicViewer />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

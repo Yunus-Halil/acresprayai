@@ -14,7 +14,7 @@ import {
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
   Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
-  CheckCircle2, XCircle, Trash2, Hexagon,
+  CheckCircle2, XCircle, Trash2, Hexagon, CalendarDays,
   Play, Pause, RotateCcw, FastForward, History,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
@@ -62,6 +62,8 @@ import {
 // Lives in SettingsTab.tsx purely because of where the file split fell.
 import { LogFlightModal } from "./SettingsTab";
 import { readCachedWeather } from "@/lib/weather";
+import { computeMissionStats } from "@/lib/missionStats";
+import ScheduleMissionModal from "./ScheduleMissionModal";
 // Farmer-facing quantities follow the unit setting. Flight-physics figures —
 // turn radius, climb rate, the m/s speeds — deliberately do NOT: they are the
 // aircraft's own spec-sheet numbers and the values the DJI parameters take, and
@@ -74,7 +76,7 @@ import { useUnitSystem } from "@/hooks/useUnitSystem";
 
 export function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
-  settings, onSaveSettings, onFlightLogged, center, userPolys, fieldId,
+  settings, onSaveSettings, onFlightLogged, center, userPolys, fieldId, fieldName,
 }: {
   analysis: any;
   boundary: BoundaryRing[] | null;
@@ -83,6 +85,8 @@ export function PlannerTab({
   maxNative: number;
   taskId: string;
   fieldId: string | null;
+  /** Used to pre-fill the schedule form's location label. */
+  fieldName?: string;
   runAnalysis: () => void;
   setActiveTab: (k: any) => void;
   settings: FarmerSettings;
@@ -92,6 +96,7 @@ export function PlannerTab({
   userPolys: UserPoly[];
 }) {
   const units = useUnitSystem();
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const [spacingM, setSpacingM] = useState<number>(15);
   const [transitAltM, setTransitAltM] = useState<number>(30);
@@ -463,65 +468,30 @@ export function PlannerTab({
   // Wind only counts as a headwind when blowing into the dominant pass axis;
   // a crosswind gets half the penalty, a tailwind helps a little.
   const battery = (() => {
-    if (!mission) return null;
-    const totalDistM = mission.sprayDistM + mission.transitDistM;
-    const totalTimeS = mission.sprayTimeS + mission.transitTimeS;
-    if (totalDistM < 1 || totalTimeS < 1) return null;
-    const cruiseMs = totalDistM / totalTimeS;        // weighted real cruise
-    const baseFlightMin = totalTimeS / 60;
-
-    // Pass axis bearing (deg from north, 0–180) — from first spray segment.
-    let passBearing: number | null = null;
-    const firstPass = mission.spraySegments?.[0];
-    if (firstPass && firstPass.length >= 2) {
-      const a = firstPass[0], b = firstPass[firstPass.length - 1];
-      const dy = b.lat - a.lat, dx = (b.lng - a.lng) * Math.cos((a.lat * Math.PI) / 180);
-      let deg = (Math.atan2(dx, dy) * 180) / Math.PI;
-      if (deg < 0) deg += 360;
-      passBearing = deg % 180;
-    }
-
-    let windFactor = 1, windKind: "headwind" | "crosswind" | "tailwind" | "calm" = "calm";
-    if (wx && wx.wind_ms > 0.3) {
-      // wx.wind_dir is "from" direction. Wind vector heads to (dir+180).
-      const windTo = (wx.wind_dir + 180) % 360;
-      let rel = passBearing != null ? Math.abs(((windTo - passBearing + 540) % 360) - 180) : 90;
-      // rel: 0 = perfectly aligned with pass direction (tailwind on outbound),
-      // 180 = directly against. We don't know which way each pass flies, but
-      // a boustrophedon spends ~half each direction, so the head- and tail-
-      // wind components on alternating rows wash out. Net effect: only the
-      // *cross* component truly disappears, the *along* component fights you
-      // on every other row. Apply full penalty when aligned, half on cross.
-      const alignment = Math.abs(Math.cos((rel * Math.PI) / 180)); // 0=cross, 1=along
-      const penalty = wx.wind_ms * 0.02 * (0.5 + 0.5 * alignment);
-      windFactor = 1 + penalty;
-      windKind = alignment > 0.7 ? "headwind" : alignment > 0.3 ? "crosswind" : "tailwind";
-    }
-
-    // Weighted avg altitude (spray vs transit) — the formula is per-meter AGL.
-    const avgAlt = (sprayAltM * mission.sprayTimeS + transitAltM * mission.transitTimeS) / totalTimeS;
-    const altitudeFactor = 1 + avgAlt * 0.001;
-
-    const tankLoad = Math.max(0, Math.min(100, fp.tank_load_pct)) / 100;
-    const payloadFactor = 1 + tankLoad * 0.15;
-
-    const tempC = wx?.temp_c ?? 20;
-    const tempFactor = tempC < 15 ? 1 + (15 - tempC) * 0.01 : 1.0;
-
-    const estimatedFlightMin = baseFlightMin * windFactor * altitudeFactor * payloadFactor * tempFactor;
-    const batteryPercent = (estimatedFlightMin / Math.max(1, spec.max_flight_min)) * 100;
-    const batteriesNeeded = Math.max(1, Math.ceil(batteryPercent / 80));
-
+    // The model itself now lives in lib/missionStats.ts, because the schedule
+    // snapshot has to be produced by the SAME calculation the planner shows
+    // live. Two endurance models is two that drift, and you find out when a
+    // pilot packs three batteries for a job the calendar promised needed two.
+    const stats = computeMissionStats({
+      mission, spec, sprayAltM, transitAltM,
+      tankLoadPct: fp.tank_load_pct,
+      zones: zonesWithRates.map(z => ({ areaM2: polygonAreaM2(z.ring), rateLha: z.rateLha })),
+      wx,
+    });
+    if (!mission || stats.flightTimeMinutes <= 0) return null;
+    const d = stats.derating;
     const pct = (f: number) => `${f >= 1 ? "+" : ""}${((f - 1) * 100).toFixed(0)}%`;
-    const recommendedTankL = spec.tank_l > 0 ? +(spec.tank_l * tankLoad).toFixed(1) : 0;
-
     return {
-      baseFlightMin, estimatedFlightMin, batteryPercent, batteriesNeeded,
-      windPctLabel: pct(windFactor), windKind, windMs: wx?.wind_ms ?? 0,
-      altPctLabel: pct(altitudeFactor), avgAlt,
-      payloadPctLabel: pct(payloadFactor),
-      tempPctLabel: pct(tempFactor), tempC,
-      cruiseMs, recommendedTankL,
+      baseFlightMin: d.baseFlightMin,
+      estimatedFlightMin: stats.flightTimeMinutes,
+      batteryPercent: d.batteryPercent,
+      batteriesNeeded: stats.batteriesNeeded,
+      windPctLabel: pct(d.windFactor), windKind: d.windKind, windMs: wx?.wind_ms ?? 0,
+      altPctLabel: pct(d.altitudeFactor), avgAlt: d.avgAltM,
+      payloadPctLabel: pct(d.payloadFactor),
+      tempPctLabel: pct(d.tempFactor), tempC: wx?.temp_c ?? 20,
+      cruiseMs: d.cruiseMs, recommendedTankL: d.recommendedTankL,
+      stats,
     };
   })();
 
@@ -660,6 +630,19 @@ export function PlannerTab({
           />
           <DroneSimMarker sim={simState} />
         </MapContainer>
+        {/* Top-right of the plan display, alongside the map's own controls. */}
+        <div className="absolute top-3 right-3 z-[500]">
+          <button
+            onClick={() => setScheduleOpen(true)}
+            disabled={!mission}
+            title={mission
+              ? "Put this plan on the schedule"
+              : "Mark at least one treatment zone to generate a plan first"}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-sm text-xs font-semibold transition-colors bg-[#4CAF50] hover:bg-[#43a047] text-black disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <CalendarDays className="h-3.5 w-3.5" /> Schedule
+          </button>
+        </div>
         <div className="absolute top-3 left-3 z-[400] bg-black/70 text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Home (drag or click map)</div>
           <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-dashed border-yellow-400" /> Transit (sprayer off)</div>
@@ -669,6 +652,25 @@ export function PlannerTab({
           )}
         </div>
       </div>
+
+      <ScheduleMissionModal
+        open={scheduleOpen}
+        onOpenChange={setScheduleOpen}
+        mission={mission}
+        zones={zonesWithRates.map(z => ({ areaM2: polygonAreaM2(z.ring), rateLha: z.rateLha }))}
+        drones={drones}
+        fallbackSpec={spec}
+        sprayAltM={sprayAltM}
+        transitAltM={transitAltM}
+        tankLoadPct={fp.tank_load_pct}
+        fieldId={fieldId}
+        scanId={taskId}
+        flightPlanId={taskId}
+        center={{ lat: center[0], lng: center[1] }}
+        fieldName={fieldName ?? ""}
+        initialDroneId={fp.drone_id}
+        onScheduled={() => { /* the Schedule tab reads on mount */ }}
+      />
 
       {/* Right control panel */}
       <div className="w-80 shrink-0 border-l border-[#222] overflow-auto p-4" style={{ background: "#161616" }}>
