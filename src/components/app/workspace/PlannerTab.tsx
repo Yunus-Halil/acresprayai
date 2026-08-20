@@ -660,6 +660,12 @@ export function PlannerTab({
         </div>
       </div>
 
+      {/* scanId is null, NOT taskId. `jobs.scan_id` is a foreign key onto
+          `scans`, the older single-image table; this workspace runs on
+          `odm_tasks`, and the two are independent — both keyed to a field,
+          neither referencing the other. So there is no scan id to give, and the
+          odm_task id goes to flight_plan_id instead, which carries no
+          constraint and is what links the calendar entry back to this plan. */}
       <ScheduleMissionModal
         open={scheduleOpen}
         onOpenChange={setScheduleOpen}
@@ -671,7 +677,7 @@ export function PlannerTab({
         transitAltM={transitAltM}
         tankLoadPct={fp.tank_load_pct}
         fieldId={fieldId}
-        scanId={taskId}
+        scanId={null}
         flightPlanId={taskId}
         center={{ lat: center[0], lng: center[1] }}
         fieldName={fieldName ?? ""}

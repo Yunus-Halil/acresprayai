@@ -135,13 +135,41 @@ Reads go through the `pilot-applications` edge function. See
 
 ## Dormant tables
 
-`scans`, `jobs`, `orthomosaics`, `crop_zones`, `anomalies`, `spray_recommendations`.
+`scans`, `orthomosaics`, `crop_zones`, `anomalies`, `spray_recommendations`.
 
 These are from an earlier data model. They have tables, RLS policies and PostGIS geometry views,
 but **no code path writes to them**. Treat them as dead schema — they will always be empty.
 
+`jobs` **is no longer dormant** — the Schedule tab writes to it. See below.
+
 In particular: AI analysis results live in `odm_tasks.ai_analysis`, **not** in `anomalies` or
 `crop_zones`.
+
+## `jobs` — scheduled missions
+
+Woken up for the Schedule tab (`src/lib/schedule.ts`). Carries `scheduled_at`, `field_id`,
+`drone_id`, `chemical`, `dose_l_ha`, `area_ha`, `status`, plus three columns added in
+`20260819230000_schedule_missions.sql`: `flight_plan_id`, `location`, and `stats` — a frozen
+snapshot of `computeMissionStats()` output, never recomputed on read.
+
+> ### The `scan_id` trap
+>
+> Three tables carry a `scan_id` and they do **not** agree on what it references:
+>
+> | Column | References |
+> | --- | --- |
+> | `flight_logs.scan_id` | `odm_tasks(id)` |
+> | `field_reports.scan_id` | `odm_tasks(id)` |
+> | **`jobs.scan_id`** | **`scans(id)`** |
+>
+> `jobs` predates the photogrammetry pipeline: when it was written `scans` was the only scan
+> concept, and it was never revisited when `odm_tasks` arrived. The orthomosaic workspace runs
+> entirely on `odm_tasks`, so passing the id it has to `jobs.scan_id` fails
+> `jobs_scan_id_fkey`.
+>
+> The scheduler therefore writes **null** to `jobs.scan_id`. The odm_task id travels in
+> `flight_plan_id`, which carries no constraint and is what actually links a calendar entry
+> back to the plan it came from.
 
 ## The `ring` vs `polygon` trap
 

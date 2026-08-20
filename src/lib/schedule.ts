@@ -40,6 +40,15 @@ export type ScheduledMission = {
 
 export type NewScheduledMission = {
   fieldId: string | null;
+  /**
+   * A `scans` row id, or null.
+   *
+   * Almost always null: `jobs.scan_id` is a foreign key onto `scans`, the older
+   * single-image table, while the orthomosaic workspace runs on `odm_tasks`.
+   * The two are independent — both keyed to a field, neither referencing the
+   * other — so an odm_task id put here fails jobs_scan_id_fkey. The odm_task id
+   * belongs in `flightPlanId`, which carries no constraint.
+   */
   scanId: string | null;
   flightPlanId: string | null;
   scheduledAt: string;
