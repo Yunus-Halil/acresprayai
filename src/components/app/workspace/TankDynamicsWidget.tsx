@@ -90,7 +90,7 @@ export function TankLiquidVisual({
 }
 
 export function TankDynamicsWidget({
-  profile, cfg, simT, open, onToggle,
+  profile, cfg, simT, open, onToggle, chrome = true,
 }: {
   profile: TankProfile | null;
   cfg: DronePhysicsConfig;
@@ -98,6 +98,14 @@ export function TankDynamicsWidget({
   simT: number;
   open: boolean;
   onToggle: () => void;
+  /**
+   * Draw the title bar and collapse control.
+   *
+   * False when hosted in a FloatingPanel, which already provides a draggable
+   * header, a collapse toggle and a hide button — two sets of chrome stacked on
+   * one card looks like a bug even when both work.
+   */
+  chrome?: boolean;
 }) {
   const sample = useMemo(
     () => (profile ? sampleTankAt(profile, simT) : null),
@@ -109,6 +117,24 @@ export function TankDynamicsWidget({
   const payloadKg = (sample?.litres ?? 0) * cfg.fluidDensityKgPerL;
   const cog = sample?.cogOffsetCm ?? 0;
   const cogLabel = `${cog >= 0 ? "+" : "−"}${Math.abs(cog).toFixed(1)} cm ${cog >= 0 ? "aft" : "fwd"}`;
+
+  const body = (
+    <div className="flex items-center gap-3">
+      <TankLiquidVisual sample={sample} cfg={cfg} />
+      <div className="text-[11px] space-y-1.5 min-w-[128px]">
+        <Metric label="Payload" value={`${payloadKg.toFixed(1)} kg`} />
+        <Metric label="CoG offset" value={cogLabel}
+          warn={Math.abs(cog) > cfg.sloshMaxOffsetCm * 0.7} />
+        <Metric label="Amp draw" value={`${(sample?.amps ?? 0).toFixed(1)} A`} />
+        <div className="flex items-start gap-1 pt-1 border-t border-[#222] text-[9px] text-neutral-600 leading-snug">
+          <Info className="h-2.5 w-2.5 mt-[1px] shrink-0" />
+          <span>Structured estimate — coefficients are unverified, not datasheet figures.</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (!chrome) return body;
 
   return (
     <div className="rounded-md border border-[#222] overflow-hidden"
@@ -125,21 +151,7 @@ export function TankDynamicsWidget({
         {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
       </button>
 
-      {open && (
-        <div className="px-3 pb-3 flex items-center gap-3">
-          <TankLiquidVisual sample={sample} cfg={cfg} />
-          <div className="text-[11px] space-y-1.5 min-w-[128px]">
-            <Metric label="Payload" value={`${payloadKg.toFixed(1)} kg`} />
-            <Metric label="CoG offset" value={cogLabel}
-              warn={Math.abs(cog) > cfg.sloshMaxOffsetCm * 0.7} />
-            <Metric label="Amp draw" value={`${(sample?.amps ?? 0).toFixed(1)} A`} />
-            <div className="flex items-start gap-1 pt-1 border-t border-[#222] text-[9px] text-neutral-600 leading-snug">
-              <Info className="h-2.5 w-2.5 mt-[1px] shrink-0" />
-              <span>Structured estimate — coefficients are unverified, not datasheet figures.</span>
-            </div>
-          </div>
-        </div>
-      )}
+      {open && <div className="px-3 pb-3">{body}</div>}
     </div>
   );
 }

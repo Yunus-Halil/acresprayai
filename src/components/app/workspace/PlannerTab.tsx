@@ -66,6 +66,10 @@ import { computeMissionStats } from "@/lib/missionStats";
 import { physicsFor } from "@/lib/dronePhysics";
 import { buildTankProfile, sampleTankAt } from "@/lib/tankProfile";
 import TankDynamicsWidget from "./TankDynamicsWidget";
+import FloatingPanel from "./FloatingPanel";
+import {
+  type PanelLayout, loadLayout, clearLayout, saveLayout,
+} from "@/lib/panelLayout";
 import ScheduleMissionModal from "./ScheduleMissionModal";
 // Farmer-facing quantities follow the unit setting. Flight-physics figures —
 // turn radius, climb rate, the m/s speeds — deliberately do NOT: they are the
@@ -131,7 +135,39 @@ export function PlannerTab({
   const units = useUnitSystem();
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [sideTab, setSideTab] = useState<"setup" | "mission">("setup");
-  const [tankOpen, setTankOpen] = useState(true);
+  // Floating map panels. Defaults chosen so nothing overlaps out of the box;
+  // an operator can then put them wherever suits the field they are looking at.
+  const PANEL_DEFAULTS: PanelLayout = useMemo(() => ({
+    tank: { anchor: "top-center", size: { w: 300, h: 132 }, visible: true, collapsed: false },
+    sim: { anchor: "bottom-center", size: { w: 560, h: 236 }, visible: true, collapsed: false },
+    legend: { anchor: "top-left", size: { w: 216, h: 108 }, visible: true, collapsed: false },
+  }), []);
+  const [panels, setPanels] = useState<PanelLayout>(() => loadLayout(PANEL_DEFAULTS));
+  const [mapRect, setMapRect] = useState({ w: 1000, h: 600 });
+  const mapWrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => { saveLayout(panels); }, [panels]);
+
+  // Snapping is relative to the map, so the map's size has to be known. A
+  // ResizeObserver rather than a window listener: the sidebar can change width
+  // without the window changing at all.
+  useEffect(() => {
+    const el = mapWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => {
+      const r = e.contentRect;
+      setMapRect({ w: Math.round(r.width), h: Math.round(r.height) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const setPanel = useCallback((id: string, next: PanelLayout[string]) =>
+    setPanels(p => ({ ...p, [id]: next })), []);
+  const resetPanels = useCallback(() => {
+    clearLayout();
+    setPanels(loadLayout(PANEL_DEFAULTS));
+  }, [PANEL_DEFAULTS]);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const [spacingM, setSpacingM] = useState<number>(15);
@@ -708,34 +744,74 @@ export function PlannerTab({
             <CalendarDays className="h-3.5 w-3.5" /> Schedule
           </button>
         </div>
-        {/* Tank dynamics, top-centre: it describes what the aircraft is
-            carrying at this instant, so it belongs beside the map it is flying
-            over rather than down a sidebar. Collapsible — it is reference, not
-            a control. */}
-        {tankProfile && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[500] w-[300px]">
+        {/* Panel control. Hiding every panel must never be a one-way door, so
+            the way back is always on screen — and Reset puts every panel back
+            where it started, which is what makes experimenting with the layout
+            safe. */}
+        <div className="absolute top-3 right-3 z-[560] flex items-center gap-1 rounded-md border border-[#222] px-1 py-1"
+             style={{ background: "rgba(10,10,10,0.86)", backdropFilter: "blur(4px)" }}>
+          {([
+            ["tank", "Tank", Droplets],
+            ["sim", "Sim", Play],
+            ["legend", "Legend", MapIcon],
+          ] as const).map(([id, label, Icon]) => (
+            <button key={id}
+              onClick={() => setPanel(id, { ...panels[id], visible: !panels[id].visible })}
+              title={`${panels[id].visible ? "Hide" : "Show"} ${label}`}
+              aria-pressed={panels[id].visible}
+              className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] transition-colors ${
+                panels[id].visible
+                  ? "bg-[#4CAF50]/15 text-[#4CAF50]"
+                  : "text-neutral-500 hover:text-neutral-300"}`}>
+              <Icon className="h-3 w-3" />
+              {label}
+            </button>
+          ))}
+          <span className="w-px self-stretch bg-[#222] mx-0.5" />
+          <button onClick={resetPanels} title="Reset panel layout"
+            className="inline-flex items-center rounded-sm px-1.5 py-1 text-neutral-500 hover:text-neutral-200 transition-colors">
+            <RotateCcw className="h-3 w-3" />
+          </button>
+        </div>
+
+        {tankProfile && panels.tank.visible && (
+          <FloatingPanel
+            title="Tank dynamics"
+            state={panels.tank}
+            limits={{ min: { w: 250, h: 110 }, max: { w: 460, h: 260 } }}
+            rect={mapRect}
+            badge={<span className="font-mono normal-case tracking-normal text-neutral-500">
+              {((sampleTankAt(tankProfile, simT)?.litres ?? 0) * tankPhysics.fluidDensityKgPerL).toFixed(1)} kg
+            </span>}
+            onChange={n => setPanel("tank", n)}
+            onHide={() => setPanel("tank", { ...panels.tank, visible: false })}
+          >
             <TankDynamicsWidget
               profile={tankProfile}
               cfg={tankPhysics}
               simT={simT}
-              open={tankOpen}
-              onToggle={() => setTankOpen(v => !v)}
+              open
+              onToggle={() => {}}
+              chrome={false}
             />
-          </div>
+          </FloatingPanel>
         )}
 
         {/* Simulation transport floats over the map rather than living in the
             sidebar: it controls what the MAP shows, and parking it hundreds of
             pixels of scroll away meant driving the video from another room. */}
-        {mission && simTimeline.total > 0 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[500] w-[min(560px,calc(100%-2rem))] rounded-md border border-[#222] px-3 py-2"
-               style={{ background: "rgba(10,10,10,0.85)", backdropFilter: "blur(4px)" }}>
-            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
-              <span>Simulation</span>
-              <span className="font-mono text-neutral-400 normal-case tracking-normal">
-                {fmtTime(simT)} / {fmtTime(simTimeline.total)}
-              </span>
-            </div>
+        {mission && simTimeline.total > 0 && panels.sim.visible && (
+          <FloatingPanel
+            title="Simulation"
+            state={panels.sim}
+            limits={{ min: { w: 320, h: 150 }, max: { w: 760, h: 420 } }}
+            rect={mapRect}
+            badge={<span className="font-mono normal-case tracking-normal text-neutral-500">
+              {fmtTime(simT)} / {fmtTime(simTimeline.total)}
+            </span>}
+            onChange={n => setPanel("sim", n)}
+            onHide={() => setPanel("sim", { ...panels.sim, visible: false })}
+          >
             <div className="rounded-sm border border-[#222] p-3 space-y-3" style={{ background: "#0f0f0f" }}>
               {/* Progress scrubber */}
               <div className="relative">
@@ -871,16 +947,28 @@ export function PlannerTab({
                 </div>
               )}
             </div>
-          </div>
+          </FloatingPanel>
         )}
-        <div className="absolute top-3 left-3 z-[400] bg-black/70 text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-sm border border-[#222] flex flex-col gap-1">
+
+        {panels.legend.visible && (
+          <FloatingPanel
+            title="Legend"
+            state={panels.legend}
+            limits={{ min: { w: 180, h: 84 }, max: { w: 340, h: 220 } }}
+            rect={mapRect}
+            onChange={n => setPanel("legend", n)}
+            onHide={() => setPanel("legend", { ...panels.legend, visible: false })}
+          >
+            <div className="text-[10px] uppercase tracking-wider flex flex-col gap-1 text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Home (drag or click map)</div>
           <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-dashed border-yellow-400" /> Transit (sprayer off)</div>
           <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-cyan-400" /> Spray pattern</div>
           {swapPoint && (
             <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-yellow-400 border border-black" /> Battery swap</div>
           )}
-        </div>
+            </div>
+          </FloatingPanel>
+        )}
       </div>
 
       {/* scanId is null, NOT taskId. `jobs.scan_id` is a foreign key onto
