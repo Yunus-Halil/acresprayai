@@ -2,6 +2,7 @@ import { LandingNav } from "@/components/landing/LandingNav";
 import { Hero } from "@/components/landing/Hero";
 import { FeatureCards } from "@/components/landing/FeatureCards";
 import { WhySection } from "@/components/landing/WhySection";
+import { CockpitSection } from "@/components/landing/CockpitSection";
 import { Steps } from "@/components/landing/Steps";
 import { Audiences } from "@/components/landing/Audiences";
 import { PilotCTA } from "@/components/landing/PilotCTA";
@@ -34,6 +35,7 @@ const Index = () => (
     <Hero />
     <FeatureCards />
     <WhySection />
+    <CockpitSection />
     <Steps />
     <Audiences />
     <PilotCTA />
