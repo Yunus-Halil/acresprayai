@@ -14,7 +14,7 @@ import {
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
   Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
-  CheckCircle2, XCircle, Trash2, Hexagon, CalendarDays,
+  CheckCircle2, XCircle, Trash2, Hexagon, CalendarDays, Info,
   Play, Pause, RotateCcw, FastForward, History,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
@@ -74,6 +74,36 @@ import {
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 
 
+/**
+ * A paragraph folded into an icon.
+ *
+ * The sidebar was carrying several multi-line explainers that were each read
+ * once and then occupied the screen forever. The words are worth keeping — the
+ * Agras/QGC distinction in particular is the difference between a file that
+ * flies and one that does not — so they move behind a hover rather than being
+ * deleted.
+ */
+function InfoTip({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className={`relative inline-flex ${className}`}>
+      <button type="button"
+        aria-label="More information"
+        onClick={() => setOpen(v => !v)}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        className="text-neutral-600 hover:text-neutral-300 transition-colors">
+        <Info className="h-3 w-3" />
+      </button>
+      {open && (
+        <span className="absolute bottom-full right-0 mb-1.5 z-[600] w-64 rounded-sm border border-[#2a2a2a] bg-[#0a0a0a] p-2.5 text-[10px] leading-relaxed text-neutral-300 shadow-xl normal-case tracking-normal font-normal">
+          {children}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
   settings, onSaveSettings, onFlightLogged, center, userPolys, fieldId, fieldName,
@@ -97,6 +127,8 @@ export function PlannerTab({
 }) {
   const units = useUnitSystem();
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [sideTab, setSideTab] = useState<"setup" | "mission">("setup");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const [spacingM, setSpacingM] = useState<number>(15);
   const [transitAltM, setTransitAltM] = useState<number>(30);
@@ -650,232 +682,12 @@ export function PlannerTab({
             <CalendarDays className="h-3.5 w-3.5" /> Schedule
           </button>
         </div>
-        <div className="absolute top-3 left-3 z-[400] bg-black/70 text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-sm border border-[#222] flex flex-col gap-1">
-          <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Home (drag or click map)</div>
-          <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-dashed border-yellow-400" /> Transit (sprayer off)</div>
-          <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-cyan-400" /> Spray pattern</div>
-          {swapPoint && (
-            <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-yellow-400 border border-black" /> Battery swap</div>
-          )}
-        </div>
-      </div>
-
-      {/* scanId is null, NOT taskId. `jobs.scan_id` is a foreign key onto
-          `scans`, the older single-image table; this workspace runs on
-          `odm_tasks`, and the two are independent — both keyed to a field,
-          neither referencing the other. So there is no scan id to give, and the
-          odm_task id goes to flight_plan_id instead, which carries no
-          constraint and is what links the calendar entry back to this plan. */}
-      <ScheduleMissionModal
-        open={scheduleOpen}
-        onOpenChange={setScheduleOpen}
-        mission={mission}
-        zones={zonesWithRates.map(z => ({ areaM2: polygonAreaM2(z.ring), rateLha: z.rateLha }))}
-        drones={drones}
-        fallbackSpec={spec}
-        sprayAltM={sprayAltM}
-        transitAltM={transitAltM}
-        tankLoadPct={fp.tank_load_pct}
-        fieldId={fieldId}
-        scanId={null}
-        flightPlanId={taskId}
-        center={{ lat: center[0], lng: center[1] }}
-        fieldName={fieldName ?? ""}
-        initialDroneId={fp.drone_id}
-        onScheduled={() => { /* the Schedule tab reads on mount */ }}
-      />
-
-      {/* Right control panel */}
-      <div className="w-80 shrink-0 border-l border-[#222] overflow-auto p-4" style={{ background: "#161616" }}>
-        <div className="flex items-center gap-2 mb-4">
-          <Plane className="h-4 w-4 text-[#4CAF50]" />
-          <div className="text-sm font-semibold">Flight Planner</div>
-        </div>
-
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pre-flight battery</div>
-        <div className="rounded-sm border border-[#222] p-3 mb-4" style={{ background: "#0f0f0f" }}>
-          {drones.length === 0 ? (
-            <div className="text-[11px] text-neutral-600 italic leading-relaxed">
-              Register a drone in <span className="text-neutral-400">Fleet</span> to enable battery simulation
-            </div>
-          ) : !activeDrone ? (
-            <div className="text-[11px] text-neutral-500 leading-relaxed">
-              Select an active drone below to simulate pre-flight battery.
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] text-neutral-500">Launch with</span>
-                <span className={`font-mono text-sm ${preFlightBattery < 30 ? "text-red-400" : preFlightBattery < 60 ? "text-yellow-300" : "text-[#4CAF50]"}`}>
-                  {preFlightBattery}%
-                </span>
-              </div>
-              <input
-                type="range" min={0} max={100} step={1}
-                value={preFlightBattery}
-                onChange={(e) => setPreFlightBattery(Number(e.target.value))}
-                className="w-full accent-[#4CAF50]"
-              />
-              <div className="text-[10px] text-neutral-600 mt-1">
-                Stored: {activeDrone.battery}% — adjust to simulate a partial charge.
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
-        <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
-          <button
-            type="button"
-            onClick={() => {
-              userTouchedSpacingRef.current = false;
-              setSpacingM(recommendedSpacing);
-              setRepeats(1);
-              setTransitAltM(30);
-              setSprayAltM(3);
-              setTransitSpeed(10);
-              setSpraySpeed(3);
-            }}
-            className="w-full rounded-sm border border-[#4CAF50]/40 bg-[#4CAF50]/10 hover:bg-[#4CAF50]/20 text-[#4CAF50] text-[11px] font-medium py-2 transition"
-          >
-            ✨ Generate recommended flight plan
-          </button>
-          <div className="text-[10px] text-neutral-500 -mt-1">
-            Auto-configures spacing, altitude, and speed to cover every anomaly with the shortest safe path for your home position.
-          </div>
-          {(() => {
-            const recommended = recommendedSpacing;
-            const atRec = spacingM === recommended;
-            return (
-              <>
-                <Slider2
-                  label={`Swath spacing  ·  recommended ${recommended} m${atRec ? "  ·  auto" : ""}`}
-                  value={spacingM}
-                  setValue={(n) => { userTouchedSpacingRef.current = true; setSpacingM(n); }}
-                  min={3} max={25} step={1} unit="m"
-                />
-                {!atRec && (
-                  <button
-                    type="button"
-                    onClick={() => { userTouchedSpacingRef.current = false; setSpacingM(recommended); }}
-                    className="text-[10px] text-[#4CAF50] hover:underline -mt-1"
-                  >
-                    ↺ Reset to recommended ({recommended} m)
-                  </button>
-                )}
-              </>
-            );
-          })()}
-          <Slider2
-            label={`Spray coverage  ·  ${repeats}× pass${repeats > 1 ? "es" : ""}`}
-            value={repeats}
-            setValue={setRepeats}
-            min={1} max={4} step={1} unit="×"
-          />
-          <div className="text-[10px] text-neutral-500 -mt-1">
-            Each anomaly zone gets its own lawnmower. Increase pass count for heavy infestation — multiplies tank, time, and battery usage.
-          </div>
-          <Slider2 label="Transit altitude (AGL)" value={transitAltM} setValue={setTransitAltM} min={10} max={120} step={1} unit="m" />
-          <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
-          <Slider2 label="Transit speed" value={transitSpeed} setValue={setTransitSpeed} min={3} max={20} step={0.5} unit="m/s" />
-          <Slider2 label="Spray speed" value={spraySpeed} setValue={setSpraySpeed} min={1} max={8} step={0.5} unit="m/s" />
-        </div>
-
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Maneuverability</div>
-        <div className={`rounded-sm border p-3 mb-4 text-xs space-y-2 ${maneuver.ok ? "border-[#1f3a1f]" : "border-amber-900/60"}`}
-             style={{ background: maneuver.ok ? "#0c1a0c" : "#1a140a" }}>
-          <div className="flex items-center justify-between">
-            <span className={`font-medium ${maneuver.ok ? "text-[#4CAF50]" : "text-amber-300"}`}>
-              {maneuver.ok ? "✓ Flyable by " : "⚠ Adjusting for "} {droneModelKey}
-            </span>
-            <span className="font-mono text-[10px] text-neutral-500">
-              U-turn need {maneuver.rUturnNeeded.toFixed(1)} m · bank {maneuver.rBankTransit.toFixed(1)} m
-            </span>
-          </div>
-          {!maneuver.ok && maneuver.issues.map((m, i) => (
-            <div key={i} className="text-[11px] text-amber-200/80 leading-relaxed">• {m}</div>
-          ))}
-          {autoFixNote && (
-            <div className="text-[11px] text-[#4CAF50] leading-relaxed pt-1 border-t border-[#1f1f1f]">
-              {autoFixNote}
-            </div>
-          )}
-          <div className="text-[10px] text-neutral-500 leading-relaxed">
-            Min turn radius {spec.min_turn_radius_m} m · climb {spec.climb_rate_ms} m/s. Spacing &amp; transit speed are auto-tuned so every U-turn fits within the drone's physical limits.
-          </div>
-        </div>
-
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Drone</div>
-        <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-3" style={{ background: "#0f0f0f" }}>
-          {drones.length === 0 ? (
-            <div className="text-[11px] text-neutral-400 leading-relaxed">
-              No drones in your fleet yet. Register one on the <span className="text-[#4CAF50]">Fleet</span> page to get accurate battery estimates.
-            </div>
-          ) : (
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-neutral-500">Active drone</label>
-              <select
-                value={fp.drone_id ?? ""}
-                onChange={(e) => updateFlightPlan({ drone_id: e.target.value || null })}
-                className="mt-1 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-xs text-[#f0f0f0] focus:outline-none focus:border-[#4CAF50]"
-              >
-                <option value="">— Select drone —</option>
-                {drones.map(d => (
-                  <option key={d.id} value={d.id}>
-                    {d.name} · {d.model}{d.status !== "idle" ? ` · ${d.status.replace("_", " ")}` : ""}
-                  </option>
-                ))}
-              </select>
-              {activeDrone && (
-                <div className="mt-2 text-[10px] text-neutral-500 font-mono">
-                  Battery now: <span className="text-neutral-300">{activeDrone.battery}%</span> · Spec: {spec.tank_l}L / {spec.max_flight_min} min / {spec.max_speed_ms} m/s
-                </div>
-              )}
-            </div>
-          )}
-          {isCustom && (
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#1f1f1f]">
-              <div className="col-span-2 text-[10px] uppercase tracking-wider text-neutral-500">Custom specs</div>
-              <label className="text-[10px] text-neutral-500">Tank (L)
-                <input type="number" min={0} step={1} value={fp.custom_specs.tank_l}
-                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, tank_l: Number(e.target.value) || 0 } })}
-                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
-              </label>
-              <label className="text-[10px] text-neutral-500">Payload (kg)
-                <input type="number" min={0} step={1} value={fp.custom_specs.payload_kg}
-                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, payload_kg: Number(e.target.value) || 0 } })}
-                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
-              </label>
-              <label className="text-[10px] text-neutral-500">Flight time (min)
-                <input type="number" min={1} step={1} value={fp.custom_specs.max_flight_min}
-                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_flight_min: Number(e.target.value) || 1 } })}
-                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
-              </label>
-              <label className="text-[10px] text-neutral-500">Max speed (m/s)
-                <input type="number" min={1} step={0.5} value={fp.custom_specs.max_speed_ms}
-                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_speed_ms: Number(e.target.value) || 1 } })}
-                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
-              </label>
-            </div>
-          )}
-          <div className="pt-2 border-t border-[#1f1f1f]">
-            <Slider2 label="Tank load" value={fp.tank_load_pct}
-              setValue={(n) => updateFlightPlan({ tank_load_pct: n })}
-              min={0} max={100} step={5} unit="%" />
-          </div>
-        </div>
-
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Home / Takeoff</div>
-        <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
-          <div className="flex justify-between"><span className="text-neutral-500">Latitude</span>
-            <span className="font-mono">{effectiveHome?.lat.toFixed(6) ?? "—"}</span></div>
-          <div className="flex justify-between"><span className="text-neutral-500">Longitude</span>
-            <span className="font-mono">{effectiveHome?.lng.toFixed(6) ?? "—"}</span></div>
-          <button onClick={() => setHome(null)} className="text-[10px] text-[#4CAF50] hover:underline">Reset to field centroid</button>
-        </div>
-
+        {/* Simulation transport floats over the map rather than living in the
+            sidebar: it controls what the MAP shows, and parking it hundreds of
+            pixels of scroll away meant driving the video from another room. */}
         {mission && simTimeline.total > 0 && (
-          <div className="mb-4">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[500] w-[min(560px,calc(100%-2rem))] rounded-md border border-[#222] px-3 py-2"
+               style={{ background: "rgba(10,10,10,0.85)", backdropFilter: "blur(4px)" }}>
             <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
               <span>Simulation</span>
               <span className="font-mono text-neutral-400 normal-case tracking-normal">
@@ -1019,6 +831,328 @@ export function PlannerTab({
             </div>
           </div>
         )}
+        <div className="absolute top-3 left-3 z-[400] bg-black/70 text-[10px] uppercase tracking-wider px-2 py-1.5 rounded-sm border border-[#222] flex flex-col gap-1">
+          <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-red-500" /> Home (drag or click map)</div>
+          <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-dashed border-yellow-400" /> Transit (sprayer off)</div>
+          <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-cyan-400" /> Spray pattern</div>
+          {swapPoint && (
+            <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-yellow-400 border border-black" /> Battery swap</div>
+          )}
+        </div>
+      </div>
+
+      {/* scanId is null, NOT taskId. `jobs.scan_id` is a foreign key onto
+          `scans`, the older single-image table; this workspace runs on
+          `odm_tasks`, and the two are independent — both keyed to a field,
+          neither referencing the other. So there is no scan id to give, and the
+          odm_task id goes to flight_plan_id instead, which carries no
+          constraint and is what links the calendar entry back to this plan. */}
+      <ScheduleMissionModal
+        open={scheduleOpen}
+        onOpenChange={setScheduleOpen}
+        mission={mission}
+        zones={zonesWithRates.map(z => ({ areaM2: polygonAreaM2(z.ring), rateLha: z.rateLha }))}
+        drones={drones}
+        fallbackSpec={spec}
+        sprayAltM={sprayAltM}
+        transitAltM={transitAltM}
+        tankLoadPct={fp.tank_load_pct}
+        fieldId={fieldId}
+        scanId={null}
+        flightPlanId={taskId}
+        center={{ lat: center[0], lng: center[1] }}
+        fieldName={fieldName ?? ""}
+        initialDroneId={fp.drone_id}
+        onScheduled={() => { /* the Schedule tab reads on mount */ }}
+      />
+
+      {/* Right control panel */}
+      <div className="w-80 shrink-0 border-l border-[#222] overflow-auto p-4" style={{ background: "#161616" }}>
+        <div className="flex items-center gap-2 mb-4">
+          <Plane className="h-4 w-4 text-[#4CAF50]" />
+          <div className="text-sm font-semibold">Flight Planner</div>
+        </div>
+
+        {/* Two tabs, not one scroll. Setup is what you touch before a job;
+            Mission is what the job tells you back. Nothing was cut — deep
+            control is the point, the fix is grouping. */}
+        <div className="grid grid-cols-2 gap-1 mb-4 rounded-sm border border-[#222] p-1" style={{ background: "#0f0f0f" }}>
+          {([["setup", "Config & Hardware"], ["mission", "Telemetry & Export"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setSideTab(k)}
+              className={`text-[11px] py-1.5 rounded-sm transition-colors ${
+                sideTab === k
+                  ? "bg-[#4CAF50] text-black font-semibold"
+                  : "text-neutral-400 hover:text-neutral-200"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {sideTab === "setup" && (<>
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pre-flight battery</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4" style={{ background: "#0f0f0f" }}>
+          {drones.length === 0 ? (
+            <div className="text-[11px] text-neutral-600 italic leading-relaxed">
+              Register a drone in <span className="text-neutral-400">Fleet</span> to enable battery simulation
+            </div>
+          ) : !activeDrone ? (
+            <div className="text-[11px] text-neutral-500 leading-relaxed">
+              Select an active drone below to simulate pre-flight battery.
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] text-neutral-500">Launch with</span>
+                <span className={`font-mono text-sm ${preFlightBattery < 30 ? "text-red-400" : preFlightBattery < 60 ? "text-yellow-300" : "text-[#4CAF50]"}`}>
+                  {preFlightBattery}%
+                </span>
+              </div>
+              <input
+                type="range" min={0} max={100} step={1}
+                value={preFlightBattery}
+                onChange={(e) => setPreFlightBattery(Number(e.target.value))}
+                className="w-full accent-[#4CAF50]"
+              />
+              <div className="text-[10px] text-neutral-600 mt-1">
+                Stored: {activeDrone.battery}% — adjust to simulate a partial charge.
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Pattern</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4 space-y-3" style={{ background: "#0f0f0f" }}>
+          <button
+            type="button"
+            onClick={() => {
+              userTouchedSpacingRef.current = false;
+              setSpacingM(recommendedSpacing);
+              setRepeats(1);
+              setTransitAltM(30);
+              setSprayAltM(3);
+              setTransitSpeed(10);
+              setSpraySpeed(3);
+            }}
+            className="w-full rounded-sm border border-[#4CAF50]/40 bg-[#4CAF50]/10 hover:bg-[#4CAF50]/20 text-[#4CAF50] text-[11px] font-medium py-2 transition"
+          >
+            ✨ Generate recommended flight plan
+          </button>
+          {(() => {
+            const recommended = recommendedSpacing;
+            const atRec = spacingM === recommended;
+            return (
+              <>
+                <Slider2
+                  label={`Swath spacing  ·  recommended ${recommended} m${atRec ? "  ·  auto" : ""}`}
+                  value={spacingM}
+                  setValue={(n) => { userTouchedSpacingRef.current = true; setSpacingM(n); }}
+                  min={3} max={25} step={1} unit="m"
+                />
+                {!atRec && (
+                  <button
+                    type="button"
+                    onClick={() => { userTouchedSpacingRef.current = false; setSpacingM(recommended); }}
+                    className="text-[10px] text-[#4CAF50] hover:underline -mt-1"
+                  >
+                    ↺ Reset to recommended ({recommended} m)
+                  </button>
+                )}
+              </>
+            );
+          })()}
+          <Slider2
+            label={`Spray coverage  ·  ${repeats}× pass${repeats > 1 ? "es" : ""}`}
+            value={repeats}
+            setValue={setRepeats}
+            min={1} max={4} step={1} unit="×"
+          />
+          <div className="text-[10px] text-neutral-500 -mt-1">
+            Each anomaly zone gets its own lawnmower. Increase pass count for heavy infestation — multiplies tank, time, and battery usage.
+          </div>
+          {/* Altitude and speed matter, but not every job: the recommended plan
+              sets them, and an operator who wants them digs exactly one level.
+              Spacing and coverage stay out front because those are the two that
+              change per field. Nothing is removed — only folded. */}
+          <button type="button"
+            onClick={() => setAdvancedOpen(v => !v)}
+            aria-expanded={advancedOpen}
+            className="w-full flex items-center justify-between text-[10px] uppercase tracking-wider text-neutral-500 hover:text-neutral-300 transition-colors pt-2 border-t border-[#1f1f1f]">
+            <span>Advanced flight dynamics</span>
+            <span className="inline-flex items-center gap-1.5 normal-case tracking-normal font-mono text-neutral-600">
+              {!advancedOpen && `${transitAltM}/${sprayAltM} m · ${transitSpeed}/${spraySpeed} m/s`}
+              {advancedOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </span>
+          </button>
+          {advancedOpen && (
+            <div className="space-y-3 pt-1">
+            <Slider2 label="Transit altitude (AGL)" value={transitAltM} setValue={setTransitAltM} min={10} max={120} step={1} unit="m" />
+            <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
+            <Slider2 label="Transit speed" value={transitSpeed} setValue={setTransitSpeed} min={3} max={20} step={0.5} unit="m/s" />
+            <Slider2 label="Spray speed" value={spraySpeed} setValue={setSpraySpeed} min={1} max={8} step={0.5} unit="m/s" />
+            </div>
+          )}
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Drone</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-3" style={{ background: "#0f0f0f" }}>
+          {drones.length === 0 ? (
+            <div className="text-[11px] text-neutral-400 leading-relaxed">
+              No drones in your fleet yet. Register one on the <span className="text-[#4CAF50]">Fleet</span> page to get accurate battery estimates.
+            </div>
+          ) : (
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-neutral-500">Active drone</label>
+              <select
+                value={fp.drone_id ?? ""}
+                onChange={(e) => updateFlightPlan({ drone_id: e.target.value || null })}
+                className="mt-1 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-xs text-[#f0f0f0] focus:outline-none focus:border-[#4CAF50]"
+              >
+                <option value="">— Select drone —</option>
+                {drones.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} · {d.model}{d.status !== "idle" ? ` · ${d.status.replace("_", " ")}` : ""}
+                  </option>
+                ))}
+              </select>
+              {activeDrone && (
+                <div className="mt-2 text-[10px] text-neutral-500 font-mono">
+                  Battery now: <span className="text-neutral-300">{activeDrone.battery}%</span> · Spec: {spec.tank_l}L / {spec.max_flight_min} min / {spec.max_speed_ms} m/s
+                </div>
+              )}
+            </div>
+          )}
+          {isCustom && (
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#1f1f1f]">
+              <div className="col-span-2 text-[10px] uppercase tracking-wider text-neutral-500">Custom specs</div>
+              <label className="text-[10px] text-neutral-500">Tank (L)
+                <input type="number" min={0} step={1} value={fp.custom_specs.tank_l}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, tank_l: Number(e.target.value) || 0 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+              <label className="text-[10px] text-neutral-500">Payload (kg)
+                <input type="number" min={0} step={1} value={fp.custom_specs.payload_kg}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, payload_kg: Number(e.target.value) || 0 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+              <label className="text-[10px] text-neutral-500">Flight time (min)
+                <input type="number" min={1} step={1} value={fp.custom_specs.max_flight_min}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_flight_min: Number(e.target.value) || 1 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+              <label className="text-[10px] text-neutral-500">Max speed (m/s)
+                <input type="number" min={1} step={0.5} value={fp.custom_specs.max_speed_ms}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_speed_ms: Number(e.target.value) || 1 } })}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
+              </label>
+            </div>
+          )}
+          <div className="pt-2 border-t border-[#1f1f1f]">
+            <Slider2 label="Tank load" value={fp.tank_load_pct}
+              setValue={(n) => updateFlightPlan({ tank_load_pct: n })}
+              min={0} max={100} step={5} unit="%" />
+          </div>
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Home / Takeoff</div>
+        <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
+          <div className="flex justify-between"><span className="text-neutral-500">Latitude</span>
+            <span className="font-mono">{effectiveHome?.lat.toFixed(6) ?? "—"}</span></div>
+          <div className="flex justify-between"><span className="text-neutral-500">Longitude</span>
+            <span className="font-mono">{effectiveHome?.lng.toFixed(6) ?? "—"}</span></div>
+          <button onClick={() => setHome(null)} className="text-[10px] text-[#4CAF50] hover:underline">Reset to field centroid</button>
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">
+          Application rate
+        </div>
+        <div className="rounded-sm border border-[#1f3a1f] p-3 mb-4 text-xs">
+          <div className="grid grid-cols-3 gap-2">
+            {(["low", "medium", "high"] as const).map(sev => (
+              <label key={sev} className="block">
+                <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-neutral-500">
+                  <span className="h-2 w-2 rounded-full" style={{ background: sevColor(sev) }} />
+                  {sev}
+                </span>
+                <input
+                  type="number" min={0} max={200} step={0.5}
+                  value={rates[sev]}
+                  onChange={e => setRates({ ...rates, [sev]: Math.max(0, Number(e.target.value)) })}
+                  className="mt-1 w-full bg-[#0f0f0f] border border-[#2a2a2a] rounded-sm px-1.5 py-1 font-mono text-xs text-neutral-200"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-2 text-[10px] text-neutral-500 leading-relaxed">
+            Litres per hectare, by zone severity. This is the dose the DJI prescription raster is
+            built from — the .waypoints export only carries a pump on/off, so it has no rate to
+            inherit. Set it from your product label, not from the AI's written recommendation.
+          </div>
+          {zonesWithRates.length > 0 && (
+            <div className="mt-2 border-t border-[#1f3a1f] pt-2 space-y-1">
+              {zonesWithRates.map((z, i) => (
+                <div key={z.id} className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ background: sevColor(z.severity) }} />
+                  <span className="text-[11px] text-neutral-400 truncate flex-1">
+                    Zone {i + 1}
+                    {settings.zone_rate_overrides?.[z.id] != null && (
+                      <span className="text-neutral-600"> · pinned</span>
+                    )}
+                  </span>
+                  {/* Shown in the viewer's units, ALWAYS stored as L/ha.
+                      The label alone following the setting would be the worst
+                      of both: the same 15 relabelled gal/ac is a nine-fold
+                      overdose on the aircraft. */}
+                  <input
+                    type="number" min={0}
+                    max={units === "metric" ? 200 : 21}
+                    step={units === "metric" ? 0.5 : 0.05}
+                    value={Number(rateValue(z.rateLha, units).toFixed(units === "metric" ? 1 : 2))}
+                    onChange={e => {
+                      const v = rateToLha(Math.max(0, Number(e.target.value)), units);
+                      onSaveSettings({
+                        ...settings,
+                        zone_rate_overrides: { ...settings.zone_rate_overrides, [z.id]: v },
+                      });
+                    }}
+                    className="w-16 bg-[#0f0f0f] border border-[#2a2a2a] rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-right text-neutral-200"
+                  />
+                  <span className="text-[10px] text-neutral-600 w-12">{rateUnit(units)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        </>)}
+
+        {sideTab === "mission" && (<>
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
+          <span>Maneuverability</span>
+          <InfoTip>
+            Min turn radius {spec.min_turn_radius_m} m · climb {spec.climb_rate_ms} m/s. Spacing and
+            transit speed are auto-tuned so every U-turn fits within the drone&rsquo;s physical limits.
+          </InfoTip>
+        </div>
+        <div className={`rounded-sm border p-3 mb-4 text-xs space-y-2 ${maneuver.ok ? "border-[#1f3a1f]" : "border-amber-900/60"}`}
+             style={{ background: maneuver.ok ? "#0c1a0c" : "#1a140a" }}>
+          <div className="flex items-center justify-between">
+            <span className={`font-medium ${maneuver.ok ? "text-[#4CAF50]" : "text-amber-300"}`}>
+              {maneuver.ok ? "✓ Flyable by " : "⚠ Adjusting for "} {droneModelKey}
+            </span>
+            <span className="font-mono text-[10px] text-neutral-500">
+              U-turn need {maneuver.rUturnNeeded.toFixed(1)} m · bank {maneuver.rBankTransit.toFixed(1)} m
+            </span>
+          </div>
+          {!maneuver.ok && maneuver.issues.map((m, i) => (
+            <div key={i} className="text-[11px] text-amber-200/80 leading-relaxed">• {m}</div>
+          ))}
+          {autoFixNote && (
+            <div className="text-[11px] text-[#4CAF50] leading-relaxed pt-1 border-t border-[#1f1f1f]">
+              {autoFixNote}
+            </div>
+          )}
+        </div>
+
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">
           Mission estimate
         </div>
@@ -1112,68 +1246,19 @@ export function PlannerTab({
           </div>
         )}
 
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">
-          Application rate
+        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
+          <span>Export</span>
+          <InfoTip>
+            <b className="text-neutral-400">Agras .zip</b> — unzip onto the card so <code>DJI/</code>
+            sits at the root. Boundary shapefile plus a prescription raster, both WGS84. The aircraft
+            plans its own flight lines from these; the pattern below is our estimate of what it will
+            fly, not a route we hand it.
+            <br />
+            <b className="text-neutral-400">.waypoints</b> — QGC WPL 110 with takeoff, transit
+            (sprayer off), spray (servo ON/OFF on servo 8), RTH and land. For Mission Planner or
+            QGroundControl. Agras cannot read it.
+          </InfoTip>
         </div>
-        <div className="rounded-sm border border-[#1f3a1f] p-3 mb-4 text-xs">
-          <div className="grid grid-cols-3 gap-2">
-            {(["low", "medium", "high"] as const).map(sev => (
-              <label key={sev} className="block">
-                <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-neutral-500">
-                  <span className="h-2 w-2 rounded-full" style={{ background: sevColor(sev) }} />
-                  {sev}
-                </span>
-                <input
-                  type="number" min={0} max={200} step={0.5}
-                  value={rates[sev]}
-                  onChange={e => setRates({ ...rates, [sev]: Math.max(0, Number(e.target.value)) })}
-                  className="mt-1 w-full bg-[#0f0f0f] border border-[#2a2a2a] rounded-sm px-1.5 py-1 font-mono text-xs text-neutral-200"
-                />
-              </label>
-            ))}
-          </div>
-          <div className="mt-2 text-[10px] text-neutral-500 leading-relaxed">
-            Litres per hectare, by zone severity. This is the dose the DJI prescription raster is
-            built from — the .waypoints export only carries a pump on/off, so it has no rate to
-            inherit. Set it from your product label, not from the AI's written recommendation.
-          </div>
-          {zonesWithRates.length > 0 && (
-            <div className="mt-2 border-t border-[#1f3a1f] pt-2 space-y-1">
-              {zonesWithRates.map((z, i) => (
-                <div key={z.id} className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full shrink-0" style={{ background: sevColor(z.severity) }} />
-                  <span className="text-[11px] text-neutral-400 truncate flex-1">
-                    Zone {i + 1}
-                    {settings.zone_rate_overrides?.[z.id] != null && (
-                      <span className="text-neutral-600"> · pinned</span>
-                    )}
-                  </span>
-                  {/* Shown in the viewer's units, ALWAYS stored as L/ha.
-                      The label alone following the setting would be the worst
-                      of both: the same 15 relabelled gal/ac is a nine-fold
-                      overdose on the aircraft. */}
-                  <input
-                    type="number" min={0}
-                    max={units === "metric" ? 200 : 21}
-                    step={units === "metric" ? 0.5 : 0.05}
-                    value={Number(rateValue(z.rateLha, units).toFixed(units === "metric" ? 1 : 2))}
-                    onChange={e => {
-                      const v = rateToLha(Math.max(0, Number(e.target.value)), units);
-                      onSaveSettings({
-                        ...settings,
-                        zone_rate_overrides: { ...settings.zone_rate_overrides, [z.id]: v },
-                      });
-                    }}
-                    className="w-16 bg-[#0f0f0f] border border-[#2a2a2a] rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-right text-neutral-200"
-                  />
-                  <span className="text-[10px] text-neutral-600 w-12">{rateUnit(units)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Export</div>
         {userFacingExporters().map((exp, i) => {
           const blocked = exp.blockedReason(exportCtx);
           return (
@@ -1241,16 +1326,7 @@ export function PlannerTab({
           </div>
         )}
 
-        <p className="text-[10px] text-neutral-500 leading-relaxed">
-          <b className="text-neutral-400">Agras .zip</b> — unzip onto the card so <code>DJI/</code>
-          sits at the root. Boundary shapefile plus a prescription raster, both WGS84. The aircraft
-          plans its own flight lines from these; the pattern below is our estimate of what it will
-          fly, not a route we hand it.
-          <br />
-          <b className="text-neutral-400">.waypoints</b> — QGC WPL 110 with takeoff, transit
-          (sprayer off), spray (servo ON/OFF on servo 8), RTH and land. For Mission Planner or
-          QGroundControl. Agras cannot read it.
-        </p>
+        </>)}
       </div>
 
       <LogFlightModal
