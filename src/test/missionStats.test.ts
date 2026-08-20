@@ -11,6 +11,7 @@ import {
 import { dayKey, groupByDay, monthGrid, monthRangeISO } from "@/lib/schedule";
 import type { ScheduledMission } from "@/lib/schedule";
 import { DRONE_SPECS } from "@/lib/droneSpecs";
+import { T40_PHYSICS } from "@/lib/dronePhysics";
 import type { Mission } from "@/lib/mission";
 import type { Forecast } from "@/lib/weather";
 
@@ -242,6 +243,93 @@ describe("flight conditions", () => {
     }), new Date(2026, 7, 21, 21, 0).getTime(), fmt);
     expect(c.summary).not.toContain("heavy rain");
     expect(c.available).toBe(false);
+  });
+});
+
+describe("the integrated physics path", () => {
+  const phys = {
+    config: T40_PHYSICS,
+    elevationM: 0,
+    swathM: 11,
+    rowLengthM: 200,
+    flowLpm: 8,
+    reserveFraction: 0.2,
+    headingDeg: 0,
+  };
+
+  it("is opt-in — no physics inputs, no change in behaviour", () => {
+    // The flat estimate is the honest answer when nobody has said what the
+    // elevation or the pack's age is. It must not be quietly replaced.
+    const plain = computeMissionStats(base);
+    expect(plain.physics).toBeUndefined();
+  });
+
+  it("reports a breakdown when physics inputs are supplied", () => {
+    const s = computeMissionStats({ ...base, physics: phys });
+    expect(s.physics).toBeDefined();
+    expect(s.physics!.confidence).toBe("structured-estimate");
+  });
+
+  it("gets lighter as the tank drains", () => {
+    // The whole premise: mass is not constant across a mission.
+    const s = computeMissionStats({ ...base, physics: phys });
+    expect(s.physics!.auwEndKg).toBeLessThan(s.physics!.auwStartKg);
+  });
+
+  it("charges for the turnarounds", () => {
+    const s = computeMissionStats({ ...base, physics: phys });
+    expect(s.physics!.turnCount).toBeGreaterThan(0);
+    expect(s.physics!.turnaroundSeconds).toBeGreaterThan(0);
+    // And the flight time includes them, rather than reporting bare cruise.
+    expect(s.flightTimeMinutes).toBeGreaterThan(base.mission!.sprayTimeS / 60);
+  });
+
+  it("sizes batteries on usable capacity, never on nameplate", () => {
+    const s = computeMissionStats({ ...base, physics: phys });
+    expect(s.physics!.usableAh).toBeLessThan(T40_PHYSICS.batteryCapacityAh);
+    expect(s.physics!.reserveFraction).toBe(0.2);
+  });
+
+  it("needs more batteries from an aged pack than a new one", () => {
+    const fresh = computeMissionStats({ ...base, physics: { ...phys, batteryCycleCount: 0 } });
+    const worn = computeMissionStats({ ...base, physics: { ...phys, batteryCycleCount: 900 } });
+    expect(worn.physics!.usableAh).toBeLessThan(fresh.physics!.usableAh);
+    expect(worn.batteriesNeeded).toBeGreaterThanOrEqual(fresh.batteriesNeeded);
+  });
+
+  it("draws more current in thin mountain air than at sea level", () => {
+    const low = computeMissionStats({ ...base, physics: { ...phys, elevationM: 0 } });
+    const high = computeMissionStats({ ...base, physics: { ...phys, elevationM: 2500 } });
+    expect(high.physics!.airDensityKgM3).toBeLessThan(low.physics!.airDensityKgM3);
+    expect(high.physics!.meanAmps).toBeGreaterThan(low.physics!.meanAmps);
+  });
+
+  it("raises a drift warning when the wind is past the advisory", () => {
+    const calm = computeMissionStats({
+      ...base, wx: { wind_ms: 2, wind_dir: 0, temp_c: 20 }, physics: phys,
+    });
+    const blowy = computeMissionStats({
+      ...base, wx: { wind_ms: 7, wind_dir: 0, temp_c: 20 }, physics: phys,
+    });
+    expect(calm.physics!.drift.level).toBe("ok");
+    expect(blowy.physics!.drift.level).not.toBe("ok");
+  });
+
+  it("produces a finite, sane estimate over a whole mission", () => {
+    const s = computeMissionStats({ ...base, physics: phys });
+    expect(Number.isFinite(s.flightTimeMinutes)).toBe(true);
+    expect(s.flightTimeMinutes).toBeGreaterThan(0);
+    expect(s.flightTimeMinutes).toBeLessThan(600);
+    expect(Number.isFinite(s.physics!.meanAmps)).toBe(true);
+    expect(s.physics!.peakAmps).toBeGreaterThanOrEqual(s.physics!.meanAmps);
+  });
+
+  it("never claims more than a structured estimate", () => {
+    // Guards the honesty of the label. The coefficients are unverified; a
+    // "high confidence" badge on top of them would be the confident-looking
+    // guess this codebase keeps refusing to ship.
+    const s = computeMissionStats({ ...base, physics: phys });
+    expect(s.physics!.confidence).toBe("structured-estimate");
   });
 });
 
