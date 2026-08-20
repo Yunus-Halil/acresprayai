@@ -34,11 +34,17 @@ export type GridRenderInfo = {
 };
 
 export function TreatmentGridLayer({
-  grid, selected, brushM, onPaintCells, onPickCell, onRender,
+  grid, selected, candidates, brushM, onPaintCells, onPickCell, onRender,
 }: {
   grid: TreatmentGrid;
   /** Cells drawn with a selection halo. */
   selected: ReadonlySet<CellId>;
+  /**
+   * Cells suggested by Find Similar — drawn with a dashed amber outline,
+   * deliberately unlike both the treated ramp and the skip blue: suggested is
+   * neither decided nor default, and must not read as either.
+   */
+  candidates?: ReadonlySet<CellId>;
   /**
    * Brush radius in metres, or null when the layer is read-only. A number turns
    * click and drag into painting; null leaves the map draggable and clicks
@@ -54,8 +60,8 @@ export function TreatmentGridLayer({
   // Props the draw loop and the event handlers read. Held in refs so that
   // changing the brush or the selection does not tear down the canvas and
   // rebuild the projection cache — those change on every click.
-  const props = useRef({ grid, selected, brushM, onPaintCells, onPickCell, onRender });
-  props.current = { grid, selected, brushM, onPaintCells, onPickCell, onRender };
+  const props = useRef({ grid, selected, candidates, brushM, onPaintCells, onPickCell, onRender });
+  props.current = { grid, selected, candidates, brushM, onPaintCells, onPickCell, onRender };
 
   const boundsRef = useRef<CellBounds>(new Float64Array(0));
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -108,7 +114,7 @@ export function TreatmentGridLayer({
 
     const draw = () => {
       if (!ctx) return;
-      const { grid: g, selected: sel, onRender: report } = props.current;
+      const { grid: g, selected: sel, candidates: cand, onRender: report } = props.current;
       const size = map.getSize();
       const dpr = window.devicePixelRatio || 1;
 
@@ -188,6 +194,27 @@ export function TreatmentGridLayer({
         ctx.lineWidth = width;
         ctx.stroke();
       };
+      // Candidates stroke at EVERY detail level, like selection: a suggestion
+      // the operator cannot see is chemical they will be asked to approve
+      // blind. Dashed, so it cannot be mistaken for a decided cell.
+      if (cand?.size) {
+        ctx.setLineDash([5, 4]);
+        for (const i of visible) {
+          if (!cand.has(g.cells[i].id)) continue;
+          ctx.beginPath();
+          for (let k = offsets[i]; k < offsets[i + 1]; k++) {
+            const x = proj[k * 2] - originX, y = proj[k * 2 + 1] - originY;
+            if (k === offsets[i]) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.closePath();
+          ctx.fillStyle = "rgba(245,158,11,0.18)";
+          ctx.fill();
+          ctx.strokeStyle = "rgba(245,158,11,0.95)";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+      }
       if (sel.size) {
         for (const i of visible) if (sel.has(g.cells[i].id)) halo(i, "rgba(255,255,255,0.95)", 2);
       }
@@ -213,7 +240,7 @@ export function TreatmentGridLayer({
   }, [map]);
 
   // Redraw when anything the draw loop reads from props changes.
-  useEffect(() => { redrawRef.current(); }, [grid, selected, brushM]);
+  useEffect(() => { redrawRef.current(); }, [grid, selected, candidates, brushM]);
 
   // --- pointer handling ----------------------------------------------------
   useEffect(() => {

@@ -17,17 +17,22 @@ import { MapContainer, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  AlertTriangle, Brush, Grid3x3, Info, Loader2, MousePointer, Save, Trash2,
+  AlertTriangle, Brush, Grid3x3, Info, Loader2, MousePointer, Save, Sparkles, Trash2, X,
 } from "lucide-react";
 import { type FarmerSettings } from "@/lib/farmerSettings";
 import { type DroneSpec } from "@/lib/droneSpecs";
-import { type LatLng2, ringsAreaM2 } from "@/lib/geo";
+import { type LatLng2, bboxOfRings, ringsAreaM2 } from "@/lib/geo";
 import {
   type CellId, type CellRate, type GridDefinition, type TreatmentGrid,
   GridTooLargeError, buildTreatmentGrid, gridDefinitionFor, gridIdFor, gridTotals,
   regenerationImpact,
 } from "@/lib/treatmentGrid";
 import { GridStoreTooLargeError, applyStored, packGrid } from "@/lib/treatmentGridStore";
+import { extractCellFeatures, samplingVerdict } from "@/lib/cellFeatures";
+import { applyMatch } from "@/lib/matchCells";
+import { candidateTotals, findSimilarCells, labelsFromGrid } from "@/lib/findSimilar";
+import { MIN_MARKS_PER_CLASS } from "@/lib/matchCells";
+import { resolutionSufficient, stitchTiles } from "@/lib/orthoRaster";
 import { SupabaseTreatmentGridRepository } from "@/lib/treatmentGridRepo";
 import type { GridRenderInfo } from "./TreatmentGridLayer";
 import TreatmentGridLayer from "./TreatmentGridLayer";
@@ -67,6 +72,13 @@ export function TreatmentTab({
   const [buildError, setBuildError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<CellId>>(new Set());
   const [render, setRender] = useState<GridRenderInfo | null>(null);
+  // Find Similar. `candidates` is null when no run is live; an empty map is a
+  // completed run that found nothing — those are different states and the UI
+  // says different things for them.
+  const [finding, setFinding] = useState(false);
+  const [candidates, setCandidates] = useState<Map<CellId, number> | null>(null);
+  const [findNote, setFindNote] = useState<string | null>(null);
+  const [findError, setFindError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -170,8 +182,120 @@ export function TreatmentTab({
   }, [paintAction, rateLha, mutate]);
 
   const onPickCell = useCallback((id: CellId | null) => {
+    // While a review is live, clicking a suggested cell ACCEPTS it — the same
+    // gesture that marks a cell manually, extended rather than replaced. Cells
+    // that are not candidates keep the normal inspect behaviour.
+    if (id && candidates?.has(id)) {
+      mutate([id], () => ({ state: "treated", rateLha, source: "operator" }));
+      setCandidates(prev => {
+        if (!prev) return prev;
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+      return;
+    }
     setSelected(id ? new Set([id]) : new Set());
-  }, []);
+  }, [candidates, mutate, rateLha]);
+
+  // Any decision made by any tool prunes the suggestion list: a cell that has
+  // left its default state — accepted here, painted, or skip-rejected with the
+  // Assign tool — is no longer a suggestion. Rejection via Assign › Skip also
+  // becomes a negative example for the next run, with no extra bookkeeping.
+  useEffect(() => {
+    if (!grid || !candidates?.size) return;
+    const byId = new Map(grid.cells.map(c => [c.id, c] as const));
+    let changed = false;
+    const next = new Map(candidates);
+    for (const id of candidates.keys()) {
+      const cell = byId.get(id);
+      if (!cell || cell.rate.source !== "default" || cell.rate.state !== "untreated") {
+        next.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) setCandidates(next);
+  }, [grid, candidates]);
+
+  // The layer wants membership, not scores — a Set view over the Map.
+  const candidateIds = useMemo(
+    () => (candidates ? new Set(candidates.keys()) : undefined),
+    [candidates],
+  );
+
+  const labels = useMemo(
+    () => (grid ? labelsFromGrid(grid) : { wanted: [], unwanted: [] }),
+    [grid],
+  );
+  const findDisabledReason = !grid
+    ? "The grid has not been built yet."
+    : labels.wanted.length < MIN_MARKS_PER_CLASS || labels.unwanted.length < MIN_MARKS_PER_CLASS
+      ? `Needs ${MIN_MARKS_PER_CLASS} cells marked treated and ${MIN_MARKS_PER_CLASS} explicitly ` +
+        `skipped (Assign › Skip) to learn from — currently ${labels.wanted.length} treated, ` +
+        `${labels.unwanted.length} skipped. Cells never touched don't count as examples.`
+      : !tileUrl
+        ? "The orthomosaic tiles are still loading."
+        : null;
+
+  const runFindSimilar = async () => {
+    if (!grid || !tileUrl || findDisabledReason) return;
+    setFinding(true);
+    setFindError(null);
+    setFindNote(null);
+    setCandidates(null);
+    try {
+      const bb = bboxOfRings(rings);
+      // The tile URL is a Leaflet template; the stitcher fills the slots.
+      const template = (z: number, x: number, y: number) =>
+        tileUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
+      const { raster, missingTiles, cellPx } = await stitchTiles(
+        template,
+        { north: bb.maxLat, south: bb.minLat, east: bb.maxLng, west: bb.minLng },
+        grid.cellSizeM,
+        Math.min(20, maxNative),
+      );
+      if (!resolutionSufficient(cellPx)) {
+        setFindError(
+          `The imagery is too coarse to measure these cells — about ${Math.floor(cellPx * cellPx)} ` +
+          `pixels per cell where at least 30 are needed. Use a larger cell size, or re-bake the ` +
+          `scan at a deeper zoom.`,
+        );
+        return;
+      }
+      const sampling = extractCellFeatures(grid.cells, raster, null);
+      const verdict = samplingVerdict(sampling);
+      if (!verdict.ok) { setFindError(verdict.message); return; }
+
+      const result = findSimilarCells(grid, sampling);
+      if (!result.ready) { setFindError(result.message); return; }
+
+      // Detection provenance: every scored cell keeps its score, on the
+      // existing detection field, via the path built for this (86ee4e9).
+      // Rates are untouched — scoring is never assigning.
+      if (result.preview) {
+        dirty.current = true;
+        setGrid(g => (g ? applyMatch(g, result.preview!, new Date().toISOString()) : g));
+      }
+
+      setCandidates(new Map(result.candidates.map(c => [c.cellId, c.score])));
+      const extras: string[] = [];
+      if (result.unscored.length) extras.push(`${result.unscored.length} cell(s) had unusable imagery and were not scored`);
+      if (missingTiles) extras.push(`${missingTiles} imagery tile(s) failed to load`);
+      const sep = result.preview?.classifier.separability;
+      if (sep && sep.verdict !== "clear") {
+        extras.push(
+          sep.verdict === "indistinguishable"
+            ? "your treated and skipped examples look alike to the imagery — treat these suggestions sceptically"
+            : "the examples are only weakly distinguishable — review each suggestion",
+        );
+      }
+      setFindNote(extras.length ? extras.join(". ") + "." : null);
+    } catch (e) {
+      setFindError((e as Error)?.message ?? String(e));
+    } finally {
+      setFinding(false);
+    }
+  };
 
   const tankL = Math.max(0, spec.tank_l * (settings.flight_plan.tank_load_pct / 100));
   const totals = grid ? gridTotals(grid, tankL) : null;
@@ -242,6 +366,7 @@ export function TreatmentTab({
             <TreatmentGridLayer
               grid={grid}
               selected={selected}
+              candidates={candidateIds}
               brushM={tool === "paint" ? (brushCells * grid.cellSizeM) / 2 : null}
               onPaintCells={onPaintCells}
               onPickCell={onPickCell}
@@ -438,6 +563,86 @@ export function TreatmentTab({
               onChange={e => setBrushCells(Number(e.target.value))}
               className="w-full accent-[#4CAF50]" />
             <div className="text-[10px] text-neutral-600 mt-1.5">Click or drag on the map to assign.</div>
+          </div>
+        )}
+
+        {/* Find similar ---------------------------------------------------- */}
+        <button
+          onClick={runFindSimilar}
+          disabled={finding || !!findDisabledReason}
+          title={findDisabledReason ?? "Score every undecided cell against your marked examples"}
+          className="w-full mb-3 text-xs rounded-sm px-2 py-2 border inline-flex items-center justify-center gap-1.5 transition-colors border-amber-600/50 text-amber-400 hover:bg-amber-500/10 disabled:opacity-45 disabled:cursor-not-allowed"
+        >
+          {finding
+            ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sampling imagery…</>
+            : <><Sparkles className="h-3.5 w-3.5" /> Find similar cells</>}
+        </button>
+        {findDisabledReason && !finding && (
+          <div className="text-[10px] text-neutral-600 leading-relaxed -mt-2 mb-3">
+            {findDisabledReason}
+          </div>
+        )}
+        {findError && (
+          <div className="rounded-sm border border-red-900/60 bg-red-950/30 p-2.5 mb-3 text-[10px] text-red-300 leading-relaxed">
+            {findError}
+          </div>
+        )}
+
+        {/* Review — suggestions are amber and dashed on the map, and none of
+            them is treatment until a human says so. */}
+        {candidates !== null && (
+          <div className="rounded-sm border border-amber-700/50 bg-amber-950/15 p-3 mb-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] uppercase tracking-wider text-amber-400">
+                {candidates.size > 0
+                  ? `${candidates.size} suggested cell${candidates.size === 1 ? "" : "s"}`
+                  : "No similar cells found"}
+              </span>
+              <button onClick={() => { setCandidates(null); setFindNote(null); }}
+                aria-label="Dismiss suggestions"
+                className="text-neutral-500 hover:text-neutral-300"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            {candidates.size > 0 ? (() => {
+              const t = candidateTotals(grid!, new Set(candidates.keys()), rateLha);
+              return (
+                <>
+                  <div className="text-[11px] text-neutral-300 mb-2">
+                    Accepting all adds <span className="font-mono">{fmtArea(t.areaM2, units).text}</span> at{" "}
+                    <span className="font-mono">{fmtRate(rateLha, units).text}</span> —{" "}
+                    <span className="font-mono">{fmtVolume(t.volumeL, units).text}</span> more chemical.
+                  </div>
+                  <div className="flex gap-1.5 mb-2">
+                    <button
+                      onClick={() => {
+                        mutate([...candidates.keys()], () => ({ state: "treated", rateLha, source: "operator" }));
+                        setCandidates(null);
+                      }}
+                      className="flex-1 text-[11px] rounded-sm px-2 py-1.5 bg-amber-500/90 hover:bg-amber-400 text-black font-semibold">
+                      Accept all
+                    </button>
+                    <button
+                      onClick={() => { setCandidates(null); setFindNote(null); }}
+                      className="flex-1 text-[11px] rounded-sm px-2 py-1.5 border border-[#333] text-neutral-300 hover:text-neutral-100">
+                      Reject all
+                    </button>
+                  </div>
+                  <div className="text-[10px] text-neutral-500 leading-relaxed">
+                    Or one at a time: click a dashed cell to accept it, or paint it with
+                    Assign › Skip to reject — a rejection also teaches the next run.
+                  </div>
+                </>
+              );
+            })() : (
+              <div className="text-[11px] text-neutral-400 leading-relaxed">
+                Nothing undecided scored close enough to your treated examples. Mark a few
+                more cells of each kind and run it again.
+              </div>
+            )}
+            {findNote && (
+              <div className="text-[10px] text-amber-500/80 leading-relaxed mt-2 pt-2 border-t border-amber-900/40">
+                {findNote}
+              </div>
+            )}
           </div>
         )}
 
