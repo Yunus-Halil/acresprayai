@@ -11,16 +11,18 @@ import {
   INPUT_LABELS, COST_MAP, issueToCostKey,
 } from "@/lib/farmerSettings";
 import { storageKey } from "@/lib/storage";
+import {
+  M2_PER_ACRE, fmtAreaAc, fmtVolume, volumeToLitres, volumeUnit, volumeValue,
+} from "@/lib/units";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
 
-// ---- Unit conversion helpers (litres are the canonical storage unit). ----
-const L_TO_GAL = 0.264172;
-function fmtVol(litres: number, system: FarmerSettings["unit_system"], digits = 1) {
-  if (system === "imperial") return `${(litres * L_TO_GAL).toFixed(digits)} gal`;
-  return `${litres.toFixed(digits)} L`;
-}
-function unitLabel(system: FarmerSettings["unit_system"]) {
-  return system === "imperial" ? "gal" : "L";
-}
+// Conversion now comes from lib/units.ts. The helpers that used to live here
+// carried their own rounded constants — 0.264172 gal/L and an acre of 4047 m²
+// against the defined 4046.8564224 — so a report and the planner could disagree
+// about the same field by a few thousandths. One table, one answer.
+const fmtVol = (litres: number, system: FarmerSettings["unit_system"], digits = 1) =>
+  fmtVolume(litres, system ?? "imperial", digits).text;
+const unitLabel = (system: FarmerSettings["unit_system"]) => volumeUnit(system ?? "imperial");
 
 // ---- Real geodesic area for a ring of {lat,lng} points using turf.
 // Turf expects GeoJSON [lng, lat] and a closed ring.
@@ -35,7 +37,7 @@ function ringAreaM2(ring: { lat: number; lng: number }[]): number {
     return 0;
   }
 }
-const M2_TO_AC = 1 / 4047; // square meters → acres
+const M2_TO_AC = 1 / M2_PER_ACRE;   // exact, from lib/units.ts
 const HA_TO_AC = 2.4710538147;
 
 // Survives the Reports tab unmounting itself while it briefly switches to the
@@ -91,7 +93,9 @@ export default function ReportsTab({
   const [litersIn, setLitersIn] = useState<string>("");
   const [notesIn, setNotesIn] = useState<string>("");
 
-  const unit = settings.unit_system ?? "imperial";
+  // Site-wide preference, not the per-field one: a report opened from the
+  // Fields list should read the same as one opened from a scan.
+  const unit = useUnitSystem();
   const isImperial = unit === "imperial";
   const effectiveLastLog = newestMission(fetchedLastLog, lastLog, settings.last_flown_mission);
   const effectiveFlightLogId = effectiveLastLog?.source === "field_snapshot" ? null : (effectiveLastLog?.id ?? null);
@@ -127,10 +131,7 @@ export default function ReportsTab({
     setRefillsIn(effectiveLastLog?.tank_refills != null ? String(effectiveLastLog.tank_refills) : "0");
     setLitersIn(
       effectiveLastLog?.liters_applied != null
-        ? String(+(isImperial
-            ? Number(effectiveLastLog.liters_applied) * L_TO_GAL
-            : Number(effectiveLastLog.liters_applied)
-          ).toFixed(2))
+        ? String(+volumeValue(Number(effectiveLastLog.liters_applied), unit).toFixed(2))
         : ""
     );
     setNotesIn(effectiveLastLog?.notes ?? "");
@@ -202,7 +203,7 @@ export default function ReportsTab({
     : `${untreatedPctLabel}% of field stays unsprayed`;
   const headlineSub = isPostFlight
     ? "vs. full-field spraying"
-    : `Targeting ${targetedAcres.toFixed(2)} ac of ${fieldAcres.toFixed(2)} ac total`;
+    : `Targeting ${fmtAreaAc(targetedAcres, unit).text} of ${fmtAreaAc(fieldAcres, unit).text} total`;
 
   // ---- Mission stats from the editable inputs (prefilled from last log). ----
   const numOrNull = (s: string) => {
@@ -217,7 +218,7 @@ export default function ReportsTab({
   const volumeAppliedRaw = numOrNull(litersIn);
   const litersApplied = volumeAppliedRaw == null
     ? null
-    : (isImperial ? volumeAppliedRaw / L_TO_GAL : volumeAppliedRaw);
+    : volumeToLitres(volumeAppliedRaw, unit);
   const pilotNotes = notesIn;
 
   // ---- PDF generation ----
@@ -294,7 +295,7 @@ export default function ReportsTab({
       const meta: [string, string][] = [
         ["FIELD", field.name],
         ["CROP TYPE", settings.crop_type ? settings.crop_type.replace(/_/g, " ") : "—"],
-        ["TOTAL AREA", `${fieldAcres.toFixed(2)} acres`],
+        ["TOTAL AREA", fmtAreaAc(fieldAcres, unit).text],
         ["SCAN DATE", scanDate],
         ["MISSION DATE", missionDateNice],
         ["PILOT", pilotName.trim()],
@@ -350,7 +351,7 @@ export default function ReportsTab({
           pdf.setFont("helvetica", "normal"); pdf.setTextColor(110);
           pdf.text(z.issue, M + 130, y);
           pdf.setTextColor(30);
-          pdf.text(`${z.acres.toFixed(2)} ac`, W - M - 110, y, { align: "right" });
+          pdf.text(fmtAreaAc(z.acres, unit).text, W - M - 110, y, { align: "right" });
           pdf.setTextColor(z.flown ? 76 : 150);
           if (z.flown) {
             pdf.setFont("helvetica", "bold"); pdf.setTextColor(34, 139, 34);
@@ -397,7 +398,7 @@ export default function ReportsTab({
       pdf.setFont("helvetica", "normal"); pdf.setFontSize(10); pdf.setTextColor(30);
       const colW = (W - 2 * M) / 2;
       const stats: [string, string, string, string][] = [
-        ["Spray distance", treatedAcres > 0 ? `${treatedAcres.toFixed(2)} ac sprayed` : "—",
+        ["Spray distance", treatedAcres > 0 ? `${fmtAreaAc(treatedAcres, unit).text} sprayed` : "—",
          "Tank refills", String(tankRefills)],
         ["Battery start", battStart != null ? `${battStart}%` : "—",
          "Landed", battEnd != null ? `${battEnd}%` : "—"],
@@ -525,10 +526,10 @@ export default function ReportsTab({
               {isPostFlight ? "Savings" : "Targeted"}
             </div>
             <div className="text-3xl font-semibold text-[#4CAF50] tabular-nums">
-              {isPostFlight ? `${savingsPct}%` : `${targetedAcres.toFixed(2)} ac`}
+              {isPostFlight ? `${savingsPct}%` : fmtAreaAc(targetedAcres, unit).text}
             </div>
             <div className="text-[11px] text-neutral-500">
-              {isPostFlight ? "vs. full-field" : `of ${fieldAcres.toFixed(2)} ac total`}
+              {isPostFlight ? "vs. full-field" : `of ${fmtAreaAc(fieldAcres, unit).text} total`}
             </div>
           </div>
         </header>
@@ -541,7 +542,7 @@ export default function ReportsTab({
             </div>
             <div>
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Total area</div>
-              <div className="text-neutral-200">{fieldAcres > 0 ? `${fieldAcres.toFixed(2)} ac` : "Boundary not defined"}</div>
+              <div className="text-neutral-200">{fieldAcres > 0 ? fmtAreaAc(fieldAcres, unit).text : "Boundary not defined"}</div>
             </div>
             <div>
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Crop</div>

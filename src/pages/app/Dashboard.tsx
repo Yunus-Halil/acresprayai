@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { areaUnit, areaValueHa, fmtAreaHa } from "@/lib/units";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpRight } from "lucide-react";
@@ -13,10 +15,10 @@ type Field = {
   boundary_area_hectares: number | null;
 };
 
-const HA_TO_AC = 2.4710538147;
 
 // ----------------------------------------------------------------------------
 export default function Dashboard() {
+  const units = useUnitSystem();
   const [fields, setFields] = useState<Field[]>([]);
   const [flightCounts, setFlightCounts] = useState<Record<string, number>>({});
   const [lastFlight, setLastFlight] = useState<Record<string, string>>({});
@@ -79,8 +81,8 @@ export default function Dashboard() {
         </Card>
         <Card className="p-5">
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Total area</div>
-          <div className="font-display text-4xl mt-1 tabular-nums">{totalAreaHa.toFixed(1)}<span className="text-base text-muted-foreground ml-1">ha</span></div>
-          <div className="text-xs text-muted-foreground mt-1 tabular-nums">{(totalAreaHa * HA_TO_AC).toFixed(1)} acres</div>
+          <div className="font-display text-4xl mt-1 tabular-nums">{areaValueHa(totalAreaHa, units).toFixed(1)}<span className="text-base text-muted-foreground ml-1">{areaUnit(units)}</span></div>
+          <div className="text-xs text-muted-foreground mt-1 tabular-nums">across {fields.length} field{fields.length === 1 ? "" : "s"}</div>
         </Card>
         <Card className="p-5">
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Boundaries defined</div>
@@ -121,7 +123,7 @@ export default function Dashboard() {
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-medium text-sm">{f.name}</div>
                         <div className="text-xs text-muted-foreground tabular-nums">
-                          {area ? `${area.toFixed(2)} ha · ${(area * HA_TO_AC).toFixed(2)} ac` : "—"}
+                          {area ? fmtAreaHa(area, units).text : "—"}
                           {defined && <span className="ml-2 text-emerald-500">(measured)</span>}
                         </div>
                       </div>

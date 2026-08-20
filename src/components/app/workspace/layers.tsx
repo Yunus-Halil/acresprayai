@@ -48,6 +48,10 @@ import {
   type BoundaryRing, type FieldRow, type TaskRow,
 } from "./types";
 import { FN_BASE, NDVI_BASE, TILE_BASE } from "./constants";
+import {
+  areaUnit, costPerAreaUnit, costPerAreaValue, fmtArea, fmtAreaHa,
+} from "@/lib/units";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
 
 // --- helpers that run inside the MapContainer ---------------------------------
 export function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
@@ -586,6 +590,7 @@ export function AnnotateTool({
 }
 
 export function MeasurePanel({ stats }: { stats: MeasureStats }) {
+  const units = useUnitSystem();
   if (!stats.active && stats.count === 0) return null;
   const mToFt = (m: number) => m * 3.28084;
   const m2ToAcre = (a: number) => a / 4046.8564224;
@@ -619,8 +624,13 @@ export function MeasurePanel({ stats }: { stats: MeasureStats }) {
           {stats.finished && stats.areaM2 > 0 && (
             <div className="pt-2 border-t border-[#222]">
               <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-0.5">Area</div>
-              <div className="font-mono tabular-nums text-[#4CAF50]">{fmt(stats.areaM2 / 10000, 3)} ha</div>
-              <div className="font-mono tabular-nums text-neutral-500 text-[11px]">{fmt(m2ToAcre(stats.areaM2), 3)} ac · {fmt(stats.areaM2, 0)} m²</div>
+              {/* The measuring tool keeps BOTH readings — it is the one place
+                  a farmer cross-checks against a neighbour's or a contract's
+                  units — but the chosen system leads. */}
+              <div className="font-mono tabular-nums text-[#4CAF50]">{fmtArea(stats.areaM2, units).text}</div>
+              <div className="font-mono tabular-nums text-neutral-500 text-[11px]">
+                {fmtArea(stats.areaM2, units === "metric" ? "imperial" : "metric").text} · {fmt(stats.areaM2, 0)} m²
+              </div>
             </div>
           )}
         </div>
@@ -645,6 +655,7 @@ export function AiZonesLayer({
   settings: FarmerSettings;
 }) {
   const map = useMap();
+  const units = useUnitSystem();
   useEffect(() => {
     const group = L.layerGroup().addTo(map);
     const container = map.getContainer();
@@ -694,6 +705,12 @@ export function AiZonesLayer({
       const estCost = formatMoney(acresNum * ratePerAc, cur);
       const ratePerAcStr = formatMoney(ratePerAc, cur);
       const acresStr = acresNum.toFixed(3);
+      const areaText = escapeHtml(fmtArea(m2, units).text);
+      // Costs are stored per acre; a metric reader sees the same money over a
+      // hectare. The multiplication below stays in acres either way, so the
+      // total cannot move when the display does.
+      const shownRate = formatMoney(costPerAreaValue(ratePerAc, units), cur);
+      const shownArea = fmtArea(m2, units);
       const sevBadge = `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;background:${color}33;color:${color};border:1px solid ${color}">${z.severity}</span>`;
       const html = `
         <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:240px">
@@ -703,13 +720,12 @@ export function AiZonesLayer({
           </div>
           <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">${escapeHtml(z.issue)}</div>
           <div style="font-size:11px;color:#9ca3af;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:8px">
-            <div>Area</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${acres} ac</div>
-            <div></div><div style="text-align:right;color:#6b7280;font-family:ui-monospace,monospace">${ha} ha</div>
+            <div>Area</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${areaText}</div>
             ${noChem
               ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:11px;border-top:1px solid #222;padding-top:6px;margin-top:2px">Drainage work required — consult agronomist (no chemical fix).</div>`
               : inputKey
                 ? `<div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${escapeHtml(estCost)}</div>
-                   <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${acresStr} ac × ${escapeHtml(ratePerAcStr)}/ac ${inputLabel ? `(${escapeHtml(inputLabel)})` : ""} = ${escapeHtml(estCost)}</div>
+                   <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${shownArea.value.toFixed(3)} ${shownArea.unit} × ${escapeHtml(shownRate)}${costPerAreaUnit(units)} ${inputLabel ? `(${escapeHtml(inputLabel)})` : ""} = ${escapeHtml(estCost)}</div>
                    ${!inputAvailable ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:10px;text-align:right">⚠ ${escapeHtml(inputLabel ?? "")} marked unavailable in Settings</div>` : ""}`
                 : `<div style="grid-column:1/-1;color:#6b7280;font-size:10px;text-align:right">No cost mapping for this issue type.</div>`
             }
@@ -751,7 +767,10 @@ export function AiZonesLayer({
       container.removeEventListener("click", handlePopupDelete, true);
       group.remove();
     };
-  }, [map, zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa]);
+    // `units` is a dependency because the popup HTML is built once, up front —
+    // without it a unit change would leave every already-rendered popup
+    // reading in the old system.
+  }, [map, zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa, units, settings]);
   return null;
 }
 
@@ -780,6 +799,7 @@ export function UserPolyLayer({
   polys, onDelete,
 }: { polys: UserPoly[]; onDelete: (id: string) => void }) {
   const map = useMap();
+  const units = useUnitSystem();
   useEffect(() => {
     const group = L.layerGroup().addTo(map);
     const container = map.getContainer();
@@ -804,7 +824,7 @@ export function UserPolyLayer({
         color, weight: 2, fillColor: color, fillOpacity: 0.18, dashArray: "4 4",
       });
       poly.bindTooltip(p.name, { sticky: true, opacity: 1, className: "ai-zone-label", direction: "top" });
-      const acres = (p.area_hectares * 2.4710538147).toFixed(2);
+      const areaText = escapeHtml(fmtAreaHa(p.area_hectares, units).text);
       const html = `
         <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:220px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
@@ -812,7 +832,7 @@ export function UserPolyLayer({
             <div style="font-weight:600;font-size:13px">${escapeHtml(p.name)}</div>
           </div>
           <div style="font-size:11px;color:#9ca3af;margin-bottom:6px">${escapeHtml(p.issue_type)}</div>
-          <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">Area: <span style="color:#f0f0f0;font-family:ui-monospace,monospace">${p.area_hectares.toFixed(3)} ha · ${acres} ac</span></div>
+          <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">Area: <span style="color:#f0f0f0;font-family:ui-monospace,monospace">${areaText}</span></div>
           ${p.notes ? `<div style="font-size:11px;color:#d1d5db;border-top:1px solid #222;padding-top:6px;margin-bottom:8px">${escapeHtml(p.notes)}</div>` : ""}
           <button data-uap-delete="${p.id}" style="font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
         </div>
@@ -826,7 +846,7 @@ export function UserPolyLayer({
       container.removeEventListener("click", handlePopupDelete, true);
       group.remove();
     };
-  }, [map, polys, onDelete]);
+  }, [map, polys, onDelete, units]);
   return null;
 }
 

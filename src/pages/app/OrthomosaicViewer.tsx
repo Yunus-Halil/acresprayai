@@ -58,6 +58,7 @@ import AiTab from "@/components/app/workspace/AiTab";
 import PlannerTab from "@/components/app/workspace/PlannerTab";
 import TreatmentTab from "@/components/app/workspace/TreatmentTab";
 import AnalyzeFieldButton from "@/components/app/workspace/AnalyzeFieldButton";
+import { seedUnitSystem } from "@/hooks/useUnitSystem";
 import WeatherTab, { HeaderWeather } from "@/components/app/workspace/WeatherTab";
 import SettingsTab from "@/components/app/workspace/SettingsTab";
 import { loadAnnotations } from "@/components/app/workspace/layers";
@@ -328,7 +329,14 @@ export default function OrthomosaicViewer() {
         setField(f as FieldRow);
         setBoundary(normalizeBoundary((f as any).boundary));
         const saved = (f as { settings?: unknown }).settings;
-        if (saved && typeof saved === "object") setSettings(mergeFarmerSettings(saved));
+        if (saved && typeof saved === "object") {
+          const merged = mergeFarmerSettings(saved);
+          setSettings(merged);
+          // The unit preference is site-wide now, but fields configured before
+          // that still carry one. Adopt it once, and only for a user who has
+          // never chosen for themselves.
+          seedUnitSystem(merged.unit_system);
+        }
       }
 
       // 1) Mint a signed URL to the orthophoto.tif sitting in Supabase Storage.

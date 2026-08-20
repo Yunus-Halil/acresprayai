@@ -33,6 +33,10 @@ import type { GridRenderInfo } from "./TreatmentGridLayer";
 import TreatmentGridLayer from "./TreatmentGridLayer";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
+import {
+  fmtArea, fmtAreaHa, fmtRate, fmtVolume, rateToLha, rateUnit, rateValue,
+} from "@/lib/units";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
 
 const repo = new SupabaseTreatmentGridRepository();
 
@@ -52,6 +56,7 @@ export function TreatmentTab({
   /** Narrow on purpose: the only tab this screen sends anyone to is Field View. */
   setActiveTab: (k: "field") => void;
 }) {
+  const units = useUnitSystem();
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const [cellMultiple, setCellMultiple] = useState<1 | 2 | 3>(1);
   const [tool, setTool] = useState<Tool>("inspect");
@@ -388,19 +393,27 @@ export function TreatmentTab({
               <>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[11px] text-neutral-500">Rate</span>
-                  <span className="font-mono text-sm text-[#4CAF50]">{rateLha} L/ha</span>
+                  <span className="font-mono text-sm text-[#4CAF50]">{fmtRate(rateLha, units).text}</span>
                 </div>
-                <input type="range" min={1} max={120} step={1} value={rateLha}
-                  onChange={e => setRateLha(Number(e.target.value))}
+                {/* The slider moves in the operator's own units; `rateLha` stays
+                    canonical L/ha, so a prescription means the same thing
+                    whoever opens it. */}
+                <input type="range"
+                  min={units === "metric" ? 1 : 0.1}
+                  max={units === "metric" ? 120 : 13}
+                  step={units === "metric" ? 1 : 0.1}
+                  value={Number(rateValue(rateLha, units).toFixed(units === "metric" ? 0 : 1))}
+                  onChange={e => setRateLha(rateToLha(Number(e.target.value), units))}
                   className="w-full accent-[#4CAF50] mb-2" />
                 <div className="flex gap-1.5 mb-1">
                   {(["low", "medium", "high"] as const).map(k => (
                     <button key={k} onClick={() => setRateLha(settings.spray_rates_lha[k])}
                       className="flex-1 text-[10px] rounded-sm px-1.5 py-1 border border-[#222] text-neutral-400 hover:text-neutral-200 transition-colors">
-                      {k} {settings.spray_rates_lha[k]}
+                      {k} {rateValue(settings.spray_rates_lha[k], units).toFixed(units === "metric" ? 0 : 1)}
                     </button>
                   ))}
                 </div>
+                <div className="text-[10px] text-neutral-600">Target rate in {rateUnit(units)}.</div>
               </>
             )}
             {paintAction === "skip" && (
@@ -439,12 +452,12 @@ export function TreatmentTab({
                 <div className="text-[11px] text-neutral-400 grid grid-cols-2 gap-y-1">
                   <div>Area</div>
                   <div className="text-right font-mono text-neutral-200">
-                    {(selectedCell.areaM2 / 10_000).toFixed(4)} ha
+                    {fmtArea(selectedCell.areaM2, units).text}
                   </div>
                   <div>State</div>
                   <div className="text-right font-mono text-neutral-200">
                     {selectedCell.rate.state === "treated"
-                      ? `${selectedCell.rate.rateLha} L/ha`
+                      ? fmtRate(selectedCell.rate.rateLha, units).text
                       : "untreated"}
                   </div>
                   <div>Set by</div>
@@ -472,15 +485,15 @@ export function TreatmentTab({
             <div className="rounded-sm border border-[#222] p-3 mb-4 text-[11px]" style={{ background: "#0f0f0f" }}>
               <Row label="Cells" value={totals.cellCount.toLocaleString()} />
               <Row label="Treated" value={`${totals.treatedCellCount.toLocaleString()} cells`} />
-              <Row label="Field area" value={`${totals.fieldAreaHa.toFixed(3)} ha`} />
-              <Row label="Treated area" value={`${totals.treatedAreaHa.toFixed(3)} ha`} />
-              <Row label="Volume" value={`${totals.totalVolumeL.toFixed(1)} L`} />
+              <Row label="Field area" value={fmtAreaHa(totals.fieldAreaHa, units).text} />
+              <Row label="Treated area" value={fmtAreaHa(totals.treatedAreaHa, units).text} />
+              <Row label="Volume" value={fmtVolume(totals.totalVolumeL, units).text} />
               <Row label="Tank loads" value={
-                tankL > 0 ? `${totals.tankLoads} × ${tankL.toFixed(0)} L` : "no sprayer tank"
+                tankL > 0 ? `${totals.tankLoads} × ${fmtVolume(tankL, units, 0).text}` : "no sprayer tank"
               } />
               {Math.abs(totals.fieldAreaHa - boundaryHa) / Math.max(boundaryHa, 1e-9) > 0.02 && (
                 <div className="text-[10px] text-neutral-600 mt-2 leading-relaxed">
-                  Grid covers {totals.fieldAreaHa.toFixed(3)} ha of a {boundaryHa.toFixed(3)} ha boundary —
+                  Grid covers {fmtAreaHa(totals.fieldAreaHa, units).text} of a {fmtAreaHa(boundaryHa, units).text} boundary —
                   the difference is edge slivers too small to treat.
                 </div>
               )}

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { fmtAreaHa } from "@/lib/units";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { useAuth } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,6 +43,7 @@ async function authHeader() {
 }
 
 export default function FieldDetail() {
+  const units = useUnitSystem();
   const { id: fieldId } = useParams<{ id: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -278,7 +281,7 @@ export default function FieldDetail() {
               />
             </div>
             <div className="text-sm text-muted-foreground mt-1">
-              {field.crop} · {field.area_hectares} ha{field.location ? ` · ${field.location}` : ""}
+              {field.crop} · {fmtAreaHa(Number(field.area_hectares) || 0, units).text}{field.location ? ` · ${field.location}` : ""}
             </div>
             {field.notes && <div className="text-sm mt-2 max-w-2xl">{field.notes}</div>}
           </div>

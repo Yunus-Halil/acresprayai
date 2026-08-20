@@ -25,6 +25,10 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
+  costPerAreaToPerAcre, costPerAreaValue, costPerAreaUnit,
+} from "@/lib/units";
+import { setUnitSystem, useUnitSystem } from "@/hooks/useUnitSystem";
+import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
 } from "@/lib/droneSpecs";
 import {
@@ -89,6 +93,11 @@ export function SettingsTab({
 }) {
   const [local, setLocal] = useState<FarmerSettings>(settings);
   useEffect(() => { setLocal(settings); }, [settings]);
+
+  const units = useUnitSystem();
+  // Costs are stored per acre at full precision. Rounding only what is SHOWN
+  // keeps a metric farmer's typed 111.20 from drifting the stored 45.
+  const round2 = (n: number) => Math.round(n * 100) / 100;
 
   const update = (patch: Partial<FarmerSettings>) => setLocal(s => ({ ...s, ...patch }));
   const updateCost = (k: keyof FarmerSettings["input_costs"], v: number) =>
@@ -185,7 +194,7 @@ export function SettingsTab({
                   <button
                     key={o.v}
                     type="button"
-                    onClick={() => update({ unit_system: o.v })}
+                    onClick={() => { setUnitSystem(o.v); update({ unit_system: o.v }); }}
                     className={`px-3 py-1.5 text-xs ${local.unit_system === o.v
                       ? "bg-[#4CAF50] text-black font-semibold"
                       : "text-neutral-400 hover:text-neutral-200"}`}
@@ -193,7 +202,9 @@ export function SettingsTab({
                 ))}
               </div>
               <div className="text-[10px] text-neutral-500 mt-1">
-                Controls how chemical volumes are displayed on reports and the planner.
+                Applies everywhere — areas, volumes, rates, altitudes, speeds and
+                temperatures across the whole app. Display only: your stored figures
+                never change, so switching can never alter a dose or a bill.
               </div>
             </div>
           </div>
@@ -206,7 +217,7 @@ export function SettingsTab({
 
         {/* Input costs */}
         <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
-          <h2 className="text-sm font-semibold mb-1">2. Input Costs <span className="text-neutral-500 font-normal">(per acre)</span></h2>
+          <h2 className="text-sm font-semibold mb-1">2. Input Costs <span className="text-neutral-500 font-normal">(per {units === "metric" ? "hectare" : "acre"})</span></h2>
           <p className="text-[11px] text-neutral-500 mb-3">Uncheck inputs you don't carry — the AI will avoid recommending them.</p>
 
           {/* Currency relabels, it never converts: these are the prices you
@@ -237,12 +248,19 @@ export function SettingsTab({
                 </div>
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">{currencySymbol(local.currency)}</span>
+                  {/* Shown in the viewer's units, ALWAYS stored per acre.
+                      This is an input, not a readout, so the conversion has to
+                      run in both directions — otherwise the first edit a metric
+                      farmer makes multiplies that price by 2.47. */}
                   <input type="number" min={0} step="0.01"
-                    className={`${inputCls} pl-5 text-right font-mono`}
-                    value={local.input_costs[k]}
-                    onChange={e => updateCost(k, Number(e.target.value) || 0)}
+                    className={`${inputCls} pl-5 pr-9 text-right font-mono`}
+                    value={round2(costPerAreaValue(local.input_costs[k], units))}
+                    onChange={e => updateCost(k, costPerAreaToPerAcre(Number(e.target.value) || 0, units))}
                     disabled={!local.available_inputs[k]}
                   />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-600 text-[10px] font-mono pointer-events-none">
+                    {costPerAreaUnit(units)}
+                  </span>
                 </div>
               </div>
             ))}
@@ -283,7 +301,7 @@ export function SettingsTab({
         <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
           <h2 className="text-sm font-semibold mb-3">3. How these settings are used</h2>
           <ul className="text-[12px] text-neutral-400 space-y-1.5 list-disc pl-5">
-            <li>Treatment zones detected by AI Analysis are priced as <span className="font-mono text-neutral-200">acres × your per-acre cost</span>.</li>
+            <li>Treatment zones detected by AI Analysis are priced as <span className="font-mono text-neutral-200">{units === "metric" ? "hectares × your per-hectare cost" : "acres × your per-acre cost"}</span>.</li>
             <li>Issues map to inputs via a fixed table (e.g. <span className="text-neutral-300">bare soil → reseeding</span>, <span className="text-neutral-300">nitrogen deficiency → nitrogen fertilizer</span>).</li>
             <li>The AI is told which inputs you carry — it won't recommend a product you don't have available.</li>
             <li>Waterlogged zones show "Drainage work required — consult agronomist" instead of a cost.</li>

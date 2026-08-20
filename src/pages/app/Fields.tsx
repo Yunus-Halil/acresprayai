@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fmtAreaHa } from "@/lib/units";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { useAuth } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,7 @@ type DBField = {
 const HA_TO_AC = 2.4710538147;
 
 export default function Fields() {
+  const units = useUnitSystem();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [dbFields, setDbFields] = useState<DBField[]>([]);
@@ -132,7 +135,7 @@ export default function Fields() {
                 <div className="min-w-0">
                   <InlineRename name={f.name} onSave={(n) => rename(f.id, n)} />
                   <div className="text-xs text-muted-foreground mt-0.5">
-                    {f.crop} · {realHa.toFixed(2)} ha · {(realHa * HA_TO_AC).toFixed(2)} ac
+                    {f.crop} · {fmtAreaHa(realHa, units).text}
                     {defined && <span className="ml-1 text-emerald-500">(measured)</span>}
                   </div>
                 </div>

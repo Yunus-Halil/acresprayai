@@ -62,6 +62,14 @@ import {
 // Lives in SettingsTab.tsx purely because of where the file split fell.
 import { LogFlightModal } from "./SettingsTab";
 import { readCachedWeather } from "@/lib/weather";
+// Farmer-facing quantities follow the unit setting. Flight-physics figures —
+// turn radius, climb rate, the m/s speeds — deliberately do NOT: they are the
+// aircraft's own spec-sheet numbers and the values the DJI parameters take, and
+// a pilot cross-checking against either should see the same figure here.
+import {
+  fmtAltitude, fmtAreaAc, fmtVolume, rateToLha, rateUnit, rateValue,
+} from "@/lib/units";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
 
 
 export function PlannerTab({
@@ -83,6 +91,7 @@ export function PlannerTab({
   center: [number, number];
   userPolys: UserPoly[];
 }) {
+  const units = useUnitSystem();
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const [spacingM, setSpacingM] = useState<number>(15);
   const [transitAltM, setTransitAltM] = useState<number>(30);
@@ -1051,7 +1060,7 @@ export function PlannerTab({
                   <span className="text-neutral-500"> ({battery.windKind}{battery.windMs > 0 ? ` ${battery.windMs.toFixed(1)} m/s` : ""})</span>
                 </span></div>
               <div className="flex justify-between"><span className="text-neutral-500">Altitude impact</span>
-                <span className="font-mono">{battery.altPctLabel} <span className="text-neutral-500">(avg {battery.avgAlt.toFixed(0)} m AGL)</span></span></div>
+                <span className="font-mono">{battery.altPctLabel} <span className="text-neutral-500">(avg {fmtAltitude(battery.avgAlt, units).text} AGL)</span></span></div>
               <div className="flex justify-between"><span className="text-neutral-500">Payload impact</span>
                 <span className="font-mono">{battery.payloadPctLabel} <span className="text-neutral-500">({fp.tank_load_pct}% tank)</span></span></div>
               <div className="flex justify-between"><span className="text-neutral-500">Temp impact</span>
@@ -1060,9 +1069,9 @@ export function PlannerTab({
                 <>
                   <div className="border-t border-[#222] my-1.5" />
                   <div className="flex justify-between"><span className="text-neutral-500">Tank capacity</span>
-                    <span className="font-mono">{droneModelKey} — {spec.tank_l} L</span></div>
+                    <span className="font-mono">{droneModelKey} — {fmtVolume(spec.tank_l, units, 0).text}</span></div>
                   <div className="flex justify-between"><span className="text-neutral-500">Recommended load</span>
-                    <span className="font-mono text-[#4CAF50]">{battery.recommendedTankL} L</span></div>
+                    <span className="font-mono text-[#4CAF50]">{fmtVolume(battery.recommendedTankL, units, 1).text}</span></div>
                 </>
               )}
             </>
@@ -1124,11 +1133,17 @@ export function PlannerTab({
                       <span className="text-neutral-600"> · pinned</span>
                     )}
                   </span>
+                  {/* Shown in the viewer's units, ALWAYS stored as L/ha.
+                      The label alone following the setting would be the worst
+                      of both: the same 15 relabelled gal/ac is a nine-fold
+                      overdose on the aircraft. */}
                   <input
-                    type="number" min={0} max={200} step={0.5}
-                    value={z.rateLha}
+                    type="number" min={0}
+                    max={units === "metric" ? 200 : 21}
+                    step={units === "metric" ? 0.5 : 0.05}
+                    value={Number(rateValue(z.rateLha, units).toFixed(units === "metric" ? 1 : 2))}
                     onChange={e => {
-                      const v = Math.max(0, Number(e.target.value));
+                      const v = rateToLha(Math.max(0, Number(e.target.value)), units);
                       onSaveSettings({
                         ...settings,
                         zone_rate_overrides: { ...settings.zone_rate_overrides, [z.id]: v },
@@ -1136,7 +1151,7 @@ export function PlannerTab({
                     }}
                     className="w-16 bg-[#0f0f0f] border border-[#2a2a2a] rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-right text-neutral-200"
                   />
-                  <span className="text-[10px] text-neutral-600 w-8">L/ha</span>
+                  <span className="text-[10px] text-neutral-600 w-12">{rateUnit(units)}</span>
                 </div>
               ))}
             </div>
@@ -1199,8 +1214,8 @@ export function PlannerTab({
               <CheckCircle2 className="h-3 w-3" /> Spray log
             </div>
             <div className="text-neutral-300 font-mono">
-              {(lastLog.acres_treated ?? 0).toFixed(2)} ac treated
-              {lastLog.liters_applied != null && <> · {lastLog.liters_applied.toFixed(1)} L applied (est.)</>}
+              {fmtAreaAc(lastLog.acres_treated ?? 0, units).text} treated
+              {lastLog.liters_applied != null && <> · {fmtVolume(lastLog.liters_applied, units).text} applied (est.)</>}
             </div>
             <div className="text-neutral-500">
               logged {lastLog.date_flown}
