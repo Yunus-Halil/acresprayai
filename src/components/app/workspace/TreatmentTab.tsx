@@ -33,6 +33,7 @@ import { applyMatch } from "@/lib/matchCells";
 import { candidateTotals, findSimilarCells, labelsFromGrid } from "@/lib/findSimilar";
 import { MIN_MARKS_PER_CLASS } from "@/lib/matchCells";
 import { resolutionSufficient, stitchTiles } from "@/lib/orthoRaster";
+import { type MigrationPlan, applyMigration, planMigration } from "@/lib/gridMigrate";
 import { SupabaseTreatmentGridRepository } from "@/lib/treatmentGridRepo";
 import type { GridRenderInfo } from "./TreatmentGridLayer";
 import TreatmentGridLayer from "./TreatmentGridLayer";
@@ -79,6 +80,12 @@ export function TreatmentTab({
   const [candidates, setCandidates] = useState<Map<CellId, number> | null>(null);
   const [findNote, setFindNote] = useState<string | null>(null);
   const [findError, setFindError] = useState<string | null>(null);
+  // A boundary edit that would cost real decisions parks here until the
+  // operator chooses. While pending, every write path is locked — the one
+  // thing this state must guarantee is that nothing overwrites the stored
+  // grid before a human has seen the numbers.
+  const [pendingMigration, setPendingMigration] = useState<MigrationPlan | null>(null);
+  const [migrationNote, setMigrationNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -122,11 +129,36 @@ export function TreatmentTab({
         try { stored = await repo.load(fieldId); } catch (e) { console.error("[grid] load failed", e); }
       }
       if (cancelled) return;
-      // A stored grid built from a different definition must not be reattached:
-      // same col/row, different ground.
-      const usable = stored && gridIdFor(stored.definition) === wantId ? stored : null;
-      setGrid(applyStored(built, usable));
       setSelected(new Set());
+      setPendingMigration(null);
+      if (stored && gridIdFor(stored.definition) === wantId) {
+        // Same definition: ids match and state reattaches directly.
+        setGrid(applyStored(built, stored));
+      } else if (stored && (Object.keys(stored.rates).length > 0 || stored.detection)) {
+        // DIFFERENT definition — the boundary (or cell size) changed since
+        // this grid was stored. Ids can never match across that (the origin
+        // and heading derive from the boundary), so the old behaviour was to
+        // reattach nothing and let the next paint bury the operator's work.
+        // Instead: remap each decision to the new cell containing its ground,
+        // silently when the edit was minor, with an explicit choice when it
+        // would cost real work.
+        const plan = planMigration(stored, built);
+        if (!plan.needsConfirmation) {
+          setGrid(applyMigration(built, plan));
+          if (plan.moved > 0 || plan.detection) dirty.current = true;
+          if (plan.decided > 0) {
+            setMigrationNote(
+              `Boundary changed — kept ${plan.moved} of ${plan.decided} decided cell${plan.decided === 1 ? "" : "s"}` +
+              (plan.lost ? ` (${plan.lost} now outside the field).` : "."),
+            );
+          }
+        } else {
+          setGrid(built);
+          setPendingMigration(plan);
+        }
+      } else {
+        setGrid(applyStored(built, null));
+      }
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -137,8 +169,12 @@ export function TreatmentTab({
   // request per cell. Debounced, and skipped entirely until the initial load
   // has attached, so a slow load cannot save an empty grid over a real one.
   const dirty = useRef(false);
+  const gridRef = useRef<TreatmentGrid | null>(null);
+  gridRef.current = grid;
+  const pendingRef = useRef(false);
+  pendingRef.current = pendingMigration !== null;
   useEffect(() => {
-    if (!grid || !fieldId || !dirty.current) return;
+    if (!grid || !fieldId || !dirty.current || pendingMigration) return;
     const t = setTimeout(async () => {
       setSaving(true);
       setSaveError(null);
@@ -157,9 +193,23 @@ export function TreatmentTab({
       }
     }, 700);
     return () => clearTimeout(t);
-  }, [grid, fieldId]);
+  }, [grid, fieldId, pendingMigration]);
+
+  // Flush a pending debounced save when the tab unmounts. Without this, a tab
+  // switch within the 700 ms window silently dropped the last strokes — and
+  // the planner reading the stored grid a second later saw a stale one.
+  useEffect(() => () => {
+    if (dirty.current && fieldId && gridRef.current && !pendingRef.current) {
+      repo.save(fieldId, packGrid(gridRef.current))
+        .catch(e => console.error("[grid] flush on unmount failed", e));
+    }
+  }, [fieldId]);
 
   const mutate = useCallback((ids: readonly CellId[], next: (cur: CellRate) => CellRate) => {
+    // Locked while a migration decision is pending: the first write would
+    // trigger a save, and the save is exactly the thing that buries the old
+    // grid. Nothing writes until the operator has chosen.
+    if (pendingRef.current) return;
     const touch = new Set(ids);
     if (!touch.size) return;
     dirty.current = true;
@@ -238,7 +288,7 @@ export function TreatmentTab({
         : null;
 
   const runFindSimilar = async () => {
-    if (!grid || !tileUrl || findDisabledReason) return;
+    if (!grid || !tileUrl || findDisabledReason || pendingRef.current) return;
     setFinding(true);
     setFindError(null);
     setFindNote(null);
@@ -309,7 +359,7 @@ export function TreatmentTab({
   );
 
   const clearAll = () => {
-    if (!grid) return;
+    if (!grid || pendingRef.current) return;
     const assigned = grid.cells.filter(c => c.rate.source !== "default" || c.rate.state === "treated").length;
     if (!assigned) return;
     if (!window.confirm(`Clear rates on ${assigned.toLocaleString()} cells? This cannot be undone.`)) return;
@@ -436,6 +486,56 @@ export function TreatmentTab({
         )}
 
         {/* Cell size ---------------------------------------------------- */}
+        {/* Boundary migration — the one dialog in this tab that guards data.
+            While it is open, painting, Find Similar and saves are all locked:
+            the first write is what buries the old grid. */}
+        {pendingMigration && (
+          <div className="rounded-sm border border-red-900/60 bg-red-950/25 p-3 mb-4 text-[11px] leading-relaxed">
+            <div className="flex items-center gap-1.5 font-semibold text-red-300 mb-1.5">
+              <AlertTriangle className="h-3.5 w-3.5" /> The field boundary changed
+            </div>
+            <p className="text-neutral-300 mb-2">
+              Only <span className="font-mono">{pendingMigration.moved}</span> of{" "}
+              <span className="font-mono">{pendingMigration.decided}</span> painted cells still
+              fall inside the new boundary — {pendingMigration.lost} would be lost. Nothing has
+              been deleted yet.
+            </p>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => {
+                  setGrid(g => (g ? applyMigration(g, pendingMigration) : g));
+                  setPendingMigration(null);
+                  dirty.current = true;
+                  setMigrationNote(
+                    `Kept ${pendingMigration.moved} of ${pendingMigration.decided} decided cells (${pendingMigration.lost} were outside the new boundary).`,
+                  );
+                }}
+                className="flex-1 text-[11px] rounded-sm px-2 py-1.5 bg-[#4CAF50] hover:bg-[#43a047] text-black font-semibold">
+                Keep {pendingMigration.moved} cell{pendingMigration.moved === 1 ? "" : "s"}
+              </button>
+              <button
+                onClick={() => {
+                  if (!window.confirm(
+                    `Discard all ${pendingMigration.decided} painted cells from the old grid? This cannot be undone.`,
+                  )) return;
+                  setPendingMigration(null);
+                  dirty.current = true;   // persist the fresh grid over the old one — explicitly chosen
+                  setGrid(g => (g ? { ...g } : g));
+                }}
+                className="flex-1 text-[11px] rounded-sm px-2 py-1.5 border border-red-900/60 text-red-300 hover:bg-red-950/40">
+                Discard old grid
+              </button>
+            </div>
+          </div>
+        )}
+        {migrationNote && !pendingMigration && (
+          <div className="rounded-sm border border-[#1f3a1f] bg-[#0c1a0c] p-2.5 mb-4 text-[10px] text-[#4CAF50] leading-relaxed flex items-start justify-between gap-2">
+            <span>{migrationNote}</span>
+            <button onClick={() => setMigrationNote(null)} aria-label="Dismiss"
+              className="text-neutral-500 hover:text-neutral-300 shrink-0"><X className="h-3 w-3" /></button>
+          </div>
+        )}
+
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Cell size</div>
         <div className="rounded-sm border border-[#222] p-3 mb-4" style={{ background: "#0f0f0f" }}>
           <div className="flex gap-1.5 mb-2">

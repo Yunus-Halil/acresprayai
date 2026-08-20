@@ -67,6 +67,10 @@ import { physicsFor } from "@/lib/dronePhysics";
 import { buildTankProfile, sampleTankAt } from "@/lib/tankProfile";
 import TankDynamicsWidget from "./TankDynamicsWidget";
 import ScheduleMissionModal from "./ScheduleMissionModal";
+import { type GridZone, gridZonesFor } from "@/lib/gridZones";
+import { boundaryHashOf, buildTreatmentGrid } from "@/lib/treatmentGrid";
+import { applyStored } from "@/lib/treatmentGridStore";
+import { SupabaseTreatmentGridRepository } from "@/lib/treatmentGridRepo";
 // Farmer-facing quantities follow the unit setting. Flight-physics figures —
 // turn radius, climb rate, the m/s speeds — deliberately do NOT: they are the
 // aircraft's own spec-sheet numbers and the values the DJI parameters take, and
@@ -107,6 +111,11 @@ function InfoTip({ children, className = "" }: { children: React.ReactNode; clas
     </span>
   );
 }
+
+// The planner reads the stored treatment grid itself rather than being handed
+// a snapshot: the tab remounts on every switch, so a load-on-mount IS live —
+// paint more cells, come back, and the zones are the new ones.
+const gridRepo = new SupabaseTreatmentGridRepository();
 
 export function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
@@ -269,13 +278,58 @@ export function PlannerTab({
   // Combine AI treatment zones + farmer-drawn manual annotations into a single
   // list of polygons the planner will lawnmower over. Both are filtered to
   // those whose centroid lies inside the field boundary.
-  type PlannerZone = { id: string; ring: LatLng2[]; severity: AiZone["severity"]; source: "ai" | "user" };
+  // Treated grid cells, as zones. The third source beside AI and hand-drawn —
+  // built and rated in the Treatment Grid tab, merged here into the same
+  // pipeline rather than a parallel one.
+  const [gridZones, setGridZones] = useState<GridZone[]>([]);
+  const [gridZonesNote, setGridZonesNote] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setGridZones([]);
+    setGridZonesNote(null);
+    if (!fieldId || !boundary || boundary.length === 0) return;
+    (async () => {
+      try {
+        const stored = await gridRepo.load(fieldId);
+        if (cancelled || !stored) return;
+        if (stored.definition.boundaryHash !== boundaryHashOf(boundary as LatLng2[][])) {
+          // The grid was built for an older boundary. Its cells sit on a
+          // lattice derived from that boundary, so routing over them now would
+          // spray the wrong ground. The Treatment Grid tab owns the migration.
+          setGridZonesNote(
+            "The treatment grid was built for an older boundary — open the Treatment Grid tab to migrate it before it can feed this plan.",
+          );
+          return;
+        }
+        const grid = applyStored(
+          buildTreatmentGrid(boundary as LatLng2[][], stored.definition), stored,
+        );
+        if (!cancelled) setGridZones(gridZonesFor(grid));
+      } catch (e) {
+        console.error("[planner] treatment grid load failed", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [fieldId, boundary]);
+
+  type PlannerZone = {
+    id: string; ring: LatLng2[]; severity: AiZone["severity"];
+    source: "ai" | "user" | "grid";
+    /** Grid zones only: the rate is the grid's own, and area is the summed
+        clipped cell area — the number the Prescription panel already showed. */
+    rateLha?: number;
+    areaM2?: number;
+  };
   const aiZonesRaw: PlannerZone[] = ((analysis?.zones ?? []) as AiZone[])
     .map(z => ({ id: z.id, ring: z.ring, severity: z.severity, source: "ai" as const }));
   const userZonesRaw: PlannerZone[] = (userPolys ?? [])
     .filter(u => u.ring && u.ring.length >= 3)
     .map(u => ({ id: `user:${u.id}`, ring: u.ring, severity: "medium" as const, source: "user" as const }));
-  const allZonesRaw: PlannerZone[] = [...aiZonesRaw, ...userZonesRaw];
+  const gridZonesRaw: PlannerZone[] = gridZones.map(z => ({
+    id: z.id, ring: z.ring, severity: "medium" as const, source: "grid" as const,
+    rateLha: z.rateLha, areaM2: z.areaM2,
+  }));
+  const allZonesRaw: PlannerZone[] = [...aiZonesRaw, ...userZonesRaw, ...gridZonesRaw];
   const validZones = (() => {
     if (!boundary || boundary.length === 0) return [];
     return allZonesRaw.filter(z => {
@@ -486,7 +540,15 @@ export function PlannerTab({
     id: z.id,
     ring: z.ring,
     severity: z.severity,
-    rateLha: resolveZoneRateLha(z, { ...settings, spray_rates_lha: rates }),
+    source: z.source,
+    areaM2: z.areaM2,
+    // A grid zone's rate is what the operator painted, cell by cell — the
+    // severity defaults and per-zone overrides govern AI and hand-drawn zones
+    // only. Overriding a grid rate here would fork it from the grid's own
+    // Prescription panel.
+    rateLha: z.source === "grid" && z.rateLha != null
+      ? z.rateLha
+      : resolveZoneRateLha(z, { ...settings, spray_rates_lha: rates }),
   }));
 
   const exportCtx: ExportContext = {
@@ -528,7 +590,9 @@ export function PlannerTab({
     const stats = computeMissionStats({
       mission, spec, sprayAltM, transitAltM,
       tankLoadPct: fp.tank_load_pct,
-      zones: zonesWithRates.map(z => ({ areaM2: polygonAreaM2(z.ring), rateLha: z.rateLha })),
+      // Grid zones carry their true clipped area; ring area is the fallback
+      // for AI/hand zones, which never had a better number. One path, no fork.
+      zones: zonesWithRates.map(z => ({ areaM2: z.areaM2 ?? polygonAreaM2(z.ring), rateLha: z.rateLha })),
       wx,
     });
     if (!mission || stats.flightTimeMinutes <= 0) return null;
@@ -896,7 +960,7 @@ export function PlannerTab({
         open={scheduleOpen}
         onOpenChange={setScheduleOpen}
         mission={mission}
-        zones={zonesWithRates.map(z => ({ areaM2: polygonAreaM2(z.ring), rateLha: z.rateLha }))}
+        zones={zonesWithRates.map(z => ({ areaM2: z.areaM2 ?? polygonAreaM2(z.ring), rateLha: z.rateLha }))}
         drones={drones}
         fallbackSpec={spec}
         sprayAltM={sprayAltM}
@@ -1137,17 +1201,24 @@ export function PlannerTab({
             <div className="mt-2 border-t border-[#1f3a1f] pt-2 space-y-1">
               {zonesWithRates.map((z, i) => (
                 <div key={z.id} className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full shrink-0" style={{ background: sevColor(z.severity) }} />
+                  <span className="h-2 w-2 rounded-full shrink-0"
+                    style={{ background: z.source === "grid" ? "#f59e0b" : sevColor(z.severity) }} />
                   <span className="text-[11px] text-neutral-400 truncate flex-1">
                     Zone {i + 1}
-                    {settings.zone_rate_overrides?.[z.id] != null && (
+                    {z.source === "grid" && <span className="text-amber-600/80"> · treatment grid</span>}
+                    {z.source !== "grid" && settings.zone_rate_overrides?.[z.id] != null && (
                       <span className="text-neutral-600"> · pinned</span>
                     )}
                   </span>
-                  {/* Shown in the viewer's units, ALWAYS stored as L/ha.
-                      The label alone following the setting would be the worst
-                      of both: the same 15 relabelled gal/ac is a nine-fold
-                      overdose on the aircraft. */}
+                  {/* Grid zones are read-only here: their rate was painted
+                      cell by cell in the Treatment Grid, and an override typed
+                      in this list would fork the plan from the Prescription
+                      panel that priced it. Edit the cells, not the summary. */}
+                  {z.source === "grid" ? (
+                    <span className="w-16 text-right font-mono text-[11px] text-neutral-300 px-1.5 py-0.5">
+                      {rateValue(z.rateLha, units).toFixed(units === "metric" ? 1 : 2)}
+                    </span>
+                  ) : (
                   <input
                     type="number" min={0}
                     max={units === "metric" ? 200 : 21}
@@ -1162,6 +1233,7 @@ export function PlannerTab({
                     }}
                     className="w-16 bg-[#0f0f0f] border border-[#2a2a2a] rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-right text-neutral-200"
                   />
+                  )}
                   <span className="text-[10px] text-neutral-600 w-12">{rateUnit(units)}</span>
                 </div>
               ))}
@@ -1199,6 +1271,12 @@ export function PlannerTab({
           )}
         </div>
 
+        {gridZonesNote && (
+          <div className="rounded-sm border border-amber-900/50 bg-amber-950/20 p-2.5 mb-3 text-[10px] text-amber-500 leading-relaxed">
+            {gridZonesNote}
+          </div>
+        )}
+
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">
           Mission estimate
         </div>
@@ -1212,7 +1290,7 @@ export function PlannerTab({
         </div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
-            <span className="font-mono">{validZones.length} of {allZonesRaw.length} <span className="text-neutral-600">(AI {aiZonesRaw.length} · marks {userZonesRaw.length})</span></span></div>
+            <span className="font-mono">{validZones.length} of {allZonesRaw.length} <span className="text-neutral-600">(AI {aiZonesRaw.length} · marks {userZonesRaw.length} · grid {gridZonesRaw.length})</span></span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Waypoints (our pattern)</span>
             <span className="font-mono">{mission?.waypoints.length ?? 0}</span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Est. spray distance</span>
