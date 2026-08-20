@@ -460,3 +460,71 @@ export function computeMissionStats(input: MissionStatsInput): MissionStats {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Refills
+// ---------------------------------------------------------------------------
+
+export type RefillPlan = {
+  /** Chemical the marked zones need, litres. */
+  requiredLitres: number;
+  /** Usable litres per load at the configured fill. */
+  perLoadLitres: number;
+  /** Tank loads the job needs, including the first. */
+  loads: number;
+  /** Trips back to the nurse tank. `loads - 1`. */
+  refills: number;
+  /**
+   * Fraction of SPRAYED distance at which each load runs dry, ascending.
+   * Empty when one load covers the job. Fractions of sprayed distance rather
+   * than of total, because the tank only empties while the boom is on.
+   */
+  dryFractions: number[];
+  /** Litres left in the last load when the job finishes. */
+  leftoverLitres: number;
+};
+
+/**
+ * How many times the aircraft has to come back and refill.
+ *
+ * WHY THIS EXISTS. The simulator drained a tank linearly across the whole
+ * mission and therefore always landed on empty exactly as the job finished —
+ * which made every plan look like one tankful, whatever the chemistry said.
+ * A pilot flying that plan runs dry mid-pass and sprays air over ground the
+ * map is calling treated, and nothing warned them. Refills are not a nicety
+ * here; an unnoticed empty tank is untreated crop that everyone believes was
+ * treated.
+ *
+ * Pure, and deliberately independent of the flight profile: what empties a
+ * tank is litres over ground, not minutes in the air.
+ */
+export function planRefills(
+  requiredLitres: number, tankCapacityL: number, tankLoadPct: number,
+): RefillPlan {
+  const perLoadLitres = Math.max(0, tankCapacityL) * Math.max(0, Math.min(100, tankLoadPct)) / 100;
+  const required = Math.max(0, requiredLitres);
+
+  if (!(perLoadLitres > 0) || required <= 0) {
+    return {
+      requiredLitres: required, perLoadLitres, loads: required > 0 ? 0 : 1,
+      refills: 0, dryFractions: [], leftoverLitres: perLoadLitres,
+    };
+  }
+
+  const loads = Math.max(1, Math.ceil(required / perLoadLitres));
+  const dryFractions: number[] = [];
+  // Each load runs dry after it has laid down its own volume. Spray volume is
+  // proportional to sprayed distance at a constant rate, so the fraction of
+  // sprayed distance is the fraction of total volume.
+  for (let i = 1; i < loads; i++) {
+    dryFractions.push((perLoadLitres * i) / required);
+  }
+  return {
+    requiredLitres: required,
+    perLoadLitres,
+    loads,
+    refills: loads - 1,
+    dryFractions,
+    leftoverLitres: perLoadLitres * loads - required,
+  };
+}

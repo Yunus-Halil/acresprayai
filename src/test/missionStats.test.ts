@@ -6,7 +6,7 @@
 // that needed three.
 import { describe, it, expect } from "vitest";
 import {
-  USABLE_BATTERY_PCT, computeMissionStats, conditionsAt, pesticideLitres,
+  USABLE_BATTERY_PCT, computeMissionStats, conditionsAt, pesticideLitres, planRefills,
 } from "@/lib/missionStats";
 import { dayKey, groupByDay, monthGrid, monthRangeISO } from "@/lib/schedule";
 import type { ScheduledMission } from "@/lib/schedule";
@@ -375,5 +375,65 @@ describe("calendar shaping", () => {
     const grid = monthGrid(2026, 7);
     expect(new Date(fromISO).getTime()).toBe(grid[0].getTime());
     expect(new Date(toISO).getTime()).toBeGreaterThan(grid[41].getTime());
+  });
+});
+
+describe("refills", () => {
+  it("needs no refill when one load covers the job, and says what is spare", () => {
+    const r = planRefills(30, 40, 100);
+    expect(r.loads).toBe(1);
+    expect(r.refills).toBe(0);
+    expect(r.dryFractions).toEqual([]);
+    expect(r.leftoverLitres).toBeCloseTo(10, 9);
+  });
+
+  it("counts the trips back to the nurse tank", () => {
+    // 100 L of chemical from a 40 L tank at full fill: three loads, two refills.
+    const r = planRefills(100, 40, 100);
+    expect(r.loads).toBe(3);
+    expect(r.refills).toBe(2);
+  });
+
+  it("respects a partial fill — the tank the pilot actually loaded", () => {
+    // Same job, tank filled to 50%: 20 L per load, so five loads.
+    const r = planRefills(100, 40, 50);
+    expect(r.perLoadLitres).toBeCloseTo(20, 9);
+    expect(r.loads).toBe(5);
+    expect(r.refills).toBe(4);
+  });
+
+  it("puts each dry point where that load actually runs out", () => {
+    // 100 L job, 40 L loads: dry at 40% and 80% of the sprayed distance —
+    // NOT evenly spaced thirds, and never at the end.
+    const r = planRefills(100, 40, 100);
+    expect(r.dryFractions).toHaveLength(2);
+    expect(r.dryFractions[0]).toBeCloseTo(0.4, 9);
+    expect(r.dryFractions[1]).toBeCloseTo(0.8, 9);
+    for (const f of r.dryFractions) {
+      expect(f).toBeGreaterThan(0);
+      expect(f).toBeLessThan(1);
+    }
+  });
+
+  it("does not invent a refill when the job exactly fills the loads", () => {
+    // 80 L from 40 L loads is two loads and one refill — not three.
+    const r = planRefills(80, 40, 100);
+    expect(r.loads).toBe(2);
+    expect(r.refills).toBe(1);
+    expect(r.leftoverLitres).toBeCloseTo(0, 9);
+  });
+
+  it("handles a non-sprayer or an empty job without dividing by zero", () => {
+    expect(planRefills(50, 0, 100).refills).toBe(0);      // no tank
+    expect(planRefills(0, 40, 100).loads).toBe(1);        // nothing to spray
+    expect(planRefills(50, 40, 0).refills).toBe(0);       // tank not loaded
+  });
+
+  it("scales with the marked area, through the same volume figure the grid shows", () => {
+    // The chemical number comes from computeMissionStats, so the refill count
+    // and the Prescription panel cannot disagree about how much is needed.
+    const litres = pesticideLitres([{ areaM2: 400_000, rateLha: 25 }]);   // 40 ha at 25 L/ha
+    expect(litres).toBeCloseTo(1000, 6);
+    expect(planRefills(litres, 40, 100).loads).toBe(25);
   });
 });

@@ -58,7 +58,9 @@ import {
   USER_POLY_COLORS,
 } from "./layers";
 import GridAnomaliesLayer from "./GridAnomaliesLayer";
-import { type GridZonesLoad, loadGridZones } from "@/lib/gridAnomalies";
+import { type GridZonesLoad, clearGridZones, loadGridZones } from "@/lib/gridAnomalies";
+import { fmtArea } from "@/lib/units";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { AnalysisGrid } from "./AiTab";
 
 // ----------------------------- Field View tab -------------------------------
@@ -154,6 +156,9 @@ export function FieldViewTab(props: {
   // Treatment-grid zones as an anomaly overlay. Derived on mount from the
   // stored grid — the grid cell is the record, this is a projection of it.
   const [gridZoneLoad, setGridZoneLoad] = useState<GridZonesLoad | null>(null);
+  const [clearingZones, setClearingZones] = useState(false);
+  const gridUnits = useUnitSystem();
+  const [gridZoneNonce, setGridZoneNonce] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setGridZoneLoad(null);
@@ -161,7 +166,45 @@ export function FieldViewTab(props: {
       .then(r => { if (!cancelled) setGridZoneLoad(r); })
       .catch(e => console.error("[fieldview] grid zones load failed", e));
     return () => { cancelled = true; };
-  }, [props.fieldId, props.boundary]);
+  }, [props.fieldId, props.boundary, gridZoneNonce]);
+
+  /**
+   * Wipe every treated cell for this field.
+   *
+   * Destructive, and about somebody's painted afternoon — so the confirmation
+   * quotes the real cost (zones, cells, ground) rather than asking "are you
+   * sure?" about an unknown quantity. Skips survive deliberately: they are not
+   * zones, and they are the negative examples Find Similar learns from.
+   */
+  const clearZones = async () => {
+    const zones = gridZoneLoad?.zones ?? [];
+    if (!props.fieldId || !props.boundary || zones.length === 0) return;
+    const cells = zones.reduce((a, z) => a + z.cellCount, 0);
+    const area = fmtArea(zones.reduce((a, z) => a + z.areaM2, 0), gridUnits).text;
+    if (!window.confirm(
+      `Clear all ${zones.length} treatment grid zone${zones.length === 1 ? "" : "s"}?
+
+` +
+      `${cells} painted cell${cells === 1 ? "" : "s"} covering ${area} will return to ` +
+      `no-decision-yet. Cells you deliberately skipped are kept, so Find Similar ` +
+      `still has its examples. This cannot be undone.`,
+    )) return;
+    setClearingZones(true);
+    try {
+      const summary = await clearGridZones(props.fieldId, props.boundary as LatLng2[][]);
+      setGridZoneNonce(n => n + 1);
+      if (summary) {
+        toast.success(
+          `Cleared ${summary.zones} zone${summary.zones === 1 ? "" : "s"}` +
+          (summary.skipsKept ? ` · ${summary.skipsKept} skipped cell${summary.skipsKept === 1 ? "" : "s"} kept` : ""),
+        );
+      }
+    } catch (e) {
+      toast.error(`Could not clear zones: ${(e as Error)?.message ?? e}`);
+    } finally {
+      setClearingZones(false);
+    }
+  };
 
   const ToolButton = ({ icon: Icon, label, onClick, active }: any) => (
     <button
@@ -488,6 +531,16 @@ export function FieldViewTab(props: {
             <div className="pl-6 text-[10px] text-amber-500/90 leading-relaxed">
               Built for an older boundary — open the Treatment Grid tab to migrate it.
             </div>
+          )}
+          {!!gridZoneLoad?.zones.length && (
+            <button
+              onClick={clearZones}
+              disabled={clearingZones}
+              className="ml-6 mt-1 inline-flex items-center gap-1.5 text-[10px] text-neutral-500 hover:text-red-300 transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="h-3 w-3" />
+              {clearingZones ? "Clearing…" : "Clear all treatment grid zones"}
+            </button>
           )}
         </div>
       )}

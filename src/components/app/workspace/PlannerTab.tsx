@@ -62,7 +62,7 @@ import {
 // Lives in SettingsTab.tsx purely because of where the file split fell.
 import { LogFlightModal } from "./SettingsTab";
 import { readCachedWeather } from "@/lib/weather";
-import { computeMissionStats } from "@/lib/missionStats";
+import { computeMissionStats, planRefills } from "@/lib/missionStats";
 import { physicsFor } from "@/lib/dronePhysics";
 import { buildTankProfile, sampleTankAt } from "@/lib/tankProfile";
 import TankDynamicsWidget from "./TankDynamicsWidget";
@@ -604,6 +604,61 @@ export function PlannerTab({
   // Midpoint along the mission path — surfaced as a yellow pin when a battery
   // swap is required, so the pilot can see where they'll be when the first
   // pack runs out.
+  // What the job actually needs, and how many trips back to the nurse tank.
+  // Memoised: `refillPoints` and the live telemetry both depend on it, and the
+  // overlay redraws every map layer when its deps change identity.
+  const requiredLitres = battery?.stats.pesticideAmountLiters ?? 0;
+  const refill = useMemo(
+    () => planRefills(requiredLitres, spec.tank_l, fp.tank_load_pct),
+    [requiredLitres, spec.tank_l, fp.tank_load_pct],
+  );
+
+  /**
+   * Where each load runs dry, walked along the SPRAY segments only.
+   *
+   * The tank empties while the boom is on, so a fraction of sprayed distance
+   * is the honest place to put the marker — walking total distance would drop
+   * it somewhere in a transit leg the sprayer was not running through.
+   */
+  const refillPoints: LatLng2[] = useMemo(() => {
+    if (!mission || refill.dryFractions.length === 0) return [];
+    const segs = mission.spraySegments ?? [];
+    const lengths: number[] = [];
+    let total = 0;
+    for (const seg of segs) {
+      let len = 0;
+      for (let i = 1; i < seg.length; i++) len += distM(seg[i - 1], seg[i]);
+      lengths.push(len);
+      total += len;
+    }
+    if (total <= 0) return [];
+
+    const out: LatLng2[] = [];
+    for (const frac of refill.dryFractions) {
+      let target = total * frac;
+      let placed: LatLng2 | null = null;
+      for (let si = 0; si < segs.length && !placed; si++) {
+        if (target > lengths[si]) { target -= lengths[si]; continue; }
+        const seg = segs[si];
+        let acc = 0;
+        for (let i = 1; i < seg.length; i++) {
+          const d = distM(seg[i - 1], seg[i]);
+          if (acc + d >= target) {
+            const t = (target - acc) / Math.max(0.01, d);
+            placed = {
+              lat: seg[i - 1].lat + (seg[i].lat - seg[i - 1].lat) * t,
+              lng: seg[i - 1].lng + (seg[i].lng - seg[i - 1].lng) * t,
+            };
+            break;
+          }
+          acc += d;
+        }
+      }
+      if (placed) out.push(placed);
+    }
+    return out;
+  }, [mission, refill]);
+
   const swapPoint: LatLng2 | null = (() => {
     if (!mission || !battery || battery.batteriesNeeded <= 1) return null;
     // Walk waypoints in order; halt at fraction (battery 1 exhausts at ~80%
@@ -673,13 +728,25 @@ export function PlannerTab({
       ? (sampleTankAt(tankProfile, simT)?.cumAmpS ?? 0) / tankProfile.totalAmpS
       : Math.min(1, simT / simTimeline.total);
     const batteryRemaining = Math.max(0, 100 - consumedFrac * drawPct);
-    const tankStart = Math.max(0, Math.min(100, fp.tank_load_pct || 100));
-    const tankRemaining = Math.max(0, tankStart * (1 - sprayCovered / totalSprayDist));
+    // Litres actually laid down, not a percentage that reaches zero exactly at
+    // the end by construction. The old form could never show a tank running
+    // dry mid-job, which is precisely the thing a pilot needs to see.
+    const perLoad = refill.perLoadLitres;
+    const sprayFrac = totalSprayDist > 0 ? sprayCovered / totalSprayDist : 0;
+    const usedL = refill.requiredLitres * sprayFrac;
+    const inCurrentLoad = perLoad > 0 ? usedL % perLoad : 0;
+    const dry = perLoad > 0 && usedL >= perLoad * refill.loads;
+    const litresLeft = perLoad > 0
+      ? (dry ? 0 : perLoad - inCurrentLoad)
+      : 0;
+    const tankStart = perLoad;
+    const tankRemaining = litresLeft;
+    const loadNumber = perLoad > 0 ? Math.min(refill.loads, Math.floor(usedL / perLoad) + 1) : 1;
     return {
       phase, distCovered, totalDist, sprayCovered, totalSprayDist,
-      batteryRemaining, batteryStart: 100, tankRemaining, tankStart,
+      batteryRemaining, batteryStart: 100, tankRemaining, tankStart, loadNumber,
     };
-  }, [simT, simTimeline, mission, battery, fp.tank_load_pct, simPlaying, tankProfile]);
+  }, [simT, simTimeline, mission, battery, simPlaying, tankProfile, refill]);
 
   // Empty states ------------------------------------------------------------
   if (!boundary || boundary.length === 0) {
@@ -736,6 +803,7 @@ export function PlannerTab({
             mission={mission} home={effectiveHome}
             onHomeChange={(p) => setHome(p)}
             swapPoint={swapPoint}
+            refillPoints={refillPoints}
           />
           <BasemapToggle
             value={basemap}
@@ -902,8 +970,13 @@ export function PlannerTab({
                   <div>
                     <div className="flex justify-between text-[10px] mb-0.5">
                       <span className="text-neutral-500 uppercase tracking-wider">Spray tank</span>
-                      <span className="font-mono text-cyan-300">
-                        {liveStats.tankRemaining.toFixed(1)}% <span className="text-neutral-600">of {liveStats.tankStart.toFixed(0)}%</span>
+                      <span className={`font-mono ${liveStats.tankRemaining <= 0.01 ? "text-red-400" : "text-cyan-300"}`}>
+                        {liveStats.tankRemaining <= 0.01
+                          ? "EMPTY"
+                          : fmtVolume(liveStats.tankRemaining, units).text}
+                        <span className="text-neutral-600">
+                          {" "}· load {liveStats.loadNumber}/{refill.loads}
+                        </span>
                       </span>
                     </div>
                     <div className="h-1.5 rounded-sm overflow-hidden bg-[#1a1a1a]">
@@ -935,6 +1008,9 @@ export function PlannerTab({
           <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-cyan-400" /> Spray pattern</div>
           {swapPoint && (
             <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-yellow-400 border border-black" /> Battery swap</div>
+          )}
+          {refillPoints.length > 0 && (
+            <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full bg-cyan-400 border border-black" /> Tank refill ({refillPoints.length})</div>
           )}
         </div>
       </div>
@@ -1262,6 +1338,30 @@ export function PlannerTab({
           )}
         </div>
 
+        {/* The gap this closes: the plan used to end with a tank that hit
+            empty exactly at the last pass, whatever the chemistry said. A
+            pilot flying that runs dry mid-pass and sprays air over ground the
+            map calls treated. */}
+        {refill.refills > 0 && (
+          <div className="rounded-sm border border-amber-700/60 bg-amber-950/25 p-3 mb-3 text-[11px] leading-relaxed">
+            <div className="flex items-center gap-1.5 font-semibold text-amber-300 mb-1">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {refill.refills} refill{refill.refills === 1 ? "" : "s"} needed
+            </div>
+            <p className="m-0 text-neutral-300">
+              This job needs {fmtVolume(refill.requiredLitres, units).text} but the tank
+              carries {fmtVolume(refill.perLoadLitres, units).text} at {fp.tank_load_pct}% fill.
+              The aircraft runs dry {refill.refills === 1 ? "once" : `${refill.refills} times`} —
+              marked on the map in cyan. Plan the nurse tank around{" "}
+              {refill.loads} load{refill.loads === 1 ? "" : "s"}.
+            </p>
+          </div>
+        )}
+        {refill.refills === 0 && refill.requiredLitres > 0 && (
+          <div className="text-[10px] text-neutral-500 mb-3 leading-relaxed">
+            One tank covers this job — {fmtVolume(refill.leftoverLitres, units).text} to spare.
+          </div>
+        )}
         {gridZonesNote && (
           <div className="rounded-sm border border-amber-900/50 bg-amber-950/20 p-2.5 mb-3 text-[10px] text-amber-500 leading-relaxed">
             {gridZonesNote}
@@ -1296,6 +1396,19 @@ export function PlannerTab({
           <div className="flex justify-between font-semibold"><span>Est. total time</span>
             <span className="font-mono">{mission ? fmtTime(mission.sprayTimeS + mission.transitTimeS) : "0:00"}</span></div>
           <div className="border-t border-[#222] my-1.5" />
+          <div className="flex justify-between">
+            <span className="text-neutral-500">Chemical needed</span>
+            <span className="font-mono text-cyan-300">{fmtVolume(refill.requiredLitres, units).text}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-neutral-500">Tank loads</span>
+            <span className={`font-mono ${refill.refills > 0 ? "text-amber-300" : "text-neutral-200"}`}>
+              {refill.loads} × {fmtVolume(refill.perLoadLitres, units, 0).text}
+              {refill.refills > 0 && (
+                <span className="text-amber-500"> · {refill.refills} refill{refill.refills === 1 ? "" : "s"}</span>
+              )}
+            </span>
+          </div>
           <div className="flex justify-between"><span className="text-neutral-500">Spray activations</span>
             <span className="font-mono">{mission?.sprayOnCount ?? 0}</span></div>
         </div>
@@ -1527,13 +1640,15 @@ export function Slider2({ label, value, setValue, min, max, step, unit, maxSafe,
   );
 }
 
-export function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoint }: {
+export function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoint, refillPoints = [] }: {
   boundary: BoundaryRing[];
   zones: { ring: { lat: number; lng: number }[]; severity?: AiZone["severity"] }[];
   mission: Mission | null;
   home: LatLng2 | null;
   onHomeChange: (p: LatLng2) => void;
   swapPoint: LatLng2 | null;
+  /** Where each tank load runs dry. */
+  refillPoints?: LatLng2[];
 }) {
   // (moved below — DroneSimMarker + simulation helpers live just after this fn)
   const map = useMap();
@@ -1623,12 +1738,27 @@ export function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, s
         .bindTooltip("Battery swap", { permanent: true, direction: "top", offset: [0, -10], className: "mission-endpoint-label" });
     }
 
+    // Refill points — cyan, matching the spray pattern they interrupt, and
+    // numbered because a two-refill job needs to be walked in order.
+    refillPoints.forEach((p, i) => {
+      const icon = L.divIcon({
+        className: "refill-pin",
+        html: `<div style="width:16px;height:16px;border-radius:50%;background:#22d3ee;border:2px solid #06202a;box-shadow:0 0 0 2px rgba(34,211,238,0.35);display:grid;place-items:center;font:600 9px/1 ui-monospace,monospace;color:#06202a">${i + 1}</div>`,
+        iconSize: [16, 16], iconAnchor: [8, 8],
+      });
+      L.marker([p.lat, p.lng], { icon, interactive: true, zIndexOffset: 880 })
+        .addTo(group)
+        .bindTooltip(`Tank empty — refill ${i + 1}`, {
+          permanent: false, direction: "top", offset: [0, -10],
+        });
+    });
+
     // Click on map sets new home
     const onClick = (e: L.LeafletMouseEvent) => onHomeChange({ lat: e.latlng.lat, lng: e.latlng.lng });
     map.on("click", onClick);
 
     return () => { map.off("click", onClick); group.remove(); };
-  }, [map, boundary, zones, mission, home, onHomeChange, swapPoint]);
+  }, [map, boundary, zones, mission, home, onHomeChange, swapPoint, refillPoints]);
   return null;
 }
 

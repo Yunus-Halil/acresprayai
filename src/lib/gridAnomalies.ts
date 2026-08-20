@@ -18,8 +18,8 @@
 // all mutate the cells, and the projections cannot disagree with them.
 import type { LatLng2 } from "./geo";
 import { type GridZone, gridZonesFor } from "./gridZones";
-import { boundaryHashOf, buildTreatmentGrid } from "./treatmentGrid";
-import { applyStored } from "./treatmentGridStore";
+import { type CellRate, boundaryHashOf, buildTreatmentGrid } from "./treatmentGrid";
+import { applyStored, packGrid } from "./treatmentGridStore";
 import { SupabaseTreatmentGridRepository } from "./treatmentGridRepo";
 
 const repo = new SupabaseTreatmentGridRepository();
@@ -57,4 +57,62 @@ export async function loadGridZones(
   }
   const grid = applyStored(buildTreatmentGrid(boundary, stored.definition), stored);
   return { zones: gridZonesFor(grid), stale: false };
+}
+
+export type ClearZonesSummary = {
+  zones: number;
+  cells: number;
+  areaM2: number;
+  /** Deliberate skips, which clearing zones does NOT touch. */
+  skipsKept: number;
+};
+
+/**
+ * What clearing the zones would cost, without clearing anything.
+ *
+ * Separate from the clear itself so the confirmation can state real numbers.
+ * "Are you sure?" over an unknown quantity of somebody's afternoon is not a
+ * confirmation, it is a coin toss.
+ */
+export function summariseZones(zones: GridZone[], skipsKept: number): ClearZonesSummary {
+  return {
+    zones: zones.length,
+    cells: zones.reduce((s, z) => s + z.cellCount, 0),
+    areaM2: zones.reduce((s, z) => s + z.areaM2, 0),
+    skipsKept,
+  };
+}
+
+/**
+ * Return every TREATED cell to its default state, leaving everything else.
+ *
+ * Scoped to treated cells on purpose. A "zone" is treated ground, so clearing
+ * the zones means clearing those; deliberate skips are not zones, and they are
+ * the negative examples Find Similar learns from — wiping them as collateral
+ * would quietly cost the operator their training set along with their paint.
+ * Detection scores also survive: they are provenance about the imagery, not
+ * decisions about it.
+ */
+export async function clearGridZones(
+  fieldId: string,
+  boundary: LatLng2[][],
+): Promise<ClearZonesSummary | null> {
+  const stored = await repo.load(fieldId);
+  if (!stored) return null;
+  if (stored.definition.boundaryHash !== boundaryHashOf(boundary)) return null;
+
+  const grid = applyStored(buildTreatmentGrid(boundary, stored.definition), stored);
+  const summary = summariseZones(
+    gridZonesFor(grid),
+    grid.cells.filter(c => c.rate.state === "untreated" && c.rate.source === "operator").length,
+  );
+
+  const cleared = {
+    ...grid,
+    cells: grid.cells.map(c => (c.rate.state === "treated"
+      ? { ...c, rate: { state: "untreated", source: "default" } as CellRate }
+      : c)),
+  };
+  await repo.save(fieldId, packGrid(cleared));
+  return summary;
 }

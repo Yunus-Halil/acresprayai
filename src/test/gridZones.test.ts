@@ -6,6 +6,7 @@ import {
 } from "@/lib/treatmentGrid";
 import { parseCellId } from "@/lib/gridMigrate";
 import { gridZonesFor, traceOutline } from "@/lib/gridZones";
+import { summariseZones } from "@/lib/gridAnomalies";
 import { buildMission } from "@/lib/mission";
 import { MemoryTreatmentGridRepository } from "@/lib/treatmentGridRepo";
 import { applyStored, packGrid } from "@/lib/treatmentGridStore";
@@ -263,5 +264,27 @@ describe("anomaly projection", () => {
     const zones = gridZonesFor(g);
     const zoneVolume = zones.reduce((s, z) => s + (z.areaM2 / 10_000) * z.rateLha, 0);
     expect(zoneVolume).toBeCloseTo(gridTotals(g, 30).totalVolumeL, 9);
+  });
+});
+
+describe("clearing zones", () => {
+  it("summarises the real cost before anything is destroyed", () => {
+    // The confirmation quotes these. "Are you sure?" over an unknown quantity
+    // of somebody's painted afternoon is a coin toss, not a confirmation.
+    const g = withTreated([
+      ...block(anchor.col, anchor.row, 3, 2),
+      ...block(anchor.col + 5, anchor.row + 4, 2, 2),
+    ]);
+    const zones = gridZonesFor(g);
+    const s = summariseZones(zones, 4);
+    expect(s.zones).toBe(2);
+    expect(s.cells).toBe(10);
+    expect(s.areaM2).toBeCloseTo(zones.reduce((a, z) => a + z.areaM2, 0), 9);
+    expect(s.skipsKept).toBe(4);
+  });
+
+  it("reports nothing to clear on an unpainted grid", () => {
+    expect(summariseZones(gridZonesFor(GRID), 0)).toEqual(
+      { zones: 0, cells: 0, areaM2: 0, skipsKept: 0 });
   });
 });
