@@ -16,6 +16,20 @@ export const PILOT_BADGE = "PILOT PROGRAM · 10 FARMS · Q3–Q4 2026 · FREE US
 /** The one address the site hands out. Used by the footer and the pilot band. */
 export const CONTACT_EMAIL = "yunus@swathwise.com";
 
+/**
+ * The full walkthrough recording, hosted on Google Drive.
+ *
+ * Kept here rather than inline so there is one place to change when the demo
+ * is re-recorded. Anything linking to it opens a new tab and carries
+ * rel="noopener", because without it the opened page gets a handle on this
+ * one through window.opener.
+ *
+ * If this ever 404s or asks visitors to request access, the sharing setting
+ * has been changed on the Drive file, not in this repo.
+ */
+export const DEMO_VIDEO_URL =
+  "https://drive.google.com/file/d/1JvYL2-GxRVNG5r9Lvd31x5iYHF6C8NRx/view?usp=sharing";
+
 export const FEATURES = [
   {
     num: "01",

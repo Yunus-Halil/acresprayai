@@ -1,5 +1,5 @@
 import { FlightPath } from "./FlightPath";
-import { PILOT_BADGE } from "./copy";
+import { DEMO_VIDEO_URL, PILOT_BADGE } from "./copy";
 
 export const Hero = () => (
   <header id="top" className="relative mx-auto max-w-[1200px] px-5 pt-14 sm:px-10 sm:pt-[90px]">
@@ -63,11 +63,18 @@ export const Hero = () => (
         >
           Apply to Pilot <span className="font-plex">→</span>
         </a>
+        {/* Off-site, so it opens in a new tab and keeps the visitor's place
+            on the page. rel="noopener noreferrer" is not optional on a
+            target="_blank" link: without it the opened page can reach back
+            through window.opener. */}
         <a
-          href="#cockpit"
+          href={DEMO_VIDEO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
           className="inline-flex items-center gap-2.5 rounded border border-sw-edge bg-sw-card px-7 py-4 text-base font-medium text-sw-ink transition-colors hover:border-sw-ink"
         >
-          Watch it fly
+          Watch the demo
+          <span className="font-plex text-sw-faint" aria-hidden="true">↗</span>
         </a>
       </div>
     </div>
