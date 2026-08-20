@@ -89,6 +89,43 @@ describe("shapefile writer", () => {
     expect(Number(rows[0].AREA_HA)).toBeCloseTo(12.0, 4);
   });
 
+  it("reads a foreign attribute schema without needing to know it", () => {
+    // No published source lists DJI's expected .dbf field list, so ours is
+    // deliberately minimal and the reader must not assume it. A package that
+    // arrives carrying somebody else's columns — including the VRA_Rate schema
+    // that circulates online and that we deliberately do NOT write, because on
+    // Agras the rate belongs in the raster — has to read back cleanly rather
+    // than throw.
+    const foreign = writePolygonShapefile(
+      [{ ring: FIELD, attrs: { VRA_Rate: 18.5, Zone_Name: "north", Type: "spray" } }],
+      [
+        { name: "VRA_Rate", type: "N", length: 12, decimals: 2 },
+        { name: "Zone_Name", type: "C", length: 24 },
+        { name: "Type", type: "C", length: 12 },
+      ],
+      WHEN,
+    );
+    const rows = readDbf(foreign.dbf);
+    expect(rows).toHaveLength(1);
+    // Field names come back UPPERCASED — the dBase convention the writer
+    // follows. Worth pinning: anything matching foreign columns by name has to
+    // fold case, and discovering that from a silent undefined is expensive.
+    expect(Number(rows[0].VRA_RATE)).toBeCloseTo(18.5, 2);
+    expect(rows[0].ZONE_NAME).toBe("north");
+    expect(rows[0].TYPE).toBe("spray");
+    // And the geometry reader ignores attributes entirely, so an unknown
+    // schema cannot cost us the boundary.
+    expect(readPolygonShapefile(foreign.shp).polygons).toHaveLength(1);
+  });
+
+  it("writes no rate column, because on Agras the rate lives in the raster", () => {
+    // Guards against reintroducing a DBF-based rate schema: PIX4D's own docs
+    // put the rates in the .tiff, and a rate in two places is a rate that can
+    // disagree with itself.
+    const names = Object.keys(readDbf(bundle.dbf)[0]).map(n => n.toUpperCase());
+    expect(names.some(n => n.includes("RATE") || n.includes("VRA"))).toBe(false);
+  });
+
   it("emits WGS84 as the projection", () => {
     const prj = new TextDecoder().decode(bundle.prj);
     expect(prj).toBe(WGS84_ESRI_WKT);

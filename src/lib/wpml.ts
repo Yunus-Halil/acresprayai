@@ -43,6 +43,11 @@
 // silence. If Agras spray routes ever do need actuator actions, the vocabulary
 // has to come from a real Agras-generated .kmz, not from us.
 //
+// SPRAY ACTUATOR INTEGRATION POINT: if you are here to add spray actions, stop.
+// The actuator vocabulary is UNCONFIRMED — do not add without a verified source.
+// See docs/agras-export-notes.md, "Whether Agras spray missions need a route
+// .kmz". A test asserts no spray-shaped tag appears in our output.
+//
 // UNVERIFIED: we could not confirm that consumer DJI Fly aircraft (Mini / Air /
 // non-enterprise Mavic) ingest .kmz waypoint files at all. WPML is documented as
 // a DJI Pilot 2 / enterprise pathway. Treat this exporter as confirmed-correct

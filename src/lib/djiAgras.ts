@@ -19,6 +19,9 @@
 //   - any .dbf attribute schema. We therefore keep the attribute table minimal
 //     and self-describing rather than inventing field names; a reader that
 //     ignores our columns still gets valid geometry, which is what it reads.
+//   See docs/agras-export-notes.md for the full confirmed/unconfirmed split and
+//   the plan to close these. Summarised here:
+//
 //   - the raster's bit depth. Single-band numeric is a strong inference — the
 //     controller asks for a *unit* and offers *Average* resampling, neither of
 //     which is meaningful over a legend-mapped RGB image — but float32 vs
@@ -345,6 +348,10 @@ export function buildAgrasPackage(input: AgrasPackageInput): AgrasPackage {
     // so a reader can never mistake an ordinary 0 for an absence.
     noData: fill === "nodata-outside" ? RX_NODATA : undefined,
   };
+  // UNCONFIRMED: raster dtype. Single-band float32 is our default, not a verified
+  // requirement — see docs/agras-export-notes.md, "Raster bit depth".
+  // TODO(agras-sample): one PIX4Dfields export settles dtype, band count,
+  // extension and the DBF field list at once. Do not resolve by reasoning.
   const rx = writeGeoTiffFloat32(rasterSpec);
 
   const files: Record<string, Uint8Array> = {
