@@ -72,7 +72,7 @@ import ScheduleMissionModal from "./ScheduleMissionModal";
 // aircraft's own spec-sheet numbers and the values the DJI parameters take, and
 // a pilot cross-checking against either should see the same figure here.
 import {
-  fmtAltitude, fmtAreaAc, fmtVolume, rateToLha, rateUnit, rateValue,
+  fmtAltitude, fmtAreaAc, fmtDistance, fmtVolume, rateToLha, rateUnit, rateValue,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 
@@ -859,13 +859,13 @@ export function PlannerTab({
                   <div className="flex justify-between text-[11px] pt-0.5">
                     <span className="text-neutral-500">Distance flown</span>
                     <span className="font-mono text-neutral-300">
-                      {(liveStats.distCovered / 1000).toFixed(2)} <span className="text-neutral-600">/ {(liveStats.totalDist / 1000).toFixed(2)} km</span>
+                      {fmtDistance(liveStats.distCovered, units).value.toFixed(2)} <span className="text-neutral-600">/ {fmtDistance(liveStats.totalDist, units).text}</span>
                     </span>
                   </div>
                   <div className="flex justify-between text-[11px]">
                     <span className="text-neutral-500">Sprayed</span>
                     <span className="font-mono text-cyan-300">
-                      {(liveStats.sprayCovered / 1000).toFixed(2)} <span className="text-neutral-600">/ {(liveStats.totalSprayDist / 1000).toFixed(2)} km</span>
+                      {fmtDistance(liveStats.sprayCovered, units).value.toFixed(2)} <span className="text-neutral-600">/ {fmtDistance(liveStats.totalSprayDist, units).text}</span>
                     </span>
                   </div>
                 </div>
@@ -1058,7 +1058,7 @@ export function PlannerTab({
               </select>
               {activeDrone && (
                 <div className="mt-2 text-[10px] text-neutral-500 font-mono">
-                  Battery now: <span className="text-neutral-300">{activeDrone.battery}%</span> · Spec: {spec.tank_l}L / {spec.max_flight_min} min / {spec.max_speed_ms} m/s
+                  Battery now: <span className="text-neutral-300">{activeDrone.battery}%</span> · Spec: {fmtVolume(spec.tank_l, units, 0).text} / {spec.max_flight_min} min / {spec.max_speed_ms} m/s
                 </div>
               )}
             </div>
@@ -1212,9 +1212,9 @@ export function PlannerTab({
           <div className="flex justify-between"><span className="text-neutral-500">Waypoints (our pattern)</span>
             <span className="font-mono">{mission?.waypoints.length ?? 0}</span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Est. spray distance</span>
-            <span className="font-mono text-cyan-300">{mission ? (mission.sprayDistM / 1000).toFixed(2) : "0.00"} km</span></div>
+            <span className="font-mono text-cyan-300">{fmtDistance(mission?.sprayDistM ?? 0, units).text}</span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Est. transit distance</span>
-            <span className="font-mono text-yellow-300">{mission ? (mission.transitDistM / 1000).toFixed(2) : "0.00"} km</span></div>
+            <span className="font-mono text-yellow-300">{fmtDistance(mission?.transitDistM ?? 0, units).text}</span></div>
           <div className="border-t border-[#222] my-1.5" />
           <div className="flex justify-between"><span className="text-neutral-500">Est. spray time</span>
             <span className="font-mono text-cyan-300">{mission ? fmtTime(mission.sprayTimeS) : "0:00"}</span></div>

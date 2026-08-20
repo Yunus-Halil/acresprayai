@@ -117,6 +117,8 @@ export function FieldViewTab(props: {
   deleteUserPolygon: (id: string) => Promise<void>;
   clearAnalysis: () => Promise<void>;
   settings: FarmerSettings;
+  /** Opens the workspace's Settings tab, which may not currently be open. */
+  openSettings: () => void;
 }) {
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const {
@@ -285,7 +287,11 @@ export function FieldViewTab(props: {
             setLayersOpen(false);
           }}
         />
-        <ToolButton icon={Settings} label="Settings" />
+        {/* This had no onClick at all — it rendered, highlighted on hover, and
+            did nothing, which reads as a broken app rather than a missing
+            feature. Settings is not in the default tab set, so it has to be
+            opened as well as selected. */}
+        <ToolButton icon={Settings} label="Settings" onClick={props.openSettings} />
       </div>
 
       {/* Measure panel */}

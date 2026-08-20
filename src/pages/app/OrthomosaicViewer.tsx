@@ -1075,6 +1075,7 @@ export default function OrthomosaicViewer() {
             saveUserPolygon={saveUserPolygon}
             deleteUserPolygon={deleteUserPolygon}
             clearAnalysis={clearAnalysis}
+            openSettings={() => openTab("settings")}
             settings={settings}
           />
         </div>
