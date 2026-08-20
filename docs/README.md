@@ -54,6 +54,7 @@ that treats only those patches instead of the whole field.
 |---|---|
 | [operations/running.md](operations/running.md) | Commands, configuration, secrets, test coverage |
 | [operations/limits.md](operations/limits.md) | What is not built, and constraints to design around |
+| [security-audit.md](security-audit.md) | Security audit 2026-08-20: what was attacked, what held, what is still open |
 | [operations/seo.md](operations/seo.md) | Titles, link-preview cards, robots, sitemap, indexability |
 
 ## Quick facts
