@@ -63,6 +63,9 @@ import {
 import { LogFlightModal } from "./SettingsTab";
 import { readCachedWeather } from "@/lib/weather";
 import { computeMissionStats } from "@/lib/missionStats";
+import { physicsFor } from "@/lib/dronePhysics";
+import { buildTankProfile, sampleTankAt } from "@/lib/tankProfile";
+import TankDynamicsWidget from "./TankDynamicsWidget";
 import ScheduleMissionModal from "./ScheduleMissionModal";
 // Farmer-facing quantities follow the unit setting. Flight-physics figures —
 // turn radius, climb rate, the m/s speeds — deliberately do NOT: they are the
@@ -128,6 +131,7 @@ export function PlannerTab({
   const units = useUnitSystem();
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [sideTab, setSideTab] = useState<"setup" | "mission">("setup");
+  const [tankOpen, setTankOpen] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const [spacingM, setSpacingM] = useState<number>(15);
@@ -448,6 +452,20 @@ export function PlannerTab({
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [simPlaying, simSpeed, simTimeline.total]);
+  // Tank state across the whole mission, built once per plan rather than
+  // stepped live — the scrubber can jump to a moment that was never played, and
+  // slosh is stateful, so it has to be precomputed to answer that honestly.
+  const tankPhysics = useMemo(() => physicsFor(droneModelKey), [droneModelKey]);
+  const tankProfile = useMemo(() => {
+    if (!simTimeline.segs.length || simTimeline.total <= 0) return null;
+    return buildTankProfile(simTimeline.segs, simTimeline.total, {
+      config: tankPhysics,
+      startLitres: tankPhysics.tankCapacityL * (Math.max(0, Math.min(100, fp.tank_load_pct)) / 100),
+      flowLpm: spec.spray_rate_lpm > 0 ? spec.spray_rate_lpm : undefined,
+      tempC: wx?.temp_c,
+    });
+  }, [simTimeline, tankPhysics, fp.tank_load_pct, spec.spray_rate_lpm, wx?.temp_c]);
+
   const simState = simPosAt(simTimeline, simT);
 
   const saveBlob = (blob: Blob, filename: string) => {
@@ -589,15 +607,23 @@ export function PlannerTab({
       : isRth ? "rth"
       : "transit";
     const drawPct = battery?.batteryPercent ?? 0;
-    const elapsedFrac = Math.min(1, simT / simTimeline.total);
-    const batteryRemaining = Math.max(0, 100 - elapsedFrac * drawPct);
+    // Charge is spent by AMP-SECONDS, not by wall-clock. A linear-in-time drain
+    // makes a full tank cost exactly what an empty one does per second, which is
+    // wrong in the direction that matters: the aircraft is at its heaviest on the
+    // outbound leg, and hover power goes as mass^1.5. The tank profile already
+    // integrates the real draw, so the bar follows that curve — steep while
+    // loaded, shallower on the way home.
+    const consumedFrac = tankProfile && tankProfile.totalAmpS > 0
+      ? (sampleTankAt(tankProfile, simT)?.cumAmpS ?? 0) / tankProfile.totalAmpS
+      : Math.min(1, simT / simTimeline.total);
+    const batteryRemaining = Math.max(0, 100 - consumedFrac * drawPct);
     const tankStart = Math.max(0, Math.min(100, fp.tank_load_pct || 100));
     const tankRemaining = Math.max(0, tankStart * (1 - sprayCovered / totalSprayDist));
     return {
       phase, distCovered, totalDist, sprayCovered, totalSprayDist,
       batteryRemaining, batteryStart: 100, tankRemaining, tankStart,
     };
-  }, [simT, simTimeline, mission, battery, fp.tank_load_pct, simPlaying]);
+  }, [simT, simTimeline, mission, battery, fp.tank_load_pct, simPlaying, tankProfile]);
 
   // Empty states ------------------------------------------------------------
   if (!boundary || boundary.length === 0) {
@@ -682,6 +708,22 @@ export function PlannerTab({
             <CalendarDays className="h-3.5 w-3.5" /> Schedule
           </button>
         </div>
+        {/* Tank dynamics, top-centre: it describes what the aircraft is
+            carrying at this instant, so it belongs beside the map it is flying
+            over rather than down a sidebar. Collapsible — it is reference, not
+            a control. */}
+        {tankProfile && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[500] w-[300px]">
+            <TankDynamicsWidget
+              profile={tankProfile}
+              cfg={tankPhysics}
+              simT={simT}
+              open={tankOpen}
+              onToggle={() => setTankOpen(v => !v)}
+            />
+          </div>
+        )}
+
         {/* Simulation transport floats over the map rather than living in the
             sidebar: it controls what the MAP shows, and parking it hundreds of
             pixels of scroll away meant driving the video from another room. */}
