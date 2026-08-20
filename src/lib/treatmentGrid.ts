@@ -146,7 +146,16 @@ export type RateSource = "default" | "threshold" | "operator";
  */
 export type CellRate =
   | { state: "untreated"; source: RateSource }
-  | { state: "treated"; rateLha: number; source: RateSource };
+  | {
+      state: "treated"; rateLha: number; source: RateSource;
+      /**
+       * What kind of problem this ground has, if the operator said. Optional
+       * and honest: a painted cell with no issue set is UNCLASSIFIED, never
+       * guessed. Uses the same vocabulary as hand-drawn anomaly polygons
+       * (USER_POLY_ISSUES) so the two flag the same kinds of things.
+       */
+      issue?: string;
+    };
 
 export const UNASSIGNED: CellRate = { state: "untreated", source: "default" };
 

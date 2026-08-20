@@ -14,7 +14,7 @@ import {
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
   Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
-  CheckCircle2, XCircle, Trash2, Hexagon,
+  CheckCircle2, XCircle, Trash2, Hexagon, Grid3x3,
   Play, Pause, RotateCcw, FastForward, History,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
@@ -57,6 +57,8 @@ import {
   escapeHtml, loadAnnotations, loadBasemap, saveAnnotations, saveBasemap, sevColor,
   USER_POLY_COLORS,
 } from "./layers";
+import GridAnomaliesLayer from "./GridAnomaliesLayer";
+import { type GridZonesLoad, loadGridZones } from "@/lib/gridAnomalies";
 import { AnalysisGrid } from "./AiTab";
 
 // ----------------------------- Field View tab -------------------------------
@@ -119,6 +121,8 @@ export function FieldViewTab(props: {
   settings: FarmerSettings;
   /** Opens the workspace's Settings tab, which may not currently be open. */
   openSettings: () => void;
+  /** For loading the treatment grid's zones as an anomaly overlay. */
+  fieldId: string | null;
 }) {
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const {
@@ -146,6 +150,18 @@ export function FieldViewTab(props: {
     active: false, finished: false, count: 0, distM: 0, areaM2: 0, liveDistM: 0,
   });
   const handleStats = useCallback((s: MeasureStats) => setMeasureStats(s), []);
+
+  // Treatment-grid zones as an anomaly overlay. Derived on mount from the
+  // stored grid — the grid cell is the record, this is a projection of it.
+  const [gridZoneLoad, setGridZoneLoad] = useState<GridZonesLoad | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setGridZoneLoad(null);
+    loadGridZones(props.fieldId, props.boundary as LatLng2[][] | null)
+      .then(r => { if (!cancelled) setGridZoneLoad(r); })
+      .catch(e => console.error("[fieldview] grid zones load failed", e));
+    return () => { cancelled = true; };
+  }, [props.fieldId, props.boundary]);
 
   const ToolButton = ({ icon: Icon, label, onClick, active }: any) => (
     <button
@@ -242,6 +258,9 @@ export function FieldViewTab(props: {
         />
         {layers.userAnnotations && userPolys.length > 0 && (
           <UserPolyLayer polys={userPolys} onDelete={deleteUserPolygon} />
+        )}
+        {layers.gridZones && gridZoneLoad && gridZoneLoad.zones.length > 0 && (
+          <GridAnomaliesLayer zones={gridZoneLoad.zones} />
         )}
         {userPolyToolActive && (
           <UserPolygonTool
@@ -460,6 +479,16 @@ export function FieldViewTab(props: {
           <LayerRow label={`Annotations · my polygons (${userPolys.length})`} icon={Hexagon}
             checked={layers.userAnnotations}
             onToggle={() => setLayers(s => ({ ...s, userAnnotations: !s.userAnnotations }))} />
+          <LayerRow
+            label={`Treatment grid zones${gridZoneLoad ? ` (${gridZoneLoad.zones.length})` : ""}`}
+            icon={Grid3x3}
+            checked={layers.gridZones}
+            onToggle={() => setLayers(s => ({ ...s, gridZones: !s.gridZones }))} />
+          {gridZoneLoad?.stale && (
+            <div className="pl-6 text-[10px] text-amber-500/90 leading-relaxed">
+              Built for an older boundary — open the Treatment Grid tab to migrate it.
+            </div>
+          )}
         </div>
       )}
 

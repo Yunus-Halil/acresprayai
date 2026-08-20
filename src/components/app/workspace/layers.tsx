@@ -972,6 +972,8 @@ export type LayerState = {
   measurements: boolean;
   boundary: boolean;
   userAnnotations: boolean;
+  /** Treatment-grid zones, projected as anomaly polygons. */
+  gridZones: boolean;
 };
 
 export function LayerRow({

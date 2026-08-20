@@ -178,6 +178,24 @@ describe("parsing what the column actually contains", () => {
     expect(parsed!.detection).toBeNull();
   });
 
+  it("keeps the issue tag on a treated rate and drops junk ones", () => {
+    // The tag is how a painted cell says WHAT is wrong with the ground. Losing
+    // it in the round trip would silently unclassify every anomaly on reload.
+    const parsed = parseStoredGrid({
+      definition: DEF,
+      rates: {
+        tagged: { state: "treated", rateLha: 20, source: "operator", issue: "Bare soil" },
+        untagged: { state: "treated", rateLha: 20, source: "operator" },
+        junkTag: { state: "treated", rateLha: 20, source: "operator", issue: 42 },
+      },
+      detection: null,
+    });
+    expect(parsed!.rates.tagged).toEqual(
+      { state: "treated", rateLha: 20, source: "operator", issue: "Bare soil" });
+    expect("issue" in parsed!.rates.untagged).toBe(false);
+    expect("issue" in parsed!.rates.junkTag).toBe(false);
+  });
+
   it("keeps detection when it is intact", () => {
     const parsed = parseStoredGrid({
       definition: DEF, rates: {},

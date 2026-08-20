@@ -128,6 +128,27 @@ describe("a small boundary nudge", () => {
   });
 });
 
+describe("the issue tag across a migration", () => {
+  it("moves with its cell", () => {
+    // The anomaly views project category from the cell, so the tag surviving
+    // the remap IS the anomaly surviving the boundary edit.
+    const old = gridOf(rect(120, 90));
+    const target = [...old.cells].sort((a, b) => a.centroid.lng - b.centroid.lng)[0];
+    const tagged: TreatmentGrid = {
+      ...old,
+      cells: old.cells.map(c => c.id === target.id
+        ? { ...c, rate: { state: "treated", rateLha: 25, source: "operator", issue: "Bare soil" } as CellRate }
+        : c),
+    };
+    const next = gridOf(rect(120, 90, { eastM: 2 }));
+    const migrated = applyMigration(next, planMigration(packGrid(tagged), next));
+    const survivor = migrated.cells.find(c => c.rate.state === "treated");
+    expect(survivor).toBeDefined();
+    expect(survivor!.rate).toEqual(
+      { state: "treated", rateLha: 25, source: "operator", issue: "Bare soil" });
+  });
+});
+
 describe("a boundary shrink", () => {
   it("drops the decisions whose ground left the field and keeps the rest", () => {
     const old = paint(gridOf(rect(120, 90)), 6, 6);   // treated west, skipped east

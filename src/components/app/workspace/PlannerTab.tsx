@@ -67,10 +67,8 @@ import { physicsFor } from "@/lib/dronePhysics";
 import { buildTankProfile, sampleTankAt } from "@/lib/tankProfile";
 import TankDynamicsWidget from "./TankDynamicsWidget";
 import ScheduleMissionModal from "./ScheduleMissionModal";
-import { type GridZone, gridZonesFor } from "@/lib/gridZones";
-import { boundaryHashOf, buildTreatmentGrid } from "@/lib/treatmentGrid";
-import { applyStored } from "@/lib/treatmentGridStore";
-import { SupabaseTreatmentGridRepository } from "@/lib/treatmentGridRepo";
+import type { GridZone } from "@/lib/gridZones";
+import { loadGridZones } from "@/lib/gridAnomalies";
 // Farmer-facing quantities follow the unit setting. Flight-physics figures —
 // turn radius, climb rate, the m/s speeds — deliberately do NOT: they are the
 // aircraft's own spec-sheet numbers and the values the DJI parameters take, and
@@ -111,11 +109,6 @@ function InfoTip({ children, className = "" }: { children: React.ReactNode; clas
     </span>
   );
 }
-
-// The planner reads the stored treatment grid itself rather than being handed
-// a snapshot: the tab remounts on every switch, so a load-on-mount IS live —
-// paint more cells, come back, and the zones are the new ones.
-const gridRepo = new SupabaseTreatmentGridRepository();
 
 export function PlannerTab({
   analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
@@ -283,32 +276,25 @@ export function PlannerTab({
   // pipeline rather than a parallel one.
   const [gridZones, setGridZones] = useState<GridZone[]>([]);
   const [gridZonesNote, setGridZonesNote] = useState<string | null>(null);
+  // Load-on-mount IS live: the tab remounts on every switch, so repainting
+  // cells and returning re-derives the zones. Shared with the Field View's
+  // anomaly overlay — one loader, one staleness rule.
   useEffect(() => {
     let cancelled = false;
     setGridZones([]);
     setGridZonesNote(null);
-    if (!fieldId || !boundary || boundary.length === 0) return;
-    (async () => {
-      try {
-        const stored = await gridRepo.load(fieldId);
-        if (cancelled || !stored) return;
-        if (stored.definition.boundaryHash !== boundaryHashOf(boundary as LatLng2[][])) {
-          // The grid was built for an older boundary. Its cells sit on a
-          // lattice derived from that boundary, so routing over them now would
-          // spray the wrong ground. The Treatment Grid tab owns the migration.
+    loadGridZones(fieldId, boundary as LatLng2[][] | null)
+      .then(r => {
+        if (cancelled || !r) return;
+        if (r.stale) {
           setGridZonesNote(
             "The treatment grid was built for an older boundary — open the Treatment Grid tab to migrate it before it can feed this plan.",
           );
-          return;
+        } else {
+          setGridZones(r.zones);
         }
-        const grid = applyStored(
-          buildTreatmentGrid(boundary as LatLng2[][], stored.definition), stored,
-        );
-        if (!cancelled) setGridZones(gridZonesFor(grid));
-      } catch (e) {
-        console.error("[planner] treatment grid load failed", e);
-      }
-    })();
+      })
+      .catch(e => console.error("[planner] treatment grid load failed", e));
     return () => { cancelled = true; };
   }, [fieldId, boundary]);
 
@@ -319,6 +305,8 @@ export function PlannerTab({
         clipped cell area — the number the Prescription panel already showed. */
     rateLha?: number;
     areaM2?: number;
+    /** Grid zones only: the operator's classification, if they set one. */
+    issue?: string;
   };
   const aiZonesRaw: PlannerZone[] = ((analysis?.zones ?? []) as AiZone[])
     .map(z => ({ id: z.id, ring: z.ring, severity: z.severity, source: "ai" as const }));
@@ -327,7 +315,7 @@ export function PlannerTab({
     .map(u => ({ id: `user:${u.id}`, ring: u.ring, severity: "medium" as const, source: "user" as const }));
   const gridZonesRaw: PlannerZone[] = gridZones.map(z => ({
     id: z.id, ring: z.ring, severity: "medium" as const, source: "grid" as const,
-    rateLha: z.rateLha, areaM2: z.areaM2,
+    rateLha: z.rateLha, areaM2: z.areaM2, issue: z.issue,
   }));
   const allZonesRaw: PlannerZone[] = [...aiZonesRaw, ...userZonesRaw, ...gridZonesRaw];
   const validZones = (() => {
@@ -542,6 +530,7 @@ export function PlannerTab({
     severity: z.severity,
     source: z.source,
     areaM2: z.areaM2,
+    issue: z.issue,
     // A grid zone's rate is what the operator painted, cell by cell — the
     // severity defaults and per-zone overrides govern AI and hand-drawn zones
     // only. Overriding a grid rate here would fork it from the grid's own
@@ -1205,7 +1194,9 @@ export function PlannerTab({
                     style={{ background: z.source === "grid" ? "#f59e0b" : sevColor(z.severity) }} />
                   <span className="text-[11px] text-neutral-400 truncate flex-1">
                     Zone {i + 1}
-                    {z.source === "grid" && <span className="text-amber-600/80"> · treatment grid</span>}
+                    {z.source === "grid" && (
+                      <span className="text-amber-600/80"> · {z.issue ?? "treatment grid"}</span>
+                    )}
                     {z.source !== "grid" && settings.zone_rate_overrides?.[z.id] != null && (
                       <span className="text-neutral-600"> · pinned</span>
                     )}

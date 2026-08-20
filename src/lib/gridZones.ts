@@ -33,9 +33,22 @@ export type GridZone = {
   areaM2: number;
   cellCount: number;
   source: "grid";
+  /**
+   * The operator's own classification, or undefined — which readers must show
+   * as "Unclassified", never guess into a category. Same vocabulary as
+   * hand-drawn anomaly polygons.
+   */
+  issue?: string;
+  /**
+   * Mean Find-Similar score over the member cells that carry one, or null when
+   * none do. This is a MATCH score, not a confidence: it says how much this
+   * ground resembled the operator's examples when it was last scored, and a
+   * hand-painted zone with no scores simply has none.
+   */
+  matchScore: number | null;
 };
 
-type Cell = { col: number; row: number; areaM2: number };
+type Cell = { col: number; row: number; areaM2: number; score: number | null };
 
 /**
  * All treated cells, grouped and outlined.
@@ -45,19 +58,28 @@ type Cell = { col: number; row: number; areaM2: number };
  * moves between renders is a rate override landing on the wrong zone.
  */
 export function gridZonesFor(grid: TreatmentGrid): GridZone[] {
-  // Bucket treated cells by rate; contiguity is found within a bucket.
-  const byRate = new Map<number, Map<string, Cell>>();
+  // Bucket treated cells by (rate, issue); contiguity is found within a
+  // bucket. Issue splits a bucket for the same reason rate does: a zone
+  // carries ONE classification, and merging "weed pressure" ground into a
+  // "bare soil" zone would misdescribe both.
+  const byKey = new Map<string, { rateLha: number; issue?: string; cells: Map<string, Cell> }>();
   for (const c of grid.cells) {
     if (c.rate.state !== "treated") continue;
     const parsed = parseCellId(c.id);
     if (!parsed) continue;
-    let bucket = byRate.get(c.rate.rateLha);
-    if (!bucket) byRate.set(c.rate.rateLha, (bucket = new Map()));
-    bucket.set(`${parsed.col},${parsed.row}`, { col: parsed.col, row: parsed.row, areaM2: c.areaM2 });
+    const issue = c.rate.issue;
+    const key = `${c.rate.rateLha}|${issue ?? ""}`;
+    let bucket = byKey.get(key);
+    if (!bucket) byKey.set(key, (bucket = { rateLha: c.rate.rateLha, issue, cells: new Map() }));
+    bucket.cells.set(`${parsed.col},${parsed.row}`, {
+      col: parsed.col, row: parsed.row, areaM2: c.areaM2,
+      score: c.detection?.score ?? null,
+    });
   }
 
   const zones: GridZone[] = [];
-  for (const [rateLha, bucket] of [...byRate.entries()].sort((a, b) => a[0] - b[0])) {
+  for (const [, { rateLha, issue, cells: bucket }] of
+       [...byKey.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
     const seen = new Set<string>();
     const keys = [...bucket.keys()].sort();
     for (const start of keys) {
@@ -76,23 +98,29 @@ export function gridZonesFor(grid: TreatmentGrid): GridZone[] {
           if (bucket.has(nk) && !seen.has(nk)) { seen.add(nk); queue.push(nk); }
         }
       }
-      zones.push(...zonesFromGroup(grid, group, rateLha));
+      zones.push(...zonesFromGroup(grid, group, rateLha, issue));
     }
   }
   return zones;
 }
 
 /** One contiguous same-rate group → one polygon, or strips when it has holes. */
-function zonesFromGroup(grid: TreatmentGrid, group: Cell[], rateLha: number): GridZone[] {
+function zonesFromGroup(
+  grid: TreatmentGrid, group: Cell[], rateLha: number, issue?: string,
+): GridZone[] {
   const loops = traceOutline(group);
   const anchor = group.reduce((a, c) => (c.row < a.row || (c.row === a.row && c.col < a.col) ? c : a));
   const areaM2 = group.reduce((s, c) => s + c.areaM2, 0);
+  const scored = group.filter(c => c.score !== null);
+  const matchScore = scored.length
+    ? scored.reduce((s, c) => s + (c.score as number), 0) / scored.length
+    : null;
 
   if (loops.length === 1) {
     return [{
       id: `grid:${grid.id}:${anchor.col}:${anchor.row}`,
       ring: loops[0].map(v => latticeToWorld(grid, v.x, v.y)),
-      rateLha, areaM2, cellCount: group.length, source: "grid",
+      rateLha, areaM2, cellCount: group.length, source: "grid", issue, matchScore,
     }];
   }
 
@@ -113,6 +141,7 @@ function zonesFromGroup(grid: TreatmentGrid, group: Cell[], rateLha: number): Gr
       if (i < cells.length && cells[i].col === cells[i - 1].col + 1) continue;
       const run = cells.slice(runStart, i);
       const c0 = run[0].col, c1 = run[run.length - 1].col;
+      const stripScored = run.filter(c => c.score !== null);
       strips.push({
         id: `grid:${grid.id}:${c0}:${row}`,
         ring: [
@@ -123,6 +152,10 @@ function zonesFromGroup(grid: TreatmentGrid, group: Cell[], rateLha: number): Gr
         areaM2: run.reduce((s, c) => s + c.areaM2, 0),
         cellCount: run.length,
         source: "grid",
+        issue,
+        matchScore: stripScored.length
+          ? stripScored.reduce((s, c) => s + (c.score as number), 0) / stripScored.length
+          : null,
       });
       runStart = i;
     }

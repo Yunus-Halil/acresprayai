@@ -37,7 +37,7 @@ import { type MigrationPlan, applyMigration, planMigration } from "@/lib/gridMig
 import { SupabaseTreatmentGridRepository } from "@/lib/treatmentGridRepo";
 import type { GridRenderInfo } from "./TreatmentGridLayer";
 import TreatmentGridLayer from "./TreatmentGridLayer";
-import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, loadBasemap, saveBasemap } from "./layers";
+import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, USER_POLY_ISSUES, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
 import {
   fmtArea, fmtAreaHa, fmtRate, fmtVolume, rateToLha, rateUnit, rateValue,
@@ -68,6 +68,10 @@ export function TreatmentTab({
   const [tool, setTool] = useState<Tool>("inspect");
   const [brushCells, setBrushCells] = useState(1);
   const [rateLha, setRateLha] = useState<number>(settings.spray_rates_lha.medium);
+  // What kind of problem the operator is painting. "" is honest UNCLASSIFIED —
+  // the app never guesses a category, and the anomaly views say "Unclassified"
+  // rather than inventing one. Same vocabulary as hand-drawn polygons.
+  const [issueTag, setIssueTag] = useState<string>("");
   const [paintAction, setPaintAction] = useState<"treat" | "skip" | "clear">("treat");
   const [grid, setGrid] = useState<TreatmentGrid | null>(null);
   const [buildError, setBuildError] = useState<string | null>(null);
@@ -223,20 +227,26 @@ export function TreatmentTab({
     // `source: "operator"` is the marker a later threshold pass must respect.
     // Everything painted here is a hand decision, including "leave this alone".
     if (paintAction === "treat") {
-      mutate(ids, () => ({ state: "treated", rateLha, source: "operator" }));
+      mutate(ids, () => ({
+        state: "treated", rateLha, source: "operator",
+        ...(issueTag ? { issue: issueTag } : {}),
+      }));
     } else if (paintAction === "skip") {
       mutate(ids, () => ({ state: "untreated", source: "operator" }));
     } else {
       mutate(ids, () => ({ state: "untreated", source: "default" }));
     }
-  }, [paintAction, rateLha, mutate]);
+  }, [paintAction, rateLha, issueTag, mutate]);
 
   const onPickCell = useCallback((id: CellId | null) => {
     // While a review is live, clicking a suggested cell ACCEPTS it — the same
     // gesture that marks a cell manually, extended rather than replaced. Cells
     // that are not candidates keep the normal inspect behaviour.
     if (id && candidates?.has(id)) {
-      mutate([id], () => ({ state: "treated", rateLha, source: "operator" }));
+      mutate([id], () => ({
+        state: "treated", rateLha, source: "operator",
+        ...(issueTag ? { issue: issueTag } : {}),
+      }));
       setCandidates(prev => {
         if (!prev) return prev;
         const next = new Map(prev);
@@ -246,7 +256,7 @@ export function TreatmentTab({
       return;
     }
     setSelected(id ? new Set([id]) : new Set());
-  }, [candidates, mutate, rateLha]);
+  }, [candidates, mutate, rateLha, issueTag]);
 
   // Any decision made by any tool prunes the suggestion list: a cell that has
   // left its default state — accepted here, painted, or skip-rejected with the
@@ -653,6 +663,24 @@ export function TreatmentTab({
               </div>
             )}
 
+            {paintAction === "treat" && (
+              <div className="mt-3">
+                <div className="text-[11px] text-neutral-500 mb-1">Issue type</div>
+                <select
+                  value={issueTag}
+                  onChange={e => setIssueTag(e.target.value)}
+                  className="w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-xs text-[#f0f0f0] focus:outline-none focus:border-[#4CAF50]"
+                >
+                  <option value="">Unclassified</option>
+                  {USER_POLY_ISSUES.map(i => <option key={i} value={i}>{i}</option>)}
+                </select>
+                <div className="text-[10px] text-neutral-600 mt-1 leading-relaxed">
+                  Tags the cells you paint. Optional — untagged ground shows as
+                  Unclassified in the anomaly views, never a guessed category.
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between mt-3 mb-1">
               <span className="text-[11px] text-neutral-500">Brush</span>
               <span className="font-mono text-xs text-neutral-300">
@@ -714,7 +742,10 @@ export function TreatmentTab({
                   <div className="flex gap-1.5 mb-2">
                     <button
                       onClick={() => {
-                        mutate([...candidates.keys()], () => ({ state: "treated", rateLha, source: "operator" }));
+                        mutate([...candidates.keys()], () => ({
+                          state: "treated", rateLha, source: "operator",
+                          ...(issueTag ? { issue: issueTag } : {}),
+                        }));
                         setCandidates(null);
                       }}
                       className="flex-1 text-[11px] rounded-sm px-2 py-1.5 bg-amber-500/90 hover:bg-amber-400 text-black font-semibold">
@@ -767,6 +798,14 @@ export function TreatmentTab({
                   </div>
                   <div>Set by</div>
                   <div className="text-right font-mono text-neutral-200">{selectedCell.rate.source}</div>
+                  {selectedCell.rate.state === "treated" && (
+                    <>
+                      <div>Issue</div>
+                      <div className="text-right font-mono text-neutral-200">
+                        {selectedCell.rate.issue ?? "Unclassified"}
+                      </div>
+                    </>
+                  )}
                   {selectedCell.clipped && (
                     <div className="col-span-2 text-[10px] text-neutral-600 mt-1">
                       Edge cell — volume is billed on the clipped area, not a full cell.

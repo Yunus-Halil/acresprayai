@@ -54,7 +54,12 @@ export function parseStoredGrid(raw: unknown): StoredGrid | null {
         rates[id] = { state: "untreated", source: rate.source };
       } else if (rate.state === "treated" && typeof rate.rateLha === "number"
                  && isFinite(rate.rateLha) && rate.rateLha > 0) {
-        rates[id] = { state: "treated", rateLha: rate.rateLha, source: rate.source };
+        const issue = (rate as { issue?: unknown }).issue;
+        rates[id] = {
+          state: "treated", rateLha: rate.rateLha, source: rate.source,
+          // The issue tag survives the round trip; junk in the column does not.
+          ...(typeof issue === "string" && issue.trim() ? { issue } : {}),
+        };
       }
     }
   }

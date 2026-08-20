@@ -23,15 +23,24 @@ function rect(widthM: number, heightM: number): LatLng2[] {
 const GRID = buildTreatmentGrid([rect(120, 90)], gridDefinitionFor([rect(120, 90)], 6));
 
 /** Grid with the given lattice cells treated. */
-function withTreated(picks: { col: number; row: number; rateLha?: number }[]): TreatmentGrid {
-  const want = new Map(picks.map(p => [`${p.col},${p.row}`, p.rateLha ?? 20]));
+function withTreated(
+  picks: { col: number; row: number; rateLha?: number; issue?: string; score?: number }[],
+): TreatmentGrid {
+  const want = new Map(picks.map(p => [`${p.col},${p.row}`, p]));
   return {
     ...GRID,
     cells: GRID.cells.map(c => {
       const parsed = parseCellId(c.id)!;
-      const rate = want.get(`${parsed.col},${parsed.row}`);
-      return rate === undefined ? c : {
-        ...c, rate: { state: "treated", rateLha: rate, source: "operator" } as CellRate,
+      const pick = want.get(`${parsed.col},${parsed.row}`);
+      return pick === undefined ? c : {
+        ...c,
+        rate: {
+          state: "treated", rateLha: pick.rateLha ?? 20, source: "operator",
+          ...(pick.issue ? { issue: pick.issue } : {}),
+        } as CellRate,
+        detection: pick.score !== undefined
+          ? { score: pick.score, modelVersion: "interactive-v1", scoredAt: "t" }
+          : c.detection,
       };
     }),
   };
@@ -146,7 +155,7 @@ describe("the hole case", () => {
   });
 
   it("traceOutline reports one loop for a solid block and two for a ring", () => {
-    const solid = block(0, 0, 3, 3).map(p => ({ ...p, areaM2: 36 }));
+    const solid = block(0, 0, 3, 3).map(p => ({ ...p, areaM2: 36, score: null }));
     expect(traceOutline(solid)).toHaveLength(1);
     const holed = solid.filter(p => !(p.col === 1 && p.row === 1));
     expect(traceOutline(holed).length).toBeGreaterThan(1);
@@ -209,5 +218,50 @@ describe("through the planner pipeline", () => {
     const zones = gridZonesFor(reloaded);
     expect(zones.reduce((s, z) => s + z.cellCount, 0)).toBe(13);
     expect(zones.length).toBe(2);
+  });
+});
+
+describe("anomaly projection", () => {
+  it("splits adjacent same-rate cells with different issues into different zones", () => {
+    // A zone carries ONE classification; merging weed ground into a bare-soil
+    // zone would misdescribe both.
+    const g = withTreated([
+      ...block(anchor.col, anchor.row, 2, 2).map(p => ({ ...p, issue: "Weed pressure" })),
+      ...block(anchor.col + 2, anchor.row, 2, 2).map(p => ({ ...p, issue: "Bare soil" })),
+    ]);
+    const zones = gridZonesFor(g);
+    expect(zones).toHaveLength(2);
+    expect(zones.map(z => z.issue).sort()).toEqual(["Bare soil", "Weed pressure"]);
+  });
+
+  it("leaves untagged ground unclassified rather than guessing", () => {
+    const g = withTreated(block(anchor.col, anchor.row, 2, 2));
+    const [zone] = gridZonesFor(g);
+    expect(zone.issue).toBeUndefined();
+  });
+
+  it("carries the mean match score of scored cells, and none when unscored", () => {
+    const g = withTreated([
+      { col: anchor.col, row: anchor.row, score: 0.8 },
+      { col: anchor.col + 1, row: anchor.row, score: 0.6 },
+      { col: anchor.col, row: anchor.row + 1 },          // hand-painted, no score
+      { col: anchor.col + 1, row: anchor.row + 1 },
+    ]);
+    const [zone] = gridZonesFor(g);
+    // Mean over the SCORED cells only — an unscored cell is not a zero.
+    expect(zone.matchScore).toBeCloseTo(0.7, 9);
+
+    const manual = withTreated(block(anchor.col, anchor.row, 2, 2));
+    expect(gridZonesFor(manual)[0].matchScore).toBeNull();
+  });
+
+  it("still prices exactly when issues subdivide the zones", () => {
+    const g = withTreated([
+      ...block(anchor.col, anchor.row, 3, 2, 15).map(p => ({ ...p, issue: "Weed pressure" })),
+      ...block(anchor.col + 3, anchor.row, 2, 2, 15),
+    ]);
+    const zones = gridZonesFor(g);
+    const zoneVolume = zones.reduce((s, z) => s + (z.areaM2 / 10_000) * z.rateLha, 0);
+    expect(zoneVolume).toBeCloseTo(gridTotals(g, 30).totalVolumeL, 9);
   });
 });
