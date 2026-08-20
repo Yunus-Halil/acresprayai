@@ -680,7 +680,7 @@ export function AiZonesLayer({
         color, weight: selectedId === z.id ? 3 : 2,
         fillColor: color, fillOpacity: selectedId === z.id ? 0.35 : 0.25,
       });
-      poly.bindTooltip(`${z.name}`, {
+      poly.bindTooltip(safeLabel(z.name), {
         permanent: false, sticky: true, opacity: 1, direction: "top",
         className: "ai-zone-label",
       });
@@ -711,7 +711,7 @@ export function AiZonesLayer({
       // total cannot move when the display does.
       const shownRate = formatMoney(costPerAreaValue(ratePerAc, units), cur);
       const shownArea = fmtArea(m2, units);
-      const sevBadge = `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;background:${color}33;color:${color};border:1px solid ${color}">${z.severity}</span>`;
+      const sevBadge = `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;background:${color}33;color:${color};border:1px solid ${color}">${safeLabel(z.severity)}</span>`;
       const html = `
         <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:240px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
@@ -778,6 +778,23 @@ export function escapeHtml(s: string): string {
   return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as any)[c]);
 }
 
+/**
+ * Text for a Leaflet tooltip or popup.
+ *
+ * Leaflet renders a STRING argument as HTML — `bindTooltip(name)` with a name
+ * of `<img onerror=...>` executes it. Every free-text value that reaches a
+ * tooltip goes through here.
+ *
+ * Today the blast radius is the author's own browser: names and notes live in
+ * the writer's own RLS-scoped rows, so this is self-XSS, and the admin surface
+ * and the PDF exporter both render text safely (JSX escapes; jsPDF draws
+ * glyphs). It is fixed anyway because it is nearly free, and because "only the
+ * attacker sees it" stops being true the first time a field is shared with an
+ * agronomist.
+ */
+export const safeLabel = (value: unknown): string =>
+  escapeHtml(value == null ? "" : String(value));
+
 // ---- User polygon annotations ------------------------------------------------
 export type UserPoly = {
   id: string;
@@ -823,7 +840,7 @@ export function UserPolyLayer({
       const poly = L.polygon(p.ring.map(pt => [pt.lat, pt.lng] as [number, number]), {
         color, weight: 2, fillColor: color, fillOpacity: 0.18, dashArray: "4 4",
       });
-      poly.bindTooltip(p.name, { sticky: true, opacity: 1, className: "ai-zone-label", direction: "top" });
+      poly.bindTooltip(safeLabel(p.name), { sticky: true, opacity: 1, className: "ai-zone-label", direction: "top" });
       const areaText = escapeHtml(fmtAreaHa(p.area_hectares, units).text);
       const html = `
         <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:220px">
@@ -834,7 +851,7 @@ export function UserPolyLayer({
           <div style="font-size:11px;color:#9ca3af;margin-bottom:6px">${escapeHtml(p.issue_type)}</div>
           <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">Area: <span style="color:#f0f0f0;font-family:ui-monospace,monospace">${areaText}</span></div>
           ${p.notes ? `<div style="font-size:11px;color:#d1d5db;border-top:1px solid #222;padding-top:6px;margin-bottom:8px">${escapeHtml(p.notes)}</div>` : ""}
-          <button data-uap-delete="${p.id}" style="font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
+          <button data-uap-delete="${escapeHtml(p.id)}" style="font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
         </div>
       `;
       poly.bindPopup(html, { className: "ai-zone-popup", maxWidth: 300, autoClose: true, closeOnClick: true });

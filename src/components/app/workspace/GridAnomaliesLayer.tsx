@@ -13,7 +13,7 @@ import { useMap } from "react-leaflet";
 import L from "leaflet";
 import type { GridZone } from "@/lib/gridZones";
 import { UNCLASSIFIED_LABEL } from "@/lib/gridAnomalies";
-import { escapeHtml } from "./layers";
+import { escapeHtml, safeLabel } from "./layers";
 import { fmtArea, fmtRate } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 
@@ -33,7 +33,7 @@ export function GridAnomaliesLayer({ zones }: { zones: GridZone[] }) {
         fillColor: COLOR, fillOpacity: 0.14,
       });
       const issue = z.issue ?? UNCLASSIFIED_LABEL;
-      poly.bindTooltip(`${issue} · treatment grid`, {
+      poly.bindTooltip(`${safeLabel(issue)} · treatment grid`, {
         sticky: true, opacity: 1, direction: "top", className: "ai-zone-label",
       });
       const html = `
