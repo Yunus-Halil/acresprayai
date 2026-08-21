@@ -34,6 +34,28 @@ export type DroneSpec = {
    * coverage cards come back from the field.
    */
   spray_overlap: number;
+  /**
+   * Multiplier on the boom width, for operators who fly wider than it.
+   *
+   * DEFAULTS TO 1.0 AND SHOULD USUALLY STAY THERE. Rotor downwash does fan the
+   * spray beyond the mechanical boom, and a pilot who knows their aircraft and
+   * their conditions can genuinely cover more ground per pass. But downwash is
+   * not a boom: it is uneven, it changes with height, load, speed and wind, and
+   * it is widest exactly where the droplets are smallest and most prone to
+   * drift. Spacing lanes on the strength of it buys fewer passes with
+   * under-dosed strips between them — and an under-dosed strip is invisible
+   * until the pest comes back through it weeks later, by which point nothing
+   * connects the miss to the plan that caused it.
+   *
+   * So this is opt-in, per drone, and the coverage tests are written against
+   * the MECHANICAL boom rather than this: a factor aggressive enough to open
+   * gaps fails a test instead of quietly under-dosing a field. At the shipped
+   * 10% overlap the arithmetic absorbs about 1.11 before gaps appear.
+   *
+   * TUNABLE STARTING VALUE: 1.0 is a deliberate refusal to assume anything, not
+   * a measured figure.
+   */
+  spray_spread_factor: number;
   min_turn_radius_m: number; // tightest physically achievable horizontal turn
   climb_rate_ms: number;     // max sustained vertical climb rate
   range_m: number;           // practical command-and-control range
@@ -50,6 +72,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 10,
     spray_swath_m: 9, spray_rate_lpm: 24,
     spray_overlap: 0.10,
+    spray_spread_factor: 1.0,
     min_turn_radius_m: 4, climb_rate_ms: 6,
     range_m: 1500, weight_kg: 65.5,
     wingspan: "2.8 m folded → 6.2 m deployed", ip: "IP67",
@@ -59,6 +82,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     tank_l: 30, payload_kg: 40, max_flight_min: 18, max_speed_ms: 10,
     spray_swath_m: 6.5, spray_rate_lpm: 8,
     spray_overlap: 0.10,
+    spray_spread_factor: 1.0,
     min_turn_radius_m: 3.5, climb_rate_ms: 6,
     range_m: 1500, weight_kg: 58,
     wingspan: "2.6 m folded → 5.5 m deployed", ip: "IP67",
@@ -68,6 +92,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     tank_l: 20, payload_kg: 25, max_flight_min: 18, max_speed_ms: 10,
     spray_swath_m: 7, spray_rate_lpm: 16,
     spray_overlap: 0.10,
+    spray_spread_factor: 1.0,
     min_turn_radius_m: 3, climb_rate_ms: 6,
     range_m: 1200, weight_kg: 42,
     wingspan: "2.2 m folded → 4.7 m deployed", ip: "IP67",
@@ -77,6 +102,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     tank_l: 50, payload_kg: 50, max_flight_min: 18, max_speed_ms: 13.8,
     spray_swath_m: 10, spray_rate_lpm: 22,
     spray_overlap: 0.10,
+    spray_spread_factor: 1.0,
     min_turn_radius_m: 4.5, climb_rate_ms: 5,
     range_m: 1000, weight_kg: 75,
     wingspan: "3.2 m folded", ip: "IP67",
@@ -86,6 +112,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     tank_l: 16, payload_kg: 20, max_flight_min: 18, max_speed_ms: 13.8,
     spray_swath_m: 5, spray_rate_lpm: 8,
     spray_overlap: 0.10,
+    spray_spread_factor: 1.0,
     min_turn_radius_m: 3.5, climb_rate_ms: 5,
     range_m: 1000, weight_kg: 40,
     wingspan: "2.6 m folded", ip: "IP67",
@@ -95,6 +122,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     tank_l: 0, payload_kg: 0, max_flight_min: 43, max_speed_ms: 21,
     spray_swath_m: 0, spray_rate_lpm: 0,
     spray_overlap: 0.10,
+    spray_spread_factor: 1.0,
     min_turn_radius_m: 1, climb_rate_ms: 8,
     range_m: 6000, weight_kg: 0.95,
     wingspan: "0.38 m unfolded", ip: "-",
@@ -104,6 +132,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     tank_l: 0, payload_kg: 0, max_flight_min: 32, max_speed_ms: 14.7,
     spray_swath_m: 0, spray_rate_lpm: 0,
     spray_overlap: 0.10,
+    spray_spread_factor: 1.0,
     min_turn_radius_m: 1, climb_rate_ms: 4,
     range_m: 4000, weight_kg: 0.5,
     wingspan: "0.24 m unfolded", ip: "IP53",
@@ -113,6 +142,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     tank_l: 30, payload_kg: 40, max_flight_min: 20, max_speed_ms: 10,
     spray_swath_m: 6, spray_rate_lpm: 12,
     spray_overlap: 0.10,
+    spray_spread_factor: 1.0,
     min_turn_radius_m: 3, climb_rate_ms: 5,
     range_m: 1000, weight_kg: 50,
     wingspan: "-", ip: "-",
@@ -188,12 +218,34 @@ export function effectiveSwathM(spec: Pick<DroneSpec, "spray_swath_m">): number 
  * Overlap is clamped to half a swath. Past that the passes are closer together
  * than they are wide, which is double application by construction.
  */
-export function passSpacingM(spec: Pick<DroneSpec, "spray_swath_m" | "spray_overlap">): number {
-  const swath = effectiveSwathM(spec);
+export function passSpacingM(
+  spec: Pick<DroneSpec, "spray_swath_m" | "spray_overlap" | "spray_spread_factor">,
+): number {
   const overlap = Number.isFinite(spec.spray_overlap)
     ? Math.min(0.5, Math.max(0, spec.spray_overlap))
     : DEFAULT_SPEC.spray_overlap;
-  return swath * (1 - overlap);
+  return coveredSwathM(spec) * (1 - overlap);
+}
+
+/**
+ * The width one pass is being TREATED AS covering: the boom, times whatever
+ * the operator has told us downwash adds.
+ *
+ * Kept separate from `effectiveSwathM` because the two answer different
+ * questions and only one of them is a fact about the aircraft. The boom is what
+ * the machine mechanically sprays, and it is what the Treatment Grid sizes its
+ * cells from — a cell is the unit a rate is assigned in, and the aircraft
+ * cannot vary its rate within one boom width no matter what the downwash does.
+ * This is the planner's working assumption about lane width, and at the default
+ * spread factor of 1.0 the two are the same number.
+ */
+export function coveredSwathM(
+  spec: Pick<DroneSpec, "spray_swath_m" | "spray_spread_factor">,
+): number {
+  const spread = Number.isFinite(spec.spray_spread_factor) && spec.spray_spread_factor > 0
+    ? spec.spray_spread_factor
+    : DEFAULT_SPEC.spray_spread_factor;
+  return effectiveSwathM(spec) * spread;
 }
 
 /**

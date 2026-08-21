@@ -25,8 +25,12 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
-  type DroneSpec, DRONE_SPECS, effectiveSwathM, passSpacingM, resolveDroneSpec,
+  type DroneSpec, DRONE_SPECS, coveredSwathM, effectiveSwathM, passSpacingM,
+  resolveDroneSpec,
 } from "@/lib/droneSpecs";
+import {
+  DEFAULT_HEADLAND_M, MAX_HEADLAND_M, applyHeadland, headlandAreaScale, headlandReason,
+} from "@/lib/headland";
 import {
   type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
   COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS,
@@ -319,7 +323,7 @@ export function PlannerTab({
     rateLha: z.rateLha, areaM2: z.areaM2, issue: z.issue,
   }));
   const allZonesRaw: PlannerZone[] = [...aiZonesRaw, ...userZonesRaw, ...gridZonesRaw];
-  const validZones = (() => {
+  const zonesInField = (() => {
     if (!boundary || boundary.length === 0) return [];
     return allZonesRaw.filter(z => {
       if (!z.ring || z.ring.length < 3) return false;
@@ -328,6 +332,45 @@ export function PlannerTab({
       return pointInAnyRing({ lat: cy, lng: cx }, boundary as LatLng2[][]);
     });
   })();
+
+  // ---- Headland ------------------------------------------------------------
+  //
+  // Applied HERE, once, and to the zone list that everything downstream reads.
+  // The route is flown inside these rings and the chemical is priced on these
+  // areas, so the plan cannot end up spraying one shape and billing another —
+  // which is exactly what would happen if the inset were applied inside the
+  // route builder and the volume kept using the original ring.
+  //
+  // A zone too narrow to take the headland keeps its full extent rather than
+  // disappearing from the plan, and says so through `headlandNotes` below.
+  const bufferM = Math.max(0, Math.min(MAX_HEADLAND_M, fp.boundary_buffer_m ?? DEFAULT_HEADLAND_M));
+  const headlandZones = useMemo(() => zonesInField.map(z => {
+    const outcome = applyHeadland(z.ring, bufferM, {
+      label: z.source === "grid" ? "A treatment-grid zone" : "A zone",
+    });
+    return {
+      ...z,
+      ring: outcome.ring,
+      // The zone's own measured area, reduced by the headland's proportional
+      // bite. Grid zones carry a true clipped-cell area that ring geometry
+      // cannot reproduce, so it is scaled rather than recomputed.
+      areaM2: z.areaM2 != null
+        ? z.areaM2 * headlandAreaScale(outcome)
+        : Math.abs(polygonAreaM2(outcome.ring)),
+      headland: outcome,
+    };
+  // `zonesInField` is rebuilt every render; its contents are what matter.
+  }), [JSON.stringify(zonesInField.map(z => [z.id, z.ring.length, z.areaM2])), bufferM]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const validZones = headlandZones;
+
+  /** Zones that could not take the headland, for the operator to see. */
+  const headlandNotes = useMemo(() => {
+    if (bufferM <= 0) return [];
+    return headlandZones
+      .map(z => headlandReason(z.headland))
+      .filter((r): r is string => r !== null);
+  }, [headlandZones, bufferM]);
 
   // Default home = centroid of boundary, but only set once so user drags persist.
   const defaultHome = boundary && boundary.length > 0 ? centroidOfRings(boundary as LatLng2[][]) : null;
@@ -1127,6 +1170,13 @@ export function PlannerTab({
                     <>
                       Lanes sit one boom apart at {overlapPct}% overlap, so each pass covers
                       the gap the last one left. Tighter spacing sprays ground twice.
+                      {spec.spray_spread_factor > 1 && (
+                        <span className="text-amber-500/80">
+                          {" "}This drone is set to fly {spec.spray_spread_factor.toFixed(2)}× its
+                          boom on downwash, which widens the lanes past what the boom itself
+                          covers.
+                        </span>
+                      )}
                     </>
                   ) : (
                     <>
@@ -1149,6 +1199,40 @@ export function PlannerTab({
               </>
             );
           })()}
+          {/* Headland. The strip the passes are held back from the edge by, so
+              the aircraft has ground to turn in and the spray stays off
+              whatever borders the field. */}
+          <Slider2
+            label={`Boundary headland${bufferM === 0 ? "  ·  off, passes run to the edge" : ""}`}
+            value={round1(altitudeValue(bufferM, units))}
+            setValue={(n) => updateFlightPlan({ boundary_buffer_m: altitudeToM(n, units) })}
+            min={0} max={round1(altitudeValue(MAX_HEADLAND_M, units))}
+            step={units === "metric" ? 0.5 : 1} unit={altitudeUnit(units)}
+          />
+          <div className="text-[10px] text-neutral-500 -mt-1 leading-relaxed">
+            {bufferM > 0 ? (
+              <>
+                Passes are planned {fmtAltitude(bufferM, units).text} inside the boundary. The
+                chemical figure below is priced on that smaller sprayed area, not the whole zone.
+              </>
+            ) : (
+              <>
+                Passes run to the boundary itself. Raise this to keep spray off a road, a
+                watercourse or a neighbour, and to leave the aircraft room to turn.
+              </>
+            )}
+          </div>
+          {headlandNotes.length > 0 && (
+            <div className="rounded-sm border border-amber-900/50 bg-amber-950/20 px-2 py-1.5 text-[10px] leading-relaxed text-amber-300/90">
+              {/* Named rather than dropped: a small patch that silently
+                  vanishes from the plan is one the operator believes was
+                  treated. */}
+              {headlandNotes.slice(0, 3).map((n, i) => <div key={i}>{n}</div>)}
+              {headlandNotes.length > 3 && (
+                <div className="text-amber-500/70">…and {headlandNotes.length - 3} more.</div>
+              )}
+            </div>
+          )}
           <Slider2
             label={`Spray coverage  ·  ${repeats}× pass${repeats > 1 ? "es" : ""}`}
             value={repeats}

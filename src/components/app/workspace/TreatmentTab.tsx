@@ -21,6 +21,10 @@ import {
 } from "lucide-react";
 import { type FarmerSettings } from "@/lib/farmerSettings";
 import { type DroneSpec, effectiveSwathM } from "@/lib/droneSpecs";
+import {
+  DEFAULT_HEADLAND_M, MAX_HEADLAND_M, applyHeadland, headlandAreaScale, headlandReason,
+} from "@/lib/headland";
+import { gridZonesFor } from "@/lib/gridZones";
 import { type LatLng2, bboxOfRings, ringsAreaM2 } from "@/lib/geo";
 import {
   type CellId, type CellRate, type GridDefinition, type TreatmentGrid,
@@ -42,7 +46,7 @@ import TreatmentGridLayer from "./TreatmentGridLayer";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, USER_POLY_ISSUES, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
 import {
-  fmtArea, fmtAreaHa, fmtRate, fmtVolume, rateToLha, rateUnit, rateValue,
+  fmtAltitude, fmtArea, fmtAreaHa, fmtRate, fmtVolume, rateToLha, rateUnit, rateValue,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 
@@ -446,6 +450,31 @@ export function TreatmentTab({
     () => (grid && definition ? regenerationImpact(grid, definition) : null),
     [grid, definition],
   );
+
+  // ---- What the headland will actually leave sprayable ---------------------
+  //
+  // The panel below prices the prescription as painted, which is what it is
+  // for: these are the cells and this is their chemical. But the plan does not
+  // spray to the boundary — it is held back by the field's headland — so the
+  // volume that leaves the tank is smaller than the volume the paint implies.
+  // Reported here rather than left to be discovered as a discrepancy between
+  // two screens, and computed with the same function and the same setting the
+  // planner uses, so the two cannot drift apart.
+  const bufferM = Math.max(
+    0, Math.min(MAX_HEADLAND_M, settings.flight_plan.boundary_buffer_m ?? DEFAULT_HEADLAND_M),
+  );
+  const headland = useMemo(() => {
+    if (!grid || !(bufferM > 0)) return null;
+    let sprayedM2 = 0, volumeL = 0, waived = 0;
+    for (const zone of gridZonesFor(grid)) {
+      const outcome = applyHeadland(zone.ring, bufferM);
+      if (headlandReason(outcome)) waived++;
+      const scale = headlandAreaScale(outcome);
+      sprayedM2 += zone.areaM2 * scale;
+      volumeL += ((zone.areaM2 * scale) / 10_000) * zone.rateLha;
+    }
+    return { sprayedHa: sprayedM2 / 10_000, volumeL, waived };
+  }, [grid, bufferM]);
 
   const clearAll = () => {
     if (!grid || pendingRef.current) return;
@@ -948,6 +977,23 @@ export function TreatmentTab({
               <Row label="Tank loads" value={
                 tankL > 0 ? `${totals.tankLoads} × ${fmtVolume(tankL, units, 0).text}` : "no sprayer tank"
               } />
+              {headland && totals.treatedCellCount > 0 && (
+                <div className="mt-2 border-t border-[#222] pt-2">
+                  <Row
+                    label={`Sprayed after ${fmtAltitude(bufferM, units).text} headland`}
+                    value={fmtAreaHa(headland.sprayedHa, units).text}
+                  />
+                  <Row label="Volume in the plan" value={fmtVolume(headland.volumeL, units).text} />
+                  <div className="text-[10px] text-neutral-600 mt-1.5 leading-relaxed">
+                    The plan holds its passes back from the boundary, so it treats less ground
+                    than is painted here. Change the headland in the Flight Planner.
+                    {headland.waived > 0 && (
+                      <> {headland.waived} zone{headland.waived === 1 ? " is" : "s are"} too
+                      narrow for it and {headland.waived === 1 ? "is" : "are"} planned whole.</>
+                    )}
+                  </div>
+                </div>
+              )}
               {Math.abs(totals.fieldAreaHa - boundaryHa) / Math.max(boundaryHa, 1e-9) > 0.02 && (
                 <div className="text-[10px] text-neutral-600 mt-2 leading-relaxed">
                   Grid covers {fmtAreaHa(totals.fieldAreaHa, units).text} of a {fmtAreaHa(boundaryHa, units).text} boundary ,

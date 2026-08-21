@@ -5,6 +5,7 @@
 // of the viewer component so ReportsTab and the planner can import it without
 // pulling in a 5k-line React module.
 import { type DroneSpec, DRONE_SPECS } from "./droneSpecs";
+import { DEFAULT_HEADLAND_M } from "./headland";
 
 export type CustomInput = { name: string; cost: number };
 
@@ -66,6 +67,15 @@ export type FarmerSettings = {
     drone_id: string | null;     // fleet drone.id; null = none selected yet
     tank_load_pct: number;       // 0-100, how full the tank is for this mission
     custom_specs: DroneSpec;     // active only when the model is unknown/"Custom"
+    /**
+     * Headland: how far inside the boundary the passes are planned, in metres.
+     *
+     * Per field, because what borders a field is a property of that field. Read
+     * by the planner when it builds the route AND by the Treatment Grid when it
+     * prices the prescription, so the sprayed area both of them report is the
+     * same one. See lib/headland.ts for the default and its caveats.
+     */
+    boundary_buffer_m: number;
   };
   /**
    * Target application rate in litres per hectare, per zone severity.
@@ -126,6 +136,7 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
     drone_id: null,
     tank_load_pct: 80,
     custom_specs: DRONE_SPECS["Custom"],
+    boundary_buffer_m: DEFAULT_HEADLAND_M,
   },
   spray_rates_lha: { low: 15, medium: 25, high: 40 },
   zone_rate_overrides: {},
