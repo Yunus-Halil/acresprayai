@@ -58,6 +58,12 @@ import {
   type Forecast, cToF as wxCToF, fetchWeather, kmhToMph as wxKmhToMph,
   readCachedWeather,
 } from "@/lib/weather";
+import {
+  DEFAULT_SPRAY_LIMITS, findSprayWindows, formatReason, rainAhead,
+  sprayVerdict as verdictOf,
+} from "@/lib/sprayWindow";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
+import { fmtTemp, fmtWindSpeed } from "@/lib/units";
 
 
 export function PlaceholderTab({ icon: Icon, title, body }: { icon: any; title: string; body: string }) {
@@ -86,6 +92,7 @@ export function HeaderWeather({ center, onClick }: { center: [number, number]; o
   const [lat, lng] = center;
   const [cur, setCur] = useState<{ temp_c: number; desc: string; code: number; icon: string } | null>(null);
   const [err, setErr] = useState(false);
+  const units = useUnitSystem();
 
   useEffect(() => {
     let cancelled = false;
@@ -96,7 +103,7 @@ export function HeaderWeather({ center, onClick }: { center: [number, number]; o
     return () => { cancelled = true; };
   }, [lat, lng]);
 
-  const tempF = cur ? Math.round((cur.temp_c * 9) / 5 + 32) : null;
+  const temp = cur ? fmtTemp(cur.temp_c, units).text : null;
   return (
     <button
       onClick={onClick}
@@ -105,7 +112,7 @@ export function HeaderWeather({ center, onClick }: { center: [number, number]; o
     >
       {cur ? <OwGlyph code={cur.code} icon={cur.icon} className="h-3.5 w-3.5 text-neutral-400" />
            : <Cloud className="h-3.5 w-3.5 text-neutral-400" />}
-      <span className="text-neutral-200 tabular-nums">{tempF != null ? `${tempF}°F` : err ? "-" : "…"}</span>
+      <span className="text-neutral-200 tabular-nums">{temp ?? (err ? "-" : "…")}</span>
       <span className="text-neutral-500">{cur?.desc ?? (err ? "Weather unavailable" : "Live weather")}</span>
     </button>
   );
@@ -140,31 +147,11 @@ export function OwGlyph({ icon, code, className }: { icon: string; code: number;
   return <Cloud className={className} />;
 }
 
-// Spray suitability — matches user-specified thresholds.
-// GREEN: wind < 10 mph (16 km/h), no rain next 6h, humidity 40–70%, temp > 50°F (10°C)
-// YELLOW: marginal (one of the soft thresholds borderline)
-// RED: hard limits blown.
-export type Verdict = "green" | "yellow" | "red";
-export function sprayVerdict(h: OwHour, rainNext6h: number): { verdict: Verdict; reasons: string[] } {
-  const reasons: string[] = [];
-  let verdict: Verdict = "green";
-  const windMph = kmhToMph(h.wind_kmh);
-  const gustMph = kmhToMph(h.gust_kmh);
-  const tempF = cToF(h.temp_c);
-  // Hard limits → RED
-  if (windMph > 10) { reasons.push(`Wind too high: ${windMph.toFixed(0)} mph (limit 10)`); verdict = "red"; }
-  if (gustMph > 15) { reasons.push(`Gusts too high: ${gustMph.toFixed(0)} mph`); verdict = "red"; }
-  if (rainNext6h > 0.5) { reasons.push(`Rain expected in next 6h: ${rainNext6h.toFixed(1)} mm`); verdict = "red"; }
-  if (tempF < 50) { reasons.push(`Temp too cold: ${tempF.toFixed(0)}°F (min 50)`); verdict = "red"; }
-  // Soft → YELLOW
-  if (verdict !== "red") {
-    if (windMph > 8) { reasons.push(`Wind marginal: ${windMph.toFixed(0)} mph`); verdict = "yellow"; }
-    if (h.humidity < 40) { reasons.push(`Humidity low: ${h.humidity}% (target 40–70)`); verdict = "yellow"; }
-    if (h.humidity > 70) { reasons.push(`Humidity high: ${h.humidity}% (target 40–70)`); verdict = "yellow"; }
-    if (tempF > 85) { reasons.push(`Temp warm: ${tempF.toFixed(0)}°F, drift risk`); verdict = "yellow"; }
-  }
-  return { verdict, reasons };
-}
+// Spray suitability now lives in @/lib/sprayWindow, because the dashboard asks
+// the same question across every field and two copies of a safety rule is two
+// copies that drift. Re-exported here so existing importers keep working.
+export type { Verdict } from "@/lib/sprayWindow";
+export { sprayVerdict } from "@/lib/sprayWindow";
 
 export function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName: string }) {
   const [lat, lng] = center;
@@ -176,6 +163,16 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
   const [savedAt, setSavedAt] = useState<number | null>(initial?.savedAt ?? null);
   const [err, setErr] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const units = useUnitSystem();
+
+  // The thresholds, stated in the operator's own units. A green tick that does
+  // not say what it checked is a green tick nobody can argue with, and this is
+  // a decision a person is legally responsible for.
+  const L = DEFAULT_SPRAY_LIMITS;
+  const wind = (kmh: number) => fmtWindSpeed(kmh / 3.6, units).text;
+  const limitsLine =
+    `Wind ≤ ${wind(L.windMaxKmh)} · gusts ≤ ${wind(L.gustMaxKmh)} · no rain 6h · ` +
+    `${L.humidityMin}-${L.humidityMax}% RH · temp ≥ ${fmtTemp(L.tempMinC, units).text}`;
 
   const load = useCallback(async (force = false) => {
     setErr(null); setRefreshing(true);
@@ -209,7 +206,7 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
   const daily = data.daily;
 
   // Rain in next 6 hours (sum of precip mm)
-  const rainNext6 = hourly.slice(0, 6).reduce((a, h) => a + (h.precip_mm || 0), 0);
+  const rainNext6 = rainAhead(hourly, 0);
 
   // Verdict for "right now" uses current + next-6h rain.
   const nowHour: OwHour = {
@@ -218,32 +215,12 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
     precip_mm: cur.precip_mm, precip_prob: 0, clouds: cur.clouds,
     code: cur.code, icon: cur.icon, desc: cur.desc,
   };
-  const now = sprayVerdict(nowHour, rainNext6);
+  const now = verdictOf(nowHour, rainNext6);
 
-  // Find best spray windows in the next 72 hours, grouped per day.
-  // A "window" is ≥ 2 consecutive GREEN hours.
-  const windows: { startTs: number; endTs: number; dayLabel: string }[] = [];
-  {
-    let runStart = -1;
-    for (let i = 0; i < Math.min(72, hourly.length); i++) {
-      const fwdRain = hourly.slice(i, i + 6).reduce((a, h) => a + (h.precip_mm || 0), 0);
-      const v = sprayVerdict(hourly[i], fwdRain);
-      const ok = v.verdict === "green";
-      if (ok && runStart < 0) runStart = i;
-      if ((!ok || i === Math.min(72, hourly.length) - 1) && runStart >= 0) {
-        const end = ok ? i : i - 1;
-        if (end - runStart + 1 >= 2) {
-          windows.push({
-            startTs: hourly[runStart].time,
-            endTs: hourly[end].time,
-            dayLabel: new Date(hourly[runStart].time * 1000).toLocaleDateString([], { weekday: "long" }),
-          });
-        }
-        runStart = -1;
-      }
-    }
-  }
-  const bestWindows = windows.slice(0, 3);
+  const bestWindows = findSprayWindows(hourly).slice(0, 3).map(w => ({
+    ...w,
+    dayLabel: new Date(w.startTs * 1000).toLocaleDateString([], { weekday: "long" }),
+  }));
 
   const fmtHour = (ts: number) => new Date(ts * 1000).toLocaleTimeString([], { hour: "numeric" });
   const fmtDay = (ts: number) => new Date(ts * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
@@ -282,12 +259,12 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
             </div>
             <div>
               <div className="text-base font-semibold" style={{ color: verdictColor }}>{verdictLabel}</div>
-              <div className="text-[11px] text-neutral-500">Wind ≤ 10 mph · No rain 6h · 40–70% RH · Temp ≥ 50°F</div>
+              <div className="text-[11px] text-neutral-500">{limitsLine}</div>
             </div>
           </div>
           {now.reasons.length > 0 && (
             <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-xs text-neutral-400">
-              {now.reasons.map((r, i) => <li key={i}>• {r}</li>)}
+              {now.reasons.map((r, i) => <li key={i}>• {formatReason(r, units)}</li>)}
             </ul>
           )}
         </div>
@@ -299,17 +276,16 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
             <div className="flex items-center gap-4">
               <OwGlyph code={cur.code} icon={cur.icon} className="h-12 w-12 text-[#4CAF50]" />
               <div>
-                <div className="text-4xl font-semibold tabular-nums">{Math.round(cToF(cur.temp_c))}°F</div>
-                <div className="text-xs text-neutral-400">{Math.round(cur.temp_c)}°C · {cur.desc}</div>
-                <div className="text-[11px] text-neutral-500">Feels {Math.round(cToF(cur.feels_c))}°F</div>
+                <div className="text-4xl font-semibold tabular-nums">{fmtTemp(cur.temp_c, units).text}</div>
+                <div className="text-xs text-neutral-400">{cur.desc}</div>
+                <div className="text-[11px] text-neutral-500">Feels {fmtTemp(cur.feels_c, units).text}</div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2 mt-4 text-xs">
               <div className="rounded-sm border border-[#222] p-2" style={{ background: "#0f0f0f" }}>
                 <Wind className="h-3 w-3 text-neutral-500 mb-1" />
                 <div className="text-neutral-500 text-[10px]">Wind</div>
-                <div className="font-mono">{kmhToMph(cur.wind_kmh).toFixed(0)} mph {compass(cur.wind_dir)}</div>
-                <div className="font-mono text-neutral-500 text-[10px]">{cur.wind_kmh.toFixed(0)} km/h</div>
+                <div className="font-mono">{wind(cur.wind_kmh)} {compass(cur.wind_dir)}</div>
               </div>
               <div className="rounded-sm border border-[#222] p-2" style={{ background: "#0f0f0f" }}>
                 <Droplets className="h-3 w-3 text-neutral-500 mb-1" />
@@ -319,7 +295,7 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
               <div className="rounded-sm border border-[#222] p-2" style={{ background: "#0f0f0f" }}>
                 <ThermometerSun className="h-3 w-3 text-neutral-500 mb-1" />
                 <div className="text-neutral-500 text-[10px]">Gust</div>
-                <div className="font-mono">{kmhToMph(cur.gust_kmh).toFixed(0)} mph</div>
+                <div className="font-mono">{wind(cur.gust_kmh)}</div>
               </div>
               <div className="rounded-sm border border-[#222] p-2" style={{ background: "#0f0f0f" }}>
                 <Cloud className="h-3 w-3 text-neutral-500 mb-1" />
@@ -339,8 +315,13 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
                   <div key={i} className="flex items-center gap-3 rounded-sm border border-[#4CAF50]/30 p-3" style={{ background: "#0f0f0f" }}>
                     <CheckCircle2 className="h-4 w-4 text-[#4CAF50]" />
                     <div className="flex-1">
-                      <div className="text-sm">{w.dayLabel} <span className="text-[#4CAF50] font-mono">{fmtHour(w.startTs)} – {fmtHour(w.endTs)}</span></div>
-                      <div className="text-[11px] text-neutral-500">Ideal: wind/humidity/temp all in range, no rain</div>
+                      <div className="text-sm">
+                        {w.active ? "Now" : w.dayLabel}{" "}
+                        <span className="text-[#4CAF50] font-mono">{fmtHour(w.startTs)} - {fmtHour(w.endTs)}</span>
+                      </div>
+                      <div className="text-[11px] text-neutral-500">
+                        {w.hours} hour{w.hours === 1 ? "" : "s"} with wind, humidity and temperature all in range, no rain
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -354,15 +335,14 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
           <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-3">Next 24 hours</div>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {hourly.slice(0, 24).map((h, i) => {
-              const fwd = hourly.slice(i, i + 6).reduce((a, x) => a + (x.precip_mm || 0), 0);
-              const v = sprayVerdict(h, fwd).verdict;
+              const v = verdictOf(h, rainAhead(hourly, i)).verdict;
               const dot = v === "green" ? "bg-[#4CAF50]" : v === "yellow" ? "bg-yellow-400" : "bg-red-500";
               return (
                 <div key={i} className="min-w-[88px] rounded-sm border border-[#222] p-2 text-center" style={{ background: "#0f0f0f" }}>
                   <div className="text-[10px] text-neutral-500">{fmtHour(h.time)}</div>
                   <OwGlyph code={h.code} icon={h.icon} className="h-5 w-5 mx-auto my-1 text-neutral-300" />
-                  <div className="text-sm font-mono tabular-nums">{Math.round(cToF(h.temp_c))}°F</div>
-                  <div className="text-[10px] text-neutral-500 mt-0.5 font-mono">{kmhToMph(h.wind_kmh).toFixed(0)} mph</div>
+                  <div className="text-sm font-mono tabular-nums">{fmtTemp(h.temp_c, units).text}</div>
+                  <div className="text-[10px] text-neutral-500 mt-0.5 font-mono">{wind(h.wind_kmh)}</div>
                   <div className="text-[10px] text-neutral-500 font-mono">{h.precip_prob}%</div>
                   <div className={`mt-1 h-1 rounded-full ${dot}`} />
                 </div>
@@ -381,11 +361,11 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
                 <div className="flex items-center gap-2 mt-1">
                   <OwGlyph code={d.code} icon={d.icon} className="h-5 w-5 text-neutral-300" />
                   <div className="text-sm font-mono">
-                    <span className="text-[#f0f0f0]">{Math.round(cToF(d.tmax_c))}°</span>
-                    <span className="text-neutral-500"> / {Math.round(cToF(d.tmin_c))}°</span>
+                    <span className="text-[#f0f0f0]">{Math.round(fmtTemp(d.tmax_c, units).value)}°</span>
+                    <span className="text-neutral-500"> / {Math.round(fmtTemp(d.tmin_c, units).value)}°</span>
                   </div>
                 </div>
-                <div className="text-[10px] text-neutral-500 font-mono mt-1">{d.precip_prob}% · {kmhToMph(d.wind_kmh).toFixed(0)} mph</div>
+                <div className="text-[10px] text-neutral-500 font-mono mt-1">{d.precip_prob}% · {wind(d.wind_kmh)}</div>
                 <div className="text-[10px] text-neutral-600 font-mono">{d.precip_mm.toFixed(1)} mm</div>
               </div>
             ))}

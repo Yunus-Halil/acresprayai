@@ -11,7 +11,9 @@ const nav = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/app/fields", label: "Fields", icon: Map },
   { to: "/app/fleet", label: "Drone Fleet", icon: Plane },
-  { to: "/app/weather", label: "Weather Radar", icon: CloudRain },
+  // "Weather Radar" until the screen stopped being a radar viewer and started
+  // answering where and when you can spray. The route is unchanged.
+  { to: "/app/weather", label: "Spray Conditions", icon: CloudRain },
   { to: "/app/schedule", label: "Schedule", icon: CalendarDays },
 ];
 // Reports live per-scan, inside the orthomosaic viewer's Reports tab - there is
