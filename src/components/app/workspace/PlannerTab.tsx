@@ -71,13 +71,18 @@ import { buildTankProfile, sampleTankAt } from "@/lib/tankProfile";
 import TankDynamicsWidget from "./TankDynamicsWidget";
 import ScheduleMissionModal from "./ScheduleMissionModal";
 import type { GridZone } from "@/lib/gridZones";
+import type { TreatmentGrid } from "@/lib/treatmentGrid";
+import {
+  DEFAULT_OVERSPRAY_TOLERANCE, MAX_OVERSPRAY_TOLERANCE, regularizeGrid,
+} from "@/lib/flightBlocks";
+import { DEFAULT_GROUPING_SWATHS, groupingDistanceM } from "@/lib/zoneGroups";
 import { loadGridZones } from "@/lib/gridAnomalies";
 // Farmer-facing quantities follow the unit setting. Flight-physics figures —
 // turn radius, climb rate, the m/s speeds — deliberately do NOT: they are the
 // aircraft's own spec-sheet numbers and the values the DJI parameters take, and
 // a pilot cross-checking against either should see the same figure here.
 import {
-  altitudeToM, altitudeUnit, altitudeValue, fmtAltitude, fmtAreaAc, fmtDistance,
+  altitudeToM, altitudeUnit, altitudeValue, fmtAltitude, fmtArea, fmtAreaAc, fmtDistance,
   fmtSpeed, fmtVolume, rateToLha, rateUnit, rateValue, speedToMs, speedUnit, speedValue,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
@@ -281,16 +286,24 @@ export function PlannerTab({
   // pipeline rather than a parallel one.
   const [gridZones, setGridZones] = useState<GridZone[]>([]);
   const [gridZonesNote, setGridZonesNote] = useState<string | null>(null);
+  /**
+   * The grid the zones came from, kept because the flight-ready shape step
+   * works on CELL STATE — which cells are treated, which the operator
+   * explicitly skipped — and a traced ring cannot tell those apart.
+   */
+  const [grid, setGrid] = useState<TreatmentGrid | null>(null);
   // Load-on-mount IS live: the tab remounts on every switch, so repainting
   // cells and returning re-derives the zones. Shared with the Field View's
   // anomaly overlay — one loader, one staleness rule.
   useEffect(() => {
     let cancelled = false;
     setGridZones([]);
+    setGrid(null);
     setGridZonesNote(null);
     loadGridZones(fieldId, boundary as LatLng2[][] | null)
       .then(r => {
         if (cancelled || !r) return;
+        setGrid(r.grid);
         if (r.stale) {
           setGridZonesNote(
             "The treatment grid was built for an older boundary, open the Treatment Grid tab to migrate it before it can feed this plan.",
@@ -318,10 +331,50 @@ export function PlannerTab({
   const userZonesRaw: PlannerZone[] = (userPolys ?? [])
     .filter(u => u.ring && u.ring.length >= 3)
     .map(u => ({ id: `user:${u.id}`, ring: u.ring, severity: "medium" as const, source: "user" as const }));
-  const gridZonesRaw: PlannerZone[] = gridZones.map(z => ({
-    id: z.id, ring: z.ring, severity: "medium" as const, source: "grid" as const,
-    rateLha: z.rateLha, areaM2: z.areaM2, issue: z.issue,
-  }));
+  // ---- Flight-ready shapes -------------------------------------------------
+  //
+  // The one step in this pipeline that changes WHAT gets sprayed rather than
+  // how it is reached: raw cell selection has staircase edges, one-cell notches
+  // and lone spurs, and squaring those off costs a little extra ground. So it
+  // is OFF until the operator turns it on, and the added area and the added
+  // chemical are on screen before they do (see the panel below). Explicit skips
+  // are never filled — that guardrail lives in lib/flightBlocks.ts.
+  const overspray = Math.max(0, Math.min(MAX_OVERSPRAY_TOLERANCE, fp.overspray_tolerance ?? 0));
+  const flightReady = useMemo(
+    () => (grid ? regularizeGrid(grid, { tolerance: overspray }) : null),
+    [grid, overspray],
+  );
+
+  /**
+   * What turning it on WOULD cost, shown while it is off.
+   *
+   * Memoised rather than computed in the render body: this walks every cell in
+   * the grid, and a 20 000-cell field would do it on every keystroke elsewhere
+   * in the panel.
+   */
+  const flightReadyPreview = useMemo(
+    () => (grid && overspray === 0
+      ? regularizeGrid(grid, { tolerance: DEFAULT_OVERSPRAY_TOLERANCE })
+      : null),
+    [grid, overspray],
+  );
+
+  /**
+   * The treatment shapes the plan routes over: the flight-ready blocks when
+   * regularization is on, the traced cell outlines when it is not.
+   *
+   * One source, chosen once, so the map, the route, the chemical figure and
+   * every export agree about which shape the job is.
+   */
+  const gridZonesRaw: PlannerZone[] = flightReady?.enabled
+    ? flightReady.blocks.map(b => ({
+        id: b.id, ring: b.ring, severity: "medium" as const, source: "grid" as const,
+        rateLha: b.rateLha, areaM2: b.areaM2, issue: b.issue,
+      }))
+    : gridZones.map(z => ({
+        id: z.id, ring: z.ring, severity: "medium" as const, source: "grid" as const,
+        rateLha: z.rateLha, areaM2: z.areaM2, issue: z.issue,
+      }));
   const allZonesRaw: PlannerZone[] = [...aiZonesRaw, ...userZonesRaw, ...gridZonesRaw];
   const zonesInField = (() => {
     if (!boundary || boundary.length === 0) return [];
@@ -480,12 +533,76 @@ export function PlannerTab({
     setTimeout(() => { fixingRef.current = false; }, 50);
   }, [maneuver.ok, spacingM, transitSpeed, sprayAltM, transitAltM, spec.climb_rate_ms]);
 
+  // ---- What the job needs, before the route that delivers it --------------
+  //
+  // Rates, chemical volume and the refill plan are all facts about the marked
+  // ground, not about the path — so they are settled here, ABOVE the route,
+  // and the route builder gets to use them. That is what lets the travel-order
+  // optimiser know where the aircraft will be when a load runs dry.
+  const zonesWithRates = validZones.map(z => ({
+    id: z.id,
+    ring: z.ring,
+    severity: z.severity,
+    source: z.source,
+    areaM2: z.areaM2,
+    issue: z.issue,
+    // A grid zone's rate is what the operator painted, cell by cell — the
+    // severity defaults and per-zone overrides govern AI and hand-drawn zones
+    // only. Overriding a grid rate here would fork it from the grid's own
+    // Prescription panel.
+    rateLha: z.source === "grid" && z.rateLha != null
+      ? z.rateLha
+      : resolveZoneRateLha(z, { ...settings, spray_rates_lha: rates }),
+  }));
+
+  /**
+   * Chemical the marked zones need. Defined here because BOTH the tank physics
+   * and the refill plan consume it, and computeMissionStats derives its own
+   * from the identical call — one number, three readers, no drift.
+   */
+  const requiredLitres = useMemo(
+    () => pesticideLitres(zonesWithRates.map(z => ({
+      areaM2: z.areaM2 ?? polygonAreaM2(z.ring), rateLha: z.rateLha,
+    }))),
+    [zonesWithRates],
+  );
+
+  // What the job actually needs, and how many trips back to the nurse tank.
+  // Memoised: `refillPoints` and the live telemetry both depend on it, and the
+  // overlay redraws every map layer when its deps change identity.
+  const refill = useMemo(
+    () => planRefills(requiredLitres, spec.tank_l, fp.tank_load_pct),
+    [requiredLitres, spec.tank_l, fp.tank_load_pct],
+  );
+
+  /** Fractions of sprayed distance at which a load runs dry. */
+  const refillFractions = refill.dryFractions;
+
+  // ---- Zone grouping ------------------------------------------------------
+  //
+  // Nearby same-rate zones are flown as one continuous sweep instead of one
+  // at a time. Zero swaths turns it off and gives every zone its own pattern,
+  // which is what the planner did before grouping existed — kept as the
+  // comparison baseline, not as dead code.
+  const groupSwaths = Math.max(0, Math.min(6, fp.zone_grouping_swaths ?? DEFAULT_GROUPING_SWATHS));
+  const groupDistM = groupingDistanceM(swathM, groupSwaths);
+
   const mission = (() => {
     if (!boundary || validZones.length === 0 || !effectiveHome) return null;
     return buildMission(
       boundary as LatLng2[][],
-      validZones.map(z => ({ id: z.id, ring: z.ring })),
-      { home: effectiveHome, transitAltM, sprayAltM, transitSpeed, spraySpeed, spacingM, repeats },
+      // Rates go with the zones, because grouping is same-rate by definition:
+      // a boom lays one rate, so two zones at different rates can never share
+      // a pass however close together they sit.
+      zonesWithRates.map(z => ({ id: z.id, ring: z.ring, rateLha: z.rateLha })),
+      {
+        home: effectiveHome, transitAltM, sprayAltM, transitSpeed, spraySpeed, spacingM, repeats,
+        groupingDistanceM: groupDistM,
+        // The nurse tank sits where the aircraft takes off from, which the
+        // ordering already treats as a service point; passing the dry points
+        // lets it land them near the pad instead of at the far fence.
+        serviceAtSprayFractions: refillFractions,
+      },
     );
   })();
 
@@ -525,33 +642,6 @@ export function PlannerTab({
   // Driven entirely by the registry in src/lib/exporters.ts. Which formats a
   // grower is offered is decided there, not here — the WPML route exporter is
   // still built and tested, but marked experimental and so never listed.
-  const zonesWithRates = validZones.map(z => ({
-    id: z.id,
-    ring: z.ring,
-    severity: z.severity,
-    source: z.source,
-    areaM2: z.areaM2,
-    issue: z.issue,
-    // A grid zone's rate is what the operator painted, cell by cell — the
-    // severity defaults and per-zone overrides govern AI and hand-drawn zones
-    // only. Overriding a grid rate here would fork it from the grid's own
-    // Prescription panel.
-    rateLha: z.source === "grid" && z.rateLha != null
-      ? z.rateLha
-      : resolveZoneRateLha(z, { ...settings, spray_rates_lha: rates }),
-  }));
-
-  /**
-   * Chemical the marked zones need. Defined here because BOTH the tank physics
-   * and the refill plan consume it, and computeMissionStats derives its own
-   * from the identical call — one number, three readers, no drift.
-   */
-  const requiredLitres = useMemo(
-    () => pesticideLitres(zonesWithRates.map(z => ({
-      areaM2: z.areaM2 ?? polygonAreaM2(z.ring), rateLha: z.rateLha,
-    }))),
-    [zonesWithRates],
-  );
 
   // Tank state across the whole mission, built once per plan rather than
   // stepped live — the scrubber can jump to a moment that was never played, and
@@ -649,10 +739,6 @@ export function PlannerTab({
   // What the job actually needs, and how many trips back to the nurse tank.
   // Memoised: `refillPoints` and the live telemetry both depend on it, and the
   // overlay redraws every map layer when its deps change identity.
-  const refill = useMemo(
-    () => planRefills(requiredLitres, spec.tank_l, fp.tank_load_pct),
-    [requiredLitres, spec.tank_l, fp.tank_load_pct],
-  );
 
   /**
    * Where each load runs dry, walked along the SPRAY segments only.
@@ -841,6 +927,7 @@ export function PlannerTab({
           )}
           <PlannerOverlay
             boundary={boundary} zones={validZones}
+            rawZones={flightReady?.enabled ? gridZones : []}
             mission={mission} home={effectiveHome}
             onHomeChange={(p) => setHome(p)}
             swapPoint={swapPoint}
@@ -1232,6 +1319,84 @@ export function PlannerTab({
                 <div className="text-amber-500/70">…and {headlandNotes.length - 3} more.</div>
               )}
             </div>
+          )}
+          {/* Zone grouping. Nearby same-rate zones are flown as one sweep
+              instead of one at a time. Routing only — it never changes which
+              ground is treated. */}
+          <Slider2
+            label={`Group nearby zones${groupSwaths === 0 ? "  ·  off, one pattern per zone" : `  ·  within ${fmtAltitude(groupDistM, units).text}`}`}
+            value={groupSwaths}
+            setValue={(n) => updateFlightPlan({ zone_grouping_swaths: n })}
+            min={0} max={4} step={0.5} unit="× boom"
+          />
+          <div className="text-[10px] text-neutral-500 -mt-1 leading-relaxed">
+            {groupSwaths > 0 ? (
+              <>
+                Zones at the same rate within {fmtAltitude(groupDistM, units).text} of each other
+                are swept in one continuous back-and-forth instead of one at a time. Unmarked
+                ground between them is still flown with the boom off — grouping changes the
+                route, never the treated area.{" "}
+                <span className="text-neutral-600">
+                  Starting value, tune it against your own fields.
+                </span>
+              </>
+            ) : (
+              <>Off. Every zone gets its own pattern, and the aircraft finishes one before
+              starting the next — useful for comparing against a grouped plan.</>
+            )}
+          </div>
+
+          {/* Flight-ready shapes. The one control here that changes what gets
+              sprayed, so it is off by default and shows its cost before it is
+              turned on. */}
+          {flightReady && flightReady.blocks.length > 0 && (
+            <>
+              <Slider2
+                label={`Flight-ready shapes${overspray === 0 ? "  ·  off, exact cells" : `  ·  ${Math.round(overspray * 100)}% over-spray allowed`}`}
+                value={Math.round(overspray * 100)}
+                setValue={(n) => updateFlightPlan({ overspray_tolerance: n / 100 })}
+                min={0} max={Math.round(MAX_OVERSPRAY_TOLERANCE * 100)} step={1} unit="%"
+              />
+              {(() => {
+                // Priced with the SAME area × rate arithmetic as the
+                // Prescription panel — never a second number for the same job.
+                const preview = flightReadyPreview;
+                if (overspray > 0) {
+                  return (
+                    <div className="rounded-sm border border-amber-900/50 bg-amber-950/20 px-2 py-1.5 text-[10px] leading-relaxed text-amber-300/90">
+                      <div className="font-medium text-amber-200">
+                        Adds {fmtArea(flightReady.addedAreaM2, units).text} of spray
+                        {" "}({fmtVolume(flightReady.addedLitres, units).text}) to square off
+                        {" "}{flightReady.blocks.length} block{flightReady.blocks.length === 1 ? "" : "s"}.
+                      </div>
+                      <div className="text-amber-300/70 mt-1">
+                        The map shows the marked cells under the flight-ready blocks, so you can
+                        see exactly what extra ground this treats. Drag to zero to go back to the
+                        cells as painted.
+                        {flightReady.sparedSkips > 0 && (
+                          <> {flightReady.sparedSkips} cell{flightReady.sparedSkips === 1 ? "" : "s"} you
+                          set to skip {flightReady.sparedSkips === 1 ? "was" : "were"} left alone.</>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="text-[10px] text-neutral-500 -mt-1 leading-relaxed">
+                    Off. The plan flies the cells exactly as painted, staircase edges and all.
+                    {preview && preview.addedAreaM2 > 0 && (
+                      <> Squaring them into blocks the aircraft can hold would add
+                      {" "}{fmtArea(preview.addedAreaM2, units).text}
+                      {" "}({fmtVolume(preview.addedLitres, units).text}) of spray.</>
+                    )}
+                    {" "}
+                    <span className="text-neutral-600">
+                      Tolerance is a starting value; cells you explicitly skipped are never filled.
+                    </span>
+                  </div>
+                );
+              })()}
+            </>
           )}
           <Slider2
             label={`Spray coverage  ·  ${repeats}× pass${repeats > 1 ? "es" : ""}`}
@@ -1747,9 +1912,15 @@ export function Slider2({ label, value, setValue, min, max, step, unit, maxSafe,
   );
 }
 
-export function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, swapPoint, refillPoints = [] }: {
+export function PlannerOverlay({ boundary, zones, rawZones = [], mission, home, onHomeChange, swapPoint, refillPoints = [] }: {
   boundary: BoundaryRing[];
   zones: { ring: { lat: number; lng: number }[]; severity?: AiZone["severity"] }[];
+  /**
+   * The cells as the operator painted them, drawn over the flight-ready blocks
+   * so the extra ground squaring them off will treat is visible rather than
+   * described. Empty when regularization is off — then `zones` IS the paint.
+   */
+  rawZones?: { ring: { lat: number; lng: number }[] }[];
   mission: Mission | null;
   home: LatLng2 | null;
   onHomeChange: (p: LatLng2) => void;
@@ -1772,6 +1943,14 @@ export function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, s
       const color = sevColor(z.severity ?? "medium");
       L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
         color, weight: 1, fillColor: color, fillOpacity: 0.12, interactive: false,
+      }).addTo(group);
+    });
+    // The paint, over the blocks: what falls inside a block but outside these
+    // outlines is exactly the ground regularization added.
+    rawZones.forEach(z => {
+      L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
+        color: "#f8fafc", weight: 1, dashArray: "3 3",
+        fill: false, opacity: 0.75, interactive: false,
       }).addTo(group);
     });
 
@@ -1865,7 +2044,7 @@ export function PlannerOverlay({ boundary, zones, mission, home, onHomeChange, s
     map.on("click", onClick);
 
     return () => { map.off("click", onClick); group.remove(); };
-  }, [map, boundary, zones, mission, home, onHomeChange, swapPoint, refillPoints]);
+  }, [map, boundary, zones, rawZones, mission, home, onHomeChange, swapPoint, refillPoints]);
   return null;
 }
 

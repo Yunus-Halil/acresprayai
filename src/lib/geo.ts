@@ -116,9 +116,16 @@ export function rotateLL(p: LatLng2, center: LatLng2, cosA: number, sinA: number
  * edge rather than cutting the field cornerwise.
  */
 export function principalAxisAngle(rings: LatLng2[][]): number {
+  const c = vertexCovariance(rings);
+  if (!c) return 0;
+  return 0.5 * Math.atan2(2 * c.sxy, c.sxx - c.syy);
+}
+
+/** Second moments of every ring vertex about their mean, in metres². */
+function vertexCovariance(rings: LatLng2[][]) {
   let cx = 0, cy = 0, n = 0;
   for (const r of rings) for (const p of r) { cx += p.lng; cy += p.lat; n++; }
-  if (n === 0) return 0;
+  if (n === 0) return null;
   cx /= n; cy /= n;
   const mLng = mPerDegLng(cy);
   let sxx = 0, syy = 0, sxy = 0;
@@ -127,7 +134,29 @@ export function principalAxisAngle(rings: LatLng2[][]): number {
     const y = (p.lat - cy) * M_PER_DEG_LAT;
     sxx += x * x; syy += y * y; sxy += x * y;
   }
-  return 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  return { sxx, syy, sxy, n };
+}
+
+/**
+ * How decided the principal axis is: the ratio of the two covariance
+ * eigenvalues, 1 for a shape with no preferred direction and rising with
+ * elongation.
+ *
+ * Separate from the bounding box's aspect ratio, and the two disagree in a way
+ * that matters. A CLUSTER of parallel strips has a nearly square bounding box —
+ * four 8 m strips spread over 56 m are as wide as they are long — while its
+ * vertices are unmistakably strung out along the strips. The box says "no long
+ * axis, pick anything"; the covariance says "along the strips", and the
+ * covariance is right, because that is the direction a pass can run furthest
+ * without leaving marked ground.
+ */
+export function axisAnisotropy(rings: LatLng2[][]): number {
+  const c = vertexCovariance(rings);
+  if (!c || c.n === 0) return 1;
+  const half = (c.sxx + c.syy) / 2;
+  const disc = Math.sqrt(((c.sxx - c.syy) / 2) ** 2 + c.sxy * c.sxy);
+  const lo = half - disc;
+  return lo > 1e-9 ? (half + disc) / lo : Infinity;
 }
 
 export function distM(a: LatLng2, b: LatLng2): number {

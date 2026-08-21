@@ -6,6 +6,7 @@
 // pulling in a 5k-line React module.
 import { type DroneSpec, DRONE_SPECS } from "./droneSpecs";
 import { DEFAULT_HEADLAND_M } from "./headland";
+import { DEFAULT_GROUPING_SWATHS } from "./zoneGroups";
 
 export type CustomInput = { name: string; cost: number };
 
@@ -76,6 +77,23 @@ export type FarmerSettings = {
      * same one. See lib/headland.ts for the default and its caveats.
      */
     boundary_buffer_m: number;
+    /**
+     * How close two same-rate zones must be to be flown as one continuous
+     * sweep, in swath widths. Zero turns grouping OFF and gives every zone its
+     * own pattern — the behaviour the planner had before grouping existed, and
+     * the baseline to compare a grouped route against. See lib/zoneGroups.ts.
+     */
+    zone_grouping_swaths: number;
+    /**
+     * How much extra ground the operator will accept, as a fraction of the area
+     * they marked, to get treatment shapes the aircraft can fly cleanly.
+     *
+     * Zero is OFF, and zero is the default. This is the one setting that
+     * changes WHAT gets sprayed rather than how it is reached, so it stays off
+     * until the operator turns it on having seen the added area and the added
+     * chemical. See lib/flightBlocks.ts.
+     */
+    overspray_tolerance: number;
   };
   /**
    * Target application rate in litres per hectare, per zone severity.
@@ -137,6 +155,8 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
     tank_load_pct: 80,
     custom_specs: DRONE_SPECS["Custom"],
     boundary_buffer_m: DEFAULT_HEADLAND_M,
+    zone_grouping_swaths: DEFAULT_GROUPING_SWATHS,
+    overspray_tolerance: 0,
   },
   spray_rates_lha: { low: 15, medium: 25, high: 40 },
   zone_rate_overrides: {},

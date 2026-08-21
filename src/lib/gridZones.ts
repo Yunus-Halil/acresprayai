@@ -185,7 +185,7 @@ function zonesFromGroup(
 }
 
 /** Lattice corner (col,row) → WGS84, replaying the grid builder's frame. */
-function latticeToWorld(grid: TreatmentGrid, col: number, row: number): LatLng2 {
+export function latticeToWorld(grid: TreatmentGrid, col: number, row: number): LatLng2 {
   const def = grid.definition;
   const size = cellSizeM(def);
   const rotated = {

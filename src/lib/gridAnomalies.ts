@@ -19,7 +19,8 @@
 import type { LatLng2 } from "./geo";
 import { type GridZone, gridZonesFor } from "./gridZones";
 import {
-  type CellRate, boundaryHashOf, buildTreatmentGrid, normalizeNote,
+  type CellRate, type TreatmentGrid,
+  boundaryHashOf, buildTreatmentGrid, normalizeNote,
 } from "./treatmentGrid";
 import type { TreatmentGridRepository } from "./treatmentGridStore";
 import { applyStored, packGrid } from "./treatmentGridStore";
@@ -32,6 +33,14 @@ export const UNCLASSIFIED_LABEL = "Unclassified";
 
 export type GridZonesLoad = {
   zones: GridZone[];
+  /**
+   * The grid the zones were projected from, or null when it was stale.
+   *
+   * Carried so a caller that needs the CELLS — the flight-ready shape step
+   * works on cell states, not on traced rings — does not have to load and
+   * rebuild the same grid a second time and risk reading a different one.
+   */
+  grid: TreatmentGrid | null;
   /**
    * True when the stored grid was built for an older boundary. Its lattice
    * derives from that boundary, so projecting it onto the new one would put
@@ -57,10 +66,10 @@ export async function loadGridZones(
   const stored = await repository.load(fieldId);
   if (!stored) return null;
   if (stored.definition.boundaryHash !== boundaryHashOf(boundary)) {
-    return { zones: [], stale: true };
+    return { zones: [], grid: null, stale: true };
   }
   const grid = applyStored(buildTreatmentGrid(boundary, stored.definition), stored);
-  return { zones: gridZonesFor(grid), stale: false };
+  return { zones: gridZonesFor(grid), grid, stale: false };
 }
 
 /**

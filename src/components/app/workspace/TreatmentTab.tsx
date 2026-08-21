@@ -25,6 +25,7 @@ import {
   DEFAULT_HEADLAND_M, MAX_HEADLAND_M, applyHeadland, headlandAreaScale, headlandReason,
 } from "@/lib/headland";
 import { gridZonesFor } from "@/lib/gridZones";
+import { MAX_OVERSPRAY_TOLERANCE, regularizeGrid } from "@/lib/flightBlocks";
 import { type LatLng2, bboxOfRings, ringsAreaM2 } from "@/lib/geo";
 import {
   type CellId, type CellRate, type GridDefinition, type TreatmentGrid,
@@ -475,6 +476,21 @@ export function TreatmentTab({
     }
     return { sprayedHa: sprayedM2 / 10_000, volumeL, waived };
   }, [grid, bufferM]);
+
+  // ---- What flight-ready shapes add, if the planner is using them ---------
+  //
+  // The panel prices the prescription as painted. When the operator has turned
+  // flight-ready shapes on in the Flight Planner, the plan squares those cells
+  // off into blocks the aircraft can hold and sprays a little more ground than
+  // is painted here. Reported with the SAME area × rate arithmetic and the same
+  // setting the planner uses, so the two screens cannot quote different jobs.
+  const overspray = Math.max(
+    0, Math.min(MAX_OVERSPRAY_TOLERANCE, settings.flight_plan.overspray_tolerance ?? 0),
+  );
+  const flightReady = useMemo(
+    () => (grid && overspray > 0 ? regularizeGrid(grid, { tolerance: overspray }) : null),
+    [grid, overspray],
+  );
 
   const clearAll = () => {
     if (!grid || pendingRef.current) return;
@@ -990,6 +1006,23 @@ export function TreatmentTab({
                     {headland.waived > 0 && (
                       <> {headland.waived} zone{headland.waived === 1 ? " is" : "s are"} too
                       narrow for it and {headland.waived === 1 ? "is" : "are"} planned whole.</>
+                    )}
+                  </div>
+                </div>
+              )}
+              {flightReady && flightReady.addedAreaM2 > 0 && (
+                <div className="mt-2 border-t border-[#222] pt-2">
+                  <Row
+                    label="Flight-ready shapes add"
+                    value={`${fmtArea(flightReady.addedAreaM2, units).text} · ${fmtVolume(flightReady.addedLitres, units).text}`}
+                  />
+                  <div className="text-[10px] text-neutral-600 mt-1.5 leading-relaxed">
+                    The plan squares these cells into blocks the aircraft can fly, which sprays
+                    a little more ground than is painted here. Change the tolerance in the
+                    Flight Planner, or set it to zero to fly the cells exactly.
+                    {flightReady.sparedSkips > 0 && (
+                      <> {flightReady.sparedSkips} cell{flightReady.sparedSkips === 1 ? "" : "s"} you
+                      set to skip {flightReady.sparedSkips === 1 ? "was" : "were"} left alone.</>
                     )}
                   </div>
                 </div>
