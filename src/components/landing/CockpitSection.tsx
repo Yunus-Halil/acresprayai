@@ -1,4 +1,5 @@
 import { Reveal } from "./Reveal";
+import { DemoLink } from "./Cta";
 import { Frame } from "./Shot";
 import { SimVideo } from "./SimVideo";
 
@@ -7,7 +8,7 @@ import { SimVideo } from "./SimVideo";
  *
  * Every claim on this page is checkable against the product. The specifics
  * below are chosen because they are TRUE and unusual, which is the only kind
- * of boast worth making — a farmer who buys on a promise and finds it missing
+ * of boast worth making: a farmer who buys on a promise and finds it missing
  * does not buy twice. Where a number is a model rather than a measurement, the
  * app says so on its own face, and so does the last line here.
  */
@@ -19,7 +20,7 @@ const Spec = ({ value, label, detail }: SpecProps) => (
     <div className="font-plex text-[22px] leading-none tracking-[-0.01em] text-sw-bright-hi sm:text-[26px]">
       {value}
     </div>
-    <div className="mt-2 font-plex text-[10px] tracking-[0.1em] text-sw-on-dark-faint">
+    <div className="mt-2 font-plex text-[11px] tracking-[0.1em] text-sw-on-dark">
       {label}
     </div>
     <div className="mt-2 text-[13px] leading-[1.5] text-sw-on-dark">{detail}</div>
@@ -67,6 +68,13 @@ export const CockpitSection = () => (
         </Frame>
       </Reveal>
 
+      {/* The full recording, from the section that shows a clip of it. The demo
+          used to have exactly one door, in the hero, which a visitor has
+          usually scrolled past by the time they want it. */}
+      <Reveal className="mt-8">
+        <DemoLink className="border border-white/20 text-sw-paper hover:border-sw-bright-hi hover:text-sw-bright-hi" />
+      </Reveal>
+
       <div className="mt-14 grid gap-x-10 gap-y-9 sm:mt-16 sm:grid-cols-2 lg:grid-cols-4">
         <Reveal>
           <Spec
@@ -99,7 +107,7 @@ export const CockpitSection = () => (
       </div>
 
       <Reveal className="mt-14 border-t border-white/10 pt-6 sm:mt-16">
-        <p className="m-0 max-w-[720px] font-plex text-[11px] leading-[1.9] tracking-[0.03em] text-sw-on-dark-faint">
+        <p className="m-0 max-w-[720px] font-plex text-[12px] leading-[1.9] tracking-[0.03em] text-sw-on-dark">
           Endurance, slosh and centre-of-gravity figures are engineering estimates for
           planning, not certified flight-dynamics data. The app labels them as such
           wherever it shows them. We would rather you trusted the number you can check

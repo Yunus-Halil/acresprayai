@@ -20,7 +20,7 @@ export const Screenshot = ({ src, alt, className = "" }: ScreenshotProps) => {
   if (missing) {
     return (
       <div
-        className={`flex min-h-[220px] items-center justify-center rounded border border-dashed border-white/15 px-6 py-10 text-center font-plex text-[11px] leading-relaxed tracking-[0.08em] text-sw-on-dark-faint ${className}`}
+        className={`flex min-h-[220px] items-center justify-center rounded border border-dashed border-white/15 px-6 py-10 text-center font-plex text-[12px] leading-relaxed tracking-[0.08em] text-sw-on-dark ${className}`}
       >
         {alt.toUpperCase()}
       </div>
@@ -58,7 +58,7 @@ export const Frame = ({
 }: FrameProps) => (
   <div className={`rounded-lg bg-sw-panel ${padding} ${className}`}>
     {caption && (
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-2.5 pb-3 pt-1.5 font-plex text-[10px] tracking-[0.08em] text-sw-on-dark-faint sm:text-[11px]">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-2.5 pb-3 pt-1.5 font-plex text-[11px] tracking-[0.08em] text-sw-on-dark">
         <span>{caption}</span>
         {status}
       </div>

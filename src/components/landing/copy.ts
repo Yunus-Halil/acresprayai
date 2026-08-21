@@ -9,9 +9,25 @@
  *    percentages.
  * 2. No social proof until it is approved in writing. There is no testimonial
  *    on this page, and an unapproved one is not better than none.
+ * 3. No em dashes and no en dashes in anything a visitor reads, labels
+ *    included. Use a colon, a comma or a middot. The page is set in a
+ *    monospace at small sizes in several places, where a dash of any length is
+ *    a smudge, and the house voice is plainer without them.
  */
 
-export const PILOT_BADGE = "PILOT PROGRAM · 10 FARMS · Q3–Q4 2026 · FREE USAGE";
+/**
+ * The pilot band, top of the hero and again above the apply button.
+ *
+ * Every figure here is also stated on /apply, and the two must not drift: ten
+ * farms and free usage are the terms an applicant is agreeing to. The window is
+ * the one thing that goes stale on its own, so it is a date and not "this
+ * season" precisely so a reader can tell when it has.
+ */
+export const PILOT_BADGE = "PILOT PROGRAM · 10 FARMS · Q3-Q4 2026 · FREE USAGE";
+
+/** Both CTAs, in one place, so every button on the page says the same thing. */
+export const CTA_PRIMARY = "Apply to Pilot";
+export const CTA_SECONDARY = "Watch the demo";
 
 /** The one address the site hands out. Used by the footer and the pilot band. */
 export const CONTACT_EMAIL = "yunus@swathwise.com";

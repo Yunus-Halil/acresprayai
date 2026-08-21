@@ -26,7 +26,7 @@ export const Audiences = () => (
         ))}
       </div>
 
-      <p className="mt-7 font-plex text-xs leading-relaxed text-sw-faint">
+      <p className="mt-7 font-plex text-xs leading-relaxed text-sw-muted">
         YOUR FIELDS, YOUR DATA. IMAGERY AND ANALYSIS STAY IN YOUR ACCOUNT.
       </p>
     </section>

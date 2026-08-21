@@ -16,10 +16,22 @@ import { T40_PHYSICS } from "./dronePhysics";
 import { DRONE_SPECS } from "./droneSpecs";
 import { type TankProfile, type TankSample, buildTankProfile, sampleTankAt } from "./tankProfile";
 
-/** The animation's loop, and the window inside it when the marker is flying. */
+/**
+ * The animation's loop, and the window inside it when the marker is flying.
+ *
+ * The flight fills most of the loop on purpose. It used to start at 0.48, so
+ * the panel spent nearly half of every cycle reading STANDBY with every number
+ * frozen: a live simulation that looked like a screenshot for seven seconds at
+ * a time. The plan now draws itself in the first quarter and the aircraft flies
+ * the rest.
+ *
+ * These two numbers are also the marker's keyTimes in FlightPath.tsx and the
+ * keyframe percentages in index.css. All three move together or the panel
+ * narrates a flight the picture is not flying.
+ */
 export const HERO_LOOP_MS = 16_000;
-export const HERO_FLIGHT_FROM = 0.48;
-export const HERO_FLIGHT_TO = 0.92;
+export const HERO_FLIGHT_FROM = 0.28;
+export const HERO_FLIGHT_TO = 0.96;
 
 /**
  * SVG units to metres.
@@ -187,14 +199,22 @@ export type HeroTelemetry = {
  * Telemetry at a moment in the animation's loop.
  *
  * `loopFraction` is 0..1 across the 16 s cycle. The marker only flies between
- * HERO_FLIGHT_FROM and HERO_FLIGHT_TO — before that the boundary, zones and
+ * HERO_FLIGHT_FROM and HERO_FLIGHT_TO: before that the boundary, zones and
  * route are still drawing on, and the honest reading is "on the ground".
  */
 export function heroTelemetryAt(mission: HeroMission, loopFraction: number): HeroTelemetry {
   const f = ((loopFraction % 1) + 1) % 1;
   if (f < HERO_FLIGHT_FROM) {
+    // On the ground: full tank, and therefore the mission's start-of-flight
+    // mass and centre of gravity, but NOT its start-of-flight speed and
+    // current. The panel used to read STANDBY beside 20 mph and 129 A, which
+    // is a parked aircraft doing 20 mph. Zeroed here rather than blanked so
+    // the row keeps its shape and the units stay on screen.
+    const parked = sampleTankAt(mission.profile, 0);
     return {
-      flying: false, progress: 0, sample: sampleTankAt(mission.profile, 0),
+      flying: false,
+      progress: 0,
+      sample: parked ? { ...parked, speedMs: 0, accelMs2: 0, amps: 0, spraying: false } : null,
       batteryPct: 100, altitudeM: 0, distanceM: 0, spraying: false,
     };
   }

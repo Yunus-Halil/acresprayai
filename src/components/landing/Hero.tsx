@@ -1,5 +1,6 @@
 import { FlightPath } from "./FlightPath";
-import { DEMO_VIDEO_URL, PILOT_BADGE } from "./copy";
+import { DemoLink, PilotLink } from "./Cta";
+import { PILOT_BADGE } from "./copy";
 
 export const Hero = () => (
   <header id="top" className="relative mx-auto max-w-[1200px] px-5 pt-14 sm:px-10 sm:pt-[90px]">
@@ -37,7 +38,7 @@ export const Hero = () => (
       </p>
 
       <ul
-        className="sw-load mt-6 flex flex-wrap gap-x-6 gap-y-2 font-plex text-[11px] tracking-[0.04em] text-sw-faint sm:text-xs"
+        className="sw-load mt-6 flex flex-wrap gap-x-6 gap-y-2 font-plex text-[11px] tracking-[0.04em] text-sw-muted sm:text-xs"
         style={{ animationDelay: "0.34s" }}
       >
         {[
@@ -57,25 +58,8 @@ export const Hero = () => (
         className="sw-load mt-8 flex flex-wrap gap-3.5 sm:mt-9"
         style={{ animationDelay: "0.4s" }}
       >
-        <a
-          href="#pilot"
-          className="inline-flex items-center gap-2.5 rounded bg-sw-green px-7 py-4 text-base font-semibold text-white transition-colors hover:bg-sw-green-deep"
-        >
-          Apply to Pilot <span className="font-plex">→</span>
-        </a>
-        {/* Off-site, so it opens in a new tab and keeps the visitor's place
-            on the page. rel="noopener noreferrer" is not optional on a
-            target="_blank" link: without it the opened page can reach back
-            through window.opener. */}
-        <a
-          href={DEMO_VIDEO_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2.5 rounded border border-sw-edge bg-sw-card px-7 py-4 text-base font-medium text-sw-ink transition-colors hover:border-sw-ink"
-        >
-          Watch the demo
-          <span className="font-plex text-sw-faint" aria-hidden="true">↗</span>
-        </a>
+        <PilotLink className="bg-sw-green text-white hover:bg-sw-green-deep" />
+        <DemoLink className="border border-sw-edge bg-sw-card text-sw-ink hover:border-sw-ink" />
       </div>
     </div>
 

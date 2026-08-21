@@ -1,4 +1,5 @@
 import { Reveal } from "./Reveal";
+import { PilotLink } from "./Cta";
 import { CONTACT_EMAIL, PILOT_BADGE } from "./copy";
 
 export const PilotCTA = () => (
@@ -19,13 +20,13 @@ export const PilotCTA = () => (
       </div>
 
       <div className="justify-self-start">
-        <a
+        {/* The one place the button goes to the form rather than to this band:
+            the band IS the destination every other "Apply to Pilot" points at. */}
+        <PilotLink
           href="/apply"
-          className="inline-flex items-center gap-2.5 whitespace-nowrap rounded bg-sw-bright px-8 py-4 text-[17px] font-semibold text-[#0c100b] transition-colors hover:bg-sw-bright-hi sm:px-[34px] sm:py-[18px]"
-        >
-          Apply to Pilot <span className="font-plex">→</span>
-        </a>
-        <p className="m-0 mt-4 font-plex text-[11px] tracking-[0.08em] text-sw-on-dark-faint">
+          className="bg-sw-bright text-[#0c100b] hover:bg-sw-bright-hi sm:px-[34px] sm:py-[18px] sm:text-[17px]"
+        />
+        <p className="m-0 mt-4 font-plex text-[12px] tracking-[0.08em] text-sw-on-dark">
           OR EMAIL{" "}
           <a
             href={`mailto:${CONTACT_EMAIL}`}

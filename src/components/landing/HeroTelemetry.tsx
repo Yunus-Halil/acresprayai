@@ -24,22 +24,30 @@ import { useUnitSystem } from "@/hooks/useUnitSystem";
  * what the model says.
  */
 
+/**
+ * One instrument.
+ *
+ * Sizes are a floor, not a preference. These were 9px labels in
+ * #7a8a72 on near-black, which is legible in a design tool at 200% and not on
+ * a laptop at arm's length. Nothing on this panel is decoration, so nothing on
+ * it is set below 10px, and the label colour clears 4.5:1 on the panel.
+ */
 const Reading = ({
   label, value, tone = "ink", sub,
 }: { label: string; value: string; tone?: "ink" | "green" | "cyan" | "amber"; sub?: string }) => (
   <div className="min-w-0">
-    <div className="font-plex text-[9px] tracking-[0.12em] text-sw-on-dark-faint">{label}</div>
+    <div className="font-plex text-[10px] tracking-[0.1em] text-sw-on-dark">{label}</div>
     <div
-      className={`mt-1 truncate font-plex text-[15px] leading-none tabular-nums sm:text-[17px] ${
+      className={`mt-1.5 truncate font-plex text-[17px] leading-none tabular-nums sm:text-[18px] ${
         tone === "green" ? "text-sw-bright-hi"
-        : tone === "cyan" ? "text-[#4fc9e6]"
+        : tone === "cyan" ? "text-[#5fd3ec]"
         : tone === "amber" ? "text-amber-300"
-        : "text-sw-on-dark"
+        : "text-sw-paper"
       }`}
     >
       {value}
     </div>
-    {sub && <div className="mt-1 truncate font-plex text-[9px] text-sw-on-dark-faint">{sub}</div>}
+    {sub && <div className="mt-1 truncate font-plex text-[10px] text-sw-on-dark">{sub}</div>}
   </div>
 );
 
@@ -93,12 +101,12 @@ export const HeroTelemetry = () => {
   const status = !tel.flying ? "STANDBY" : tel.spraying ? "SPRAYING" : "TRANSIT";
 
   return (
-    <div ref={host} className="rounded-b-lg bg-sw-panel px-4 py-4 sm:px-5">
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <div className="font-plex text-[10px] tracking-[0.1em] text-sw-on-dark-faint">
+    <div ref={host} className="rounded-b-lg bg-sw-panel px-4 py-5 sm:px-5">
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <div className="font-plex text-[11px] tracking-[0.1em] text-sw-on-dark">
           LIVE FLIGHT MODEL · DJI AGRAS T40
         </div>
-        <div className="flex items-center gap-2 font-plex text-[10px] tracking-[0.1em]">
+        <div className="flex items-center gap-2 font-plex text-[11px] tracking-[0.1em]">
           <span
             className={`h-[7px] w-[7px] rounded-full ${
               status === "SPRAYING" ? "bg-sw-bright-hi"
@@ -112,16 +120,24 @@ export const HeroTelemetry = () => {
         </div>
       </div>
 
-      <div className="flex items-start gap-4 sm:gap-6">
-        {/* The product's own tank widget, tilting with the modelled fluid. */}
-        <div className="hidden shrink-0 sm:block">
-          <TankLiquidVisual sample={s} cfg={T40_PHYSICS} width={104} height={60} />
-          <div className="mt-1.5 text-center font-plex text-[9px] tracking-[0.1em] text-sw-on-dark-faint">
+      {/* Stacks on a phone rather than hiding the tank. The slosh glyph is the
+          single most arresting thing on this panel, and a phone visitor is
+          exactly the one worth stopping. */}
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-6">
+        {/* The product's own tank widget, tilting with the modelled fluid.
+            Boxed rather than dropped straight onto the panel: the widget draws
+            its own body in near-black for the app's near-black chrome, and
+            without a surround it reads here as a hole rather than a tank. */}
+        <div className="flex shrink-0 items-center gap-3 sm:block">
+          <div className="rounded border border-white/15 bg-black/40 p-1.5">
+            <TankLiquidVisual sample={s} cfg={T40_PHYSICS} width={112} height={64} />
+          </div>
+          <div className="font-plex text-[10px] tracking-[0.1em] text-sw-on-dark sm:mt-2 sm:text-center">
             SLOSH
           </div>
         </div>
 
-        <div className="grid min-w-0 flex-1 grid-cols-3 gap-x-4 gap-y-4 sm:grid-cols-6 sm:gap-x-5">
+        <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-6">
           <Reading
             label="BATTERY"
             value={`${tel.batteryPct.toFixed(0)}%`}
@@ -143,10 +159,13 @@ export const HeroTelemetry = () => {
         </div>
       </div>
 
-      <div className="mt-4 border-t border-white/10 pt-3 font-plex text-[9px] leading-[1.8] text-sw-on-dark-faint">
-        Computed live by the same tank-dynamics and endurance model the planner runs. The
-        payload drains as it sprays, current falls as the aircraft lightens, and the fluid
-        leans through every turn. Engineering estimates for planning, not certified flight data.
+      {/* Legibility over volume: this was three lines at 9px in the faintest
+          grey on the page, which is unreadable text used as texture. Shorter,
+          bigger, and light enough to actually read, because it carries the one
+          disclaimer on the panel. */}
+      <div className="mt-5 border-t border-white/10 pt-4 font-plex text-[11px] leading-[1.75] text-sw-on-dark">
+        Computed live by the tank-dynamics and endurance model the planner runs, not scripted.
+        Engineering estimates for planning, not certified flight data.
       </div>
     </div>
   );

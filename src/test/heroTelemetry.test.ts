@@ -3,13 +3,13 @@
 // decoration fails here instead of on the homepage.
 import { describe, it, expect } from "vitest";
 import {
-  HERO_FLIGHT_FROM, SPRAY_ALT_M, TRANSIT_ALT_M,
+  HERO_FLIGHT_FROM, HERO_FLIGHT_TO, SPRAY_ALT_M, TRANSIT_ALT_M,
   buildHeroMission, heroTelemetryAt, sprayingAt,
 } from "@/lib/heroTelemetry";
 
 const mission = buildHeroMission();
 const frames = Array.from({ length: 120 }, (_, i) =>
-  heroTelemetryAt(mission, HERO_FLIGHT_FROM + (0.92 - HERO_FLIGHT_FROM) * (i / 119)));
+  heroTelemetryAt(mission, HERO_FLIGHT_FROM + (HERO_FLIGHT_TO - HERO_FLIGHT_FROM) * (i / 119)));
 
 describe("the demo mission is a plausible job", () => {
   it("flies a real distance in a time a T40 could actually manage", () => {
@@ -71,12 +71,29 @@ describe("what the panel shows is model output", () => {
 });
 
 describe("before the marker takes off", () => {
+  it("spends most of the loop flying, not parked", () => {
+    // The panel is the reason to stop and look at the hero. If the flight
+    // window shrinks back towards half the loop, it is a frozen readout again.
+    expect(HERO_FLIGHT_TO - HERO_FLIGHT_FROM).toBeGreaterThan(0.6);
+  });
+
   it("reads standby rather than inventing a flight", () => {
     const pre = heroTelemetryAt(mission, 0.1);
     expect(pre.flying).toBe(false);
     expect(pre.batteryPct).toBe(100);
     expect(pre.distanceM).toBe(0);
     expect(pre.altitudeM).toBe(0);
+  });
+
+  it("does not show a parked aircraft doing 20 mph", () => {
+    // STANDBY beside a cruise speed and a 129 A draw is the one reading on
+    // this panel a visitor could catch out at a glance.
+    const pre = heroTelemetryAt(mission, 0.1);
+    expect(pre.sample?.speedMs).toBe(0);
+    expect(pre.sample?.amps).toBe(0);
+    expect(pre.spraying).toBe(false);
+    // The tank is still full, because it is: this is the moment before takeoff.
+    expect(pre.sample?.litres).toBeGreaterThan(0);
   });
 
   it("wraps cleanly across the loop boundary", () => {

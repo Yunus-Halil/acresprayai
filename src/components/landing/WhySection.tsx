@@ -23,7 +23,10 @@ const Row = ({ title, body, footnote, media, mediaFirst = false }: RowProps) => 
         {title}
       </h3>
       <p className="m-0 mt-4 text-base leading-[1.55] text-sw-muted">{body}</p>
-      <div className="mt-5 font-plex text-xs leading-[2] text-sw-faint">{footnote}</div>
+      {/* Mono data line naming what the capture shows. Set in sw-muted, not
+          sw-faint: it is the caption that tells a sceptic what they are looking
+          at, so it has to survive being read on a laptop in daylight. */}
+      <div className="mt-5 font-plex text-xs leading-[2] text-sw-muted">{footnote}</div>
     </div>
     <div className={mediaFirst ? "order-1 lg:order-2" : ""}>{media}</div>
   </Reveal>
@@ -31,13 +34,22 @@ const Row = ({ title, body, footnote, media, mediaFirst = false }: RowProps) => 
 
 export const WhySection = () => (
   <section id="why" className="relative mx-auto max-w-[1200px] px-5 pt-24 sm:px-10 sm:pt-[130px]">
-    <Reveal className="max-w-[620px]">
+    {/* "A smarter farm management engine" was the vaguest line on the page and
+        it overclaimed: SwathWise plans spray missions, and a farmer who reads
+        "farm management" arrives expecting inventory and books. The replacement
+        says who it is for and what it saves them, in their own terms. */}
+    <Reveal className="max-w-[680px]">
       <div className="font-plex text-xs tracking-[0.1em] text-sw-green">
-        WHY FARM OWNERS CHOOSE US
+        WHY OPERATORS CHOOSE SWATHWISE
       </div>
       <h2 className="m-0 mt-4 text-[clamp(30px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.03em] text-sw-ink sm:mt-[18px]">
-        A smarter farm management engine for farmers with little time and big needs.
+        Built for operators who bill by the acre and can&rsquo;t afford a wasted trip.
       </h2>
+      <p className="m-0 mt-5 max-w-[600px] text-[17px] leading-[1.55] text-sw-muted">
+        Scout the field, mark the ground worth treating, price it against your own input
+        costs, and leave with a route your Agras will fly. The chemical, the batteries and
+        every refill are settled before the truck moves.
+      </p>
     </Reveal>
 
     {/* The only route capture we have is portrait, so it sits centred at its
