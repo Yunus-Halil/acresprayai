@@ -20,7 +20,7 @@ import {
   AlertTriangle, Brush, Grid3x3, Info, Loader2, MousePointer, Save, Search, Sparkles, Trash2, X,
 } from "lucide-react";
 import { type FarmerSettings } from "@/lib/farmerSettings";
-import { type DroneSpec } from "@/lib/droneSpecs";
+import { type DroneSpec, effectiveSwathM } from "@/lib/droneSpecs";
 import { type LatLng2, bboxOfRings, ringsAreaM2 } from "@/lib/geo";
 import {
   type CellId, type CellRate, type GridDefinition, type TreatmentGrid,
@@ -106,7 +106,9 @@ export function TreatmentTab({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const rings = (boundary ?? []) as unknown as LatLng2[][];
-  const swathM = spec.spray_swath_m > 0 ? spec.spray_swath_m : 6;
+  // Shared with the Flight Planner's pass spacing, so a cell is exactly the
+  // lane the aircraft flies rather than a number that happens to match today.
+  const swathM = effectiveSwathM(spec);
 
   const definition: GridDefinition | null = useMemo(
     () => (rings.length ? gridDefinitionFor(rings, swathM, cellMultiple) : null),

@@ -7,9 +7,10 @@ import {
   type LatLng2,
   M_PER_DEG_LAT,
   bboxOfRings,
-  centroidOfRings,
+  centroidOfRing,
   distM,
   lerp,
+  mPerDegLng,
   pointInRing,
   principalAxisAngle,
   rotateLL,
@@ -23,11 +24,83 @@ export type Pass = {
 };
 
 /**
+ * How far a zone's own long axis may sit from the field's before the passes
+ * follow the zone instead of the field.
+ *
+ * Below this the two are the same intent expressed with rounding error, and
+ * snapping to the field keeps every pass parallel to the crop rows and to the
+ * treatment-grid lattice, which is laid out on the same field heading. Past it
+ * the zone genuinely runs its own way and following the field would cut it
+ * cornerwise into many short passes.
+ *
+ * TUNABLE STARTING GUESS: 15° is chosen for feel, not measured.
+ */
+const AXIS_SNAP_TOL_RAD = (15 * Math.PI) / 180;
+
+/**
+ * A shape this close to square has no meaningful long axis — its principal
+ * axis is decided by rounding, and would flip between renders. Below this
+ * ratio the field heading wins.
+ */
+const MIN_ELONGATION = 1.15;
+
+/** Signed separation between two headings, folded into (-π/2, π/2]. */
+function axisDelta(a: number, b: number): number {
+  let d = (a - b) % Math.PI;
+  if (d > Math.PI / 2) d -= Math.PI;
+  if (d <= -Math.PI / 2) d += Math.PI;
+  return d;
+}
+
+/**
+ * The heading to run one zone's passes along: its long axis, so the drone
+ * makes the fewest and longest passes and therefore the fewest U-turns.
+ *
+ * Snapped to the field's heading (or square to it) when the zone is close to
+ * either, and when the zone is too square for its own axis to mean anything.
+ * That keeps grid-derived zones — which are unions of cells laid out on the
+ * field heading — flying lanes that line up with the cells whose rates they
+ * carry, instead of cutting diagonally across them.
+ */
+export function zoneSweepHeadingRad(ring: LatLng2[], fieldTheta: number): number {
+  if (ring.length < 3) return fieldTheta;
+  const theta = principalAxisAngle([ring]);
+
+  // Extents along the zone's own axes decide whether it has a long one at all.
+  const anchor = centroidOfRing(ring);
+  const c = Math.cos(-theta), s = Math.sin(-theta);
+  const bb = bboxOfRings([ring.map(p => rotateLL(p, anchor, c, s))]);
+  const alongM = (bb.maxLng - bb.minLng) * mPerDegLng(anchor.lat);
+  const acrossM = (bb.maxLat - bb.minLat) * M_PER_DEG_LAT;
+  const short = Math.min(alongM, acrossM);
+  if (!(short > 0) || Math.max(alongM, acrossM) / short < MIN_ELONGATION) return fieldTheta;
+
+  // Both the field heading and square to it keep passes on the cell lattice.
+  const candidates = [fieldTheta, fieldTheta + Math.PI / 2];
+  let best = candidates[0], bestDelta = Infinity;
+  for (const cand of candidates) {
+    const d = Math.abs(axisDelta(theta, cand));
+    if (d < bestDelta) { bestDelta = d; best = cand; }
+  }
+  return bestDelta <= AXIS_SNAP_TOL_RAD ? best : theta;
+}
+
+/**
  * Per-zone parallel lawnmower. Each anomaly zone gets its own compact set of
- * parallel passes, all rotated to the FIELD's principal axis so every zone's
- * rows stay parallel to every other zone's. Passes are clipped to
+ * parallel passes, run along THAT zone's long axis (see zoneSweepHeadingRad),
+ * so a strip lying across the field is flown down its length rather than
+ * chopped into short passes by the field's heading. Passes are clipped to
  * (boundary ∩ zone), so lines exist only where the drone actually sprays — no
  * full-width rows, no skipped rows, no diagonal jumps.
+ *
+ * SPACING IS EXACT, AND THE PATTERN IS CENTRED. `spacingM` is one boom width
+ * less its overlap (see droneSpecs.passSpacingM), so the lines must land that
+ * far apart and nowhere closer: dividing the zone's width into equal shares
+ * instead would quietly tighten the spacing on every zone that is not a whole
+ * number of lanes wide, which is most of them, and pay for it in a second dose
+ * of chemical. Lane count is rounded UP and the set is centred in the zone, so
+ * the outermost lanes sit at most half a spacing from the edge and the boom —
+ * which is wider than the spacing — covers the rest. No gaps, no redundancy.
  *
  * Adjacent passes within a zone alternate direction (boustrophedon) for tight
  * U-turns at the zone edge; buildMission bridges zones with a straight transit.
@@ -42,33 +115,39 @@ export function buildFieldSweep(
   repeats = 1,
 ): Pass[][] {
   if (!boundary.length || !zones.length) return [];
-  const fieldCenter = centroidOfRings(boundary);
-  const theta = principalAxisAngle(boundary);
-  const cF = Math.cos(-theta), sF = Math.sin(-theta);
-  const cI = Math.cos(theta), sI = Math.sin(theta);
-  const rot = (p: LatLng2) => rotateLL(p, fieldCenter, cF, sF);
-  const unrot = (p: LatLng2) => rotateLL(p, fieldCenter, cI, sI);
-  const rotBoundary = boundary.map(r => r.map(rot));
-  const spacing = Math.max(2, spacingM);
+  const fieldTheta = principalAxisAngle(boundary);
+  const spacing = Math.max(0.5, spacingM);
 
   const fragments: Pass[][] = [];
   for (const zone of zones) {
+    // Each zone gets its own rotated frame, anchored on itself: sweep lines run
+    // along the frame's east axis, which is the zone's long axis after this
+    // rotation.
+    const theta = zoneSweepHeadingRad(zone.ring, fieldTheta);
+    const anchor = centroidOfRing(zone.ring);
+    const cF = Math.cos(-theta), sF = Math.sin(-theta);
+    const cI = Math.cos(theta), sI = Math.sin(theta);
+    const rot = (p: LatLng2) => rotateLL(p, anchor, cF, sF);
+    const unrot = (p: LatLng2) => rotateLL(p, anchor, cI, sI);
+    const rotBoundary = boundary.map(r => r.map(rot));
+
     const rotRing = zone.ring.map(rot);
     const bb = bboxOfRings([rotRing]);
     const heightM = (bb.maxLat - bb.minLat) * M_PER_DEG_LAT;
     if (heightM < 0.5) continue;
 
     const r = Math.max(1, Math.floor(repeats));
-    const basePasses = Math.max(1, Math.round(heightM / spacing));
-    const passCount = basePasses * r;
-    const step = heightM / passCount;
-    const dLat = step / M_PER_DEG_LAT;
+    const step = spacing / r;
+    const passCount = Math.max(1, Math.ceil(heightM / step));
+    // Centre the lane set: whatever the zone's width leaves over is split
+    // evenly top and bottom rather than piled onto one edge.
+    const firstOffsetM = (heightM - (passCount - 1) * step) / 2;
     const padLng = (bb.maxLng - bb.minLng) * 0.05 + 0.0002;
 
     const passes: Pass[] = [];
     let flip = false;
     for (let i = 0; i < passCount; i++) {
-      const y = bb.minLat + dLat * (i + 0.5);
+      const y = bb.minLat + (firstOffsetM + step * i) / M_PER_DEG_LAT;
       const a = { lat: y, lng: bb.minLng - padLng };
       const b = { lat: y, lng: bb.maxLng + padLng };
 

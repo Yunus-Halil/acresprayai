@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
-  type DroneSpec, DRONE_SPECS, resolveDroneSpec,
+  type DroneSpec, DRONE_SPECS, effectiveSwathM, passSpacingM, resolveDroneSpec,
 } from "@/lib/droneSpecs";
 import {
   type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
@@ -35,10 +35,9 @@ import {
 } from "@/lib/farmerSettings";
 import {
   type LatLng2,
-  M_PER_DEG_LAT,
   bboxOfRings, centroidOfRings, centroidSafe, distM, lerp, mPerDegLng,
   pointInAnyRing, pointInRing, polygonAreaM2, polylineLengthM,
-  principalAxisAngle, ringContaining, ringsAreaM2, rotateLL,
+  ringContaining, ringsAreaM2,
   routeInsideBoundary, segRingIntersections, segSegT, segmentInsideRings,
 } from "@/lib/geo";
 import {
@@ -139,7 +138,9 @@ export function PlannerTab({
   const [tankOpen, setTankOpen] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
-  const [spacingM, setSpacingM] = useState<number>(15);
+  // Seeded from the Custom profile's boom; the effect below snaps it to the
+  // active drone's as soon as one is resolved.
+  const [spacingM, setSpacingM] = useState<number>(() => passSpacingM(DRONE_SPECS["Custom"]));
   const [transitAltM, setTransitAltM] = useState<number>(30);
   const [sprayAltM, setSprayAltM] = useState<number>(3);
   const [transitSpeed, setTransitSpeed] = useState<number>(10);
@@ -332,50 +333,21 @@ export function PlannerTab({
   const defaultHome = boundary && boundary.length > 0 ? centroidOfRings(boundary as LatLng2[][]) : null;
   const effectiveHome = home ?? defaultHome;
 
-  // ---- Coverage-max spacing ----------------------------------------------
-  // The largest row spacing that still guarantees at least one sweep line
-  // passes through every anomaly zone. Computed in the same rotated frame
-  // buildFieldSweep uses (field's principal axis), so it matches the actual
-  // pattern that gets generated. If any zone is narrower than this, it can
-  // be missed entirely.
-  const coverageMaxM = (() => {
-    if (!boundary || boundary.length === 0 || validZones.length === 0) return null;
-    const fieldCenter = centroidOfRings(boundary as LatLng2[][]);
-    const theta = principalAxisAngle(boundary as LatLng2[][]);
-    const cF = Math.cos(-theta), sF = Math.sin(-theta);
-    const rot = (p: LatLng2) => rotateLL(p, fieldCenter, cF, sF);
-    let minHeightM = Infinity;
-    for (const z of validZones) {
-      const rr = z.ring.map(rot);
-      let lo = Infinity, hi = -Infinity;
-      for (const p of rr) { if (p.lat < lo) lo = p.lat; if (p.lat > hi) hi = p.lat; }
-      const h = (hi - lo) * M_PER_DEG_LAT;
-      if (h < minHeightM) minHeightM = h;
-    }
-    if (!isFinite(minHeightM) || minHeightM <= 0) return null;
-    // Floor by 0.5 m so the slider always lands inside, not exactly on the edge.
-    return Math.max(1, Math.floor(minHeightM * 2) / 2 - 0.5);
-  })();
-
-  // ---- Recommended spacing -----------------------------------------------
-  // Home-aware: wider spacing = fewer passes = fewer long returns to/from
-  // home, so the recommendation widens as the home pin moves away from the
-  // field. Capped by both the coverage-max (every anomaly must still be hit)
-  // and the active drone's physical spray swath.
-  const recommendedSpacing = (() => {
-    const base = 15;
-    let rec = base;
-    if (effectiveHome && boundary && boundary.length > 0) {
-      const c = centroidOfRings(boundary as LatLng2[][]);
-      const dHome = distM(effectiveHome, c);
-      const adj = Math.round(Math.max(-5, Math.min(8, (dHome - 60) / 60)));
-      rec = base + adj;
-    }
-    if (coverageMaxM && rec > coverageMaxM) rec = Math.floor(coverageMaxM);
-    const droneSwath = spec?.spray_swath_m && spec.spray_swath_m > 0 ? spec.spray_swath_m : null;
-    if (droneSwath && rec > droneSwath) rec = Math.floor(droneSwath);
-    return Math.max(5, Math.min(22, rec));
-  })();
+  // ---- Pass spacing, from the aircraft ------------------------------------
+  //
+  // One boom width, less the overlap this drone flies with. Nothing else gets
+  // a say: an Agras sprays a full swath per pass, so lines any closer together
+  // are a second dose on ground that already had one — redundant back-and-forth,
+  // wasted flight time, wasted battery, double application. This is the same
+  // swath the Treatment Grid sizes its cells from, so a pass covers a whole
+  // lane of cells and the rate assigned to a cell is a rate one pass can fly.
+  //
+  // The recommendation used to be a 15 m base nudged by how far the home pin
+  // sat from the field and then clamped down by the narrowest zone on the
+  // field. Both were about travel efficiency and both packed the lines far
+  // tighter than the boom, which is the bug this replaces.
+  const swathM = effectiveSwathM(spec);
+  const recommendedSpacing = round1(passSpacingM(spec));
 
   // Auto-snap spacing to the recommended value until the user manually moves
   // the slider. Re-applies whenever the recommendation changes (e.g. home pin
@@ -389,12 +361,13 @@ export function PlannerTab({
   // ---- Maneuverability check ---------------------------------------------
   // Verifies the current pattern (spacing + speeds + altitude deltas) is
   // physically flyable by the active drone:
-  //   1. U-turn radius at row ends must be ≥ drone's tightest physical
-  //      turn radius (spec.min_turn_radius_m). Required radius = spacing / 2.
-  //   2. Bank-limited turn radius at transit speed (r = v² / (g·tan 25°))
-  //      must also fit inside spacing / 2 — otherwise the drone overshoots.
-  //   3. The climb between spray and transit altitude must be sustainable
+  //   1. Bank-limited turn radius at transit speed (r = v² / (g·tan 25°))
+  //      must fit inside spacing / 2 — otherwise the drone overshoots the next
+  //      lane while still turning onto it.
+  //   2. The climb between spray and transit altitude must be sustainable
   //      at the spec'd climb rate within the row-end distance available.
+  //   3. A lane spacing tighter than the aircraft's own turn radius is
+  //      reported, but it is NOT an error — see below.
   const G = 9.81;
   const BANK_RAD = (25 * Math.PI) / 180;
   const maneuver = (() => {
@@ -403,25 +376,32 @@ export function PlannerTab({
     const altDelta = Math.abs(transitAltM - sprayAltM);
     const climbTimeS = altDelta / Math.max(0.5, spec.climb_rate_ms);
     const climbHorizM = climbTimeS * transitSpeed;
-    const failPhysical = rUturnNeeded < spec.min_turn_radius_m;
+    const tightTurn = rUturnNeeded < spec.min_turn_radius_m;
     const failBank = rUturnNeeded < rBankTransit;
     const failClimb = climbHorizM > spacingM * 4;  // need a comfortable runway
     const issues: string[] = [];
-    if (failPhysical) issues.push(
-      `Spacing ${fmtAltitude(spacingM, units).text} forces a ${fmtAltitude(rUturnNeeded, units).text} U-turn, tighter than the ${fmtAltitude(spec.min_turn_radius_m, units).text} physical minimum for this drone.`);
     if (failBank) issues.push(
       `Transit speed ${fmtSpeed(transitSpeed, units).text} needs a ${fmtAltitude(rBankTransit, units).text} banked turn radius, wider than the ${fmtAltitude(rUturnNeeded, units).text} available between rows.`);
     if (failClimb) issues.push(
       `${fmtAltitude(altDelta, units).text} climb at ${fmtSpeed(spec.climb_rate_ms, units).text} needs ~${fmtAltitude(climbHorizM, units).text} of horizontal runway, more than the row-end space allows.`);
-    return { ok: issues.length === 0, issues, rUturnNeeded, rBankTransit, climbHorizM };
+    // Lane spacing is one boom width and is not negotiable, so a turn radius
+    // wider than half a lane is a fact about the turnaround, not a fault in
+    // the pattern: the aircraft swings out past the end of the zone, where it
+    // is already climbing to transit altitude with the sprayer off. Widening
+    // the lanes to make the turn fit — which this used to do — leaves an
+    // unsprayed strip down the middle of every gap, and does it silently.
+    const notes: string[] = [];
+    if (tightTurn) notes.push(
+      `Lanes are ${fmtAltitude(spacingM, units).text} apart, tighter than this drone's ${fmtAltitude(spec.min_turn_radius_m, units).text} turn radius, so each turnaround swings out past the edge of the zone. That is the turn, not the spray.`);
+    return { ok: issues.length === 0, issues, notes, rUturnNeeded, rBankTransit, climbHorizM };
   })();
 
   // ---- Auto-fix ----------------------------------------------------------
   // When the pattern fails maneuverability, nudge parameters until it passes:
   //   • bank-limited fail → drop transit speed to v = sqrt(spacing/2 · g·tan25°)
-  //   • physical-radius fail → widen spacing to 2 · min_turn_radius_m
   //   • climb fail → drop transit/spray altitude delta by raising spray alt
-  // Records what changed so the UI can report the auto-adjustment.
+  // Spacing is deliberately NOT among them. It comes from the boom, and every
+  // other number here may be traded before coverage is.
   const [autoFixNote, setAutoFixNote] = useState<string | null>(null);
   const fixingRef = useRef(false);
   useEffect(() => {
@@ -430,41 +410,32 @@ export function PlannerTab({
     fixingRef.current = true;
     const fixes: string[] = [];
 
-    // 1) Widen spacing if drone physically can't U-turn at current spacing.
-    let newSpacing = spacingM;
-    const minSpacing = Math.ceil(spec.min_turn_radius_m * 2);
-    if (spacingM / 2 < spec.min_turn_radius_m && newSpacing < minSpacing) {
-      newSpacing = Math.min(25, minSpacing);
-      fixes.push(`spacing → ${newSpacing} m`);
-    }
-
-    // 2) Cap transit speed by bank-limited radius for the (possibly new) spacing.
+    // 1) Cap transit speed by the bank-limited radius the lane spacing allows.
     let newTransit = transitSpeed;
-    const vMax = Math.sqrt((newSpacing / 2) * G * Math.tan(BANK_RAD));
+    const vMax = Math.sqrt((spacingM / 2) * G * Math.tan(BANK_RAD));
     if (vMax < transitSpeed) {
       newTransit = Math.max(3, Math.floor(vMax * 2) / 2);
       fixes.push(`transit speed → ${fmtSpeed(newTransit, units).text}`);
     }
 
-    // 3) Reduce climb runway by trimming the altitude delta.
+    // 2) Reduce climb runway by trimming the altitude delta.
     let newSprayAlt = sprayAltM;
     const altDelta = Math.abs(transitAltM - sprayAltM);
     const climbHoriz = (altDelta / Math.max(0.5, spec.climb_rate_ms)) * newTransit;
-    if (climbHoriz > newSpacing * 4) {
-      const allowedDelta = (newSpacing * 4) * spec.climb_rate_ms / Math.max(1, newTransit);
+    if (climbHoriz > spacingM * 4) {
+      const allowedDelta = (spacingM * 4) * spec.climb_rate_ms / Math.max(1, newTransit);
       newSprayAlt = Math.max(1, Math.round((transitAltM - allowedDelta) * 2) / 2);
       if (newSprayAlt !== sprayAltM) fixes.push(`spray altitude → ${newSprayAlt} m`);
     }
 
     if (fixes.length) {
-      if (newSpacing !== spacingM) { userTouchedSpacingRef.current = true; setSpacingM(newSpacing); }
       if (newTransit !== transitSpeed) setTransitSpeed(newTransit);
       if (newSprayAlt !== sprayAltM) setSprayAltM(newSprayAlt);
       setAutoFixNote(`Auto-adjusted: ${fixes.join(" · ")}`);
     }
     // Release after a tick so subsequent renders re-check the fixed values.
     setTimeout(() => { fixingRef.current = false; }, 50);
-  }, [maneuver.ok, spacingM, transitSpeed, sprayAltM, transitAltM, spec.min_turn_radius_m, spec.climb_rate_ms]);
+  }, [maneuver.ok, spacingM, transitSpeed, sprayAltM, transitAltM, spec.climb_rate_ms]);
 
   const mission = (() => {
     if (!boundary || validZones.length === 0 || !effectiveHome) return null;
@@ -1140,23 +1111,39 @@ export function PlannerTab({
           </button>
           {(() => {
             const recommended = recommendedSpacing;
-            const atRec = spacingM === recommended;
+            const atRec = Math.abs(spacingM - recommended) < 0.05;
+            const overlapPct = Math.round(Math.min(0.5, Math.max(0, spec.spray_overlap)) * 100);
             return (
               <>
                 <Slider2
-                  label={`Swath spacing  ·  recommended ${fmtAltitude(recommended, units).text}${atRec ? "  ·  auto" : ""}`}
+                  label={`Pass spacing  ·  one ${fmtAltitude(swathM, units).text} boom${atRec ? "  ·  auto" : ""}`}
                   value={round1(altitudeValue(spacingM, units))}
                   setValue={(n) => { userTouchedSpacingRef.current = true; setSpacingM(altitudeToM(n, units)); }}
-                  min={round1(altitudeValue(3, units))} max={round1(altitudeValue(25, units))}
-                  step={units === "metric" ? 1 : 2} unit={altitudeUnit(units)}
+                  min={round1(altitudeValue(1, units))} max={round1(altitudeValue(25, units))}
+                  step={units === "metric" ? 0.5 : 1} unit={altitudeUnit(units)}
                 />
+                <div className="text-[10px] text-neutral-500 -mt-1 leading-relaxed">
+                  {atRec ? (
+                    <>
+                      Lanes sit one boom apart at {overlapPct}% overlap, so each pass covers
+                      the gap the last one left. Tighter spacing sprays ground twice.
+                    </>
+                  ) : (
+                    <>
+                      Manual. The aircraft sprays {fmtAltitude(swathM, units).text} per pass,
+                      so {spacingM > swathM
+                        ? "lanes wider than the boom leave unsprayed strips between them"
+                        : "tighter lanes double-treat the overlap"}.
+                    </>
+                  )}
+                </div>
                 {!atRec && (
                   <button
                     type="button"
                     onClick={() => { userTouchedSpacingRef.current = false; setSpacingM(recommended); }}
                     className="text-[10px] text-[#4CAF50] hover:underline -mt-1"
                   >
-                    ↺ Reset to recommended ({fmtAltitude(recommended, units).text})
+                    ↺ Back to one boom at {overlapPct}% overlap ({fmtAltitude(recommended, units).text})
                   </button>
                 )}
               </>
@@ -1341,8 +1328,10 @@ export function PlannerTab({
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
           <span>Maneuverability</span>
           <InfoTip>
-            Min turn radius {fmtAltitude(spec.min_turn_radius_m, units).text} · climb {fmtSpeed(spec.climb_rate_ms, units).text}. Spacing and
-            transit speed are auto-tuned so every U-turn fits within the drone&rsquo;s physical limits.
+            Min turn radius {fmtAltitude(spec.min_turn_radius_m, units).text} · climb {fmtSpeed(spec.climb_rate_ms, units).text}.
+            Transit speed and altitude are auto-tuned so every U-turn fits the drone&rsquo;s
+            physical limits. Lane spacing is not: it is one boom width, and widening it
+            to ease a turn would leave unsprayed ground between the passes.
           </InfoTip>
         </div>
         <div className={`rounded-sm border p-3 mb-4 text-xs space-y-2 ${maneuver.ok ? "border-[#1f3a1f]" : "border-amber-900/60"}`}
@@ -1357,6 +1346,11 @@ export function PlannerTab({
           </div>
           {!maneuver.ok && maneuver.issues.map((m, i) => (
             <div key={i} className="text-[11px] text-amber-200/80 leading-relaxed">• {m}</div>
+          ))}
+          {/* Stated, not fixed: these describe how the turnaround will look,
+              and the fix for them would be to widen the lanes past the boom. */}
+          {maneuver.notes.map((m, i) => (
+            <div key={`n${i}`} className="text-[11px] text-neutral-400 leading-relaxed">• {m}</div>
           ))}
           {autoFixNote && (
             <div className="text-[11px] text-[#4CAF50] leading-relaxed pt-1 border-t border-[#1f1f1f]">
@@ -1604,7 +1598,9 @@ export function PlannerTab({
           };
         })}
         totalAcres={
-          // Sprayed acres = sprayed distance × effective swath
+          // Sprayed acres = sprayed distance × LANE spacing, not the boom
+          // width. The lanes tile the ground exactly once; multiplying by the
+          // boom instead would bill the deliberate overlap twice.
           mission ? (mission.sprayDistM * spacingM) / 4046.8564224 : 0
         }
         estLiters={

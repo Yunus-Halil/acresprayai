@@ -23,6 +23,17 @@ export type DroneSpec = {
   max_speed_ms: number;      // max horizontal speed
   spray_swath_m: number;     // effective swath at typical AGL (0 = non-sprayer)
   spray_rate_lpm: number;    // nominal flow rate, litres/min (0 = non-sprayer)
+  /**
+   * Fraction of the swath that adjacent passes deliberately share, 0–0.5.
+   *
+   * TUNABLE STARTING GUESS, NOT A VERIFIED FIGURE. 10% is the conventional
+   * rule of thumb for keeping coverage even where the edge of the spray
+   * pattern thins out and where GPS wander puts the aircraft a little off the
+   * line. The right number differs by nozzle, height, droplet size and wind,
+   * and it is per-drone here so it can be corrected per airframe as real
+   * coverage cards come back from the field.
+   */
+  spray_overlap: number;
   min_turn_radius_m: number; // tightest physically achievable horizontal turn
   climb_rate_ms: number;     // max sustained vertical climb rate
   range_m: number;           // practical command-and-control range
@@ -38,6 +49,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     role: "sprayer",
     tank_l: 40, payload_kg: 50, max_flight_min: 18, max_speed_ms: 10,
     spray_swath_m: 9, spray_rate_lpm: 24,
+    spray_overlap: 0.10,
     min_turn_radius_m: 4, climb_rate_ms: 6,
     range_m: 1500, weight_kg: 65.5,
     wingspan: "2.8 m folded → 6.2 m deployed", ip: "IP67",
@@ -46,6 +58,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     role: "sprayer",
     tank_l: 30, payload_kg: 40, max_flight_min: 18, max_speed_ms: 10,
     spray_swath_m: 6.5, spray_rate_lpm: 8,
+    spray_overlap: 0.10,
     min_turn_radius_m: 3.5, climb_rate_ms: 6,
     range_m: 1500, weight_kg: 58,
     wingspan: "2.6 m folded → 5.5 m deployed", ip: "IP67",
@@ -54,6 +67,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     role: "sprayer",
     tank_l: 20, payload_kg: 25, max_flight_min: 18, max_speed_ms: 10,
     spray_swath_m: 7, spray_rate_lpm: 16,
+    spray_overlap: 0.10,
     min_turn_radius_m: 3, climb_rate_ms: 6,
     range_m: 1200, weight_kg: 42,
     wingspan: "2.2 m folded → 4.7 m deployed", ip: "IP67",
@@ -62,6 +76,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     role: "sprayer",
     tank_l: 50, payload_kg: 50, max_flight_min: 18, max_speed_ms: 13.8,
     spray_swath_m: 10, spray_rate_lpm: 22,
+    spray_overlap: 0.10,
     min_turn_radius_m: 4.5, climb_rate_ms: 5,
     range_m: 1000, weight_kg: 75,
     wingspan: "3.2 m folded", ip: "IP67",
@@ -70,6 +85,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     role: "sprayer",
     tank_l: 16, payload_kg: 20, max_flight_min: 18, max_speed_ms: 13.8,
     spray_swath_m: 5, spray_rate_lpm: 8,
+    spray_overlap: 0.10,
     min_turn_radius_m: 3.5, climb_rate_ms: 5,
     range_m: 1000, weight_kg: 40,
     wingspan: "2.6 m folded", ip: "IP67",
@@ -78,6 +94,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     role: "survey",
     tank_l: 0, payload_kg: 0, max_flight_min: 43, max_speed_ms: 21,
     spray_swath_m: 0, spray_rate_lpm: 0,
+    spray_overlap: 0.10,
     min_turn_radius_m: 1, climb_rate_ms: 8,
     range_m: 6000, weight_kg: 0.95,
     wingspan: "0.38 m unfolded", ip: "-",
@@ -86,6 +103,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     role: "survey",
     tank_l: 0, payload_kg: 0, max_flight_min: 32, max_speed_ms: 14.7,
     spray_swath_m: 0, spray_rate_lpm: 0,
+    spray_overlap: 0.10,
     min_turn_radius_m: 1, climb_rate_ms: 4,
     range_m: 4000, weight_kg: 0.5,
     wingspan: "0.24 m unfolded", ip: "IP53",
@@ -94,6 +112,7 @@ export const DRONE_SPECS: Record<string, DroneSpec> = {
     role: "sprayer",
     tank_l: 30, payload_kg: 40, max_flight_min: 20, max_speed_ms: 10,
     spray_swath_m: 6, spray_rate_lpm: 12,
+    spray_overlap: 0.10,
     min_turn_radius_m: 3, climb_rate_ms: 5,
     range_m: 1000, weight_kg: 50,
     wingspan: "-", ip: "-",
@@ -140,6 +159,41 @@ export function resolveDroneSpec(
     key: model || "Custom",
     isCustom: true,
   };
+}
+
+/**
+ * The swath to plan against, in metres.
+ *
+ * A non-sprayer has no swath at all, and a spec loaded from an older saved
+ * profile can be missing the field entirely, so both fall back to the Custom
+ * profile's width rather than to zero — a zero would divide a field into
+ * infinitely many passes. The Treatment Grid sizes its cells from this and the
+ * Flight Planner spaces its passes from it, which is the point: the lane the
+ * aircraft flies and the cell the rate is assigned to are the same width.
+ */
+export function effectiveSwathM(spec: Pick<DroneSpec, "spray_swath_m">): number {
+  return spec.spray_swath_m > 0 ? spec.spray_swath_m : DEFAULT_SPEC.spray_swath_m;
+}
+
+/**
+ * Distance between adjacent parallel passes, in metres.
+ *
+ * One boom width, less the overlap the drone is configured to fly with. A T40
+ * at 9 m and 10% therefore puts its lines 8.1 m apart: each pass covers the
+ * gap the last one left, with 0.9 m of margin for wander and for the thinner
+ * edge of the pattern. Spacing the lines any tighter is not extra safety, it
+ * is a second dose on ground that already had one, paid for in chemical,
+ * flight time and battery.
+ *
+ * Overlap is clamped to half a swath. Past that the passes are closer together
+ * than they are wide, which is double application by construction.
+ */
+export function passSpacingM(spec: Pick<DroneSpec, "spray_swath_m" | "spray_overlap">): number {
+  const swath = effectiveSwathM(spec);
+  const overlap = Number.isFinite(spec.spray_overlap)
+    ? Math.min(0.5, Math.max(0, spec.spray_overlap))
+    : DEFAULT_SPEC.spray_overlap;
+  return swath * (1 - overlap);
 }
 
 /**
