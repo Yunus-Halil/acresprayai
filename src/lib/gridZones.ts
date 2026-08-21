@@ -22,7 +22,7 @@
 // one-calculation-path rule the mission stats follow.
 import { type LatLng2, M_PER_DEG_LAT, mPerDegLng, rotateLL } from "./geo";
 import { parseCellId } from "./gridMigrate";
-import { type TreatmentGrid, cellSizeM } from "./treatmentGrid";
+import { type CellId, type TreatmentGrid, cellSizeM } from "./treatmentGrid";
 
 export type GridZone = {
   /** Stable within a grid: derived from the gridId and the group's anchor cell. */
@@ -32,6 +32,15 @@ export type GridZone = {
   /** Σ member cells' clipped areas — the number the prescription is priced on. */
   areaM2: number;
   cellCount: number;
+  /**
+   * The cells this shape is a projection of.
+   *
+   * Carried so an edit made ON the zone can be written to the cells that
+   * compose it, which is the only place a classification is allowed to live.
+   * Without this a caller would have to re-derive membership from the ring and
+   * could get a different answer than the projection did.
+   */
+  cellIds: CellId[];
   source: "grid";
   /**
    * The operator's own classification, or undefined — which readers must show
@@ -39,6 +48,8 @@ export type GridZone = {
    * hand-drawn anomaly polygons.
    */
   issue?: string;
+  /** The operator's own words about this ground, if they wrote any. */
+  note?: string;
   /**
    * Mean Find-Similar score over the member cells that carry one, or null when
    * none do. This is a MATCH score, not a confidence: it says how much this
@@ -48,7 +59,7 @@ export type GridZone = {
   matchScore: number | null;
 };
 
-type Cell = { col: number; row: number; areaM2: number; score: number | null };
+type Cell = { id: CellId; col: number; row: number; areaM2: number; score: number | null };
 
 /**
  * All treated cells, grouped and outlined.
@@ -58,27 +69,33 @@ type Cell = { col: number; row: number; areaM2: number; score: number | null };
  * moves between renders is a rate override landing on the wrong zone.
  */
 export function gridZonesFor(grid: TreatmentGrid): GridZone[] {
-  // Bucket treated cells by (rate, issue); contiguity is found within a
+  // Bucket treated cells by (rate, issue, note); contiguity is found within a
   // bucket. Issue splits a bucket for the same reason rate does: a zone
   // carries ONE classification, and merging "weed pressure" ground into a
-  // "bare soil" zone would misdescribe both.
-  const byKey = new Map<string, { rateLha: number; issue?: string; cells: Map<string, Cell> }>();
+  // "bare soil" zone would misdescribe both. The note splits it for the same
+  // reason again — a popup showing one note over cells that disagree would be
+  // showing a note about ground it does not describe.
+  type Bucket = { rateLha: number; issue?: string; note?: string; cells: Map<string, Cell> };
+  const byKey = new Map<string, Bucket>();
   for (const c of grid.cells) {
     if (c.rate.state !== "treated") continue;
     const parsed = parseCellId(c.id);
     if (!parsed) continue;
     const issue = c.rate.issue;
-    const key = `${c.rate.rateLha}|${issue ?? ""}`;
+    const note = c.rate.note;
+    // NUL separates the parts: it cannot occur in an issue or a note, so no
+    // combination of the two can collide with a different combination.
+    const key = `${c.rate.rateLha}\u0000${issue ?? ""}\u0000${note ?? ""}`;
     let bucket = byKey.get(key);
-    if (!bucket) byKey.set(key, (bucket = { rateLha: c.rate.rateLha, issue, cells: new Map() }));
+    if (!bucket) byKey.set(key, (bucket = { rateLha: c.rate.rateLha, issue, note, cells: new Map() }));
     bucket.cells.set(`${parsed.col},${parsed.row}`, {
-      col: parsed.col, row: parsed.row, areaM2: c.areaM2,
+      id: c.id, col: parsed.col, row: parsed.row, areaM2: c.areaM2,
       score: c.detection?.score ?? null,
     });
   }
 
   const zones: GridZone[] = [];
-  for (const [, { rateLha, issue, cells: bucket }] of
+  for (const [, { rateLha, issue, note, cells: bucket }] of
        [...byKey.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
     const seen = new Set<string>();
     const keys = [...bucket.keys()].sort();
@@ -98,7 +115,7 @@ export function gridZonesFor(grid: TreatmentGrid): GridZone[] {
           if (bucket.has(nk) && !seen.has(nk)) { seen.add(nk); queue.push(nk); }
         }
       }
-      zones.push(...zonesFromGroup(grid, group, rateLha, issue));
+      zones.push(...zonesFromGroup(grid, group, rateLha, issue, note));
     }
   }
   return zones;
@@ -106,7 +123,7 @@ export function gridZonesFor(grid: TreatmentGrid): GridZone[] {
 
 /** One contiguous same-rate group → one polygon, or strips when it has holes. */
 function zonesFromGroup(
-  grid: TreatmentGrid, group: Cell[], rateLha: number, issue?: string,
+  grid: TreatmentGrid, group: Cell[], rateLha: number, issue?: string, note?: string,
 ): GridZone[] {
   const loops = traceOutline(group);
   const anchor = group.reduce((a, c) => (c.row < a.row || (c.row === a.row && c.col < a.col) ? c : a));
@@ -120,7 +137,9 @@ function zonesFromGroup(
     return [{
       id: `grid:${grid.id}:${anchor.col}:${anchor.row}`,
       ring: loops[0].map(v => latticeToWorld(grid, v.x, v.y)),
-      rateLha, areaM2, cellCount: group.length, source: "grid", issue, matchScore,
+      rateLha, areaM2, cellCount: group.length,
+      cellIds: group.map(c => c.id).sort(),
+      source: "grid", issue, note, matchScore,
     }];
   }
 
@@ -151,8 +170,10 @@ function zonesFromGroup(
         rateLha,
         areaM2: run.reduce((s, c) => s + c.areaM2, 0),
         cellCount: run.length,
+        cellIds: run.map(c => c.id).sort(),
         source: "grid",
         issue,
+        note,
         matchScore: stripScored.length
           ? stripScored.reduce((s, c) => s + (c.score as number), 0) / stripScored.length
           : null,
@@ -186,7 +207,7 @@ type V = { x: number; y: number };
  * the rightmost available turn, which keeps each loop simple instead of
  * figure-eighting through the pinch.
  */
-export function traceOutline(cells: Cell[]): V[][] {
+export function traceOutline(cells: readonly { col: number; row: number }[]): V[][] {
   const dirs: Record<string, true> = {};
   const key = (a: V, b: V) => `${a.x},${a.y}>${b.x},${b.y}`;
   const add = (a: V, b: V) => {

@@ -18,7 +18,10 @@
 // all mutate the cells, and the projections cannot disagree with them.
 import type { LatLng2 } from "./geo";
 import { type GridZone, gridZonesFor } from "./gridZones";
-import { type CellRate, boundaryHashOf, buildTreatmentGrid } from "./treatmentGrid";
+import {
+  type CellRate, boundaryHashOf, buildTreatmentGrid, normalizeNote,
+} from "./treatmentGrid";
+import type { TreatmentGridRepository } from "./treatmentGridStore";
 import { applyStored, packGrid } from "./treatmentGridStore";
 import { SupabaseTreatmentGridRepository } from "./treatmentGridRepo";
 
@@ -48,15 +51,118 @@ export type GridZonesLoad = {
 export async function loadGridZones(
   fieldId: string | null,
   boundary: LatLng2[][] | null,
+  repository: TreatmentGridRepository = repo,
 ): Promise<GridZonesLoad | null> {
   if (!fieldId || !boundary || boundary.length === 0) return null;
-  const stored = await repo.load(fieldId);
+  const stored = await repository.load(fieldId);
   if (!stored) return null;
   if (stored.definition.boundaryHash !== boundaryHashOf(boundary)) {
     return { zones: [], stale: true };
   }
   const grid = applyStored(buildTreatmentGrid(boundary, stored.definition), stored);
   return { zones: gridZonesFor(grid), stale: false };
+}
+
+/**
+ * An edit to a zone's description. Both fields are optional and tri-state:
+ * absent leaves the current value alone, null clears it, a string sets it.
+ */
+export type ZoneClassification = {
+  /** From USER_POLY_ISSUES, or null for Unclassified. */
+  issue?: string | null;
+  note?: string | null;
+};
+
+export type ClassifyResult = {
+  /** Freshly derived zones, so a caller can redraw without a second read. */
+  zones: GridZone[];
+  /** Cells actually written. Zero means the zone had already left the grid. */
+  cells: number;
+};
+
+/**
+ * Writes are serialised.
+ *
+ * Every write here is a read-modify-write of one JSON column, so two of them
+ * in flight at once means the second one's read predates the first one's write
+ * and silently reverts it. An operator classifying a zone and typing a note in
+ * the same breath is exactly that race, so the queue is not theoretical.
+ */
+let writeQueue: Promise<unknown> = Promise.resolve();
+function serialise<T>(work: () => Promise<T>): Promise<T> {
+  const next = writeQueue.then(work, work);
+  // Keep the chain alive after a rejection: one failed write must not wedge
+  // every later one.
+  writeQueue = next.catch(() => undefined);
+  return next;
+}
+
+/**
+ * Set the issue and/or note on a zone, by writing them to the cells it is a
+ * projection of.
+ *
+ * WHY THE CELLS AND NOT THE ZONE. A zone is derived on read from contiguous
+ * same-rate cells (see gridZones.ts); it has no record of its own to store
+ * anything in. Writing a per-zone classification somewhere else would create a
+ * second copy that drifts the moment a cell is repainted, and there would be no
+ * principled answer to which one is true. So the shape is edited exactly where
+ * the Treatment Grid tab edits it: on the cells. That is also what makes the
+ * round trip work in both directions for free.
+ *
+ * METADATA ONLY. `state`, `rateLha` and `source` are copied through untouched.
+ * Classifying ground says what is wrong with it, never what to spray on it.
+ *
+ * Returns null when there is no grid to write to, or when the stored grid was
+ * built for a different boundary — the caller must not silently create one.
+ */
+export async function classifyGridZone(
+  fieldId: string,
+  boundary: LatLng2[][],
+  zoneId: string,
+  patch: ZoneClassification,
+  repository: TreatmentGridRepository = repo,
+): Promise<ClassifyResult | null> {
+  return serialise(async () => {
+    const stored = await repository.load(fieldId);
+    if (!stored) return null;
+    if (stored.definition.boundaryHash !== boundaryHashOf(boundary)) return null;
+
+    const grid = applyStored(buildTreatmentGrid(boundary, stored.definition), stored);
+    const zone = gridZonesFor(grid).find(z => z.id === zoneId);
+    if (!zone) return null;
+
+    const members = new Set(zone.cellIds);
+    const issue = patch.issue === undefined
+      ? undefined
+      : (patch.issue?.trim() ? patch.issue.trim() : null);
+    const note = patch.note === undefined
+      ? undefined
+      : (normalizeNote(patch.note) ?? null);
+
+    let written = 0;
+    const next = {
+      ...grid,
+      cells: grid.cells.map(c => {
+        if (!members.has(c.id) || c.rate.state !== "treated") return c;
+        written++;
+        const nextIssue = issue === undefined ? c.rate.issue : (issue ?? undefined);
+        const nextNote = note === undefined ? c.rate.note : (note ?? undefined);
+        // Rebuilt field by field rather than spread, so that the three
+        // treatment-bearing fields are visibly copied through unchanged.
+        const rate: CellRate = {
+          state: "treated",
+          rateLha: c.rate.rateLha,
+          source: c.rate.source,
+          ...(nextIssue ? { issue: nextIssue } : {}),
+          ...(nextNote ? { note: nextNote } : {}),
+        };
+        return { ...c, rate };
+      }),
+    };
+
+    await repository.save(fieldId, packGrid(next));
+    return { zones: gridZonesFor(next), cells: written };
+  });
 }
 
 export type ClearZonesSummary = {

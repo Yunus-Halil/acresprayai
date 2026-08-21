@@ -153,11 +153,38 @@ export type CellRate =
        * and honest: a painted cell with no issue set is UNCLASSIFIED, never
        * guessed. Uses the same vocabulary as hand-drawn anomaly polygons
        * (USER_POLY_ISSUES) so the two flag the same kinds of things.
+       *
+       * METADATA ONLY. Neither this nor `note` may influence what is treated
+       * or at what rate — classifying ground describes it, it does not spray
+       * it. Every writer of these two fields must leave `state`, `rateLha` and
+       * `source` exactly as they found them.
        */
       issue?: string;
+      /**
+       * The operator's own words about this ground: "third year running",
+       * "check drainage". Free text, short, and never parsed — it exists so a
+       * triage decision made in the field survives the walk back to the truck.
+       */
+      note?: string;
     };
 
 export const UNASSIGNED: CellRate = { state: "untreated", source: "default" };
+
+/**
+ * Ceiling on a cell note, in characters.
+ *
+ * The whole grid lives in one JSON column and a note is stored per cell, so a
+ * zone of 200 cells carrying an essay each is how that column stops loading.
+ * Short by design: this is a margin annotation, not a report.
+ */
+export const MAX_NOTE_CHARS = 200;
+
+/** A note as it may be stored: trimmed, capped, or absent entirely. */
+export function normalizeNote(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return trimmed ? trimmed.slice(0, MAX_NOTE_CHARS) : undefined;
+}
 
 /** Raw detection output, kept separate from the rate it may imply. */
 export type CellDetection = {

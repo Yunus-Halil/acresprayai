@@ -14,7 +14,7 @@ import {
   type PackedDetection, type StoredGrid, type TreatmentGridRepository,
   GridStoreTooLargeError,
 } from "./treatmentGridStore";
-import { MAX_CELLS } from "./treatmentGrid";
+import { MAX_CELLS, normalizeNote } from "./treatmentGrid";
 
 /** The single key inside `fields.settings` that the grid occupies. */
 export const GRID_SETTINGS_KEY = "treatment_grid";
@@ -55,10 +55,14 @@ export function parseStoredGrid(raw: unknown): StoredGrid | null {
       } else if (rate.state === "treated" && typeof rate.rateLha === "number"
                  && isFinite(rate.rateLha) && rate.rateLha > 0) {
         const issue = (rate as { issue?: unknown }).issue;
+        const note = normalizeNote((rate as { note?: unknown }).note);
         rates[id] = {
           state: "treated", rateLha: rate.rateLha, source: rate.source,
-          // The issue tag survives the round trip; junk in the column does not.
+          // The issue tag and note survive the round trip; junk in the column
+          // does not. A note is capped here as well as in the editor, because
+          // this parser is the last gate before the value is trusted.
           ...(typeof issue === "string" && issue.trim() ? { issue } : {}),
+          ...(note ? { note } : {}),
         };
       }
     }

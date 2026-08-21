@@ -303,7 +303,13 @@ export function FieldViewTab(props: {
           <UserPolyLayer polys={userPolys} onDelete={deleteUserPolygon} />
         )}
         {layers.gridZones && gridZoneLoad && gridZoneLoad.zones.length > 0 && (
-          <GridAnomaliesLayer zones={gridZoneLoad.zones} />
+          // fieldId and boundary are what let the popup write a classification
+          // back to the cells the shape is drawn from.
+          <GridAnomaliesLayer
+            zones={gridZoneLoad.zones}
+            fieldId={props.fieldId}
+            boundary={props.boundary as LatLng2[][] | null}
+          />
         )}
         {userPolyToolActive && (
           <UserPolygonTool

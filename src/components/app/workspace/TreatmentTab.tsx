@@ -24,8 +24,8 @@ import { type DroneSpec } from "@/lib/droneSpecs";
 import { type LatLng2, bboxOfRings, ringsAreaM2 } from "@/lib/geo";
 import {
   type CellId, type CellRate, type GridDefinition, type TreatmentGrid,
-  GridTooLargeError, buildTreatmentGrid, gridDefinitionFor, gridIdFor, gridTotals,
-  regenerationImpact,
+  GridTooLargeError, MAX_NOTE_CHARS, buildTreatmentGrid, gridDefinitionFor, gridIdFor,
+  gridTotals, normalizeNote, regenerationImpact,
 } from "@/lib/treatmentGrid";
 import { GridStoreTooLargeError, applyStored, packGrid } from "@/lib/treatmentGridStore";
 import { extractCellFeatures, samplingVerdict } from "@/lib/cellFeatures";
@@ -74,6 +74,9 @@ export function TreatmentTab({
   // the app never guesses a category, and the anomaly views say "Unclassified"
   // rather than inventing one. Same vocabulary as hand-drawn polygons.
   const [issueTag, setIssueTag] = useState<string>("");
+  // The operator's own words, painted onto cells alongside the issue tag. The
+  // same field the Field View zone popup writes — one record, two ways in.
+  const [noteTag, setNoteTag] = useState<string>("");
   const [paintAction, setPaintAction] = useState<"treat" | "skip" | "clear">("treat");
   const [grid, setGrid] = useState<TreatmentGrid | null>(null);
   const [buildError, setBuildError] = useState<string | null>(null);
@@ -230,30 +233,34 @@ export function TreatmentTab({
     }));
   }, []);
 
+  /** What a "treat" stroke writes: the rate, plus how it was described. */
+  const treatedRate = useCallback((): CellRate => {
+    const note = normalizeNote(noteTag);
+    return {
+      state: "treated", rateLha, source: "operator",
+      ...(issueTag ? { issue: issueTag } : {}),
+      ...(note ? { note } : {}),
+    };
+  }, [rateLha, issueTag, noteTag]);
+
   const onPaintCells = useCallback((ids: CellId[]) => {
     // `source: "operator"` is the marker a later threshold pass must respect.
     // Everything painted here is a hand decision, including "leave this alone".
     if (paintAction === "treat") {
-      mutate(ids, () => ({
-        state: "treated", rateLha, source: "operator",
-        ...(issueTag ? { issue: issueTag } : {}),
-      }));
+      mutate(ids, treatedRate);
     } else if (paintAction === "skip") {
       mutate(ids, () => ({ state: "untreated", source: "operator" }));
     } else {
       mutate(ids, () => ({ state: "untreated", source: "default" }));
     }
-  }, [paintAction, rateLha, issueTag, mutate]);
+  }, [paintAction, treatedRate, mutate]);
 
   const onPickCell = useCallback((id: CellId | null) => {
     // While a review is live, clicking a suggested cell ACCEPTS it — the same
     // gesture that marks a cell manually, extended rather than replaced. Cells
     // that are not candidates keep the normal inspect behaviour.
     if (id && candidates?.has(id)) {
-      mutate([id], () => ({
-        state: "treated", rateLha, source: "operator",
-        ...(issueTag ? { issue: issueTag } : {}),
-      }));
+      mutate([id], treatedRate);
       setCandidates(prev => {
         if (!prev) return prev;
         const next = new Map(prev);
@@ -263,7 +270,7 @@ export function TreatmentTab({
       return;
     }
     setSelected(id ? new Set([id]) : new Set());
-  }, [candidates, mutate, rateLha, issueTag]);
+  }, [candidates, mutate, treatedRate]);
 
   // Any decision made by any tool prunes the suggestion list: a cell that has
   // left its default state — accepted here, painted, or skip-rejected with the
@@ -748,6 +755,19 @@ export function TreatmentTab({
                   Tags the cells you paint. Optional, untagged ground shows as
                   Unclassified in the anomaly views, never a guessed category.
                 </div>
+                <div className="text-[11px] text-neutral-500 mt-3 mb-1">Note</div>
+                <textarea
+                  value={noteTag}
+                  onChange={e => setNoteTag(e.target.value.slice(0, MAX_NOTE_CHARS))}
+                  rows={2}
+                  maxLength={MAX_NOTE_CHARS}
+                  placeholder="e.g. third year running, check drainage"
+                  className="w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-xs text-[#f0f0f0] focus:outline-none focus:border-[#4CAF50] resize-none"
+                />
+                <div className="text-[10px] text-neutral-600 mt-1 leading-relaxed">
+                  Painted onto the cells with the tag. The same note the Field
+                  View zone popup shows and edits.
+                </div>
               </div>
             )}
 
@@ -825,10 +845,7 @@ export function TreatmentTab({
                   <div className="flex gap-1.5 mb-2">
                     <button
                       onClick={() => {
-                        mutate([...candidates.keys()], () => ({
-                          state: "treated", rateLha, source: "operator",
-                          ...(issueTag ? { issue: issueTag } : {}),
-                        }));
+                        mutate([...candidates.keys()], treatedRate);
                         setCandidates(null);
                       }}
                       className="flex-1 text-[11px] rounded-sm px-2 py-1.5 bg-amber-500/90 hover:bg-amber-400 text-black font-semibold">
@@ -893,6 +910,11 @@ export function TreatmentTab({
                       <div className="text-right font-mono text-neutral-200">
                         {selectedCell.rate.issue ?? "Unclassified"}
                       </div>
+                      {selectedCell.rate.note && (
+                        <div className="col-span-2 text-[11px] text-neutral-300 bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 mt-1 leading-relaxed whitespace-pre-wrap break-words">
+                          {selectedCell.rate.note}
+                        </div>
+                      )}
                     </>
                   )}
                   {selectedCell.clipped && (
