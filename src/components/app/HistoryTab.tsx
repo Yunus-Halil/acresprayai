@@ -4,11 +4,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CheckCircle2, Clock, FileBarChart, Plane, ChevronsLeftRight, X } from "lucide-react";
+import { Loader2, CheckCircle2, Clock, FileBarChart, Plane, Columns2, X } from "lucide-react";
 import { area as turfArea } from "@turf/area";
 import { polygon as turfPolygon } from "@turf/helpers";
 import Timelapse from "@/components/app/Timelapse";
+import ScanCompare from "@/components/app/ScanCompare";
 import { isPlayable } from "@/lib/timelapse";
+import { compareSelectionError, isComparable, notComparableReason } from "@/lib/scanLayers";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 const FN_BASE = `https://${PROJECT_REF}.supabase.co/functions/v1`;
@@ -87,76 +89,12 @@ function MiniMap({ task, boundary, token }: { task: Task; boundary: Ring[] | nul
   return <div ref={ref} className="h-40 rounded bg-[#0a0a0a] border border-[#1f1f1f] overflow-hidden" />;
 }
 
-function CompareMap({ a, b, boundary, token }: { a: Task; b: Task; boundary: Ring[] | null; token: string | null }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const [pct, setPct] = useState(50);
-  const topPaneRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!ref.current || !a.odm_uuid || !b.odm_uuid || !token) return;
-    const map = L.map(ref.current, { zoomControl: true, attributionControl: false });
-    // Bottom layer (older = a): ortho + ndvi
-    const bottomPane = map.createPane("histBottom") as HTMLElement; bottomPane.style.zIndex = "300";
-    const topPane = map.createPane("histTop") as HTMLElement; topPane.style.zIndex = "400";
-    topPaneRef.current = topPane;
-    const q = `?token=${token}`;
-    L.tileLayer(`${TILE_BASE}/${a.odm_uuid}/{z}/{x}/{y}.png${q}`, { pane: "histBottom", maxZoom: 22 }).addTo(map);
-    L.tileLayer(`${NDVI_BASE}/${a.id}/{z}/{x}/{y}.png${q}`, { pane: "histBottom", maxZoom: 22, opacity: 0.7 }).addTo(map);
-    L.tileLayer(`${TILE_BASE}/${b.odm_uuid}/{z}/{x}/{y}.png${q}`, { pane: "histTop", maxZoom: 22 }).addTo(map);
-    L.tileLayer(`${NDVI_BASE}/${b.id}/{z}/{x}/{y}.png${q}`, { pane: "histTop", maxZoom: 22, opacity: 0.7 }).addTo(map);
-    const bb = boundsFromRings(boundary);
-    if (bb) map.fitBounds(bb, { padding: [20, 20] });
-    return () => { map.remove(); topPaneRef.current = null; };
-  }, [a.id, b.id, a.odm_uuid, b.odm_uuid, boundary, token]);
-
-  useEffect(() => {
-    if (topPaneRef.current) topPaneRef.current.style.clipPath = `inset(0 0 0 ${pct}%)`;
-  }, [pct]);
-
-  const onDrag = (e: React.MouseEvent | React.TouchEvent) => {
-    const wrap = wrapRef.current; if (!wrap) return;
-    const move = (clientX: number) => {
-      const r = wrap.getBoundingClientRect();
-      const x = Math.max(0, Math.min(r.width, clientX - r.left));
-      setPct((x / r.width) * 100);
-    };
-    const mm = (ev: MouseEvent) => move(ev.clientX);
-    const tm = (ev: TouchEvent) => move(ev.touches[0].clientX);
-    const up = () => {
-      window.removeEventListener("mousemove", mm);
-      window.removeEventListener("mouseup", up);
-      window.removeEventListener("touchmove", tm);
-      window.removeEventListener("touchend", up);
-    };
-    window.addEventListener("mousemove", mm);
-    window.addEventListener("mouseup", up);
-    window.addEventListener("touchmove", tm);
-    window.addEventListener("touchend", up);
-    if ("touches" in e) move(e.touches[0].clientX); else move((e as React.MouseEvent).clientX);
-  };
-
-  return (
-    <div ref={wrapRef} className="relative h-[420px] rounded border border-[#1f1f1f] overflow-hidden bg-[#0a0a0a]">
-      <div ref={ref} className="absolute inset-0" />
-      <div className="absolute top-2 left-2 text-[10px] uppercase tracking-wider bg-black/70 px-2 py-1 rounded text-neutral-300 pointer-events-none">
-        Older · {new Date(a.created_at).toLocaleDateString()}
-      </div>
-      <div className="absolute top-2 right-2 text-[10px] uppercase tracking-wider bg-black/70 px-2 py-1 rounded text-neutral-300 pointer-events-none">
-        Newer · {new Date(b.created_at).toLocaleDateString()}
-      </div>
-      <div
-        onMouseDown={onDrag as any} onTouchStart={onDrag as any}
-        className="absolute top-0 bottom-0 w-1 bg-white/90 cursor-ew-resize z-[500] -translate-x-1/2"
-        style={{ left: `${pct}%` }}
-      >
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-white shadow-lg flex items-center justify-center">
-          <ChevronsLeftRight className="h-4 w-4 text-black" />
-        </div>
-      </div>
-    </div>
-  );
-}
+// The swipe-over-one-map compare that used to live here is gone. It was a third
+// hand-rolled L.map beside MiniMap and the Field View's own renderer, it stacked
+// the index layer over both scans with no way to turn it off, and a single map
+// cannot show two scans as two pictures — only as one picture cut in half. See
+// components/app/ScanCompare.tsx, which runs the real renderer twice and keeps
+// the swipe as one of its two layouts.
 
 export default function HistoryTab({
   fieldId, fieldName, boundary, currentTaskId, openTask,
@@ -229,13 +167,19 @@ export default function HistoryTab({
     [tasks],
   );
 
+  const [comparing, setComparing] = useState(false);
+
   const toggle = (id: string) => {
     setSelected(s => {
       if (s.includes(id)) return s.filter(x => x !== id);
       const next = [...s, id];
+      // Rolling window of two: a third click replaces the oldest rather than
+      // being ignored, so picking the wrong scan is one click to fix.
       return next.length > 2 ? next.slice(-2) : next;
     });
   };
+
+  const selectionError = compareSelectionError(selected);
 
   const [aId, bId] = selected.length === 2
     ? [...selected].sort((x, y) => {
@@ -249,6 +193,21 @@ export default function HistoryTab({
   const aStress = a ? stats.get(a.id)!.stressed : 0;
   const bStress = b ? stats.get(b.id)!.stressed : 0;
   const delta = a && b && aStress > 0 ? ((bStress - aStress) / aStress) * 100 : 0;
+
+  // Compare takes over the whole panel. Two orthomosaics at a useful size do not
+  // fit under a scrolling list of cards, and the point of the view is to look
+  // closely at both at once.
+  if (comparing && a && b) {
+    return (
+      <ScanCompare
+        left={a}
+        right={b}
+        boundary={boundary}
+        token={token}
+        onExit={() => setComparing(false)}
+      />
+    );
+  }
 
   return (
     <div className="flex-1 min-h-0 overflow-auto p-6 bg-[#0a0a0a]">
@@ -278,12 +237,21 @@ export default function HistoryTab({
               const flown = !!logs[t.id];
               const isCurrent = t.id === currentTaskId;
               const isSelected = selected.includes(t.id);
+              // A scan with no baked tiles has nothing to draw in a pane, so it
+              // is not offered for comparison — with the reason, rather than a
+              // card that just refuses to respond to clicks.
+              const blocked = notComparableReason(t);
               return (
                 <Card
                   key={t.id}
-                  onClick={() => toggle(t.id)}
-                  className={`p-4 cursor-pointer transition border bg-[#111] ${
-                    isSelected ? "border-cyan-500 ring-1 ring-cyan-500/40" : "border-[#1f1f1f] hover:border-[#333]"
+                  onClick={() => { if (!blocked) toggle(t.id); }}
+                  title={blocked ?? undefined}
+                  className={`p-4 transition border bg-[#111] ${
+                    blocked
+                      ? "cursor-not-allowed border-[#1f1f1f] opacity-60"
+                      : isSelected
+                        ? "cursor-pointer border-cyan-500 ring-1 ring-cyan-500/40"
+                        : "cursor-pointer border-[#1f1f1f] hover:border-[#333]"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -305,6 +273,7 @@ export default function HistoryTab({
                   <div className="mt-3 space-y-1 text-xs text-neutral-400">
                     <div><span className="text-neutral-100">{s.zones}</span> zone{s.zones === 1 ? "" : "s"} found</div>
                     <div><span className="text-neutral-100">{s.stressed.toFixed(2)} ac</span> stressed</div>
+                    {blocked && <div className="text-[11px] text-amber-500/80">{blocked}</div>}
                     <div className="flex items-center gap-1">
                       {flown
                         ? <Badge variant="outline" className="border-emerald-600 text-emerald-400 text-[10px] gap-1"><CheckCircle2 className="h-3 w-3" /> Mission flown</Badge>
@@ -335,15 +304,37 @@ export default function HistoryTab({
           <Timelapse scans={playable} boundary={boundary} token={token} />
         )}
 
-        {a && b && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-[11px] uppercase tracking-wider text-neutral-500">Comparison</div>
+        {/* Compare action. Present whenever there is more than one scan to
+            compare, so the feature is discoverable before anything is selected
+            rather than appearing only once the selection happens to be right. */}
+        {!loading && tasks.filter(isComparable).length >= 2 && (
+          <Card className="p-3 bg-[#111] border-[#1f1f1f] flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] uppercase tracking-wider text-neutral-500">Compare scans</div>
+              <div className={`text-xs mt-0.5 ${selectionError ? "text-neutral-500" : "text-neutral-300"}`}>
+                {selectionError ?? `${new Date(a!.created_at).toLocaleDateString()} and ${new Date(b!.created_at).toLocaleDateString()}, oldest on the left.`}
+              </div>
+            </div>
+            {selected.length > 0 && (
               <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setSelected([])}>
                 <X className="h-3 w-3" /> Clear
               </Button>
-            </div>
-            <CompareMap a={a} b={b} boundary={boundary} token={token} />
+            )}
+            <Button
+              size="sm"
+              className="h-7 text-[11px]"
+              disabled={!!selectionError}
+              title={selectionError ?? "Open the side-by-side view"}
+              onClick={() => setComparing(true)}
+            >
+              <Columns2 className="h-3 w-3" /> Compare
+            </Button>
+          </Card>
+        )}
+
+        {a && b && (
+          <div className="space-y-3">
+            <div className="text-[11px] uppercase tracking-wider text-neutral-500">Change between them</div>
             <Card className="p-4 bg-[#111] border-[#1f1f1f]">
               {aStress > 0 ? (
                 <div className="text-sm text-neutral-200">
