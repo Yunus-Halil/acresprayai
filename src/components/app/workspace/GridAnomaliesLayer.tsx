@@ -36,12 +36,18 @@ const NOTE_DEBOUNCE_MS = 600;
 type Draft = { issue: string; note: string };
 
 export function GridAnomaliesLayer({
-  zones, fieldId, boundary,
+  zones, fieldId, boundary, onZonesChanged,
 }: {
   zones: GridZone[];
   /** Null when the scan has no field: classification has nowhere to be saved. */
   fieldId: string | null;
   boundary: LatLng2[][] | null;
+  /**
+   * Fired after a classification write lands, so the shell can refresh the
+   * scan's assessment snapshot. NOT a request to reload `zones` — see the
+   * drafts comment below for why the layer never redraws mid-edit.
+   */
+  onZonesChanged?: () => void;
 }) {
   const map = useMap();
   const units = useUnitSystem();
@@ -71,6 +77,7 @@ export function GridAnomaliesLayer({
         if (!res) {
           return "Could not save: the treatment grid has moved on. Reopen the tab.";
         }
+        onZonesChanged?.();
         return null;
       } catch (e) {
         console.error("[fieldview] classify failed", e);

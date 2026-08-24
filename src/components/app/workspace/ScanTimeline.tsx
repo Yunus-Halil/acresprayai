@@ -5,17 +5,21 @@
 // flights, the timelapse) now lives beside the Field View so the orthomosaic
 // under discussion is always the one on screen.
 //
-// THREE STATES, NEVER BLURRED. A scan card says "Not analyzed", "Analysis
-// failed: <reason>", or shows the analyzed result — and an analyzed result of
-// zero zones says so in words. The one thing a card never does is print
-// "0 zones · 0.00 ac" for a scan nobody analyzed: a number that looks measured
-// and isn't is worse than no number. See analysisStateOf in lib/compareGround.
+// THREE STATES, NEVER BLURRED. A scan card says "No grid assessment yet",
+// "Grid run failed: <reason>", or shows the assessed result — and an assessed
+// result of zero zones says so in words. The one thing a card never does is
+// print "0 zones · 0.00 ac" for a scan nobody assessed: a number that looks
+// measured and isn't is worse than no number. Assessment comes from the
+// TREATMENT GRID (lib/scanAssessment.ts); results left behind by the removed
+// legacy vision path are shown, but always marked as legacy so no number is
+// ambiguous about which system produced it. See analysisStateOf in
+// lib/compareGround.
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  AlertTriangle, CheckCircle2, Clock, Columns2, FileBarChart, Loader2,
-  Plane, RefreshCw, Sparkles, X,
+  AlertTriangle, CheckCircle2, Clock, Columns2, FileBarChart, Grid3x3, Loader2,
+  Plane, RefreshCw, Trash2, X,
 } from "lucide-react";
 import Timelapse from "@/components/app/Timelapse";
 import { isPlayable } from "@/lib/timelapse";
@@ -188,12 +192,19 @@ const shortTime = (iso: string) =>
 function AnalysisLine({ scan }: { scan: FieldScan }) {
   const state = analysisStateOf(scan);
   if (state.kind === "none") {
-    return <div className="text-[11px] text-neutral-500">Not analyzed yet</div>;
+    return (
+      <div
+        className="text-[11px] text-neutral-500"
+        title="Mark stressed and healthy reference cells in the Treatment Grid tab to assess this scan."
+      >
+        No grid assessment yet
+      </div>
+    );
   }
   if (state.kind === "failed") {
     return (
       <div className="text-[11px] text-red-400 leading-snug">
-        <span className="font-medium">Analysis failed</span>
+        <span className="font-medium">Grid run failed</span>
         {state.at && <span className="text-red-400/70"> · {new Date(state.at).toLocaleString()}</span>}
         <div className="text-red-400/80">{state.error}</div>
       </div>
@@ -203,15 +214,23 @@ function AnalysisLine({ scan }: { scan: FieldScan }) {
   const stressed = stressedAcres(zones);
   return (
     <div className="text-[11px] text-neutral-400">
+      {state.source === "legacy" && (
+        <span
+          className="mr-1.5 rounded-sm border border-amber-700/60 px-1 py-px text-[9px] uppercase tracking-wider text-amber-400"
+          title="Produced by the retired vision-analysis path, not the treatment grid. Re-assess in the Treatment Grid tab; this result is kept until you clear it."
+        >
+          Legacy vision
+        </span>
+      )}
       {zones.length === 0
-        ? <span className="text-emerald-400/90">Analyzed · no stressed areas found</span>
+        ? <span className="text-emerald-400/90">Assessed · nothing marked for treatment</span>
         : <>
             <span className="text-neutral-100">{zones.length}</span> zone{zones.length === 1 ? "" : "s"} ·{" "}
-            <span className="text-neutral-100">{stressed.toFixed(2)} ac</span> stressed
+            <span className="text-neutral-100">{stressed.toFixed(2)} ac</span> marked
           </>}
       {state.rerunFailed && (
         <div className="text-amber-500/80 leading-snug">
-          A later re-run failed ({state.rerunFailed.error}); showing the last good result.
+          A later grid run failed ({state.rerunFailed.error}); showing the last good state.
         </div>
       )}
     </div>
@@ -219,8 +238,8 @@ function AnalysisLine({ scan }: { scan: FieldScan }) {
 }
 
 function ScanCard({
-  scan, index, isCurrent, flown, boundaryDrawn, token,
-  analyzingId, onAnalyze, onOpenScan,
+  scan, index, isCurrent, flown, token,
+  onOpenGrid, onOpenScan, onLegacyCleared,
   compareOn, pickBadge, onPick,
   rebaking, onRebake,
 }: {
@@ -228,11 +247,11 @@ function ScanCard({
   index: number;
   isCurrent: boolean;
   flown: boolean;
-  boundaryDrawn: boolean;
   token: string | null;
-  analyzingId: string | null;
-  onAnalyze: (id: string) => void;
+  /** Opens the Treatment Grid tab — only meaningful for the current scan. */
+  onOpenGrid: () => void;
   onOpenScan: (id: string) => void;
+  onLegacyCleared: () => void;
   compareOn: boolean;
   pickBadge: "A" | "B" | null;
   onPick: (id: string) => void;
@@ -243,11 +262,22 @@ function ScanCard({
   const blocked = notComparableReason(scan);
   const info = useScanInfo(scan.id, token);
   const imagery = rgbLayerLabel(info);
-  const analyzing = analyzingId === scan.id;
   const isRebaking = rebaking?.taskId === scan.id;
-  const analyzeLabel = state.kind === "done" ? "Re-analyze"
-    : state.kind === "failed" ? "Retry analysis"
-    : "Analyze";
+  const isLegacy = state.kind === "done" && state.source === "legacy";
+
+  // User-initiated removal of a result left by the retired vision path.
+  // Deliberate and confirmed — legacy data is never deleted silently.
+  const clearLegacy = async () => {
+    if (!window.confirm(
+      "Remove this scan's legacy vision-analysis result? The retired analysis path " +
+      "produced it; the treatment grid will not recreate it. This cannot be undone.",
+    )) return;
+    const { error } = await supabase.from("odm_tasks")
+      .update({ ai_analysis: null, ai_analysis_at: null } as never)
+      .eq("id", scan.id);
+    if (error) toast.error(`Could not clear the legacy result: ${error.message}`);
+    else { toast.success("Legacy result cleared."); onLegacyCleared(); }
+  };
 
   return (
     <div
@@ -311,20 +341,37 @@ function ScanCard({
           {flown ? <FileBarChart className="h-3 w-3" /> : <Plane className="h-3 w-3" />}
           {flown ? "View Report" : "Plan Mission"}
         </button>
+        {/* Assessment is reference points placed by a person, so the action is
+            opening the grid, not a run button pretending it can go headless.
+            For another scan, opening that scan's workspace is the road there. */}
         <button
           type="button"
-          disabled={!!analyzingId || !boundaryDrawn || !!blocked}
+          disabled={!!blocked}
           title={
-            !boundaryDrawn ? "Draw the field boundary first so the AI only analyzes your farmland."
-            : blocked ?? (state.kind === "done" ? "Run the AI analysis again on this scan" : "Run the AI analysis on this scan")
+            blocked ??
+            (isCurrent
+              ? "Mark stressed and healthy reference cells; the grid extrapolates and this card follows."
+              : "Open this scan's workspace, then its Treatment Grid tab.")
           }
-          onClick={(e) => { e.stopPropagation(); onAnalyze(scan.id); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isCurrent) onOpenGrid(); else onOpenScan(scan.id);
+          }}
           className="inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm bg-[#4CAF50] px-2 text-[11px] font-semibold text-black transition-colors hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600"
         >
-          {analyzing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-          {analyzing ? "Analyzing…" : analyzeLabel}
+          <Grid3x3 className="h-3 w-3" />
+          {state.kind === "failed" ? "Retry in grid" : state.kind === "done" && !isLegacy ? "Re-assess" : "Treatment Grid"}
         </button>
       </div>
+      {isLegacy && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); void clearLegacy(); }}
+          className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-neutral-600 transition-colors hover:text-red-400"
+        >
+          <Trash2 className="h-3 w-3" /> Clear legacy result
+        </button>
+      )}
       <button
         type="button"
         disabled={!!rebaking || !!blocked}
@@ -349,7 +396,7 @@ function ScanCard({
 
 export function ScanPanel({
   open, onClose, fieldName, scans, flownIds, loading, currentTaskId,
-  boundary, token, analyzingId, onAnalyze, onOpenScan,
+  boundary, token, onOpenGrid, onScansChanged, onOpenScan,
   compareOn, onToggleCompare, picked, onPick, aId, bId, onTilesRebaked,
 }: {
   open: boolean;
@@ -361,8 +408,10 @@ export function ScanPanel({
   currentTaskId: string;
   boundary: Ring[] | null;
   token: string | null;
-  analyzingId: string | null;
-  onAnalyze: (id: string) => void;
+  /** Opens the Treatment Grid tab for the current scan. */
+  onOpenGrid: () => void;
+  /** A scan row changed (legacy result cleared) — refetch the list. */
+  onScansChanged: () => void;
   onOpenScan: (id: string) => void;
   compareOn: boolean;
   onToggleCompare: () => void;
@@ -377,7 +426,6 @@ export function ScanPanel({
 
   const playable = scans.filter(isPlayable);
   const comparableCount = scans.filter(isComparable).length;
-  const boundaryDrawn = (boundary ?? []).some(r => r.length >= 3);
 
   return (
     <div
@@ -438,11 +486,10 @@ export function ScanPanel({
             index={i}
             isCurrent={s.id === currentTaskId}
             flown={flownIds.has(s.id)}
-            boundaryDrawn={boundaryDrawn}
             token={token}
-            analyzingId={analyzingId}
-            onAnalyze={onAnalyze}
+            onOpenGrid={onOpenGrid}
             onOpenScan={onOpenScan}
+            onLegacyCleared={onScansChanged}
             compareOn={compareOn}
             pickBadge={s.id === aId ? "A" : s.id === bId ? "B" : null}
             onPick={onPick}

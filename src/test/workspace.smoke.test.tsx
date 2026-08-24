@@ -38,7 +38,6 @@ vi.mock("react-leaflet", () => ({
 // Stub the tabs: their internals are covered elsewhere, and mounting the planner
 // pulls in the whole simulator.
 vi.mock("@/components/app/workspace/FieldViewTab", () => ({ default: () => <div data-testid="tab-field" /> }));
-vi.mock("@/components/app/workspace/AiTab", () => ({ default: () => <div data-testid="tab-ai" /> }));
 vi.mock("@/components/app/workspace/PlannerTab", () => ({ default: () => <div data-testid="tab-planner" /> }));
 vi.mock("@/components/app/workspace/WeatherTab", () => ({
   default: () => <div data-testid="tab-weather" />,
@@ -109,10 +108,10 @@ describe("workspace shell", () => {
     // component is mounted. That lazy mounting IS the per-tab state isolation —
     // if the split had collapsed it, every tab would render at once.
     expect(screen.getByTestId("tab-field")).toBeInTheDocument();
-    for (const id of ["tab-weather", "tab-ai", "tab-planner", "tab-reports", "tab-settings"]) {
+    for (const id of ["tab-weather", "tab-planner", "tab-reports", "tab-settings"]) {
       expect(screen.queryByTestId(id), `${id} should not be mounted`).toBeNull();
     }
-    for (const label of ["Weather", "AI Analysis", "Flight Planner", "Settings"]) {
+    for (const label of ["Weather", "Flight Planner", "Settings"]) {
       expect(screen.queryByText(label), `${label} tab should not be open`).toBeNull();
     }
   });

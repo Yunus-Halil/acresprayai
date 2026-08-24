@@ -27,7 +27,7 @@ import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
 } from "@/lib/droneSpecs";
 import {
-  type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
+  type CustomInput, type FarmerSettings, type LastFlownMission,
   COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS, formatMoney,
   growthStage, issueToCostKey, mergeFarmerSettings, normalizeBoundary,
 } from "@/lib/farmerSettings";
@@ -638,140 +638,9 @@ export function MeasurePanel({ stats }: { stats: MeasureStats }) {
   );
 }
 
-// --- AI zones layer ----------------------------------------------------------
-export const sevColor = (s: AiZone["severity"]) =>
+// --- Severity colours (user zones / planner overlays) ------------------------
+export const sevColor = (s: "low" | "medium" | "high") =>
   s === "high" ? "#ef4444" : s === "medium" ? "#f59e0b" : "#eab308";
-
-export function AiZonesLayer({
-  zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa, settings,
-}: {
-  zones: AiZone[];
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
-  onUpdate: (id: string, ring: { lat: number; lng: number }[]) => void;
-  onDelete: (id: string) => void;
-  boundaryAreaHa: number | null;
-  settings: FarmerSettings;
-}) {
-  const map = useMap();
-  const units = useUnitSystem();
-  useEffect(() => {
-    const group = L.layerGroup().addTo(map);
-    const container = map.getContainer();
-    const deletedIds = new Set<string>();
-    const handlePopupDelete = (evt: Event) => {
-      const btn = (evt.target as HTMLElement | null)?.closest?.("button[data-aiz-delete]") as HTMLButtonElement | null;
-      const id = btn?.dataset.aizDelete;
-      if (!id) return;
-      evt.preventDefault();
-      evt.stopPropagation();
-      if ("stopImmediatePropagation" in evt) evt.stopImmediatePropagation();
-      if (deletedIds.has(id)) return;
-      deletedIds.add(id);
-      map.closePopup();
-      onDelete(id);
-    };
-    container.addEventListener("pointerdown", handlePopupDelete, true);
-    container.addEventListener("click", handlePopupDelete, true);
-    zones.forEach((z) => {
-      const color = sevColor(z.severity);
-      const poly = L.polygon(z.ring.map(p => [p.lat, p.lng] as [number, number]), {
-        color, weight: selectedId === z.id ? 3 : 2,
-        fillColor: color, fillOpacity: selectedId === z.id ? 0.35 : 0.25,
-      });
-      poly.bindTooltip(safeLabel(z.name), {
-        permanent: false, sticky: true, opacity: 1, direction: "top",
-        className: "ai-zone-label",
-      });
-      // Real geodesic area of the on-screen polygon — what the farmer actually
-      // pays to treat. No severity multipliers, no AI coverage estimate.
-      const m2 = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));
-      const acresNum = m2 / 4046.8564224;
-      const acres = acresNum.toFixed(2);
-      const ha = (m2 / 10000).toFixed(3);
-      const rec = z.recommendation;
-      // Cost = farmer's actual per-acre input price × real polygon acreage.
-      // Map AI issue → canonical key → farmer setting key.
-      const costKey = issueToCostKey(z);
-      const inputKey = costKey ? COST_MAP[costKey] : null;
-      const ratePerAc = inputKey ? Number(settings.input_costs[inputKey] ?? 0) : 0;
-      const inputLabel = inputKey ? INPUT_LABELS[inputKey] : null;
-      const noChem = costKey === "waterlogging";
-      const inputAvailable = inputKey ? !!settings.available_inputs[inputKey] : true;
-      // Money renders in the field's own currency. Intl handles symbol
-      // placement, which is not always a prefix.
-      const cur = settings.currency ?? "USD";
-      const estCost = formatMoney(acresNum * ratePerAc, cur);
-      const ratePerAcStr = formatMoney(ratePerAc, cur);
-      const acresStr = acresNum.toFixed(3);
-      const areaText = escapeHtml(fmtArea(m2, units).text);
-      // Costs are stored per acre; a metric reader sees the same money over a
-      // hectare. The multiplication below stays in acres either way, so the
-      // total cannot move when the display does.
-      const shownRate = formatMoney(costPerAreaValue(ratePerAc, units), cur);
-      const shownArea = fmtArea(m2, units);
-      const sevBadge = `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;background:${color}33;color:${color};border:1px solid ${color}">${safeLabel(z.severity)}</span>`;
-      const html = `
-        <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:240px">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-            <div style="font-weight:600;font-size:13px">${escapeHtml(z.name)}</div>
-            ${sevBadge}
-          </div>
-          <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">${escapeHtml(z.issue)}</div>
-          <div style="font-size:11px;color:#9ca3af;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:8px">
-            <div>Area</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${areaText}</div>
-            ${noChem
-              ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:11px;border-top:1px solid #222;padding-top:6px;margin-top:2px">Drainage work required, consult agronomist (no chemical fix).</div>`
-              : inputKey
-                ? `<div>Est. cost</div><div style="text-align:right;color:#f0f0f0;font-family:ui-monospace,monospace">${escapeHtml(estCost)}</div>
-                   <div style="grid-column:1/-1;color:#6b7280;font-family:ui-monospace,monospace;font-size:10px;text-align:right">${shownArea.value.toFixed(3)} ${shownArea.unit} × ${escapeHtml(shownRate)}${costPerAreaUnit(units)} ${inputLabel ? `(${escapeHtml(inputLabel)})` : ""} = ${escapeHtml(estCost)}</div>
-                   ${!inputAvailable ? `<div style="grid-column:1/-1;color:#f59e0b;font-size:10px;text-align:right">⚠ ${escapeHtml(inputLabel ?? "")} marked unavailable in Settings</div>` : ""}`
-                : `<div style="grid-column:1/-1;color:#6b7280;font-size:10px;text-align:right">No cost mapping for this issue type.</div>`
-            }
-          </div>
-          ${rec ? `
-            <div style="border-top:1px solid #222;padding-top:8px;font-size:11px">
-              <div style="color:#4CAF50;font-weight:600;margin-bottom:3px">Recommended treatment</div>
-              <div style="color:#f0f0f0;margin-bottom:2px">${escapeHtml(rec.action ?? "-")}</div>
-              ${rec.product ? `<div style="color:#9ca3af">Product: <span style="color:#f0f0f0">${escapeHtml(rec.product)}</span></div>` : ""}
-              ${rec.dose ? `<div style="color:#9ca3af">Rate: <span style="color:#f0f0f0">${escapeHtml(rec.dose)}</span></div>` : ""}
-              ${rec.rationale ? `<div style="color:#6b7280;margin-top:4px;font-style:italic">${escapeHtml(rec.rationale)}</div>` : ""}
-            </div>` : `
-            <div style="border-top:1px solid #222;padding-top:8px;font-size:11px;color:#6b7280">
-              No specific treatment, monitor and re-scan after weather change.
-            </div>`}
-          <button data-aiz-delete="${escapeHtml(z.id)}" style="margin-top:9px;font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.45);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
-        </div>
-      `;
-      poly.bindPopup(html, {
-        className: "ai-zone-popup",
-        maxWidth: 320, closeButton: true, autoPan: true, autoClose: true, closeOnClick: true,
-      });
-      poly.on("click", (e) => { L.DomEvent.stopPropagation(e); onSelect(z.id); poly.openPopup(e.latlng); });
-      group.addLayer(poly);
-      if (selectedId === z.id) {
-        poly.bringToFront();
-        (poly as any).pm.enable({
-          allowSelfIntersection: false, snappable: true, snapDistance: 15,
-          draggable: true, hideMiddleMarkers: false,
-        });
-        poly.on("pm:markerdragend pm:dragend pm:vertexadded pm:vertexremoved", () => {
-          const latlngs = (poly.getLatLngs()[0] as L.LatLng[]).map(ll => ({ lat: ll.lat, lng: ll.lng }));
-          onUpdate(z.id, latlngs);
-        });
-      }
-    });
-    return () => {
-      container.removeEventListener("pointerdown", handlePopupDelete, true);
-      container.removeEventListener("click", handlePopupDelete, true);
-      group.remove();
-    };
-    // `units` is a dependency because the popup HTML is built once, up front —
-    // without it a unit change would leave every already-rendered popup
-    // reading in the old system.
-  }, [map, zones, selectedId, onSelect, onUpdate, onDelete, boundaryAreaHa, units, settings]);
-  return null;
-}
 
 export function escapeHtml(s: string): string {
   return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as any)[c]);

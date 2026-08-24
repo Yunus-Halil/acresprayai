@@ -42,7 +42,7 @@ export const WIND_DIRECTIONS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as c
 // The result banner
 // ---------------------------------------------------------------------------
 
-export type BannerTone = "none" | "clean" | "success";
+export type BannerTone = "none" | "clean" | "legacy" | "success";
 export type Banner = {
   tone: BannerTone;
   big: string;
@@ -56,16 +56,21 @@ const ac = (n: number) => `${n.toFixed(2)} ac`;
 /**
  * Decides the one banner the report shows.
  *
- * The failure this prevents shipped once: a scan nobody analyzed rendered
+ * The failure this prevents shipped once: a scan nobody assessed rendered
  * "100.00% of field stays unsprayed" in a full-width green success bar — a
  * null presented as a positive agronomic finding, over a pilot's name.
  *
- *   - no analysis       → neutral, explicitly not a finding of zero
- *   - analyzed, clean   → its own state; a real result, worded as one
- *   - analyzed, zones   → the only state that earns success styling
+ *   - no assessment      → neutral, explicitly not a finding of zero
+ *   - assessed, clean    → its own state; a real result, worded as one
+ *   - legacy result      → labelled as the retired vision path's output,
+ *                          never given success styling — its numbers are not
+ *                          the treatment grid's and must not dress like them
+ *   - assessed, zones    → the only state that earns success styling
  */
 export function bannerFor(input: {
   hasAnalysis: boolean;
+  /** "grid" for treatment-grid assessments; "legacy" for retired-path results. */
+  source?: "grid" | "legacy";
   zoneCount: number;
   targetedAcres: number;
   fieldAcres: number;
@@ -76,16 +81,26 @@ export function bannerFor(input: {
   if (!input.hasAnalysis) {
     return {
       tone: "none",
-      big: "No analysis run — treatment area not determined",
-      sub: "This scan's imagery has not been analyzed.",
+      big: "No assessment — treatment area not determined",
+      sub: "No treatment-grid assessment exists for this scan.",
       note: "This is not a finding of zero treatment need. No spray recommendation is made or implied.",
+    };
+  }
+  if (input.source === "legacy") {
+    return {
+      tone: "legacy",
+      big: input.zoneCount === 0
+        ? "Legacy analysis on file — no zones"
+        : `Legacy analysis on file — ${input.zoneCount} zone${input.zoneCount === 1 ? "" : "s"}, ${ac(input.targetedAcres)}`,
+      sub: "Produced by the retired vision-analysis system, not the treatment grid.",
+      note: "Re-assess this scan with the treatment grid before acting on these figures.",
     };
   }
   if (input.zoneCount === 0) {
     return {
       tone: "clean",
-      big: "Analysis found no areas requiring targeted treatment",
-      sub: `Computed over ${ac(input.fieldAcres)} of imaged field.`,
+      big: "Assessment found nothing marked for treatment",
+      sub: `From your reference points, across ${ac(input.fieldAcres)} of field.`,
       note: null,
     };
   }
@@ -100,7 +115,7 @@ export function bannerFor(input: {
   return {
     tone: "success",
     big: `Targeting ${ac(input.targetedAcres)} of ${ac(input.fieldAcres)}`,
-    sub: "Computed treatment area from this scan's analysis.",
+    sub: "Treatment area extrapolated from your reference points by the treatment grid.",
     note: null,
   };
 }
@@ -124,7 +139,7 @@ export function missingRecordFields(input: {
 }): string[] {
   const r = input.record;
   const missing: string[] = [];
-  if (!input.hasAnalysis) missing.push("Imagery analysis");
+  if (!input.hasAnalysis) missing.push("Treatment grid assessment");
   if (input.fieldAcres <= 0) missing.push("Field boundary");
   if (!input.missionLogged) missing.push("Logged mission");
   if (input.volumeAppliedL == null) missing.push("Volume applied");

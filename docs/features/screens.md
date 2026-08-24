@@ -25,7 +25,7 @@ Four KPI cards: total fields, total area (ha and acres), boundaries defined, spr
 
 Below, a field list with a status dot, real measured area, flights logged, last flown date, and a
 boundary-set badge. Fields with no boundary are visually distinct because boundary is the gate
-for AI analysis.
+for the treatment grid and mission planning.
 
 ## Fields — `/app/fields`
 

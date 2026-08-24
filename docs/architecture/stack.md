@@ -17,7 +17,6 @@ Browser (React SPA)
                                │
                                ├─► OpenDroneMap node   (photogrammetry)
                                ├─► titiler.xyz         (COG → tiles / stats / preview)
-                               ├─► vision model    (OpenAI-compatible endpoint)
                                └─► OpenWeather → Open-Meteo fallback
 ```
 
@@ -45,7 +44,7 @@ asset imports under `src/assets/`, and the vision provider is set by environment
 |---|---|---|
 | **OpenDroneMap node** | Photogrammetry. Configured by `ODM_BASE_URL` + `ODM_AUTH_TOKEN`. Either self-hosted NodeODM or WebODM Lightning. | No new scans can be processed. Existing scans unaffected. |
 | **titiler.xyz** | Renders the GeoTIFF into tiles, previews and zonal statistics. Public, free, not operated by us. | **Every map in the product breaks simultaneously.** See [operations/limits.md](../operations/limits.md). |
-| **Vision model provider** | Gemini 2.5 Flash by default, via any OpenAI-compatible `/chat/completions` endpoint. Configured with `AI_API_KEY`, `AI_GATEWAY_URL`, `AI_MODEL`. | AI analysis unavailable; everything else works. |
+| **Analysis** | The treatment grid: operator reference points extrapolated on-device (lib/findSimilar.ts). No external model provider. | n/a |
 | **OpenWeather / Open-Meteo** | Forecast. `OPENWEATHER_API_KEY` optional — Open-Meteo needs no key and is the automatic fallback. | Weather tab empty; planner loses wind/temperature derating. |
 
 ## Repository layout
@@ -81,7 +80,6 @@ src/
 │   │       ├── layers.tsx        map-attached pieces: measure, annotate, AI
 │   │       │                     zones, user polygons, boundary tool, controls
 │   │       ├── FieldViewTab.tsx
-│   │       ├── AiTab.tsx
 │   │       ├── PlannerTab.tsx
 │   │       ├── WeatherTab.tsx
 │   │       └── SettingsTab.tsx
@@ -103,7 +101,7 @@ supabase/
 │   ├── bake-tiles/               render tiles into storage
 │   ├── tile/                     serve pre-baked tiles
 │   ├── ndvi-tile/                render vegetation index tiles
-│   ├── analyze-ortho/            the vision model call
+│   ├── (analyze-ortho was removed; the treatment grid is the analysis system)
 │   └── weather/                  normalised forecast proxy
 └── migrations/                   25 SQL migrations
 ```

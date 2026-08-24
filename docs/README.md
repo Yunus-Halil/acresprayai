@@ -42,7 +42,7 @@ that treats only those patches instead of the whole field.
 |---|---|
 | [features/screens.md](features/screens.md) | Routes and what the user does on each |
 | [features/workspace.md](features/workspace.md) | The orthomosaic workspace and its seven tabs |
-| [features/ai-analysis.md](features/ai-analysis.md) | The exact AI contract, constraints and enforcement |
+
 | [features/mission-planner.md](features/mission-planner.md) | Sweep geometry, flight physics, battery model |
 | [features/cost-and-reports.md](features/cost-and-reports.md) | Cost mapping and PDF report generation |
 | [features/export-formats.md](features/export-formats.md) | GeoJSON and QGC WPL 110 waypoint output |
@@ -65,7 +65,7 @@ that treats only those patches instead of the whole field.
 | Backend | Supabase — Postgres + PostGIS, Auth, Storage, Deno Edge Functions |
 | Photogrammetry | OpenDroneMap (NodeODM / WebODM Lightning) |
 | Tile rendering | TiTiler (public `titiler.xyz`) |
-| Vision model | Gemini 2.5 Flash by default, via any OpenAI-compatible endpoint |
+| Analysis | Treatment grid: operator reference points, on-device extrapolation. No external model. |
 | Weather | OpenWeather One Call 3.0, falling back to Open-Meteo |
 | Transactional email | Resend (pilot application notifications) |
 | Edge functions | 11 |

@@ -26,7 +26,7 @@ import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
 } from "@/lib/droneSpecs";
 import {
-  type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
+  type CustomInput, type FarmerSettings, type LastFlownMission,
   COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS,
   growthStage, issueToCostKey, mergeFarmerSettings, normalizeBoundary,
 } from "@/lib/farmerSettings";
@@ -49,17 +49,17 @@ import { FN_BASE, NDVI_BASE, TILE_BASE } from "./constants";
 import {
   type Annotation, type LayerState, type MeasureStats, type UserPoly,
   type BasemapId,
-  AiZonesLayer, AnnotateTool, BasemapLayer, BasemapToggle, BoundaryTool, FitBounds,
+  AnnotateTool, BasemapLayer, BasemapToggle, BoundaryTool, FitBounds,
   LayerRow, MapControls,
   MeasurePanel, MeasureTool, MouseReadout, USER_POLY_ISSUES, UserPolyLayer,
-  escapeHtml, loadAnnotations, loadBasemap, saveAnnotations, saveBasemap, sevColor,
+  escapeHtml, loadAnnotations, loadBasemap, saveAnnotations, saveBasemap,
   USER_POLY_COLORS,
 } from "./layers";
 import GridAnomaliesLayer from "./GridAnomaliesLayer";
 import { type GridZonesLoad, clearGridZones, loadGridZones } from "@/lib/gridAnomalies";
 import { fmtArea } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
-import { AnalysisGrid } from "./AiTab";
+import { snapshotGridAssessmentFromStore } from "@/lib/scanAssessment";
 import { ScanPanel, useFieldScans, useScanInfo } from "./ScanTimeline";
 import {
   type SideLayerState, ComparePanes, CompareStatsBar, DEFAULT_SIDE,
@@ -88,19 +88,6 @@ export function FieldViewTab(props: {
   cursorZoomRef: React.MutableRefObject<HTMLDivElement | null>;
   layersOpen: boolean;
   setLayersOpen: (v: boolean) => void;
-  drawerOpen: boolean;
-  setDrawerOpen: (v: boolean) => void;
-  analysis: any;
-  analyzing: boolean;
-  analysisErr: string | null;
-  runAnalysis: () => void;
-  showAiZones: boolean;
-  setShowAiZones: (v: boolean) => void;
-  selectedZone: string | null;
-  setSelectedZone: (id: string | null) => void;
-  updateZoneRing: (id: string, ring: { lat: number; lng: number }[]) => void;
-  deleteZone: (id: string) => void;
-  exportFlightPlan: () => void;
   taskId: string;
   annotations: Annotation[];
   setAnnotations: React.Dispatch<React.SetStateAction<Annotation[]>>;
@@ -124,7 +111,6 @@ export function FieldViewTab(props: {
   setDraftUserPoly: React.Dispatch<React.SetStateAction<DraftPolygon | null>>;
   saveUserPolygon: (f: { name: string; issue_type: string; color: string; notes: string }) => Promise<void>;
   deleteUserPolygon: (id: string) => Promise<void>;
-  clearAnalysis: () => Promise<void>;
   settings: FarmerSettings;
   /** Opens the workspace's Settings tab, which may not currently be open. */
   openSettings: () => void;
@@ -135,10 +121,11 @@ export function FieldViewTab(props: {
     token: string | null;
     fieldName: string;
     currentTaskId: string;
-    /** Bumped after an analysis or a rebake so the scan list refetches. */
+    /** Bumped after an assessment snapshot or a rebake so the scan list refetches. */
     scansNonce: number;
-    analyzingId: string | null;
-    analyzeScan: (taskId: string) => void;
+    bumpScansNonce: () => void;
+    /** Opens the Treatment Grid tab — the one analysis system. */
+    openTreatmentGrid: () => void;
     onTilesRebaked: (taskId: string) => void;
     openScan: (taskId: string) => void;
   };
@@ -147,17 +134,12 @@ export function FieldViewTab(props: {
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
     cursorCoordRef, cursorZoomRef, layersOpen, setLayersOpen,
-    drawerOpen, setDrawerOpen,
-    analysis, analyzing, analysisErr, runAnalysis,
-    showAiZones, setShowAiZones, selectedZone, setSelectedZone,
-    updateZoneRing, deleteZone, exportFlightPlan,
     taskId, annotations, setAnnotations,
     boundary, boundaryMode, setBoundaryMode, boundaryDirty, boundarySaving,
     saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited, handleBoundaryDeleteRing,
     fieldAreaHa, activeBoundaryIdx, setActiveBoundaryIdx,
     userPolys, userPolyToolActive, setUserPolyToolActive,
-    draftUserPoly, setDraftUserPoly, saveUserPolygon, deleteUserPolygon, clearAnalysis,
-    settings,
+    draftUserPoly, setDraftUserPoly, saveUserPolygon, deleteUserPolygon,
   } = props;
 
   // ---- Scan panel + single-map compare --------------------------------------
@@ -282,6 +264,10 @@ export function FieldViewTab(props: {
     try {
       const summary = await clearGridZones(props.fieldId, props.boundary as LatLng2[][]);
       setGridZoneNonce(n => n + 1);
+      // The scan's assessment record follows the grid: cleared zones mean a
+      // cleared snapshot, refreshed in the scan panel.
+      await snapshotGridAssessmentFromStore(taskId, props.fieldId, props.boundary as LatLng2[][]);
+      scansApi.bumpScansNonce();
       if (summary) {
         toast.success(
           `Cleared ${summary.zones} zone${summary.zones === 1 ? "" : "s"}` +
@@ -377,17 +363,6 @@ export function FieldViewTab(props: {
             swipePct={swipePct}
           />
         )}
-        {!compareActive && showAiZones && analysis?.zones && analysis.zones.length > 0 && (
-          <AiZonesLayer
-            zones={analysis.zones}
-            selectedId={selectedZone}
-            onSelect={setSelectedZone}
-            onUpdate={updateZoneRing}
-            onDelete={deleteZone}
-            boundaryAreaHa={fieldAreaHa}
-            settings={settings}
-          />
-        )}
         <MeasureTool active={measureActive} visible={layers.measurements} onStats={handleStats} />
         <AnnotateTool
           active={annotateActive}
@@ -419,6 +394,13 @@ export function FieldViewTab(props: {
             zones={gridZoneLoad.zones}
             fieldId={props.fieldId}
             boundary={props.boundary as LatLng2[][] | null}
+            onZonesChanged={() => {
+              // A classification edit changes the zones' descriptions; the
+              // scan's assessment snapshot follows so cards and reports agree.
+              void snapshotGridAssessmentFromStore(
+                taskId, props.fieldId!, props.boundary as LatLng2[][],
+              ).then(() => scansApi.bumpScansNonce());
+            }}
           />
         )}
         {userPolyToolActive && (
@@ -459,6 +441,8 @@ export function FieldViewTab(props: {
           bAnalyzed={bZones !== null}
           aBounds={aMeta?.bounds ?? null}
           bBounds={bMeta?.bounds ?? null}
+          aSource={aAnalysis?.kind === "done" ? aAnalysis.source : null}
+          bSource={bAnalysis?.kind === "done" ? bAnalysis.source : null}
         />
       )}
       {compareActive && (
@@ -478,8 +462,8 @@ export function FieldViewTab(props: {
         currentTaskId={scansApi.currentTaskId}
         boundary={boundary}
         token={scansApi.token}
-        analyzingId={scansApi.analyzingId}
-        onAnalyze={scansApi.analyzeScan}
+        onOpenGrid={scansApi.openTreatmentGrid}
+        onScansChanged={scansApi.bumpScansNonce}
         onOpenScan={scansApi.openScan}
         compareOn={compareOn}
         onToggleCompare={toggleCompare}
@@ -695,9 +679,6 @@ export function FieldViewTab(props: {
           <LayerRow label="Field boundary" icon={MapPin}
             checked={layers.boundary}
             onToggle={() => setLayers(s => ({ ...s, boundary: !s.boundary }))} />
-          <LayerRow label="AI treatment zones" icon={Sparkles}
-            checked={showAiZones}
-            onToggle={() => setShowAiZones(!showAiZones)} />
           <LayerRow label={`Annotations · my polygons (${userPolys.length})`} icon={Hexagon}
             checked={layers.userAnnotations}
             onToggle={() => setLayers(s => ({ ...s, userAnnotations: !s.userAnnotations }))} />
@@ -862,69 +843,6 @@ export function FieldViewTab(props: {
           </div>
         </div>
       )}
-
-      {/* Slide-up AI drawer */}
-      <div
-        className="absolute bottom-0 left-0 right-0 z-[1100] border-t border-[#222] transition-[max-height] duration-300 ease-out"
-        style={{
-          background: "#0f0f0f",
-          maxHeight: drawerOpen ? "60vh" : 42,
-        }}
-      >
-        <button
-          onClick={() => setDrawerOpen(!drawerOpen)}
-          className="w-full h-[42px] px-4 flex items-center gap-3 text-left hover:bg-[#141414]"
-        >
-          <Sparkles className="h-4 w-4 text-[#4CAF50]" />
-          <div className="text-xs font-medium">
-            Field Health:{" "}
-            <span className={
-              analysis ? (analysis.health_score >= 70 ? "text-[#4CAF50]" : analysis.health_score >= 40 ? "text-yellow-400" : "text-red-400") : "text-neutral-500"
-            }>
-              {analysis ? `${analysis.health_score}/100` : "Not analyzed"}
-            </span>
-          </div>
-          {analysis && (
-            <div className="text-[11px] text-neutral-500 truncate hidden md:block">
-              {analysis.zones.length} treatment zone{analysis.zones.length === 1 ? "" : "s"} · {analysis.issues.length} issue{analysis.issues.length === 1 ? "" : "s"}
-            </div>
-          )}
-          <div className="ml-auto flex items-center gap-2 text-neutral-500">
-            {drawerOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-          </div>
-        </button>
-
-        {drawerOpen && (
-          <div className="px-4 pb-4 overflow-auto" style={{ maxHeight: "calc(60vh - 42px)" }}>
-            {!analysis && !analyzing && (
-              <div className="flex items-center gap-3 py-3">
-                <p className="text-xs text-neutral-400 leading-relaxed flex-1">
-                  Run AI vision over this orthomosaic to detect bare patches, waterlogging,
-                  discoloration and row gaps, and auto-draw treatment zones you can export.
-                </p>
-                <button onClick={runAnalysis}
-                  className="inline-flex items-center gap-2 bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 text-xs font-semibold whitespace-nowrap">
-                  <Sparkles className="h-3.5 w-3.5" /> Analyze field
-                </button>
-              </div>
-            )}
-            {analysisErr && <div className="text-red-400 text-xs py-2">{analysisErr}</div>}
-            {analyzing && (
-              <div className="flex items-center gap-2 py-4 text-neutral-300 text-xs">
-                <Loader2 className="h-4 w-4 animate-spin text-[#4CAF50]" />
-                Analyzing imagery…
-              </div>
-            )}
-            {analysis && <AnalysisGrid
-              analysis={analysis} runAnalysis={runAnalysis}
-              showAiZones={showAiZones} setShowAiZones={setShowAiZones}
-              selectedZone={selectedZone} setSelectedZone={setSelectedZone}
-              deleteZone={deleteZone} exportFlightPlan={exportFlightPlan}
-              clearAnalysis={clearAnalysis}
-            />}
-          </div>
-        )}
-      </div>
 
       {/* User-polygon tool hint */}
       {userPolyToolActive && !draftUserPoly && !layersOpen && (

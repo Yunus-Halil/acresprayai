@@ -31,7 +31,7 @@ import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
 } from "@/lib/droneSpecs";
 import {
-  type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
+  type CustomInput, type FarmerSettings, type LastFlownMission,
   COST_MAP, CURRENCIES, DEFAULT_FARMER_SETTINGS, INPUT_LABELS, currencySymbol,
   growthStage, issueToCostKey, mergeFarmerSettings, normalizeBoundary,
 } from "@/lib/farmerSettings";
@@ -57,7 +57,7 @@ import {
 } from "@/lib/reportRecord";
 import {
   type Annotation, type LayerState, type MeasureStats, type UserPoly,
-  AiZonesLayer, AnnotateTool, BoundaryTool, FitBounds, LayerRow, MapControls,
+  AnnotateTool, BoundaryTool, FitBounds, LayerRow, MapControls,
   MeasurePanel, MeasureTool, MouseReadout, USER_POLY_ISSUES, UserPolyLayer,
   escapeHtml, loadAnnotations, saveAnnotations, sevColor,
 } from "./layers";

@@ -53,11 +53,6 @@ const CASES: Case[] = [
     request: () => new Request(`https://fn/bake-tiles?task_id=${TASK_ID}`, { method: "POST", headers: AUTH }),
   },
   {
-    name: "analyze-ortho",
-    module: "../../../supabase/functions/analyze-ortho/index.ts",
-    request: () => postJson("https://fn/analyze-ortho", { task_id: TASK_ID, boundary: [] }),
-  },
-  {
     name: "odm-asset",
     module: "../../../supabase/functions/odm-asset/index.ts",
     request: () => new Request(`https://fn/odm-asset?uuid=${UUID}&probe=ortho`, { headers: AUTH }),

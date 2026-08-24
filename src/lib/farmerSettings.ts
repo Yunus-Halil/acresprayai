@@ -212,7 +212,7 @@ export function mergeFarmerSettings(saved: unknown): FarmerSettings {
  * in the exporter so the planner UI and the DJI package always agree.
  */
 export function resolveZoneRateLha(
-  zone: { id: string; severity: AiZone["severity"] },
+  zone: { id: string; severity: "low" | "medium" | "high" },
   settings: FarmerSettings,
 ): number {
   const override = settings.zone_rate_overrides?.[zone.id];
@@ -337,26 +337,6 @@ export function growthStage(crop: string, planting: string, now: number = Date.n
   }
   return `~${wk} weeks since planting`;
 }
-
-/** AI treatment zone as persisted in `odm_tasks.ai_analysis`. */
-export type AiZone = {
-  id: string;
-  name: string;
-  issue: string;
-  what_you_see?: string;
-  confidence?: string;
-  severity: "low" | "medium" | "high";
-  tier?: 1 | 2;
-  coverage_pct: number;
-  area_acres?: number;
-  recommendation: { action: string; product?: string; dose?: string; rationale?: string } | null;
-  /**
-   * The zone outline. Note this is `ring`, not `polygon` — analyze-ortho
-   * normalises the model's `polygon` field into `ring` before it is persisted.
-   * Anything reading zones back out of the DB must use `ring`.
-   */
-  ring: { lat: number; lng: number }[];
-};
 
 /**
  * Boundaries are stored either as a single ring (legacy) or as an array of rings

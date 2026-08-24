@@ -27,7 +27,7 @@ import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
 } from "@/lib/droneSpecs";
 import {
-  type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
+  type CustomInput, type FarmerSettings, type LastFlownMission,
   COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS,
   growthStage, issueToCostKey, mergeFarmerSettings, normalizeBoundary,
 } from "@/lib/farmerSettings";
@@ -49,7 +49,7 @@ import {
 import { FN_BASE, NDVI_BASE, TILE_BASE } from "./constants";
 import {
   type Annotation, type LayerState, type MeasureStats, type UserPoly,
-  AiZonesLayer, AnnotateTool, BoundaryTool, FitBounds, LayerRow, MapControls,
+  AnnotateTool, BoundaryTool, FitBounds, LayerRow, MapControls,
   MeasurePanel, MeasureTool, MouseReadout, USER_POLY_ISSUES, UserPolyLayer,
   escapeHtml, loadAnnotations, saveAnnotations, sevColor,
 } from "./layers";

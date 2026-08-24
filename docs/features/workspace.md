@@ -8,7 +8,7 @@ This is where the farmer spends their time.
 ## Load sequence
 
 1. Resolve the session; fetch the `odm_tasks` row and its field
-2. Rehydrate any saved AI analysis so zones survive a reload
+2. Fetch the scan's saved grid assessment so its zone snapshot survives a reload
 3. Call `ortho-url` for a signed GeoTIFF URL and TileJSON
 4. Validate the bounds are WGS84
 5. Drive `bake-tiles` to completion, showing a progress count

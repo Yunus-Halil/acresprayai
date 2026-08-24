@@ -38,9 +38,8 @@ Never in the repo. Set with `supabase secrets set`.
 |---|---|
 | `ODM_BASE_URL` | Processing node base URL |
 | `ODM_AUTH_TOKEN` | Processing node token |
-| `AI_API_KEY` | Vision provider key for `analyze-ortho` |
-| `AI_GATEWAY_URL` | Optional. Any OpenAI-compatible `/chat/completions` endpoint. Defaults to Google's OpenAI-compatible endpoint |
-| `AI_MODEL` | Optional. Defaults to `gemini-2.5-flash`; use `google/gemini-2.5-flash` on OpenRouter |
+
+
 | `OPENWEATHER_API_KEY` | Optional — falls back to Open-Meteo |
 | `RESEND_API_KEY` | Pilot application notification email. Without it applications still save, but nothing is sent |
 | `PILOT_NOTIFY_TO` | Optional — where notifications go. Defaults to `yunus@swathwise.com` |
@@ -114,7 +113,7 @@ Run just the edge tests with `npx vitest run src/test/edge`.
 ### Not covered
 
 No component or integration tests. The workspace UI, planner UI and PDF generation are untested,
-as is `analyze-ortho`'s prompt construction and response normalisation.
+and the treatment grid's UI is covered only through its libraries.
 
 `src/test/workspace.smoke.test.tsx` (5 tests) covers the workspace shell: load sequence, tab-bar
 render with only the default tab mounted, progress and error states, tile-bake driving, and

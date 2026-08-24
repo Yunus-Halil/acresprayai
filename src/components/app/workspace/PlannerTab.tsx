@@ -14,7 +14,7 @@ import {
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
   Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
-  CheckCircle2, XCircle, Trash2, Hexagon, CalendarDays, Info,
+  CheckCircle2, XCircle, Trash2, Hexagon, CalendarDays, Info, Grid3x3,
   Play, Pause, RotateCcw, FastForward, History,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
@@ -31,7 +31,7 @@ import {
   DEFAULT_HEADLAND_M, MAX_HEADLAND_M, applyHeadland, headlandAreaScale, headlandReason,
 } from "@/lib/headland";
 import {
-  type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
+  type CustomInput, type FarmerSettings, type LastFlownMission,
   COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS,
   growthStage, issueToCostKey, mergeFarmerSettings, normalizeBoundary,
   resolveZoneRateLha,
@@ -56,7 +56,7 @@ import { FN_BASE, NDVI_BASE, TILE_BASE } from "./constants";
 import {
   type Annotation, type LayerState, type MeasureStats, type UserPoly,
   type BasemapId,
-  AiZonesLayer, AnnotateTool, BasemapLayer, BasemapToggle, BoundaryTool, FitBounds,
+  AnnotateTool, BasemapLayer, BasemapToggle, BoundaryTool, FitBounds,
   LayerRow, MapControls,
   MeasurePanel, MeasureTool, MouseReadout, USER_POLY_ISSUES, UserPolyLayer,
   escapeHtml, loadAnnotations, loadBasemap, saveAnnotations, saveBasemap, sevColor,
@@ -118,10 +118,9 @@ function InfoTip({ children, className = "" }: { children: React.ReactNode; clas
 }
 
 export function PlannerTab({
-  analysis, boundary, tileUrl, bounds, maxNative, taskId, runAnalysis, setActiveTab,
+  boundary, tileUrl, bounds, maxNative, taskId, setActiveTab,
   settings, onSaveSettings, onFlightLogged, center, userPolys, fieldId, fieldName,
 }: {
-  analysis: any;
   boundary: BoundaryRing[] | null;
   tileUrl: string;
   bounds: L.LatLngBoundsExpression | null;
@@ -130,7 +129,6 @@ export function PlannerTab({
   fieldId: string | null;
   /** Used to pre-fill the schedule form's location label. */
   fieldName?: string;
-  runAnalysis: () => void;
   setActiveTab: (k: any) => void;
   settings: FarmerSettings;
   onSaveSettings: (s: FarmerSettings) => Promise<void> | void;
@@ -315,9 +313,13 @@ export function PlannerTab({
     return () => { cancelled = true; };
   }, [fieldId, boundary]);
 
+  // Two zone sources, both operator-authored: the treatment grid (the analysis
+  // system) and hand-drawn anomaly polygons. The legacy vision-model zones are
+  // gone with the analyze-ortho path — the planner never sprays anything a
+  // model drew and a human did not confirm cell by cell.
   type PlannerZone = {
-    id: string; ring: LatLng2[]; severity: AiZone["severity"];
-    source: "ai" | "user" | "grid";
+    id: string; ring: LatLng2[]; severity: "low" | "medium" | "high";
+    source: "user" | "grid";
     /** Grid zones only: the rate is the grid's own, and area is the summed
         clipped cell area — the number the Prescription panel already showed. */
     rateLha?: number;
@@ -325,8 +327,6 @@ export function PlannerTab({
     /** Grid zones only: the operator's classification, if they set one. */
     issue?: string;
   };
-  const aiZonesRaw: PlannerZone[] = ((analysis?.zones ?? []) as AiZone[])
-    .map(z => ({ id: z.id, ring: z.ring, severity: z.severity, source: "ai" as const }));
   const userZonesRaw: PlannerZone[] = (userPolys ?? [])
     .filter(u => u.ring && u.ring.length >= 3)
     .map(u => ({ id: `user:${u.id}`, ring: u.ring, severity: "medium" as const, source: "user" as const }));
@@ -374,7 +374,7 @@ export function PlannerTab({
         id: z.id, ring: z.ring, severity: "medium" as const, source: "grid" as const,
         rateLha: z.rateLha, areaM2: z.areaM2, issue: z.issue,
       }));
-  const allZonesRaw: PlannerZone[] = [...aiZonesRaw, ...userZonesRaw, ...gridZonesRaw];
+  const allZonesRaw: PlannerZone[] = [...userZonesRaw, ...gridZonesRaw];
   const zonesInField = (() => {
     if (!boundary || boundary.length === 0) return [];
     return allZonesRaw.filter(z => {
@@ -895,9 +895,15 @@ export function PlannerTab({
         <div className="max-w-md">
           <Plane className="h-8 w-8 mx-auto mb-3 text-[#4CAF50]" />
           <h2 className="text-lg font-semibold mb-1">Flight Planner</h2>
-          <p className="text-sm text-neutral-500 mb-4">Run AI analysis or draw a manual anomaly first. The planner generates lawnmower patterns over treatment zones.</p>
-          <button onClick={runAnalysis} className="text-xs bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 font-semibold inline-flex items-center gap-2">
-            <Sparkles className="h-3.5 w-3.5" /> Analyze field
+          <p className="text-sm text-neutral-500 mb-4">
+            Mark treatment zones in the Treatment Grid, or draw a manual anomaly polygon,
+            then the planner generates lawnmower patterns over them.
+          </p>
+          <button
+            onClick={() => setActiveTab("treatment")}
+            className="text-xs bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-2 font-semibold inline-flex items-center gap-2"
+          >
+            <Grid3x3 className="h-3.5 w-3.5" /> Open Treatment Grid
           </button>
         </div>
       </div>
@@ -1650,7 +1656,7 @@ export function PlannerTab({
         </div>
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
-            <span className="font-mono">{validZones.length} of {allZonesRaw.length} <span className="text-neutral-600">(AI {aiZonesRaw.length} · marks {userZonesRaw.length} · grid {gridZonesRaw.length})</span></span></div>
+            <span className="font-mono">{validZones.length} of {allZonesRaw.length} <span className="text-neutral-600">(grid {gridZonesRaw.length} · marks {userZonesRaw.length})</span></span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Waypoints (our pattern)</span>
             <span className="font-mono">{mission?.waypoints.length ?? 0}</span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Est. spray distance</span>
@@ -1836,13 +1842,12 @@ export function PlannerTab({
         recordDefaults={settings.application_record ?? null}
         batteryStart={preFlightBattery}
         zones={validZones.map(z => {
-          const ai = (analysis?.zones ?? []).find((a: AiZone) => a.id === z.id);
           const m2 = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));
           const acres = (m2 / 4046.8564224);
           return {
             id: z.id,
-            label: ai?.name ?? (z.source === "user" ? "Manual annotation" : "Zone"),
-            issue: ai?.issue ?? null,
+            label: z.source === "user" ? "Manual annotation" : (z.issue ?? "Grid zone"),
+            issue: z.issue ?? null,
             acres,
           };
         })}
@@ -1927,7 +1932,7 @@ export function Slider2({ label, value, setValue, min, max, step, unit, maxSafe,
 
 export function PlannerOverlay({ boundary, zones, rawZones = [], mission, home, onHomeChange, swapPoint, refillPoints = [] }: {
   boundary: BoundaryRing[];
-  zones: { ring: { lat: number; lng: number }[]; severity?: AiZone["severity"] }[];
+  zones: { ring: { lat: number; lng: number }[]; severity?: "low" | "medium" | "high" }[];
   /**
    * The cells as the operator painted them, drawn over the flight-ready blocks
    * so the extra ground squaring them off will treat is visible rather than

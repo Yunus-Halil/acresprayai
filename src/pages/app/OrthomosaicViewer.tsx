@@ -23,7 +23,7 @@ import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
 } from "@/lib/droneSpecs";
 import {
-  type AiZone, type CustomInput, type FarmerSettings, type LastFlownMission,
+  type CustomInput, type FarmerSettings, type LastFlownMission,
   COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS,
   growthStage, issueToCostKey, mergeFarmerSettings, normalizeBoundary,
 } from "@/lib/farmerSettings";
@@ -53,10 +53,8 @@ import {
 } from "@/components/app/workspace/constants";
 import type { Annotation, LayerState, UserPoly } from "@/components/app/workspace/layers";
 import FieldViewTab from "@/components/app/workspace/FieldViewTab";
-import AiTab from "@/components/app/workspace/AiTab";
 import PlannerTab from "@/components/app/workspace/PlannerTab";
 import TreatmentTab from "@/components/app/workspace/TreatmentTab";
-import AnalyzeFieldButton from "@/components/app/workspace/AnalyzeFieldButton";
 import { seedUnitSystem } from "@/hooks/useUnitSystem";
 import WeatherTab, { HeaderWeather } from "@/components/app/workspace/WeatherTab";
 import SettingsTab from "@/components/app/workspace/SettingsTab";
@@ -152,7 +150,7 @@ async function extractAndUpload(
 // this component. Re-exported from here for modules that still import them by
 // this path.
 export type {
-  AiZone, CustomInput, FarmerSettings, LastFlownMission,
+  CustomInput, FarmerSettings, LastFlownMission,
 } from "@/lib/farmerSettings";
 export {
   COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS, growthStage, issueToCostKey,
@@ -187,28 +185,17 @@ export default function OrthomosaicViewer() {
   } | null>(null);
   // "history" is gone as a destination: the scan timeline and compare live as
   // a panel over Field View now (ScanTimeline/SwipeCompare), not a second map.
-  type TabKey = "field" | "weather" | "ai" | "treatment" | "planner" | "reports" | "settings";
+  // "ai" is gone too — the legacy vision-analysis tab went with the deleted
+  // analyze-ortho path; the treatment grid is the one analysis system.
+  type TabKey = "field" | "weather" | "treatment" | "planner" | "reports" | "settings";
   const [activeTab, setActiveTab] = useState<TabKey>("field");
   const [openTabs, setOpenTabs] = useState<TabKey[]>(["field"]);
   const [newTabOpen, setNewTabOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  // Which scan an analysis is currently running for (the scan panel can start
-  // one for any scan of the field, not just the open one).
-  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
-  // Bumped whenever a scan's stored state changed (analysis ran, tiles rebaked)
-  // so the scan panel refetches; also busts the tile cache after a rebake.
+  // Bumped whenever a scan's stored state changed (grid assessment snapshot,
+  // tiles rebaked) so the scan panel refetches; also busts the tile cache.
   const [scansNonce, setScansNonce] = useState(0);
   const [tileRev, setTileRev] = useState(0);
-  const [analysis, setAnalysis] = useState<{
-    health_score: number; summary: string;
-    issues: { label: string; severity: string; description: string }[];
-    zones: AiZone[];
-  } | null>(null);
-  const [analysisErr, setAnalysisErr] = useState<string | null>(null);
-  const [selectedZone, setSelectedZone] = useState<string | null>(null);
-  const [showAiZones, setShowAiZones] = useState(true);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   // Database-backed manual polygon annotations (farmer's anomalies).
   const [userPolys, setUserPolys] = useState<UserPoly[]>([]);
@@ -319,25 +306,6 @@ export default function OrthomosaicViewer() {
       console.log("[OrthoViewer] task row:", t);
       if (!t?.odm_uuid) { setErr("Scan not found"); return; }
       setTask(t as TaskRow);
-
-      // Rehydrate saved AI analysis so treatment zones survive page reloads.
-      const saved = (t as any).ai_analysis;
-      if (saved && typeof saved === "object" && Array.isArray(saved.zones)) {
-        setAnalysis({
-          health_score: Number(saved.health_score ?? 0),
-          summary: String(saved.summary ?? ""),
-          issues: Array.isArray(saved.issues) ? saved.issues : [],
-          zones: saved.zones,
-        });
-      }
-      // A failed run is recorded on the scan by analyze-ortho; surface it,
-      // rather than letting a failure render as "never analyzed".
-      const lastRun = saved && typeof saved === "object" ? (saved as any).last_run : null;
-      if (lastRun?.status === "failed") {
-        setAnalysisErr(
-          `Analysis failed${lastRun.at ? ` (${new Date(lastRun.at).toLocaleString()})` : ""}: ${lastRun.error ?? "unknown error"}`,
-        );
-      }
 
       const { data: f } = await supabase.from("fields")
         .select("id, name, boundary, boundary_area_hectares, settings").eq("id", t.field_id).maybeSingle();
@@ -518,130 +486,10 @@ export default function OrthomosaicViewer() {
       + (ndviInfo?.fingerprint ? `&v=${encodeURIComponent(ndviInfo.fingerprint)}` : "")
     : null;
 
-  // Analysis can now be started from the top bar, which is visible on every
-  // tab — so its outcome has to be visible from every tab too. Both existing
-  // inline error displays live somewhere that can be closed: one inside Field
-  // View's collapsed drawer, one inside a tab that is not open by default.
-  // Reporting only there is how "nothing happened" becomes the user experience
-  // of a failure. The inline displays stay; this adds a toast alongside them.
-  // `target` may name any scan of this field (the scan panel analyzes older
-  // scans without reopening them); button onClick handlers pass a click event,
-  // which the typeof guard discards. Persistence happens server-side in
-  // analyze-ortho — success and failure both land on the scan row.
-  const runAnalysis = async (target?: string | unknown) => {
-    const targetId = typeof target === "string" ? target : taskId;
-    if (!targetId || !token || analyzingId) return;
-    const forCurrent = targetId === taskId;
-    const validRings = (boundary ?? []).filter(r => r.length >= 3);
-    if (validRings.length === 0) {
-      const msg = "Define the field boundary first so the AI only analyzes your farmland.";
-      setAnalysisErr(msg);
-      toast.error(msg, {
-        action: { label: "Draw boundary", onClick: () => setActiveTab("field") },
-      });
-      return;
-    }
-    setAnalyzingId(targetId);
-    if (forCurrent) { setAnalyzing(true); setAnalysisErr(null); }
-    try {
-      const r = await fetch(`${FN_BASE}/analyze-ortho`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          task_id: targetId,
-          boundary: validRings,
-          field_settings: {
-            crop_type: settings.crop_type || null,
-            planting_date: settings.planting_date || null,
-            harvest_date: settings.harvest_date || null,
-            growth_stage: growthStage(settings.crop_type, settings.planting_date),
-            available_inputs: Object.entries(settings.available_inputs)
-              .filter(([, on]) => on)
-              .map(([k]) => INPUT_LABELS[k as keyof typeof INPUT_LABELS]),
-            unavailable_inputs: Object.entries(settings.available_inputs)
-              .filter(([, on]) => !on)
-              .map(([k]) => INPUT_LABELS[k as keyof typeof INPUT_LABELS]),
-            custom_inputs: settings.custom_inputs.filter(c => c.name.trim()),
-            currency: settings.currency ?? "USD",
-          },
-        }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error ?? "Analysis failed");
-      const payload = {
-        health_score: j.health_score,
-        summary: j.summary,
-        issues: j.issues ?? [],
-        zones: j.zones ?? [],
-        watch_list: j.watch_list ?? [],
-        data_source: j.data_source ?? "RGB",
-        band_count: j.band_count ?? 3,
-        ndvi_cells: j.ndvi_cells ?? [],
-        disclaimer: j.disclaimer ?? "These zones show anomalies detected from aerial imagery. Ground inspection is recommended to confirm issue type before treatment. SwathWise does not replace professional agronomic advice.",
-      };
-      if (forCurrent) {
-        setAnalysis(payload);
-        setSelectedZone(j.zones?.[0]?.id ?? null);
-      }
-      // Zero zones is a real and unremarkable result — a healthy field — but
-      // silence would read as a failed run, so it gets said out loud.
-      const zoneCount = payload.zones.length;
-      toast.success(
-        zoneCount === 0
-          ? "Analysis complete, no treatment zones found."
-          : `Analysis complete, ${zoneCount} treatment zone${zoneCount === 1 ? "" : "s"}.`,
-        forCurrent ? { action: { label: "View", onClick: () => openTab("ai") } } : undefined,
-      );
-      // analyze-ortho persisted the result server-side; it only reports here.
-      if (j.persisted === false) {
-        toast.warning("The result could not be saved to the scan record, it will not survive a reload.");
-      }
-      setScansNonce(n => n + 1);
-    } catch (e: any) {
-      const msg = e?.message ?? String(e);
-      if (forCurrent) setAnalysisErr(msg);
-      // The failure is also recorded on the scan row by analyze-ortho, so the
-      // scan panel shows it after this toast is long gone.
-      setScansNonce(n => n + 1);
-      toast.error(`Analysis failed, ${msg}`, {
-        action: { label: "Retry", onClick: () => { void runAnalysis(targetId); } },
-      });
-    } finally {
-      setAnalyzingId(null);
-      if (forCurrent) setAnalyzing(false);
-    }
-  };
-
-  // First-open auto-run: a scan that has NEVER been analyzed (no result, no
-  // recorded failure) analyzes itself once the tiles are ready and a boundary
-  // exists. This is the missing link that left every scan at "0 zones": there
-  // was no path from "scan completed" to "analysis ran" except a person
-  // finding the button. A previously FAILED run is deliberately not retried
-  // automatically — the failure is shown, and a person decides.
-  const autoRan = useRef(false);
-  useEffect(() => {
-    if (autoRan.current || !tileTemplate || !task || analyzingId) return;
-    const t = task as unknown as { ai_analysis: unknown; ai_analysis_at: string | null };
-    if (t.ai_analysis || t.ai_analysis_at) return;
-    const validRings = (boundary ?? []).filter(r => r.length >= 3);
-    if (validRings.length === 0) return;
-    autoRan.current = true;
-    toast.info("New scan — running field analysis…");
-    void runAnalysis();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tileTemplate, task, boundary]);
-
-  const clearAnalysis = async () => {
-    if (!taskId) return;
-    if (!window.confirm("Clear the saved AI analysis for this scan?")) return;
-    setAnalysis(null);
-    setSelectedZone(null);
-    try {
-      await supabase.from("odm_tasks")
-        .update({ ai_analysis: null, ai_analysis_at: null } as any)
-        .eq("id", taskId);
-    } catch (e) { console.warn("ai_analysis clear failed", e); }
-  };
+  // The legacy analyze-ortho vision path is gone. Analysis is the treatment
+  // grid: the operator marks reference cells in the Treatment Grid tab, the
+  // system extrapolates, and every grid write snapshots the zones onto this
+  // scan (lib/scanAssessment.ts). Nothing here runs a model.
 
   // Boundary persistence ------------------------------------------------------
   // Multi-polygon: each ring is one fragment of the field. Users can keep
@@ -718,54 +566,6 @@ export default function OrthomosaicViewer() {
     }
   };
 
-  const updateZoneRing = useCallback((id: string, ring: { lat: number; lng: number }[]) => {
-    setAnalysis(a => a ? { ...a, zones: a.zones.map(z => z.id === id ? { ...z, ring } : z) } : a);
-  }, []);
-
-  const deleteZone = (id: string) => {
-    setAnalysis(a => {
-      const next = a ? { ...a, zones: a.zones.filter(z => z.id !== id) } : a;
-      // Persist immediately so the deletion survives reload / tab switch.
-      if (next && taskId) {
-        supabase.from("odm_tasks")
-          .update({ ai_analysis: next as any, ai_analysis_at: new Date().toISOString() } as any)
-          .eq("id", taskId)
-          .then(({ error }) => { if (error) console.warn("deleteZone persist failed", error); });
-      }
-      return next;
-    });
-    if (selectedZone === id) setSelectedZone(null);
-  };
-
-  const exportFlightPlan = () => {
-    if (!analysis) return;
-    const fc = {
-      type: "FeatureCollection",
-      features: analysis.zones.map(z => ({
-        type: "Feature",
-        properties: {
-          name: z.name, issue: z.issue, severity: z.severity,
-          coverage_pct: z.coverage_pct,
-          action: z.recommendation?.action,
-          product: z.recommendation?.product,
-          dose: z.recommendation?.dose,
-        },
-        geometry: {
-          type: "Polygon",
-          coordinates: [[
-            ...z.ring.map(p => [p.lng, p.lat]),
-            [z.ring[0].lng, z.ring[0].lat],
-          ]],
-        },
-      })),
-    };
-    const blob = new Blob([JSON.stringify(fc, null, 2)], { type: "application/geo+json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `flight-plan-${taskId}.geojson`; a.click();
-    URL.revokeObjectURL(url);
-  };
-
   // ---- User annotations CRUD (DB-backed) ------------------------------------
   const saveUserPolygon = async (form: { name: string; issue_type: string; color: string; notes: string }) => {
     if (!draftUserPoly || !taskId) return;
@@ -822,25 +622,23 @@ export default function OrthomosaicViewer() {
 
   // ---- Report map capture -------------------------------------------------
   // The report's map must show exactly what its tables describe: orthomosaic,
-  // boundary, AI zones. Working overlays (annotations, grid zones, user
-  // polygons, measurements) are hidden for the capture and restored after —
-  // the screenshotted map and the printed tables come from one data source.
-  const captureRestore = useRef<{ layers: LayerState; showAiZones: boolean } | null>(null);
+  // boundary, and the treatment-grid zones. Working overlays (annotations,
+  // user polygons, measurements) are hidden for the capture and restored after
+  // — the screenshotted map and the printed tables come from one data source.
+  const captureRestore = useRef<{ layers: LayerState } | null>(null);
   const prepareMapCapture = useCallback(() => {
-    captureRestore.current = { layers, showAiZones };
+    captureRestore.current = { layers };
     // Field View listens and exits compare/panel state, which would otherwise
     // be captured over the ortho.
     window.dispatchEvent(new CustomEvent("swathwise:prepare-capture"));
     setLayers({
       annotations: false, design: false, orthomosaic: true, ndvi: false,
-      measurements: false, boundary: true, userAnnotations: false, gridZones: false,
+      measurements: false, boundary: true, userAnnotations: false, gridZones: true,
     });
-    setShowAiZones(!!analysis);
-  }, [layers, showAiZones, analysis]);
+  }, [layers]);
   const restoreMapCapture = useCallback(() => {
     if (!captureRestore.current) return;
     setLayers(captureRestore.current.layers);
-    setShowAiZones(captureRestore.current.showAiZones);
     captureRestore.current = null;
   }, []);
 
@@ -952,17 +750,9 @@ export default function OrthomosaicViewer() {
     (b[0][1] + b[1][1]) / 2,
   ];
 
-  const score = analysis?.health_score;
-  const scoreTone =
-    score == null ? { dot: "#666", text: "text-neutral-500", label: "Not scored" }
-    : score >= 70 ? { dot: "#4CAF50", text: "text-[#4CAF50]", label: `${score}/100 · Healthy` }
-    : score >= 40 ? { dot: "#facc15", text: "text-yellow-400", label: `${score}/100 · Watch` }
-    : { dot: "#ef4444", text: "text-red-400", label: `${score}/100 · Stressed` };
-
   const TAB_DEFS: { key: TabKey; label: string; icon: any }[] = [
     { key: "field", label: "Field View", icon: MapIcon },
     { key: "weather", label: "Weather", icon: CloudSun },
-    { key: "ai", label: "AI Analysis", icon: Bot },
     { key: "treatment", label: "Treatment Grid", icon: Grid3x3 },
     { key: "planner", label: "Flight Planner", icon: Plane },
     { key: "reports", label: "Reports", icon: FileBarChart },
@@ -1007,19 +797,14 @@ export default function OrthomosaicViewer() {
             if (!openTabs.includes("weather")) setOpenTabs(t => [...t, "weather"]);
             setActiveTab("weather");
           }} />
-
-          {/* Always visible, on every tab, whatever any drawer is doing.
-              See AnalyzeFieldButton.tsx for why it had to exist. */}
-          <AnalyzeFieldButton
-            hasAnalysis={!!analysis}
-            analyzing={analyzing}
-            onRun={runAnalysis}
-          />
-
-          <div className="flex items-center gap-2 px-3 h-7 rounded-sm border border-[#222] bg-[#161616]">
-            <span className="h-2 w-2 rounded-full" style={{ background: scoreTone.dot }} />
-            <span className={`text-xs font-medium ${scoreTone.text}`}>{scoreTone.label}</span>
-          </div>
+          {/* The one analysis system, one click away from every tab. */}
+          <button
+            type="button"
+            onClick={() => openTab("treatment")}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm bg-[#4CAF50] px-3 text-xs font-semibold text-black transition-colors hover:bg-[#43a047]"
+          >
+            <Grid3x3 className="h-3.5 w-3.5" /> Treatment Grid
+          </button>
         </div>
       </div>
 
@@ -1111,19 +896,6 @@ export default function OrthomosaicViewer() {
             cursorZoomRef={cursorZoomRef}
             layersOpen={layersOpen}
             setLayersOpen={setLayersOpen}
-            drawerOpen={drawerOpen}
-            setDrawerOpen={setDrawerOpen}
-            analysis={analysis}
-            analyzing={analyzing}
-            analysisErr={analysisErr}
-            runAnalysis={runAnalysis}
-            showAiZones={showAiZones}
-            setShowAiZones={setShowAiZones}
-            selectedZone={selectedZone}
-            setSelectedZone={setSelectedZone}
-            updateZoneRing={updateZoneRing}
-            deleteZone={deleteZone}
-            exportFlightPlan={exportFlightPlan}
             taskId={taskId!}
             annotations={annotations}
             setAnnotations={setAnnotations}
@@ -1148,7 +920,6 @@ export default function OrthomosaicViewer() {
             saveUserPolygon={saveUserPolygon}
             fieldId={field?.id ?? null}
             deleteUserPolygon={deleteUserPolygon}
-            clearAnalysis={clearAnalysis}
             openSettings={() => openTab("settings")}
             settings={settings}
             scansApi={{
@@ -1156,8 +927,11 @@ export default function OrthomosaicViewer() {
               fieldName: field?.name ?? "Field",
               currentTaskId: taskId!,
               scansNonce,
-              analyzingId,
-              analyzeScan: (id) => { void runAnalysis(id); },
+              bumpScansNonce: () => setScansNonce(n => n + 1),
+              // Assessment is interactive by nature — reference points are a
+              // human gesture — so the card action opens the Treatment Grid
+              // rather than pretending analysis can run headless.
+              openTreatmentGrid: () => openTab("treatment"),
               onTilesRebaked: (id) => {
                 setScansNonce(n => n + 1);
                 if (id === taskId) setTileRev(r => r + 1);
@@ -1167,11 +941,6 @@ export default function OrthomosaicViewer() {
           />
         </div>
         {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
-        {activeTab === "ai" && (
-          <AiTab analysis={analysis} analyzing={analyzing} analysisErr={analysisErr}
-            runAnalysis={runAnalysis} exportFlightPlan={exportFlightPlan}
-            clearAnalysis={clearAnalysis} deleteZone={deleteZone} settings={settings} />
-        )}
         {activeTab === "treatment" && (
           <TreatmentTab
             boundary={boundary}
@@ -1179,6 +948,7 @@ export default function OrthomosaicViewer() {
             bounds={bounds}
             maxNative={maxNative}
             fieldId={field?.id ?? null}
+            taskId={taskId!}
             spec={resolveDroneSpec(parentActiveDrone?.model, settings.flight_plan.custom_specs).spec}
             settings={settings}
             setActiveTab={setActiveTab}
@@ -1186,7 +956,6 @@ export default function OrthomosaicViewer() {
         )}
         {activeTab === "planner" && (
           <PlannerTab
-            analysis={analysis}
             boundary={boundary}
             tileUrl={tileUrl}
             bounds={bounds}
@@ -1194,7 +963,6 @@ export default function OrthomosaicViewer() {
             taskId={taskId!}
             fieldId={field?.id ?? null}
             fieldName={field?.name ?? taskName}
-            runAnalysis={runAnalysis}
             setActiveTab={setActiveTab}
             settings={settings}
             onSaveSettings={saveSettings}
@@ -1207,7 +975,6 @@ export default function OrthomosaicViewer() {
           <ReportsTab
             field={field ? { id: field.id, name: field.name, boundary_area_hectares: field.boundary_area_hectares ?? null } : null}
             task={{ id: taskId!, created_at: task.created_at }}
-            analysis={analysis}
             settings={settings}
             activeDrone={parentActiveDrone}
             lastLog={parentLastLog}
@@ -1235,6 +1002,8 @@ export default function OrthomosaicViewer() {
         <div className="ml-auto truncate font-mono text-neutral-600">{task.odm_uuid?.slice(0, 8)}</div>
       </div>
 
+      {/* .ai-zone-label / .ai-zone-popup are the map tooltip/popup styles shared
+          by the grid-zone and user-polygon layers; the name predates the grid. */}
       <style>{`
         .ai-zone-label {
           background: #1a1a1a;

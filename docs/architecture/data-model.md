@@ -38,7 +38,7 @@ One row per scan. Despite the name this is the central object of the product.
 | `output_path` | text | `all.zip` in the `scans` bucket |
 | `ortho_path` | text | GeoTIFF in the `orthos` bucket |
 | `error` | text | User-facing failure reason |
-| `ai_analysis` | jsonb | Persisted analysis result — see [features/ai-analysis.md](../features/ai-analysis.md) |
+| `ai_analysis` | jsonb | Per-scan treatment-grid assessment snapshot (`src/lib/scanAssessment.ts`); rows without `source: "treatment-grid"` are legacy vision results, kept and labelled — see the state decoder in `src/lib/compareGround.ts` |
 | `ai_analysis_at` | timestamptz | |
 | `tiles_baked` | boolean | True only when **every** tile actually stored |
 | `tiles_done` | integer | Resume cursor into the tile list |
@@ -173,10 +173,10 @@ snapshot of `computeMissionStats()` output, never recomputed on read.
 
 ## The `ring` vs `polygon` trap
 
-> **Read this before writing anything that consumes AI zones.**
+> **Read this before writing anything that consumes zones.**
 
-The vision model returns each zone's outline under the key `polygon`. The `analyze-ortho`
-function validates, reprojects and clips it, then persists it under the key **`ring`**.
+The removed analyze-ortho vision path returned each zone's outline under the key `polygon`; its
+normalisation persisted it under the key **`ring`**, and treatment-grid snapshots write `ring` too.
 
 Anything reading zones back out of `odm_tasks.ai_analysis` must use `ring`. Reading `polygon`
 silently yields `undefined`, and every derived area computes as zero with no error. This bug

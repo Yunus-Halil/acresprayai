@@ -138,18 +138,38 @@ export function clipRingToRect(ring: GroundPoint[], rect: ScanBounds): GroundPoi
 // Change statistics — overlap only
 // ---------------------------------------------------------------------------
 
-type ZoneLike = { ring?: GroundPoint[] };
+type ZoneLike = { ring?: GroundPoint[]; areaM2?: number };
 
-/** Stressed acres of a whole scan, no clipping. For single-scan cards. */
-export function stressedAcres(zones: ZoneLike[]): number {
-  return zones.reduce((sum, z) => sum + polyAcres(z.ring), 0);
+/**
+ * One zone's acres. Treatment-grid snapshots carry `areaM2` — the sum of the
+ * member cells' TRUE clipped areas, the number prescriptions are priced on —
+ * so it wins over re-deriving from the traced ring, which pokes past the field
+ * edge. Ring area is the fallback for legacy zones that carry nothing better.
+ */
+export function zoneAcres(z: ZoneLike): number {
+  if (typeof z.areaM2 === "number" && isFinite(z.areaM2) && z.areaM2 >= 0) {
+    return z.areaM2 / 4046.8564224;
+  }
+  return polyAcres(z.ring);
 }
 
-/** Stressed acres inside the shared footprint only. */
+/** Marked/stressed acres of a whole scan, no clipping. For single-scan cards. */
+export function stressedAcres(zones: ZoneLike[]): number {
+  return zones.reduce((sum, z) => sum + zoneAcres(z), 0);
+}
+
+/**
+ * Marked acres inside the shared footprint only. A zone partly outside is
+ * counted by its true area scaled by the clipped fraction of its ring —
+ * geometry decides the fraction, the grid's own arithmetic decides the total.
+ */
 export function stressedAcresWithin(zones: ZoneLike[], rect: ScanBounds): number {
   return zones.reduce((sum, z) => {
     if (!z.ring || z.ring.length < 3) return sum;
-    return sum + polyAcres(clipRingToRect(z.ring, rect));
+    const ringAc = polyAcres(z.ring);
+    if (ringAc <= 0) return sum;
+    const clippedAc = polyAcres(clipRingToRect(z.ring, rect));
+    return sum + zoneAcres(z) * (clippedAc / ringAc);
   }, 0);
 }
 
@@ -193,45 +213,66 @@ export type AnalysisState =
   | { kind: "failed"; error: string; at: string | null }
   | {
       kind: "done";
+      /**
+       * "grid": snapshotted from the treatment grid — the product's one
+       * analysis system. "legacy": written by the removed analyze-ortho vision
+       * path; kept, never blended, and every reader labels it as legacy so no
+       * number is ambiguous about which system produced it.
+       */
+      source: "grid" | "legacy";
       zones: { id?: string; ring?: GroundPoint[]; severity?: string }[];
       at: string | null;
-      /** A later re-run failed; the zones shown are from the last good run. */
+      /** A later grid run failed; the zones shown are from the last good state. */
       rerunFailed: { error: string; at: string | null } | null;
     };
 
 /**
- * The one place that decides whether a scan is "not analyzed", "analyzed"
- * or "failed" — so the three can never blur into one rendering again.
+ * The one place that decides whether a scan is "no reference points yet",
+ * "assessed" or "run failed" — so the three can never blur into one rendering.
  *
- * The states live in odm_tasks without a schema change:
- *   ai_analysis == null, ai_analysis_at == null      → never analyzed
- *   ai_analysis.last_run.status == "failed", no zones → failed, reason stored
- *   ai_analysis.zones is an array                     → analyzed (possibly zero
- *                                                       zones, which is a real
- *                                                       result, not an absence)
+ * The states live in odm_tasks.ai_analysis without a schema change (shape in
+ * lib/scanAssessment.ts):
+ *   null / empty grid snapshot with no reference points  → none
+ *   last_run.status == "failed", nothing assessed        → failed, reason kept
+ *   zones array (possibly empty)                         → done — an empty
+ *     result from placed reference points is a RESULT, not an absence
+ *   source != "treatment-grid" but zones present         → done, legacy-marked
  */
 export function analysisStateOf(task: {
   ai_analysis: unknown;
   ai_analysis_at: string | null;
 }): AnalysisState {
   const a = task.ai_analysis as {
+    source?: string;
     zones?: unknown;
+    reference?: { treated?: number; skipped?: number };
+    detection?: unknown;
     last_run?: { status?: string; at?: string; error?: string };
   } | null;
   const lastRun = a && typeof a === "object" ? a.last_run : undefined;
+  const failedRun = lastRun?.status === "failed"
+    ? { error: lastRun.error ?? "Unknown error", at: lastRun.at ?? null }
+    : null;
+
   if (a && Array.isArray(a.zones)) {
+    const isGrid = a.source === "treatment-grid";
+    // A grid snapshot with zero zones AND zero reference points AND no
+    // detection is a grid nobody has worked yet — "none", not "assessed clean".
+    if (
+      isGrid && a.zones.length === 0 && !a.detection &&
+      (a.reference?.treated ?? 0) === 0 && (a.reference?.skipped ?? 0) === 0
+    ) {
+      return failedRun ? { kind: "failed", ...failedRun } : { kind: "none" };
+    }
     return {
       kind: "done",
+      source: isGrid ? "grid" : "legacy",
       zones: a.zones as { id?: string; ring?: GroundPoint[]; severity?: string }[],
       at: task.ai_analysis_at,
-      rerunFailed: lastRun?.status === "failed"
-        ? { error: lastRun.error ?? "Unknown error", at: lastRun.at ?? null }
-        : null,
+      rerunFailed: failedRun,
     };
   }
-  if (lastRun?.status === "failed") {
-    return { kind: "failed", error: lastRun.error ?? "Unknown error", at: lastRun.at ?? null };
-  }
+  if (failedRun) return { kind: "failed", ...failedRun };
   return { kind: "none" };
 }
 

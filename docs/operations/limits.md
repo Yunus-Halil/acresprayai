@@ -75,9 +75,9 @@ The planner still *reads* rather than fetches: if nothing has populated the cach
 location, battery estimates run without wind or temperature adjustment. There is no error — the
 numbers are simply less accurate.
 
-### Boundary is required for AI analysis
+### Boundary is required for assessment and planning
 
-By design. Without it the model would be reading neighbouring land.
+By design. Without it the treatment grid would lattice neighbouring land.
 
 ### Defaults are US-centric
 

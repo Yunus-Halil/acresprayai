@@ -40,6 +40,7 @@ import {
 } from "@/lib/findSimilar";
 import { MIN_MARKS_PER_CLASS } from "@/lib/matchCells";
 import { resolutionSufficient, stitchTiles } from "@/lib/orthoRaster";
+import { recordGridRunFailure, snapshotGridAssessment } from "@/lib/scanAssessment";
 import { type MigrationPlan, applyMigration, planMigration } from "@/lib/gridMigrate";
 import { SupabaseTreatmentGridRepository } from "@/lib/treatmentGridRepo";
 import type { GridRenderInfo } from "./TreatmentGridLayer";
@@ -57,13 +58,19 @@ const repo = new SupabaseTreatmentGridRepository();
 type Tool = "inspect" | "paint";
 
 export function TreatmentTab({
-  boundary, tileUrl, bounds, maxNative, fieldId, spec, settings, setActiveTab,
+  boundary, tileUrl, bounds, maxNative, fieldId, taskId, spec, settings, setActiveTab,
 }: {
   boundary: BoundaryRing[] | null;
   tileUrl: string;
   bounds: L.LatLngBoundsExpression | null;
   maxNative: number;
   fieldId: string | null;
+  /**
+   * The scan whose imagery is on screen. Every successful grid write made here
+   * snapshots the zones onto this scan (lib/scanAssessment.ts) — that is what
+   * scan cards, compare statistics and the spray report read.
+   */
+  taskId: string;
   spec: DroneSpec;
   settings: FarmerSettings;
   /** Narrow on purpose: the only tab this screen sends anyone to is Field View. */
@@ -203,28 +210,39 @@ export function TreatmentTab({
         await repo.save(fieldId, packGrid(grid));
         dirty.current = false;
         setSavedAt(Date.now());
+        // Freeze the zones onto the scan the operator is working against, so
+        // this assessment survives as this scan's record after the grid moves
+        // on. A failed snapshot is a failed save of the scan record — said,
+        // not swallowed.
+        const snap = await snapshotGridAssessment(taskId, grid);
+        if (!snap.ok) {
+          setSaveError(`Grid saved, but the scan's assessment record did not update: ${snap.error}`);
+        }
       } catch (e) {
         const msg = e instanceof GridStoreTooLargeError
           ? e.message
           : `Could not save: ${(e as Error)?.message ?? e}`;
         setSaveError(msg);
         console.error("[grid] save failed", e);
+        void recordGridRunFailure(taskId, msg);
       } finally {
         setSaving(false);
       }
     }, 700);
     return () => clearTimeout(t);
-  }, [grid, fieldId, pendingMigration]);
+  }, [grid, fieldId, taskId, pendingMigration]);
 
   // Flush a pending debounced save when the tab unmounts. Without this, a tab
   // switch within the 700 ms window silently dropped the last strokes — and
   // the planner reading the stored grid a second later saw a stale one.
   useEffect(() => () => {
     if (dirty.current && fieldId && gridRef.current && !pendingRef.current) {
-      repo.save(fieldId, packGrid(gridRef.current))
+      const g = gridRef.current;
+      repo.save(fieldId, packGrid(g))
+        .then(() => snapshotGridAssessment(taskId, g))
         .catch(e => console.error("[grid] flush on unmount failed", e));
     }
-  }, [fieldId]);
+  }, [fieldId, taskId]);
 
   const mutate = useCallback((ids: readonly CellId[], next: (cur: CellRate) => CellRate) => {
     // Locked while a migration decision is pending: the first write would
@@ -335,16 +353,24 @@ export function TreatmentTab({
       Math.min(20, maxNative),
     );
     if (!resolutionSufficient(cellPx)) {
-      setFindError(
+      const msg =
         `The imagery is too coarse to measure these cells, about ${Math.floor(cellPx * cellPx)} ` +
         `pixels per cell where at least 30 are needed. Use a larger cell size, or re-bake the ` +
-        `scan at a deeper zoom.`,
-      );
+        `scan at a deeper zoom.`;
+      setFindError(msg);
+      // The failed run is recorded on the scan, not just flashed in this tab —
+      // a failure that only lives in transient state renders later as "never
+      // run", which is the legacy path's defect and must not come back.
+      void recordGridRunFailure(taskId, msg);
       return null;
     }
     const sampling = extractCellFeatures(grid.cells, raster, null);
     const verdict = samplingVerdict(sampling);
-    if (!verdict.ok) { setFindError(verdict.message); return null; }
+    if (!verdict.ok) {
+      setFindError(verdict.message);
+      void recordGridRunFailure(taskId, verdict.message);
+      return null;
+    }
     return { sampling, missingTiles };
   };
 
@@ -361,7 +387,11 @@ export function TreatmentTab({
       const { sampling, missingTiles } = sampled;
 
       const result = findSimilarCells(grid, sampling);
-      if (!result.ready) { setFindError(result.message); return; }
+      if (!result.ready) {
+        setFindError(result.message);
+        void recordGridRunFailure(taskId, result.message);
+        return;
+      }
 
       // Detection provenance: every scored cell keeps its score, on the
       // existing detection field. Rates are untouched — scoring is never
@@ -386,7 +416,9 @@ export function TreatmentTab({
       }
       setFindNote(extras.length ? extras.join(". ") + "." : null);
     } catch (e) {
-      setFindError((e as Error)?.message ?? String(e));
+      const msg = (e as Error)?.message ?? String(e);
+      setFindError(msg);
+      void recordGridRunFailure(taskId, msg);
     } finally {
       setFinding(false);
     }
@@ -435,7 +467,9 @@ export function TreatmentTab({
       if (missingTiles) extras.push(`${missingTiles} imagery tile(s) failed to load`);
       setFindNote(extras.length ? extras.join(". ") + "." : null);
     } catch (e) {
-      setFindError((e as Error)?.message ?? String(e));
+      const msg = (e as Error)?.message ?? String(e);
+      setFindError(msg);
+      void recordGridRunFailure(taskId, msg);
     } finally {
       setFinding(false);
     }

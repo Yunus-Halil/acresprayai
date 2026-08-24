@@ -149,7 +149,7 @@ orthomosaic not ready, tile service unhappy — get a transparent pixel so the m
 with broken tiles.
 
 Band **roles** decide the maths — never band count or band order. See
-[Band resolution](../features/ai-analysis.md#band-resolution); the short version is that ODM
+band resolution in `supabase/functions/_shared/bands.ts`; the short version is that ODM
 writes RGB orthos as RGBA, and no two multispectral sensors agree on band order, so both must be
 resolved rather than assumed.
 
@@ -182,12 +182,12 @@ reason.
 
 ---
 
-## `analyze-ortho` — run the vision model
+## `analyze-ortho` — REMOVED
 
 **Auth:** JWT required. **Body:** `{ task_id, boundary, field_settings }`.
 
-The entire AI capability of the product. See [features/ai-analysis.md](../features/ai-analysis.md)
-for the full contract.
+Deleted 2026-08-24 along with the whole legacy vision path; the treatment grid (client-side, src/lib/findSimilar.ts) is the analysis system and calls no model. See src/lib/scanAssessment.ts
+for the per-scan snapshot it writes instead.
 
 ---
 

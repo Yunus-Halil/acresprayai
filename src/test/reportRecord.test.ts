@@ -26,10 +26,10 @@ const COMPLETE_RECORD: ApplicationRecord = {
 describe("the result banner", () => {
   const base = { targetedAcres: 0, fieldAcres: 11.07, isPostFlight: false, savingsPct: 0 };
 
-  it("renders NO ANALYSIS as neutral, explicitly not a finding of zero", () => {
+  it("renders NO ASSESSMENT as neutral, explicitly not a finding of zero", () => {
     const b = bannerFor({ ...base, hasAnalysis: false, zoneCount: 0 });
     expect(b.tone).toBe("none");
-    expect(b.big).toMatch(/No analysis run/i);
+    expect(b.big).toMatch(/No assessment/i);
     expect(b.big).toMatch(/not determined/i);
     expect(b.note).toMatch(/not a finding of zero/i);
     expect(b.note).toMatch(/No spray recommendation/i);
@@ -39,27 +39,35 @@ describe("the result banner", () => {
     }
   });
 
-  it("analyzed-and-clean is its own state, not success styling and not absence", () => {
-    const b = bannerFor({ ...base, hasAnalysis: true, zoneCount: 0 });
+  it("assessed-and-clean is its own state, not success styling and not absence", () => {
+    const b = bannerFor({ ...base, hasAnalysis: true, source: "grid", zoneCount: 0 });
     expect(b.tone).toBe("clean");
-    expect(b.big).toMatch(/no areas requiring targeted treatment/i);
+    expect(b.big).toMatch(/nothing marked for treatment/i);
   });
 
-  it("reserves success styling for a completed analysis with computed zones", () => {
-    const pre = bannerFor({ ...base, hasAnalysis: true, zoneCount: 3, targetedAcres: 2.4 });
+  it("reserves success styling for a grid assessment with marked zones", () => {
+    const pre = bannerFor({ ...base, hasAnalysis: true, source: "grid", zoneCount: 3, targetedAcres: 2.4 });
     expect(pre.tone).toBe("success");
     expect(pre.big).toMatch(/Targeting 2\.40 ac of 11\.07 ac/);
 
     const post = bannerFor({
-      ...base, hasAnalysis: true, zoneCount: 3, targetedAcres: 2.4,
+      ...base, hasAnalysis: true, source: "grid", zoneCount: 3, targetedAcres: 2.4,
       isPostFlight: true, savingsPct: 78,
     });
     expect(post.tone).toBe("success");
     expect(post.big).toBe("78% less chemical");
   });
 
+  it("labels a legacy result as the retired path's output, never as success", () => {
+    const b = bannerFor({ ...base, hasAnalysis: true, source: "legacy", zoneCount: 3, targetedAcres: 2.4 });
+    expect(b.tone).toBe("legacy");
+    expect(b.big).toMatch(/Legacy analysis/i);
+    expect(b.sub).toMatch(/retired vision-analysis system/i);
+    expect(b.note).toMatch(/Re-assess/i);
+  });
+
   it("states areas in acres, never square feet", () => {
-    const b = bannerFor({ ...base, hasAnalysis: true, zoneCount: 1, targetedAcres: 0.008 });
+    const b = bannerFor({ ...base, hasAnalysis: true, source: "grid", zoneCount: 1, targetedAcres: 0.008 });
     expect(b.big).toContain("0.01 ac");
     expect(b.big).not.toMatch(/ft/);
   });
@@ -84,7 +92,7 @@ describe("what makes a report FINAL", () => {
       missionLogged: false, record: EMPTY_RECORD,
     });
     for (const label of [
-      "Imagery analysis", "Field boundary", "Logged mission", "Volume applied",
+      "Treatment grid assessment", "Field boundary", "Logged mission", "Volume applied",
       "Grower / customer name", "Product name", "EPA registration number",
       "Application start time", "Application end time",
       "Wind speed", "Wind direction", "Temperature",

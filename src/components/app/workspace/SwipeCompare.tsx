@@ -538,7 +538,7 @@ export function SideLegend({ side, index }: { side: "A" | "B"; index: Vegetation
 }
 
 export function CompareStatsBar({
-  a, b, stats, aAnalyzed, bAnalyzed, aBounds, bBounds,
+  a, b, stats, aAnalyzed, bAnalyzed, aBounds, bBounds, aSource, bSource,
 }: {
   a: FieldScan;
   b: FieldScan;
@@ -547,8 +547,15 @@ export function CompareStatsBar({
   bAnalyzed: boolean;
   aBounds: ScanBounds | null;
   bBounds: ScanBounds | null;
+  /** Which system produced each side's zones — legacy results are labelled. */
+  aSource: "grid" | "legacy" | null;
+  bSource: "grid" | "legacy" | null;
 }) {
   const offset = aBounds && bBounds ? offsetDescription(aBounds, bBounds) : null;
+  const legacySides = [
+    ...(aSource === "legacy" ? [`A (${shortDate(a.created_at)})`] : []),
+    ...(bSource === "legacy" ? [`B (${shortDate(b.created_at)})`] : []),
+  ];
   return (
     <div
       data-testid="compare-stats"
@@ -579,9 +586,9 @@ export function CompareStatsBar({
               </span>
             ) : (
               <span className="text-neutral-500">
-                {aAnalyzed ? `Analyze the ${shortDate(b.created_at)} scan` :
-                 bAnalyzed ? `Analyze the ${shortDate(a.created_at)} scan` :
-                 "Analyze both scans"} to measure change.
+                {aAnalyzed ? `Assess the ${shortDate(b.created_at)} scan` :
+                 bAnalyzed ? `Assess the ${shortDate(a.created_at)} scan` :
+                 "Assess both scans"} in the Treatment Grid to measure change.
               </span>
             )}
           </div>
@@ -589,6 +596,12 @@ export function CompareStatsBar({
             Change is measured only inside the ground both flights covered; the dimmed area was
             not covered by both.
           </div>
+          {legacySides.length > 0 && (
+            <div className="mt-1 text-[10px] leading-snug text-amber-500/80">
+              Side {legacySides.join(" and side ")} shows a legacy vision-analysis result, not a
+              treatment-grid assessment. Re-assess it before relying on this change figure.
+            </div>
+          )}
           {aAnalyzed && bAnalyzed && stats.deltaPct === null && stats.aStressedAc === 0 && (
             <div className="mt-0.5 text-[10px] leading-snug text-neutral-500">
               The older scan has no stressed area inside the shared coverage, so there is no

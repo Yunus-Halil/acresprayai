@@ -1,0 +1,153 @@
+// The per-scan record of what the TREATMENT GRID found — the product's one
+// analysis system.
+//
+// THE MODEL. The grid itself is per-field and mutable: one lattice of cells in
+// fields.settings, edited live as the operator paints reference points and
+// runs Find Similar over a scan's imagery. Scan cards, the compare view's
+// change statistics and the spray report all need "what the assessment was ON
+// THIS SCAN" — so every successful grid write snapshots a slim projection of
+// the zones onto the scan row (odm_tasks.ai_analysis, the column the deleted
+// legacy path used to own), and every failed grid run records its reason
+// there. History lives on the scans; the live grid stays the single editable
+// truth.
+//
+// THREE STATES, DECIDED HERE AND NOWHERE ELSE:
+//   none    — no reference points placed and no detection run for this scan
+//   done    — the grid was worked against this scan; zones may legitimately be
+//             empty, and an empty result is a RESULT, never rendered like
+//             absence
+//   failed  — a grid run (tile stitch, sampling, save) failed; the reason is
+//             stored, never a silent null
+//
+// LEGACY DATA. Rows written by the removed analyze-ortho vision path lack
+// `source: "treatment-grid"`. They are never deleted, never blended with grid
+// output, and every reader labels them as legacy — two analysis systems on
+// one surface would make it ambiguous which one produced any given number.
+import { supabase } from "@/integrations/supabase/client";
+import type { LatLng2 } from "./geo";
+import { type GridZone, gridZonesFor } from "./gridZones";
+import type { TreatmentGrid } from "./treatmentGrid";
+import { labelsFromGrid } from "./findSimilar";
+import { loadGridZones } from "./gridAnomalies";
+
+export const GRID_SOURCE = "treatment-grid" as const;
+
+/** A zone as frozen onto a scan: everything display needs, nothing else. */
+export type SnapshotZone = {
+  id: string;
+  ring: LatLng2[];
+  /** Σ member cells' clipped areas — the priced number, carried not re-derived. */
+  areaM2: number;
+  rateLha: number;
+  cellCount: number;
+  issue?: string;
+  matchScore?: number | null;
+};
+
+export type ScanAssessment = {
+  source: typeof GRID_SOURCE;
+  zones: SnapshotZone[];
+  /** Operator reference points at snapshot time — what "none" is decided from. */
+  reference: { treated: number; skipped: number };
+  /** Present when a Find Similar detection has scored this grid. */
+  detection: { scoredAt: string; modelVersion: string } | null;
+  computed_at: string;
+  last_run: { status: "completed" | "failed"; at: string; error?: string };
+};
+
+const slim = (z: GridZone): SnapshotZone => ({
+  id: z.id,
+  ring: z.ring,
+  areaM2: z.areaM2,
+  rateLha: z.rateLha,
+  cellCount: z.cellCount,
+  ...(z.issue ? { issue: z.issue } : {}),
+  matchScore: z.matchScore,
+});
+
+function assessmentFromGrid(grid: TreatmentGrid): ScanAssessment {
+  const labels = labelsFromGrid(grid);
+  const scored = grid.cells.find(c => c.detection);
+  const now = new Date().toISOString();
+  return {
+    source: GRID_SOURCE,
+    zones: gridZonesFor(grid).map(slim),
+    reference: { treated: labels.wanted.length, skipped: labels.unwanted.length },
+    detection: scored?.detection
+      ? { scoredAt: scored.detection.scoredAt, modelVersion: scored.detection.modelVersion }
+      : null,
+    computed_at: now,
+    last_run: { status: "completed", at: now },
+  };
+}
+
+/**
+ * Freeze the grid's current zones onto a scan row.
+ *
+ * Called after every successful grid write made while this scan is open — the
+ * imagery on screen is the imagery the decisions were made against. Failure to
+ * snapshot is reported to the caller (the grid save itself already succeeded,
+ * so this must not be silently conflated with it).
+ */
+export async function snapshotGridAssessment(
+  taskId: string,
+  grid: TreatmentGrid,
+): Promise<{ ok: boolean; error?: string }> {
+  const assessment = assessmentFromGrid(grid);
+  const { error } = await supabase.from("odm_tasks")
+    .update({
+      ai_analysis: assessment as never,
+      ai_analysis_at: assessment.computed_at,
+    } as never)
+    .eq("id", taskId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/**
+ * Same freeze, from storage — for write paths that do not hold the live grid
+ * (zone classification popup, clear-zones). Loads the stored grid, projects,
+ * snapshots. No-op when there is no current grid for the boundary.
+ */
+export async function snapshotGridAssessmentFromStore(
+  taskId: string,
+  fieldId: string,
+  boundary: LatLng2[][] | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const load = await loadGridZones(fieldId, boundary);
+  if (!load || !load.grid) return { ok: false, error: "No current grid for this boundary" };
+  return snapshotGridAssessment(taskId, load.grid);
+}
+
+/**
+ * Record a FAILED grid run on the scan, preserving whatever assessment (or
+ * legacy result) already sits there. "Failed at 10:12: imagery too coarse" and
+ * "never run" must never be the same null — that is the defect the removed
+ * legacy path had, reproduced nowhere.
+ */
+export async function recordGridRunFailure(
+  taskId: string,
+  reason: string,
+): Promise<void> {
+  try {
+    const { data } = await supabase.from("odm_tasks")
+      .select("ai_analysis").eq("id", taskId).maybeSingle();
+    const prior = data?.ai_analysis && typeof data.ai_analysis === "object"
+      ? data.ai_analysis as Record<string, unknown>
+      : {};
+    // `prior` is spread through untouched — a failed run must never restamp a
+    // legacy result's source or disturb its zones. Post-legacy-removal, a
+    // last_run marker always means a treatment-grid run.
+    const { error } = await supabase.from("odm_tasks")
+      .update({
+        ai_analysis: {
+          ...prior,
+          last_run: { status: "failed", at: new Date().toISOString(), error: reason },
+        } as never,
+      } as never)
+      .eq("id", taskId);
+    if (error) console.warn("[assessment] could not record failure:", error.message);
+  } catch (e) {
+    console.warn("[assessment] could not record failure", e);
+  }
+}

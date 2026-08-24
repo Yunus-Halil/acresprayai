@@ -89,7 +89,7 @@ already filled, a report generates once automatically. A module-level `Set` keye
 handles symbol placement — several supported currencies put the symbol after the number, and some
 have no minor unit.
 
-The code is also sent to `analyze-ortho` and interpolated into the prompt, so the model states
+Historically the code was also interpolated into the removed analyze-ortho prompt, so the model stated
 costs in the farmer's own currency. It is validated against `/^[A-Z]{3}$/` server-side, because
 that string reaches the prompt.
 

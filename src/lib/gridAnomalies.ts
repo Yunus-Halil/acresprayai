@@ -2,12 +2,13 @@
 //
 // WHAT AN "ANOMALY" ACTUALLY IS IN THIS APP, for anyone arriving from the
 // brief that assumed a dedicated anomaly-record layer: there isn't one. The
-// `anomalies` DB table is dormant dead schema (see data-model.md). The two
-// live shapes are AiZone (JSON inside odm_tasks.ai_analysis) and UserPoly
-// (user_annotations rows), and neither goes through a "promotion" flow — the
-// planner reads both directly. Grid zones follow the same pattern: they are
-// PROJECTIONS of the grid's cell state, derived on read, never stored as
-// separate records.
+// `anomalies` DB table is dormant dead schema (see data-model.md). The live
+// shapes are grid zones (projections of the treatment grid's cell state) and
+// UserPoly (user_annotations rows); the planner reads both directly, with no
+// "promotion" flow. Grid zones are PROJECTIONS: derived on read, never stored
+// as separate records — though each save also freezes a per-scan snapshot
+// onto odm_tasks.ai_analysis (see lib/scanAssessment.ts) so scan cards,
+// compare statistics and reports have a history the mutable grid cannot keep.
 //
 // ONE DIRECTION OF TRUTH, on purpose. The grid cell is the authoritative
 // record; a zone shown on the Field View or routed by the planner is a view of

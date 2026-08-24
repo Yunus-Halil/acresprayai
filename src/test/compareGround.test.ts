@@ -133,42 +133,88 @@ describe("the georeferencing offset is reported, not hidden", () => {
   });
 });
 
-describe("analysis states are structurally distinct", () => {
-  it("never analyzed", () => {
+describe("assessment states are structurally distinct", () => {
+  const gridSnapshot = (over: Record<string, unknown> = {}) => ({
+    source: "treatment-grid",
+    zones: [] as unknown[],
+    reference: { treated: 0, skipped: 0 },
+    detection: null,
+    computed_at: "2026-08-24T10:00:00Z",
+    last_run: { status: "completed", at: "2026-08-24T10:00:00Z" },
+    ...over,
+  });
+
+  it("never assessed", () => {
     expect(analysisStateOf({ ai_analysis: null, ai_analysis_at: null }))
       .toEqual({ kind: "none" });
   });
 
-  it("failed, with the stored reason", () => {
+  it("an empty grid snapshot with no reference points is NONE, not 'assessed clean'", () => {
     const s = analysisStateOf({
-      ai_analysis: { last_run: { status: "failed", at: "2026-08-20T10:00:00Z", error: "AI rate limit" } },
+      ai_analysis: gridSnapshot(),
+      ai_analysis_at: "2026-08-24T10:00:00Z",
+    });
+    expect(s).toEqual({ kind: "none" });
+  });
+
+  it("failed grid run, with the stored reason", () => {
+    const s = analysisStateOf({
+      ai_analysis: { last_run: { status: "failed", at: "2026-08-20T10:00:00Z", error: "imagery too coarse" } },
       ai_analysis_at: null,
     });
-    expect(s).toEqual({ kind: "failed", error: "AI rate limit", at: "2026-08-20T10:00:00Z" });
+    expect(s).toEqual({ kind: "failed", error: "imagery too coarse", at: "2026-08-20T10:00:00Z" });
   });
 
-  it("analyzed with zero zones is DONE, not none — a clean field is a result", () => {
+  it("reference points placed but nothing marked is DONE — a clean result, not absence", () => {
     const s = analysisStateOf({
-      ai_analysis: { zones: [], last_run: { status: "completed", at: "2026-08-20T10:00:00Z" } },
-      ai_analysis_at: "2026-08-20T10:00:00Z",
+      ai_analysis: gridSnapshot({ reference: { treated: 3, skipped: 3 } }),
+      ai_analysis_at: "2026-08-24T10:00:00Z",
     });
     expect(s.kind).toBe("done");
-    if (s.kind === "done") expect(s.zones).toEqual([]);
+    if (s.kind === "done") {
+      expect(s.source).toBe("grid");
+      expect(s.zones).toEqual([]);
+    }
   });
 
-  it("keeps the last good result when a re-run failed, and says the re-run failed", () => {
+  it("a result without the grid source marker is DONE but marked LEGACY", () => {
     const s = analysisStateOf({
-      ai_analysis: {
-        zones: [{ id: "z1" }],
-        last_run: { status: "failed", at: "2026-08-21T10:00:00Z", error: "boom" },
-      },
+      ai_analysis: { zones: [{ id: "ai-0" }], health_score: 70 },
       ai_analysis_at: "2026-08-20T10:00:00Z",
     });
     expect(s.kind).toBe("done");
     if (s.kind === "done") {
+      expect(s.source).toBe("legacy");
       expect(s.zones).toHaveLength(1);
-      expect(s.rerunFailed).toEqual({ error: "boom", at: "2026-08-21T10:00:00Z" });
     }
+  });
+
+  it("keeps the last good state when a later run failed, and says the run failed", () => {
+    const s = analysisStateOf({
+      ai_analysis: gridSnapshot({
+        zones: [{ id: "z1" }],
+        reference: { treated: 2, skipped: 2 },
+        last_run: { status: "failed", at: "2026-08-25T10:00:00Z", error: "boom" },
+      }),
+      ai_analysis_at: "2026-08-24T10:00:00Z",
+    });
+    expect(s.kind).toBe("done");
+    if (s.kind === "done") {
+      expect(s.zones).toHaveLength(1);
+      expect(s.rerunFailed).toEqual({ error: "boom", at: "2026-08-25T10:00:00Z" });
+    }
+  });
+});
+
+describe("zone acres prefer the grid's own arithmetic", () => {
+  it("uses areaM2 (the summed clipped cell areas) over the ring when present", () => {
+    // Ring says ~1 ha; areaM2 says exactly half that (edge cells clipped).
+    const z = { ring: SQUARE_100M, areaM2: 5000 };
+    expect(stressedAcres([z])).toBeCloseTo(5000 / 4046.8564224, 3);
+  });
+
+  it("falls back to ring area for legacy zones that carry nothing better", () => {
+    expect(stressedAcres([{ ring: SQUARE_100M }])).toBeCloseTo(polyAcres(SQUARE_100M), 3);
   });
 });
 
