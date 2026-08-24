@@ -46,7 +46,6 @@ vi.mock("@/components/app/workspace/WeatherTab", () => ({
 }));
 vi.mock("@/components/app/workspace/SettingsTab", () => ({ default: () => <div data-testid="tab-settings" /> }));
 vi.mock("@/components/app/ReportsTab", () => ({ default: () => <div data-testid="tab-reports" /> }));
-vi.mock("@/components/app/HistoryTab", () => ({ default: () => <div data-testid="tab-history" /> }));
 
 import OrthomosaicViewer from "@/pages/app/OrthomosaicViewer";
 
@@ -110,7 +109,7 @@ describe("workspace shell", () => {
     // component is mounted. That lazy mounting IS the per-tab state isolation —
     // if the split had collapsed it, every tab would render at once.
     expect(screen.getByTestId("tab-field")).toBeInTheDocument();
-    for (const id of ["tab-weather", "tab-ai", "tab-planner", "tab-reports", "tab-history", "tab-settings"]) {
+    for (const id of ["tab-weather", "tab-ai", "tab-planner", "tab-reports", "tab-settings"]) {
       expect(screen.queryByTestId(id), `${id} should not be mounted`).toBeNull();
     }
     for (const label of ["Weather", "AI Analysis", "Flight Planner", "Settings"]) {

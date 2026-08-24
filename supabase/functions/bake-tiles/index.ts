@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { fetchResilient, jsonSafe } from "../_shared/net.ts";
+import { type RenderPlan, renderTileQuery, resolveRenderPlan } from "../_shared/renderPlan.ts";
+import type { BandAnalysis } from "../_shared/bands.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -69,7 +71,7 @@ Deno.serve(async (req) => {
     );
 
     const { data: task } = await admin.from("odm_tasks")
-      .select("id, user_id, odm_uuid, ortho_path, tiles_baked, tiles_done, tiles_total, tiles_failed, tiles_min_zoom, tiles_max_zoom, tiles_plan_locked")
+      .select("id, user_id, odm_uuid, ortho_path, band_mapping, tiles_baked, tiles_done, tiles_total, tiles_failed, tiles_min_zoom, tiles_max_zoom, tiles_plan_locked")
       .eq("id", taskId).maybeSingle();
     if (!task || task.user_id !== ud.user.id) return json({ error: "Not found" }, 404);
     if (!task.odm_uuid || !task.ortho_path) return json({ error: "Orthomosaic not ready" }, 409);
@@ -124,6 +126,28 @@ Deno.serve(async (req) => {
       maxZ = Math.max(minZ, maxNative);
     }
 
+    // ---- Determine how the tiles are rendered -----------------------------
+    // Band order, display stretch and nodata come from the file itself and are
+    // persisted, so every pass (and every rebake) of one scan renders the same
+    // way. See _shared/renderPlan.ts for why each parameter exists.
+    type StoredBands = BandAnalysis & { render?: RenderPlan };
+    const stored = task.band_mapping as StoredBands | null;
+    let renderQS: string;
+    // A rebake re-derives the plan: rebaking exists to repair tiles rendered
+    // wrongly, and reusing the plan that rendered them would repair nothing.
+    if (stored?.render && !rebake) {
+      renderQS = renderTileQuery(stored.render);
+    } else {
+      const { bands: resolvedBands, plan, authoritative } =
+        await resolveRenderPlan(TITILER, cogUrl, stored ?? null);
+      renderQS = renderTileQuery(plan);
+      if (authoritative) {
+        await admin.from("odm_tasks")
+          .update({ band_mapping: { ...resolvedBands, render: plan } })
+          .eq("id", task.id);
+      }
+    }
+
     const list = buildTileList(bounds, minZ, maxZ);
     const total = list.length;
 
@@ -153,21 +177,15 @@ Deno.serve(async (req) => {
       if (offset < firstFailedOffset) firstFailedOffset = offset;
     };
 
-    // `nodata=0` is what keeps the black collar out of the baked tiles. An ODM
-    // orthophoto is a rectangle with the flight footprint in the middle and
-    // zeroes everywhere else; without this, TiTiler has no reason to think 0 is
-    // special and bakes it as opaque black, which then sits over the basemap as
-    // a hard rectangle around the field. With it, the collar becomes alpha 0.
-    //
-    // The trade is that a genuinely pure-black pixel inside the footprint also
-    // goes transparent. On real crop imagery that is close to nonexistent, and
-    // a stray transparent pixel is far cheaper than burying the whole basemap.
+    // The render query carries nodata (transparent collar), band order and any
+    // display stretch — all derived from the file, all persisted, so no two
+    // passes of one scan can render differently. See _shared/renderPlan.ts.
     const worker = async () => {
       while (true) {
         const i = cursor++;
         if (i >= batch.length) return;
         const { z, x, y } = batch[i];
-        const tileUrl = `${TITILER}/cog/tiles/WebMercatorQuad/${z}/${x}/${y}.png?url=${encodeURIComponent(cogUrl)}&nodata=0`;
+        const tileUrl = `${TITILER}/cog/tiles/WebMercatorQuad/${z}/${x}/${y}.png?url=${encodeURIComponent(cogUrl)}${renderQS}`;
         try {
           const r = await fetchResilient(tileUrl, { timeoutMs: 20_000, attempts: 3, label: "bake:tile" });
           if (r.status === 404 || r.status === 204) {

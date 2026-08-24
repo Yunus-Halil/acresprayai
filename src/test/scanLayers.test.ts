@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   type ComparableScan, type ScanBounds, type ScanIndexInfo,
   INDEX_RAMP, INDEX_SHORT_LABEL,
-  boundsFromTileJson, boundsOverlap, compareSelectionError, coverageOf,
+  boundsFromTileJson, boundsOverlap, coverageOf,
   defaultIndexFor, indexDetail, indexOptions, indexRampCss, indexTileUrl,
   isCalibratedIndex, isComparable, legendEnds, notComparableReason, rgbTileUrl,
 } from "@/lib/scanLayers";
@@ -228,18 +228,6 @@ describe("which scans can be compared", () => {
 
   it("refuses one with no orthomosaic at all", () => {
     expect(notComparableReason({ ...SCAN, odm_uuid: null })).toMatch(/no orthomosaic/i);
-  });
-});
-
-describe("the two-scan guard", () => {
-  it("explains what is missing rather than just refusing", () => {
-    expect(compareSelectionError([])).toMatch(/select two scans/i);
-    expect(compareSelectionError(["a"])).toMatch(/one more/i);
-    expect(compareSelectionError(["a", "b", "c"])).toMatch(/exactly two.*3 are selected/i);
-  });
-
-  it("passes exactly two", () => {
-    expect(compareSelectionError(["a", "b"])).toBeNull();
   });
 });
 

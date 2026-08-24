@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
 import ReportsTab from "@/components/app/ReportsTab";
-import HistoryTab from "@/components/app/HistoryTab";
 import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
 } from "@/lib/droneSpecs";
@@ -186,13 +185,22 @@ export default function OrthomosaicViewer() {
     method?: string; available?: string[]; fingerprint?: string;
     reason?: string; index: "ndvi" | "ndre" | "vari"; label: string;
   } | null>(null);
-  type TabKey = "field" | "weather" | "ai" | "treatment" | "planner" | "reports" | "history" | "settings";
+  // "history" is gone as a destination: the scan timeline and compare live as
+  // a panel over Field View now (ScanTimeline/SwipeCompare), not a second map.
+  type TabKey = "field" | "weather" | "ai" | "treatment" | "planner" | "reports" | "settings";
   const [activeTab, setActiveTab] = useState<TabKey>("field");
   const [openTabs, setOpenTabs] = useState<TabKey[]>(["field"]);
   const [newTabOpen, setNewTabOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  // Which scan an analysis is currently running for (the scan panel can start
+  // one for any scan of the field, not just the open one).
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  // Bumped whenever a scan's stored state changed (analysis ran, tiles rebaked)
+  // so the scan panel refetches; also busts the tile cache after a rebake.
+  const [scansNonce, setScansNonce] = useState(0);
+  const [tileRev, setTileRev] = useState(0);
   const [analysis, setAnalysis] = useState<{
     health_score: number; summary: string;
     issues: { label: string; severity: string; description: string }[];
@@ -321,6 +329,14 @@ export default function OrthomosaicViewer() {
           issues: Array.isArray(saved.issues) ? saved.issues : [],
           zones: saved.zones,
         });
+      }
+      // A failed run is recorded on the scan by analyze-ortho; surface it,
+      // rather than letting a failure render as "never analyzed".
+      const lastRun = saved && typeof saved === "object" ? (saved as any).last_run : null;
+      if (lastRun?.status === "failed") {
+        setAnalysisErr(
+          `Analysis failed${lastRun.at ? ` (${new Date(lastRun.at).toLocaleString()})` : ""}: ${lastRun.error ?? "unknown error"}`,
+        );
       }
 
       const { data: f } = await supabase.from("fields")
@@ -490,7 +506,10 @@ export default function OrthomosaicViewer() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  const tileUrl = tileTemplate && token ? `${tileTemplate}?token=${token}` : null;
+  // `rev` busts the browser's immutable tile cache after an in-session rebake.
+  const tileUrl = tileTemplate && token
+    ? `${tileTemplate}?token=${token}${tileRev ? `&rev=${tileRev}` : ""}`
+    : null;
   // The fingerprint identifies the resolved band mapping. Embedding it means a
   // corrected mapping yields a different URL, so the browser's 24h tile cache
   // cannot keep serving tiles rendered with the old expression.
@@ -505,8 +524,14 @@ export default function OrthomosaicViewer() {
   // View's collapsed drawer, one inside a tab that is not open by default.
   // Reporting only there is how "nothing happened" becomes the user experience
   // of a failure. The inline displays stay; this adds a toast alongside them.
-  const runAnalysis = async () => {
-    if (!taskId || !token) return;
+  // `target` may name any scan of this field (the scan panel analyzes older
+  // scans without reopening them); button onClick handlers pass a click event,
+  // which the typeof guard discards. Persistence happens server-side in
+  // analyze-ortho — success and failure both land on the scan row.
+  const runAnalysis = async (target?: string | unknown) => {
+    const targetId = typeof target === "string" ? target : taskId;
+    if (!targetId || !token || analyzingId) return;
+    const forCurrent = targetId === taskId;
     const validRings = (boundary ?? []).filter(r => r.length >= 3);
     if (validRings.length === 0) {
       const msg = "Define the field boundary first so the AI only analyzes your farmland.";
@@ -516,13 +541,14 @@ export default function OrthomosaicViewer() {
       });
       return;
     }
-    setAnalyzing(true); setAnalysisErr(null);
+    setAnalyzingId(targetId);
+    if (forCurrent) { setAnalyzing(true); setAnalysisErr(null); }
     try {
       const r = await fetch(`${FN_BASE}/analyze-ortho`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          task_id: taskId,
+          task_id: targetId,
           boundary: validRings,
           field_settings: {
             crop_type: settings.crop_type || null,
@@ -553,8 +579,10 @@ export default function OrthomosaicViewer() {
         ndvi_cells: j.ndvi_cells ?? [],
         disclaimer: j.disclaimer ?? "These zones show anomalies detected from aerial imagery. Ground inspection is recommended to confirm issue type before treatment. SwathWise does not replace professional agronomic advice.",
       };
-      setAnalysis(payload);
-      setSelectedZone(j.zones?.[0]?.id ?? null);
+      if (forCurrent) {
+        setAnalysis(payload);
+        setSelectedZone(j.zones?.[0]?.id ?? null);
+      }
       // Zero zones is a real and unremarkable result — a healthy field — but
       // silence would read as a failed run, so it gets said out loud.
       const zoneCount = payload.zones.length;
@@ -562,24 +590,46 @@ export default function OrthomosaicViewer() {
         zoneCount === 0
           ? "Analysis complete, no treatment zones found."
           : `Analysis complete, ${zoneCount} treatment zone${zoneCount === 1 ? "" : "s"}.`,
-        { action: { label: "View", onClick: () => openTab("ai") } },
+        forCurrent ? { action: { label: "View", onClick: () => openTab("ai") } } : undefined,
       );
-      // Persist so it survives reloads.
-      try {
-        await supabase.from("odm_tasks")
-          .update({ ai_analysis: payload as any, ai_analysis_at: new Date().toISOString() } as any)
-          .eq("id", taskId);
-      } catch (e) { console.warn("ai_analysis persist failed", e); }
+      // analyze-ortho persisted the result server-side; it only reports here.
+      if (j.persisted === false) {
+        toast.warning("The result could not be saved to the scan record, it will not survive a reload.");
+      }
+      setScansNonce(n => n + 1);
     } catch (e: any) {
       const msg = e?.message ?? String(e);
-      setAnalysisErr(msg);
+      if (forCurrent) setAnalysisErr(msg);
+      // The failure is also recorded on the scan row by analyze-ortho, so the
+      // scan panel shows it after this toast is long gone.
+      setScansNonce(n => n + 1);
       toast.error(`Analysis failed, ${msg}`, {
-        action: { label: "Retry", onClick: () => { void runAnalysis(); } },
+        action: { label: "Retry", onClick: () => { void runAnalysis(targetId); } },
       });
     } finally {
-      setAnalyzing(false);
+      setAnalyzingId(null);
+      if (forCurrent) setAnalyzing(false);
     }
   };
+
+  // First-open auto-run: a scan that has NEVER been analyzed (no result, no
+  // recorded failure) analyzes itself once the tiles are ready and a boundary
+  // exists. This is the missing link that left every scan at "0 zones": there
+  // was no path from "scan completed" to "analysis ran" except a person
+  // finding the button. A previously FAILED run is deliberately not retried
+  // automatically — the failure is shown, and a person decides.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current || !tileTemplate || !task || analyzingId) return;
+    const t = task as unknown as { ai_analysis: unknown; ai_analysis_at: string | null };
+    if (t.ai_analysis || t.ai_analysis_at) return;
+    const validRings = (boundary ?? []).filter(r => r.length >= 3);
+    if (validRings.length === 0) return;
+    autoRan.current = true;
+    toast.info("New scan — running field analysis…");
+    void runAnalysis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tileTemplate, task, boundary]);
 
   const clearAnalysis = async () => {
     if (!taskId) return;
@@ -892,7 +942,6 @@ export default function OrthomosaicViewer() {
     { key: "treatment", label: "Treatment Grid", icon: Grid3x3 },
     { key: "planner", label: "Flight Planner", icon: Plane },
     { key: "reports", label: "Reports", icon: FileBarChart },
-    { key: "history", label: "History", icon: History },
     { key: "settings", label: "Settings", icon: Settings },
   ];
   const openTab = (k: TabKey) => {
@@ -1078,6 +1127,19 @@ export default function OrthomosaicViewer() {
             clearAnalysis={clearAnalysis}
             openSettings={() => openTab("settings")}
             settings={settings}
+            scansApi={{
+              token,
+              fieldName: field?.name ?? "Field",
+              currentTaskId: taskId!,
+              scansNonce,
+              analyzingId,
+              analyzeScan: (id) => { void runAnalysis(id); },
+              onTilesRebaked: (id) => {
+                setScansNonce(n => n + 1);
+                if (id === taskId) setTileRev(r => r + 1);
+              },
+              openScan: (id) => window.open(`/app/orthomosaic/${id}`, "_blank"),
+            }}
           />
         </div>
         {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
@@ -1126,15 +1188,6 @@ export default function OrthomosaicViewer() {
             activeDrone={parentActiveDrone}
             lastLog={parentLastLog}
             setActiveTab={setActiveTab}
-          />
-        )}
-        {activeTab === "history" && (
-          <HistoryTab
-            fieldId={field?.id ?? null}
-            fieldName={field?.name ?? "Field"}
-            boundary={boundary}
-            currentTaskId={taskId!}
-            openTask={(id) => window.open(`/app/orthomosaic/${id}`, "_blank")}
           />
         )}
         {activeTab === "settings" && (

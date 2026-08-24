@@ -1,7 +1,14 @@
 // Row shapes the workspace loads. Extracted from OrthomosaicViewer.tsx.
 import type { FarmerSettings } from "@/lib/farmerSettings";
 
-export type TaskRow = { odm_uuid: string | null; field_id: string; created_at: string };
+export type TaskRow = {
+  odm_uuid: string | null;
+  field_id: string;
+  created_at: string;
+  /** Saved analysis JSON, incl. the last_run success/failure marker. */
+  ai_analysis?: unknown;
+  ai_analysis_at?: string | null;
+};
 export type BoundaryRing = { lat: number; lng: number }[];
 export type FieldRow = {
   id: string;

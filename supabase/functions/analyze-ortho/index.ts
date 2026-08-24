@@ -8,8 +8,43 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
+// A failed run is recorded ON THE SCAN, not just returned to whichever browser
+// tab happened to ask. Without this, "analysis failed at 9am" and "analysis
+// was never run" are the same null in the database, and the UI can only render
+// both as an eternal nothing. The marker lives inside the ai_analysis JSON
+// (no schema change): a prior successful result is preserved beneath it, and
+// consumers that only read `.zones` are unaffected.
+type FailureRecorder = (reason: string, status?: number) => Promise<Response>;
+function failureRecorder(
+  admin: ReturnType<typeof createClient>,
+  taskId: string,
+): FailureRecorder {
+  return async (reason, status = 500) => {
+    try {
+      const { data: cur } = await admin.from("odm_tasks")
+        .select("ai_analysis").eq("id", taskId).maybeSingle();
+      const prior = cur?.ai_analysis && typeof cur.ai_analysis === "object"
+        ? cur.ai_analysis as Record<string, unknown>
+        : {};
+      const { error } = await admin.from("odm_tasks").update({
+        ai_analysis: {
+          ...prior,
+          last_run: { status: "failed", at: new Date().toISOString(), error: reason },
+        },
+      }).eq("id", taskId);
+      if (error) console.warn(`[analyze-ortho] could not record failure: ${error.message}`);
+    } catch (e) {
+      console.warn("[analyze-ortho] could not record failure", e);
+    }
+    return json({ error: reason }, status);
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  // Set once the caller's claim to the scan is verified; from then on every
+  // failure — thrown or returned — is recorded on the row.
+  let recordFailure: FailureRecorder | null = null;
   try {
     const auth = req.headers.get("Authorization");
     if (!auth?.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
@@ -48,10 +83,13 @@ Deno.serve(async (req) => {
       .select("id, user_id, ortho_path").eq("id", task_id).maybeSingle();
     if (!task || task.user_id !== ud.user.id) return json({ error: "Not found" }, 404);
     if (!task.ortho_path) return json({ error: "Orthomosaic not ready" }, 409);
+    recordFailure = failureRecorder(admin, task.id as string);
 
     const { data: signed, error: sErr } = await admin.storage.from("orthos")
       .createSignedUrl(task.ortho_path, 60 * 15);
-    if (sErr || !signed?.signedUrl) return json({ error: "sign failed" }, 500);
+    if (sErr || !signed?.signedUrl) {
+      return recordFailure("Could not read the orthomosaic from storage");
+    }
 
     // 1) Get a high-res PNG preview + bounds from TiTiler, and probe band count
     //    so we know whether real NDVI is available (multispectral, >=4 bands)
@@ -77,10 +115,14 @@ Deno.serve(async (req) => {
       + (rgb ? rgb.map(b => `&bidx=${b}`).join("") : "");
 
     const [imgRes, tjRes] = await Promise.all([fetch(previewUrl), fetch(tjUrl)]);
-    if (!imgRes.ok) return json({ error: `Preview fetch failed (${imgRes.status})` }, 500);
+    if (!imgRes.ok) {
+      return recordFailure(`Could not render an image preview of this scan (tile service ${imgRes.status})`);
+    }
     const tj = tjRes.ok ? await tjRes.json() : null;
     const b = tj?.bounds as number[] | undefined;
-    if (!b || b.length !== 4) return json({ error: "Missing bounds" }, 500);
+    if (!b || b.length !== 4) {
+      return recordFailure("The orthomosaic has no usable geographic bounds");
+    }
     const [west, south, east, north] = b;
 
     // Validate the user-supplied field boundary. May be a single ring (legacy)
@@ -221,7 +263,7 @@ RECOMMENDATION RULES:
     // "gemini-2.5-flash", OpenRouter and Lovable want "google/gemini-2.5-flash" —
     // which is why the model is configurable rather than hardcoded.
     const key = Deno.env.get("AI_API_KEY");
-    if (!key) return json({ error: "AI is not configured (missing AI_API_KEY)" }, 500);
+    if (!key) return recordFailure("AI is not configured (missing AI_API_KEY)");
     const aiUrl = Deno.env.get("AI_GATEWAY_URL")
       ?? "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
     const aiModel = Deno.env.get("AI_MODEL") ?? "gemini-2.5-flash";
@@ -364,14 +406,19 @@ ${rings.map((r, ri) => `Part ${ri + 1} vertices (lat, lng):\n${r.map((p, i) => `
     });
     if (!aiRes.ok) {
       const t = await aiRes.text();
-      if (aiRes.status === 429) return json({ error: "AI rate limit, retry shortly" }, 429);
-      if (aiRes.status === 402) return json({ error: "AI provider reports no remaining credit" }, 402);
-      return json({ error: `AI provider returned ${aiRes.status}: ${t.slice(0, 300)}` }, 500);
+      if (aiRes.status === 429) return recordFailure("AI rate limit, retry shortly", 429);
+      if (aiRes.status === 402) return recordFailure("AI provider reports no remaining credit", 402);
+      return recordFailure(`AI provider returned ${aiRes.status}: ${t.slice(0, 300)}`);
     }
     const aiData = await aiRes.json();
     const content = aiData?.choices?.[0]?.message?.content ?? "{}";
     let parsed: any;
-    try { parsed = JSON.parse(content); } catch { parsed = { health_score: 0, issues: [], zones: [] }; }
+    // An unreadable response is a FAILED run. It used to be silently coerced to
+    // a zero-zone result, which then persisted as "this field is clean" — a
+    // fabricated finding, and the worst kind: one that looks like a measurement.
+    try { parsed = JSON.parse(content); } catch {
+      return recordFailure("The AI returned an unreadable response, retry the analysis");
+    }
 
     // 3) Parse polygon vertices. The model is instructed to return [lat, lng] in WGS84
     // already inside the orthomosaic bounds. We accept that, but also defensively detect
@@ -465,7 +512,7 @@ ${rings.map((r, ri) => `Part ${ri + 1} vertices (lat, lng):\n${r.map((p, i) => `
       confidence: z.confidence,
     }));
 
-    return json({
+    const result = {
       health_score: Number(parsed.health_score ?? 0),
       summary: parsed.summary ?? "",
       multispectral_recommendations: Array.isArray(parsed.multispectral_recommendations) ? parsed.multispectral_recommendations : [],
@@ -477,8 +524,24 @@ ${rings.map((r, ri) => `Part ${ri + 1} vertices (lat, lng):\n${r.map((p, i) => `
       band_count: bandCount,
       ndvi_cells: ndviCells,
       disclaimer: "These zones show anomalies detected from aerial imagery. Ground inspection is recommended to confirm issue type before treatment. SwathWise does not replace professional agronomic advice.",
-    });
+    };
+
+    // Persisted HERE, with the service role, not by the browser after its
+    // success toast. The old client-side write could fail after "Analysis
+    // complete" was already on screen, leaving zones that evaporate on reload.
+    const now = new Date().toISOString();
+    const { error: perErr } = await admin.from("odm_tasks").update({
+      ai_analysis: { ...result, last_run: { status: "completed", at: now } },
+      ai_analysis_at: now,
+    }).eq("id", task.id);
+    if (perErr) console.error(`[analyze-ortho] persist failed: ${perErr.message}`);
+
+    // `persisted` lets the client say "this result could not be saved" instead
+    // of letting the reload quietly disagree with the toast.
+    return json({ ...result, persisted: !perErr, analyzed_at: now });
   } catch (e) {
-    return json({ error: String((e as Error)?.message ?? e) }, 500);
+    const reason = String((e as Error)?.message ?? e);
+    if (recordFailure) return await recordFailure(reason);
+    return json({ error: reason }, 500);
   }
 });

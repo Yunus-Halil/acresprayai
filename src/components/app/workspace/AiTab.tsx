@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
 import ReportsTab from "@/components/app/ReportsTab";
-import HistoryTab from "@/components/app/HistoryTab";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";

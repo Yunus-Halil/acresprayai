@@ -18,8 +18,6 @@ import {
   Play, Pause, RotateCcw, FastForward, History,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
-import ReportsTab from "@/components/app/ReportsTab";
-import HistoryTab from "@/components/app/HistoryTab";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -62,6 +60,13 @@ import { type GridZonesLoad, clearGridZones, loadGridZones } from "@/lib/gridAno
 import { fmtArea } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { AnalysisGrid } from "./AiTab";
+import { ScanPanel, useFieldScans, useScanInfo } from "./ScanTimeline";
+import {
+  type SideLayerState, ComparePanes, CompareStatsBar, DEFAULT_SIDE,
+  ScanStrip, SideLegend, SwipeHandle, useScanRenderMeta,
+} from "./SwipeCompare";
+import { abOf, analysisStateOf, compareStats, togglePick } from "@/lib/compareGround";
+import { defaultIndexFor, notComparableReason } from "@/lib/scanLayers";
 
 // ----------------------------- Field View tab -------------------------------
 export function FieldViewTab(props: {
@@ -125,6 +130,18 @@ export function FieldViewTab(props: {
   openSettings: () => void;
   /** For loading the treatment grid's zones as an anomaly overlay. */
   fieldId: string | null;
+  /** Scan panel + compare wiring owned by the workspace shell. */
+  scansApi: {
+    token: string | null;
+    fieldName: string;
+    currentTaskId: string;
+    /** Bumped after an analysis or a rebake so the scan list refetches. */
+    scansNonce: number;
+    analyzingId: string | null;
+    analyzeScan: (taskId: string) => void;
+    onTilesRebaked: (taskId: string) => void;
+    openScan: (taskId: string) => void;
+  };
 }) {
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const {
@@ -142,6 +159,69 @@ export function FieldViewTab(props: {
     draftUserPoly, setDraftUserPoly, saveUserPolygon, deleteUserPolygon, clearAnalysis,
     settings,
   } = props;
+
+  // ---- Scan panel + single-map compare --------------------------------------
+  // The scan history lives HERE, beside the one map, replacing the old History
+  // tab and its separate map surfaces. Compare renders both scans as layers on
+  // this same map (see SwipeCompare.tsx), so the two sides cannot drift apart.
+  const { scansApi } = props;
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [compareOn, setCompareOn] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [swipePct, setSwipePct] = useState(50);
+  const [sideA, setSideA] = useState<SideLayerState>(DEFAULT_SIDE);
+  const [sideB, setSideB] = useState<SideLayerState>(DEFAULT_SIDE);
+
+  const { scans, flownIds, loading: scansLoading } =
+    useFieldScans(props.fieldId, scansApi.scansNonce);
+  const dateOf = (id: string) => scans.find(s => s.id === id)?.created_at ?? "";
+  const { a: aId, b: bId } = abOf(picked, dateOf);
+  const aScan = scans.find(s => s.id === aId) ?? null;
+  const bScan = scans.find(s => s.id === bId) ?? null;
+  const compareActive = compareOn && !!aScan && !!bScan;
+
+  const aInfo = useScanInfo(compareOn ? aId : null, scansApi.token);
+  const bInfo = useScanInfo(compareOn ? bId : null, scansApi.token);
+  const aMeta = useScanRenderMeta(compareActive ? aId : null, scansApi.token);
+  const bMeta = useScanRenderMeta(compareActive ? bId : null, scansApi.token);
+
+  // Zones per side: null until that scan has a COMPLETED analysis. The compare
+  // stats treat null as "cannot claim anything yet", never as zero.
+  const aAnalysis = aScan ? analysisStateOf(aScan) : null;
+  const bAnalysis = bScan ? analysisStateOf(bScan) : null;
+  const aZones = aAnalysis?.kind === "done" ? aAnalysis.zones : null;
+  const bZones = bAnalysis?.kind === "done" ? bAnalysis.zones : null;
+  const cmp = compareActive
+    ? compareStats({
+        aBounds: aMeta?.bounds ?? null,
+        bBounds: bMeta?.bounds ?? null,
+        aZones,
+        bZones,
+      })
+    : null;
+
+  // Offer each side its own scan's best index once the bands are known; never
+  // override a choice already made.
+  useEffect(() => {
+    const d = defaultIndexFor(aInfo);
+    if (d) setSideA(s => (s.index ? s : { ...s, index: d }));
+  }, [aInfo]);
+  useEffect(() => {
+    const d = defaultIndexFor(bInfo);
+    if (d) setSideB(s => (s.index ? s : { ...s, index: d }));
+  }, [bInfo]);
+
+  const toggleCompare = () => {
+    if (compareOn) { setCompareOn(false); return; }
+    const current = scans.find(s => s.id === scansApi.currentTaskId);
+    setPicked(current && !notComparableReason(current) ? [current.id] : []);
+    setSideA(DEFAULT_SIDE);
+    setSideB(DEFAULT_SIDE);
+    setSwipePct(50);
+    setCompareOn(true);
+    setPanelOpen(true);
+  };
 
   const [measureActive, setMeasureActive] = useState(false);
   const [annotateActive, setAnnotateActive] = useState(false);
@@ -219,7 +299,7 @@ export function FieldViewTab(props: {
   );
 
   return (
-    <div className="absolute inset-0 bg-[#0a0a0a]">
+    <div ref={wrapRef} className="absolute inset-0 bg-[#0a0a0a]">
       <MapContainer
         bounds={bounds}
         boundsOptions={{ padding: [40, 40] }}
@@ -231,7 +311,10 @@ export function FieldViewTab(props: {
         style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
       >
         <BasemapLayer id={basemap} />
-        {layers.orthomosaic && tileUrl && (
+        {/* While comparing, the compare panes below own ALL imagery — the
+            route scan's own layers would otherwise show through side B's
+            ground as if the newer flight had covered it. */}
+        {!compareActive && layers.orthomosaic && tileUrl && (
           <TileLayer
             key={tileUrl}
             url={tileUrl}
@@ -247,7 +330,7 @@ export function FieldViewTab(props: {
             zIndex={10}
           />
         )}
-        {layers.ndvi && ndviUrl && (
+        {!compareActive && layers.ndvi && ndviUrl && (
           <TileLayer
             key={`ndvi-${ndviUrl}`}
             url={ndviUrl}
@@ -267,7 +350,25 @@ export function FieldViewTab(props: {
         <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />
         <MapControls fitTo={bounds} />
         <BasemapToggle value={basemap} onChange={(id) => { setBasemap(id); saveBasemap(id); }} />
-        {showAiZones && analysis?.zones && analysis.zones.length > 0 && (
+        {compareActive && aScan && bScan && (
+          <ComparePanes
+            a={aScan}
+            b={bScan}
+            token={scansApi.token}
+            rev={scansApi.scansNonce}
+            sideA={sideA}
+            sideB={sideB}
+            aInfo={aInfo}
+            bInfo={bInfo}
+            aMeta={aMeta}
+            bMeta={bMeta}
+            aZones={aZones}
+            bZones={bZones}
+            overlap={cmp?.overlap ?? null}
+            swipePct={swipePct}
+          />
+        )}
+        {!compareActive && showAiZones && analysis?.zones && analysis.zones.length > 0 && (
           <AiZonesLayer
             zones={analysis.zones}
             selectedId={selectedZone}
@@ -319,10 +420,73 @@ export function FieldViewTab(props: {
         )}
       </MapContainer>
 
+      {/* Compare chrome: all screen-space overlays over the ONE map. */}
+      {compareOn && (
+        <ScanStrip
+          scans={scans}
+          picked={picked}
+          aId={aId}
+          bId={bId}
+          onPick={(id) => setPicked(p => togglePick(p, id))}
+          notPickable={notComparableReason}
+          onExit={() => setCompareOn(false)}
+          aInfo={aInfo}
+          bInfo={bInfo}
+          sideA={sideA}
+          sideB={sideB}
+          onSideA={setSideA}
+          onSideB={setSideB}
+        />
+      )}
+      {compareActive && (
+        <SwipeHandle pct={swipePct} onPct={setSwipePct} containerRef={wrapRef} />
+      )}
+      {compareActive && aScan && bScan && cmp && (
+        <CompareStatsBar
+          a={aScan}
+          b={bScan}
+          stats={cmp}
+          aAnalyzed={aZones !== null}
+          bAnalyzed={bZones !== null}
+          aBounds={aMeta?.bounds ?? null}
+          bBounds={bMeta?.bounds ?? null}
+        />
+      )}
+      {compareActive && (
+        <div className="absolute bottom-12 left-4 z-[1001] space-y-2">
+          {sideA.imagery === "index" && sideA.index && <SideLegend side="A" index={sideA.index} />}
+          {sideB.imagery === "index" && sideB.index && <SideLegend side="B" index={sideB.index} />}
+        </div>
+      )}
+
+      <ScanPanel
+        open={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        fieldName={scansApi.fieldName}
+        scans={scans}
+        flownIds={flownIds}
+        loading={scansLoading}
+        currentTaskId={scansApi.currentTaskId}
+        boundary={boundary}
+        token={scansApi.token}
+        analyzingId={scansApi.analyzingId}
+        onAnalyze={scansApi.analyzeScan}
+        onOpenScan={scansApi.openScan}
+        compareOn={compareOn}
+        onToggleCompare={toggleCompare}
+        picked={picked}
+        onPick={(id) => setPicked(p => togglePick(p, id))}
+        aId={aId}
+        bId={bId}
+        onTilesRebaked={scansApi.onTilesRebaked}
+      />
+
       {/* Floating icon toolbar */}
       <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-1.5">
         <ToolButton icon={Layers} label="Layers" active={layersOpen}
           onClick={() => { setLayersOpen(!layersOpen); }} />
+        <ToolButton icon={History} label="Scans & compare" active={panelOpen}
+          onClick={() => setPanelOpen(v => !v)} />
         <ToolButton icon={Ruler} label="Measure" active={measureActive}
           onClick={() => {
             setMeasureActive(v => !v); setAnnotateActive(false); setLayersOpen(false);

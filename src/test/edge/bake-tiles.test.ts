@@ -252,6 +252,98 @@ describe("bake-tiles · poison-tile guard", () => {
   });
 });
 
+describe("bake-tiles · band-aware rendering", () => {
+  /** Every tile URL the bake requested from the tile service. */
+  const tileUrls = (fetchMock: ReturnType<typeof mockFetch>) =>
+    fetchMock.mock.calls
+      .map(c => String(c[0]))
+      .filter(u => u.includes("/cog/tiles/"));
+
+  it("selects the resolved RGB bands for a sensor that stores them out of order", async () => {
+    const handler = await boot();
+    mockFetch([
+      { match: "tilejson.json", respond: () => tilejson(12) },
+      {
+        // MicaSense-style layout: blue first, red third. Rendering "first
+        // three bands" here is the blue-field/magenta-road bug.
+        match: "/cog/info",
+        respond: () => jsonResponse({
+          count: 5, dtype: "uint8",
+          colorinterp: ["gray", "gray", "gray", "gray", "gray"],
+          band_descriptions: [["b1", "Blue"], ["b2", "Green"], ["b3", "Red"], ["b4", "NIR"], ["b5", "Red edge"]],
+        }),
+      },
+      { match: "/cog/tiles/", respond: () => new Response(PNG) },
+    ]);
+    const fetchMock = vi.mocked(globalThis.fetch);
+
+    const body = await (await handler(req())).json();
+
+    expect(body.done).toBe(true);
+    for (const u of tileUrls(fetchMock as ReturnType<typeof mockFetch>)) {
+      expect(u).toContain("bidx=3&bidx=2&bidx=1"); // red b3, green b2, blue b1
+      expect(u).toContain("nodata=0");
+    }
+    // The plan persists, so every later pass and rebake renders identically.
+    const bm = task().band_mapping as { render?: { bidx: number[] | null } };
+    expect(bm.render?.bidx).toEqual([3, 2, 1]);
+  });
+
+  it("stretches 16-bit imagery using the file's own percentile statistics", async () => {
+    const handler = await boot();
+    mockFetch([
+      { match: "tilejson.json", respond: () => tilejson(12) },
+      {
+        match: "/cog/info",
+        respond: () => jsonResponse({
+          count: 4, dtype: "uint16",
+          colorinterp: ["gray", "gray", "gray", "gray"],
+          band_descriptions: [["b1", "Red"], ["b2", "Green"], ["b3", "Blue"], ["b4", "NIR"]],
+        }),
+      },
+      {
+        match: "/cog/statistics",
+        respond: () => jsonResponse({
+          b1: { percentile_2: 120, percentile_98: 9100 },
+          b2: { percentile_2: 150, percentile_98: 8800 },
+          b3: { percentile_2: 90, percentile_98: 7000 },
+        }),
+      },
+      { match: "/cog/tiles/", respond: () => new Response(PNG) },
+    ]);
+    const fetchMock = vi.mocked(globalThis.fetch);
+
+    const body = await (await handler(req())).json();
+
+    expect(body.done).toBe(true);
+    for (const u of tileUrls(fetchMock as ReturnType<typeof mockFetch>)) {
+      expect(u).toContain("rescale=120,9100");
+      expect(u).toContain("rescale=150,8800");
+      expect(u).toContain("rescale=90,7000");
+    }
+  });
+
+  it("renders conservatively and persists nothing when the probe is unavailable", async () => {
+    const handler = await boot();
+    // No /cog/info route: the probe fetch throws, exactly like an outage.
+    mockFetch([
+      { match: "tilejson.json", respond: () => tilejson(12) },
+      { match: "/cog/tiles/", respond: () => new Response(PNG) },
+    ]);
+    const fetchMock = vi.mocked(globalThis.fetch);
+
+    const body = await (await handler(req())).json();
+
+    expect(body.done).toBe(true);
+    for (const u of tileUrls(fetchMock as ReturnType<typeof mockFetch>)) {
+      expect(u).toContain("nodata=0");
+      expect(u).not.toContain("bidx=");
+    }
+    // A failed probe must not freeze a guess: the next pass re-probes.
+    expect(task().band_mapping ?? null).toBeNull();
+  });
+});
+
 describe("bake-tiles · rebake", () => {
   it("?rebake=1 clears the latch and re-bakes from zero", async () => {
     const handler = await boot({ tiles_baked: true, tiles_done: 3, tiles_total: 3, tiles_plan_locked: true });

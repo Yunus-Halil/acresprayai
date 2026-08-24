@@ -33,11 +33,19 @@ export type ScanIndexInfo = {
   ambiguousMultispectral?: boolean;
   spectralBands?: number;
   bands?: number;
+  /** Which physical band each role resolved to, as reported by the server. */
+  roles?: Partial<Record<"red" | "green" | "blue" | "nir" | "rededge", number>>;
   method?: string;
   /** Human-readable justification for the band mapping. */
   reason?: string;
   /** Identifies the resolved mapping; embedded in tile URLs to defeat caching. */
   fingerprint?: string;
+  /**
+   * How the baked RGB tiles were rendered, when known. Absent for scans whose
+   * tiles were baked before band-aware rendering — which is what lets the UI
+   * label those tiles as the composite they actually are.
+   */
+  render?: { dtype: string | null; bidx: number[] | null; rescale: [number, number][] } | null;
 };
 
 /** A scan as this feature needs it. Mirrors the odm_tasks columns it reads. */
@@ -114,6 +122,41 @@ export const indexDetail = (index: VegetationIndex): string => INDEX_DEFS[index]
  */
 export const isCalibratedIndex = (index: VegetationIndex): boolean =>
   index === "ndvi" || index === "ndre";
+
+/**
+ * What the baked "RGB" tiles may honestly be called, per scan.
+ *
+ * A plain camera's tiles are an RGB photograph. A multispectral file is only a
+ * true-colour photograph when the baked tiles selected the red/green/blue
+ * bands — tiles baked before band-aware rendering show whatever the first
+ * three bands are, and on a sensor that stores green or blue first that is a
+ * false-colour composite. The label follows the tiles, not the wish.
+ */
+export function rgbLayerLabel(
+  info: ScanIndexInfo | null | undefined,
+): { label: string; caveat: string | null; needsRebake: boolean } {
+  const spectral = info?.spectralBands ?? info?.bands ?? 3;
+  if (!info || spectral <= 3) {
+    return { label: "RGB orthomosaic", caveat: null, needsRebake: false };
+  }
+  const rolesResolved = !!(info.roles?.red && info.roles?.green && info.roles?.blue);
+  const bakedWithBands = !!info.render?.bidx;
+  if (rolesResolved && bakedWithBands) {
+    return { label: "True colour (multispectral)", caveat: null, needsRebake: false };
+  }
+  if (rolesResolved) {
+    return {
+      label: "Multispectral · bands 1–3 shown",
+      caveat: "These map tiles were rendered before band-aware rendering, so colours may look wrong. Re-render the tiles to show true colour.",
+      needsRebake: true,
+    };
+  }
+  return {
+    label: "Multispectral composite (bands 1–3)",
+    caveat: "This file's band roles could not be identified, so the first three bands are shown as-is. Colours may not be natural.",
+    needsRebake: false,
+  };
+}
 
 export type IndexOption = {
   index: VegetationIndex;
@@ -289,15 +332,3 @@ export function notComparableReason(scan: ComparableScan): string | null {
   return "This scan's map tiles have not finished baking yet.";
 }
 
-/**
- * The guard on opening the compare view, as a sentence.
- *
- * Compare is a two-scan operation; one is not a comparison and three has no
- * layout. Null means the selection is good.
- */
-export function compareSelectionError(selected: readonly string[]): string | null {
-  if (selected.length === 0) return "Select two scans to compare.";
-  if (selected.length === 1) return "Select one more scan, compare needs exactly two.";
-  if (selected.length > 2) return `Compare takes exactly two scans, ${selected.length} are selected.`;
-  return null;
-}

@@ -111,6 +111,11 @@ Deno.serve(async (req) => {
         available: r.bands.available,
         fingerprint: r.bands.fingerprint,
         reason: r.bands.reason,
+        // How the baked RGB tiles were rendered (band order, stretch). Absent
+        // until a bake has run with band-aware rendering — which is exactly
+        // what lets the client say "these tiles show bands 1–3, re-render for
+        // true colour" instead of mislabelling old tiles.
+        render: (r.bands as { render?: unknown }).render ?? null,
         ...expr,
       });
     }

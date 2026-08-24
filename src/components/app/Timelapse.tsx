@@ -73,8 +73,7 @@ export default function Timelapse({
     });
     layersRef.current = layers;
 
-    // Framed on the field boundary, not on any one scan's extent - the whole
-    // point is that the extents may differ and we are not hiding it.
+    // Framed on the field boundary, so every scan plays within one steady view.
     const b = boundsFromRings(boundary);
     if (b) map.fitBounds(b, { padding: [20, 20] });
     else map.setView([0, 0], 2);
@@ -129,7 +128,7 @@ export default function Timelapse({
         <div>
           <div className="text-[11px] uppercase tracking-wider text-neutral-500">Timelapse</div>
           <p className="mt-1 text-xs text-neutral-500">
-            Every scan in order. Layers are shown as flown, extents are not aligned.
+            Every completed scan of this field, oldest to newest.
           </p>
         </div>
         <div className="flex items-center gap-2">
