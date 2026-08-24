@@ -212,6 +212,15 @@ export function FieldViewTab(props: {
     if (d) setSideB(s => (s.index ? s : { ...s, index: d }));
   }, [bInfo]);
 
+  // Report capture must photograph the plain Field View, not the compare
+  // divider or the scan panel; the shell announces a capture and this backs
+  // out of both.
+  useEffect(() => {
+    const onCapture = () => { setCompareOn(false); setPanelOpen(false); };
+    window.addEventListener("swathwise:prepare-capture", onCapture);
+    return () => window.removeEventListener("swathwise:prepare-capture", onCapture);
+  }, []);
+
   const toggleCompare = () => {
     if (compareOn) { setCompareOn(false); return; }
     const current = scans.find(s => s.id === scansApi.currentTaskId);

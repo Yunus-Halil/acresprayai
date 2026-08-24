@@ -820,6 +820,30 @@ export default function OrthomosaicViewer() {
     }
   };
 
+  // ---- Report map capture -------------------------------------------------
+  // The report's map must show exactly what its tables describe: orthomosaic,
+  // boundary, AI zones. Working overlays (annotations, grid zones, user
+  // polygons, measurements) are hidden for the capture and restored after —
+  // the screenshotted map and the printed tables come from one data source.
+  const captureRestore = useRef<{ layers: LayerState; showAiZones: boolean } | null>(null);
+  const prepareMapCapture = useCallback(() => {
+    captureRestore.current = { layers, showAiZones };
+    // Field View listens and exits compare/panel state, which would otherwise
+    // be captured over the ortho.
+    window.dispatchEvent(new CustomEvent("swathwise:prepare-capture"));
+    setLayers({
+      annotations: false, design: false, orthomosaic: true, ndvi: false,
+      measurements: false, boundary: true, userAnnotations: false, gridZones: false,
+    });
+    setShowAiZones(!!analysis);
+  }, [layers, showAiZones, analysis]);
+  const restoreMapCapture = useCallback(() => {
+    if (!captureRestore.current) return;
+    setLayers(captureRestore.current.layers);
+    setShowAiZones(captureRestore.current.showAiZones);
+    captureRestore.current = null;
+  }, []);
+
   // Probe the COG once to figure out NDVI vs VARI and band count for the legend.
   useEffect(() => {
     if (!taskId || !token || !tileTemplate) return;
@@ -1188,6 +1212,8 @@ export default function OrthomosaicViewer() {
             activeDrone={parentActiveDrone}
             lastLog={parentLastLog}
             setActiveTab={setActiveTab}
+            prepareMapCapture={prepareMapCapture}
+            restoreMapCapture={restoreMapCapture}
           />
         )}
         {activeTab === "settings" && (

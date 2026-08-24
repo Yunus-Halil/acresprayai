@@ -1833,6 +1833,7 @@ export function PlannerTab({
         scanId={taskId}
         droneId={fp.drone_id ?? null}
         droneName={activeDrone?.name ?? null}
+        recordDefaults={settings.application_record ?? null}
         batteryStart={preFlightBattery}
         zones={validZones.map(z => {
           const ai = (analysis?.zones ?? []).find((a: AiZone) => a.id === z.id);
@@ -1860,7 +1861,20 @@ export function PlannerTab({
         }
         onSaved={async (log) => {
           onFlightLogged(log);
-          await onSaveSettings({ ...settings, flight_plan: fp, last_flown_mission: log });
+          // Reusable record values (grower, product, certificates) become the
+          // field's defaults so the next mission prefills them.
+          const defaults = log.record
+            ? {
+                grower_name: log.record.grower_name,
+                product_name: log.record.product_name,
+                epa_reg_no: log.record.epa_reg_no,
+                applicator_cert_no: log.record.applicator_cert_no,
+                part137_cert_no: log.record.part137_cert_no,
+              }
+            : settings.application_record ?? null;
+          await onSaveSettings({
+            ...settings, flight_plan: fp, last_flown_mission: log, application_record: defaults,
+          });
           await refreshLastLog();
           // refresh drone roster so the planner picks up the new battery level
           const { data } = await supabase.from("drones")

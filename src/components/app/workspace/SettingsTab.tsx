@@ -52,6 +52,10 @@ import {
 } from "./types";
 import { FN_BASE, NDVI_BASE, TILE_BASE } from "./constants";
 import {
+  type ApplicationRecord, type ApplicationRecordDefaults,
+  EMPTY_RECORD, WIND_DIRECTIONS,
+} from "@/lib/reportRecord";
+import {
   type Annotation, type LayerState, type MeasureStats, type UserPoly,
   AiZonesLayer, AnnotateTool, BoundaryTool, FitBounds, LayerRow, MapControls,
   MeasurePanel, MeasureTool, MouseReadout, USER_POLY_ISSUES, UserPolyLayer,
@@ -317,7 +321,7 @@ export function SettingsTab({
 // planner pre-fills "Pre-flight battery" with the last known landed value.
 export function LogFlightModal({
   open, onOpenChange, fieldId, scanId, droneId, droneName,
-  batteryStart, zones, totalAcres, estLiters, onSaved,
+  batteryStart, zones, totalAcres, estLiters, recordDefaults, onSaved,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -329,6 +333,8 @@ export function LogFlightModal({
   zones: { id: string; label: string; issue: string | null; acres: number }[];
   totalAcres: number;
   estLiters: number | null;
+  /** Stable per-field record values (grower, product, certificates). */
+  recordDefaults: ApplicationRecordDefaults | null;
   onSaved: (log: LastFlownMission) => void | Promise<void>;
 }) {
   const today = new Date().toISOString().slice(0, 10);
@@ -337,6 +343,11 @@ export function LogFlightModal({
   const [refills, setRefills] = useState<number>(0);
   const [completed, setCompleted] = useState<Set<string>>(() => new Set(zones.map(z => z.id)));
   const [notes, setNotes] = useState("");
+  // The volume the pilot actually applied, in litres. Prefilled from the plan
+  // estimate as a CONVENIENCE and labelled as such — what gets stored is what
+  // the pilot confirms or corrects, never the estimate wearing "logged".
+  const [volumeIn, setVolumeIn] = useState<string>("");
+  const [rec, setRec] = useState<ApplicationRecord>(EMPTY_RECORD);
   const [saving, setSaving] = useState(false);
 
   // Reset whenever the modal is reopened so the zone list / starting battery
@@ -348,6 +359,8 @@ export function LogFlightModal({
     setRefills(0);
     setCompleted(new Set(zones.map(z => z.id)));
     setNotes("");
+    setVolumeIn("");
+    setRec({ ...EMPTY_RECORD, ...(recordDefaults ?? {}) });
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleZone = (id: string) => {
@@ -362,7 +375,32 @@ export function LogFlightModal({
     .filter(z => completed.has(z.id))
     .reduce((a, z) => a + z.acres, 0);
   const coverageRatio = totalAcres > 0 ? Math.min(1, acresDone / totalAcres) : 1;
-  const litersDone = estLiters != null ? estLiters * (refills + 1) * coverageRatio : null;
+  // Estimate only, shown as a prefill hint. It used to be STORED as
+  // liters_applied — a planner estimate presented as a logged actual, which is
+  // how a report once printed "3.3 gal applied" against a mission that flew
+  // zero zones. What persists now is only what the pilot types.
+  const estLitersApplied = estLiters != null && acresDone > 0
+    ? +(estLiters * (refills + 1) * coverageRatio).toFixed(1)
+    : null;
+  const litersApplied = (() => {
+    const t = volumeIn.trim();
+    if (!t) return null;
+    const n = Number(t);
+    return Number.isFinite(n) && n >= 0 ? +n.toFixed(2) : null;
+  })();
+
+  const normalizedRecord = (): ApplicationRecord => ({
+    grower_name: rec.grower_name.trim(),
+    product_name: rec.product_name.trim(),
+    epa_reg_no: rec.epa_reg_no.trim(),
+    applicator_cert_no: rec.applicator_cert_no.trim(),
+    part137_cert_no: rec.part137_cert_no.trim(),
+    start_time: rec.start_time || null,
+    end_time: rec.end_time || null,
+    wind_speed_mph: rec.wind_speed_mph,
+    wind_direction: rec.wind_direction || null,
+    temperature_f: rec.temperature_f,
+  });
 
   const save = async () => {
     if (!fieldId || saving) return;
@@ -386,9 +424,10 @@ export function LogFlightModal({
         tank_refills: refills,
         zones_completed: Array.from(completed),
         acres_treated: +acresDone.toFixed(2),
-        liters_applied: litersDone != null ? +litersDone.toFixed(2) : null,
+        liters_applied: litersApplied,
         notes: notes.trim() || null,
         created_at: new Date().toISOString(),
+        record: normalizedRecord(),
       };
       const row = {
         user_id: user.id,
@@ -419,8 +458,10 @@ export function LogFlightModal({
       if (droneId) {
         await supabase.from("drones").update({ battery: batteryEnd }).eq("id", droneId);
       }
+      // The flight_logs table has no column for the application record, so the
+      // record rides along on the snapshot the settings JSON keeps.
       const savedLog: LastFlownMission = inserted
-        ? { ...(inserted as LastFlownMission), source: "flight_logs" }
+        ? { ...(inserted as LastFlownMission), source: "flight_logs", record: snapshotBase.record }
         : snapshotBase;
       toast.success(inserted ? "Flight logged" : "Mission saved to field", {
         description: `${acresDone.toFixed(2)} ac recorded for ${dateFlown}.`,
@@ -436,7 +477,7 @@ export function LogFlightModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-[#0f0f0f] border-[#1f1f1f] text-neutral-200 max-w-md">
+      <DialogContent className="bg-[#0f0f0f] border-[#1f1f1f] text-neutral-200 max-w-md max-h-[88vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <CheckCircle2 className="h-4 w-4 text-[#4CAF50]" />
@@ -529,10 +570,113 @@ export function LogFlightModal({
             )}
             <div className="mt-2 text-[11px] text-neutral-500 flex justify-between">
               <span>Treated</span>
-              <span className="font-mono text-neutral-300">
-                {acresDone.toFixed(2)} ac
-                {litersDone != null && <> · {litersDone.toFixed(1)} L (est.)</>}
-              </span>
+              <span className="font-mono text-neutral-300">{acresDone.toFixed(2)} ac</span>
+            </div>
+          </div>
+
+          {/* Volume actually applied. The estimate is a hint, never the value. */}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">
+              Volume applied (L)
+            </div>
+            <input
+              type="number" min={0} step={0.1}
+              value={volumeIn}
+              onChange={e => setVolumeIn(e.target.value)}
+              placeholder={estLitersApplied != null ? `plan estimated ~${estLitersApplied} L` : "e.g. 12.5"}
+              className="w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200 placeholder:text-neutral-600"
+            />
+            <div className="mt-1 text-[10px] text-neutral-500">
+              Enter what actually left the tank. Left empty, the report shows this as missing
+              rather than borrowing the plan's estimate.
+            </div>
+          </div>
+
+          {/* Application record: what the pesticide record keeper needs. */}
+          <div className="pt-2 border-t border-[#1f1f1f] space-y-2">
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500">
+              Application record
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="col-span-2 text-[10px] text-neutral-500">
+                Grower / customer
+                <input value={rec.grower_name}
+                  onChange={e => setRec(r => ({ ...r, grower_name: e.target.value }))}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm text-neutral-200" />
+              </label>
+              <label className="text-[10px] text-neutral-500">
+                Product name
+                <input value={rec.product_name}
+                  onChange={e => setRec(r => ({ ...r, product_name: e.target.value }))}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm text-neutral-200" />
+              </label>
+              <label className="text-[10px] text-neutral-500">
+                EPA reg. no.
+                <input value={rec.epa_reg_no}
+                  onChange={e => setRec(r => ({ ...r, epa_reg_no: e.target.value }))}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
+              </label>
+              <label className="text-[10px] text-neutral-500">
+                Start time
+                <input type="time" value={rec.start_time ?? ""}
+                  onChange={e => setRec(r => ({ ...r, start_time: e.target.value || null }))}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
+              </label>
+              <label className="text-[10px] text-neutral-500">
+                End time
+                <input type="time" value={rec.end_time ?? ""}
+                  onChange={e => setRec(r => ({ ...r, end_time: e.target.value || null }))}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
+              </label>
+              {/* Observed on site by the applicator. Deliberately NOT prefilled
+                  from the forecast API: a forecast presented as an observed
+                  condition would falsify the record.
+                  TODO(field-capture): capture automatically at mission time. */}
+              <label className="text-[10px] text-neutral-500">
+                Wind speed (mph)
+                <input type="number" min={0} step={0.5}
+                  value={rec.wind_speed_mph ?? ""}
+                  onChange={e => setRec(r => ({
+                    ...r,
+                    wind_speed_mph: e.target.value === "" ? null : Number(e.target.value),
+                  }))}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
+              </label>
+              <label className="text-[10px] text-neutral-500">
+                Wind direction
+                <select value={rec.wind_direction ?? ""}
+                  onChange={e => setRec(r => ({ ...r, wind_direction: e.target.value || null }))}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm text-neutral-200">
+                  <option value="">—</option>
+                  {WIND_DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </label>
+              <label className="text-[10px] text-neutral-500">
+                Temperature (°F)
+                <input type="number" step={1}
+                  value={rec.temperature_f ?? ""}
+                  onChange={e => setRec(r => ({
+                    ...r,
+                    temperature_f: e.target.value === "" ? null : Number(e.target.value),
+                  }))}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
+              </label>
+              <label className="text-[10px] text-neutral-500">
+                Applicator cert. no.
+                <input value={rec.applicator_cert_no}
+                  onChange={e => setRec(r => ({ ...r, applicator_cert_no: e.target.value }))}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
+              </label>
+              <label className="text-[10px] text-neutral-500">
+                Part 137 cert. no.
+                <input value={rec.part137_cert_no}
+                  onChange={e => setRec(r => ({ ...r, part137_cert_no: e.target.value }))}
+                  className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
+              </label>
+            </div>
+            <div className="text-[10px] text-neutral-600 leading-snug">
+              These become the report's application record. Anything left blank shows on the
+              report as missing, and the report stays a draft until the record is complete.
             </div>
           </div>
 

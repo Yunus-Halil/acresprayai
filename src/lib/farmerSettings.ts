@@ -7,6 +7,8 @@
 import { type DroneSpec, DRONE_SPECS } from "./droneSpecs";
 import { DEFAULT_HEADLAND_M } from "./headland";
 import { DEFAULT_GROUPING_SWATHS } from "./zoneGroups";
+import type { ApplicationRecord, ApplicationRecordDefaults } from "./reportRecord";
+export type { ApplicationRecord, ApplicationRecordDefaults } from "./reportRecord";
 
 export type CustomInput = { name: string; cost: number };
 
@@ -28,6 +30,12 @@ export type LastFlownMission = {
   liters_applied: number | null;
   notes: string | null;
   created_at?: string | null;
+  /**
+   * The pesticide application record for this mission (grower, product, EPA
+   * number, observed conditions, certificates). Rides the settings snapshot
+   * and the archived report; public.flight_logs has no column for it yet.
+   */
+  record?: ApplicationRecord | null;
 };
 
 export type FarmerSettings = {
@@ -122,6 +130,12 @@ export type FarmerSettings = {
   // canonical record is still public.flight_logs; this snapshot makes the
   // Reports tab resilient across tab switches.
   last_flown_mission?: LastFlownMission | null;
+  /**
+   * Stable application-record values for this field (grower name, product,
+   * certificates). Prefill every mission's record so the operator types them
+   * once, not per flight.
+   */
+  application_record?: ApplicationRecordDefaults | null;
 };
 
 export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
@@ -161,6 +175,7 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
   spray_rates_lha: { low: 15, medium: 25, high: 40 },
   zone_rate_overrides: {},
   last_flown_mission: null,
+  application_record: null,
 };
 
 /**

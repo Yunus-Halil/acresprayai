@@ -12,9 +12,18 @@ import {
 } from "@/lib/farmerSettings";
 import { storageKey } from "@/lib/storage";
 import {
-  M2_PER_ACRE, fmtAreaAc, fmtVolume, volumeToLitres, volumeUnit, volumeValue,
+  M2_PER_ACRE, fmtVolume, volumeToLitres, volumeUnit, volumeValue,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
+import {
+  type ApplicationRecord, EMPTY_RECORD, WIND_DIRECTIONS,
+  bannerFor, computedRateLPerAc, missingRecordFields, missionDateError, volumeZoneNote,
+} from "@/lib/reportRecord";
+
+// The report standardises on ACRES for every area it prints. fmtAreaAc
+// elsewhere may drop to ft² for small areas, which is how one page came to say
+// "0 ft²" beside "11.07 ac". One unit, one document.
+const acres = (n: number) => `${n.toFixed(2)} ac`;
 
 // Conversion now comes from lib/units.ts. The helpers that used to live here
 // carried their own rounded constants — 0.264172 gal/L and an acre of 4047 m²
@@ -73,10 +82,18 @@ type Props = {
   lastLog: FlightLogRow | null;
   // Switches viewer to a given tab key; we use it to flash Field View for capture.
   setActiveTab: (k: "field" | "weather" | "ai" | "planner" | "reports" | "settings") => void;
+  /**
+   * Puts Field View into report-capture layers (orthomosaic + boundary + AI
+   * zones ONLY) and back. The captured map must be driven by the same data as
+   * the report's tables, or the two can contradict each other on one page.
+   */
+  prepareMapCapture: () => void;
+  restoreMapCapture: () => void;
 };
 
 export default function ReportsTab({
   field, task, analysis, settings, activeDrone, lastLog, setActiveTab,
+  prepareMapCapture, restoreMapCapture,
 }: Props) {
   const [pilotName, setPilotName] = useState<string>(() => localStorage.getItem(storageKey("pilot_name")) ?? "");
   const [generating, setGenerating] = useState(false);
@@ -97,13 +114,20 @@ export default function ReportsTab({
   // Fields list should read the same as one opened from a scan.
   const unit = useUnitSystem();
   const isImperial = unit === "imperial";
-  const effectiveLastLog = newestMission(fetchedLastLog, lastLog, settings.last_flown_mission);
+
+  // ONLY missions flown against THIS scan count. The report used to adopt the
+  // field's newest log whatever scan it belonged to, which is how a page could
+  // print "Zones flown 0/0" beside "Volume applied 3.3 gal": the volume came
+  // from a different mission entirely.
+  const forThisScan = (l: FlightLogRow | null | undefined) =>
+    l && l.scan_id === task.id ? l : null;
+  const effectiveLastLog = newestMission(
+    forThisScan(fetchedLastLog), forThisScan(lastLog), forThisScan(settings.last_flown_mission),
+  );
   const effectiveFlightLogId = effectiveLastLog?.source === "field_snapshot" ? null : (effectiveLastLog?.id ?? null);
   const effectiveMissionRecordId = effectiveLastLog?.id ?? null;
 
-  // Reports owns its own latest-log lookup. Parent props are still useful for
-  // instant updates, but this makes the tab simply fetch the newest completed
-  // mission for the field whenever it opens/remounts.
+  // Reports owns its own latest-log lookup, scoped to this scan.
   useEffect(() => {
     if (!field?.id) return;
     let cancelled = false;
@@ -112,6 +136,7 @@ export default function ReportsTab({
         .from("flight_logs")
         .select("id, field_id, scan_id, drone_id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes, created_at")
         .eq("field_id", field.id)
+        .eq("scan_id", task.id)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -120,7 +145,22 @@ export default function ReportsTab({
       setFetchedLastLog(data ? ({ ...(data as FlightLogRow), source: "flight_logs" }) : null);
     })();
     return () => { cancelled = true; };
-  }, [field?.id]);
+  }, [field?.id, task.id]);
+
+  // The application record: prefilled from the mission log's record (entered
+  // in the Log Flight dialog), then the field's stored defaults, and editable
+  // here so an older mission's gaps can be corrected before generating.
+  const [record, setRecord] = useState<ApplicationRecord>(EMPTY_RECORD);
+  useEffect(() => {
+    const fromLog = effectiveLastLog?.record;
+    const defaults = settings.application_record;
+    setRecord({
+      ...EMPTY_RECORD,
+      ...(defaults ?? {}),
+      ...(fromLog ?? {}),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveLastLog?.id]);
 
   // Whenever the logged-flight backing data changes, re-prefill the editable
   // fields. Pilot can still type over any of them.
@@ -154,6 +194,10 @@ export default function ReportsTab({
   }, [pilotName]);
 
   // ---- Derived values (zones, chemical totals, savings) ----
+  // Analysis is tri-valent in the product (never ran / ran clean / has zones);
+  // by the time it reaches this tab a failed or absent run is `null`. Every
+  // computed claim below is gated on hasAnalysis — no analysis, no numbers.
+  const hasAnalysis = !!analysis;
   const zones = analysis?.zones ?? [];
   const zoneRows = zones.map(z => {
     const m2 = ringAreaM2(z.ring);
@@ -187,23 +231,23 @@ export default function ReportsTab({
     : 0;
 
   // Pre-flight vs post-flight framing.
-  // Post-flight = a mission has been logged for this field.
+  // Post-flight = a mission has been logged for THIS scan.
   const isPostFlight = !!effectiveLastLog;
   const targetedAcres = isPostFlight
     ? zoneRows.filter(z => z.flown).reduce((s, z) => s + z.acres, 0)
     : treatedAcres;
-  const untreatedPct = fieldAcres > 0
-    ? Math.max(0, Math.min(100, (1 - targetedAcres / fieldAcres) * 100))
-    : 0;
-  const untreatedPctLabel = untreatedPct >= 99.95
-    ? untreatedPct.toFixed(2)
-    : untreatedPct >= 10 ? untreatedPct.toFixed(1) : untreatedPct.toFixed(2);
-  const headlineBig = isPostFlight
-    ? `${savingsPct}% less chemical`
-    : `${untreatedPctLabel}% of field stays unsprayed`;
-  const headlineSub = isPostFlight
-    ? "vs. full-field spraying"
-    : `Targeting ${fmtAreaAc(targetedAcres, unit).text} of ${fmtAreaAc(fieldAcres, unit).text} total`;
+
+  // The one banner the report shows, decided in lib/reportRecord so the states
+  // cannot blur: "no analysis" is neutral and explicitly not a finding;
+  // success styling exists only for a completed analysis with computed zones.
+  const banner = bannerFor({
+    hasAnalysis,
+    zoneCount: zoneRows.length,
+    targetedAcres,
+    fieldAcres,
+    isPostFlight,
+    savingsPct,
+  });
 
   // ---- Mission stats from the editable inputs (prefilled from last log). ----
   const numOrNull = (s: string) => {
@@ -221,19 +265,50 @@ export default function ReportsTab({
     : volumeToLitres(volumeAppliedRaw, unit);
   const pilotNotes = notesIn;
 
+  // ---- The record's completeness decides DRAFT vs FINAL. --------------------
+  // A report missing required record fields still generates — an operator in
+  // the field should never be locked out of their own document — but it
+  // carries a DRAFT — INCOMPLETE watermark on every page and each gap renders
+  // labelled in red, never silently dropped.
+  const missing = missingRecordFields({
+    hasAnalysis,
+    fieldAcres,
+    volumeAppliedL: litersApplied,
+    missionLogged: !!effectiveLastLog,
+    record,
+  });
+  const isDraft = missing.length > 0;
+  const dateErr = missionDate ? missionDateError(missionDate) : null;
+  const zonesFlownCount = zoneRows.filter(z => z.flown).length;
+  const volumeNote = volumeZoneNote({
+    volumeAppliedL: litersApplied,
+    zonesFlown: zonesFlownCount,
+    zonesTotal: zoneRows.length,
+    hasAnalysis,
+  });
+  const acresTreatedLogged = effectiveLastLog?.acres_treated ?? null;
+  const rateLPerAc = computedRateLPerAc(litersApplied, acresTreatedLogged);
+
   // ---- PDF generation ----
   const generate = async () => {
     if (!field) { toast.error("Define a field boundary first."); return; }
     if (!pilotName.trim()) { toast.error("Enter a pilot name first."); return; }
     if (!missionDate) { toast.error("Enter the mission date first."); return; }
+    // A mission date after the report date is invalid input, not a draft state:
+    // nothing downstream can be right, so this one blocks outright.
+    const dateProblem = missionDateError(missionDate);
+    if (dateProblem) { toast.error(dateProblem); return; }
     setGenerating(true);
     let restored = false;
     const capRoot = document.getElementById("field-view-capture");
     const prevVisibility = capRoot?.style.visibility ?? "";
     const prevPointer = capRoot?.style.pointerEvents ?? "";
     try {
-      // 1) Make sure the map is on-screen for html2canvas, then give tiles a beat
-      //    to load before snapshotting.
+      // 1) Make sure the map is on-screen for html2canvas, showing EXACTLY the
+      //    layers the report's tables describe — orthomosaic, boundary, AI
+      //    zones — and none of the operator's working overlays. The map and
+      //    the tables must be driven by the same data or they can disagree.
+      prepareMapCapture();
       setActiveTab("field");
       await new Promise(r => setTimeout(r, 50));
       if (capRoot) {
@@ -262,6 +337,7 @@ export default function ReportsTab({
         capRoot.style.visibility = prevVisibility;
         capRoot.style.pointerEvents = prevPointer;
       }
+      restoreMapCapture();
       setActiveTab("reports");
       restored = true;
 
@@ -278,155 +354,294 @@ export default function ReportsTab({
         ? new Date(missionDate + "T00:00").toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })
         : "-";
 
-      // Header
+      // Every string below reaches a GROWER, not the app operator. Nothing on
+      // this document may read as an in-app instruction, and any required value
+      // that is absent renders as a labelled red MISSING — never silently
+      // dropped, never defaulted.
+      const MISSING_RGB: [number, number, number] = [220, 53, 69];
+      const kvRow = (label: string, value: string | null, x: number, valueX: number, yy: number) => {
+        pdf.setFont("helvetica", "bold"); pdf.setTextColor(110); pdf.setFontSize(8);
+        pdf.text(label, x, yy);
+        if (value) {
+          pdf.setFont("helvetica", "normal"); pdf.setTextColor(20); pdf.setFontSize(10);
+          pdf.text(value, valueX, yy);
+        } else {
+          pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(MISSING_RGB[0], MISSING_RGB[1], MISSING_RGB[2]);
+          pdf.setFontSize(9);
+          pdf.text("MISSING", valueX, yy);
+        }
+      };
+      const has = (s: string | null | undefined) => (s && s.trim() ? s.trim() : null);
+
+      // Header: brand + generation date
       pdf.setFont("helvetica", "bold"); pdf.setTextColor(76, 175, 80);
       pdf.setFontSize(16); pdf.text("SwathWise", M, y);
       pdf.setFont("helvetica", "normal"); pdf.setTextColor(120);
-      pdf.setFontSize(10); pdf.text(niceDate, W - M, y, { align: "right" });
+      pdf.setFontSize(9); pdf.text(`Generated ${niceDate}`, W - M, y, { align: "right" });
       y += 8;
       pdf.setDrawColor(220); pdf.setLineWidth(0.5); pdf.line(M, y, W - M, y);
-      y += 18;
+      y += 16;
       pdf.setFont("helvetica", "bold"); pdf.setTextColor(30);
-      pdf.setFontSize(20); pdf.text("FIELD SPRAY REPORT", M, y);
-      y += 22;
+      pdf.setFontSize(17); pdf.text("FIELD SPRAY & APPLICATION REPORT", M, y);
+      y += 14;
+      // Field identity line
+      pdf.setFont("helvetica", "normal"); pdf.setTextColor(90); pdf.setFontSize(10);
+      pdf.text(
+        `${field.name} · ${settings.crop_type ? settings.crop_type.replace(/_/g, " ") : "crop not set"} · ${fieldAcres > 0 ? acres(fieldAcres) : "boundary not set"}`,
+        M, y,
+      );
+      y += 12;
+      if (isDraft) {
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(MISSING_RGB[0], MISSING_RGB[1], MISSING_RGB[2]);
+        pdf.setFontSize(8);
+        const draftLine = pdf.splitTextToSize(
+          `DRAFT — INCOMPLETE. Missing: ${missing.join(", ")}.`, W - 2 * M,
+        );
+        pdf.text(draftLine, M, y);
+        y += draftLine.length * 9 + 4;
+      }
+      y += 2;
 
-      // Meta grid
-      pdf.setFontSize(9); pdf.setTextColor(110); pdf.setFont("helvetica", "bold");
-      const meta: [string, string][] = [
+      // Metadata grid, two columns; all areas in acres.
+      const metaL: [string, string | null][] = [
         ["FIELD", field.name],
-        ["CROP TYPE", settings.crop_type ? settings.crop_type.replace(/_/g, " ") : "-"],
-        ["TOTAL AREA", fmtAreaAc(fieldAcres, unit).text],
+        ["TOTAL AREA", fieldAcres > 0 ? acres(fieldAcres) : null],
         ["SCAN DATE", scanDate],
         ["MISSION DATE", missionDateNice],
-        ["PILOT", pilotName.trim()],
-        ["DRONE", activeDrone ? `${activeDrone.name} · ${activeDrone.model}` : ", Not assigned ,"],
       ];
-      const labelW = 90;
-      for (const [k, v] of meta) {
-        pdf.setFont("helvetica", "bold"); pdf.setTextColor(110); pdf.setFontSize(8);
-        pdf.text(k, M, y);
-        pdf.setFont("helvetica", "normal"); pdf.setTextColor(20); pdf.setFontSize(10);
-        pdf.text(v, M + labelW, y);
-        y += 14;
+      const metaR: [string, string | null][] = [
+        ["CROP", has(settings.crop_type?.replace(/_/g, " ")) ?? null],
+        ["PILOT", has(pilotName)],
+        ["AIRCRAFT", activeDrone ? `${activeDrone.name} · ${activeDrone.model}` : "Not recorded"],
+        ["REPORT DATE", niceDate],
+      ];
+      const colHalf = (W - 2 * M) / 2;
+      for (let i = 0; i < Math.max(metaL.length, metaR.length); i++) {
+        if (metaL[i]) kvRow(metaL[i][0], metaL[i][1], M, M + 70, y);
+        if (metaR[i]) kvRow(metaR[i][0], metaR[i][1], M + colHalf + 6, M + colHalf + 76, y);
+        y += 13;
       }
-      y += 6;
-      pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 14;
+      y += 4;
+      pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
 
-      // Field map
+      // Field map — captured from the same layers the tables below describe.
       pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
-      pdf.text("FIELD MAP", M, y); y += 10;
+      pdf.text("FIELD MAP", M, y); y += 8;
       if (mapDataUrl) {
         const imgW = W - 2 * M;
-        const imgH = imgW * 0.45;
+        const imgH = imgW * 0.38;
         pdf.addImage(mapDataUrl, "JPEG", M, y, imgW, imgH);
-        y += imgH + 12;
+        y += imgH + 4;
+        pdf.setFont("helvetica", "normal"); pdf.setFontSize(7); pdf.setTextColor(150);
+        pdf.text(
+          hasAnalysis && zoneRows.length > 0
+            ? "Shown: orthomosaic, field boundary, and the treatment zones listed below."
+            : "Shown: orthomosaic and field boundary. No treatment zones are drawn because none were computed.",
+          M, y,
+        );
+        y += 10;
       } else {
         pdf.setFontSize(9); pdf.setTextColor(150);
-        pdf.text("Map preview unavailable: tiles could not be captured.", M, y + 4);
-        y += 24;
+        pdf.text("Map image not available for this report.", M, y + 4);
+        y += 20;
       }
-      pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 14;
+      pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
 
-      // Headline savings callout
-      pdf.setFillColor(76, 175, 80);
-      pdf.roundedRect(M, y, W - 2 * M, 56, 6, 6, "F");
-      pdf.setTextColor(255); pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(isPostFlight ? 26 : 20);
-      pdf.text(headlineBig, M + 16, y + 30);
-      pdf.setFontSize(10); pdf.setFont("helvetica", "normal");
-      pdf.text(headlineSub, M + 16, y + 46);
-      y += 70;
+      // Result banner. Three states that must never share a visual treatment:
+      //   no analysis  → neutral outline, explicitly NOT a finding of zero
+      //   ran, clean   → quiet informational state, worded as a real result
+      //   ran, zones   → the only state that earns the green success fill
+      const bannerH = banner.note ? 58 : 48;
+      if (banner.tone === "success") {
+        pdf.setFillColor(76, 175, 80);
+        pdf.roundedRect(M, y, W - 2 * M, bannerH, 6, 6, "F");
+        pdf.setTextColor(255);
+      } else {
+        pdf.setDrawColor(banner.tone === "clean" ? 76 : 160, banner.tone === "clean" ? 175 : 160, banner.tone === "clean" ? 80 : 160);
+        pdf.setLineWidth(1);
+        pdf.roundedRect(M, y, W - 2 * M, bannerH, 6, 6, "S");
+        pdf.setTextColor(banner.tone === "clean" ? 46 : 90, banner.tone === "clean" ? 125 : 90, banner.tone === "clean" ? 50 : 90);
+      }
+      pdf.setFont("helvetica", "bold"); pdf.setFontSize(14);
+      pdf.text(banner.big, M + 14, y + 22);
+      pdf.setFontSize(9); pdf.setFont("helvetica", "normal");
+      pdf.text(banner.sub, M + 14, y + 36);
+      if (banner.note) {
+        pdf.setFont("helvetica", "bold"); pdf.setFontSize(8);
+        pdf.text(banner.note, M + 14, y + 49);
+      }
+      y += bannerH + 12;
 
       // Treatment zones
       pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
-      pdf.text("TREATMENT ZONES", M, y); y += 12;
-      pdf.setFontSize(10); pdf.setTextColor(30); pdf.setFont("helvetica", "normal");
-      if (zoneRows.length === 0) {
-        pdf.setTextColor(150);
-        pdf.text("No AI zones. Run an analysis first.", M, y); y += 16;
+      pdf.text("TREATMENT ZONES", M, y); y += 11;
+      pdf.setFontSize(10); pdf.setFont("helvetica", "normal");
+      if (!hasAnalysis) {
+        pdf.setTextColor(MISSING_RGB[0], MISSING_RGB[1], MISSING_RGB[2]);
+        pdf.setFontSize(9);
+        pdf.text("Not determined — no imagery analysis was run for this scan.", M, y); y += 14;
+      } else if (zoneRows.length === 0) {
+        pdf.setTextColor(90);
+        pdf.setFontSize(9);
+        pdf.text("The imagery analysis found no zones requiring targeted treatment.", M, y); y += 14;
       } else {
         for (const z of zoneRows) {
-          pdf.setTextColor(30); pdf.setFont("helvetica", "bold");
+          pdf.setTextColor(30); pdf.setFont("helvetica", "bold"); pdf.setFontSize(10);
           pdf.text(z.name, M, y);
           pdf.setFont("helvetica", "normal"); pdf.setTextColor(110);
           pdf.text(z.issue, M + 130, y);
           pdf.setTextColor(30);
-          pdf.text(fmtAreaAc(z.acres, unit).text, W - M - 110, y, { align: "right" });
-          pdf.setTextColor(z.flown ? 76 : 150);
+          pdf.text(acres(z.acres), W - M - 90, y, { align: "right" });
           if (z.flown) {
             pdf.setFont("helvetica", "bold"); pdf.setTextColor(34, 139, 34);
             pdf.text("Flown", W - M, y, { align: "right" });
           } else {
-            pdf.setFont("helvetica", "normal"); pdf.setTextColor(170);
-            pdf.text("Pending", W - M, y, { align: "right" });
+            pdf.setFont("helvetica", "normal"); pdf.setTextColor(150);
+            pdf.text("Not flown", W - M, y, { align: "right" });
           }
-          y += 14;
+          y += 13;
         }
       }
-      y += 6;
-      pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 14;
+      y += 4;
+      pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
 
-      // Chemical usage
+      // Planned chemical use — an estimate from zone areas and configured
+      // rates, labelled as such and kept apart from the logged volume below.
       pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
-      pdf.text("CHEMICAL USAGE (EST.)", M, y); y += 12;
-      pdf.setFont("helvetica", "normal"); pdf.setFontSize(10); pdf.setTextColor(30);
-      if (buckets.size === 0) {
-        pdf.setTextColor(150);
-        pdf.text("No chemical-mapped zones.", M, y); y += 14;
+      pdf.text("PLANNED CHEMICAL USE (ESTIMATE)", M, y); y += 11;
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(10);
+      if (!hasAnalysis || buckets.size === 0) {
+        pdf.setTextColor(90); pdf.setFontSize(9);
+        pdf.text(
+          hasAnalysis
+            ? "Not computed — no treatment zones to plan against."
+            : "Not computed — treatment zones were not determined.",
+          M, y,
+        );
+        y += 14;
       } else {
         for (const b of buckets.values()) {
           pdf.setTextColor(30); pdf.text(b.label, M, y);
           pdf.text(fmtVol(b.litres, unit), W - M, y, { align: "right" });
-          y += 14;
+          y += 13;
         }
         pdf.setDrawColor(235); pdf.line(M, y - 4, W - M, y - 4);
         pdf.setFont("helvetica", "bold");
-        pdf.text("Total applied", M, y);
+        pdf.text("Planned total", M, y);
         pdf.text(fmtVol(totalLitres, unit), W - M, y, { align: "right" });
-        y += 14;
+        y += 13;
         pdf.setFont("helvetica", "normal"); pdf.setTextColor(76, 175, 80);
-        pdf.text("Chemical saved vs full-field spray", M, y);
+        pdf.text("Estimated chemical saved vs full-field spray", M, y);
         pdf.text(`${savingsPct}%`, W - M, y, { align: "right" });
-        y += 16;
+        y += 14;
       }
-      pdf.setTextColor(30);
-      pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 14;
+      pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
+
+      // APPLICATION RECORD — the section that makes this a pesticide
+      // application record rather than a summary.
+      pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
+      pdf.text("APPLICATION RECORD", M, y); y += 11;
+      const recL: [string, string | null][] = [
+        ["GROWER / CUSTOMER", has(record.grower_name)],
+        ["PRODUCT", has(record.product_name)],
+        ["EPA REG. NO.", has(record.epa_reg_no)],
+        ["APPLICATION DATE", missionDateNice],
+        ["START TIME", record.start_time],
+        ["END TIME", record.end_time],
+        ["VOLUME APPLIED", litersApplied != null ? fmtVol(litersApplied, unit) : null],
+      ];
+      const recR: [string, string | null][] = [
+        ["RATE (COMPUTED)", rateLPerAc != null
+          ? `${fmtVol(rateLPerAc, unit, 2)}/ac (volume ÷ treated area)` : null],
+        ["ACRES TREATED", acresTreatedLogged != null ? acres(acresTreatedLogged) : null],
+        ["FIELD TOTAL", fieldAcres > 0 ? acres(fieldAcres) : null],
+        ["WIND", record.wind_speed_mph != null && record.wind_direction
+          ? `${record.wind_speed_mph} mph ${record.wind_direction}` : null],
+        ["TEMPERATURE", record.temperature_f != null ? `${record.temperature_f} °F` : null],
+        ["APPLICATOR CERT.", has(record.applicator_cert_no)],
+        ["PART 137 CERT.", has(record.part137_cert_no)],
+      ];
+      for (let i = 0; i < Math.max(recL.length, recR.length); i++) {
+        if (recL[i]) kvRow(recL[i][0], recL[i][1], M, M + 108, y);
+        if (recR[i]) kvRow(recR[i][0], recR[i][1], M + colHalf + 6, M + colHalf + 100, y);
+        y += 13;
+      }
+      y += 2;
+      pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
 
       // Mission stats
       pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
-      pdf.text("MISSION STATS", M, y); y += 12;
-      pdf.setFont("helvetica", "normal"); pdf.setFontSize(10); pdf.setTextColor(30);
+      pdf.text("MISSION STATS", M, y); y += 11;
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(10);
       const colW = (W - 2 * M) / 2;
+      const flownLabel = hasAnalysis
+        ? `${zonesFlownCount} of ${zoneRows.length}`
+        : "Not determined";
       const stats: [string, string, string, string][] = [
-        ["Spray distance", treatedAcres > 0 ? `${fmtAreaAc(treatedAcres, unit).text} sprayed` : "-",
-         "Tank refills", String(tankRefills)],
-        ["Battery start", battStart != null ? `${battStart}%` : "-",
-         "Landed", battEnd != null ? `${battEnd}%` : "-"],
-        [`Volume applied (logged)`, litersApplied != null ? fmtVol(litersApplied, unit) : "-",
-         "Zones flown", `${zoneRows.filter(z => z.flown).length} / ${zoneRows.length}`],
+        ["Battery start", battStart != null ? `${battStart}%` : "Not recorded",
+         "Battery landed", battEnd != null ? `${battEnd}%` : "Not recorded"],
+        ["Tank refills", String(tankRefills),
+         "Zones flown", flownLabel],
       ];
       for (const [k1, v1, k2, v2] of stats) {
         pdf.setTextColor(110); pdf.text(k1, M, y);
         pdf.setTextColor(30); pdf.text(v1, M + colW - 12, y, { align: "right" });
         pdf.setTextColor(110); pdf.text(k2, M + colW + 12, y);
         pdf.setTextColor(30); pdf.text(v2, W - M, y, { align: "right" });
-        y += 14;
+        y += 13;
       }
-      y += 6;
-      pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 14;
+      if (volumeNote) {
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(MISSING_RGB[0], MISSING_RGB[1], MISSING_RGB[2]);
+        pdf.setFontSize(8);
+        const noteLines = pdf.splitTextToSize(volumeNote, W - 2 * M);
+        pdf.text(noteLines, M, y);
+        y += noteLines.length * 9 + 2;
+      }
+      y += 4;
 
-      // Pilot notes
-      pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
-      pdf.text("PILOT NOTES", M, y); y += 12;
-      pdf.setFont("helvetica", "normal"); pdf.setFontSize(10); pdf.setTextColor(30);
-      const notes = pilotNotes?.trim() || ",";
-      const wrapped = pdf.splitTextToSize(notes, W - 2 * M);
-      pdf.text(wrapped, M, y);
-      y += wrapped.length * 12 + 10;
+      // Applicator notes — only when the applicator wrote any.
+      if (pilotNotes?.trim()) {
+        pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
+        pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
+        pdf.text("APPLICATOR NOTES", M, y); y += 11;
+        pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(30);
+        const wrapped = pdf.splitTextToSize(pilotNotes.trim(), W - 2 * M);
+        pdf.text(wrapped, M, y);
+        y += wrapped.length * 11 + 6;
+      }
 
-      // Footer
-      pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(150);
-      pdf.text("Generated by SwathWise · swathwise.com", W / 2, pdf.internal.pageSize.getHeight() - 18, { align: "center" });
+      // Footer: signature line + retention notice.
+      const H = pdf.internal.pageSize.getHeight();
+      const sigY = Math.max(y + 24, H - 64);
+      pdf.setDrawColor(120); pdf.setLineWidth(0.75);
+      pdf.line(M, sigY, M + 220, sigY);
+      pdf.line(W - M - 140, sigY, W - M, sigY);
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(110);
+      pdf.text("Applicator signature", M, sigY + 10);
+      pdf.text("Date", W - M - 140, sigY + 10);
+      pdf.setFontSize(7.5); pdf.setTextColor(130);
+      pdf.text(
+        "Retain this application record for the period required by federal and state regulation (typically two years or longer).",
+        M, H - 28,
+      );
+      pdf.setFontSize(8); pdf.setTextColor(150);
+      pdf.text("Generated by SwathWise · swathwise.com", W / 2, H - 16, { align: "center" });
+
+      // DRAFT watermark, on every page, drawn last so nothing covers it.
+      if (isDraft) {
+        const pages = pdf.getNumberOfPages();
+        for (let p = 1; p <= pages; p++) {
+          pdf.setPage(p);
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(52);
+          pdf.setTextColor(248, 180, 180);
+          pdf.text("DRAFT — INCOMPLETE", W / 2, H / 2, { align: "center", angle: 35 });
+        }
+        pdf.setPage(pdf.getNumberOfPages());
+      }
 
       const blob = pdf.output("blob");
       const safeName = field.name.replace(/[^a-z0-9_-]+/gi, "_").slice(0, 40) || "Field";
@@ -450,16 +665,24 @@ export default function ReportsTab({
       const summary = {
         pilot_name: pilotName.trim(),
         field_acres: fieldAcres,
-        treated_acres: treatedAcres,
-        total_litres: totalLitres,
-        savings_pct: savingsPct,
+        // Null, not zero, when no analysis computed them.
+        treated_acres: hasAnalysis ? treatedAcres : null,
+        total_litres: hasAnalysis ? totalLitres : null,
+        savings_pct: hasAnalysis && zoneRows.length > 0 ? savingsPct : null,
         health_score: analysis?.health_score ?? null,
-        zones_total: zoneRows.length,
-        zones_flown: zoneRows.filter(z => z.flown).length,
+        zones_total: hasAnalysis ? zoneRows.length : null,
+        zones_flown: hasAnalysis ? zonesFlownCount : null,
         drone: activeDrone ? { name: activeDrone.name, model: activeDrone.model } : null,
         mission_date: missionDate,
         flight_log_id: effectiveFlightLogId,
         mission_record_id: effectiveMissionRecordId,
+        // The application record as printed, plus the draft state — the
+        // archive is the durable home of a mission's record.
+        application_record: record,
+        volume_applied_l: litersApplied,
+        rate_l_per_ac: rateLPerAc,
+        draft: isDraft,
+        missing_fields: missing,
       };
       const ins = await supabase.from("field_reports").insert({
         user_id: uid,
@@ -481,18 +704,20 @@ export default function ReportsTab({
       if (!restored && capRoot) {
         capRoot.style.visibility = prevVisibility;
         capRoot.style.pointerEvents = prevPointer;
+        restoreMapCapture();
       }
       setGenerating(false);
     }
   };
 
   // ---- Auto-generate when a freshly-logged mission lands on this tab. ----
-  // Fires once per flight_log_id, only if the pilot name + mission date are
-  // already filled and we haven't archived a report for this log yet.
+  // Fires once per flight_log_id, only for a COMPLETE record — an automatic
+  // process must not quietly fill the archive with drafts.
   useEffect(() => {
     const logId = effectiveLastLog?.id;
     if (!logId || !field || generating) return;
     if (!pilotName.trim() || !missionDate) return;
+    if (isDraft || missionDateError(missionDate)) return;
     if (autoGeneratedFlightReports.has(logId)) return;
     // Skip if a report for this flight log was already archived previously.
     if (reports.some(r => (r.summary as any)?.flight_log_id === logId || (r.summary as any)?.mission_record_id === logId)) {
@@ -522,15 +747,32 @@ export default function ReportsTab({
             </p>
           </div>
           <div className="text-right">
-            <div className="text-[10px] uppercase tracking-wider text-neutral-500">
-              {isPostFlight ? "Savings" : "Targeted"}
-            </div>
-            <div className="text-3xl font-semibold text-[#4CAF50] tabular-nums">
-              {isPostFlight ? `${savingsPct}%` : fmtAreaAc(targetedAcres, unit).text}
-            </div>
-            <div className="text-[11px] text-neutral-500">
-              {isPostFlight ? "vs. full-field" : `of ${fmtAreaAc(fieldAcres, unit).text} total`}
-            </div>
+            {/* Same tri-state as the report banner: no analysis shows no number. */}
+            {!hasAnalysis ? (
+              <>
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500">Treatment area</div>
+                <div className="text-lg font-medium text-neutral-500">Not determined</div>
+                <div className="text-[11px] text-neutral-600">no analysis run</div>
+              </>
+            ) : zoneRows.length === 0 ? (
+              <>
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500">Analysis</div>
+                <div className="text-lg font-medium text-neutral-200">No zones found</div>
+                <div className="text-[11px] text-neutral-500">over {acres(fieldAcres)}</div>
+              </>
+            ) : (
+              <>
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500">
+                  {isPostFlight ? "Savings" : "Targeted"}
+                </div>
+                <div className="text-3xl font-semibold text-[#4CAF50] tabular-nums">
+                  {isPostFlight ? `${savingsPct}%` : acres(targetedAcres)}
+                </div>
+                <div className="text-[11px] text-neutral-500">
+                  {isPostFlight ? "vs. full-field" : `of ${acres(fieldAcres)} total`}
+                </div>
+              </>
+            )}
           </div>
         </header>
 
@@ -542,7 +784,7 @@ export default function ReportsTab({
             </div>
             <div>
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Total area</div>
-              <div className="text-neutral-200">{fieldAcres > 0 ? fmtAreaAc(fieldAcres, unit).text : "Boundary not defined"}</div>
+              <div className="text-neutral-200">{fieldAcres > 0 ? acres(fieldAcres) : "Boundary not defined"}</div>
             </div>
             <div>
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Crop</div>
@@ -554,7 +796,9 @@ export default function ReportsTab({
             </div>
             <div>
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">AI zones</div>
-              <div className="text-neutral-200">{zoneRows.length} ({zoneRows.filter(z => z.flown).length} flown)</div>
+              <div className="text-neutral-200">
+                {hasAnalysis ? `${zoneRows.length} (${zonesFlownCount} flown)` : "Not analyzed"}
+              </div>
             </div>
           </div>
 
@@ -575,9 +819,13 @@ export default function ReportsTab({
                 <input
                   type="date"
                   value={missionDate}
+                  max={new Date().toISOString().slice(0, 10)}
                   onChange={e => setMissionDate(e.target.value)}
-                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
+                  className={`w-full h-9 px-3 rounded bg-[#0f0f0f] border text-sm text-neutral-100 focus:outline-none ${
+                    dateErr ? "border-red-500 focus:border-red-500" : "border-[#262626] focus:border-[#4CAF50]"
+                  }`}
                 />
+                {dateErr && <div className="mt-1 text-[11px] text-red-400">{dateErr}</div>}
               </div>
               <div>
                 <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Battery start (%)</label>
@@ -635,6 +883,87 @@ export default function ReportsTab({
             )}
           </div>
 
+          {/* ---- Application record. Canonical entry is the Log Flight dialog;
+                  these are prefilled from it and editable here so an older
+                  mission's gaps can be corrected before generating. ---- */}
+          <div className="pt-3 border-t border-[#1f1f1f] space-y-3">
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500">Application record</div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="col-span-2">
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Grower / customer</label>
+                <input value={record.grower_name}
+                  onChange={e => setRecord(r => ({ ...r, grower_name: e.target.value }))}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Product name</label>
+                <input value={record.product_name}
+                  onChange={e => setRecord(r => ({ ...r, product_name: e.target.value }))}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">EPA reg. no.</label>
+                <input value={record.epa_reg_no}
+                  onChange={e => setRecord(r => ({ ...r, epa_reg_no: e.target.value }))}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Start time</label>
+                <input type="time" value={record.start_time ?? ""}
+                  onChange={e => setRecord(r => ({ ...r, start_time: e.target.value || null }))}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">End time</label>
+                <input type="time" value={record.end_time ?? ""}
+                  onChange={e => setRecord(r => ({ ...r, end_time: e.target.value || null }))}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
+              </div>
+              {/* Observed on site. Never prefilled from a forecast API: a
+                  forecast presented as an observed condition would falsify the
+                  record. TODO(field-capture): automated capture at mission time. */}
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Wind speed (mph)</label>
+                <input type="number" min={0} step={0.5}
+                  value={record.wind_speed_mph ?? ""}
+                  onChange={e => setRecord(r => ({
+                    ...r, wind_speed_mph: e.target.value === "" ? null : Number(e.target.value),
+                  }))}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Wind direction</label>
+                <select value={record.wind_direction ?? ""}
+                  onChange={e => setRecord(r => ({ ...r, wind_direction: e.target.value || null }))}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]">
+                  <option value="">—</option>
+                  {WIND_DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Temperature (°F)</label>
+                <input type="number" step={1}
+                  value={record.temperature_f ?? ""}
+                  onChange={e => setRecord(r => ({
+                    ...r, temperature_f: e.target.value === "" ? null : Number(e.target.value),
+                  }))}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Applicator cert. no.</label>
+                <input value={record.applicator_cert_no}
+                  onChange={e => setRecord(r => ({ ...r, applicator_cert_no: e.target.value }))}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Part 137 cert. no.</label>
+                <input value={record.part137_cert_no}
+                  onChange={e => setRecord(r => ({ ...r, part137_cert_no: e.target.value }))}
+                  className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
+              </div>
+            </div>
+          </div>
+
           <div>
             <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Pilot name</label>
             <input
@@ -645,18 +974,27 @@ export default function ReportsTab({
             />
           </div>
 
+          {isDraft && (
+            <div className="rounded border border-red-900/50 bg-red-500/5 px-3 py-2 text-[11px] leading-relaxed text-red-300/90">
+              <span className="font-semibold">This will generate as DRAFT — INCOMPLETE.</span>{" "}
+              Missing: {missing.join(", ")}. Each gap prints on the report in red rather than
+              being dropped; complete the record here or in the mission log to issue a final copy.
+            </div>
+          )}
+
           <button
             onClick={generate}
-            disabled={generating || !field || !missionDate || !pilotName.trim()}
+            disabled={generating || !field || !missionDate || !pilotName.trim() || !!dateErr}
             className="w-full h-10 rounded bg-[#4CAF50] hover:bg-[#43a047] text-white text-sm font-medium inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {generating
               ? (<><Loader2 className="h-4 w-4 animate-spin" /> Generating…</>)
-              : (<><Download className="h-4 w-4" /> Download Report</>)}
+              : (<><Download className="h-4 w-4" /> {isDraft ? "Download Draft Report" : "Download Report"}</>)}
           </button>
           {!analysis && (
             <div className="text-[11px] text-yellow-400/90 flex items-center gap-1.5">
-              <Sparkles className="h-3 w-3" /> Run an AI analysis first for treatment zones and chemical savings.
+              <Sparkles className="h-3 w-3" /> No analysis has been run for this scan, the report
+              will state that treatment areas were not determined.
             </div>
           )}
         </div>
@@ -678,6 +1016,9 @@ export default function ReportsTab({
                       {new Date(r.generated_at).toLocaleString()}
                       {r.pilot_name ? ` · ${r.pilot_name}` : ""}
                     </span>
+                    {(r.summary as { draft?: boolean })?.draft && (
+                      <span className="rounded-sm border border-red-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-red-400">DRAFT</span>
+                    )}
                     {r.summary?.savings_pct != null && (
                       <span className="text-[#4CAF50] tabular-nums">{r.summary.savings_pct}% saved</span>
                     )}
