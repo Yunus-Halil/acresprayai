@@ -63,9 +63,15 @@ const SCANS: FieldScan[] = [
   }),
   // Never assessed.
   scan("s3", "2026-06-01T09:00:00Z"),
-  // A grid run that failed, reason stored.
+  // A grid run that failed, reason stored, stamped as the grid's own.
   scan("s4", "2026-07-01T09:00:00Z", {
-    ai_analysis: { last_run: { status: "failed", at: "2026-07-01T10:00:00Z", error: "The imagery is too coarse to measure these cells" } },
+    ai_analysis: {
+      last_run: {
+        status: "failed", at: "2026-07-01T10:00:00Z",
+        error: "The imagery is too coarse to measure these cells",
+        source: "treatment-grid",
+      },
+    },
   }),
   // Tiles never baked.
   scan("s5", "2026-08-01T09:00:00Z", { tiles_baked: false }),
@@ -73,6 +79,16 @@ const SCANS: FieldScan[] = [
   scan("s6", "2026-08-10T09:00:00Z", {
     ai_analysis: { zones: [{ id: "ai-0", ring: RING }], health_score: 70 },
     ai_analysis_at: "2026-08-10T10:00:00Z",
+  }),
+  // A FAILURE left behind by the removed vision path — the fossil that made a
+  // scan report "Grid run failed · AI is not configured (missing AI_API_KEY)".
+  scan("s7", "2026-08-15T09:00:00Z", {
+    ai_analysis: {
+      last_run: {
+        status: "failed", at: "2026-08-23T09:00:00Z",
+        error: "AI is not configured (missing AI_API_KEY)",
+      },
+    },
   }),
 ];
 
@@ -167,6 +183,22 @@ describe("the assessment states", () => {
     expect(within(c).getByRole("button", { name: /clear legacy result/i })).toBeInTheDocument();
   });
 
+  // The regression, at the surface it appeared on: a stale failure from the
+  // deleted vision path must never be attributed to the treatment grid.
+  it("a legacy FAILURE is never reported as a grid failure", () => {
+    renderPanel();
+    const c = cardOf("August 15, 2026");
+
+    expect(within(c).queryByText("Grid run failed")).toBeNull();
+    // The scan simply has no grid assessment...
+    expect(within(c).getByText("No grid assessment yet")).toBeInTheDocument();
+    // ...and the fossil is disclosed as the retired system's, not dropped.
+    expect(within(c).getByText(/retired vision system failed here/i)).toBeInTheDocument();
+    expect(within(c).getByText(/AI is not configured/)).toBeInTheDocument();
+    expect(within(c).getByText(/nothing the grid needs/i)).toBeInTheDocument();
+    expect(within(c).getByRole("button", { name: /clear legacy failure record/i })).toBeInTheDocument();
+  });
+
   it("the flight-log badge says what it means instead of 'Pending'", () => {
     renderPanel();
     expect(screen.queryByText(/^Pending$/)).toBeNull();
@@ -244,7 +276,7 @@ describe("what the panel reads and never writes on its own", () => {
       return <div data-testid="probe">{scans.length}:{flownIds.has("s1") ? "flown" : "no"}</div>;
     }
     render(<Probe />);
-    await waitFor(() => expect(screen.getByTestId("probe")).toHaveTextContent("6:flown"));
+    await waitFor(() => expect(screen.getByTestId("probe")).toHaveTextContent("7:flown"));
 
     expect(new Set(fromMock.mock.calls.map(c => c[0]))).toEqual(new Set(["odm_tasks", "flight_logs"]));
     expect(writeAttempt).not.toHaveBeenCalled();

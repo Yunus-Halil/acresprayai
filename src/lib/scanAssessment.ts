@@ -29,8 +29,9 @@ import { type GridZone, gridZonesFor } from "./gridZones";
 import type { TreatmentGrid } from "./treatmentGrid";
 import { labelsFromGrid } from "./findSimilar";
 import { loadGridZones } from "./gridAnomalies";
+import { GRID_SOURCE } from "./compareGround";
 
-export const GRID_SOURCE = "treatment-grid" as const;
+export { GRID_SOURCE };
 
 /** A zone as frozen onto a scan: everything display needs, nothing else. */
 export type SnapshotZone = {
@@ -52,7 +53,13 @@ export type ScanAssessment = {
   /** Present when a Find Similar detection has scored this grid. */
   detection: { scoredAt: string; modelVersion: string } | null;
   computed_at: string;
-  last_run: { status: "completed" | "failed"; at: string; error?: string };
+  /** `source` marks the run as the grid's, so failures stay attributable. */
+  last_run: {
+    status: "completed" | "failed";
+    at: string;
+    error?: string;
+    source: typeof GRID_SOURCE;
+  };
 };
 
 const slim = (z: GridZone): SnapshotZone => ({
@@ -77,7 +84,7 @@ function assessmentFromGrid(grid: TreatmentGrid): ScanAssessment {
       ? { scoredAt: scored.detection.scoredAt, modelVersion: scored.detection.modelVersion }
       : null,
     computed_at: now,
-    last_run: { status: "completed", at: now },
+    last_run: { status: "completed", at: now, source: GRID_SOURCE },
   };
 }
 
@@ -136,13 +143,23 @@ export async function recordGridRunFailure(
       ? data.ai_analysis as Record<string, unknown>
       : {};
     // `prior` is spread through untouched — a failed run must never restamp a
-    // legacy result's source or disturb its zones. Post-legacy-removal, a
-    // last_run marker always means a treatment-grid run.
+    // legacy result's source or disturb its zones.
+    //
+    // The failure carries its OWN provenance. Without it, a failure the
+    // removed vision path left behind is indistinguishable from a grid
+    // failure, and the reader blames the grid for it — which is exactly how a
+    // scan came to display "Grid run failed · AI is not configured (missing
+    // AI_API_KEY)" for a system that calls no service at all.
     const { error } = await supabase.from("odm_tasks")
       .update({
         ai_analysis: {
           ...prior,
-          last_run: { status: "failed", at: new Date().toISOString(), error: reason },
+          last_run: {
+            status: "failed",
+            at: new Date().toISOString(),
+            error: reason,
+            source: GRID_SOURCE,
+          },
         } as never,
       } as never)
       .eq("id", taskId);

@@ -189,15 +189,33 @@ const longDate = (iso: string) =>
 const shortTime = (iso: string) =>
   new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
+/**
+ * A failure the retired vision path left on the scan. Said plainly, and NOT
+ * as a grid failure: the grid computes over pixels and calls no service, so
+ * "AI is not configured" can only have come from the deleted system.
+ */
+function LegacyFailureLine({ at, error }: { at: string | null; error: string }) {
+  return (
+    <div className="text-[10px] leading-snug text-amber-500/80">
+      A run of the retired vision system failed here
+      {at && ` on ${new Date(at).toLocaleDateString()}`} ({error}). Not a treatment-grid
+      result, and nothing the grid needs.
+    </div>
+  );
+}
+
 function AnalysisLine({ scan }: { scan: FieldScan }) {
   const state = analysisStateOf(scan);
   if (state.kind === "none") {
     return (
-      <div
-        className="text-[11px] text-neutral-500"
-        title="Mark stressed and healthy reference cells in the Treatment Grid tab to assess this scan."
-      >
-        No grid assessment yet
+      <div>
+        <div
+          className="text-[11px] text-neutral-500"
+          title="Mark stressed and healthy reference cells in the Treatment Grid tab to assess this scan."
+        >
+          No grid assessment yet
+        </div>
+        {state.legacyFailure && <LegacyFailureLine {...state.legacyFailure} />}
       </div>
     );
   }
@@ -233,6 +251,7 @@ function AnalysisLine({ scan }: { scan: FieldScan }) {
           A later grid run failed ({state.rerunFailed.error}); showing the last good state.
         </div>
       )}
+      {state.legacyFailure && <LegacyFailureLine {...state.legacyFailure} />}
     </div>
   );
 }
@@ -263,20 +282,42 @@ function ScanCard({
   const info = useScanInfo(scan.id, token);
   const imagery = rgbLayerLabel(info);
   const isRebaking = rebaking?.taskId === scan.id;
-  const isLegacy = state.kind === "done" && state.source === "legacy";
+  const isLegacyResult = state.kind === "done" && state.source === "legacy";
+  // Mutually exclusive with kind "failed" by construction: a row holds one
+  // `last_run`, and it is either the grid's or the retired path's.
+  const hasLegacyFailure = state.kind !== "failed" && !!state.legacyFailure;
+  // A scan carrying ONLY a stale failure has no grid assessment to protect —
+  // clearing it is tidying a fossil, not discarding an assessment.
+  const failureOnly = hasLegacyFailure && !isLegacyResult;
 
-  // User-initiated removal of a result left by the retired vision path.
+  // User-initiated removal of what the retired vision path left behind.
   // Deliberate and confirmed — legacy data is never deleted silently.
   const clearLegacy = async () => {
     if (!window.confirm(
-      "Remove this scan's legacy vision-analysis result? The retired analysis path " +
-      "produced it; the treatment grid will not recreate it. This cannot be undone.",
+      failureOnly
+        ? "Remove the failed run the retired vision system recorded on this scan? " +
+          "It is not a treatment-grid result and nothing depends on it. " +
+          "Your grid assessment, if any, is kept."
+        : "Remove this scan's legacy vision-analysis result? The retired analysis path " +
+          "produced it; the treatment grid will not recreate it. This cannot be undone.",
     )) return;
+    // A failure-only fossil can sit beside a real grid snapshot in the same
+    // column, so strip just the stale marker and leave everything else — the
+    // key is deleted outright rather than set undefined, which JSON drops
+    // silently and which would read as "no failure" only by accident.
+    let patch: Record<string, unknown>;
+    if (failureOnly) {
+      const rest = { ...(scan.ai_analysis as Record<string, unknown> | null ?? {}) };
+      delete rest.last_run;
+      patch = { ai_analysis: rest };
+    } else {
+      patch = { ai_analysis: null, ai_analysis_at: null };
+    }
     const { error } = await supabase.from("odm_tasks")
-      .update({ ai_analysis: null, ai_analysis_at: null } as never)
+      .update(patch as never)
       .eq("id", scan.id);
-    if (error) toast.error(`Could not clear the legacy result: ${error.message}`);
-    else { toast.success("Legacy result cleared."); onLegacyCleared(); }
+    if (error) toast.error(`Could not clear the legacy record: ${error.message}`);
+    else { toast.success("Legacy record cleared."); onLegacyCleared(); }
   };
 
   return (
@@ -360,16 +401,19 @@ function ScanCard({
           className="inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm bg-[#4CAF50] px-2 text-[11px] font-semibold text-black transition-colors hover:bg-[#43a047] disabled:bg-[#1a1a1a] disabled:text-neutral-600"
         >
           <Grid3x3 className="h-3 w-3" />
-          {state.kind === "failed" ? "Retry in grid" : state.kind === "done" && !isLegacy ? "Re-assess" : "Treatment Grid"}
+          {state.kind === "failed" ? "Retry in grid"
+            : state.kind === "done" && !isLegacyResult ? "Re-assess"
+            : "Treatment Grid"}
         </button>
       </div>
-      {isLegacy && (
+      {(isLegacyResult || hasLegacyFailure) && (
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); void clearLegacy(); }}
           className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-neutral-600 transition-colors hover:text-red-400"
         >
-          <Trash2 className="h-3 w-3" /> Clear legacy result
+          <Trash2 className="h-3 w-3" />
+          {failureOnly ? "Clear legacy failure record" : "Clear legacy result"}
         </button>
       )}
       <button

@@ -140,7 +140,7 @@ describe("assessment states are structurally distinct", () => {
     reference: { treated: 0, skipped: 0 },
     detection: null,
     computed_at: "2026-08-24T10:00:00Z",
-    last_run: { status: "completed", at: "2026-08-24T10:00:00Z" },
+    last_run: { status: "completed", at: "2026-08-24T10:00:00Z", source: "treatment-grid" },
     ...over,
   });
 
@@ -159,10 +159,58 @@ describe("assessment states are structurally distinct", () => {
 
   it("failed grid run, with the stored reason", () => {
     const s = analysisStateOf({
-      ai_analysis: { last_run: { status: "failed", at: "2026-08-20T10:00:00Z", error: "imagery too coarse" } },
+      ai_analysis: {
+        last_run: {
+          status: "failed", at: "2026-08-20T10:00:00Z",
+          error: "imagery too coarse", source: "treatment-grid",
+        },
+      },
       ai_analysis_at: null,
     });
     expect(s).toEqual({ kind: "failed", error: "imagery too coarse", at: "2026-08-20T10:00:00Z" });
+  });
+
+  // The regression: the removed vision path stamped its own failures onto this
+  // same column, most of them "AI is not configured (missing AI_API_KEY)" from
+  // an auto-run against a key that was never set. Reading those as grid
+  // failures made scans report that the treatment grid needs an AI key — for a
+  // system that computes over pixels and calls no service at all.
+  it("an UNSTAMPED failure is a legacy artifact, never a grid failure", () => {
+    const s = analysisStateOf({
+      ai_analysis: {
+        last_run: {
+          status: "failed", at: "2026-08-23T09:00:00Z",
+          error: "AI is not configured (missing AI_API_KEY)",
+        },
+      },
+      ai_analysis_at: null,
+    });
+    expect(s.kind).toBe("none");
+    if (s.kind === "none") {
+      expect(s.legacyFailure).toEqual({
+        error: "AI is not configured (missing AI_API_KEY)",
+        at: "2026-08-23T09:00:00Z",
+      });
+    }
+  });
+
+  it("a legacy failure never masks a real grid assessment sitting beside it", () => {
+    const s = analysisStateOf({
+      ai_analysis: gridSnapshot({
+        zones: [{ id: "z1" }],
+        reference: { treated: 3, skipped: 3 },
+        last_run: { status: "failed", at: "2026-08-23T09:00:00Z", error: "AI is not configured (missing AI_API_KEY)" },
+      }),
+      ai_analysis_at: "2026-08-24T10:00:00Z",
+    });
+    expect(s.kind).toBe("done");
+    if (s.kind === "done") {
+      expect(s.source).toBe("grid");
+      expect(s.zones).toHaveLength(1);
+      // Disclosed as legacy, and NOT reported as a failed grid re-run.
+      expect(s.rerunFailed).toBeNull();
+      expect(s.legacyFailure?.error).toMatch(/AI is not configured/);
+    }
   });
 
   it("reference points placed but nothing marked is DONE — a clean result, not absence", () => {
@@ -194,7 +242,7 @@ describe("assessment states are structurally distinct", () => {
       ai_analysis: gridSnapshot({
         zones: [{ id: "z1" }],
         reference: { treated: 2, skipped: 2 },
-        last_run: { status: "failed", at: "2026-08-25T10:00:00Z", error: "boom" },
+        last_run: { status: "failed", at: "2026-08-25T10:00:00Z", error: "boom", source: "treatment-grid" },
       }),
       ai_analysis_at: "2026-08-24T10:00:00Z",
     });

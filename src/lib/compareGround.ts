@@ -17,6 +17,14 @@ import { area as turfArea } from "@turf/area";
 import { polygon as turfPolygon } from "@turf/helpers";
 import type { ScanBounds } from "@/lib/scanLayers";
 
+/**
+ * Provenance marker on everything the treatment grid writes to a scan row —
+ * results AND failures. Declared here, in the pure module, so the decoder can
+ * check it without pulling the database client into its import graph;
+ * lib/scanAssessment.ts (the writer) imports it from here.
+ */
+export const GRID_SOURCE = "treatment-grid" as const;
+
 export type GroundPoint = { lat: number; lng: number };
 
 const M_PER_DEG_LAT = 110_574;
@@ -208,8 +216,20 @@ export function compareStats(input: {
 // What a scan's analysis may claim
 // ---------------------------------------------------------------------------
 
+/**
+ * A failed run recorded by the REMOVED vision path, found on a scan row.
+ *
+ * These exist because that path stamped its failures onto `ai_analysis`
+ * before it was deleted — most of them "AI is not configured (missing
+ * AI_API_KEY)", from an auto-run against a key that was never set. They are
+ * disclosed, never attributed to the treatment grid, and never silently
+ * dropped: the grid has no AI configuration and cannot produce such a failure.
+ */
+export type LegacyFailure = { error: string; at: string | null };
+
 export type AnalysisState =
-  | { kind: "none" }
+  | { kind: "none"; legacyFailure?: LegacyFailure }
+  /** A TREATMENT GRID run failed. Never a legacy artifact — see LegacyFailure. */
   | { kind: "failed"; error: string; at: string | null }
   | {
       kind: "done";
@@ -222,18 +242,28 @@ export type AnalysisState =
       source: "grid" | "legacy";
       zones: { id?: string; ring?: GroundPoint[]; severity?: string }[];
       at: string | null;
-      /** A later grid run failed; the zones shown are from the last good state. */
+      /** A later GRID run failed; the zones shown are from the last good state. */
       rerunFailed: { error: string; at: string | null } | null;
+      /** A failure left by the removed vision path, disclosed as such. */
+      legacyFailure?: LegacyFailure;
     };
 
 /**
  * The one place that decides whether a scan is "no reference points yet",
  * "assessed" or "run failed" — so the three can never blur into one rendering.
  *
+ * FAILURES CARRY PROVENANCE, exactly like results. A `last_run` failure is a
+ * grid failure only when it is stamped `source: "treatment-grid"`. Anything
+ * else was written by the removed vision path, and attributing it to the grid
+ * is how a scan came to read "Grid run failed · AI is not configured (missing
+ * AI_API_KEY)" — a message the grid cannot produce, since it computes over
+ * pixels and calls no service. Those are reported as legacy artifacts.
+ *
  * The states live in odm_tasks.ai_analysis without a schema change (shape in
  * lib/scanAssessment.ts):
  *   null / empty grid snapshot with no reference points  → none
- *   last_run.status == "failed", nothing assessed        → failed, reason kept
+ *   grid-stamped last_run failure, nothing assessed      → failed, reason kept
+ *   unstamped last_run failure                           → none + legacyFailure
  *   zones array (possibly empty)                         → done — an empty
  *     result from placed reference points is a RESULT, not an absence
  *   source != "treatment-grid" but zones present         → done, legacy-marked
@@ -247,22 +277,26 @@ export function analysisStateOf(task: {
     zones?: unknown;
     reference?: { treated?: number; skipped?: number };
     detection?: unknown;
-    last_run?: { status?: string; at?: string; error?: string };
+    last_run?: { status?: string; at?: string; error?: string; source?: string };
   } | null;
   const lastRun = a && typeof a === "object" ? a.last_run : undefined;
-  const failedRun = lastRun?.status === "failed"
+  const anyFailure = lastRun?.status === "failed"
     ? { error: lastRun.error ?? "Unknown error", at: lastRun.at ?? null }
     : null;
+  // Only a failure the grid itself stamped may be reported as a grid failure.
+  const fromGrid = lastRun?.source === GRID_SOURCE;
+  const failedRun = anyFailure && fromGrid ? anyFailure : null;
+  const legacyFailure = anyFailure && !fromGrid ? anyFailure : undefined;
 
   if (a && Array.isArray(a.zones)) {
-    const isGrid = a.source === "treatment-grid";
+    const isGrid = a.source === GRID_SOURCE;
     // A grid snapshot with zero zones AND zero reference points AND no
     // detection is a grid nobody has worked yet — "none", not "assessed clean".
     if (
       isGrid && a.zones.length === 0 && !a.detection &&
       (a.reference?.treated ?? 0) === 0 && (a.reference?.skipped ?? 0) === 0
     ) {
-      return failedRun ? { kind: "failed", ...failedRun } : { kind: "none" };
+      return failedRun ? { kind: "failed", ...failedRun } : { kind: "none", legacyFailure };
     }
     return {
       kind: "done",
@@ -270,10 +304,11 @@ export function analysisStateOf(task: {
       zones: a.zones as { id?: string; ring?: GroundPoint[]; severity?: string }[],
       at: task.ai_analysis_at,
       rerunFailed: failedRun,
+      legacyFailure,
     };
   }
   if (failedRun) return { kind: "failed", ...failedRun };
-  return { kind: "none" };
+  return { kind: "none", legacyFailure };
 }
 
 // ---------------------------------------------------------------------------
