@@ -77,6 +77,12 @@ export function bannerFor(input: {
   /** True when a mission for THIS scan has been logged. */
   isPostFlight: boolean;
   savingsPct: number;
+  /**
+   * The two volumes the savings percentage is computed from, pre-formatted.
+   * When present, the post-flight subtitle prints them so the headline is
+   * reproducible from the page.
+   */
+  chemical?: { planned: string; fullField: string; baselineRate: string };
 }): Banner {
   if (!input.hasAnalysis) {
     return {
@@ -108,7 +114,15 @@ export function bannerFor(input: {
     return {
       tone: "success",
       big: `${input.savingsPct}% less chemical`,
-      sub: `vs. full-field spraying, across ${ac(input.targetedAcres)} of ${ac(input.fieldAcres)} total`,
+      // VERIFIABLE FROM THE PAGE. The percentage is rate-weighted — planned
+      // volume against whole-field volume at the named baseline — so the
+      // subtitle states those two volumes, and 1 − planned/baseline reproduces
+      // the headline. The old subtitle quoted ACRES (6.25 of 11.07), which
+      // reproduces 43.5%, not the rate-weighted 40% above it: a reader
+      // checking the maths found the page contradicting itself.
+      sub: input.chemical
+        ? `${input.chemical.planned} planned vs ${input.chemical.fullField} whole-field at ${input.chemical.baselineRate}`
+        : `across ${ac(input.targetedAcres)} of ${ac(input.fieldAcres)} total`,
       note: null,
     };
   }
@@ -207,4 +221,104 @@ export function computedRateLPerAc(
   if (volumeAppliedL == null || volumeAppliedL <= 0) return null;
   if (acresTreated == null || acresTreated <= 0) return null;
   return volumeAppliedL / acresTreated;
+}
+
+// ---------------------------------------------------------------------------
+// Zone summary: what the report's main body shows instead of a row per cell
+// ---------------------------------------------------------------------------
+
+export type ReportZoneRow = {
+  id: string;
+  issue: string;
+  acres: number;
+  rateLha: number | null;
+  flown: boolean;
+};
+
+export type ZoneGroup = {
+  /** Classification, or "Unclassified" said once — never printed per row. */
+  label: string;
+  rateLha: number | null;
+  acres: number;
+  count: number;
+  flownCount: number;
+  /** all / partial / none, so "Flown" is never claimed for a half-flown group. */
+  flownState: "all" | "partial" | "none";
+};
+
+export type ZoneSummary = {
+  groups: ZoneGroup[];
+  totals: {
+    treatedAcres: number;
+    untreatedAcres: number;
+    fieldAcres: number;
+    zoneCount: number;
+    flownCount: number;
+  };
+  /** True when zones exist and not one carries a classification. */
+  allUnclassified: boolean;
+};
+
+/**
+ * Groups zones by (classification, rate) for the grower-facing table.
+ *
+ * The grid legitimately produces one zone per contiguous cell group — dozens
+ * of 0.02 ac fragments on a scattered field — and a real report once
+ * enumerated all 54 of them, pushing the application record clean off the
+ * page. A grower needs "Stressed at 25 L/ha: 3.10 ac across 14 zones", not
+ * the lattice. The per-zone detail stays available (appendix, CSV); this is
+ * what the main body prints.
+ */
+export function summariseZones(rows: ReportZoneRow[], fieldAcres: number): ZoneSummary {
+  const byKey = new Map<string, ZoneGroup>();
+  for (const z of rows) {
+    const label = z.issue.trim() || "Unclassified";
+    const key = `${label} ${z.rateLha ?? ""}`;
+    let g = byKey.get(key);
+    if (!g) {
+      byKey.set(key, (g = {
+        label, rateLha: z.rateLha, acres: 0, count: 0, flownCount: 0, flownState: "none",
+      }));
+    }
+    g.acres += z.acres;
+    g.count += 1;
+    if (z.flown) g.flownCount += 1;
+  }
+  const groups = [...byKey.values()]
+    .map(g => ({
+      ...g,
+      flownState: (g.flownCount === 0 ? "none"
+        : g.flownCount === g.count ? "all" : "partial") as ZoneGroup["flownState"],
+    }))
+    .sort((a, b) => b.acres - a.acres);
+
+  const treatedAcres = groups.reduce((s, g) => s + g.acres, 0);
+  return {
+    groups,
+    totals: {
+      treatedAcres,
+      untreatedAcres: Math.max(0, fieldAcres - treatedAcres),
+      fieldAcres,
+      zoneCount: rows.length,
+      flownCount: rows.filter(z => z.flown).length,
+    },
+    allUnclassified: rows.length > 0 &&
+      rows.every(z => !z.issue.trim() || z.issue.trim() === "Unclassified"),
+  };
+}
+
+/** The per-zone detail as CSV — the appendix's machine-readable twin. */
+export function zoneDetailCsv(rows: ReportZoneRow[]): string {
+  const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  const lines = ["zone_id,classification,acres,rate_l_per_ha,flown"];
+  for (const z of rows) {
+    lines.push([
+      esc(z.id),
+      esc(z.issue.trim() || "Unclassified"),
+      z.acres.toFixed(4),
+      z.rateLha != null ? String(z.rateLha) : "",
+      z.flown ? "yes" : "no",
+    ].join(","));
+  }
+  return lines.join("\n");
 }

@@ -12,12 +12,13 @@ import {
 import { type AnalysisState, analysisStateOf, zoneAcres } from "@/lib/compareGround";
 import { storageKey } from "@/lib/storage";
 import {
-  M2_PER_ACRE, fmtVolume, volumeToLitres, volumeUnit, volumeValue,
+  M2_PER_ACRE, fmtRate, fmtVolume, volumeToLitres, volumeUnit, volumeValue,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import {
   type ApplicationRecord, EMPTY_RECORD, WIND_DIRECTIONS,
-  bannerFor, computedRateLPerAc, missingRecordFields, missionDateError, volumeZoneNote,
+  bannerFor, computedRateLPerAc, missingRecordFields, missionDateError,
+  summariseZones, volumeZoneNote, zoneDetailCsv,
 } from "@/lib/reportRecord";
 
 // The report standardises on ACRES for every area it prints. fmtAreaAc
@@ -96,6 +97,8 @@ export default function ReportsTab({
 }: Props) {
   const [pilotName, setPilotName] = useState<string>(() => localStorage.getItem(storageKey("pilot_name")) ?? "");
   const [generating, setGenerating] = useState(false);
+  // Per-zone detail is an appendix a reader opts into, never the main body.
+  const [includeAppendix, setIncludeAppendix] = useState(false);
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [fetchedLastLog, setFetchedLastLog] = useState<FlightLogRow | null>(null);
 
@@ -138,9 +141,16 @@ export default function ReportsTab({
   // from a different mission entirely.
   const forThisScan = (l: FlightLogRow | null | undefined) =>
     l && l.scan_id === task.id ? l : null;
+  // A flight flown against ANOTHER scan of this field is offered, never
+  // adopted: silently pulling its numbers in is the contradiction above, but
+  // hiding it means an operator who logged from a different scan's workspace
+  // sees an empty report and no explanation. So it is shown, named, and
+  // attached only if they say so.
+  const [adoptedLog, setAdoptedLog] = useState<FlightLogRow | null>(null);
+  const [otherFlights, setOtherFlights] = useState<FlightLogRow[]>([]);
   const effectiveLastLog = newestMission(
     forThisScan(fetchedLastLog), forThisScan(lastLog), forThisScan(settings.last_flown_mission),
-  );
+  ) ?? adoptedLog;
   const effectiveFlightLogId = effectiveLastLog?.source === "field_snapshot" ? null : (effectiveLastLog?.id ?? null);
   const effectiveMissionRecordId = effectiveLastLog?.id ?? null;
 
@@ -160,9 +170,31 @@ export default function ReportsTab({
       if (cancelled) return;
       if (error) console.warn("[ReportsTab] latest flight log lookup failed", error);
       setFetchedLastLog(data ? ({ ...(data as FlightLogRow), source: "flight_logs" }) : null);
+
+      // Nothing logged against this scan: find the field's other recent
+      // flights so the operator can attach one instead of facing a blank form
+      // with no hint that their mission exists.
+      if (!data) {
+        const { data: others } = await supabase
+          .from("flight_logs")
+          .select("id, field_id, scan_id, drone_id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes, created_at")
+          .eq("field_id", field.id)
+          .order("date_flown", { ascending: false })
+          .limit(3);
+        if (!cancelled) {
+          setOtherFlights(
+            ((others as FlightLogRow[] | null) ?? []).filter(l => l.scan_id !== task.id),
+          );
+        }
+      } else if (!cancelled) {
+        setOtherFlights([]);
+      }
     })();
     return () => { cancelled = true; };
   }, [field?.id, task.id]);
+
+  // Attaching is per-scan and never sticky across scans.
+  useEffect(() => { setAdoptedLog(null); }, [task.id]);
 
   // The application record: prefilled from the mission log's record (entered
   // in the Log Flight dialog), then the field's stored defaults, and editable
@@ -277,9 +309,20 @@ export default function ReportsTab({
     ? zoneRows.filter(z => z.flown).reduce((s, z) => s + z.acres, 0)
     : treatedAcres;
 
+  // The grower-facing zone summary: grouped by classification × rate, with
+  // the per-zone detail relegated to the appendix and CSV.
+  const zoneSummary = summariseZones(
+    zoneRows.map(z => ({
+      id: z.id, issue: z.issue, acres: z.acres, rateLha: z.rateLha, flown: z.flown,
+    })),
+    fieldAcres,
+  );
+
   // The one banner the report shows, decided in lib/reportRecord so the states
   // cannot blur: "no assessment" is neutral and explicitly not a finding;
-  // success styling exists only for a grid assessment with marked zones.
+  // success styling exists only for a grid assessment with marked zones. The
+  // post-flight savings figure is rate-weighted, so the banner carries the two
+  // volumes it is computed from — the page must let a reader reproduce it.
   const banner = bannerFor({
     hasAnalysis: isDone,
     source: source ?? undefined,
@@ -288,6 +331,13 @@ export default function ReportsTab({
     fieldAcres,
     isPostFlight,
     savingsPct,
+    chemical: hasGridAssessment && fullFieldLitres > 0
+      ? {
+          planned: fmtVol(totalLitres, unit),
+          fullField: fmtVol(fullFieldLitres, unit),
+          baselineRate: fmtRate(baselineRateLha, unit).text,
+        }
+      : undefined,
   });
 
   // ---- Mission stats from the editable inputs (prefilled from last log). ----
@@ -388,8 +438,30 @@ export default function ReportsTab({
       // 3) Build the PDF.
       const pdf = new jsPDF({ unit: "pt", format: "letter" });
       const W = pdf.internal.pageSize.getWidth();
+      const H = pdf.internal.pageSize.getHeight();
       const M = 36;
       let y = M;
+
+      // ---- Pagination -----------------------------------------------------
+      // Content flows through `ensure(need)`: anything that will not fit above
+      // the reserved footer band starts a new page with a compact continuation
+      // header. Nothing is ever drawn past BOTTOM, so the footer can never
+      // overprint a table row and no section can silently fall off the page —
+      // a real report once pushed the entire application record into the void
+      // below y=792 this way.
+      const FOOTER_H = 48;
+      const BOTTOM = H - FOOTER_H;
+      const contHeader = () => {
+        pdf.setFont("helvetica", "bold"); pdf.setTextColor(76, 175, 80); pdf.setFontSize(10);
+        pdf.text("SwathWise", M, y);
+        pdf.setFont("helvetica", "normal"); pdf.setTextColor(120); pdf.setFontSize(8);
+        pdf.text(`Field Spray & Application Report · ${field.name} (continued)`, W - M, y, { align: "right" });
+        y += 6;
+        pdf.setDrawColor(220); pdf.setLineWidth(0.5); pdf.line(M, y, W - M, y);
+        y += 14;
+      };
+      const newPage = () => { pdf.addPage(); y = M; contHeader(); };
+      const ensure = (need: number) => { if (y + need > BOTTOM) newPage(); };
       const today = new Date();
       const ymd = today.toISOString().slice(0, 10);
       const niceDate = today.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
@@ -481,8 +553,8 @@ export default function ReportsTab({
         pdf.setFont("helvetica", "normal"); pdf.setFontSize(7); pdf.setTextColor(150);
         pdf.text(
           hasGridAssessment && zoneRows.length > 0
-            ? "Shown: orthomosaic, field boundary, and the treatment-grid zones listed below."
-            : "Shown: orthomosaic and field boundary. No treatment zones are drawn because none were marked.",
+            ? "Framed to the flown area: orthomosaic, field boundary, and the treatment-grid zones summarised below. Surrounding basemap is outside the flight."
+            : "Framed to the flown area: orthomosaic and field boundary; surrounding basemap is outside the flight. No treatment zones are drawn because none were marked.",
           M, y,
         );
         y += 10;
@@ -553,22 +625,66 @@ export default function ReportsTab({
           y += 11;
           pdf.setFont("helvetica", "normal");
         }
-        for (const z of zoneRows) {
-          pdf.setTextColor(30); pdf.setFont("helvetica", "bold"); pdf.setFontSize(10);
-          pdf.text(z.name, M, y);
-          pdf.setFont("helvetica", "normal"); pdf.setTextColor(110);
-          pdf.text(z.issue, M + 130, y);
+        // GROUPED, not enumerated. The grid legitimately yields dozens of
+        // small contiguous zones; a grower reads classification × rate, not
+        // the lattice. Per-zone detail lives in the appendix and the CSV.
+        if (zoneSummary.allUnclassified) {
+          pdf.setFont("helvetica", "bold"); pdf.setTextColor(180, 83, 9); pdf.setFontSize(8);
+          pdf.text(
+            "Zones have not been classified. Areas and rates below are as painted; add classifications in the Treatment Grid.",
+            M, y,
+          );
+          y += 11;
+        }
+        // Column header
+        const COL = { rate: W - M - 250, area: W - M - 150, zones: W - M - 80, flown: W - M };
+        pdf.setFont("helvetica", "bold"); pdf.setTextColor(140); pdf.setFontSize(7.5);
+        pdf.text("CLASSIFICATION", M, y);
+        pdf.text("RATE", COL.rate, y, { align: "right" });
+        pdf.text("AREA", COL.area, y, { align: "right" });
+        pdf.text("ZONES", COL.zones, y, { align: "right" });
+        pdf.text("FLOWN", COL.flown, y, { align: "right" });
+        y += 4;
+        pdf.setDrawColor(230); pdf.line(M, y, W - M, y);
+        y += 10;
+        for (const g of zoneSummary.groups) {
+          ensure(14);
+          pdf.setFont("helvetica", "bold"); pdf.setTextColor(30); pdf.setFontSize(9.5);
+          pdf.text(g.label, M, y);
+          pdf.setFont("helvetica", "normal"); pdf.setTextColor(70);
+          pdf.text(g.rateLha != null ? fmtRate(g.rateLha, unit).text : "—", COL.rate, y, { align: "right" });
           pdf.setTextColor(30);
-          pdf.text(acres(z.acres), W - M - 90, y, { align: "right" });
-          if (z.flown) {
+          pdf.text(acres(g.acres), COL.area, y, { align: "right" });
+          pdf.setTextColor(70);
+          pdf.text(String(g.count), COL.zones, y, { align: "right" });
+          if (g.flownState === "all") {
             pdf.setFont("helvetica", "bold"); pdf.setTextColor(34, 139, 34);
-            pdf.text("Flown", W - M, y, { align: "right" });
+            pdf.text("Flown", COL.flown, y, { align: "right" });
+          } else if (g.flownState === "partial") {
+            pdf.setFont("helvetica", "normal"); pdf.setTextColor(180, 83, 9);
+            pdf.text(`${g.flownCount}/${g.count}`, COL.flown, y, { align: "right" });
           } else {
             pdf.setFont("helvetica", "normal"); pdf.setTextColor(150);
-            pdf.text("Not flown", W - M, y, { align: "right" });
+            pdf.text("Not flown", COL.flown, y, { align: "right" });
           }
           y += 13;
         }
+        // Totals: the row that lets a reader tie the banner back to acres.
+        ensure(30);
+        pdf.setDrawColor(200); pdf.line(M, y - 4, W - M, y - 4);
+        pdf.setFont("helvetica", "bold"); pdf.setTextColor(30); pdf.setFontSize(9.5);
+        pdf.text("Marked for treatment", M, y);
+        pdf.text(acres(zoneSummary.totals.treatedAcres), COL.area, y, { align: "right" });
+        pdf.text(String(zoneSummary.totals.zoneCount), COL.zones, y, { align: "right" });
+        pdf.text(`${zoneSummary.totals.flownCount}/${zoneSummary.totals.zoneCount}`, COL.flown, y, { align: "right" });
+        y += 12;
+        pdf.setFont("helvetica", "normal"); pdf.setTextColor(90); pdf.setFontSize(9);
+        pdf.text("Untreated", M, y);
+        pdf.text(acres(zoneSummary.totals.untreatedAcres), COL.area, y, { align: "right" });
+        y += 12;
+        pdf.text("Field total", M, y);
+        pdf.text(acres(zoneSummary.totals.fieldAcres), COL.area, y, { align: "right" });
+        y += 13;
       }
       y += 4;
       pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
@@ -592,24 +708,35 @@ export default function ReportsTab({
         y += 14;
       } else {
         for (const b of buckets.values()) {
+          ensure(14);
           pdf.setTextColor(30); pdf.text(b.label, M, y);
           pdf.text(fmtVol(b.litres, unit), W - M, y, { align: "right" });
           y += 13;
         }
+        ensure(42);
         pdf.setDrawColor(235); pdf.line(M, y - 4, W - M, y - 4);
         pdf.setFont("helvetica", "bold");
         pdf.text("Planned total", M, y);
         pdf.text(fmtVol(totalLitres, unit), W - M, y, { align: "right" });
         y += 13;
-        pdf.setFont("helvetica", "normal"); pdf.setTextColor(76, 175, 80);
-        pdf.text(`Saved vs whole field at ${baselineRateLha} L/ha (your medium rate)`, M, y);
+        // The savings line prints BOTH volumes: 1 − planned/baseline is the
+        // banner's percentage, reproducible with the numbers on this page.
+        pdf.setFont("helvetica", "normal"); pdf.setTextColor(90); pdf.setFontSize(9);
+        pdf.text(`Whole field at ${fmtRate(baselineRateLha, unit).text} (your medium rate)`, M, y);
+        pdf.text(fmtVol(fullFieldLitres, unit), W - M, y, { align: "right" });
+        y += 12;
+        pdf.setTextColor(76, 175, 80);
+        pdf.text("Saved vs that baseline (rate-weighted)", M, y);
         pdf.text(`${savingsPct}%`, W - M, y, { align: "right" });
         y += 14;
       }
       pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
 
       // APPLICATION RECORD — the section that makes this a pesticide
-      // application record rather than a summary.
+      // application record rather than a summary. It ALWAYS renders, whatever
+      // came before it: the space it needs is reserved as a block, so a long
+      // zone table can push it to the next page but never off the document.
+      ensure(9 * 13 + 30);
       pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
       pdf.text("APPLICATION RECORD", M, y); y += 11;
       const recL: [string, string | null][] = [
@@ -641,6 +768,7 @@ export default function ReportsTab({
       pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
 
       // Mission stats
+      ensure(3 * 13 + 40);
       pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
       pdf.text("MISSION STATS", M, y); y += 11;
       pdf.setFont("helvetica", "normal"); pdf.setFontSize(10);
@@ -673,44 +801,92 @@ export default function ReportsTab({
 
       // Applicator notes — only when the applicator wrote any.
       if (pilotNotes?.trim()) {
+        const wrapped = pdf.splitTextToSize(pilotNotes.trim(), W - 2 * M);
+        ensure(wrapped.length * 11 + 30);
         pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
         pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
         pdf.text("APPLICATOR NOTES", M, y); y += 11;
         pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(30);
-        const wrapped = pdf.splitTextToSize(pilotNotes.trim(), W - 2 * M);
         pdf.text(wrapped, M, y);
         y += wrapped.length * 11 + 6;
       }
 
-      // Footer: signature line + retention notice.
-      const H = pdf.internal.pageSize.getHeight();
-      const sigY = Math.max(y + 24, H - 64);
+      // Signature block: part of the content FLOW, never pinned to a page
+      // bottom — the old fixed placement is what overprinted the zone table.
+      ensure(56);
+      const sigY = y + 26;
       pdf.setDrawColor(120); pdf.setLineWidth(0.75);
       pdf.line(M, sigY, M + 220, sigY);
       pdf.line(W - M - 140, sigY, W - M, sigY);
       pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(110);
       pdf.text("Applicator signature", M, sigY + 10);
       pdf.text("Date", W - M - 140, sigY + 10);
-      pdf.setFontSize(7.5); pdf.setTextColor(130);
-      pdf.text(
-        "Retain this application record for the period required by federal and state regulation (typically two years or longer).",
-        M, H - 28,
-      );
-      pdf.setFontSize(8); pdf.setTextColor(150);
-      pdf.text("Generated by SwathWise · swathwise.com", W / 2, H - 16, { align: "center" });
+      y = sigY + 20;
+
+      // Optional appendix: the per-zone detail the main body no longer
+      // enumerates. Off by default; a grower gets the summary, an agronomist
+      // who wants the lattice asks for it (or takes the CSV).
+      if (includeAppendix && zoneRows.length > 0) {
+        newPage();
+        pdf.setFont("helvetica", "bold"); pdf.setFontSize(11); pdf.setTextColor(30);
+        pdf.text("APPENDIX — PER-ZONE DETAIL", M, y); y += 8;
+        pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(110);
+        pdf.text(
+          `Every zone the treatment grid produced, as painted. The report body summarises these by classification and rate.`,
+          M, y + 6,
+        );
+        y += 20;
+        const AC = { rate: W - M - 170, area: W - M - 70, flown: W - M };
+        pdf.setFont("helvetica", "bold"); pdf.setTextColor(140); pdf.setFontSize(7.5);
+        pdf.text("ZONE", M, y);
+        pdf.text("CLASSIFICATION", M + 150, y);
+        pdf.text("RATE", AC.rate, y, { align: "right" });
+        pdf.text("AREA", AC.area, y, { align: "right" });
+        pdf.text("FLOWN", AC.flown, y, { align: "right" });
+        y += 4; pdf.setDrawColor(230); pdf.line(M, y, W - M, y); y += 9;
+        pdf.setFontSize(8);
+        for (const z of zoneRows) {
+          ensure(11);
+          pdf.setFont("helvetica", "normal"); pdf.setTextColor(70);
+          pdf.text(z.id.length > 26 ? `…${z.id.slice(-24)}` : z.id, M, y);
+          pdf.setTextColor(30);
+          pdf.text(z.issue || "Unclassified", M + 150, y);
+          pdf.text(z.rateLha != null ? fmtRate(z.rateLha, unit).text : "—", AC.rate, y, { align: "right" });
+          pdf.text(acres(z.acres), AC.area, y, { align: "right" });
+          pdf.setTextColor(z.flown ? 34 : 150);
+          pdf.text(z.flown ? "yes" : "no", AC.flown, y, { align: "right" });
+          y += 10.5;
+        }
+      }
+
+      // Per-page footer, drawn AFTER all content so it owns the reserved band
+      // on every page: retention notice, brand, and page numbers.
+      const pageCount = pdf.getNumberOfPages();
+      for (let p = 1; p <= pageCount; p++) {
+        pdf.setPage(p);
+        pdf.setDrawColor(225); pdf.setLineWidth(0.5);
+        pdf.line(M, H - FOOTER_H + 8, W - M, H - FOOTER_H + 8);
+        pdf.setFont("helvetica", "normal"); pdf.setFontSize(7.5); pdf.setTextColor(130);
+        pdf.text(
+          "Retain this application record for the period required by federal and state regulation (typically two years or longer).",
+          M, H - 28,
+        );
+        pdf.setFontSize(8); pdf.setTextColor(150);
+        pdf.text("Generated by SwathWise · swathwise.com", M, H - 16);
+        pdf.text(`Page ${p} of ${pageCount}`, W - M, H - 16, { align: "right" });
+      }
 
       // DRAFT watermark, on every page, drawn last so nothing covers it.
       if (isDraft) {
-        const pages = pdf.getNumberOfPages();
-        for (let p = 1; p <= pages; p++) {
+        for (let p = 1; p <= pageCount; p++) {
           pdf.setPage(p);
           pdf.setFont("helvetica", "bold");
           pdf.setFontSize(52);
           pdf.setTextColor(248, 180, 180);
           pdf.text("DRAFT — INCOMPLETE", W / 2, H / 2, { align: "center", angle: 35 });
         }
-        pdf.setPage(pdf.getNumberOfPages());
       }
+      pdf.setPage(pageCount);
 
       const blob = pdf.output("blob");
       const safeName = field.name.replace(/[^a-z0-9_-]+/gi, "_").slice(0, 40) || "Field";
@@ -957,9 +1133,65 @@ export default function ReportsTab({
                 />
               </div>
             </div>
-            {!effectiveLastLog && (
+            {!effectiveLastLog && otherFlights.length === 0 && (
               <div className="text-[11px] text-neutral-500">
                 No flight logged for this field yet, fill in the numbers manually, or log the mission from the Planner to auto-fill.
+              </div>
+            )}
+
+            {/* Flights this field HAS, flown against a different scan. Offered
+                with their scan named, so attaching one is a decision rather
+                than a number appearing from nowhere. */}
+            {!effectiveLastLog && otherFlights.length > 0 && (
+              <div className="rounded border border-[#1f1f1f] bg-[#111] px-3 py-2.5 space-y-2">
+                <div className="text-[11px] leading-relaxed text-neutral-400">
+                  No mission is logged against <span className="text-neutral-200">this scan</span>, but
+                  this field has {otherFlights.length === 1 ? "a logged flight" : "logged flights"} from
+                  another scan. Attach one to use its figures, or leave it and enter this mission
+                  by hand.
+                </div>
+                {otherFlights.map(l => (
+                  <div key={l.id} className="flex items-center justify-between gap-3 rounded-sm border border-[#222] bg-[#0f0f0f] px-2.5 py-1.5">
+                    <div className="min-w-0 text-[11px]">
+                      <div className="text-neutral-200">
+                        {new Date(`${l.date_flown}T00:00`).toLocaleDateString(undefined, {
+                          year: "numeric", month: "long", day: "numeric",
+                        })}
+                      </div>
+                      <div className="text-[10px] text-neutral-500">
+                        {l.acres_treated != null ? `${l.acres_treated.toFixed(2)} ac treated` : "acreage not recorded"}
+                        {" · "}
+                        {l.liters_applied != null ? fmtVol(l.liters_applied, unit) : "volume not recorded"}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAdoptedLog({ ...l, source: "flight_logs" })}
+                      className="shrink-0 rounded-sm border border-[#4CAF50] px-2 py-1 text-[11px] text-[#4CAF50] transition-colors hover:bg-[#4CAF50]/10"
+                    >
+                      Attach this flight
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* An attached flight belongs to another scan; the report says so
+                rather than quietly presenting it as this scan's mission. */}
+            {adoptedLog && effectiveLastLog?.id === adoptedLog.id && (
+              <div className="flex items-start justify-between gap-3 rounded border border-amber-900/50 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-300/90">
+                <div>
+                  Using a flight logged against a different scan of this field
+                  ({new Date(`${adoptedLog.date_flown}T00:00`).toLocaleDateString()}). Its figures
+                  describe that mission — check they belong on this report.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAdoptedLog(null)}
+                  className="shrink-0 text-amber-300/80 underline hover:text-amber-200"
+                >
+                  Detach
+                </button>
               </div>
             )}
           </div>
@@ -1060,6 +1292,44 @@ export default function ReportsTab({
               <span className="font-semibold">This will generate as DRAFT — INCOMPLETE.</span>{" "}
               Missing: {missing.join(", ")}. Each gap prints on the report in red rather than
               being dropped; complete the record here or in the mission log to issue a final copy.
+            </div>
+          )}
+
+          {zoneRows.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="flex cursor-pointer items-center gap-2 text-[11px] text-neutral-400">
+                <input
+                  type="checkbox"
+                  checked={includeAppendix}
+                  onChange={e => setIncludeAppendix(e.target.checked)}
+                  className="accent-[#4CAF50]"
+                />
+                Include per-zone appendix ({zoneRows.length} zones — the report body shows the
+                summary either way)
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  const csv = zoneDetailCsv(zoneRows.map(z => ({
+                    id: z.id, issue: z.issue, acres: z.acres, rateLha: z.rateLha, flown: z.flown,
+                  })));
+                  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${(field?.name ?? "field").replace(/[^a-z0-9_-]+/gi, "_")}_zones.csv`;
+                  a.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 2000);
+                }}
+                className="text-[11px] text-neutral-400 underline hover:text-neutral-200"
+              >
+                Export zone detail (CSV)
+              </button>
+            </div>
+          )}
+          {hasGridAssessment && zoneSummary.allUnclassified && (
+            <div className="text-[11px] text-amber-400/90">
+              None of these zones is classified yet — the report will say so. Classify them from
+              the Treatment Grid or the zone popups in Field View.
             </div>
           )}
 

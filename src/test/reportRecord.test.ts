@@ -7,7 +7,8 @@
 import { describe, expect, it } from "vitest";
 import {
   type ApplicationRecord, EMPTY_RECORD,
-  bannerFor, computedRateLPerAc, missingRecordFields, missionDateError, volumeZoneNote,
+  bannerFor, computedRateLPerAc, missingRecordFields, missionDateError,
+  summariseZones, volumeZoneNote, zoneDetailCsv,
 } from "@/lib/reportRecord";
 
 const COMPLETE_RECORD: ApplicationRecord = {
@@ -156,5 +157,80 @@ describe("computed application rate", () => {
     expect(computedRateLPerAc(25, null)).toBeNull();
     expect(computedRateLPerAc(25, 0)).toBeNull();
     expect(computedRateLPerAc(0, 5)).toBeNull();
+  });
+});
+
+describe("a verifiable savings banner", () => {
+  it("post-flight prints the two volumes the percentage is computed from", () => {
+    const b = bannerFor({
+      hasAnalysis: true, source: "grid", zoneCount: 3,
+      targetedAcres: 6.25, fieldAcres: 11.07,
+      isPostFlight: true, savingsPct: 40,
+      chemical: { planned: "15.7 gal", fullField: "26.2 gal", baselineRate: "2.7 gal/ac" },
+    });
+    expect(b.big).toBe("40% less chemical");
+    // 1 - 15.7/26.2 = 40.1% — the reader reproduces the headline from the sub.
+    expect(b.sub).toBe("15.7 gal planned vs 26.2 gal whole-field at 2.7 gal/ac");
+    // The old subtitle quoted acres (6.25 of 11.07 → 43.5%), contradicting the
+    // rate-weighted 40% printed above it.
+    expect(b.sub).not.toMatch(/6\.25|11\.07|ac total/);
+  });
+});
+
+describe("the zone summary a grower actually reads", () => {
+  const rows = [
+    { id: "g:1:1", issue: "Weed pressure", acres: 0.5, rateLha: 25, flown: true },
+    { id: "g:1:2", issue: "Weed pressure", acres: 0.3, rateLha: 25, flown: true },
+    { id: "g:2:1", issue: "Weed pressure", acres: 0.2, rateLha: 40, flown: false },
+    { id: "g:3:1", issue: "", acres: 0.1, rateLha: 15, flown: true },
+    { id: "g:3:2", issue: "Unclassified", acres: 0.1, rateLha: 15, flown: false },
+  ];
+
+  it("groups by classification and rate instead of enumerating cells", () => {
+    const s = summariseZones(rows, 11.07);
+    expect(s.groups).toHaveLength(3);
+    const weed25 = s.groups.find(g => g.label === "Weed pressure" && g.rateLha === 25)!;
+    expect(weed25.acres).toBeCloseTo(0.8);
+    expect(weed25.count).toBe(2);
+    expect(weed25.flownState).toBe("all");
+    const weed40 = s.groups.find(g => g.rateLha === 40)!;
+    expect(weed40.flownState).toBe("none");
+    // Blank and explicit "Unclassified" are the same group, said once.
+    const uncl = s.groups.find(g => g.label === "Unclassified")!;
+    expect(uncl.count).toBe(2);
+    expect(uncl.flownState).toBe("partial");
+    expect(uncl.flownCount).toBe(1);
+  });
+
+  it("totals let the reader tie the banner back to acres", () => {
+    const s = summariseZones(rows, 11.07);
+    expect(s.totals.treatedAcres).toBeCloseTo(1.2);
+    expect(s.totals.untreatedAcres).toBeCloseTo(11.07 - 1.2);
+    expect(s.totals.fieldAcres).toBeCloseTo(11.07);
+    expect(s.totals.zoneCount).toBe(5);
+    expect(s.totals.flownCount).toBe(3);
+  });
+
+  it("says all-unclassified once, not once per row", () => {
+    const uncl = rows.map(r => ({ ...r, issue: "" }));
+    expect(summariseZones(uncl, 11.07).allUnclassified).toBe(true);
+    expect(summariseZones(rows, 11.07).allUnclassified).toBe(false);
+    expect(summariseZones([], 11.07).allUnclassified).toBe(false);
+  });
+});
+
+describe("the CSV twin of the appendix", () => {
+  it("carries every zone with escaping, never a summarised row", () => {
+    const csv = zoneDetailCsv([
+      { id: "g:1:1", issue: 'Weed, "resistant"', acres: 0.51234, rateLha: 25, flown: true },
+      { id: "g:2:1", issue: "", acres: 0.1, rateLha: null, flown: false },
+    ]);
+    const lines = csv.split("\n");
+    expect(lines[0]).toBe("zone_id,classification,acres,rate_l_per_ha,flown");
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toContain('"Weed, ""resistant"""');
+    expect(lines[1]).toContain("0.5123");
+    expect(lines[2]).toContain("Unclassified");
+    expect(lines[2]).toMatch(/,,no$/);
   });
 });

@@ -25,6 +25,7 @@ import {
 import { toast } from "sonner";
 import {
   costPerAreaToPerAcre, costPerAreaValue, costPerAreaUnit,
+  fmtAreaAc, volumeToLitres, volumeUnit, volumeValue,
 } from "@/lib/units";
 import { setUnitSystem, useUnitSystem } from "@/hooks/useUnitSystem";
 import {
@@ -337,15 +338,19 @@ export function LogFlightModal({
   recordDefaults: ApplicationRecordDefaults | null;
   onSaved: (log: LastFlownMission) => void | Promise<void>;
 }) {
+  // Every quantity in this dialog follows the operator's unit preference — the
+  // same one the planner, the grid and the report already use. STORAGE stays
+  // canonical (litres, acres); only what is shown and typed is converted.
+  const units = useUnitSystem();
   const today = new Date().toISOString().slice(0, 10);
   const [dateFlown, setDateFlown] = useState(today);
   const [batteryEnd, setBatteryEnd] = useState<number>(25);
   const [refills, setRefills] = useState<number>(0);
   const [completed, setCompleted] = useState<Set<string>>(() => new Set(zones.map(z => z.id)));
   const [notes, setNotes] = useState("");
-  // The volume the pilot actually applied, in litres. Prefilled from the plan
-  // estimate as a CONVENIENCE and labelled as such — what gets stored is what
-  // the pilot confirms or corrects, never the estimate wearing "logged".
+  // What the pilot types, IN THEIR OWN UNITS. Prefilled from the plan estimate
+  // as a CONVENIENCE and labelled as such — what gets stored is what the pilot
+  // confirms or corrects, never the estimate wearing "logged".
   const [volumeIn, setVolumeIn] = useState<string>("");
   const [rec, setRec] = useState<ApplicationRecord>(EMPTY_RECORD);
   const [saving, setSaving] = useState(false);
@@ -382,11 +387,19 @@ export function LogFlightModal({
   const estLitersApplied = estLiters != null && acresDone > 0
     ? +(estLiters * (refills + 1) * coverageRatio).toFixed(1)
     : null;
+  /** The estimate hint, in the units the operator is typing in. */
+  const estShown = estLitersApplied != null
+    ? +volumeValue(estLitersApplied, units).toFixed(1)
+    : null;
+  // Typed in the operator's units, CONVERTED to litres for storage. Without
+  // this conversion an imperial operator's "4.4" was stored as 4.4 L and read
+  // back as 1.16 gal — a number they never entered, on a compliance record.
   const litersApplied = (() => {
     const t = volumeIn.trim();
     if (!t) return null;
     const n = Number(t);
-    return Number.isFinite(n) && n >= 0 ? +n.toFixed(2) : null;
+    if (!Number.isFinite(n) || n < 0) return null;
+    return +volumeToLitres(n, units).toFixed(2);
   })();
 
   const normalizedRecord = (): ApplicationRecord => ({
@@ -464,7 +477,7 @@ export function LogFlightModal({
         ? { ...(inserted as LastFlownMission), source: "flight_logs", record: snapshotBase.record }
         : snapshotBase;
       toast.success(inserted ? "Flight logged" : "Mission saved to field", {
-        description: `${acresDone.toFixed(2)} ac recorded for ${dateFlown}.`,
+        description: `${fmtAreaAc(acresDone, units).text} recorded for ${dateFlown}.`,
       });
       await onSaved(savedLog);
       onOpenChange(false);
@@ -562,7 +575,7 @@ export function LogFlightModal({
                       <span className="flex-1 truncate">
                         Zone {i + 1}, {z.issue ?? z.label}
                       </span>
-                      <span className="font-mono text-neutral-500">{z.acres.toFixed(2)} ac</span>
+                      <span className="font-mono text-neutral-500">{fmtAreaAc(z.acres, units).text}</span>
                     </label>
                   );
                 })}
@@ -570,20 +583,22 @@ export function LogFlightModal({
             )}
             <div className="mt-2 text-[11px] text-neutral-500 flex justify-between">
               <span>Treated</span>
-              <span className="font-mono text-neutral-300">{acresDone.toFixed(2)} ac</span>
+              <span className="font-mono text-neutral-300">{fmtAreaAc(acresDone, units).text}</span>
             </div>
           </div>
 
           {/* Volume actually applied. The estimate is a hint, never the value. */}
           <div>
             <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">
-              Volume applied (L)
+              Volume applied ({volumeUnit(units)})
             </div>
             <input
               type="number" min={0} step={0.1}
               value={volumeIn}
               onChange={e => setVolumeIn(e.target.value)}
-              placeholder={estLitersApplied != null ? `plan estimated ~${estLitersApplied} L` : "e.g. 12.5"}
+              placeholder={estShown != null
+                ? `plan estimated ~${estShown} ${volumeUnit(units)}`
+                : units === "metric" ? "e.g. 12.5" : "e.g. 3.3"}
               className="w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200 placeholder:text-neutral-600"
             />
             <div className="mt-1 text-[10px] text-neutral-500">

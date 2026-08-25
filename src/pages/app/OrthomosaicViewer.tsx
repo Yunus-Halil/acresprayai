@@ -55,6 +55,7 @@ import type { Annotation, LayerState, UserPoly } from "@/components/app/workspac
 import FieldViewTab from "@/components/app/workspace/FieldViewTab";
 import PlannerTab from "@/components/app/workspace/PlannerTab";
 import TreatmentTab from "@/components/app/workspace/TreatmentTab";
+import FlightLogTab from "@/components/app/workspace/FlightLogTab";
 import { seedUnitSystem } from "@/hooks/useUnitSystem";
 import WeatherTab, { HeaderWeather } from "@/components/app/workspace/WeatherTab";
 import SettingsTab from "@/components/app/workspace/SettingsTab";
@@ -187,7 +188,7 @@ export default function OrthomosaicViewer() {
   // a panel over Field View now (ScanTimeline/SwipeCompare), not a second map.
   // "ai" is gone too — the legacy vision-analysis tab went with the deleted
   // analyze-ortho path; the treatment grid is the one analysis system.
-  type TabKey = "field" | "weather" | "treatment" | "planner" | "reports" | "settings";
+  type TabKey = "field" | "weather" | "treatment" | "planner" | "reports" | "flightlog" | "settings";
   const [activeTab, setActiveTab] = useState<TabKey>("field");
   const [openTabs, setOpenTabs] = useState<TabKey[]>(["field"]);
   const [newTabOpen, setNewTabOpen] = useState(false);
@@ -756,6 +757,7 @@ export default function OrthomosaicViewer() {
     { key: "treatment", label: "Treatment Grid", icon: Grid3x3 },
     { key: "planner", label: "Flight Planner", icon: Plane },
     { key: "reports", label: "Reports", icon: FileBarChart },
+    { key: "flightlog", label: "Flight Log", icon: History },
     { key: "settings", label: "Settings", icon: Settings },
   ];
   const openTab = (k: TabKey) => {
@@ -981,6 +983,17 @@ export default function OrthomosaicViewer() {
             setActiveTab={setActiveTab}
             prepareMapCapture={prepareMapCapture}
             restoreMapCapture={restoreMapCapture}
+          />
+        )}
+        {activeTab === "flightlog" && (
+          <FlightLogTab
+            fieldId={field?.id ?? null}
+            fieldName={field?.name ?? taskName}
+            settings={settings}
+            openScan={(id) => {
+              if (id === taskId) { setActiveTab("field"); return; }
+              window.open(`/app/orthomosaic/${id}`, "_blank");
+            }}
           />
         )}
         {activeTab === "settings" && (

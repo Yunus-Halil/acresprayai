@@ -68,6 +68,24 @@ import {
 import { abOf, analysisStateOf, compareStats, togglePick } from "@/lib/compareGround";
 import { defaultIndexFor, notComparableReason } from "@/lib/scanLayers";
 
+/**
+ * Frames the map on the orthomosaic (modest padding) the moment a report
+ * capture is announced. Without this the screenshot showed whatever the
+ * operator had panned to — half ortho, half bare basemap, reading as a
+ * rendering error on the PDF.
+ */
+function FitOnCapture({ bounds }: { bounds: L.LatLngBoundsExpression }) {
+  const map = useMap();
+  useEffect(() => {
+    const onCapture = () => map.fitBounds(bounds as L.LatLngBoundsExpression, {
+      padding: [24, 24], animate: false,
+    });
+    window.addEventListener("swathwise:prepare-capture", onCapture);
+    return () => window.removeEventListener("swathwise:prepare-capture", onCapture);
+  }, [map, bounds]);
+  return null;
+}
+
 // ----------------------------- Field View tab -------------------------------
 export function FieldViewTab(props: {
   center: [number, number];
@@ -342,6 +360,7 @@ export function FieldViewTab(props: {
           />
         )}
         <FitBounds bounds={bounds} />
+        <FitOnCapture bounds={bounds} />
         <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />
         <MapControls fitTo={bounds} />
         <BasemapToggle value={basemap} onChange={(id) => { setBasemap(id); saveBasemap(id); }} />
