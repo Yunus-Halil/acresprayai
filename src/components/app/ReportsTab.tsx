@@ -425,6 +425,9 @@ export default function ReportsTab({
     // the acreages differ".
     assessedAt: isDone ? assessment.at : null,
     loggedAt: effectiveLastLog?.created_at ?? null,
+    // Flags a treated acreage recorded by the pre-fix ring-derived path
+    // (2026-08-20..26) without rewriting it.
+    log: effectiveLastLog,
     // Station data fetched for this mission, accepted or not: condition
     // flagging runs on it even when the operator recorded different values.
     modelCheck: record.model_check ?? null,

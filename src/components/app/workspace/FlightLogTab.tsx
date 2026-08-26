@@ -18,6 +18,7 @@ import {
   AlertTriangle, CalendarDays, FileText, Loader2, MapPin, Plane, Sprout,
 } from "lucide-react";
 import { type ApplicationRecord, conditionSourceLabel } from "@/lib/reportRecord";
+import { acreageFromBuggyPath, LEGACY_AREA_NOTE } from "@/lib/legacyAreaAudit";
 import type { FarmerSettings } from "@/lib/farmerSettings";
 import { fmtAreaAc, fmtVolume } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
@@ -297,6 +298,12 @@ export function FlightLogTab({
                   {log.tank_refills}
                 </Stat>
               </div>
+
+              {acreageFromBuggyPath(log) && (
+                <p className="mt-2 rounded border border-amber-900/50 bg-amber-950/30 px-2 py-1.5 text-[11px] leading-snug text-amber-300/90">
+                  {LEGACY_AREA_NOTE}
+                </p>
+              )}
 
               <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-neutral-500">
                 <span className="inline-flex items-center gap-1">

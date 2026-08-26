@@ -33,6 +33,8 @@ export const TEMP_LIMIT_F = 85;
  * are the defaults, not the law: an orchard operator and a row-crop operator
  * tolerate different wind, and product labels vary.
  */
+import { acreageFromBuggyPath, LEGACY_AREA_NOTE, type AuditableLog } from "./legacyAreaAudit";
+
 export type ConditionLimits = { wind_mph: number; temp_f: number };
 export const DEFAULT_CONDITION_LIMITS: ConditionLimits = {
   wind_mph: WIND_LIMIT_MPH,
@@ -41,6 +43,7 @@ export const DEFAULT_CONDITION_LIMITS: ConditionLimits = {
 
 export type Reconciliation = {
   kind:
+    | "legacy-area"
     | "volume-vs-plan"
     | "rate-vs-baseline"
     | "area-mismatch"
@@ -249,6 +252,12 @@ export function reconcileReport(input: {
   /** Assessment snapshot time vs mission log time, for the area-note context. */
   assessedAt?: string | null;
   loggedAt?: string | null;
+  /**
+   * The mission row itself, so the pass can flag treated acreage recorded by
+   * the pre-fix ring-derived path (2026-08-20..26). The stored figure is
+   * never rewritten — this only names the method behind it.
+   */
+  log?: AuditableLog | null;
   /** Fetched station data stored on the record, whether or not accepted. */
   modelCheck?: Parameters<typeof modelConditionFlags>[0];
   fmtVolume: (l: number) => string;
@@ -263,6 +272,10 @@ export function reconcileReport(input: {
   const gridEditedAfterLog = !!(input.assessedAt && input.loggedAt &&
     input.assessedAt > input.loggedAt);
 
+  // First, because it contextualises every area comparison below it: a
+  // logged acreage from the pre-fix window was measured by a method now
+  // known to over-count at the field edge.
+  push("legacy-area", acreageFromBuggyPath(input.log) ? LEGACY_AREA_NOTE : null);
   push("volume-vs-plan", volumeVsPlanNote(input.appliedL, input.plannedL, input.fmtVolume));
   push("rate-vs-baseline",
     rateVsBaselineNote(input.computedRateLPerAc, input.baselineLha, input.fmtRatePerAc));
