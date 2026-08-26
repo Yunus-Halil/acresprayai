@@ -50,6 +50,8 @@ function renderModal() {
       estLiters={20}
       recordDefaults={null}
       baselineRateLha={25}
+      center={null}
+      conditionLimits={null}
       onSaved={onSaved}
     />,
   );
@@ -174,7 +176,7 @@ describe("impossible input warns at entry, in the operator's units", () => {
     expect(note.textContent).toMatch(/verify against the product label/i);
   });
 
-  it("conditions typed by the applicator save with 'observed' provenance; none is invented", async () => {
+  it("conditions typed by the applicator save with 'observed' provenance, per value", async () => {
     const { onSaved } = renderModal();
     const wind = document.querySelector('input[step="0.5"]') as HTMLInputElement;
     fireEvent.change(wind, { target: { value: "7" } });
@@ -182,14 +184,19 @@ describe("impossible input warns at entry, in the operator's units", () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     const rec = onSaved.mock.calls[0][0].record;
     expect(rec.wind_speed_mph).toBe(7);
-    expect(rec.conditions_source).toBe("observed");
+    // Provenance is per value: the typed wind is observed; the untyped
+    // temperature carries none rather than borrowing the wind's.
+    expect(rec.wind_source).toBe("observed");
+    expect(rec.temp_source).toBeNull();
   });
 
   it("a record with no conditions carries no provenance stamp", async () => {
     const { onSaved } = renderModal();
     fireEvent.click(screen.getByRole("button", { name: /save flight log/i }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
-    expect(onSaved.mock.calls[0][0].record.conditions_source).toBeNull();
+    const rec = onSaved.mock.calls[0][0].record;
+    expect(rec.wind_source).toBeNull();
+    expect(rec.temp_source).toBeNull();
   });
 });
 

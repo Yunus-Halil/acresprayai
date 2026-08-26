@@ -19,6 +19,31 @@ export type ApplicationRecordDefaults = {
  *  from a forecast API and presented as observed conditions.
  *  TODO(field-capture): capture these automatically at mission time from an
  *  on-site source, stamped with observation time — until then they are manual. */
+/**
+ * Where a condition value came from. "observed" = the applicator entered what
+ * they saw on site. The model shape carries the NOAA station and its distance,
+ * because a station observation is NOT an observed condition — an airport
+ * anemometer miles from the field, not boom height over the crop — and it must
+ * never print without saying so.
+ */
+export type ConditionSource =
+  | "observed"
+  | { kind: "model"; provider: string; station: string; distance_mi: number; observed_at: string };
+
+/** A fetched station observation, kept on the record whether or not the
+ *  operator accepted it — condition flagging runs on it either way. */
+export type ModelConditionCheck = {
+  provider: string;
+  station: string;
+  station_name?: string;
+  distance_mi: number;
+  observed_at: string;
+  wind_mph: number | null;
+  wind_dir?: string | null;
+  temp_f: number | null;
+  fetched_at: string;
+};
+
 export type ApplicationConditions = {
   start_time: string | null;
   end_time: string | null;
@@ -26,16 +51,32 @@ export type ApplicationConditions = {
   wind_direction: string | null;
   temperature_f: number | null;
   /**
-   * Where the wind/temperature values came from. "observed" = the applicator
-   * entered what they saw on site. Reserved for a future approved provider:
-   * { kind: "model", provider, distanceMi, fetchedAt } — a fetched value is
-   * NOT an observed condition (grid data at 10 m height, kilometres wide) and
-   * must never print without its provenance label. Absent on records made
-   * before provenance existed; those print unlabelled rather than being
-   * stamped with a provenance nobody recorded.
+   * Legacy single stamp from before per-value provenance; readers fall back
+   * to it. Absent entirely on records made before provenance existed; those
+   * print unlabelled rather than being stamped with a provenance nobody
+   * recorded.
    */
   conditions_source?: "observed" | null;
+  /** Per-value provenance: wind (speed + direction travel together) and
+   *  temperature can come from different places — accept the station wind,
+   *  type your own thermometer reading — and each is labelled as its own. */
+  wind_source?: ConditionSource | null;
+  temp_source?: ConditionSource | null;
+  /** See ModelConditionCheck — stored on fetch, independent of acceptance. */
+  model_check?: ModelConditionCheck | null;
 };
+
+/** The provenance label printed beside a condition value. Never empty for a
+ *  model value; empty only for pre-provenance records. */
+export function conditionSourceLabel(
+  src: ConditionSource | null | undefined,
+  legacy?: "observed" | null,
+): string {
+  const s = src ?? legacy ?? null;
+  if (!s) return "";
+  if (s === "observed") return " (observed)";
+  return ` (model data — ${s.station}, ${s.distance_mi.toFixed(1)} mi)`;
+}
 
 export type ApplicationRecord = ApplicationRecordDefaults & ApplicationConditions;
 

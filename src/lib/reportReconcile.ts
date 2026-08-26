@@ -28,6 +28,17 @@ export const WIND_LIMIT_MPH = 10;
 /** Typical volatility/efficacy threshold; verify against the product label. */
 export const TEMP_LIMIT_F = 85;
 
+/**
+ * Operator-configurable condition thresholds (Settings). The constants above
+ * are the defaults, not the law: an orchard operator and a row-crop operator
+ * tolerate different wind, and product labels vary.
+ */
+export type ConditionLimits = { wind_mph: number; temp_f: number };
+export const DEFAULT_CONDITION_LIMITS: ConditionLimits = {
+  wind_mph: WIND_LIMIT_MPH,
+  temp_f: TEMP_LIMIT_F,
+};
+
 export type Reconciliation = {
   kind:
     | "volume-vs-plan"
@@ -90,17 +101,27 @@ export function areaMismatchNote(
   zonesFlown: number,
   zonesTotal: number,
   fmtAc: (ac: number) => string,
+  /** When known: whether the grid changed after the mission was logged. The
+   *  logged figure is a snapshot of that day's zones; the marked figure is
+   *  the grid as it stands NOW — later editing diverges them while the zone
+   *  ids survive, and that is a time skew, not an arithmetic error. */
+  gridEditedAfterLog?: boolean,
 ): string | null {
   if (markedAcres == null || loggedTreatedAcres == null) return null;
   if (zonesTotal === 0 || zonesFlown !== zonesTotal || markedAcres <= 0) return null;
   const ratio = loggedTreatedAcres / markedAcres;
   if (Math.abs(ratio - 1) <= AREA_TOLERANCE) return null;
-  return `All ${zonesTotal} zones are logged as flown, yet the logged treated area ` +
+  const base = `All ${zonesTotal} zones are logged as flown, yet the logged treated area ` +
     `(${fmtAc(loggedTreatedAcres)}) differs from the marked-for-treatment area ` +
     `(${fmtAc(markedAcres)}) by ${pct(ratio)}. These are different measurements — marked is ` +
     `the grid's cell arithmetic, treated is what was logged after flying — and they are ` +
     `never interchanged in this document's calculations, but at full completion they ` +
-    `should agree. Verify the flight log.`;
+    `should agree.`;
+  return gridEditedAfterLog
+    ? `${base} The grid has been edited since this mission was logged: the marked area ` +
+      `reflects today's grid, the treated area reflects the zones as they stood on the day. ` +
+      `Re-fly or re-log if today's grid is what was actually treated.`
+    : `${base} Verify the flight log.`;
 }
 
 /** Zones flown and treated area must at least agree about zero. */
@@ -155,21 +176,55 @@ export function overTankCapacityNote(
 export function conditionFlags(
   windMph: number | null,
   tempF: number | null,
+  limits: ConditionLimits = DEFAULT_CONDITION_LIMITS,
 ): string[] {
   const flags: string[] = [];
-  if (windMph != null && windMph > WIND_LIMIT_MPH) {
+  if (windMph != null && windMph > limits.wind_mph) {
     flags.push(
       `Wind ${windMph} mph — outside typical application conditions ` +
-      `(above ${WIND_LIMIT_MPH} mph). Verify against the product label.`,
+      `(above ${limits.wind_mph} mph). Verify against the product label.`,
     );
   }
-  if (tempF != null && tempF > TEMP_LIMIT_F) {
+  if (tempF != null && tempF > limits.temp_f) {
     flags.push(
       `Temperature ${tempF} °F — outside typical application conditions ` +
-      `(above ${TEMP_LIMIT_F} °F). Verify against the product label.`,
+      `(above ${limits.temp_f} °F). Verify against the product label.`,
     );
   }
   return flags;
+}
+
+/**
+ * The same flags, run over FETCHED station data rather than the operator's
+ * entries. Kept separate so the report can say which data is speaking: model
+ * data can contradict the record without either being silently preferred.
+ */
+export function modelConditionFlags(
+  check: {
+    wind_mph: number | null;
+    temp_f: number | null;
+    station: string;
+    distance_mi: number;
+  } | null | undefined,
+  limits: ConditionLimits = DEFAULT_CONDITION_LIMITS,
+): string[] {
+  if (!check) return [];
+  const out: string[] = [];
+  if (check.wind_mph != null && check.wind_mph > limits.wind_mph) {
+    out.push(
+      `Station data for this time and location (${check.station}, ${check.distance_mi.toFixed(1)} mi ` +
+      `from the field) indicates wind of ${check.wind_mph} mph — outside typical application ` +
+      `conditions. Verify against the product label.`,
+    );
+  }
+  if (check.temp_f != null && check.temp_f > limits.temp_f) {
+    out.push(
+      `Station data for this time and location (${check.station}, ${check.distance_mi.toFixed(1)} mi ` +
+      `from the field) indicates ${check.temp_f} °F — outside typical application conditions. ` +
+      `Verify against the product label.`,
+    );
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +244,13 @@ export function reconcileReport(input: {
   tempF: number | null;
   startTime: string | null;
   endTime: string | null;
+  /** Operator-configured thresholds; the exported constants are the defaults. */
+  limits?: ConditionLimits;
+  /** Assessment snapshot time vs mission log time, for the area-note context. */
+  assessedAt?: string | null;
+  loggedAt?: string | null;
+  /** Fetched station data stored on the record, whether or not accepted. */
+  modelCheck?: Parameters<typeof modelConditionFlags>[0];
   fmtVolume: (l: number) => string;
   fmtAcres: (ac: number) => string;
   fmtRatePerAc: (lPerAc: number) => string;
@@ -197,18 +259,22 @@ export function reconcileReport(input: {
   const push = (kind: Reconciliation["kind"], message: string | null) => {
     if (message) out.push({ kind, message });
   };
+  const limits = input.limits ?? DEFAULT_CONDITION_LIMITS;
+  const gridEditedAfterLog = !!(input.assessedAt && input.loggedAt &&
+    input.assessedAt > input.loggedAt);
 
   push("volume-vs-plan", volumeVsPlanNote(input.appliedL, input.plannedL, input.fmtVolume));
   push("rate-vs-baseline",
     rateVsBaselineNote(input.computedRateLPerAc, input.baselineLha, input.fmtRatePerAc));
   push("area-mismatch", areaMismatchNote(
     input.markedAcres, input.loggedTreatedAcres,
-    input.zonesFlown, input.zonesTotal, input.fmtAcres,
+    input.zonesFlown, input.zonesTotal, input.fmtAcres, gridEditedAfterLog,
   ));
   push("zones-vs-area",
     zonesVsAreaNote(input.loggedTreatedAcres, input.zonesFlown, input.fmtAcres));
   push("time-order", endBeforeStartNote(input.startTime, input.endTime));
-  for (const f of conditionFlags(input.windMph, input.tempF)) push("conditions", f);
+  for (const f of conditionFlags(input.windMph, input.tempF, limits)) push("conditions", f);
+  for (const f of modelConditionFlags(input.modelCheck, limits)) push("conditions", f);
 
   return out;
 }

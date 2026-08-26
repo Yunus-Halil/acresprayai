@@ -17,7 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   AlertTriangle, CalendarDays, FileText, Loader2, MapPin, Plane, Sprout,
 } from "lucide-react";
-import type { ApplicationRecord } from "@/lib/reportRecord";
+import { type ApplicationRecord, conditionSourceLabel } from "@/lib/reportRecord";
 import type { FarmerSettings } from "@/lib/farmerSettings";
 import { fmtAreaAc, fmtVolume } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
@@ -70,15 +70,16 @@ function RecordBlock({ record }: { record: ApplicationRecord }) {
     ["EPA reg. no.", record.epa_reg_no || null],
     ["Start", record.start_time],
     ["End", record.end_time],
-    // "(observed)" = entered by the applicator; pre-provenance records print
-    // bare rather than being stamped with a provenance nobody recorded.
+    // Provenance prints with the value: observed, or model data with its
+    // station and distance. Pre-provenance records print bare rather than
+    // being stamped with a provenance nobody recorded.
     ["Wind", record.wind_speed_mph != null && record.wind_direction
       ? `${record.wind_speed_mph} mph ${record.wind_direction}`
-        + (record.conditions_source === "observed" ? " (observed)" : "")
+        + conditionSourceLabel(record.wind_source, record.conditions_source)
       : null],
     ["Temperature", record.temperature_f != null
       ? `${record.temperature_f} °F`
-        + (record.conditions_source === "observed" ? " (observed)" : "")
+        + conditionSourceLabel(record.temp_source, record.conditions_source)
       : null],
     ["Applicator cert.", record.applicator_cert_no || null],
     ["Part 137 cert.", record.part137_cert_no || null],

@@ -77,6 +77,7 @@ function renderTab(over: Partial<React.ComponentProps<typeof ReportsTab>> = {}) 
       settings={DEFAULT_FARMER_SETTINGS}
       activeDrone={null}
       lastLog={null}
+      center={null}
       setActiveTab={vi.fn()}
       prepareMapCapture={vi.fn()}
       restoreMapCapture={vi.fn()}

@@ -136,6 +136,14 @@ export type FarmerSettings = {
    * once, not per flight.
    */
   application_record?: ApplicationRecordDefaults | null;
+  /**
+   * Operator-configured condition-flag thresholds. Hardcoded 10 mph / 85 °F
+   * is wrong for somebody — orchards and open row crop tolerate different
+   * wind, and product labels vary. These drive the report's condition flags
+   * AND the Log Flight entry warnings; the reportReconcile constants are the
+   * defaults.
+   */
+  condition_limits?: { wind_mph: number; temp_f: number };
 };
 
 export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
@@ -176,6 +184,7 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
   zone_rate_overrides: {},
   last_flown_mission: null,
   application_record: null,
+  condition_limits: { wind_mph: 10, temp_f: 85 },
 };
 
 /**
@@ -192,6 +201,10 @@ export function mergeFarmerSettings(saved: unknown): FarmerSettings {
     available_inputs: { ...DEFAULT_FARMER_SETTINGS.available_inputs, ...(s.available_inputs ?? {}) },
     custom_inputs: Array.isArray(s.custom_inputs) ? s.custom_inputs.slice(0, 3) : [],
     spray_rates_lha: { ...DEFAULT_FARMER_SETTINGS.spray_rates_lha, ...(s.spray_rates_lha ?? {}) },
+    condition_limits: {
+      ...DEFAULT_FARMER_SETTINGS.condition_limits!,
+      ...(s.condition_limits ?? {}),
+    },
     zone_rate_overrides: (s.zone_rate_overrides && typeof s.zone_rate_overrides === "object")
       ? s.zone_rate_overrides
       : {},

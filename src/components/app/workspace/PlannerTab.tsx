@@ -1852,9 +1852,17 @@ export function PlannerTab({
         droneName={activeDrone?.name ?? null}
         recordDefaults={settings.application_record ?? null}
         baselineRateLha={settings.spray_rates_lha.medium}
+        center={center ?? null}
+        conditionLimits={settings.condition_limits ?? null}
         batteryStart={preFlightBattery}
         zones={validZones.map(z => {
-          const m2 = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));
+          // Grid zones carry their TRUE clipped cell area — the number the
+          // prescription is priced on. Re-deriving from the ring here (the
+          // old code) broke gridZones.ts's carried-area rule and made the
+          // logged treated acreage disagree with the report's marked acreage
+          // by construction. Ring math survives only for hand-drawn polygons,
+          // whose ring is their only measure.
+          const m2 = z.areaM2 ?? polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));
           const acres = (m2 / 4046.8564224);
           return {
             id: z.id,

@@ -60,6 +60,7 @@ import {
   conditionFlags, endBeforeStartNote, overTankCapacityNote,
   rateVsBaselineNote, volumeVsPlanNote,
 } from "@/lib/reportReconcile";
+import ConditionLookup from "./ConditionLookup";
 import {
   type Annotation, type LayerState, type MeasureStats, type UserPoly,
   AnnotateTool, BoundaryTool, FitBounds, LayerRow, MapControls,
@@ -305,9 +306,47 @@ export function SettingsTab({
           </div>
         </section>
 
+        {/* Condition flag thresholds */}
+        <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
+          <h2 className="text-sm font-semibold mb-1">3. Application Condition Flags</h2>
+          <p className="text-[11px] text-neutral-500 mb-4">
+            Wind or temperature beyond these values gets flagged in the Log Flight dialog and
+            on the spray report — flagged, never blocked, and never a compliance claim: product
+            labels vary and only you know yours.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Flag wind above (mph)</label>
+              <input
+                type="number" min={0} step={0.5} className={inputCls}
+                value={local.condition_limits?.wind_mph ?? 10}
+                onChange={e => update({
+                  condition_limits: {
+                    wind_mph: Number(e.target.value) || 0,
+                    temp_f: local.condition_limits?.temp_f ?? 85,
+                  },
+                })}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Flag temperature above (°F)</label>
+              <input
+                type="number" step={1} className={inputCls}
+                value={local.condition_limits?.temp_f ?? 85}
+                onChange={e => update({
+                  condition_limits: {
+                    wind_mph: local.condition_limits?.wind_mph ?? 10,
+                    temp_f: Number(e.target.value) || 0,
+                  },
+                })}
+              />
+            </div>
+          </div>
+        </section>
+
         {/* How it's used */}
         <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
-          <h2 className="text-sm font-semibold mb-3">3. How these settings are used</h2>
+          <h2 className="text-sm font-semibold mb-3">4. How these settings are used</h2>
           <ul className="text-[12px] text-neutral-400 space-y-1.5 list-disc pl-5">
             <li>Treatment zones detected by AI Analysis are priced as <span className="font-mono text-neutral-200">{units === "metric" ? "hectares × your per-hectare cost" : "acres × your per-acre cost"}</span>.</li>
             <li>Issues map to inputs via a fixed table (e.g. <span className="text-neutral-300">bare soil → reseeding</span>, <span className="text-neutral-300">nitrogen deficiency → nitrogen fertilizer</span>).</li>
@@ -326,7 +365,8 @@ export function SettingsTab({
 // planner pre-fills "Pre-flight battery" with the last known landed value.
 export function LogFlightModal({
   open, onOpenChange, fieldId, scanId, droneId, droneName,
-  batteryStart, zones, totalAcres, estLiters, recordDefaults, baselineRateLha, onSaved,
+  batteryStart, zones, totalAcres, estLiters, recordDefaults, baselineRateLha,
+  center, conditionLimits, onSaved,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -342,6 +382,10 @@ export function LogFlightModal({
   recordDefaults: ApplicationRecordDefaults | null;
   /** The configured medium rate (L/ha), for the at-entry rate sanity check. */
   baselineRateLha: number | null;
+  /** Field centroid [lat, lng] for the NOAA condition lookup; null disables it. */
+  center: [number, number] | null;
+  /** Operator-configured condition-flag thresholds. */
+  conditionLimits: { wind_mph: number; temp_f: number } | null;
   onSaved: (log: LastFlownMission) => void | Promise<void>;
 }) {
   // Every quantity in this dialog follows the operator's unit preference — the
@@ -424,7 +468,7 @@ export function LogFlightModal({
         )
       : null,
     endBeforeStartNote(rec.start_time, rec.end_time),
-    ...conditionFlags(rec.wind_speed_mph, rec.temperature_f),
+    ...conditionFlags(rec.wind_speed_mph, rec.temperature_f, conditionLimits ?? undefined),
   ].filter((w): w is string => !!w);
 
   const normalizedRecord = (): ApplicationRecord => ({
@@ -438,11 +482,13 @@ export function LogFlightModal({
     wind_speed_mph: rec.wind_speed_mph,
     wind_direction: rec.wind_direction || null,
     temperature_f: rec.temperature_f,
-    // Typed into this dialog by the person who was there = observed. A future
-    // approved weather provider gets its own provenance kind; a fetched value
-    // must never wear this label.
-    conditions_source:
-      rec.wind_speed_mph != null || rec.temperature_f != null ? "observed" : null,
+    // Per-value provenance. A value present without a tracked source was
+    // typed by the person who was there = observed; an accepted NOAA
+    // suggestion carries its model source; a fetched-but-declined suggestion
+    // survives only as model_check, never as entered data.
+    wind_source: rec.wind_speed_mph != null ? (rec.wind_source ?? "observed") : null,
+    temp_source: rec.temperature_f != null ? (rec.temp_source ?? "observed") : null,
+    model_check: rec.model_check ?? null,
   });
 
   const save = async () => {
@@ -673,10 +719,11 @@ export function LogFlightModal({
                   onChange={e => setRec(r => ({ ...r, end_time: e.target.value || null }))}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
               </label>
-              {/* Observed on site by the applicator. Deliberately NOT prefilled
-                  from the forecast API: a forecast presented as an observed
-                  condition would falsify the record.
-                  TODO(field-capture): capture automatically at mission time. */}
+              {/* Conditions. Typed values are observed; the NOAA lookup below
+                  offers a station observation as a SUGGESTION — nothing fills
+                  in until it is explicitly accepted, and an accepted value
+                  carries model provenance, never "observed". Editing a value
+                  by hand afterwards makes that value observed again. */}
               <label className="text-[10px] text-neutral-500">
                 Wind speed (mph)
                 <input type="number" min={0} step={0.5}
@@ -684,13 +731,20 @@ export function LogFlightModal({
                   onChange={e => setRec(r => ({
                     ...r,
                     wind_speed_mph: e.target.value === "" ? null : Number(e.target.value),
+                    wind_source: e.target.value === "" ? null : "observed",
                   }))}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
               </label>
               <label className="text-[10px] text-neutral-500">
                 Wind direction
                 <select value={rec.wind_direction ?? ""}
-                  onChange={e => setRec(r => ({ ...r, wind_direction: e.target.value || null }))}
+                  onChange={e => setRec(r => ({
+                    ...r,
+                    wind_direction: e.target.value || null,
+                    // Direction travels with speed; a manual correction makes
+                    // the wind pair the operator's own.
+                    wind_source: r.wind_speed_mph != null || e.target.value ? "observed" : r.wind_source,
+                  }))}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm text-neutral-200">
                   <option value="">—</option>
                   {WIND_DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}
@@ -703,9 +757,38 @@ export function LogFlightModal({
                   onChange={e => setRec(r => ({
                     ...r,
                     temperature_f: e.target.value === "" ? null : Number(e.target.value),
+                    temp_source: e.target.value === "" ? null : "observed",
                   }))}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
               </label>
+              <ConditionLookup
+                center={center}
+                dateYmd={dateFlown}
+                timeHm={rec.start_time}
+                onFetched={(s) => setRec(r => ({
+                  ...r,
+                  // Kept whether or not accepted: the report's condition
+                  // flagging runs on what the station said either way.
+                  model_check: {
+                    provider: s.provider, station: s.station, station_name: s.station_name,
+                    distance_mi: s.distance_mi, observed_at: s.observed_at,
+                    wind_mph: s.wind_mph, wind_dir: s.wind_dir, temp_f: s.temp_f,
+                    fetched_at: new Date().toISOString(),
+                  },
+                }))}
+                onAccept={(s) => setRec(r => ({
+                  ...r,
+                  wind_speed_mph: s.wind_mph ?? r.wind_speed_mph,
+                  wind_direction: s.wind_dir ?? r.wind_direction,
+                  temperature_f: s.temp_f ?? r.temperature_f,
+                  wind_source: s.wind_mph != null
+                    ? { kind: "model", provider: s.provider, station: s.station, distance_mi: s.distance_mi, observed_at: s.observed_at }
+                    : r.wind_source,
+                  temp_source: s.temp_f != null
+                    ? { kind: "model", provider: s.provider, station: s.station, distance_mi: s.distance_mi, observed_at: s.observed_at }
+                    : r.temp_source,
+                }))}
+              />
               <label className="text-[10px] text-neutral-500">
                 Applicator cert. no.
                 <input value={rec.applicator_cert_no}

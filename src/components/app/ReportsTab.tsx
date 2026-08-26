@@ -17,10 +17,11 @@ import {
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import {
   type ApplicationRecord, EMPTY_RECORD, WIND_DIRECTIONS,
-  bannerFor, computedRateLPerAc, missingRecordFields, missionDateError,
-  summariseZones, volumeZoneNote, zoneDetailCsv,
+  bannerFor, computedRateLPerAc, conditionSourceLabel, missingRecordFields,
+  missionDateError, summariseZones, volumeZoneNote, zoneDetailCsv,
 } from "@/lib/reportRecord";
 import { reconcileReport } from "@/lib/reportReconcile";
+import ConditionLookup from "@/components/app/workspace/ConditionLookup";
 
 // The report standardises on ACRES for every area it prints. fmtAreaAc
 // elsewhere may drop to ft² for small areas, which is how one page came to say
@@ -80,6 +81,8 @@ type Props = {
   settings: FarmerSettings;
   activeDrone: DroneRow | null;
   lastLog: FlightLogRow | null;
+  /** Field centroid [lat, lng] for the NOAA condition backfill; null disables it. */
+  center: [number, number] | null;
   // Switches viewer to a given tab key; we use it to flash Field View for capture.
   setActiveTab: (k: "field" | "weather" | "treatment" | "planner" | "reports" | "settings") => void;
   /**
@@ -93,7 +96,7 @@ type Props = {
 };
 
 export default function ReportsTab({
-  field, task, settings, activeDrone, lastLog, setActiveTab,
+  field, task, settings, activeDrone, lastLog, center, setActiveTab,
   prepareMapCapture, restoreMapCapture,
 }: Props) {
   const [pilotName, setPilotName] = useState<string>(() => localStorage.getItem(storageKey("pilot_name")) ?? "");
@@ -201,12 +204,6 @@ export default function ReportsTab({
   // in the Log Flight dialog), then the field's stored defaults, and editable
   // here so an older mission's gaps can be corrected before generating.
   const [record, setRecord] = useState<ApplicationRecord>(EMPTY_RECORD);
-  /** Values typed into THIS form were seen by the person typing = observed. */
-  const stampObserved = (r: ApplicationRecord): ApplicationRecord => ({
-    ...r,
-    conditions_source:
-      r.wind_speed_mph != null || r.temperature_f != null ? "observed" : null,
-  });
   useEffect(() => {
     // The per-mission record (times, wind, temperature) has NO column in
     // flight_logs — it lives only on the settings snapshot of the same
@@ -422,6 +419,15 @@ export default function ReportsTab({
     tempF: record.temperature_f,
     startTime: record.start_time,
     endTime: record.end_time,
+    limits: settings.condition_limits ?? undefined,
+    // The area-mismatch note names the time skew when the grid was edited
+    // after the mission was logged — the diagnosed cause of "6/6 flown but
+    // the acreages differ".
+    assessedAt: isDone ? assessment.at : null,
+    loggedAt: effectiveLastLog?.created_at ?? null,
+    // Station data fetched for this mission, accepted or not: condition
+    // flagging runs on it even when the operator recorded different values.
+    modelCheck: record.model_check ?? null,
     fmtVolume: (l) => fmtVol(l, unit),
     fmtAcres: (ac2) => acres(ac2),
     fmtRatePerAc: (lPerAc) => `${fmtVol(lPerAc, unit, 2)}/ac`,
@@ -824,18 +830,17 @@ export default function ReportsTab({
         ["TREATED (LOGGED)", acresTreatedLogged != null ? acres(acresTreatedLogged) : null],
         ["MARKED (GRID)", hasGridAssessment ? acres(zoneSummary.totals.treatedAcres) : null],
         ["FIELD TOTAL", fieldAcres > 0 ? acres(fieldAcres) : null],
-        // Provenance prints with the value. "(observed)" = the applicator
-        // entered it; records from before provenance existed print bare
-        // rather than being stamped with a provenance nobody recorded. A
-        // model-data value from any future approved provider must carry its
-        // own label ("model data, X mi") — never a naked number.
+        // Provenance prints with the value: "(observed)" for what the
+        // applicator entered, "(model data — KMIC, 4.2 mi)" for an accepted
+        // NOAA station value. Records from before provenance existed print
+        // bare rather than being stamped with a provenance nobody recorded.
         ["WIND", record.wind_speed_mph != null && record.wind_direction
           ? `${record.wind_speed_mph} mph ${record.wind_direction}`
-            + (record.conditions_source === "observed" ? " (observed)" : "")
+            + conditionSourceLabel(record.wind_source, record.conditions_source)
           : null],
         ["TEMPERATURE", record.temperature_f != null
           ? `${record.temperature_f} °F`
-            + (record.conditions_source === "observed" ? " (observed)" : "")
+            + conditionSourceLabel(record.temp_source, record.conditions_source)
           : null],
         ["APPLICATOR CERT.", has(record.applicator_cert_no)],
         ["PART 137 CERT.", has(record.part137_cert_no)],
@@ -1320,8 +1325,10 @@ export default function ReportsTab({
                 <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Wind speed (mph)</label>
                 <input type="number" min={0} step={0.5}
                   value={record.wind_speed_mph ?? ""}
-                  onChange={e => setRecord(r => stampObserved({
-                    ...r, wind_speed_mph: e.target.value === "" ? null : Number(e.target.value),
+                  onChange={e => setRecord(r => ({
+                    ...r,
+                    wind_speed_mph: e.target.value === "" ? null : Number(e.target.value),
+                    wind_source: e.target.value === "" ? null : "observed",
                   }))}
                   className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
               </div>
@@ -1338,8 +1345,10 @@ export default function ReportsTab({
                 <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Temperature (°F)</label>
                 <input type="number" step={1}
                   value={record.temperature_f ?? ""}
-                  onChange={e => setRecord(r => stampObserved({
-                    ...r, temperature_f: e.target.value === "" ? null : Number(e.target.value),
+                  onChange={e => setRecord(r => ({
+                    ...r,
+                    temperature_f: e.target.value === "" ? null : Number(e.target.value),
+                    temp_source: e.target.value === "" ? null : "observed",
                   }))}
                   className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
               </div>
@@ -1355,6 +1364,39 @@ export default function ReportsTab({
                   onChange={e => setRecord(r => ({ ...r, part137_cert_no: e.target.value }))}
                   className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
               </div>
+              {/* Late backfill: a flight logged weeks ago with empty weather
+                  fields is exactly when a LABELED estimate beats a blank on a
+                  record that must be retained. Same suggestion flow as the Log
+                  Flight dialog — nothing enters until explicitly accepted, and
+                  an accepted value prints with model provenance. */}
+              {record.wind_speed_mph == null && record.temperature_f == null && (
+                <ConditionLookup
+                  center={center}
+                  dateYmd={missionDate}
+                  timeHm={record.start_time}
+                  onFetched={(s) => setRecord(r => ({
+                    ...r,
+                    model_check: {
+                      provider: s.provider, station: s.station, station_name: s.station_name,
+                      distance_mi: s.distance_mi, observed_at: s.observed_at,
+                      wind_mph: s.wind_mph, wind_dir: s.wind_dir, temp_f: s.temp_f,
+                      fetched_at: new Date().toISOString(),
+                    },
+                  }))}
+                  onAccept={(s) => setRecord(r => ({
+                    ...r,
+                    wind_speed_mph: s.wind_mph ?? r.wind_speed_mph,
+                    wind_direction: s.wind_dir ?? r.wind_direction,
+                    temperature_f: s.temp_f ?? r.temperature_f,
+                    wind_source: s.wind_mph != null
+                      ? { kind: "model", provider: s.provider, station: s.station, distance_mi: s.distance_mi, observed_at: s.observed_at }
+                      : r.wind_source,
+                    temp_source: s.temp_f != null
+                      ? { kind: "model", provider: s.provider, station: s.station, distance_mi: s.distance_mi, observed_at: s.observed_at }
+                      : r.temp_source,
+                  }))}
+                />
+              )}
             </div>
           </div>
 

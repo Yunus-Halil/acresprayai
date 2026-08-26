@@ -987,6 +987,7 @@ export default function OrthomosaicViewer() {
             settings={settings}
             activeDrone={parentActiveDrone}
             lastLog={parentLastLog}
+            center={center}
             setActiveTab={setActiveTab}
             prepareMapCapture={prepareMapCapture}
             restoreMapCapture={restoreMapCapture}

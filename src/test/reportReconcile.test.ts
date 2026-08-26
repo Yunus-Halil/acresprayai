@@ -8,8 +8,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AREA_TOLERANCE, RATE_BASELINE_RATIO, TEMP_LIMIT_F, VOLUME_PLAN_TOLERANCE, WIND_LIMIT_MPH,
-  areaMismatchNote, conditionFlags, endBeforeStartNote, overTankCapacityNote,
-  rateVsBaselineNote, reconcileReport, volumeVsPlanNote,
+  areaMismatchNote, conditionFlags, endBeforeStartNote, modelConditionFlags,
+  overTankCapacityNote, rateVsBaselineNote, reconcileReport, volumeVsPlanNote,
 } from "@/lib/reportReconcile";
 import { AC_PER_HA, L_PER_US_GAL } from "@/lib/units";
 
@@ -138,5 +138,63 @@ describe("the full pass over the reported document", () => {
       fmtVolume: gal, fmtAcres: ac, fmtRatePerAc: ratePerAc,
     });
     expect(notes).toEqual([]);
+  });
+});
+
+describe("operator-configured limits", () => {
+  it("flags against the operator's thresholds, not the hardcoded defaults", () => {
+    const limits = { wind_mph: 6, temp_f: 75 };
+    // 8 mph / 80 F: quiet on defaults, flagged for an orchard operator.
+    expect(conditionFlags(8, 80)).toHaveLength(0);
+    const flagged = conditionFlags(8, 80, limits);
+    expect(flagged).toHaveLength(2);
+    expect(flagged[0]).toMatch(/above 6 mph/);
+    expect(flagged[1]).toMatch(/above 75/);
+  });
+});
+
+describe("station data speaks even when the operator recorded different values", () => {
+  const check = {
+    wind_mph: 14, temp_f: 97, station: "KMIC", distance_mi: 4.2,
+  };
+
+  it("flags fetched conditions with the station named, no compliance claim", () => {
+    const flags = modelConditionFlags(check);
+    expect(flags).toHaveLength(2);
+    for (const f of flags) {
+      expect(f).toMatch(/KMIC, 4\.2 mi/);
+      expect(f).toMatch(/verify against the product label/i);
+      expect(f).not.toMatch(/non-compliant|violation/i);
+    }
+  });
+
+  it("runs in the full pass alongside the operator's own values", () => {
+    const notes = reconcileReport({
+      plannedL: 40, appliedL: 42, baselineLha: 25,
+      computedRateLPerAc: 42 / 3.8, markedAcres: 3.9, loggedTreatedAcres: 3.8,
+      zonesFlown: 6, zonesTotal: 6,
+      // Operator recorded calm conditions; the station disagreed.
+      windMph: 5, tempF: 74,
+      startTime: "07:30", endTime: "08:10",
+      modelCheck: check,
+      fmtVolume: gal, fmtAcres: ac, fmtRatePerAc: ratePerAc,
+    });
+    expect(notes.filter(n => n.kind === "conditions")).toHaveLength(2);
+    expect(notes[0].message).toMatch(/Station data/);
+  });
+});
+
+describe("the area note names the time skew when the grid moved on", () => {
+  it("says the grid was edited after logging when the timestamps show it", () => {
+    const notes = reconcileReport({
+      plannedL: null, appliedL: null, baselineLha: 25, computedRateLPerAc: null,
+      markedAcres: 0.95, loggedTreatedAcres: 0.7, zonesFlown: 6, zonesTotal: 6,
+      windMph: null, tempF: null, startTime: null, endTime: null,
+      assessedAt: "2026-08-25T18:00:00Z", loggedAt: "2026-08-20T12:00:00Z",
+      fmtVolume: gal, fmtAcres: ac, fmtRatePerAc: ratePerAc,
+    });
+    const area = notes.find(n => n.kind === "area-mismatch")!;
+    expect(area.message).toMatch(/edited since this mission was logged/i);
+    expect(area.message).toMatch(/marked area reflects today's grid/i);
   });
 });
