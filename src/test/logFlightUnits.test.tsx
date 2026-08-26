@@ -173,6 +173,24 @@ describe("impossible input warns at entry, in the operator's units", () => {
     const note = await screen.findByText(/outside typical application conditions/i);
     expect(note.textContent).toMatch(/verify against the product label/i);
   });
+
+  it("conditions typed by the applicator save with 'observed' provenance; none is invented", async () => {
+    const { onSaved } = renderModal();
+    const wind = document.querySelector('input[step="0.5"]') as HTMLInputElement;
+    fireEvent.change(wind, { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: /save flight log/i }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    const rec = onSaved.mock.calls[0][0].record;
+    expect(rec.wind_speed_mph).toBe(7);
+    expect(rec.conditions_source).toBe("observed");
+  });
+
+  it("a record with no conditions carries no provenance stamp", async () => {
+    const { onSaved } = renderModal();
+    fireEvent.click(screen.getByRole("button", { name: /save flight log/i }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(onSaved.mock.calls[0][0].record.conditions_source).toBeNull();
+  });
 });
 
 describe("an empty volume field stays empty", () => {

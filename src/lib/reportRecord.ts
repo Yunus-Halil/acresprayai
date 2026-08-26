@@ -25,6 +25,16 @@ export type ApplicationConditions = {
   wind_speed_mph: number | null;
   wind_direction: string | null;
   temperature_f: number | null;
+  /**
+   * Where the wind/temperature values came from. "observed" = the applicator
+   * entered what they saw on site. Reserved for a future approved provider:
+   * { kind: "model", provider, distanceMi, fetchedAt } — a fetched value is
+   * NOT an observed condition (grid data at 10 m height, kilometres wide) and
+   * must never print without its provenance label. Absent on records made
+   * before provenance existed; those print unlabelled rather than being
+   * stamped with a provenance nobody recorded.
+   */
+  conditions_source?: "observed" | null;
 };
 
 export type ApplicationRecord = ApplicationRecordDefaults & ApplicationConditions;
@@ -302,7 +312,7 @@ export function summariseZones(rows: ReportZoneRow[], fieldAcres: number): ZoneS
   const byKey = new Map<string, ZoneGroup>();
   for (const z of rows) {
     const label = z.issue.trim() || "Unclassified";
-    const key = `${label} ${z.rateLha ?? ""}`;
+    const key = `${label}\u0000${z.rateLha ?? ""}`;
     let g = byKey.get(key);
     if (!g) {
       byKey.set(key, (g = {

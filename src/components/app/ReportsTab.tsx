@@ -201,6 +201,12 @@ export default function ReportsTab({
   // in the Log Flight dialog), then the field's stored defaults, and editable
   // here so an older mission's gaps can be corrected before generating.
   const [record, setRecord] = useState<ApplicationRecord>(EMPTY_RECORD);
+  /** Values typed into THIS form were seen by the person typing = observed. */
+  const stampObserved = (r: ApplicationRecord): ApplicationRecord => ({
+    ...r,
+    conditions_source:
+      r.wind_speed_mph != null || r.temperature_f != null ? "observed" : null,
+  });
   useEffect(() => {
     // The per-mission record (times, wind, temperature) has NO column in
     // flight_logs — it lives only on the settings snapshot of the same
@@ -818,9 +824,19 @@ export default function ReportsTab({
         ["TREATED (LOGGED)", acresTreatedLogged != null ? acres(acresTreatedLogged) : null],
         ["MARKED (GRID)", hasGridAssessment ? acres(zoneSummary.totals.treatedAcres) : null],
         ["FIELD TOTAL", fieldAcres > 0 ? acres(fieldAcres) : null],
+        // Provenance prints with the value. "(observed)" = the applicator
+        // entered it; records from before provenance existed print bare
+        // rather than being stamped with a provenance nobody recorded. A
+        // model-data value from any future approved provider must carry its
+        // own label ("model data, X mi") — never a naked number.
         ["WIND", record.wind_speed_mph != null && record.wind_direction
-          ? `${record.wind_speed_mph} mph ${record.wind_direction}` : null],
-        ["TEMPERATURE", record.temperature_f != null ? `${record.temperature_f} °F` : null],
+          ? `${record.wind_speed_mph} mph ${record.wind_direction}`
+            + (record.conditions_source === "observed" ? " (observed)" : "")
+          : null],
+        ["TEMPERATURE", record.temperature_f != null
+          ? `${record.temperature_f} °F`
+            + (record.conditions_source === "observed" ? " (observed)" : "")
+          : null],
         ["APPLICATOR CERT.", has(record.applicator_cert_no)],
         ["PART 137 CERT.", has(record.part137_cert_no)],
       ];
@@ -1304,7 +1320,7 @@ export default function ReportsTab({
                 <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Wind speed (mph)</label>
                 <input type="number" min={0} step={0.5}
                   value={record.wind_speed_mph ?? ""}
-                  onChange={e => setRecord(r => ({
+                  onChange={e => setRecord(r => stampObserved({
                     ...r, wind_speed_mph: e.target.value === "" ? null : Number(e.target.value),
                   }))}
                   className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
@@ -1322,7 +1338,7 @@ export default function ReportsTab({
                 <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Temperature (°F)</label>
                 <input type="number" step={1}
                   value={record.temperature_f ?? ""}
-                  onChange={e => setRecord(r => ({
+                  onChange={e => setRecord(r => stampObserved({
                     ...r, temperature_f: e.target.value === "" ? null : Number(e.target.value),
                   }))}
                   className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />

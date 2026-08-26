@@ -438,6 +438,11 @@ export function LogFlightModal({
     wind_speed_mph: rec.wind_speed_mph,
     wind_direction: rec.wind_direction || null,
     temperature_f: rec.temperature_f,
+    // Typed into this dialog by the person who was there = observed. A future
+    // approved weather provider gets its own provenance kind; a fetched value
+    // must never wear this label.
+    conditions_source:
+      rec.wind_speed_mph != null || rec.temperature_f != null ? "observed" : null,
   });
 
   const save = async () => {

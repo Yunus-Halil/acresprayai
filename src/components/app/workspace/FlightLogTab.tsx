@@ -70,9 +70,16 @@ function RecordBlock({ record }: { record: ApplicationRecord }) {
     ["EPA reg. no.", record.epa_reg_no || null],
     ["Start", record.start_time],
     ["End", record.end_time],
+    // "(observed)" = entered by the applicator; pre-provenance records print
+    // bare rather than being stamped with a provenance nobody recorded.
     ["Wind", record.wind_speed_mph != null && record.wind_direction
-      ? `${record.wind_speed_mph} mph ${record.wind_direction}` : null],
-    ["Temperature", record.temperature_f != null ? `${record.temperature_f} °F` : null],
+      ? `${record.wind_speed_mph} mph ${record.wind_direction}`
+        + (record.conditions_source === "observed" ? " (observed)" : "")
+      : null],
+    ["Temperature", record.temperature_f != null
+      ? `${record.temperature_f} °F`
+        + (record.conditions_source === "observed" ? " (observed)" : "")
+      : null],
     ["Applicator cert.", record.applicator_cert_no || null],
     ["Part 137 cert.", record.part137_cert_no || null],
   ];
