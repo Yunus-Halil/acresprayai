@@ -231,6 +231,12 @@ export type TreatmentGrid = {
   cells: TreatmentCell[];
   warnings: GridWarning[];
   cellSizeM: number;
+  /**
+   * Which scan's imagery the current reference points were confirmed against
+   * (see treatmentGridStore.GridAssessedAgainst). Null/absent = unknown
+   * provenance: opened on any scan, this grid is carried over until confirmed.
+   */
+  assessed?: import("./treatmentGridStore").GridAssessedAgainst | null;
 };
 
 // ---------------------------------------------------------------------------

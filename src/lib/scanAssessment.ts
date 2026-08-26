@@ -33,6 +33,28 @@ import { GRID_SOURCE } from "./compareGround";
 
 export { GRID_SOURCE };
 
+/**
+ * Fired after any successful grid write (paint save, Find Similar scores,
+ * clear, confirm). Field View is PERMANENTLY MOUNTED — only hidden on tab
+ * switch, to keep its Leaflet state — so its load-on-mount of grid zones
+ * never re-ran when the operator edited the grid in another tab and came
+ * back: they saw the old grid drawn over the new state. Anything holding
+ * long-lived grid-derived state listens for this and reloads.
+ */
+export const GRID_CHANGED_EVENT = "swathwise:grid-changed";
+
+/**
+ * Callers announce AFTER a successful grid write — deliberately not baked
+ * into the snapshot writer, because the zone-classify popup writes through
+ * the same path while the operator is mid-edit, and a reload there would
+ * yank the popup out from under them (GridAnomaliesLayer's drafts note).
+ */
+export const announceGridChanged = () => {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(GRID_CHANGED_EVENT));
+  }
+};
+
 /** A zone as frozen onto a scan: everything display needs, nothing else. */
 export type SnapshotZone = {
   id: string;
@@ -99,7 +121,16 @@ function assessmentFromGrid(grid: TreatmentGrid): ScanAssessment {
 export async function snapshotGridAssessment(
   taskId: string,
   grid: TreatmentGrid,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
+  // THE INHERITANCE GATE. The grid is field-keyed and carries forward to
+  // every new scan, but its reference points were judged against ONE scan's
+  // imagery. Until the operator confirms (or adjusts) them on this scan, the
+  // carried-over grid is a starting point — writing it onto this scan's row
+  // would present an inherited grid as an assessment of imagery nobody
+  // assessed. Skipped, not failed: the grid save itself succeeded.
+  if (grid.assessed?.scanId !== taskId) {
+    return { ok: true, skipped: true };
+  }
   const assessment = assessmentFromGrid(grid);
   const { error } = await supabase.from("odm_tasks")
     .update({

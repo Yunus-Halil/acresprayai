@@ -71,9 +71,31 @@ export type ScanBounds = { north: number; south: number; east: number; west: num
  * function addresses the bucket, and the token rides in the query string
  * because Leaflet loads tiles as plain <img> elements and cannot set headers.
  */
-export function rgbTileUrl(scan: ComparableScan, token: string | null): string | null {
+/**
+ * A cache key for the RGB tiles, derived from HOW they were rendered.
+ *
+ * Baked tiles are served immutable, and their path carries only the scan's
+ * uuid — so after a rebake with a different render plan (band order fixed,
+ * new stretch), a browser holding the old tiles under a still-valid token
+ * kept serving them. The plan itself is the honest version: same plan, same
+ * pixels; new plan, new URL.
+ */
+export function renderVersion(info: ScanIndexInfo | null | undefined): string {
+  const r = info?.render;
+  if (!r) return "";
+  return [r.dtype ?? "", (r.bidx ?? []).join("-"), r.rescale.map(p => p.join("_")).join("-")]
+    .join("~");
+}
+
+export function rgbTileUrl(
+  scan: ComparableScan,
+  token: string | null,
+  info?: ScanIndexInfo | null,
+): string | null {
   if (!scan.odm_uuid || !token) return null;
-  return `${TILE_BASE}/${scan.odm_uuid}/{z}/{x}/{y}.png?token=${token}`;
+  const v = renderVersion(info);
+  return `${TILE_BASE}/${scan.odm_uuid}/{z}/{x}/{y}.png?token=${token}`
+    + (v ? `&v=${encodeURIComponent(v)}` : "");
 }
 
 /**

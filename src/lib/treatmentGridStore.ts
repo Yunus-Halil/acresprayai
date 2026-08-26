@@ -42,6 +42,24 @@ export type PackedDetection = {
   scores: number[];
 };
 
+/**
+ * Which scan's imagery the current reference points were confirmed against.
+ *
+ * The grid is FIELD-keyed and carries forward to every new scan — but its
+ * reference cells were judged against one specific orthomosaic's pixels, and
+ * a new flight has different growth, lighting and sun angle. So provenance is
+ * part of the grid: opened on a different scan, the grid is a CARRIED-OVER
+ * starting point, not an assessment, until the operator confirms (or adjusts)
+ * the points against the imagery actually on screen. Grids stored before this
+ * field existed have unknown provenance and are treated as carried over.
+ */
+export type GridAssessedAgainst = {
+  scanId: string;
+  /** ISO date of that scan's capture, for "carried over from 12 May" copy. */
+  scanDate: string | null;
+  at: string;
+};
+
 /** Everything needed to rebuild a grid's state onto freshly computed geometry. */
 export type StoredGrid = {
   definition: GridDefinition;
@@ -51,6 +69,7 @@ export type StoredGrid = {
    */
   rates: Record<CellId, CellRate>;
   detection: PackedDetection | null;
+  assessed?: GridAssessedAgainst | null;
 };
 
 export interface TreatmentGridRepository {
@@ -101,6 +120,7 @@ export function packGrid(grid: TreatmentGrid): StoredGrid {
     definition: grid.definition,
     rates,
     detection: cellIds.length ? { modelVersion, scoredAt, cellIds, scores } : null,
+    assessed: grid.assessed ?? null,
   };
 }
 
@@ -129,6 +149,7 @@ export function applyStored(grid: TreatmentGrid, stored: StoredGrid | null): Tre
 
   return {
     ...grid,
+    assessed: stored.assessed ?? null,
     cells: grid.cells.map(c => ({
       ...c,
       rate: stored.rates[c.id] ?? c.rate,

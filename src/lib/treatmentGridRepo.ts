@@ -88,7 +88,23 @@ export function parseStoredGrid(raw: unknown): StoredGrid | null {
     }
   }
 
-  return { definition: d as StoredGrid["definition"], rates, detection };
+  // Provenance: which scan the reference points were confirmed against. A
+  // malformed or absent stamp degrades to null — "unknown, treat as carried
+  // over" — never to a claim of having been assessed against anything.
+  let assessed: StoredGrid["assessed"] = null;
+  const rawA = (g as { assessed?: unknown }).assessed;
+  if (rawA && typeof rawA === "object") {
+    const a = rawA as { scanId?: unknown; scanDate?: unknown; at?: unknown };
+    if (typeof a.scanId === "string" && a.scanId && typeof a.at === "string") {
+      assessed = {
+        scanId: a.scanId,
+        scanDate: typeof a.scanDate === "string" ? a.scanDate : null,
+        at: a.at,
+      };
+    }
+  }
+
+  return { definition: d as StoredGrid["definition"], rates, detection, assessed };
 }
 
 /** Records a StoredGrid would occupy — the number the ceiling applies to. */

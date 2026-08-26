@@ -62,6 +62,7 @@ import SettingsTab from "@/components/app/workspace/SettingsTab";
 import { loadAnnotations } from "@/components/app/workspace/layers";
 import Seo from "@/components/Seo";
 import { useNdviLayerDefault } from "@/lib/ndviLayer";
+import { renderVersion } from "@/lib/scanLayers";
 
 // Endpoints and load-loop bounds live in ./workspace/constants, imported above.
 
@@ -475,9 +476,14 @@ export default function OrthomosaicViewer() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // `rev` busts the browser's immutable tile cache after an in-session rebake.
+  // `rev` busts the browser's immutable tile cache after an in-session rebake;
+  // `v` (the render plan, from /info once it loads) does the same across
+  // sessions — a rebake changes the plan, the plan changes the URL, so a
+  // browser holding tiles baked with the old plan cannot keep serving them.
+  const renderV = renderVersion(ndviInfo as Parameters<typeof renderVersion>[0]);
   const tileUrl = tileTemplate && token
     ? `${tileTemplate}?token=${token}${tileRev ? `&rev=${tileRev}` : ""}`
+      + (renderV ? `&v=${encodeURIComponent(renderV)}` : "")
     : null;
   // The fingerprint identifies the resolved band mapping. Embedding it means a
   // corrected mapping yields a different URL, so the browser's 24h tile cache
@@ -951,6 +957,7 @@ export default function OrthomosaicViewer() {
             maxNative={maxNative}
             fieldId={field?.id ?? null}
             taskId={taskId!}
+            scanCreatedAt={task.created_at ?? null}
             spec={resolveDroneSpec(parentActiveDrone?.model, settings.flight_plan.custom_specs).spec}
             settings={settings}
             setActiveTab={setActiveTab}

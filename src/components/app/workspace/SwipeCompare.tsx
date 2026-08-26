@@ -192,7 +192,9 @@ export function ComparePanes({
     if (side.imagery === "index" && side.index) {
       return indexTileUrl(scan, token, side.index, info);
     }
-    const u = rgbTileUrl(scan, token);
+    // `info` carries the render plan, which versions the URL past any cached
+    // tiles from an older bake.
+    const u = rgbTileUrl(scan, token, info);
     return u ? `${u}&rev=${rev}` : null;
   };
   const aUrl = urlFor(a, sideA, aInfo);

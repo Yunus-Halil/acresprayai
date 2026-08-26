@@ -1657,6 +1657,17 @@ export function PlannerTab({
         <div className="rounded-sm border border-[#222] p-3 mb-4 text-xs space-y-1.5" style={{ background: "#0f0f0f" }}>
           <div className="flex justify-between"><span className="text-neutral-500">Zones</span>
             <span className="font-mono">{validZones.length} of {allZonesRaw.length} <span className="text-neutral-600">(grid {gridZonesRaw.length} · marks {userZonesRaw.length})</span></span></div>
+          {/* Inherited grids can be flown — the operator's call — but never
+              without being told the zones were judged on another flight. */}
+          {grid && gridZonesRaw.length > 0 && grid.assessed?.scanId !== taskId && (
+            <div className="text-[10px] leading-snug text-amber-500/90">
+              These grid zones were carried over from
+              {grid.assessed?.scanDate
+                ? ` your ${new Date(grid.assessed.scanDate).toLocaleDateString()} scan`
+                : " an earlier scan"} and have not been confirmed against this scan's imagery.
+              Review them in the Treatment Grid before flying.
+            </div>
+          )}
           <div className="flex justify-between"><span className="text-neutral-500">Waypoints (our pattern)</span>
             <span className="font-mono">{mission?.waypoints.length ?? 0}</span></div>
           <div className="flex justify-between"><span className="text-neutral-500">Est. spray distance</span>

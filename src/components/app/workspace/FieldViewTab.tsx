@@ -59,7 +59,7 @@ import GridAnomaliesLayer from "./GridAnomaliesLayer";
 import { type GridZonesLoad, clearGridZones, loadGridZones } from "@/lib/gridAnomalies";
 import { fmtArea } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
-import { snapshotGridAssessmentFromStore } from "@/lib/scanAssessment";
+import { GRID_CHANGED_EVENT, snapshotGridAssessmentFromStore } from "@/lib/scanAssessment";
 import { ScanPanel, useFieldScans, useScanInfo } from "./ScanTimeline";
 import {
   type SideLayerState, ComparePanes, CompareStatsBar, DEFAULT_SIDE,
@@ -256,6 +256,32 @@ export function FieldViewTab(props: {
       .catch(e => console.error("[fieldview] grid zones load failed", e));
     return () => { cancelled = true; };
   }, [props.fieldId, props.boundary, gridZoneNonce]);
+
+  // This tab is PERMANENTLY MOUNTED (only hidden on tab switch, to keep the
+  // Leaflet map alive), so the load above never re-ran after the operator
+  // edited the grid in the Treatment Grid tab — they came back to the OLD
+  // zones drawn over the new state. Grid writes announce themselves; reload.
+  useEffect(() => {
+    const onGridChanged = () => {
+      setGridZoneNonce(n => n + 1);
+      scansApi.bumpScansNonce();
+    };
+    window.addEventListener(GRID_CHANGED_EVENT, onGridChanged);
+    return () => window.removeEventListener(GRID_CHANGED_EVENT, onGridChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Carried over: the live grid's reference points were confirmed against a
+  // different scan's imagery (or none on record). The overlay still draws —
+  // hiding it would hide real painted work — but says what it is.
+  const gridCarriedOver = !!gridZoneLoad?.grid &&
+    gridZoneLoad.grid.cells.some(c => c.rate.source !== "default" || c.detection !== null) &&
+    gridZoneLoad.grid.assessed?.scanId !== taskId;
+  const gridCarriedFrom = gridCarriedOver
+    ? (gridZoneLoad?.grid?.assessed?.scanDate
+        ? new Date(gridZoneLoad.grid.assessed.scanDate).toLocaleDateString()
+        : "an earlier scan")
+    : null;
 
   /**
    * Wipe every treated cell for this field.
@@ -709,6 +735,12 @@ export function FieldViewTab(props: {
           {gridZoneLoad?.stale && (
             <div className="pl-6 text-[10px] text-amber-500/90 leading-relaxed">
               Built for an older boundary, open the Treatment Grid tab to migrate it.
+            </div>
+          )}
+          {gridCarriedOver && (
+            <div className="pl-6 text-[10px] text-amber-500/90 leading-relaxed">
+              Carried over from {gridCarriedFrom} — not yet confirmed against this scan's
+              imagery. Review it in the Treatment Grid tab.
             </div>
           )}
           {!!gridZoneLoad?.zones.length && (

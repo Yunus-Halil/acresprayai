@@ -40,7 +40,9 @@ import {
 } from "@/lib/findSimilar";
 import { MIN_MARKS_PER_CLASS } from "@/lib/matchCells";
 import { resolutionSufficient, stitchTiles } from "@/lib/orthoRaster";
-import { recordGridRunFailure, snapshotGridAssessment } from "@/lib/scanAssessment";
+import {
+  announceGridChanged, recordGridRunFailure, snapshotGridAssessment,
+} from "@/lib/scanAssessment";
 import { type MigrationPlan, applyMigration, planMigration } from "@/lib/gridMigrate";
 import { SupabaseTreatmentGridRepository } from "@/lib/treatmentGridRepo";
 import type { GridRenderInfo } from "./TreatmentGridLayer";
@@ -58,7 +60,7 @@ const repo = new SupabaseTreatmentGridRepository();
 type Tool = "inspect" | "paint";
 
 export function TreatmentTab({
-  boundary, tileUrl, bounds, maxNative, fieldId, taskId, spec, settings, setActiveTab,
+  boundary, tileUrl, bounds, maxNative, fieldId, taskId, scanCreatedAt, spec, settings, setActiveTab,
 }: {
   boundary: BoundaryRing[] | null;
   tileUrl: string;
@@ -68,9 +70,14 @@ export function TreatmentTab({
   /**
    * The scan whose imagery is on screen. Every successful grid write made here
    * snapshots the zones onto this scan (lib/scanAssessment.ts) — that is what
-   * scan cards, compare statistics and the spray report read.
+   * scan cards, compare statistics and the spray report read. Any operator
+   * edit also stamps the grid as assessed against THIS scan, because the
+   * field-keyed grid carries forward to new scans and must not present an
+   * older scan's judgments as an assessment of this imagery.
    */
   taskId: string;
+  /** ISO capture time of this scan, kept on the provenance stamp. */
+  scanCreatedAt: string | null;
   spec: DroneSpec;
   settings: FarmerSettings;
   /** Narrow on purpose: the only tab this screen sends anyone to is Field View. */
@@ -210,10 +217,15 @@ export function TreatmentTab({
         await repo.save(fieldId, packGrid(grid));
         dirty.current = false;
         setSavedAt(Date.now());
+        // Field View is permanently mounted and holds its own copy of the
+        // zones; this is what tells it (and the scan panel) to reload.
+        announceGridChanged();
         // Freeze the zones onto the scan the operator is working against, so
         // this assessment survives as this scan's record after the grid moves
-        // on. A failed snapshot is a failed save of the scan record — said,
-        // not swallowed.
+        // on. Skipped (not failed) when the grid is carried over from another
+        // scan and unconfirmed — an inherited grid is not an assessment. A
+        // genuinely failed snapshot is a failed save of the scan record —
+        // said, not swallowed.
         const snap = await snapshotGridAssessment(taskId, grid);
         if (!snap.ok) {
           setSaveError(`Grid saved, but the scan's assessment record did not update: ${snap.error}`);
@@ -239,10 +251,21 @@ export function TreatmentTab({
     if (dirty.current && fieldId && gridRef.current && !pendingRef.current) {
       const g = gridRef.current;
       repo.save(fieldId, packGrid(g))
-        .then(() => snapshotGridAssessment(taskId, g))
+        .then(() => { announceGridChanged(); return snapshotGridAssessment(taskId, g); })
         .catch(e => console.error("[grid] flush on unmount failed", e));
     }
   }, [fieldId, taskId]);
+
+  /**
+   * The provenance stamp: this grid's reference points were judged against
+   * THIS scan's imagery, now. Applied by every operator edit — adjusting the
+   * points on the imagery IS reviewing them — and by the explicit Confirm.
+   */
+  const assessedHere = useCallback(() => ({
+    scanId: taskId,
+    scanDate: scanCreatedAt,
+    at: new Date().toISOString(),
+  }), [taskId, scanCreatedAt]);
 
   const mutate = useCallback((ids: readonly CellId[], next: (cur: CellRate) => CellRate) => {
     // Locked while a migration decision is pending: the first write would
@@ -254,9 +277,53 @@ export function TreatmentTab({
     dirty.current = true;
     setGrid(g => g && ({
       ...g,
+      assessed: assessedHere(),
       cells: g.cells.map(c => (touch.has(c.id) ? { ...c, rate: next(c.rate) } : c)),
     }));
-  }, []);
+  }, [assessedHere]);
+
+  // Carried over: the grid holds decisions or scores made against a DIFFERENT
+  // scan's imagery (or one from before provenance existed). It is a starting
+  // point here — shown, editable, but not an assessment of this scan until
+  // the operator confirms or adjusts it.
+  const hasWork = !!grid && grid.cells.some(
+    c => c.rate.source !== "default" || c.detection !== null,
+  );
+  const inherited = hasWork && grid!.assessed?.scanId !== taskId;
+  const inheritedFrom = inherited
+    ? (grid!.assessed?.scanDate
+        ? new Date(grid!.assessed.scanDate).toLocaleDateString(undefined, {
+            year: "numeric", month: "long", day: "numeric",
+          })
+        : "an earlier scan")
+    : null;
+
+  const confirmInherited = () => {
+    if (pendingRef.current) return;
+    dirty.current = true;
+    setGrid(g => g && ({ ...g, assessed: assessedHere() }));
+  };
+
+  const startFresh = () => {
+    if (pendingRef.current) return;
+    if (!window.confirm(
+      "Clear the carried-over grid and start fresh on this scan? Every reference point, " +
+      "rate and Find Similar score from the previous scan will be removed. This cannot be undone.",
+    )) return;
+    dirty.current = true;
+    setCandidates(null);
+    setFindNote(null);
+    setFindError(null);
+    setGrid(g => g && ({
+      ...g,
+      assessed: assessedHere(),
+      cells: g.cells.map(c => ({
+        ...c,
+        rate: { state: "untreated", source: "default" } as CellRate,
+        detection: null,
+      })),
+    }));
+  };
 
   /** What a "treat" stroke writes: the rate, plus how it was described. */
   const treatedRate = useCallback((): CellRate => {
@@ -328,13 +395,20 @@ export function TreatmentTab({
   );
   const findDisabledReason = !grid
     ? "The grid has not been built yet."
-    : labels.wanted.length < MIN_MARKS_PER_CLASS || labels.unwanted.length < MIN_MARKS_PER_CLASS
-      ? `Needs ${MIN_MARKS_PER_CLASS} cells marked treated and ${MIN_MARKS_PER_CLASS} explicitly ` +
-        `skipped (Assign › Skip) to learn from, currently ${labels.wanted.length} treated, ` +
-        `${labels.unwanted.length} skipped. Cells never touched don't count as examples.`
-      : !tileUrl
-        ? "The orthomosaic tiles are still loading."
-        : null;
+    // Find Similar learns from the reference points AS THEY READ ON THIS
+    // IMAGERY — carried-over points were judged on a different flight's
+    // pixels (different growth, light, sun angle), so matching against them
+    // here would extrapolate from examples nobody vetted on this scan.
+    : inherited
+      ? `These reference points were carried over from ${inheritedFrom}. Confirm or adjust ` +
+        `them against this scan's imagery first (banner above).`
+      : labels.wanted.length < MIN_MARKS_PER_CLASS || labels.unwanted.length < MIN_MARKS_PER_CLASS
+        ? `Needs ${MIN_MARKS_PER_CLASS} cells marked treated and ${MIN_MARKS_PER_CLASS} explicitly ` +
+          `skipped (Assign › Skip) to learn from, currently ${labels.wanted.length} treated, ` +
+          `${labels.unwanted.length} skipped. Cells never touched don't count as examples.`
+        : !tileUrl
+          ? "The orthomosaic tiles are still loading."
+          : null;
 
   /**
    * Stitch the ortho tiles and extract per-cell features — the shared front
@@ -398,7 +472,9 @@ export function TreatmentTab({
       // assigning. Model version marks these as kNN scores, not centroid ones.
       if (result.scores.size) {
         dirty.current = true;
-        setGrid(g => (g ? applyScores(g, result.scores, new Date().toISOString()) : g));
+        setGrid(g => (g
+          ? { ...applyScores(g, result.scores, new Date().toISOString()), assessed: assessedHere() }
+          : g));
       }
 
       setCandidateMode("similar");
@@ -650,6 +726,38 @@ export function TreatmentTab({
               <AlertTriangle className="h-3.5 w-3.5" /> Grid not generated
             </div>
             {buildError}
+          </div>
+        )}
+
+        {/* Carried over from another scan — a starting point, not an
+            assessment. The points stay visible and editable on the NEW
+            imagery (adjusting anything confirms), but Find Similar is held
+            and no scan record is written until the operator decides. */}
+        {inherited && !pendingMigration && (
+          <div className="rounded-sm border border-amber-800/60 bg-amber-950/20 p-3 mb-4 text-[11px] leading-relaxed">
+            <div className="flex items-center gap-1.5 font-semibold text-amber-300 mb-1.5">
+              <AlertTriangle className="h-3.5 w-3.5" /> Carried over from {inheritedFrom}
+            </div>
+            <p className="text-neutral-300 mb-2">
+              These reference points were judged against that scan's imagery. This flight has
+              different growth and light, so they are shown here as a starting point — review
+              them on the current imagery, then confirm, adjust, or clear. Until then this scan
+              counts as not yet assessed.
+            </p>
+            <div className="flex gap-1.5">
+              <button
+                onClick={confirmInherited}
+                className="flex-1 text-[11px] rounded-sm px-2 py-1.5 bg-[#4CAF50] hover:bg-[#43a047] text-black font-semibold"
+              >
+                They still hold — confirm for this scan
+              </button>
+              <button
+                onClick={startFresh}
+                className="text-[11px] rounded-sm px-2 py-1.5 border border-[#333] text-neutral-300 hover:bg-[#1a1a1a]"
+              >
+                Clear and start fresh
+              </button>
+            </div>
           </div>
         )}
 

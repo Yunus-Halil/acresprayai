@@ -43,7 +43,7 @@ function installDb(existing: Row | null) {
   return updates;
 }
 
-function paintedGrid() {
+function paintedGrid(assessedScanId: string | null = "task-1") {
   const def = gridDefinitionFor([RING], 10, 1);
   const grid = buildTreatmentGrid([RING], def);
   const treated: CellRate = { state: "treated", rateLha: 25, source: "operator", issue: "Weed pressure" };
@@ -53,10 +53,41 @@ function paintedGrid() {
     : i === 2 ? { ...c, rate: skipped }
     : c
   ));
-  return { ...grid, cells };
+  return {
+    ...grid,
+    cells,
+    assessed: assessedScanId
+      ? { scanId: assessedScanId, scanDate: "2026-08-20T10:00:00Z", at: "2026-08-25T10:00:00Z" }
+      : null,
+  };
 }
 
 beforeEach(() => { vi.clearAllMocks(); });
+
+describe("the inheritance gate", () => {
+  it("refuses to write a carried-over grid onto a scan it was not confirmed against", async () => {
+    const updates = installDb(null);
+    // Confirmed against a DIFFERENT scan — the rescan-inheritance case.
+    const res = await snapshotGridAssessment("task-2", paintedGrid("task-1"));
+    expect(res).toEqual({ ok: true, skipped: true });
+    expect(updates).toHaveLength(0);
+  });
+
+  it("treats unknown provenance (pre-provenance grids) as carried over too", async () => {
+    const updates = installDb(null);
+    const res = await snapshotGridAssessment("task-1", paintedGrid(null));
+    expect(res).toEqual({ ok: true, skipped: true });
+    expect(updates).toHaveLength(0);
+  });
+
+  it("a skipped snapshot leaves the scan reading as NOT yet assessed", async () => {
+    installDb(null);
+    await snapshotGridAssessment("task-2", paintedGrid("task-1"));
+    // Nothing was written, so the scan row still decodes as none.
+    const state = analysisStateOf({ ai_analysis: null, ai_analysis_at: null });
+    expect(state.kind).toBe("none");
+  });
+});
 
 describe("snapshotGridAssessment", () => {
   it("freezes the grid's zones, reference counts and provenance onto the scan", async () => {
@@ -93,7 +124,10 @@ describe("snapshotGridAssessment", () => {
   it("an unpainted grid snapshots as NONE downstream — no fabricated clean result", async () => {
     const updates = installDb(null);
     const def = gridDefinitionFor([RING], 10, 1);
-    await snapshotGridAssessment("task-1", buildTreatmentGrid([RING], def));
+    await snapshotGridAssessment("task-1", {
+      ...buildTreatmentGrid([RING], def),
+      assessed: { scanId: "task-1", scanDate: null, at: "2026-08-25T10:00:00Z" },
+    });
 
     const written = updates[0] as { ai_analysis: unknown; ai_analysis_at: string };
     const state = analysisStateOf({ ai_analysis: written.ai_analysis, ai_analysis_at: written.ai_analysis_at });
