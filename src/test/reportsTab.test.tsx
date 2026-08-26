@@ -142,6 +142,55 @@ describe("a legacy vision result is marked, never dressed as a grid assessment",
   });
 });
 
+describe("the logged application record prefills the report", () => {
+  it("reads conditions off the settings snapshot when the DB row of the same mission carries none", async () => {
+    // Exactly the shape production has: flight_logs has no record column, so
+    // the DB row arrives bare while the settings snapshot of the SAME mission
+    // (matched by id) holds the wind/temperature the pilot logged. The report
+    // once picked the bare row, read .record, and prefilled nothing — while
+    // the Flight Log tab displayed those values one tab over.
+    const dbRow = {
+      id: "log-1", field_id: "field-1", scan_id: "scan-1", drone_id: null,
+      date_flown: "2026-08-20", battery_start: 61, battery_end: 25,
+      tank_refills: 0, zones_completed: ["z1"], acres_treated: 0.7,
+      liters_applied: 40.1, notes: "windy pm", created_at: "2026-08-20T12:00:00Z",
+    };
+    fromMock.mockImplementation(tableStub({
+      odm_tasks: [{ ai_analysis: null, ai_analysis_at: null }],
+      flight_logs: [dbRow],
+      field_reports: [],
+    }));
+    const settings = {
+      ...DEFAULT_FARMER_SETTINGS,
+      last_flown_mission: {
+        ...dbRow,
+        source: "flight_logs" as const,
+        record: {
+          grower_name: "John Jenkins", product_name: "Agrispray", epa_reg_no: "24532S",
+          applicator_cert_no: "354Z45NN", part137_cert_no: "32515Z",
+          start_time: null, end_time: null,
+          wind_speed_mph: 11, wind_direction: "SE", temperature_f: 97,
+        },
+      },
+    };
+    const { container } = renderTab({ settings });
+
+    await waitFor(() => {
+      const wind = container.querySelector('input[type="number"][step="0.5"]') as HTMLInputElement;
+      expect(wind.value).toBe("11");
+    });
+    // Tank refills shares step="1", so gather all and look for the logged 97°F.
+    const stepOnes = [...container.querySelectorAll('input[type="number"][step="1"]')]
+      .map(el => (el as HTMLInputElement).value);
+    expect(stepOnes).toContain("97");
+    // Times were genuinely not logged: they stay blank and keep the DRAFT —
+    // prefill fills what was recorded, never what wasn't.
+    const notice = await screen.findByText(/DRAFT — INCOMPLETE/i);
+    expect(notice.parentElement?.textContent).toMatch(/Application start time/);
+    expect(notice.parentElement?.textContent).not.toMatch(/Wind speed|Temperature/);
+  });
+});
+
 describe("mission logs from other scans stay out", () => {
   it("does not adopt a field-level log flown against a different scan", async () => {
     const foreignLog = {

@@ -201,7 +201,16 @@ export default function ReportsTab({
   // here so an older mission's gaps can be corrected before generating.
   const [record, setRecord] = useState<ApplicationRecord>(EMPTY_RECORD);
   useEffect(() => {
-    const fromLog = effectiveLastLog?.record;
+    // The per-mission record (times, wind, temperature) has NO column in
+    // flight_logs — it lives only on the settings snapshot of the same
+    // mission. When the database row wins the "which log" pick, reading
+    // `.record` off it finds nothing, and the operator watched their logged
+    // wind and temperature fail to prefill while the Flight Log tab happily
+    // displayed them. So: take the record from whichever carrier of THIS
+    // mission actually has it, matched by id.
+    const snap = settings.last_flown_mission;
+    const fromLog = effectiveLastLog?.record
+      ?? (effectiveLastLog && snap?.id === effectiveLastLog.id ? snap.record : null);
     const defaults = settings.application_record;
     setRecord({
       ...EMPTY_RECORD,
@@ -209,7 +218,7 @@ export default function ReportsTab({
       ...(fromLog ?? {}),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveLastLog?.id]);
+  }, [effectiveLastLog?.id, settings.last_flown_mission?.id]);
 
   // Whenever the logged-flight backing data changes, re-prefill the editable
   // fields. Pilot can still type over any of them.
