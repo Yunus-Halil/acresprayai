@@ -78,11 +78,23 @@ export function bannerFor(input: {
   isPostFlight: boolean;
   savingsPct: number;
   /**
-   * The two volumes the savings percentage is computed from, pre-formatted.
-   * When present, the post-flight subtitle prints them so the headline is
-   * reproducible from the page.
+   * The volumes the savings claim is computed from, pre-formatted so the
+   * headline is reproducible from the page. Post-flight, `applied` (the
+   * LOGGED volume) is what the claim must rest on — a projection printed
+   * beside a record that contradicts it is the most damaging thing this
+   * document can do.
    */
-  chemical?: { planned: string; fullField: string; baselineRate: string };
+  chemical?: {
+    planned: string;
+    fullField: string;
+    baselineRate: string;
+    /** The logged applied volume, when one exists. */
+    applied?: string | null;
+    /** 1 − applied/fullField, rounded. Null when applied is missing. */
+    appliedSavingsPct?: number | null;
+    /** True when the applied volume meets or exceeds the whole-field baseline. */
+    exceededBaseline?: boolean;
+  };
 }): Banner {
   if (!input.hasAnalysis) {
     return {
@@ -111,19 +123,36 @@ export function bannerFor(input: {
     };
   }
   if (input.isPostFlight) {
+    const chem = input.chemical;
+    // GATED ON THE RECORD. Once a mission is logged, the savings claim rests
+    // on the volume actually applied, never on the plan's projection — a
+    // report once said "91% less chemical, 2.5 gal planned" while its own
+    // application record showed 10.6 gal applied. Everything printed here is
+    // reproducible from the two volumes in the subtitle.
+    if (chem?.applied != null) {
+      if (chem.exceededBaseline) {
+        return {
+          tone: "none",
+          big: "Application exceeded the whole-field baseline",
+          sub: `${chem.applied} applied vs ${chem.fullField} whole-field at ${chem.baselineRate}`,
+          note: "No savings figure is claimed for this mission.",
+        };
+      }
+      return {
+        tone: "success",
+        big: `${chem.appliedSavingsPct}% less chemical`,
+        sub: `${chem.applied} applied vs ${chem.fullField} whole-field at ${chem.baselineRate}`,
+        note: null,
+      };
+    }
+    // No applied volume logged: the projection may show, SAID as a projection.
     return {
       tone: "success",
-      big: `${input.savingsPct}% less chemical`,
-      // VERIFIABLE FROM THE PAGE. The percentage is rate-weighted — planned
-      // volume against whole-field volume at the named baseline — so the
-      // subtitle states those two volumes, and 1 − planned/baseline reproduces
-      // the headline. The old subtitle quoted ACRES (6.25 of 11.07), which
-      // reproduces 43.5%, not the rate-weighted 40% above it: a reader
-      // checking the maths found the page contradicting itself.
-      sub: input.chemical
-        ? `${input.chemical.planned} planned vs ${input.chemical.fullField} whole-field at ${input.chemical.baselineRate}`
+      big: `${input.savingsPct}% less chemical planned`,
+      sub: chem
+        ? `${chem.planned} planned vs ${chem.fullField} whole-field at ${chem.baselineRate}`
         : `across ${ac(input.targetedAcres)} of ${ac(input.fieldAcres)} total`,
-      note: null,
+      note: "No applied volume is logged yet — this is the plan's projection, not measured performance.",
     };
   }
   return {

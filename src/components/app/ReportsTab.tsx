@@ -20,6 +20,7 @@ import {
   bannerFor, computedRateLPerAc, missingRecordFields, missionDateError,
   summariseZones, volumeZoneNote, zoneDetailCsv,
 } from "@/lib/reportRecord";
+import { reconcileReport } from "@/lib/reportReconcile";
 
 // The report standardises on ACRES for every area it prints. fmtAreaAc
 // elsewhere may drop to ft² for small areas, which is how one page came to say
@@ -327,27 +328,6 @@ export default function ReportsTab({
     fieldAcres,
   );
 
-  // The one banner the report shows, decided in lib/reportRecord so the states
-  // cannot blur: "no assessment" is neutral and explicitly not a finding;
-  // success styling exists only for a grid assessment with marked zones. The
-  // post-flight savings figure is rate-weighted, so the banner carries the two
-  // volumes it is computed from — the page must let a reader reproduce it.
-  const banner = bannerFor({
-    hasAnalysis: isDone,
-    source: source ?? undefined,
-    zoneCount: zoneRows.length,
-    targetedAcres: isDone && source === "legacy" ? treatedAcres : targetedAcres,
-    fieldAcres,
-    isPostFlight,
-    savingsPct,
-    chemical: hasGridAssessment && fullFieldLitres > 0
-      ? {
-          planned: fmtVol(totalLitres, unit),
-          fullField: fmtVol(fullFieldLitres, unit),
-          baselineRate: fmtRate(baselineRateLha, unit).text,
-        }
-      : undefined,
-  });
 
   // ---- Mission stats from the editable inputs (prefilled from last log). ----
   const numOrNull = (s: string) => {
@@ -391,6 +371,55 @@ export default function ReportsTab({
   });
   const acresTreatedLogged = effectiveLastLog?.acres_treated ?? null;
   const rateLPerAc = computedRateLPerAc(litersApplied, acresTreatedLogged);
+
+  // The one banner the report shows, decided in lib/reportRecord so the states
+  // cannot blur: "no assessment" is neutral and explicitly not a finding;
+  // success styling exists only for a grid assessment with marked zones. The
+  // post-flight savings figure is rate-weighted, so the banner carries the two
+  // volumes it is computed from — the page must let a reader reproduce it.
+  const banner = bannerFor({
+    hasAnalysis: isDone,
+    source: source ?? undefined,
+    zoneCount: zoneRows.length,
+    targetedAcres: isDone && source === "legacy" ? treatedAcres : targetedAcres,
+    fieldAcres,
+    isPostFlight,
+    savingsPct,
+    chemical: hasGridAssessment && fullFieldLitres > 0
+      ? {
+          planned: fmtVol(totalLitres, unit),
+          fullField: fmtVol(fullFieldLitres, unit),
+          baselineRate: fmtRate(baselineRateLha, unit).text,
+          // Once a volume is LOGGED, the claim rests on it, not the plan.
+          applied: litersApplied != null ? fmtVol(litersApplied, unit) : null,
+          appliedSavingsPct: litersApplied != null
+            ? Math.max(0, Math.round((1 - litersApplied / fullFieldLitres) * 100))
+            : null,
+          exceededBaseline: litersApplied != null && litersApplied >= fullFieldLitres,
+        }
+      : undefined,
+  });
+
+  // ---- Reconcile before printing. -------------------------------------------
+  // Every derived figure compared against every other; findings print in the
+  // body, never block, and never silently pick between conflicting numbers.
+  const reconciliations = reconcileReport({
+    plannedL: hasGridAssessment ? totalLitres : null,
+    appliedL: litersApplied,
+    baselineLha: baselineRateLha,
+    computedRateLPerAc: rateLPerAc,
+    markedAcres: hasGridAssessment ? zoneSummary.totals.treatedAcres : null,
+    loggedTreatedAcres: acresTreatedLogged,
+    zonesFlown: zonesFlownCount,
+    zonesTotal: zoneRows.length,
+    windMph: record.wind_speed_mph,
+    tempF: record.temperature_f,
+    startTime: record.start_time,
+    endTime: record.end_time,
+    fmtVolume: (l) => fmtVol(l, unit),
+    fmtAcres: (ac2) => acres(ac2),
+    fmtRatePerAc: (lPerAc) => `${fmtVol(lPerAc, unit, 2)}/ac`,
+  });
 
   // ---- PDF generation ----
   const generate = async () => {
@@ -608,6 +637,28 @@ export default function ReportsTab({
       }
       y += bannerH + 12;
 
+      // RECONCILIATION NOTES — in the body, right under the headline, never
+      // fine print. When the document's own figures disagree, the document
+      // says so before a reader who did not fly the mission can be misled by
+      // either number. Nothing is blocked and no conflicting number is
+      // quietly dropped.
+      if (reconciliations.length > 0) {
+        pdf.setFont("helvetica", "bold"); pdf.setFontSize(9);
+        pdf.setTextColor(180, 83, 9);
+        ensure(16);
+        pdf.text("RECONCILIATION NOTES", M, y); y += 11;
+        pdf.setFont("helvetica", "normal"); pdf.setFontSize(8.5);
+        for (const r of reconciliations) {
+          const wrapped = pdf.splitTextToSize(`• ${r.message}`, W - 2 * M - 6);
+          ensure(wrapped.length * 10 + 4);
+          pdf.setTextColor(146, 64, 14);
+          pdf.text(wrapped, M + 3, y);
+          y += wrapped.length * 10 + 4;
+        }
+        y += 4;
+        pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
+      }
+
       // Treatment zones
       pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
       pdf.text("TREATMENT ZONES", M, y); y += 11;
@@ -682,7 +733,7 @@ export default function ReportsTab({
         ensure(30);
         pdf.setDrawColor(200); pdf.line(M, y - 4, W - M, y - 4);
         pdf.setFont("helvetica", "bold"); pdf.setTextColor(30); pdf.setFontSize(9.5);
-        pdf.text("Marked for treatment", M, y);
+        pdf.text("Marked for treatment (grid)", M, y);
         pdf.text(acres(zoneSummary.totals.treatedAcres), COL.area, y, { align: "right" });
         pdf.text(String(zoneSummary.totals.zoneCount), COL.zones, y, { align: "right" });
         pdf.text(`${zoneSummary.totals.flownCount}/${zoneSummary.totals.zoneCount}`, COL.flown, y, { align: "right" });
@@ -757,10 +808,15 @@ export default function ReportsTab({
         ["END TIME", record.end_time],
         ["VOLUME APPLIED", litersApplied != null ? fmtVol(litersApplied, unit) : null],
       ];
+      // TWO area definitions exist on this document and are never mixed:
+      // "marked (grid)" is the grid's cell arithmetic in the zones table;
+      // "treated (logged)" is the pilot's flight log, and it alone feeds the
+      // computed rate. Each is labelled as itself wherever it appears.
       const recR: [string, string | null][] = [
         ["RATE (COMPUTED)", rateLPerAc != null
-          ? `${fmtVol(rateLPerAc, unit, 2)}/ac (volume ÷ treated area)` : null],
-        ["ACRES TREATED", acresTreatedLogged != null ? acres(acresTreatedLogged) : null],
+          ? `${fmtVol(rateLPerAc, unit, 2)}/ac (logged volume ÷ logged treated area)` : null],
+        ["TREATED (LOGGED)", acresTreatedLogged != null ? acres(acresTreatedLogged) : null],
+        ["MARKED (GRID)", hasGridAssessment ? acres(zoneSummary.totals.treatedAcres) : null],
         ["FIELD TOTAL", fieldAcres > 0 ? acres(fieldAcres) : null],
         ["WIND", record.wind_speed_mph != null && record.wind_direction
           ? `${record.wind_speed_mph} mph ${record.wind_direction}` : null],
@@ -1295,6 +1351,17 @@ export default function ReportsTab({
               className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]"
             />
           </div>
+
+          {reconciliations.length > 0 && (
+            <div className="rounded border border-amber-900/50 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-300/90">
+              <div className="font-semibold mb-1">
+                The figures below disagree — these notes will print in the report body:
+              </div>
+              <ul className="list-disc space-y-1 pl-4">
+                {reconciliations.map((r, i) => <li key={i}>{r.message}</li>)}
+              </ul>
+            </div>
+          )}
 
           {isDraft && (
             <div className="rounded border border-red-900/50 bg-red-500/5 px-3 py-2 text-[11px] leading-relaxed text-red-300/90">

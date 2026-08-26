@@ -49,6 +49,7 @@ function renderModal() {
       totalAcres={3.1}
       estLiters={20}
       recordDefaults={null}
+      baselineRateLha={25}
       onSaved={onSaved}
     />,
   );
@@ -137,6 +138,40 @@ describe("metric operator", () => {
     renderModal();
     expect(screen.queryByText(/\bac\b/)).toBeNull();
     expect(screen.getAllByText(/ha\b/).length).toBeGreaterThan(0);
+  });
+});
+
+describe("impossible input warns at entry, in the operator's units", () => {
+  beforeEach(() => setUnitSystem("imperial"));
+
+  it("a volume far above the plan's estimate is challenged while typing, not at report time", async () => {
+    renderModal();
+    const input = screen.getByPlaceholderText(/plan estimated/i);
+    // Plan ≈ 20 L (~5.3 gal); type 40 gal — 7.6× plan.
+    fireEvent.change(input, { target: { value: "40" } });
+
+    expect(await screen.findByText(/check before saving/i)).toBeInTheDocument();
+    expect(screen.getByText(/ABOVE the planned/)).toBeInTheDocument();
+    // And it also cannot fit the tank: 20 L per fill, 0 refills.
+    expect(screen.getByText(/exceeds what 1 tank load/)).toBeInTheDocument();
+    // Never blocked: the save button stays enabled.
+    expect(screen.getByRole("button", { name: /save flight log/i })).toBeEnabled();
+  });
+
+  it("an end time before the start time is caught as it is entered", async () => {
+    renderModal();
+    const times = document.querySelectorAll('input[type="time"]');
+    fireEvent.change(times[0], { target: { value: "16:00" } });
+    fireEvent.change(times[1], { target: { value: "15:30" } });
+    expect(await screen.findByText(/before its start time/)).toBeInTheDocument();
+  });
+
+  it("conditions past typical limits are flagged without judging compliance", async () => {
+    renderModal();
+    const wind = document.querySelector('input[step="0.5"]') as HTMLInputElement;
+    fireEvent.change(wind, { target: { value: "11" } });
+    const note = await screen.findByText(/outside typical application conditions/i);
+    expect(note.textContent).toMatch(/verify against the product label/i);
   });
 });
 

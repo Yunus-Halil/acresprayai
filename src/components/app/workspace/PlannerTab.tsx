@@ -1851,6 +1851,7 @@ export function PlannerTab({
         droneId={fp.drone_id ?? null}
         droneName={activeDrone?.name ?? null}
         recordDefaults={settings.application_record ?? null}
+        baselineRateLha={settings.spray_rates_lha.medium}
         batteryStart={preFlightBattery}
         zones={validZones.map(z => {
           const m2 = polygonAreaM2(z.ring.map(p => L.latLng(p.lat, p.lng)));

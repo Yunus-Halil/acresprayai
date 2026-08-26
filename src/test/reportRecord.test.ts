@@ -51,12 +51,15 @@ describe("the result banner", () => {
     expect(pre.tone).toBe("success");
     expect(pre.big).toMatch(/Targeting 2\.40 ac of 11\.07 ac/);
 
+    // Post-flight with no applied volume logged: the projection may show,
+    // but SAID as a projection — never as measured performance.
     const post = bannerFor({
       ...base, hasAnalysis: true, source: "grid", zoneCount: 3, targetedAcres: 2.4,
       isPostFlight: true, savingsPct: 78,
     });
     expect(post.tone).toBe("success");
-    expect(post.big).toBe("78% less chemical");
+    expect(post.big).toBe("78% less chemical planned");
+    expect(post.note).toMatch(/projection, not measured performance/i);
   });
 
   it("labels a legacy result as the retired path's output, never as success", () => {
@@ -160,20 +163,45 @@ describe("computed application rate", () => {
   });
 });
 
-describe("a verifiable savings banner", () => {
-  it("post-flight prints the two volumes the percentage is computed from", () => {
-    const b = bannerFor({
-      hasAnalysis: true, source: "grid", zoneCount: 3,
-      targetedAcres: 6.25, fieldAcres: 11.07,
-      isPostFlight: true, savingsPct: 40,
-      chemical: { planned: "15.7 gal", fullField: "26.2 gal", baselineRate: "2.7 gal/ac" },
-    });
-    expect(b.big).toBe("40% less chemical");
-    // 1 - 15.7/26.2 = 40.1% — the reader reproduces the headline from the sub.
-    expect(b.sub).toBe("15.7 gal planned vs 26.2 gal whole-field at 2.7 gal/ac");
-    // The old subtitle quoted acres (6.25 of 11.07 → 43.5%), contradicting the
-    // rate-weighted 40% printed above it.
+describe("a verifiable, record-gated savings banner", () => {
+  const base = {
+    hasAnalysis: true, source: "grid" as const, zoneCount: 3,
+    targetedAcres: 6.25, fieldAcres: 11.07,
+    isPostFlight: true, savingsPct: 40,
+  };
+  const chem = { planned: "2.5 gal", fullField: "29.5 gal", baselineRate: "2.7 gal/ac" };
+
+  it("without a logged volume, the projection is labelled as a projection", () => {
+    const b = bannerFor({ ...base, chemical: chem });
+    expect(b.big).toBe("40% less chemical planned");
+    expect(b.sub).toBe("2.5 gal planned vs 29.5 gal whole-field at 2.7 gal/ac");
+    expect(b.note).toMatch(/projection, not measured performance/i);
+    // Never the acreage subtitle that contradicted the rate-weighted figure.
     expect(b.sub).not.toMatch(/6\.25|11\.07|ac total/);
+  });
+
+  it("with a logged volume, the claim rests on the RECORD, not the plan", () => {
+    // The reported contradiction: 2.5 gal planned, 10.6 gal applied. The old
+    // banner said "91% less chemical" from the plan. Now: actual vs baseline.
+    const b = bannerFor({
+      ...base,
+      chemical: { ...chem, applied: "10.6 gal", appliedSavingsPct: 64, exceededBaseline: false },
+    });
+    expect(b.tone).toBe("success");
+    expect(b.big).toBe("64% less chemical");
+    expect(b.sub).toBe("10.6 gal applied vs 29.5 gal whole-field at 2.7 gal/ac");
+    expect(b.big).not.toMatch(/91/);
+  });
+
+  it("claims NO savings when the applied volume meets or exceeds the baseline", () => {
+    const b = bannerFor({
+      ...base,
+      chemical: { ...chem, applied: "31.0 gal", appliedSavingsPct: 0, exceededBaseline: true },
+    });
+    expect(b.tone).toBe("none");
+    expect(b.big).toMatch(/exceeded the whole-field baseline/i);
+    expect(b.big).not.toMatch(/%/);
+    expect(b.note).toMatch(/No savings figure is claimed/i);
   });
 });
 

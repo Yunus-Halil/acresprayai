@@ -25,7 +25,7 @@ import {
 import { toast } from "sonner";
 import {
   costPerAreaToPerAcre, costPerAreaValue, costPerAreaUnit,
-  fmtAreaAc, volumeToLitres, volumeUnit, volumeValue,
+  fmtAreaAc, fmtVolume, volumeToLitres, volumeUnit, volumeValue,
 } from "@/lib/units";
 import { setUnitSystem, useUnitSystem } from "@/hooks/useUnitSystem";
 import {
@@ -56,6 +56,10 @@ import {
   type ApplicationRecord, type ApplicationRecordDefaults,
   EMPTY_RECORD, WIND_DIRECTIONS,
 } from "@/lib/reportRecord";
+import {
+  conditionFlags, endBeforeStartNote, overTankCapacityNote,
+  rateVsBaselineNote, volumeVsPlanNote,
+} from "@/lib/reportReconcile";
 import {
   type Annotation, type LayerState, type MeasureStats, type UserPoly,
   AnnotateTool, BoundaryTool, FitBounds, LayerRow, MapControls,
@@ -322,7 +326,7 @@ export function SettingsTab({
 // planner pre-fills "Pre-flight battery" with the last known landed value.
 export function LogFlightModal({
   open, onOpenChange, fieldId, scanId, droneId, droneName,
-  batteryStart, zones, totalAcres, estLiters, recordDefaults, onSaved,
+  batteryStart, zones, totalAcres, estLiters, recordDefaults, baselineRateLha, onSaved,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -336,6 +340,8 @@ export function LogFlightModal({
   estLiters: number | null;
   /** Stable per-field record values (grower, product, certificates). */
   recordDefaults: ApplicationRecordDefaults | null;
+  /** The configured medium rate (L/ha), for the at-entry rate sanity check. */
+  baselineRateLha: number | null;
   onSaved: (log: LastFlownMission) => void | Promise<void>;
 }) {
   // Every quantity in this dialog follows the operator's unit preference — the
@@ -401,6 +407,25 @@ export function LogFlightModal({
     if (!Number.isFinite(n) || n < 0) return null;
     return +volumeToLitres(n, units).toFixed(2);
   })();
+
+  // ---- Warn AT ENTRY, with the same rules the report reconciles by. --------
+  // A figure the report will later contradict is cheapest to catch while the
+  // person who flew the mission is still holding the controller. Warnings
+  // only — never blocked, never silently accepted.
+  const fmtL = (l: number) => fmtVolume(l, units).text;
+  const entryWarnings: string[] = [
+    volumeVsPlanNote(litersApplied, estLitersApplied, fmtL),
+    overTankCapacityNote(litersApplied, estLiters, refills, fmtL),
+    baselineRateLha != null
+      ? rateVsBaselineNote(
+          litersApplied != null && acresDone > 0 ? litersApplied / acresDone : null,
+          baselineRateLha,
+          (lPerAc) => `${fmtVolume(lPerAc, units, 2).text}/ac`,
+        )
+      : null,
+    endBeforeStartNote(rec.start_time, rec.end_time),
+    ...conditionFlags(rec.wind_speed_mph, rec.temperature_f),
+  ].filter((w): w is string => !!w);
 
   const normalizedRecord = (): ApplicationRecord => ({
     grower_name: rec.grower_name.trim(),
@@ -706,6 +731,23 @@ export function LogFlightModal({
               className="w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-[12px] text-neutral-200 placeholder:text-neutral-600 resize-none"
             />
           </div>
+
+          {/* At-entry sanity checks: same rules the report reconciles by,
+              surfaced while the pilot is still holding the numbers. Warnings
+              only — the figures save exactly as typed. */}
+          {entryWarnings.length > 0 && (
+            <div className="rounded-sm border border-amber-800/60 bg-amber-950/20 px-2.5 py-2 text-[11px] leading-relaxed text-amber-300/90">
+              <div className="mb-1 flex items-center gap-1.5 font-semibold">
+                <AlertTriangle className="h-3.5 w-3.5" /> Check before saving
+              </div>
+              <ul className="list-disc space-y-1 pl-4">
+                {entryWarnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+              <div className="mt-1 text-[10px] text-amber-500/70">
+                Saving is not blocked — these will also print as reconciliation notes on the report.
+              </div>
+            </div>
+          )}
 
           {droneName && (
             <div className="text-[10px] text-neutral-500">
