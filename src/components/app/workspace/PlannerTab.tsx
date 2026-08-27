@@ -1339,7 +1339,7 @@ export function PlannerTab({
               <>
                 Zones at the same rate within {fmtAltitude(groupDistM, units).text} of each other
                 are swept in one continuous back-and-forth instead of one at a time. Unmarked
-                ground between them is still flown with the boom off — grouping changes the
+                ground between them is still flown with the boom off; grouping changes the
                 route, never the treated area.{" "}
                 <span className="text-neutral-600">
                   Starting value, tune it against your own fields.
@@ -1347,7 +1347,7 @@ export function PlannerTab({
               </>
             ) : (
               <>Off. Every zone gets its own pattern, and the aircraft finishes one before
-              starting the next — useful for comparing against a grouped plan.</>
+              starting the next, which is useful for comparing against a grouped plan.</>
             )}
           </div>
 

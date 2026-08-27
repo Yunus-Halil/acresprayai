@@ -567,7 +567,7 @@ export default function ReportsTab({
         pdf.setTextColor(MISSING_RGB[0], MISSING_RGB[1], MISSING_RGB[2]);
         pdf.setFontSize(8);
         const draftLine = pdf.splitTextToSize(
-          `DRAFT — INCOMPLETE. Missing: ${missing.join(", ")}.`, W - 2 * M,
+          `INCOMPLETE DRAFT. Missing: ${missing.join(", ")}.`, W - 2 * M,
         );
         pdf.text(draftLine, M, y);
         y += draftLine.length * 9 + 4;
@@ -682,7 +682,7 @@ export default function ReportsTab({
       if (!isDone) {
         pdf.setTextColor(MISSING_RGB[0], MISSING_RGB[1], MISSING_RGB[2]);
         pdf.setFontSize(9);
-        pdf.text("Not determined — this scan has no treatment-grid assessment.", M, y); y += 14;
+        pdf.text("Not determined: this scan has no treatment-grid assessment.", M, y); y += 14;
       } else if (zoneRows.length === 0) {
         pdf.setTextColor(90);
         pdf.setFontSize(9);
@@ -728,7 +728,7 @@ export default function ReportsTab({
           pdf.setFont("helvetica", "bold"); pdf.setTextColor(30); pdf.setFontSize(9.5);
           pdf.text(g.label, M, y);
           pdf.setFont("helvetica", "normal"); pdf.setTextColor(70);
-          pdf.text(g.rateLha != null ? fmtRate(g.rateLha, unit).text : "—", COL.rate, y, { align: "right" });
+          pdf.text(g.rateLha != null ? fmtRate(g.rateLha, unit).text : "-", COL.rate, y, { align: "right" });
           pdf.setTextColor(30);
           pdf.text(acres(g.acres), COL.area, y, { align: "right" });
           pdf.setTextColor(70);
@@ -775,10 +775,10 @@ export default function ReportsTab({
         pdf.setTextColor(90); pdf.setFontSize(9);
         pdf.text(
           hasGridAssessment
-            ? "Not computed — no treatment zones to plan against."
+            ? "Not computed: no treatment zones to plan against."
             : source === "legacy"
-              ? "Not computed — the legacy result carries no grid rates. Re-assess with the treatment grid."
-              : "Not computed — treatment zones were not determined.",
+              ? "Not computed: the legacy result carries no grid rates. Re-assess with the treatment grid."
+              : "Not computed: treatment zones were not determined.",
           M, y,
         );
         y += 14;
@@ -919,7 +919,7 @@ export default function ReportsTab({
       if (includeAppendix && zoneRows.length > 0) {
         newPage();
         pdf.setFont("helvetica", "bold"); pdf.setFontSize(11); pdf.setTextColor(30);
-        pdf.text("APPENDIX — PER-ZONE DETAIL", M, y); y += 8;
+        pdf.text("APPENDIX: PER-ZONE DETAIL", M, y); y += 8;
         pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(110);
         pdf.text(
           `Every zone the treatment grid produced, as painted. The report body summarises these by classification and rate.`,
@@ -941,7 +941,7 @@ export default function ReportsTab({
           pdf.text(z.id.length > 26 ? `…${z.id.slice(-24)}` : z.id, M, y);
           pdf.setTextColor(30);
           pdf.text(z.issue || "Unclassified", M + 150, y);
-          pdf.text(z.rateLha != null ? fmtRate(z.rateLha, unit).text : "—", AC.rate, y, { align: "right" });
+          pdf.text(z.rateLha != null ? fmtRate(z.rateLha, unit).text : "-", AC.rate, y, { align: "right" });
           pdf.text(acres(z.acres), AC.area, y, { align: "right" });
           pdf.setTextColor(z.flown ? 34 : 150);
           pdf.text(z.flown ? "yes" : "no", AC.flown, y, { align: "right" });
@@ -973,7 +973,7 @@ export default function ReportsTab({
           pdf.setFont("helvetica", "bold");
           pdf.setFontSize(52);
           pdf.setTextColor(248, 180, 180);
-          pdf.text("DRAFT — INCOMPLETE", W / 2, H / 2, { align: "center", angle: 35 });
+          pdf.text("INCOMPLETE DRAFT", W / 2, H / 2, { align: "center", angle: 35 });
         }
       }
       pdf.setPage(pageCount);
@@ -1273,7 +1273,7 @@ export default function ReportsTab({
                 <div>
                   Using a flight logged against a different scan of this field
                   ({new Date(`${adoptedLog.date_flown}T00:00`).toLocaleDateString()}). Its figures
-                  describe that mission — check they belong on this report.
+                  describe that mission. Check they belong on this report.
                 </div>
                 <button
                   type="button"
@@ -1341,7 +1341,7 @@ export default function ReportsTab({
                 <select value={record.wind_direction ?? ""}
                   onChange={e => setRecord(r => ({ ...r, wind_direction: e.target.value || null }))}
                   className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm text-neutral-100 focus:outline-none focus:border-[#4CAF50]">
-                  <option value="">—</option>
+                  <option value="">Not recorded</option>
                   {WIND_DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
@@ -1417,7 +1417,7 @@ export default function ReportsTab({
           {reconciliations.length > 0 && (
             <div className="rounded border border-amber-900/50 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-300/90">
               <div className="font-semibold mb-1">
-                The figures below disagree — these notes will print in the report body:
+                The figures below disagree. These notes will print in the report body:
               </div>
               <ul className="list-disc space-y-1 pl-4">
                 {reconciliations.map((r, i) => <li key={i}>{r.message}</li>)}
@@ -1427,7 +1427,7 @@ export default function ReportsTab({
 
           {isDraft && (
             <div className="rounded border border-red-900/50 bg-red-500/5 px-3 py-2 text-[11px] leading-relaxed text-red-300/90">
-              <span className="font-semibold">This will generate as DRAFT — INCOMPLETE.</span>{" "}
+              <span className="font-semibold">This will generate as an INCOMPLETE DRAFT.</span>{" "}
               Missing: {missing.join(", ")}. Each gap prints on the report in red rather than
               being dropped; complete the record here or in the mission log to issue a final copy.
             </div>
@@ -1442,7 +1442,7 @@ export default function ReportsTab({
                   onChange={e => setIncludeAppendix(e.target.checked)}
                   className="accent-[#4CAF50]"
                 />
-                Include per-zone appendix ({zoneRows.length} zones — the report body shows the
+                Include per-zone appendix ({zoneRows.length} zones; the report body shows the
                 summary either way)
               </label>
               <button
@@ -1466,7 +1466,7 @@ export default function ReportsTab({
           )}
           {hasGridAssessment && zoneSummary.allUnclassified && (
             <div className="text-[11px] text-amber-400/90">
-              None of these zones is classified yet — the report will say so. Classify them from
+              None of these zones is classified yet, and the report will say so. Classify them from
               the Treatment Grid or the zone popups in Field View.
             </div>
           )}

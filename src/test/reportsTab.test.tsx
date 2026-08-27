@@ -103,7 +103,7 @@ describe("an unassessed scan claims nothing", () => {
 
   it("lists the grid assessment among the draft's missing fields", async () => {
     renderTab();
-    const notice = await screen.findByText(/DRAFT — INCOMPLETE/i);
+    const notice = await screen.findByText(/INCOMPLETE DRAFT/i);
     expect(notice.parentElement?.textContent).toMatch(/Treatment grid assessment/);
     expect(screen.getByRole("button", { name: /download draft report/i })).toBeInTheDocument();
   });
@@ -138,7 +138,7 @@ describe("a legacy vision result is marked, never dressed as a grid assessment",
     renderTab();
     expect(await screen.findByText("Legacy result")).toBeInTheDocument();
     expect(screen.getByText(/re-assess with the grid/i)).toBeInTheDocument();
-    const notice = await screen.findByText(/DRAFT — INCOMPLETE/i);
+    const notice = await screen.findByText(/INCOMPLETE DRAFT/i);
     expect(notice.parentElement?.textContent).toMatch(/Treatment grid assessment/);
   });
 });
@@ -186,7 +186,7 @@ describe("the logged application record prefills the report", () => {
     expect(stepOnes).toContain("97");
     // Times were genuinely not logged: they stay blank and keep the DRAFT —
     // prefill fills what was recorded, never what wasn't.
-    const notice = await screen.findByText(/DRAFT — INCOMPLETE/i);
+    const notice = await screen.findByText(/INCOMPLETE DRAFT/i);
     expect(notice.parentElement?.textContent).toMatch(/Application start time/);
     expect(notice.parentElement?.textContent).not.toMatch(/Wind speed|Temperature/);
   });

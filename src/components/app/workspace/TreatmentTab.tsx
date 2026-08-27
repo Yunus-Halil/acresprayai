@@ -828,7 +828,7 @@ export function TreatmentTab({
             </div>
             <p className="text-neutral-300 mb-2">
               These reference points were judged against that scan's imagery. This flight has
-              different growth and light, so they are shown here as a starting point — review
+              different growth and light, so they are shown here as a starting point. Review
               them on the current imagery, then confirm, adjust, or clear. Until then this scan
               counts as not yet assessed.
             </p>
@@ -837,7 +837,7 @@ export function TreatmentTab({
                 onClick={confirmInherited}
                 className="flex-1 text-[11px] rounded-sm px-2 py-1.5 bg-[#4CAF50] hover:bg-[#43a047] text-black font-semibold"
               >
-                They still hold — confirm for this scan
+                They still hold: confirm for this scan
               </button>
               <button
                 onClick={startFresh}
@@ -1282,7 +1282,7 @@ export function TreatmentTab({
                 ? <><Loader2 className="h-3 w-3" /> Unsaved changes…</>
                 : savedAt
                   ? savedScope === "grid-only"
-                    ? <span className="text-yellow-500/90 inline-flex items-center gap-1.5"><Save className="h-3 w-3" /> Saved — not yet counted for this scan (confirm above)</span>
+                    ? <span className="text-yellow-500/90 inline-flex items-center gap-1.5"><Save className="h-3 w-3" /> Saved, but not yet counted for this scan (confirm above)</span>
                     : <><Save className="h-3 w-3" /> Saved</>
                   : <><Info className="h-3 w-3" /> Changes save automatically</>}
           </span>

@@ -312,7 +312,7 @@ export function SettingsTab({
           <h2 className="text-sm font-semibold mb-1">3. Application Condition Flags</h2>
           <p className="text-[11px] text-neutral-500 mb-4">
             Wind or temperature beyond these values gets flagged in the Log Flight dialog and
-            on the spray report — flagged, never blocked, and never a compliance claim: product
+            on the spray report. Flagged, never blocked, and never a compliance claim: product
             labels vary and only you know yours.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -580,7 +580,7 @@ export function LogFlightModal({
     // fail and then claiming success anyway.
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       setSaveFailure(
-        "You appear to be offline. Nothing was saved — your entries stay here " +
+        "You appear to be offline. Nothing was saved; your entries stay here " +
         "(and are kept as a local draft); retry when you have signal.",
       );
       return;
@@ -684,7 +684,7 @@ export function LogFlightModal({
         } else {
           setSaveFailure(
             `Nothing was saved. The flight log could not be written (${error?.message ?? "database error"}) ` +
-            "and the field snapshot write failed too — this usually means no connection. " +
+            "and the field snapshot write failed too, which usually means no connection. " +
             "Your entries are kept here and as a local draft; retry when you have signal.",
           );
         }
@@ -763,7 +763,7 @@ export function LogFlightModal({
             />
             {batteryEnd == null && (
               <div className="mt-1 text-[10px] text-neutral-500">
-                Move the slider to record the landed charge — untouched, the log says &ldquo;not recorded&rdquo;.
+                Move the slider to record the landed charge. Untouched, the log says &ldquo;not recorded&rdquo;.
               </div>
             )}
             {batteryEnd != null && batteryEnd < 20 && (
@@ -796,7 +796,7 @@ export function LogFlightModal({
             <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Zones completed</div>
             {zones.length > 0 && (
               <div className="mb-1 text-[10px] text-neutral-600">
-                Check only the zones you actually flew — nothing is assumed.
+                Check only the zones you actually flew; nothing is assumed.
               </div>
             )}
             {zones.length === 0 ? (
@@ -913,7 +913,7 @@ export function LogFlightModal({
                     wind_source: r.wind_speed_mph != null || e.target.value ? "observed" : r.wind_source,
                   }))}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm text-neutral-200">
-                  <option value="">—</option>
+                  <option value="">Not recorded</option>
                   {WIND_DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </label>
@@ -999,7 +999,7 @@ export function LogFlightModal({
                 {entryWarnings.map((w, i) => <li key={i}>{w}</li>)}
               </ul>
               <div className="mt-1 text-[10px] text-amber-500/70">
-                Saving is not blocked — these will also print as reconciliation notes on the report.
+                Saving is not blocked; these will also print as reconciliation notes on the report.
               </div>
             </div>
           )}

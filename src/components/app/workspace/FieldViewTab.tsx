@@ -768,7 +768,7 @@ export function FieldViewTab(props: {
           )}
           {gridCarriedOver && (
             <div className="pl-6 text-[10px] text-amber-500/90 leading-relaxed">
-              Carried over from {gridCarriedFrom} — not yet confirmed against this scan's
+              Carried over from {gridCarriedFrom}, not yet confirmed against this scan's
               imagery. Review it in the Treatment Grid tab.
             </div>
           )}
@@ -816,7 +816,7 @@ export function FieldViewTab(props: {
                   ? "border-red-700/70 bg-red-900/25 text-red-300"
                   : "border-[#333] text-neutral-300 hover:bg-[#1a1a1a]"}`}
             >
-              {removePointMode ? "Remove points: ON — tap a vertex to delete it" : "Remove points"}
+              {removePointMode ? "Remove points: ON (tap a vertex to delete it)" : "Remove points"}
             </button>
           )}
           {boundaryMode === "edit" && (

@@ -240,15 +240,15 @@ export function analyseBands(
       : method === "profile" ? "sensor profile"
       : method === "convention" ? "RGB+NIR convention"
       : "colour interpretation";
-    reason = `${spectral} spectral bands${hasAlpha ? " + alpha" : ""} — NIR b${roles.nir}, red b${roles.red} (via ${via})`;
+    reason = `${spectral} spectral bands${hasAlpha ? " + alpha" : ""}: NIR b${roles.nir}, red b${roles.red} (via ${via})`;
   } else if (ambiguousMultispectral) {
     reason = namesAreGeneric
-      ? `${spectral} spectral bands, none labelled and no matching sensor profile — cannot tell which is near-infrared, so falling back to a visible-light index`
+      ? `${spectral} spectral bands, none labelled and no matching sensor profile: cannot tell which is near-infrared, so falling back to a visible-light index`
       : `${spectral} spectral bands, but red and/or near-infrared could not be identified from: ${names.filter(Boolean).join(", ")}`;
   } else if (hasAlpha) {
-    reason = `${spectral} spectral bands + alpha mask — no near-infrared, so no true NDVI`;
+    reason = `${spectral} spectral bands + alpha mask: no near-infrared, so no true NDVI`;
   } else {
-    reason = `${spectral} spectral bands — no near-infrared, so no true NDVI`;
+    reason = `${spectral} spectral bands: no near-infrared, so no true NDVI`;
   }
 
   return {

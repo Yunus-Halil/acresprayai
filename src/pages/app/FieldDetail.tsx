@@ -447,7 +447,7 @@ export default function FieldDetail() {
         {scansLoadFailed && (
           <Card className="p-4 text-sm border-destructive/50 text-destructive">
             Couldn&rsquo;t load this field&rsquo;s scans ({scansLoadFailed}). This is a loading
-            failure, not an empty history — check your connection and{" "}
+            failure, not an empty history. Check your connection and{" "}
             <button className="underline" onClick={() => void loadTasks({ reload: true })}>retry</button>.
           </Card>
         )}
@@ -494,7 +494,7 @@ export default function FieldDetail() {
                 {Date.now() - new Date(t.created_at).getTime() > 24 * 3600_000 && (
                   <div className="text-[11px] text-amber-600">
                     This scan has been {t.status} for over a day. Progress only advances while
-                    the app is open — keep this page open, or press Retry if it seems stuck.
+                    the app is open. Keep this page open, or press Retry if it seems stuck.
                   </div>
                 )}
               </div>

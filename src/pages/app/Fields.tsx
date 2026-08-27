@@ -139,7 +139,7 @@ export default function Fields() {
       {loadFailed && (
         <Card className="p-4 text-sm border-destructive/50 text-destructive">
           Couldn&rsquo;t load your fields ({loadFailed}). This is a loading failure, not an
-          empty account — check your connection and{" "}
+          empty account. Check your connection and{" "}
           <button className="underline" onClick={() => void load({ reload: true })}>retry</button>.
         </Card>
       )}

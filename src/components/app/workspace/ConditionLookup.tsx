@@ -67,7 +67,7 @@ export function ConditionLookup({
           type="button"
           disabled={!canLookup || busy}
           title={canLookup
-            ? "Fetch the nearest NWS station's observation for the application time. Shown as a suggestion — nothing is filled in until you accept it."
+            ? "Fetch the nearest NWS station's observation for the application time. Shown as a suggestion; nothing is filled in until you accept it."
             : "Enter the application date and start time first."}
           onClick={() => void lookUp()}
           className="inline-flex items-center gap-1.5 text-[11px] text-neutral-400 underline transition-colors hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
@@ -90,13 +90,13 @@ export function ConditionLookup({
         >
           <div className="font-medium text-sky-200">
             {suggestion.wind_mph != null && suggestion.wind_dir
-              ? `Wind at ${when(suggestion.observed_at)} — ${suggestion.wind_mph} mph ${suggestion.wind_dir}`
-              : `Wind at ${when(suggestion.observed_at)} — not reported`}
+              ? `Wind at ${when(suggestion.observed_at)}: ${suggestion.wind_mph} mph ${suggestion.wind_dir}`
+              : `Wind at ${when(suggestion.observed_at)}: not reported`}
             {suggestion.temp_f != null ? ` · ${suggestion.temp_f} °F` : " · temperature not reported"}
           </div>
           <div className="text-[10px] text-sky-300/70">
             Source: NOAA station {suggestion.station} ({suggestion.station_name}),{" "}
-            {suggestion.distance_mi.toFixed(1)} mi from the field — station data, not conditions
+            {suggestion.distance_mi.toFixed(1)} mi from the field. Station data, not conditions
             at your boom.
           </div>
           <div className="mt-1.5 flex gap-1.5">

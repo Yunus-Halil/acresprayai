@@ -75,7 +75,7 @@ export function conditionSourceLabel(
   const s = src ?? legacy ?? null;
   if (!s) return "";
   if (s === "observed") return " (observed)";
-  return ` (model data — ${s.station}, ${s.distance_mi.toFixed(1)} mi)`;
+  return ` (model data: ${s.station}, ${s.distance_mi.toFixed(1)} mi)`;
 }
 
 export type ApplicationRecord = ApplicationRecordDefaults & ApplicationConditions;
@@ -150,7 +150,7 @@ export function bannerFor(input: {
   if (!input.hasAnalysis) {
     return {
       tone: "none",
-      big: "No assessment — treatment area not determined",
+      big: "No assessment: treatment area not determined",
       sub: "No treatment-grid assessment exists for this scan.",
       note: "This is not a finding of zero treatment need. No spray recommendation is made or implied.",
     };
@@ -159,8 +159,8 @@ export function bannerFor(input: {
     return {
       tone: "legacy",
       big: input.zoneCount === 0
-        ? "Legacy analysis on file — no zones"
-        : `Legacy analysis on file — ${input.zoneCount} zone${input.zoneCount === 1 ? "" : "s"}, ${ac(input.targetedAcres)}`,
+        ? "Legacy analysis on file: no zones"
+        : `Legacy analysis on file: ${input.zoneCount} zone${input.zoneCount === 1 ? "" : "s"}, ${ac(input.targetedAcres)}`,
       sub: "Produced by the retired vision-analysis system, not the treatment grid.",
       note: "Re-assess this scan with the treatment grid before acting on these figures.",
     };
@@ -203,7 +203,7 @@ export function bannerFor(input: {
       sub: chem
         ? `${chem.planned} planned vs ${chem.fullField} whole-field at ${chem.baselineRate}`
         : `across ${ac(input.targetedAcres)} of ${ac(input.fieldAcres)} total`,
-      note: "No applied volume is logged yet — this is the plan's projection, not measured performance.",
+      note: "No applied volume is logged yet; this is the plan's projection, not measured performance.",
     };
   }
   return {

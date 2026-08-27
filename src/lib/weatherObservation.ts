@@ -46,7 +46,7 @@ export function observationFailureText(f: ObservationFailure): string {
   switch (f.reason) {
     case "out-of-retention":
       return "This flight is older than the live NWS feed keeps (about 7 days). " +
-        "Older reconstruction needs the NCEI archive, which is not wired in — " +
+        "Older reconstruction needs the NCEI archive, which is not wired in, so " +
         "enter the conditions you observed.";
     case "no-station":
       return "No NWS observation station covers this location (US coverage only). " +
@@ -55,7 +55,7 @@ export function observationFailureText(f: ObservationFailure): string {
       return "The nearest station reported nothing within 90 minutes of that time. " +
         "Enter the conditions you observed.";
     case "in-the-future":
-      return "The application time is in the future — nothing to look up yet.";
+      return "The application time is in the future, so there is nothing to look up yet.";
     case "bad-time":
       return "Enter the application date and start time first.";
     default:

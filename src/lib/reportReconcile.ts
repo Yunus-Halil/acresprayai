@@ -70,7 +70,7 @@ export function volumeVsPlanNote(
   const ratio = appliedL / plannedL;
   if (Math.abs(ratio - 1) <= VOLUME_PLAN_TOLERANCE) return null;
   return ratio > 1
-    ? `The logged volume (${fmt(appliedL)}) is ${pct(ratio)} ABOVE the planned ${fmt(plannedL)} — ` +
+    ? `The logged volume (${fmt(appliedL)}) is ${pct(ratio)} ABOVE the planned ${fmt(plannedL)}: ` +
       `${ratio.toFixed(1)}× plan. Check the volume entry and the plan before relying on either.`
     : `The logged volume (${fmt(appliedL)}) is ${pct(ratio)} below the planned ${fmt(plannedL)}. ` +
       `If the mission was cut short, the zone completion list should say so.`;
@@ -90,7 +90,7 @@ export function rateVsBaselineNote(
   return `The computed application rate (${fmtRatePerAc(computedRateLPerAc)}) is ` +
     `${ratio.toFixed(1)}× the configured baseline (${fmtRatePerAc(baselineLPerAc)}). ` +
     `Either the logged volume or the treated area is off, or this was a deliberate ` +
-    `over-application — verify before this record is relied on.`;
+    `over-application. Verify before this record is relied on.`;
 }
 
 /**
@@ -116,8 +116,8 @@ export function areaMismatchNote(
   if (Math.abs(ratio - 1) <= AREA_TOLERANCE) return null;
   const base = `All ${zonesTotal} zones are logged as flown, yet the logged treated area ` +
     `(${fmtAc(loggedTreatedAcres)}) differs from the marked-for-treatment area ` +
-    `(${fmtAc(markedAcres)}) by ${pct(ratio)}. These are different measurements — marked is ` +
-    `the grid's cell arithmetic, treated is what was logged after flying — and they are ` +
+    `(${fmtAc(markedAcres)}) by ${pct(ratio)}. These are different measurements (marked is ` +
+    `the grid's cell arithmetic; treated is what was logged after flying), and they are ` +
     `never interchanged in this document's calculations, but at full completion they ` +
     `should agree.`;
   return gridEditedAfterLog
@@ -153,7 +153,7 @@ export function endBeforeStartNote(
   if (!startTime || !endTime) return null;
   if (endTime > startTime) return null;
   if (endTime === startTime) {
-    return "Application start and end times are identical — a zero-minute application.";
+    return "Application start and end times are identical: a zero-minute application.";
   }
   return `The application end time (${endTime}) is before its start time (${startTime}).`;
 }
@@ -184,13 +184,13 @@ export function conditionFlags(
   const flags: string[] = [];
   if (windMph != null && windMph > limits.wind_mph) {
     flags.push(
-      `Wind ${windMph} mph — outside typical application conditions ` +
+      `Wind ${windMph} mph is outside typical application conditions ` +
       `(above ${limits.wind_mph} mph). Verify against the product label.`,
     );
   }
   if (tempF != null && tempF > limits.temp_f) {
     flags.push(
-      `Temperature ${tempF} °F — outside typical application conditions ` +
+      `Temperature ${tempF} °F is outside typical application conditions ` +
       `(above ${limits.temp_f} °F). Verify against the product label.`,
     );
   }
@@ -216,14 +216,14 @@ export function modelConditionFlags(
   if (check.wind_mph != null && check.wind_mph > limits.wind_mph) {
     out.push(
       `Station data for this time and location (${check.station}, ${check.distance_mi.toFixed(1)} mi ` +
-      `from the field) indicates wind of ${check.wind_mph} mph — outside typical application ` +
+      `from the field) indicates wind of ${check.wind_mph} mph, outside typical application ` +
       `conditions. Verify against the product label.`,
     );
   }
   if (check.temp_f != null && check.temp_f > limits.temp_f) {
     out.push(
       `Station data for this time and location (${check.station}, ${check.distance_mi.toFixed(1)} mi ` +
-      `from the field) indicates ${check.temp_f} °F — outside typical application conditions. ` +
+      `from the field) indicates ${check.temp_f} °F, outside typical application conditions. ` +
       `Verify against the product label.`,
     );
   }

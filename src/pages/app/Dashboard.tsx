@@ -118,7 +118,7 @@ export default function Dashboard() {
           ) : loadFailed ? (
             <p className="text-sm text-destructive">
               Couldn&rsquo;t load your fields ({loadFailed}). This is a loading failure, not an
-              empty account — check your connection and reload.
+              empty account. Check your connection and reload.
             </p>
           ) : fields.length === 0 ? (
             <p className="text-sm text-muted-foreground">No fields yet. <Link to="/app/fields" className="underline">Create your first field</Link>.</p>

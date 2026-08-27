@@ -208,7 +208,7 @@ export function FlightLogTab({
           <h1 className="text-2xl font-semibold tracking-tight">Flight Log</h1>
           <p className="mt-1 text-sm text-neutral-400">
             Every mission logged for {fieldName}, newest first. This is the record you keep,
-            not a summary of it — nothing here is estimated or filled in.
+            not a summary of it. Nothing here is estimated or filled in.
           </p>
         </header>
 
@@ -223,7 +223,7 @@ export function FlightLogTab({
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <div>
               The flight log could not be read ({error}). This is a loading failure, not an
-              empty log — do not read it as "no flights".
+              empty log. Do not read it as "no flights".
             </div>
           </div>
         )}
@@ -345,7 +345,7 @@ export function FlightLogTab({
                 ? <RecordBlock record={record} />
                 : (
                   <div className="mt-3 border-t border-[#1f1f1f] pt-2 text-[10px] leading-snug text-neutral-600">
-                    The application record for this flight is not stored on the flight row — only
+                    The application record for this flight is not stored on the flight row; only
                     the most recent flight's record is kept outside its generated report.
                     {report && " Open the report above for the full record as issued."}
                   </div>

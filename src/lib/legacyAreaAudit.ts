@@ -51,6 +51,6 @@ export function acreageFromBuggyPath(log: AuditableLog | null | undefined): bool
 /** The plain-language flag, shared by the Flight Log and the report. */
 export const LEGACY_AREA_NOTE =
   "The treated area on this flight was computed by a pre-fix method (before 26 Aug 2026) " +
-  "that over-counts zones at the field edge — typically 10–20% high for a full mission, " +
-  "more for zones hugging the boundary. The figure is kept exactly as recorded; the " +
+  "that over-counts zones at the field edge (typically 10 to 20% high for a full mission, " +
+  "more for zones hugging the boundary). The figure is kept exactly as recorded; the " +
   "computed application rate derived from it is correspondingly understated.";

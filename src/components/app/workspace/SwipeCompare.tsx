@@ -593,7 +593,7 @@ export function CompareStatsBar({
     >
       {!stats.overlap ? (
         <div className="text-[11px] leading-snug text-amber-400">
-          These two flights share no ground — their footprints do not intersect, so there is
+          These two flights share no ground: their footprints do not intersect, so there is
           nothing to compare between them.
         </div>
       ) : (
