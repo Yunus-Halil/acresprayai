@@ -242,6 +242,17 @@ export function TreatmentGridLayer({
   // Redraw when anything the draw loop reads from props changes.
   useEffect(() => { redrawRef.current(); }, [grid, selected, candidates, brushM]);
 
+  // While the brush is armed, the map surface belongs to the brush: without
+  // touch-action none the browser claims a finger drag for scrolling before
+  // the stroke ever reaches us.
+  useEffect(() => {
+    const el = map.getContainer();
+    if (brushM === null) return;
+    const prev = el.style.touchAction;
+    el.style.touchAction = "none";
+    return () => { el.style.touchAction = prev; };
+  }, [map, brushM]);
+
   // --- pointer handling ----------------------------------------------------
   useEffect(() => {
     let painting = false;
@@ -278,8 +289,19 @@ export function TreatmentGridLayer({
       props.current.onPaintCells(fresh);
     };
 
-    const onMove = (e: L.LeafletMouseEvent) => {
-      const idxs = under(e.latlng);
+    // Pointer events, on the container, in the CAPTURE phase. Three reasons:
+    // Leaflet map "mouse*" events never fire for touch, so a tablet operator
+    // could not paint at all; capture runs before Leaflet's own pan handlers,
+    // so the brush wins the gesture; and one handler covers mouse, pen and
+    // finger identically. A second finger cancels the stroke and hands the
+    // gesture back to the map for pinch-zoom.
+    const container = map.getContainer();
+    const toLatLng = (e: PointerEvent) => map.mouseEventToLatLng(e as unknown as MouseEvent);
+    let activePointers = 0;
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
+      const idxs = under(toLatLng(e));
       const next = new Set(idxs);
       const prev = hoverRef.current;
       const changed = next.size !== prev.size || [...next].some(i => !prev.has(i));
@@ -288,20 +310,30 @@ export function TreatmentGridLayer({
       if (painting) applyStroke(idxs);
     };
 
-    const onDown = (e: L.LeafletMouseEvent) => {
-      if (props.current.brushM === null) return;
-      painting = true;
-      stroked.clear();
-      // Otherwise the map pans out from under the brush on the first drag.
-      map.dragging.disable();
-      applyStroke(under(e.latlng));
-    };
-
     const stop = () => {
       if (!painting) return;
       painting = false;
       stroked.clear();
       map.dragging.enable();
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      activePointers++;
+      if (activePointers > 1) { stop(); return; }   // pinch takes over
+      if (props.current.brushM === null) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      // A finger stroke must not also scroll, zoom or synthesize mouse events.
+      if (e.pointerType !== "mouse" && e.cancelable) e.preventDefault();
+      painting = true;
+      stroked.clear();
+      // Otherwise the map pans out from under the brush on the first drag.
+      map.dragging.disable();
+      applyStroke(under(toLatLng(e)));
+    };
+
+    const onPointerEnd = () => {
+      activePointers = Math.max(0, activePointers - 1);
+      stop();
     };
 
     const onClick = (e: L.LeafletMouseEvent) => {
@@ -317,21 +349,21 @@ export function TreatmentGridLayer({
       redrawRef.current();
     };
 
-    map.on("mousemove", onMove);
-    map.on("mousedown", onDown);
-    map.on("mouseup", stop);
-    map.on("mouseout", onOut);
+    container.addEventListener("pointermove", onPointerMove);
+    container.addEventListener("pointerdown", onPointerDown, { capture: true, passive: false });
+    container.addEventListener("pointerleave", onOut);
     map.on("click", onClick);
     // A pointerup outside the map still ends the stroke — otherwise the brush
     // stays armed and the next hover paints without a click.
-    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointerup", onPointerEnd);
+    window.addEventListener("pointercancel", onPointerEnd);
     return () => {
-      map.off("mousemove", onMove);
-      map.off("mousedown", onDown);
-      map.off("mouseup", stop);
-      map.off("mouseout", onOut);
+      container.removeEventListener("pointermove", onPointerMove);
+      container.removeEventListener("pointerdown", onPointerDown, { capture: true } as EventListenerOptions);
+      container.removeEventListener("pointerleave", onOut);
       map.off("click", onClick);
-      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointerup", onPointerEnd);
+      window.removeEventListener("pointercancel", onPointerEnd);
       if (painting) map.dragging.enable();
     };
   }, [map]);

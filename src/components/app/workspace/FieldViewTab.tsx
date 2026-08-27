@@ -166,6 +166,10 @@ export function FieldViewTab(props: {
   // this same map (see SwipeCompare.tsx), so the two sides cannot drift apart.
   const { scansApi } = props;
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  // Touch has no right-click: an explicit mode maps vertex removal onto a
+  // plain tap. Off by default so a stray tap never deletes a point.
+  const [removePointMode, setRemovePointMode] = useState(false);
+  useEffect(() => { if (boundaryMode !== "edit") setRemovePointMode(false); }, [boundaryMode]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [compareOn, setCompareOn] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
@@ -428,6 +432,7 @@ export function FieldViewTab(props: {
           onDeleteRing={handleBoundaryDeleteRing}
           activeIdx={activeBoundaryIdx}
           setActiveIdx={setActiveBoundaryIdx}
+          removeVertexOnTap={removePointMode}
         />
         {layers.userAnnotations && userPolys.length > 0 && (
           <UserPolyLayer polys={userPolys} onDelete={deleteUserPolygon} />
@@ -770,12 +775,25 @@ export function FieldViewTab(props: {
           <div className="text-[11px] text-neutral-400 leading-relaxed mb-3">
             {boundaryMode === "draw"
               ? "Click to drop vertices, click the first point to close. Finish one shape and immediately start the next, perfect for fragmented fields."
-              : "Click a part to select it, then drag vertices to adjust. Right-click a vertex to remove just that point. Use Delete part to remove only the selected fragment."}
+              : removePointMode
+                ? "Remove points is on: tap or click a vertex to delete it. Switch it off to go back to dragging."
+                : "Click a part to select it, then drag vertices to adjust. To delete a point, right-click it, or switch on Remove points below and tap it. Use Delete part to remove only the selected fragment."}
           </div>
           {boundary && boundary.length > 0 && (
             <div className="mb-2 text-[10px] uppercase tracking-wider text-neutral-500">
               Selected: {activeBoundaryIdx === null ? "none, click a part on the map" : `part ${activeBoundaryIdx + 1} of ${boundary.length}`}
             </div>
+          )}
+          {boundaryMode === "edit" && (
+            <button
+              onClick={() => setRemovePointMode(v => !v)}
+              className={`w-full mb-2 inline-flex items-center justify-center gap-1.5 rounded-sm px-3 py-1.5 text-[11px] border ${
+                removePointMode
+                  ? "border-red-700/70 bg-red-900/25 text-red-300"
+                  : "border-[#333] text-neutral-300 hover:bg-[#1a1a1a]"}`}
+            >
+              {removePointMode ? "Remove points: ON — tap a vertex to delete it" : "Remove points"}
+            </button>
           )}
           {boundaryMode === "edit" && (
             <button

@@ -741,7 +741,7 @@ export function UserPolyLayer({
 // plus where AI analysis is allowed to run.
 export function BoundaryTool({
   mode, boundary, visible, onCreated, onEdited,
-  onDeleteRing, activeIdx, setActiveIdx,
+  onDeleteRing, activeIdx, setActiveIdx, removeVertexOnTap = false,
 }: {
   mode: "off" | "draw" | "edit";
   boundary: BoundaryRing[] | null;
@@ -751,6 +751,8 @@ export function BoundaryTool({
   onDeleteRing: (index: number) => void;
   activeIdx: number | null;
   setActiveIdx: (i: number | null) => void;
+  /** Touch has no right-click: when on, tapping a vertex removes it. */
+  removeVertexOnTap?: boolean;
 }) {
   const map = useMap();
 
@@ -832,6 +834,9 @@ export function BoundaryTool({
           (poly as any).pm.enable({
             allowSelfIntersection: false, snappable: true, snapDistance: 15,
             draggable: true, hideMiddleMarkers: false,
+            // Right-click is the desktop default; "Remove points" mode maps
+            // the same action onto a plain tap for touch operators.
+            removeVertexOn: removeVertexOnTap ? "click" : "contextmenu",
           });
         } catch { /* noop */ }
         const handle = () => {
@@ -843,7 +848,7 @@ export function BoundaryTool({
       polys.push(poly);
     });
     return () => { polys.forEach(p => { try { p.remove(); } catch { /* noop */ } }); };
-  }, [boundary, visible, mode, map, onEdited, onDeleteRing, activeIdx, setActiveIdx]);
+  }, [boundary, visible, mode, map, onEdited, onDeleteRing, activeIdx, setActiveIdx, removeVertexOnTap]);
 
   return null;
 }

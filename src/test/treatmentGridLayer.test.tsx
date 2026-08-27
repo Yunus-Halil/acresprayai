@@ -99,8 +99,31 @@ function mount(opts: {
       />
     </MapContainer>,
   );
-  return { map: map as unknown as L.Map, grid: g };
+  const m = map as unknown as L.Map;
+  // The layer listens for DOM pointer events on the container and converts
+  // them via mouseEventToLatLng; jsdom has no layout, so the pixel mapping is
+  // stubbed to hand back whatever latlng the test last aimed at.
+  (m as unknown as { mouseEventToLatLng: () => L.LatLng }).mouseEventToLatLng =
+    () => (m as unknown as { __ll: L.LatLng }).__ll;
+  return { map: m, grid: g };
 }
+
+/** Dispatch a pointer event on the map container, aimed at a latlng. One
+ *  path for mouse, pen and finger — exactly what the tablet fix demands. */
+function pointer(
+  map: L.Map,
+  type: "pointerdown" | "pointermove",
+  latlng: L.LatLng | null,
+  init: { pointerType?: string; isPrimary?: boolean; button?: number } = {},
+) {
+  if (latlng) (map as unknown as { __ll: L.LatLng }).__ll = latlng;
+  const ev = new MouseEvent(type, { bubbles: true, cancelable: true, button: init.button ?? 0 });
+  Object.defineProperty(ev, "pointerType", { value: init.pointerType ?? "mouse" });
+  Object.defineProperty(ev, "isPrimary", { value: init.isPrimary ?? true });
+  map.getContainer().dispatchEvent(ev);
+}
+/** The stroke-ending pointerup is a window-level listener. */
+const pointerUp = () => window.dispatchEvent(new MouseEvent("pointerup"));
 
 describe("drawing", () => {
   it("paints the cells in view", () => {
@@ -187,12 +210,44 @@ describe("painting", () => {
     });
 
     const a = g.cells[10], b = g.cells[11];
-    map.fire("mousedown", { latlng: L.latLng(a.centroid.lat, a.centroid.lng) } as never);
-    map.fire("mousemove", { latlng: L.latLng(b.centroid.lat, b.centroid.lng) } as never);
-    map.fire("mouseup", {} as never);
+    pointer(map, "pointerdown", L.latLng(a.centroid.lat, a.centroid.lng));
+    pointer(map, "pointermove", L.latLng(b.centroid.lat, b.centroid.lng));
+    pointerUp();
 
     expect(painted).toContain(a.id);
     expect(painted).toContain(b.id);
+  });
+
+  it("a finger paints exactly like a mouse — the tablet operator's whole workflow", () => {
+    const painted: CellId[] = [];
+    const { map, grid: g } = mount({
+      zoom: 18, brushM: 5, onPaintCells: ids => painted.push(...ids),
+    });
+
+    const a = g.cells[10], b = g.cells[11];
+    pointer(map, "pointerdown", L.latLng(a.centroid.lat, a.centroid.lng), { pointerType: "touch" });
+    pointer(map, "pointermove", L.latLng(b.centroid.lat, b.centroid.lng), { pointerType: "touch" });
+    pointerUp();
+
+    expect(painted).toContain(a.id);
+    expect(painted).toContain(b.id);
+  });
+
+  it("a second finger cancels the stroke and gives the map back for pinch", () => {
+    const painted: CellId[] = [];
+    const { map, grid: g } = mount({
+      zoom: 18, brushM: 5, onPaintCells: ids => painted.push(...ids),
+    });
+
+    pointer(map, "pointerdown", L.latLng(g.cells[10].centroid.lat, g.cells[10].centroid.lng), { pointerType: "touch" });
+    expect(map.dragging.enabled()).toBe(false);
+    // Second finger joins: painting must stop and dragging return.
+    pointer(map, "pointerdown", L.latLng(g.cells[11].centroid.lat, g.cells[11].centroid.lng), { pointerType: "touch", isPrimary: false });
+    expect(map.dragging.enabled()).toBe(true);
+    const before = painted.length;
+    pointer(map, "pointermove", L.latLng(g.cells[12].centroid.lat, g.cells[12].centroid.lng), { pointerType: "touch" });
+    expect(painted.length).toBe(before);
+    pointerUp(); pointerUp();
   });
 
   it("reports each cell once per stroke however much the drag wobbles", () => {
@@ -205,9 +260,9 @@ describe("painting", () => {
 
     const a = g.cells[10];
     const ll = L.latLng(a.centroid.lat, a.centroid.lng);
-    map.fire("mousedown", { latlng: ll } as never);
-    for (let i = 0; i < 8; i++) map.fire("mousemove", { latlng: ll } as never);
-    map.fire("mouseup", {} as never);
+    pointer(map, "pointerdown", ll);
+    for (let i = 0; i < 8; i++) pointer(map, "pointermove", ll);
+    pointerUp();
 
     expect(painted.filter(id => id === a.id)).toHaveLength(1);
   });
@@ -217,7 +272,7 @@ describe("painting", () => {
     const { map, grid: g } = mount({
       zoom: 18, brushM: 5, onPaintCells: ids => painted.push(...ids),
     });
-    map.fire("mousemove", { latlng: L.latLng(g.cells[3].centroid.lat, g.cells[3].centroid.lng) } as never);
+    pointer(map, "pointermove", L.latLng(g.cells[3].centroid.lat, g.cells[3].centroid.lng));
     expect(painted).toEqual([]);
   });
 
@@ -227,8 +282,9 @@ describe("painting", () => {
       zoom: 18, brushM: null, onPaintCells: ids => painted.push(...ids),
     });
     const ll = L.latLng(g.cells[3].centroid.lat, g.cells[3].centroid.lng);
-    map.fire("mousedown", { latlng: ll } as never);
-    map.fire("mousemove", { latlng: ll } as never);
+    pointer(map, "pointerdown", ll);
+    pointer(map, "pointermove", ll);
+    pointerUp();
     expect(painted).toEqual([]);
   });
 
@@ -237,17 +293,17 @@ describe("painting", () => {
     // Failing to re-enable would leave the map permanently stuck.
     const { map, grid: g } = mount({ zoom: 18, brushM: 5 });
     const ll = L.latLng(g.cells[3].centroid.lat, g.cells[3].centroid.lng);
-    map.fire("mousedown", { latlng: ll } as never);
+    pointer(map, "pointerdown", ll);
     expect(map.dragging.enabled()).toBe(false);
-    map.fire("mouseup", {} as never);
+    pointerUp();
     expect(map.dragging.enabled()).toBe(true);
   });
 
   it("a wide brush takes more cells than a narrow one", () => {
     const wide: CellId[] = [];
     const { map, grid: g } = mount({ zoom: 18, brushM: 45, onPaintCells: ids => wide.push(...ids) });
-    map.fire("mousedown", { latlng: L.latLng(g.cells[55].centroid.lat, g.cells[55].centroid.lng) } as never);
-    map.fire("mouseup", {} as never);
+    pointer(map, "pointerdown", L.latLng(g.cells[55].centroid.lat, g.cells[55].centroid.lng));
+    pointerUp();
     expect(wide.length).toBeGreaterThan(1);
   });
 });

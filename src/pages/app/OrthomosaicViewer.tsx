@@ -853,7 +853,9 @@ export default function OrthomosaicViewer() {
       </div>
 
       {/* Browser-style tab bar */}
-      <div className="h-10 shrink-0 flex items-end pl-2 pr-3 gap-0.5 border-b border-[#1f1f1f] relative"
+      {/* overflow-x keeps every open tab reachable at tablet widths — the
+          old fixed-width bar simply clipped Flight Log off-screen at 768px. */}
+      <div className="h-10 shrink-0 flex items-end pl-2 pr-3 gap-0.5 border-b border-[#1f1f1f] relative overflow-x-auto overflow-y-hidden"
            style={{ background: "#141414" }}>
         {TAB_DEFS.filter(t => openTabs.includes(t.key)).map(t => {
           const Icon = t.icon;
@@ -862,7 +864,7 @@ export default function OrthomosaicViewer() {
             <button
               key={t.key}
               onClick={() => setActiveTab(t.key)}
-              className={`group relative h-9 flex items-center gap-2 pl-3 pr-2 min-w-[140px] max-w-[200px] text-xs border-t border-l border-r rounded-t-md -mb-px transition-colors
+              className={`group relative h-9 flex items-center gap-2 pl-3 pr-2 min-w-[96px] shrink-0 lg:min-w-[140px] max-w-[200px] text-xs border-t border-l border-r rounded-t-md -mb-px transition-colors
                 ${active
                   ? "border-[#1f1f1f] text-[#f0f0f0]"
                   : "border-transparent text-neutral-500 hover:text-neutral-300 hover:bg-[#1a1a1a]"}`}
