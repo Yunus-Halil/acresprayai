@@ -21,6 +21,7 @@ import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygon
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
@@ -331,16 +332,29 @@ export function FieldViewTab(props: {
     }
   };
 
+  // Radix tooltip instead of a native title: the browser's ~1s hover delay
+  // is not configurable, and an icon-only rail needs its labels fast. The
+  // provider wrapping the toolbar below sets the delay for THIS rail only —
+  // the app-wide default stays slower so dense forms don't flicker labels.
   const ToolButton = ({ icon: Icon, label, onClick, active }: any) => (
-    <button
-      onClick={onClick} title={label}
-      className={`h-10 w-10 grid place-items-center rounded-sm border transition-colors
-        ${active
-          ? "bg-[#1a1a1a] border-[#4CAF50] text-[#4CAF50]"
-          : "bg-[#141414]/90 border-[#222] text-neutral-300 hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"}`}
-    >
-      <Icon className="h-4 w-4" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onClick} aria-label={label}
+          className={`h-10 w-10 grid place-items-center rounded-sm border transition-colors
+            ${active
+              ? "bg-[#1a1a1a] border-[#4CAF50] text-[#4CAF50]"
+              : "bg-[#141414]/90 border-[#222] text-neutral-300 hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"}`}
+        >
+          <Icon className="h-4 w-4" />
+        </button>
+      </TooltipTrigger>
+      {/* Above Leaflet's panes (z up to ~1000), matching the rail's dark chrome. */}
+      <TooltipContent side="right" sideOffset={6}
+        className="z-[1200] border-[#333] bg-[#1a1a1a] px-2 py-1 text-xs text-neutral-200">
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 
   return (
@@ -529,7 +543,11 @@ export function FieldViewTab(props: {
         onTilesRebaked={scansApi.onTilesRebaked}
       />
 
-      {/* Floating icon toolbar */}
+      {/* Floating icon toolbar. The scoped provider makes labels appear at
+          ~120ms — quick enough to read while sweeping down the rail, slow
+          enough not to flicker on a pass-through — and skipDelayDuration
+          shows the next label instantly once one is already open. */}
+      <TooltipProvider delayDuration={120} skipDelayDuration={500}>
       <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-1.5">
         <ToolButton icon={Layers} label="Layers" active={layersOpen}
           onClick={() => { setLayersOpen(!layersOpen); }} />
@@ -573,6 +591,7 @@ export function FieldViewTab(props: {
             opened as well as selected. */}
         <ToolButton icon={Settings} label="Settings" onClick={props.openSettings} />
       </div>
+      </TooltipProvider>
 
       {/* Measure panel */}
       {(measureActive || measureStats.count > 0) && layers.measurements && !layersOpen && (
