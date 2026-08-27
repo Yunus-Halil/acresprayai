@@ -170,7 +170,9 @@ export function useRebake(token: string | null, onDone: (taskId: string) => void
       }
       throw new Error("Tile re-rendering did not finish.");
     } catch (e) {
-      toast.error(String((e as Error)?.message ?? e));
+      toast.error("Couldn't re-render the map tiles", {
+        description: `Nothing was changed. Check your connection and try again. (${String((e as Error)?.message ?? e)})`,
+      });
     } finally {
       busy.current = false;
       setRebaking(null);
@@ -194,11 +196,15 @@ const shortTime = (iso: string) =>
  * as a grid failure: the grid computes over pixels and calls no service, so
  * "AI is not configured" can only have come from the deleted system.
  */
-function LegacyFailureLine({ at, error }: { at: string | null; error: string }) {
+function LegacyFailureLine({ at }: { at: string | null; error: string }) {
+  // The raw error is always some flavour of "the old system was never set
+  // up" (missing AI_API_KEY and friends) — server vocabulary that means
+  // nothing to an operator who never saw that system. It stays in the data,
+  // it does not print.
   return (
     <div className="text-[10px] leading-snug text-amber-500/80">
-      A run of the retired vision system failed here
-      {at && ` on ${new Date(at).toLocaleDateString()}`} ({error}). Not a treatment-grid
+      An older automatic analysis (no longer part of SwathWise) failed here
+      {at && ` on ${new Date(at).toLocaleDateString()}`}. Not a treatment-grid
       result, and nothing the grid needs.
     </div>
   );
@@ -235,9 +241,9 @@ function AnalysisLine({ scan }: { scan: FieldScan }) {
       {state.source === "legacy" && (
         <span
           className="mr-1.5 rounded-sm border border-amber-700/60 px-1 py-px text-[9px] uppercase tracking-wider text-amber-400"
-          title="Produced by the retired vision-analysis path, not the treatment grid. Re-assess in the Treatment Grid tab; this result is kept until you clear it."
+          title="Produced by an older automatic analysis that is no longer part of SwathWise, not by the treatment grid. Re-assess in the Treatment Grid tab; this result is kept until you clear it."
         >
-          Legacy vision
+          Old analysis
         </span>
       )}
       {zones.length === 0
@@ -295,11 +301,11 @@ function ScanCard({
   const clearLegacy = async () => {
     if (!window.confirm(
       failureOnly
-        ? "Remove the failed run the retired vision system recorded on this scan? " +
-          "It is not a treatment-grid result and nothing depends on it. " +
+        ? "Remove the failed run an older automatic analysis (no longer part of SwathWise) " +
+          "recorded on this scan? It is not a treatment-grid result and nothing depends on it. " +
           "Your grid assessment, if any, is kept."
-        : "Remove this scan's legacy vision-analysis result? The retired analysis path " +
-          "produced it; the treatment grid will not recreate it. This cannot be undone.",
+        : "Remove this scan's old analysis result? An older automatic analysis produced it, " +
+          "and the treatment grid will not recreate it. This cannot be undone.",
     )) return;
     // A failure-only fossil can sit beside a real grid snapshot in the same
     // column, so strip just the stale marker and leave everything else — the
@@ -316,7 +322,11 @@ function ScanCard({
     const { error } = await supabase.from("odm_tasks")
       .update(patch as never)
       .eq("id", scan.id);
-    if (error) toast.error(`Could not clear the legacy record: ${error.message}`);
+    if (error) {
+      toast.error("Couldn't clear the old analysis record", {
+        description: `Nothing was removed. Check your connection and try again. (${error.message})`,
+      });
+    }
     else { toast.success("Legacy record cleared."); onLegacyCleared(); }
   };
 
@@ -337,7 +347,7 @@ function ScanCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-wider text-neutral-500">
-            Scan {index + 1}{isCurrent && " · open now"} · {shortTime(scan.created_at)}
+            Scan {index + 1}{isCurrent && " · viewing"} · {shortTime(scan.created_at)}
           </div>
           <div className="truncate text-sm font-medium text-neutral-100">{longDate(scan.created_at)}</div>
         </div>
@@ -358,7 +368,7 @@ function ScanCard({
           ) : (
             <span
               className="inline-flex items-center gap-1 rounded-sm border border-[#2a2a2a] px-1.5 py-0.5 text-neutral-500"
-              title="No flown mission has been logged for this scan. Log one from the workspace Settings tab after flying."
+              title="No flown mission has been logged for this scan. Log one from the Flight Planner: fly the mission, then press Mark as Flown."
             >
               <Clock className="h-3 w-3" /> No mission logged
             </span>
@@ -413,7 +423,7 @@ function ScanCard({
           className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-neutral-600 transition-colors hover:text-red-400"
         >
           <Trash2 className="h-3 w-3" />
-          {failureOnly ? "Clear legacy failure record" : "Clear legacy result"}
+          {failureOnly ? "Clear old failure record" : "Clear old analysis result"}
         </button>
       )}
       <button
@@ -542,11 +552,19 @@ export function ScanPanel({
           />
         ))}
 
-        {playable.length >= 2 && (
+        {playable.length >= 2 ? (
           <div className="border-t border-[#1f1f1f] pt-3">
             <Timelapse scans={playable} boundary={boundary} token={token} />
           </div>
-        )}
+        ) : scans.length >= 2 ? (
+          // The timelapse used to simply vanish here — an operator who saw it
+          // once and then uploaded a scan whose tiles hadn't baked never
+          // learned why it was gone.
+          <div className="border-t border-[#1f1f1f] pt-3 text-[11px] text-neutral-600">
+            The timelapse appears once two scans have finished baking their map
+            tiles ({playable.length} of {scans.length} ready).
+          </div>
+        ) : null}
       </div>
     </div>
   );

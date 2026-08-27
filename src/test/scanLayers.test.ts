@@ -14,6 +14,7 @@ import {
   boundsFromTileJson, boundsOverlap, coverageOf,
   defaultIndexFor, indexDetail, indexOptions, indexRampCss, indexTileUrl,
   isCalibratedIndex, isComparable, legendEnds, notComparableReason, rgbTileUrl,
+ rgbLayerLabel,
 } from "@/lib/scanLayers";
 import { analyseBands } from "../../supabase/functions/_shared/bands";
 
@@ -87,6 +88,29 @@ describe("what an ordinary RGB scan may be shown as", () => {
     // claim about the picture.
     expect(legendEnds("vari")).toEqual({ low: "Less green", high: "More green" });
     expect(legendEnds("ndvi")).toEqual({ low: "Stressed", high: "Healthy" });
+  });
+});
+
+describe("the black-collar rebake cue on plain RGB scans", () => {
+  // The rebake button was built for RGB scans baked before nodata masking —
+  // the opaque black collar — yet the amber cue only ever fired for
+  // multispectral scans. The missing render plan is the older bake's
+  // client-visible fingerprint, so it must trigger the cue for RGB too.
+  it("an RGB scan with no stored render plan asks for a re-render", () => {
+    const l = rgbLayerLabel(RGB_ALPHA);
+    expect(l.needsRebake).toBe(true);
+    expect(l.caveat).toMatch(/black borders/i);
+  });
+
+  it("an RGB scan baked with the current renderer is left alone", () => {
+    const l = rgbLayerLabel({ ...RGB_ALPHA, render: { bidx: [1, 2, 3], nodata: 0 } } as never);
+    expect(l.needsRebake).toBe(false);
+    expect(l.caveat).toBeNull();
+  });
+
+  it("a scan with no info at all makes no rebake claim", () => {
+    const l = rgbLayerLabel(undefined as never);
+    expect(l.needsRebake).toBe(false);
   });
 });
 

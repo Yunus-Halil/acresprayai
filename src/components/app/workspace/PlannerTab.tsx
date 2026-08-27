@@ -1450,7 +1450,7 @@ export function PlannerTab({
                 onChange={(e) => updateFlightPlan({ drone_id: e.target.value || null })}
                 className="mt-1 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-xs text-[#f0f0f0] focus:outline-none focus:border-[#4CAF50]"
               >
-                <option value="">, Select drone ,</option>
+                <option value="">Select a drone</option>
                 {drones.map(d => (
                   <option key={d.id} value={d.id}>
                     {d.name} · {d.model}{d.status !== "idle" ? ` · ${d.status.replace("_", " ")}` : ""}
@@ -1626,7 +1626,7 @@ export function PlannerTab({
             <p className="m-0 text-neutral-300">
               This job needs {fmtVolume(refill.requiredLitres, units).text} but the tank
               carries {fmtVolume(refill.perLoadLitres, units).text} at {fp.tank_load_pct}% fill.
-              The aircraft runs dry {refill.refills === 1 ? "once" : `${refill.refills} times`} ,
+              The aircraft runs dry {refill.refills === 1 ? "once" : `${refill.refills} times`},
               marked on the map in cyan. Plan the nurse tank around{" "}
               {refill.loads} load{refill.loads === 1 ? "" : "s"}.
             </p>

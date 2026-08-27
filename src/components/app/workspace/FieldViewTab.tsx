@@ -323,7 +323,9 @@ export function FieldViewTab(props: {
         );
       }
     } catch (e) {
-      toast.error(`Could not clear zones: ${(e as Error)?.message ?? e}`);
+      toast.error("Couldn't clear the zones", {
+        description: `Nothing was removed. Check your connection and try again. (${String((e as Error)?.message ?? e)})`,
+      });
     } finally {
       setClearingZones(false);
     }
@@ -493,6 +495,9 @@ export function FieldViewTab(props: {
           bBounds={bMeta?.bounds ?? null}
           aSource={aAnalysis?.kind === "done" ? aAnalysis.source : null}
           bSource={bAnalysis?.kind === "done" ? bAnalysis.source : null}
+          currentTaskId={scansApi.currentTaskId}
+          onOpenGrid={scansApi.openTreatmentGrid}
+          onOpenScan={scansApi.openScan}
         />
       )}
       {compareActive && (

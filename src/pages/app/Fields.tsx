@@ -73,7 +73,11 @@ export default function Fields() {
       area_hectares: 0,
       location: form.location || null, notes: form.notes || null,
     }).select().single();
-    if (error) return toast.error(error.message);
+    if (error) {
+      return toast.error("Couldn't create the field", {
+        description: `Nothing was created. Check your connection and try again. (${error.message})`,
+      });
+    }
     toast.success(`Field created, now upload drone images for ${data.name}`);
     setForm({ name: "", location: "", notes: "" });
     setOpen(false);
@@ -94,7 +98,12 @@ export default function Fields() {
 
   const rename = async (id: string, name: string) => {
     const { error } = await supabase.from("fields").update({ name }).eq("id", id);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error("Couldn't rename the field", {
+        description: `The name was not changed. Check your connection and try again. (${error.message})`,
+      });
+      return;
+    }
     setDbFields(prev => prev.map(f => f.id === id ? { ...f, name } : f));
     toast.success("Field renamed");
   };

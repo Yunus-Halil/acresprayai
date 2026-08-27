@@ -15,7 +15,7 @@
 // that, everything outside the geometric intersection of the two footprints
 // is dimmed: change numbers exist only where both flights actually looked,
 // and the dimming shows the person exactly where that is.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Polygon, Rectangle, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import { ChevronsLeftRight, Layers, X } from "lucide-react";
@@ -129,6 +129,25 @@ export function ComparePanes({
   swipePct: number;
 }) {
   const map = useMap();
+
+  // Fit the view to the compared ground when compare opens for this pair.
+  // Without this the operator can enter compare zoomed into a corner with
+  // side B entirely off-screen and no cue that anything is there.
+  const fitted = useRef(false);
+  useEffect(() => { fitted.current = false; }, [a.id, b.id]);
+  useEffect(() => {
+    if (fitted.current) return;
+    const boxes = [aMeta?.bounds, bMeta?.bounds].filter(Boolean) as ScanBounds[];
+    const box = boxes.length
+      ? boxes.reduce((u, x) => ({
+          north: Math.max(u.north, x.north), south: Math.min(u.south, x.south),
+          east: Math.max(u.east, x.east), west: Math.min(u.west, x.west),
+        }))
+      : overlap;
+    if (!box) return;
+    fitted.current = true;
+    map.fitBounds([[box.south, box.west], [box.north, box.east]], { padding: [40, 40] });
+  }, [map, aMeta, bMeta, overlap, a.id, b.id]);
 
   // Panes must exist before any child layer mounts into them, and child
   // effects run before this component's own — so the layers render one commit
@@ -278,7 +297,7 @@ export function ComparePanes({
             pane={PANES.mask.name}
             renderer={maskRenderer}
             interactive={false}
-            pathOptions={{ stroke: false, fillColor: "#0a0a0a", fillOpacity: 0.55 }}
+            pathOptions={{ stroke: false, fillColor: "#0a0a0a", fillOpacity: 0.3 }}
           />
           <Rectangle
             bounds={[[overlap!.south, overlap!.west], [overlap!.north, overlap!.east]]}
@@ -541,6 +560,7 @@ export function SideLegend({ side, index }: { side: "A" | "B"; index: Vegetation
 
 export function CompareStatsBar({
   a, b, stats, aAnalyzed, bAnalyzed, aBounds, bBounds, aSource, bSource,
+  currentTaskId, onOpenGrid, onOpenScan,
 }: {
   a: FieldScan;
   b: FieldScan;
@@ -552,7 +572,15 @@ export function CompareStatsBar({
   /** Which system produced each side's zones — legacy results are labelled. */
   aSource: "grid" | "legacy" | null;
   bSource: "grid" | "legacy" | null;
+  /** The scan whose workspace this is — its grid opens in place. */
+  currentTaskId?: string | null;
+  onOpenGrid?: () => void;
+  onOpenScan?: (taskId: string) => void;
 }) {
+  // The un-assessed side is the named next step; give it a button, not just
+  // a sentence — a stats bar that names a destination with no way to go
+  // there is a soft dead end.
+  const target = !aAnalyzed ? a : !bAnalyzed ? b : null;
   const offset = aBounds && bBounds ? offsetDescription(aBounds, bBounds) : null;
   const legacySides = [
     ...(aSource === "legacy" ? [`A (${shortDate(a.created_at)})`] : []),
@@ -587,10 +615,24 @@ export function CompareStatsBar({
                 )}
               </span>
             ) : (
-              <span className="text-neutral-500">
-                {aAnalyzed ? `Assess the ${shortDate(b.created_at)} scan` :
-                 bAnalyzed ? `Assess the ${shortDate(a.created_at)} scan` :
-                 "Assess both scans"} in the Treatment Grid to measure change.
+              <span className="inline-flex items-center gap-2 text-neutral-500">
+                <span>
+                  {aAnalyzed ? `Assess the ${shortDate(b.created_at)} scan` :
+                   bAnalyzed ? `Assess the ${shortDate(a.created_at)} scan` :
+                   "Assess both scans"} in the Treatment Grid to measure change.
+                </span>
+                {target && (onOpenGrid || onOpenScan) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (target.id === currentTaskId && onOpenGrid) onOpenGrid();
+                      else if (onOpenScan) onOpenScan(target.id);
+                    }}
+                    className="shrink-0 rounded-sm border border-[#2b4a2e] bg-[#4CAF50]/15 px-2 py-0.5 text-[10px] font-semibold text-[#9ccc9f] hover:bg-[#4CAF50]/25"
+                  >
+                    {target.id === currentTaskId ? "Open Treatment Grid" : `Open the ${shortDate(target.created_at)} scan`}
+                  </button>
+                )}
               </span>
             )}
           </div>
@@ -600,7 +642,7 @@ export function CompareStatsBar({
           </div>
           {legacySides.length > 0 && (
             <div className="mt-1 text-[10px] leading-snug text-amber-500/80">
-              Side {legacySides.join(" and side ")} shows a legacy vision-analysis result, not a
+              Side {legacySides.join(" and side ")} shows a result from an older automatic analysis (no longer part of SwathWise), not a
               treatment-grid assessment. Re-assess it before relying on this change figure.
             </div>
           )}

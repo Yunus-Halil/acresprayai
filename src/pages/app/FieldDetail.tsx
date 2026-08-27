@@ -244,7 +244,11 @@ export default function FieldDetail() {
   const downloadZip = async (t: Task) => {
     if (!t.output_path) return;
     const { data, error } = await supabase.storage.from("scans").createSignedUrl(t.output_path, 60 * 10);
-    if (error) return toast.error(error.message);
+    if (error) {
+      return toast.error("Couldn't prepare the download", {
+        description: `Check your connection and try again. (${error.message})`,
+      });
+    }
     window.open(data.signedUrl, "_blank");
   };
 
@@ -315,7 +319,12 @@ export default function FieldDetail() {
                 name={field.name}
                 onSave={async (newName) => {
                   const { error } = await supabase.from("fields").update({ name: newName }).eq("id", field.id);
-                  if (error) { toast.error(error.message); return; }
+                  if (error) {
+                    toast.error("Couldn't rename the field", {
+                      description: `The name was not changed. Check your connection and try again. (${error.message})`,
+                    });
+                    return;
+                  }
                   setField({ ...field, name: newName });
                   toast.success("Field renamed");
                 }}

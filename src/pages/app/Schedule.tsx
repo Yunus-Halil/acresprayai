@@ -96,7 +96,9 @@ export default function Schedule() {
       toast.success("Mission cancelled");
       void load();
     } catch (e) {
-      toast.error(`Could not cancel: ${(e as Error)?.message ?? e}`);
+      toast.error("Couldn't cancel the mission", {
+        description: `It is still scheduled. Check your connection and try again. (${String((e as Error)?.message ?? e)})`,
+      });
     }
   };
 

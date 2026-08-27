@@ -66,7 +66,7 @@ export function MouseReadout({ coordRef, zoomRef }: { coordRef: { current: HTMLD
   const map = useMap();
   const write = (lat: number, lng: number, z: number) => {
     if (coordRef.current) {
-      coordRef.current.textContent = Number.isFinite(lat) ? `${lat.toFixed(6)}, ${lng.toFixed(6)}` : ",, ,";
+      coordRef.current.textContent = Number.isFinite(lat) ? `${lat.toFixed(6)}, ${lng.toFixed(6)}` : "";
     }
     if (zoomRef.current) zoomRef.current.textContent = `Zoom ${Math.round(z)}`;
   };

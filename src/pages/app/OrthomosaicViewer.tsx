@@ -1056,7 +1056,7 @@ export default function OrthomosaicViewer() {
       {/* Bottom status bar */}
       <div className="h-7 shrink-0 px-3 flex items-center gap-4 text-[11px] text-neutral-500 border-t border-[#1f1f1f]"
            style={{ background: "#0f0f0f" }}>
-        <div ref={cursorCoordRef} className="font-mono">,, ,</div>
+        <div ref={cursorCoordRef} className="font-mono"></div>
         <div ref={cursorZoomRef} className="font-mono">Zoom 15</div>
         <div className="ml-auto truncate font-mono text-neutral-600">{task.odm_uuid?.slice(0, 8)}</div>
       </div>

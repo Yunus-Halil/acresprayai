@@ -21,7 +21,7 @@ import { type ApplicationRecord, conditionSourceLabel } from "@/lib/reportRecord
 import { toast } from "sonner";
 import { acreageFromBuggyPath, LEGACY_AREA_NOTE } from "@/lib/legacyAreaAudit";
 import type { FarmerSettings } from "@/lib/farmerSettings";
-import { fmtAreaAc, fmtVolume } from "@/lib/units";
+import { fmtAreaAc, fmtTempF, fmtVolume, fmtWindMph } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 
 export type FlightLogRow = {
@@ -66,6 +66,7 @@ function Stat({ label, children, missing }: {
 }
 
 function RecordBlock({ record }: { record: ApplicationRecord }) {
+  const units = useUnitSystem();
   const rows: [string, string | null][] = [
     ["Grower", record.grower_name || null],
     ["Product", record.product_name || null],
@@ -76,11 +77,11 @@ function RecordBlock({ record }: { record: ApplicationRecord }) {
     // station and distance. Pre-provenance records print bare rather than
     // being stamped with a provenance nobody recorded.
     ["Wind", record.wind_speed_mph != null && record.wind_direction
-      ? `${record.wind_speed_mph} mph ${record.wind_direction}`
+      ? `${fmtWindMph(record.wind_speed_mph, units).text} ${record.wind_direction}`
         + conditionSourceLabel(record.wind_source, record.conditions_source)
       : null],
     ["Temperature", record.temperature_f != null
-      ? `${record.temperature_f} °F`
+      ? fmtTempF(record.temperature_f, units).text
         + conditionSourceLabel(record.temp_source, record.conditions_source)
       : null],
     ["Applicator cert.", record.applicator_cert_no || null],

@@ -57,6 +57,13 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); });
 
+const RING = [[
+  { lat: 45.0, lng: -93.0 },
+  { lat: 45.001, lng: -93.0 },
+  { lat: 45.001, lng: -92.999 },
+  { lat: 45.0, lng: -92.999 },
+]];
+
 describe("when it appears at all", () => {
   it("renders nothing for a field with no completed scans", () => {
     const { container } = render(<Timelapse scans={[]} boundary={null} token="jwt" />);
@@ -69,8 +76,17 @@ describe("when it appears at all", () => {
     expect(tileLayers).toHaveLength(0);
   });
 
+  it("says what it needs when there is no boundary, instead of a black box", () => {
+    // The old fallback was map.setView([0,0],2): the Atlantic at world zoom,
+    // a permanent black rectangle with working-looking controls.
+    render(<Timelapse scans={THREE} boundary={null} token="jwt" />);
+    expect(screen.getByText(/needs a saved field boundary/i)).toBeInTheDocument();
+    expect(tileLayers).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /play timelapse/i })).toBeNull();
+  });
+
   it("appears once a second scan exists", () => {
-    render(<Timelapse scans={THREE.slice(0, 2)} boundary={null} token="jwt" />);
+    render(<Timelapse scans={THREE.slice(0, 2)} boundary={RING} token="jwt" />);
     expect(screen.getByRole("slider", { name: /scan timeline/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /play timelapse/i })).toBeInTheDocument();
   });
@@ -78,7 +94,7 @@ describe("when it appears at all", () => {
 
 describe("what it draws", () => {
   it("mounts one tile layer per scan, carrying the session token", () => {
-    render(<Timelapse scans={THREE} boundary={null} token="jwt" />);
+    render(<Timelapse scans={THREE} boundary={RING} token="jwt" />);
     expect(tileLayers).toHaveLength(3);
     expect(tileLayers[0].url).toContain("/tile/uuid-1/");
     expect(tileLayers[2].url).toContain("/tile/uuid-3/");
@@ -86,7 +102,7 @@ describe("what it draws", () => {
   });
 
   it("labels every scan on the timeline", () => {
-    render(<Timelapse scans={THREE} boundary={null} token="jwt" />);
+    render(<Timelapse scans={THREE} boundary={RING} token="jwt" />);
     expect(screen.getByText("May 1")).toBeInTheDocument();
     expect(screen.getByText("Jun 1")).toBeInTheDocument();
     expect(screen.getByText("Jul 1")).toBeInTheDocument();
@@ -94,7 +110,7 @@ describe("what it draws", () => {
   });
 
   it("starts on the oldest scan alone", () => {
-    render(<Timelapse scans={THREE} boundary={null} token="jwt" />);
+    render(<Timelapse scans={THREE} boundary={RING} token="jwt" />);
     expect(opacities()).toEqual([1, 0, 0]);
   });
 });
@@ -111,7 +127,7 @@ describe("scrubbing", () => {
   };
 
   it("splits opacity between the two nearest scans as it moves", () => {
-    render(<Timelapse scans={THREE} boundary={null} token="jwt" />);
+    render(<Timelapse scans={THREE} boundary={RING} token="jwt" />);
 
     drag("0");
     expect(opacities()).toEqual([1, 0, 0]);
@@ -127,7 +143,7 @@ describe("scrubbing", () => {
   });
 
   it("never leaves the map blank part-way through a transition", () => {
-    render(<Timelapse scans={THREE} boundary={null} token="jwt" />);
+    render(<Timelapse scans={THREE} boundary={RING} token="jwt" />);
     for (const p of ["0.1", "0.37", "0.9", "1.42", "1.99"]) {
       drag(p);
       const total = opacities().reduce((a, b) => a + b, 0);
@@ -141,7 +157,7 @@ describe("playback", () => {
     vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance"] });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 
-    render(<Timelapse scans={THREE} boundary={null} token="jwt" />);
+    render(<Timelapse scans={THREE} boundary={RING} token="jwt" />);
     await user.click(screen.getByRole("button", { name: /play timelapse/i }));
 
     // Part-way: somewhere between the first and second scan.
@@ -164,7 +180,7 @@ describe("playback", () => {
 
   it("offers a speed control that toggles between 1x and 2x", async () => {
     const user = userEvent.setup();
-    render(<Timelapse scans={THREE} boundary={null} token="jwt" />);
+    render(<Timelapse scans={THREE} boundary={RING} token="jwt" />);
 
     const speed = screen.getByRole("button", { name: /playback speed 1x/i });
     await user.click(speed);
@@ -174,7 +190,7 @@ describe("playback", () => {
 
 describe("it is read-only", () => {
   it("never touches the database", () => {
-    render(<Timelapse scans={THREE} boundary={null} token="jwt" />);
+    render(<Timelapse scans={THREE} boundary={RING} token="jwt" />);
     expect(supabaseFrom).not.toHaveBeenCalled();
   });
 });

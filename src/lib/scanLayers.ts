@@ -159,7 +159,18 @@ export function rgbLayerLabel(
 ): { label: string; caveat: string | null; needsRebake: boolean } {
   const spectral = info?.spectralBands ?? info?.bands ?? 3;
   if (!info || spectral <= 3) {
-    return { label: "RGB orthomosaic", caveat: null, needsRebake: false };
+    // A plain RGB scan baked before the render plan existed has no nodata
+    // masking — the opaque black collar this button was built to fix. The
+    // missing render plan is that older bake's client-visible fingerprint,
+    // so the cue must fire here too, not only for multispectral scans.
+    const preRenderPlan = !!info && !info.render;
+    return {
+      label: "RGB orthomosaic",
+      caveat: preRenderPlan
+        ? "These map tiles were baked by an older renderer: opaque black borders can appear around the field. Re-render the tiles to fix them."
+        : null,
+      needsRebake: preRenderPlan,
+    };
   }
   const rolesResolved = !!(info.roles?.red && info.roles?.green && info.roles?.blue);
   const bakedWithBands = !!info.render?.bidx;

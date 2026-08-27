@@ -140,7 +140,9 @@ export function ScheduleMissionModal({
       onOpenChange(false);
       onScheduled();
     } catch (e) {
-      toast.error(`Could not schedule: ${(e as Error)?.message ?? e}`);
+      toast.error("Couldn't schedule the mission", {
+        description: `Nothing was scheduled. Check your connection and try again. (${String((e as Error)?.message ?? e)})`,
+      });
     } finally {
       setSaving(false);
     }

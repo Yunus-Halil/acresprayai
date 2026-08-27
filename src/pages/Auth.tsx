@@ -41,7 +41,24 @@ export default function Auth() {
         if (error) throw error;
       }
     } catch (err: any) {
-      toast.error(err.message ?? "Something went wrong");
+      // Map the raw Supabase strings an operator actually meets to plain
+      // language; anything unmapped keeps its detail as the description.
+      const raw = String(err?.message ?? "");
+      if (/invalid login credentials/i.test(raw)) {
+        toast.error("That email and password didn't match", {
+          description: "Check both and try again, or use the sign-up link below if you don't have an account yet.",
+        });
+      } else if (/email not confirmed/i.test(raw)) {
+        toast.error("Confirm your email first", {
+          description: "Open the confirmation link we sent you, then sign in here.",
+        });
+      } else if (/failed to fetch|network/i.test(raw)) {
+        toast.error("You appear to be offline", {
+          description: "Nothing was sent. Check your connection and try again.",
+        });
+      } else {
+        toast.error("Couldn't sign you in", { description: raw || "Something went wrong. Try again." });
+      }
     } finally {
       setLoading(false);
     }

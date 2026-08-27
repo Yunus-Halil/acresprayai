@@ -179,8 +179,8 @@ describe("the assessment states", () => {
   it("a legacy vision result is visibly marked and offers a deliberate clear", () => {
     renderPanel();
     const c = cardOf("August 10, 2026");
-    expect(within(c).getByText("Legacy vision")).toBeInTheDocument();
-    expect(within(c).getByRole("button", { name: /clear legacy result/i })).toBeInTheDocument();
+    expect(within(c).getByText("Old analysis")).toBeInTheDocument();
+    expect(within(c).getByRole("button", { name: /clear old analysis result/i })).toBeInTheDocument();
   });
 
   // The regression, at the surface it appeared on: a stale failure from the
@@ -193,10 +193,14 @@ describe("the assessment states", () => {
     // The scan simply has no grid assessment...
     expect(within(c).getByText("No grid assessment yet")).toBeInTheDocument();
     // ...and the fossil is disclosed as the retired system's, not dropped.
-    expect(within(c).getByText(/retired vision system failed here/i)).toBeInTheDocument();
-    expect(within(c).getByText(/AI is not configured/)).toBeInTheDocument();
+    expect(within(c).getByText(/older automatic analysis .+ failed here/i)).toBeInTheDocument();
+    // The raw server string ("AI is not configured (missing AI_API_KEY)")
+    // means nothing to an operator who never saw that system: it stays in
+    // the data and never prints.
+    expect(within(c).queryByText(/AI is not configured/)).toBeNull();
+    expect(within(c).queryByText(/AI_API_KEY/)).toBeNull();
     expect(within(c).getByText(/nothing the grid needs/i)).toBeInTheDocument();
-    expect(within(c).getByRole("button", { name: /clear legacy failure record/i })).toBeInTheDocument();
+    expect(within(c).getByRole("button", { name: /clear old failure record/i })).toBeInTheDocument();
   });
 
   it("the flight-log badge says what it means instead of 'Pending'", () => {

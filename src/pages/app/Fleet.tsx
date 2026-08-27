@@ -100,7 +100,12 @@ export default function Fleet() {
       notes: parsed.data.notes ?? null,
       specs: spec as any,
     } as any).select().single();
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error("Couldn't add the drone", {
+        description: `Nothing was saved. Check your connection and try again. (${error.message})`,
+      });
+      return;
+    }
     toast.success("Drone added · forecasting telemetry");
     setActive(data as any);
     setOpen(false);

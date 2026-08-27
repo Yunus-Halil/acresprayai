@@ -95,7 +95,7 @@ export default function Dashboard() {
         <Card className="p-5">
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Boundaries defined</div>
           <div className="font-display text-4xl mt-1 tabular-nums">{definedCount}<span className="text-base text-muted-foreground ml-1">/ {fields.length || 0}</span></div>
-          <div className="text-xs text-muted-foreground mt-1">Draw the field outline in the orthomosaic viewer to unlock AI analysis.</div>
+          <div className="text-xs text-muted-foreground mt-1">After a scan finishes, open its map and outline the field to unlock the treatment grid and mission planning.</div>
         </Card>
         <Card className="p-5">
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Spray logs</div>

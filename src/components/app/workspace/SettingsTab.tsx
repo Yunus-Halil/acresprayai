@@ -139,7 +139,7 @@ export function SettingsTab({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Field Settings</h1>
-            <p className="text-xs text-neutral-500 mt-1">Drives cost calculations and AI recommendations for this field.</p>
+            <p className="text-xs text-neutral-500 mt-1">Drives cost calculations for this field.</p>
           </div>
           <div className="flex items-center gap-2">
             {savedAt && !dirty && !saving && (
@@ -159,13 +159,13 @@ export function SettingsTab({
         {/* Crop info */}
         <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
           <h2 className="text-sm font-semibold mb-1">1. Crop Information</h2>
-          <p className="text-[11px] text-neutral-500 mb-4">Used to estimate growth stage and tune AI recommendations.</p>
+          <p className="text-[11px] text-neutral-500 mb-4">Used to estimate growth stage.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Crop type</label>
               <select className={inputCls} value={local.crop_type}
                 onChange={e => update({ crop_type: e.target.value })}>
-                <option value="">, Select crop ,</option>
+                <option value="">Select a crop</option>
                 {CROP_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -317,27 +317,27 @@ export function SettingsTab({
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>Flag wind above (mph)</label>
+              <label className={labelCls}>Flag wind above ({windUnit(units)})</label>
               <input
                 type="number" min={0} step={0.5} className={inputCls}
-                value={local.condition_limits?.wind_mph ?? 10}
+                value={windMphShown(local.condition_limits?.wind_mph ?? 10, units)}
                 onChange={e => update({
                   condition_limits: {
-                    wind_mph: Number(e.target.value) || 0,
+                    wind_mph: windMphFromShown(Number(e.target.value) || 0, units),
                     temp_f: local.condition_limits?.temp_f ?? 85,
                   },
                 })}
               />
             </div>
             <div>
-              <label className={labelCls}>Flag temperature above (°F)</label>
+              <label className={labelCls}>Flag temperature above ({tempUnit(units)})</label>
               <input
                 type="number" step={1} className={inputCls}
-                value={local.condition_limits?.temp_f ?? 85}
+                value={tempFShown(local.condition_limits?.temp_f ?? 85, units)}
                 onChange={e => update({
                   condition_limits: {
                     wind_mph: local.condition_limits?.wind_mph ?? 10,
-                    temp_f: Number(e.target.value) || 0,
+                    temp_f: tempFFromShown(Number(e.target.value) || 0, units),
                   },
                 })}
               />
@@ -349,9 +349,9 @@ export function SettingsTab({
         <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
           <h2 className="text-sm font-semibold mb-3">4. How these settings are used</h2>
           <ul className="text-[12px] text-neutral-400 space-y-1.5 list-disc pl-5">
-            <li>Treatment zones detected by AI Analysis are priced as <span className="font-mono text-neutral-200">{units === "metric" ? "hectares × your per-hectare cost" : "acres × your per-acre cost"}</span>.</li>
+            <li>Marked treatment zones are priced as <span className="font-mono text-neutral-200">{units === "metric" ? "hectares × your per-hectare cost" : "acres × your per-acre cost"}</span>.</li>
             <li>Issues map to inputs via a fixed table (e.g. <span className="text-neutral-300">bare soil → reseeding</span>, <span className="text-neutral-300">nitrogen deficiency → nitrogen fertilizer</span>).</li>
-            <li>The AI is told which inputs you carry. It won't recommend a product you don't have available.</li>
+            <li>Your product list is what the mission log and application record offer for prefill.</li>
             <li>Waterlogged zones show "Drainage work required, consult agronomist" instead of a cost.</li>
           </ul>
         </section>
@@ -704,7 +704,7 @@ export function LogFlightModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <CheckCircle2 className="h-4 w-4 text-[#4CAF50]" />
-            Mission Complete, Log Flight
+            Mission complete: log the flight
           </DialogTitle>
           <p className="text-[11px] text-neutral-500 mt-1">
             This becomes part of the spray log, a timestamped record for compliance and audit.

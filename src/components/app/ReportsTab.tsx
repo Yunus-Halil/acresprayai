@@ -13,6 +13,7 @@ import { type AnalysisState, analysisStateOf, zoneAcres } from "@/lib/compareGro
 import { storageKey } from "@/lib/storage";
 import {
   M2_PER_ACRE, fmtRate, fmtVolume, volumeToLitres, volumeUnit, volumeValue,
+  tempFFromShown, tempFShown, tempUnit, windMphFromShown, windMphShown, windUnit,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import {
@@ -696,7 +697,7 @@ export default function ReportsTab({
           pdf.setFont("helvetica", "bold");
           pdf.setTextColor(180, 83, 9);
           pdf.setFontSize(8);
-          pdf.text("Recorded by the retired vision-analysis system — not a treatment-grid assessment.", M, y);
+          pdf.text("Recorded by an older automatic analysis (no longer part of SwathWise), not a treatment-grid assessment.", M, y);
           y += 11;
           pdf.setFont("helvetica", "normal");
         }
@@ -1325,12 +1326,12 @@ export default function ReportsTab({
                   forecast presented as an observed condition would falsify the
                   record. TODO(field-capture): automated capture at mission time. */}
               <div>
-                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Wind speed (mph)</label>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Wind speed ({windUnit(unit)})</label>
                 <input type="number" min={0} step={0.5}
-                  value={record.wind_speed_mph ?? ""}
+                  value={record.wind_speed_mph != null ? windMphShown(record.wind_speed_mph, unit) : ""}
                   onChange={e => setRecord(r => ({
                     ...r,
-                    wind_speed_mph: e.target.value === "" ? null : Number(e.target.value),
+                    wind_speed_mph: e.target.value === "" ? null : windMphFromShown(Number(e.target.value), unit),
                     wind_source: e.target.value === "" ? null : "observed",
                   }))}
                   className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
@@ -1345,12 +1346,12 @@ export default function ReportsTab({
                 </select>
               </div>
               <div>
-                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Temperature (°F)</label>
+                <label className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 block">Temperature ({tempUnit(unit)})</label>
                 <input type="number" step={1}
-                  value={record.temperature_f ?? ""}
+                  value={record.temperature_f != null ? tempFShown(record.temperature_f, unit) : ""}
                   onChange={e => setRecord(r => ({
                     ...r,
-                    temperature_f: e.target.value === "" ? null : Number(e.target.value),
+                    temperature_f: e.target.value === "" ? null : tempFFromShown(Number(e.target.value), unit),
                     temp_source: e.target.value === "" ? null : "observed",
                   }))}
                   className="w-full h-9 px-3 rounded bg-[#0f0f0f] border border-[#262626] text-sm font-mono text-neutral-100 focus:outline-none focus:border-[#4CAF50]" />
@@ -1483,7 +1484,7 @@ export default function ReportsTab({
             <div className="text-[11px] text-yellow-400/90 flex items-center gap-1.5">
               <Grid3x3 className="h-3 w-3" />{" "}
               {source === "legacy"
-                ? "This scan carries only a legacy vision result. The report marks it as legacy; assess the scan in the Treatment Grid tab for a final report."
+                ? "This scan carries only a result from an older automatic analysis. The report marks it as such; assess the scan in the Treatment Grid tab for a final report."
                 : "No treatment-grid assessment exists for this scan; the report will state that treatment areas were not determined."}
             </div>
           )}

@@ -73,10 +73,14 @@ export default function Timelapse({
     });
     layersRef.current = layers;
 
-    // Framed on the field boundary, so every scan plays within one steady view.
+    // Framed on the field boundary, so every scan plays within one steady
+    // view. Without a boundary there is nothing to frame — the old fallback
+    // (world view over the Atlantic) rendered a permanent black box with
+    // working-looking controls; that case now renders a message instead
+    // (see the boundary check in the render below), so this branch only
+    // runs when a frame exists.
     const b = boundsFromRings(boundary);
     if (b) map.fitBounds(b, { padding: [20, 20] });
-    else map.setView([0, 0], 2);
 
     return () => {
       layersRef.current = [];
@@ -113,6 +117,17 @@ export default function Timelapse({
   }, [playing, speed, count]);
 
   if (count < 2) return null;
+
+  // No boundary = nothing to frame the map on. Say so instead of showing a
+  // black box centred on the open ocean.
+  if (!boundsFromRings(boundary)) {
+    return (
+      <div className="rounded-sm border border-[#1f1f1f] bg-[#141414] p-3 text-[11px] text-neutral-500">
+        The timelapse needs a saved field boundary to frame the map. Draw one in
+        Field View and it will appear here.
+      </div>
+    );
+  }
 
   const finished = atEnd(position, count);
 
