@@ -49,10 +49,11 @@ export default function FieldDetail() {
   const navigate = useNavigate();
   const [field, setField] = useState<Field | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [scansLoadFailed, setScansLoadFailed] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
-  const [resumable, setResumable] = useState<{ done: number; total: number } | null>(null);
+  const [resumable, setResumable] = useState<{ done: number; total: number; savedAt?: number } | null>(null);
   const [orthoAvailable, setOrthoAvailable] = useState<Record<string, boolean>>({});
   const [caps, setCaps] = useState<NodeCapabilities | null>(null);
   const [taskPage, setTaskPage] = useState(0);
@@ -64,7 +65,7 @@ export default function FieldDetail() {
   useEffect(() => {
     if (!fieldId) return;
     const c = readCheckpoint(fieldId);
-    setResumable(c ? { done: c.done.length, total: c.total } : null);
+    setResumable(c ? { done: c.done.length, total: c.total, savedAt: c.savedAt } : null);
   }, [fieldId, busy]);
 
   useEffect(() => { void fetchNodeCapabilities().then(setCaps); }, []);
@@ -86,10 +87,17 @@ export default function FieldDetail() {
       // Refresh every page currently visible in one request.
       ? [0, (taskPage + 1) * PAGE_SIZE - 1] as [number, number]
       : pageRange(targetPage);
-    const { data } = await supabase.from("odm_tasks").select("*")
+    const { data, error } = await supabase.from("odm_tasks").select("*")
       .eq("field_id", fieldId)
       .order("created_at", { ascending: false })
       .range(span[0], span[1]);
+    if (error) {
+      // A failed load must never render as "no scans" — keep whatever rows
+      // are already on screen and say what actually happened.
+      setScansLoadFailed(error.message);
+      return;
+    }
+    setScansLoadFailed(null);
     const rows = (data as Task[]) ?? [];
     setTasks(prev => (opts.reload || targetPage === 0 ? rows : appendPage(prev, rows)));
     setTasksHasMore(hasMore(rows, span[1] - span[0] + 1));
@@ -105,7 +113,7 @@ export default function FieldDetail() {
       return;
     }
     if (pollRef.current) return;
-    pollRef.current = window.setInterval(async () => {
+    const tick = async () => {
       const auth = await authHeader();
       await Promise.all(active.map(t => fetch(`${FN_BASE}/odm-poll`, {
         method: "POST",
@@ -113,7 +121,11 @@ export default function FieldDetail() {
         body: JSON.stringify({ task_id: t.id }),
       }).catch(() => {})));
       loadTasks({ reload: true });
-    }, 5000);
+    };
+    // First pass immediately: a reopened page must correct a stale status
+    // now, not after the first interval elapses.
+    void tick();
+    pollRef.current = window.setInterval(tick, 5000);
     return () => {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     };
@@ -211,13 +223,21 @@ export default function FieldDetail() {
 
   // Ask the server to re-drive a scan that failed or stalled mid-transfer.
   const retryTask = async (t: Task) => {
-    const auth = await authHeader();
-    await fetch(`${FN_BASE}/odm-poll`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: auth },
-      body: JSON.stringify({ task_id: t.id, retry: true }),
-    }).catch(() => {});
-    toast.info("Retrying this scan.");
+    // The toast follows the request's outcome — offline, "Retrying" was a lie.
+    try {
+      const auth = await authHeader();
+      const res = await fetch(`${FN_BASE}/odm-poll`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: auth },
+        body: JSON.stringify({ task_id: t.id, retry: true }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.info("Retrying this scan.");
+    } catch {
+      toast.error("Couldn't reach the processing service", {
+        description: "The retry was not started. Check your connection and try again.",
+      });
+    }
     loadTasks();
   };
 
@@ -229,7 +249,28 @@ export default function FieldDetail() {
   };
 
   const removeTask = async (id: string) => {
-    await supabase.from("odm_tasks").delete().eq("id", id);
+    const t = tasks.find(x => x.id === id);
+    // Deleting a scan orphans everything recorded against it — count and say.
+    let refs = "";
+    try {
+      const [flights, reports] = await Promise.all([
+        supabase.from("flight_logs").select("id", { count: "exact", head: true }).eq("scan_id", id),
+        supabase.from("field_reports").select("id", { count: "exact", head: true }).eq("scan_id", id),
+      ]);
+      const parts: string[] = [];
+      if (flights.count) parts.push(`${flights.count} logged flight${flights.count === 1 ? "" : "s"}`);
+      if (reports.count) parts.push(`${reports.count} archived report${reports.count === 1 ? "" : "s"}`);
+      if (parts.length) refs = ` ${parts.join(" and ")} reference this scan and will lose their imagery link.`;
+    } catch { /* counts are best-effort; the confirmation still runs */ }
+    const when = t?.created_at ? `scan from ${new Date(t.created_at).toLocaleDateString()}` : "this scan";
+    if (!window.confirm(`Permanently delete the ${when} and its map?${refs} This cannot be undone.`)) return;
+    const { error } = await supabase.from("odm_tasks").delete().eq("id", id);
+    if (error) {
+      toast.error("Couldn't delete the scan", {
+        description: "Nothing was deleted. Check your connection and try again.",
+      });
+      return;
+    }
     loadTasks();
   };
 
@@ -337,8 +378,10 @@ export default function FieldDetail() {
             <RotateCcw className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-600" />
             <div className="space-y-1.5">
               <div>
-                <strong>{resumable.done} of {resumable.total} images</strong> from an interrupted upload are already
-                on the processing node. Select the same images and press Start, only the missing ones will be sent.
+                <strong>{resumable.done} of {resumable.total} images</strong> from an upload interrupted{" "}
+                {resumable.savedAt ? new Date(resumable.savedAt).toLocaleString() : "earlier"} are already
+                on the processing node. Select the exact same images and press Start, only the missing
+                ones will be sent. A different selection will not be merged into this scan.
               </div>
               <button onClick={discardResume} className="underline text-muted-foreground hover:text-foreground">
                 Discard saved progress and start fresh
@@ -392,7 +435,14 @@ export default function FieldDetail() {
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Scan history ({tasks.length})</div>
         </div>
 
-        {tasks.length === 0 && (
+        {scansLoadFailed && (
+          <Card className="p-4 text-sm border-destructive/50 text-destructive">
+            Couldn&rsquo;t load this field&rsquo;s scans ({scansLoadFailed}). This is a loading
+            failure, not an empty history — check your connection and{" "}
+            <button className="underline" onClick={() => void loadTasks({ reload: true })}>retry</button>.
+          </Card>
+        )}
+        {tasks.length === 0 && !scansLoadFailed && (
           <Card className="p-8 text-center text-sm text-muted-foreground">
             No scans yet for this field. Upload drone images above to start your first scan.
           </Card>
@@ -430,8 +480,14 @@ export default function FieldDetail() {
                   {t.status === "uploading" && "Waiting for images…"}
                   {t.status === "queued" && "Queued on the processing node…"}
                   {t.status === "processing" && `Reconstructing · ${Math.round(t.progress)}%`}
-                  {t.status === "mirroring" && "Saving results, nearly there…"}
+                  {t.status === "mirroring" && "Saving results… (progress runs while this page is open)"}
                 </div>
+                {Date.now() - new Date(t.created_at).getTime() > 24 * 3600_000 && (
+                  <div className="text-[11px] text-amber-600">
+                    This scan has been {t.status} for over a day. Progress only advances while
+                    the app is open — keep this page open, or press Retry if it seems stuck.
+                  </div>
+                )}
               </div>
             )}
 

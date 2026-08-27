@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [flightCounts, setFlightCounts] = useState<Record<string, number>>({});
   const [lastFlight, setLastFlight] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -30,6 +31,13 @@ export default function Dashboard() {
         .from("fields")
         .select("id, name, area_hectares, boundary, boundary_area_hectares")
         .order("created_at", { ascending: false });
+      if (f.error) {
+        // A failed load is not an empty account.
+        setLoadFailed(f.error.message);
+        setLoading(false);
+        return;
+      }
+      setLoadFailed(null);
       const list = (f.data as Field[]) ?? [];
       setFields(list);
 
@@ -107,6 +115,11 @@ export default function Dashboard() {
           </div>
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : loadFailed ? (
+            <p className="text-sm text-destructive">
+              Couldn&rsquo;t load your fields ({loadFailed}). This is a loading failure, not an
+              empty account — check your connection and reload.
+            </p>
           ) : fields.length === 0 ? (
             <p className="text-sm text-muted-foreground">No fields yet. <Link to="/app/fields" className="underline">Create your first field</Link>.</p>
           ) : (

@@ -25,7 +25,8 @@ import {
 import { toast } from "sonner";
 import {
   costPerAreaToPerAcre, costPerAreaValue, costPerAreaUnit,
-  fmtAreaAc, fmtVolume, volumeToLitres, volumeUnit, volumeValue,
+  fmtAreaAc, fmtVolume, tempFFromShown, tempFShown, tempUnit,
+  volumeToLitres, volumeUnit, volumeValue, windMphFromShown, windMphShown, windUnit,
 } from "@/lib/units";
 import { setUnitSystem, useUnitSystem } from "@/hooks/useUnitSystem";
 import {
@@ -95,7 +96,7 @@ export function SettingsTab({
   settings, onSave, saving, savedAt, fieldAreaHa,
 }: {
   settings: FarmerSettings;
-  onSave: (s: FarmerSettings) => Promise<void> | void;
+  onSave: (s: FarmerSettings) => Promise<boolean | void> | boolean | void;
   saving: boolean;
   savedAt: number | null;
   fieldAreaHa: number | null;
@@ -363,6 +364,28 @@ export function SettingsTab({
 // Captures the audit-trail record after a real mission is flown. Writes a
 // row to public.flight_logs and updates the drone's stored battery so the
 // planner pre-fills "Pre-flight battery" with the last known landed value.
+// ---- Flight-log draft -----------------------------------------------------
+// The Log Flight dialog is the most typing in the product; a closed tab or a
+// dead battery must not erase it. The draft persists locally on every change
+// and is cleared only by a confirmed save or an explicit discard.
+const flightDraftKey = (scanId: string) => `swathwise:flight-draft:${scanId}`;
+type FlightDraft = {
+  dateFlown: string; batteryEnd: number | null; refills: number;
+  completed: string[]; notes: string; volumeIn: string;
+  rec: ApplicationRecord; savedAt?: string;
+};
+function readFlightDraft(scanId: string): FlightDraft | null {
+  try {
+    const raw = localStorage.getItem(flightDraftKey(scanId));
+    return raw ? (JSON.parse(raw) as FlightDraft) : null;
+  } catch {
+    return null;
+  }
+}
+function clearFlightDraft(scanId: string) {
+  try { localStorage.removeItem(flightDraftKey(scanId)); } catch { /* nothing stored */ }
+}
+
 export function LogFlightModal({
   open, onOpenChange, fieldId, scanId, droneId, droneName,
   batteryStart, zones, totalAcres, estLiters, recordDefaults, baselineRateLha,
@@ -386,7 +409,8 @@ export function LogFlightModal({
   center: [number, number] | null;
   /** Operator-configured condition-flag thresholds. */
   conditionLimits: { wind_mph: number; temp_f: number } | null;
-  onSaved: (log: LastFlownMission) => void | Promise<void>;
+  /** Return false when the write did NOT land — the modal must not claim success. */
+  onSaved: (log: LastFlownMission) => void | boolean | Promise<void | boolean>;
 }) {
   // Every quantity in this dialog follows the operator's unit preference — the
   // same one the planner, the grid and the report already use. STORAGE stays
@@ -394,9 +418,13 @@ export function LogFlightModal({
   const units = useUnitSystem();
   const today = new Date().toISOString().slice(0, 10);
   const [dateFlown, setDateFlown] = useState(today);
-  const [batteryEnd, setBatteryEnd] = useState<number>(25);
+  // Landed battery starts EMPTY: an untouched control must log "not
+  // recorded", never an invented 25% wearing the look of telemetry.
+  const [batteryEnd, setBatteryEnd] = useState<number | null>(null);
   const [refills, setRefills] = useState<number>(0);
-  const [completed, setCompleted] = useState<Set<string>>(() => new Set(zones.map(z => z.id)));
+  // Zones start UNCHECKED: "completed" is the pilot's claim about what was
+  // actually flown, not a default.
+  const [completed, setCompleted] = useState<Set<string>>(() => new Set());
   const [notes, setNotes] = useState("");
   // What the pilot types, IN THEIR OWN UNITS. Prefilled from the plan estimate
   // as a CONVENIENCE and labelled as such — what gets stored is what the pilot
@@ -404,19 +432,73 @@ export function LogFlightModal({
   const [volumeIn, setVolumeIn] = useState<string>("");
   const [rec, setRec] = useState<ApplicationRecord>(EMPTY_RECORD);
   const [saving, setSaving] = useState(false);
+  // An explicit failure state: when nothing was saved, the dialog says so and
+  // keeps every typed value in place.
+  const [saveFailure, setSaveFailure] = useState<string | null>(null);
+  const [draftNote, setDraftNote] = useState<string | null>(null);
+  const pristine = useRef<string | null>(null);
+  const dirtyRef = useRef(false);
 
-  // Reset whenever the modal is reopened so the zone list / starting battery
-  // reflect the current mission.
+  // Reset whenever the modal is reopened — from the local draft when one
+  // exists (a closed tab mid-entry loses nothing), from honest defaults
+  // otherwise.
   useEffect(() => {
     if (!open) return;
-    setDateFlown(today);
-    setBatteryEnd(Math.max(0, Math.min(batteryStart, 25)));
-    setRefills(0);
-    setCompleted(new Set(zones.map(z => z.id)));
-    setNotes("");
-    setVolumeIn("");
-    setRec({ ...EMPTY_RECORD, ...(recordDefaults ?? {}) });
+    const draft = readFlightDraft(scanId);
+    if (draft) {
+      setDateFlown(draft.dateFlown || today);
+      setBatteryEnd(draft.batteryEnd ?? null);
+      setRefills(draft.refills ?? 0);
+      setCompleted(new Set(draft.completed ?? []));
+      setNotes(draft.notes ?? "");
+      setVolumeIn(draft.volumeIn ?? "");
+      setRec({ ...EMPTY_RECORD, ...(recordDefaults ?? {}), ...(draft.rec ?? {}) });
+      setDraftNote(
+        `Restored your unsent entries${draft.savedAt ? ` from ${new Date(draft.savedAt).toLocaleString()}` : ""}.`,
+      );
+    } else {
+      setDateFlown(today);
+      setBatteryEnd(null);
+      setRefills(0);
+      setCompleted(new Set());
+      setNotes("");
+      setVolumeIn("");
+      setRec({ ...EMPTY_RECORD, ...(recordDefaults ?? {}) });
+      setDraftNote(null);
+    }
+    setSaveFailure(null);
+    pristine.current = null; // captured by the draft effect's first run
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist the draft on every change past the initial state. try/catch: a
+  // blocked localStorage downgrades to the unload warning below, never a crash.
+  useEffect(() => {
+    if (!open) return;
+    const cur = JSON.stringify({
+      dateFlown, batteryEnd, refills, completed: Array.from(completed), notes, volumeIn, rec,
+    });
+    if (pristine.current === null) { pristine.current = cur; dirtyRef.current = false; return; }
+    if (cur === pristine.current) { dirtyRef.current = false; return; }
+    dirtyRef.current = true;
+    try {
+      localStorage.setItem(flightDraftKey(scanId), JSON.stringify({
+        dateFlown, batteryEnd, refills, completed: Array.from(completed),
+        notes, volumeIn, rec, savedAt: new Date().toISOString(),
+      } satisfies FlightDraft));
+    } catch (e) {
+      console.error("[flight-draft] write failed", e);
+    }
+  }, [open, scanId, dateFlown, batteryEnd, refills, completed, notes, volumeIn, rec]);
+
+  // Belt over the draft's braces: a hard close mid-entry still warns.
+  useEffect(() => {
+    if (!open) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (dirtyRef.current) { e.preventDefault(); e.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [open]);
 
   const toggleZone = (id: string) => {
     setCompleted(prev => {
@@ -493,6 +575,16 @@ export function LogFlightModal({
 
   const save = async () => {
     if (!fieldId || saving) return;
+    setSaveFailure(null);
+    // Detect a dead connection up front instead of attempting writes that
+    // fail and then claiming success anyway.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setSaveFailure(
+        "You appear to be offline. Nothing was saved — your entries stay here " +
+        "(and are kept as a local draft); retry when you have signal.",
+      );
+      return;
+    }
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -536,29 +628,71 @@ export function LogFlightModal({
         .insert(row)
         .select("id, field_id, scan_id, drone_id, date_flown, battery_start, battery_end, tank_refills, zones_completed, acres_treated, liters_applied, notes, created_at")
         .single();
-      if (error) {
-        // Keep the user flow unblocked: the field-level snapshot is what the
-        // Reports tab actually needs. We still surface the database issue in
-        // console for debugging, but do not lose the mission values.
-        console.warn("[flight_logs] insert failed; using field snapshot fallback", error);
+      // Drone battery is a convenience update, never worth failing the log —
+      // and never written from an unrecorded landing charge.
+      if (droneId && batteryEnd != null) {
+        try { await supabase.from("drones").update({ battery: batteryEnd }).eq("id", droneId); }
+        catch (e) { console.error("[drones] battery update failed", e); }
       }
 
-      // Update drone battery so next planner session pre-fills with landed %.
-      if (droneId) {
-        await supabase.from("drones").update({ battery: batteryEnd }).eq("id", droneId);
-      }
       // The flight_logs table has no column for the application record, so the
       // record rides along on the snapshot the settings JSON keeps.
       const savedLog: LastFlownMission = inserted
         ? { ...(inserted as LastFlownMission), source: "flight_logs", record: snapshotBase.record }
         : snapshotBase;
-      toast.success(inserted ? "Flight logged" : "Mission saved to field", {
-        description: `${fmtAreaAc(acresDone, units).text} recorded for ${dateFlown}.`,
-      });
-      await onSaved(savedLog);
-      onOpenChange(false);
+
+      if (inserted) {
+        // Primary record confirmed persisted. The field summary rides behind
+        // it; its failure downgrades the message, it does not un-save the log.
+        clearFlightDraft(scanId);
+        toast.success("Flight logged", {
+          description: `${fmtAreaAc(acresDone, units).text} recorded for ${dateFlown}.`,
+        });
+        try {
+          const ok = await onSaved(savedLog);
+          if (ok === false) {
+            toast.warning("Logged, but the field summary did not update", {
+              description: "The flight log itself is saved. The field's last-mission summary will catch up on the next save.",
+            });
+          }
+        } catch (e) {
+          console.error("[flight] onSaved failed after insert", e);
+          toast.warning("Logged, but the field summary did not update", {
+            description: "The flight log itself is saved.",
+          });
+        }
+        onOpenChange(false);
+      } else {
+        // Primary insert failed: the settings snapshot is now the ONLY copy,
+        // so success may only be claimed after that write is CONFIRMED.
+        console.warn("[flight_logs] insert failed; attempting field snapshot fallback", error);
+        let persisted = false;
+        try {
+          persisted = (await onSaved(snapshotBase)) !== false;
+        } catch (e) {
+          console.error("[flight] snapshot fallback failed", e);
+        }
+        if (persisted) {
+          clearFlightDraft(scanId);
+          toast.success("Mission saved to field", {
+            description:
+              `${fmtAreaAc(acresDone, units).text} recorded for ${dateFlown}. ` +
+              `The detailed flight log could not be written (${error?.message ?? "database error"}); ` +
+              "the mission is kept on the field record.",
+          });
+          onOpenChange(false);
+        } else {
+          setSaveFailure(
+            `Nothing was saved. The flight log could not be written (${error?.message ?? "database error"}) ` +
+            "and the field snapshot write failed too — this usually means no connection. " +
+            "Your entries are kept here and as a local draft; retry when you have signal.",
+          );
+        }
+      }
     } catch (e: any) {
-      toast.error("Couldn't save flight log", { description: e?.message ?? String(e) });
+      setSaveFailure(
+        `Nothing was saved: ${e?.message ?? String(e)}. Your entries are kept here and as a local draft; retry when you have signal.`,
+      );
     } finally {
       setSaving(false);
     }
@@ -578,6 +712,29 @@ export function LogFlightModal({
         </DialogHeader>
 
         <div className="space-y-4">
+          {draftNote && (
+            <div className="flex items-center justify-between gap-2 rounded-sm border border-[#2b4a2e] bg-[#4CAF50]/10 px-2.5 py-1.5 text-[11px] text-[#9ccc9f]">
+              <span>{draftNote}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  clearFlightDraft(scanId);
+                  setDateFlown(today);
+                  setBatteryEnd(null);
+                  setRefills(0);
+                  setCompleted(new Set());
+                  setNotes("");
+                  setVolumeIn("");
+                  setRec({ ...EMPTY_RECORD, ...(recordDefaults ?? {}) });
+                  setDraftNote(null);
+                  pristine.current = null;
+                }}
+                className="shrink-0 text-[10px] text-neutral-400 underline hover:text-neutral-200"
+              >
+                Discard draft
+              </button>
+            </div>
+          )}
           {/* Date */}
           <div>
             <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Date flown</div>
@@ -595,16 +752,21 @@ export function LogFlightModal({
             <div className="flex items-center justify-between mb-1">
               <div className="text-[10px] uppercase tracking-wider text-neutral-500">Battery used</div>
               <div className="text-[11px] font-mono text-neutral-400">
-                Started {batteryStart}% → Landed <span className="text-neutral-100">{batteryEnd}%</span>
+                Started {batteryStart}% → Landed <span className="text-neutral-100">{batteryEnd != null ? `${batteryEnd}%` : "not recorded"}</span>
               </div>
             </div>
             <input
               type="range" min={0} max={100} step={1}
-              value={batteryEnd}
+              value={batteryEnd ?? batteryStart}
               onChange={e => setBatteryEnd(Number(e.target.value))}
-              className={`w-full ${batteryEnd < 20 ? "accent-red-500" : "accent-[#4CAF50]"}`}
+              className={`w-full ${batteryEnd != null && batteryEnd < 20 ? "accent-red-500" : "accent-[#4CAF50]"}`}
             />
-            {batteryEnd < 20 && (
+            {batteryEnd == null && (
+              <div className="mt-1 text-[10px] text-neutral-500">
+                Move the slider to record the landed charge — untouched, the log says &ldquo;not recorded&rdquo;.
+              </div>
+            )}
+            {batteryEnd != null && batteryEnd < 20 && (
               <div className="mt-1 text-[10px] text-red-400">Landed below 20%, pushing the battery limit.</div>
             )}
           </div>
@@ -632,6 +794,11 @@ export function LogFlightModal({
           {/* Zones completed */}
           <div>
             <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Zones completed</div>
+            {zones.length > 0 && (
+              <div className="mb-1 text-[10px] text-neutral-600">
+                Check only the zones you actually flew — nothing is assumed.
+              </div>
+            )}
             {zones.length === 0 ? (
               <div className="text-[11px] text-neutral-500 italic">No zones in this mission.</div>
             ) : (
@@ -725,12 +892,12 @@ export function LogFlightModal({
                   carries model provenance, never "observed". Editing a value
                   by hand afterwards makes that value observed again. */}
               <label className="text-[10px] text-neutral-500">
-                Wind speed (mph)
+                Wind speed ({windUnit(units)})
                 <input type="number" min={0} step={0.5}
-                  value={rec.wind_speed_mph ?? ""}
+                  value={rec.wind_speed_mph != null ? windMphShown(rec.wind_speed_mph, units) : ""}
                   onChange={e => setRec(r => ({
                     ...r,
-                    wind_speed_mph: e.target.value === "" ? null : Number(e.target.value),
+                    wind_speed_mph: e.target.value === "" ? null : windMphFromShown(Number(e.target.value), units),
                     wind_source: e.target.value === "" ? null : "observed",
                   }))}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
@@ -751,12 +918,12 @@ export function LogFlightModal({
                 </select>
               </label>
               <label className="text-[10px] text-neutral-500">
-                Temperature (°F)
+                Temperature ({tempUnit(units)})
                 <input type="number" step={1}
-                  value={rec.temperature_f ?? ""}
+                  value={rec.temperature_f != null ? tempFShown(rec.temperature_f, units) : ""}
                   onChange={e => setRec(r => ({
                     ...r,
-                    temperature_f: e.target.value === "" ? null : Number(e.target.value),
+                    temperature_f: e.target.value === "" ? null : tempFFromShown(Number(e.target.value), units),
                     temp_source: e.target.value === "" ? null : "observed",
                   }))}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1.5 text-sm font-mono text-neutral-200" />
@@ -837,9 +1004,17 @@ export function LogFlightModal({
             </div>
           )}
 
-          {droneName && (
+          {droneName && batteryEnd != null && (
             <div className="text-[10px] text-neutral-500">
               Will update <span className="text-neutral-400">{droneName}</span>'s stored battery to {batteryEnd}%.
+            </div>
+          )}
+          {saveFailure && (
+            <div className="rounded-sm border border-red-900/60 bg-red-950/30 px-2.5 py-2 text-[11px] leading-relaxed text-red-300">
+              <div className="mb-1 flex items-center gap-1.5 font-semibold">
+                <AlertTriangle className="h-3.5 w-3.5" /> Not saved
+              </div>
+              {saveFailure}
             </div>
           )}
           {!fieldId && (

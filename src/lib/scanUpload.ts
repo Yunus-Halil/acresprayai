@@ -75,6 +75,10 @@ type Checkpoint = {
   fieldId: string;
   /** File identity (name+size+mtime) of every image ODM has accepted. */
   done: string[];
+  /** Identity of EVERY file in the batch, so resume matches the selection
+   *  itself — a different batch with the same count must never merge into
+   *  this task, and a changed selection must never silently re-upload. */
+  fileKeys?: string[];
   total: number;
   savedAt: number;
 };
@@ -88,8 +92,11 @@ export function readCheckpoint(fieldId: string): Checkpoint | null {
     const raw = localStorage.getItem(ckptKey(fieldId));
     if (!raw) return null;
     const c = JSON.parse(raw) as Checkpoint;
-    // A checkpoint older than a day is more likely to confuse than help.
-    if (!c?.odmUuid || Date.now() - c.savedAt > 86_400_000) return null;
+    // No silent expiry: saved progress is kept until the operator discards it
+    // or the upload completes. The banner shows its age; if the processing
+    // node has since dropped the task, the retry fails with its own message
+    // instead of the progress quietly vanishing.
+    if (!c?.odmUuid) return null;
     return c;
   } catch { return null; }
 }
@@ -98,6 +105,17 @@ export function clearCheckpoint(fieldId: string) {
 }
 function writeCheckpoint(c: Checkpoint) {
   try { localStorage.setItem(ckptKey(c.fieldId), JSON.stringify(c)); } catch { /* quota / private mode */ }
+}
+
+/** Is this selection the SAME batch the checkpoint belongs to? */
+function sameBatch(prior: Checkpoint, files: File[]): boolean {
+  const keys = new Set(files.map(fileKey));
+  if (prior.fileKeys) {
+    return prior.fileKeys.length === files.length && prior.fileKeys.every(k => keys.has(k));
+  }
+  // Legacy checkpoint without the full list: require the count to match AND
+  // every already-accepted image to be present in the selection.
+  return prior.total === files.length && prior.done.every(k => keys.has(k));
 }
 
 async function authHeader(): Promise<string> {
@@ -218,7 +236,18 @@ export async function uploadScan(opts: {
 
   // ---- Resume or init ----------------------------------------------------
   const prior = readCheckpoint(fieldId);
-  const resumable = prior && prior.total === files.length;
+  const resumable = prior != null && sameBatch(prior, files);
+  if (prior && !resumable) {
+    // Never silently discard or merge. Discarding re-uploads a whole batch on
+    // metered data; merging a different batch with the same count would put
+    // two flights into one orthomosaic.
+    throw new UploadError(
+      `These are not the same images as the interrupted upload (${prior.done.length} of ${prior.total} ` +
+      "are already on the processing node). Select the exact same files to resume, or press " +
+      "\"Discard saved progress and start fresh\" to begin a new scan.",
+      true,
+    );
+  }
   let odmUuid: string;
   let taskId: string;
   const alreadyDone = new Set<string>(resumable ? prior!.done : []);
@@ -227,7 +256,6 @@ export async function uploadScan(opts: {
     odmUuid = prior!.odmUuid;
     taskId = prior!.taskId;
   } else {
-    clearCheckpoint(fieldId);
     const initRes = await fetch(`${FN_BASE}/odm-submit`, {
       method: "POST",
       headers: {
@@ -245,6 +273,7 @@ export async function uploadScan(opts: {
 
   const checkpoint: Checkpoint = {
     odmUuid, taskId, fieldId, total: files.length,
+    fileKeys: files.map(fileKey),
     done: [...alreadyDone], savedAt: Date.now(),
   };
   writeCheckpoint(checkpoint);

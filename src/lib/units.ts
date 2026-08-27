@@ -198,6 +198,25 @@ export function fmtWindSpeed(ms: number, sys: UnitSystem): Measure {
 
 // --- temperature, mass ------------------------------------------------------
 
+// ---- Application-record conditions ---------------------------------------
+// The record stores wind in mph and temperature in F (the column names say
+// so). Display and entry follow the preference: km/h and C for metric.
+export const KMH_PER_MPH = 1.609344;
+export const windUnit = (sys: UnitSystem): string => (sys === "metric" ? "km/h" : "mph");
+export const windMphShown = (mph: number, sys: UnitSystem): number =>
+  sys === "metric" ? +(mph * KMH_PER_MPH).toFixed(1) : mph;
+export const windMphFromShown = (shown: number, sys: UnitSystem): number =>
+  sys === "metric" ? +(shown / KMH_PER_MPH).toFixed(2) : shown;
+export const fmtWindMph = (mph: number, sys: UnitSystem): Measure =>
+  measure(windMphShown(mph, sys), windUnit(sys), 1);
+export const tempUnit = (sys: UnitSystem): string => (sys === "metric" ? "°C" : "°F");
+export const tempFShown = (f: number, sys: UnitSystem): number =>
+  sys === "metric" ? +((f - 32) * 5 / 9).toFixed(1) : f;
+export const tempFFromShown = (shown: number, sys: UnitSystem): number =>
+  sys === "metric" ? +(shown * 9 / 5 + 32).toFixed(1) : shown;
+export const fmtTempF = (f: number, sys: UnitSystem): Measure =>
+  measure(tempFShown(f, sys), tempUnit(sys), sys === "metric" ? 1 : 0);
+
 export function fmtTemp(celsius: number, sys: UnitSystem): Measure {
   return sys === "metric"
     ? measure(celsius, "°C", 0)

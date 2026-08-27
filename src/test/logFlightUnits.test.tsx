@@ -61,6 +61,12 @@ function renderModal() {
 /** The insert payload the dialog sent to flight_logs. */
 const savedRow = () => insertSpy.mock.calls[0]?.[0] as Record<string, unknown>;
 
+/** Zones now start UNCHECKED — completion is the pilot's claim, not a
+ *  default. Tests that need flown acreage check the zones like a pilot. */
+const checkAllZones = () => {
+  for (const box of screen.getAllByRole("checkbox")) fireEvent.click(box);
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -106,6 +112,7 @@ describe("imperial operator", () => {
 
   it("shows the plan's estimate in gallons too", () => {
     renderModal();
+    checkAllZones();
     // estLiters 20 over the full 3.1 ac at 0 refills ≈ 20 L ≈ 5.3 gal.
     const input = screen.getByPlaceholderText(/plan estimated/i) as HTMLInputElement;
     expect(input.placeholder).toMatch(/gal/);
@@ -114,9 +121,21 @@ describe("imperial operator", () => {
 
   it("still stores treated area in acres, the canonical unit", async () => {
     const { onSaved } = renderModal();
+    checkAllZones();
     fireEvent.click(screen.getByRole("button", { name: /save flight log/i }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(savedRow().acres_treated).toBeCloseTo(3.1, 2);
+  });
+
+  it("an untouched dialog claims nothing: zero acreage, no landed battery", async () => {
+    const { onSaved } = renderModal();
+    fireEvent.click(screen.getByRole("button", { name: /save flight log/i }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    // The old defaults logged full acreage and a 25% landing the pilot never
+    // reported — fabrications on a compliance record.
+    expect(savedRow().acres_treated).toBe(0);
+    expect(savedRow().battery_end).toBeNull();
+    expect(savedRow().zones_completed).toEqual([]);
   });
 });
 
@@ -148,6 +167,7 @@ describe("impossible input warns at entry, in the operator's units", () => {
 
   it("a volume far above the plan's estimate is challenged while typing, not at report time", async () => {
     renderModal();
+    checkAllZones();
     const input = screen.getByPlaceholderText(/plan estimated/i);
     // Plan ≈ 20 L (~5.3 gal); type 40 gal — 7.6× plan.
     fireEvent.change(input, { target: { value: "40" } });

@@ -207,6 +207,14 @@ export default function OrthomosaicViewer() {
   const [boundary, setBoundary] = useState<BoundaryRing[] | null>(null);
   const [boundaryMode, setBoundaryMode] = useState<"off" | "draw" | "edit">("off");
   const [boundaryDirty, setBoundaryDirty] = useState(false);
+  // A traced-but-unsaved boundary lives only in memory; leaving the page is
+  // the one way to lose it, so leaving gets challenged.
+  useEffect(() => {
+    if (!boundaryDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [boundaryDirty]);
   const [boundarySaving, setBoundarySaving] = useState(false);
   const [activeBoundaryIdx, setActiveBoundaryIdx] = useState<number | null>(null);
   const cursorCoordRef = useRef<HTMLDivElement | null>(null);
@@ -552,6 +560,9 @@ export default function OrthomosaicViewer() {
       setField(prev => prev ? { ...prev, boundary_area_hectares: Number(ha.toFixed(4)) } : prev);
     } catch (e) {
       console.error("save boundary failed", e);
+      toast.error("Couldn't save the boundary", {
+        description: "Nothing was saved. Your traced outline is still on screen; check your connection and press Save boundary again.",
+      });
     } finally {
       setBoundarySaving(false);
     }
@@ -561,9 +572,15 @@ export default function OrthomosaicViewer() {
     if (!window.confirm("Remove this field's saved boundary?")) return;
     setBoundarySaving(true);
     try {
-      await supabase.from("fields")
+      const { error } = await supabase.from("fields")
         .update({ boundary: null, boundary_area_hectares: null } as any)
         .eq("id", field.id);
+      if (error) {
+        toast.error("Couldn't remove the boundary", {
+          description: "Nothing was changed. Check your connection and try again.",
+        });
+        return;
+      }
       setBoundary(null);
       setBoundaryDirty(false);
       setBoundaryMode("off");
@@ -590,7 +607,13 @@ export default function OrthomosaicViewer() {
       area_hectares: Number(draftUserPoly.areaHa.toFixed(4)),
     };
     const { data, error } = await supabase.from("user_annotations").insert(row).select("*").single();
-    if (error) { console.error(error); return; }
+    if (error) {
+      console.error(error);
+      toast.error("Couldn't save this annotation", {
+        description: "Nothing was saved. Your drawing is still on screen; check your connection and press Save again.",
+      });
+      return;
+    }
     setUserPolys(prev => [...prev, {
       id: data.id, name: data.name, issue_type: data.issue_type, color: data.color,
       notes: data.notes, ring: data.ring as any, area_hectares: Number(data.area_hectares ?? 0),
@@ -606,12 +629,20 @@ export default function OrthomosaicViewer() {
     if (error) {
       console.error(error);
       if (existing) setUserPolys(prev => prev.some(p => p.id === id) ? prev : [...prev, existing]);
+      toast.error("Couldn't delete the annotation", {
+        description: "It was restored to the list. Check your connection and try again.",
+      });
     }
   };
 
   // ---- Farmer settings save (debounced via explicit Save button) -----------
-  const saveSettings = async (next: FarmerSettings) => {
-    if (!field?.id) return;
+  // Returns whether the write LANDED. Spray rates, flight-plan params and the
+  // last-flown-mission snapshot all pass through here; a swallowed failure
+  // used to mean an operator was shown success while compliance data
+  // evaporated. Callers that need the truth (the Log Flight fallback) read
+  // the return value; everyone sees the toast.
+  const saveSettings = async (next: FarmerSettings): Promise<boolean> => {
+    if (!field?.id) return false;
     setSettings(next);
     setSettingsSaving(true);
     try {
@@ -620,8 +651,13 @@ export default function OrthomosaicViewer() {
         .eq("id", field.id);
       if (error) throw error;
       setSettingsSavedAt(Date.now());
+      return true;
     } catch (e) {
       console.error("[settings] save failed", e);
+      toast.error("Couldn't save field settings", {
+        description: "Nothing was saved. Check your connection and try again.",
+      });
+      return false;
     } finally {
       setSettingsSaving(false);
     }

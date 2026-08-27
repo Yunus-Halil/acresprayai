@@ -131,7 +131,7 @@ export function PlannerTab({
   fieldName?: string;
   setActiveTab: (k: any) => void;
   settings: FarmerSettings;
-  onSaveSettings: (s: FarmerSettings) => Promise<void> | void;
+  onSaveSettings: (s: FarmerSettings) => Promise<boolean | void> | boolean | void;
   onFlightLogged: (log: LastFlownMission) => void;
   center: [number, number];
   userPolys: UserPoly[];
@@ -1886,6 +1886,7 @@ export function PlannerTab({
         }
         onSaved={async (log) => {
           onFlightLogged(log);
+          let persisted: boolean | void = undefined;
           // Reusable record values (grower, product, certificates) become the
           // field's defaults so the next mission prefills them.
           const defaults = log.record
@@ -1897,7 +1898,7 @@ export function PlannerTab({
                 part137_cert_no: log.record.part137_cert_no,
               }
             : settings.application_record ?? null;
-          await onSaveSettings({
+          persisted = await onSaveSettings({
             ...settings, flight_plan: fp, last_flown_mission: log, application_record: defaults,
           });
           await refreshLastLog();
@@ -1905,6 +1906,9 @@ export function PlannerTab({
           const { data } = await supabase.from("drones")
             .select("id, name, model, battery, status").order("created_at", { ascending: false });
           setDrones((data as any) ?? []);
+          // The modal needs the truth: false means the settings snapshot did
+          // NOT land, and it must not claim "saved to field".
+          return persisted !== false;
         }}
       />
     </div>

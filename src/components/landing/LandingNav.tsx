@@ -25,6 +25,12 @@ export const LandingNav = () => (
         </a>
       ))}
       <a
+        href="/auth"
+        className="text-sw-ink underline underline-offset-4 transition-colors hover:text-sw-green"
+      >
+        Sign in
+      </a>
+      <a
         href="#pilot"
         className="inline-flex items-center gap-2 rounded bg-sw-ink px-5 py-3 font-medium text-sw-paper transition-colors hover:bg-sw-green hover:text-white"
       >

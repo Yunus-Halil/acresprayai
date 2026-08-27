@@ -123,6 +123,17 @@ export function TreatmentTab({
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // A failed LOAD is its own state, never an empty grid: painting stays
+  // locked so a blank grid can never bury the stored one.
+  const [loadFailed, setLoadFailed] = useState<string | null>(null);
+  const [loadNonce, setLoadNonce] = useState(0);
+  const skipLoadRef = useRef(false);
+  // Strokes sitting in the debounce window: "Saved" must never show while
+  // the latest strokes have not landed.
+  const [unsaved, setUnsaved] = useState(false);
+  // What the last save actually persisted: an inherited, unconfirmed grid
+  // saves the FIELD grid but skips this scan's snapshot.
+  const [savedScope, setSavedScope] = useState<"full" | "grid-only">("full");
 
   const rings = (boundary ?? []) as unknown as LatLng2[][];
   // Shared with the Flight Planner's pass spacing, so a cell is exactly the
@@ -160,10 +171,24 @@ export function TreatmentTab({
         return;
       }
       let stored = null;
-      if (fieldId) {
-        try { stored = await repo.load(fieldId); } catch (e) { console.error("[grid] load failed", e); }
+      if (fieldId && !skipLoadRef.current) {
+        try {
+          stored = await repo.load(fieldId);
+        } catch (e) {
+          // A failed load must never present as an empty grid: the first
+          // repair stroke would arm the autosave and overwrite the stored
+          // grid with a blank one. No grid, no painting, until the load
+          // succeeds or the operator explicitly chooses to go on without it.
+          if (cancelled) return;
+          console.error("[grid] load failed", e);
+          setGrid(null);
+          setLoadFailed((e as Error)?.message ?? String(e));
+          setLoading(false);
+          return;
+        }
       }
       if (cancelled) return;
+      setLoadFailed(null);
       setSelected(new Set());
       setPendingMigration(null);
       if (stored && gridIdFor(stored.definition) === wantId) {
@@ -197,7 +222,7 @@ export function TreatmentTab({
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [definition, fieldId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [definition, fieldId, loadNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Persist on idle ----------------------------------------------------
   // Painting fires per cell under the brush; writing each one would be a
@@ -210,6 +235,7 @@ export function TreatmentTab({
   pendingRef.current = pendingMigration !== null;
   useEffect(() => {
     if (!grid || !fieldId || !dirty.current || pendingMigration) return;
+    setUnsaved(true);
     const t = setTimeout(async () => {
       setSaving(true);
       setSaveError(null);
@@ -217,6 +243,7 @@ export function TreatmentTab({
         await repo.save(fieldId, packGrid(grid));
         dirty.current = false;
         setSavedAt(Date.now());
+        setUnsaved(false);
         // Field View is permanently mounted and holds its own copy of the
         // zones; this is what tells it (and the scan panel) to reload.
         announceGridChanged();
@@ -230,6 +257,7 @@ export function TreatmentTab({
         if (!snap.ok) {
           setSaveError(`Grid saved, but the scan's assessment record did not update: ${snap.error}`);
         }
+        setSavedScope(snap.ok && (snap as { skipped?: boolean }).skipped ? "grid-only" : "full");
       } catch (e) {
         const msg = e instanceof GridStoreTooLargeError
           ? e.message
@@ -243,6 +271,32 @@ export function TreatmentTab({
     }, 700);
     return () => clearTimeout(t);
   }, [grid, fieldId, taskId, pendingMigration]);
+
+  // A closing browser runs no React cleanup: flush the debounced save when
+  // the page hides, and warn on unload while strokes are still in flight.
+  // Losing the last strokes because the lid closed is not acceptable.
+  useEffect(() => {
+    const flush = () => {
+      if (!dirty.current || !fieldId || !gridRef.current || pendingRef.current) return;
+      const g = gridRef.current;
+      dirty.current = false;
+      repo.save(fieldId, packGrid(g))
+        .then(() => { announceGridChanged(); return snapshotGridAssessment(taskId, g); })
+        .catch(e => { dirty.current = true; console.error("[grid] flush failed", e); });
+    };
+    const onVisibility = () => { if (document.visibilityState === "hidden") flush(); };
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (dirty.current) { flush(); e.preventDefault(); e.returnValue = ""; }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [fieldId, taskId]);
 
   // Flush a pending debounced save when the tab unmounts. Without this, a tab
   // switch within the 700 ms window silently dropped the last strokes — and
@@ -704,6 +758,40 @@ export function TreatmentTab({
           )}
         </div>
 
+        {loadFailed && !loading && (
+          <div className="absolute inset-0 z-[600] grid place-items-center bg-black/70 p-6">
+            <div className="max-w-md rounded-sm border border-red-900/60 bg-[#141414] p-4 text-center">
+              <p className="text-sm font-semibold text-red-300 mb-1">Couldn&rsquo;t load your saved grid</p>
+              <p className="text-xs text-neutral-400 mb-3 leading-relaxed">
+                The saved treatment grid for this field could not be fetched ({loadFailed}).
+                Painting is locked so a blank grid can never overwrite the saved one.
+                Check your connection and retry.
+              </p>
+              <div className="flex justify-center gap-2">
+                <button
+                  onClick={() => setLoadNonce(n => n + 1)}
+                  className="text-xs bg-[#4CAF50] hover:bg-[#43a047] text-black rounded-sm px-3 py-1.5 font-semibold"
+                >
+                  Retry loading
+                </button>
+                <button
+                  onClick={() => {
+                    if (!window.confirm(
+                      "Start with an empty grid WITHOUT loading the saved one? " +
+                      "If you paint here and it saves, the previously saved grid for this field will be overwritten.",
+                    )) return;
+                    skipLoadRef.current = true;
+                    setLoadNonce(n => n + 1);
+                  }}
+                  className="text-xs border border-[#333] text-neutral-300 hover:text-white rounded-sm px-3 py-1.5"
+                >
+                  Start without it
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {loading && (
           <div className="absolute inset-0 grid place-items-center z-[500] bg-black/40">
             <div className="flex items-center gap-2 text-xs text-neutral-300">
@@ -854,6 +942,12 @@ export function TreatmentTab({
 
         {/* Tool ---------------------------------------------------------- */}
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Tool</div>
+        {grid && !hasWork && (
+          <div className="rounded-sm border border-[#2b4a2e] bg-[#4CAF50]/10 p-2.5 mb-2 text-[11px] text-[#9ccc9f] leading-relaxed">
+            Start by painting: pick <span className="font-semibold">Assign</span>, choose Treat or Skip,
+            and drag across the map. Marking 3 cells you&rsquo;d treat and 3 you&rsquo;d skip unlocks Find Similar.
+          </div>
+        )}
         <div className="flex gap-1.5 mb-3">
           <button onClick={() => setTool("inspect")}
             className={`flex-1 text-xs rounded-sm px-2 py-2 border inline-flex items-center justify-center gap-1.5 transition-colors ${
@@ -1184,9 +1278,13 @@ export function TreatmentTab({
           <span className="inline-flex items-center gap-1.5">
             {saving
               ? <><Loader2 className="h-3 w-3 animate-spin" /> Saving…</>
-              : savedAt
-                ? <><Save className="h-3 w-3" /> Saved</>
-                : <><Info className="h-3 w-3" /> Changes save automatically</>}
+              : unsaved
+                ? <><Loader2 className="h-3 w-3" /> Unsaved changes…</>
+                : savedAt
+                  ? savedScope === "grid-only"
+                    ? <span className="text-yellow-500/90 inline-flex items-center gap-1.5"><Save className="h-3 w-3" /> Saved — not yet counted for this scan (confirm above)</span>
+                    : <><Save className="h-3 w-3" /> Saved</>
+                  : <><Info className="h-3 w-3" /> Changes save automatically</>}
           </span>
           {!fieldId && <span className="text-yellow-600">No field, not saved</span>}
         </div>

@@ -218,41 +218,64 @@ describe("uploadScan · resume", () => {
       expect(key).toMatch(/^IMG_\d+\.jpg:\d+:\d+$/);
     }
 
-    // A different file with the same name is NOT treated as already uploaded.
+    // A different file with the same name is a DIFFERENT batch: the upload
+    // refuses to merge it into the checkpointed task rather than quietly
+    // treating the impostor as already sent (or re-sending everything).
     const impostor = new File([new Uint8Array([9, 9, 9])], "IMG_0.jpg", { type: "image/jpeg" });
     Object.defineProperty(impostor, "lastModified", { value: 999 });
     const swapped = [impostor, ...files.slice(1)];
 
     const second = scenario();
     installFetch(second);
-    await uploadScan({ fieldId: FIELD, files: swapped, onProgress: noop });
+    const err = await uploadScan({ fieldId: FIELD, files: swapped, onProgress: noop }).catch(e => e);
 
-    expect(second.uploadAttempts).toContain("IMG_0.jpg");
+    expect(err).toBeInstanceOf(UploadError);
+    expect(err.message).toMatch(/not the same images/i);
+    // Nothing was uploaded or merged, and the saved progress survives.
+    expect(second.uploadAttempts).toHaveLength(0);
+    expect(second.initCalls).toBe(0);
+    expect(readCheckpoint(FIELD)).not.toBeNull();
   });
 
-  it("starts fresh when the selection size no longer matches the checkpoint", async () => {
+  it("refuses a different selection instead of silently starting over", async () => {
     installFetch(scenario({ fail: new Map([["IMG_4.jpg", { status: 500 }]]) }));
     await uploadScan({ fieldId: FIELD, files: makeFiles(6), onProgress: noop }).catch(() => {});
     expect(readCheckpoint(FIELD)).not.toBeNull();
 
-    // A different number of files means a different scan.
+    // The old behaviour silently cleared the checkpoint and re-uploaded the
+    // whole batch on metered data. Now: an explicit refusal that names the
+    // way forward, with the saved progress intact.
     const second = scenario();
     installFetch(second);
-    await uploadScan({ fieldId: FIELD, files: makeFiles(8), onProgress: noop });
+    const err = await uploadScan({ fieldId: FIELD, files: makeFiles(8), onProgress: noop }).catch(e => e);
 
-    expect(second.initCalls).toBe(1);
-    expect(second.uploadAttempts).toHaveLength(8);
+    expect(err).toBeInstanceOf(UploadError);
+    expect(err.message).toMatch(/discard saved progress/i);
+    expect(second.initCalls).toBe(0);
+    expect(readCheckpoint(FIELD)).not.toBeNull();
+
+    // Discarding explicitly then re-selecting starts a genuinely new scan.
+    clearCheckpoint(FIELD);
+    const third = scenario();
+    installFetch(third);
+    await uploadScan({ fieldId: FIELD, files: makeFiles(8), onProgress: noop });
+    expect(third.initCalls).toBe(1);
+    expect(third.uploadAttempts).toHaveLength(8);
   });
 
-  it("discards a checkpoint older than a day", async () => {
+  it("keeps saved progress regardless of age — expiry was silent work-loss", async () => {
     installFetch(scenario({ fail: new Map([["IMG_4.jpg", { status: 500 }]]) }));
     await uploadScan({ fieldId: FIELD, files: makeFiles(6), onProgress: noop }).catch(() => {});
 
+    // An operator who loses signal Friday and returns Monday must not
+    // re-upload 160 images because a timer quietly ran out.
     const raw = JSON.parse(localStorage.getItem(`swathwise.upload.${FIELD}`)!);
-    raw.savedAt = Date.now() - 2 * 86_400_000;
+    raw.savedAt = Date.now() - 3 * 86_400_000;
     localStorage.setItem(`swathwise.upload.${FIELD}`, JSON.stringify(raw));
 
-    expect(readCheckpoint(FIELD)).toBeNull();
+    const kept = readCheckpoint(FIELD);
+    expect(kept).not.toBeNull();
+    expect(kept!.done.length).toBe(5);
   });
 
   it("clearCheckpoint forgets saved progress", async () => {

@@ -18,6 +18,7 @@ import {
   AlertTriangle, CalendarDays, FileText, Loader2, MapPin, Plane, Sprout,
 } from "lucide-react";
 import { type ApplicationRecord, conditionSourceLabel } from "@/lib/reportRecord";
+import { toast } from "sonner";
 import { acreageFromBuggyPath, LEGACY_AREA_NOTE } from "@/lib/legacyAreaAudit";
 import type { FarmerSettings } from "@/lib/farmerSettings";
 import { fmtAreaAc, fmtVolume } from "@/lib/units";
@@ -185,9 +186,18 @@ export function FlightLogTab({
   }), [logs]);
 
   const openReport = async (r: ReportRow) => {
-    const { data } = await supabase.storage.from("field-reports")
+    const { data, error } = await supabase.storage.from("field-reports")
       .createSignedUrl(r.storage_path, 60 * 10);
-    if (data?.signedUrl) window.open(data.signedUrl, "_blank", "noopener");
+    if (data?.signedUrl) {
+      window.open(data.signedUrl, "_blank", "noopener");
+      return;
+    }
+    // A button that silently does nothing reads as broken software.
+    toast.error("Couldn't open the report", {
+      description: error?.message
+        ? `The archive did not answer (${error.message}). Check your connection and try again.`
+        : "The archive did not answer. Check your connection and try again.",
+    });
   };
 
   return (

@@ -46,16 +46,24 @@ export default function Fields() {
     const span = opts.reload
       ? [0, (page + 1) * PAGE_SIZE - 1] as [number, number]
       : pageRange(targetPage);
-    const { data: fields } = await supabase
+    const { data: fields, error } = await supabase
       .from("fields")
       .select("*")
       .order("created_at", { ascending: false })
       .range(span[0], span[1]);
+    if (error) {
+      // A failed load must never render as "No fields yet" — a person with
+      // real fields and no connection would read that as their data being gone.
+      setLoadFailed(error.message);
+      return;
+    }
+    setLoadFailed(null);
     const rows = (fields as DBField[]) ?? [];
     setDbFields(prev => (opts.reload || targetPage === 0 ? rows : appendPage(prev, rows)));
     setMore(hasMore(rows, span[1] - span[0] + 1));
     if (!opts.reload) setPage(targetPage);
   };
+  const [loadFailed, setLoadFailed] = useState<string | null>(null);
   useEffect(() => { load(); }, []);
 
   const add = async (e: React.FormEvent) => {
@@ -74,7 +82,13 @@ export default function Fields() {
 
   const remove = async (id: string) => {
     if (!confirm("Delete this field and all its scans?")) return;
-    await supabase.from("fields").delete().eq("id", id);
+    const { error } = await supabase.from("fields").delete().eq("id", id);
+    if (error) {
+      toast.error("Couldn't delete the field", {
+        description: "Nothing was deleted. Check your connection and try again.",
+      });
+      return;
+    }
     load({ reload: true });
   };
 
@@ -113,7 +127,14 @@ export default function Fields() {
         </Dialog>
       </header>
 
-      {dbFields.length === 0 && (
+      {loadFailed && (
+        <Card className="p-4 text-sm border-destructive/50 text-destructive">
+          Couldn&rsquo;t load your fields ({loadFailed}). This is a loading failure, not an
+          empty account — check your connection and{" "}
+          <button className="underline" onClick={() => void load({ reload: true })}>retry</button>.
+        </Card>
+      )}
+      {dbFields.length === 0 && !loadFailed && (
         <Card className="p-10 text-center space-y-3">
           <Leaf className="h-10 w-10 mx-auto text-primary" />
           <div className="font-display text-xl">No fields yet</div>
