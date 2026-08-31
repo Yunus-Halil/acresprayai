@@ -9,7 +9,9 @@ each keeps its own state.
 > and navigated away. The `+` button itself was also dead for a different reason: its menu was
 > rendered inside the horizontally scrolling tab strip, and a box that scrolls on one axis clips
 > the other, so the menu was painted into a 40px-tall box and never seen. The menu now lives
-> outside the scroller. `src/test/workspaceTabBar.test.ts` guards both.
+> outside the scroller, and the strip is sized to its tabs rather than stretched across the bar,
+> so the `+` sits next to the last tab instead of at the far right edge.
+> `src/test/workspaceTabBar.test.ts` guards all three.
 
 This is where the farmer spends their time.
 

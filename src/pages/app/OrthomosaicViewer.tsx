@@ -174,6 +174,10 @@ function isTypingTarget(target: EventTarget | null): boolean {
  * The new-tab shortcut, written once so the tooltip, the menu footer and the
  * handler can never drift apart and advertise a key that does nothing.
  */
+/** Menu width in px. Matches `w-56` on the menu; used to pick which edge it
+ *  hangs from, so the two cannot disagree without this constant changing. */
+const NEW_TAB_MENU_W = 224;
+
 const NEW_TAB_SHORTCUT_LABEL =
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "")
     ? "⌥ T"
@@ -728,6 +732,24 @@ export default function OrthomosaicViewer() {
   useNdviLayerDefault(taskId, ndviInfo, (visible) =>
     setLayers(l => (l.ndvi === visible ? l : { ...l, ndvi: visible })));
 
+  const newTabRef = useRef<HTMLDivElement | null>(null);
+
+  // Which edge of the "+" the menu hangs from.
+  //
+  // The button sits immediately after the last tab, so it is usually near the
+  // LEFT of the bar and the menu opens rightward. But the tab strip shrinks
+  // into a scroller once the tabs outgrow the bar, which walks the button back
+  // toward the right edge on a narrow screen. Neither alignment is right in
+  // both cases and CSS cannot flip on its own, so it is measured on open: one
+  // getBoundingClientRect, no observers, no layout thrash.
+  const [newTabAlign, setNewTabAlign] = useState<"left" | "right">("left");
+  const alignNewTabMenu = useCallback(() => {
+    const el = newTabRef.current;
+    if (!el || typeof window === "undefined") return;
+    const { left } = el.getBoundingClientRect();
+    setNewTabAlign(left + NEW_TAB_MENU_W + 8 > window.innerWidth ? "right" : "left");
+  }, []);
+
   // Alt+T opens the new-tab menu.
   //
   // It used to be Ctrl/Cmd+T, which never once worked: Ctrl+T is a RESERVED
@@ -742,17 +764,17 @@ export default function OrthomosaicViewer() {
       if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "t"
           && !isTypingTarget(e.target)) {
         e.preventDefault();
+        alignNewTabMenu();
         setNewTabOpen(o => !o);
       }
       if (e.key === "Escape") { setNewTabOpen(false); setLayersOpen(false); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [alignNewTabMenu]);
 
   // A menu that only closes on Escape or a second click of its own button is a
   // menu the operator has to fight. Close it on any click that lands outside.
-  const newTabRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!newTabOpen) return;
     const onDown = (e: MouseEvent) => {
@@ -903,7 +925,12 @@ export default function OrthomosaicViewer() {
           dead. Anything that has to escape the strip's bounds goes here. */}
       <div className="h-10 shrink-0 flex items-end pl-2 pr-3 border-b border-[#1f1f1f]"
            style={{ background: "#141414" }}>
-        <div className="h-full min-w-0 flex-1 flex items-end gap-0.5 overflow-x-auto overflow-y-hidden">
+        {/* Sized to its tabs, NOT to the bar. `flex-1` here stretched the strip
+            across the full width and shoved the "+" against the right edge,
+            miles from the tab it adds to. Default `flex: 0 1 auto` lets it sit
+            at content width and still shrink into a scroller once the tabs
+            outgrow the bar, so the "+" stays next to the last tab either way. */}
+        <div className="h-full min-w-0 flex items-end gap-0.5 overflow-x-auto overflow-y-hidden">
         {TAB_DEFS.filter(t => openTabs.includes(t.key)).map(t => {
           const Icon = t.icon;
           const active = activeTab === t.key;
@@ -943,7 +970,7 @@ export default function OrthomosaicViewer() {
             data-testid="new-tab-button"
             aria-haspopup="menu"
             aria-expanded={newTabOpen}
-            onClick={() => setNewTabOpen(o => !o)}
+            onClick={() => { if (!newTabOpen) alignNewTabMenu(); setNewTabOpen(o => !o); }}
             title={`New tab (${NEW_TAB_SHORTCUT_LABEL})`}
             className="h-7 w-7 ml-1 grid place-items-center rounded-sm text-neutral-500 hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"
           >
@@ -951,7 +978,7 @@ export default function OrthomosaicViewer() {
           </button>
           {newTabOpen && (
             <div role="menu" data-testid="new-tab-menu"
-                 className="absolute z-[2000] top-8 right-0 w-56 rounded-md border border-[#222] bg-[#161616] shadow-2xl p-1">
+                 className={`absolute z-[2000] top-8 w-56 rounded-md border border-[#222] bg-[#161616] shadow-2xl p-1 ${newTabAlign === "right" ? "right-0" : "left-0"}`}>
               <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-neutral-500">Open in new tab</div>
               {TAB_DEFS.filter(t => !openTabs.includes(t.key)).map(t => {
                 const Icon = t.icon;

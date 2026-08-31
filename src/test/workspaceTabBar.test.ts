@@ -57,10 +57,28 @@ describe("workspace tab bar", () => {
     expect(bar).toContain('data-testid="new-tab-button"');
   });
 
-  it("hangs the menu leftwards so it cannot run off a narrow screen", () => {
-    // The + sits at the right end of the bar. `left-0` put a 224px menu past
-    // the viewport edge on a phone; `right-0` opens it inward.
-    expect(tabBarSource()).toMatch(/new-tab-menu[\s\S]{0,200}right-0/);
+  it("keeps the + next to the last tab rather than at the far edge of the bar", () => {
+    const bar = tabBarSource();
+    const scroller = bar.slice(bar.indexOf("<div className=\"h-full"), bar.indexOf("overflow-y-hidden"));
+    // `flex-1` stretched the strip across the whole bar and pushed the + to the
+    // right-hand edge, a screen away from the tab it adds to. The strip is
+    // sized to its tabs and shrinks only when they overflow.
+    expect(scroller).not.toMatch(/\bflex-1\b/);
+    expect(scroller).toContain("min-w-0");
+    expect(scroller).toContain("overflow-x-auto");
+  });
+
+  it("picks the menu edge from where the button actually is", () => {
+    // Neither alignment works in both cases: the + normally sits near the left
+    // (menu opens rightward), but a full tab strip on a narrow screen walks it
+    // toward the right edge (menu must open leftward). CSS cannot flip on its
+    // own, so it is measured.
+    expect(SRC).toContain("const NEW_TAB_MENU_W = 224");
+    expect(SRC).toMatch(/getBoundingClientRect\(\)[\s\S]{0,200}window\.innerWidth/);
+    expect(tabBarSource()).toMatch(/newTabAlign === "right" \? "right-0" : "left-0"/);
+    // Both entry points into the menu measure before opening.
+    expect(SRC).toContain("if (!newTabOpen) alignNewTabMenu();");
+    expect(SRC).toMatch(/alignNewTabMenu\(\);\s*\n\s*setNewTabOpen\(o => !o\);/);
   });
 
   it("closes on a click outside, not only on Escape or a second click", () => {
