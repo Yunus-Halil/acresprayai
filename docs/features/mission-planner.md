@@ -162,10 +162,31 @@ The generated mission plays back on the map on a `requestAnimationFrame` timelin
 play/pause, scrub and speed control, showing the drone's position and whether the sprayer is on
 at each moment.
 
-## Drone specifications
+## Aircraft directory and drone specifications
 
-One shared table in `src/lib/droneSpecs.ts`, keyed by the `drones.model` string, with an alias
-map so model names saved under older spellings still resolve.
+Two layers, and the difference between them is the whole point.
+
+**The catalogue** is `src/data/aircraftDirectory.json`: data, not code, so adding an airframe is
+an edit to a JSON file rather than a component change and a deploy. Thirty-seven entries covering
+the DJI Agras line (T10 through T100), XAG (P40, V40, P100, P100 Pro, P150, P150 Max), Hylio
+(the AG-1xx and AG-2xx series plus the current PEGASUS / ARES / ATLAS / PHOTON names) and the
+mapping aircraft SwathWise ingests imagery from. Every entry carries make, model, role
+(spray, mapping, or both), tank capacity in litres, swath, the manufacturer page the figures came
+off, and the date they were read.
+
+**A figure the manufacturer does not publish is `null`.** It is never inferred from a model
+number, a predecessor or a dealer listing. DJI's T10 carries 8 L while the T16's capacity is not
+published at all, so the numbering does not decode, and a guessed capacity would sit unnoticed on
+a compliance record. Where the maker publishes a swath *range* rather than one operating figure,
+`swath_m` is null and `swath_published_m` carries the range, because effective swath depends on
+altitude, speed and nozzle. The operator states the width they actually fly.
+
+**The planning layer** is `PLANNING_PROFILES` in `src/lib/droneSpecs.ts`: hand-tuned operational
+figures for the seven airframes SwathWise has shipped flight planning against. They override the
+published numbers, deliberately. The T40 is the worked example: DJI publishes 11 m at 2.5 m AGL
+and 7 m/s; SwathWise plans 9 m, because lanes spaced on the outer edge of a pattern that is
+thinnest exactly where it is widest leave under-dosed strips nobody sees until the pest comes
+back through them.
 
 | Model | Role | Tank | Swath | Flight | Turn r | Climb |
 |---|---|---|---|---|---|---|
@@ -174,18 +195,57 @@ map so model names saved under older spellings still resolve.
 | DJI Agras T25 | Sprayer | 20 L | 7 m | 18 min | 3 m | 6 m/s |
 | XAG P100 Pro | Sprayer | 50 L | 10 m | 18 min | 4.5 m | 5 m/s |
 | XAG V40 | Sprayer | 16 L | 5 m | 18 min | 3.5 m | 5 m/s |
-| DJI Mavic 3M | Survey | — | — | 43 min | 1 m | 8 m/s |
-| Parrot Anafi USA | Survey | — | — | 32 min | 1 m | 4 m/s |
-| Custom | Sprayer | 30 L | 6 m | 20 min | 3 m | 5 m/s |
+| DJI Mavic 3M | Survey | n/a | n/a | 43 min | 1 m | 8 m/s |
+| Parrot Anafi USA | Survey | n/a | n/a | 32 min | 1 m | 4 m/s |
 
-Both the fleet endurance chart and the planner's battery estimate derive from the same
-`max_flight_min`, and the Fleet screen's display strings are formatted from these same numbers —
-so the two can never drift apart.
+Changing a number in that table re-plans every existing mission for that airframe: pass spacing,
+treatment grid cell size and chemical volume all move together. The seven are frozen at the values
+they shipped with for exactly that reason.
 
-> ⚠️ **Verify before relying on these.** They are conservative real-world figures, not marketing
-> maxima, and they have **not** been checked against current manufacturer datasheets. They feed
-> battery, tank and maneuverability estimates a pilot depends on. Treat them as defaults to
-> confirm per airframe; operators can override everything through the Custom profile.
+Every other seeded airframe takes its tank and swath from the directory and falls back to the
+`DEFAULT_SPEC` shape for the fields nobody publishes. `resolveDroneSpec` returns a `known` set
+saying which fields are real, so a spec card prints "Not published" instead of a placeholder, and
+the planner says out loud when it is spacing lanes on a fallback.
+
+> ⚠️ **The planning profiles are still unverified.** They are conservative real-world figures, not
+> marketing maxima, and they have **not** been checked against current manufacturer datasheets.
+> They feed battery, tank and maneuverability estimates a pilot depends on. Treat them as defaults
+> to confirm per airframe. The directory's tank and swath figures, by contrast, each carry the
+> manufacturer URL and date they were read from.
+
+### Custom aircraft
+
+Always offered, pinned above every make in the picker rather than buried at the bottom of it.
+Fields are make, model, spray/mapping, tank capacity and swath. Tank capacity is **required** for
+a sprayer: the Log Flight dialog and the report both reconcile logged volume against capacity
+times refills, and a sprayer with no capacity is a sprayer whose spray record cannot be checked.
+Swath is optional and stays blank when unstated.
+
+Nothing is autofilled from a "similar" model. The closest seeded airframe is still a different
+aircraft, and a capacity inherited from it would be a fabricated number on a spray record.
+
+A custom aircraft is stored on its own fleet row in `drones.specs` (as `{ kind: "custom", ... }`)
+and is first-class everywhere: mission planning, Log Flight and reports all resolve from that row.
+This replaced a field-level `flight_plan.custom_specs`, under which two custom aircraft in one
+fleet shared a single tank capacity and whichever was selected got the other one's numbers.
+
+The same column also stores `{ kind: "override", tank_l, swath_m }`: the one or two figures an
+operator supplies for a **seeded** airframe whose maker publishes none, such as a T16 or a Hylio
+PEGASUS sold in two tank configurations. The aircraft stays seeded; only the missing numbers come
+from the operator.
+
+### When a figure is missing
+
+A check that cannot run is not a check that passed, so each of these says so:
+
+- **Planner** shows an amber note when the active aircraft has no tank capacity (the refill plan
+  cannot be computed at all) or no swath (lanes are spaced on the generic fallback, and the note
+  quotes the maker's published range where there is one).
+- **Treatment Grid** distinguishes "tank capacity not set" from "no sprayer tank". A survey
+  airframe has no tank; a sprayer with an unpublished capacity has one we do not know.
+- **Log Flight** warns that the logged volume was not checked against tank capacity, rather than
+  silently skipping the check and reading as though it had reconciled.
+- **Fleet** prints "Not published" on the spec card and flags an aircraft with no capacity on file.
 
 ## Available but unused
 

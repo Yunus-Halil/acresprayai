@@ -1,7 +1,15 @@
 # The orthomosaic workspace
 
 `/app/orthomosaic/:taskId` — a dark, full-screen, tabbed environment built around a Leaflet map.
-Tabs open on demand (Ctrl/Cmd+T opens the tab menu) and each keeps its own state.
+Tabs open on demand, from the `+` button at the end of the tab strip or with **Alt+T**, and
+each keeps its own state.
+
+> The shortcut used to be documented as Ctrl/Cmd+T, which never worked: Ctrl+T is a reserved
+> browser shortcut and the keydown never reaches the page, so pressing it opened a browser tab
+> and navigated away. The `+` button itself was also dead for a different reason: its menu was
+> rendered inside the horizontally scrolling tab strip, and a box that scrolls on one axis clips
+> the other, so the menu was painted into a 40px-tall box and never seen. The menu now lives
+> outside the scroller. `src/test/workspaceTabBar.test.ts` guards both.
 
 This is where the farmer spends their time.
 

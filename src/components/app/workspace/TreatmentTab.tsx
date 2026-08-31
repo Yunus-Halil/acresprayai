@@ -1226,8 +1226,16 @@ export function TreatmentTab({
               <Row label="Field area" value={fmtAreaHa(totals.fieldAreaHa, units).text} />
               <Row label="Treated area" value={fmtAreaHa(totals.treatedAreaHa, units).text} />
               <Row label="Volume" value={fmtVolume(totals.totalVolumeL, units).text} />
+              {/* Two different zeroes. A survey airframe HAS no tank; a sprayer
+                  whose maker never published a capacity has one we do not know.
+                  Printing "no sprayer tank" for both told an operator their
+                  spray drone could not spray. */}
               <Row label="Tank loads" value={
-                tankL > 0 ? `${totals.tankLoads} × ${fmtVolume(tankL, units, 0).text}` : "no sprayer tank"
+                tankL > 0
+                  ? `${totals.tankLoads} × ${fmtVolume(tankL, units, 0).text}`
+                  : spec.role === "sprayer"
+                    ? "tank capacity not set"
+                    : "no sprayer tank"
               } />
               {headland && totals.treatedCellCount > 0 && (
                 <div className="mt-2 border-t border-[#222] pt-2">

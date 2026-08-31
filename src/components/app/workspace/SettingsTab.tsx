@@ -550,6 +550,13 @@ export function LogFlightModal({
         )
       : null,
     endBeforeStartNote(rec.start_time, rec.end_time),
+    // A check that cannot run is not a check that passed. `estLiters` is null
+    // when the aircraft has no tank capacity on file, and overTankCapacityNote
+    // returns null for that too — indistinguishable, from the pilot's side,
+    // from a volume that reconciled. So say which one it was.
+    litersApplied != null && estLiters == null
+      ? "No tank capacity is on file for this aircraft, so the logged volume was not checked against what the tank could hold. Set the capacity on the Fleet page to turn that check back on."
+      : null,
     ...conditionFlags(rec.wind_speed_mph, rec.temperature_f, conditionLimits ?? undefined),
   ].filter((w): w is string => !!w);
 

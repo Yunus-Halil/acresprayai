@@ -69,4 +69,22 @@ describe("no em dashes reach the operator", () => {
       offenders.join("\n"),
     ).toEqual([]);
   });
+
+  // The aircraft directory is DATA, so the .ts scan above walks straight past
+  // it, but its `note` field is rendered verbatim on the registration form and
+  // in the planner. Copy that reaches an operator is copy this rule binds,
+  // whatever file extension it happens to live behind.
+  it("the aircraft directory carries none in anything rendered", () => {
+    const raw = readFileSync(join(ROOT, "src", "data", "aircraftDirectory.json"), "utf-8");
+    const dir = JSON.parse(raw) as {
+      aircraft: { id: string; make: string; model: string; note: string }[];
+    };
+    const offenders = dir.aircraft
+      .filter(a => `${a.make} ${a.model} ${a.note}`.includes("—"))
+      .map(a => `${a.id}: ${a.note.slice(0, 100)}`);
+    expect(
+      offenders,
+      "Em dash in an aircraft directory entry the operator reads:\n" + offenders.join("\n"),
+    ).toEqual([]);
+  });
 });

@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { type DroneSpec, DRONE_SPECS, resolveDroneSpec } from "@/lib/droneSpecs";
+import { type DroneSpec, resolveDroneSpec } from "@/lib/droneSpecs";
 import type { Mission } from "@/lib/mission";
 import type { LatLng2 } from "@/lib/geo";
 import {
@@ -22,7 +22,17 @@ import { readCachedWeather } from "@/lib/weather";
 import { fmtAreaHa, fmtTemp, fmtVolume, fmtWindSpeed } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 
-export type FleetDrone = { id: string; name: string; model: string; battery: number };
+/**
+ * A fleet row as the planner and this dialog need it.
+ *
+ * `specs` is load-bearing, not decoration: a custom aircraft keeps its tank and
+ * swath there, so a dialog that selects a drone without carrying its specs
+ * estimates a custom airframe against the generic fallback shape instead of
+ * the machine the operator described.
+ */
+export type FleetDrone = {
+  id: string; name: string; model: string; battery: number; specs?: unknown;
+};
 
 /** Local datetime for an <input type="datetime-local">. */
 function toLocalInput(d: Date): string {
@@ -76,7 +86,9 @@ export function ScheduleMissionModal({
   const spec: DroneSpec = useMemo(() => {
     const d = drones.find(x => x.id === droneId);
     if (!d) return fallbackSpec;
-    return resolveDroneSpec(d.model, DRONE_SPECS["Custom"]).spec;
+    // The drone's OWN specs, not a field-level custom profile: two custom
+    // aircraft in one fleet are two different aircraft.
+    return resolveDroneSpec(d.model, (d.specs as never) ?? null).spec;
   }, [droneId, drones, fallbackSpec]);
 
   const cached = useMemo(

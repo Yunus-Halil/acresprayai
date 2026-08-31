@@ -25,8 +25,9 @@ import {
 import { toast } from "sonner";
 import {
   type DroneSpec, DRONE_SPECS, coveredSwathM, effectiveSwathM, passSpacingM,
-  resolveDroneSpec,
+  resolveDroneSpec, swathIsStated, tankIsStated,
 } from "@/lib/droneSpecs";
+import { isCustomAircraft } from "@/lib/aircraftDirectory";
 import {
   DEFAULT_HEADLAND_M, MAX_HEADLAND_M, applyHeadland, headlandAreaScale, headlandReason,
 } from "@/lib/headland";
@@ -171,13 +172,16 @@ export function PlannerTab({
   const [simT, setSimT] = useState(0);
 
   // ---- Drone fleet ------------------------------------------------------
-  type FleetDrone = { id: string; name: string; model: string; battery: number; status: string };
+  type FleetDrone = { id: string; name: string; model: string; battery: number; status: string; specs?: unknown };
   const [drones, setDrones] = useState<FleetDrone[]>([]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const { data } = await supabase.from("drones")
-        .select("id, name, model, battery, status").order("created_at", { ascending: false });
+        // `specs` carries a custom aircraft's tank and swath. Selecting the
+        // model without it plans a custom airframe against the generic
+        // fallback shape and never says so.
+        .select("id, name, model, battery, status, specs").order("created_at", { ascending: false });
       if (!cancelled) setDrones((data as any) ?? []);
     })();
     return () => { cancelled = true; };
@@ -244,13 +248,23 @@ export function PlannerTab({
     setLastLog((data as FlightLogRow | null) ?? null);
   }, [fieldId, taskId]);
   useEffect(() => { void refreshLastLog(); }, [refreshLastLog]);
+  // The aircraft the plan is being flown by, resolved from the drone's own row.
+  //
+  // It used to resolve the model against the spec table and then, for anything
+  // unrecognised, fall back to `fp.custom_specs` — a FIELD-level profile. Two
+  // custom aircraft in one fleet therefore shared one set of numbers, and
+  // whichever was selected got the other one's tank. A custom aircraft now
+  // carries its own specs on its own fleet row, and `fp.custom_specs` is only
+  // the last resort for rows saved before that was true.
   const droneModelKey = activeDrone?.model ?? "Custom";
-  const baseSpec = DRONE_SPECS[droneModelKey] ?? fp.custom_specs;
-  const isCustom = !DRONE_SPECS[droneModelKey] || droneModelKey === "Custom";
-  // Merge defaults so older saved custom_specs (missing newer fields like
-  // min_turn_radius_m / climb_rate_ms) still pass maneuverability checks.
-  const SPEC_DEFAULTS = DRONE_SPECS["Custom"];
-  const spec: DroneSpec = { ...SPEC_DEFAULTS, ...(isCustom ? fp.custom_specs : baseSpec) };
+  const resolved = resolveDroneSpec(
+    activeDrone?.model ?? null,
+    (activeDrone?.specs as never) ?? fp.custom_specs,
+  );
+  const isCustom = resolved.isCustom;
+  const spec: DroneSpec = resolved.spec;
+  const swathStated = swathIsStated(resolved);
+  const tankStated = tankIsStated(resolved);
 
   const updateFlightPlan = (patch: Partial<FarmerSettings["flight_plan"]>) =>
     setFp(prev => ({ ...prev, ...patch }));
@@ -1459,12 +1473,36 @@ export function PlannerTab({
               </select>
               {activeDrone && (
                 <div className="mt-2 text-[10px] text-neutral-500 font-mono">
-                  Battery now: <span className="text-neutral-300">{activeDrone.battery}%</span> · Spec: {fmtVolume(spec.tank_l, units, 0).text} / {spec.max_flight_min} min / {fmtSpeed(spec.max_speed_ms, units).text}
+                  Battery now: <span className="text-neutral-300">{activeDrone.battery}%</span> · Spec: {tankStated ? fmtVolume(spec.tank_l, units, 0).text : "tank not set"} / {spec.max_flight_min} min / {fmtSpeed(spec.max_speed_ms, units).text}
+                </div>
+              )}
+              {/* A plan built on a number nobody chose is still a plan, and it
+                  still prints acres and litres. It says so out loud instead. */}
+              {activeDrone && !tankStated && spec.role === "sprayer" && (
+                <div className="mt-2 rounded-sm border border-amber-500/40 bg-amber-500/5 px-2 py-1.5 text-[10px] leading-relaxed text-amber-300">
+                  No tank capacity on file for this aircraft. The refill plan below cannot be
+                  computed and will simply not appear, and the volume check on your flight log
+                  will not run. Set the capacity on the Fleet page.
+                </div>
+              )}
+              {activeDrone && !swathStated && spec.role === "sprayer" && (
+                <div className="mt-2 rounded-sm border border-amber-500/40 bg-amber-500/5 px-2 py-1.5 text-[10px] leading-relaxed text-amber-300">
+                  No swath on file for this aircraft. Passes below are spaced on the generic
+                  {" "}{fmtAltitude(DRONE_SPECS["Custom"].spray_swath_m, units).text} fallback, which is a placeholder and not your boom.
+                  {resolved.entry?.swath_published_m && (
+                    <> {resolved.entry.make} publishes {resolved.entry.swath_published_m[0]}-{resolved.entry.swath_published_m[1]} m for this airframe.</>
+                  )} Set the width you fly on the Fleet page.
                 </div>
               )}
             </div>
           )}
-          {isCustom && (
+          {/* Legacy field-level custom specs.
+              Only for fleet rows saved before a custom aircraft carried its own
+              make, model, tank and swath on its own row. A custom aircraft
+              registered through the Fleet page resolves from that row and is
+              edited there, so these inputs stay out of its way rather than
+              offering a second, conflicting set of numbers for one machine. */}
+          {isCustom && !isCustomAircraft(activeDrone?.specs) && (
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#1f1f1f]">
               <div className="col-span-2 text-[10px] uppercase tracking-wider text-neutral-500">Custom specs</div>
               <label className="text-[10px] text-neutral-500">Tank (L)
@@ -1487,6 +1525,15 @@ export function PlannerTab({
                   onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_speed_ms: Number(e.target.value) || 1 } })}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
               </label>
+            </div>
+          )}
+          {isCustomAircraft(activeDrone?.specs) && (
+            <div className="pt-2 border-t border-[#1f1f1f] text-[10px] text-neutral-500 leading-relaxed">
+              <span className="uppercase tracking-wider">Custom aircraft</span>
+              <div className="mt-1 font-mono text-neutral-400">
+                {activeDrone!.model} · {tankStated ? fmtVolume(spec.tank_l, units, 0).text : "tank not set"} · {swathStated ? fmtAltitude(spec.spray_swath_m, units).text : "swath not set"}
+              </div>
+              <div className="mt-1">Edit these on the Fleet page; they belong to the aircraft, not to this field.</div>
             </div>
           )}
           <div className="pt-2 border-t border-[#1f1f1f]">

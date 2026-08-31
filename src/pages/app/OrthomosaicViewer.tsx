@@ -161,6 +161,24 @@ export type { DroneSpec } from "@/lib/droneSpecs";
 export { DRONE_SPECS } from "@/lib/droneSpecs";
 export type { Mission, MissionAction, MissionParams, MissionWP } from "@/lib/mission";
 
+// Modifier shortcuts must not fire while the operator is typing into a field —
+// Alt+T inside the notes box should type, not open a menu.
+function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  const tag = el.tagName.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
+}
+
+/**
+ * The new-tab shortcut, written once so the tooltip, the menu footer and the
+ * handler can never drift apart and advertise a key that does nothing.
+ */
+const NEW_TAB_SHORTCUT_LABEL =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "")
+    ? "⌥ T"
+    : "Alt + T";
+
 // -----------------------------------------------------------------------------
 export default function OrthomosaicViewer() {
   const { taskId } = useParams<{ taskId: string }>();
@@ -238,7 +256,7 @@ export default function OrthomosaicViewer() {
 
   // Lightweight copies of fleet + last-flight data for the Reports tab so it
   // doesn't depend on the PlannerTab being mounted.
-  type ParentDrone = { id: string; name: string; model: string; battery: number };
+  type ParentDrone = { id: string; name: string; model: string; battery: number; specs?: unknown };
   type ParentFlightLog = LastFlownMission;
   const [parentDrones, setParentDrones] = useState<ParentDrone[]>([]);
   const [parentLastLog, setParentLastLog] = useState<ParentFlightLog | null>(null);
@@ -246,7 +264,9 @@ export default function OrthomosaicViewer() {
     let cancelled = false;
     (async () => {
       const { data } = await supabase.from("drones")
-        .select("id, name, model, battery").order("created_at");
+        // `specs` is where a custom aircraft keeps its tank and swath; the
+        // Reports tab reconciles logged volume against that tank.
+        .select("id, name, model, battery, specs").order("created_at");
       if (!cancelled) setParentDrones((data as ParentDrone[] | null) ?? []);
     })();
     return () => { cancelled = true; };
@@ -708,10 +728,19 @@ export default function OrthomosaicViewer() {
   useNdviLayerDefault(taskId, ndviInfo, (visible) =>
     setLayers(l => (l.ndvi === visible ? l : { ...l, ndvi: visible })));
 
-  // Ctrl/Cmd+T opens the new-tab menu
+  // Alt+T opens the new-tab menu.
+  //
+  // It used to be Ctrl/Cmd+T, which never once worked: Ctrl+T is a RESERVED
+  // browser shortcut, the keydown is swallowed before the page sees it, and
+  // preventDefault on a handler that never runs prevents nothing. So the
+  // advertised shortcut opened a browser tab and left SwathWise instead — a
+  // promise the app could not keep, printed in its own UI. Alt+T reaches the
+  // page in Chrome, Edge, Firefox and Safari, and preventDefault does stop
+  // Firefox's menu-bar access key.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "t") {
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "t"
+          && !isTypingTarget(e.target)) {
         e.preventDefault();
         setNewTabOpen(o => !o);
       }
@@ -720,6 +749,18 @@ export default function OrthomosaicViewer() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // A menu that only closes on Escape or a second click of its own button is a
+  // menu the operator has to fight. Close it on any click that lands outside.
+  const newTabRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!newTabOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!newTabRef.current?.contains(e.target as Node)) setNewTabOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [newTabOpen]);
 
   if (err) {
     return (
@@ -853,16 +894,23 @@ export default function OrthomosaicViewer() {
       </div>
 
       {/* Browser-style tab bar */}
-      {/* overflow-x keeps every open tab reachable at tablet widths — the
-          old fixed-width bar simply clipped Flight Log off-screen at 768px. */}
-      <div className="h-10 shrink-0 flex items-end pl-2 pr-3 gap-0.5 border-b border-[#1f1f1f] relative overflow-x-auto overflow-y-hidden"
+      {/* TWO boxes, deliberately. The tab strip scrolls horizontally so every
+          open tab stays reachable at tablet widths; the "+" and its menu sit
+          OUTSIDE that scroller. A horizontal scroll container clips the cross
+          axis too (overflow-x:auto forces overflow-y to a computed value that
+          clips), so a menu rendered inside the strip was painted into a 40px
+          box and never seen — the button toggled state correctly and looked
+          dead. Anything that has to escape the strip's bounds goes here. */}
+      <div className="h-10 shrink-0 flex items-end pl-2 pr-3 border-b border-[#1f1f1f]"
            style={{ background: "#141414" }}>
+        <div className="h-full min-w-0 flex-1 flex items-end gap-0.5 overflow-x-auto overflow-y-hidden">
         {TAB_DEFS.filter(t => openTabs.includes(t.key)).map(t => {
           const Icon = t.icon;
           const active = activeTab === t.key;
           return (
             <button
               key={t.key}
+              type="button"
               onClick={() => setActiveTab(t.key)}
               className={`group relative h-9 flex items-center gap-2 pl-3 pr-2 min-w-[96px] shrink-0 lg:min-w-[140px] max-w-[200px] text-xs border-t border-l border-r rounded-t-md -mb-px transition-colors
                 ${active
@@ -878,6 +926,7 @@ export default function OrthomosaicViewer() {
               {t.key !== "field" && (
                 <span
                   role="button"
+                  aria-label={`Close ${t.label}`}
                   onClick={(e) => { e.stopPropagation(); closeTab(t.key); }}
                   className="h-4 w-4 grid place-items-center rounded-sm text-neutral-500 hover:text-[#f0f0f0] hover:bg-[#262626]"
                 >
@@ -887,21 +936,27 @@ export default function OrthomosaicViewer() {
             </button>
           );
         })}
-        <div className="relative">
+        </div>
+        <div className="relative shrink-0 self-center" ref={newTabRef}>
           <button
+            type="button"
+            data-testid="new-tab-button"
+            aria-haspopup="menu"
+            aria-expanded={newTabOpen}
             onClick={() => setNewTabOpen(o => !o)}
-            title="New tab (Ctrl+T)"
+            title={`New tab (${NEW_TAB_SHORTCUT_LABEL})`}
             className="h-7 w-7 ml-1 grid place-items-center rounded-sm text-neutral-500 hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"
           >
             <Plus className="h-4 w-4" />
           </button>
           {newTabOpen && (
-            <div className="absolute z-[2000] top-9 left-0 w-56 rounded-md border border-[#222] bg-[#161616] shadow-2xl p-1">
+            <div role="menu" data-testid="new-tab-menu"
+                 className="absolute z-[2000] top-8 right-0 w-56 rounded-md border border-[#222] bg-[#161616] shadow-2xl p-1">
               <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-neutral-500">Open in new tab</div>
               {TAB_DEFS.filter(t => !openTabs.includes(t.key)).map(t => {
                 const Icon = t.icon;
                 return (
-                  <button key={t.key} onClick={() => openTab(t.key)}
+                  <button key={t.key} type="button" role="menuitem" onClick={() => openTab(t.key)}
                     className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-200 hover:bg-[#1f1f1f] rounded-sm">
                     <Icon className="h-3.5 w-3.5 text-[#4CAF50]" />
                     {t.label}
@@ -911,7 +966,7 @@ export default function OrthomosaicViewer() {
               {TAB_DEFS.every(t => openTabs.includes(t.key)) && (
                 <div className="px-2 py-2 text-[11px] text-neutral-500">All tabs are open.</div>
               )}
-              <div className="border-t border-[#222] mt-1 pt-1 px-2 pb-1 text-[10px] text-neutral-600 font-mono">⌘/Ctrl + T</div>
+              <div className="border-t border-[#222] mt-1 pt-1 px-2 pb-1 text-[10px] text-neutral-600 font-mono">{NEW_TAB_SHORTCUT_LABEL}</div>
             </div>
           )}
         </div>
@@ -996,7 +1051,10 @@ export default function OrthomosaicViewer() {
             fieldId={field?.id ?? null}
             taskId={taskId!}
             scanCreatedAt={task.created_at ?? null}
-            spec={resolveDroneSpec(parentActiveDrone?.model, settings.flight_plan.custom_specs).spec}
+            spec={resolveDroneSpec(
+              parentActiveDrone?.model,
+              (parentActiveDrone?.specs as never) ?? settings.flight_plan.custom_specs,
+            ).spec}
             settings={settings}
             setActiveTab={setActiveTab}
           />

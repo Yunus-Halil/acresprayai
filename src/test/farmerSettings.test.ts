@@ -13,6 +13,7 @@ import {
 } from "@/lib/farmerSettings";
 import {
   DRONE_SPECS,
+  DRONE_SPEC_KNOWN,
   MODEL_IDS,
   canonicalModel,
   drainPerMin,
@@ -213,10 +214,22 @@ describe("drone specs", () => {
 
   // Regression guard: Fleet used to register "XAG P100 Pro" while the planner
   // only knew "XAG P100", so the planner silently fell back to generic specs.
-  it("resolves legacy model names through the alias table", () => {
-    expect(canonicalModel("XAG P100")).toBe("XAG P100 Pro");
+  // Both strings must resolve to a real airframe rather than to nothing; since
+  // the directory seeded the P100 as its own entry they resolve to DIFFERENT
+  // airframes, which is the point - "XAG P100" names the 40 L P100, not the
+  // 50 L Pro it used to be aliased onto.
+  it("resolves legacy model names to a real airframe", () => {
+    expect(canonicalModel("XAG P100")).toBe("XAG P100");
+    expect(canonicalModel("XAG P100 Pro")).toBe("XAG P100 Pro");
     expect(resolveDroneSpec("XAG P100").isCustom).toBe(false);
-    expect(resolveDroneSpec("XAG P100").spec).toEqual(DRONE_SPECS["XAG P100 Pro"]);
+    expect(resolveDroneSpec("XAG P100").spec.tank_l).toBe(40);
+    expect(resolveDroneSpec("XAG P100 Pro").spec.tank_l).toBe(50);
+  });
+
+  it("resolves hyphenated Agras names saved by older builds", () => {
+    expect(canonicalModel("DJI Agras T-40")).toBe("DJI Agras T40");
+    expect(canonicalModel("DJI Mavic 3 Multispectral")).toBe("DJI Mavic 3M");
+    expect(canonicalModel("Nothing Like This")).toBeNull();
   });
 
   it("falls back to custom specs for an unknown model", () => {
@@ -238,12 +251,20 @@ describe("drone specs", () => {
     expect(drainPerMin(t40) * t40.max_flight_min).toBeCloseTo(100, 6);
   });
 
+  // A sprayer figure is either a real published number or exactly zero. Zero
+  // is how "the manufacturer does not publish this" is spelled, and the guards
+  // in effectiveSwathM handle it. What must never appear is a plausible-looking
+  // middle number nobody sourced, because that reads as a measurement.
   it("keeps sprayer fields coherent", () => {
-    for (const [name, spec] of Object.entries(DRONE_SPECS)) {
+    for (const name of MODEL_IDS) {
+      const spec = DRONE_SPECS[name];
+      const known = DRONE_SPEC_KNOWN[name];
       if (spec.role === "sprayer") {
-        expect(spec.tank_l, name).toBeGreaterThan(0);
-        expect(spec.spray_swath_m, name).toBeGreaterThan(0);
-        expect(spec.spray_rate_lpm, name).toBeGreaterThan(0);
+        if (known.has("tank_l")) expect(spec.tank_l, name).toBeGreaterThan(0);
+        else expect(spec.tank_l, name).toBe(0);
+        if (known.has("spray_swath_m")) expect(spec.spray_swath_m, name).toBeGreaterThan(0);
+        else expect(spec.spray_swath_m, name).toBe(0);
+        if (known.has("spray_rate_lpm")) expect(spec.spray_rate_lpm, name).toBeGreaterThan(0);
       } else {
         expect(spec.tank_l, name).toBe(0);
         expect(spec.spray_swath_m, name).toBe(0);
@@ -252,6 +273,15 @@ describe("drone specs", () => {
       expect(spec.climb_rate_ms, name).toBeGreaterThan(0);
       expect(spec.max_speed_ms, name).toBeGreaterThan(0);
     }
+  });
+
+  // "Custom" is not an aircraft. It is the fallback SHAPE the arithmetic needs
+  // when nothing has been published, so its numbers are finite and its known
+  // set is empty - nothing in it is claimed as a fact about any airframe.
+  it("claims nothing as known for the Custom fallback shape", () => {
+    expect(MODEL_IDS).not.toContain("Custom");
+    expect(DRONE_SPEC_KNOWN["Custom"].size).toBe(0);
+    expect(DRONE_SPECS["Custom"].spray_swath_m).toBeGreaterThan(0);
   });
 
   it("renders a spec sheet with no blank values", () => {
@@ -266,7 +296,7 @@ describe("drone specs", () => {
     // A survey airframe has no tank, and "0 L" would read as a real spec.
     // The placeholder is a plain hyphen: em dashes were removed from all
     // user-facing text, and this value is user-facing.
-    const sheet = specSheet(DRONE_SPECS["DJI Mavic 3M"]);
+    const sheet = specSheet(DRONE_SPECS["DJI Mavic 3M"], DRONE_SPEC_KNOWN["DJI Mavic 3M"]);
     expect(sheet.find(r => r.k === "Tank")?.v).toBe("-");
     expect(sheet.find(r => r.k === "Swath")?.v).toBe("-");
   });
