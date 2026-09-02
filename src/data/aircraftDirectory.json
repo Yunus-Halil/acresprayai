@@ -25,6 +25,34 @@
   ],
   "aircraft": [
     {
+      "id": "DJI Agras MG-1P",
+      "make": "DJI",
+      "model": "Agras MG-1P",
+      "roles": ["spray"],
+      "status": "legacy",
+      "tank_l": null,
+      "swath_m": null,
+      "swath_published_m": null,
+      "flow_lpm": null,
+      "source": null,
+      "verified": null,
+      "note": "Discontinued. The DJI specification page is gone as of 2026-09-02, so tank and swath are left for the operator to read off their own airframe. An operating profile for it exists in agrasProfiles.json, and every figure in it is marked unverified for the same reason."
+    },
+    {
+      "id": "DJI Agras MG-1S",
+      "make": "DJI",
+      "model": "Agras MG-1S",
+      "roles": ["spray"],
+      "status": "legacy",
+      "tank_l": null,
+      "swath_m": null,
+      "swath_published_m": null,
+      "flow_lpm": null,
+      "source": null,
+      "verified": null,
+      "note": "Discontinued, page gone. Shares the MG-1P operating envelope; see that note."
+    },
+    {
       "id": "DJI Agras T10",
       "make": "DJI",
       "model": "Agras T10",

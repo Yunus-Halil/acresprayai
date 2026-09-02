@@ -70,6 +70,7 @@ import { physicsFor } from "@/lib/dronePhysics";
 import { buildTankProfile, sampleTankAt } from "@/lib/tankProfile";
 import TankDynamicsWidget from "./TankDynamicsWidget";
 import ScheduleMissionModal from "./ScheduleMissionModal";
+import JobEstimatePanel from "./JobEstimatePanel";
 import type { GridZone } from "@/lib/gridZones";
 import type { TreatmentGrid } from "@/lib/treatmentGrid";
 import {
@@ -141,6 +142,7 @@ export function PlannerTab({
   /** Slider values are shown to one decimal; the stored SI value keeps full precision. */
   const round1 = (n: number) => Math.round(n * 10) / 10;
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [estimateOpen, setEstimateOpen] = useState(false);
   const [sideTab, setSideTab] = useState<"setup" | "mission">("setup");
   const [tankOpen, setTankOpen] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -577,6 +579,19 @@ export function PlannerTab({
     () => pesticideLitres(zonesWithRates.map(z => ({
       areaM2: z.areaM2 ?? polygonAreaM2(z.ring), rateLha: z.rateLha,
     }))),
+    [zonesWithRates],
+  );
+
+  /**
+   * Ground the operator confirmed, square metres.
+   *
+   * The same sum computeMissionStats reports as `treatedAreaHa`, taken here so
+   * the job estimate leads with the identical figure whether or not a route has
+   * been built yet. It is the one number on this screen that owes nothing to
+   * the aircraft or the path.
+   */
+  const treatedAreaM2 = useMemo(
+    () => zonesWithRates.reduce((a, z) => a + Math.max(0, z.areaM2 ?? polygonAreaM2(z.ring)), 0),
     [zonesWithRates],
   );
 
@@ -1187,6 +1202,24 @@ export function PlannerTab({
         onScheduled={() => { /* the Schedule tab reads on mount */ }}
       />
 
+      {/* The night-before number, which is a different question from the one the
+          rest of this tab answers. Everything else here estimates the ROUTE:
+          it needs a home pin, a boundary and a built mission before it says
+          anything. This needs marked ground and an aircraft, which is all an
+          operator has when they are quoting the job or deciding how many times
+          the tender truck goes out tomorrow. */}
+      <JobEstimatePanel
+        open={estimateOpen}
+        onOpenChange={setEstimateOpen}
+        droneModel={activeDrone?.model ?? null}
+        statedTankL={tankStated ? spec.tank_l : null}
+        treatedAreaM2={treatedAreaM2}
+        requiredLitres={requiredLitres}
+        tankLoadPct={fp.tank_load_pct}
+        spraySpeedMs={spraySpeed}
+        sprayAltM={sprayAltM}
+      />
+
       {/* Right control panel */}
       <div className="w-80 shrink-0 border-l border-[#222] overflow-auto p-4" style={{ background: "#161616" }}>
         <div className="flex items-center gap-2 mb-4">
@@ -1659,6 +1692,18 @@ export function PlannerTab({
             </div>
           )}
         </div>
+
+        {/* Opens the night-before estimate. Deliberately reachable whether or
+            not a mission has been built: the whole point of it is that it runs
+            on marked ground and an aircraft, at an hour when nobody has a home
+            pin placed or a controller switched on. */}
+        <button
+          type="button"
+          onClick={() => setEstimateOpen(true)}
+          className="mb-4 w-full rounded-sm border border-[#2a2a2a] bg-[#0f0f0f] py-2 text-[11px] text-neutral-300 transition hover:border-[#4CAF50]/50 hover:text-[#4CAF50]"
+        >
+          Job estimate: loads, refills and a day
+        </button>
 
         {/* The gap this closes: the plan used to end with a tank that hit
             empty exactly at the last pass, whatever the chemistry said. A
