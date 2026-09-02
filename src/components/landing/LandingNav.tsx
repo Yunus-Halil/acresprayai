@@ -4,6 +4,7 @@ import { CTA_PRIMARY } from "./copy";
 const LINKS = [
   { label: "Why SwathWise", href: "#why" },
   { label: "How it works", href: "#how" },
+  { label: "The record", href: "#record" },
   { label: "Who it's for", href: "#who" },
 ];
 

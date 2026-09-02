@@ -72,7 +72,7 @@ export const FlightPath = () => (
     style={{ animationDelay: "0.55s" }}
   >
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-white/10 px-4 py-3.5 font-plex text-[11px] tracking-[0.08em] text-sw-on-dark sm:px-5">
-      <span>SPRAY MISSION · GENERATED FROM AI TREATMENT ZONES</span>
+      <span>SPRAY MISSION · GENERATED FROM CONFIRMED TREATMENT ZONES</span>
       <span className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
         <Legend
           swatch="h-[9px] w-[9px] rounded-[1px] border border-[#f0c052] bg-[#e8b23a]/30"

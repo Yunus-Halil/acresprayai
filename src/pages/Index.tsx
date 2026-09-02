@@ -3,6 +3,7 @@ import { Hero } from "@/components/landing/Hero";
 import { FeatureCards } from "@/components/landing/FeatureCards";
 import { WhySection } from "@/components/landing/WhySection";
 import { CockpitSection } from "@/components/landing/CockpitSection";
+import { ComplianceSection } from "@/components/landing/ComplianceSection";
 import { Steps } from "@/components/landing/Steps";
 import { Audiences } from "@/components/landing/Audiences";
 import { PilotCTA } from "@/components/landing/PilotCTA";
@@ -14,7 +15,7 @@ const Index = () => (
   <main className="relative min-h-screen overflow-hidden bg-sw-paper font-grotesk text-sw-ink">
     <Seo
       title="SwathWise: Precision spray missions from drone imagery"
-      description="Upload drone images, get a stitched map of your farm, and let AI find the crops that need spraying, with flight plans ready for your drone."
+      description="Upload drone images, get a stitched map of your farm, mark the ground worth treating, and leave with flight plans and an application record for the job you flew."
       path="/"
     />
     {/* Faint ink grid, fading out below the hero. */}
@@ -36,6 +37,7 @@ const Index = () => (
     <FeatureCards />
     <WhySection />
     <CockpitSection />
+    <ComplianceSection />
     <Steps />
     <Audiences />
     <PilotCTA />

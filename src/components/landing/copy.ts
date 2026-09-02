@@ -49,8 +49,8 @@ export const DEMO_VIDEO_URL =
 export const FEATURES = [
   {
     num: "01",
-    title: "Instant crop anomaly detection",
-    body: "Find and identify the crops that need spraying in the click of a button.",
+    title: "Mark a few, get the rest",
+    body: "Circle the patches you know need spraying. SwathWise finds the ground that matches them across the field.",
   },
   {
     num: "02",
@@ -77,8 +77,8 @@ export const STEPS = [
   },
   {
     num: "02",
-    title: "Let AI analyze",
-    body: "Your data is processed instantly to reveal trends and patterns, all overlaid on your interactive farm.",
+    title: "Mark what needs treating",
+    body: "Scan the map, circle the patches worth spraying, and SwathWise extends your examples across the rest of the field.",
   },
   {
     num: "03",

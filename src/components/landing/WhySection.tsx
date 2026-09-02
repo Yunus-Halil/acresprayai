@@ -69,13 +69,13 @@ export const WhySection = () => (
 
     <div className="mt-16 flex flex-col gap-16 sm:mt-[90px] sm:gap-[90px]">
       <Row
-        title="Real-time intelligence"
-        body="Get instant insights on crop health. AI draws treatment zones on your field, sizes each one in acres, and estimates what it will cost to treat, before anything flies."
+        title="You mark it, it measures it"
+        body="Mark the patches worth treating and SwathWise finds the ground that matches, sizes every zone in acres, and estimates what it will cost to treat, before anything flies. On a field you have not scanned before, it surfaces what stands out so you know where to look first."
         footnote="ZONE AREA · EST. COST · RECOMMENDED TREATMENT"
         media={
           <Shot
             src="/screens/treatment-zone.png"
-            alt="AI treatment zone with area and cost estimate"
+            alt="A confirmed treatment zone with its area and cost estimate"
           />
         }
       />
@@ -115,7 +115,7 @@ export const WhySection = () => (
       <Row
         mediaFirst
         title="Costs on every acre"
-        body="Tell SwathWise what inputs you carry and what they cost per acre. Every treatment zone the AI finds is priced against your numbers, and it never recommends a product you don't have."
+        body="Tell SwathWise what inputs you carry and what they cost per acre. Every zone you confirm is priced against your numbers, and it never suggests a product you don't have."
         footnote="ACRES × YOUR PER-ACRE COST"
         media={
           <Shot src="/screens/field-settings.png" alt="Field settings with per-acre input costs" />
