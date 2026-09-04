@@ -15,6 +15,8 @@
 // ambiguous about which system produced it. See analysisStateOf in
 // lib/compareGround.
 import { useEffect, useRef, useState } from "react";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
+import { fmtAreaAc } from "@/lib/units";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -211,6 +213,7 @@ function LegacyFailureLine({ at }: { at: string | null; error: string }) {
 }
 
 function AnalysisLine({ scan }: { scan: FieldScan }) {
+  const units = useUnitSystem();
   const state = analysisStateOf(scan);
   if (state.kind === "none") {
     return (
@@ -250,7 +253,7 @@ function AnalysisLine({ scan }: { scan: FieldScan }) {
         ? <span className="text-emerald-400/90">Assessed · nothing marked for treatment</span>
         : <>
             <span className="text-neutral-100">{zones.length}</span> zone{zones.length === 1 ? "" : "s"} ·{" "}
-            <span className="text-neutral-100">{stressed.toFixed(2)} ac</span> marked
+            <span className="text-neutral-100">{fmtAreaAc(stressed, units).text}</span> marked
           </>}
       {state.rerunFailed && (
         <div className="text-amber-500/80 leading-snug">

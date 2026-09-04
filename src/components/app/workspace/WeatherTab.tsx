@@ -62,7 +62,7 @@ import {
   sprayVerdict as verdictOf,
 } from "@/lib/sprayWindow";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
-import { fmtTemp, fmtWindSpeed } from "@/lib/units";
+import { fmtPrecip, fmtTemp, fmtWindSpeed } from "@/lib/units";
 
 
 export function PlaceholderTab({ icon: Icon, title, body }: { icon: any; title: string; body: string }) {
@@ -365,7 +365,7 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
                   </div>
                 </div>
                 <div className="text-[10px] text-neutral-500 font-mono mt-1">{d.precip_prob}% · {wind(d.wind_kmh)}</div>
-                <div className="text-[10px] text-neutral-600 font-mono">{d.precip_mm.toFixed(1)} mm</div>
+                <div className="text-[10px] text-neutral-600 font-mono">{fmtPrecip(d.precip_mm, units).text}</div>
               </div>
             ))}
           </div>

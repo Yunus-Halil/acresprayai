@@ -12,7 +12,7 @@ import {
 import { type AnalysisState, analysisStateOf, zoneAcres } from "@/lib/compareGround";
 import { storageKey } from "@/lib/storage";
 import {
-  M2_PER_ACRE, fmtRate, fmtVolume, volumeToLitres, volumeUnit, volumeValue,
+  M2_PER_ACRE, fmtAreaAc, fmtRate, fmtVolume, volumeToLitres, volumeUnit, volumeValue,
   tempFFromShown, tempFShown, tempUnit, windMphFromShown, windMphShown, windUnit,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
@@ -1249,7 +1249,7 @@ export default function ReportsTab({
                         })}
                       </div>
                       <div className="text-[10px] text-neutral-500">
-                        {l.acres_treated != null ? `${l.acres_treated.toFixed(2)} ac treated` : "acreage not recorded"}
+                        {l.acres_treated != null ? `${fmtAreaAc(l.acres_treated, unit ?? "imperial").text} treated` : "acreage not recorded"}
                         {" · "}
                         {l.liters_applied != null ? fmtVol(l.liters_applied, unit) : "volume not recorded"}
                       </div>

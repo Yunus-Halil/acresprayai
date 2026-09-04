@@ -318,3 +318,21 @@ describe("known-field bookkeeping", () => {
     }
   });
 });
+
+describe("the spec sheet follows the viewer's unit setting", () => {
+  it("prints the T40 card in imperial for an imperial viewer", () => {
+    const { spec, known } = resolveDroneSpec("DJI Agras T40", null);
+    const card = Object.fromEntries(specSheet(spec, known, "imperial").map(r => [r.k, r.v]));
+    expect(card["Tank"]).toBe("11 gal");
+    expect(card["Max speed"]).toBe("22.4 mph");
+    expect(card["Weight"]).toMatch(/lb \(loaded\)/);
+    expect(card["Spray rate"]).toMatch(/gal\/min/);
+  });
+
+  it("defaults to the SI the table stores", () => {
+    const { spec, known } = resolveDroneSpec("DJI Agras T40", null);
+    const card = Object.fromEntries(specSheet(spec, known).map(r => [r.k, r.v]));
+    expect(card["Tank"]).toBe("40 L");
+    expect(card["Weight"]).toBe("65.5 kg (loaded)");
+  });
+});

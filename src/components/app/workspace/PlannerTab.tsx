@@ -83,9 +83,10 @@ import { loadGridZones } from "@/lib/gridAnomalies";
 // aircraft's own spec-sheet numbers and the values the DJI parameters take, and
 // a pilot cross-checking against either should see the same figure here.
 import {
-  altitudeToM, altitudeUnit, altitudeValue, fmtAltitude, fmtArea, fmtAreaAc, fmtDistance,
-  fmtDistancePair, fmtSpeed, fmtVolume, rateToLha, rateUnit, rateValue, speedToMs,
-  speedUnit, speedValue,
+  KG_PER_LB, altitudeToM, altitudeUnit, altitudeValue, fmtAltitude, fmtArea, fmtAreaAc,
+  fmtDistance, fmtDistancePair, fmtSpeed, fmtTemp, fmtVolume, fmtWindSpeed, rateToLha,
+  rateUnit, rateValue, speedToMs, speedUnit, speedValue, volumeToLitres, volumeUnit,
+  volumeValue,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 
@@ -537,7 +538,7 @@ export function PlannerTab({
     if (climbHoriz > spacingM * 4) {
       const allowedDelta = (spacingM * 4) * spec.climb_rate_ms / Math.max(1, newTransit);
       newSprayAlt = Math.max(1, Math.round((transitAltM - allowedDelta) * 2) / 2);
-      if (newSprayAlt !== sprayAltM) fixes.push(`spray altitude → ${newSprayAlt} m`);
+      if (newSprayAlt !== sprayAltM) fixes.push(`spray altitude → ${fmtAltitude(newSprayAlt, units).text}`);
     }
 
     if (fixes.length) {
@@ -1487,10 +1488,28 @@ export function PlannerTab({
           </button>
           {advancedOpen && (
             <div className="space-y-3 pt-1">
-            <Slider2 label="Transit altitude (AGL)" value={transitAltM} setValue={setTransitAltM} min={10} max={120} step={1} unit="m" />
-            <Slider2 label="Spray altitude (AGL)" value={sprayAltM} setValue={setSprayAltM} min={1} max={10} step={0.5} unit="m" />
-            <Slider2 label="Transit speed" value={transitSpeed} setValue={setTransitSpeed} min={3} max={20} step={0.5} unit="m/s" />
-            <Slider2 label="Spray speed" value={spraySpeed} setValue={setSpraySpeed} min={1} max={8} step={0.5} unit="m/s" />
+            {/* Shown and dragged in the viewer's units, stored in SI — the same
+                round-trip the Pass spacing slider above already does. */}
+            <Slider2 label="Transit altitude (AGL)"
+              value={round1(altitudeValue(transitAltM, units))}
+              setValue={(n) => setTransitAltM(altitudeToM(n, units))}
+              min={round1(altitudeValue(10, units))} max={round1(altitudeValue(120, units))}
+              step={1} unit={altitudeUnit(units)} />
+            <Slider2 label="Spray altitude (AGL)"
+              value={round1(altitudeValue(sprayAltM, units))}
+              setValue={(n) => setSprayAltM(altitudeToM(n, units))}
+              min={round1(altitudeValue(1, units))} max={round1(altitudeValue(10, units))}
+              step={units === "metric" ? 0.5 : 1} unit={altitudeUnit(units)} />
+            <Slider2 label="Transit speed"
+              value={round1(speedValue(transitSpeed, units))}
+              setValue={(n) => setTransitSpeed(speedToMs(n, units))}
+              min={round1(speedValue(3, units))} max={round1(speedValue(20, units))}
+              step={0.5} unit={speedUnit(units)} />
+            <Slider2 label="Spray speed"
+              value={round1(speedValue(spraySpeed, units))}
+              setValue={(n) => setSpraySpeed(speedToMs(n, units))}
+              min={round1(speedValue(1, units))} max={round1(speedValue(8, units))}
+              step={0.5} unit={speedUnit(units)} />
             </div>
           )}
         </div>
@@ -1512,7 +1531,7 @@ export function PlannerTab({
                 <option value="">Select a drone</option>
                 {drones.map(d => (
                   <option key={d.id} value={d.id}>
-                    {d.name} · {d.model}{d.status !== "idle" ? ` · ${d.status.replace("_", " ")}` : ""}
+                    {d.name} · {d.model}
                   </option>
                 ))}
               </select>
@@ -1550,14 +1569,14 @@ export function PlannerTab({
           {isCustom && !isCustomAircraft(activeDrone?.specs) && (
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#1f1f1f]">
               <div className="col-span-2 text-[10px] uppercase tracking-wider text-neutral-500">Custom specs</div>
-              <label className="text-[10px] text-neutral-500">Tank (L)
-                <input type="number" min={0} step={1} value={fp.custom_specs.tank_l}
-                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, tank_l: Number(e.target.value) || 0 } })}
+              <label className="text-[10px] text-neutral-500">Tank ({volumeUnit(units)})
+                <input type="number" min={0} step={1} value={round1(volumeValue(fp.custom_specs.tank_l, units))}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, tank_l: volumeToLitres(Number(e.target.value) || 0, units) } })}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
               </label>
-              <label className="text-[10px] text-neutral-500">Payload (kg)
-                <input type="number" min={0} step={1} value={fp.custom_specs.payload_kg}
-                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, payload_kg: Number(e.target.value) || 0 } })}
+              <label className="text-[10px] text-neutral-500">Payload ({units === "metric" ? "kg" : "lb"})
+                <input type="number" min={0} step={1} value={round1(units === "metric" ? fp.custom_specs.payload_kg : fp.custom_specs.payload_kg / KG_PER_LB)}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, payload_kg: (Number(e.target.value) || 0) * (units === "metric" ? 1 : KG_PER_LB) } })}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
               </label>
               <label className="text-[10px] text-neutral-500">Flight time (min)
@@ -1565,9 +1584,9 @@ export function PlannerTab({
                   onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_flight_min: Number(e.target.value) || 1 } })}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
               </label>
-              <label className="text-[10px] text-neutral-500">Max speed (m/s)
-                <input type="number" min={1} step={0.5} value={fp.custom_specs.max_speed_ms}
-                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_speed_ms: Number(e.target.value) || 1 } })}
+              <label className="text-[10px] text-neutral-500">Max speed ({speedUnit(units)})
+                <input type="number" min={1} step={0.5} value={round1(speedValue(fp.custom_specs.max_speed_ms, units))}
+                  onChange={(e) => updateFlightPlan({ custom_specs: { ...fp.custom_specs, max_speed_ms: speedToMs(Number(e.target.value) || 1, units) } })}
                   className="mt-0.5 w-full bg-[#0a0a0a] border border-[#222] rounded-sm px-2 py-1 text-xs font-mono" />
               </label>
             </div>
@@ -1824,14 +1843,14 @@ export function PlannerTab({
               <div className="flex justify-between"><span className="text-neutral-500">Wind impact</span>
                 <span className="font-mono">
                   {battery.windPctLabel}
-                  <span className="text-neutral-500"> ({battery.windKind}{battery.windMs > 0 ? ` ${battery.windMs.toFixed(1)} m/s` : ""})</span>
+                  <span className="text-neutral-500"> ({battery.windKind}{battery.windMs > 0 ? ` ${fmtWindSpeed(battery.windMs, units).text}` : ""})</span>
                 </span></div>
               <div className="flex justify-between"><span className="text-neutral-500">Altitude impact</span>
                 <span className="font-mono">{battery.altPctLabel} <span className="text-neutral-500">(avg {fmtAltitude(battery.avgAlt, units).text} AGL)</span></span></div>
               <div className="flex justify-between"><span className="text-neutral-500">Payload impact</span>
                 <span className="font-mono">{battery.payloadPctLabel} <span className="text-neutral-500">({fp.tank_load_pct}% tank)</span></span></div>
               <div className="flex justify-between"><span className="text-neutral-500">Temp impact</span>
-                <span className="font-mono">{battery.tempPctLabel} <span className="text-neutral-500">({battery.tempC.toFixed(0)}°C)</span></span></div>
+                <span className="font-mono">{battery.tempPctLabel} <span className="text-neutral-500">({fmtTemp(battery.tempC, units).text})</span></span></div>
               {spec.tank_l > 0 && (
                 <>
                   <div className="border-t border-[#222] my-1.5" />

@@ -17,7 +17,7 @@
 // forecast actually carries; formatting happens at the edge, in whichever units
 // the operator chose.
 import type { WxHour } from "./weather";
-import { type UnitSystem, fmtTemp, fmtWindSpeed } from "./units";
+import { fmtPrecip, type UnitSystem, fmtTemp, fmtWindSpeed } from "./units";
 
 export type SprayLimits = {
   /** Sustained wind above this is a hard stop, km/h. */
@@ -129,7 +129,7 @@ export function formatReason(r: Reason, sys: UnitSystem): string {
     case "gust":
       return `Gusts ${wind(r.value)}, over the ${wind(r.limit)} limit`;
     case "rain":
-      return `${r.value.toFixed(1)} mm of rain due within 6 hours`;
+      return `${fmtPrecip(r.value, sys).text} of rain due within 6 hours`;
     case "cold":
       return `Too cold at ${temp(r.value)}, minimum ${temp(r.limit)}`;
     case "hot":
@@ -147,7 +147,7 @@ export function shortReason(r: Reason, sys: UnitSystem): string {
   switch (r.kind) {
     case "wind": return `Wind ${wind(r.value)}`;
     case "gust": return `Gusts ${wind(r.value)}`;
-    case "rain": return `Rain ${r.value.toFixed(1)} mm`;
+    case "rain": return `Rain ${fmtPrecip(r.value, sys).text}`;
     case "cold": return `Cold ${fmtTemp(r.value, sys).text}`;
     case "hot": return `Warm ${fmtTemp(r.value, sys).text}`;
     case "humidity-low": return `Dry air ${Math.round(r.value)}%`;

@@ -16,6 +16,8 @@
 // is dimmed: change numbers exist only where both flights actually looked,
 // and the dimming shows the person exactly where that is.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
+import { areaValueAc, fmtAreaAc } from "@/lib/units";
 import { Polygon, Rectangle, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import { ChevronsLeftRight, Layers, X } from "lucide-react";
@@ -577,6 +579,7 @@ export function CompareStatsBar({
   onOpenGrid?: () => void;
   onOpenScan?: (taskId: string) => void;
 }) {
+  const units = useUnitSystem();
   // The un-assessed side is the named next step; give it a button, not just
   // a sentence — a stats bar that names a destination with no way to go
   // there is a soft dead end.
@@ -600,14 +603,14 @@ export function CompareStatsBar({
         <>
           <div className="flex items-baseline justify-between gap-3 text-[11px]">
             <span className="text-neutral-400">
-              Shared coverage <span className="font-medium text-neutral-100">{stats.overlapAcres.toFixed(1)} ac</span>
+              Shared coverage <span className="font-medium text-neutral-100">{fmtAreaAc(stats.overlapAcres, units).text}</span>
             </span>
             {aAnalyzed && bAnalyzed ? (
               <span className="text-neutral-300">
                 Stressed within it:{" "}
-                <span className="font-medium text-neutral-100">{stats.aStressedAc!.toFixed(2)}</span>
+                <span className="font-medium text-neutral-100">{areaValueAc(stats.aStressedAc!, units).toFixed(2)}</span>
                 <span className="text-neutral-600"> → </span>
-                <span className="font-medium text-neutral-100">{stats.bStressedAc!.toFixed(2)} ac</span>
+                <span className="font-medium text-neutral-100">{fmtAreaAc(stats.bStressedAc!, units).text}</span>
                 {stats.deltaPct !== null && (
                   <span className={`ml-1 font-semibold ${stats.deltaPct < 0 ? "text-emerald-400" : "text-amber-400"}`}>
                     ({stats.deltaPct > 0 ? "+" : ""}{stats.deltaPct.toFixed(0)}%)

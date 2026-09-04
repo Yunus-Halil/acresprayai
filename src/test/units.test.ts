@@ -9,7 +9,7 @@ import {
   AC_PER_HA, KG_PER_LB, L_PER_US_GAL, M2_PER_ACRE, M_PER_FT,
   altitudeToM, altitudeValue, areaUnit, costOfAreaHa, costPerAreaUnit,
   MS_PER_MPH, costPerAreaToPerAcre, costPerAreaValue, fmtAltitude, fmtLengthCm, fmtArea, fmtAreaHa, fmtMass, fmtRate, fmtSpeed,
-  fmtDistancePair, fmtMetricRange, fmtTemp, fmtVolume, fmtWindSpeed, metricRangeUnit,
+  fmtDistancePair, fmtFlow, fmtMetricRange, fmtPrecip, fmtTemp, fmtVolume, fmtWindSpeed, metricRangeUnit,
   metricRangeValue, rateToLha, rateUnit, rateValue, speedToMs,
   speedUnit, speedValue, volumeValue,
 } from "@/lib/units";
@@ -260,5 +260,17 @@ describe("a ratio of two distances", () => {
     const end = fmtDistancePair(1915, 1915, "imperial");
     expect(start.unit).toBe(end.unit);
     expect(start.text).toBe("0.0 / 1.2 mi");
+  });
+});
+
+describe("flow and rain follow the unit setting", () => {
+  it("shows a pump in gallons per minute to a US operator", () => {
+    expect(fmtFlow(12, "metric").text).toBe("12.0 L/min");
+    expect(fmtFlow(12, "imperial").text).toBe("3.2 gal/min");
+  });
+
+  it("shows rain depth in inches to a US operator", () => {
+    expect(fmtPrecip(12.7, "imperial").text).toBe("0.50 in");
+    expect(fmtPrecip(12.7, "metric").text).toBe("12.7 mm");
   });
 });

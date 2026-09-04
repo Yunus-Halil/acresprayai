@@ -41,7 +41,7 @@ import {
 } from "@/lib/jobEstimate";
 import {
   M2_PER_HECTARE, type MetricRangeKind, altitudeToM, altitudeUnit, altitudeValue,
-  fmtAltitude, fmtArea, fmtMass, fmtMetricRange, fmtRate, fmtVolume, fmtWindSpeed,
+  fmtAltitude, fmtArea, fmtFlow, fmtMass, fmtMetricRange, fmtRate, fmtVolume, fmtWindSpeed,
   metricRangeUnit, metricRangeValue, rateToLha, rateUnit, rateValue,
   speedToMs, speedUnit, speedValue,
 } from "@/lib/units";
@@ -405,10 +405,10 @@ export function JobEstimatePanel({
                   <span className={LABEL}>Pump</span>
                 </div>
                 <div className="space-y-1">
-                  <Row label="Rate needs" value={`${round1(est.requiredFlowLpm)} L/min`} />
+                  <Row label="Rate needs" value={fmtFlow(est.requiredFlowLpm, units).text} />
                   <Row
                     label={`Pump delivers, ${nozzles} nozzles`}
-                    value={est.maxFlowLpm != null ? `${est.maxFlowLpm} L/min` : "not verified"}
+                    value={est.maxFlowLpm != null ? fmtFlow(est.maxFlowLpm, units).text : "not verified"}
                     muted={est.maxFlowLpm == null}
                   />
                   <Row

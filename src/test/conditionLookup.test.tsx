@@ -50,10 +50,10 @@ describe("the accept gate", () => {
     const card = await screen.findByTestId("condition-suggestion");
 
     // The operator sees what it is and where it came from BEFORE deciding.
-    expect(card.textContent).toMatch(/11 mph SE/);
+    expect(card.textContent).toMatch(/11(\.0)? mph SE/);
     expect(card.textContent).toMatch(/97 °F/);
     expect(card.textContent).toMatch(/KMIC/);
-    expect(card.textContent).toMatch(/4\.2 mi/);
+    expect(card.textContent).toMatch(/4\.20? mi/);
     expect(card.textContent).toMatch(/station data, not conditions/i);
 
     // Fetched ≠ entered: the parent knows about the fetch (for model_check)

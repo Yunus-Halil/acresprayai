@@ -33,6 +33,9 @@ import {
   AIRCRAFT, type AircraftEntry, type AircraftOverride, aircraftById,
   isAircraftOverride, isCustomAircraft, type CustomAircraft,
 } from "./aircraftDirectory";
+import {
+  type UnitSystem, fmtAltitude, fmtFlow, fmtMass, fmtSpeed, fmtVolume,
+} from "./units";
 
 export type DroneRole = "sprayer" | "survey";
 
@@ -456,18 +459,21 @@ export function drainPerMin(spec: DroneSpec): number {
  * from a shape the code needed something to put in.
  */
 export function specSheet(
-  spec: DroneSpec, known?: Set<SpecField>,
+  spec: DroneSpec, known?: Set<SpecField>, sys: UnitSystem = "metric",
 ): { k: string; v: string }[] {
+  // The card follows the viewer's unit setting like every other readout. The
+  // stored spec stays SI; defaulting to metric keeps tests and callers with no
+  // display preference reading back exactly what the table holds.
   const sprayer = spec.role === "sprayer";
   const has = (f: SpecField) => !known || known.has(f);
   const show = (f: SpecField, render: () => string) => has(f) ? render() : "Not published";
   return [
-    { k: "Tank", v: sprayer ? show("tank_l", () => `${spec.tank_l} L`) : "-" },
-    { k: "Swath", v: sprayer ? show("spray_swath_m", () => `${spec.spray_swath_m} m`) : "-" },
-    { k: "Max speed", v: show("max_speed_ms", () => `${spec.max_speed_ms} m/s`) },
+    { k: "Tank", v: sprayer ? show("tank_l", () => fmtVolume(spec.tank_l, sys, 0).text) : "-" },
+    { k: "Swath", v: sprayer ? show("spray_swath_m", () => fmtAltitude(spec.spray_swath_m, sys).text) : "-" },
+    { k: "Max speed", v: show("max_speed_ms", () => fmtSpeed(spec.max_speed_ms, sys).text) },
     { k: "Flight time", v: show("max_flight_min", () => `${spec.max_flight_min} min${sprayer ? " (full load)" : ""}`) },
-    { k: "Spray rate", v: sprayer ? show("spray_rate_lpm", () => `${spec.spray_rate_lpm} L/min`) : "-" },
-    { k: "Weight", v: show("weight_kg", () => `${spec.weight_kg} kg${sprayer ? " (loaded)" : ""}`) },
+    { k: "Spray rate", v: sprayer ? show("spray_rate_lpm", () => fmtFlow(spec.spray_rate_lpm, sys).text) : "-" },
+    { k: "Weight", v: show("weight_kg", () => `${fmtMass(spec.weight_kg, sys).text}${sprayer ? " (loaded)" : ""}`) },
     { k: "Wingspan", v: show("wingspan", () => spec.wingspan) },
     { k: "IP rating", v: show("ip", () => spec.ip) },
   ];

@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
-  costPerAreaToPerAcre, costPerAreaValue, costPerAreaUnit,
+  AC_PER_HA, areaValueAc, costPerAreaToPerAcre, costPerAreaValue, costPerAreaUnit,
   fmtAreaAc, fmtVolume, tempFFromShown, tempFShown, tempUnit,
   volumeToLitres, volumeUnit, volumeValue, windMphFromShown, windMphShown, windUnit,
 } from "@/lib/units";
@@ -170,17 +170,22 @@ export function SettingsTab({
               </select>
             </div>
             <div>
-              <label className={labelCls}>Field size (acres)</label>
+              <label className={labelCls}>Field size ({units === "metric" ? "hectares" : "acres"})</label>
               <input
                 type="number" min={0} step="0.01"
                 className={inputCls}
-                placeholder={acresFromBoundary ? acresFromBoundary.toFixed(2) : "Not defined yet"}
-                value={local.area_acres_override ?? ""}
-                onChange={e => update({ area_acres_override: e.target.value === "" ? null : Number(e.target.value) })}
+                placeholder={acresFromBoundary ? areaValueAc(acresFromBoundary, units).toFixed(2) : "Not defined yet"}
+                value={local.area_acres_override == null ? "" : +areaValueAc(local.area_acres_override, units).toFixed(2)}
+                onChange={e => update({
+                  // Stored per-ACRE whatever is typed, like every stored figure:
+                  // the display setting relabels the screen, never the row.
+                  area_acres_override: e.target.value === "" ? null
+                    : units === "metric" ? Number(e.target.value) * AC_PER_HA : Number(e.target.value),
+                })}
               />
               <div className="text-[10px] text-neutral-500 mt-1">
                 {acresFromBoundary
-                  ? `Boundary calc: ${acresFromBoundary.toFixed(2)} ac · leave blank to use this.`
+                  ? `Boundary calc: ${fmtAreaAc(acresFromBoundary, units).text} · leave blank to use this.`
                   : "Define a boundary on the Field View to auto-fill."}
               </div>
             </div>

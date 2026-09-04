@@ -107,6 +107,26 @@ export function fmtVolume(litres: number, sys: UnitSystem, decimals?: number): M
 
 export const volumeUnit = (sys: UnitSystem): string => (sys === "metric" ? "L" : "gal");
 
+/**
+ * Pump flow from litres per minute.
+ *
+ * US operators size pumps in gallons per minute; DJI publishes litres. Same
+ * pump either way — only the screen moves, exactly as with every rate here.
+ */
+export function fmtFlow(lpm: number, sys: UnitSystem, decimals?: number): Measure {
+  return sys === "metric"
+    ? measure(lpm, "L/min", decimals ?? 1)
+    : measure(lpm / L_PER_US_GAL, "gal/min", decimals ?? 1);
+}
+
+/** Rain depth from millimetres. Inches for imperial, two decimals — 0.5 mm is 0.02 in. */
+export const MM_PER_INCH = 25.4;
+export function fmtPrecip(mm: number, sys: UnitSystem): Measure {
+  return sys === "metric"
+    ? measure(mm, "mm", 1)
+    : measure(mm / MM_PER_INCH, "in", 2);
+}
+
 export const volumeValue = (litres: number, sys: UnitSystem): number =>
   sys === "metric" ? litres : litres / L_PER_US_GAL;
 

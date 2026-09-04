@@ -29,7 +29,7 @@ import {
 } from "./agrasProfiles";
 import {
   M2_PER_HECTARE, type UnitSystem, altitudeUnit, altitudeValue, fmtAltitude,
-  fmtMetricRange, fmtSpeed, speedUnit, speedValue,
+  fmtFlow, fmtMass, fmtMetricRange, fmtSpeed, fmtVolume, speedUnit, speedValue,
 } from "./units";
 
 /**
@@ -359,7 +359,7 @@ export function estimateJob(input: JobEstimateInput): JobEstimate {
       field: "tank_l",
       severity: "note",
       message:
-        `${profile.tank_l} L is a quoted capacity for the ${profile.model}, not one DJI ` +
+        `${fmtVolume(profile.tank_l, display, 0).text} is a quoted capacity for the ${profile.model}, not one DJI ` +
         "publishes. Every load, refill and chemical figure below rests on it. Read the " +
         "capacity off your own machine and set it on the drone.",
     });
@@ -377,8 +377,8 @@ export function estimateJob(input: JobEstimateInput): JobEstimate {
       severity: "note",
       message:
         `At ${fmtAltitude(input.elevationM, display).text} of field elevation the payload derate takes ` +
-        `${(capacityL - liftableL).toFixed(1)} kg off the load, so a full tank here is ` +
-        `${liftableL.toFixed(1)} L rather than ${capacityL} L.`,
+        `${fmtMass(capacityL - liftableL, display).text} off the load, so a full tank here is ` +
+        `${fmtVolume(liftableL, display).text} rather than ${fmtVolume(capacityL, display, 0).text}.`,
     });
   }
 
@@ -417,7 +417,7 @@ export function estimateJob(input: JobEstimateInput): JobEstimate {
   } else if (flowCeilingExceeded) {
     const asked =
       `This rate at ${spd(speedMs)} asks the pump for ` +
-      `${requiredFlowLpm.toFixed(1)} L/min and it delivers ${ceiling}. `;
+      `${fmtFlow(requiredFlowLpm, display).text} and it delivers ${fmtFlow(ceiling, display).text}. `;
     warnings.push({
       field: "speedMs",
       severity: maxSpeedForRateMs == null ? "blocking" : "note",

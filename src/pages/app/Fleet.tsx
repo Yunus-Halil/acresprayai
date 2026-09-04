@@ -20,6 +20,11 @@ import { z } from "zod";
 import {
   DRONE_SPECS, DRONE_SPEC_KNOWN, drainPerMin, resolveDroneSpec, roleLabel, specSheet,
 } from "@/lib/droneSpecs";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
+import {
+  altitudeToM, altitudeUnit, altitudeValue, fmtMetricRange, volumeToLitres,
+  volumeUnit, volumeValue,
+} from "@/lib/units";
 import {
   type AircraftEntry, type AircraftOverride, type AircraftRole, type CustomAircraft,
   aircraftById, aircraftByMake, customModelLabel, EMPTY_CUSTOM_AIRCRAFT,
@@ -58,11 +63,6 @@ function forecast(d: Drone) {
   return { series: out, recallAt, role: roleLabel(spec) };
 }
 
-const statusColor = (s: string) =>
-  s === "in_flight" ? "border-sky-500 text-sky-500" :
-  s === "charging" ? "border-amber-500 text-amber-600" :
-  "border-emerald-500 text-emerald-600";
-
 /** Text input that reads back "" for an unset number instead of 0. */
 function numText(n: number | null): string {
   return n == null ? "" : String(n);
@@ -76,6 +76,15 @@ function parseNum(raw: string): number | null {
 
 export default function Fleet() {
   const { user } = useAuth();
+  const units = useUnitSystem();
+
+  // Operator-entered capacity and swath, shown and typed in THEIR units and
+  // stored in SI like everything else. The pair must be inverses or the number
+  // drifts a little every time the dialog re-renders.
+  const shownVol = (l: number | null) => l == null ? null : +volumeValue(l, units).toFixed(2);
+  const storedVol = (v: number | null) => v == null ? null : volumeToLitres(v, units);
+  const shownLen = (m: number | null) => m == null ? null : +altitudeValue(m, units).toFixed(2);
+  const storedLen = (v: number | null) => v == null ? null : altitudeToM(v, units);
   const [drones, setDrones] = useState<Drone[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -287,22 +296,22 @@ export default function Fleet() {
                   <div className="grid sm:grid-cols-2 gap-3">
                     <div>
                       <Label>
-                        Tank capacity (L)
+                        Tank capacity ({volumeUnit(units)})
                         {custom.roles.includes("spray")
                           ? <span className="text-destructive"> *</span>
                           : <span className="text-muted-foreground font-normal"> (not applicable)</span>}
                       </Label>
                       <Input type="number" min={0} step="any" inputMode="decimal"
                         disabled={!custom.roles.includes("spray")}
-                        value={numText(custom.tank_l)} placeholder="Enter from your aircraft"
-                        onChange={e => setCustom({ ...custom, tank_l: parseNum(e.target.value) })} />
+                        value={numText(shownVol(custom.tank_l))} placeholder="Enter from your aircraft"
+                        onChange={e => setCustom({ ...custom, tank_l: storedVol(parseNum(e.target.value)) })} />
                     </div>
                     <div>
-                      <Label>Swath width (m) <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                      <Label>Swath width ({altitudeUnit(units)}) <span className="text-muted-foreground font-normal">(optional)</span></Label>
                       <Input type="number" min={0} step="any" inputMode="decimal"
                         disabled={!custom.roles.includes("spray")}
-                        value={numText(custom.swath_m)} placeholder="Leave blank if unsure"
-                        onChange={e => setCustom({ ...custom, swath_m: parseNum(e.target.value) })} />
+                        value={numText(shownLen(custom.swath_m))} placeholder="Leave blank if unsure"
+                        onChange={e => setCustom({ ...custom, swath_m: storedLen(parseNum(e.target.value)) })} />
                     </div>
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
@@ -327,7 +336,7 @@ export default function Fleet() {
                       </Badge>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {specSheet(previewResolved.spec, previewResolved.known).map(s => (
+                      {specSheet(previewResolved.spec, previewResolved.known, units).map(s => (
                         <div key={s.k} className="rounded-md border bg-muted/30 p-2">
                           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{s.k}</div>
                           <div className="text-xs font-medium leading-tight mt-0.5">{s.v}</div>
@@ -363,22 +372,22 @@ export default function Fleet() {
                       <div className="grid sm:grid-cols-2 gap-3">
                         {entry.tank_l == null && (
                           <div>
-                            <Label>Tank capacity (L) <span className="text-destructive">*</span></Label>
+                            <Label>Tank capacity ({volumeUnit(units)}) <span className="text-destructive">*</span></Label>
                             <Input type="number" min={0} step="any" inputMode="decimal"
-                              value={numText(seededOverride.tank_l)} placeholder="Enter from your aircraft"
-                              onChange={e => setSeededOverride({ ...seededOverride, tank_l: parseNum(e.target.value) })} />
+                              value={numText(shownVol(seededOverride.tank_l))} placeholder="Enter from your aircraft"
+                              onChange={e => setSeededOverride({ ...seededOverride, tank_l: storedVol(parseNum(e.target.value)) })} />
                           </div>
                         )}
                         {entry.swath_m == null && (
                           <div>
-                            <Label>Swath width (m) <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                            <Label>Swath width ({altitudeUnit(units)}) <span className="text-muted-foreground font-normal">(optional)</span></Label>
                             <Input type="number" min={0} step="any" inputMode="decimal"
-                              value={numText(seededOverride.swath_m)} placeholder={
+                              value={numText(shownLen(seededOverride.swath_m))} placeholder={
                                 entry.swath_published_m
-                                  ? `Published range ${entry.swath_published_m[0]}-${entry.swath_published_m[1]} m`
+                                  ? `Published range ${fmtMetricRange(entry.swath_published_m, units, "length", { keepMetric: true })}`
                                   : "Leave blank if unsure"
                               }
-                              onChange={e => setSeededOverride({ ...seededOverride, swath_m: parseNum(e.target.value) })} />
+                              onChange={e => setSeededOverride({ ...seededOverride, swath_m: storedLen(parseNum(e.target.value)) })} />
                           </div>
                         )}
                       </div>
@@ -438,10 +447,13 @@ export default function Fleet() {
                   </div>
                   <div className="text-xs text-muted-foreground truncate">{d.model}</div>
                 </div>
-                <Badge variant="outline" className={statusColor(d.status)}>{d.status.replace("_"," ")}</Badge>
               </div>
-              <div className="grid grid-cols-3 gap-2 text-[11px] mt-2">
-                <div className="flex items-center gap-1"><Battery className="h-3 w-3" /> {d.battery}%</div>
+              {/* No status badge here, deliberately. There is no telemetry link:
+                  a drone registered as "idle" would say idle forever, and a badge
+                  that can never change is a claim to live data we do not have.
+                  Battery is shown because the operator typed it. */}
+              <div className="flex items-center gap-1 text-[11px] mt-2">
+                <Battery className="h-3 w-3" /> {d.battery}%
               </div>
             </button>
           ))}
@@ -508,7 +520,7 @@ export default function Fleet() {
                   numbers are the maker's, which are theirs, and which are the
                   fallback shape standing in for a figure nobody published. */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
-                {specSheet(activeResolved.spec, activeResolved.known).map(s => (
+                {specSheet(activeResolved.spec, activeResolved.known, units).map(s => (
                   <div key={s.k} className="rounded-md border bg-muted/30 p-2">
                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{s.k}</div>
                     <div className="text-xs font-medium leading-tight mt-0.5">{s.v}</div>

@@ -12,6 +12,8 @@
 // not) so the record can keep it as a model_check: condition flagging runs on
 // what the station said even when the operator recorded different values.
 import { useState } from "react";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
+import { M_PER_MILE, fmtDistance, fmtTempF, fmtWindMph } from "@/lib/units";
 import { CloudSun, Loader2 } from "lucide-react";
 import {
   type ObservationSuggestion, fetchObservation, observationFailureText,
@@ -30,6 +32,7 @@ export function ConditionLookup({
   /** Fired whenever a fetch succeeds, before any decision. */
   onFetched: (s: ObservationSuggestion) => void;
 }) {
+  const units = useUnitSystem();
   const [busy, setBusy] = useState(false);
   const [suggestion, setSuggestion] = useState<ObservationSuggestion | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -90,13 +93,13 @@ export function ConditionLookup({
         >
           <div className="font-medium text-sky-200">
             {suggestion.wind_mph != null && suggestion.wind_dir
-              ? `Wind at ${when(suggestion.observed_at)}: ${suggestion.wind_mph} mph ${suggestion.wind_dir}`
+              ? `Wind at ${when(suggestion.observed_at)}: ${fmtWindMph(suggestion.wind_mph, units).text} ${suggestion.wind_dir}`
               : `Wind at ${when(suggestion.observed_at)}: not reported`}
-            {suggestion.temp_f != null ? ` · ${suggestion.temp_f} °F` : " · temperature not reported"}
+            {suggestion.temp_f != null ? ` · ${fmtTempF(suggestion.temp_f, units).text}` : " · temperature not reported"}
           </div>
           <div className="text-[10px] text-sky-300/70">
             Source: NOAA station {suggestion.station} ({suggestion.station_name}),{" "}
-            {suggestion.distance_mi.toFixed(1)} mi from the field. Station data, not conditions
+            {fmtDistance(suggestion.distance_mi * M_PER_MILE, units).text} from the field. Station data, not conditions
             at your boom.
           </div>
           <div className="mt-1.5 flex gap-1.5">

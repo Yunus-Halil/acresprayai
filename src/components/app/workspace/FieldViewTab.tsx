@@ -58,7 +58,7 @@ import {
 } from "./layers";
 import GridAnomaliesLayer from "./GridAnomaliesLayer";
 import { type GridZonesLoad, clearGridZones, loadGridZones } from "@/lib/gridAnomalies";
-import { fmtArea } from "@/lib/units";
+import { fmtAreaHa, fmtArea } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { GRID_CHANGED_EVENT, snapshotGridAssessmentFromStore } from "@/lib/scanAssessment";
 import { ScanPanel, useFieldScans, useScanInfo } from "./ScanTimeline";
@@ -149,6 +149,7 @@ export function FieldViewTab(props: {
     openScan: (taskId: string) => void;
   };
 }) {
+  const units = useUnitSystem();
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
@@ -840,14 +841,17 @@ export function FieldViewTab(props: {
                 <div className="col-span-2 text-[10px] uppercase tracking-wider text-neutral-500">
                   {boundary.length} part{boundary.length === 1 ? "" : "s"} · total area
                 </div>
-                <div className="rounded border border-[#222] px-2 py-1.5" style={{ background: "#0f0f0f" }}>
-                  <div className="text-[10px] uppercase text-neutral-500">Hectares</div>
-                  <div className="font-mono text-cyan-400 tabular-nums">{ha.toFixed(3)} ha</div>
-                </div>
-                <div className="rounded border border-[#222] px-2 py-1.5" style={{ background: "#0f0f0f" }}>
-                  <div className="text-[10px] uppercase text-neutral-500">Acres</div>
-                  <div className="font-mono text-cyan-400 tabular-nums">{ac.toFixed(3)} ac</div>
-                </div>
+                {/* Both stay visible for cross-checking a contract, but the
+                    chosen system's card comes first. */}
+                {(units === "metric"
+                  ? [{ label: "Hectares", text: `${ha.toFixed(3)} ha` }, { label: "Acres", text: `${ac.toFixed(3)} ac` }]
+                  : [{ label: "Acres", text: `${ac.toFixed(3)} ac` }, { label: "Hectares", text: `${ha.toFixed(3)} ha` }]
+                ).map(c => (
+                  <div key={c.label} className="rounded border border-[#222] px-2 py-1.5" style={{ background: "#0f0f0f" }}>
+                    <div className="text-[10px] uppercase text-neutral-500">{c.label}</div>
+                    <div className="font-mono text-cyan-400 tabular-nums">{c.text}</div>
+                  </div>
+                ))}
               </div>
             );
           })()}
@@ -975,6 +979,7 @@ export function UserPolyForm({
   onCancel: () => void;
   onSave: (f: { name: string; issue_type: string; color: string; notes: string }) => void | Promise<void>;
 }) {
+  const units = useUnitSystem();
   const [name, setName] = useState("");
   const [issueType, setIssueType] = useState<string>("Bare soil");
   const [color, setColor] = useState<string>("orange");
@@ -999,7 +1004,7 @@ export function UserPolyForm({
           <Hexagon className="h-4 w-4 text-orange-400" />
           <div className="text-sm font-semibold">New annotation</div>
           <div className="ml-auto text-[10px] uppercase tracking-wider text-neutral-500 font-mono">
-            {draft.areaHa.toFixed(3)} ha · {(draft.areaHa * 2.4710538147).toFixed(2)} ac
+            {fmtAreaHa(draft.areaHa, units).text} · {fmtAreaHa(draft.areaHa, units === "metric" ? "imperial" : "metric").text}
           </div>
         </div>
         <div className="px-5 py-4 space-y-3">

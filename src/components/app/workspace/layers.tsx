@@ -47,7 +47,7 @@ import {
   type BoundaryRing, type FieldRow, type TaskRow,
 } from "./types";
 import { FN_BASE, NDVI_BASE, TILE_BASE } from "./constants";
-import {
+import { fmtDistance,
   areaUnit, costPerAreaUnit, costPerAreaValue, fmtArea, fmtAreaHa,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
@@ -617,8 +617,12 @@ export function MeasurePanel({ stats }: { stats: MeasureStats }) {
             <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-0.5">
               {stats.finished ? "Perimeter" : "Distance"}
             </div>
-            <div className="font-mono tabular-nums text-[#f0f0f0]">{fmt(dist)} m</div>
-            <div className="font-mono tabular-nums text-neutral-500 text-[11px]">{fmt(mToFt(dist), 0)} ft</div>
+            {/* Chosen system leads, the other stays visible in small type -
+                the same cross-check treatment the area block below gives. */}
+            <div className="font-mono tabular-nums text-[#f0f0f0]">{fmtDistance(dist, units).text}</div>
+            <div className="font-mono tabular-nums text-neutral-500 text-[11px]">
+              {fmtDistance(dist, units === "metric" ? "imperial" : "metric").text}
+            </div>
           </div>
           {stats.finished && stats.areaM2 > 0 && (
             <div className="pt-2 border-t border-[#222]">
