@@ -9,7 +9,8 @@ import {
   AC_PER_HA, KG_PER_LB, L_PER_US_GAL, M2_PER_ACRE, M_PER_FT,
   altitudeToM, altitudeValue, areaUnit, costOfAreaHa, costPerAreaUnit,
   MS_PER_MPH, costPerAreaToPerAcre, costPerAreaValue, fmtAltitude, fmtLengthCm, fmtArea, fmtAreaHa, fmtMass, fmtRate, fmtSpeed,
-  fmtTemp, fmtVolume, fmtWindSpeed, rateToLha, rateUnit, rateValue, speedToMs,
+  fmtDistancePair, fmtMetricRange, fmtTemp, fmtVolume, fmtWindSpeed, metricRangeUnit,
+  metricRangeValue, rateToLha, rateUnit, rateValue, speedToMs,
   speedUnit, speedValue, volumeValue,
 } from "@/lib/units";
 
@@ -203,5 +204,61 @@ describe("the preference store", () => {
     localStorage.setItem("swathwise.units", "furlongs");
     const m = await import("@/hooks/useUnitSystem");
     expect(m.getUnitSystem()).toBe("imperial");
+  });
+});
+
+describe("operating ranges stored in metric", () => {
+  it("keeps the metric visible for the two an operator cross-checks against DJI", () => {
+    // The T40's advertised swath and speed, which is what the manual prints.
+    expect(fmtMetricRange([9, 11], "imperial", "length", { keepMetric: true }))
+      .toBe("9 to 11 m (29.5 to 36.1 ft)");
+    expect(fmtMetricRange([7, 10], "imperial", "speed", { keepMetric: true }))
+      .toBe("7 to 10 m/s (15.7 to 22.4 mph)");
+  });
+
+  it("converts outright where the metric is not the point", () => {
+    expect(fmtMetricRange([3, 3.5], "imperial", "length")).toBe("9.8 to 11.5 ft");
+  });
+
+  it("leaves metric alone, brackets and all", () => {
+    expect(fmtMetricRange([9, 11], "metric", "length", { keepMetric: true })).toBe("9 to 11 m");
+    expect(fmtMetricRange([7, 10], "metric", "speed")).toBe("7 to 10 m/s");
+  });
+
+  it("moves a bound onto the input in the same unit the label used", () => {
+    expect(metricRangeValue(9, "imperial", "length")).toBeCloseTo(29.5276, 3);
+    expect(metricRangeUnit("imperial", "speed")).toBe("mph");
+    expect(metricRangeUnit("metric", "length")).toBe("m");
+  });
+});
+
+describe("a ratio of two distances", () => {
+  it("puts both halves in ONE unit, chosen by the total", () => {
+    // The bug: 1239 m rendered as feet against 1915 m rendered as miles, so the
+    // panel printed "4064.52 / 1.19 mi".
+    const p = fmtDistancePair(1239, 1915, "imperial");
+    expect(p.unit).toBe("mi");
+    expect(p.text).toBe("0.8 / 1.2 mi");
+  });
+
+  it("stays in feet while the whole job is under a mile", () => {
+    const p = fmtDistancePair(414.8, 1000, "imperial");
+    expect(p.unit).toBe("ft");
+    expect(p.text).toBe("1,361 / 3,281 ft");
+  });
+
+  it("rounds to a precision a GPS-planned path actually has", () => {
+    // Whole feet and metres; one decimal on the long units. Never centimetres.
+    expect(fmtDistancePair(1239, 1500, "imperial").part).toBe("4,065");
+    expect(fmtDistancePair(412, 900, "metric").text).toBe("412 / 900 m");
+    expect(fmtDistancePair(1239, 2500, "metric").text).toBe("1.2 / 2.5 km");
+  });
+
+  it("does not switch units halfway through a playback", () => {
+    // The total is fixed, so the unit is fixed, however small the numerator is.
+    const start = fmtDistancePair(0, 1915, "imperial");
+    const end = fmtDistancePair(1915, 1915, "imperial");
+    expect(start.unit).toBe(end.unit);
+    expect(start.text).toBe("0.0 / 1.2 mi");
   });
 });

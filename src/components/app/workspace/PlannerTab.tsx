@@ -84,7 +84,8 @@ import { loadGridZones } from "@/lib/gridAnomalies";
 // a pilot cross-checking against either should see the same figure here.
 import {
   altitudeToM, altitudeUnit, altitudeValue, fmtAltitude, fmtArea, fmtAreaAc, fmtDistance,
-  fmtSpeed, fmtVolume, rateToLha, rateUnit, rateValue, speedToMs, speedUnit, speedValue,
+  fmtDistancePair, fmtSpeed, fmtVolume, rateToLha, rateUnit, rateValue, speedToMs,
+  speedUnit, speedValue,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 
@@ -1146,19 +1147,30 @@ export function PlannerTab({
                         style={{ width: `${(liveStats.tankRemaining / Math.max(1, liveStats.tankStart)) * 100}%` }} />
                     </div>
                   </div>
-                  {/* Distance */}
-                  <div className="flex justify-between text-[11px] pt-0.5">
-                    <span className="text-neutral-500">Distance flown</span>
-                    <span className="font-mono text-neutral-300">
-                      {fmtDistance(liveStats.distCovered, units).value.toFixed(2)} <span className="text-neutral-600">/ {fmtDistance(liveStats.totalDist, units).text}</span>
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-neutral-500">Sprayed</span>
-                    <span className="font-mono text-cyan-300">
-                      {fmtDistance(liveStats.sprayCovered, units).value.toFixed(2)} <span className="text-neutral-600">/ {fmtDistance(liveStats.totalSprayDist, units).text}</span>
-                    </span>
-                  </div>
+                  {/* Distance. Both halves of each ratio come out of ONE call, so
+                      they cannot end up in different units: `fmtDistance` picks its
+                      unit from the magnitude it is handed, which had the numerator
+                      in feet and the denominator in miles on the same line. */}
+                  {(() => {
+                    const flown = fmtDistancePair(liveStats.distCovered, liveStats.totalDist, units);
+                    const sprayed = fmtDistancePair(liveStats.sprayCovered, liveStats.totalSprayDist, units);
+                    return (
+                      <>
+                        <div className="flex justify-between text-[11px] pt-0.5">
+                          <span className="text-neutral-500">Distance flown</span>
+                          <span className="font-mono text-neutral-300">
+                            {flown.part} <span className="text-neutral-600">/ {flown.total} {flown.unit}</span>
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-neutral-500">Sprayed</span>
+                          <span className="font-mono text-cyan-300">
+                            {sprayed.part} <span className="text-neutral-600">/ {sprayed.total} {sprayed.unit}</span>
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </div>

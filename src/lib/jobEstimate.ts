@@ -24,9 +24,13 @@
 // routed number is the better one.
 import {
   type AgrasProfile, EFFECTIVE_SWATH_FACTOR_DEFAULT, IN_CANOPY_SWATH_CAP_M,
-  type SwathConstraint, constrainSwath, maxFlowLpm, usableTankAtElevationL,
+  type Range, type SwathConstraint, clampToRange, constrainSwath, maxFlowLpm,
+  usableTankAtElevationL,
 } from "./agrasProfiles";
-import { M2_PER_HECTARE } from "./units";
+import {
+  M2_PER_HECTARE, type UnitSystem, altitudeUnit, altitudeValue, fmtAltitude,
+  fmtMetricRange, fmtSpeed, speedUnit, speedValue,
+} from "./units";
 
 /**
  * Non-productive time, which is most of a real day and none of a spec sheet.
@@ -100,6 +104,13 @@ export type JobEstimateInput = {
    */
   tankCapacityL: number | null;
   ground: GroundOpsInput;
+  /**
+   * Units the WARNING PROSE is written in. The maths is SI throughout and does
+   * not move; only the sentences do. Defaults to metric so a caller that has no
+   * display preference — a test, a stored estimate — reads back the SI it
+   * stored rather than a conversion that depends on who was looking.
+   */
+  display?: UnitSystem;
 };
 
 export type EstimateWarning = {
@@ -132,10 +143,25 @@ export type LoadBreakdown = {
   midLoadSwaps: number;
 };
 
+/** An input held against the profile's stored envelope. */
+export type EnvelopeClamp = {
+  /** The value the estimate actually ran on, SI. */
+  value: number;
+  /** What the operator asked for, SI. */
+  requested: number;
+  clamped: boolean;
+};
+
 export type JobEstimate = {
   // --- the number we own, first ---
   treatedAreaM2: number;
   treatedAreaHa: number;
+
+  // --- the envelope the estimate was allowed to run in ---
+  /** Speed after the profile's stored range has had its say, m/s. */
+  speed: EnvelopeClamp;
+  /** Height after the profile's stored range has had its say, m. */
+  height: EnvelopeClamp;
 
   // --- swath ---
   swath: SwathConstraint;
@@ -195,6 +221,8 @@ export type JobEstimate = {
   warnings: EstimateWarning[];
 };
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 /** Litres one hectare needs at a rate. Trivial, named so the units are visible. */
 const litresFor = (areaM2: number, rateLha: number) => (areaM2 / M2_PER_HECTARE) * rateLha;
 
@@ -207,7 +235,51 @@ const litresFor = (areaM2: number, rateLha: number) => (areaM2 / M2_PER_HECTARE)
  */
 export function estimateJob(input: JobEstimateInput): JobEstimate {
   const { profile, ground } = input;
+  const display: UnitSystem = input.display ?? "metric";
   const warnings: EstimateWarning[] = [];
+
+  // Prose helpers. SI in, the reader's units out, and nothing else in this
+  // function converts anything — the arithmetic below is metric start to end.
+  const len = (m: number) => `${round2(altitudeValue(m, display))} ${altitudeUnit(display)}`;
+  const spd = (ms: number) => `${round2(speedValue(ms, display))} ${speedUnit(display)}`;
+
+  // --- the envelope ------------------------------------------------------
+  //
+  // WHY THESE ARE HELD AND NOT JUST LABELLED. The panel used to print the
+  // aircraft's range as label text and accept anything typed underneath it, so
+  // a 40 ft swath or a 30 mph pass produced an estimate for an aircraft that
+  // does not exist — and produced it silently, in the same type as a real one.
+  // A range that only exists as a caption is decoration. Held here, at the one
+  // place the estimate is computed, so every consumer gets the same guard.
+  const heldTo = (v: number, r: Range): EnvelopeClamp => {
+    const value = clampToRange(Number.isFinite(v) ? v : r[0], r);
+    return { value, requested: v, clamped: Math.abs(value - v) > 1e-9 };
+  };
+  const speed = heldTo(input.speedMs, profile.speed_ms);
+  const height = heldTo(input.heightM, profile.height_m);
+  const speedMs = speed.value;
+  const heightM = height.value;
+
+  if (speed.clamped) {
+    warnings.push({
+      field: "speedMs.envelope",
+      severity: "note",
+      message:
+        `${spd(speed.requested)} is outside the ${profile.model} envelope of ` +
+        `${fmtMetricRange(profile.speed_ms, display, "speed", { keepMetric: true })}. ` +
+        `Everything below is computed at ${spd(speedMs)}.`,
+    });
+  }
+  if (height.clamped) {
+    warnings.push({
+      field: "heightM.envelope",
+      severity: "note",
+      message:
+        `${len(height.requested)} is outside the ${profile.model} spray height of ` +
+        `${fmtMetricRange(profile.height_m, display, "length")}. ` +
+        `Everything below is computed at ${len(heightM)}.`,
+    });
+  }
 
   if (!input.profileMatched) {
     warnings.push({
@@ -240,12 +312,12 @@ export function estimateJob(input: JobEstimateInput): JobEstimate {
    * keeps its wide pattern while slowing down, which is the exact fiction the
    * envelope exists to prevent.
    */
-  const effectiveSwathAt = (speedMs: number): number => {
-    const w = constrainSwath(profile, input.advertisedSwathM, speedMs, input.heightM).swathM * factor;
+  const effectiveSwathAt = (atSpeedMs: number): number => {
+    const w = constrainSwath(profile, input.advertisedSwathM, atSpeedMs, heightM).swathM * factor;
     return input.inCanopy ? Math.min(w, IN_CANOPY_SWATH_CAP_M) : w;
   };
 
-  const swath = constrainSwath(profile, input.advertisedSwathM, input.speedMs, input.heightM);
+  const swath = constrainSwath(profile, input.advertisedSwathM, speedMs, heightM, display);
   if (swath.clamped && swath.reason) {
     warnings.push({ field: "advertisedSwathM", severity: "note", message: swath.reason });
   }
@@ -258,7 +330,8 @@ export function estimateJob(input: JobEstimateInput): JobEstimate {
       field: "inCanopy",
       severity: "note",
       message:
-        `In-canopy work is capped at ${IN_CANOPY_SWATH_CAP_M} m of effective swath. ` +
+        `In-canopy work is capped at ${fmtAltitude(IN_CANOPY_SWATH_CAP_M, display).text} of ` +
+        "effective swath. " +
         "Field measurement on this class found no more than that regardless of the " +
         "advertised width, so the cap is a measurement and not a safety margin.",
     });
@@ -269,7 +342,7 @@ export function estimateJob(input: JobEstimateInput): JobEstimate {
   const rate = Math.max(0, input.applicationRateLha);
 
   // --- productive time ---------------------------------------------------
-  const coverageRateM2S = effectiveSwathM * Math.max(0, input.speedMs);
+  const coverageRateM2S = effectiveSwathM * Math.max(0, speedMs);
   const sprayFlightMin = coverageRateM2S > 0 ? treatedAreaM2 / coverageRateM2S / 60 : 0;
 
   // --- chemical and loads ------------------------------------------------
@@ -303,7 +376,7 @@ export function estimateJob(input: JobEstimateInput): JobEstimate {
       field: "elevationM",
       severity: "note",
       message:
-        `At ${Math.round(input.elevationM)} m of field elevation the payload derate takes ` +
+        `At ${fmtAltitude(input.elevationM, display).text} of field elevation the payload derate takes ` +
         `${(capacityL - liftableL).toFixed(1)} kg off the load, so a full tank here is ` +
         `${liftableL.toFixed(1)} L rather than ${capacityL} L.`,
     });
@@ -343,14 +416,14 @@ export function estimateJob(input: JobEstimateInput): JobEstimate {
     });
   } else if (flowCeilingExceeded) {
     const asked =
-      `This rate at ${input.speedMs.toFixed(1)} m/s asks the pump for ` +
+      `This rate at ${spd(speedMs)} asks the pump for ` +
       `${requiredFlowLpm.toFixed(1)} L/min and it delivers ${ceiling}. `;
     warnings.push({
       field: "speedMs",
       severity: maxSpeedForRateMs == null ? "blocking" : "note",
       message: maxSpeedForRateMs != null
         ? asked +
-          `Fly at or below ${maxSpeedForRateMs.toFixed(1)} m/s, or the aircraft flies the ` +
+          `Fly at or below ${fmtSpeed(maxSpeedForRateMs, display).text}, or the aircraft flies the ` +
           "pattern and lays down less than the label rate."
         : asked +
           `No speed in the ${profile.model} envelope delivers it, because slowing down ` +
@@ -426,6 +499,8 @@ export function estimateJob(input: JobEstimateInput): JobEstimate {
   return {
     treatedAreaM2,
     treatedAreaHa,
+    speed,
+    height,
     swath,
     effectiveSwathM,
     inCanopyCapped,

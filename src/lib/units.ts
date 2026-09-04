@@ -269,3 +269,88 @@ export const costPerAreaToPerAcre = (shown: number, sys: UnitSystem): number =>
 
 /** Total cost of an area, from a per-acre price. System-independent by design. */
 export const costOfAreaHa = (ha: number, perAcre: number): number => ha * AC_PER_HA * perAcre;
+
+// --- operating ranges held in metric ----------------------------------------
+
+/**
+ * A [min, max] operating envelope, stored in SI, rendered for the screen.
+ *
+ * WHY THIS EXISTS AS ONE FUNCTION. Aircraft profiles are stored in metres and
+ * metres per second because that is how DJI publishes them, and the panel that
+ * reads them is imperial. Every place that printed a range hand-wrote the SI
+ * numbers next to a field the operator was typing feet into — "9 to 11 m" over
+ * an input reading 32.81 ft. The numbers were right and the label was a lie
+ * about them, which is the worst of the two failures: a wrong number gets
+ * questioned, a wrong unit gets believed.
+ *
+ * `keepMetric` is for the two ranges an operator will cross-check against DJI's
+ * own manual — swath and speed. There the metric stays visible and the display
+ * unit follows in brackets, because the point is to be able to hold this label
+ * next to the printed spec. Everything else converts outright.
+ */
+export type MetricRangeKind = "length" | "speed";
+
+const rangeNum = (v: number): string => String(+v.toFixed(1));
+
+export function fmtMetricRange(
+  range: readonly [number, number],
+  sys: UnitSystem,
+  kind: MetricRangeKind,
+  opts: { keepMetric?: boolean } = {},
+): string {
+  const siUnit = kind === "speed" ? "m/s" : "m";
+  const metric = `${rangeNum(range[0])} to ${rangeNum(range[1])} ${siUnit}`;
+  if (sys === "metric") return metric;
+
+  const toShown = kind === "speed"
+    ? (v: number) => v / MS_PER_MPH
+    : (v: number) => v / M_PER_FT;
+  const unit = kind === "speed" ? "mph" : "ft";
+  const shown = `${rangeNum(toShown(range[0]))} to ${rangeNum(toShown(range[1]))} ${unit}`;
+  return opts.keepMetric ? `${metric} (${shown})` : shown;
+}
+
+/** One end of such a range as the display system's number, unformatted. */
+export const metricRangeValue = (
+  m: number, sys: UnitSystem, kind: MetricRangeKind,
+): number =>
+  kind === "speed" ? speedValue(m, sys) : altitudeValue(m, sys);
+
+/** The unit a `MetricRangeKind` renders in. */
+export const metricRangeUnit = (sys: UnitSystem, kind: MetricRangeKind): string =>
+  kind === "speed" ? speedUnit(sys) : altitudeUnit(sys);
+
+// --- a ratio of two distances ----------------------------------------------
+
+/**
+ * Two distances rendered against each other, in ONE unit.
+ *
+ * WHAT THIS FIXES. `fmtDistance` picks its unit from the magnitude it is given,
+ * which is right for a lone figure and wrong for a pair: 1239 m came out as
+ * "4064.52" feet and the 1915 m it was being measured against came out as
+ * "1.19 mi", and the panel printed "4064.52 / 1.19 mi". Both halves were
+ * correct and the ratio between them was nonsense.
+ *
+ * The DENOMINATOR chooses the unit, because it is the fixed one — the total
+ * does not change as the aircraft flies, so the row does not switch units
+ * halfway through a playback.
+ *
+ * Precision is the other half of the fix. Centimetres on a GPS-planned path is
+ * a precision nobody has: whole feet and metres, one decimal on miles and
+ * kilometres.
+ */
+export function fmtDistancePair(
+  partM: number, totalM: number, sys: UnitSystem,
+): { part: string; total: string; unit: string; text: string } {
+  const big = sys === "metric" ? totalM >= 1000 : totalM >= M_PER_MILE;
+  const unit = sys === "metric" ? (big ? "km" : "m") : (big ? "mi" : "ft");
+  const per = sys === "metric" ? (big ? 1000 : 1) : (big ? M_PER_MILE : M_PER_FT);
+  const decimals = big ? 1 : 0;
+  const show = (m: number) =>
+    (Number.isFinite(m) ? m / per : 0).toLocaleString(undefined, {
+      minimumFractionDigits: decimals, maximumFractionDigits: decimals,
+    });
+  const part = show(partM);
+  const total = show(totalM);
+  return { part, total, unit, text: `${part} / ${total} ${unit}` };
+}

@@ -25,6 +25,9 @@
 // than an honest fallback.
 import raw from "@/data/agrasProfiles.json";
 import { canonicalModel } from "./droneSpecs";
+import {
+  type UnitSystem, altitudeUnit, altitudeValue, fmtMetricRange, speedUnit, speedValue,
+} from "./units";
 
 /** A [min, max] operating envelope. Defaults come from the midpoint. */
 export type Range = [number, number];
@@ -244,12 +247,19 @@ export type SwathConstraint = {
  */
 export function constrainSwath(
   profile: AgrasProfile, requestedM: number, speedMs: number, heightM: number,
+  display: UnitSystem = "metric",
 ): SwathConstraint {
+  // Prose in the reader's units. The maths stays in SI; only the sentence
+  // moves, and it defaults to metric so a caller with no display preference
+  // — a test, a stored estimate — gets the SI it stored.
+  const len = (m: number) => `${round2(altitudeValue(m, display))} ${altitudeUnit(display)}`;
+  const spd = (ms: number) => `${round2(speedValue(ms, display))} ${speedUnit(display)}`;
+
   const ceiling = maxSwathAt(profile, speedMs, heightM);
   const inRange = clampToRange(requestedM, profile.swath_m);
   if (inRange <= ceiling + 1e-9) {
     return { swathM: inRange, requestedM, clamped: inRange !== requestedM, reason: inRange !== requestedM
-      ? `${profile.model} swath is ${profile.swath_m[0]} to ${profile.swath_m[1]} m.`
+      ? `${profile.model} swath is ${fmtMetricRange(profile.swath_m, display, "length", { keepMetric: true })}.`
       : "" };
   }
   const speedF = rangeFraction(speedMs, profile.speed_ms);
@@ -263,9 +273,9 @@ export function constrainSwath(
     requestedM,
     clamped: true,
     reason:
-      `${round2(inRange)} m of swath needs about ${round2(needSpeed)} m/s at ` +
-      `${round2(needHeight)} m. At ${round2(speedMs)} m/s and ${round2(heightM)} m ` +
-      `this aircraft lays ${round2(ceiling)} m, and ${limiter} is what is holding it back.`,
+      `${len(inRange)} of swath needs about ${spd(needSpeed)} at ` +
+      `${len(needHeight)}. At ${spd(speedMs)} and ${len(heightM)} ` +
+      `this aircraft lays ${len(ceiling)}, and ${limiter} is what is holding it back.`,
   };
 }
 

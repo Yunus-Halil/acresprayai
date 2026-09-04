@@ -33,17 +33,20 @@ import {
 } from "@/components/ui/dialog";
 import {
   AGRAS_PROFILE_UPDATED, AGRAS_PROFILE_VERSION, EFFECTIVE_SWATH_FACTOR_DEFAULT,
-  EFFECTIVE_SWATH_FACTOR_PUBLISHED, availableNozzleCounts, midpoint, resolveAgrasProfile,
+  EFFECTIVE_SWATH_FACTOR_PUBLISHED, IN_CANOPY_SWATH_CAP_M, PAYLOAD_DERATE_KG_PER_1000M,
+  type Range, availableNozzleCounts, midpoint, resolveAgrasProfile,
 } from "@/lib/agrasProfiles";
 import {
   DEFAULT_GROUND_OPS, type GroundOpsInput, estimateJob, fmtMinutes,
 } from "@/lib/jobEstimate";
 import {
-  M2_PER_HECTARE, altitudeToM, altitudeUnit, altitudeValue,
-  fmtArea, fmtRate, fmtVolume, rateToLha, rateUnit, rateValue,
+  M2_PER_HECTARE, type MetricRangeKind, altitudeToM, altitudeUnit, altitudeValue,
+  fmtAltitude, fmtArea, fmtMass, fmtMetricRange, fmtRate, fmtVolume, fmtWindSpeed,
+  metricRangeUnit, metricRangeValue, rateToLha, rateUnit, rateValue,
   speedToMs, speedUnit, speedValue,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
+import type { UnitSystem } from "@/lib/units";
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -64,8 +67,8 @@ const INPUT =
  * inverses or a value drifts every time the panel re-renders.
  */
 function NumField({
-  label, value, onChange, unit, step = 0.1, min, max, hint, toShown = (v: number) => v,
-  fromShown = (v: number) => v,
+  label, value, onChange, unit, step = 0.1, min, max, hint, warn,
+  toShown = (v: number) => v, fromShown = (v: number) => v,
 }: {
   label: string;
   value: number;
@@ -75,6 +78,8 @@ function NumField({
   min?: number;
   max?: number;
   hint?: string;
+  /** Said out loud, in amber, when the value is outside what the aircraft does. */
+  warn?: string;
   toShown?: (si: number) => number;
   fromShown?: (shown: number) => number;
 }) {
@@ -84,7 +89,7 @@ function NumField({
       <span className="mt-1 flex items-center gap-1.5">
         <input
           type="number"
-          className={INPUT}
+          className={`${INPUT} ${warn ? "border-amber-600/70" : ""}`}
           value={round2(toShown(value))}
           step={step}
           min={min}
@@ -96,8 +101,64 @@ function NumField({
         />
         <span className="shrink-0 font-mono text-[10px] text-neutral-500">{unit}</span>
       </span>
+      {warn && (
+        <span className="mt-1 block text-[10px] leading-relaxed text-amber-400/90">{warn}</span>
+      )}
       {hint && <span className="mt-1 block text-[10px] leading-relaxed text-neutral-600">{hint}</span>}
     </label>
+  );
+}
+
+/**
+ * A field bound to an operating range the profile actually stores.
+ *
+ * WHY THIS IS A SEPARATE THING. The range used to exist only as label text, so
+ * the panel would print "9 to 11 m" and then accept a 40 ft swath underneath it
+ * without a word. The estimator now holds the value to the envelope, and this
+ * is the half of that which the operator can see: the input carries the real
+ * min and max, and a value outside them says so in amber and says what the
+ * estimate is using instead.
+ *
+ * `range` is SI, because that is how the profile stores it. Nothing here
+ * converts by hand — `fmtMetricRange` writes the label and `metricRangeValue`
+ * moves the bounds onto the input.
+ */
+function RangeField({
+  label, range, kind, keepMetric, units, value, onChange, step, hint,
+}: {
+  label: string;
+  range: Range;
+  kind: MetricRangeKind;
+  /** Keep the metric visible alongside the conversion. Swath and speed only. */
+  keepMetric?: boolean;
+  units: UnitSystem;
+  value: number;
+  onChange: (si: number) => void;
+  step: number;
+  hint?: string;
+}) {
+  const toShown = (si: number) => metricRangeValue(si, units, kind);
+  const fromShown = (shown: number) =>
+    kind === "speed" ? speedToMs(shown, units) : altitudeToM(shown, units);
+  const out = value < range[0] - 1e-9 || value > range[1] + 1e-9;
+  const held = Math.min(range[1], Math.max(range[0], value));
+  return (
+    <NumField
+      label={`${label}, ${fmtMetricRange(range, units, kind, { keepMetric })}`}
+      value={value}
+      onChange={onChange}
+      unit={metricRangeUnit(units, kind)}
+      step={step}
+      min={round2(toShown(range[0]))}
+      max={round2(toShown(range[1]))}
+      toShown={toShown}
+      fromShown={fromShown}
+      warn={out
+        ? `Outside this aircraft's range. The estimate is using ` +
+          `${round2(toShown(held))} ${metricRangeUnit(units, kind)}.`
+        : undefined}
+      hint={hint}
+    />
   );
 }
 
@@ -202,8 +263,9 @@ export function JobEstimatePanel({
     elevationM,
     tankCapacityL: statedTankL,
     ground,
+    display: units,
   }), [profile, resolved.matched, treatedAreaM2, rateLha, swathM, factor, inCanopy,
-       speedMs, heightM, fillPct, nozzles, elevationM, statedTankL, ground]);
+       speedMs, heightM, fillPct, nozzles, elevationM, statedTankL, ground, units]);
 
   const nozzleChoices = availableNozzleCounts(profile);
   const blocking = est.warnings.filter(w => w.severity === "blocking");
@@ -417,7 +479,7 @@ export function JobEstimatePanel({
               {profile.wind_limit_ms != null && (
                 <div className="mt-2 flex items-center gap-1.5 border-t border-[#1f1f1f] pt-2 text-[10px] text-neutral-500">
                   <Wind className="h-3 w-3" />
-                  Wind limit {profile.wind_limit_ms} m/s. Not applied to anything here; it is
+                  Wind limit {fmtWindSpeed(profile.wind_limit_ms, units).text}. Not applied to anything here; it is
                   a go or no-go on the day.
                 </div>
               )}
@@ -429,14 +491,15 @@ export function JobEstimatePanel({
                 <span className={LABEL}>Swath</span>
               </div>
 
-              <NumField
-                label={`Advertised swath, ${profile.swath_m[0]} to ${profile.swath_m[1]} m`}
+              <RangeField
+                label="Advertised swath"
+                range={profile.swath_m}
+                kind="length"
+                keepMetric
+                units={units}
                 value={swathM}
                 onChange={setSwathM}
-                unit={altitudeUnit(units)}
                 step={units === "metric" ? 0.5 : 1}
-                toShown={(m) => altitudeValue(m, units)}
-                fromShown={(v) => altitudeToM(v, units)}
                 hint={est.swath.clamped ? est.swath.reason : undefined}
               />
 
@@ -467,7 +530,8 @@ export function JobEstimatePanel({
                 <span>
                   In-canopy work
                   <span className="mt-0.5 block text-[10px] leading-relaxed text-neutral-500">
-                    Caps effective swath at 7 m. Field measurement on T50-class aircraft found
+                    Caps effective swath at {fmtAltitude(IN_CANOPY_SWATH_CAP_M, units).text}.
+                    Field measurement on T50-class aircraft found
                     no more than that for in-canopy fungicide passes, whatever the advertised
                     width said.
                   </span>
@@ -484,23 +548,24 @@ export function JobEstimatePanel({
 
             <div className={`${CARD} space-y-2.5`} style={CARD_BG}>
               <span className={LABEL}>Flying</span>
-              <NumField
-                label={`Speed, ${profile.speed_ms[0]} to ${profile.speed_ms[1]} m/s`}
+              <RangeField
+                label="Speed"
+                range={profile.speed_ms}
+                kind="speed"
+                keepMetric
+                units={units}
                 value={speedMs}
                 onChange={setSpeedMs}
-                unit={speedUnit(units)}
                 step={0.5}
-                toShown={(ms) => speedValue(ms, units)}
-                fromShown={(v) => speedToMs(v, units)}
               />
-              <NumField
-                label={`Height, ${profile.height_m[0]} to ${profile.height_m[1]} m`}
+              <RangeField
+                label="Height"
+                range={profile.height_m}
+                kind="length"
+                units={units}
                 value={heightM}
                 onChange={setHeightM}
-                unit={altitudeUnit(units)}
                 step={units === "metric" ? 0.5 : 1}
-                toShown={(m) => altitudeValue(m, units)}
-                fromShown={(v) => altitudeToM(v, units)}
                 hint="Speed and height together set how wide the pattern actually lays. The widest swath needs both at the top of their ranges."
               />
               <NumField
@@ -544,7 +609,8 @@ export function JobEstimatePanel({
                 min={0}
                 toShown={(m) => altitudeValue(m, units)}
                 fromShown={(v) => altitudeToM(v, units)}
-                hint="DJI derates payload by 10 kg per 1000 m, so a full tank is smaller up high."
+                hint={`DJI derates payload by ${fmtMass(PAYLOAD_DERATE_KG_PER_1000M, units).text} per ` +
+                  `${fmtAltitude(1000, units).text}, so a full tank is smaller up high.`}
               />
               <label className="block">
                 <span className={LABEL}>Nozzles</span>

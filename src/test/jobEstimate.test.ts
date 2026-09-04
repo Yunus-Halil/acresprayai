@@ -351,3 +351,70 @@ describe("fmtMinutes", () => {
     expect(fmtMinutes(NaN)).toBe("0m");
   });
 });
+
+describe("the operating envelope is held, not just printed", () => {
+  // The panel used to render the aircraft's range as label text and accept
+  // anything typed underneath it, so a 40 ft swath or a 30 mph pass produced an
+  // estimate for an aircraft that does not exist — silently, in the same type
+  // as a real one.
+  it("holds a speed above the envelope down to the top of it", () => {
+    const e = estimateJob(base({ speedMs: 30 }));
+    expect(e.speed.requested).toBe(30);
+    expect(e.speed.value).toBe(t50.profile.speed_ms[1]);
+    expect(e.speed.clamped).toBe(true);
+    expect(warn(e, "speedMs.envelope")?.severity).toBe("note");
+  });
+
+  it("holds a height below the envelope up to the bottom of it", () => {
+    const e = estimateJob(base({ heightM: 0.5 }));
+    expect(e.height.value).toBe(t50.profile.height_m[0]);
+    expect(e.height.clamped).toBe(true);
+    expect(warn(e, "heightM.envelope")).toBeTruthy();
+  });
+
+  it("computes the coverage rate on the held speed, not the requested one", () => {
+    const wild = estimateJob(base({ speedMs: 30 }));
+    const top = estimateJob(base({ speedMs: t50.profile.speed_ms[1] }));
+    expect(wild.coverageRateM2S).toBeCloseTo(top.coverageRateM2S, 6);
+    expect(wild.sprayFlightMin).toBeCloseTo(top.sprayFlightMin, 6);
+  });
+
+  it("says nothing when the inputs are inside the envelope", () => {
+    const e = estimateJob(base());
+    expect(e.speed.clamped).toBe(false);
+    expect(e.height.clamped).toBe(false);
+    expect(warn(e, "speedMs.envelope")).toBeUndefined();
+    expect(warn(e, "heightM.envelope")).toBeUndefined();
+  });
+
+  it("a swath of 40 ft no longer passes without a word", () => {
+    // 40 ft is 12.19 m, wider than any Agras advertises.
+    const e = estimateJob(base({ advertisedSwathM: 12.19 }));
+    expect(e.swath.clamped).toBe(true);
+    expect(e.swath.swathM).toBeLessThanOrEqual(t50.profile.swath_m[1]);
+    expect(warn(e, "advertisedSwathM")).toBeTruthy();
+  });
+});
+
+describe("warning prose follows the reader's units", () => {
+  it("writes the in-canopy cap in feet for an imperial operator", () => {
+    const over = { inCanopy: true, effectiveSwathFactor: 1.0, advertisedSwathM: 11,
+                   speedMs: 10, heightM: 3.5 };
+    expect(warn(estimateJob(base(over)), "inCanopy")?.message).toMatch(/7 m of/);
+    expect(warn(estimateJob(base({ ...over, display: "imperial" })), "inCanopy")?.message)
+      .toMatch(/23 ft of/);
+  });
+
+  it("writes the pump's speed ceiling in mph for an imperial operator", () => {
+    const over = { applicationRateLha: 80 };
+    expect(warn(estimateJob(base(over)), "speedMs")?.message).toMatch(/m\/s/);
+    expect(warn(estimateJob(base({ ...over, display: "imperial" })), "speedMs")?.message)
+      .toMatch(/mph/);
+  });
+
+  it("defaults to the SI it stores, so a saved estimate reads back unchanged", () => {
+    const e = estimateJob(base({ speedMs: 30 }));
+    expect(warn(e, "speedMs.envelope")?.message).toMatch(/m\/s/);
+    expect(warn(e, "speedMs.envelope")?.message).not.toMatch(/mph/);
+  });
+});
