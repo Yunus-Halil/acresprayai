@@ -188,6 +188,20 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
 };
 
 /**
+ * True when the medium rate is still the number SwathWise shipped.
+ *
+ * The savings figure on every report is measured against this rate, so the
+ * document has to be able to say where it came from. It cannot say the
+ * operator CHOSE it — the whole merged blob is written back on any settings
+ * save, so a stored 25 proves nothing about who put it there — but it can say
+ * truthfully that the value is unchanged from the default, which is what a
+ * reader needs in order to weigh the claim. Anything stronger would be a
+ * provenance we do not actually have.
+ */
+export const baselineRateIsShippedDefault = (s: FarmerSettings): boolean =>
+  s.spray_rates_lha.medium === DEFAULT_FARMER_SETTINGS.spray_rates_lha.medium;
+
+/**
  * Merge a persisted settings blob over the defaults. Older rows predate several
  * fields, so every nested object is filled in rather than replaced wholesale.
  */

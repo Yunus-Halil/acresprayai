@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import turfArea from "@turf/area";
 import { polygon as turfPolygon } from "@turf/helpers";
-import {
+import { baselineRateIsShippedDefault,
   type FarmerSettings, type LastFlownMission,
 } from "@/lib/farmerSettings";
 import { type AnalysisState, analysisStateOf, zoneAcres } from "@/lib/compareGround";
@@ -19,7 +19,8 @@ import { useUnitSystem } from "@/hooks/useUnitSystem";
 import {
   type ApplicationRecord, EMPTY_RECORD, WIND_DIRECTIONS,
   bannerFor, computedRateLPerAc, conditionSourceLabel, missingRecordFields,
-  missionDateError, summariseZones, volumeZoneNote, zoneDetailCsv,
+  missionDateError, savingsBasisLabel, savingsClaim, savingsRefusalNote,
+  summariseZones, volumeZoneNote, zoneDetailCsv,
 } from "@/lib/reportRecord";
 import { reconcileReport } from "@/lib/reportReconcile";
 import ConditionLookup from "@/components/app/workspace/ConditionLookup";
@@ -312,9 +313,13 @@ export default function ReportsTab({
   // nobody can defend.
   const baselineRateLha = settings.spray_rates_lha.medium;
   const fullFieldLitres = (fieldAcres * M2_PER_ACRE / 10_000) * baselineRateLha;
-  const savingsPct = hasGridAssessment && fullFieldLitres > 0
-    ? Math.max(0, Math.min(100, Math.round((1 - totalLitres / fullFieldLitres) * 100)))
-    : 0;
+  // WHERE THE BASELINE CAME FROM. The report cannot claim the operator chose
+  // this rate — any settings save writes the whole merged blob back, so a
+  // stored 25 L/ha proves nothing about who put it there. What it CAN say is
+  // that the value is unchanged from the shipped default, and it says exactly
+  // that wherever the baseline is named.
+  const baselineIsDefault = baselineRateIsShippedDefault(settings);
+  const baselineLabel = `${fmtRate(baselineRateLha, unit).text}${baselineIsDefault ? " (shipped default)" : ""}`;
 
   // Pre-flight vs post-flight framing.
   // Post-flight = a mission has been logged for THIS scan.
@@ -376,6 +381,18 @@ export default function ReportsTab({
   const acresTreatedLogged = effectiveLastLog?.acres_treated ?? null;
   const rateLPerAc = computedRateLPerAc(litersApplied, acresTreatedLogged);
 
+  // THE ONE SAVINGS DECISION. Computed here, once, and read by all three
+  // surfaces that used to reach for their own: the header tile, this banner,
+  // and the PDF's chemical block. They cannot disagree because there is only
+  // one number for them to print.
+  const savings = savingsClaim({
+    hasGridAssessment,
+    plannedL: hasGridAssessment ? totalLitres : null,
+    appliedL: litersApplied,
+    fullFieldL: fullFieldLitres,
+  });
+  const savingsPctOrNull = savings.kind === "none" ? null : savings.pct;
+
   // The one banner the report shows, decided in lib/reportRecord so the states
   // cannot blur: "no assessment" is neutral and explicitly not a finding;
   // success styling exists only for a grid assessment with marked zones. The
@@ -388,18 +405,13 @@ export default function ReportsTab({
     targetedAcres: isDone && source === "legacy" ? treatedAcres : targetedAcres,
     fieldAcres,
     isPostFlight,
-    savingsPct,
+    savings,
     chemical: hasGridAssessment && fullFieldLitres > 0
       ? {
           planned: fmtVol(totalLitres, unit),
           fullField: fmtVol(fullFieldLitres, unit),
-          baselineRate: fmtRate(baselineRateLha, unit).text,
-          // Once a volume is LOGGED, the claim rests on it, not the plan.
+          baselineRate: baselineLabel,
           applied: litersApplied != null ? fmtVol(litersApplied, unit) : null,
-          appliedSavingsPct: litersApplied != null
-            ? Math.max(0, Math.round((1 - litersApplied / fullFieldLitres) * 100))
-            : null,
-          exceededBaseline: litersApplied != null && litersApplied >= fullFieldLitres,
         }
       : undefined,
   });
@@ -795,16 +807,36 @@ export default function ReportsTab({
         pdf.text("Planned total", M, y);
         pdf.text(fmtVol(totalLitres, unit), W - M, y, { align: "right" });
         y += 13;
-        // The savings line prints BOTH volumes: 1 − planned/baseline is the
-        // banner's percentage, reproducible with the numbers on this page.
+        // The reduction line prints every volume it rests on, so the
+        // percentage is reproducible from this page alone — and it prints the
+        // SAME claim the banner does, from the same decision, including when
+        // that decision is to claim nothing.
         pdf.setFont("helvetica", "normal"); pdf.setTextColor(90); pdf.setFontSize(9);
-        pdf.text(`Whole field at ${fmtRate(baselineRateLha, unit).text} (your medium rate)`, M, y);
+        pdf.text(`Whole field at ${baselineLabel} (medium rate, from field settings)`, M, y);
         pdf.text(fmtVol(fullFieldLitres, unit), W - M, y, { align: "right" });
         y += 12;
-        pdf.setTextColor(76, 175, 80);
-        pdf.text("Saved vs that baseline (rate-weighted)", M, y);
-        pdf.text(`${savingsPct}%`, W - M, y, { align: "right" });
-        y += 14;
+        if (savings.kind === "measured") {
+          // The claim rests on the logged volume, so the logged volume is
+          // printed right beside it rather than only in the record below.
+          pdf.setTextColor(90);
+          pdf.text("Applied (from the flight log)", M, y);
+          pdf.text(fmtVol(litersApplied!, unit), W - M, y, { align: "right" });
+          y += 12;
+          pdf.setTextColor(76, 175, 80);
+          pdf.text("Reduction vs that baseline (measured, rate-weighted)", M, y);
+          pdf.text(`${savings.pct}%`, W - M, y, { align: "right" });
+          y += 14;
+        } else if (savings.kind === "projected") {
+          pdf.setTextColor(76, 175, 80);
+          pdf.text("Planned reduction vs that baseline (projection, not measured)", M, y);
+          pdf.text(`${savings.pct}%`, W - M, y, { align: "right" });
+          y += 14;
+        } else {
+          // No percentage anywhere on the document, and the reason in its place.
+          pdf.setTextColor(120);
+          pdf.text(savingsRefusalNote(savings.reason), M, y);
+          y += 14;
+        }
       }
       pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
 
@@ -1006,7 +1038,11 @@ export default function ReportsTab({
         zones_source: source,
         treated_acres: isDone ? treatedAcres : null,
         total_litres: hasGridAssessment ? totalLitres : null,
-        savings_pct: hasGridAssessment && zoneRows.length > 0 ? savingsPct : null,
+        // Null whenever no claim could be defended, and stamped with what the
+        // number rested on — an archived percentage with no basis is exactly
+        // the ambiguity `zones_source` exists to prevent elsewhere.
+        savings_pct: savingsPctOrNull,
+        savings_basis: savings.kind === "none" ? null : savings.kind,
         zones_total: isDone ? zoneRows.length : null,
         zones_flown: isDone ? zonesFlownCount : null,
         drone: activeDrone ? { name: activeDrone.name, model: activeDrone.model } : null,
@@ -1107,14 +1143,26 @@ export default function ReportsTab({
               </>
             ) : (
               <>
+                {/* Post-flight this tile reads the SAME savings decision the
+                    banner does. It used to print the plan's projection under a
+                    bare "Savings" label whatever the record said, so a page
+                    could show 99% here and "no reduction figure is claimed"
+                    directly below it. */}
                 <div className="text-[10px] uppercase tracking-wider text-neutral-500">
-                  {isPostFlight ? "Savings" : "Targeted"}
+                  {isPostFlight ? savingsBasisLabel(savings) : "Targeted"}
                 </div>
-                <div className="text-3xl font-semibold text-[#4CAF50] tabular-nums">
-                  {isPostFlight ? `${savingsPct}%` : acres(targetedAcres)}
+                <div className={`text-3xl font-semibold tabular-nums ${
+                  !isPostFlight || savings.kind !== "none" ? "text-[#4CAF50]" : "text-neutral-500"
+                }`}>
+                  {!isPostFlight ? acres(targetedAcres)
+                    : savings.kind === "none" ? "Not claimed"
+                    : `${savings.pct}%`}
                 </div>
                 <div className="text-[11px] text-neutral-500">
-                  {isPostFlight ? "vs. full-field" : `of ${acres(fieldAcres)} total`}
+                  {!isPostFlight ? `of ${acres(fieldAcres)} total`
+                    : savings.kind === "measured" ? `vs. whole field at ${baselineLabel}`
+                    : savings.kind === "projected" ? "projection, no volume logged"
+                    : "see the report banner"}
                 </div>
               </>
             )}
@@ -1511,7 +1559,11 @@ export default function ReportsTab({
                       <span className="rounded-sm border border-red-900/60 px-1.5 py-0.5 text-[10px] font-semibold text-red-400">DRAFT</span>
                     )}
                     {r.summary?.savings_pct != null && (
-                      <span className="text-[#4CAF50] tabular-nums">{r.summary.savings_pct}% saved</span>
+                      <span className="text-[#4CAF50] tabular-nums">
+                        {r.summary.savings_pct}%
+                        {(r.summary as { savings_basis?: string }).savings_basis === "projected"
+                          ? " planned" : " less"}
+                      </span>
                     )}
                   </button>
                 </li>

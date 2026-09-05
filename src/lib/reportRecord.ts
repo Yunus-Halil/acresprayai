@@ -90,6 +90,116 @@ export const EMPTY_RECORD: ApplicationRecord = {
 export const WIND_DIRECTIONS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
 
 // ---------------------------------------------------------------------------
+// The savings claim
+// ---------------------------------------------------------------------------
+
+/**
+ * Why no percentage may be printed.
+ *
+ * Each of these is a state the document has to be able to be IN, not an error.
+ * A report that cannot defend a reduction figure prints the reason instead of
+ * the figure — a blank with a sentence beats a number with nothing behind it.
+ */
+export type SavingsRefusal =
+  /** No treatment-grid assessment, so there is no plan to compare. */
+  | "no-assessment"
+  /** No field boundary area, so the whole-field baseline does not exist. */
+  | "no-baseline"
+  /** Zones exist but carry no rates, so the planned volume is not a number. */
+  | "nothing-planned"
+  /** The volume actually applied met or exceeded the whole-field baseline. */
+  | "exceeded";
+
+/**
+ * The ONE savings decision for a report. Every surface prints this or prints
+ * nothing.
+ *
+ * WHY THIS IS A FUNCTION AND NOT AN EXPRESSION AT EACH CALL SITE. It used to
+ * be the latter, and the surfaces drifted exactly as you would expect: the
+ * banner was gated on the LOGGED volume — the fix for a report that once read
+ * "91% less chemical, 2.5 gal planned" beside a record showing 10.6 gal
+ * applied — while the header tile above it and the PDF's chemical block below
+ * it both went on printing the plan's projection. One page, three surfaces,
+ * two different numbers, and the gate only covered one of them.
+ *
+ *   measured  — 1 − applied/baseline. A logged volume; the only kind of
+ *               figure that may be stated in the past tense.
+ *   projected — 1 − planned/baseline. The plan's arithmetic, and it must be
+ *               labelled as a projection wherever it appears.
+ *   none      — nothing may be printed. `reason` says which wall was hit.
+ *
+ * Note what "projected" really measures: at a single flat rate it collapses to
+ * an AREA ratio — 1 − treated/field — against a whole-field application nobody
+ * necessarily intended to make. That is a defensible comparison and it is not
+ * a measurement, which is why the wording around it never says "saved".
+ */
+export type SavingsClaim =
+  | { kind: "measured"; pct: number }
+  | { kind: "projected"; pct: number }
+  | { kind: "none"; reason: SavingsRefusal };
+
+const clampPct = (v: number): number => Math.max(0, Math.min(100, Math.round(v)));
+
+export function savingsClaim(input: {
+  /** False for no assessment, or for a legacy result — neither can be priced. */
+  hasGridAssessment: boolean;
+  /** Sum of (zone area x painted rate), litres. Null when not computable. */
+  plannedL: number | null;
+  /** The volume the pilot logged, litres. Null until a mission is logged. */
+  appliedL: number | null;
+  /** Whole field at the baseline rate, litres. */
+  fullFieldL: number;
+}): SavingsClaim {
+  if (!input.hasGridAssessment) return { kind: "none", reason: "no-assessment" };
+  if (!(input.fullFieldL > 0)) return { kind: "none", reason: "no-baseline" };
+
+  // A logged volume outranks the plan, always. This is the gate.
+  if (input.appliedL != null) {
+    if (input.appliedL >= input.fullFieldL) return { kind: "none", reason: "exceeded" };
+    return { kind: "measured", pct: clampPct((1 - input.appliedL / input.fullFieldL) * 100) };
+  }
+
+  // No planned volume is not "100% saved". Zones with no rates on them price
+  // at zero litres, and 1 − 0/baseline is 100 — a fabricated headline off an
+  // empty prescription. It is a missing number, and it prints as one.
+  if (input.plannedL == null || !(input.plannedL > 0)) {
+    return { kind: "none", reason: "nothing-planned" };
+  }
+  return { kind: "projected", pct: clampPct((1 - input.plannedL / input.fullFieldL) * 100) };
+}
+
+/** Headline for a refused claim. Never contains a digit. */
+export function savingsRefusalHeadline(reason: SavingsRefusal): string {
+  switch (reason) {
+    case "no-assessment": return "No reduction figure: treatment area not determined";
+    case "no-baseline": return "No reduction figure: no field area to compare against";
+    case "nothing-planned": return "No reduction figure: zones carry no rates";
+    case "exceeded": return "Application met or exceeded the whole-field baseline";
+  }
+}
+
+/** The sentence stating what is NOT being claimed, and why. */
+export function savingsRefusalNote(reason: SavingsRefusal): string {
+  switch (reason) {
+    case "no-assessment":
+      return "No treatment-grid assessment exists for this scan, so no comparison is made.";
+    case "no-baseline":
+      return "This field has no boundary area on file, so the whole-field baseline cannot be computed.";
+    case "nothing-planned":
+      return "The marked zones carry no application rates, so there is no planned volume to compare.";
+    case "exceeded":
+      return "No reduction figure is claimed for this mission.";
+  }
+}
+
+/** Four words for a stat tile, naming what the percentage rests on. */
+export function savingsBasisLabel(claim: SavingsClaim): string {
+  return claim.kind === "measured" ? "Less chemical"
+    : claim.kind === "projected" ? "Planned reduction"
+    : "Reduction";
+}
+
+// ---------------------------------------------------------------------------
 // The result banner
 // ---------------------------------------------------------------------------
 
@@ -127,13 +237,17 @@ export function bannerFor(input: {
   fieldAcres: number;
   /** True when a mission for THIS scan has been logged. */
   isPostFlight: boolean;
-  savingsPct: number;
   /**
-   * The volumes the savings claim is computed from, pre-formatted so the
-   * headline is reproducible from the page. Post-flight, `applied` (the
-   * LOGGED volume) is what the claim must rest on — a projection printed
-   * beside a record that contradicts it is the most damaging thing this
-   * document can do.
+   * The one savings decision, from `savingsClaim()`. The banner does not
+   * compute a percentage and must not be handed one: every surface on the
+   * report reads this same value, which is the only way they cannot disagree.
+   */
+  savings: SavingsClaim;
+  /**
+   * The volumes the claim is computed from, pre-formatted so the headline is
+   * reproducible from the page. `applied` is the LOGGED volume — a projection
+   * printed beside a record that contradicts it is the most damaging thing
+   * this document can do.
    */
   chemical?: {
     planned: string;
@@ -141,10 +255,6 @@ export function bannerFor(input: {
     baselineRate: string;
     /** The logged applied volume, when one exists. */
     applied?: string | null;
-    /** 1 − applied/fullField, rounded. Null when applied is missing. */
-    appliedSavingsPct?: number | null;
-    /** True when the applied volume meets or exceeds the whole-field baseline. */
-    exceededBaseline?: boolean;
   };
 }): Banner {
   if (!input.hasAnalysis) {
@@ -175,31 +285,32 @@ export function bannerFor(input: {
   }
   if (input.isPostFlight) {
     const chem = input.chemical;
-    // GATED ON THE RECORD. Once a mission is logged, the savings claim rests
-    // on the volume actually applied, never on the plan's projection — a
-    // report once said "91% less chemical, 2.5 gal planned" while its own
-    // application record showed 10.6 gal applied. Everything printed here is
-    // reproducible from the two volumes in the subtitle.
-    if (chem?.applied != null) {
-      if (chem.exceededBaseline) {
-        return {
-          tone: "none",
-          big: "Application exceeded the whole-field baseline",
-          sub: `${chem.applied} applied vs ${chem.fullField} whole-field at ${chem.baselineRate}`,
-          note: "No savings figure is claimed for this mission.",
-        };
-      }
+    const claim = input.savings;
+
+    // GATED ON THE RECORD, in one place. Once a mission is logged the claim
+    // rests on the volume actually applied, never on the plan's projection.
+    if (claim.kind === "none") {
+      return {
+        tone: "none",
+        big: savingsRefusalHeadline(claim.reason),
+        sub: chem?.applied != null
+          ? `${chem.applied} applied vs ${chem.fullField} whole-field at ${chem.baselineRate}`
+          : `across ${ac(input.targetedAcres)} of ${ac(input.fieldAcres)} total`,
+        note: savingsRefusalNote(claim.reason),
+      };
+    }
+    if (claim.kind === "measured") {
       return {
         tone: "success",
-        big: `${chem.appliedSavingsPct}% less chemical`,
-        sub: `${chem.applied} applied vs ${chem.fullField} whole-field at ${chem.baselineRate}`,
+        big: `${claim.pct}% less chemical`,
+        sub: `${chem?.applied} applied vs ${chem?.fullField} whole-field at ${chem?.baselineRate}`,
         note: null,
       };
     }
     // No applied volume logged: the projection may show, SAID as a projection.
     return {
       tone: "success",
-      big: `${input.savingsPct}% less chemical planned`,
+      big: `${claim.pct}% less chemical planned`,
       sub: chem
         ? `${chem.planned} planned vs ${chem.fullField} whole-field at ${chem.baselineRate}`
         : `across ${ac(input.targetedAcres)} of ${ac(input.fieldAcres)} total`,

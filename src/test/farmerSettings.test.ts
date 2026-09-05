@@ -4,6 +4,7 @@ import {
   CURRENCIES,
   DEFAULT_FARMER_SETTINGS,
   INPUT_LABELS,
+  baselineRateIsShippedDefault,
   currencySymbol,
   formatMoney,
   growthStage,
@@ -299,5 +300,23 @@ describe("drone specs", () => {
     const sheet = specSheet(DRONE_SPECS["DJI Mavic 3M"], DRONE_SPEC_KNOWN["DJI Mavic 3M"]);
     expect(sheet.find(r => r.k === "Tank")?.v).toBe("-");
     expect(sheet.find(r => r.k === "Swath")?.v).toBe("-");
+  });
+});
+
+describe("the report's savings baseline names where it came from", () => {
+  it("flags a medium rate still sitting at the shipped default", () => {
+    expect(baselineRateIsShippedDefault(DEFAULT_FARMER_SETTINGS)).toBe(true);
+    expect(baselineRateIsShippedDefault(
+      mergeFarmerSettings({ spray_rates_lha: { medium: 40 } }),
+    )).toBe(false);
+  });
+
+  it("does not pretend a saved blob proves the operator chose the rate", () => {
+    // Any settings save writes the whole merged object back, so a stored 25
+    // is indistinguishable from an untouched default - and the predicate
+    // reports exactly that rather than inventing provenance.
+    const saved = mergeFarmerSettings({ crop_type: "corn" });
+    expect(saved.spray_rates_lha.medium).toBe(25);
+    expect(baselineRateIsShippedDefault(saved)).toBe(true);
   });
 });

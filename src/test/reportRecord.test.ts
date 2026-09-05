@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   type ApplicationRecord, EMPTY_RECORD,
   bannerFor, computedRateLPerAc, missingRecordFields, missionDateError,
-  summariseZones, volumeZoneNote, zoneDetailCsv,
+  savingsBasisLabel, savingsClaim, summariseZones, volumeZoneNote, zoneDetailCsv,
 } from "@/lib/reportRecord";
 
 const COMPLETE_RECORD: ApplicationRecord = {
@@ -25,7 +25,10 @@ const COMPLETE_RECORD: ApplicationRecord = {
 };
 
 describe("the result banner", () => {
-  const base = { targetedAcres: 0, fieldAcres: 11.07, isPostFlight: false, savingsPct: 0 };
+  const base = {
+    targetedAcres: 0, fieldAcres: 11.07, isPostFlight: false,
+    savings: { kind: "none", reason: "no-assessment" } as const,
+  };
 
   it("renders NO ASSESSMENT as neutral, explicitly not a finding of zero", () => {
     const b = bannerFor({ ...base, hasAnalysis: false, zoneCount: 0 });
@@ -55,7 +58,7 @@ describe("the result banner", () => {
     // but SAID as a projection — never as measured performance.
     const post = bannerFor({
       ...base, hasAnalysis: true, source: "grid", zoneCount: 3, targetedAcres: 2.4,
-      isPostFlight: true, savingsPct: 78,
+      isPostFlight: true, savings: { kind: "projected", pct: 78 },
     });
     expect(post.tone).toBe("success");
     expect(post.big).toBe("78% less chemical planned");
@@ -167,7 +170,8 @@ describe("a verifiable, record-gated savings banner", () => {
   const base = {
     hasAnalysis: true, source: "grid" as const, zoneCount: 3,
     targetedAcres: 6.25, fieldAcres: 11.07,
-    isPostFlight: true, savingsPct: 40,
+    isPostFlight: true,
+    savings: { kind: "projected", pct: 40 } as const,
   };
   const chem = { planned: "2.5 gal", fullField: "29.5 gal", baselineRate: "2.7 gal/ac" };
 
@@ -185,7 +189,8 @@ describe("a verifiable, record-gated savings banner", () => {
     // banner said "91% less chemical" from the plan. Now: actual vs baseline.
     const b = bannerFor({
       ...base,
-      chemical: { ...chem, applied: "10.6 gal", appliedSavingsPct: 64, exceededBaseline: false },
+      savings: { kind: "measured", pct: 64 },
+      chemical: { ...chem, applied: "10.6 gal" },
     });
     expect(b.tone).toBe("success");
     expect(b.big).toBe("64% less chemical");
@@ -196,12 +201,62 @@ describe("a verifiable, record-gated savings banner", () => {
   it("claims NO savings when the applied volume meets or exceeds the baseline", () => {
     const b = bannerFor({
       ...base,
-      chemical: { ...chem, applied: "31.0 gal", appliedSavingsPct: 0, exceededBaseline: true },
+      savings: { kind: "none", reason: "exceeded" },
+      chemical: { ...chem, applied: "31.0 gal" },
     });
     expect(b.tone).toBe("none");
     expect(b.big).toMatch(/exceeded the whole-field baseline/i);
     expect(b.big).not.toMatch(/%/);
-    expect(b.note).toMatch(/No savings figure is claimed/i);
+    expect(b.note).toMatch(/No reduction figure is claimed/i);
+  });
+});
+
+describe("one savings decision, so the surfaces cannot disagree", () => {
+  // The bug: the banner was gated on the logged volume while the header tile
+  // and the PDF's chemical block both printed the plan's projection. Same
+  // page, two numbers. Every surface now reads savingsClaim().
+  const full = 156;   // 15.43 ac at the 25 L/ha default
+
+  it("prefers the LOGGED volume over the plan whenever one exists", () => {
+    const c = savingsClaim({ hasGridAssessment: true, plannedL: 1.6, appliedL: 60, fullFieldL: full });
+    expect(c).toEqual({ kind: "measured", pct: 62 });
+    // Not the 99% the plan alone would have produced.
+    expect(c.kind === "measured" && c.pct).not.toBe(99);
+  });
+
+  it("falls back to the plan only when nothing has been logged, and says so", () => {
+    const c = savingsClaim({ hasGridAssessment: true, plannedL: 1.6, appliedL: null, fullFieldL: full });
+    expect(c).toEqual({ kind: "projected", pct: 99 });
+    expect(savingsBasisLabel(c)).toBe("Planned reduction");
+  });
+
+  it("refuses outright when the application met or beat the baseline", () => {
+    expect(savingsClaim({ hasGridAssessment: true, plannedL: 1.6, appliedL: 156, fullFieldL: full }))
+      .toEqual({ kind: "none", reason: "exceeded" });
+    expect(savingsClaim({ hasGridAssessment: true, plannedL: 1.6, appliedL: 200, fullFieldL: full }))
+      .toEqual({ kind: "none", reason: "exceeded" });
+  });
+
+  it("never turns an empty prescription into a 100% headline", () => {
+    // Zones with no rates price at zero litres, and 1 - 0/baseline is 100.
+    // That is a missing number, not a perfect result.
+    expect(savingsClaim({ hasGridAssessment: true, plannedL: 0, appliedL: null, fullFieldL: full }))
+      .toEqual({ kind: "none", reason: "nothing-planned" });
+    expect(savingsClaim({ hasGridAssessment: true, plannedL: null, appliedL: null, fullFieldL: full }))
+      .toEqual({ kind: "none", reason: "nothing-planned" });
+  });
+
+  it("claims nothing without an assessment or without a field area", () => {
+    expect(savingsClaim({ hasGridAssessment: false, plannedL: 1.6, appliedL: null, fullFieldL: full }))
+      .toEqual({ kind: "none", reason: "no-assessment" });
+    expect(savingsClaim({ hasGridAssessment: true, plannedL: 1.6, appliedL: null, fullFieldL: 0 }))
+      .toEqual({ kind: "none", reason: "no-baseline" });
+  });
+
+  it("labels the tile by what the number actually rests on", () => {
+    expect(savingsBasisLabel({ kind: "measured", pct: 62 })).toBe("Less chemical");
+    expect(savingsBasisLabel({ kind: "projected", pct: 99 })).toBe("Planned reduction");
+    expect(savingsBasisLabel({ kind: "none", reason: "exceeded" })).toBe("Reduction");
   });
 });
 
