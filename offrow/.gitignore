@@ -1,0 +1,25 @@
+# Downloaded and generated imagery. Never committed.
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Outputs
+*.png
+!docs/**/*.png
+out/
