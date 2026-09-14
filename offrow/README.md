@@ -16,6 +16,7 @@ is by construction not the planted crop. That is geometry, not prediction.
 | 1 | `sensor.py` | implemented |
 | 2 | `datasets.py` | implemented |
 | 3 | `synth.py` | implemented |
+| 4 | ~~`altitude.py`~~ | cancelled: the ladder is flown |
 | 5 | `io.py`, `vegetation.py` | implemented |
 | 6 | `rows.py` | stub |
 | 7 | `blobs.py`, `candidates.py`, `grid.py` | stub |
@@ -133,6 +134,6 @@ every resolution. `rows.py`'s confidence metric is where that gets handled.
 5. No hardcoded sensor. Camera geometry is parameters.
 6. Ranked candidates, never verdicts.
 
-`data/` is gitignored. There is no drone for this work, so nothing may assume access to
-new imagery; everything is developed against synthetic scenes and public datasets
-resampled to simulate altitude. Any curve produced that way is labelled simulated.
+`data/` is gitignored. Synthetic scenes and public datasets carry development; flown
+imagery is arriving. Anything not captured by a camera at the GSD it claims is labelled
+as what it is, and synthetic numbers are never quoted outside this repo.

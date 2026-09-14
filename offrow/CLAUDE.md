@@ -6,9 +6,11 @@ Part of SwathWise. This repo is the research track: given an orthomosaic of a co
 field at V2 to V6, a field boundary, and the grower's row spacing, find vegetation
 that is not the planted crop and rank grid cells for operator review.
 
-There is no drone available for this work yet. Everything here is developed against
-synthetic scenes and against public datasets resampled to simulate altitude. The
-code must not assume access to new imagery.
+Development is carried by synthetic scenes and public datasets; flown imagery is
+arriving and the altitude ladder will be flown rather than simulated. Nothing may
+assume any particular imagery is present: every loader states where its data
+comes from and refuses rather than substituting, and every number states whether
+it was flown, rendered, or neither.
 
 ## The one idea this repo is built on
 
