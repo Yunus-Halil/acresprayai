@@ -41,6 +41,42 @@ MIN_ROWS_FOR_PITCH = 10.0
 ROW_SPACING_30IN_M = 0.762
 ROW_SPACING_75CM_M = 0.75
 
+#: The weed this system is specified against: a 3 cm seedling in V2 to V6 corn.
+TARGET_WEED_DIAMETER_M = 0.03
+
+#: Upper edges of the ground-truth weed diameter bins, in metres. Octaves
+#: anchored on the target: 4 cm is just above the 3 cm seedling, and at the 5.5
+#: mm/px a 30 m flight gives, the edges land at 7.3, 14.5, 29 and 58 px across.
+#: That puts the first edge just above the roughly 4 px detection floor and the
+#: second right at the roughly 15 px shape floor, so the bins separate detection
+#: regimes rather than slicing a continuum at round numbers.
+#:
+#: Recall is never reported pooled across these. USU weeds run 15 to 38 cm, which
+#: is 31 to 80 px at its own GSD: comfortably into the regime where leaf shape is
+#: resolvable. A pooled number from that set would measure the easy problem and
+#: flatter us. Only the smallest bin speaks to the flight spec.
+WEED_DIAMETER_BINS_M = (0.04, 0.08, 0.16, 0.32)
+
+#: Index of the bin that contains :data:`TARGET_WEED_DIAMETER_M`. The only bin
+#: whose recall is evidence about the flight spec.
+FLIGHT_SPEC_BIN = 0
+
+
+def diameter_bin_labels(bins_m: tuple[float, ...] = WEED_DIAMETER_BINS_M) -> list[str]:
+    """Human labels for the diameter bins, in centimetres."""
+    labels = [f"<{bins_m[0] * 100:g} cm"]
+    labels += [f"{a * 100:g}-{b * 100:g} cm" for a, b in zip(bins_m, bins_m[1:], strict=False)]
+    labels.append(f">={bins_m[-1] * 100:g} cm")
+    return labels
+
+
+def diameter_bin(diameter_m: float, bins_m: tuple[float, ...] = WEED_DIAMETER_BINS_M) -> int:
+    """Index of the bin a ground-truth diameter falls in."""
+    for index, edge in enumerate(bins_m):
+        if diameter_m < edge:
+            return index
+    return len(bins_m)
+
 
 class DatasetUnavailable(RuntimeError):
     """Raised when a dataset cannot be fetched automatically.
@@ -141,6 +177,7 @@ class Annotation:
     x_max: float
     y_max: float
     is_point: bool = False
+    stated_diameter_m: float | None = None
 
     @property
     def centroid_px(self) -> tuple[float, float]:
@@ -164,6 +201,31 @@ class Annotation:
         """Box extent in metres. The honest measure of how big a plant is."""
         scale = gsd_mm / 1000.0
         return (self.width_px * scale, self.height_px * scale)
+
+    def diameter_m(self, gsd_mm: float) -> float:
+        """Canopy diameter: the longest extent of the box, in metres.
+
+        Longest rather than mean, because the detection floors in
+        :mod:`offrow.sensor` are expressed as pixels across an object and this
+        has to be the same quantity. It travels with every annotation so recall
+        can be binned by it: a 25 cm weed and a 3 cm seedling are different
+        detection problems and pooling them measures the easy one.
+
+        When a truth source states the diameter directly, as synthetic scenes
+        do, :attr:`stated_diameter_m` overrides this.
+        """
+        if self.stated_diameter_m is not None:
+            return self.stated_diameter_m
+        return max(self.size_m(gsd_mm))
+
+    def equiv_diameter_m(self, gsd_mm: float) -> float:
+        """Diameter of a circle with the box's area. For comparison with blob features."""
+        w, h = self.size_m(gsd_mm)
+        return float(np.sqrt(w * h))
+
+    def diameter_bin(self, gsd_mm: float, bins_m: tuple[float, ...] = WEED_DIAMETER_BINS_M) -> int:
+        """Which size bin this object belongs to."""
+        return diameter_bin(self.diameter_m(gsd_mm), bins_m)
 
 
 @dataclass(frozen=True)
@@ -305,6 +367,25 @@ class Dataset:
             "max_extent_m_median": float(np.median(arr)),
             "max_extent_m_p95": float(np.percentile(arr, 95)),
         }
+
+    def diameter_histogram(
+        self, bins_m: tuple[float, ...] = WEED_DIAMETER_BINS_M, labels: set[str] | None = None
+    ) -> dict[str, int]:
+        """Ground-truth object count per diameter bin.
+
+        The shape of this histogram decides whether a recall number from this
+        dataset means anything about the flight spec. A set with nothing in the
+        smallest bin cannot answer the question the spec asks, however good its
+        pooled recall looks.
+        """
+        names = diameter_bin_labels(bins_m)
+        counts = dict.fromkeys(names, 0)
+        for frame in self.frames:
+            for ann in frame.annotations:
+                if labels and ann.label not in labels:
+                    continue
+                counts[names[ann.diameter_bin(frame.gsd_mm, bins_m)]] += 1
+        return counts
 
 
 # --------------------------------------------------------------------------
@@ -621,6 +702,7 @@ def stitch(tiles: list[Frame], dedupe_tolerance_m: float = 0.05) -> Mosaic:
                     x_max=ann.x_max + tile.tile.x_px,
                     y_max=ann.y_max + tile.tile.y_px,
                     is_point=ann.is_point,
+                    stated_diameter_m=ann.stated_diameter_m,
                 )
             )
 
@@ -1075,6 +1157,21 @@ def coverage_report(dataset: Dataset, row_spacing_m: float = ROW_SPACING_75CM_M)
             f"median {sizes['max_extent_m_median'] * 100:.1f} cm, "
             f"p95 {sizes['max_extent_m_p95'] * 100:.1f} cm"
         )
+
+    lines.append("")
+    histogram = dataset.diameter_histogram()
+    total = sum(histogram.values())
+    if total:
+        lines.append("  ground truth by weed diameter:")
+        names = diameter_bin_labels()
+        for index, (name, count) in enumerate(histogram.items()):
+            flag = "  <- the flight-spec bin" if index == FLIGHT_SPEC_BIN else ""
+            lines.append(f"    {name:<12} {count:>7}  {100 * count / total:5.1f}%{flag}")
+        if histogram[names[FLIGHT_SPEC_BIN]] == 0:
+            lines.append(
+                "    nothing in the flight-spec bin: pooled recall from this set says "
+                "nothing about a 3 cm seedling"
+            )
 
     lines.append("")
     feasibility = row_fit_feasibility(coverage["short_edge_m_median"], row_spacing_m)

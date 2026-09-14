@@ -13,6 +13,7 @@ import typer
 from offrow import __version__
 from offrow import datasets as datasets_mod
 from offrow import sensor as sensor_mod
+from offrow import synth as synth_mod
 
 app = typer.Typer(
     add_completion=False,
@@ -301,18 +302,115 @@ def inspect(
 
 @app.command()
 def synth(
-    out: Path = typer.Option(..., "--out", help="Output directory."),
+    out: Path = typer.Option(Path("data/synth"), "--out", help="Output directory."),
+    name: str = typer.Option("scene", "--name", help="Basename for the written files."),
     gsd_mm: float = typer.Option(5.5, "--gsd-mm", help="Render resolution."),
     acres: float = typer.Option(2.0, "--acres", help="Field size."),
+    width_m: float = typer.Option(None, "--width-m", help="Explicit width, overrides --acres."),
+    height_m: float = typer.Option(None, "--height-m", help="Explicit height, overrides --acres."),
     row_spacing_in: float = typer.Option(30.0, "--row-spacing-in", help="Planted row spacing."),
-    weed_density: float = typer.Option(3.0, "--weed-density", help="Weeds per 10 square metres."),
+    row_angle_deg: float = typer.Option(0.0, "--row-angle", help="Row direction in degrees."),
+    inrow_spacing_m: float = typer.Option(0.15, "--inrow-m", help="Within-row plant spacing."),
+    jitter: float = typer.Option(0.10, "--jitter", help="Spacing jitter as a fraction."),
+    skip_rate: float = typer.Option(0.05, "--skip-rate", help="Fraction of plant positions empty."),
+    crop_cm: float = typer.Option(12.0, "--crop-cm", help="Crop canopy diameter."),
+    weed_density: float = typer.Option(0.3, "--weed-density", help="Weeds per square metre."),
+    weed_cm: float = typer.Option(
+        3.0, "--weed-cm", help="Mean weed diameter. Defaults to the flight-spec target."
+    ),
+    offrow_bias: float = typer.Option(
+        0.5, "--offrow-bias", help="0 uniform, 1 all at the inter-row midpoint."
+    ),
     shadows: bool = typer.Option(False, "--shadows", help="Cast directional plant shadows."),
+    sun_azimuth: float = typer.Option(135.0, "--sun-azimuth", help="Shadow direction."),
+    sun_elevation: float = typer.Option(40.0, "--sun-elevation", help="Sun height."),
     wheel_tracks: bool = typer.Option(False, "--wheel-tracks", help="Draw wheel tracks."),
     wet_patches: bool = typer.Option(False, "--wet-patches", help="Draw wet soil patches."),
     seed: int = typer.Option(0, "--seed", help="Reproducibility."),
+    ladder_mm: str = typer.Option(
+        None, "--ladder-mm", help="Also render this comma-separated GSD ladder as a figure."
+    ),
+    ladder_extent_m: float = typer.Option(
+        None, "--ladder-extent-m", help="Ground extent shown per ladder panel."
+    ),
+    no_raster: bool = typer.Option(
+        False, "--no-raster", help="Write truth and manifest only, skip the GeoTIFF."
+    ),
 ) -> None:
-    """Render a synthetic field with exact ground truth."""
-    _not_built("offrow synth (synth.py)")
+    """Render a synthetic field with exact ground truth.
+
+    The only place the hard regime gets tested: the public sets contain no weed
+    under 8 cm, and the flight spec targets 3 cm.
+    """
+    params = synth_mod.SceneParams(
+        acres=acres,
+        width_m=width_m,
+        height_m=height_m,
+        row_spacing_m=row_spacing_in * 0.0254,
+        row_angle_deg=row_angle_deg,
+        inrow_spacing_m=inrow_spacing_m,
+        spacing_jitter_frac=jitter,
+        skip_rate=skip_rate,
+        crop_diameter_m=crop_cm / 100.0,
+        weed_density_per_m2=weed_density,
+        weed_diameter_m=weed_cm / 100.0,
+        weed_offrow_bias=offrow_bias,
+        shadows=shadows,
+        sun_azimuth_deg=sun_azimuth,
+        sun_elevation_deg=sun_elevation,
+        wheel_tracks=wheel_tracks,
+        wet_patches=wet_patches,
+        seed=seed,
+    )
+    scene = synth_mod.generate(params)
+
+    typer.secho(
+        f"{scene.extent_m[0]:.1f} x {scene.extent_m[1]:.1f} m "
+        f"({scene.area_acres:.2f} acres) at {gsd_mm:g} mm/px",
+        bold=True,
+    )
+    typer.echo(
+        f"  {len(scene.crop_xy_m)} crop plants, {len(scene.weed_xy_m)} weeds, "
+        f"{int(scene.offrow_mask.sum())} of them off-row"
+    )
+    typer.echo(f"  {scene.min_coverage_rows(params.row_spacing_m):.0f} rows across the short edge")
+    typer.echo("  ground truth by weed diameter:")
+    histogram = scene.diameter_histogram()
+    total = max(sum(histogram.values()), 1)
+    for index, (label, count) in enumerate(histogram.items()):
+        flag = "  <- the flight-spec bin" if index == datasets_mod.FLIGHT_SPEC_BIN else ""
+        typer.echo(f"    {label:<12} {count:>7}  {100 * count / total:5.1f}%{flag}")
+
+    if not no_raster:
+        written = synth_mod.write_scene(scene, out, gsd_mm, name=name)
+    else:
+        out.mkdir(parents=True, exist_ok=True)
+        written = {
+            "truth": scene.truth_geojson(out / f"{name}_truth.geojson"),
+            "crop": scene.crop_geojson(out / f"{name}_crop.geojson"),
+            "boundary": scene.boundary_geojson(out / f"{name}_boundary.geojson"),
+        }
+    typer.echo("")
+    for kind, path in written.items():
+        typer.echo(f"  {kind:<9} {path}")
+    if not no_raster and synth_mod.last_raster_backend() == "tifffile":
+        typer.secho(
+            "  raster written as a tiled TIFF plus .tfw/.prj world files: rasterio could "
+            "not load on this machine, so a true GeoTIFF was not written.",
+            fg=typer.colors.YELLOW,
+        )
+
+    if ladder_mm:
+        gsds = _parse_floats(ladder_mm, "--ladder-mm")
+        figure = synth_mod.degradation_figure(
+            scene, gsds, out / f"{name}_ladder.png", extent_m=ladder_extent_m
+        )
+        typer.echo(f"  ladder    {figure}")
+
+    typer.secho(
+        "\n  Synthetic. Drives development and tests. Never a reportable accuracy number.",
+        fg=typer.colors.YELLOW,
+    )
 
 
 @app.command()

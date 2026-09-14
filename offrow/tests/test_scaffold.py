@@ -28,7 +28,7 @@ MODULES = [
 
 #: Implemented modules are exempt from the stub checks below. Removing a name
 #: from here is part of shipping the step that implements it.
-IMPLEMENTED = ("offrow.sensor", "offrow.cli", "offrow.datasets")
+IMPLEMENTED = ("offrow.sensor", "offrow.cli", "offrow.datasets", "offrow.synth")
 
 STUB_MODULES = [m for m in MODULES if m not in IMPLEMENTED]
 

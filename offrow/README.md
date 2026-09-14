@@ -15,7 +15,7 @@ is by construction not the planted crop. That is geometry, not prediction.
 |---|---|---|
 | 1 | `sensor.py` | implemented |
 | 2 | `datasets.py` | implemented |
-| 3 | `synth.py` | stub |
+| 3 | `synth.py` | implemented |
 | 4 | `altitude.py` | stub |
 | 5 | `io.py`, `vegetation.py` | stub |
 | 6 | `rows.py` | stub |
@@ -88,6 +88,26 @@ unjudgeable, not wrong.
 offrow fetch   --dataset usu-corn-weeddb
 offrow inspect --dataset usu-corn-weeddb --row-spacing-in 30 --mosaic --complete --samples 3
 ```
+
+## Weed size is binned, never pooled
+
+Recall is always reported per ground-truth weed diameter, with edges at 4, 8, 16 and
+32 cm. Those are octaves anchored on the 3 cm seedling the flight spec targets: at 5.5
+mm/px they land at 7.3, 14.5, 29 and 58 px across, so the first edge sits just above the
+4 px detection floor and the second right at the 15 px shape floor.
+
+USU has **zero** labelled weeds under 8 cm; 93 percent of its truth is 16 cm or larger.
+A pooled recall number from it measures a different, easier problem. The smallest bin is
+the only one that speaks to the flight spec, and the public sets do not populate it, so
+the recall-versus-GSD curve bounds the problem from above rather than estimating it.
+`synth.py` defaults to a 3 cm weed for exactly this reason.
+
+## Environment: the GDAL stack is blocked here
+
+`rasterio`, `pyproj` and `pyogrio` fail to import on this machine under an Application
+Control policy. `synth.py` writes a tiled TIFF plus `.tfw`/`.prj` world files instead of
+a GeoTIFF and says so; `last_raster_backend()` reports which backend ran. `io.py` will
+need the same seam. Lifting the policy is the better fix.
 
 ## Rules that outrank convenience
 
