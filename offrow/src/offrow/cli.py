@@ -11,6 +11,7 @@ from pathlib import Path
 import typer
 
 from offrow import __version__
+from offrow import datasets as datasets_mod
 from offrow import sensor as sensor_mod
 
 app = typer.Typer(
@@ -170,9 +171,61 @@ def fetch(
     dataset: str = typer.Option(..., "--dataset", help="droneweed | usu-corn-weeddb"),
     subset: str = typer.Option(None, "--subset", help="Source-specific subset, e.g. maize."),
     out: Path = typer.Option(Path("data"), "--out", help="Cache directory. Gitignored."),
+    force: bool = typer.Option(False, "--force", help="Re-download even if cached."),
 ) -> None:
     """Download a public dataset into the local cache."""
-    _not_built("offrow fetch (datasets.py)")
+    try:
+        target = datasets_mod.fetch(dataset, subset=subset, root=out, force=force)
+    except datasets_mod.DatasetUnavailable as exc:
+        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=3) from exc
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--dataset") from exc
+    typer.echo(f"ready: {target}")
+
+
+@app.command()
+def inspect(
+    dataset: str = typer.Option(..., "--dataset", help="droneweed | usu-corn-weeddb"),
+    subset: str = typer.Option("maize", "--subset", help="Source-specific subset."),
+    root: Path = typer.Option(Path("data"), "--root", help="Cache directory."),
+    row_spacing_in: float = typer.Option(
+        29.5, "--row-spacing-in", help="Planted row spacing to judge row-fit against."
+    ),
+    samples: int = typer.Option(0, "--samples", help="Render this many frames with boxes drawn."),
+    out: Path = typer.Option(Path("out/samples"), "--out", help="Where to write sample frames."),
+    limit: int = typer.Option(0, "--limit", help="Only load this many frames. 0 loads all."),
+) -> None:
+    """Ground coverage per frame, and whether it spans enough rows for a row model.
+
+    The question that decides where rows.py can run: on a frame, on a stitched
+    strip, or only on a real orthomosaic.
+    """
+    spacing_m = row_spacing_in * 0.0254
+
+    if dataset in datasets_mod.SPECS:
+        spec = datasets_mod.SPECS[dataset]
+        if spec.tile_coverage_m:
+            typer.secho("From the published descriptor, before loading a byte:", bold=True)
+            typer.echo(f"  {datasets_mod.spec_feasibility(dataset, spacing_m)}")
+            typer.echo("")
+
+    try:
+        data = datasets_mod.load(dataset, root=root, subset=subset)
+    except datasets_mod.DatasetUnavailable as exc:
+        typer.secho(str(exc), fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=3) from exc
+
+    if limit:
+        data.frames = data.frames[:limit]
+    typer.echo(datasets_mod.coverage_report(data, spacing_m))
+
+    if samples and data.frames:
+        typer.echo("")
+        ranked = sorted(data.frames, key=lambda f: -len(f.annotations))[:samples]
+        for i, frame in enumerate(ranked):
+            path = datasets_mod.draw_boxes(frame, out / f"{dataset}_{i:02d}.png")
+            typer.echo(f"  wrote {path}")
 
 
 @app.command()

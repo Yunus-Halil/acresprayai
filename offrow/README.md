@@ -45,7 +45,21 @@ pytest
 offrow sensor --sensor-mm 13.2 --px 8192 --focal-mm 8.8 --alt 30
 offrow sensor --list
 offrow sensor --catalog fourthirds-20mp --target-gsd-mm 5.5
+offrow sensor --cruise 15 --frame-interval 1 --frontlap 0.75 --duty 0.55
 ```
+
+### The crossover altitude
+
+Coverage cost is piecewise, not quadratic. Ground speed is the smaller of cruise speed
+and what the frame interval allows at the required frontlap, so above the crossover the
+aircraft is cruise-limited and coverage falls off linearly as you descend; below it the
+camera binds and the fall-off goes quadratic. On the spec sensor at 15 m/s, 1 s and 75
+percent frontlap the crossover is 53.3 m, and 30 m costs 7.1x the flying of 120 m rather
+than the 16x a quadratic-everywhere model predicts. `crossover_altitude_m()` is a
+first-class output for that reason.
+
+Flight-count ratios are geometry and survive. Both acres/hour columns depend on cruise
+speed, frame interval, sidelap and duty cycle, which are assumptions and are parameters.
 
 `offrow --help` lists the rest of the commands. They exit with a message naming the
 module that has to exist first.

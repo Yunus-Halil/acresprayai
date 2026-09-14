@@ -26,7 +26,11 @@ MODULES = [
     "offrow.vegetation",
 ]
 
-STUB_MODULES = [m for m in MODULES if m not in ("offrow.sensor", "offrow.cli")]
+#: Implemented modules are exempt from the stub checks below. Removing a name
+#: from here is part of shipping the step that implements it.
+IMPLEMENTED = ("offrow.sensor", "offrow.cli", "offrow.datasets")
+
+STUB_MODULES = [m for m in MODULES if m not in IMPLEMENTED]
 
 
 @pytest.mark.parametrize("name", MODULES)
