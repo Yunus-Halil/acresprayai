@@ -16,8 +16,7 @@ is by construction not the planted crop. That is geometry, not prediction.
 | 1 | `sensor.py` | implemented |
 | 2 | `datasets.py` | implemented |
 | 3 | `synth.py` | implemented |
-| 4 | `altitude.py` | stub |
-| 5 | `io.py`, `vegetation.py` | stub |
+| 5 | `io.py`, `vegetation.py` | implemented |
 | 6 | `rows.py` | stub |
 | 7 | `blobs.py`, `candidates.py`, `grid.py` | stub |
 | 8 | `eval.py` | stub |
@@ -102,12 +101,26 @@ the only one that speaks to the flight spec, and the public sets do not populate
 the recall-versus-GSD curve bounds the problem from above rather than estimating it.
 `synth.py` defaults to a 3 cm weed for exactly this reason.
 
-## Environment: the GDAL stack is blocked here
+## Environment: GDAL is checked at runtime, not assumed
 
-`rasterio`, `pyproj` and `pyogrio` fail to import on this machine under an Application
-Control policy. `synth.py` writes a tiled TIFF plus `.tfw`/`.prj` world files instead of
-a GeoTIFF and says so; `last_raster_backend()` reports which backend ran. `io.py` will
-need the same seam. Lifting the policy is the better fix.
+`rasterio`, `pyproj` and `pyogrio` were blocked on this machine by an Application
+Control policy and later were not, with no change to the install. So availability is a
+runtime fact: `io.py` and `synth.py` both go through a backend seam, `offrow backends`
+says which is active, and asking for one that cannot load raises rather than silently
+using the other. GeoJSON never touches GDAL.
+
+## The altitude ladder is flown, not simulated
+
+There is no `altitude.py`. A real drone flies the ladder and the rungs are measured.
+`eval.gsd_sweep()` takes a scene per GSD. Synthetic scenes can still be rendered
+natively at several GSDs, which exercises a detector across resolutions on known truth
+and is still not flying.
+
+The synthetic finding that rows survive 1.7 to 11 mm/px unchanged, while a 3 cm weed
+goes from 17.6 px to 2.7, stands as an **untested upper bound** from synthetic imagery.
+The part worth keeping is that the angle search is the fragile step, not the sampling:
+project an axis-aligned profile through rows running at 23 degrees and it is noise at
+every resolution. `rows.py`'s confidence metric is where that gets handled.
 
 ## Rules that outrank convenience
 

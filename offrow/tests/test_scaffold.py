@@ -12,7 +12,6 @@ import inspect
 import pytest
 
 MODULES = [
-    "offrow.altitude",
     "offrow.blobs",
     "offrow.candidates",
     "offrow.cli",
@@ -28,7 +27,14 @@ MODULES = [
 
 #: Implemented modules are exempt from the stub checks below. Removing a name
 #: from here is part of shipping the step that implements it.
-IMPLEMENTED = ("offrow.sensor", "offrow.cli", "offrow.datasets", "offrow.synth")
+IMPLEMENTED = (
+    "offrow.sensor",
+    "offrow.cli",
+    "offrow.datasets",
+    "offrow.synth",
+    "offrow.io",
+    "offrow.vegetation",
+)
 
 STUB_MODULES = [m for m in MODULES if m not in IMPLEMENTED]
 

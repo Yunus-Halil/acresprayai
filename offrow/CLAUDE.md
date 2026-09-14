@@ -32,8 +32,16 @@ mm/px. Operators fly mapping missions at 100 to 120 m and get roughly 2 cm/px.
 That is a fifteen to thirty times gap, and whether the middle of it is usable
 decides whether this is a product or a paper.
 
-Answering it needs no new flights. Take real high-resolution imagery, degrade it to
-simulate higher altitudes, and measure recall at each step. See `altitude.py`.
+**The altitude ladder comes from real flights.** A drone flies the ladder and the
+rungs are measured, not simulated. There is no `altitude.py` and there is not
+going to be one: simulating degradation was only ever a way to answer this
+without an aircraft, and there is an aircraft.
+
+What this changes for everything else: a rung of the ladder is imagery captured
+at that GSD, so `eval.gsd_sweep()` takes a scene per GSD rather than one scene
+and a degradation model. Synthetic scenes can still be rendered natively at
+several GSDs, which is useful for exercising a detector across resolutions on
+known truth, and is still not flying.
 
 ## Hard constraints
 
@@ -88,22 +96,6 @@ of flying lower is part of the finding.
 No drone is committed to yet, so keep a small dict of candidate airframes and
 their parameters rather than baking one in.
 
-### `altitude.py`
-The altitude simulation ladder, and the most important module in the repo right
-now.
-
-To simulate imagery captured at a higher altitude from imagery captured at a lower
-one, do **not** simply decimate. Flying higher degrades the optical transfer
-function as well as the sampling rate, and plain decimation simulates only the
-second, which makes high altitudes look better than they are.
-
-Apply a Gaussian PSF whose sigma scales with the altitude ratio, then decimate,
-then optionally add sensor noise. Expose the PSF assumption as a parameter and
-document it as an approximation, because it is one. Any curve produced by this
-module must be labelled as simulated, never reported as flown.
-
-`ladder(image, source_gsd_mm, target_gsds_mm) -> list[(gsd, array)]`
-
 ### `datasets.py`
 Loaders for public sets, normalised to a common internal representation of
 imagery plus point or box ground truth.
@@ -152,12 +144,59 @@ Windowed raster access. `iter_windows(path, window_m, overlap_m)` yields
 cannot straddle two windows without appearing whole in one. Boundary clipping and
 inward buffering live here. Expose `gsd_m(transform) -> float`.
 
+**Two backends behind one interface.** `rasterio` when it loads, `tifffile` when
+it does not, chosen at runtime by `open_raster(path, backend="auto")` and
+reported by `active_backend()` and `offrow backends`. The tifffile backend
+decodes only the TIFF segments a window touches and takes georeferencing from
+GeoTIFF tags or a `.tfw` world file. Both are tested against each other; they
+return identical pixels, transforms and bounds.
+
+The seam logic lives in this module, not in either backend, so both are correct
+for the same reason. Ownership is the mechanism: every window gets an owned
+rectangle, the owned rectangles tile the raster exactly with no gaps and no
+overlaps, and a feature is kept from the window that owns its centroid. The
+boundary between two neighbours is the midpoint of the ground they actually
+share, computed from the offsets used rather than from the nominal stride,
+because the last window is pulled back to the raster edge and an ownership rule
+that ignored that would have two windows owning the same ground.
+
+Features flagged `touches_border` are dropped before the ownership test. A blob
+cut by a window edge has a displaced centroid and a truncated area, so it cannot
+be trusted even when its centroid lands in the owned rectangle. Nothing is lost:
+with the overlap at least one blob diameter, every blob appears whole in the
+window that owns it. `required_overlap_m()` states that rule.
+
+GeoJSON reading and writing are hand-rolled on `json` plus `shapely`, because
+`pyogrio` needs GDAL and GDAL is not guaranteed to load.
+
 ### `vegetation.py`
-Returns a boolean mask, but see the note under tests: a binary mask of a
-five-pixel object is mostly edge, and its ground area is therefore not
-GSD-invariant even when the underlying imagery is. Either expose sub-pixel
-coverage alongside the mask, or make the GSD dependence of the area floor
-explicit downstream. Do not quietly rely on the boolean area being stable.
+Returns a boolean mask, and `vegetation_coverage()` alongside it. A binary mask
+of a five-pixel object is mostly edge, so its ground area is not GSD-invariant
+even when the imagery is: measured across 2.75 to 5.5 mm/px, a 3 cm weed's mask
+area rises about 18 percent while a 12 cm plant moves about 1. Sub-pixel
+coverage drifts less and is the measure to prefer, though it is not a cure,
+since its endpoints come from percentiles and a five-pixel weed has few fully
+vegetated pixels to set the plant end from.
+
+**Morphological kernels quantise, and that is worse than it sounds.** A radius
+in millimetres becomes a whole number of pixels, so a 3 mm opening is one pixel
+at 1.7 mm/px (1.7 mm of ground), one pixel at 2.75 mm/px (2.75 mm of ground),
+and zero pixels at 5.5 mm/px. The radius is floored rather than rounded, so the
+kernel applied is never larger than the one requested, but it cannot be constant
+across a GSD ladder and no rounding rule makes it so. Rounding up was worse: it
+made the effective ground radius grow as GSD coarsened and then snap back to
+zero, which alone swung 3 cm weed mask area by 29 points across a factor of two.
+
+`MaskResult.effective_open_radius_mm` reports what was actually applied. The
+conclusion for `blobs.py`: **the ground-unit area floor is the correct way to
+despeckle, not morphology**, because a pixel count times a pixel area is
+continuous in GSD while a structuring element is not. Keep the opening small and
+let the area floor do that work. Closing still earns its place, rejoining a leaf
+split by a shadow, where being approximate is acceptable.
+
+The global fallback is two-pass and bounded: `accumulate_histogram()` builds a
+fixed-range histogram across windows and `threshold_from_histogram()` takes Otsu
+on the total, so whole-raster statistics never need a whole raster in memory.
 
 Convert RGB to normalized chromaticity first: `r = R/(R+G+B)` and so on. This is
 the shadow handling, and it is why a shaded corn leaf and a sunlit corn leaf land
@@ -192,7 +231,11 @@ found, weeds missed". Those are different failures with different fixes.
 
 ### `blobs.py`
 Connected components on the mask. Drop anything below a ground-unit area floor
-(default 4 cm squared).
+(default 4 cm squared). This floor, not the morphological opening, is where
+despeckling belongs: it is continuous in GSD where a structuring element is not.
+
+Drop blobs touching a window border too, and let the owning window supply them
+whole. `io.merge_across_seams()` expects a `touches_border` flag for that.
 
 Per blob, compute: `area_m2`, `equiv_diameter_m`, `eccentricity`, `solidity`,
 `extent`, `compactness` (perimeter squared over 4 pi area), `major_axis_m`,
@@ -286,6 +329,7 @@ decide the flight spec once hardware exists.
 
 ```
 offrow sensor   --sensor-mm 13.2 --px 8192 --focal-mm 8.8 --alt 30
+offrow backends
 offrow fetch    --dataset usu-corn-weeddb
 offrow inspect  --dataset usu-corn-weeddb --row-spacing-in 30 --mosaic --complete
 offrow synth    --out data/synth --gsd-mm 5.5 --acres 2 --weed-cm 3 --shadows
@@ -301,24 +345,24 @@ offrow gsd-sweep --scene data/droneweed/maize --gsds-mm 1.7,2.7,5.5,11,22 --out 
 Python 3.11+. rasterio, numpy, scipy, scikit-image, shapely, geopandas, pyproj,
 matplotlib, typer, pytest. No GDAL command line dependency.
 
-**The development machine cannot load the GDAL stack.** An Application Control
-policy blocks the compiled extensions in `rasterio`, `pyproj` and `pyogrio`;
-`numpy`, `scipy`, `scikit-image`, `shapely`, `tifffile`, `Pillow` and
-`matplotlib` all load. That is a machine policy, not a packaging problem, and it
-is not to be worked around.
+**The GDAL stack is not guaranteed to load.** On this machine an Application
+Control policy blocked the compiled extensions in `rasterio`, `pyproj` and
+`pyogrio` for a period and then stopped blocking them, with no change to the
+install. Treat its availability as a runtime fact to be checked, not a build-time
+one to be assumed.
 
-Consequences to design for until it is lifted:
+Everything that touches GDAL therefore goes through a backend seam:
 
-- `synth.py` writes rasters through `rasterio` when it loads and otherwise
-  through `tifffile` as a tiled TIFF plus `.tfw` and `.prj` world files, which
-  every GIS reads. The choice is reported, never silent: `last_raster_backend()`
-  says which ran and the CLI prints it when it was the fallback.
+- `io.py` reads through `rasterio` or `tifffile`, chosen at runtime, reported by
+  `active_backend()` and `offrow backends`. Both are tested against each other.
+- `synth.py` writes through `rasterio` or `tifffile` plus `.tfw` and `.prj`
+  world files. `last_raster_backend()` says which ran.
+- GeoJSON is read and written with `json` and `shapely`, never `pyogrio`.
 - Scene coordinates are written directly in a projected CRS in metres, so
   nothing needs `pyproj` to reproject.
-- `io.py` will need the same treatment. `tifffile` can read a tiled TIFF
-  window by window, so windowed access is reachable without GDAL, but it is
-  more work than `rasterio.windows` and should be written behind the same
-  backend seam rather than sprinkled through the module.
+
+The choice is never silent and never a substitution: asking for a backend that
+cannot load raises rather than quietly using the other one.
 
 ## Tests that must exist and keep passing
 
@@ -330,7 +374,11 @@ easiest to test.
 - Row detection still recovers the angle with 20 percent plant skips and with a
   10 percent weed population present.
 - Blob results from a windowed run are identical to a single-window run on a small
-  raster, including blobs placed deliberately across the window seam.
+  raster, including blobs placed deliberately across the window seam. Landed in
+  `tests/test_io.py`, parametrised over every backend that loads. Positions are
+  compared with a sub-pixel ground tolerance, not for bit-equality: a windowed
+  centroid is computed in the window and offset by its origin, so it takes a
+  different rounding path to the same answer.
 - The same synthetic scene rendered at 2.7 mm and 5.5 mm produces vegetation masks
   whose area agrees within 5 percent, proving ground-unit thresholds work. **This
   holds for crop-sized objects and does not hold for the 3 cm seedling.**

@@ -12,6 +12,7 @@ import typer
 
 from offrow import __version__
 from offrow import datasets as datasets_mod
+from offrow import io as io_mod
 from offrow import sensor as sensor_mod
 from offrow import synth as synth_mod
 
@@ -165,6 +166,34 @@ def sensor(
         f"Roughly {sensor_mod.DETECTION_FLOOR_PX:g} px across is the floor for detecting a blob, "
         f"{sensor_mod.SHAPE_FLOOR_PX:g} px is where leaf shape becomes usable."
     )
+
+
+@app.command()
+def backends() -> None:
+    """Which raster backend is active, and why.
+
+    ``rasterio`` is the right library. Where an Application Control policy blocks
+    the GDAL DLLs it does not load at all, and the ``tifffile`` backend reads
+    tiled TIFFs window by window instead, taking georeferencing from GeoTIFF tags
+    or a .tfw world file. Both go through the same interface and the same seam
+    logic, and the window-seam test runs against whichever are present.
+    """
+    active = io_mod.active_backend()
+    typer.secho(f"Active raster backend: {active}", bold=True)
+    for name in ("rasterio", "pyproj", "pyogrio", "geopandas", "tifffile", "shapely"):
+        try:
+            __import__(name)
+            state, colour = "loads", typer.colors.GREEN
+        except Exception as exc:  # noqa: BLE001 - the reason is the useful part
+            state, colour = f"unavailable: {type(exc).__name__}: {exc}", typer.colors.YELLOW
+        typer.secho(f"  {name:<11} {state}", fg=colour)
+    if active != "rasterio":
+        typer.secho(
+            "\n  Running without GDAL. Rasters are read through tifffile and written as "
+            "tiled TIFF plus .tfw/.prj world files. Same interface, same results; "
+            "rasterio is preferred when it is available.",
+            fg=typer.colors.YELLOW,
+        )
 
 
 @app.command()
@@ -457,7 +486,7 @@ def gsd_sweep(
     row_spacing_in: float = typer.Option(30.0, "--row-spacing-in", help="Row spacing."),
 ) -> None:
     """Recall against GSD, with row-model confidence alongside it."""
-    _not_built("offrow gsd-sweep (altitude.py, eval.py)")
+    _not_built("offrow gsd-sweep (eval.py)")
 
 
 if __name__ == "__main__":

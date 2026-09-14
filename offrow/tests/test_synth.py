@@ -150,7 +150,7 @@ def test_soil_noise_is_anchored_to_the_ground_not_the_pixel_grid():
 
     Downsample the fine render to the coarse grid and the soil should broadly
     agree. If the noise were seeded per pixel this correlation would vanish and
-    render_ladder would be no use as a cross-check on altitude.py.
+    the same scene at two GSDs would be two unrelated fields.
     """
     scene = synth.generate(
         synth.SceneParams(width_m=3.0, height_m=3.0, seed=5, weed_density_per_m2=0.0, skip_rate=1.0)

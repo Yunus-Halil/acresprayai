@@ -7,8 +7,8 @@ rows is by construction not the planted crop. That is geometry, not prediction.
 The output is a ranked review queue. A human confirms. Nothing here decides that
 anything is a weed.
 
-Only :mod:`offrow.sensor` is implemented. Every other module is a stub with the
-signatures it will have.
+The altitude ladder comes from real flights, not from simulation. There is no
+``altitude.py``.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ __version__ = "0.1.0"
 
 __all__ = [
     "__version__",
-    "altitude",
     "blobs",
     "candidates",
     "datasets",

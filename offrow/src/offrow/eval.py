@@ -55,7 +55,8 @@ class Curve:
     recall: np.ndarray
     fp_per_acre: np.ndarray
     label: str = ""
-    simulated: bool = False
+    diameter_bin: str = ""
+    flown: bool = False
 
     def recall_at_budget(self, fp_per_acre_budget: float) -> float:
         """Recall at the highest threshold meeting the budget."""
@@ -102,21 +103,29 @@ def cell_recall(
 
 
 def gsd_sweep(
-    scene: Any,
-    gsds_mm: list[float],
+    scenes: dict[float, Any],
     row_spacing_m: float,
     out_path: Path | None = None,
-    simulated: bool = True,
+    flown: bool = True,
 ) -> dict[str, Any]:
-    """Run the full pipeline across an altitude ladder and plot recall against GSD.
+    """Recall against GSD, from imagery captured at each GSD.
+
+    Args:
+        scenes: GSD in millimetres to the scene or dataset flown at it. One
+            entry per rung of the ladder.
+        row_spacing_m: What the grower planted.
+        out_path: Where to write the plot.
+        flown: Whether these rungs came from a camera. Synthetic rungs are
+            rendered natively at each GSD and are still not flown; label them.
 
     Row-model confidence is plotted on the same axes. Without it a falling
     recall curve is ambiguous between "rows were found and the weeds were
     missed" and "rows were never found", and those have different fixes.
 
-    The curve this produces is the deliverable that decides the flight spec once
-    hardware exists, so it is labelled simulated whenever the imagery came
-    through :mod:`offrow.altitude` rather than from a camera at that altitude.
+    Recall is reported per weed-diameter bin, never pooled. The public sets
+    contain no weed under 8 cm, so a pooled curve from them would measure the
+    easy regime; the smallest bin is the only one that speaks to the flight
+    spec.
     """
     raise NotImplementedError
 

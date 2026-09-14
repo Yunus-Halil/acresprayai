@@ -15,8 +15,8 @@ Two design rules make the renders worth trusting:
 
 **Everything is drawn in ground coordinates.** Soil texture comes from a noise
 field anchored to the ground, not to the pixel grid, so the same scene rendered
-at two GSDs is the same ground, sampled twice. That is what makes
-:func:`render_ladder` a real cross-check on :mod:`offrow.altitude`.
+at two GSDs is the same ground, sampled twice, rather than two unrelated
+fields that happen to share a seed.
 
 **Edges are antialiased analytically.** Coverage per pixel comes from a signed
 distance function, so a 3 cm weed at 11 mm/px is a soft two-and-a-half-pixel
@@ -59,8 +59,8 @@ class SceneParams:
     """Everything about a synthetic field except the GSD it is rendered at.
 
     Separating the scene from the render resolution is the point: the same scene
-    rendered natively at several GSDs is the cross-check on whether
-    :mod:`offrow.altitude`'s degradation model behaves sensibly.
+    can be rendered natively at several GSDs, which is how a resolution question
+    gets asked of a detector without confounding it with a different field.
 
     Args:
         acres: Field size. Ignored if ``width_m`` and ``height_m`` are given.
@@ -839,9 +839,10 @@ def render_ladder(
 ) -> list[tuple[float, np.ndarray]]:
     """Render the same scene natively at several GSDs.
 
-    The reference :mod:`offrow.altitude` is checked against. These are drawn from
-    the ground truth at each resolution, so they are what a camera at that
-    altitude would have seen, not what a degradation model thinks it would have.
+    Each rung is drawn from the ground truth at its own resolution, so it is what
+    a camera at that altitude would have seen rather than a coarser version of a
+    finer render. The real altitude ladder comes from real flights; this one
+    exists so a detector can be exercised across resolutions on known truth.
     """
     return [(gsd, render(scene, gsd, block_px)) for gsd in gsds_mm]
 

@@ -8,9 +8,16 @@ model can be substituted for it.
 
 Row fitting is also the first thing expected to fail as GSD coarsens, because it
 needs the projection profile to still show periodic structure. So it reports a
-confidence, and the altitude curve can then separate "rows not found" from "rows
+confidence, and the recall curve can then separate "rows not found" from "rows
 found, weeds missed". Those are different failures with different fixes, and a
 single recall number hides the difference.
+
+On synthetic scenes the row structure survives 1.7 to 11 mm/px unchanged: a
+76 cm pitch is 69 pixels even at 11 mm. What does break is the angle. Project
+an axis-aligned profile through rows running at 23 degrees and it is noise at
+every resolution. The angle search is the fragile part, not the sampling, and
+the confidence metric is where that gets caught. Treat that as an untested
+upper bound from synthetic imagery until real flights say otherwise.
 """
 
 from __future__ import annotations
