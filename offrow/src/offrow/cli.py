@@ -48,6 +48,9 @@ def sensor(
     sensor_mm: float = typer.Option(13.2, "--sensor-mm", help="Sensor width in millimetres."),
     px: int = typer.Option(8192, "--px", help="Pixels across the sensor width."),
     focal_mm: float = typer.Option(8.8, "--focal-mm", help="True focal length in millimetres."),
+    height_mm: float = typer.Option(
+        None, "--height-mm", help="Along-track sensor height. Defaults to 4:3 of the width."
+    ),
     alt: str = typer.Option(
         DEFAULT_ALTITUDES, "--alt", help="Altitude in metres, or a comma-separated ladder."
     ),
@@ -65,10 +68,14 @@ def sensor(
         "--ref-alt",
         help="Altitude costs are quoted against.",
     ),
-    ref_acres_per_hour: float = typer.Option(
-        sensor_mod.DEFAULT_REFERENCE_ACRES_PER_HOUR,
-        "--ref-acres-per-hour",
-        help="Coverage at the reference altitude. An operational assumption, not a measurement.",
+    cruise: float = typer.Option(15.0, "--cruise", help="Cruise ground speed, m/s."),
+    frame_interval: float = typer.Option(
+        1.0, "--frame-interval", help="Shortest interval between captures, seconds."
+    ),
+    frontlap: float = typer.Option(0.75, "--frontlap", help="Along-track overlap fraction."),
+    sidelap: float = typer.Option(0.65, "--sidelap", help="Across-track overlap fraction."),
+    duty: float = typer.Option(
+        0.55, "--duty", help="Fraction of wall-clock on survey lines, after turns and swaps."
     ),
     list_sensors: bool = typer.Option(False, "--list", help="List candidate airframes and exit."),
 ) -> None:
@@ -94,18 +101,40 @@ def sensor(
             sensor_width_mm=sensor_mm,
             pixels_across=px,
             focal_length_mm=focal_mm,
+            sensor_height_mm=height_mm,
             note="Supplied on the command line.",
         )
+
+    profile = sensor_mod.MissionProfile(
+        cruise_speed_ms=cruise,
+        frame_interval_s=frame_interval,
+        frontlap=frontlap,
+        sidelap=sidelap,
+        duty_cycle=duty,
+    )
 
     typer.echo(
         f"{cam.name}: {cam.sensor_width_mm} mm / {cam.pixels_across} px / {cam.focal_length_mm} mm"
     )
     typer.echo(
         f"pixel pitch {cam.pixel_pitch_um:.2f} um, "
-        f"swath {cam.field_of_view_ratio:.3f} m per m of altitude"
+        f"swath {cam.field_of_view_ratio:.3f} m and along-track {cam.along_track_ratio:.3f} m "
+        "per m of altitude"
     )
     if cam.note:
         typer.echo(f"note: {cam.note}")
+    typer.echo("")
+
+    crossover = sensor_mod.crossover_altitude_m(cam, profile)
+    typer.secho(f"Crossover altitude: {crossover:.1f} m", fg=typer.colors.GREEN, bold=True)
+    typer.echo(
+        f"  above it the aircraft cruises at {cruise:g} m/s and coverage falls off linearly "
+        "as you descend;"
+    )
+    typer.echo(
+        f"  below it the {frame_interval:g} s frame interval binds at {frontlap:.0%} frontlap "
+        "and the fall-off goes quadratic."
+    )
     typer.echo("")
 
     if target_gsd_mm is not None:
@@ -116,15 +145,19 @@ def sensor(
     plans = sensor_mod.altitude_ladder(
         cam,
         _parse_floats(alt, "--alt"),
+        profile=profile,
         reference_altitude_m=ref_alt,
-        reference_acres_per_hour=ref_acres_per_hour,
         target_object_mm=weed_cm * 10.0,
     )
     typer.echo(sensor_mod.format_table(plans))
     typer.echo("")
     typer.echo(
-        f"Acres/hour scales from an assumed {ref_acres_per_hour:g} at {ref_alt:g} m. "
-        "The ratios are geometry; the absolute numbers are only as good as that assumption."
+        f"Theoretical acres/hour is survey-line time only. Effective applies a {duty:.0%} duty "
+        f"cycle for turns, transit and battery swaps, and assumes {sidelap:.0%} sidelap."
+    )
+    typer.echo(
+        "Flight-count ratios are geometry and survive; both acres/hour columns are only as "
+        "good as the cruise speed, frame interval and duty cycle above."
     )
     typer.echo(
         f"Roughly {sensor_mod.DETECTION_FLOOR_PX:g} px across is the floor for detecting a blob, "
