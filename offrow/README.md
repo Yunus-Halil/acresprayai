@@ -14,7 +14,7 @@ is by construction not the planted crop. That is geometry, not prediction.
 | Step | Module | State |
 |---|---|---|
 | 1 | `sensor.py` | implemented |
-| 2 | `datasets.py` | stub |
+| 2 | `datasets.py` | implemented |
 | 3 | `synth.py` | stub |
 | 4 | `altitude.py` | stub |
 | 5 | `io.py`, `vegetation.py` | stub |
@@ -63,6 +63,31 @@ speed, frame interval, sidelap and duty cycle, which are assumptions and are par
 
 `offrow --help` lists the rest of the commands. They exit with a message naming the
 module that has to exist first.
+
+## A frame is not a field
+
+Both public datasets ship tiles cut out of orthomosaics, and a tile is too small to
+carry a row model:
+
+| | tile | rows at 30 in | reassembled | rows |
+|---|---:|---:|---:|---:|
+| DRONEWEED | 1000 px @ 1.7 mm = 1.70 m | 2.2 | filenames carry no tile origin | - |
+| USU-Corn-WeedDB | 640 px @ 4.8 mm = 3.07 m | 4.0 | 12.9 x 17.8 m | 16.9 |
+
+`row_fit_feasibility()` computes this from the published descriptor without
+downloading anything, and every coverage report ends with it. USU filenames encode the
+tile origin (`10m_cache (1036)_x1024_y512.jpg`), so `stitch()` puts a source frame back
+together; DRONEWEED files are named species plus a counter, so unless the VOC `path`
+field kept the original partition name, those tiles cannot be reassembled at all.
+
+A stitched mosaic has complete imagery and partial truth. `Mosaic.truth_footprint_m2`
+says how much of it the annotations cover, because a detection outside that footprint is
+unjudgeable, not wrong.
+
+```
+offrow fetch   --dataset usu-corn-weeddb
+offrow inspect --dataset usu-corn-weeddb --row-spacing-in 30 --mosaic --complete --samples 3
+```
 
 ## Rules that outrank convenience
 

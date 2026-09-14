@@ -195,6 +195,12 @@ def inspect(
     samples: int = typer.Option(0, "--samples", help="Render this many frames with boxes drawn."),
     out: Path = typer.Option(Path("out/samples"), "--out", help="Where to write sample frames."),
     limit: int = typer.Option(0, "--limit", help="Only load this many frames. 0 loads all."),
+    mosaic: bool = typer.Option(
+        False, "--mosaic", help="Reassemble tiles into their source frames and report that too."
+    ),
+    complete: bool = typer.Option(
+        False, "--complete", help="Fill mosaic gaps with unlabelled tiles. USU only."
+    ),
 ) -> None:
     """Ground coverage per frame, and whether it spans enough rows for a row model.
 
@@ -224,7 +230,72 @@ def inspect(
         typer.echo("")
         ranked = sorted(data.frames, key=lambda f: -len(f.annotations))[:samples]
         for i, frame in enumerate(ranked):
-            path = datasets_mod.draw_boxes(frame, out / f"{dataset}_{i:02d}.png")
+            width_m, _ = frame.coverage_m
+            path = datasets_mod.draw_boxes(
+                frame,
+                out / f"{dataset}_tile_{i:02d}.png",
+                scale_bar_m=0.5,
+                title=(
+                    f"{frame.image_path.name}  |  {width_m:.2f} m  |  "
+                    f"{width_m / spacing_m:.1f} rows"
+                ),
+            )
+            typer.echo(f"  wrote {path}")
+
+    if not mosaic:
+        return
+
+    groups = datasets_mod.group_tiles(data)
+    typer.echo("")
+    if not groups:
+        typer.secho(
+            "  No tile origins in these filenames, so the tiles cannot be reassembled.\n"
+            "  Check whether the VOC path field kept the original partition name; if it did\n"
+            "  not, this dataset can exercise the vegetation mask but never the row model.",
+            fg=typer.colors.YELLOW,
+        )
+        return
+
+    unlabelled = None
+    if complete:
+        try:
+            unlabelled = datasets_mod.load_usu_unlabelled_tiles(root=root)
+        except datasets_mod.DatasetUnavailable as exc:
+            typer.secho(f"  no unlabelled tiles: {exc}", fg=typer.colors.YELLOW)
+
+    mosaics = []
+    for source_id in groups:
+        try:
+            mosaics.append(datasets_mod.stitch_complete(source_id, data, unlabelled))
+        except ValueError:
+            continue
+
+    summary = datasets_mod.mosaic_coverage_summary(mosaics)
+    typer.secho(f"  reassembled into {len(mosaics)} source frames", bold=True)
+    typer.echo(
+        f"  mosaic coverage: {summary['width_m_median']:.1f} x "
+        f"{summary['height_m_median']:.1f} m median, "
+        f"{summary['tiles_per_mosaic_median']:.0f} tiles each"
+    )
+    typer.echo(
+        f"  row fit: {datasets_mod.row_fit_feasibility(summary['short_edge_m_median'], spacing_m)}"
+    )
+
+    if samples and mosaics:
+        biggest = sorted(mosaics, key=lambda m: -m.coverage_m2)[:samples]
+        for i, m in enumerate(biggest):
+            covered = 100 * m.truth_footprint_m2 / m.coverage_m2 if m.coverage_m2 else 0.0
+            path = datasets_mod.draw_boxes(
+                m,
+                out / f"{dataset}_mosaic_{i:02d}.png",
+                scale_bar_m=2.0,
+                title=(
+                    f"{m.source_id}: {len(m.tiles)} tiles  |  "
+                    f"{m.coverage_m[0]:.1f} x {m.coverage_m[1]:.1f} m  |  "
+                    f"{m.min_coverage_m / spacing_m:.0f} rows  |  "
+                    f"truth covers {covered:.0f}%"
+                ),
+            )
             typer.echo(f"  wrote {path}")
 
 

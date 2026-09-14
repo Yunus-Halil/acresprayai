@@ -18,6 +18,7 @@ Downloads cache under ``data/``, which is gitignored.
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import Iterator
@@ -165,6 +166,21 @@ class Annotation:
         return (self.width_px * scale, self.height_px * scale)
 
 
+@dataclass(frozen=True)
+class TilePosition:
+    """Where a tile sat in the frame it was cut from.
+
+    The difference between a dataset that can exercise the row model and one
+    that cannot. A tile is 3 m of ground; the frame it came from is 18 m. If the
+    origin survived into the filename the tiles can be put back together, and if
+    it did not they are 8,800 unrelated 3 m squares.
+    """
+
+    source_id: str
+    x_px: int
+    y_px: int
+
+
 @dataclass
 class Frame:
     """One image plus its ground truth and its ground sampling.
@@ -186,6 +202,7 @@ class Frame:
     growth_stage: str = ""
     crop: str = ""
     annotation_path: Path | None = None
+    tile: TilePosition | None = None
 
     def load(self) -> np.ndarray:
         """Read the image as HxWx3 uint8."""
@@ -413,6 +430,245 @@ def voc_source_path(xml_path: Path) -> str | None:
     return None
 
 
+# --------------------------------------------------------------------------
+# YOLO, and putting tiles back together
+# --------------------------------------------------------------------------
+
+#: ``10m_cache (1036)_x1024_y512.jpg``: altitude token, source frame id, and the
+#: tile's pixel origin within that frame.
+USU_TILE_RE = re.compile(r"(?P<alt>\d+)m_cache \((?P<fid>\d+)\)_x(?P<x>\d+)_y(?P<y>\d+)")
+
+
+def parse_tile_position(path: Path) -> TilePosition | None:
+    """Recover a tile's origin from its filename, or None if it is not encoded."""
+    match = USU_TILE_RE.search(path.stem)
+    if not match:
+        return None
+    return TilePosition(
+        source_id=f"{match.group('alt')}m_{match.group('fid')}",
+        x_px=int(match.group("x")),
+        y_px=int(match.group("y")),
+    )
+
+
+def image_size_px(path: Path) -> tuple[int, int]:
+    """Image dimensions from the file header, without decoding the pixels."""
+    from PIL import Image
+
+    with Image.open(path) as image:
+        return image.size
+
+
+def parse_yolo(
+    txt_path: Path, class_names: dict[int, str], width_px: int, height_px: int
+) -> list[Annotation]:
+    """Parse one YOLO label file into :class:`Annotation` objects.
+
+    YOLO stores centre and extent normalised to the image, so the pixel size has
+    to come from somewhere; it comes from the image header.
+    """
+    annotations = []
+    for line in txt_path.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        index = int(float(parts[0]))
+        cx, cy, w, h = (float(v) for v in parts[1:5])
+        cx, w = cx * width_px, w * width_px
+        cy, h = cy * height_px, h * height_px
+        annotations.append(
+            Annotation(
+                label=class_names.get(index, str(index)).strip().lower(),
+                x_min=cx - w / 2.0,
+                y_min=cy - h / 2.0,
+                x_max=cx + w / 2.0,
+                y_max=cy + h / 2.0,
+            )
+        )
+    return annotations
+
+
+def parse_data_yaml(path: Path) -> dict[int, str]:
+    """Class index to name, from an Ultralytics ``data.yaml``.
+
+    Parsed by hand rather than with a YAML dependency: the file is three keys
+    deep and adding a parser for it would be the tail wagging the dog.
+    """
+    names: dict[int, str] = {}
+    in_names = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("names:"):
+            in_names = True
+            continue
+        if in_names:
+            match = re.match(r"\s+(\d+):\s*(.+?)\s*$", line)
+            if match:
+                names[int(match.group(1))] = match.group(2).strip().strip("'").strip('"')
+            elif line.strip() and not line.startswith(" "):
+                break
+    return names
+
+
+@dataclass
+class Mosaic:
+    """Tiles from one source frame, put back together.
+
+    The whole point of this class is that :attr:`min_coverage_m` is an order of
+    magnitude larger than a single tile's, which is the difference between a
+    dataset that can exercise ``rows.py`` and one that cannot.
+    """
+
+    source_id: str
+    gsd_mm: float
+    width_px: int
+    height_px: int
+    tiles: list[Frame]
+    annotations: list[Annotation] = field(default_factory=list)
+    crop: str = ""
+    source: str = ""
+    truth_tiles: list[Frame] = field(default_factory=list)
+
+    @property
+    def truth_footprint_m2(self) -> float:
+        """Ground area the annotations actually cover.
+
+        A mosaic can have complete imagery and partial truth. Anything found
+        outside this footprint is unjudgeable, not wrong, and an evaluation that
+        forgets the difference will report false positives that are nothing of
+        the kind. Overlapping tiles are not double counted.
+        """
+        tiles = self.truth_tiles or self.tiles
+        if not tiles:
+            return 0.0
+        scale = self.gsd_mm / 1000.0
+        covered: set[tuple[int, int]] = set()
+        step = 64  # coarse occupancy grid; exact to within a 30 cm cell
+        for tile in tiles:
+            for gy in range(tile.tile.y_px, tile.tile.y_px + tile.height_px, step):
+                for gx in range(tile.tile.x_px, tile.tile.x_px + tile.width_px, step):
+                    covered.add((gx // step, gy // step))
+        return len(covered) * (step * scale) ** 2
+
+    @property
+    def coverage_m(self) -> tuple[float, float]:
+        scale = self.gsd_mm / 1000.0
+        return (self.width_px * scale, self.height_px * scale)
+
+    @property
+    def min_coverage_m(self) -> float:
+        return min(self.coverage_m)
+
+    @property
+    def coverage_m2(self) -> float:
+        w, h = self.coverage_m
+        return w * h
+
+    def load(self) -> np.ndarray:
+        """Compose the tiles into one array.
+
+        Tiles overlap, and a later tile overwrites an earlier one in the
+        overlap. That is fine within a single source frame, where the overlap is
+        the same pixels twice; it would not be fine across frames, where
+        parallax and exposure differ.
+        """
+        canvas = np.zeros((self.height_px, self.width_px, 3), dtype=np.uint8)
+        for tile in sorted(self.tiles, key=lambda f: (f.tile.y_px, f.tile.x_px)):
+            array = tile.load()
+            h, w = array.shape[:2]
+            y, x = tile.tile.y_px, tile.tile.x_px
+            h = min(h, self.height_px - y)
+            w = min(w, self.width_px - x)
+            if h > 0 and w > 0:
+                canvas[y : y + h, x : x + w] = array[:h, :w]
+        return canvas
+
+
+def group_tiles(dataset: Dataset) -> dict[str, list[Frame]]:
+    """Group a dataset's frames by the source frame they were cut from."""
+    groups: dict[str, list[Frame]] = {}
+    for frame in dataset.frames:
+        if frame.tile is None:
+            continue
+        groups.setdefault(frame.tile.source_id, []).append(frame)
+    return groups
+
+
+def stitch(tiles: list[Frame], dedupe_tolerance_m: float = 0.05) -> Mosaic:
+    """Reassemble tiles from one source frame, merging their annotations.
+
+    Tiles overlap, so an object in the overlap is labelled twice, once per tile.
+    Those duplicates are merged by centroid proximity in mosaic coordinates:
+    leaving them in would inflate the truth count and quietly depress every
+    precision number computed against it.
+    """
+    if not tiles:
+        raise ValueError("no tiles to stitch")
+    if any(t.tile is None for t in tiles):
+        raise ValueError("every tile needs a TilePosition to be stitched")
+
+    gsd = tiles[0].gsd_mm
+    width = max(t.tile.x_px + t.width_px for t in tiles)
+    height = max(t.tile.y_px + t.height_px for t in tiles)
+
+    placed: list[Annotation] = []
+    for tile in tiles:
+        for ann in tile.annotations:
+            placed.append(
+                Annotation(
+                    label=ann.label,
+                    x_min=ann.x_min + tile.tile.x_px,
+                    y_min=ann.y_min + tile.tile.y_px,
+                    x_max=ann.x_max + tile.tile.x_px,
+                    y_max=ann.y_max + tile.tile.y_px,
+                    is_point=ann.is_point,
+                )
+            )
+
+    tolerance_px = dedupe_tolerance_m * 1000.0 / gsd
+    merged: list[Annotation] = []
+    for ann in sorted(placed, key=lambda a: (a.label, a.x_min, a.y_min)):
+        cx, cy = ann.centroid_px
+        duplicate = False
+        for kept in merged:
+            if kept.label != ann.label:
+                continue
+            kx, ky = kept.centroid_px
+            if abs(kx - cx) <= tolerance_px and abs(ky - cy) <= tolerance_px:
+                duplicate = True
+                break
+        if not duplicate:
+            merged.append(ann)
+
+    return Mosaic(
+        source_id=tiles[0].tile.source_id,
+        gsd_mm=gsd,
+        width_px=width,
+        height_px=height,
+        tiles=tiles,
+        annotations=merged,
+        crop=tiles[0].crop,
+        source=tiles[0].source,
+    )
+
+
+def mosaic_coverage_summary(mosaics: list[Mosaic]) -> dict[str, float]:
+    """Coverage statistics across reassembled frames."""
+    if not mosaics:
+        return {}
+    shortest = np.array([m.min_coverage_m for m in mosaics])
+    widths = np.array([m.coverage_m[0] for m in mosaics])
+    heights = np.array([m.coverage_m[1] for m in mosaics])
+    return {
+        "mosaics": float(len(mosaics)),
+        "width_m_median": float(np.median(widths)),
+        "height_m_median": float(np.median(heights)),
+        "short_edge_m_min": float(shortest.min()),
+        "short_edge_m_median": float(np.median(shortest)),
+        "short_edge_m_max": float(shortest.max()),
+        "tiles_per_mosaic_median": float(np.median([len(m.tiles) for m in mosaics])),
+    }
+
+
 def _pair_images_with_annotations(directory: Path) -> list[tuple[Path, Path]]:
     """Match every image to its VOC sidecar, by stem, anywhere under ``directory``."""
     xml_by_stem = {p.stem: p for p in directory.rglob("*.xml")}
@@ -574,11 +830,19 @@ def load_droneweed(root: Path = DATA_ROOT, subset: str = "maize") -> Dataset:
     return _build_dataset(spec, pairs, Path(root), stage_from=_droneweed_stage)
 
 
-def load_usu_corn_weeddb(root: Path = DATA_ROOT) -> Dataset:
+def load_usu_corn_weeddb(root: Path = DATA_ROOT, split: str | None = None) -> Dataset:
     """Load USU-Corn-WeedDB, UAV RGB multi-species weed detection in forage corn.
 
     The second opinion. Its value is being a different camera over different
     soil, not being larger.
+
+    Labels are YOLO text, not PASCAL VOC, and only the three weed species are
+    labelled: the corn itself is not. So this set can measure whether a weed was
+    found, but it cannot check a row fit against labelled crop positions.
+
+    Args:
+        root: Cache directory.
+        split: ``"train"``, ``"val"`` or ``"test"``. None loads all three.
     """
     spec = SPECS["usu-corn-weeddb"]
     directory = Path(root) / "usu-corn-weeddb"
@@ -586,8 +850,112 @@ def load_usu_corn_weeddb(root: Path = DATA_ROOT) -> Dataset:
         raise DatasetUnavailable(
             f"{directory} does not exist. Run: offrow fetch --dataset usu-corn-weeddb"
         )
-    pairs = _pair_images_with_annotations(directory)
-    return _build_dataset(spec, pairs, Path(root))
+
+    yaml_candidates = list(directory.rglob("data.yaml"))
+    if not yaml_candidates:
+        raise DatasetUnavailable(f"no data.yaml under {directory}; is the archive unpacked?")
+    class_names = parse_data_yaml(yaml_candidates[0])
+    labelled_root = yaml_candidates[0].parent
+
+    frames: list[Frame] = []
+    splits = [split] if split else ["train", "val", "test"]
+    for part in splits:
+        image_dir = labelled_root / "images" / part
+        label_dir = labelled_root / "labels" / part
+        if not image_dir.exists():
+            continue
+        for image in sorted(image_dir.glob("*.jpg")):
+            label_file = label_dir / f"{image.stem}.txt"
+            if not label_file.exists():
+                continue
+            width, height = image_size_px(image)
+            frames.append(
+                Frame(
+                    image_path=image,
+                    annotation_path=label_file,
+                    gsd_mm=spec.gsd_mm,
+                    width_px=width,
+                    height_px=height,
+                    annotations=parse_yolo(label_file, class_names, width, height),
+                    source=spec.key,
+                    growth_stage=part,
+                    crop=spec.crop,
+                    tile=parse_tile_position(image),
+                )
+            )
+    return Dataset(
+        name=spec.name, spec=spec, frames=frames, root=Path(root), license_note=spec.license
+    )
+
+
+def load_usu_unlabelled_tiles(root: Path = DATA_ROOT) -> Dataset:
+    """Load the unlabelled USU tiles, for imagery only.
+
+    8,000 tiles with no ground truth. Useless for measuring recall and essential
+    for filling the holes in a mosaic: the labelled tiles are a sparse subset of
+    each source frame, so a mosaic built from them alone has gaps, and a row fit
+    across a gap is a row fit against missing data.
+
+    Every frame here carries an empty annotation list, which is not the same as
+    a frame with no weeds in it. Nothing may treat these as negatives.
+    """
+    spec = SPECS["usu-corn-weeddb"]
+    directory = Path(root) / "usu-corn-weeddb"
+    candidates = [d for d in directory.rglob("Unlabeled_Dataset") if d.is_dir()]
+    if not candidates:
+        raise DatasetUnavailable(f"no Unlabeled_Dataset under {directory}")
+
+    frames = []
+    for image in sorted(candidates[0].glob("*.jpg")):
+        position = parse_tile_position(image)
+        if position is None:
+            continue
+        width, height = image_size_px(image)
+        frames.append(
+            Frame(
+                image_path=image,
+                gsd_mm=spec.gsd_mm,
+                width_px=width,
+                height_px=height,
+                annotations=[],
+                source=spec.key,
+                growth_stage="unlabelled",
+                crop=spec.crop,
+                tile=position,
+            )
+        )
+    return Dataset(
+        name=f"{spec.name} (unlabelled)",
+        spec=spec,
+        frames=frames,
+        root=Path(root),
+        license_note=spec.license,
+    )
+
+
+def stitch_complete(
+    source_id: str,
+    labelled: Dataset,
+    unlabelled: Dataset | None = None,
+    dedupe_tolerance_m: float = 0.05,
+) -> Mosaic:
+    """Stitch one source frame using every tile available for it.
+
+    Imagery comes from labelled and unlabelled tiles alike; ground truth comes
+    only from the labelled ones. The resulting mosaic therefore has complete
+    imagery and partial truth, and :attr:`Mosaic.truth_footprint_m2` says how
+    much of it the truth actually covers. Scoring a detection outside that
+    footprint against this truth would count a correct find as a false positive.
+    """
+    tiles = [f for f in labelled.frames if f.tile and f.tile.source_id == source_id]
+    truth_tiles = list(tiles)
+    if unlabelled is not None:
+        tiles += [f for f in unlabelled.frames if f.tile and f.tile.source_id == source_id]
+    if not tiles:
+        raise ValueError(f"no tiles for source frame {source_id!r}")
+    mosaic = stitch(tiles, dedupe_tolerance_m=dedupe_tolerance_m)
+    mosaic.truth_tiles = truth_tiles
+    return mosaic
 
 
 LOADERS = {"droneweed": load_droneweed, "usu-corn-weeddb": load_usu_corn_weeddb}
@@ -608,7 +976,9 @@ def load(dataset: str, root: Path = DATA_ROOT, subset: str | None = None) -> Dat
 # --------------------------------------------------------------------------
 
 
-def draw_boxes(frame: Frame, out_path: Path, scale_bar_m: float = 0.5) -> Path:
+def draw_boxes(
+    frame: Frame | Mosaic, out_path: Path, scale_bar_m: float = 1.0, title: str = ""
+) -> Path:
     """Render a frame with its boxes drawn and a ground scale bar.
 
     The scale bar is the point of the picture. A tile of weeds looks the same at
@@ -659,8 +1029,11 @@ def draw_boxes(frame: Frame, out_path: Path, scale_bar_m: float = 0.5) -> Path:
     ax.set_xlabel("metres")
     ax.set_ylabel("metres")
     ax.set_title(
-        f"{frame.source} {frame.growth_stage} | {width_m:.2f} x {height_m:.2f} m "
-        f"@ {frame.gsd_mm:g} mm/px",
+        title
+        or (
+            f"{frame.source} | {width_m:.2f} x {height_m:.2f} m @ {frame.gsd_mm:g} mm/px "
+            f"| {len(frame.annotations)} labelled"
+        ),
         fontsize=10,
     )
     fig.tight_layout()
