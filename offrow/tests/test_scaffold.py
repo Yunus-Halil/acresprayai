@@ -34,6 +34,7 @@ IMPLEMENTED = (
     "offrow.synth",
     "offrow.io",
     "offrow.vegetation",
+    "offrow.rows",
 )
 
 STUB_MODULES = [m for m in MODULES if m not in IMPLEMENTED]

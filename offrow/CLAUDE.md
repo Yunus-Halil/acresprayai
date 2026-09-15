@@ -226,10 +226,55 @@ in the perpendicular projection profile.
 
 Expose `signed_distance_to_row(points, model) -> np.ndarray` in meters.
 
-Row fitting is likely the first thing to fail as GSD coarsens, since it needs the
-projection profile to still show periodic structure. Instrument it to report a
-confidence, so the altitude curve can distinguish "rows not found" from "rows
-found, weeds missed". Those are different failures with different fixes.
+**Phase is the part that goes wrong, and it goes wrong silently.** Angle and
+pitch are easy to check against a known scene and were exact through two
+separate phase bugs, both of which left every centerline at a random offset.
+Anything touching row phase must be checked against known crop positions, not
+against the angle and the pitch: crop plants sit on centerlines by construction,
+so the distance from the model to a crop plant is the fit's error. Uniform noise
+on a 76 cm pitch averages 19 cm; a fit that has found the rows leaves the
+planter jitter, about 1.5 cm.
+
+The two bugs, so they do not come back:
+
+1. The phase was read out of the Radon profile's index. The profile is cropped
+   to a square and trimmed where the chord gets short, so its origin is not the
+   tile's origin. `phase_from_mask` now computes the phase in ground coordinates
+   with the same expression `signed_distance_to_row` uses, which leaves no
+   convention to disagree about.
+2. The phase was measured from the CRS origin. A UTM easting is around 1e6, so
+   `x * -sin(theta)` with the angle off by 0.05 degrees is a 436 m offset, and
+   436 m modulo a 76 cm pitch is uniform noise. Phase is now measured from each
+   tile's own centre, which bounds the lever arm at half a tile, and tiles
+   interpolate by each predicting a distance at the query point rather than by
+   averaging phases that mean different things in different places.
+
+Angles are degrees counterclockwise from the ground CRS's +x axis, in [0, 180).
+A north-up raster has `e < 0`, so an angle measured in array coordinates is
+mirrored on the ground; `pixel_angle_to_ground` is the only place that happens.
+Note also that skimage's Radon theta runs the opposite way to an array angle, so
+the array-frame row angle is `90 - theta`. Using `theta - 90` is a reflection
+that agrees at 0 and 90 degrees and is wrong everywhere else, which is exactly
+the kind of error a fixture at 0 degrees cannot catch.
+
+Instrument it to report a confidence, so the recall curve can distinguish "rows
+not found" from "rows found, weeds missed". Those are different failures with
+different fixes.
+
+The confidence is split into an angle part and a pitch part and the model is
+only as good as the weaker one, because they fail separately: a single row gives
+a perfect direction and says nothing about spacing. Measured on 13 m synthetic
+tiles at 5.5 mm/px, real rows score 0.98, real rows with 95 percent of plants
+skipped 0.49, spatially correlated noise at the same coverage 0.22, and a closed
+canopy 0.00. `MIN_TILE_CONFIDENCE` sits at 0.35, in the gap between the worst
+real grid and the best noise, and a model with no tile above it refuses to be
+queried rather than returning distances computed from nothing.
+
+The spec expected row fitting to be the first thing to fail as GSD coarsens. On
+synthetic scenes that looks wrong: a 76 cm pitch is 69 pixels even at 11 mm/px
+and angle, pitch and phase all hold across 1.7 to 11 mm. What fails is the angle
+search, not the sampling. Treat that as an untested upper bound until the flown
+ladder says otherwise.
 
 ### `blobs.py`
 Connected components on the mask. Drop anything below a ground-unit area floor
@@ -375,6 +420,9 @@ easiest to test.
   3 percent, swept across angles 0 to 175 and several pitches, on synthetic fields.
 - Row detection still recovers the angle with 20 percent plant skips and with a
   10 percent weed population present.
+- **The fitted grid lands on the known crop positions.** Neither of the two
+  phase bugs moved the angle or the pitch by a measurable amount. This is the
+  test that catches them, and it belongs beside every change to row geometry.
 - Blob results from a windowed run are identical to a single-window run on a small
   raster, including blobs placed deliberately across the window seam. Landed in
   `tests/test_io.py`, parametrised over every backend that loads. Positions are

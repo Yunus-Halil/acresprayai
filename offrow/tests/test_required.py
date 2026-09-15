@@ -31,6 +31,22 @@ LANDED = {
         "tests.test_vegetation",
         "test_seedling_mask_area_bias_across_gsd_is_measured_not_targeted",
     ),
+    "row angle within 1 degree and pitch within 3 percent, swept": (
+        "tests.test_rows",
+        "test_row_angle_is_recovered_within_one_degree",
+    ),
+    "row pitch within 3 percent, swept across pitches": (
+        "tests.test_rows",
+        "test_row_pitch_is_recovered_within_three_percent",
+    ),
+    "row fit survives 20 percent skips and a weed population": (
+        "tests.test_rows",
+        "test_the_fit_survives_the_known_false_positive_sources",
+    ),
+    "the fitted grid lands on known crop positions": (
+        "tests.test_rows",
+        "test_fitted_rows_land_on_the_known_crop_positions",
+    ),
 }
 
 
@@ -40,16 +56,6 @@ def test_landed_requirements_still_exist(requirement):
     module_name, test_name = LANDED[requirement]
     module = importlib.import_module(module_name)
     assert hasattr(module, test_name), f"{requirement}: {module_name}.{test_name} is gone"
-
-
-@pytest.mark.skip(reason="step 6: rows.py")
-def test_row_angle_within_one_degree_and_pitch_within_three_percent():
-    """Swept across angles 0 to 175 and several pitches, on synthetic fields."""
-
-
-@pytest.mark.skip(reason="step 6: rows.py")
-def test_row_angle_survives_twenty_percent_skips_and_ten_percent_weeds():
-    """The planter leaves gaps and the field has weeds. The angle must not care."""
 
 
 @pytest.mark.skip(reason="step 7: candidates.py")

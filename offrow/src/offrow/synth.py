@@ -199,6 +199,9 @@ class Scene:
     weed_xy_m: np.ndarray
     weed_diameter_m: np.ndarray
     weed_orientation_deg: np.ndarray
+    #: Signed distance to the nearest row, in scene coordinates. The magnitude is
+    #: what matters and is unaffected by the flip into ground coordinates; the
+    #: sign is not, since mirroring y negates the row normal's y component.
     weed_distance_to_row_m: np.ndarray
     extent_m: tuple[float, float]
     origin_xy_m: tuple[float, float] = DEFAULT_ORIGIN_XY
@@ -226,6 +229,26 @@ class Scene:
             counts[names[diameter_bin(float(diameter))]] += 1
         return counts
 
+    def ground_xy(self, xy_m: np.ndarray) -> np.ndarray:
+        """Scene coordinates to ground coordinates.
+
+        The scene's y grows downward, the way an array's row index does, because
+        that is how it is rendered. A north-up raster's ground y grows upward. So
+        the two are mirrored, and every position leaving this class has to be
+        flipped or the truth lands on the opposite side of the field from the
+        imagery it describes.
+
+        This was wrong once: truth points were written with ``oy + y`` and sat
+        mirrored against their own render, which would have scored every
+        detection against the wrong ground.
+        """
+        xy_m = np.atleast_2d(np.asarray(xy_m, dtype=np.float64))
+        ox, oy = self.origin_xy_m
+        out = np.empty_like(xy_m)
+        out[:, 0] = ox + xy_m[:, 0]
+        out[:, 1] = oy + self.extent_m[1] - xy_m[:, 1]
+        return out
+
     def truth_geojson(self, path: Path) -> Path:
         """Write weed positions as ground truth points, carrying diameter.
 
@@ -233,12 +256,12 @@ class Scene:
         by it. A truth file without it can only produce a pooled number, and a
         pooled number over a synthetic size distribution is meaningless.
         """
-        ox, oy = self.origin_xy_m
         band = 0.30 * self.params.row_spacing_m
+        ground = self.ground_xy(self.weed_xy_m) if len(self.weed_xy_m) else np.zeros((0, 2))
         features = [
             {
                 "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [ox + float(x), oy + float(y)]},
+                "geometry": {"type": "Point", "coordinates": [float(x), float(y)]},
                 "properties": {
                     "class": "weed",
                     "diameter_m": round(float(d), 5),
@@ -248,21 +271,21 @@ class Scene:
                 },
             }
             for (x, y), d, dist in zip(
-                self.weed_xy_m, self.weed_diameter_m, self.weed_distance_to_row_m, strict=True
+                ground, self.weed_diameter_m, self.weed_distance_to_row_m, strict=True
             )
         ]
         return _write_geojson(path, features, self.crs)
 
     def crop_geojson(self, path: Path) -> Path:
         """Write crop positions. What a row fit gets checked against."""
-        ox, oy = self.origin_xy_m
+        ground = self.ground_xy(self.crop_xy_m) if len(self.crop_xy_m) else np.zeros((0, 2))
         features = [
             {
                 "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [ox + float(x), oy + float(y)]},
+                "geometry": {"type": "Point", "coordinates": [float(x), float(y)]},
                 "properties": {"class": "crop", "diameter_m": round(float(d), 5)},
             }
-            for (x, y), d in zip(self.crop_xy_m, self.crop_diameter_m, strict=True)
+            for (x, y), d in zip(ground, self.crop_diameter_m, strict=True)
         ]
         return _write_geojson(path, features, self.crs)
 

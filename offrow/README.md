@@ -18,7 +18,7 @@ is by construction not the planted crop. That is geometry, not prediction.
 | 3 | `synth.py` | implemented |
 | 4 | ~~`altitude.py`~~ | cancelled: the ladder is flown |
 | 5 | `io.py`, `vegetation.py` | implemented |
-| 6 | `rows.py` | stub |
+| 6 | `rows.py` | implemented |
 | 7 | `blobs.py`, `candidates.py`, `grid.py` | stub |
 | 8 | `eval.py` | stub |
 
@@ -122,6 +122,23 @@ goes from 17.6 px to 2.7, stands as an **untested upper bound** from synthetic i
 The part worth keeping is that the angle search is the fragile step, not the sampling:
 project an axis-aligned profile through rows running at 23 degrees and it is noise at
 every resolution. `rows.py`'s confidence metric is where that gets handled.
+
+## Row geometry: check the phase, not the angle
+
+Angle and pitch are easy to check and were exact through two separate phase bugs, each
+of which put every centerline at a random offset. The test that catches them compares
+the fitted model against known crop positions, which sit on centerlines by construction.
+Uniform noise on a 76 cm pitch averages 19 cm; a fit that has found the rows leaves the
+planter jitter, about 1.5 cm.
+
+Row confidence is split into an angle part and a pitch part because they fail
+separately: one row gives a perfect direction and no spacing at all. Real rows score
+0.98, noise at the same vegetation coverage scores 0.22, a closed canopy scores 0.00,
+and a model with nothing above the floor refuses to be queried.
+
+```
+offrow backends
+```
 
 ## Rules that outrank convenience
 
