@@ -47,6 +47,14 @@ LANDED = {
         "tests.test_rows",
         "test_fitted_rows_land_on_the_known_crop_positions",
     ),
+    "headland exclusion drops inside and keeps just outside": (
+        "tests.test_detect",
+        "test_headland_exclusion_drops_inside_and_keeps_just_outside",
+    ),
+    "end to end on synthetic at 5.5 mm with shadows": (
+        "tests.test_detect",
+        "test_end_to_end_on_a_synthetic_field_with_shadows",
+    ),
 }
 
 
@@ -56,13 +64,3 @@ def test_landed_requirements_still_exist(requirement):
     module_name, test_name = LANDED[requirement]
     module = importlib.import_module(module_name)
     assert hasattr(module, test_name), f"{requirement}: {module_name}.{test_name} is gone"
-
-
-@pytest.mark.skip(reason="step 7: candidates.py")
-def test_headland_exclusion_drops_inside_and_keeps_just_outside():
-    """Boundary buffer arithmetic, at the buffer edge where it can be off by one."""
-
-
-@pytest.mark.skip(reason="step 7: end to end")
-def test_end_to_end_recall_floor_at_5_5mm_with_shadows():
-    """Synthetic field, shadows on, recall above an agreed floor at a fixed FP budget."""

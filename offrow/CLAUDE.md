@@ -277,9 +277,23 @@ search, not the sampling. Treat that as an untested upper bound until the flown
 ladder says otherwise.
 
 ### `blobs.py`
-Connected components on the mask. Drop anything below a ground-unit area floor
-(default 4 cm squared). This floor, not the morphological opening, is where
-despeckling belongs: it is continuous in GSD where a structuring element is not.
+Connected components on the mask. Drop anything below a ground-unit area floor.
+This floor, not the morphological opening, is where despeckling belongs: it is
+continuous in GSD where a structuring element is not.
+
+**The floor is 1 cm squared, not the 4 the spec named.** A weed's canopy
+diameter is not its leaf area: a 3 cm rosette covers about 72 percent of its own
+circle, so about 5 cm squared, and a 4 cm squared floor sits directly on top of
+the flight-spec target. Measured on a 40 m synthetic field at 5.5 mm/px, dropping
+the floor from 4 to 1 took recall on 3.0 to 3.6 cm weeds from 66 percent to 100,
+and on 2.4 to 3.0 cm weeds from 8 percent to 98, while false positives per acre
+stayed at zero. The floor was pure loss over that range.
+
+That zero is a property of synthetic soil and not a promise. Real soil has
+stones, residue and dry clods a chromaticity threshold will sometimes call green,
+and the floor is what removes them. This is the one parameter in the detector
+that cannot be set honestly without flown imagery, and the false-positives-per-
+acre measurement from a real field is what sets it. See `FLIGHT.md`.
 
 Drop blobs touching a window border too, and let the owning window supply them
 whole. `io.merge_across_seams()` expects a `touches_border` flag for that.
@@ -295,6 +309,10 @@ to the one-class step later, and collecting them now means the feature extractio
 is already validated when that lands.
 
 ### `candidates.py`
+Current scoring is pure geometry. `reviewable_acres()` is the denominator for
+false positives per acre: acres excluded as headland are acres nobody was asked
+to walk, and counting them would flatter the rate.
+
 Current scoring is pure geometry. A blob is a candidate when
 `abs(distance_to_row_m) > band_frac * row_spacing_m`, default `band_frac = 0.30`.
 Score is the normalized off-row distance, clipped to [0, 1].
@@ -335,7 +353,19 @@ Synthetic drives development and tests. It does not produce reportable accuracy
 numbers. Anything quoted outside this repo comes from the public datasets.
 
 ### `eval.py`
-Match predictions to truth by centroid distance within a tolerance.
+Match predictions to truth by centroid distance within a tolerance. Truth carries
+`diameter_m` per feature and `read_truth()` refuses a file without it, because
+recall is binned by diameter and a truth file that cannot be binned can only
+produce the pooled number this repo has agreed not to report.
+
+Two denominators, and they answer different questions. Recall over **off-row
+truth** is what a geometric detector claims to find. Recall over **all truth** is
+what an operator gets, and it is lower because in-row weeds are out of scope by
+construction. Report both, labelled, and never quietly pick the flattering one.
+
+Restrict truth to the reviewable interior before scoring. A weed in the headland
+was deliberately excluded by `candidates.py`, and counting it as a miss scores
+the system against ground it was told not to look at.
 
 The headline metric is **recall at a fixed false-positives-per-acre budget**, not
 accuracy and not pixel IoU. The operator's real cost is how many junk flags they

@@ -43,9 +43,9 @@ packages = ["src/offrow"]
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers -m 'not slow'"
 markers = [
-    "slow: takes more than a few seconds",
+    "slow: renders synthetic scenes; excluded by default, run with -m slow",
     "dataset: needs a public dataset present under data/",
 ]
 filterwarnings = ["error::DeprecationWarning:offrow.*"]

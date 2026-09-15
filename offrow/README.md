@@ -19,8 +19,8 @@ is by construction not the planted crop. That is geometry, not prediction.
 | 4 | ~~`altitude.py`~~ | cancelled: the ladder is flown |
 | 5 | `io.py`, `vegetation.py` | implemented |
 | 6 | `rows.py` | implemented |
-| 7 | `blobs.py`, `candidates.py`, `grid.py` | stub |
-| 8 | `eval.py` | stub |
+| 7 | `blobs.py`, `candidates.py`, `grid.py` | implemented |
+| 8 | `eval.py` | matching and binned recall done; curves and sweep outstanding |
 
 Every stub raises `NotImplementedError`, and `tests/test_scaffold.py` enforces that.
 `tests/test_required.py` holds the spec's list of must-pass tests as skips, each naming
@@ -139,6 +139,24 @@ and a model with nothing above the floor refuses to be queried.
 ```
 offrow backends
 ```
+
+## The detector, end to end
+
+```
+offrow detect --ortho field.tif --boundary field.geojson --row-spacing-in 30 \
+              --out candidates.geojson
+offrow grid   --candidates candidates.geojson --cell-m 10 --out review.geojson
+```
+
+`detect` fits rows from the ortho, extracts blobs window by window, applies headland
+and boundary exclusions **before** scoring, and emits a queue ranked by normalised
+off-row distance. `grid` aggregates that into 10 m review cells sorted by worst
+candidate. Nothing in either output calls anything a weed; there is a test for that.
+
+The area floor in `blobs.py` is 1 cm2, not the 4 the spec named. A 3 cm weed has about
+5 cm2 of leaf area, so a 4 cm2 floor deleted two thirds of them while buying no
+reduction in false positives at all. See `FLIGHT.md` for why that number cannot be
+settled without flown imagery.
 
 ## Rules that outrank convenience
 

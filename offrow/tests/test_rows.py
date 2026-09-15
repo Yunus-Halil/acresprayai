@@ -70,6 +70,7 @@ def angle_error_deg(got: float, want: float) -> float:
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("angle", [0.0, 23.0, 45.0, 67.0, 90.0, 112.0, 140.0, 175.0])
 def test_row_angle_is_recovered_within_one_degree(angle):
     """The spec's sweep across angles 0 to 175."""
@@ -110,6 +111,7 @@ def test_ground_angle_flips_for_a_north_up_raster():
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("spacing", [0.50, 0.70, 0.762, 0.914, 1.10])
 def test_row_pitch_is_recovered_within_three_percent(spacing):
     """The spec's sweep across pitches."""
@@ -206,6 +208,7 @@ def test_a_harmonic_costs_confidence():
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("angle", [0.0, 23.0, 67.0, 140.0])
 @pytest.mark.parametrize("tile_m", [FIELD_M, FIELD_M / 2, FIELD_M / 3])
 def test_fitted_rows_land_on_the_known_crop_positions(angle, tile_m):
@@ -352,6 +355,7 @@ def test_a_weak_fit_warns():
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "nuisance",
     [
@@ -379,6 +383,7 @@ def test_the_fit_survives_the_known_false_positive_sources(nuisance):
     assert np.abs(distance).mean() < CROP_DISTANCE_CEILING_M
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("gsd_mm", [1.7, 2.75, 5.5, 11.0])
 def test_the_fit_holds_across_the_gsd_ladder(gsd_mm):
     """Synthetic, and an upper bound: a 76 cm pitch is 69 px even at 11 mm."""

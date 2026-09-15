@@ -1,18 +1,22 @@
 """Command line interface.
 
-Only ``offrow sensor`` does anything yet. The rest are declared so the shape of
-the tool is visible and so nothing quietly invents a different interface later.
+``eval`` and ``gsd-sweep`` are still stubs and say so. Everything else runs.
 """
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import typer
 
 from offrow import __version__
+from offrow import blobs as blobs_mod
+from offrow import candidates as candidates_mod
 from offrow import datasets as datasets_mod
+from offrow import grid as grid_mod
 from offrow import io as io_mod
+from offrow import rows as rows_mod
 from offrow import sensor as sensor_mod
 from offrow import synth as synth_mod
 
@@ -445,16 +449,90 @@ def synth(
 @app.command()
 def detect(
     ortho: Path = typer.Option(..., "--ortho", help="Orthomosaic to process."),
-    boundary: Path = typer.Option(..., "--boundary", help="Field boundary GeoJSON."),
+    boundary: Path = typer.Option(None, "--boundary", help="Field boundary GeoJSON."),
     row_spacing_in: float = typer.Option(
-        ..., "--row-spacing-in", help="Row spacing the grower planted."
+        30.0, "--row-spacing-in", help="Row spacing the grower planted."
     ),
     out: Path = typer.Option(..., "--out", help="Candidate GeoJSON to write."),
     headland_m: float = typer.Option(15.0, "--headland-m", help="Inward boundary buffer."),
     exclude: Path = typer.Option(None, "--exclude", help="Extra exclusion polygons."),
+    band_frac: float = typer.Option(0.30, "--band-frac", help="In-row band as a fraction."),
+    tile_m: float = typer.Option(20.0, "--tile-m", help="Row-model tile edge."),
+    window_m: float = typer.Option(40.0, "--window-m", help="Blob extraction window edge."),
+    min_area_cm2: float = typer.Option(
+        blobs_mod.MIN_AREA_CM2,
+        "--min-area-cm2",
+        help="Ground-unit area floor. This is the despeckling. Raise it if flown "
+        "imagery shows soil speckle; it deletes small weeds, so measure first.",
+    ),
+    max_blob_m: float = typer.Option(
+        0.60, "--max-blob-m", help="Largest expected blob; sets the window overlap."
+    ),
+    blobs_out: Path = typer.Option(None, "--blobs-out", help="Also write every blob."),
 ) -> None:
     """Find off-row candidates. Produces a review queue, never a verdict."""
-    _not_built("offrow detect (io.py, vegetation.py, rows.py, blobs.py, candidates.py)")
+    spacing_m = row_spacing_in * 0.0254
+    field = io_mod.read_boundary(boundary) if boundary else None
+    exclusions = None
+    if exclude:
+        geometries, _props, _crs = io_mod.read_geojson(exclude)
+        exclusions = geometries
+
+    typer.secho(f"raster backend: {io_mod.active_backend()}", fg=typer.colors.BLUE)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        model = rows_mod.fit_from_raster(ortho, spacing_m, tile_m=tile_m, boundary=field)
+
+    typer.secho(
+        f"row model: {len(model.tiles)} tiles, confidence {model.confidence:.2f} "
+        f"(angle {model.angle_confidence:.2f}, pitch {model.pitch_confidence:.2f})",
+        bold=True,
+    )
+    typer.echo(
+        f"  angle {model.median_angle_deg:.2f} deg, pitch {model.median_pitch_m:.4f} m "
+        f"against the grower's {spacing_m:.4f} m"
+    )
+    for warning in caught:
+        if issubclass(warning.category, rows_mod.RowFitWarning):
+            typer.secho(f"  {warning.message}", fg=typer.colors.YELLOW)
+    if model.confidence < rows_mod.MIN_TILE_CONFIDENCE:
+        typer.secho(
+            "  the rows were not found; everything below is distance to a grid that is not there",
+            fg=typer.colors.RED,
+            bold=True,
+        )
+
+    found = blobs_mod.extract_from_raster(
+        ortho,
+        row_model=model,
+        boundary=field,
+        window_m=window_m,
+        max_blob_diameter_m=max_blob_m,
+        min_area_cm2=min_area_cm2,
+    )
+    typer.echo(f"blobs: {len(found)} above the {min_area_cm2:g} cm2 floor")
+
+    params = candidates_mod.CandidateParams(band_frac=band_frac, headland_buffer_m=headland_m)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", candidates_mod.LowRowConfidence)
+        queue = candidates_mod.detect(found, model, field, params, exclusions)
+
+    acres = candidates_mod.reviewable_acres(field, headland_m) if field else 0.0
+    typer.secho(f"candidates: {len(queue)}", bold=True)
+    if acres > 0:
+        typer.echo(f"  over {acres:.2f} reviewable acres after a {headland_m:g} m headland")
+        typer.echo(f"  {len(queue) / acres:.1f} flags per acre at score > 0")
+
+    candidates_mod.to_geojson(queue, out, crs=model.crs)
+    typer.echo(f"  wrote {out}")
+    if blobs_out:
+        blobs_mod.to_geojson(found, blobs_out, crs=model.crs)
+        typer.echo(f"  wrote {blobs_out}")
+    typer.secho(
+        "\n  A ranked queue for review. Nothing here is a confirmed weed.",
+        fg=typer.colors.YELLOW,
+    )
 
 
 @app.command()
@@ -462,9 +540,49 @@ def grid(
     candidates: Path = typer.Option(..., "--candidates", help="Candidate GeoJSON from detect."),
     cell_m: float = typer.Option(10.0, "--cell-m", help="Review cell edge length."),
     out: Path = typer.Option(..., "--out", help="Review grid GeoJSON to write."),
+    boundary: Path = typer.Option(None, "--boundary", help="Field boundary, to clip cells."),
+    top: int = typer.Option(10, "--top", help="Print this many of the top cells."),
 ) -> None:
     """Aggregate candidates into review cells ranked by worst candidate."""
-    _not_built("offrow grid (grid.py)")
+    geometries, properties, crs = io_mod.read_geojson(candidates)
+    field = io_mod.read_boundary(boundary) if boundary else None
+
+    loaded = [
+        grid_mod_candidate(geometry, record)
+        for geometry, record in zip(geometries, properties, strict=True)
+    ]
+    cells = grid_mod.aggregate(loaded, cell_m=cell_m, boundary=field)
+    ranked = grid_mod.rank(cells)
+    grid_mod.to_geojson(cells, out, crs=crs)
+
+    stats = grid_mod.summary(cells)
+    typer.secho(
+        f"{int(stats['cells_flagged'])} of {int(stats['cells_total'])} cells flagged "
+        f"({stats['flagged_fraction']:.0%})",
+        bold=True,
+    )
+    typer.echo(f"  wrote {out}")
+    if ranked:
+        typer.echo("")
+        typer.echo("  rank  max_score  count  area_m2   cell origin")
+        for index, cell in enumerate(ranked[:top], start=1):
+            typer.echo(
+                f"  {index:>4}  {cell.max_score:9.3f}  {cell.candidate_count:>5}  "
+                f"{cell.candidate_area_m2:7.4f}   {cell.origin_xy_m[0]:.1f}, "
+                f"{cell.origin_xy_m[1]:.1f}"
+            )
+
+
+def grid_mod_candidate(geometry, record):
+    """A minimal stand-in for a Candidate, read back from GeoJSON."""
+    return candidates_mod.Candidate(
+        centroid_xy_m=(geometry.centroid.x, geometry.centroid.y),
+        score=float(record.get("score", 0.0)),
+        distance_to_row_m=float(record.get("distance_to_row_m", 0.0)),
+        area_m2=float(record.get("area_m2", 0.0)),
+        gsd_m=float(record.get("gsd_m", 0.0)),
+        geometry=geometry,
+    )
 
 
 @app.command(name="eval")
