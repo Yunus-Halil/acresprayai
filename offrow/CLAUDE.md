@@ -140,6 +140,35 @@ DRONEWEED, sits behind proof-of-work bot protection. That is an access control
 the operator put up: `fetch` refuses and prints the manual route rather than
 working around it, and never silently falls back to the other dataset.
 
+### `ingest.py`
+Field triage. Given a folder of captures for one rung, say whether that rung is
+usable, in seconds, while re-flying is still possible.
+
+Everything is measured from the captures rather than from the flight plan: the
+altitude actually held, the GSD actually achieved, the overlap actually flown,
+the shutter actually used. A plan is a hypothesis and the EXIF is the
+measurement.
+
+It needs no camera database and no committed airframe. Sensor width comes from
+`36 * focal / focal_35mm`, both of which every camera writes into every frame,
+which also means it works on a body nobody has met before.
+
+The checks exist because each corresponding mistake produces a full card of
+frames that look fine and are not: auto-exposure left on, which makes
+overlapping frames disagree about the colour of the same ground and defeats the
+chromaticity normalisation outright; a gimbal that drifted off nadir; a shutter
+slow enough to smear a five-pixel weed; an altitude that was not the one the
+rung wanted; overlap too thin for a field of near-identical green objects; and
+truth points that fall outside the ground actually flown, which is the half of
+the day that cannot be redone.
+
+`check_ortho` covers the three things `io.py` refuses: a CRS in degrees,
+non-square pixels, a rotated transform. Two of those are what an ortho tool
+produces by default.
+
+Exit non-zero on a blocking failure. The report is wrapped to 78 columns because
+it gets read on a phone, in sunlight, one-handed.
+
 ### `io.py`
 Windowed raster access. `iter_windows(path, window_m, overlap_m)` yields
 `(array, transform, window)` with overlap sized so the largest expected blob

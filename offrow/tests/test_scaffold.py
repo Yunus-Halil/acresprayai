@@ -18,6 +18,7 @@ MODULES = [
     "offrow.datasets",
     "offrow.eval",
     "offrow.grid",
+    "offrow.ingest",
     "offrow.io",
     "offrow.rows",
     "offrow.sensor",
@@ -43,7 +44,9 @@ IMPLEMENTED = (
     "offrow.blobs",
     "offrow.candidates",
     "offrow.grid",
+    "offrow.ingest",
     "offrow.eval",
+    "offrow.ingest",
 )
 
 STUB_MODULES = [m for m in MODULES if m not in IMPLEMENTED]

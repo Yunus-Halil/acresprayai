@@ -21,6 +21,7 @@ is by construction not the planted crop. That is geometry, not prediction.
 | 6 | `rows.py` | implemented |
 | 7 | `blobs.py`, `candidates.py`, `grid.py` | implemented |
 | 8 | `eval.py` | matching and binned recall done; curves and sweep outstanding |
+| - | `ingest.py` | field triage for flown captures |
 
 Every stub raises `NotImplementedError`, and `tests/test_scaffold.py` enforces that.
 `tests/test_required.py` holds the spec's list of must-pass tests as skips, each naming
@@ -157,6 +158,20 @@ The area floor in `blobs.py` is 1 cm2, not the 4 the spec named. A 3 cm weed has
 5 cm2 of leaf area, so a 4 cm2 floor deleted two thirds of them while buying no
 reduction in false positives at all. See `FLIGHT.md` for why that number cannot be
 settled without flown imagery.
+
+## Before Saturday: check the rung in the field
+
+```
+offrow ingest --frames /card/rung_5p5mm --truth truth.csv --target-gsd-mm 5.5
+```
+
+Measures what the captures actually are, not what the mission planner was told to do:
+altitude held, GSD achieved, frontlap and sidelap flown, exposure really locked, gimbal
+really at nadir, motion blur, and whether the truth points land inside the ground flown.
+Exits non-zero on **NOT USABLE**. Needs no camera database: sensor width comes out of
+`36 x focal / focal_35mm`, which every camera writes into every frame.
+
+`FLIGHT.md` is the Friday plan, with a preflight checklist at the top.
 
 ## Rules that outrank convenience
 

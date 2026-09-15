@@ -15,6 +15,7 @@ from offrow import blobs as blobs_mod
 from offrow import candidates as candidates_mod
 from offrow import datasets as datasets_mod
 from offrow import grid as grid_mod
+from offrow import ingest as ingest_mod
 from offrow import io as io_mod
 from offrow import rows as rows_mod
 from offrow import sensor as sensor_mod
@@ -444,6 +445,53 @@ def synth(
         "\n  Synthetic. Drives development and tests. Never a reportable accuracy number.",
         fg=typer.colors.YELLOW,
     )
+
+
+@app.command()
+def ingest(
+    frames: Path = typer.Option(..., "--frames", help="Folder of captures for ONE rung."),
+    truth: Path = typer.Option(
+        None, "--truth", help="Measured target positions and sizes. GeoJSON or CSV."
+    ),
+    ortho: Path = typer.Option(None, "--ortho", help="The processed ortho, if you have it yet."),
+    target_gsd_mm: float = typer.Option(
+        None, "--target-gsd-mm", help="What this rung was meant to achieve."
+    ),
+    frontlap: float = typer.Option(0.80, "--frontlap", help="Planned along-track overlap."),
+    sidelap: float = typer.Option(0.70, "--sidelap", help="Planned across-track overlap."),
+) -> None:
+    """Is this rung usable? Run it in the field, between flights.
+
+    Everything is measured from the captures rather than from what the mission
+    planner was told to do: the altitude actually held, the overlap actually
+    achieved, the shutter actually used. Exits non-zero when the rung should be
+    re-flown before you leave, which is the only time it can still be re-flown
+    against the same ground truth.
+    """
+    report = ingest_mod.inspect_rung(
+        frames,
+        truth=truth,
+        ortho=ortho,
+        target_gsd_mm=target_gsd_mm,
+        frontlap=frontlap,
+        sidelap=sidelap,
+    )
+
+    typer.echo("")
+    for line in ingest_mod.format_report(report).splitlines():
+        if "[FAIL]" in line:
+            typer.secho(line, fg=typer.colors.RED, bold=True)
+        elif "[warn]" in line:
+            typer.secho(line, fg=typer.colors.YELLOW)
+        elif line.strip().startswith("NOT USABLE"):
+            typer.secho(line, fg=typer.colors.RED, bold=True)
+        elif line.strip().startswith("USABLE"):
+            typer.secho(line, fg=typer.colors.GREEN, bold=True)
+        else:
+            typer.echo(line)
+    typer.echo("")
+    if not report.usable:
+        raise typer.Exit(code=1)
 
 
 @app.command()

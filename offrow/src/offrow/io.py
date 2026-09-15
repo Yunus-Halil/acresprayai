@@ -233,7 +233,11 @@ class _RasterioReader(RasterReader):
         # downstream has to know which backend produced it. affine.Affine has
         # the same six coefficients and none of the helpers.
         self.transform = Transform(*tuple(self._dataset.transform)[:6])
-        self.crs = str(self._dataset.crs) if self._dataset.crs else None
+        # rasterio reads a world file for the transform but not a .prj sidecar
+        # for the CRS, while the tifffile backend reads both. Falling back here
+        # keeps the two backends answering the same question the same way, which
+        # is the only reason to have a seam at all.
+        self.crs = str(self._dataset.crs) if self._dataset.crs else _read_crs(path, None)
 
     def read(self, window: Window, bands: Sequence[int] = (1, 2, 3)) -> np.ndarray:
         from rasterio.windows import Window as RioWindow

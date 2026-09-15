@@ -16,46 +16,159 @@ then. Budget your time accordingly — the truth work is the expensive half.
 
 ---
 
+# PREFLIGHT — do this before every single flight
+
+Each line is one thing you touch, in the order you touch it. Everything here can
+be wrong in a way that produces a full card of useless frames rather than an
+obvious failure, which is why it is a checklist and not prose.
+
+**Aircraft**
+
+- [ ] Fresh battery, seated, latched
+- [ ] Props on, tight, undamaged
+- [ ] Card in, **formatted**, >16 GB free
+- [ ] Power on, wait for GPS lock, >12 satellites
+- [ ] Compass / IMU: no warnings
+- [ ] Home point set **here**, not at the last field
+- [ ] Return-to-home height above the tallest thing around
+
+**Camera — the silent killers live here**
+
+- [ ] Mode: **M** (manual). Not P, not A, not auto
+- [ ] Shutter: **1/1600 s** (never slower than 1/1500)
+- [ ] ISO: lowest that keeps the histogram off the left wall at 1/1600
+- [ ] Aperture: **f/4 – f/5.6**
+- [ ] White balance: **Daylight**. Not AWB
+- [ ] Focus: **manual**, set on the crop, then do not touch it
+- [ ] Picture profile: **Standard or Neutral**. Not Vivid, not HDR
+- [ ] Format: **RAW + JPEG** if the card allows, else JPEG
+- [ ] Gimbal: **−90°**, straight down. Recheck every flight; they drift
+- [ ] Take one test frame, look at it, confirm it is sharp and correctly exposed
+
+**Mission**
+
+- [ ] Altitude for **this rung** (from the table you wrote on page 1)
+- [ ] Frontlap **80 %**, sidelap **70 %**
+- [ ] Ground speed for this rung (from the same table)
+- [ ] Interval shooting on, interval = the one the camera can sustain
+- [ ] Flight lines **across** the rows, not along them
+- [ ] Mission area covers the whole plot plus one line of margin
+
+**Last look**
+
+- [ ] Nobody and nothing in the plot — no markers you are about to fly into,
+      no vehicle, no you
+- [ ] Log entry for the *previous* flight is written
+- [ ] Note the time and the rung on the log sheet **now**, before takeoff
+
+## BETWEEN RUNGS — 60 seconds, every time
+
+- [ ] Land, battery out, battery in
+- [ ] **Gimbal still −90°?**
+- [ ] **Shutter still 1/1600, ISO still fixed, WB still Daylight?** Some aircraft
+      reset the camera when the battery is swapped
+- [ ] Frame count went up by roughly what you expected
+- [ ] `offrow ingest` on the rung you just flew (see §6.5). **Do this in the
+      field.** It takes seconds and it is the difference between re-flying a bad
+      rung today and discovering on Saturday that the corn has grown
+- [ ] Write the log entry
+
+## AFTER THE LAST FLIGHT — before you leave the field
+
+- [ ] Copy both cards to the laptop or a phone. Two copies, two devices
+- [ ] `offrow ingest` on every rung, not just the ones you checked
+- [ ] Photograph every marked weed with a ruler, if not already done
+- [ ] Collect the GCPs, scale bars, colour card and size-ladder discs
+- [ ] Count the markers you collected against the number you put out
+- [ ] Transcribe the truth notebook **today**, while you can still read it
+
+---
+
 ## 0. Before you leave the house
 
-### 0.1 Get the camera's three numbers
+### 0.1 The camera's three numbers, and how to get them without the internet
 
 Nothing in this plan is a fixed altitude, because the altitude depends on the
-camera and no camera has been committed to. You need, for the actual body you
-are flying:
+camera. You need **sensor width in mm**, **pixels across** that width, and **true
+focal length in mm** (not the 35 mm equivalent).
 
-- **sensor width in mm** (the physical active area, not the "1 inch" marketing
-  name)
-- **pixels across** that width
-- **true focal length in mm** (not the 35 mm equivalent)
+**Pixels across** is the width of a photo the camera has taken. Look at any file.
 
-These are in the manufacturer's spec sheet, and the focal length is also in the
-EXIF of any photo the camera has already taken (`FocalLength`, not
-`FocalLengthIn35mmFilm`). Take one photo of your hand and read it off. **Do not
-guess**: the whole ladder shifts if the focal length is wrong.
+**Focal length** is in the EXIF of any photo: the field called `FocalLength`.
+On a phone, most gallery apps will show it under "details" or "info".
 
-Then:
+**Sensor width** is the one people get wrong, because the format names are
+marketing rather than measurements. Two ways, either is fine:
+
+*From the format name:*
+
+| format name | sensor width mm | height mm |
+|---|---:|---:|
+| 1/2.3" | 6.17 | 4.55 |
+| 1/1.7" | 7.60 | 5.70 |
+| 1/1.3" | 9.80 | 7.30 |
+| 1" | 13.20 | 8.80 |
+| 4/3 (Micro Four Thirds) | 17.30 | 13.00 |
+| APS-C | 23.50 | 15.60 |
+| 35 mm "full frame" | 36.00 | 24.00 |
+
+*Or from EXIF alone, which needs no table.* Every photo carries both
+`FocalLength` and `FocalLengthIn35mmFilm`. Then:
+
+> **sensor width mm = 36 × FocalLength ÷ FocalLengthIn35mmFilm**
+
+Example: `FocalLength 8.8 mm`, `FocalLengthIn35mmFilm 24 mm` gives
+36 × 8.8 ÷ 24 = **13.2 mm**, a 1 inch sensor. This works on any camera and is
+worth doing even if you think you know the format, as a check.
+
+**Then the altitude for any rung, with arithmetic you can do on a phone:**
+
+> **altitude m = target GSD mm × focal mm × pixels across ÷ (sensor width mm × 1000)**
+
+Example, 1 inch 20 MP (13.2 mm, 5472 px, 8.8 mm) at the 5.5 mm/px target rung:
+
+> 5.5 × 8.8 × 5472 ÷ (13.2 × 1000) = 264 806 ÷ 13 200 = **20.1 m**
+
+And **ground speed**, which is set by the camera's frame interval and the
+overlap, not by preference:
+
+> **max speed m/s = altitude m × (sensor height mm ÷ focal mm) × 0.20 ÷ frame interval s**
+
+The 0.20 is (1 − 0.80 frontlap). Cap it at whatever the aircraft cruises at; if
+the formula gives more than that, fly the cruise speed.
+
+If you do have a laptop, the same numbers come out of:
 
 ```
 offrow sensor --sensor-mm <W> --px <N> --focal-mm <F> \
               --cruise 8 --frame-interval 1 --frontlap 0.80 --sidelap 0.70 \
               --alt 10,14,20,29,40,58,80
-```
-
-and
-
-```
 offrow sensor --sensor-mm <W> --px <N> --focal-mm <F> --target-gsd-mm 5.5
 ```
 
-which prints the altitude for the 5.5 mm/px target rung. Write the numbers on
-the back of this page.
+**Fill this in before you leave, and put it in your pocket:**
+
+```
+sensor width ______ mm   pixels across ______   focal ______ mm
+sensor height ______ mm  frame interval ______ s   cruise ______ m/s
+
+rung   target GSD   altitude   ground speed   line spacing
+ 1      2.7 mm      ______ m    ______ m/s     ______ m
+ 2      5.5 mm      ______ m    ______ m/s     ______ m
+ 3     11.0 mm      ______ m    ______ m/s     ______ m
+ 4      3.7 mm      ______ m    ______ m/s     ______ m
+ 5      8.0 mm      ______ m    ______ m/s     ______ m
+ 6     16.0 mm      ______ m    ______ m/s     ______ m
+ 7     22.0 mm      ______ m    ______ m/s     ______ m
+```
+
+Line spacing is **swath × 0.30**, and swath is **altitude × sensor width ÷ focal**.
 
 Also get the **shortest frame interval the camera will actually sustain** while
-writing to the card. It is often slower than the advertised burst rate. If you
-do not know it, measure it: point the camera at the floor, set interval shooting
-to 1 s, run it for two minutes, and count the files. If it drops frames, use the
-interval that does not.
+writing to the card. It is often slower than the advertised burst rate. Measure
+it: point the camera at the floor, set interval shooting to 1 s, run it for two
+minutes, and count the files. If it drops frames, use the interval that does not.
+Write that number in the box above, because the ground speed depends on it.
 
 ### 0.2 Worked examples, so the numbers look familiar
 
@@ -422,6 +535,37 @@ target lane: start marker position, disc order, disc sizes
 GCP positions and how they were measured
 ```
 
+### 6.5 Check the rung before you move on
+
+```
+offrow ingest --frames /path/to/this/rung --truth truth.csv --target-gsd-mm 5.5
+```
+
+It reads the frames themselves rather than what the mission planner was told to
+do, and answers in a few seconds: the altitude actually held, the GSD actually
+achieved, the frontlap and sidelap actually flown, whether exposure was really
+locked, whether the gimbal was really at nadir, how much motion blur is in the
+frames, and whether your truth points fall inside the ground you flew.
+
+It exits non-zero and prints **NOT USABLE** when the rung should be re-flown.
+Run it between rungs, in the field, while re-flying is still an option. Add
+`--ortho` once you have processed one, and it also checks the three things
+`io.py` will refuse on Saturday: a CRS in degrees, non-square pixels, a rotated
+transform.
+
+The truth file can be the CSV you are typing into your phone. It wants a header
+row and columns it can recognise:
+
+```
+id,lat,lon,diameter_cm
+w001,40.51234567,-96.48765432,2.5
+w002,40.51234901,-96.48765011,3.0
+```
+
+If there is no laptop in the vehicle, at minimum copy the card and run it that
+evening before you drive home, while re-flying tomorrow morning against the same
+markers is still possible.
+
 ---
 
 ## 7. If you are running out of time
@@ -430,6 +574,8 @@ Cut in this order. Everything above a line is worth more than everything below.
 
 1. Ground truth on the small weeds (§2.3). **Never cut.** This is the only
    irreplaceable thing on the list.
+1. `offrow ingest` after each rung (§6.5). It takes seconds and it is what turns
+   a wasted Friday into a fifteen-minute re-flight.
 2. Rungs 1, 2 and 3 of the ladder (2.7, 5.5, 11 mm).
 3. The size-ladder targets (§2.2).
 4. The larger FP-per-acre pass (§4.4).
