@@ -8,6 +8,7 @@ import { X } from "lucide-react";
 import type { CellId, TreatmentGrid } from "@/lib/treatmentGrid";
 import type { LatLng2 } from "@/lib/geo";
 import { candidateTotals } from "@/lib/findSimilar";
+import { RGB_FEATURES } from "@/lib/cellFeatures";
 import { type UnitSystem, fmtArea, fmtRate, fmtVolume } from "@/lib/units";
 import {
   DEMO_TARGET_KEY, DEMO_TARGET_TEXT, DEMO_WEED_CAROUSEL, type DemoWeed,
@@ -222,10 +223,14 @@ export function JarvisScanOverlay({
   const totals = candidates
     ? candidateTotals(grid, new Set(candidates.keys()), rateLha)
     : null;
+  // Cells along the boundary are clipped, so N cells rarely equal N × cell².
+  // Say so whenever the difference is one an operator could notice.
+  const nominalM2 = totals ? totals.count * grid.cellSizeM * grid.cellSizeM : 0;
+  const clippedNotably = !!totals && totals.count > 0 && totals.areaM2 < nominalM2 * 0.98;
 
   const statusLines = [
     `Sampling ${grid.cells.length.toLocaleString()} cells${cellPx ? ` · ${Math.round(cellPx)} px per cell` : ""}`,
-    "Colour and texture features per cell",
+    `${RGB_FEATURES.length} colour and variation features per cell`,
     `${examples.length} marked example${examples.length === 1 ? "" : "s"} as reference`,
     ...(spun && !ready ? ["Matching…"] : []),
   ];
@@ -367,18 +372,28 @@ export function JarvisScanOverlay({
       {phase === "program" && (
         <div style={{ ...cardBase, left: progX, bottom: progBottom, width: progW, padding: 12, pointerEvents: "auto" }}>
           <Frame color={AMBER} />
-          <div className="flex items-baseline justify-between mb-2">
-            <div style={{ fontSize: 9, letterSpacing: "0.18em", color: AMBER }}>TREATMENT</div>
-            {totals && (
+          <div className="flex items-baseline justify-between mb-1">
+            <div style={{ fontSize: 9, letterSpacing: "0.18em", color: AMBER }}>TREATMENT ZONES</div>
+            {totals && totals.count > 0 && (
               <div style={{ fontSize: 10, color: "#f7d98a" }}>
-                {totals.count} cell{totals.count === 1 ? "" : "s"} · {fmtArea(totals.areaM2, units).text}
+                {totals.count} cell{totals.count === 1 ? "" : "s"} matched
               </div>
             )}
           </div>
+          {totals && totals.count > 0 && (
+            <div style={{ fontSize: 10.5, color: "#efe9d8", lineHeight: 1.45, marginBottom: 8 }}>
+              Treated area <span style={{ color: "#f7d98a" }}>{fmtArea(totals.areaM2, units).text}</span>
+              {clippedNotably && (
+                <span style={{ color: "#c9b57a" }}>
+                  {" "}(edge cells clipped to the field boundary, so less than {totals.count} full cells)
+                </span>
+              )}
+            </div>
+          )}
           {totals && totals.count === 0 && (
             <div style={{ fontSize: 10.5, color: "#e6dcc2", lineHeight: 1.45, marginBottom: 8 }}>
-              No further cells matched beyond your marked examples. The program below
-              applies to the cells you marked.
+              No further cells matched beyond your marked examples. The notes below
+              apply to the cells you marked.
             </div>
           )}
           {candidates && candidates.size > MAX_LINES && (
@@ -393,17 +408,18 @@ export function JarvisScanOverlay({
                 <div style={{ color: "#efe9d8", animation: `jv-in 260ms ease-out ${i * 220}ms both` }}>{row.text}</div>
               </div>
             ))}
-            <div style={{ color: AMBER, animation: "jv-in 260ms ease-out 660ms both" }}>Carrier</div>
-            <div style={{ color: "#efe9d8", animation: "jv-in 260ms ease-out 660ms both" }}>
-              {fmtRate(rateLha, units).text}
-              {totals && totals.count > 0 && <> · {fmtVolume(totals.volumeL, units).text} total for the flagged cells</>}
+            <div style={{ color: AMBER, animation: "jv-in 260ms ease-out 880ms both" }}>Volume</div>
+            <div style={{ color: "#efe9d8", animation: "jv-in 260ms ease-out 880ms both" }}>
+              Application volume {fmtRate(rateLha, units).text} from your settings
+              {totals && totals.count > 0 && <>, {fmtVolume(totals.volumeL, units).text} of spray mix for the treated area</>}.
+              {" "}Drone carrier volume, not a product rate; ground-rig labels often specify far more.
             </div>
           </div>
-          <div style={{ fontSize: 9, color: "#8f8a78", marginTop: 8 }}>{DEMO_TARGET_TEXT.caveat}</div>
+          <div style={{ fontSize: 9, color: "#8f8a78", marginTop: 8, lineHeight: 1.4 }}>{DEMO_TARGET_TEXT.caveat}</div>
           <button onClick={onClose}
             className="mt-2.5 w-full text-[11px] rounded-sm px-2 py-1.5 font-semibold"
             style={{ background: AMBER, color: "#111" }}>
-            Review suggestions →
+            Review zones →
           </button>
         </div>
       )}

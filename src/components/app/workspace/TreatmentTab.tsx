@@ -1022,7 +1022,7 @@ export function TreatmentTab({
             {paintAction === "treat" && (
               <>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[11px] text-neutral-500">Rate</span>
+                  <span className="text-[11px] text-neutral-500">Application volume</span>
                   <span className="font-mono text-sm text-[#4CAF50]">{fmtRate(rateLha, units).text}</span>
                 </div>
                 {/* The slider moves in the operator's own units; `rateLha` stays
@@ -1043,7 +1043,9 @@ export function TreatmentTab({
                     </button>
                   ))}
                 </div>
-                <div className="text-[10px] text-neutral-600">Target rate in {rateUnit(units)}.</div>
+                <div className="text-[10px] text-neutral-600">
+                  Spray mix per unit area in {rateUnit(units)}. Carrier volume, not the product rate on the label.
+                </div>
               </>
             )}
             {paintAction === "skip" && (

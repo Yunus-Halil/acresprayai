@@ -96,31 +96,46 @@ export const DEMO_WEED_CAROUSEL: DemoWeed[] = [
 /** Which carousel entry the scan settles on. Change here to swap the story. */
 export const DEMO_TARGET_KEY = "palmer";
 
-/** Copy for the identified-weed card and the treatment card. */
+/**
+ * Copy for the identified-weed card and the treatment-zones card.
+ *
+ * The card is decision support, not a prescription. It names the herbicide
+ * groups Extension guidance associates with this weed and then sends the
+ * operator to the label: the app does not know the crop, its trait package,
+ * growth stage, weed size, prior applications or local resistance status, and
+ * every one of those changes what may legally be sprayed. No product rate
+ * appears here on purpose.
+ */
 export const DEMO_TARGET_TEXT = {
-  identity: "Broadleaf · summer annual · glyphosate-resistant populations confirmed in Virginia",
-  // Palmer's taproot and fast canopy strip soil moisture from the crop row:
+  identity: "Broadleaf · summer annual · glyphosate resistance widely documented",
+  // Palmer’s taproot and fast canopy strip soil moisture from the crop row:
   // the ground under a stand dries first, which is why it shows up as patchy
   // bare or stressed ground before the plant itself is obvious from the air.
   finding:
-    "Deep taproot and a canopy that adds 2–3 in a day in July heat. It pulls soil " +
+    "Deep taproot and a canopy that can add 2–3 in a day in summer heat. It pulls soil " +
     "moisture out from under the crop row, so the ground beneath a stand dries first. " +
     "The dry, bare patches around your marked cells are consistent with that pattern.",
   program: [
     {
-      label: "Herbicide",
-      text: "Glufosinate (Group 10) at 32 fl oz/ac, or fomesafen (Group 14). Not glyphosate alone: resistance is widespread in this region.",
+      label: "Control",
+      text: "Extension guidance commonly pairs this weed with Group 10 (glufosinate) or Group 14 (PPO) programs. Product, rate and crop restrictions come from the label, not from this screen.",
+    },
+    {
+      label: "Resistance",
+      text: "Glyphosate resistance risk: verify local resistance status and the product label before relying on Group 9.",
     },
     {
       label: "Timing",
-      text: "Spray before plants pass 4 in. Control drops sharply above that height, and it gets there in days.",
+      text: "Treat while very small. Weed-size limits vary by crop and label; many recommendations are under 2–4 in.",
     },
     {
       label: "Nutrition",
-      text: "Hold nitrogen on the flagged cells until control is confirmed. Fertilising a dry patch now feeds the weed, not the crop.",
+      text: "Consider holding nitrogen on the flagged cells until control is confirmed. A dry patch fertilised now feeds the weed, not the crop.",
     },
   ],
-  caveat: "Check the label for your crop and rate before spraying.",
+  caveat:
+    "Label-aware prompts, not a prescription. Confirm crop, trait, growth stage, weed size, " +
+    "prior applications and label restrictions before spraying.",
 } as const;
 
 /** Fetch the carousel photos into the browser cache ahead of the first run. */
