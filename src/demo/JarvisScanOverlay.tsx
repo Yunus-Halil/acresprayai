@@ -124,25 +124,32 @@ export function JarvisScanOverlay({
   }, [onClose]);
 
   // ---- Carousel: fast, then decelerating, always landing on the target ----
+  //
+  // `pos` is an absolute index into a filmstrip of repeated entries, so the
+  // strip only ever slides one way; the entry under the frame is pos % len.
+  // The strip starts so that CAROUSEL_TICKS steps later it lands on the target.
   const targetIdx = Math.max(0, DEMO_WEED_CAROUSEL.findIndex(w => w.key === DEMO_TARGET_KEY));
   const len = DEMO_WEED_CAROUSEL.length;
-  const [idx, setIdx] = useState(() => (((targetIdx - CAROUSEL_TICKS) % len) + len) % len);
+  const startPos = ((targetIdx - CAROUSEL_TICKS) % len + len) % len;
+  const [pos, setPos] = useState(startPos);
+  const [stepMs, setStepMs] = useState(60);
   const [spun, setSpun] = useState(false);
   useEffect(() => {
     let i = 0;
-    let cur = (((targetIdx - CAROUSEL_TICKS) % len) + len) % len;
     let t = 0;
+    const delayAt = (k: number) => { const p = k / CAROUSEL_TICKS; return 60 + 520 * p * p * p; };
     const step = () => {
       i++;
-      cur = (cur + 1) % len;
-      setIdx(cur);
+      setPos(startPos + i);
       if (i >= CAROUSEL_TICKS) { setSpun(true); return; }
-      const p = i / CAROUSEL_TICKS;
-      t = window.setTimeout(step, 45 + 420 * p * p * p);
+      const d = delayAt(i);
+      setStepMs(d);
+      t = window.setTimeout(step, d);
     };
-    t = window.setTimeout(step, 45);
+    t = window.setTimeout(step, 60);
     return () => window.clearTimeout(t);
-  }, [targetIdx, len]);
+  }, [startPos]);
+  const current = DEMO_WEED_CAROUSEL[pos % len];
 
   // ---- Phase machine: gated on BOTH the animation and the real result ------
   const ready = spun && !running && candidates !== null;
@@ -199,9 +206,11 @@ export function JarvisScanOverlay({
   }
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-  // Carousel strip above the reticle.
-  const tile = 54;
-  const stripW = len * (tile + 4) + 16, stripH = tile + 16;
+  // Recognition viewer above the reticle: one large frame plus a sliding
+  // filmstrip. `stripW/H` are its outer size (the status card hangs off it).
+  const tile = 44, gap = 4, stepPx = tile + gap;
+  const frameW = 236, frameH = 132;
+  const stripW = frameW + 16, stripH = 8 + frameH + 6 + 30 + 6 + tile + 8;
   const stripX = clamp(cx - stripW / 2, 8, size.x - stripW - 8);
   const stripY = clamp(cy - r - 18 - stripH, 8, size.y - stripH - 8);
 
@@ -243,20 +252,9 @@ export function JarvisScanOverlay({
         @keyframes jv-spin-r { to { transform: rotate(-360deg); } }
         @keyframes jv-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
         @keyframes jv-pulse { 0% { r: 3; opacity: 1; } 100% { r: 16; opacity: 0; } }
-        @keyframes jv-sweep { from { transform: translateY(-2px); } to { transform: translateY(100vh); } }
+        @keyframes jv-lock { 0% { transform: scale(1.12); opacity: .4; } 100% { transform: scale(1); opacity: 1; } }
         @keyframes jv-blink { 50% { opacity: 0; } }
       `}</style>
-
-      {/* Sweep line across the imagery while sampling */}
-      {phase === "scan" && (
-        <div className="absolute inset-0 overflow-hidden">
-          <div style={{
-            position: "absolute", left: 0, right: 0, top: 0, height: 2,
-            background: `linear-gradient(90deg, transparent, ${GREEN}cc 30%, ${GREEN}cc 70%, transparent)`,
-            boxShadow: `0 0 12px ${GREEN}`, animation: "jv-sweep 1.8s linear infinite",
-          }} />
-        </div>
-      )}
 
       {/* Reticle + branch lines */}
       <svg width={size.x} height={size.y} className="absolute inset-0" style={{ overflow: "visible" }}>
@@ -301,25 +299,75 @@ export function JarvisScanOverlay({
         })}
       </svg>
 
-      {/* Carousel strip */}
+      {/* Recognition viewer: the frame shows the candidate under comparison,
+          the filmstrip slides beneath it and the frame locks when it settles. */}
       <div style={{ ...cardBase, left: stripX, top: stripY, width: stripW, height: stripH, padding: 8 }}>
         <Frame color={GREEN} />
-        <div className="flex items-center gap-1">
-          {DEMO_WEED_CAROUSEL.map((w, i) => {
-            const active = i === idx;
-            const settled = spun && active;
-            return (
-              <div key={w.key} title={w.common}
-                style={{
-                  width: tile, height: tile, display: "grid", placeItems: "center", borderRadius: 2,
-                  border: `1px solid ${active ? GREEN : "#2a2a2a"}`,
-                  padding: 1,
-                  transition: "border-color 80ms",
-                }}>
-                <Photo w={w} size={tile - 4} active={active} settled={settled} />
-              </div>
-            );
-          })}
+        <div style={{ position: "relative", width: frameW, height: frameH, overflow: "hidden", borderRadius: 2, background: "#050705" }}>
+          <img key={current.key} src={current.image} alt={current.common}
+            style={{
+              width: "100%", height: "100%", objectFit: "cover", display: "block",
+              filter: spun ? "none" : "saturate(0.85) contrast(1.05)",
+            }} />
+          {/* frame brackets; they snap in on the lock */}
+          <div style={{
+            position: "absolute", inset: spun ? 6 : 12, pointerEvents: "none",
+            animation: spun ? "jv-lock 320ms ease-out both" : "none",
+            transition: "inset 120ms",
+          }}>
+            <Frame color={spun ? GREEN : `${GREEN}99`} />
+          </div>
+          {/* scan-line texture while comparing */}
+          {!spun && (
+            <div style={{
+              position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.35,
+              background: "repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,.35) 3px 4px)",
+            }} />
+          )}
+          <div style={{
+            position: "absolute", left: 8, bottom: 6, right: 8, display: "flex",
+            justifyContent: "space-between", alignItems: "baseline", fontSize: 9,
+            letterSpacing: "0.14em", color: spun ? GREEN : "#b9dcb9",
+            textShadow: "0 1px 2px rgba(0,0,0,.9)",
+          }}>
+            <span>{spun ? "MATCH" : "COMPARING"}</span>
+            <span style={{ letterSpacing: 0, fontSize: 8.5, color: "#9fc99f" }}>
+              {String((pos % len) + 1).padStart(2, "0")} / {String(len).padStart(2, "0")}
+            </span>
+          </div>
+        </div>
+        <div style={{ height: 30, marginTop: 6, lineHeight: 1.2 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: spun ? "#f4fff4" : "#d8ecd8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {current.common}
+          </div>
+          <div style={{ fontSize: 9.5, fontStyle: "italic", color: "#9fc99f" }}>{current.latin}</div>
+        </div>
+        {/* filmstrip: absolute positions, slides one way, wraps by repetition */}
+        <div style={{ position: "relative", width: frameW, height: tile, marginTop: 6, overflow: "hidden" }}>
+          <div style={{
+            position: "absolute", top: 0, left: 0, display: "flex", gap,
+            transform: `translateX(${frameW / 2 - tile / 2 - pos * stepPx}px)`,
+            transition: `transform ${Math.round(stepMs * 0.85)}ms cubic-bezier(.2,.7,.3,1)`,
+          }}>
+            {Array.from({ length: startPos + CAROUSEL_TICKS + len + 2 }, (_, k) => {
+              const w = DEMO_WEED_CAROUSEL[k % len];
+              const active = k === pos;
+              return (
+                <div key={k} title={w.common}
+                  style={{
+                    width: tile, height: tile, flexShrink: 0, borderRadius: 2, padding: 1,
+                    border: `1px solid ${active ? GREEN : "#232823"}`,
+                    transition: "border-color 80ms",
+                  }}>
+                  <Photo w={w} size={tile - 4} active={active} settled={spun && active} />
+                </div>
+              );
+            })}
+          </div>
+          {/* centre marker under the frame */}
+          <div style={{
+            position: "absolute", left: frameW / 2 - 1, top: 0, width: 2, height: 4, background: GREEN,
+          }} />
         </div>
       </div>
 
