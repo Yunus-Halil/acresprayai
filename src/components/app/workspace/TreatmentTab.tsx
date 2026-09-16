@@ -53,6 +53,9 @@ import {
   fmtAltitude, fmtArea, fmtAreaHa, fmtRate, fmtVolume, rateToLha, rateUnit, rateValue,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
+// DEMO_JARVIS — temporary conference overlay; see src/demo/jarvisDemo.ts to remove.
+import { DEMO_JARVIS_SCAN } from "@/demo/jarvisDemo";
+import { JarvisScanOverlay, MapHandle } from "@/demo/JarvisScanOverlay";
 
 const repo = new SupabaseTreatmentGridRepository();
 
@@ -113,6 +116,14 @@ export function TreatmentTab({
   const [outlierDrivers, setOutlierDrivers] = useState<string | null>(null);
   const [findNote, setFindNote] = useState<string | null>(null);
   const [findError, setFindError] = useState<string | null>(null);
+  // DEMO_JARVIS — overlay open, candidates held back from the map until the
+  // overlay's branch phase reveals them, and the Leaflet map for projection.
+  const [jarvis, setJarvis] = useState(false);
+  const [jarvisRun, setJarvisRun] = useState(0);   // remounts the overlay per run
+  const [jarvisHold, setJarvisHold] = useState(false);
+  const [demoMap, setDemoMap] = useState<L.Map | null>(null);
+  const jarvisReveal = useCallback(() => setJarvisHold(false), []);
+  const jarvisClose = useCallback(() => { setJarvis(false); setJarvisHold(false); }, []);
   // A boundary edit that would cost real decisions parks here until the
   // operator chooses. While pending, every write path is locked — the one
   // thing this state must guarantee is that nothing overwrites the stored
@@ -447,6 +458,8 @@ export function TreatmentTab({
     () => (grid ? labelsFromGrid(grid) : { wanted: [], unwanted: [] }),
     [grid],
   );
+  // DEMO_JARVIS — the operator's treated marks, the cells the reticle sits on.
+  const jarvisExamples = useMemo(() => new Set<CellId>(labels.wanted), [labels]);
   const findDisabledReason = !grid
     ? "The grid has not been built yet."
     // Find Similar learns from the reference points AS THEY READ ON THIS
@@ -509,6 +522,7 @@ export function TreatmentTab({
     setFindNote(null);
     setOutlierDrivers(null);
     setCandidates(null);
+    if (DEMO_JARVIS_SCAN) { setJarvis(true); setJarvisHold(true); setJarvisRun(n => n + 1); }   // DEMO_JARVIS
     try {
       const sampled = await sampleField();
       if (!sampled) return;
@@ -714,19 +728,38 @@ export function TreatmentTab({
             <TreatmentGridLayer
               grid={grid}
               selected={selected}
-              candidates={candidateIds}
+              candidates={jarvisHold ? undefined : candidateIds}   /* DEMO_JARVIS: was candidateIds */
               brushM={tool === "paint" ? (brushCells * grid.cellSizeM) / 2 : null}
               onPaintCells={onPaintCells}
               onPickCell={onPickCell}
               onRender={setRender}
             />
           )}
+          {DEMO_JARVIS_SCAN && <MapHandle onMap={setDemoMap} />}{/* DEMO_JARVIS */}
           <BasemapToggle
             value={basemap}
             onChange={(id) => { setBasemap(id); saveBasemap(id); }}
             className="absolute bottom-4 right-4 z-[1000]"
           />
         </MapContainer>
+
+        {/* DEMO_JARVIS — conference overlay; unmounts itself on a real error so
+            the normal error card is what the operator sees. */}
+        {DEMO_JARVIS_SCAN && jarvis && demoMap && grid && !findError && (
+          <JarvisScanOverlay
+            key={jarvisRun}
+            map={demoMap}
+            grid={grid}
+            exampleIds={jarvisExamples}
+            candidates={candidates}
+            running={finding}
+            rateLha={rateLha}
+            units={units}
+            cellPx={render?.cellPx ?? null}
+            onReveal={jarvisReveal}
+            onClose={jarvisClose}
+          />
+        )}
 
         {/* Legend + what the renderer is actually showing right now. The detail
             level is surfaced rather than hidden: at low zoom the undecided
@@ -1075,7 +1108,7 @@ export function TreatmentTab({
           className="w-full mb-3 text-xs rounded-sm px-2 py-2 border inline-flex items-center justify-center gap-1.5 transition-colors border-amber-600/50 text-amber-400 hover:bg-amber-500/10 disabled:opacity-45 disabled:cursor-not-allowed"
         >
           {finding
-            ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sampling imagery…</>
+            ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {DEMO_JARVIS_SCAN ? "Scanning…" : "Sampling imagery…"}</>
             : <><Sparkles className="h-3.5 w-3.5" /> Find similar cells</>}
         </button>
         {findDisabledReason && !finding && (
