@@ -52,6 +52,21 @@ function Glyph({ w, size, color, dim }: { w: DemoWeed; size: number; color: stri
   );
 }
 
+/** The real photograph, cropped square; falls back to the glyph if it fails to load. */
+function Photo({ w, size, active, settled }: { w: DemoWeed; size: number; active: boolean; settled?: boolean }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <Glyph w={w} size={size * 0.7} color={active ? GREEN : "#8a8a8a"} dim={!active} />;
+  return (
+    <img src={w.image} alt={w.common} width={size} height={size} onError={() => setFailed(true)}
+      style={{
+        width: size, height: size, objectFit: "cover", display: "block", borderRadius: 2,
+        filter: active ? "none" : "grayscale(0.7) brightness(0.55)",
+        boxShadow: settled ? `0 0 14px ${GREEN}aa` : "none",
+        transition: "filter 80ms",
+      }} />
+  );
+}
+
 /** Corner brackets — the HUD frame. */
 function Frame({ color }: { color: string }) {
   const c: CSSProperties = { position: "absolute", width: 10, height: 10, borderColor: color, borderStyle: "solid" };
@@ -184,12 +199,13 @@ export function JarvisScanOverlay({
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
   // Carousel strip above the reticle.
-  const stripW = len * 44 + 16, stripH = 58;
+  const tile = 54;
+  const stripW = len * (tile + 4) + 16, stripH = tile + 16;
   const stripX = clamp(cx - stripW / 2, 8, size.x - stripW - 8);
   const stripY = clamp(cy - r - 18 - stripH, 8, size.y - stripH - 8);
 
   // Identity card: left of the reticle when there is room, else right.
-  const cardW = 300, cardH = 176;
+  const cardW = 316, cardH = 196;
   const roomLeft = cx - r - 24 - cardW >= 8;
   const cardX = roomLeft ? cx - r - 24 - cardW : clamp(cx + r + 24, 8, size.x - cardW - 8);
   const cardY = clamp(cy - cardH / 2, stripY + stripH + 8, size.y - cardH - 8);
@@ -281,7 +297,7 @@ export function JarvisScanOverlay({
       </svg>
 
       {/* Carousel strip */}
-      <div style={{ ...cardBase, left: stripX, top: stripY, width: stripW, height: stripH, padding: "6px 8px" }}>
+      <div style={{ ...cardBase, left: stripX, top: stripY, width: stripW, height: stripH, padding: 8 }}>
         <Frame color={GREEN} />
         <div className="flex items-center gap-1">
           {DEMO_WEED_CAROUSEL.map((w, i) => {
@@ -290,13 +306,12 @@ export function JarvisScanOverlay({
             return (
               <div key={w.key} title={w.common}
                 style={{
-                  width: 40, height: 44, display: "grid", placeItems: "center", borderRadius: 2,
+                  width: tile, height: tile, display: "grid", placeItems: "center", borderRadius: 2,
                   border: `1px solid ${active ? GREEN : "#2a2a2a"}`,
-                  background: settled ? `${GREEN}22` : active ? `${GREEN}11` : "transparent",
-                  boxShadow: settled ? `0 0 14px ${GREEN}66` : "none",
-                  transition: "background 80ms, border-color 80ms",
+                  padding: 1,
+                  transition: "border-color 80ms",
                 }}>
-                <Glyph w={w} size={26} color={active ? GREEN : "#8a8a8a"} dim={!active} />
+                <Photo w={w} size={tile - 4} active={active} settled={settled} />
               </div>
             );
           })}
@@ -326,11 +341,14 @@ export function JarvisScanOverlay({
         <div style={{ ...cardBase, left: cardX, top: cardY, width: cardW, minHeight: cardH, padding: 12 }}>
           <Frame color={GREEN} />
           <div className="flex items-start gap-3">
-            <Glyph w={target} size={44} color={GREEN} />
+            <div style={{ border: `1px solid ${GREEN}`, padding: 2, borderRadius: 2, flexShrink: 0 }}>
+              <Photo w={target} size={64} active settled />
+            </div>
             <div className="min-w-0">
               <div style={{ fontSize: 9, letterSpacing: "0.18em", color: GREEN }}>MATCH</div>
               <div style={{ fontSize: 15, fontWeight: 700, color: "#f4fff4", lineHeight: 1.15 }}>{target.common}</div>
               <div style={{ fontSize: 10, fontStyle: "italic", color: "#9fc99f" }}>{target.latin}</div>
+              <div style={{ fontSize: 8.5, color: "#6f8f6f", marginTop: 3 }}>Photo: {target.credit}</div>
             </div>
           </div>
           <div style={{ fontSize: 9.5, color: "#a9cfa9", marginTop: 8, borderTop: `1px solid ${GREEN}33`, paddingTop: 6 }}>

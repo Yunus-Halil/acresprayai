@@ -1,7 +1,7 @@
 // DEMO_JARVIS — temporary conference-demo dressing for the Treatment Grid.
 //
-// TO REMOVE: delete this folder (src/demo) and every line in
-// components/app/workspace/TreatmentTab.tsx tagged `DEMO_JARVIS`. Nothing else
+// TO REMOVE: delete this folder (src/demo), public/demo-weeds, and every line
+// in components/app/workspace/TreatmentTab.tsx tagged `DEMO_JARVIS`. Nothing else
 // depends on it. Flip the flag below to false to switch it off without
 // deleting anything.
 //
@@ -20,8 +20,14 @@ export type DemoWeed = {
   key: string;
   common: string;
   latin: string;
-  /** Stroke-only SVG path in a 32×32 box. */
+  /** Stroke-only SVG path in a 32×32 box; the fallback if the photo fails to load. */
   glyph: string;
+  /** Real photograph, served from public/demo-weeds. Licences in CREDITS.md there. */
+  image: string;
+  /** Shown on screen next to the photo: author and licence. */
+  credit: string;
+  /** Wikimedia Commons file page. */
+  source: string;
 };
 
 /**
@@ -32,34 +38,58 @@ export const DEMO_WEED_CAROUSEL: DemoWeed[] = [
   {
     key: "ragweed", common: "Common ragweed", latin: "Ambrosia artemisiifolia",
     glyph: "M16 30V12M16 24c-5 0-8-3-9-8M16 24c5 0 8-3 9-8M16 18c-4 0-6-2-7-6M16 18c4 0 6-2 7-6M16 12c-2-1-3-3-3-6M16 12c2-1 3-3 3-6",
+    image: "/demo-weeds/ragweed.jpg",
+    credit: "SB Johnny, CC BY-SA 3.0",
+    source: "https://commons.wikimedia.org/wiki/File:Ambrosia_artemisiifolia_young_plant_001.JPG",
   },
   {
     key: "horseweed", common: "Horseweed (marestail)", latin: "Erigeron canadensis",
     glyph: "M16 30V4M16 26h-6M16 26h6M16 22h-5M16 22h5M16 18h-4M16 18h4M16 14h-3M16 14h3M16 10h-2M16 10h2",
+    image: "/demo-weeds/horseweed.jpg",
+    credit: "Fritzflohrreynolds, CC BY-SA 3.0",
+    source: "https://commons.wikimedia.org/wiki/File:Conyza_canadensis_-_Canadian_horseweed.jpg",
   },
   {
     key: "palmer", common: "Palmer amaranth", latin: "Amaranthus palmeri",
     glyph: "M16 30V6M16 22c-4-1-6-4-7-8M16 22c4-1 6-4 7-8M16 14c-3-1-4-3-5-6M16 14c3-1 4-3 5-6M16 6l-1.5-3M16 6l1.5-3M16 4v-2",
+    image: "/demo-weeds/palmer.jpg",
+    credit: "Pompilid, CC BY-SA 3.0",
+    source: "https://commons.wikimedia.org/wiki/File:Amaranthus_palmeri.jpg",
   },
   {
     key: "johnsongrass", common: "Johnsongrass", latin: "Sorghum halepense",
     glyph: "M16 30c0-8 2-14 8-20M16 30c0-8-2-14-8-20M16 30V8M16 12c3-2 6-2 9 0",
+    image: "/demo-weeds/johnsongrass.jpg",
+    credit: "Jim Conrad, public domain",
+    source: "https://commons.wikimedia.org/wiki/File:Sorghum_halepense-thicket.jpg",
   },
   {
     key: "lambsquarters", common: "Common lambsquarters", latin: "Chenopodium album",
     glyph: "M16 30V18M16 18l-7-5 7-9 7 9z",
+    image: "/demo-weeds/lambsquarters.jpg",
+    credit: "Rasbak, CC BY-SA 3.0",
+    source: "https://commons.wikimedia.org/wiki/File:Melganzenvoet_bloeiwijze_Chenopodium_album.jpg",
   },
   {
     key: "morningglory", common: "Morningglory", latin: "Ipomoea spp.",
     glyph: "M16 30c0-6-4-8-6-12M10 18c0-4 3-6 6-3 3-3 6-1 6 3 0 5-6 8-6 8s-6-3-6-8",
+    image: "/demo-weeds/morningglory.jpg",
+    credit: "SB Johnny, CC BY-SA 3.0",
+    source: "https://commons.wikimedia.org/wiki/File:Ipomoea_hederacea_001.JPG",
   },
   {
     key: "foxtail", common: "Giant foxtail", latin: "Setaria faberi",
     glyph: "M14 30c0-10 2-16 6-20M20 10c2 1 3 3 3 5M20 10c-2 1-3 3-3 5M19 13c2 1 3 3 3 5M19 13c-2 1-3 3-3 5",
+    image: "/demo-weeds/foxtail.jpg",
+    credit: "Kropsoq, CC BY-SA 3.0",
+    source: "https://commons.wikimedia.org/wiki/File:Setaria_faberi_001.jpg",
   },
   {
     key: "crabgrass", common: "Large crabgrass", latin: "Digitaria sanguinalis",
     glyph: "M16 30c-6-2-10-6-12-10M16 30c6-2 10-6 12-10M16 30c-2-6-2-12 0-18M16 30c4-4 8-6 12-6M16 30c-4-4-8-6-12-6",
+    image: "/demo-weeds/crabgrass.jpg",
+    credit: "Rasbak, CC BY-SA 3.0",
+    source: "https://commons.wikimedia.org/wiki/File:Harig_vingergras_plant_(Digitaria_sanguinalis).jpg",
   },
 ];
 
@@ -92,3 +122,11 @@ export const DEMO_TARGET_TEXT = {
   ],
   caveat: "Check the label for your crop and rate before spraying.",
 } as const;
+
+/** Fetch the carousel photos into the browser cache ahead of the first run. */
+export function preloadDemoWeedPhotos(): void {
+  for (const w of DEMO_WEED_CAROUSEL) {
+    const img = new Image();
+    img.src = w.image;
+  }
+}

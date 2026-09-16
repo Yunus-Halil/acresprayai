@@ -54,7 +54,7 @@ import {
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 // DEMO_JARVIS — temporary conference overlay; see src/demo/jarvisDemo.ts to remove.
-import { DEMO_JARVIS_SCAN } from "@/demo/jarvisDemo";
+import { DEMO_JARVIS_SCAN, preloadDemoWeedPhotos } from "@/demo/jarvisDemo";
 import { JarvisScanOverlay, MapHandle } from "@/demo/JarvisScanOverlay";
 
 const repo = new SupabaseTreatmentGridRepository();
@@ -124,6 +124,8 @@ export function TreatmentTab({
   const [demoMap, setDemoMap] = useState<L.Map | null>(null);
   const jarvisReveal = useCallback(() => setJarvisHold(false), []);
   const jarvisClose = useCallback(() => { setJarvis(false); setJarvisHold(false); }, []);
+  // Warm the carousel photos so the first spin is not a row of empty tiles.
+  useEffect(() => { if (DEMO_JARVIS_SCAN) preloadDemoWeedPhotos(); }, []);
   // A boundary edit that would cost real decisions parks here until the
   // operator chooses. While pending, every write path is locked — the one
   // thing this state must guarantee is that nothing overwrites the stored
