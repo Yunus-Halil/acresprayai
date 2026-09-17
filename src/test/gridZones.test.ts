@@ -161,6 +161,38 @@ describe("the hole case", () => {
     const holed = solid.filter(p => !(p.col === 1 && p.row === 1));
     expect(traceOutline(holed).length).toBeGreaterThan(1);
   });
+
+  it("a tall strip with one interior gap merges into a few blocks, not one per row", () => {
+    // A 3-wide, 10-tall painted strip — a long run along a crop row — with a
+    // single skipped cell in the MIDDLE column partway down, so it is a true
+    // interior hole (a 2-wide strip cannot have one: every cell in it already
+    // touches an edge). The old fallback chopped the ENTIRE strip into ten
+    // single-row slivers just because it contained a hole; the fix should
+    // cost only the rows the gap actually touches.
+    const strip = block(anchor.col, anchor.row, 3, 10)
+      .filter(p => !(p.col === anchor.col + 1 && p.row === anchor.row + 4));
+    const g = withTreated(strip);
+    const zones = gridZonesFor(g);
+    // Every cell is accounted for, none double-counted.
+    expect(zones.reduce((s, z) => s + z.cellCount, 0)).toBe(29);
+    // Rows above the gap merge into one block, rows below into another, and
+    // the gap's own row splits into at most two single-cell blocks either
+    // side of it — four blocks total, nowhere near the ten (or eleven,
+    // counting the split gap row) a per-row fallback would produce.
+    expect(zones.length).toBeLessThanOrEqual(4);
+    // No zone's bounding box may contain the skipped cell's centre.
+    const hole = GRID.cells.find(c => {
+      const p = parseCellId(c.id)!;
+      return p.col === anchor.col + 1 && p.row === anchor.row + 4;
+    })!;
+    for (const z of zones) {
+      const lats = z.ring.map(v => v.lat), lngs = z.ring.map(v => v.lng);
+      const inside =
+        hole.centroid.lat > Math.min(...lats) && hole.centroid.lat < Math.max(...lats) &&
+        hole.centroid.lng > Math.min(...lngs) && hole.centroid.lng < Math.max(...lngs);
+      expect(inside).toBe(false);
+    }
+  });
 });
 
 describe("one calculation path for chemical volume", () => {

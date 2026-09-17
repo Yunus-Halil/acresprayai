@@ -31,6 +31,10 @@ type Task = {
 const ACTIVE_STATUSES = ["uploading", "queued", "processing", "mirroring"];
 type Field = {
   id: string; name: string; crop: string; area_hectares: number;
+  // The true, drawn boundary area. `area_hectares` is a legacy column that
+  // stays 0 for fields created before boundary drawing existed — the same
+  // fallback every other screen (Dashboard, Fields list) already applies.
+  boundary_area_hectares: number | null;
   location: string | null; notes: string | null; created_at: string;
 };
 
@@ -331,7 +335,7 @@ export default function FieldDetail() {
               />
             </div>
             <div className="text-sm text-muted-foreground mt-1">
-              {field.crop} · {fmtAreaHa(Number(field.area_hectares) || 0, units).text}{field.location ? ` · ${field.location}` : ""}
+              {field.crop} · {fmtAreaHa(Number(field.boundary_area_hectares ?? field.area_hectares) || 0, units).text}{field.location ? ` · ${field.location}` : ""}
             </div>
             {field.notes && <div className="text-sm mt-2 max-w-2xl">{field.notes}</div>}
           </div>

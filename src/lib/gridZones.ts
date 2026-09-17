@@ -145,43 +145,97 @@ function zonesFromGroup(
 
   // More than one loop means the group encloses untreated ground — a hole.
   // A planner zone is a single ring, and swallowing the hole would spray a
-  // cell somebody deliberately left alone. Decompose into horizontal strips
-  // instead: more zones, zero chemical on undecided ground. Rare in practice.
+  // cell somebody deliberately left alone. Decompose into rectangular blocks
+  // instead: zero chemical on undecided ground, same as a strip-per-row
+  // would give, but a run of rows with the identical column span merges into
+  // one tall block rather than staying a stack of single-row slivers — a
+  // long painted strip with one skipped cell in it should cost a couple of
+  // blocks around the gap, not a separate outline for every grid row.
+  return rectBlocksFromGroup(grid, group, rateLha, issue, note);
+}
+
+/** A maximal same-column-span run of consecutive rows, still being extended. */
+type RowBlock = { row0: number; row1: number; c0: number; c1: number; cells: Cell[] };
+
+/**
+ * Rectangle decomposition of a cell group that has a hole in it.
+ *
+ * Each row's cells are split into column-contiguous runs, same as before; the
+ * new step is a single pass down the rows that keeps a run open across rows
+ * whose span matches exactly, so a hole only costs blocks along its own
+ * edges rather than flattening the whole group into one-row-tall strips.
+ * Column span is compared exactly, so this still never spans a hole — it
+ * changes how many blocks a hole-free stretch collapses into, not what a
+ * block may contain.
+ */
+function rectBlocksFromGroup(
+  grid: TreatmentGrid, group: Cell[], rateLha: number, issue?: string, note?: string,
+): GridZone[] {
   const byRow = new Map<number, Cell[]>();
   for (const c of group) {
     const list = byRow.get(c.row);
     if (list) list.push(c); else byRow.set(c.row, [c]);
   }
-  const strips: GridZone[] = [];
-  for (const [row, cells] of [...byRow.entries()].sort((a, b) => a[0] - b[0])) {
-    cells.sort((a, b) => a.col - b.col);
-    let runStart = 0;
-    for (let i = 1; i <= cells.length; i++) {
-      if (i < cells.length && cells[i].col === cells[i - 1].col + 1) continue;
-      const run = cells.slice(runStart, i);
-      const c0 = run[0].col, c1 = run[run.length - 1].col;
-      const stripScored = run.filter(c => c.score !== null);
-      strips.push({
-        id: `grid:${grid.id}:${c0}:${row}`,
+  const runsOf = (cells: Cell[]): { c0: number; c1: number; cells: Cell[] }[] => {
+    const sorted = [...cells].sort((a, b) => a.col - b.col);
+    const runs: { c0: number; c1: number; cells: Cell[] }[] = [];
+    let start = 0;
+    for (let i = 1; i <= sorted.length; i++) {
+      if (i < sorted.length && sorted[i].col === sorted[i - 1].col + 1) continue;
+      const run = sorted.slice(start, i);
+      runs.push({ c0: run[0].col, c1: run[run.length - 1].col, cells: run });
+      start = i;
+    }
+    return runs;
+  };
+
+  const rows = [...byRow.keys()].sort((a, b) => a - b);
+  let open = new Map<string, RowBlock>();
+  const closed: RowBlock[] = [];
+  let prevRow: number | null = null;
+  for (const row of rows) {
+    const contiguous = prevRow !== null && row === prevRow + 1;
+    const next = new Map<string, RowBlock>();
+    for (const run of runsOf(byRow.get(row)!)) {
+      const k = `${run.c0},${run.c1}`;
+      const extending = contiguous ? open.get(k) : undefined;
+      if (extending) {
+        extending.row1 = row;
+        extending.cells.push(...run.cells);
+        next.set(k, extending);
+      } else {
+        next.set(k, { row0: row, row1: row, c0: run.c0, c1: run.c1, cells: [...run.cells] });
+      }
+    }
+    // Anything that was open but did not extend into this row is done growing.
+    for (const [k, b] of open) if (next.get(k) !== b) closed.push(b);
+    open = next;
+    prevRow = row;
+  }
+  for (const b of open.values()) closed.push(b);
+
+  return closed
+    .sort((a, b) => a.row0 - b.row0 || a.c0 - b.c0)
+    .map(b => {
+      const scored = b.cells.filter(c => c.score !== null);
+      return {
+        id: `grid:${grid.id}:${b.c0}:${b.row0}`,
         ring: [
-          latticeToWorld(grid, c0, row), latticeToWorld(grid, c1 + 1, row),
-          latticeToWorld(grid, c1 + 1, row + 1), latticeToWorld(grid, c0, row + 1),
+          latticeToWorld(grid, b.c0, b.row0), latticeToWorld(grid, b.c1 + 1, b.row0),
+          latticeToWorld(grid, b.c1 + 1, b.row1 + 1), latticeToWorld(grid, b.c0, b.row1 + 1),
         ],
         rateLha,
-        areaM2: run.reduce((s, c) => s + c.areaM2, 0),
-        cellCount: run.length,
-        cellIds: run.map(c => c.id).sort(),
+        areaM2: b.cells.reduce((s, c) => s + c.areaM2, 0),
+        cellCount: b.cells.length,
+        cellIds: b.cells.map(c => c.id).sort(),
         source: "grid",
         issue,
         note,
-        matchScore: stripScored.length
-          ? stripScored.reduce((s, c) => s + (c.score as number), 0) / stripScored.length
+        matchScore: scored.length
+          ? scored.reduce((s, c) => s + (c.score as number), 0) / scored.length
           : null,
-      });
-      runStart = i;
-    }
-  }
-  return strips;
+      };
+    });
 }
 
 /** Lattice corner (col,row) → WGS84, replaying the grid builder's frame. */
