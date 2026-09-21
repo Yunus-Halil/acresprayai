@@ -4,7 +4,9 @@
 //
 //   angle  projection-profile variance search across 0..180 degrees, coarse
 //          then fine. Rows aligned with the projection stack into sharp peaks;
-//          everything else smears flat.
+//          everything else smears flat. With a hint from a previous fit the
+//          search is confined to a few degrees either side, which is what makes
+//          a full-depth sweep of hundreds of windows affordable.
 //   pitch  autocorrelation of the perpendicular profile, searched inside a
 //          band around the grower's spacing. The band is not the answer; the
 //          fit happens inside it, and disagreeing with the grower by more than
@@ -17,6 +19,17 @@
 //          bugs in the research track put every centreline at a random offset
 //          while angle and pitch stayed exact; this is the arrangement that
 //          survived them.
+//
+// The projection is SPARSE: only vegetated samples are projected, at a cost
+// proportional to the vegetation rather than to the window. The per-bin
+// normalisation is the EXACT count of disc pixels whose centre lands in each
+// bin, computed once per image size and angle and cached. An analytic chord
+// length was tried and is wrong in a way that matters: at exactly 45 and 135
+// degrees the pixel centres project onto a lattice of half the bin width, so
+// bins alternate between one and two lattice lines, and dividing by a smooth
+// chord leaves an alternating pattern whose variance is fourteen times the
+// typical angle's. Every noise window "found rows" at 45 degrees. Exact
+// counts carry the same alternation and cancel it.
 //
 // Confidence is split into an angle part and a pitch part because they fail
 // separately: one row gives a perfect direction and no spacing at all. A
@@ -40,6 +53,8 @@ export const MIN_TILE_CONFIDENCE = 0.35;
 export const DEFAULT_ROW_WINDOW_M = 12;
 /** Windows outside this vegetation-fraction band cannot carry rows: bare, or closed canopy. */
 export const VEGETATION_FRACTION_RANGE: [number, number] = [0.01, 0.85];
+/** Half-width of the angle search when a hint is supplied, degrees. */
+export const HINT_SEARCH_DEG = 4;
 
 const clip01 = (v: number) => Math.max(0, Math.min(1, v));
 const median = (xs: number[]): number => {
@@ -50,6 +65,28 @@ const median = (xs: number[]): number => {
 
 /** A mask window as a float image (values 0..1), possibly mean-pooled. */
 export type FloatImage = { data: Float32Array; width: number; height: number };
+
+/** The vegetated samples of a FloatImage, which is all the projection needs. */
+export type SparseImage = {
+  width: number; height: number;
+  xs: Float32Array; ys: Float32Array; vals: Float32Array;
+  total: number;
+};
+
+export function toSparse(img: FloatImage): SparseImage {
+  let n = 0;
+  for (let i = 0; i < img.data.length; i++) if (img.data[i] > 0) n++;
+  const xs = new Float32Array(n), ys = new Float32Array(n), vals = new Float32Array(n);
+  let k = 0, total = 0;
+  for (let y = 0; y < img.height; y++) {
+    for (let x = 0; x < img.width; x++) {
+      const v = img.data[y * img.width + x];
+      if (v <= 0) continue;
+      xs[k] = x + 0.5; ys[k] = y + 0.5; vals[k] = v; k++; total += v;
+    }
+  }
+  return { width: img.width, height: img.height, xs, ys, vals, total };
+}
 
 export function downsampleFactor(gsdM: number, nominalSpacingM: number): number {
   if (!(gsdM > 0) || !(nominalSpacingM > 0)) return 1;
@@ -78,41 +115,67 @@ export function poolWindow(
 }
 
 /**
- * Variance of the projection profile at one array-frame angle, chord-corrected.
+ * Projection profile at one array-frame angle, chord-corrected.
  *
  * `angleDeg` is the direction the ROWS run, counterclockwise from +x in array
- * coordinates (y down). Pixels are projected onto the perpendicular, binned at
- * one sample per bin, and each bin is normalised by how many pixels of the
- * inscribed disc fell in it, so the disc's own dome shape does not swamp the
- * row signal.
+ * coordinates (y down). Vegetated samples inside the inscribed disc are
+ * projected onto the perpendicular and binned at one sample per bin; each bin
+ * is divided by the disc's chord length there, so the disc's own dome shape
+ * does not swamp the row signal. Bins with a short chord are NaN.
  */
-export function projectionProfile(img: FloatImage, angleDeg: number): { profile: Float64Array; counts: Float64Array } {
-  const side = Math.min(img.width, img.height);
-  const cx = img.width / 2, cy = img.height / 2, R = side / 2;
+const countCache = new Map<string, { counts: Float64Array; max: number }>();
+const COUNT_CACHE_LIMIT = 6000;
+
+/** Disc pixels per projection bin for an image size and angle. Exact, cached. */
+export function binCounts(width: number, height: number, angleDeg: number): { counts: Float64Array; max: number } {
+  const key = `${width}x${height}|${Math.round(angleDeg * 100)}`;
+  const hit = countCache.get(key);
+  if (hit) return hit;
+  const side = Math.min(width, height);
+  const cx = width / 2, cy = height / 2, R = side / 2, R2 = R * R;
   const th = (angleDeg * Math.PI) / 180;
-  const nx = -Math.sin(th), ny = Math.cos(th);            // unit normal to the rows
+  const nx = -Math.sin(th), ny = Math.cos(th);
   const nBins = Math.ceil(side) + 2;
-  const sums = new Float64Array(nBins), counts = new Float64Array(nBins);
-  for (let y = 0; y < img.height; y++) {
+  const counts = new Float64Array(nBins);
+  for (let y = 0; y < height; y++) {
     const dy = y + 0.5 - cy;
-    for (let x = 0; x < img.width; x++) {
+    for (let x = 0; x < width; x++) {
       const dx = x + 0.5 - cx;
-      if (dx * dx + dy * dy > R * R) continue;
-      const s = dx * nx + dy * ny + R;
-      const b = Math.floor(s);
-      if (b < 0 || b >= nBins) continue;
-      sums[b] += img.data[y * img.width + x];
-      counts[b] += 1;
+      if (dx * dx + dy * dy > R2) continue;
+      const b = Math.floor(dx * nx + dy * ny + R);
+      if (b >= 0 && b < nBins) counts[b]++;
     }
   }
-  // Keep only bins whose chord is long enough to average over.
-  let maxCount = 0;
-  for (let i = 0; i < nBins; i++) if (counts[i] > maxCount) maxCount = counts[i];
-  const profile = new Float64Array(nBins);
-  for (let i = 0; i < nBins; i++) {
-    profile[i] = counts[i] > 0.5 * maxCount ? sums[i] / counts[i] : NaN;
+  let max = 0;
+  for (let i = 0; i < nBins; i++) if (counts[i] > max) max = counts[i];
+  if (countCache.size >= COUNT_CACHE_LIMIT) countCache.clear();
+  const entry = { counts, max };
+  countCache.set(key, entry);
+  return entry;
+}
+
+export function projectionProfile(img: SparseImage | FloatImage, angleDeg: number): { profile: Float64Array } {
+  const sp: SparseImage = "xs" in img ? img : toSparse(img);
+  const side = Math.min(sp.width, sp.height);
+  const cx = sp.width / 2, cy = sp.height / 2, R = side / 2;
+  const th = (angleDeg * Math.PI) / 180;
+  const nx = -Math.sin(th), ny = Math.cos(th);
+  const nBins = Math.ceil(side) + 2;
+  const sums = new Float64Array(nBins);
+  const R2 = R * R;
+  for (let i = 0; i < sp.xs.length; i++) {
+    const dx = sp.xs[i] - cx, dy = sp.ys[i] - cy;
+    if (dx * dx + dy * dy > R2) continue;
+    const b = Math.floor(dx * nx + dy * ny + R);
+    if (b < 0 || b >= nBins) continue;
+    sums[b] += sp.vals[i];
   }
-  return { profile, counts };
+  const { counts, max } = binCounts(sp.width, sp.height, angleDeg);
+  const profile = new Float64Array(nBins);
+  for (let b = 0; b < nBins; b++) {
+    profile[b] = counts[b] > 0.5 * max ? sums[b] / counts[b] : NaN;
+  }
+  return { profile };
 }
 
 const finiteVariance = (p: Float64Array): number => {
@@ -127,36 +190,55 @@ const finiteVariance = (p: Float64Array): number => {
   return Math.max(0, s2 / n - m * m);
 };
 
+const norm180 = (a: number) => ((a % 180) + 180) % 180;
+
 /**
  * Dominant row angle in ARRAY coordinates, and a confidence from the margin
  * between the best angle's profile variance and the typical variance.
+ *
+ * With `hintPxDeg` the coarse search covers only HINT_SEARCH_DEG either side;
+ * the confidence is then measured against a full-circle sample at 10 degree
+ * steps so a confined search cannot manufacture a margin.
  */
 export function rowAngle(
-  img: FloatImage, coarseStep = 1, fineStep = 0.1,
+  img: FloatImage | SparseImage,
+  opts: { coarseStep?: number; fineStep?: number; hintPxDeg?: number | null } = {},
 ): { anglePxDeg: number; confidence: number } {
-  let any = false;
-  for (let i = 0; i < img.data.length; i++) if (img.data[i] > 0) { any = true; break; }
-  if (!any) return { anglePxDeg: 0, confidence: 0 };
+  const sp = "xs" in img ? img : toSparse(img);
+  if (sp.xs.length === 0) return { anglePxDeg: 0, confidence: 0 };
+  const coarseStep = opts.coarseStep ?? 1, fineStep = opts.fineStep ?? 0.1;
+  const hint = opts.hintPxDeg ?? null;
 
-  const coarse: number[] = [];
+  const background: number[] = [];
   let best = 0, bestVar = -1;
-  for (let a = 0; a < 180; a += coarseStep) {
-    const v = finiteVariance(projectionProfile(img, a).profile);
-    coarse.push(v);
-    if (v > bestVar) { bestVar = v; best = a; }
+  if (hint === null) {
+    for (let a = 0; a < 180; a += coarseStep) {
+      const v = finiteVariance(projectionProfile(sp, a).profile);
+      background.push(v);
+      if (v > bestVar) { bestVar = v; best = a; }
+    }
+  } else {
+    for (let a = 0; a < 180; a += 10) background.push(finiteVariance(projectionProfile(sp, a).profile));
+    for (let a = hint - HINT_SEARCH_DEG; a <= hint + HINT_SEARCH_DEG + 1e-9; a += 0.5) {
+      const v = finiteVariance(projectionProfile(sp, norm180(a)).profile);
+      if (v > bestVar) { bestVar = v; best = a; }
+    }
   }
   let bestFine = best, bestFineVar = -1;
-  for (let a = best - coarseStep; a <= best + coarseStep + 1e-9; a += fineStep) {
-    const v = finiteVariance(projectionProfile(img, ((a % 180) + 180) % 180).profile);
+  const span = hint === null ? coarseStep : 0.5;
+  for (let a = best - span; a <= best + span + 1e-9; a += fineStep) {
+    const v = finiteVariance(projectionProfile(sp, norm180(a)).profile);
     if (v > bestFineVar) { bestFineVar = v; bestFine = a; }
   }
-  const typical = median(coarse);
-  const confidence = bestVar <= 0 ? 0 : clip01((bestVar - typical) / (bestVar + typical));
-  return { anglePxDeg: ((bestFine % 180) + 180) % 180, confidence };
+  const typical = median(background);
+  const peak = Math.max(bestVar, bestFineVar);
+  const confidence = peak <= 0 ? 0 : clip01((peak - typical) / (peak + typical));
+  return { anglePxDeg: norm180(bestFine), confidence };
 }
 
 /** Array-frame angle to ground-frame. A north-up raster's y grows downward, so the angle mirrors. */
-export const pixelAngleToGround = (anglePxDeg: number): number => ((-anglePxDeg % 180) + 180) % 180;
+export const pixelAngleToGround = (anglePxDeg: number): number => norm180(-anglePxDeg);
+export const groundAngleToPixel = (angleGroundDeg: number): number => norm180(-angleGroundDeg);
 
 /**
  * Row spacing from the perpendicular profile, by autocorrelation inside the
@@ -188,7 +270,6 @@ export function rowPitch(
   }
   let bi = 0;
   for (let i = 1; i < r.length; i++) if (r[i] > r[bi]) bi = i;
-  // Sub-sample peak by a parabola through the peak and its neighbours.
   let lag = low + bi;
   if (bi > 0 && bi < r.length - 1) {
     const a = r[bi - 1], b = r[bi], d = r[bi + 1];
@@ -216,7 +297,7 @@ export function checkPitch(recoveredM: number, growerM: number): boolean {
  * modulo a 76 cm pitch is uniform noise.
  */
 export function phaseFromImage(
-  img: FloatImage,
+  sp: SparseImage,
   toGround: (px: number, py: number) => { x: number; y: number },
   cx: number, cy: number,
   angleGroundDeg: number, pitchM: number,
@@ -225,16 +306,12 @@ export function phaseFromImage(
   const th = (angleGroundDeg * Math.PI) / 180;
   const nx = -Math.sin(th), ny = Math.cos(th);
   let re = 0, im = 0;
-  for (let y = 0; y < img.height; y++) {
-    for (let x = 0; x < img.width; x++) {
-      const v = img.data[y * img.width + x];
-      if (v <= 0) continue;
-      const g = toGround(x + 0.5, y + 0.5);
-      const across = (g.x - cx) * nx + (g.y - cy) * ny;
-      const ang = (2 * Math.PI * across) / pitchM;
-      re += v * Math.cos(ang);
-      im += v * Math.sin(ang);
-    }
+  for (let i = 0; i < sp.xs.length; i++) {
+    const g = toGround(sp.xs[i], sp.ys[i]);
+    const across = (g.x - cx) * nx + (g.y - cy) * ny;
+    const ang = (2 * Math.PI * across) / pitchM;
+    re += sp.vals[i] * Math.cos(ang);
+    im += sp.vals[i] * Math.sin(ang);
   }
   if (re === 0 && im === 0) return 0;
   const ph = (Math.atan2(im, re) / (2 * Math.PI)) * pitchM;
@@ -265,9 +342,11 @@ export type FitWindowInput = {
   /** Pixel window, inclusive. */
   x0: number; y0: number; x1: number; y1: number;
   gsdM: number;
-  /** Local metres of the window's pixel (0,0) corner, and the sign of y per pixel row. */
+  /** Local metres of the window's pixel (0,0) corner; y decreases per pixel row. */
   originX: number; originY: number;
   growerSpacingM: number;
+  /** Ground angle of a previous fit, to confine the search. */
+  angleHintDeg?: number | null;
 };
 
 /** Fit one window: angle, pitch, phase, and how much to believe each. */
@@ -296,8 +375,10 @@ export function fitWindow(input: FitWindowInput): RowTileFit {
   if (img.width < 8 || img.height < 8) return empty;
   if (vegetationFraction < VEGETATION_FRACTION_RANGE[0] || vegetationFraction > VEGETATION_FRACTION_RANGE[1]) return empty;
 
-  const { anglePxDeg, confidence: angleConfidence } = rowAngle(img);
-  const { profile } = projectionProfile(img, anglePxDeg);
+  const sp = toSparse(img);
+  const hintPx = input.angleHintDeg == null ? null : groundAngleToPixel(input.angleHintDeg);
+  const { anglePxDeg, confidence: angleConfidence } = rowAngle(sp, { hintPxDeg: hintPx });
+  const { profile } = projectionProfile(sp, anglePxDeg);
   const { pitchM: recovered, confidence: rawPitchConf } = rowPitch(profile, sampleM, growerSpacingM);
   let pitchM = recovered, pitchConfidence = rawPitchConf, pitchFromGrower = false;
   if (!checkPitch(recovered, growerSpacingM)) {
@@ -306,7 +387,7 @@ export function fitWindow(input: FitWindowInput): RowTileFit {
     pitchFromGrower = true;
   }
   const angleDeg = pixelAngleToGround(anglePxDeg);
-  const phaseM = phaseFromImage(img, toGround, centre.x, centre.y, angleDeg, pitchM);
+  const phaseM = phaseFromImage(sp, toGround, centre.x, centre.y, angleDeg, pitchM);
   return {
     centre, sizeM, angleDeg, pitchM, phaseM,
     confidence: Math.min(angleConfidence, pitchConfidence),
@@ -373,4 +454,28 @@ export function distanceToRowM(model: RowModel, p: LatLng2): number | null {
   }
   if (!best || bestD > 2 * best.sizeM) return null;
   return signedDistanceToRow(best, x, y);
+}
+
+/**
+ * Fit a whole raster as one window, in a frame anchored at ITS north-west
+ * corner, and return a distance function in that same frame. For the sweep,
+ * where each window is its own raster.
+ */
+export function fitRaster(
+  mask: Uint8Array,
+  raster: Pick<RasterSource, "width" | "height" | "bounds">,
+  growerSpacingM: number,
+  angleHintDeg: number | null,
+): { fit: RowTileFit; distanceTo: (p: LatLng2) => number } {
+  const gsdM = rasterGsdM(raster);
+  const origin: LatLng2 = { lat: raster.bounds.north, lng: raster.bounds.west };
+  const frame = localFrame(origin);
+  const fit = fitWindow({
+    mask, width: raster.width, x0: 0, y0: 0, x1: raster.width - 1, y1: raster.height - 1,
+    gsdM, originX: 0, originY: 0, growerSpacingM, angleHintDeg,
+  });
+  return {
+    fit,
+    distanceTo: (p: LatLng2) => { const { x, y } = frame.toXY(p); return signedDistanceToRow(fit, x, y); },
+  };
 }

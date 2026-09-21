@@ -1,4 +1,5 @@
-// Connected components of the vegetation mask, described in ground units.
+// Connected components of the vegetation mask, described in ground units,
+// and the population statistics that say which plant is unlike the others.
 //
 // Ported from offrow/src/offrow/blobs.py. The area floor is 1 cm squared, not
 // the 4 the original spec named: a 3 cm rosette covers about 5 cm squared of
@@ -10,7 +11,15 @@
 // by an edge has a displaced centroid and a truncated area, so the ranking
 // treats it as untrustworthy, but the operator can still see that something
 // was there.
+//
+// THE PLANT POPULATION. In an early-season row crop most blobs ARE the crop,
+// at one size and one colour. The shorth of the blob population is therefore
+// "what the crop looks like from above today", and a plant far from it in
+// size or colour is worth a look whether or not a row model exists. That is
+// how a single large weed among small corn is found in a field where the
+// canopy has closed enough to defeat the row fit.
 import type { RasterSource } from "../cellFeatures";
+import { shorth } from "./baseline";
 import { pixelLatLng, rasterGsdM } from "./tiles";
 import type { Blob } from "./types";
 
@@ -144,4 +153,91 @@ export function extractBlobs(
     });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// The plant population
+// ---------------------------------------------------------------------------
+
+export const BLOB_FEATURE_NAMES = ["size", "greenness (ExG)", "green share", "shape (extent)"] as const;
+export type BlobFeatureName = (typeof BLOB_FEATURE_NAMES)[number];
+
+/** Plants needed before "unlike the others" means anything. */
+export const MIN_POPULATION = 30;
+
+/**
+ * Smallest spread each plant feature is allowed to have, in its own units.
+ *
+ * A population of near-identical plants, or one measured on a coarse pixel
+ * grid, can have a shorth of nearly nothing: every rasterised 5 px disc has
+ * one of three possible extents. Dividing by that would make a plant one
+ * pixel different from its neighbours an outlier by a hundred deviations.
+ * These floors are measurement precision, stated: 10% in size, 0.02 in ExG,
+ * 0.01 in green share, 0.05 in extent.
+ */
+export const BLOB_SCALE_FLOORS = [0.1, 0.02, 0.01, 0.05];
+
+export type BlobBaseline = {
+  centres: number[];
+  scales: number[];
+  population: number;
+  /** Typical plant diameter, metres: the crop, in an early-season row crop. */
+  typicalDiameterM: number;
+};
+
+const blobFeatures = (b: Blob): number[] => [
+  Math.log(Math.max(1e-6, b.equivDiameterM)),
+  b.exgMean,
+  b.chromaG,
+  b.extent,
+];
+
+/**
+ * Shorth over the plant population, on log size so a plant twice the typical
+ * size is as far above as a plant half the size is below.
+ *
+ * Blobs at the resolution floor (under three pixels across) are left out of
+ * the baseline: their shape and colour are mostly edge, and they would drag
+ * the typical plant toward the noise.
+ */
+export function blobBaseline(blobs: Blob[]): BlobBaseline | null {
+  const measurable = blobs.filter(b => !b.touchesBorder && b.equivDiameterM >= 3 * b.gsdM);
+  if (measurable.length < MIN_POPULATION) return null;
+  const rows = measurable.map(blobFeatures);
+  const centres: number[] = [], scales: number[] = [];
+  for (let f = 0; f < BLOB_FEATURE_NAMES.length; f++) {
+    const { centre, scale } = shorth(rows.map(r => r[f]));
+    centres.push(centre);
+    scales.push(Math.max(scale, BLOB_SCALE_FLOORS[f]));
+  }
+  return { centres, scales, population: measurable.length, typicalDiameterM: Math.exp(centres[0]) };
+}
+
+export type BlobScore = {
+  /** Signed deviation per feature. */
+  z: number[];
+  strength: number;
+  feature: BlobFeatureName;
+  direction: "above" | "below";
+};
+
+/**
+ * How unlike the population one plant is.
+ *
+ * Size stands on its own: a plant three times the typical diameter needs no
+ * second opinion. Colour and shape need support from a second feature, or an
+ * overwhelming margin, for the same reason tiles do.
+ */
+export function scoreBlob(b: Blob, base: BlobBaseline, blobZ: number): BlobScore {
+  const f = blobFeatures(b);
+  const z = f.map((v, i) => (base.scales[i] > 1e-9 ? (v - base.centres[i]) / base.scales[i] : 0));
+  // Under six pixels across a blob's outline is mostly edge; its shape says
+  // nothing about the plant and must not lead or support.
+  if (b.equivDiameterM / b.gsdM < 6) z[3] = 0;
+  const order = z.map((v, i) => i).sort((a, c) => Math.abs(z[c]) - Math.abs(z[a]));
+  const top = order[0], second = order[1];
+  const m1 = Math.abs(z[top]), m2 = Math.abs(z[second]);
+  const supported = top === 0 || m2 >= 0.5 * blobZ || m1 >= 1.5 * blobZ;
+  const strength = supported ? m1 : Math.min(m1, 2 * m2);
+  return { z, strength, feature: BLOB_FEATURE_NAMES[top], direction: z[top] > 0 ? "above" : "below" };
 }

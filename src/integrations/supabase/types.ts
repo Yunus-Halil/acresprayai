@@ -928,6 +928,15 @@ export type Database = {
       }
       weed_observations: {
         Row: {
+          area_m2: number | null
+          blob_z: number | null
+          blob_z_feature: string | null
+          class: string | null
+          estimate: Json | null
+          estimate_model: string | null
+          geometry: Json | null
+          tile_count: number | null
+          vector: Json | null
           anomaly_feature: string | null
           anomaly_z: number | null
           brain: Json | null
@@ -969,6 +978,15 @@ export type Database = {
           weather: Json | null
         }
         Insert: {
+          area_m2?: number | null
+          blob_z?: number | null
+          blob_z_feature?: string | null
+          class?: string | null
+          estimate?: Json | null
+          estimate_model?: string | null
+          geometry?: Json | null
+          tile_count?: number | null
+          vector?: Json | null
           anomaly_feature?: string | null
           anomaly_z?: number | null
           brain?: Json | null
@@ -1010,6 +1028,15 @@ export type Database = {
           weather?: Json | null
         }
         Update: {
+          area_m2?: number | null
+          blob_z?: number | null
+          blob_z_feature?: string | null
+          class?: string | null
+          estimate?: Json | null
+          estimate_model?: string | null
+          geometry?: Json | null
+          tile_count?: number | null
+          vector?: Json | null
           anomaly_feature?: string | null
           anomaly_z?: number | null
           brain?: Json | null

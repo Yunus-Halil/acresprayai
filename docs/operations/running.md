@@ -42,7 +42,6 @@ Never in the repo. Set with `supabase secrets set`.
 
 | `OPENWEATHER_API_KEY` | Optional — falls back to Open-Meteo |
 | `RESEND_API_KEY` | Pilot application notification email. Without it applications still save, but nothing is sent |
-| `ANTHROPIC_API_KEY` | Weed Scout brain (`weed-brain` function, developer mode only). Without it the scout runs and the brain answers "unconfigured" |
 | `PILOT_NOTIFY_TO` | Optional — where notifications go. Defaults to `yunus@swathwise.com` |
 | `PILOT_NOTIFY_FROM` | Optional — sender. Defaults to Resend's shared `onboarding@resend.dev`, which only delivers to the Resend account's own address |
 | `PILOT_ADMIN_EMAILS` | Optional — comma-separated allowlist for `/admin/pilot-applications`. Defaults to `yunus@swathwise.com` |

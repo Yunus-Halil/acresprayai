@@ -1,22 +1,23 @@
 // The archive: one row per candidate an operator chose to keep.
 //
-// This is the database the species estimates will be built from. Every row
-// carries the chip (in the private `weed-chips` bucket), the event context,
-// the crop and stage, the pipeline's measurements, the brain's estimate if
-// one was asked for, and above all the operator's own verdict. The verdict is
-// the label; everything else is the feature. Rows are written by a human
-// action, never by the pipeline on its own, so the archive holds what someone
-// looked at and decided, not everything a threshold happened to pass.
+// This is the database the species estimates will be built from, and the
+// data the scout itself learns from (feedback.ts). Every row carries the chip
+// (in the private `weed-chips` bucket), the event context, the crop and
+// stage, the pipeline's measurements, the feature vector the scout compares
+// on, the in-house estimate, and above all the operator's own verdict. The
+// verdict is the label; everything else is the feature. Rows are written by a
+// human action, never by the pipeline on its own, so the archive holds what
+// someone looked at and decided, not everything a threshold happened to pass.
 //
 // Owner-scoped by RLS like every other table. The national dataset is a
 // later, separate, consented step; nothing here shares anything.
 import { supabase } from "@/integrations/supabase/client";
-import type { BrainEstimate } from "./brain";
 import type { EventContext } from "./context";
-import type { Candidate, ScoutParams } from "./types";
+import { featureVectorOf } from "./feedback";
+import type { Candidate, CandidateKind, FeedbackRow, ScoutParams } from "./types";
 import { dataUrlToBase64 } from "./zoom";
 
-export const PIPELINE_VERSION = "weed-scout-v1";
+export const PIPELINE_VERSION = "weed-scout-v2";
 export const CHIP_BUCKET = "weed-chips";
 
 export type Verdict = "weed" | "crop" | "not_vegetation" | "unsure";
@@ -26,6 +27,10 @@ export const VERDICTS: { value: Verdict; label: string }[] = [
   { value: "not_vegetation", label: "Not vegetation" },
   { value: "unsure", label: "Unsure" },
 ];
+
+const KINDS = new Set<CandidateKind>([
+  "not-average region", "field outlier", "off-row vegetation", "vegetation outlier", "off-row and outlier",
+]);
 
 export type ObservationRow = {
   id: string;
@@ -44,7 +49,6 @@ export type ObservationRow = {
   verdict: Verdict | null;
   species: string | null;
   notes: string | null;
-  brain: unknown | null;
   created_at: string;
 };
 
@@ -58,7 +62,6 @@ export type SaveObservationInput = {
   growthStage: string | null;
   params: ScoutParams;
   gsdM: number;
-  brain: { estimate: BrainEstimate; model: string } | null;
   verdict: Verdict | null;
   species: string | null;
   notes: string | null;
@@ -134,8 +137,15 @@ export async function saveObservation(input: SaveObservationInput): Promise<{ ok
     anomaly_z: c.anomalyZ,
     anomaly_feature: c.anomalyFeature,
     features: c.blob,
-    brain: input.brain?.estimate ?? null,
-    brain_model: input.brain?.model ?? null,
+    geometry: c.region ? c.region.rings : null,
+    area_m2: c.areaM2,
+    tile_count: c.region?.tileCount ?? null,
+    class: c.region?.klass ?? null,
+    blob_z: c.blobZ,
+    blob_z_feature: c.blobZFeature,
+    vector: featureVectorOf(c, input.params.rowSpacingM),
+    estimate: c.estimate,
+    estimate_model: c.estimate?.model ?? null,
     verdict: input.verdict,
     species: input.species,
     notes: input.notes,
@@ -153,9 +163,37 @@ export async function saveObservation(input: SaveObservationInput): Promise<{ ok
 
 export async function listObservations(scanId: string): Promise<ObservationRow[]> {
   const { data, error } = await supabase.from("weed_observations")
-    .select("id, candidate_id, scan_id, tile_id, lat, lng, captured_at, place, local_time, season, kind, score, chip_path, verdict, species, notes, brain, created_at")
+    .select("id, candidate_id, scan_id, tile_id, lat, lng, captured_at, place, local_time, season, kind, score, chip_path, verdict, species, notes, created_at")
     .eq("scan_id", scanId)
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as ObservationRow[];
+}
+
+/**
+ * Every verdict the operator has ever saved, as the scout consumes it. Rows
+ * without a vector (saved by the first pipeline version) cannot be compared
+ * and are left out; they still count in the archive.
+ */
+export async function loadFeedback(): Promise<FeedbackRow[]> {
+  const { data, error } = await supabase.from("weed_observations")
+    .select("kind, verdict, species, vector, field_id")
+    .not("verdict", "is", null)
+    .not("vector", "is", null)
+    .limit(5000);
+  if (error) throw new Error(error.message);
+  const out: FeedbackRow[] = [];
+  for (const r of (data ?? []) as unknown as { kind: string; verdict: string; species: string | null; vector: unknown; field_id: string | null }[]) {
+    if (!KINDS.has(r.kind as CandidateKind)) continue;
+    if (!Array.isArray(r.vector) || !r.vector.every(v => typeof v === "number" && Number.isFinite(v))) continue;
+    if (!["weed", "crop", "not_vegetation", "unsure"].includes(r.verdict)) continue;
+    out.push({
+      kind: r.kind as CandidateKind,
+      verdict: r.verdict as FeedbackRow["verdict"],
+      species: r.species,
+      vector: r.vector as number[],
+      fieldId: r.field_id,
+    });
+  }
+  return out;
 }

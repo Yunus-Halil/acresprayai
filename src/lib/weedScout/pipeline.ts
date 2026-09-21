@@ -1,31 +1,52 @@
 // The pipeline, end to end, in the order the operator described it:
 //
-//   1. the mosaic and the boundary become tiles          (tiles.ts)
-//   2. every tile is measured against the field average   (baseline.ts)
-//   3. the not-average tiles are marked                   (baseline.ts)
-//      and, where rows can be fitted, off-row vegetation  (rows.ts, blobs.ts)
-//   4. the marked ground is re-read at full depth         (zoom.ts)
-//   5. candidates are ranked for the brain and the human  (candidates.ts)
+//   1. the mosaic and the boundary become tiles              (tiles.ts)
+//   2. every tile is measured against the field's densest
+//      half AND against its own neighbourhood                (baseline.ts)
+//   3. the not-average tiles are marked, and touching ones
+//      are grown into regions with an area                   (baseline.ts)
+//      where rows can be fitted, off-row vegetation; and
+//      plants unlike the field's plants                      (rows.ts, blobs.ts)
+//   4. the whole interior is swept at full depth, window by
+//      window, so the small things are seen                  (sweep.ts)
+//   5. candidates are ranked, compared with the archive, and
+//      described in-house                                    (candidates.ts,
+//                                                             feedback.ts, describe.ts)
 //
-// Browser-side. Yields to the event loop between tiles so the map stays
+// Browser-side. Yields to the event loop between windows so the map stays
 // responsive during a run, and reports every stage so the UI can say what is
-// happening rather than spinning.
+// happening rather than spinning. Nothing here calls anything outside the
+// tile server and the operator's own archive.
 import { pointInAnyRing } from "../geo";
 import { stitchTiles } from "../orthoRaster";
-import { MIN_BASELINE_TILES, fieldBaseline, flagOutliers, sampleTiles } from "./baseline";
+import {
+  MIN_BASELINE_TILES, fieldBaseline, flagTiles, growRegions, sampleTiles, scoreTiles,
+} from "./baseline";
 import { extractBlobs } from "./blobs";
 import { chipSpanM, rankCandidates } from "./candidates";
-import { fitRowModel } from "./rows";
+import type { EventContext } from "./context";
+import { describe } from "./describe";
+import { applyFeedback } from "./feedback";
+import { distanceToRowM, fitRowModel } from "./rows";
+import { planSweep, sweepWindow } from "./sweep";
 import { rasterGsdM, tessellate, tileIdAt, tileLattice, tileWindow } from "./tiles";
-import type { AnalysisTile, Candidate, RowModel, ScoutInputs, ScoutProgress, ScoutResult, TileFlag } from "./types";
+import {
+  F, type AnalysisTile, type Blob, type Candidate, type Region, type RowModel, type ScoutInputs, type ScoutProgress,
+  type ScoutResult, type SweepStats, type TileFlag, type TileScore,
+} from "./types";
 import { globalThreshold, indexRaster, maskWindow } from "./vegetation";
-import { boundsOfRing, fetchRaster, padBounds, renderChip } from "./zoom";
+import { boundsAround, fetchRaster, renderChip } from "./zoom";
 
 const yieldToUi = () => new Promise<void>(r => setTimeout(r, 0));
 
 export type RunOptions = {
   onProgress?: (p: ScoutProgress) => void;
   signal?: AbortSignal;
+  /** For the describer. Optional; the estimate says when it is missing. */
+  context?: EventContext | null;
+  crop?: string;
+  growthStage?: string | null;
+  fieldId?: string | null;
 };
 
 class Aborted extends Error {
@@ -41,6 +62,7 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
   const startedAt = new Date().toISOString();
   const template = (z: number, x: number, y: number) =>
     tileUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
+  const insideField = (p: { lat: number; lng: number }) => pointInAnyRing(p, boundary);
 
   // 1. Imagery, then tiles. ---------------------------------------------------
   report("stitching");
@@ -52,11 +74,12 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
   const { raster, missingTiles } = await stitchTiles(template, bbox, params.tileM, Math.min(20, maxNative));
   check();
   const gsdM = rasterGsdM(raster);
-  if (missingTiles) notes.push(`${missingTiles} imagery tile(s) failed to load; ground under them is unmeasured.`);
+  if (missingTiles) notes.push(`${missingTiles} imagery tile(s) failed to load in the base pass; ground under them is unmeasured.`);
 
   report("tiling");
   const tiles = tessellate(boundary, params.tileM, params.headlandM);
   const tileById = new Map(tiles.map(t => [t.id, t]));
+  const headland = new Set(tiles.filter(t => t.headland).map(t => t.id));
   const tileOf = (p: { lat: number; lng: number }) => {
     const id = tileIdAt(lattice, p);
     return id && tileById.has(id) ? id : null;
@@ -81,38 +104,43 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
     notes.push(`${fallbacks} of ${tiles.length} tiles had no soil-to-plant contrast of their own and used the field-wide threshold.`);
   }
 
-  // 3. Baseline and flags. ----------------------------------------------------
+  // 3. Baseline at two scales, flags, regions. --------------------------------
   report("baseline");
   const samples = sampleTiles(tiles, raster, mask);
   const baseline = fieldBaseline(samples);
+  let scores: TileScore[] = [];
   let flags: TileFlag[] = [];
+  let regions: Region[] = [];
   if (!baseline) {
     notes.push(`Only ${samples.filter(s => s.usable).length} tiles held enough pixels to measure; a baseline needs ${MIN_BASELINE_TILES}. Nothing was flagged as not-average.`);
   } else {
-    const headland = new Set(tiles.filter(t => t.headland).map(t => t.id));
-    flags = flagOutliers(samples, baseline, params.anomalyZ, headland);
+    scores = scoreTiles(samples, baseline, tiles, params.anomalyZ);
+    flags = flagTiles(scores, params.anomalyZ, headland);
+    report("regions");
+    regions = growRegions(tiles, scores, flags, lattice, params, headland);
+    const flagged = new Set(flags.map(f => f.tileId));
+    const unsupported = scores.filter(s => !s.supported && s.leader >= params.anomalyZ).length;
+    if (unsupported) notes.push(`${unsupported} tile(s) deviated on one feature alone and were not flagged without a second feature agreeing.`);
+    const brightOnly = scores.filter(s => !flagged.has(s.tileId) && (Math.abs(s.fieldZ[F.brightness]) >= params.anomalyZ || Math.abs(s.localZ[F.brightness]) >= params.anomalyZ)).length;
+    if (brightOnly) notes.push(`${brightOnly} tile(s) differed from the field only in brightness (a seam, a shadow or exposure) and were not flagged; brightness describes a region, it never triggers one.`);
+    const covered = regions.reduce((s, r) => s + r.tileCount, 0);
+    if (regions.length) notes.push(`${regions.length} region(s) cover ${covered} tiles (${((covered / tiles.length) * 100).toFixed(0)}% of the field).`);
   }
   await yieldToUi();
   check();
 
-  // Rows, where they can be found. --------------------------------------------
+  // Rows, where they can be found, on the base pass. --------------------------
   report("rows");
   let rows: RowModel | null = null;
   try {
-    rows = fitRowModel(mask, raster, params.rowSpacingM, {
-      insideField: p => pointInAnyRing(p, boundary),
-    });
+    rows = fitRowModel(mask, raster, params.rowSpacingM, { insideField });
     if (!rows.usable) {
       notes.push(
-        "No window of this imagery showed a row pattern the fit would trust, so nothing is scored as off-row. " +
-        "Off-row detection needs early-season row crop with soil visible between rows.",
+        "No window of the base pass showed a row pattern the fit would trust. The sweep still tries per window; " +
+        "if that fails too, nothing is scored as off-row and plant outliers carry the small things.",
       );
-    } else {
-      const weak = rows.tiles.filter(t => t.confidence > 0 && t.confidence < 0.35).length;
-      if (weak) notes.push(`${weak} row-fit window(s) were below the confidence floor and are not consulted.`);
-      if (rows.tiles.some(t => t.pitchFromGrower && t.confidence > 0)) {
-        notes.push("Some windows recovered a row spacing more than 10% from the stated spacing (a harmonic); the stated spacing was kept there.");
-      }
+    } else if (rows.tiles.some(t => t.pitchFromGrower && t.confidence > 0)) {
+      notes.push("Some windows recovered a row spacing more than 10% from the stated spacing (a harmonic); the stated spacing was kept there.");
     }
   } catch (e) {
     rows = null;
@@ -121,86 +149,87 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
   await yieldToUi();
   check();
 
-  // Blobs over the whole field mask. -----------------------------------------
-  report("blobs");
-  let blobs = extractBlobs(mask, raster, { minAreaCm2: params.minBlobCm2, tileOf, idPrefix: "b" });
+  // 4. Plants: the full-depth sweep, or the base pass when it is off. --------
+  let blobs: Blob[] = [];
+  const sweep: SweepStats = { ran: false, windows: 0, gsdM: null, backedOff: 0, failed: 0, rowWindows: 0 };
+  const plan = params.sweep ? planSweep(bbox, tiles, maxNative, params.maxSweepWindows) : null;
+  if (plan && plan.windows.length && plan.gsdM < gsdM * 0.95) {
+    sweep.ran = true;
+    sweep.gsdM = plan.gsdM;
+    sweep.backedOff = plan.backedOff;
+    const angleHint = rows?.usable ? rows.medianAngleDeg : null;
+    const coarseDistance = (p: { lat: number; lng: number }) => (rows ? distanceToRowM(rows, p) : null);
+    const angles: number[] = [];
+    for (let i = 0; i < plan.windows.length; i++) {
+      report("sweeping", i / plan.windows.length, `window ${i + 1} of ${plan.windows.length}`);
+      const res = await sweepWindow(template, plan.windows[i], plan.z, {
+        fieldThreshold, growerSpacingM: params.rowSpacingM, angleHintDeg: angleHint,
+        minAreaCm2: params.minBlobCm2, tileOf, coarseDistance,
+      });
+      if (res.failed) sweep.failed++;
+      if (res.fit) { sweep.rowWindows++; angles.push(res.fit.angleDeg); }
+      blobs.push(...res.blobs);
+      sweep.windows++;
+      check();
+      await yieldToUi();
+    }
+    if (sweep.backedOff) notes.push(`The sweep read at ${(plan.gsdM * 100).toFixed(1)} cm/px, ${sweep.backedOff} zoom level(s) above the deepest bake, to stay under ${params.maxSweepWindows} windows. Raise the window limit for the full depth.`);
+    if (sweep.failed) notes.push(`${sweep.failed} sweep window(s) failed to load; plants there were not measured.`);
+    if (rows && !rows.usable && sweep.rowWindows) notes.push(`${sweep.rowWindows} of ${sweep.windows} sweep windows found rows on their own at full depth.`);
+  } else {
+    report("blobs");
+    blobs = extractBlobs(mask, raster, { minAreaCm2: params.minBlobCm2, tileOf, idPrefix: "b" });
+    if (params.sweep && plan) notes.push("The base pass already read the imagery at its deepest zoom, so no separate sweep was needed.");
+  }
   await yieldToUi();
   check();
 
-  // Preliminary ranking decides which ground is worth zooming into. ---------
-  const ranked = rankCandidates({ blobs, tiles, flags, rows, params });
-
-  // 4. Zoom in on the not-average things. -------------------------------------
-  const zoomTiles = new Set<string>();
-  for (const f of flags) { if (zoomTiles.size >= params.maxZoomTiles) break; if (!tileById.get(f.tileId)?.headland) zoomTiles.add(f.tileId); }
-  for (const c of ranked.candidates) { if (zoomTiles.size >= params.maxZoomTiles) break; zoomTiles.add(c.tileId); }
-  let zoomGsdM: number | null = null;
-  const refined = new Map<string, Candidate>();
-  let zi = 0;
-  for (const tileId of zoomTiles) {
-    const tile = tileById.get(tileId)!;
-    report("zooming", zi / zoomTiles.size, `tile ${tileId}`);
-    zi++;
-    try {
-      const { raster: deep } = await fetchRaster(template, padBounds(boundsOfRing(tile.ring), 0.75), Math.min(20, maxNative));
-      check();
-      const deepGsd = rasterGsdM(deep);
-      zoomGsdM = deepGsd;
-      const deepIndex = indexRaster(deep);
-      const deepMask = new Uint8Array(deep.width * deep.height);
-      maskWindow(deepIndex, deep.width, { x0: 0, y0: 0, x1: deep.width - 1, y1: deep.height - 1 }, deepMask, fieldThreshold);
-      const deepBlobs = extractBlobs(deepMask, deep, {
-        minAreaCm2: params.minBlobCm2,
-        tileOf: p => (pointInAnyRing(p, [tile.ring]) ? tile.id : null),
-        idPrefix: `z${tileId}-`,
-      });
-      for (const c of ranked.candidates) {
-        if (c.tileId !== tileId) continue;
-        let next: Candidate = { ...c };
-        if (c.blob) {
-          // The same plant, re-measured on the deep pixels: nearest deep blob
-          // within half a metre of the coarse centroid.
-          let best = null as (typeof deepBlobs)[number] | null, bestD = 0.5;
-          for (const b of deepBlobs) {
-            const d = distanceM(b.centroid, c.centroid);
-            if (d < bestD) { bestD = d; best = b; }
-          }
-          if (best) next = { ...next, blob: { ...best, id: c.blob.id, tileId }, centroid: best.centroid };
-        }
-        const chip = renderChip(deep, next.centroid, chipSpanM(next, params.tileM / 2));
-        if (chip) next = { ...next, chip: chip.dataUrl, chipSpanM: chip.spanM, chipGsdM: chip.gsdM };
-        refined.set(c.id, next);
-      }
-    } catch (e) {
-      notes.push(`Zoom into tile ${tileId} failed: ${(e as Error).message}`);
-    }
-    await yieldToUi();
-  }
-  if (zoomTiles.size && zoomGsdM !== null && zoomGsdM < gsdM * 0.9) {
-    notes.push(`Flagged ground was re-read at ${(zoomGsdM * 100).toFixed(1)} cm/px (base pass ${(gsdM * 100).toFixed(1)} cm/px).`);
-  }
-
-  // 5. Final queue. -----------------------------------------------------------
+  // 5. Rank, learn from the archive, describe. --------------------------------
   report("ranking");
-  const candidates = ranked.candidates.map(c => refined.get(c.id) ?? c);
+  const ranked = rankCandidates({ blobs, tiles, flags, regions, rows, params });
+  let candidates: Candidate[] = applyFeedback(ranked.candidates, inputs.feedback ?? [], params.rowSpacingM, opts.fieldId ?? null);
+  const measuredGsd = sweep.gsdM ?? gsdM;
+  candidates = candidates.map(c => ({
+    ...c,
+    estimate: describe(c, opts.context ?? null, opts.crop ?? "", opts.growthStage ?? null, ranked.plants, params.rowSpacingM, measuredGsd),
+  }));
   if (ranked.overflow) notes.push(`${ranked.overflow} further candidate(s) were cut from the queue; raise the thresholds or shrink the field.`);
-  if (ranked.headlandExcluded) notes.push(`${ranked.headlandExcluded} blob(s) inside the ${params.headlandM} m headland were not scored.`);
-  blobs = [];
+  if (ranked.headlandExcluded) notes.push(`${ranked.headlandExcluded} plant(s) inside the ${params.headlandM} m headland were not scored.`);
+  if (!ranked.plants && blobs.length) notes.push(`Only ${blobs.length} plants were measurable, too few for a plant population baseline; nothing is scored as a plant outlier.`);
+  else if (ranked.plants) notes.push(`Typical plant in this field: ${(ranked.plants.typicalDiameterM * 100).toFixed(0)} cm across, over ${ranked.plants.population.toLocaleString()} plants.`);
+  const adjusted = candidates.filter(c => c.feedback && c.feedback.factor !== 1).length;
+  if (adjusted) notes.push(`${adjusted} candidate(s) were re-ranked from your past verdicts.`);
+
+  // Chips for the top of the queue, read at the sweep depth. -----------------
+  const chipZ = Math.min(plan?.z ?? 20, 21, maxNative);
+  const chipCount = Math.min(params.maxChips, candidates.length);
+  for (let i = 0; i < chipCount; i++) {
+    report("chips", i / chipCount);
+    const c = candidates[i];
+    try {
+      const span = chipSpanM(c, params.tileM / 2);
+      const z = c.region ? Math.max(14, chipZ - Math.round(Math.log2(Math.max(1, span / 6)))) : chipZ;
+      const { raster: r } = await fetchRaster(template, boundsAround(c.centroid, span), z, 9);
+      const chip = renderChip(r, c.centroid, span);
+      if (chip) candidates[i] = { ...c, chip: chip.dataUrl, chipSpanM: chip.spanM, chipGsdM: chip.gsdM };
+    } catch {
+      // A missing chip is a missing picture, not a missing candidate.
+    }
+    check();
+    if (i % 4 === 3) await yieldToUi();
+  }
+
   report("done");
   return {
-    tiles, samples, flags, rows, candidates,
-    gsdM, zoomGsdM, missingTiles,
+    tiles, samples, scores, flags, regions, rows, candidates,
+    gsdM, sweep, missingTiles,
     baselineTiles: baseline?.tiles ?? 0,
+    blobCount: blobs.length,
+    smallestMeasurableM: 3 * measuredGsd,
     notes,
     startedAt,
     finishedAt: new Date().toISOString(),
   };
-}
-
-function distanceM(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
-  const dLat = (a.lat - b.lat) * 111_320;
-  const dLng = (a.lng - b.lng) * 111_320 * Math.cos((a.lat * Math.PI) / 180);
-  return Math.hypot(dLat, dLng);
 }
 
 export type { AnalysisTile };

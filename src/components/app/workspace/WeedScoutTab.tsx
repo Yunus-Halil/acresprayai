@@ -2,36 +2,40 @@
 // Grid tab.
 //
 // The screen runs lib/weedScout end to end over the scan on screen and shows
-// what came out: the not-average tiles, the off-row vegetation, and for each
-// candidate the zoomed chip, the measurements, the event context, the brain's
-// estimate on request, and the operator's verdict. Saving a verdict writes an
-// observation to the archive; nothing is written by the run itself.
+// what came out: not-average regions as shapes with an area, single odd tiles
+// and plants as points, and for each candidate the chip, the measurements,
+// the in-house description, what the archive said about things like it, and
+// the operator's verdict. Saving a verdict writes an observation to the
+// archive, which the next run learns from; nothing is written by the run
+// itself.
 //
 // Everything on this screen is a candidate, never a verdict. The only place
 // the word "weed" is applied to a plant is the verdict button the operator
-// presses.
+// presses. Nothing here calls anything outside the tile server and the
+// operator's own archive.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleMarker, MapContainer, Polygon, Rectangle, TileLayer } from "react-leaflet";
+import { CircleMarker, MapContainer, Polygon, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  AlertTriangle, Bot, CheckCircle2, FlaskConical, Loader2, MapPin, Play, Save, Square, X,
+  AlertTriangle, CheckCircle2, FlaskConical, Loader2, MapPin, Play, Save, Square, X,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { type FarmerSettings, growthStage } from "@/lib/farmerSettings";
 import type { LatLng2 } from "@/lib/geo";
 import { storageKey } from "@/lib/storage";
-import { fmtDistance } from "@/lib/units";
+import { fmtArea, fmtDistance } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { describeCandidate } from "@/lib/weedScout/candidates";
 import { type EventContext, describeEvent, fetchEventContext } from "@/lib/weedScout/context";
-import { type BrainResult, askBrain } from "@/lib/weedScout/brain";
+import { describeFeedback } from "@/lib/weedScout/feedback";
 import {
-  type ObservationRow, type Verdict, VERDICTS, listObservations, saveObservation,
+  type ObservationRow, type Verdict, VERDICTS, listObservations, loadFeedback, saveObservation,
 } from "@/lib/weedScout/observations";
 import { runWeedScout } from "@/lib/weedScout/pipeline";
 import {
-  type Candidate, type ScoutParams, type ScoutProgress, type ScoutResult, DEFAULT_SCOUT_PARAMS,
+  type Candidate, type FeedbackRow, type RegionClass, type ScoutParams, type ScoutProgress, type ScoutResult,
+  DEFAULT_SCOUT_PARAMS,
 } from "@/lib/weedScout/types";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
@@ -51,7 +55,11 @@ function loadParams(): ScoutParams {
       anomalyZ: num(p.anomalyZ, DEFAULT_SCOUT_PARAMS.anomalyZ),
       bandFrac: num(p.bandFrac, DEFAULT_SCOUT_PARAMS.bandFrac),
       minBlobCm2: num(p.minBlobCm2, DEFAULT_SCOUT_PARAMS.minBlobCm2),
-      maxZoomTiles: Math.round(num(p.maxZoomTiles, DEFAULT_SCOUT_PARAMS.maxZoomTiles)),
+      blobZ: num(p.blobZ, DEFAULT_SCOUT_PARAMS.blobZ),
+      minRegionTiles: Math.round(num(p.minRegionTiles, DEFAULT_SCOUT_PARAMS.minRegionTiles)),
+      sweep: p.sweep !== false,
+      maxSweepWindows: Math.round(num(p.maxSweepWindows, DEFAULT_SCOUT_PARAMS.maxSweepWindows)),
+      maxChips: Math.round(num(p.maxChips, DEFAULT_SCOUT_PARAMS.maxChips)),
     };
   } catch {
     return DEFAULT_SCOUT_PARAMS;
@@ -63,17 +71,31 @@ const STAGE_LABEL: Record<ScoutProgress["stage"], string> = {
   tiling: "Cutting the field into tiles",
   masking: "Separating plants from soil",
   baseline: "Measuring the field average",
+  regions: "Merging not-average tiles into regions",
   rows: "Fitting the crop rows",
   blobs: "Finding vegetation",
-  zooming: "Zooming in on the not-average tiles",
+  sweeping: "Sweeping the field at full depth",
   ranking: "Ranking candidates",
+  chips: "Rendering chips",
   done: "Done",
 };
 
 const KIND_COLOUR: Record<Candidate["kind"], string> = {
-  "off-row vegetation": "#f59e0b",
+  "not-average region": "#38bdf8",
   "field outlier": "#38bdf8",
+  "off-row vegetation": "#f59e0b",
+  "vegetation outlier": "#a78bfa",
   "off-row and outlier": "#f43f5e",
+};
+
+const CLASS_COLOUR: Record<RegionClass, string> = {
+  "bare or dry ground": "#f97316",
+  "dark ground (wet, shadow or residue)": "#60a5fa",
+  "thin stand": "#fbbf24",
+  "dense vegetation": "#22c55e",
+  "pale vegetation": "#facc15",
+  "greener than the field": "#4ade80",
+  "different from the field": "#38bdf8",
 };
 
 const inputCls = "w-full bg-[#0f0f0f] border border-[#222] rounded-sm px-2 py-1 text-xs text-[#f0f0f0] focus:outline-none focus:border-[#4CAF50]";
@@ -107,13 +129,15 @@ export function WeedScoutTab({
   const [runError, setRunError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [context, setContext] = useState<EventContext | null>(null);
-  const [brain, setBrain] = useState<Record<string, BrainResult | "asking">>({});
   const [saved, setSaved] = useState<Record<string, ObservationRow>>({});
+  const [feedback, setFeedback] = useState<FeedbackRow[]>([]);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [species, setSpecies] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [showRegions, setShowRegions] = useState(true);
+  const [showPoints, setShowPoints] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
 
   // `boundary` is what changes; the cast is stable per boundary.
@@ -131,14 +155,14 @@ export function WeedScoutTab({
     return () => { cancelled = true; };
   }, [center, capturedAt]);
 
-  // What is already in the archive for this scan.
-  useEffect(() => {
-    let cancelled = false;
+  // What is already in the archive for this scan, and every verdict to learn from.
+  const reloadArchive = useCallback(() => {
     listObservations(taskId)
-      .then(rows => { if (!cancelled) setSaved(Object.fromEntries(rows.map(r => [r.candidate_id, r]))); })
+      .then(rows => setSaved(Object.fromEntries(rows.map(r => [r.candidate_id, r]))))
       .catch(() => { /* an empty archive and an unreachable one look the same here; saving will say */ });
-    return () => { cancelled = true; };
+    loadFeedback().then(setFeedback).catch(() => setFeedback([]));
   }, [taskId]);
+  useEffect(() => { reloadArchive(); }, [reloadArchive]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -147,7 +171,6 @@ export function WeedScoutTab({
     [result, selectedId],
   );
   useEffect(() => {
-    // Reset the verdict form when the selection changes; prefill from the archive.
     const row = selectedId ? saved[selectedId] : undefined;
     setVerdict((row?.verdict as Verdict | null) ?? null);
     setSpecies(row?.species ?? "");
@@ -163,11 +186,10 @@ export function WeedScoutTab({
     setRunError(null);
     setResult(null);
     setSelectedId(null);
-    setBrain({});
     try {
       const res = await runWeedScout(
-        { boundary: rings, tileUrl, maxNative, params },
-        { onProgress: setProgress, signal: ctrl.signal },
+        { boundary: rings, tileUrl, maxNative, params, feedback },
+        { onProgress: setProgress, signal: ctrl.signal, context, crop, growthStage: stage, fieldId },
       );
       setResult(res);
       setSelectedId(res.candidates[0]?.id ?? null);
@@ -177,20 +199,12 @@ export function WeedScoutTab({
       setRunning(false);
       setProgress(null);
     }
-  }, [rings, tileUrl, maxNative, params, running]);
-
-  const ask = useCallback(async (c: Candidate) => {
-    if (!context) return;
-    setBrain(b => ({ ...b, [c.id]: "asking" }));
-    const r = await askBrain({ candidate: c, context, crop, growthStage: stage, rowSpacingM: params.rowSpacingM });
-    setBrain(b => ({ ...b, [c.id]: r }));
-  }, [context, crop, stage, params.rowSpacingM]);
+  }, [rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId]);
 
   const save = useCallback(async () => {
     if (!selected || !user || !context || !result) return;
     setSaving(true);
     setSaveError(null);
-    const b = brain[selected.id];
     const r = await saveObservation({
       userId: user.id,
       fieldId,
@@ -200,8 +214,7 @@ export function WeedScoutTab({
       crop,
       growthStage: stage,
       params,
-      gsdM: result.gsdM,
-      brain: b && b !== "asking" && b.kind === "estimate" ? { estimate: b.estimate, model: b.model } : null,
+      gsdM: result.sweep.gsdM ?? result.gsdM,
       verdict,
       species: species.trim() || null,
       notes: notes.trim() || null,
@@ -217,10 +230,12 @@ export function WeedScoutTab({
         place: context.place, local_time: context.localTime, season: context.season,
         kind: selected.kind, score: selected.score, chip_path: null,
         verdict, species: species.trim() || null, notes: notes.trim() || null,
-        brain: null, created_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
       },
     }));
-  }, [selected, user, context, result, brain, fieldId, taskId, crop, stage, params, verdict, species, notes]);
+    // The next run learns from this verdict.
+    loadFeedback().then(setFeedback).catch(() => { /* keep what we had */ });
+  }, [selected, user, context, result, fieldId, taskId, crop, stage, params, verdict, species, notes]);
 
   if (!rings.length) {
     return (
@@ -241,12 +256,13 @@ export function WeedScoutTab({
     );
   }
 
-  const flagsByTile = new Map((result?.flags ?? []).map(f => [f.tileId, f]));
-  const flaggedTiles = result ? result.tiles.filter(t => flagsByTile.has(t.id)) : [];
+  const regionCandidates = result?.candidates.filter(c => c.region) ?? [];
+  const pointCandidates = result?.candidates.filter(c => !c.region) ?? [];
   const rowSpacingShown = units === "metric" ? (params.rowSpacingM * 100).toFixed(1) : (params.rowSpacingM / 0.0254).toFixed(1);
   const rowSpacingUnit = units === "metric" ? "cm" : "in";
   const setRowSpacingShown = (v: number) =>
     setParams(p => ({ ...p, rowSpacingM: units === "metric" ? v / 100 : v * 0.0254 }));
+  const areaText = (m2: number) => fmtArea(m2, units).text;
 
   return (
     <div className="absolute inset-0 flex" style={{ background: "#0f0f0f" }}>
@@ -272,16 +288,20 @@ export function WeedScoutTab({
             <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])}
               pathOptions={{ color: "#4CAF50", weight: 1.5, fill: false, dashArray: "4 4" }} />
           ))}
-          {flaggedTiles.map(t => {
-            const f = flagsByTile.get(t.id)!;
-            const alpha = Math.min(0.55, 0.15 + (f.z - params.anomalyZ) * 0.08);
+          {showRegions && regionCandidates.map(c => {
+            const colour = CLASS_COLOUR[c.region!.klass];
+            const active = c.id === selectedId;
             return (
-              <Rectangle key={t.id}
-                bounds={[[t.ring[2].lat, t.ring[0].lng], [t.ring[0].lat, t.ring[1].lng]]}
-                pathOptions={{ color: "#38bdf8", weight: 1, fillColor: "#38bdf8", fillOpacity: alpha }} />
+              <Polygon key={c.id}
+                positions={c.region!.rings.map(ring => ring.map(p => [p.lat, p.lng] as [number, number]))}
+                eventHandlers={{ click: () => setSelectedId(c.id) }}
+                pathOptions={{
+                  color: active ? "#ffffff" : colour, weight: active ? 2.5 : 1.5,
+                  fillColor: colour, fillOpacity: saved[c.id] ? 0.45 : 0.22,
+                }} />
             );
           })}
-          {(result?.candidates ?? []).map(c => (
+          {showPoints && pointCandidates.map(c => (
             <CircleMarker key={c.id} center={[c.centroid.lat, c.centroid.lng]}
               radius={c.id === selectedId ? 9 : 5}
               eventHandlers={{ click: () => setSelectedId(c.id) }}
@@ -301,11 +321,19 @@ export function WeedScoutTab({
 
         <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1.5">
           <div className="flex items-center gap-2 text-neutral-300"><FlaskConical className="h-3 w-3 text-[#4CAF50]" /> Weed Scout, experimental</div>
-          <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: "rgba(56,189,248,0.4)" }} /> Not-average tile</div>
-          <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full" style={{ background: KIND_COLOUR["off-row vegetation"] }} /> Off-row vegetation</div>
-          <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full" style={{ background: KIND_COLOUR["field outlier"] }} /> Field outlier</div>
-          <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full" style={{ background: KIND_COLOUR["off-row and outlier"] }} /> Both</div>
-          <div className="text-neutral-500">Solid marker: saved to the archive</div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={showRegions} onChange={e => setShowRegions(e.target.checked)} className="accent-[#4CAF50]" />
+            Regions (shape colour is how it reads)
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={showPoints} onChange={e => setShowPoints(e.target.checked)} className="accent-[#4CAF50]" />
+            Points
+          </label>
+          <div className="flex items-center gap-2 pl-4"><span className="inline-block w-3 h-3 rounded-full" style={{ background: KIND_COLOUR["off-row vegetation"] }} /> Off-row plant</div>
+          <div className="flex items-center gap-2 pl-4"><span className="inline-block w-3 h-3 rounded-full" style={{ background: KIND_COLOUR["vegetation outlier"] }} /> Plant unlike the field's plants</div>
+          <div className="flex items-center gap-2 pl-4"><span className="inline-block w-3 h-3 rounded-full" style={{ background: KIND_COLOUR["off-row and outlier"] }} /> Both</div>
+          <div className="flex items-center gap-2 pl-4"><span className="inline-block w-3 h-3 rounded-full" style={{ background: KIND_COLOUR["field outlier"] }} /> Single not-average tile</div>
+          <div className="text-neutral-500">Solid: saved to the archive</div>
         </div>
       </div>
 
@@ -318,8 +346,9 @@ export function WeedScoutTab({
             <span className="text-[10px] uppercase tracking-wider text-amber-400/90 border border-amber-400/40 rounded-sm px-1.5 py-0.5">Experimental</span>
           </div>
           <p className="text-[11px] text-neutral-500 mt-1">
-            Tiles the field, marks what is not average, fits the crop rows, zooms in on the flagged ground, and
-            ranks candidates for you to look at. Candidates, never verdicts.
+            Tiles the field, marks what is not average at two scales and merges it into regions, fits the crop
+            rows, sweeps the whole field at full depth for the small things, and ranks candidates for you to
+            look at. Learns from your verdicts. Everything runs in this browser.
           </p>
         </div>
 
@@ -343,18 +372,26 @@ export function WeedScoutTab({
                   onChange={e => setParams(p => ({ ...p, headlandM: Math.max(0, Number(e.target.value) || 0) }))} />
               </div>
               <div>
-                <label className={labelCls}>Flag beyond (z)</label>
+                <label className={labelCls}>Flag tiles beyond (z)</label>
                 <input type="number" min={1.5} max={10} step={0.5} className={inputCls} value={params.anomalyZ}
                   onChange={e => setParams(p => ({ ...p, anomalyZ: Math.max(1.5, Number(e.target.value) || 3.5) }))} />
               </div>
               <div>
-                <label className={labelCls}>Zoom tiles (max)</label>
-                <input type="number" min={0} max={200} step={1} className={inputCls} value={params.maxZoomTiles}
-                  onChange={e => setParams(p => ({ ...p, maxZoomTiles: Math.max(0, Math.round(Number(e.target.value) || 0)) }))} />
+                <label className={labelCls}>Flag plants beyond (z)</label>
+                <input type="number" min={1.5} max={10} step={0.5} className={inputCls} value={params.blobZ}
+                  onChange={e => setParams(p => ({ ...p, blobZ: Math.max(1.5, Number(e.target.value) || 3.5) }))} />
               </div>
               <div>
-                <label className={labelCls}>Crop / stage</label>
-                <div className="text-xs text-neutral-300 py-1">{crop || "not set"}{stage ? `, ${stage}` : ""}</div>
+                <label className={labelCls}>Sweep windows (max)</label>
+                <input type="number" min={0} max={2000} step={50} className={inputCls} value={params.maxSweepWindows}
+                  onChange={e => setParams(p => ({ ...p, maxSweepWindows: Math.max(0, Math.round(Number(e.target.value) || 0)) }))} />
+              </div>
+              <div className="col-span-2 flex items-center justify-between">
+                <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer">
+                  <input type="checkbox" checked={params.sweep} onChange={e => setParams(p => ({ ...p, sweep: e.target.checked }))} className="accent-[#4CAF50]" />
+                  Sweep the whole field at full depth
+                </label>
+                <div className="text-[11px] text-neutral-500">{crop || "crop not set"}{stage ? `, ${stage}` : ""}</div>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -378,6 +415,9 @@ export function WeedScoutTab({
                 </div>
               )}
             </div>
+            {feedback.length > 0 && (
+              <div className="text-[11px] text-neutral-500">Learning from {feedback.length} saved verdict{feedback.length === 1 ? "" : "s"}.</div>
+            )}
             {runError && (
               <div className="text-[11px] text-red-400 flex items-start gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {runError}</div>
             )}
@@ -398,12 +438,17 @@ export function WeedScoutTab({
             <section className="p-4 border-b border-[#1f1f1f] text-[11px] space-y-1">
               <div className={labelCls}>This run</div>
               <Row k="Tiles" v={`${result.tiles.length.toLocaleString()} at ${params.tileM} m, ${result.baselineTiles.toLocaleString()} in the baseline`} />
-              <Row k="Imagery" v={`${(result.gsdM * 100).toFixed(1)} cm/px base${result.zoomGsdM ? `, ${(result.zoomGsdM * 100).toFixed(1)} cm/px zoomed` : ""}`} />
-              <Row k="Not-average tiles" v={String(result.flags.length)} />
+              <Row k="Base pass" v={`${(result.gsdM * 100).toFixed(1)} cm/px`} />
+              <Row k="Sweep" v={result.sweep.ran
+                ? `${result.sweep.windows} windows at ${((result.sweep.gsdM ?? 0) * 100).toFixed(1)} cm/px${result.sweep.rowWindows ? `, rows in ${result.sweep.rowWindows}` : ""}`
+                : "not run"} />
+              <Row k="Smallest measurable" v={fmtDistance(result.smallestMeasurableM, units).text} />
+              <Row k="Plants measured" v={result.blobCount.toLocaleString()} />
+              <Row k="Regions" v={`${result.regions.length} (${areaText(result.regions.reduce((s, r) => s + r.areaM2, 0))})`} />
               <Row k="Row model" v={result.rows?.usable
                 ? `found, confidence ${result.rows.confidence.toFixed(2)}, ${result.rows.medianAngleDeg.toFixed(0)} deg, pitch ${(result.rows.medianPitchM * 100).toFixed(0)} cm`
-                : "no trustworthy rows in this imagery"} />
-              <Row k="Candidates" v={String(result.candidates.length)} />
+                : "no trustworthy rows in the base pass"} />
+              <Row k="Candidates" v={`${result.candidates.length} (${regionCandidates.length} regions, ${pointCandidates.length} points)`} />
               {result.notes.map((n, i) => (
                 <div key={i} className="text-neutral-500 flex items-start gap-1.5 pt-1"><AlertTriangle className="h-3 w-3 shrink-0 mt-0.5 text-amber-500/80" /> {n}</div>
               ))}
@@ -415,9 +460,9 @@ export function WeedScoutTab({
             <section className="border-b border-[#1f1f1f]">
               <div className="px-4 pt-3 pb-1"><div className={labelCls}>Candidates, best first</div></div>
               {result.candidates.length === 0 && (
-                <div className="px-4 pb-3 text-[11px] text-neutral-500">Nothing stood out at these thresholds. That is a result, not an absence: lower the flag threshold or check the notes above.</div>
+                <div className="px-4 pb-3 text-[11px] text-neutral-500">Nothing stood out at these thresholds. That is a result, not an absence: lower a threshold or check the notes above.</div>
               )}
-              <ul className="max-h-64 overflow-y-auto">
+              <ul className="max-h-72 overflow-y-auto">
                 {result.candidates.map((c, i) => (
                   <li key={c.id}>
                     <button type="button" onClick={() => setSelectedId(c.id)}
@@ -430,8 +475,8 @@ export function WeedScoutTab({
                       <div className="min-w-0 flex-1">
                         <div className="text-xs text-neutral-200 flex items-center gap-2">
                           <span className="font-mono text-neutral-500">#{i + 1}</span>
-                          <span className="inline-block w-2 h-2 rounded-full" style={{ background: KIND_COLOUR[c.kind] }} />
-                          <span className="truncate">{c.kind}</span>
+                          <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: c.region ? CLASS_COLOUR[c.region.klass] : KIND_COLOUR[c.kind] }} />
+                          <span className="truncate">{c.region ? `${c.region.klass}, ${areaText(c.areaM2)}` : c.kind}</span>
                           {saved[c.id] && <CheckCircle2 className="h-3 w-3 text-[#4CAF50] shrink-0" />}
                         </div>
                         <div className="text-[10px] text-neutral-500 truncate">{describeCandidate(c)}</div>
@@ -450,51 +495,62 @@ export function WeedScoutTab({
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className={labelCls}>Selected candidate</div>
-                  <div className="text-xs text-neutral-200">{selected.kind}</div>
+                  <div className="text-xs text-neutral-200">{selected.region ? `${selected.region.klass}, ${areaText(selected.areaM2)}` : selected.kind}</div>
                   <div className="text-[10px] text-neutral-500">{describeCandidate(selected)}</div>
                 </div>
                 <button type="button" onClick={() => setSelectedId(null)} className="text-neutral-500 hover:text-neutral-200"><X className="h-3.5 w-3.5" /></button>
               </div>
               {selected.chip ? (
                 <div>
-                  <img src={selected.chip} alt="Zoomed chip of the candidate" className="w-full rounded-sm border border-[#222]" style={{ imageRendering: "pixelated" }} />
+                  <img src={selected.chip} alt="Chip of the candidate" className="w-full rounded-sm border border-[#222]" style={{ imageRendering: "pixelated" }} />
                   <div className="text-[10px] text-neutral-500 mt-1">
                     {selected.chipSpanM ? `${fmtDistance(selected.chipSpanM, units).text} across` : ""}
                     {selected.chipGsdM ? ` at ${(selected.chipGsdM * 100).toFixed(2)} cm/px, real pixels, north up` : ""}
                   </div>
                 </div>
               ) : (
-                <div className="text-[11px] text-neutral-500">No chip: this tile was not among the zoomed ones. Raise the zoom-tile limit and run again.</div>
+                <div className="text-[11px] text-neutral-500">No chip rendered for this one (only the top {params.maxChips} get one). Raise the chip limit in the stored parameters if you need it.</div>
               )}
               <dl className="text-[11px] grid grid-cols-2 gap-x-3 gap-y-1">
                 <Dt k="Score" v={selected.score.toFixed(2)} />
-                <Dt k="Off row" v={selected.distanceToRowM != null ? `${(Math.abs(selected.distanceToRowM) * 100).toFixed(0)} cm` : "no row model"} />
-                <Dt k="Tile deviation" v={selected.anomalyZ != null ? `${selected.anomalyZ.toFixed(1)} z on ${selected.anomalyFeature}` : "within the field average"} />
-                <Dt k="Size" v={selected.blob ? `${(selected.blob.equivDiameterM * 100).toFixed(0)} cm, ${(selected.blob.areaM2 * 1e4).toFixed(0)} cm2` : "no vegetation"} />
-                <Dt k="Greenness" v={selected.blob ? selected.blob.exgMean.toFixed(3) : "n/a"} />
-                <Dt k="Measured at" v={selected.blob ? `${(selected.blob.gsdM * 100).toFixed(2)} cm/px` : "n/a"} />
+                {selected.region ? (
+                  <>
+                    <Dt k="Area" v={areaText(selected.areaM2)} />
+                    <Dt k="Tiles" v={`${selected.region.tileCount} (${selected.region.coreTiles} core)`} />
+                    <Dt k="Deviation" v={`mean ${selected.region.meanStrength.toFixed(1)}, max ${selected.region.maxStrength.toFixed(1)}`} />
+                    <Dt k="Drivers" v={selected.region.drivers.map(d => `${d.feature} ${d.z > 0 ? "+" : "-"}${Math.abs(d.z).toFixed(1)}`).join("; ")} />
+                  </>
+                ) : (
+                  <>
+                    <Dt k="Off row" v={selected.distanceToRowM != null ? `${(Math.abs(selected.distanceToRowM) * 100).toFixed(0)} cm` : "no row model"} />
+                    <Dt k="Unlike plants" v={selected.blobZ != null ? `${selected.blobZ.toFixed(1)} z on ${selected.blobZFeature}` : "within the field's plants"} />
+                    <Dt k="Tile deviation" v={selected.anomalyZ != null ? `${selected.anomalyZ.toFixed(1)} z on ${selected.anomalyFeature}` : "within the field average"} />
+                    <Dt k="Size" v={selected.blob ? `${(selected.blob.equivDiameterM * 100).toFixed(0)} cm, ${(selected.blob.areaM2 * 1e4).toFixed(0)} cm2` : "no vegetation"} />
+                    <Dt k="Greenness" v={selected.blob ? selected.blob.exgMean.toFixed(3) : "n/a"} />
+                    <Dt k="Measured at" v={selected.blob ? `${(selected.blob.gsdM * 100).toFixed(2)} cm/px` : "n/a"} />
+                  </>
+                )}
               </dl>
 
-              {/* The brain */}
-              <div className="border border-[#222] rounded-sm p-3 space-y-2" style={{ background: "#161616" }}>
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-semibold inline-flex items-center gap-1.5"><Bot className="h-3.5 w-3.5 text-[#4CAF50]" /> The brain</div>
-                  <button type="button" onClick={() => ask(selected)}
-                    disabled={!context || brain[selected.id] === "asking"}
-                    className="text-[11px] bg-[#262626] hover:bg-[#333] disabled:opacity-40 text-neutral-200 rounded-sm px-2 py-1 inline-flex items-center gap-1.5">
-                    {brain[selected.id] === "asking" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bot className="h-3 w-3" />}
-                    {brain[selected.id] && brain[selected.id] !== "asking" ? "Ask again" : "Describe this"}
-                  </button>
+              {/* The in-house description */}
+              {selected.estimate && (
+                <div className="border border-[#222] rounded-sm p-3 space-y-2 text-[11px]" style={{ background: "#161616" }}>
+                  <div className="text-xs font-semibold">What it looks like</div>
+                  <p className="text-neutral-200 leading-relaxed">{selected.estimate.summary}</p>
+                  <p className="text-neutral-400">{selected.estimate.positionNote}</p>
+                  <p className="text-neutral-400">{selected.estimate.seasonNote}</p>
+                  {selected.feedback && (
+                    <p className={selected.feedback.factor < 1 ? "text-neutral-500" : "text-[#4CAF50]"}>{describeFeedback(selected.feedback)}</p>
+                  )}
+                  <div className="text-neutral-400">To confirm on the ground: {selected.estimate.whatWouldConfirm.join(" ")}</div>
+                  <div className="text-neutral-600">{selected.estimate.caveats.join(" ")}</div>
+                  <div className="text-neutral-600 font-mono">{selected.estimate.model}, computed in this browser</div>
                 </div>
-                <BrainView r={brain[selected.id]} />
-                <p className="text-[10px] text-neutral-600">
-                  An estimate from the chip and its context, for you to check on the ground. Never a product, never a rate.
-                </p>
-              </div>
+              )}
 
               {/* Verdict */}
               <div className="space-y-2">
-                <div className={labelCls}>Your verdict (the label the archive learns from)</div>
+                <div className={labelCls}>Your verdict (the label the scout learns from)</div>
                 <div className="grid grid-cols-4 gap-1">
                   {VERDICTS.map(v => (
                     <button key={v.value} type="button" onClick={() => setVerdict(v.value)}
@@ -539,51 +595,8 @@ function Dt({ k, v }: { k: string; v: string }) {
   return (
     <>
       <dt className="text-neutral-500">{k}</dt>
-      <dd className="text-neutral-200 font-mono text-right">{v}</dd>
+      <dd className="text-neutral-200 font-mono text-right break-words">{v}</dd>
     </>
-  );
-}
-
-function BrainView({ r }: { r: BrainResult | "asking" | undefined }) {
-  if (!r) return <div className="text-[11px] text-neutral-500">Not asked yet.</div>;
-  if (r === "asking") return <div className="text-[11px] text-neutral-400">Looking at the chip and its context.</div>;
-  if (r.kind === "unavailable") {
-    const why: Record<typeof r.reason, string> = {
-      unconfigured: "The brain is not configured on the server (ANTHROPIC_API_KEY is not set on the weed-brain function).",
-      unauthorized: "Sign in to use the brain.",
-      refused: "The model declined to describe this one.",
-      malformed: "The reply could not be used.",
-      error: "The brain is unavailable right now.",
-    };
-    return <div className="text-[11px] text-amber-400/90">{why[r.reason]}{r.detail ? ` ${r.detail}` : ""}</div>;
-  }
-  const e = r.estimate;
-  return (
-    <div className="text-[11px] space-y-2">
-      <p className="text-neutral-200 leading-relaxed">{e.summary}</p>
-      <div className="text-neutral-400">
-        {e.is_vegetation ? "Reads as vegetation" : "May not be vegetation"} ({Math.round(e.vegetation_confidence * 100)}% sure).
-        {e.growth_habit ? ` ${e.growth_habit}.` : ""}{e.leaf_notes ? ` ${e.leaf_notes}` : ""}{e.colour_notes ? ` ${e.colour_notes}` : ""}
-      </div>
-      {e.plausible.length > 0 && (
-        <ul className="space-y-1">
-          {e.plausible.map((p, i) => (
-            <li key={i} className="border-l-2 border-[#333] pl-2">
-              <span className="text-neutral-200">{p.group}</span>
-              <span className="text-neutral-500"> {p.likelihood}</span>
-              {p.examples.length > 0 && <span className="text-neutral-500">, e.g. {p.examples.join(", ")}</span>}
-              {p.why && <div className="text-neutral-500">{p.why}</div>}
-            </li>
-          ))}
-        </ul>
-      )}
-      {e.crop_lookalike && <div className="text-neutral-400">Could be the crop: {e.crop_lookalike}</div>}
-      {e.what_would_confirm.length > 0 && (
-        <div className="text-neutral-400">To confirm on the ground: {e.what_would_confirm.join("; ")}</div>
-      )}
-      {e.caveats.length > 0 && <div className="text-neutral-500">{e.caveats.join(" ")}</div>}
-      <div className="text-neutral-600 font-mono">{r.model}</div>
-    </div>
   );
 }
 
