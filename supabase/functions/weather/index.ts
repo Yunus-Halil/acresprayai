@@ -54,6 +54,14 @@ Deno.serve(async (req) => {
     return json({ error: "lat/lon required" }, 400);
   }
 
+  // CONTEXT (?mode=context&lat&lon&time=ISO): the Weed Scout's event context.
+  // Place and time zone from /points, plus the nearest-station observation at
+  // the capture time when it is inside the live feed's retention. One call,
+  // one provider, every field nullable and reasoned.
+  if (url.searchParams.get("mode") === "context") {
+    return json(await nwsContext(lat, lon, url.searchParams.get("time") ?? ""));
+  }
+
   if (url.searchParams.get("mode") === "observation") {
     try {
       return json(await nwsObservation(lat, lon, url.searchParams.get("time") ?? ""));
@@ -230,7 +238,43 @@ async function nwsObservation(lat: number, lon: number, timeIso: string) {
     wind_dir: windDeg != null ? degToCompass(windDeg) : null,
     wind_dir_deg: windDeg,
     temp_f: tempC != null ? +((tempC * 9) / 5 + 32).toFixed(1) : null,
+    // The station's own words for the sky ("Sunny", "Overcast"), when given.
+    sky: typeof p.textDescription === "string" && p.textDescription ? p.textDescription : null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Event context: where, in whose clock, and what the sky was doing
+// ---------------------------------------------------------------------------
+
+async function nwsContext(lat: number, lon: number, timeIso: string) {
+  let place: string | null = null;
+  let time_zone: string | null = null;
+  let error: string | null = null;
+  try {
+    const pRes = await fetch(`${NWS}/points/${lat.toFixed(4)},${lon.toFixed(4)}`, { headers: nwsHeaders() });
+    if (pRes.ok) {
+      const points = await pRes.json();
+      const rel = points?.properties?.relativeLocation?.properties;
+      const city = typeof rel?.city === "string" ? rel.city : null;
+      const state = typeof rel?.state === "string" ? rel.state : null;
+      place = city && state ? `${city}, ${state}` : city ?? state;
+      time_zone = typeof points?.properties?.timeZone === "string" ? points.properties.timeZone : null;
+    } else {
+      error = `points ${pRes.status} (NOAA covers the US only)`;
+    }
+  } catch (e) {
+    error = String((e as Error)?.message ?? e);
+  }
+  let observation: unknown = null;
+  if (timeIso) {
+    try {
+      observation = await nwsObservation(lat, lon, timeIso);
+    } catch (e) {
+      observation = { ok: false, reason: "unavailable", detail: String((e as Error)?.message ?? e) };
+    }
+  }
+  return { ok: true, provider: "noaa-nws", place, time_zone, observation, error };
 }
 
 // ---------------------------------------------------------------------------

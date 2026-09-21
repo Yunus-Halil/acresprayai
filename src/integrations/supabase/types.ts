@@ -926,6 +926,132 @@ export type Database = {
         }
         Relationships: []
       }
+      weed_observations: {
+        Row: {
+          anomaly_feature: string | null
+          anomaly_z: number | null
+          brain: Json | null
+          brain_model: string | null
+          candidate_id: string
+          captured_at: string
+          chip_gsd_m: number | null
+          chip_path: string | null
+          chip_span_m: number | null
+          created_at: string
+          crop: string | null
+          distance_to_row_m: number | null
+          features: Json | null
+          field_id: string | null
+          growth_stage: string | null
+          gsd_m: number | null
+          id: string
+          kind: string
+          lat: number
+          lng: number
+          local_date: string | null
+          local_time: string | null
+          notes: string | null
+          params: Json | null
+          pipeline_version: string
+          place: string | null
+          row_confidence: number | null
+          row_spacing_m: number | null
+          scan_id: string | null
+          score: number
+          season: string
+          species: string | null
+          tile_id: string
+          time_zone: string | null
+          updated_at: string
+          user_id: string
+          verdict: string | null
+          verdict_at: string | null
+          weather: Json | null
+        }
+        Insert: {
+          anomaly_feature?: string | null
+          anomaly_z?: number | null
+          brain?: Json | null
+          brain_model?: string | null
+          candidate_id: string
+          captured_at: string
+          chip_gsd_m?: number | null
+          chip_path?: string | null
+          chip_span_m?: number | null
+          created_at?: string
+          crop?: string | null
+          distance_to_row_m?: number | null
+          features?: Json | null
+          field_id?: string | null
+          growth_stage?: string | null
+          gsd_m?: number | null
+          id?: string
+          kind: string
+          lat: number
+          lng: number
+          local_date?: string | null
+          local_time?: string | null
+          notes?: string | null
+          params?: Json | null
+          pipeline_version?: string
+          place?: string | null
+          row_confidence?: number | null
+          row_spacing_m?: number | null
+          scan_id?: string | null
+          score: number
+          season: string
+          species?: string | null
+          tile_id: string
+          time_zone?: string | null
+          updated_at?: string
+          user_id: string
+          verdict?: string | null
+          verdict_at?: string | null
+          weather?: Json | null
+        }
+        Update: {
+          anomaly_feature?: string | null
+          anomaly_z?: number | null
+          brain?: Json | null
+          brain_model?: string | null
+          candidate_id?: string
+          captured_at?: string
+          chip_gsd_m?: number | null
+          chip_path?: string | null
+          chip_span_m?: number | null
+          created_at?: string
+          crop?: string | null
+          distance_to_row_m?: number | null
+          features?: Json | null
+          field_id?: string | null
+          growth_stage?: string | null
+          gsd_m?: number | null
+          id?: string
+          kind?: string
+          lat?: number
+          lng?: number
+          local_date?: string | null
+          local_time?: string | null
+          notes?: string | null
+          params?: Json | null
+          pipeline_version?: string
+          place?: string | null
+          row_confidence?: number | null
+          row_spacing_m?: number | null
+          scan_id?: string | null
+          score?: number
+          season?: string
+          species?: string | null
+          tile_id?: string
+          time_zone?: string | null
+          updated_at?: string
+          user_id?: string
+          verdict?: string | null
+          verdict_at?: string | null
+          weather?: Json | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       anomalies_geo: {

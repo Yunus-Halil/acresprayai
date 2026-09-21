@@ -14,7 +14,7 @@ import {
   Sparkles, Download, AlertTriangle, X, Plane, CloudSun,
   FileBarChart, Map as MapIcon, Bot, Pencil, Cloud,
   Wind, Droplets, ThermometerSun, CloudRain, Sun, CloudSnow, CloudFog,
-  CheckCircle2, XCircle, Trash2, Hexagon, Grid3x3,
+  CheckCircle2, XCircle, Trash2, Hexagon, FlaskConical, Grid3x3,
   Play, Pause, RotateCcw, FastForward, History,
 } from "lucide-react";
 import UserPolygonTool, { type DraftPolygon } from "@/components/app/UserPolygonTool";
@@ -55,6 +55,8 @@ import type { Annotation, LayerState, UserPoly } from "@/components/app/workspac
 import FieldViewTab from "@/components/app/workspace/FieldViewTab";
 import PlannerTab from "@/components/app/workspace/PlannerTab";
 import TreatmentTab from "@/components/app/workspace/TreatmentTab";
+import WeedScoutTab from "@/components/app/workspace/WeedScoutTab";
+import { useDeveloperMode } from "@/hooks/useDeveloperMode";
 import FlightLogTab from "@/components/app/workspace/FlightLogTab";
 import { seedUnitSystem } from "@/hooks/useUnitSystem";
 import WeatherTab, { HeaderWeather } from "@/components/app/workspace/WeatherTab";
@@ -214,6 +216,10 @@ export default function OrthomosaicViewer() {
   type TabKey = "field" | "weather" | "treatment" | "planner" | "reports" | "flightlog" | "settings";
   const [activeTab, setActiveTab] = useState<TabKey>("field");
   const [openTabs, setOpenTabs] = useState<TabKey[]>(["field"]);
+  // Developer mode: the "treatment" slot shows the experimental Weed Scout
+  // instead of the Treatment Grid. Same tab key on purpose, so every button
+  // that opens the analysis system opens whichever one is switched in.
+  const dev = useDeveloperMode();
   const [newTabOpen, setNewTabOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   // Bumped whenever a scan's stored state changed (grid assessment snapshot,
@@ -859,7 +865,7 @@ export default function OrthomosaicViewer() {
   const TAB_DEFS: { key: TabKey; label: string; icon: any }[] = [
     { key: "field", label: "Field View", icon: MapIcon },
     { key: "weather", label: "Weather", icon: CloudSun },
-    { key: "treatment", label: "Treatment Grid", icon: Grid3x3 },
+    { key: "treatment", label: dev.weedScout ? "Weed Scout" : "Treatment Grid", icon: dev.weedScout ? FlaskConical : Grid3x3 },
     { key: "planner", label: "Flight Planner", icon: Plane },
     { key: "reports", label: "Reports", icon: FileBarChart },
     { key: "flightlog", label: "Flight Log", icon: History },
@@ -910,7 +916,8 @@ export default function OrthomosaicViewer() {
             onClick={() => openTab("treatment")}
             className="inline-flex h-7 items-center gap-1.5 rounded-sm bg-[#4CAF50] px-3 text-xs font-semibold text-black transition-colors hover:bg-[#43a047]"
           >
-            <Grid3x3 className="h-3.5 w-3.5" /> Treatment Grid
+            {dev.weedScout ? <FlaskConical className="h-3.5 w-3.5" /> : <Grid3x3 className="h-3.5 w-3.5" />}
+            {dev.weedScout ? "Weed Scout" : "Treatment Grid"}
           </button>
         </div>
       </div>
@@ -1069,7 +1076,21 @@ export default function OrthomosaicViewer() {
           />
         </div>
         {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
-        {activeTab === "treatment" && (
+        {activeTab === "treatment" && dev.weedScout && (
+          <WeedScoutTab
+            boundary={boundary}
+            tileUrl={tileUrl}
+            bounds={bounds}
+            maxNative={maxNative}
+            fieldId={field?.id ?? null}
+            taskId={taskId!}
+            scanCreatedAt={task.created_at ?? null}
+            settings={settings}
+            center={center}
+            setActiveTab={setActiveTab}
+          />
+        )}
+        {activeTab === "treatment" && !dev.weedScout && (
           <TreatmentTab
             boundary={boundary}
             tileUrl={tileUrl}

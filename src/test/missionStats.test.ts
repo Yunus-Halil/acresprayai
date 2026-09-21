@@ -202,8 +202,10 @@ describe("flight conditions", () => {
   it("says the forecast is unavailable rather than inventing one", () => {
     // A mission three weeks out is past the 7-day window. Letting the last day
     // in the array stand in for that date is the failure this guards: a pilot
-    // can act on a fabricated number.
-    const far = atMs + 21 * 86_400_000;
+    // can act on a fabricated number. Anchored on the real clock, not on the
+    // fixture date: the "in the past" branch is decided against Date.now(),
+    // and a fixed date drifted into it three weeks after this was written.
+    const far = Date.now() + 21 * 86_400_000;
     const c = conditionsAt(forecast(), far, fmt);
     expect(c.available).toBe(false);
     expect(c.basis).toBe("current");

@@ -29,6 +29,7 @@ import {
   volumeToLitres, volumeUnit, volumeValue, windMphFromShown, windMphShown, windUnit,
 } from "@/lib/units";
 import { setUnitSystem, useUnitSystem } from "@/hooks/useUnitSystem";
+import { setDeveloperFlag, useDeveloperMode } from "@/hooks/useDeveloperMode";
 import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
 } from "@/lib/droneSpecs";
@@ -105,6 +106,7 @@ export function SettingsTab({
   useEffect(() => { setLocal(settings); }, [settings]);
 
   const units = useUnitSystem();
+  const dev = useDeveloperMode();
   // Costs are stored per acre at full precision. Rounding only what is SHOWN
   // keeps a metric farmer's typed 111.20 from drifting the stored 45.
   const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -359,6 +361,38 @@ export function SettingsTab({
             <li>Your product list is what the mission log and application record offer for prefill.</li>
             <li>Waterlogged zones show "Drainage work required, consult agronomist" instead of a cost.</li>
           </ul>
+        </section>
+
+        {/* Developer mode. Per browser, not per field: it is a preference of
+            the person testing, and it changes nothing stored on the field. */}
+        <section className="rounded-sm border border-amber-500/30 p-5" style={{ background: "#161616" }}>
+          <h2 className="text-sm font-semibold mb-1">5. Developer mode</h2>
+          <p className="text-[11px] text-neutral-500 mb-4">
+            Experimental systems, swapped in for testing on real fields. These settings live in this browser
+            only and change nothing stored on the field. Turning one off brings the shipped system back as it was.
+          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs text-neutral-200">Weed Scout replaces the Treatment Grid</div>
+              <div className="text-[11px] text-neutral-500 mt-1 max-w-lg">
+                Tiles the field, marks the tiles that are not average, fits the crop rows and flags vegetation
+                between them, zooms in on the flagged ground, and asks the brain to describe each candidate with
+                the place, local time, season and weather of the capture. Saved verdicts build the observation
+                archive. Candidates, never verdicts; the grid's own state is untouched while this is on.
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={dev.weedScout}
+              onClick={() => setDeveloperFlag("weedScout", !dev.weedScout)}
+              className={`shrink-0 text-xs rounded-sm px-3 py-1.5 border font-semibold ${dev.weedScout
+                ? "bg-amber-400 text-black border-amber-400"
+                : "border-[#222] text-neutral-300 hover:bg-[#1f1f1f]"}`}
+            >
+              {dev.weedScout ? "On" : "Off"}
+            </button>
+          </div>
         </section>
       </div>
     </div>
