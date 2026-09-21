@@ -42,6 +42,7 @@ import {
   F, type AnalysisTile, type Blob, type Candidate, type Region, type RowModel, type ScoutInputs, type ScoutProgress,
   type ScoutResult, type SweepStats, type TileFlag, type TileScore,
 } from "./types";
+import { type UnitSystem, fmtLengthCm } from "../units";
 import { globalThreshold, indexRaster, maskWindow } from "./vegetation";
 import { boundsAround, fetchRaster, renderChip } from "./zoom";
 
@@ -55,6 +56,8 @@ export type RunOptions = {
   crop?: string;
   growthStage?: string | null;
   fieldId?: string | null;
+  /** Follows the operator's display setting; defaults to metric for callers (tests) that omit it. */
+  unitSystem?: UnitSystem;
 };
 
 class Aborted extends Error {
@@ -67,6 +70,7 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
     opts.onProgress?.({ stage, fraction, note });
   const check = () => { if (opts.signal?.aborted) throw new Aborted(); };
   const notes: string[] = [];
+  const sys: UnitSystem = opts.unitSystem ?? "metric";
   const startedAt = new Date().toISOString();
   const template = (z: number, x: number, y: number) =>
     tileUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
@@ -204,7 +208,7 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
       check();
       await yieldToUi();
     }
-    if (sweep.backedOff) notes.push(`The sweep read at ${(plan.gsdM * 100).toFixed(1)} cm/px, ${sweep.backedOff} zoom level(s) above the deepest bake, to stay under ${params.maxSweepWindows} windows. Raise the window limit for the full depth.`);
+    if (sweep.backedOff) notes.push(`The sweep read at ${fmtLengthCm(plan.gsdM * 100, sys).text}/px, ${sweep.backedOff} zoom level(s) above the deepest bake, to stay under ${params.maxSweepWindows} windows. Raise the window limit for the full depth.`);
     if (sweep.failed) notes.push(`${sweep.failed} sweep window(s) failed to load; plants there were not measured.`);
     if (canopyWindows) notes.push(`${canopyWindows} sweep window(s) were one sheet of vegetation and yielded no separate plants.`);
     if (fitRowsInSweep && rows && !rows.usable && sweep.rowWindows) {
@@ -232,13 +236,13 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
   const measuredGsd = sweep.gsdM ?? gsdM;
   candidates = candidates.map(c => ({
     ...c,
-    estimate: describe(c, opts.context ?? null, opts.crop ?? "", opts.growthStage ?? null, ranked.plants, params.rowSpacingM, measuredGsd),
+    estimate: describe(c, opts.context ?? null, opts.crop ?? "", opts.growthStage ?? null, ranked.plants, params.rowSpacingM, measuredGsd, sys),
   }));
   if (ranked.overflow) notes.push(`${ranked.overflow} further candidate(s) were cut from the queue; raise the thresholds or shrink the field.`);
   if (ranked.headlandExcluded) notes.push(`${ranked.headlandExcluded} plant(s) inside the ${params.headlandM} m headland were not scored.`);
   if (!canopy.closed) {
     if (!ranked.plants && blobs.length) notes.push(`Only ${blobs.length} plants were measurable, too few for a plant population baseline; nothing is scored as a plant outlier.`);
-    else if (ranked.plants) notes.push(`Typical plant in this field: ${(ranked.plants.typicalDiameterM * 100).toFixed(0)} cm across, over ${ranked.plants.population.toLocaleString()} plants.`);
+    else if (ranked.plants) notes.push(`Typical plant in this field: ${fmtLengthCm(ranked.plants.typicalDiameterM * 100, sys).text} across, over ${ranked.plants.population.toLocaleString()} plants.`);
   }
   const adjusted = candidates.filter(c => c.feedback && c.feedback.factor !== 1).length;
   if (adjusted) notes.push(`${adjusted} candidate(s) were re-ranked from your past verdicts.`);

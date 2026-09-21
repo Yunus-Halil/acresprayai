@@ -24,7 +24,7 @@ import { useAuth } from "@/lib/auth";
 import { type FarmerSettings, growthStage } from "@/lib/farmerSettings";
 import type { LatLng2 } from "@/lib/geo";
 import { storageKey } from "@/lib/storage";
-import { fmtArea, fmtDistance } from "@/lib/units";
+import { fmtArea, fmtAreaCm2, fmtDistance, fmtLengthCm } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { describeCandidate } from "@/lib/weedScout/candidates";
 import { type EventContext, describeEvent, fetchEventContext } from "@/lib/weedScout/context";
@@ -191,7 +191,7 @@ export function WeedScoutTab({
     try {
       const res = await runWeedScout(
         { boundary: rings, tileUrl, maxNative, params, feedback },
-        { onProgress: setProgress, signal: ctrl.signal, context, crop, growthStage: stage, fieldId },
+        { onProgress: setProgress, signal: ctrl.signal, context, crop, growthStage: stage, fieldId, unitSystem: units },
       );
       setResult(res);
       setSelectedId(res.candidates[0]?.id ?? null);
@@ -201,7 +201,7 @@ export function WeedScoutTab({
       setRunning(false);
       setProgress(null);
     }
-  }, [rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId]);
+  }, [rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId, units]);
 
   const save = useCallback(async () => {
     if (!selected || !user || !context || !result) return;
@@ -466,15 +466,15 @@ export function WeedScoutTab({
               <Row k="Tiles" v={`${result.tiles.length.toLocaleString()} at ${result.tileM} m${params.autoTile ? " (auto)" : ""}, ${result.baselineTiles.toLocaleString()} in the baseline`} />
               <Row k="Rows" v={result.rowsUsed} />
               {result.canopyClosed && <Row k="Canopy" v="closed: regions only, no plant-level detection" />}
-              <Row k="Base pass" v={`${(result.gsdM * 100).toFixed(1)} cm/px`} />
+              <Row k="Base pass" v={`${fmtLengthCm(result.gsdM * 100, units).text}/px`} />
               <Row k="Sweep" v={result.sweep.ran
-                ? `${result.sweep.windows} windows at ${((result.sweep.gsdM ?? 0) * 100).toFixed(1)} cm/px${result.sweep.rowWindows ? `, rows in ${result.sweep.rowWindows}` : ""}`
+                ? `${result.sweep.windows} windows at ${fmtLengthCm((result.sweep.gsdM ?? 0) * 100, units).text}/px${result.sweep.rowWindows ? `, rows in ${result.sweep.rowWindows}` : ""}`
                 : "not run"} />
-              <Row k="Smallest measurable" v={fmtDistance(result.smallestMeasurableM, units).text} />
+              <Row k="Smallest measurable" v={fmtLengthCm(result.smallestMeasurableM * 100, units).text} />
               <Row k="Plants measured" v={result.blobCount.toLocaleString()} />
               <Row k="Regions" v={`${result.regions.length} (${areaText(result.regions.reduce((s, r) => s + r.areaM2, 0))})`} />
               {result.rows?.usable && (
-                <Row k="Row model" v={`confidence ${result.rows.confidence.toFixed(2)}, ${result.rows.medianAngleDeg.toFixed(0)} deg, pitch ${(result.rows.medianPitchM * 100).toFixed(0)} cm`} />
+                <Row k="Row model" v={`confidence ${result.rows.confidence.toFixed(2)}, ${result.rows.medianAngleDeg.toFixed(0)} deg, pitch ${fmtLengthCm(result.rows.medianPitchM * 100, units).text}`} />
               )}
               <Row k="Candidates" v={`${result.candidates.length} (${regionCandidates.length} regions, ${pointCandidates.length} points)`} />
               {result.notes.map((n, i) => (
@@ -507,7 +507,7 @@ export function WeedScoutTab({
                           <span className="truncate">{c.region ? `${c.region.klass}, ${areaText(c.areaM2)}` : c.kind}</span>
                           {saved[c.id] && <CheckCircle2 className="h-3 w-3 text-[#4CAF50] shrink-0" />}
                         </div>
-                        <div className="text-[10px] text-neutral-500 truncate">{describeCandidate(c)}</div>
+                        <div className="text-[10px] text-neutral-500 truncate">{describeCandidate(c, units)}</div>
                       </div>
                       <div className="text-[10px] font-mono text-neutral-400">{c.score.toFixed(2)}</div>
                     </button>
@@ -524,7 +524,7 @@ export function WeedScoutTab({
                 <div>
                   <div className={labelCls}>Selected candidate</div>
                   <div className="text-xs text-neutral-200">{selected.region ? `${selected.region.klass}, ${areaText(selected.areaM2)}` : selected.kind}</div>
-                  <div className="text-[10px] text-neutral-500">{describeCandidate(selected)}</div>
+                  <div className="text-[10px] text-neutral-500">{describeCandidate(selected, units)}</div>
                 </div>
                 <button type="button" onClick={() => setSelectedId(null)} className="text-neutral-500 hover:text-neutral-200"><X className="h-3.5 w-3.5" /></button>
               </div>
@@ -533,7 +533,7 @@ export function WeedScoutTab({
                   <img src={selected.chip} alt="Chip of the candidate" className="w-full rounded-sm border border-[#222]" style={{ imageRendering: "pixelated" }} />
                   <div className="text-[10px] text-neutral-500 mt-1">
                     {selected.chipSpanM ? `${fmtDistance(selected.chipSpanM, units).text} across` : ""}
-                    {selected.chipGsdM ? ` at ${(selected.chipGsdM * 100).toFixed(2)} cm/px, real pixels, north up` : ""}
+                    {selected.chipGsdM ? ` at ${fmtLengthCm(selected.chipGsdM * 100, units).text}/px, real pixels, north up` : ""}
                   </div>
                 </div>
               ) : (
@@ -550,12 +550,12 @@ export function WeedScoutTab({
                   </>
                 ) : (
                   <>
-                    <Dt k="Off row" v={selected.distanceToRowM != null ? `${(Math.abs(selected.distanceToRowM) * 100).toFixed(0)} cm` : "no row model"} />
+                    <Dt k="Off row" v={selected.distanceToRowM != null ? fmtLengthCm(Math.abs(selected.distanceToRowM) * 100, units).text : "no row model"} />
                     <Dt k="Unlike plants" v={selected.blobZ != null ? `${selected.blobZ.toFixed(1)} z on ${selected.blobZFeature}` : "within the field's plants"} />
                     <Dt k="Tile deviation" v={selected.anomalyZ != null ? `${selected.anomalyZ.toFixed(1)} z on ${selected.anomalyFeature}` : "within the field average"} />
-                    <Dt k="Size" v={selected.blob ? `${(selected.blob.equivDiameterM * 100).toFixed(0)} cm, ${(selected.blob.areaM2 * 1e4).toFixed(0)} cm2` : "no vegetation"} />
+                    <Dt k="Size" v={selected.blob ? `${fmtLengthCm(selected.blob.equivDiameterM * 100, units).text}, ${fmtAreaCm2(selected.blob.areaM2 * 1e4, units).text}` : "no vegetation"} />
                     <Dt k="Greenness" v={selected.blob ? selected.blob.exgMean.toFixed(3) : "n/a"} />
-                    <Dt k="Measured at" v={selected.blob ? `${(selected.blob.gsdM * 100).toFixed(2)} cm/px` : "n/a"} />
+                    <Dt k="Measured at" v={selected.blob ? `${fmtLengthCm(selected.blob.gsdM * 100, units).text}/px` : "n/a"} />
                   </>
                 )}
               </dl>

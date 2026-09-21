@@ -257,6 +257,17 @@ export function fmtLengthCm(cm: number, sys: UnitSystem): Measure {
 
 export const lengthCmUnit = (sys: UnitSystem): string => (sys === "metric" ? "cm" : "in");
 
+/**
+ * A small area in square centimetres — a leaf or a blob's footprint, not a
+ * field. Square inches for imperial; `fmtArea` is for field-scale ground and
+ * would round anything this small to zero.
+ */
+export function fmtAreaCm2(cm2: number, sys: UnitSystem): Measure {
+  return sys === "metric"
+    ? measure(cm2, "cm²", 0)
+    : measure(cm2 / (2.54 * 2.54), "in²", 1);
+}
+
 export function fmtMass(kg: number, sys: UnitSystem): Measure {
   return sys === "metric" ? measure(kg, "kg", 1) : measure(kg / KG_PER_LB, "lb", 1);
 }

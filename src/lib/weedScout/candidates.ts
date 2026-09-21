@@ -22,6 +22,7 @@
 // Nothing here produces a verdict. No field, label or string in this module
 // describes a candidate as a weed; there is a test for that.
 import type { LatLng2 } from "../geo";
+import { type UnitSystem, fmtLengthCm } from "../units";
 import { type BlobBaseline, blobBaseline, scoreBlob } from "./blobs";
 import { distanceToRowM } from "./rows";
 import type { AnalysisTile, Blob, Candidate, CandidateKind, Region, RowModel, ScoutParams, TileFlag } from "./types";
@@ -158,8 +159,8 @@ export function rankCandidates(input: RankInput): RankResult {
   return { candidates: out.slice(0, MAX_CANDIDATES), overflow, headlandExcluded, plants };
 }
 
-/** One line describing why a candidate is in the queue. Never a verdict. */
-export function describeCandidate(c: Candidate): string {
+/** One line describing why a candidate is in the queue. Never a verdict. `sys` follows the operator's display setting. */
+export function describeCandidate(c: Candidate, sys: UnitSystem = "metric"): string {
   const parts: string[] = [];
   if (c.region) {
     parts.push(`${c.region.klass}, ${c.region.tileCount} tiles`);
@@ -168,7 +169,7 @@ export function describeCandidate(c: Candidate): string {
     return parts.join(", ");
   }
   if (c.distanceToRowM !== null && (c.kind === "off-row vegetation" || c.kind === "off-row and outlier")) {
-    parts.push(`${(Math.abs(c.distanceToRowM) * 100).toFixed(0)} cm off the nearest row`);
+    parts.push(`${fmtLengthCm(Math.abs(c.distanceToRowM) * 100, sys).text} off the nearest row`);
   }
   if (c.blobZ !== null && c.blobZFeature && (c.kind === "vegetation outlier" || c.kind === "off-row and outlier")) {
     parts.push(`${c.blobZFeature} ${c.blobZ.toFixed(1)} deviations from the field's plants`);
@@ -176,7 +177,7 @@ export function describeCandidate(c: Candidate): string {
   if (c.kind === "field outlier" && c.anomalyZ !== null && c.anomalyFeature) {
     parts.push(`${c.anomalyFeature} ${c.anomalyZ.toFixed(1)} typical deviations from the field`);
   }
-  if (c.blob) parts.push(`${(c.blob.equivDiameterM * 100).toFixed(0)} cm across`);
+  if (c.blob) parts.push(`${fmtLengthCm(c.blob.equivDiameterM * 100, sys).text} across`);
   else parts.push("no vegetation in the tile");
   return parts.join(", ");
 }

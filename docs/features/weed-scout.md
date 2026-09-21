@@ -98,6 +98,13 @@ time-of-day note, what a person on the ground should check, and caveats. No spec
 ever named by this file; species text only ever comes from verdicts the operator wrote,
 surfaced by retrieval. Never a product, never a rate.
 
+Every distance, area and resolution figure the tab and the describer produce follows the
+operator's unit setting (`useUnitSystem`), the same one every other screen reads: cm/in for
+plant and off-row measurements (`fmtLengthCm`), cm²/in² for a leaf's footprint
+(`fmtAreaCm2`), and m²/ha or ft²/ac for regions (`fmtArea`). `describe()`, `describeCandidate()`
+and the pipeline's own notes all take the unit system as a parameter and default to metric
+only for callers, such as the tests, that have no operator setting to read.
+
 ## The event context
 
 `weather?mode=context&lat&lon&time=` on the existing weather edge function. NOAA's

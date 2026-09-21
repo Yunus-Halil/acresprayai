@@ -12,18 +12,20 @@
 import type { EventContext } from "./context";
 import type { BlobBaseline } from "./blobs";
 import type { Candidate, Estimate } from "./types";
+import { type UnitSystem, fmtArea, fmtLengthCm } from "../units";
 
-const cm = (m: number) => `${(m * 100).toFixed(0)} cm`;
+/** cm, formatted in whichever system the operator has set. `sys` defaults to metric for any caller that has not been threaded through yet. */
+const cm = (m: number, sys: UnitSystem = "metric") => fmtLengthCm(m * 100, sys).text;
 
 /** Size class from equivalent diameter, with the resolution floor stated. */
-export function sizeClassOf(diameterM: number, gsdM: number): string {
+export function sizeClassOf(diameterM: number, gsdM: number, sys: UnitSystem = "metric"): string {
   const px = diameterM / gsdM;
   if (px < 3) return "at the resolution floor (under 3 pixels across, size and shape are not reliable)";
-  if (diameterM < 0.04) return "seedling-sized (under 4 cm)";
-  if (diameterM < 0.08) return "small (4 to 8 cm)";
-  if (diameterM < 0.16) return "established (8 to 16 cm)";
-  if (diameterM < 0.32) return "large (16 to 32 cm)";
-  return "a clump or patch (over 32 cm)";
+  if (diameterM < 0.04) return `seedling-sized (under ${cm(0.04, sys)})`;
+  if (diameterM < 0.08) return `small (${cm(0.04, sys)} to ${cm(0.08, sys)})`;
+  if (diameterM < 0.16) return `established (${cm(0.08, sys)} to ${cm(0.16, sys)})`;
+  if (diameterM < 0.32) return `large (${cm(0.16, sys)} to ${cm(0.32, sys)})`;
+  return `a clump or patch (over ${cm(0.32, sys)})`;
 }
 
 /** Growth habit from the coarse outline, only when there are pixels enough to say. */
@@ -48,16 +50,16 @@ export function colourNoteOf(c: Candidate, plants: BlobBaseline | null): string 
   return "about the same green as the field's typical plant";
 }
 
-export function positionNoteOf(c: Candidate, rowSpacingM: number): string {
+export function positionNoteOf(c: Candidate, rowSpacingM: number, sys: UnitSystem = "metric"): string {
   if (c.kind === "not-average region") {
-    return `A ${c.region?.klass ?? "not-average"} area of about ${c.areaM2 < 10_000 ? `${c.areaM2.toFixed(0)} m2` : `${(c.areaM2 / 10_000).toFixed(1)} ha`}, ${c.region?.tileCount ?? 0} tiles.`;
+    return `A ${c.region?.klass ?? "not-average"} area of about ${fmtArea(c.areaM2, sys).text}, ${c.region?.tileCount ?? 0} tiles.`;
   }
   if (c.distanceToRowM == null) return "No trustworthy row model here, so its position relative to the crop rows is unknown.";
   const d = Math.abs(c.distanceToRowM);
   const frac = rowSpacingM > 0 ? d / rowSpacingM : 0;
-  if (frac >= 0.4) return `Sits ${cm(d)} from the nearest fitted row, near the middle of the inter-row: not where the planter put anything.`;
-  if (frac >= 0.3) return `Sits ${cm(d)} from the nearest fitted row, outside the in-row band.`;
-  return `Sits ${cm(d)} from the nearest fitted row, within the band a planted plant can wander in.`;
+  if (frac >= 0.4) return `Sits ${cm(d, sys)} from the nearest fitted row, near the middle of the inter-row: not where the planter put anything.`;
+  if (frac >= 0.3) return `Sits ${cm(d, sys)} from the nearest fitted row, outside the in-row band.`;
+  return `Sits ${cm(d, sys)} from the nearest fitted row, within the band a planted plant can wander in.`;
 }
 
 /** Season and time context, in words a farmer would use. Groups only, never a species. */
@@ -96,13 +98,13 @@ export function whatWouldConfirm(c: Candidate): string[] {
   return out;
 }
 
-export function caveatsOf(c: Candidate, gsdM: number): string[] {
+export function caveatsOf(c: Candidate, gsdM: number, sys: UnitSystem = "metric"): string[] {
   const out: string[] = [];
   if (c.blob) {
     const px = c.blob.equivDiameterM / c.blob.gsdM;
-    out.push(`${cm(c.blob.equivDiameterM)} across is ${px.toFixed(0)} pixels at ${(c.blob.gsdM * 100).toFixed(1)} cm/px.`);
+    out.push(`${cm(c.blob.equivDiameterM, sys)} across is ${px.toFixed(0)} pixels at ${cm(c.blob.gsdM, sys)}/px.`);
   } else {
-    out.push(`Measured at ${(gsdM * 100).toFixed(1)} cm/px; nothing smaller than ${cm(3 * gsdM)} is measurable in this pass.`);
+    out.push(`Measured at ${cm(gsdM, sys)}/px; nothing smaller than ${cm(3 * gsdM, sys)} is measurable in this pass.`);
   }
   if (c.rowConfidence != null && c.rowConfidence < 0.5) out.push(`Row fit confidence here is ${c.rowConfidence.toFixed(2)}; treat the off-row distance as approximate.`);
   if (c.blob?.touchesBorder) out.push("This plant touched the edge of its imagery window; its size is a lower bound.");
@@ -119,13 +121,14 @@ export function describe(
   plants: BlobBaseline | null,
   rowSpacingM: number,
   gsdM: number,
+  sys: UnitSystem = "metric",
 ): Estimate {
   const sizeClass = c.blob
-    ? sizeClassOf(c.blob.equivDiameterM, c.blob.gsdM)
+    ? sizeClassOf(c.blob.equivDiameterM, c.blob.gsdM, sys)
     : c.kind === "not-average region" ? "a region, not a plant" : "a tile, not a plant";
   const habit = habitOf(c);
   const colourNote = colourNoteOf(c, plants);
-  const positionNote = positionNoteOf(c, rowSpacingM);
+  const positionNote = positionNoteOf(c, rowSpacingM, sys);
   const seasonNote = seasonNoteOf(ctx, crop, stage);
 
   let summary: string;
@@ -157,6 +160,6 @@ export function describe(
     positionNote,
     seasonNote,
     whatWouldConfirm: whatWouldConfirm(c),
-    caveats: caveatsOf(c, gsdM),
+    caveats: caveatsOf(c, gsdM, sys),
   };
 }
