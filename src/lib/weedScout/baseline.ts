@@ -454,3 +454,23 @@ export function growRegions(
   regions.sort((a, b) => b.tileCount * b.meanStrength - a.tileCount * a.meanStrength);
   return regions;
 }
+
+/** Median tile vegetation fraction above which the field reads as closed canopy. */
+export const CANOPY_CLOSED_FRACTION = 0.85;
+
+/**
+ * Whether soil is visible between plants at all.
+ *
+ * Plant-level detection (blobs, rows, the plant population) needs plants to
+ * be separate things on a soil background. Pasture, a mature crop or a cover
+ * crop is one green sheet; asking for its connected components returns one
+ * component the size of the field, or sixty thousand fragments of shadow.
+ * Regions still work on a closed canopy: pale patches, thin patches and
+ * bare patches are exactly what the tile baseline sees.
+ */
+export function canopyClosed(samples: TileSample[]): { closed: boolean; medianVegetation: number } {
+  const usable = samples.filter(s => s.usable);
+  if (!usable.length) return { closed: false, medianVegetation: 0 };
+  const medianVegetation = median(usable.map(s => s.vegetationFraction));
+  return { closed: medianVegetation >= CANOPY_CLOSED_FRACTION, medianVegetation };
+}

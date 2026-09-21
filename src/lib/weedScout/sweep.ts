@@ -20,7 +20,7 @@
 import type { RasterSource } from "../cellFeatures";
 import { type LatLng2, M_PER_DEG_LAT, mPerDegLng } from "../geo";
 import { metresPerPixel } from "../gridRender";
-import { extractBlobs } from "./blobs";
+import { TooManyBlobsError, extractBlobs } from "./blobs";
 import { MIN_TILE_CONFIDENCE, fitRaster } from "./rows";
 import { rasterGsdM } from "./tiles";
 import type { AnalysisTile, Blob, RowTileFit } from "./types";
@@ -138,6 +138,8 @@ export type WindowResult = {
   gsdM: number;
   failed: boolean;
   missingTiles: number;
+  /** The window's mask was one sheet of vegetation; no plants could be separated. */
+  canopy: boolean;
 };
 
 /**
@@ -159,13 +161,15 @@ export async function sweepWindow(
     minAreaCm2: number;
     tileOf: (p: LatLng2) => string | null;
     coarseDistance: (p: LatLng2) => number | null;
+    /** False when the field is not a row crop: skip the fit, use coarseDistance (null) instead. */
+    fitRows: boolean;
   },
 ): Promise<WindowResult> {
   let raster: RasterSource, missingTiles: number;
   try {
     ({ raster, missingTiles } = await fetchRaster(template, win.fetch, z, SWEEP_MAX_TILES));
   } catch {
-    return { blobs: [], fit: null, gsdM: 0, failed: true, missingTiles: 0 };
+    return { blobs: [], fit: null, gsdM: 0, failed: true, missingTiles: 0, canopy: false };
   }
   const gsdM = rasterGsdM(raster);
   const index = indexRaster(raster);
@@ -176,14 +180,20 @@ export async function sweepWindow(
     index, raster.width, { x0: 0, y0: 0, x1: raster.width - 1, y1: raster.height - 1 },
     mask, opts.fieldThreshold,
   );
-  const { fit, distanceTo } = fitRaster(mask, raster, opts.growerSpacingM, opts.angleHintDeg);
-  const trusted = fit.confidence >= MIN_TILE_CONFIDENCE;
-  const all = extractBlobs(mask, raster, { minAreaCm2: opts.minAreaCm2, tileOf: opts.tileOf, idPrefix: `s${win.id}-` });
+  const rowFit = opts.fitRows ? fitRaster(mask, raster, opts.growerSpacingM, opts.angleHintDeg) : null;
+  const trusted = !!rowFit && rowFit.fit.confidence >= MIN_TILE_CONFIDENCE;
+  let all: Blob[];
+  try {
+    all = extractBlobs(mask, raster, { minAreaCm2: opts.minAreaCm2, tileOf: opts.tileOf, idPrefix: `s${win.id}-` });
+  } catch (e) {
+    if (e instanceof TooManyBlobsError) return { blobs: [], fit: null, gsdM, failed: false, missingTiles, canopy: true };
+    throw e;
+  }
   const blobs: Blob[] = [];
   for (const b of all) {
     if (b.touchesBorder || !inBounds(b.centroid, win.owned)) continue;
-    const d = trusted ? distanceTo(b.centroid) : opts.coarseDistance(b.centroid);
-    blobs.push({ ...b, distanceToRowM: d, rowConfidence: trusted ? fit.confidence : null });
+    const d = trusted ? rowFit!.distanceTo(b.centroid) : opts.coarseDistance(b.centroid);
+    blobs.push({ ...b, distanceToRowM: d, rowConfidence: trusted ? rowFit!.fit.confidence : null });
   }
-  return { blobs, fit: trusted ? fit : null, gsdM, failed: false, missingTiles };
+  return { blobs, fit: trusted ? rowFit!.fit : null, gsdM, failed: false, missingTiles, canopy: false };
 }

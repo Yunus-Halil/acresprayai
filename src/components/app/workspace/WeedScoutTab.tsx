@@ -57,6 +57,8 @@ function loadParams(): ScoutParams {
       minBlobCm2: num(p.minBlobCm2, DEFAULT_SCOUT_PARAMS.minBlobCm2),
       blobZ: num(p.blobZ, DEFAULT_SCOUT_PARAMS.blobZ),
       minRegionTiles: Math.round(num(p.minRegionTiles, DEFAULT_SCOUT_PARAMS.minRegionTiles)),
+      autoTile: p.autoTile !== false,
+      rowMode: p.rowMode === "rows" || p.rowMode === "none" ? p.rowMode : "auto",
       sweep: p.sweep !== false,
       maxSweepWindows: Math.round(num(p.maxSweepWindows, DEFAULT_SCOUT_PARAMS.maxSweepWindows)),
       maxChips: Math.round(num(p.maxChips, DEFAULT_SCOUT_PARAMS.maxChips)),
@@ -346,9 +348,10 @@ export function WeedScoutTab({
             <span className="text-[10px] uppercase tracking-wider text-amber-400/90 border border-amber-400/40 rounded-sm px-1.5 py-0.5">Experimental</span>
           </div>
           <p className="text-[11px] text-neutral-500 mt-1">
-            Tiles the field, marks what is not average at two scales and merges it into regions, fits the crop
-            rows, sweeps the whole field at full depth for the small things, and ranks candidates for you to
-            look at. Learns from your verdicts. Everything runs in this browser.
+            Any crop, any field shape. Tiles the field, marks what is not average at two scales and merges it
+            into regions, fits crop rows where there are any, sweeps the whole field at full depth for the small
+            things, and ranks candidates for you to look at. Learns from your verdicts. Everything runs in this
+            browser.
           </p>
         </div>
 
@@ -356,14 +359,37 @@ export function WeedScoutTab({
           {/* Parameters */}
           <section className="p-4 border-b border-[#1f1f1f] space-y-3">
             <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className={labelCls}>Crop pattern</label>
+                <div className="inline-flex rounded-sm border border-[#222] bg-[#0f0f0f] overflow-hidden">
+                  {([
+                    { v: "auto", label: "Detect rows" },
+                    { v: "rows", label: "Row crop" },
+                    { v: "none", label: "Not a row crop" },
+                  ] as const).map(o => (
+                    <button key={o.v} type="button" onClick={() => setParams(p => ({ ...p, rowMode: o.v }))}
+                      className={`px-2.5 py-1 text-[11px] ${params.rowMode === o.v ? "bg-[#4CAF50] text-black font-semibold" : "text-neutral-400 hover:text-neutral-200"}`}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-[10px] text-neutral-500 mt-1">
+                  Any crop, any field shape. Rows only add the between-the-rows signal; regions and plant outliers work without them.
+                </div>
+              </div>
               <div>
                 <label className={labelCls}>Tile size (m)</label>
-                <input type="number" min={1} max={20} step={0.5} className={inputCls} value={params.tileM}
-                  onChange={e => setParams(p => ({ ...p, tileM: Math.max(1, Number(e.target.value) || 3) }))} />
+                <div className="flex items-center gap-2">
+                  <input type="number" min={1} max={20} step={0.5} className={inputCls} value={params.tileM} disabled={params.autoTile}
+                    onChange={e => setParams(p => ({ ...p, tileM: Math.max(1, Number(e.target.value) || 3) }))} />
+                  <label className="text-[11px] text-neutral-400 inline-flex items-center gap-1 shrink-0 cursor-pointer">
+                    <input type="checkbox" checked={params.autoTile} onChange={e => setParams(p => ({ ...p, autoTile: e.target.checked }))} className="accent-[#4CAF50]" /> auto
+                  </label>
+                </div>
               </div>
               <div>
                 <label className={labelCls}>Row spacing ({rowSpacingUnit})</label>
-                <input type="number" min={1} step={0.5} className={inputCls} value={rowSpacingShown}
+                <input type="number" min={1} step={0.5} className={inputCls} value={rowSpacingShown} disabled={params.rowMode === "none"}
                   onChange={e => { const v = Number(e.target.value); if (v > 0) setRowSpacingShown(v); }} />
               </div>
               <div>
@@ -437,7 +463,9 @@ export function WeedScoutTab({
           {result && (
             <section className="p-4 border-b border-[#1f1f1f] text-[11px] space-y-1">
               <div className={labelCls}>This run</div>
-              <Row k="Tiles" v={`${result.tiles.length.toLocaleString()} at ${params.tileM} m, ${result.baselineTiles.toLocaleString()} in the baseline`} />
+              <Row k="Tiles" v={`${result.tiles.length.toLocaleString()} at ${result.tileM} m${params.autoTile ? " (auto)" : ""}, ${result.baselineTiles.toLocaleString()} in the baseline`} />
+              <Row k="Rows" v={result.rowsUsed} />
+              {result.canopyClosed && <Row k="Canopy" v="closed: regions only, no plant-level detection" />}
               <Row k="Base pass" v={`${(result.gsdM * 100).toFixed(1)} cm/px`} />
               <Row k="Sweep" v={result.sweep.ran
                 ? `${result.sweep.windows} windows at ${((result.sweep.gsdM ?? 0) * 100).toFixed(1)} cm/px${result.sweep.rowWindows ? `, rows in ${result.sweep.rowWindows}` : ""}`
@@ -445,9 +473,9 @@ export function WeedScoutTab({
               <Row k="Smallest measurable" v={fmtDistance(result.smallestMeasurableM, units).text} />
               <Row k="Plants measured" v={result.blobCount.toLocaleString()} />
               <Row k="Regions" v={`${result.regions.length} (${areaText(result.regions.reduce((s, r) => s + r.areaM2, 0))})`} />
-              <Row k="Row model" v={result.rows?.usable
-                ? `found, confidence ${result.rows.confidence.toFixed(2)}, ${result.rows.medianAngleDeg.toFixed(0)} deg, pitch ${(result.rows.medianPitchM * 100).toFixed(0)} cm`
-                : "no trustworthy rows in the base pass"} />
+              {result.rows?.usable && (
+                <Row k="Row model" v={`confidence ${result.rows.confidence.toFixed(2)}, ${result.rows.medianAngleDeg.toFixed(0)} deg, pitch ${(result.rows.medianPitchM * 100).toFixed(0)} cm`} />
+              )}
               <Row k="Candidates" v={`${result.candidates.length} (${regionCandidates.length} regions, ${pointCandidates.length} points)`} />
               {result.notes.map((n, i) => (
                 <div key={i} className="text-neutral-500 flex items-start gap-1.5 pt-1"><AlertTriangle className="h-3 w-3 shrink-0 mt-0.5 text-amber-500/80" /> {n}</div>

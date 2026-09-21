@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { RasterSource } from "@/lib/cellFeatures";
 import { M_PER_DEG_LAT, mPerDegLng, polygonAreaM2, type LatLng2 } from "@/lib/geo";
 import {
-  classify, fieldBaseline, flagTiles, growRegions, sampleTiles, scoreTiles, shorth, traceOutline,
+  canopyClosed, classify, fieldBaseline, flagTiles, growRegions, sampleTiles, scoreTiles, shorth, traceOutline,
 } from "@/lib/weedScout/baseline";
 import { blobBaseline, extractBlobs, labelComponents, scoreBlob } from "@/lib/weedScout/blobs";
 import { describeCandidate, rankCandidates } from "@/lib/weedScout/candidates";
@@ -18,7 +18,7 @@ import {
   MIN_TILE_CONFIDENCE, distanceToRowM, fitRowModel, localFrame, pixelAngleToGround, projectionProfile, rowAngle, toSparse,
 } from "@/lib/weedScout/rows";
 import { inBounds, planSweep, planWindows } from "@/lib/weedScout/sweep";
-import { distanceToBoundaryM, rasterGsdM, tessellate, tileIdAt, tileLattice, tileWindow } from "@/lib/weedScout/tiles";
+import { autoTileM, distanceToBoundaryM, rasterGsdM, tessellate, tileIdAt, tileLattice, tileWindow } from "@/lib/weedScout/tiles";
 import { DEFAULT_SCOUT_PARAMS, type Candidate, type FeedbackRow } from "@/lib/weedScout/types";
 import { globalThreshold, indexRaster, maskWindow, otsuFromHistogram, emptyHistogram, accumulateHistogram } from "@/lib/weedScout/vegetation";
 import { cropRaster, pixelRect } from "@/lib/weedScout/zoom";
@@ -164,6 +164,42 @@ describe("step 1: the boundary becomes tiles", () => {
     const w = tileWindow(tile, raster)!;
     expect(w.x1 - w.x0 + 1).toBeGreaterThanOrEqual(149);
     expect(w.x1 - w.x0 + 1).toBeLessThanOrEqual(151);
+  });
+});
+
+describe("any field: tile size follows the area, canopy is detected", () => {
+  it("keeps 3 m where it fits, shrinks for a plot, grows for a section", () => {
+    expect(autoTileM(squareField(60))).toBe(3);                 // 400 tiles
+    expect(autoTileM(squareField(300))).toBe(3);                // 10,000 tiles
+    const plot = autoTileM(squareField(12));                    // 144 m2: 3 m would be 16 tiles
+    expect(plot).toBeLessThan(1.5);
+    expect(plot).toBeGreaterThanOrEqual(1);
+    const section = autoTileM(squareField(1600));               // 256 ha: 3 m would be 284k tiles
+    expect(section).toBeGreaterThanOrEqual(11);
+    expect(section).toBeLessThanOrEqual(12);
+    // The lattice it produces is inside the ceiling, and the count is in the band.
+    const tiles = tessellate(squareField(1600), section, 0);
+    expect(tiles.length).toBeLessThanOrEqual(20_000);
+    expect(tiles.length).toBeGreaterThan(15_000);
+    expect(autoTileM(squareField(2000))).toBeLessThanOrEqual(20);
+  });
+
+  it("reads a solid green field as closed canopy and a row crop as open", () => {
+    const open = renderScene({ sizeM: 30, gsdM: 0.05, rowAngleDeg: 0 });
+    const tiles = tessellate(squareField(30), 3, 0);
+    expect(canopyClosed(sampleTiles(tiles, open.raster, maskOf(open.raster))).closed).toBe(false);
+    // Pasture: every pixel is the plant colour, so the mask is one sheet.
+    const px = open.raster.width;
+    const rgba = new Uint8ClampedArray(px * px * 4);
+    for (let i = 0; i < px * px; i++) { rgba[i * 4] = 58; rgba[i * 4 + 1] = 128 + (i % 7); rgba[i * 4 + 2] = 40; rgba[i * 4 + 3] = 255; }
+    const closed: RasterSource = { ...open.raster, rgba };
+    const idx = indexRaster(closed);
+    const mask = new Uint8Array(px * px);
+    // A field of one colour has no soil mode: force the mask on, as the pipeline's fallback would on a canopy.
+    maskWindow(idx, px, { x0: 0, y0: 0, x1: px - 1, y1: px - 1 }, mask, -10);
+    const c = canopyClosed(sampleTiles(tiles, closed, mask));
+    expect(c.closed).toBe(true);
+    expect(c.medianVegetation).toBeGreaterThan(0.85);
   });
 });
 

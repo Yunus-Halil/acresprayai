@@ -19,13 +19,34 @@ When it is on, the workspace's "treatment" tab slot renders `WeedScoutTab` inste
 `TreatmentTab`, and every button that opens the analysis system opens the scout. Off
 again, the grid is back exactly as it was.
 
+## Any crop, any field
+
+Nothing in the scout assumes corn, rows, or a size. Three things adapt per run and the
+result says what they did:
+
+- **Tile size** follows the field's area when "auto" is on (the default): 3 m wherever
+  that lands between 100 and 20,000 tiles, smaller for a trial plot so the baseline has
+  tiles to be a baseline, larger for a quarter section so the browser can hold it. Ground
+  units, 1 to 20 m, reported in the run summary.
+- **Rows** are a crop pattern setting: *Detect rows* (default) tries the fit and, if the base
+  pass finds none, treats the field as not a row crop for that run and says so; *Row crop*
+  fits everywhere and warns when nothing is found; *Not a row crop* skips the fit. Rows only
+  add the between-the-rows signal. Regions and plant outliers work without them.
+- **Closed canopy** (pasture, a mature crop, a cover crop): when the typical tile is over
+  85% vegetation, plants cannot be separated, so plant-level detection and the row fit are
+  turned off for that run and the regions carry it. The same guard is per window in the
+  sweep, and a mask that splits into too many pieces is a note, not a crash.
+
+Multi-part boundaries are handled throughout; a headland that swallows the whole field is
+reported rather than silently scoring nothing.
+
 ## The pipeline, in the operator's order
 
 All of it is `src/lib/weedScout/`, pure except where the browser is unavoidable.
 
 | Step | What | Module |
 |---|---|---|
-| 1 | The boundary becomes `tileM` (default 3 m) squares in a local metric frame, clipped by centroid; headland tiles stay in the baseline and out of the scoring | `tiles.ts` |
+| 1 | The boundary becomes squares in a local metric frame (edge from the field's area, or pinned), clipped by centroid; headland tiles stay in the baseline and out of the scoring | `tiles.ts` |
 | 2 | Every tile is measured: chromaticity shares, brightness and its spread, ExG and its spread, green-red index, vegetation fraction. Very dark pixels are unknown, not soil | `baseline.ts` |
 | 3 | The baseline is the **shorth** per feature (the shortest interval holding half the tiles), so a patch covering a third of the field cannot swallow it, with a precision floor per feature so a field that agrees with itself to the fourth decimal does not make every tile an outlier. Every tile is scored against the field AND against its own 5x5 neighbourhood. A tile is flagged when its strongest non-brightness deviation passes `anomalyZ` (3.5) with a second feature from a different group in support, or overwhelmingly. Brightness never leads and never supports: it is what seams, vignetting and cloud edges move, so it names a region's class and triggers nothing. Touching flagged tiles are grown by hysteresis (neighbours whose leading deviation passes 60% of the threshold) into **regions** with an outline, an area and a class | `baseline.ts` |
 |   | Where the crop rows can be fitted (angle by sparse projection-variance search with exact per-bin pixel counts, pitch by autocorrelation inside a band around the stated spacing, phase by circular mean about the window centre), vegetation further than 30% of the spacing from a centreline is off-row. Independently, the **plant population** (shorth of log size, greenness, green share, shape over every plant, with precision floors; shape is ignored under six pixels across) says which plant is unlike the others, so a large weed among small corn is found even when the canopy has defeated the row fit. Plants cut by an imagery edge are never candidates | `rows.ts`, `blobs.ts`, `candidates.ts` |
@@ -115,8 +136,8 @@ field exactly; feedback lowers dismissed-looking candidates and raises confirmed
 ones and stays silent with too few neighbours; the describer never says weed, spray, apply
 or rate.
 
-Not verified: any flown imagery. The thresholds (`anomalyZ` 3.5, `blobZ` 3.5, band 0.30,
+Both migrations are applied to the linked project and the weather function is deployed
+(2026-09-21). Not verified: any flown imagery. The thresholds (`anomalyZ` 3.5, `blobZ` 3.5, band 0.30,
 1 cm squared floor, hysteresis 0.6) are starting values that the operator's verdicts and a
 false-positives-per-acre count from a real field are meant to set. The sweep and the chips
-are browser-only and have run under no signed-in session. Push the second migration with
-`npx supabase db push` and redeploy `weather` for the context mode.
+are browser-only and have run under no signed-in session.

@@ -35,9 +35,23 @@ export type ScoutInputs = {
   feedback?: FeedbackRow[];
 };
 
+/**
+ * Whether the field is planted in rows the scout should look for.
+ *
+ *   auto  try to fit rows; if the base pass finds none, treat the field as
+ *         not a row crop for this run and say so
+ *   rows  the operator says there are rows; fit them everywhere
+ *   none  no rows (broadcast, drilled, pasture, orchard floor, unknown); skip
+ *         the row fit and rely on regions and the plant population
+ */
+export type RowMode = "auto" | "rows" | "none";
+
 export type ScoutParams = {
-  /** Analysis tile edge in metres. Ground units, never pixels. */
+  /** Analysis tile edge in metres when `autoTile` is off. Ground units, never pixels. */
   tileM: number;
+  /** Pick the tile size from the field's area, so any field lands on a workable tile count. */
+  autoTile: boolean;
+  rowMode: RowMode;
   /** Grower-stated row spacing in metres. 0.762 is 30 inches. */
   rowSpacingM: number;
   /** Inward buffer from the boundary that is excluded before scoring. */
@@ -65,6 +79,8 @@ export type ScoutParams = {
 
 export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
   tileM: 3,
+  autoTile: true,
+  rowMode: "auto",
   rowSpacingM: 0.762,
   headlandM: 15,
   anomalyZ: 3.5,
@@ -335,6 +351,12 @@ export type SweepStats = {
 };
 
 export type ScoutResult = {
+  /** Tile edge actually used, metres. */
+  tileM: number;
+  /** How rows were treated in this run, after auto-detection. */
+  rowsUsed: "fitted" | "not found" | "not a row crop";
+  /** True when the field read as closed canopy and plant-level detection was skipped. */
+  canopyClosed: boolean;
   tiles: AnalysisTile[];
   samples: TileSample[];
   scores: TileScore[];

@@ -7,7 +7,7 @@
 // zoom pass a unit to re-read. Three metres is the default: at the 2 cm/px an
 // operator gets from a 100 m mapping flight that is a 150 px square, enough
 // to average, small enough that one odd plant still moves the average.
-import { type LatLng2, M_PER_DEG_LAT, bboxOfRings, mPerDegLng, pointInAnyRing } from "../geo";
+import { type LatLng2, M_PER_DEG_LAT, bboxOfRings, mPerDegLng, pointInAnyRing, polygonAreaM2 } from "../geo";
 import type { RasterSource } from "../cellFeatures";
 import type { AnalysisTile } from "./types";
 
@@ -145,4 +145,32 @@ export function pixelLatLng(src: Pick<RasterSource, "width" | "height" | "bounds
     lng: west + ((x + 0.5) / src.width) * (east - west),
     lat: north - ((y + 0.5) / src.height) * (north - south),
   };
+}
+
+/** Tile counts the pipeline is comfortable with. Inside this band nothing backs off. */
+export const AUTO_TILE_TARGET: [number, number] = [100, 20_000];
+export const AUTO_TILE_RANGE_M: [number, number] = [1, 20];
+
+/**
+ * Pick a tile size from the field's area.
+ *
+ * Fields come in every shape and size: a 0.1 acre trial plot and a 300 acre
+ * quarter section both have to land on a tile count the baseline can use and
+ * the browser can hold. Three metres is kept wherever it fits the band; a
+ * small plot shrinks the tile so the baseline has enough tiles to be a
+ * baseline, and a large field grows it so the count stays under twenty
+ * thousand. Ground units throughout, and the run reports what it chose.
+ */
+export function autoTileM(boundary: LatLng2[][], preferredM = 3): number {
+  const area = boundary.reduce((s, ring) => s + polygonAreaM2(ring), 0);
+  if (!(area > 0)) return preferredM;
+  const [minTiles, maxTiles] = AUTO_TILE_TARGET;
+  const [minM, maxM] = AUTO_TILE_RANGE_M;
+  const count = area / (preferredM * preferredM);
+  let tileM = preferredM;
+  if (count > maxTiles) tileM = Math.sqrt(area / maxTiles);
+  else if (count < minTiles) tileM = Math.sqrt(area / minTiles);
+  tileM = Math.max(minM, Math.min(maxM, tileM));
+  // Half-metre steps read better than 3.1416 m tiles and change nothing else.
+  return Math.round(tileM * 2) / 2;
 }
