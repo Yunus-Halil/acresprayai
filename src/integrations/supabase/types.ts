@@ -895,6 +895,11 @@ export type Database = {
           task_id: string
           updated_at: string
           user_id: string
+          weed_catalog_id: string | null
+          weed_label: string | null
+          weed_label_source: string | null
+          weed_label_status: string | null
+          weed_observation_id: string | null
         }
         Insert: {
           area_hectares?: number | null
@@ -909,6 +914,11 @@ export type Database = {
           task_id: string
           updated_at?: string
           user_id: string
+          weed_catalog_id?: string | null
+          weed_label?: string | null
+          weed_label_source?: string | null
+          weed_label_status?: string | null
+          weed_observation_id?: string | null
         }
         Update: {
           area_hectares?: number | null
@@ -923,6 +933,194 @@ export type Database = {
           task_id?: string
           updated_at?: string
           user_id?: string
+          weed_catalog_id?: string | null
+          weed_label?: string | null
+          weed_label_source?: string | null
+          weed_label_status?: string | null
+          weed_observation_id?: string | null
+        }
+        Relationships: []
+      }
+      weed_catalog_entries: {
+        Row: {
+          aerial_identification_validated: boolean
+          as_of: string | null
+          catalog_id: string
+          catalog_status: string
+          catalog_version: string
+          common_name: string
+          crop_contexts: string[]
+          crop_evidence: Json
+          habitat_flags: string[]
+          habitat_mentions_state: boolean
+          habitat_profile_checked: boolean
+          habitat_where_found_present: boolean
+          imported_at: string
+          pending_source_update: Json | null
+          plant_type: string
+          regulatory_scientific_name: string | null
+          regulatory_source_id: string | null
+          regulatory_tier: string | null
+          resolved_scientific_name: string | null
+          review_notes: string | null
+          review_status: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          scientific_name_as_source: string
+          source_hash: string
+          source_ids: string[]
+          state: string
+          usda_candidate_symbols: Json
+          usda_match_method: string | null
+          usda_status: string
+          usda_symbol: string | null
+          vt_profile_url: string | null
+        }
+        Insert: {
+          aerial_identification_validated?: boolean
+          as_of?: string | null
+          catalog_id: string
+          catalog_status: string
+          catalog_version: string
+          common_name: string
+          crop_contexts?: string[]
+          crop_evidence?: Json
+          habitat_flags?: string[]
+          habitat_mentions_state?: boolean
+          habitat_profile_checked?: boolean
+          habitat_where_found_present?: boolean
+          imported_at?: string
+          pending_source_update?: Json | null
+          plant_type?: string
+          regulatory_scientific_name?: string | null
+          regulatory_source_id?: string | null
+          regulatory_tier?: string | null
+          resolved_scientific_name?: string | null
+          review_notes?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          scientific_name_as_source: string
+          source_hash: string
+          source_ids?: string[]
+          state: string
+          usda_candidate_symbols?: Json
+          usda_match_method?: string | null
+          usda_status: string
+          usda_symbol?: string | null
+          vt_profile_url?: string | null
+        }
+        Update: {
+          aerial_identification_validated?: boolean
+          as_of?: string | null
+          catalog_id?: string
+          catalog_status?: string
+          catalog_version?: string
+          common_name?: string
+          crop_contexts?: string[]
+          crop_evidence?: Json
+          habitat_flags?: string[]
+          habitat_mentions_state?: boolean
+          habitat_profile_checked?: boolean
+          habitat_where_found_present?: boolean
+          imported_at?: string
+          pending_source_update?: Json | null
+          plant_type?: string
+          regulatory_scientific_name?: string | null
+          regulatory_source_id?: string | null
+          regulatory_tier?: string | null
+          resolved_scientific_name?: string | null
+          review_notes?: string | null
+          review_status?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          scientific_name_as_source?: string
+          source_hash?: string
+          source_ids?: string[]
+          state?: string
+          usda_candidate_symbols?: Json
+          usda_match_method?: string | null
+          usda_status?: string
+          usda_symbol?: string | null
+          vt_profile_url?: string | null
+        }
+        Relationships: []
+      }
+      weed_catalog_review_queue: {
+        Row: {
+          catalog_id: string | null
+          catalog_version: string
+          id: string
+          imported_at: string
+          label: string
+          reason: string
+          resolution: string | null
+          resolved: boolean
+          resolved_at: string | null
+          resolved_by: string | null
+          source_id: string | null
+          state: string
+        }
+        Insert: {
+          catalog_id?: string | null
+          catalog_version: string
+          id: string
+          imported_at?: string
+          label: string
+          reason: string
+          resolution?: string | null
+          resolved?: boolean
+          resolved_at?: string | null
+          resolved_by?: string | null
+          source_id?: string | null
+          state: string
+        }
+        Update: {
+          catalog_id?: string | null
+          catalog_version?: string
+          id?: string
+          imported_at?: string
+          label?: string
+          reason?: string
+          resolution?: string | null
+          resolved?: boolean
+          resolved_at?: string | null
+          resolved_by?: string | null
+          source_id?: string | null
+          state?: string
+        }
+        Relationships: []
+      }
+      weed_catalog_sources: {
+        Row: {
+          accessed: string | null
+          catalog_version: string
+          imported_at: string
+          scope: string | null
+          source_id: string
+          state: string
+          title: string
+          url: string
+        }
+        Insert: {
+          accessed?: string | null
+          catalog_version: string
+          imported_at?: string
+          scope?: string | null
+          source_id: string
+          state: string
+          title: string
+          url: string
+        }
+        Update: {
+          accessed?: string | null
+          catalog_version?: string
+          imported_at?: string
+          scope?: string | null
+          source_id?: string
+          state?: string
+          title?: string
+          url?: string
         }
         Relationships: []
       }
@@ -976,6 +1174,13 @@ export type Database = {
           verdict: string | null
           verdict_at: string | null
           weather: Json | null
+          suggested_catalog_id: string | null
+          suggestion_basis: string | null
+          identification_status: string
+          catalog_id: string | null
+          identification_source: string | null
+          identification_basis: string | null
+          identified_at: string | null
         }
         Insert: {
           area_m2?: number | null
@@ -1026,6 +1231,13 @@ export type Database = {
           verdict?: string | null
           verdict_at?: string | null
           weather?: Json | null
+          suggested_catalog_id?: string | null
+          suggestion_basis?: string | null
+          identification_status?: string
+          catalog_id?: string | null
+          identification_source?: string | null
+          identification_basis?: string | null
+          identified_at?: string | null
         }
         Update: {
           area_m2?: number | null
@@ -1076,6 +1288,13 @@ export type Database = {
           verdict?: string | null
           verdict_at?: string | null
           weather?: Json | null
+          suggested_catalog_id?: string | null
+          suggestion_basis?: string | null
+          identification_status?: string
+          catalog_id?: string | null
+          identification_source?: string | null
+          identification_basis?: string | null
+          identified_at?: string | null
         }
         Relationships: []
       }
@@ -1326,6 +1545,10 @@ export type Database = {
       }
     }
     Functions: {
+      import_weed_catalog: {
+        Args: { p: Json }
+        Returns: Json
+      }
       _postgis_deprecate: {
         Args: { newname: string; oldname: string; version: string }
         Returns: undefined

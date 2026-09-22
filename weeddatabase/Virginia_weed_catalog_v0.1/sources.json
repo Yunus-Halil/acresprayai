@@ -1,0 +1,26 @@
+{
+  "VT_WEEDID": {
+    "title": "Virginia Tech Weed Identification index",
+    "url": "https://weedid.cals.vt.edu/",
+    "accessed": "2026-09-22",
+    "scope": "Clinic submission reference, not necessarily crop relevance or proof of Virginia field occurrence."
+  },
+  "USDA_VA": {
+    "title": "USDA NRCS State Plants List: Virginia",
+    "url": "https://plants.sc.egov.usda.gov/DocumentLibrary/Txt/Virginia_NRCS_csv.txt",
+    "accessed": "2026-09-22",
+    "scope": "State taxonomic checklist. State-level inclusion does not mean agricultural weed, current occurrence, or county-level presence."
+  },
+  "VT_PMG_2026": {
+    "title": "2026 Pest Management Guide - Field Crops, Tables 5.12, 5.47, 5.65 and 5.81",
+    "url": "https://ext.vt.edu/content/dam/pubs_ext_vt_edu/456/456-016/ENTO-633.pdf",
+    "accessed": "2026-09-22",
+    "scope": "Field-crop weed columns/rows in Tables 5.12, 5.47, 5.65 and 5.81; guide covers Mid-Atlantic. Crop relevance, not guaranteed presence in every Virginia field."
+  },
+  "VA_NOXIOUS_2026": {
+    "title": "Virginia Administrative Code 2VAC5-317-20",
+    "url": "https://law.lis.virginia.gov/admincode/title2/agency5/chapter317/section20/",
+    "accessed": "2026-09-22",
+    "scope": "Regulatory tier. Tier 1 plants are designated not known present in Virginia."
+  }
+}

@@ -23,6 +23,7 @@ import {
   summariseZones, volumeZoneNote, zoneDetailCsv,
 } from "@/lib/reportRecord";
 import { reconcileReport } from "@/lib/reportReconcile";
+import { type IdentificationRow, identificationCaveat, summariseIdentifications } from "@/lib/weedCatalog/identification";
 import ConditionLookup from "@/components/app/workspace/ConditionLookup";
 
 // The report standardises on ACRES for every area it prints. fmtAreaAc
@@ -125,6 +126,24 @@ export default function ReportsTab({
     })();
     return () => { cancelled = true; };
   }, [task.id]);
+
+  // Weed Scout identifications for this scan. Only rows the operator
+  // confirmed or edited are printed as findings (summariseIdentifications);
+  // suggestions and unidentified candidates are a count, never a name.
+  const [weedRows, setWeedRows] = useState<IdentificationRow[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.from("weed_observations")
+        .select("candidate_id, kind, verdict, species, identification_status, catalog_id, identification_source, suggested_catalog_id, area_m2, lat, lng")
+        .eq("scan_id", task.id);
+      if (cancelled || error) return;
+      setWeedRows((data ?? []) as unknown as IdentificationRow[]);
+    })();
+    return () => { cancelled = true; };
+  }, [task.id]);
+  const weedIds = summariseIdentifications(weedRows);
+  const hasWeedRows = weedIds.stated.length > 0 || weedIds.unidentified > 0 || weedIds.rejected > 0;
 
   // ---- Editable mission fields. Prefilled from the last logged flight when
   //      available, but always overridable so the pilot can double-check / fix
@@ -921,6 +940,28 @@ export default function ReportsTab({
       }
       y += 4;
 
+      // Weed identifications: what the operator stated, with source. The
+      // rest is a count; an unidentified candidate never prints as a name.
+      if (hasWeedRows) {
+        ensure(44 + weedIds.stated.length * 11);
+        pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
+        pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
+        pdf.text("WEED IDENTIFICATIONS (OPERATOR-STATED)", M, y); y += 11;
+        for (const s of weedIds.stated) {
+          ensure(11);
+          pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(30);
+          pdf.text(`${s.label} (${s.status === "confirmed" ? "confirmed by operator" : "identified by operator"})`, M, y);
+          pdf.setFontSize(7); pdf.setTextColor(110);
+          const src = pdf.splitTextToSize(s.source ?? "no source recorded", (W - 2 * M) * 0.55) as string[];
+          pdf.text(src[0] ?? "", W - M, y, { align: "right" });
+          y += 11;
+        }
+        pdf.setFont("helvetica", "normal"); pdf.setFontSize(8); pdf.setTextColor(110);
+        const caveat = pdf.splitTextToSize(identificationCaveat(weedIds), W - 2 * M) as string[];
+        pdf.text(caveat, M, y);
+        y += caveat.length * 9 + 6;
+      }
+
       // Applicator notes — only when the applicator wrote any.
       if (pilotNotes?.trim()) {
         const wrapped = pdf.splitTextToSize(pilotNotes.trim(), W - 2 * M);
@@ -1056,6 +1097,15 @@ export default function ReportsTab({
         rate_l_per_ac: rateLPerAc,
         draft: isDraft,
         missing_fields: missing,
+        // Operator-stated weed identifications only, with their source and
+        // how they were stated. Suggestions and unidentified candidates are
+        // counts here and nowhere a name.
+        weed_identifications: weedIds.stated.map(s => ({
+          candidate_id: s.candidate_id, label: s.label, status: s.status, catalog_id: s.catalog_id,
+          source: s.source, area_m2: s.area_m2, lat: s.lat, lng: s.lng,
+        })),
+        weed_candidates_unidentified: weedIds.unidentified,
+        weed_suggestions_rejected: weedIds.rejected,
       };
       const ins = await supabase.from("field_reports").insert({
         user_id: uid,
@@ -1196,6 +1246,32 @@ export default function ReportsTab({
               </div>
             </div>
           </div>
+
+          {/* Weed identifications: the operator's statements, never the scout's.
+              Hidden entirely when the scan has no saved observations. */}
+          {hasWeedRows && (
+            <div className="pt-3 border-t border-[#1f1f1f] space-y-2" data-testid="weed-identifications">
+              <div className="text-[10px] uppercase tracking-wider text-neutral-500">Weed identifications (operator-stated)</div>
+              {weedIds.stated.length > 0 ? (
+                <ul className="text-xs space-y-1">
+                  {weedIds.stated.map(s => (
+                    <li key={s.candidate_id} className="flex items-start justify-between gap-3">
+                      <span className="text-neutral-200">
+                        {s.label}{" "}
+                        <span className="text-neutral-500">({s.status === "confirmed" ? "confirmed from a suggestion" : "operator identification"})</span>
+                      </span>
+                      <span className="text-[10px] text-neutral-500 text-right max-w-[50%] truncate" title={s.source ?? ""}>
+                        {s.source ?? "no source recorded"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-xs text-neutral-400">No operator-stated identifications.</div>
+              )}
+              <div className="text-[11px] text-neutral-500">{identificationCaveat(weedIds)}</div>
+            </div>
+          )}
 
           {/* ---- Mission details: required before generating. Prefilled from
                   the last logged flight so the pilot can double-check / edit. ---- */}

@@ -1,0 +1,27 @@
+{
+  "vt_source_records": 739,
+  "regulatory_list_entries": 26,
+  "law_only_additions": 16,
+  "total_catalog_records": 755,
+  "usda_exact_binomial_matches": 641,
+  "usda_unmatched_vt": 98,
+  "single_symbol_assigned": 635,
+  "crop_context_sourced": 54,
+  "noxious_crosswalked": 10,
+  "agricultural_completeness_claimed": false,
+  "aerial_species_detection_validated": 0,
+  "regulatory_ambiguous": [],
+  "profiles_checked": 739,
+  "profiles_failed": 0,
+  "profiles_with_where_found_notes": 427,
+  "profile_automatic_flag_counts": {
+    "turf_landscape": 96,
+    "pasture_forage": 112,
+    "roadside_disturbed": 148,
+    "agronomic_crops": 40,
+    "horticultural_crops": 34,
+    "aquatic_wetland": 25
+  },
+  "source_only_profiles_with_automatic_agricultural_cue": 127,
+  "review_queue_items": 259
+}

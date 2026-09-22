@@ -12,6 +12,7 @@
 // Owner-scoped by RLS like every other table. The national dataset is a
 // later, separate, consented step; nothing here shares anything.
 import { supabase } from "@/integrations/supabase/client";
+import { type Identification, type IdentificationStatus, isStatedFinding } from "../weedCatalog/identification";
 import type { EventContext } from "./context";
 import { featureVectorOf } from "./feedback";
 import type { Candidate, CandidateKind, FeedbackRow, ScoutParams } from "./types";
@@ -50,6 +51,14 @@ export type ObservationRow = {
   species: string | null;
   notes: string | null;
   created_at: string;
+  /** What the scout offered, if anything. Never a finding. */
+  suggested_catalog_id: string | null;
+  suggestion_basis: string | null;
+  /** What the operator said. Only confirmed / edited are findings. */
+  identification_status: IdentificationStatus;
+  catalog_id: string | null;
+  identification_source: string | null;
+  identification_basis: string | null;
 };
 
 export type SaveObservationInput = {
@@ -63,9 +72,36 @@ export type SaveObservationInput = {
   params: ScoutParams;
   gsdM: number;
   verdict: Verdict | null;
+  /** Free species text when no identification was made; ignored when one was (the label wins). */
   species: string | null;
   notes: string | null;
+  /** The suggestion that was on screen, so the archive knows what was shown and why. */
+  suggestion: { catalogId: string; basis: string } | null;
+  /** The operator's identification. UNIDENTIFIED when they made none. */
+  identification: Identification;
 };
+
+/**
+ * The identification columns for a row, as one pure step so the rule can be
+ * tested: a suggestion never becomes the label, a confirmation carries the
+ * suggested id, an unidentified or rejected row carries no catalog id, and
+ * the free species text survives only when nothing was identified.
+ */
+export function identificationColumns(input: Pick<SaveObservationInput, "species" | "suggestion" | "identification">) {
+  const id = input.identification;
+  const stated = isStatedFinding(id);
+  const status: IdentificationStatus = stated ? id.status : (id.status === "rejected" ? "rejected" : "unidentified");
+  return {
+    suggested_catalog_id: input.suggestion?.catalogId ?? null,
+    suggestion_basis: input.suggestion?.basis ?? null,
+    identification_status: status,
+    catalog_id: stated ? id.catalogId : null,
+    identification_source: stated ? id.source : null,
+    identification_basis: stated ? id.basis : null,
+    identified_at: stated ? new Date().toISOString() : null,
+    species: stated ? id.label!.trim() : (input.species?.trim() || null),
+  };
+}
 
 const base64ToBytes = (b64: string): Uint8Array => {
   const bin = atob(b64);
@@ -147,11 +183,12 @@ export async function saveObservation(input: SaveObservationInput): Promise<{ ok
     estimate: c.estimate,
     estimate_model: c.estimate?.model ?? null,
     verdict: input.verdict,
-    species: input.species,
     notes: input.notes,
     verdict_at: input.verdict ? new Date().toISOString() : null,
     pipeline_version: PIPELINE_VERSION,
     params: input.params,
+    // species, the suggestion and the identification, by the one rule.
+    ...identificationColumns(input),
   };
   const { data, error } = await supabase.from("weed_observations")
     .upsert(row as never, { onConflict: "scan_id,candidate_id" })
@@ -163,7 +200,7 @@ export async function saveObservation(input: SaveObservationInput): Promise<{ ok
 
 export async function listObservations(scanId: string): Promise<ObservationRow[]> {
   const { data, error } = await supabase.from("weed_observations")
-    .select("id, candidate_id, scan_id, tile_id, lat, lng, captured_at, place, local_time, season, kind, score, chip_path, verdict, species, notes, created_at")
+    .select("id, candidate_id, scan_id, tile_id, lat, lng, captured_at, place, local_time, season, kind, score, chip_path, verdict, species, notes, created_at, suggested_catalog_id, suggestion_basis, identification_status, catalog_id, identification_source, identification_basis")
     .eq("scan_id", scanId)
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);

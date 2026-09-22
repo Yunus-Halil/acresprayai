@@ -314,7 +314,7 @@ export default function OrthomosaicViewer() {
     (async () => {
       const { data, error } = await supabase
         .from("user_annotations")
-        .select("id, name, issue_type, color, notes, ring, area_hectares, created_at")
+        .select("id, name, issue_type, color, notes, ring, area_hectares, created_at, weed_label, weed_label_status, weed_label_source, weed_catalog_id")
         .eq("task_id", taskId)
         .order("created_at", { ascending: true });
       if (cancelled) return;
@@ -324,6 +324,8 @@ export default function OrthomosaicViewer() {
         notes: r.notes, ring: r.ring as { lat: number; lng: number }[],
         area_hectares: Number(r.area_hectares ?? 0),
         created_at: r.created_at,
+        weed_label: r.weed_label ?? null, weed_label_status: r.weed_label_status ?? null,
+        weed_label_source: r.weed_label_source ?? null, weed_catalog_id: r.weed_catalog_id ?? null,
       })));
     })();
     return () => { cancelled = true; };
@@ -629,10 +631,16 @@ export default function OrthomosaicViewer() {
   const insertUserAnnotation = async (input: {
     name: string; issue_type: string; color: string; notes: string | null;
     ring: { lat: number; lng: number }[]; areaHa: number;
+    // Weed Scout only: the operator's stated identification, or nulls. A
+    // hand-drawn polygon never sets these.
+    weed_label?: string | null; weed_label_status?: "confirmed" | "edited" | null;
+    weed_catalog_id?: string | null; weed_label_source?: string | null;
+    weed_observation_id?: string | null;
   }): Promise<string | null> => {
     if (!taskId) return null;
     const { data: s } = await supabase.auth.getSession();
     if (!s.session) return null;
+    const labelled = !!input.weed_label && !!input.weed_label_status;
     const row = {
       user_id: s.session.user.id,
       task_id: taskId,
@@ -643,6 +651,12 @@ export default function OrthomosaicViewer() {
       notes: input.notes?.trim() || null,
       ring: input.ring as any,
       area_hectares: Number(input.areaHa.toFixed(4)),
+      // All-or-nothing, matching the table's check: no label, no status, no catalog id.
+      weed_label: labelled ? input.weed_label : null,
+      weed_label_status: labelled ? input.weed_label_status : null,
+      weed_catalog_id: labelled ? (input.weed_catalog_id ?? null) : null,
+      weed_label_source: labelled ? (input.weed_label_source ?? null) : null,
+      weed_observation_id: input.weed_observation_id ?? null,
     };
     const { data, error } = await supabase.from("user_annotations").insert(row).select("*").single();
     if (error) {
@@ -653,6 +667,8 @@ export default function OrthomosaicViewer() {
       id: data.id, name: data.name, issue_type: data.issue_type, color: data.color,
       notes: data.notes, ring: data.ring as any, area_hectares: Number(data.area_hectares ?? 0),
       created_at: data.created_at,
+      weed_label: data.weed_label ?? null, weed_label_status: data.weed_label_status ?? null,
+      weed_label_source: data.weed_label_source ?? null, weed_catalog_id: data.weed_catalog_id ?? null,
     }]);
     return data.id as string;
   };

@@ -1,9 +1,10 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
-import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays } from "lucide-react";
+import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays, Sprout } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import RequireAuth from "@/components/RequireAuth";
+import { useDeveloperMode } from "@/hooks/useDeveloperMode";
 import logo from "@/assets/swathwise-logo.png";
 import Seo from "@/components/Seo";
 
@@ -15,6 +16,11 @@ const nav = [
   // answering where and when you can spray. The route is unchanged.
   { to: "/app/weather", label: "Spray Conditions", icon: CloudRain },
   { to: "/app/schedule", label: "Schedule", icon: CalendarDays },
+];
+// Developer mode only: the internal review view over the weed reference
+// catalog that Weed Scout's identification panel reads from.
+const devNav = [
+  { to: "/app/weeds", label: "Weed Library", icon: Sprout, end: false },
 ];
 // Reports live per-scan, inside the orthomosaic viewer's Reports tab - there is
 // no cross-field reporting page.
@@ -34,6 +40,8 @@ export default function AppLayout() {
 function AppShell() {
   // RequireAuth guarantees a user by the time this renders.
   const { user, signOut } = useAuth();
+  const dev = useDeveloperMode();
+  const items = dev.weedScout ? [...nav, ...devNav] : nav;
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -42,7 +50,7 @@ function AppShell() {
           <img src={logo} alt="SwathWise" className="h-7 w-7" /> SwathWise
         </div>
         <nav className="p-3 flex-1 space-y-1">
-          {nav.map(item => (
+          {items.map(item => (
             <NavLink
               key={item.to}
               to={item.to}

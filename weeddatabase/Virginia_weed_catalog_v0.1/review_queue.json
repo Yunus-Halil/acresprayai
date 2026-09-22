@@ -1,0 +1,1424 @@
+[
+  {
+    "label": "crabgrass",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "foxtail spp.",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "pigweed",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "smartweed",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "annual morningglory",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "waterhemp / Palmer amaranth",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "lambsquarters",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "fall panicum",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "shattercane",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "wirestem muhly",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "common ragweed / giant ragweed",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "waterhemp",
+    "reason": "Source guide uses a group, alternative name, or label not uniquely mapped to one Virginia Tech species; no species-level claim made.",
+    "source_id": "VT_PMG_2026"
+  },
+  {
+    "label": "Artemisia absinthium",
+    "catalog_id": "VT-2",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Dioscorea bulbifera",
+    "catalog_id": "VT-111",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Climacium americanum",
+    "catalog_id": "VT-804",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Anomodon rostratus",
+    "catalog_id": "VT-525",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Dichondra micrantha",
+    "catalog_id": "VT-347",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Atrichum spp.",
+    "catalog_id": "VT-569",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Iva obscurum",
+    "catalog_id": "VT-707",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Momordica charantia",
+    "catalog_id": "VT-149",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Meripilus giganteus",
+    "catalog_id": "VT-249",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Tradescantia ohioensis",
+    "catalog_id": "VT-411",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Nephrolepis exaltata",
+    "catalog_id": "VT-215",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Rubus spp.",
+    "catalog_id": "VT-766",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Itea lutea",
+    "catalog_id": "VT-704",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Packera glabellus",
+    "catalog_id": "VT-770",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Cynara cardunculus",
+    "catalog_id": "VT-134",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Macfadyena unguis-cati",
+    "catalog_id": "VT-630",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Houttuynia cordata",
+    "catalog_id": "VT-811",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Pennisetum alopecuroides",
+    "catalog_id": "VT-25",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Calycanthus chinensis",
+    "catalog_id": "VT-697",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Sapium sebiferum",
+    "catalog_id": "VT-768",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Haracleum maximum",
+    "catalog_id": "VT-345",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Scleroderma aurantium",
+    "catalog_id": "VT-87",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Marchantia polymorpha",
+    "catalog_id": "VT-470",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Weissia controversa",
+    "catalog_id": "VT-166",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Euonymus kiautschovicus",
+    "catalog_id": "VT-308",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Cruciata laevipes",
+    "catalog_id": "VT-311",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Viccinium stamineum",
+    "catalog_id": "VT-578",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Thuidium delicatulum",
+    "catalog_id": "VT-193",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Murdannia nudiflora",
+    "catalog_id": "VT-742",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Taxus baccata",
+    "catalog_id": "VT-96",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Panicum dicotomiflorum",
+    "catalog_id": "VT-197",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Algae filimentous",
+    "catalog_id": "VT-222",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Desmodium tortuosum",
+    "catalog_id": "VT-691",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Lactuca sativa",
+    "catalog_id": "VT-538",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Valeriana officinalis",
+    "catalog_id": "VT-409",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Solidago giganteae",
+    "catalog_id": "VT-248",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Frangula alnus",
+    "catalog_id": "VT-24",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Laburnum anagyroides",
+    "catalog_id": "VT-49",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Actinidia chinensis",
+    "catalog_id": "VT-151",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Clerodendrum trichotomum",
+    "catalog_id": "VT-615",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Gratiola officinalis",
+    "catalog_id": "VT-406",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Sisymbrium offcinale",
+    "catalog_id": "VT-402",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Amphicarpa bracteata",
+    "catalog_id": "VT-107",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Calocedrus decurrens",
+    "catalog_id": "VT-192",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Rottboellia cochinchinensis",
+    "catalog_id": "VT-159",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Prunus serrulata",
+    "catalog_id": "VT-557",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Ilex crenata",
+    "catalog_id": "VT-174",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Acer palmatum",
+    "catalog_id": "VT-422",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Monarda citriodora",
+    "catalog_id": "VT-156",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Nymphoides cordata",
+    "catalog_id": "VT-169",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Phyllanthus tenellus",
+    "catalog_id": "VT-751",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Chaenomeles japonica",
+    "catalog_id": "VT-298",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Helianthus simulans",
+    "catalog_id": "VT-563",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Chara spp.",
+    "catalog_id": "VT-577",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Crepis tectorum",
+    "catalog_id": "VT-595",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Algae nonfilimentous",
+    "catalog_id": "VT-381",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Viola nephrophylla",
+    "catalog_id": "VT-372",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Impatiens glandulifera",
+    "catalog_id": "VT-251",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Aphanes arvensis",
+    "catalog_id": "VT-795",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Mentha × piperita",
+    "catalog_id": "VT-687",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Oxalis debilis",
+    "catalog_id": "VT-745",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Punica granatum",
+    "catalog_id": "VT-814",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Danthonia spicada",
+    "catalog_id": "VT-571",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Iva axillaris",
+    "catalog_id": "VT-93",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Cydonia oblonga",
+    "catalog_id": "VT-388",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Vulpia myruros",
+    "catalog_id": "VT-365",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Myriophyllum brasiliensis",
+    "catalog_id": "VT-108",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Leucoagaricus americanus",
+    "catalog_id": "VT-46",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Amaranthus tuberculatus",
+    "catalog_id": "VT-621",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Magnolia soulangeana",
+    "catalog_id": "VT-568",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Matricaria perforata",
+    "catalog_id": "VT-455",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Triglo maritima",
+    "catalog_id": "VT-340",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Ligularia sibirica",
+    "catalog_id": "VT-560",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Solanum eleaegnifolium",
+    "catalog_id": "VT-773",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Bryum argenteum",
+    "catalog_id": "VT-62",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Aster laeve",
+    "catalog_id": "VT-705",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Crotalaria pallida var. obovata",
+    "catalog_id": "VT-421",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Clerodendrum chinense",
+    "catalog_id": "VT-150",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Senecio viscosus",
+    "catalog_id": "VT-671",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Acer sacharum",
+    "catalog_id": "VT-534",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Erianthus physocarpa",
+    "catalog_id": "VT-696",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Laurus nobilis",
+    "catalog_id": "VT-379",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Echinops exaltatus",
+    "catalog_id": "VT-217",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Veronica filiformis",
+    "catalog_id": "VT-221",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Spiraea thunbergii",
+    "catalog_id": "VT-606",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Plagiomnium cuspidatum",
+    "catalog_id": "VT-182",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Serissa foetida",
+    "catalog_id": "VT-231",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Orychophragmus violaceus",
+    "catalog_id": "VT-651",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Salicornea virginica",
+    "catalog_id": "VT-663",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Gnaphalium palustre",
+    "catalog_id": "VT-425",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Drymaria cordata",
+    "catalog_id": "VT-718",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Vitis spp.",
+    "catalog_id": "VT-790",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Prunus subhirtella",
+    "catalog_id": "VT-589",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Berberis julianae",
+    "catalog_id": "VT-304",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Lilium philidelphicum",
+    "catalog_id": "VT-462",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Arctium tomentosum",
+    "catalog_id": "VT-609",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Nymphoides peltata",
+    "catalog_id": "VT-440",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Zoysia matrella",
+    "catalog_id": "VT-341",
+    "reason": "Virginia Tech entry did not exact-binomial match USDA Virginia checklist. May be synonym, typo, cultivated plant, or a taxon absent from this checklist; not evidence of absence."
+  },
+  {
+    "label": "Linaria canadensis",
+    "catalog_id": "VT-125",
+    "reason": "Exact-binomial USDA candidate matches more than one accepted symbol; expert taxonomic reconciliation needed."
+  },
+  {
+    "label": "Erigeron canadensis",
+    "catalog_id": "VT-123",
+    "reason": "Exact-binomial USDA candidate matches more than one accepted symbol; expert taxonomic reconciliation needed."
+  },
+  {
+    "label": "Chenopodium ambrosioides",
+    "catalog_id": "VT-32",
+    "reason": "Exact-binomial USDA candidate matches more than one accepted symbol; expert taxonomic reconciliation needed."
+  },
+  {
+    "label": "Polygonum caespitosum",
+    "catalog_id": "VT-116",
+    "reason": "Exact-binomial USDA candidate matches more than one accepted symbol; expert taxonomic reconciliation needed."
+  },
+  {
+    "label": "Cassia fasciculata",
+    "catalog_id": "VT-706",
+    "reason": "Exact-binomial USDA candidate matches more than one accepted symbol; expert taxonomic reconciliation needed."
+  },
+  {
+    "label": "Gnaphalium purpureum",
+    "catalog_id": "VT-491",
+    "reason": "Exact-binomial USDA candidate matches more than one accepted symbol; expert taxonomic reconciliation needed."
+  },
+  {
+    "label": "Salvinia molesta",
+    "catalog_id": "VAC-86448bff01",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Solanum viarum",
+    "catalog_id": "VAC-a5b2537e9d",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Heracleum mantegazzianum",
+    "catalog_id": "VAC-567e2027ec",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Imperata cylindrica",
+    "catalog_id": "VAC-7d372dd967",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Ipomoea aquatica",
+    "catalog_id": "VAC-3c6b5044ba",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Vitex rotundifolia",
+    "catalog_id": "VAC-e5292fa7c7",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Oplismenus hirtellus spp. undulatifolius",
+    "catalog_id": "VAC-12349a5ada",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Corydalis incisa",
+    "catalog_id": "VAC-cc9915c126",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Trapa bispinosa",
+    "catalog_id": "VAC-aca8067248",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Ampelopsis brevipedunculata",
+    "catalog_id": "VAC-84b242b003",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Persicaria perfoliata",
+    "catalog_id": "VAC-9fd4b345fd",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Dioscorea polystachya",
+    "catalog_id": "VAC-66694d2365",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Ficaria verna",
+    "catalog_id": "VAC-1bb57fb72d",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Lespedeza bicolor",
+    "catalog_id": "VAC-013be4ffbe",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Reynoutria japonica",
+    "catalog_id": "VAC-fe26528997",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "label": "Ulmus pumila",
+    "catalog_id": "VAC-8ff731b18f",
+    "reason": "Law-only listing may have a synonymous Virginia Tech index name; reconcile before deduplication."
+  },
+  {
+    "catalog_id": "VT-2",
+    "label": "absinthe",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-273",
+    "label": "American burnweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-39",
+    "label": "American pokeweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-162",
+    "label": "Asiatic dayflower",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-383",
+    "label": "bahiagrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-504",
+    "label": "bald brome",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-234",
+    "label": "big chickweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-393",
+    "label": "bitter dock",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-378",
+    "label": "black nightshade",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-205",
+    "label": "blindeyes",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-665",
+    "label": "broomsedge bluestem",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-682",
+    "label": "butter and eggs",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-30",
+    "label": "Canada goldenrod",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-124",
+    "label": "Canada lettuce",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-140",
+    "label": "Carolina geranium",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-594",
+    "label": "cheatgrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-368",
+    "label": "common mallow",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-336",
+    "label": "common plantain",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-410",
+    "label": "common speedwell",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-456",
+    "label": "common St. Johnswort",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-56",
+    "label": "common sunflower",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-679",
+    "label": "common tansy",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-418",
+    "label": "coralberry",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-82",
+    "label": "corn speedwell",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-311",
+    "label": "crosswort",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-176",
+    "label": "curly dock",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-186",
+    "label": "cypress spurge",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-201",
+    "label": "dallisgrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-355",
+    "label": "dovefoot geranium",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-188",
+    "label": "eastern gamagrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-83",
+    "label": "European field pansy",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-197",
+    "label": "fall panicgrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-429",
+    "label": "Fernald's yellowcress",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-73",
+    "label": "field horsetail",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-619",
+    "label": "flower of an hour",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-303",
+    "label": "foxtail barley",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-296",
+    "label": "foxtail millet",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-405",
+    "label": "garden asparagus",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-681",
+    "label": "garden yellowrocket",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-148",
+    "label": "germander speedwell",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-248",
+    "label": "giant goldenrod",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-645",
+    "label": "green carpetweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-402",
+    "label": "hedgemustard",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-48",
+    "label": "henbit deadnettle",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-136",
+    "label": "horsenettle",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-387",
+    "label": "Indiangrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-451",
+    "label": "Italian ryegrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-159",
+    "label": "itchgrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-266",
+    "label": "ivyleaf speedwell",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-605",
+    "label": "Japanese barberry",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-302",
+    "label": "Japanese hop",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-436",
+    "label": "knotroot foxtail",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-371",
+    "label": "lesser calamint",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-495",
+    "label": "little barley",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-545",
+    "label": "little bluestem",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-751",
+    "label": "long-stalked phyllanthus",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-118",
+    "label": "low hopclover",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-478",
+    "label": "meadow fescue",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-317",
+    "label": "moleplant",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-595",
+    "label": "narrowleaf hawksbeard",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-382",
+    "label": "Norwegian cinquefoil",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-86",
+    "label": "orange hawkweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-255",
+    "label": "orchardgrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-417",
+    "label": "Oriental bittersweet",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-322",
+    "label": "oxeye daisy",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-729",
+    "label": "palmleaf morningglory",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-444",
+    "label": "Pennsylvania smartweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-80",
+    "label": "perennial sowthistle",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-458",
+    "label": "Persian speedwell",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-461",
+    "label": "Philadelphia fleabane",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-579",
+    "label": "poverty brome",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-598",
+    "label": "poverty rush",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-93",
+    "label": "povertyweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-92",
+    "label": "prostrate knotweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-492",
+    "label": "purple deadnettle",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-535",
+    "label": "purple loosestrife",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-226",
+    "label": "purpletop",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-143",
+    "label": "Queen Anne's lace",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-365",
+    "label": "rattail fescue",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-476",
+    "label": "red clover",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-518",
+    "label": "redroot amaranth",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-246",
+    "label": "redtop",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-146",
+    "label": "rescuegrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-572",
+    "label": "saltgrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-455",
+    "label": "scentless false mayweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-500",
+    "label": "shaggy soldier",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-711",
+    "label": "showy rattlebox",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-773",
+    "label": "silverleaf nightshade",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-627",
+    "label": "sleepydick",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-348",
+    "label": "slender parsley piert",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-494",
+    "label": "small geranium",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-206",
+    "label": "small hopclover",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-437",
+    "label": "smallflower buttercup",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-800",
+    "label": "smallflower morningglory",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-358",
+    "label": "smooth bedstraw",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-131",
+    "label": "smooth hawksbeard",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-279",
+    "label": "smooth pigweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-289",
+    "label": "smut grass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-103",
+    "label": "Spanish needles",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-4",
+    "label": "spiny plumeless thistle",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-488",
+    "label": "spotted St. Johnswort",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-641",
+    "label": "spring draba",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-114",
+    "label": "St. Anthony's turnip",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-397",
+    "label": "stickweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-154",
+    "label": "stink grass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-267",
+    "label": "sun spurge",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-399",
+    "label": "sweet vernalgrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-652",
+    "label": "switchgrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-217",
+    "label": "tall globethistle",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-221",
+    "label": "threadstalk speedwell",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-554",
+    "label": "thymeleaf speedwell",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-723",
+    "label": "toothed spurge",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-643",
+    "label": "tumble windmill grass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-634",
+    "label": "Vasey's grass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-653",
+    "label": "Virginia buttonweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-664",
+    "label": "Virginia pepperweed",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-660",
+    "label": "Virginia threeseed mercury",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-181",
+    "label": "weeping lovegrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-9",
+    "label": "western panicgrass",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-633",
+    "label": "white vervain",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-694",
+    "label": "wild four-o'clock",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-650",
+    "label": "wild garlic",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-790",
+    "label": "wild grapes",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-307",
+    "label": "wild mustard",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-220",
+    "label": "wild oat",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-510",
+    "label": "wild radish",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  },
+  {
+    "catalog_id": "VT-227",
+    "label": "woodland bittercress",
+    "reason": "Automated keyword in profile habitat notes suggests agricultural context; read primary profile and verify before assigning crop evidence.",
+    "source_id": "VT_WEEDID"
+  }
+]

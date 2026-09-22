@@ -1,0 +1,756 @@
+﻿catalog_id,common_name,scientific_name_as_source,plant_type_as_source,catalog_status,crop_contexts,regulatory_tier,usda_match_status,usda_symbol_candidate,habitat_flags_auto_for_review,vt_profile_url
+VT-2,absinthe,Artemisia absinthium,broadleaf,source_index_only,,,unmatched_requires_review,,pasture_forage,https://weedid.cals.vt.edu/profile/2/
+VT-281,Adam and Eve orchid,Aplectrum hyemale,broadleaf,source_index_only,,,matched,APHY,,https://weedid.cals.vt.edu/profile/281/
+VT-111,air yam,Dioscorea bulbifera,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/111/
+VT-523,Allegheny monkeyflower,Mimulus ringens,broadleaf,source_index_only,,,matched,MIRI,,https://weedid.cals.vt.edu/profile/523/
+VT-463,alligatorweed,Alternanthera philoxeroides,broadleaf,source_index_only,,,matched,ALPH,aquatic_wetland,https://weedid.cals.vt.edu/profile/463/
+VT-120,American barberry,Berberis canadensis,broadleaf,source_index_only,,,matched,BECA2,,https://weedid.cals.vt.edu/profile/120/
+VT-41,American basswood,Tilia americana,broadleaf,source_index_only,,,matched,TIAM,,https://weedid.cals.vt.edu/profile/41/
+VT-34,American beautyberry,Callicarpa americana,broadleaf,source_index_only,,,matched,CAAM2,,https://weedid.cals.vt.edu/profile/34/
+VT-259,American beech,Fagus grandifolia,broadleaf,source_index_only,,,matched,FAGR,,https://weedid.cals.vt.edu/profile/259/
+VT-377,American black elderberry,Sambucus nigra ssp. canadensis,broadleaf,source_index_only,,,matched,SANI4,,https://weedid.cals.vt.edu/profile/377/
+VT-43,American bur-reed,Sparganium americanum,grass_or_grasslike,source_index_only,,,matched,SPAM,,https://weedid.cals.vt.edu/profile/43/
+VT-273,American burnweed,Erechtites hieracifolia,broadleaf,source_index_only,,,matched,ERHI12,agronomic_crops; pasture_forage,https://weedid.cals.vt.edu/profile/273/
+VT-35,American cancer-root,Conopholis americana,unclassified,source_index_only,,,matched,COAM,,https://weedid.cals.vt.edu/profile/35/
+VT-804,American climacium moss,Climacium americanum,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/804/
+VT-423,American climbing fern,Lygodium palmatum,broadleaf,source_index_only,,,matched,LYPA3,,https://weedid.cals.vt.edu/profile/423/
+VT-485,American false pennyroyal,Hedeoma pulegioides,broadleaf,source_index_only,,,matched,HEPU,,https://weedid.cals.vt.edu/profile/485/
+VT-36,American hazelnut,Corylus americana,broadleaf,source_index_only,,,matched,COAM3,,https://weedid.cals.vt.edu/profile/36/
+VT-40,American plum,Prunus americana,broadleaf,source_index_only,,,matched,PRAM,,https://weedid.cals.vt.edu/profile/40/
+VT-39,American pokeweed,Phytolacca americana,broadleaf,source_index_only,,,matched,PHAM4,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/39/
+VT-42,American speedwell,Veronica americana,broadleaf,source_index_only,,,matched,VEAM2,,https://weedid.cals.vt.edu/profile/42/
+VT-395,American sycamore,Platanus occidentalis,broadleaf,source_index_only,,,matched,PLOC,,https://weedid.cals.vt.edu/profile/395/
+VT-38,American water-willow,Justicia americana,broadleaf,source_index_only,,,matched,JUAM,aquatic_wetland,https://weedid.cals.vt.edu/profile/38/
+VT-398,American white waterlily,Nymphaea odorata,broadleaf,source_index_only,,,matched,NYOD,aquatic_wetland,https://weedid.cals.vt.edu/profile/398/
+VT-331,Amur honeysuckle,Lonicera maackii,broadleaf,source_index_only,,Tier 3,matched,LOMA6,,https://weedid.cals.vt.edu/profile/331/
+VT-54,annual bluegrass,Poa annua,grass_or_grasslike,crop_context_sourced,small_grains,,matched,POAN,,https://weedid.cals.vt.edu/profile/54/
+VT-413,annual sowthistle,Sonchus oleraceus,broadleaf,source_index_only,,,matched,SOOL,,https://weedid.cals.vt.edu/profile/413/
+VT-519,annual trampweed,Facelis retusa,broadleaf,source_index_only,,,matched,FARE,,https://weedid.cals.vt.edu/profile/519/
+VT-525,anomodon moss,Anomodon rostratus,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/525/
+VT-465,apple of Peru,Nicandra physalodes,broadleaf,source_index_only,,,matched,NIPH,,https://weedid.cals.vt.edu/profile/465/
+VT-521,arrowleaf sida,Sida rhombifolia,broadleaf,source_index_only,,,matched,SIRH,roadside_disturbed,https://weedid.cals.vt.edu/profile/521/
+VT-356,ashy sunflower,Helianthus mollis,broadleaf,source_index_only,,,matched,HEMO2,,https://weedid.cals.vt.edu/profile/356/
+VT-347,Asian ponysfoot,Dichondra micrantha,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/347/
+VT-162,Asiatic dayflower,Commelina communis,broadleaf,source_index_only,,,matched,COCO3,horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/162/
+VT-454,Asiatic tearthumb,Polygonum perfoliatum,broadleaf,source_index_only,,,matched,POPE10,,https://weedid.cals.vt.edu/profile/454/
+VT-569,atrichum moss,Atrichum spp.,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/569/
+VT-364,Australian water-clover,Marsilea mutica,broadleaf,source_index_only,,,matched,MAMU2,aquatic_wetland,https://weedid.cals.vt.edu/profile/364/
+VT-625,autumn olive,Elaeagnus umbellata,broadleaf,crop_context_sourced,pasture_hay,Tier 3,matched,ELUM,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/625/
+VT-383,bahiagrass,Paspalum notatum,grass_or_grasslike,source_index_only,,,matched,PANO2,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/383/
+VT-504,bald brome,Bromus racemosus,grass_or_grasslike,source_index_only,,,matched,BRRA2,pasture_forage,https://weedid.cals.vt.edu/profile/504/
+VT-707,balloon plant,Iva obscurum,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/707/
+VT-149,balsampear,Momordica charantia,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/149/
+VT-179,barnyardgrass,Echinochloa crus-galli,grass_or_grasslike,crop_context_sourced,corn; soybean,,matched,ECCR,agronomic_crops,https://weedid.cals.vt.edu/profile/179/
+VT-50,beaked panicgrass,Panicum anceps,grass_or_grasslike,source_index_only,,,matched,PAAN,,https://weedid.cals.vt.edu/profile/50/
+VT-66,bearded beggarticks,Bidens aristosa,broadleaf,source_index_only,,,matched,BIAR,,https://weedid.cals.vt.edu/profile/66/
+VT-655,beechdrops,Epifagus virginiana,unclassified,source_index_only,,,matched,EPVI2,,https://weedid.cals.vt.edu/profile/655/
+VT-238,beefsteakplant,Perilla frutescens,broadleaf,source_index_only,,,matched,PEFR4,,https://weedid.cals.vt.edu/profile/238/
+VT-189,Bermudagrass,Cynodon dactylon,grass_or_grasslike,crop_context_sourced,corn; soybean,,matched,CYDA,,https://weedid.cals.vt.edu/profile/189/
+VT-100,biennial beeblossom,Gaura biennis,broadleaf,source_index_only,,,matched,OEGA,,https://weedid.cals.vt.edu/profile/100/
+VT-244,big bluestem,Andropogon gerardii,grass_or_grasslike,source_index_only,,,matched,ANGE,,https://weedid.cals.vt.edu/profile/244/
+VT-234,big chickweed,Cerastium fontanum ssp. vulgare,broadleaf,source_index_only,,,matched,CEFO2,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/234/
+VT-185,big cordgrass,Spartina cynosuroides,grass_or_grasslike,source_index_only,,,matched,SPCY,,https://weedid.cals.vt.edu/profile/185/
+VT-216,bigpod sesbania,Sesbania exaltata,broadleaf,source_index_only,,,matched,SEHE8,aquatic_wetland; roadside_disturbed,https://weedid.cals.vt.edu/profile/216/
+VT-275,bigtop lovegrass,Eragrostis hirsuta,grass_or_grasslike,source_index_only,,,matched,ERHI,roadside_disturbed,https://weedid.cals.vt.edu/profile/275/
+VT-237,billion-dollar grass,Echinochloa frumentacea,grass_or_grasslike,source_index_only,,,matched,ECFR,,https://weedid.cals.vt.edu/profile/237/
+VT-172,bird's-foot trefoil,Lotus corniculatus,broadleaf,source_index_only,,,matched,LOCO6,roadside_disturbed,https://weedid.cals.vt.edu/profile/172/
+VT-469,bishop's weed,Aegopodium podagraria,broadleaf,source_index_only,,,matched,AEPO,,https://weedid.cals.vt.edu/profile/469/
+VT-393,bitter dock,Rumex obtusifolius,broadleaf,source_index_only,,,matched,RUOB,horticultural_crops; roadside_disturbed,https://weedid.cals.vt.edu/profile/393/
+VT-31,bitter panicgrass,Panicum amarum,grass_or_grasslike,source_index_only,,,matched,PAAM2,aquatic_wetland,https://weedid.cals.vt.edu/profile/31/
+VT-170,bitternut hickory,Carya cordiformis,broadleaf,source_index_only,,,matched,CACO15,,https://weedid.cals.vt.edu/profile/170/
+VT-208,bittersweet nightshade,Solanum dulcamara,broadleaf,source_index_only,,,matched,SODU,,https://weedid.cals.vt.edu/profile/208/
+VT-374,black bamboo,Phyllostachys nigra,grass_or_grasslike,source_index_only,,,matched,PHNI80,,https://weedid.cals.vt.edu/profile/374/
+VT-503,black bugbane,Actaea racemosa var. racemosa,broadleaf,source_index_only,,,matched,ACRA7,,https://weedid.cals.vt.edu/profile/503/
+VT-552,black cherry,Prunus serotina,broadleaf,source_index_only,,,matched,PRSE2,,https://weedid.cals.vt.edu/profile/552/
+VT-241,black highbush blueberry,Vaccinium fuscatum,broadleaf,source_index_only,,,matched,VAFU,,https://weedid.cals.vt.edu/profile/241/
+VT-95,black huckleberry,Gaylussacia baccata,broadleaf,source_index_only,,,matched,GABA,,https://weedid.cals.vt.edu/profile/95/
+VT-764,black locust,Robinia pseudoacacia,broadleaf,crop_context_sourced,pasture_hay,,matched,ROPS,,https://weedid.cals.vt.edu/profile/764/
+VT-326,black medic,Medicago lupulina,broadleaf,source_index_only,,,matched,MELU,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/326/
+VT-378,black nightshade,Solanum nigrum,broadleaf,source_index_only,,,matched,SONI,agronomic_crops; pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/378/
+VT-396,black raspberry,Rubus occidentalis,broadleaf,source_index_only,,,matched,RUOC,,https://weedid.cals.vt.edu/profile/396/
+VT-376,black willow,Salix nigra,broadleaf,source_index_only,,,matched,SANI,,https://weedid.cals.vt.edu/profile/376/
+VT-249,black-staining polypore,Meripilus giganteus,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/249/
+VT-152,blackberry lily,Belamcanda chinensis,grass_or_grasslike,source_index_only,,,matched,BECH,,https://weedid.cals.vt.edu/profile/152/
+VT-276,blackeyed Susan,Rudbeckia hirta,broadleaf,source_index_only,,,matched,RUHI2,,https://weedid.cals.vt.edu/profile/276/
+VT-590,blackgum,Nyssa sylvatica,broadleaf,source_index_only,,,matched,NYSY,,https://weedid.cals.vt.edu/profile/590/
+VT-480,blackhaw,Viburnum prunifolium,broadleaf,source_index_only,,,matched,VIPR,,https://weedid.cals.vt.edu/profile/480/
+VT-16,bladder campion,Silene alba,broadleaf,source_index_only,,,matched,SILAA3,roadside_disturbed,https://weedid.cals.vt.edu/profile/16/
+VT-205,blindeyes,Papaver dubium,broadleaf,source_index_only,,,matched,PADU,agronomic_crops; pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/205/
+VT-236,blue huckleberry,Gaylussacia frondosa,broadleaf,source_index_only,,,matched,GAFR2,,https://weedid.cals.vt.edu/profile/236/
+VT-160,blue mistflower,Conoclinium coelestinum,broadleaf,source_index_only,,,matched,COCO13,,https://weedid.cals.vt.edu/profile/160/
+VT-254,blue sedge,Carex glaucodea,grass_or_grasslike,source_index_only,,,matched,CAGL6,,https://weedid.cals.vt.edu/profile/254/
+VT-670,blue waxweed,Cuphea viscosissima,broadleaf,source_index_only,,,matched,CUVI,,https://weedid.cals.vt.edu/profile/670/
+VT-411,bluejacket,Tradescantia ohioensis,broadleaf,source_index_only,,,unmatched_requires_review,,roadside_disturbed,https://weedid.cals.vt.edu/profile/411/
+VT-390,blunt spikerush,Eleocharis obtusa,grass_or_grasslike,source_index_only,,,matched,ELOB2,,https://weedid.cals.vt.edu/profile/390/
+VT-215,Boston swordfern,Nephrolepis exaltata,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/215/
+VT-370,boxelder,Acer negundo,broadleaf,source_index_only,,,matched,ACNE2,,https://weedid.cals.vt.edu/profile/370/
+VT-766,brambles,Rubus spp.,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/766/
+VT-109,Brazilian watermeal,Wolffia brasiliensis,broadleaf,source_index_only,,,matched,WOBR,,https://weedid.cals.vt.edu/profile/109/
+VT-196,Brazilian waterweed,Egeria densa,broadleaf,source_index_only,,,matched,EGDE,aquatic_wetland,https://weedid.cals.vt.edu/profile/196/
+VT-352,brittle waternymph,Najas minor,broadleaf,source_index_only,,,matched,NAMI,,https://weedid.cals.vt.edu/profile/352/
+VT-319,broadleaf cattail,Typha latifolia,grass_or_grasslike,source_index_only,,,matched,TYLA,,https://weedid.cals.vt.edu/profile/319/
+VT-269,broadleaf helleborine,Epipactis helleborine,broadleaf,source_index_only,,,matched,EPHE,,https://weedid.cals.vt.edu/profile/269/
+VT-253,broadleaf ironweed,Vernonia glauca,broadleaf,source_index_only,,,matched,VEGL,,https://weedid.cals.vt.edu/profile/253/
+VT-439,broadleaf pondweed,Stuckenia pectinata,broadleaf,source_index_only,,,matched,STPE15,,https://weedid.cals.vt.edu/profile/439/
+VT-468,broadleaf signalgrass,Urochloa platyphylla,grass_or_grasslike,crop_context_sourced,corn; soybean,,matched,URPL2,agronomic_crops,https://weedid.cals.vt.edu/profile/468/
+VT-665,broomsedge bluestem,Andropogon virginicus,grass_or_grasslike,source_index_only,,,matched,ANVI2,pasture_forage; horticultural_crops,https://weedid.cals.vt.edu/profile/665/
+VT-306,brown mustard,Brassica juncea,broadleaf,source_index_only,,,matched,BRJU,,https://weedid.cals.vt.edu/profile/306/
+VT-767,browneyed Susan,Rudbeckia triloba,broadleaf,source_index_only,,,matched,RUTR2,,https://weedid.cals.vt.edu/profile/767/
+VT-297,brownray knapweed,Centaurea jacea,broadleaf,source_index_only,,,matched,CEJA,,https://weedid.cals.vt.edu/profile/297/
+VT-482,buffalo nut,Pyrularia pubera,broadleaf,source_index_only,,,matched,PYPU,,https://weedid.cals.vt.edu/profile/482/
+VT-524,buffalobur,Solanum rostratum,broadleaf,source_index_only,,,matched,SORO,,https://weedid.cals.vt.edu/profile/524/
+VT-113,bulbous bluegrass,Poa bulbosa,grass_or_grasslike,source_index_only,,,matched,POBU,roadside_disturbed,https://weedid.cals.vt.edu/profile/113/
+VT-112,bulbous woodrush,Luzula bulbosa,grass_or_grasslike,source_index_only,,,matched,LUBU,,https://weedid.cals.vt.edu/profile/112/
+VT-673,bull thistle,Cirsium vulgare,broadleaf,crop_context_sourced,pasture_hay,,matched,CIVU,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/673/
+VT-51,burcucumber,Sicyos angulatus,broadleaf,crop_context_sourced,corn; soybean,,matched,SIAN,,https://weedid.cals.vt.edu/profile/51/
+VT-12,burningbush,Euonymus alatus,broadleaf,source_index_only,,,matched,EUAL13,,https://weedid.cals.vt.edu/profile/12/
+VT-45,bursting-heart,Euonymus americanus,broadleaf,source_index_only,,,matched,EUAM9,,https://weedid.cals.vt.edu/profile/45/
+VT-682,butter and eggs,Linaria vulgaris,broadleaf,source_index_only,,,matched,LIVU2,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/682/
+VT-704,butterfly weed,Itea lutea,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/704/
+VT-770,butterweed,Packera glabellus,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/770/
+VT-815,Caley pea,Lathyrus hirsutus,broadleaf,source_index_only,,,matched,LAHI2,,https://weedid.cals.vt.edu/profile/815/
+VT-119,camphor pluchea,Pluchea camphorata,broadleaf,source_index_only,,,matched,PLCA7,,https://weedid.cals.vt.edu/profile/119/
+VT-30,Canada goldenrod,Solidago altissima,broadleaf,source_index_only,,,matched,SOAL6,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/30/
+VT-124,Canada lettuce,Lactuca canadensis,broadleaf,source_index_only,,,matched,LACA,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/124/
+VT-72,Canada thistle,Cirsium arvense,broadleaf,crop_context_sourced,pasture_hay,,matched,CIAR4,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/72/
+VT-125,Canada toadflax,Linaria canadensis,broadleaf,source_index_only,,,matched,,roadside_disturbed,https://weedid.cals.vt.edu/profile/125/
+VT-127,Canadian blacksnakeroot,Sanicula canadensis,broadleaf,source_index_only,,,matched,SACA15,,https://weedid.cals.vt.edu/profile/127/
+VT-486,Canadian clearweed,Pilea pumila,broadleaf,source_index_only,,,matched,PIPU2,,https://weedid.cals.vt.edu/profile/486/
+VT-126,Canadian lousewort,Pedicularis canadensis,broadleaf,source_index_only,,,matched,PECA,,https://weedid.cals.vt.edu/profile/126/
+VT-134,cardoon,Cynara cardunculus,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/134/
+VT-142,Carolina desert-chicory,Pyrrhopappus carolinianus,broadleaf,source_index_only,,,matched,PYCA2,,https://weedid.cals.vt.edu/profile/142/
+VT-141,Carolina elephantsfoot,Elephantopus carolinianus,broadleaf,source_index_only,,,matched,ELCA3,,https://weedid.cals.vt.edu/profile/141/
+VT-140,Carolina geranium,Geranium carolinianum,broadleaf,source_index_only,,,matched,GECA5,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/140/
+VT-139,Carolina mosquitofern,Azolla caroliniana,broadleaf,source_index_only,,,matched,AZCA,,https://weedid.cals.vt.edu/profile/139/
+VT-137,Carolina ponysfoot,Dichondra carolinensis,broadleaf,source_index_only,,,matched,DICA3,,https://weedid.cals.vt.edu/profile/137/
+VT-550,castor aralia,Kalopanax septemlobus,broadleaf,source_index_only,,,matched,KASE,,https://weedid.cals.vt.edu/profile/550/
+VT-630,catclawvine,Macfadyena unguis-cati,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/630/
+VT-145,catnip,Nepeta cataria,broadleaf,source_index_only,,,matched,NECA2,,https://weedid.cals.vt.edu/profile/145/
+VT-414,centipede grass,Eremochloa ophiuroides,grass_or_grasslike,source_index_only,,,matched,EROP,,https://weedid.cals.vt.edu/profile/414/
+VT-631,chamber bitter,Phyllanthus urinaria,broadleaf,source_index_only,,,matched,PHUR,,https://weedid.cals.vt.edu/profile/631/
+VT-811,chameleon plant,Houttuynia cordata,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/811/
+VT-594,cheatgrass,Bromus tectorum,grass_or_grasslike,source_index_only,,,matched,BRTE,agronomic_crops; horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/594/
+VT-293,chicory,Cichorium intybus,broadleaf,crop_context_sourced,pasture_hay,,matched,CIIN,agronomic_crops; pasture_forage,https://weedid.cals.vt.edu/profile/293/
+VT-94,Chinaberrytree,Melia azedarach,broadleaf,source_index_only,,,matched,MEAZ,,https://weedid.cals.vt.edu/profile/94/
+VT-357,Chinese chestnut,Castanea mollissima,broadleaf,source_index_only,,,matched,CAMO83,,https://weedid.cals.vt.edu/profile/357/
+VT-25,Chinese fountaingrass,Pennisetum alopecuroides,grass_or_grasslike,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/25/
+VT-497,Chinese pear,Pyrus pyrifolia,broadleaf,source_index_only,,,matched,PYPY2,,https://weedid.cals.vt.edu/profile/497/
+VT-564,Chinese privet,Ligustrum sinense,broadleaf,source_index_only,,,matched,LISI,,https://weedid.cals.vt.edu/profile/564/
+VT-565,Chinese silvergrass,Miscanthus sinensis,grass_or_grasslike,source_index_only,,,matched,MISI,roadside_disturbed,https://weedid.cals.vt.edu/profile/565/
+VT-697,Chinese sweetshrub,Calycanthus chinensis,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/697/
+VT-768,Chinese tallow,Sapium sebiferum,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/768/
+VT-566,Chinese wisteria,Wisteria sinensis,broadleaf,source_index_only,,,matched,WISI,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/566/
+VT-415,Chinese yam,Dioscorea oppositifolia,broadleaf,source_index_only,,,matched,DIOP,,https://weedid.cals.vt.edu/profile/415/
+VT-753,clammy groundcherry,Physalis heterophylla,broadleaf,source_index_only,,,matched,PHHE5,,https://weedid.cals.vt.edu/profile/753/
+VT-669,clammy locust,Robinia viscosa,broadleaf,source_index_only,,,matched,ROVI,,https://weedid.cals.vt.edu/profile/669/
+VT-199,climbing dayflower,Commelina diffusa,broadleaf,source_index_only,,,matched,CODI5,,https://weedid.cals.vt.edu/profile/199/
+VT-708,coastal sandbur,Cenchrus spinifex,grass_or_grasslike,source_index_only,,,matched,CESP4,,https://weedid.cals.vt.edu/profile/708/
+VT-23,coastal sweetpepperbush,Clethra alnifolia,broadleaf,source_index_only,,,matched,CLAL3,,https://weedid.cals.vt.edu/profile/23/
+VT-178,cockspur hawthorn,Crataegus crus-galli,broadleaf,source_index_only,,,matched,CRCR2,,https://weedid.cals.vt.edu/profile/178/
+VT-219,coltsfoot,Tussilago farfara,broadleaf,source_index_only,,,matched,TUFA,,https://weedid.cals.vt.edu/profile/219/
+VT-407,common balm,Melissa officinalis,broadleaf,source_index_only,,,matched,MEOF2,,https://weedid.cals.vt.edu/profile/407/
+VT-677,common barley,Hordeum vulgare,grass_or_grasslike,source_index_only,,,matched,HOVU,roadside_disturbed,https://weedid.cals.vt.edu/profile/677/
+VT-567,common blue violet,Viola sororia,broadleaf,source_index_only,,,matched,VISO,,https://weedid.cals.vt.edu/profile/567/
+VT-517,common bugle,Ajuga reptans,broadleaf,source_index_only,,,matched,AJRE,,https://weedid.cals.vt.edu/profile/517/
+VT-354,common burdock,Arctium minus,broadleaf,crop_context_sourced,pasture_hay,,matched,ARMI2,roadside_disturbed,https://weedid.cals.vt.edu/profile/354/
+VT-394,common buttonbush,Cephalanthus occidentalis,broadleaf,source_index_only,,,matched,CEOC2,,https://weedid.cals.vt.edu/profile/394/
+VT-223,common carpetgrass,Axonopus fissifolius,grass_or_grasslike,source_index_only,,,matched,AXFI,,https://weedid.cals.vt.edu/profile/223/
+VT-346,common chickweed,Stellaria media,broadleaf,crop_context_sourced,small_grains; pasture_hay,,matched,STME2,turf_landscape,https://weedid.cals.vt.edu/profile/346/
+VT-562,common cinquefoil,Potentilla simplex,broadleaf,source_index_only,,,matched,POSI2,turf_landscape,https://weedid.cals.vt.edu/profile/562/
+VT-587,common cocklebur,Xanthium strumarium,broadleaf,crop_context_sourced,pasture_hay,,matched,XAST,agronomic_crops; aquatic_wetland,https://weedid.cals.vt.edu/profile/587/
+VT-345,common cowparsnip,Haracleum maximum,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/345/
+VT-404,common dandelion,Taraxacum officinale,broadleaf,crop_context_sourced,pasture_hay,,matched,TAOF,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/404/
+VT-471,common duckmeat,Spirodela polyrrhiza,broadleaf,source_index_only,,,matched,SPPO,,https://weedid.cals.vt.edu/profile/471/
+VT-351,common duckweed,Lemna minor,broadleaf,source_index_only,,,matched,LEMI3,,https://weedid.cals.vt.edu/profile/351/
+VT-87,common earthball,Scleroderma aurantium,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/87/
+VT-101,common evening primrose,Oenothera biennis,broadleaf,source_index_only,,,matched,OEBI,,https://weedid.cals.vt.edu/profile/101/
+VT-684,common groundsel,Senecio vulgaris,broadleaf,crop_context_sourced,small_grains; pasture_hay,,matched,SEVU,turf_landscape,https://weedid.cals.vt.edu/profile/684/
+VT-327,common hop,Humulus lupulus,broadleaf,source_index_only,,,matched,HULU,,https://weedid.cals.vt.edu/profile/327/
+VT-470,common liverwort,Marchantia polymorpha,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/470/
+VT-368,common mallow,Malva neglecta,broadleaf,source_index_only,,,matched,MANE,agronomic_crops; horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/368/
+VT-592,common milkweed,Asclepias syriaca,broadleaf,crop_context_sourced,pasture_hay,,matched,ASSY,roadside_disturbed,https://weedid.cals.vt.edu/profile/592/
+VT-233,common mouse-ear chickweed,Cerastium fontanum,broadleaf,source_index_only,,,matched,CEFO2,,https://weedid.cals.vt.edu/profile/233/
+VT-603,common mullein,Verbascum thapsus,broadleaf,crop_context_sourced,pasture_hay,,matched,VETH,roadside_disturbed,https://weedid.cals.vt.edu/profile/603/
+VT-163,common nipplewort,Lapsana communis,broadleaf,source_index_only,,,matched,LACO3,,https://weedid.cals.vt.edu/profile/163/
+VT-353,common periwinkle,Vinca minor,broadleaf,source_index_only,,,matched,VIMI2,,https://weedid.cals.vt.edu/profile/353/
+VT-654,common persimmon,Diospyros virginiana,broadleaf,source_index_only,,,matched,DIVI5,,https://weedid.cals.vt.edu/profile/654/
+VT-336,common plantain,Plantago major,broadleaf,source_index_only,,,matched,PLMA2,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/336/
+VT-69,common ragweed,Ambrosia artemisiifolia,broadleaf,crop_context_sourced,corn; soybean; pasture_hay,,matched,AMAR2,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/69/
+VT-91,common reed,Phragmites australis,grass_or_grasslike,source_index_only,,Tier 3,matched,PHAU7,roadside_disturbed,https://weedid.cals.vt.edu/profile/91/
+VT-210,common rush,Juncus effusus,grass_or_grasslike,source_index_only,,,matched,JUEF,aquatic_wetland,https://weedid.cals.vt.edu/profile/210/
+VT-683,common selfheal,Prunella vulgaris,broadleaf,source_index_only,,,matched,PRVU,,https://weedid.cals.vt.edu/profile/683/
+VT-5,common sheep sorrel,Rumex acetosella,broadleaf,source_index_only,,,matched,RUAC3,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/5/
+VT-410,common speedwell,Veronica officinalis,broadleaf,source_index_only,,,matched,VEOF2,agronomic_crops; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/410/
+VT-456,common St. Johnswort,Hypericum perforatum,broadleaf,source_index_only,,,matched,HYPE,pasture_forage,https://weedid.cals.vt.edu/profile/456/
+VT-56,common sunflower,Helianthus annuus,broadleaf,source_index_only,,,matched,HEAN3,pasture_forage,https://weedid.cals.vt.edu/profile/56/
+VT-607,common sweetleaf,Symplocos tinctoria,broadleaf,source_index_only,,,matched,SYTI,,https://weedid.cals.vt.edu/profile/607/
+VT-679,common tansy,Tanacetum vulgare,broadleaf,source_index_only,,,matched,TAVU,pasture_forage,https://weedid.cals.vt.edu/profile/679/
+VT-522,common threeseed mercury,Acalypha rhomboidea,broadleaf,source_index_only,,,matched,ACRH,,https://weedid.cals.vt.edu/profile/522/
+VT-312,common velvetgrass,Holcus lanatus,grass_or_grasslike,source_index_only,,,matched,HOLA,,https://weedid.cals.vt.edu/profile/312/
+VT-539,common vetch,Vicia sativa,broadleaf,source_index_only,,,matched,VISA,,https://weedid.cals.vt.edu/profile/539/
+VT-675,common viper's bugloss,Echium vulgare,broadleaf,source_index_only,,,matched,ECVU,,https://weedid.cals.vt.edu/profile/675/
+VT-350,common yarrow,Achillea millefolium,broadleaf,crop_context_sourced,pasture_hay,,matched,ACMI2,pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/350/
+VT-584,common yellow oxalis,Oxalis stricta,broadleaf,source_index_only,,,matched,OXST,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/584/
+VT-166,controverial weissia moss,Weissia controversa,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/166/
+VT-195,coon's tail,Ceratophyllum demersum,broadleaf,source_index_only,,,matched,CEDE4,aquatic_wetland,https://weedid.cals.vt.edu/profile/195/
+VT-418,coralberry,Symphoricarpos orbiculatus,broadleaf,source_index_only,,,matched,SYOR,pasture_forage,https://weedid.cals.vt.edu/profile/418/
+VT-76,corn chamomile,Anthemis arvensis,broadleaf,crop_context_sourced,small_grains,,matched,ANAR6,pasture_forage,https://weedid.cals.vt.edu/profile/76/
+VT-78,corn gromwell,Buglossoides arvensis,broadleaf,source_index_only,,,matched,BUAR3,roadside_disturbed,https://weedid.cals.vt.edu/profile/78/
+VT-82,corn speedwell,Veronica arvensis,broadleaf,source_index_only,,,matched,VEAR,agronomic_crops; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/82/
+VT-81,corn spurry,Spergula arvensis,broadleaf,source_index_only,,,matched,SPAR,,https://weedid.cals.vt.edu/profile/81/
+VT-629,cow pea,Vigna unguiculata,broadleaf,source_index_only,,,matched,VIUN,,https://weedid.cals.vt.edu/profile/629/
+VT-288,crape myrtle,Lagerstroemia indica,broadleaf,source_index_only,,,matched,LAIN,turf_landscape,https://weedid.cals.vt.edu/profile/288/
+VT-581,creeping bentgrass,Agrostis stolonifera,grass_or_grasslike,source_index_only,,,matched,AGST2,turf_landscape,https://weedid.cals.vt.edu/profile/581/
+VT-515,creeping lespedeza,Lespedeza repens,broadleaf,source_index_only,,,matched,LERE2,,https://weedid.cals.vt.edu/profile/515/
+VT-426,creeping primrose,Ludwigia palustris,broadleaf,source_index_only,,,matched,LUPA,aquatic_wetland,https://weedid.cals.vt.edu/profile/426/
+VT-308,creeping strawberry bush,Euonymus kiautschovicus,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/308/
+VT-171,creeping woodsorrel,Oxalis corniculata,broadleaf,source_index_only,,,matched,OXCO,,https://weedid.cals.vt.edu/profile/171/
+VT-591,creeping yellowcress,Rorippa sylvestris,broadleaf,source_index_only,,,matched,ROSY,,https://weedid.cals.vt.edu/profile/591/
+VT-311,crosswort,Cruciata laevipes,broadleaf,source_index_only,,,unmatched_requires_review,,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/311/
+VT-715,crowfootgrass,Dactyloctenium aegyptium,grass_or_grasslike,source_index_only,,,matched,DAAE,,https://weedid.cals.vt.edu/profile/715/
+VT-638,crownvetch,Coronilla varia,broadleaf,source_index_only,,,matched,SEVA4,,https://weedid.cals.vt.edu/profile/638/
+VT-7,cucumber-tree,Magnolia acuminata,broadleaf,source_index_only,,,matched,MAAC,,https://weedid.cals.vt.edu/profile/7/
+VT-176,curly dock,Rumex crispus,broadleaf,source_index_only,,,matched,RUCR,pasture_forage; horticultural_crops; roadside_disturbed,https://weedid.cals.vt.edu/profile/176/
+VT-175,curly pondweed,Potamogeton crispus,broadleaf,source_index_only,,,matched,POCR3,,https://weedid.cals.vt.edu/profile/175/
+VT-316,curlytop knotweed,Polygonum lapathifolium,broadleaf,source_index_only,,,matched,POLA4,aquatic_wetland; roadside_disturbed,https://weedid.cals.vt.edu/profile/316/
+VT-541,cursed buttercup,Ranunculus sceleratus,broadleaf,source_index_only,,,matched,RASC3,roadside_disturbed,https://weedid.cals.vt.edu/profile/541/
+VT-309,cutleaf evening primrose,Oenothera laciniata,broadleaf,source_index_only,,,matched,OELA,,https://weedid.cals.vt.edu/profile/309/
+VT-203,cutleaf geranium,Geranium dissectum,broadleaf,source_index_only,,,matched,GEDI,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/203/
+VT-186,cypress spurge,Euphorbia cyparissias,broadleaf,source_index_only,,,matched,EUCY2,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/186/
+VT-501,cypressvine,Ipomoea quamoclit,broadleaf,source_index_only,,,matched,IPQU,,https://weedid.cals.vt.edu/profile/501/
+VT-201,dallisgrass,Paspalum dilatatum,grass_or_grasslike,source_index_only,,,matched,PADI3,pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/201/
+VT-343,dames rocket,Hesperis matronalis,broadleaf,source_index_only,,,matched,HEMA3,,https://weedid.cals.vt.edu/profile/343/
+VT-578,deerberry,Viccinium stamineum,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/578/
+VT-157,deertongue,Dichanthelium clandestinum,grass_or_grasslike,source_index_only,,,matched,DICL,,https://weedid.cals.vt.edu/profile/157/
+VT-193,delicate thuidium moss,Thuidium delicatulum,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/193/
+VT-67,Deptford pink,Dianthus armeria,broadleaf,source_index_only,,,matched,DIAR,,https://weedid.cals.vt.edu/profile/67/
+VT-190,devil in the bush,Nigella damascena,broadleaf,source_index_only,,,matched,NIDA,,https://weedid.cals.vt.edu/profile/190/
+VT-235,devil's beggartick,Bidens frondosa,broadleaf,source_index_only,,,matched,BIFR,,https://weedid.cals.vt.edu/profile/235/
+VT-610,devil's grandmother,Elephantopus tomentosus,broadleaf,source_index_only,,,matched,ELTO2,,https://weedid.cals.vt.edu/profile/610/
+VT-574,devil's walkingstick,Aralia spinosa,broadleaf,source_index_only,,,matched,ARSP2,roadside_disturbed,https://weedid.cals.vt.edu/profile/574/
+VT-342,disc mayweed,Matricaria matricarioides,broadleaf,source_index_only,,,matched,MADI6,roadside_disturbed,https://weedid.cals.vt.edu/profile/342/
+VT-132,dogfennel,Eupatorium capillifolium,broadleaf,crop_context_sourced,pasture_hay,,matched,EUCA5,,https://weedid.cals.vt.edu/profile/132/
+VT-817,dotted smartweed,Polygonum punctatum,broadleaf,source_index_only,,,matched,POPU5,,https://weedid.cals.vt.edu/profile/817/
+VT-355,dovefoot geranium,Geranium molle,broadleaf,source_index_only,,,matched,GEMO,pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/355/
+VT-742,doveweed,Murdannia nudiflora,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/742/
+VT-636,duckweed,Lemna valdiviana,broadleaf,source_index_only,,,matched,LEVA,,https://weedid.cals.vt.edu/profile/636/
+VT-640,early yellowrocket,Barbarea verna,broadleaf,source_index_only,,,matched,BAVE,,https://weedid.cals.vt.edu/profile/640/
+VT-262,eastern baccharis,Baccharis halimifolia,broadleaf,source_index_only,,,matched,BAHA,,https://weedid.cals.vt.edu/profile/262/
+VT-481,eastern black nightshade,Solanum ptycanthum,broadleaf,crop_context_sourced,corn; soybean,,matched,SOPT7,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/481/
+VT-85,eastern blue-eyed grass,Sisyrinchium atlanticum,grass_or_grasslike,source_index_only,,,matched,SIAT,,https://weedid.cals.vt.edu/profile/85/
+VT-194,eastern cottonwood,Populus deltoides,broadleaf,source_index_only,,,matched,PODE3,,https://weedid.cals.vt.edu/profile/194/
+VT-55,eastern daisy fleabane,Erigeron annuus,broadleaf,source_index_only,,,matched,ERAN,roadside_disturbed,https://weedid.cals.vt.edu/profile/55/
+VT-188,eastern gamagrass,Tripsacum dactyloides,grass_or_grasslike,source_index_only,,,matched,TRDA3,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/188/
+VT-506,eastern poison ivy,Toxicodendron radicans,broadleaf,source_index_only,,,matched,TORA2,,https://weedid.cals.vt.edu/profile/506/
+VT-121,eastern redbud,Cercis canadensis,broadleaf,source_index_only,,,matched,CECA4,,https://weedid.cals.vt.edu/profile/121/
+VT-657,eastern redcedar,Juniperus virginiana,broadleaf,source_index_only,,,matched,JUVI,,https://weedid.cals.vt.edu/profile/657/
+VT-104,eastern woodland sedge,Carex blanda,grass_or_grasslike,source_index_only,,,matched,CABL,,https://weedid.cals.vt.edu/profile/104/
+VT-135,edible fig,Ficus carica,broadleaf,source_index_only,,,matched,FICA,,https://weedid.cals.vt.edu/profile/135/
+VT-268,English ivy,Hedera helix,broadleaf,source_index_only,,,matched,HEHE,,https://weedid.cals.vt.edu/profile/268/
+VT-96,English yew,Taxus baccata,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/96/
+VT-573,Eurasian watermilfoil,Myriophyllum spicatum,broadleaf,source_index_only,,,matched,MYSP2,,https://weedid.cals.vt.edu/profile/573/
+VT-416,European cranberrybush,Viburnum opulus,broadleaf,source_index_only,,,matched,VIOP,,https://weedid.cals.vt.edu/profile/416/
+VT-83,European field pansy,Viola arvensis,broadleaf,source_index_only,,,matched,VIAR,agronomic_crops; horticultural_crops; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/83/
+VT-335,European lily of the valley,Convallaria majalis,grass_or_grasslike,source_index_only,,,matched,COMA7,,https://weedid.cals.vt.edu/profile/335/
+VT-386,eyebane,Chamaesyce nutans,broadleaf,source_index_only,,,matched,CHNU9,,https://weedid.cals.vt.edu/profile/386/
+VT-197,fall panicgrass,Panicum dicotomiflorum,grass_or_grasslike,source_index_only,,,unmatched_requires_review,,horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/197/
+VT-431,fall phlox,Phlox paniculata,broadleaf,source_index_only,,,matched,PHPA9,,https://weedid.cals.vt.edu/profile/431/
+VT-479,false daisy,Eclipta prostrata,broadleaf,source_index_only,,,matched,ECPR,,https://weedid.cals.vt.edu/profile/479/
+VT-200,fan clubmoss,Lycopodium digitatum,broadleaf,source_index_only,,,matched,LYDI3,,https://weedid.cals.vt.edu/profile/200/
+VT-429,Fernald's yellowcress,Rorippa palustris spp. fernaldiana,broadleaf,source_index_only,,,matched,ROPA2,pasture_forage; horticultural_crops,https://weedid.cals.vt.edu/profile/429/
+VT-484,fiddle dock,Rumex pulcher,broadleaf,source_index_only,,,matched,RUPU3,,https://weedid.cals.vt.edu/profile/484/
+VT-79,field bindweed,Convolvulus arvensis,broadleaf,crop_context_sourced,pasture_hay,,matched,COAR4,agronomic_crops; horticultural_crops,https://weedid.cals.vt.edu/profile/79/
+VT-77,field brome,Bromus arvensis,grass_or_grasslike,source_index_only,,,matched,BRAR5,,https://weedid.cals.vt.edu/profile/77/
+VT-73,field horsetail,Equisetum arvense,broadleaf,source_index_only,,,matched,EQAR,pasture_forage; horticultural_crops; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/73/
+VT-772,field madder,Sherardia arvensis,broadleaf,source_index_only,,,matched,SHAR2,,https://weedid.cals.vt.edu/profile/772/
+VT-509,field mustard,Brassica rapa,broadleaf,source_index_only,,,matched,BRRA,roadside_disturbed,https://weedid.cals.vt.edu/profile/509/
+VT-98,field pansy,Viola bicolor,broadleaf,source_index_only,,,matched,VIBI,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/98/
+VT-74,field pennycress,Thlaspi arvense,broadleaf,crop_context_sourced,small_grains; pasture_hay,,matched,THAR5,agronomic_crops; turf_landscape,https://weedid.cals.vt.edu/profile/74/
+VT-117,field pepperweed,Lepidium campestre,broadleaf,source_index_only,,,matched,LECA5,turf_landscape,https://weedid.cals.vt.edu/profile/117/
+VT-447,field pumpkin,Cucurbita pepo,broadleaf,source_index_only,,,matched,CUPE,,https://weedid.cals.vt.edu/profile/447/
+VT-367,field pussytoes,Antennaria neglecta,broadleaf,source_index_only,,,matched,ANNE,,https://weedid.cals.vt.edu/profile/367/
+VT-222,filamentous algae,Algae filimentous,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/222/
+VT-445,fiveangled dodder,Cuscuta pentagona var. pentagona,unclassified,source_index_only,,,matched,CUPE3,,https://weedid.cals.vt.edu/profile/445/
+VT-508,floating marshpennywort,Hydrocotyle ranunculoides,broadleaf,source_index_only,,,matched,HYRA,,https://weedid.cals.vt.edu/profile/508/
+VT-818,floating primrose-willow,Ludwigia peploides,broadleaf,source_index_only,,,matched,LUPE5,,https://weedid.cals.vt.edu/profile/818/
+VT-691,Florida beggarweed,Desmodium tortuosum,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/691/
+VT-619,flower of an hour,Hibiscus trionum,broadleaf,source_index_only,,,matched,HITR,agronomic_crops; horticultural_crops,https://weedid.cals.vt.edu/profile/619/
+VT-570,flowering quince,Chaenomeles speciosa,broadleaf,source_index_only,,,matched,CHSP12,,https://weedid.cals.vt.edu/profile/570/
+VT-810,fox sedge,Carex vulpinoidea,grass_or_grasslike,source_index_only,,,matched,CAVU2,,https://weedid.cals.vt.edu/profile/810/
+VT-303,foxtail barley,Hordeum jubatum,grass_or_grasslike,source_index_only,,,matched,HOJU,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/303/
+VT-296,foxtail millet,Setaria italica,grass_or_grasslike,source_index_only,,,matched,SEIT,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/296/
+VT-401,fragrant flatsedge,Cyperus odoratus,grass_or_grasslike,source_index_only,,,matched,CYOD,,https://weedid.cals.vt.edu/profile/401/
+VT-68,fragrant sumac,Rhus aromatica,broadleaf,source_index_only,,,matched,RHAR4,,https://weedid.cals.vt.edu/profile/68/
+VT-686,frost grape,Vitis vulpina,broadleaf,source_index_only,,,matched,VIVU,,https://weedid.cals.vt.edu/profile/686/
+VT-239,Fuller's teasel,Dipsacus fullonum,broadleaf,source_index_only,,,matched,DIFU2,roadside_disturbed,https://weedid.cals.vt.edu/profile/239/
+VT-435,gallant soldier,Galinsoga parviflora,broadleaf,source_index_only,,,matched,GAPA2,,https://weedid.cals.vt.edu/profile/435/
+VT-405,garden asparagus,Asparagus officinalis,broadleaf,source_index_only,,,matched,ASOF,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/405/
+VT-184,garden cornflower,Centaurea cyanus,broadleaf,source_index_only,,,matched,CECY2,,https://weedid.cals.vt.edu/profile/184/
+VT-538,garden lettuce,Lactuca sativa,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/538/
+VT-520,garden rhubarb,Rheum rhaponticum,broadleaf,source_index_only,,,matched,RHRH2,,https://weedid.cals.vt.edu/profile/520/
+VT-409,garden valerian,Valeriana officinalis,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/409/
+VT-681,garden yellowrocket,Barbarea vulgaris,broadleaf,source_index_only,,,matched,BAVU,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/681/
+VT-460,garlic mustard,Alliaria petiolata,broadleaf,crop_context_sourced,pasture_hay,Tier 3,matched,ALPE4,,https://weedid.cals.vt.edu/profile/460/
+VT-148,germander speedwell,Veronica chamaedrys,broadleaf,source_index_only,,,matched,VECH,agronomic_crops; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/148/
+VT-218,giant foxtail,Setaria faberi,grass_or_grasslike,source_index_only,,,matched,SEFA,,https://weedid.cals.vt.edu/profile/218/
+VT-248,giant goldenrod,Solidago giganteae,broadleaf,source_index_only,,,unmatched_requires_review,,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/248/
+VT-247,giant ironweed,Vernonia gigantea,broadleaf,source_index_only,,,matched,VEGI,,https://weedid.cals.vt.edu/profile/247/
+VT-24,glossy buckthorn,Frangula alnus,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/24/
+VT-89,golden bamboo,Phyllostachys aurea,grass_or_grasslike,source_index_only,,,matched,PHAU8,turf_landscape,https://weedid.cals.vt.edu/profile/89/
+VT-49,golden chain tree,Laburnum anagyroides,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/49/
+VT-151,golden kiwi,Actinidia chinensis,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/151/
+VT-88,golden ragwort,Packera aurea,broadleaf,source_index_only,,,matched,PAAU3,roadside_disturbed,https://weedid.cals.vt.edu/profile/88/
+VT-258,grass-like starwort,Stellaria graminea,broadleaf,source_index_only,,,matched,STGR,,https://weedid.cals.vt.edu/profile/258/
+VT-819,great blue lobelia,Lobelia siphilitica,broadleaf,source_index_only,,,matched,LOSI,,https://weedid.cals.vt.edu/profile/819/
+VT-616,great ragweed,Ambrosia trifida,broadleaf,source_index_only,,,matched,AMTR,roadside_disturbed,https://weedid.cals.vt.edu/profile/616/
+VT-292,greater bladder sedge,Carex intumescens,grass_or_grasslike,source_index_only,,,matched,CAIN12,,https://weedid.cals.vt.edu/profile/292/
+VT-443,green ash,Fraxinus pennsylvanica,broadleaf,source_index_only,,,matched,FRPE,,https://weedid.cals.vt.edu/profile/443/
+VT-645,green carpetweed,Mollugo verticillata,broadleaf,source_index_only,,,matched,MOVE,agronomic_crops; turf_landscape,https://weedid.cals.vt.edu/profile/645/
+VT-11,green field speedwell,Veronica agrestis,broadleaf,source_index_only,,,matched,VEAG,,https://weedid.cals.vt.edu/profile/11/
+VT-668,green foxtail,Setaria viridis,grass_or_grasslike,source_index_only,,,matched,SEVI4,roadside_disturbed,https://weedid.cals.vt.edu/profile/668/
+VT-667,green hawthorn,Crataegus viridis,broadleaf,source_index_only,,,matched,CRVI2,,https://weedid.cals.vt.edu/profile/667/
+VT-19,greenwhite sedge,Carex albolutescens,grass_or_grasslike,source_index_only,,,matched,CAAL5,,https://weedid.cals.vt.edu/profile/19/
+VT-264,ground ivy,Glechoma hederacea,broadleaf,source_index_only,,,matched,GLHE2,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/264/
+VT-33,groundnut,Apios americana,broadleaf,source_index_only,,,matched,APAM,,https://weedid.cals.vt.edu/profile/33/
+VT-442,Guadeloupe cucumber,Melothria pendula,broadleaf,source_index_only,,,matched,MEPE3,,https://weedid.cals.vt.edu/profile/442/
+VT-639,hairy angelica,Angelica venenosa,broadleaf,source_index_only,,,matched,ANVE,roadside_disturbed,https://weedid.cals.vt.edu/profile/639/
+VT-274,hairy bittercress,Cardamine hirsuta,broadleaf,source_index_only,,,matched,CAHI3,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/274/
+VT-507,hairy cat's ear,Hypochaeris radicata,broadleaf,source_index_only,,,matched,HYRA3,,https://weedid.cals.vt.edu/profile/507/
+VT-536,hairy crabgrass,Digitaria sanguinalis,grass_or_grasslike,source_index_only,,,matched,DISA,turf_landscape,https://weedid.cals.vt.edu/profile/536/
+VT-647,hairy crabweed,Fatoua villosa,broadleaf,source_index_only,,,matched,FAVI,,https://weedid.cals.vt.edu/profile/647/
+VT-798,hairy fleabane,Erigeron bonariensis,broadleaf,source_index_only,,,matched,COBO,,https://weedid.cals.vt.edu/profile/798/
+VT-648,hairy vetch,Vicia villosa,broadleaf,crop_context_sourced,small_grains,,matched,VIVI,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/648/
+VT-614,hairyfruit sedge,Carex trichocarpa,grass_or_grasslike,source_index_only,,,matched,CATR8,,https://weedid.cals.vt.edu/profile/614/
+VT-483,hairyseed paspalum,Paspalum pubiflorum,grass_or_grasslike,source_index_only,,,matched,PAPU5,aquatic_wetland,https://weedid.cals.vt.edu/profile/483/
+VT-617,hardy orange,Poncirus trifoliata,broadleaf,source_index_only,,,matched,POTR4,,https://weedid.cals.vt.edu/profile/617/
+VT-527,hare's ear,Bupleurum rotundifolium,broadleaf,source_index_only,,,matched,BURO,,https://weedid.cals.vt.edu/profile/527/
+VT-615,harlequin glorybower,Clerodendrum trichotomum,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/615/
+VT-434,harvestlice,Agrimonia parviflora,broadleaf,source_index_only,,,matched,AGPA6,,https://weedid.cals.vt.edu/profile/434/
+VT-556,hazel alder,Alnus serrulata,broadleaf,source_index_only,,,matched,ALSE2,,https://weedid.cals.vt.edu/profile/556/
+VT-799,heavenly bamboo,Nandina domestica,broadleaf,source_index_only,,,matched,NADO,,https://weedid.cals.vt.edu/profile/799/
+VT-549,hedge bindweed,Calystegia sepium,broadleaf,crop_context_sourced,pasture_hay,,matched,CASE13,horticultural_crops,https://weedid.cals.vt.edu/profile/549/
+VT-806,hedgehog woodrush,Luzula echinata,grass_or_grasslike,source_index_only,,,matched,LUEC,,https://weedid.cals.vt.edu/profile/806/
+VT-406,hedgehyssop,Gratiola officinalis,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/406/
+VT-402,hedgemustard,Sisymbrium offcinale,broadleaf,source_index_only,,,unmatched_requires_review,,horticultural_crops,https://weedid.cals.vt.edu/profile/402/
+VT-128,hemp dogbane,Apocynum cannabinum,broadleaf,source_index_only,,,matched,APCA,roadside_disturbed,https://weedid.cals.vt.edu/profile/128/
+VT-48,henbit deadnettle,Lamium amplexicaule,broadleaf,source_index_only,,,matched,LAAM,horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/48/
+VT-107,hog peanut,Amphicarpa bracteata,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/107/
+VT-133,hogwort,Croton capitatus,broadleaf,source_index_only,,,matched,CRCA6,,https://weedid.cals.vt.edu/profile/133/
+VT-613,honeylocust,Gleditsia triacanthos,broadleaf,source_index_only,,,matched,GLTR,,https://weedid.cals.vt.edu/profile/613/
+VT-18,honeyvine milkweed,Ampelamus albidus,broadleaf,source_index_only,,,matched,CYLA,,https://weedid.cals.vt.edu/profile/18/
+VT-793,hophornbeam copperleaf,Acalypha ostryifolia,broadleaf,source_index_only,,,matched,ACOS,,https://weedid.cals.vt.edu/profile/793/
+VT-428,horned pondweed,Zannichellia palustris,broadleaf,source_index_only,,,matched,ZAPA,,https://weedid.cals.vt.edu/profile/428/
+VT-136,horsenettle,Solanum carolinense,broadleaf,source_index_only,,,matched,SOCA3,pasture_forage; horticultural_crops,https://weedid.cals.vt.edu/profile/136/
+VT-123,horseweed,Erigeron canadensis,broadleaf,crop_context_sourced,corn; soybean; small_grains; pasture_hay,,matched,,pasture_forage,https://weedid.cals.vt.edu/profile/123/
+VT-245,humped bladderwort,Utricularia gibba,broadleaf,source_index_only,,,matched,UTGI,,https://weedid.cals.vt.edu/profile/245/
+VT-283,hyssopleaf thoroughwort,Eupatorium hyssopifolium,broadleaf,source_index_only,,,matched,EUHY,,https://weedid.cals.vt.edu/profile/283/
+VT-192,incense cedar,Calocedrus decurrens,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/192/
+VT-287,Indian goosegrass,Eleusine indica,grass_or_grasslike,crop_context_sourced,corn; soybean,,matched,ELIN3,,https://weedid.cals.vt.edu/profile/287/
+VT-286,Indian strawberry,Duchesnea indica,broadleaf,source_index_only,,,matched,DUIN2,turf_landscape,https://weedid.cals.vt.edu/profile/286/
+VT-387,Indiangrass,Sorghastrum nutans,grass_or_grasslike,source_index_only,,,matched,SONU2,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/387/
+VT-451,Italian ryegrass,Lolium perenne ssp. multiflorum,grass_or_grasslike,source_index_only,,,matched,LOPE,agronomic_crops; horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/451/
+VT-159,itchgrass,Rottboellia cochinchinensis,grass_or_grasslike,source_index_only,,,unmatched_requires_review,,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/159/
+VT-265,ivyleaf morningglory,Ipomoea hederacea,broadleaf,source_index_only,,,matched,IPHE,,https://weedid.cals.vt.edu/profile/265/
+VT-266,ivyleaf speedwell,Veronica hederifolia,broadleaf,source_index_only,,,matched,VEHE2,agronomic_crops; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/266/
+VT-626,jagged chickweed,Holosteum umbellatum,broadleaf,source_index_only,,,matched,HOUM,,https://weedid.cals.vt.edu/profile/626/
+VT-605,Japanese barberry,Berberis thunbergii,broadleaf,source_index_only,,,matched,BETH,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/605/
+VT-583,Japanese clover,Kummerowia striata,broadleaf,source_index_only,,,matched,KUST2,,https://weedid.cals.vt.edu/profile/583/
+VT-557,Japanese flowering cherry,Prunus serrulata,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/557/
+VT-174,Japanese holly,Ilex crenata,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/174/
+VT-300,Japanese honeysuckle,Lonicera japonica,broadleaf,source_index_only,,Tier 3,matched,LOJA,roadside_disturbed,https://weedid.cals.vt.edu/profile/300/
+VT-302,Japanese hop,Humulus japonicus,broadleaf,source_index_only,,,matched,HUJA,pasture_forage,https://weedid.cals.vt.edu/profile/302/
+VT-183,Japanese knotweed,Polygonum cuspidatum,broadleaf,crop_context_sourced,pasture_hay,,matched,POCU6,,https://weedid.cals.vt.edu/profile/183/
+VT-422,Japanese maple,Acer palmatum,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/422/
+VT-299,Japanese spindletree,Euonymus japonica,broadleaf,source_index_only,,,matched,EUJA8,,https://weedid.cals.vt.edu/profile/299/
+VT-301,Japanese spirea,Spiraea japonica,broadleaf,source_index_only,,,matched,SPJA,,https://weedid.cals.vt.edu/profile/301/
+VT-622,Jerusalem artichoke,Helianthus tuberosus,broadleaf,source_index_only,,,matched,HETU,,https://weedid.cals.vt.edu/profile/622/
+VT-540,jetbead,Rhodotypos scandens,broadleaf,source_index_only,,,matched,RHSC3,,https://weedid.cals.vt.edu/profile/540/
+VT-129,jewelweed,Impatiens capensis,broadleaf,source_index_only,,,matched,IMCA,turf_landscape; aquatic_wetland,https://weedid.cals.vt.edu/profile/129/
+VT-582,jimsonweed,Datura stramonium,broadleaf,crop_context_sourced,corn; soybean; pasture_hay,,matched,DAST,agronomic_crops,https://weedid.cals.vt.edu/profile/582/
+VT-261,Johnsongrass,Sorghum halepense,grass_or_grasslike,crop_context_sourced,corn; soybean,,matched,SOHA,,https://weedid.cals.vt.edu/profile/261/
+VT-277,jointhead arthraxon,Arthraxon hispidus,grass_or_grasslike,source_index_only,,,matched,ARHI3,,https://weedid.cals.vt.edu/profile/277/
+VT-161,jungle rice,Echinochloa colona,grass_or_grasslike,source_index_only,,,matched,ECCO2,,https://weedid.cals.vt.edu/profile/161/
+VT-477,Kentucky bluegrass,Poa pratensis,grass_or_grasslike,source_index_only,,,matched,POPR,,https://weedid.cals.vt.edu/profile/477/
+VT-512,kidneyleaf mudplantain,Heteranthera reniformis,broadleaf,source_index_only,,,matched,HERE,,https://weedid.cals.vt.edu/profile/512/
+VT-419,kiss me over the garden gate,Polygonum orientale,broadleaf,source_index_only,,,matched,POOR2,,https://weedid.cals.vt.edu/profile/419/
+VT-57,knawel,Scleranthus annuus,broadleaf,source_index_only,,,matched,SCAN2,,https://weedid.cals.vt.edu/profile/57/
+VT-436,knotroot foxtail,Setaria parviflora,grass_or_grasslike,source_index_only,,,matched,SEPA10,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/436/
+VT-730,kochia,Kochia scoparia,broadleaf,source_index_only,,,matched,BASC5,,https://weedid.cals.vt.edu/profile/730/
+VT-360,kudzu,Pueraria montana var. lobata,broadleaf,crop_context_sourced,pasture_hay,Tier 3,matched,PUMO,roadside_disturbed,https://weedid.cals.vt.edu/profile/360/
+VT-20,lambsquarters,Chenopodium album,broadleaf,source_index_only,,,matched,CHAL7,turf_landscape,https://weedid.cals.vt.edu/profile/20/
+VT-99,lanceleaf ragweed,Ambrosia bidentata,broadleaf,source_index_only,,,matched,AMBI2,,https://weedid.cals.vt.edu/profile/99/
+VT-90,large hopclover,Trifolium aureum,broadleaf,source_index_only,,,matched,TRAU2,roadside_disturbed,https://weedid.cals.vt.edu/profile/90/
+VT-65,largebracted plantain,Plantago aristata,broadleaf,source_index_only,,,matched,PLAR3,,https://weedid.cals.vt.edu/profile/65/
+VT-291,largepod pinweed,Lechea intermedia,broadleaf,source_index_only,,,matched,LEIN,,https://weedid.cals.vt.edu/profile/291/
+VT-553,lateflowering thoroughwort,Eupatorium serotinum,broadleaf,source_index_only,,,matched,EUSE2,,https://weedid.cals.vt.edu/profile/553/
+VT-558,lawn burweed,Soliva sessilis,broadleaf,source_index_only,,,matched,SOSE2,,https://weedid.cals.vt.edu/profile/558/
+VT-561,lawn marshpennywort,Hydrocotyle sibthorpioides,broadleaf,source_index_only,,,matched,HYSI,,https://weedid.cals.vt.edu/profile/561/
+VT-452,lawndaisy,Bellis perennis,broadleaf,source_index_only,,,matched,BEPE2,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/452/
+VT-232,leafy pondweed,Potamogeton foliosus,broadleaf,source_index_only,,,matched,POFO3,,https://weedid.cals.vt.edu/profile/232/
+VT-156,lemon beebalm,Monarda citriodora,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/156/
+VT-371,lesser calamint,Calamintha nepeta,broadleaf,source_index_only,,,matched,CANE17,pasture_forage,https://weedid.cals.vt.edu/profile/371/
+VT-198,lesser swinecress,Coronopus didymus,broadleaf,source_index_only,,,matched,CODI6,turf_landscape,https://weedid.cals.vt.edu/profile/198/
+VT-495,little barley,Hordeum pusillum,grass_or_grasslike,source_index_only,,,matched,HOPU,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/495/
+VT-545,little bluestem,Schizachyrium scoparium,grass_or_grasslike,source_index_only,,,matched,SCSC,pasture_forage; aquatic_wetland,https://weedid.cals.vt.edu/profile/545/
+VT-169,little floatingheart,Nymphoides cordata,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/169/
+VT-412,little hogweed,Portulaca oleracea,broadleaf,source_index_only,,,matched,POOL,,https://weedid.cals.vt.edu/profile/412/
+VT-1,littleleaf buttercup,Ranunculus abortivus,broadleaf,source_index_only,,,matched,RAAB,turf_landscape,https://weedid.cals.vt.edu/profile/1/
+VT-349,littlepod false flax,Camelina microcarpa,broadleaf,source_index_only,,,matched,CAMI2,,https://weedid.cals.vt.edu/profile/349/
+VT-658,live oak,Quercus virginiana,broadleaf,source_index_only,,,matched,QUVI,,https://weedid.cals.vt.edu/profile/658/
+VT-751,long-stalked phyllanthus,Phyllanthus tenellus,broadleaf,source_index_only,,,unmatched_requires_review,,horticultural_crops,https://weedid.cals.vt.edu/profile/751/
+VT-324,longleaf groundcherry,Physalis longifolia var. subglabrata,broadleaf,source_index_only,,,matched,PHLO4,,https://weedid.cals.vt.edu/profile/324/
+VT-380,longleaf pondweed,Potamogeton nodosus,broadleaf,source_index_only,,,matched,PONO2,,https://weedid.cals.vt.edu/profile/380/
+VT-118,low hopclover,Trifolium campestre,broadleaf,source_index_only,,,matched,TRCA5,pasture_forage,https://weedid.cals.vt.edu/profile/118/
+VT-330,lyreleaf sage,Salvia lyrata,broadleaf,source_index_only,,,matched,SALY2,,https://weedid.cals.vt.edu/profile/330/
+VT-685,maidenstears,Silene vulgaris,broadleaf,source_index_only,,,matched,SIVU,,https://weedid.cals.vt.edu/profile/685/
+VT-430,man of the earth,Ipomoea pandurata,broadleaf,source_index_only,,,matched,IPPA,,https://weedid.cals.vt.edu/profile/430/
+VT-624,manyflower marshpennywort,Hydrocotyle umbellata,broadleaf,source_index_only,,,matched,HYUM,,https://weedid.cals.vt.edu/profile/624/
+VT-138,maroon Carolina milkvine,Matelea carolinensis,broadleaf,source_index_only,,,matched,MACA9,,https://weedid.cals.vt.edu/profile/138/
+VT-337,Maryland goldenaster,Chrysopsis mariana,broadleaf,source_index_only,,,matched,CHMA14,,https://weedid.cals.vt.edu/profile/337/
+VT-338,Maryland meadowbeauty,Rhexia mariana,broadleaf,source_index_only,,,matched,RHMA,,https://weedid.cals.vt.edu/profile/338/
+VT-106,mat amaranth,Amaranthus blitoides,broadleaf,source_index_only,,,matched,AMBL,,https://weedid.cals.vt.edu/profile/106/
+VT-97,matrimony vine,Lycium barbarum,broadleaf,source_index_only,,,matched,LYBA4,,https://weedid.cals.vt.edu/profile/97/
+VT-298,Maule's quince,Chaenomeles japonica,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/298/
+VT-441,mayapple,Podophyllum peltatum,broadleaf,source_index_only,,,matched,POPE,,https://weedid.cals.vt.edu/profile/441/
+VT-173,mayweed chamomile,Anthemis cotula,broadleaf,source_index_only,,,matched,ANCO2,,https://weedid.cals.vt.edu/profile/173/
+VT-478,meadow fescue,Schedonorus pratensis,grass_or_grasslike,source_index_only,,,matched,SCPR4,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/478/
+VT-474,meadow hawkweed,Hieracium pratense,broadleaf,source_index_only,,,matched,HICA10,roadside_disturbed,https://weedid.cals.vt.edu/profile/474/
+VT-271,Mexican fireplant,Euphorbia heterophylla,broadleaf,source_index_only,,,matched,EUCY,,https://weedid.cals.vt.edu/profile/271/
+VT-32,Mexican tea,Chenopodium ambrosioides,broadleaf,source_index_only,,,matched,,,https://weedid.cals.vt.edu/profile/32/
+VT-13,mockernut hickory,Carya alba,broadleaf,source_index_only,,,matched,CATO6,,https://weedid.cals.vt.edu/profile/13/
+VT-317,moleplant,Euphorbia lathyris,broadleaf,source_index_only,,,matched,EULA4,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/317/
+VT-362,Morrow's honeysuckle,Lonicera morrowii,broadleaf,source_index_only,,,matched,LOMO2,,https://weedid.cals.vt.edu/profile/362/
+VT-105,moth mullein,Verbascum blattaria,broadleaf,source_index_only,,,matched,VEBL,,https://weedid.cals.vt.edu/profile/105/
+VT-228,mountain fetterbush,Pieris floribunda,broadleaf,source_index_only,,,matched,PIFL,,https://weedid.cals.vt.edu/profile/228/
+VT-318,mountain laurel,Kalmia latifolia,broadleaf,source_index_only,,,matched,KALA,,https://weedid.cals.vt.edu/profile/318/
+VT-602,mouseear cress,Arabidopsis thaliana,broadleaf,source_index_only,,,matched,ARTH,,https://weedid.cals.vt.edu/profile/602/
+VT-563,muck sunflower,Helianthus simulans,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/563/
+VT-680,mugwort,Artemisia vulgaris,broadleaf,crop_context_sourced,pasture_hay,,matched,ARVU,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/680/
+VT-363,multiflora rose,Rosa multiflora,broadleaf,crop_context_sourced,pasture_hay,,matched,ROMU,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/363/
+VT-385,musk thistle,Carduus nutans,broadleaf,crop_context_sourced,pasture_hay,,matched,CANU4,roadside_disturbed,https://weedid.cals.vt.edu/profile/385/
+VT-577,muskgrass,Chara spp.,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/577/
+VT-52,narrowleaf blue-eyed grass,Sisyrinchium angustifolium,grass_or_grasslike,source_index_only,,,matched,SIAN3,,https://weedid.cals.vt.edu/profile/52/
+VT-595,narrowleaf hawksbeard,Crepis tectorum,broadleaf,source_index_only,,,unmatched_requires_review,,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/595/
+VT-597,narrowleaf mountainmint,Pycnanthemum tenuifolium,broadleaf,source_index_only,,,matched,PYTE,,https://weedid.cals.vt.edu/profile/597/
+VT-596,narrowleaf pinweed,Lechea tenuifolia,broadleaf,source_index_only,,,matched,LETE,,https://weedid.cals.vt.edu/profile/596/
+VT-313,narrowleaf plantain,Plantago lanceolata,broadleaf,source_index_only,,,matched,PLLA,,https://weedid.cals.vt.edu/profile/313/
+VT-628,navel cornsalad,Valerianella umbilicata,broadleaf,source_index_only,,,matched,VAUM,,https://weedid.cals.vt.edu/profile/628/
+VT-6,needle spikerush,Eleocharis acicularis,grass_or_grasslike,source_index_only,,,matched,ELAC,,https://weedid.cals.vt.edu/profile/6/
+VT-649,Nepalese browntop,Microstegium vimineum,grass_or_grasslike,source_index_only,,,matched,MIVI,,https://weedid.cals.vt.edu/profile/649/
+VT-632,nettleleaf noseburn,Tragia urticifolia,broadleaf,source_index_only,,,matched,TRUR2,,https://weedid.cals.vt.edu/profile/632/
+VT-543,nimblewill,Muhlenbergia schreberi,grass_or_grasslike,source_index_only,,,matched,MUSC,,https://weedid.cals.vt.edu/profile/543/
+VT-381,nonfilamentous algae,Algae nonfilimentous,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/381/
+VT-372,northern bog violet,Viola nephrophylla,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/372/
+VT-816,northern catalpa,Catalpa speciosa,broadleaf,source_index_only,,,matched,CASP8,roadside_disturbed,https://weedid.cals.vt.edu/profile/816/
+VT-225,northern dewberry,Rubus flagellaris,broadleaf,source_index_only,,,matched,RUFL,,https://weedid.cals.vt.edu/profile/225/
+VT-794,northern jointvetch,Aeschynomene virginica,broadleaf,source_index_only,,,matched,AEVI3,,https://weedid.cals.vt.edu/profile/794/
+VT-760,northern red oak,Quercus rubra,broadleaf,source_index_only,,,matched,QURU,,https://weedid.cals.vt.edu/profile/760/
+VT-382,Norwegian cinquefoil,Potentilla norvegica,broadleaf,source_index_only,,,matched,PONO3,agronomic_crops; pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/382/
+VT-528,nutgrass,Cyperus rotundus,grass_or_grasslike,source_index_only,,,matched,CYRO,,https://weedid.cals.vt.edu/profile/528/
+VT-321,openflower rosette grass,Dichanthelium laxiflorum,grass_or_grasslike,source_index_only,,,matched,DILA9,roadside_disturbed,https://weedid.cals.vt.edu/profile/321/
+VT-86,orange hawkweed,Hieracium aurantiacum,broadleaf,source_index_only,,,matched,HIAU,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/86/
+VT-243,orangegrass,Hypericum gentianoides,grass_or_grasslike,source_index_only,,,matched,HYGE,,https://weedid.cals.vt.edu/profile/243/
+VT-255,orchardgrass,Dactylis glomerata,grass_or_grasslike,source_index_only,,,matched,DAGL,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/255/
+VT-678,oregano,Origanum vulgare,broadleaf,source_index_only,,,matched,ORVU,,https://weedid.cals.vt.edu/profile/678/
+VT-417,Oriental bittersweet,Celastrus orbiculatus,broadleaf,source_index_only,,Tier 3,matched,CEOR7,pasture_forage,https://weedid.cals.vt.edu/profile/417/
+VT-116,Oriental lady's thumb,Polygonum caespitosum,broadleaf,source_index_only,,,matched,,,https://weedid.cals.vt.edu/profile/116/
+VT-251,ornamental jewelweed,Impatiens glandulifera,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/251/
+VT-472,Osage orange,Maclura pomifera,broadleaf,source_index_only,,,matched,MAPO,,https://weedid.cals.vt.edu/profile/472/
+VT-322,oxeye daisy,Chrysanthemum leucanthemum,broadleaf,source_index_only,,,matched,LEVU,pasture_forage,https://weedid.cals.vt.edu/profile/322/
+VT-424,Palmer amaranth,Amaranthus palmeri,broadleaf,source_index_only,,,matched,AMPA,,https://weedid.cals.vt.edu/profile/424/
+VT-729,palmleaf morningglory,Ipomoea wrightii,broadleaf,source_index_only,,,matched,IPWR,agronomic_crops,https://weedid.cals.vt.edu/profile/729/
+VT-432,panicledleaf ticktrefoil,Desmodium paniculatum,broadleaf,source_index_only,,,matched,DEPA6,,https://weedid.cals.vt.edu/profile/432/
+VT-433,paper mulberry,Broussonetia papyrifera,broadleaf,source_index_only,,,matched,BRPA4,,https://weedid.cals.vt.edu/profile/433/
+VT-59,parrot feather watermilfoil,Myriophyllum aquaticum,broadleaf,source_index_only,,,matched,MYAQ2,,https://weedid.cals.vt.edu/profile/59/
+VT-795,parsley-piert,Aphanes arvensis,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/795/
+VT-706,partridge pea,Cassia fasciculata,broadleaf,source_index_only,,,matched,,,https://weedid.cals.vt.edu/profile/706/
+VT-257,pasture spikesedge,Kyllinga gracillima,grass_or_grasslike,source_index_only,,,matched,KYGR,aquatic_wetland; roadside_disturbed,https://weedid.cals.vt.edu/profile/257/
+VT-618,pawpaw,Asimina triloba,broadleaf,source_index_only,,,matched,ASTR,,https://weedid.cals.vt.edu/profile/618/
+VT-444,Pennsylvania smartweed,Polygonum pensylvanicum,broadleaf,source_index_only,,,matched,POPE2,agronomic_crops; horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/444/
+VT-687,peppermint,Mentha × piperita,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/687/
+VT-320,perennial pea,Lathyrus latifolius,broadleaf,source_index_only,,,matched,LALA4,roadside_disturbed,https://weedid.cals.vt.edu/profile/320/
+VT-450,perennial ryegrass,Lolium perenne,grass_or_grasslike,source_index_only,,,matched,LOPE,turf_landscape,https://weedid.cals.vt.edu/profile/450/
+VT-80,perennial sowthistle,Sonchus arvensis,broadleaf,source_index_only,,,matched,SOAR2,pasture_forage,https://weedid.cals.vt.edu/profile/80/
+VT-457,perplexed ticktrefoil,Desmodium perplexum,broadleaf,source_index_only,,,matched,DEPE80,,https://weedid.cals.vt.edu/profile/457/
+VT-458,Persian speedwell,Veronica persica,broadleaf,source_index_only,,,matched,VEPE3,agronomic_crops; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/458/
+VT-446,petty spurge,Euphorbia peplus,broadleaf,source_index_only,,,matched,EUPE6,,https://weedid.cals.vt.edu/profile/446/
+VT-461,Philadelphia fleabane,Erigeron philadelphicus,broadleaf,source_index_only,,,matched,ERPH,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/461/
+VT-712,Piedmont bedstraw,Cruciata pedemontana,broadleaf,source_index_only,,,matched,CRPE10,,https://weedid.cals.vt.edu/profile/712/
+VT-250,pignut hickory,Carya glabra,broadleaf,source_index_only,,,matched,CAGL8,,https://weedid.cals.vt.edu/profile/250/
+VT-745,pink woodsorrel,Oxalis debilis,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/745/
+VT-812,plantain-leaved pussytoes,Antennaria plantaginifolia,broadleaf,source_index_only,,,matched,ANPL,,https://weedid.cals.vt.edu/profile/812/
+VT-168,plume poppy,Macleaya cordata,broadleaf,source_index_only,,,matched,MACO10,,https://weedid.cals.vt.edu/profile/168/
+VT-334,poison hemlock,Conium maculatum,broadleaf,crop_context_sourced,pasture_hay,,matched,COMA2,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/334/
+VT-814,pomegranate,Punica granatum,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/814/
+VT-599,poorjoe,Diodia teres,broadleaf,source_index_only,,,matched,DITE2,,https://weedid.cals.vt.edu/profile/599/
+VT-164,poorland flatsedge,Cyperus compressus,grass_or_grasslike,source_index_only,,,matched,CYCO,turf_landscape,https://weedid.cals.vt.edu/profile/164/
+VT-579,poverty brome,Bromus sterilis,grass_or_grasslike,source_index_only,,,matched,BRST2,pasture_forage,https://weedid.cals.vt.edu/profile/579/
+VT-635,poverty dropseed,Sporobolus vaginiflorus,grass_or_grasslike,source_index_only,,,matched,SPVA,,https://weedid.cals.vt.edu/profile/635/
+VT-571,poverty oatgrass,Danthonia spicada,grass_or_grasslike,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/571/
+VT-598,poverty rush,Juncus tenuis,grass_or_grasslike,source_index_only,,,matched,JUTE,pasture_forage; horticultural_crops; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/598/
+VT-93,povertyweed,Iva axillaris,broadleaf,source_index_only,,,unmatched_requires_review,,pasture_forage,https://weedid.cals.vt.edu/profile/93/
+VT-473,Powell's amaranth,Amaranthus powellii,broadleaf,source_index_only,,,matched,AMPO2,,https://weedid.cals.vt.edu/profile/473/
+VT-690,prairie broomweed,Amphiachyris dracunculoides,broadleaf,source_index_only,,,matched,AMDR,,https://weedid.cals.vt.edu/profile/690/
+VT-586,prairie fleabane,Erigeron strigosus,broadleaf,source_index_only,,,matched,ERST3,,https://weedid.cals.vt.edu/profile/586/
+VT-359,prairie tea,Croton monanthogynus,broadleaf,source_index_only,,,matched,CRMO6,,https://weedid.cals.vt.edu/profile/359/
+VT-555,prickly lettuce,Lactuca serriola,broadleaf,crop_context_sourced,small_grains; pasture_hay,,matched,LASE,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/555/
+VT-612,prickly Russian thistle,Salsola tragus,broadleaf,source_index_only,,,matched,SATR12,,https://weedid.cals.vt.edu/profile/612/
+VT-575,prickly sida,Sida spinosa,broadleaf,crop_context_sourced,corn; soybean,,matched,SISP,agronomic_crops; pasture_forage; horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/575/
+VT-608,princesstree,Paulownia tomentosa,broadleaf,source_index_only,,,matched,PATO2,,https://weedid.cals.vt.edu/profile/608/
+VT-92,prostrate knotweed,Polygonum aviculare,broadleaf,source_index_only,,,matched,POAV,horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/92/
+VT-21,prostrate pigweed,Amaranthus albus,broadleaf,source_index_only,,,matched,AMAL,,https://weedid.cals.vt.edu/profile/21/
+VT-796,purple ammannia,Ammannia coccinea,broadleaf,source_index_only,,,matched,AMCO,,https://weedid.cals.vt.edu/profile/796/
+VT-492,purple deadnettle,Lamium purpureum,broadleaf,source_index_only,,,matched,LAPU2,horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/492/
+VT-535,purple loosestrife,Lythrum salicaria,broadleaf,source_index_only,,Tier 2,matched,LYSA2,pasture_forage; aquatic_wetland; roadside_disturbed,https://weedid.cals.vt.edu/profile/535/
+VT-285,purple passionflower,Passiflora incarnata,broadleaf,source_index_only,,,matched,PAIN6,roadside_disturbed,https://weedid.cals.vt.edu/profile/285/
+VT-226,purpletop,Tridens flavus,grass_or_grasslike,source_index_only,,,matched,TRFL2,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/226/
+VT-448,purslane speedwell,Veronica peregrina,broadleaf,source_index_only,,,matched,VEPE2,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/448/
+VT-514,quackgrass,Elymus repens,grass_or_grasslike,crop_context_sourced,corn; soybean,,matched,ELRE4,agronomic_crops; horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/514/
+VT-143,Queen Anne's lace,Daucus carota,broadleaf,source_index_only,,,matched,DACA6,pasture_forage; horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/143/
+VT-388,quince,Cydonia oblonga,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/388/
+VT-392,rabbit-tobacco,Pseudognaphalium obtusifolium,broadleaf,source_index_only,,,matched,PSOB3,,https://weedid.cals.vt.edu/profile/392/
+VT-75,rabbitfoot clover,Trifolium arvense,broadleaf,source_index_only,,,matched,TRAR4,,https://weedid.cals.vt.edu/profile/75/
+VT-325,ram's horn,Proboscidea louisianica,broadleaf,source_index_only,,,matched,PRLO,,https://weedid.cals.vt.edu/profile/325/
+VT-3,ramtilla,Guizotia abyssinica,broadleaf,source_index_only,,,matched,GUAB,,https://weedid.cals.vt.edu/profile/3/
+VT-366,rape,Brassica napus,broadleaf,source_index_only,,,matched,BRNA,,https://weedid.cals.vt.edu/profile/366/
+VT-389,rare clubmoss,Lycopodium obscurum,broadleaf,source_index_only,,,matched,LYOB,,https://weedid.cals.vt.edu/profile/389/
+VT-365,rattail fescue,Vulpia myruros,grass_or_grasslike,source_index_only,,,unmatched_requires_review,,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/365/
+VT-476,red clover,Trifolium pratense,broadleaf,source_index_only,,,matched,TRPR2,pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/476/
+VT-529,red fescue,Festuca rubra,grass_or_grasslike,source_index_only,,,matched,FERU2,roadside_disturbed,https://weedid.cals.vt.edu/profile/529/
+VT-531,red maple,Acer rubrum var. trilobum,broadleaf,source_index_only,,,matched,ACRU,,https://weedid.cals.vt.edu/profile/531/
+VT-530,red mulberry,Morus rubra,broadleaf,source_index_only,,,matched,MORU2,,https://weedid.cals.vt.edu/profile/530/
+VT-777,red sandspurry,Spergularia rubra,broadleaf,source_index_only,,,matched,SPRU,,https://weedid.cals.vt.edu/profile/777/
+VT-108,red stemmed parrots feather,Myriophyllum brasiliensis,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/108/
+VT-46,reddening lepiota,Leucoagaricus americanus,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/46/
+VT-518,redroot amaranth,Amaranthus retroflexus,broadleaf,source_index_only,,,matched,AMRE,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/518/
+VT-158,redstar,Ipomoea coccinea,broadleaf,source_index_only,,,matched,IPCO3,,https://weedid.cals.vt.edu/profile/158/
+VT-153,redstem stork's bill,Erodium cicutarium,broadleaf,source_index_only,,,matched,ERCI6,roadside_disturbed,https://weedid.cals.vt.edu/profile/153/
+VT-246,redtop,Agrostis gigantea,grass_or_grasslike,source_index_only,,,matched,AGGI2,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/246/
+VT-749,reed canarygrass,Phalaris arundinacea,grass_or_grasslike,source_index_only,,,matched,PHAR3,,https://weedid.cals.vt.edu/profile/749/
+VT-146,rescuegrass,Bromus catharticus,grass_or_grasslike,source_index_only,,,matched,BRCA6,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/146/
+VT-209,rice button aster,Symphyotrichum dumosum,broadleaf,source_index_only,,,matched,SYDU2,,https://weedid.cals.vt.edu/profile/209/
+VT-420,rice cutgrass,Leersia oryzoides,grass_or_grasslike,source_index_only,,,matched,LEOR,,https://weedid.cals.vt.edu/profile/420/
+VT-22,roadside pennycress,Thlaspi alliaceum,broadleaf,source_index_only,,,matched,THAL2,,https://weedid.cals.vt.edu/profile/22/
+VT-620,rough bluegrass,Poa trivialis,grass_or_grasslike,source_index_only,,,matched,POTR2,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/620/
+VT-621,roughfruit amaranth,Amaranthus tuberculatus,broadleaf,source_index_only,,,unmatched_requires_review,,aquatic_wetland; roadside_disturbed,https://weedid.cals.vt.edu/profile/621/
+VT-526,roundleaf greenbriar,Smilax rotundifolia,broadleaf,source_index_only,,,matched,SMRO,,https://weedid.cals.vt.edu/profile/526/
+VT-533,rugosa rose,Rosa rugosa,broadleaf,source_index_only,,,matched,RORU,,https://weedid.cals.vt.edu/profile/533/
+VT-532,rusty blackhaw,Viburnum rufidulum,broadleaf,source_index_only,,,matched,VIRU,,https://weedid.cals.vt.edu/profile/532/
+VT-572,saltgrass,Distichlis spicata,grass_or_grasslike,source_index_only,,,matched,DISP,pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/572/
+VT-438,saltmeadow cordgrass,Spartina patens,grass_or_grasslike,source_index_only,,,matched,SPPA,,https://weedid.cals.vt.edu/profile/438/
+VT-17,sassafras,Sassafras albidum,broadleaf,source_index_only,,,matched,SAAL5,,https://weedid.cals.vt.edu/profile/17/
+VT-568,saucer magnolia,Magnolia soulangeana,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/568/
+VT-63,sawtooth blackberry,Rubus argutus,broadleaf,source_index_only,,,matched,RUAR2,,https://weedid.cals.vt.edu/profile/63/
+VT-10,sawtooth oak,Quercus acutissima,broadleaf,source_index_only,,,matched,QUAC80,,https://weedid.cals.vt.edu/profile/10/
+VT-797,scarlet pimpernel,Anagallis arvensis,broadleaf,source_index_only,,,matched,ANAR,turf_landscape,https://weedid.cals.vt.edu/profile/797/
+VT-455,scentless false mayweed,Matricaria perforata,broadleaf,source_index_only,,,unmatched_requires_review,,pasture_forage,https://weedid.cals.vt.edu/profile/455/
+VT-546,Scotch broom,Cytisus scoparius,broadleaf,source_index_only,,,matched,CYSC4,,https://weedid.cals.vt.edu/profile/546/
+VT-340,seaside arrowgrass,Triglo maritima,grass_or_grasslike,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/340/
+VT-548,sensitive fern,Onoclea sensibilis,broadleaf,source_index_only,,,matched,ONSE,,https://weedid.cals.vt.edu/profile/548/
+VT-373,sensitive partridge pea,Chamaecrista nictitans ssp. nictitans var. nictitans,broadleaf,source_index_only,,,matched,CHNI2,aquatic_wetland; roadside_disturbed,https://weedid.cals.vt.edu/profile/373/
+VT-180,sericea lespedeza,Lespedeza cuneata,broadleaf,crop_context_sourced,pasture_hay,,matched,LECU,,https://weedid.cals.vt.edu/profile/180/
+VT-500,shaggy soldier,Galinsoga quadriradiata,broadleaf,source_index_only,,,matched,GAQU,horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/500/
+VT-328,shallow sedge,Carex lurida,grass_or_grasslike,source_index_only,,,matched,CALU5,,https://weedid.cals.vt.edu/profile/328/
+VT-211,sharpleaf cancerwort,Kickxia elatine,broadleaf,source_index_only,,,matched,KIEL,,https://weedid.cals.vt.edu/profile/211/
+VT-611,shaved sedge,Carex tonsa,grass_or_grasslike,source_index_only,,,matched,CATO10,,https://weedid.cals.vt.edu/profile/611/
+VT-115,shepherd's purse,Capsella bursa-pastoris,broadleaf,crop_context_sourced,small_grains,,matched,CABU2,agronomic_crops; horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/115/
+VT-165,shining bedstraw,Galium concinnum,broadleaf,source_index_only,,,matched,GACO3,,https://weedid.cals.vt.edu/profile/165/
+VT-110,shortleaf spikesedge,Kyllinga brevifolia,grass_or_grasslike,source_index_only,,,matched,KYBR,turf_landscape,https://weedid.cals.vt.edu/profile/110/
+VT-711,showy rattlebox,Crotalaria spectabilis,broadleaf,source_index_only,,,matched,CRSP2,agronomic_crops,https://weedid.cals.vt.edu/profile/711/
+VT-560,Siberian ligularia,Ligularia sibirica,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/560/
+VT-391,sicklepod,Senna obtusifolia,broadleaf,source_index_only,,,matched,SEOB4,,https://weedid.cals.vt.edu/profile/391/
+VT-305,silktree,Albizia julibrissin,broadleaf,source_index_only,,,matched,ALJU,roadside_disturbed,https://weedid.cals.vt.edu/profile/305/
+VT-47,silky dogwood,Cornus amomum,broadleaf,source_index_only,,,matched,COAM2,,https://weedid.cals.vt.edu/profile/47/
+VT-144,silver hairgrass,Aira caryophyllea,grass_or_grasslike,source_index_only,,,matched,AICA,roadside_disturbed,https://weedid.cals.vt.edu/profile/144/
+VT-773,silverleaf nightshade,Solanum eleaegnifolium,broadleaf,source_index_only,,,unmatched_requires_review,,agronomic_crops; pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/773/
+VT-64,silvery everlasting,Gamochaeta argyrinea,broadleaf,source_index_only,,,matched,GAAR10,,https://weedid.cals.vt.edu/profile/64/
+VT-62,silvery threadmoss,Bryum argenteum,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/62/
+VT-627,sleepydick,Ornithogalum umbellatum,grass_or_grasslike,source_index_only,,,matched,ORUM,agronomic_crops; pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/627/
+VT-666,slender amaranth,Amaranthus viridis,broadleaf,source_index_only,,,matched,AMVI,,https://weedid.cals.vt.edu/profile/666/
+VT-348,slender parsley piert,Aphanes microcarpa,broadleaf,source_index_only,,,matched,APMI,pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/348/
+VT-323,slimleaf panicgrass,Dichanthelium linearifolium,grass_or_grasslike,source_index_only,,,matched,DILI2,,https://weedid.cals.vt.edu/profile/323/
+VT-494,small geranium,Geranium pusillum,broadleaf,source_index_only,,,matched,GEPU2,pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/494/
+VT-206,small hopclover,Trifolium dubium,broadleaf,source_index_only,,,matched,TRDU2,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/206/
+VT-496,small pondweed,Potamogeton pusillus,broadleaf,source_index_only,,,matched,POPU7,aquatic_wetland,https://weedid.cals.vt.edu/profile/496/
+VT-437,smallflower buttercup,Ranunculus parviflorus,broadleaf,source_index_only,,,matched,RAPA3,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/437/
+VT-800,smallflower morningglory,Jacquemontia tamnifolia,broadleaf,source_index_only,,,matched,JATA,agronomic_crops; horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/800/
+VT-695,smallspike false nettle,Boehmeria cylindrica,broadleaf,source_index_only,,,matched,BOCY,,https://weedid.cals.vt.edu/profile/695/
+VT-705,smooth aster,Aster laeve,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/705/
+VT-358,smooth bedstraw,Galium mollugo,broadleaf,source_index_only,,,matched,GAMO,horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/358/
+VT-290,smooth brome,Bromus inermis,grass_or_grasslike,source_index_only,,,matched,BRIN2,,https://weedid.cals.vt.edu/profile/290/
+VT-26,smooth cordgrass,Spartina alterniflora,grass_or_grasslike,source_index_only,,,matched,SPAL,,https://weedid.cals.vt.edu/profile/26/
+VT-295,smooth crabgrass,Digitaria ischaemum,grass_or_grasslike,source_index_only,,,matched,DIIS,turf_landscape,https://weedid.cals.vt.edu/profile/295/
+VT-131,smooth hawksbeard,Crepis capillaris,broadleaf,source_index_only,,,matched,CRCA3,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/131/
+VT-279,smooth pigweed,Amaranthus hybridus,broadleaf,source_index_only,,,matched,AMHY,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/279/
+VT-421,smooth rattlebox,Crotalaria pallida var. obovata,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/421/
+VT-761,smooth sumac,Rhus glabra,broadleaf,source_index_only,,,matched,RHGL,roadside_disturbed,https://weedid.cals.vt.edu/profile/761/
+VT-289,smut grass,Sporobolus indicus,grass_or_grasslike,source_index_only,,,matched,SPIN4,pasture_forage; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/289/
+VT-727,sneezeweed,Helenium amarum,broadleaf,source_index_only,,,matched,HEAM,,https://weedid.cals.vt.edu/profile/727/
+VT-408,soapwort,Saponaria officinalis,broadleaf,source_index_only,,,matched,SAOF4,,https://weedid.cals.vt.edu/profile/408/
+VT-278,soft brome,Bromus hordeaceus,grass_or_grasslike,source_index_only,,,matched,BRHO2,,https://weedid.cals.vt.edu/profile/278/
+VT-61,sourwood,Oxydendrum arboreum,broadleaf,source_index_only,,,matched,OXAR,,https://weedid.cals.vt.edu/profile/61/
+VT-155,southern crabgrass,Digitaria ciliaris,grass_or_grasslike,source_index_only,,,matched,DICI,,https://weedid.cals.vt.edu/profile/155/
+VT-260,southern waternymph,Najas guadalupensis,broadleaf,source_index_only,,,matched,NAGU,,https://weedid.cals.vt.edu/profile/260/
+VT-344,soybean,Glycine max,broadleaf,source_index_only,,,matched,GLMA4,,https://weedid.cals.vt.edu/profile/344/
+VT-103,Spanish needles,Bidens bipinnata,broadleaf,source_index_only,,,matched,BIBI7,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/103/
+VT-576,spiny amaranth,Amaranthus spinosus,broadleaf,crop_context_sourced,pasture_hay,,matched,AMSP,,https://weedid.cals.vt.edu/profile/576/
+VT-4,spiny plumeless thistle,Carduus acanthoides,broadleaf,source_index_only,,,matched,CAAC,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/4/
+VT-84,spiny sowthistle,Sonchus asper,broadleaf,source_index_only,,,matched,SOAS,,https://weedid.cals.vt.edu/profile/84/
+VT-491,spoonleaf purple everlasting,Gnaphalium purpureum,broadleaf,source_index_only,,,matched,,,https://weedid.cals.vt.edu/profile/491/
+VT-580,spotted knapweed,Centaurea stoebe ssp. micranthos,broadleaf,crop_context_sourced,pasture_hay,,matched,CEST8,pasture_forage,https://weedid.cals.vt.edu/profile/580/
+VT-459,spotted ladysthumb,Polygonum persicaria,broadleaf,source_index_only,,,matched,POPE3,,https://weedid.cals.vt.edu/profile/459/
+VT-332,spotted sandmat,Chamaesyce maculata,broadleaf,source_index_only,,,matched,CHMA15,,https://weedid.cals.vt.edu/profile/332/
+VT-488,spotted St. Johnswort,Hypericum punctatum,broadleaf,source_index_only,,,matched,HYPU,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/488/
+VT-710,spotted water hemlock,Cicuta maculata,broadleaf,source_index_only,,,matched,CIMA2,,https://weedid.cals.vt.edu/profile/710/
+VT-642,spring avens,Geum vernum,broadleaf,source_index_only,,,matched,GEVE,,https://weedid.cals.vt.edu/profile/642/
+VT-641,spring draba,Draba verna,broadleaf,source_index_only,,,matched,DRVE2,pasture_forage,https://weedid.cals.vt.edu/profile/641/
+VT-177,spurred anoda,Anoda cristata,broadleaf,crop_context_sourced,corn; soybean,,matched,ANCR2,agronomic_crops; roadside_disturbed,https://weedid.cals.vt.edu/profile/177/
+VT-498,squarestem spikerush,Eleocharis quadrangulata,grass_or_grasslike,source_index_only,,,matched,ELQU,,https://weedid.cals.vt.edu/profile/498/
+VT-808,squirrel corn,Dicentra canadensis,broadleaf,source_index_only,,,matched,DICA,,https://weedid.cals.vt.edu/profile/808/
+VT-282,St. Andrew's cross,Hypericum hypericoides,broadleaf,source_index_only,,,matched,HYHY,,https://weedid.cals.vt.edu/profile/282/
+VT-114,St. Anthony's turnip,Ranunculus bulbosus,broadleaf,source_index_only,,,matched,RABU,pasture_forage,https://weedid.cals.vt.edu/profile/114/
+VT-547,St. Augustinegrass,Stenotaphrum secundatum,grass_or_grasslike,source_index_only,,,matched,STSE,,https://weedid.cals.vt.edu/profile/547/
+VT-369,starch grape hyacinth,Muscari neglectum,grass_or_grasslike,source_index_only,,,matched,MUNE,turf_landscape,https://weedid.cals.vt.edu/profile/369/
+VT-150,stickbush,Clerodendrum chinense,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/150/
+VT-397,stickweed,Verbesina occidentalis,broadleaf,source_index_only,,,matched,VEOC,pasture_forage,https://weedid.cals.vt.edu/profile/397/
+VT-256,sticky chickweed,Cerastium glomeratum,broadleaf,source_index_only,,,matched,CEGL2,roadside_disturbed,https://weedid.cals.vt.edu/profile/256/
+VT-671,sticky ragwort,Senecio viscosus,broadleaf,source_index_only,,,unmatched_requires_review,,roadside_disturbed,https://weedid.cals.vt.edu/profile/671/
+VT-58,stickywilly,Galium aparine,broadleaf,source_index_only,,,matched,GAAP2,,https://weedid.cals.vt.edu/profile/58/
+VT-230,stiff dogwood,Cornus foemina,broadleaf,source_index_only,,,matched,COFO,aquatic_wetland; roadside_disturbed,https://weedid.cals.vt.edu/profile/230/
+VT-202,stinging nettle,Urtica dioica,broadleaf,crop_context_sourced,pasture_hay,,matched,URDI,,https://weedid.cals.vt.edu/profile/202/
+VT-154,stink grass,Eragrostis cilianensis,grass_or_grasslike,source_index_only,,,matched,ERCI,agronomic_crops; pasture_forage,https://weedid.cals.vt.edu/profile/154/
+VT-585,strawcolored flatsedge,Cyperus strigosus,grass_or_grasslike,source_index_only,,,matched,CYST,,https://weedid.cals.vt.edu/profile/585/
+VT-361,strict blue-eyed grass,Sisyrinchium montanum,grass_or_grasslike,source_index_only,,,matched,SIMO2,,https://weedid.cals.vt.edu/profile/361/
+VT-537,stringy stonecrop,Sedum sarmentosum,broadleaf,source_index_only,,,matched,SESA,,https://weedid.cals.vt.edu/profile/537/
+VT-333,striped prince's pine,Chimaphila maculata,broadleaf,source_index_only,,,matched,CHMA3,,https://weedid.cals.vt.edu/profile/333/
+VT-637,strong quillwort,Isoetes valida,grass_or_grasslike,source_index_only,,,matched,ISVA2,,https://weedid.cals.vt.edu/profile/637/
+VT-534,sugar maple,Acer sacharum,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/534/
+VT-696,sugarcane plumegrass,Erianthus physocarpa,grass_or_grasslike,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/696/
+VT-511,sulphur cinquefoil,Potentilla recta,broadleaf,source_index_only,,,matched,PORE5,roadside_disturbed,https://weedid.cals.vt.edu/profile/511/
+VT-267,sun spurge,Euphorbia helioscopia,broadleaf,source_index_only,,,matched,EUHE2,agronomic_crops; pasture_forage,https://weedid.cals.vt.edu/profile/267/
+VT-427,swamp bay,Persea palustris,broadleaf,source_index_only,,,matched,PEPA37,,https://weedid.cals.vt.edu/profile/427/
+VT-280,swamp smartweed,Polygonum hydropiperoides,broadleaf,source_index_only,,,matched,POHY2,,https://weedid.cals.vt.edu/profile/280/
+VT-102,swamp tupelo,Nyssa biflora,broadleaf,source_index_only,,,matched,NYBI,,https://weedid.cals.vt.edu/profile/102/
+VT-263,swamp verbena,Verbena hastata,broadleaf,source_index_only,,,matched,VEHA2,,https://weedid.cals.vt.edu/profile/263/
+VT-600,sweet autumn virginsbower,Clematis terniflora,broadleaf,source_index_only,,,matched,CLTE4,,https://weedid.cals.vt.edu/profile/600/
+VT-379,sweet bay,Laurus nobilis,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/379/
+VT-14,sweet clover,Melilotus alba,broadleaf,source_index_only,,,matched,MEOF,roadside_disturbed,https://weedid.cals.vt.edu/profile/14/
+VT-676,sweet fennel,Foeniculum vulgare,broadleaf,source_index_only,,,matched,FOVU,,https://weedid.cals.vt.edu/profile/676/
+VT-53,sweet sagewort,Artemisia annua,broadleaf,source_index_only,,,matched,ARAN3,roadside_disturbed,https://weedid.cals.vt.edu/profile/53/
+VT-399,sweet vernalgrass,Anthoxanthum odoratum,grass_or_grasslike,source_index_only,,,matched,ANOD,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/399/
+VT-70,sweet woodreed,Cinna arundinacea,grass_or_grasslike,source_index_only,,,matched,CIAR2,,https://weedid.cals.vt.edu/profile/70/
+VT-44,sweetflag,Acorus americanus,grass_or_grasslike,source_index_only,,,matched,ACAM,,https://weedid.cals.vt.edu/profile/44/
+VT-588,sweetgum,Liquidambar styraciflua,broadleaf,source_index_only,,,matched,LIST2,,https://weedid.cals.vt.edu/profile/588/
+VT-400,sweetscented bedstraw,Galium odoratum,broadleaf,source_index_only,,,matched,GAOD3,,https://weedid.cals.vt.edu/profile/400/
+VT-652,switchgrass,Panicum virgatum,grass_or_grasslike,source_index_only,,,matched,PAVI2,pasture_forage,https://weedid.cals.vt.edu/profile/652/
+VT-71,tall fescue,Schedonorus arundinaceus,grass_or_grasslike,source_index_only,,,matched,SCAR7,,https://weedid.cals.vt.edu/profile/71/
+VT-217,tall globethistle,Echinops exaltatus,broadleaf,source_index_only,,,unmatched_requires_review,,pasture_forage; aquatic_wetland; roadside_disturbed,https://weedid.cals.vt.edu/profile/217/
+VT-490,tall morningglory,Ipomoea purpurea,broadleaf,source_index_only,,,matched,IPPU2,,https://weedid.cals.vt.edu/profile/490/
+VT-212,tall oatgrass,Arrhenatherum elatius,grass_or_grasslike,source_index_only,,,matched,AREL3,roadside_disturbed,https://weedid.cals.vt.edu/profile/212/
+VT-8,tapered rosette grass,Dichanthelium acuminatum,grass_or_grasslike,source_index_only,,,matched,DIAC2,,https://weedid.cals.vt.edu/profile/8/
+VT-721,tapertip cupgrass,Eriochloa acuminata,grass_or_grasslike,source_index_only,,,matched,ERAC4,,https://weedid.cals.vt.edu/profile/721/
+VT-593,Tatarian honeysuckle,Lonicera tatarica,broadleaf,source_index_only,,,matched,LOTA,roadside_disturbed,https://weedid.cals.vt.edu/profile/593/
+VT-601,Texas panicum,Urochloa texana,grass_or_grasslike,crop_context_sourced,corn; soybean,,matched,URTE2,agronomic_crops,https://weedid.cals.vt.edu/profile/601/
+VT-559,thin paspalum,Paspalum setaceum,grass_or_grasslike,source_index_only,,,matched,PASE5,,https://weedid.cals.vt.edu/profile/559/
+VT-221,threadstalk speedwell,Veronica filiformis,broadleaf,source_index_only,,,unmatched_requires_review,,agronomic_crops; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/221/
+VT-453,throughwort pennycress,Microthlaspi perfoliatum,broadleaf,source_index_only,,,matched,MIPE8,,https://weedid.cals.vt.edu/profile/453/
+VT-606,Thunbergs meadowsweet,Spiraea thunbergii,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/606/
+VT-554,thymeleaf speedwell,Veronica serpyllifolia,broadleaf,source_index_only,,,matched,VESE,agronomic_crops; turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/554/
+VT-475,Timothy,Phleum pratense,grass_or_grasslike,source_index_only,,,matched,PHPR3,,https://weedid.cals.vt.edu/profile/475/
+VT-182,toothed plagiomnium moss,Plagiomnium cuspidatum,other,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/182/
+VT-723,toothed spurge,Euphorbia dentata,broadleaf,source_index_only,,,matched,EUDE4,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/723/
+VT-191,trailing pearlwort,Sagina decumbens,broadleaf,source_index_only,,,matched,SADE,,https://weedid.cals.vt.edu/profile/191/
+VT-231,tree-of-a-thousand-stars,Serissa foetida,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/231/
+VT-29,tree-of-heaven,Ailanthus altissima,broadleaf,source_index_only,,Tier 3,matched,AIAL,roadside_disturbed,https://weedid.cals.vt.edu/profile/29/
+VT-505,trumpet creeper,Campsis radicans,broadleaf,crop_context_sourced,pasture_hay,,matched,CARA2,roadside_disturbed,https://weedid.cals.vt.edu/profile/505/
+VT-224,trumpetweed,Eutrochium fistulosum,broadleaf,source_index_only,,,matched,EUFI14,,https://weedid.cals.vt.edu/profile/224/
+VT-720,tufted lovegrass,Eragrostis pectinacea,grass_or_grasslike,source_index_only,,,matched,ERPE,,https://weedid.cals.vt.edu/profile/720/
+VT-623,tuliptree,Liriodendron tulipifera,broadleaf,source_index_only,,,matched,LITU,,https://weedid.cals.vt.edu/profile/623/
+VT-643,tumble windmill grass,Chloris verticillata,grass_or_grasslike,source_index_only,,,matched,CHVE2,pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/643/
+VT-270,twoheaded water-starwort,Callitriche heterophylla,broadleaf,source_index_only,,,matched,CAHE3,,https://weedid.cals.vt.edu/profile/270/
+VT-272,twoleaf watermilfoil,Myriophyllum heterophyllum,broadleaf,source_index_only,,,matched,MYHE2,,https://weedid.cals.vt.edu/profile/272/
+VT-709,Tyrol knapweed,Centaurea nigrescens,other,source_index_only,,,matched,CENI3,,https://weedid.cals.vt.edu/profile/709/
+VT-449,upland bentgrass,Agrostis perennans,grass_or_grasslike,source_index_only,,,matched,AGPE,,https://weedid.cals.vt.edu/profile/449/
+VT-634,Vasey's grass,Paspalum urvillei,grass_or_grasslike,source_index_only,,,matched,PAUR2,pasture_forage; aquatic_wetland; roadside_disturbed,https://weedid.cals.vt.edu/profile/634/
+VT-544,velvet panicum,Dichanthelium scoparium,grass_or_grasslike,source_index_only,,,matched,DISC3,,https://weedid.cals.vt.edu/profile/544/
+VT-604,velvetleaf,Abutilon theophrasti,broadleaf,crop_context_sourced,corn; soybean; pasture_hay,,matched,ABTH,,https://weedid.cals.vt.edu/profile/604/
+VT-252,vente conmigo,Croton glandulosus,broadleaf,source_index_only,,,matched,CRGL2,,https://weedid.cals.vt.edu/profile/252/
+VT-651,violet orychophragmus,Orychophragmus violaceus,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/651/
+VT-653,Virginia buttonweed,Diodia virginiana,broadleaf,source_index_only,,,matched,DIVI3,pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/653/
+VT-502,Virginia creeper,Parthenocissus quinquefolia,broadleaf,crop_context_sourced,pasture_hay,,matched,PAQU2,,https://weedid.cals.vt.edu/profile/502/
+VT-663,Virginia glasswort,Salicornea virginica,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/663/
+VT-659,Virginia mountainmint,Pycnanthemum virginianum,broadleaf,source_index_only,,,matched,PYVI,,https://weedid.cals.vt.edu/profile/659/
+VT-664,Virginia pepperweed,Lepidium virginicum,broadleaf,source_index_only,,,matched,LEVI3,horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/664/
+VT-656,Virginia strawberry,Fragaria virginiana,broadleaf,source_index_only,,,matched,FRVI,,https://weedid.cals.vt.edu/profile/656/
+VT-661,Virginia sweetspire,Itea virginica,broadleaf,source_index_only,,,matched,ITVI,,https://weedid.cals.vt.edu/profile/661/
+VT-660,Virginia threeseed mercury,Acalypha virginica,broadleaf,source_index_only,,,matched,ACVI,pasture_forage,https://weedid.cals.vt.edu/profile/660/
+VT-403,watercress,Nasturtium officinale,broadleaf,source_index_only,,,matched,NAOF,,https://weedid.cals.vt.edu/profile/403/
+VT-542,watershield,Brasenia schreberi,broadleaf,source_index_only,,,matched,BRSC,,https://weedid.cals.vt.edu/profile/542/
+VT-204,waterthread pondweed,Potamogeton diversifolius,broadleaf,source_index_only,,,matched,PODI,aquatic_wetland,https://weedid.cals.vt.edu/profile/204/
+VT-644,waterthyme,Hydrilla verticillata,broadleaf,source_index_only,,Tier 3,matched,HYVE3,,https://weedid.cals.vt.edu/profile/644/
+VT-147,wax myrtle,Morella cerifera,broadleaf,source_index_only,,,matched,MOCE2,,https://weedid.cals.vt.edu/profile/147/
+VT-493,weakstalk bulrush,Scirpus purshianus,grass_or_grasslike,source_index_only,,,matched,SCPU14,,https://weedid.cals.vt.edu/profile/493/
+VT-181,weeping lovegrass,Eragrostis curvula,grass_or_grasslike,source_index_only,,,matched,ERCU2,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/181/
+VT-60,western brackenfern,Pteridium aquilinum,broadleaf,source_index_only,,,matched,PTAQ,,https://weedid.cals.vt.edu/profile/60/
+VT-425,western marsh cudweed,Gnaphalium palustre,broadleaf,source_index_only,,,unmatched_requires_review,,roadside_disturbed,https://weedid.cals.vt.edu/profile/425/
+VT-9,western panicgrass,Dichanthelium acuminatum var. fasciculatum,grass_or_grasslike,source_index_only,,,matched,DIAC2,pasture_forage,https://weedid.cals.vt.edu/profile/9/
+VT-207,western salsify,Tragopogon dubius,broadleaf,source_index_only,,,matched,TRDU,roadside_disturbed,https://weedid.cals.vt.edu/profile/207/
+VT-37,white ash,Fraxinus americana,broadleaf,source_index_only,,,matched,FRAM2,,https://weedid.cals.vt.edu/profile/37/
+VT-516,white clover,Trifolium repens,broadleaf,source_index_only,,,matched,TRRE3,,https://weedid.cals.vt.edu/profile/516/
+VT-466,white heath aster,Symphyotrichum pilosum var. pilosum,broadleaf,source_index_only,,,matched,SYPI2,roadside_disturbed,https://weedid.cals.vt.edu/profile/466/
+VT-15,white mulberry,Morus alba,broadleaf,source_index_only,,,matched,MOAL,,https://weedid.cals.vt.edu/profile/15/
+VT-315,white panicle aster,Symphyotrichum lanceolatum ssp. lanceolatum var. lanceolatum,broadleaf,source_index_only,,,matched,SYLA6,aquatic_wetland; roadside_disturbed,https://weedid.cals.vt.edu/profile/315/
+VT-28,white snakeroot,Ageratina altissima,broadleaf,crop_context_sourced,pasture_hay,,matched,AGAL5,roadside_disturbed,https://weedid.cals.vt.edu/profile/28/
+VT-633,white vervain,Verbena urticifolia,broadleaf,source_index_only,,,matched,VEUR,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/633/
+VT-662,whitegrass,Leersia virginica,grass_or_grasslike,source_index_only,,,matched,LEVI2,,https://weedid.cals.vt.edu/profile/662/
+VT-718,whitesnow,Drymaria cordata,grass_or_grasslike,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/718/
+VT-310,whitestar,Ipomoea lacunosa,broadleaf,source_index_only,,,matched,IPLA,,https://weedid.cals.vt.edu/profile/310/
+VT-805,whitetinge sedge,Carex albicans,grass_or_grasslike,source_index_only,,,matched,CAAL25,,https://weedid.cals.vt.edu/profile/805/
+VT-499,whorled yellow loosestrife,Lysimachia quadrifolia,broadleaf,source_index_only,,,matched,LYQU2,,https://weedid.cals.vt.edu/profile/499/
+VT-339,widgeongrass,Ruppia maritima,grass_or_grasslike,source_index_only,,,matched,RUMA5,,https://weedid.cals.vt.edu/profile/339/
+VT-674,wild basil,Clinopodium vulgare,broadleaf,source_index_only,,,matched,CLVU,,https://weedid.cals.vt.edu/profile/674/
+VT-809,wild blue phlox,Phlox divaricata,broadleaf,source_index_only,,,matched,PHDI5,,https://weedid.cals.vt.edu/profile/809/
+VT-757,wild buckwheat,Polygonum convolvulus,broadleaf,crop_context_sourced,small_grains,,matched,POCO10,,https://weedid.cals.vt.edu/profile/757/
+VT-694,wild four-o'clock,Mirabilis nyctaginea,broadleaf,source_index_only,,,matched,MINY,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/694/
+VT-650,wild garlic,Allium vineale,grass_or_grasslike,source_index_only,,,matched,ALVI,pasture_forage; turf_landscape,https://weedid.cals.vt.edu/profile/650/
+VT-790,wild grapes,Vitis spp.,broadleaf,source_index_only,,,unmatched_requires_review,,pasture_forage; horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/790/
+VT-307,wild mustard,Brassica kaber,broadleaf,source_index_only,,,matched,SIARA,agronomic_crops; horticultural_crops,https://weedid.cals.vt.edu/profile/307/
+VT-220,wild oat,Avena fatua,grass_or_grasslike,source_index_only,,,matched,AVFA,agronomic_crops; horticultural_crops; turf_landscape,https://weedid.cals.vt.edu/profile/220/
+VT-689,wild parsnip,Pastinaca sativa,broadleaf,crop_context_sourced,pasture_hay,,matched,PASA2,,https://weedid.cals.vt.edu/profile/689/
+VT-510,wild radish,Raphanus raphanistrum,broadleaf,source_index_only,,,matched,RARA2,agronomic_crops; pasture_forage; horticultural_crops,https://weedid.cals.vt.edu/profile/510/
+VT-384,wild sarsaparilla,Aralia nudicaulis,broadleaf,source_index_only,,,matched,ARNU2,,https://weedid.cals.vt.edu/profile/384/
+VT-464,wine raspberry,Rubus phoenicolasius,broadleaf,source_index_only,,,matched,RUPH,,https://weedid.cals.vt.edu/profile/464/
+VT-167,winged sumac,Rhus copallinum,broadleaf,source_index_only,,,matched,RHCO,roadside_disturbed,https://weedid.cals.vt.edu/profile/167/
+VT-27,wingstem,Verbesina alternifolia,broadleaf,source_index_only,,,matched,VEAL,,https://weedid.cals.vt.edu/profile/27/
+VT-589,winter-flowering cherry,Prunus subhirtella,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/589/
+VT-304,wintergreen barberry,Berberis julianae,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/304/
+VT-130,witchgrass,Panicum capillare,grass_or_grasslike,source_index_only,,,matched,PACA6,turf_landscape; roadside_disturbed,https://weedid.cals.vt.edu/profile/130/
+VT-227,woodland bittercress,Cardamine flexuosa,broadleaf,source_index_only,,,matched,CAFL14,pasture_forage; roadside_disturbed,https://weedid.cals.vt.edu/profile/227/
+VT-229,woodland lettuce,Lactuca floridana,broadleaf,source_index_only,,,matched,LAFL,,https://weedid.cals.vt.edu/profile/229/
+VT-462,woodlily,Lilium philidelphicum,grass_or_grasslike,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/462/
+VT-187,woolgrass,Scirpus cyperinus,grass_or_grasslike,source_index_only,,,matched,SCCY,,https://weedid.cals.vt.edu/profile/187/
+VT-609,woolly burdock,Arctium tomentosum,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/609/
+VT-672,yaupon,Ilex vomitoria,broadleaf,source_index_only,,,matched,ILVO,,https://weedid.cals.vt.edu/profile/672/
+VT-242,yellow archangel,Lamiastrum galeobdolon,broadleaf,source_index_only,,,matched,LAGA2,,https://weedid.cals.vt.edu/profile/242/
+VT-440,yellow floatingheart,Nymphoides peltata,broadleaf,source_index_only,,,unmatched_requires_review,,,https://weedid.cals.vt.edu/profile/440/
+VT-487,yellow foxtail,Setaria pumila,grass_or_grasslike,source_index_only,,,matched,SEPU8,,https://weedid.cals.vt.edu/profile/487/
+VT-213,yellow nutsedge,Cyperus esculentus,grass_or_grasslike,crop_context_sourced,corn; soybean,,matched,CYES,turf_landscape,https://weedid.cals.vt.edu/profile/213/
+VT-329,yellow passionflower,Passiflora lutea,broadleaf,source_index_only,,,matched,PALU2,,https://weedid.cals.vt.edu/profile/329/
+VT-646,yellow spring bedstraw,Galium verum,broadleaf,source_index_only,,,matched,GAVE,,https://weedid.cals.vt.edu/profile/646/
+VT-341,zoysiagrass,Zoysia matrella,grass_or_grasslike,source_index_only,,,unmatched_requires_review,,turf_landscape,https://weedid.cals.vt.edu/profile/341/
+VAC-86448bff01,Giant salvinia,Salvinia molesta,unclassified,regulatory_only,,Tier 1,not_crosswalked,,,
+VAC-a5b2537e9d,Tropical soda apple,Solanum viarum,unclassified,regulatory_only,,Tier 1,not_crosswalked,,,
+VAC-567e2027ec,Giant hogweed,Heracleum mantegazzianum,unclassified,regulatory_only,,Tier 1,not_crosswalked,,,
+VAC-7d372dd967,Cogon grass,Imperata cylindrica,unclassified,regulatory_only,,Tier 2,not_crosswalked,,,
+VAC-3c6b5044ba,Water spinach,Ipomoea aquatica,unclassified,regulatory_only,,Tier 2,not_crosswalked,,,
+VAC-e5292fa7c7,Beach vitex,Vitex rotundifolia,unclassified,regulatory_only,,Tier 2,not_crosswalked,,,
+VAC-12349a5ada,Wavyleaf basketgrass,Oplismenus hirtellus spp. undulatifolius,unclassified,regulatory_only,,Tier 2,not_crosswalked,,,
+VAC-cc9915c126,Incised fumewort,Corydalis incisa,unclassified,regulatory_only,,Tier 2,not_crosswalked,,,
+VAC-aca8067248,Two-horned trapa,Trapa bispinosa,unclassified,regulatory_only,,Tier 2,not_crosswalked,,,
+VAC-84b242b003,Porcelain berry,Ampelopsis brevipedunculata,unclassified,regulatory_only,,Tier 3,not_crosswalked,,,
+VAC-9fd4b345fd,Mile-a-minute weed,Persicaria perfoliata,unclassified,regulatory_only,,Tier 3,not_crosswalked,,,
+VAC-66694d2365,Chinese yam,Dioscorea polystachya,unclassified,regulatory_only,,Tier 3,not_crosswalked,,,
+VAC-1bb57fb72d,Lesser celandine,Ficaria verna,unclassified,regulatory_only,,Tier 3,not_crosswalked,,,
+VAC-013be4ffbe,Bicolor lespedeza,Lespedeza bicolor,unclassified,regulatory_only,,Tier 3,not_crosswalked,,,
+VAC-fe26528997,Japanese knotweed,Reynoutria japonica,unclassified,regulatory_only,,Tier 3,not_crosswalked,,,
+VAC-8ff731b18f,Siberian elm,Ulmus pumila,unclassified,regulatory_only,,Tier 3,not_crosswalked,,,

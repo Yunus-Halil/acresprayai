@@ -16,6 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { PAGE_SIZE, appendPage, hasMore, pageRange } from "@/lib/pagination";
 import ImportOrthomosaicForm from "@/components/app/ImportOrthomosaicForm";
+import { ASSUMED_REGION_WARNING } from "@/lib/weedCatalog/region";
 
 type DBField = {
   id: string;
@@ -112,6 +113,10 @@ export default function Fields() {
 
   return (
     <div className="p-8 space-y-6">
+      {/* Testing assumption, said where the fields are. See lib/weedCatalog/region.ts. */}
+      <Card role="status" className="p-4 text-sm border-amber-500/60 bg-amber-500/10 text-amber-900 dark:text-amber-200">
+        <span className="font-semibold">Weed reference list: </span>{ASSUMED_REGION_WARNING}
+      </Card>
       <header className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-display text-3xl">Fields</h1>

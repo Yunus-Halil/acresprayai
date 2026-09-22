@@ -17,6 +17,7 @@
 // writes a rate. The word "weed" appears only where the operator's own
 // verdict already put it (species text carried through describe.ts).
 import { type LatLng2, M_PER_DEG_LAT, m2ToHectares, mPerDegLng, polygonAreaM2 } from "../geo";
+import { type Identification, UNIDENTIFIED, identificationLine, isStatedFinding } from "../weedCatalog/identification";
 import { chipSpanM } from "./candidates";
 import type { Candidate, RegionClass } from "./types";
 
@@ -28,6 +29,15 @@ export type AppliedAnnotation = {
   notes: string;
   ring: LatLng2[];
   areaHa: number;
+  /**
+   * The operator's stated identification, or nulls. A suggestion the operator
+   * never confirmed does not travel: the row then says "not identified" in its
+   * notes and carries no label for Field View, the Planner or the report.
+   */
+  weed_label: string | null;
+  weed_label_status: "confirmed" | "edited" | null;
+  weed_catalog_id: string | null;
+  weed_label_source: string | null;
 };
 
 /** A small square around a point candidate's centroid, sized like its own chip. */
@@ -61,15 +71,16 @@ function issueTypeFor(c: Candidate): string {
   return "Other";
 }
 
-function nameFor(c: Candidate): string {
+function nameFor(c: Candidate, id: Identification): string {
+  if (isStatedFinding(id)) return `${id.label} (operator-identified)`;
   return `Weed Scout: ${c.region ? c.region.klass : c.kind}`;
 }
 
 /** What the Field View popup answers on a click - the "what is this" the operator asked for. */
-function notesFor(c: Candidate): string {
+function notesFor(c: Candidate, id: Identification): string {
   const e = c.estimate;
   const body = e ? [e.summary, e.positionNote].filter(Boolean).join(" ") : "Flagged by Weed Scout.";
-  return `${body} (Weed Scout, experimental - verify on the ground before treating.)`.slice(0, 480);
+  return `${identificationLine(id)} ${body} (Weed Scout, experimental - verify on the ground before treating.)`.slice(0, 480);
 }
 
 /**
@@ -81,17 +92,22 @@ function notesFor(c: Candidate): string {
  * gets a small square around its centroid, sized like the chip already
  * rendered for it, so the shape on the map is roughly what the chip showed.
  */
-export function annotationFromCandidate(c: Candidate): AppliedAnnotation {
+export function annotationFromCandidate(c: Candidate, identification: Identification = UNIDENTIFIED): AppliedAnnotation {
   const ring = c.region && c.region.rings[0]?.length >= 3
     ? c.region.rings[0]
     : squareRing(c.centroid, chipSpanM(c));
   const areaM2 = c.region ? c.areaM2 : polygonAreaM2(ring);
+  const stated = isStatedFinding(identification);
   return {
-    name: nameFor(c),
+    name: nameFor(c, identification),
     issue_type: issueTypeFor(c),
     color: "orange",
-    notes: notesFor(c),
+    notes: notesFor(c, identification),
     ring,
     areaHa: m2ToHectares(areaM2),
+    weed_label: stated ? identification.label : null,
+    weed_label_status: stated ? (identification.status as "confirmed" | "edited") : null,
+    weed_catalog_id: stated ? identification.catalogId : null,
+    weed_label_source: stated ? identification.source : null,
   };
 }

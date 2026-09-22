@@ -27,12 +27,22 @@ import { storageKey } from "@/lib/storage";
 import { fmtArea, fmtAreaCm2, fmtDistance, fmtLengthCm } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { describeCandidate } from "@/lib/weedScout/candidates";
-import { annotationFromCandidate } from "@/lib/weedScout/applyToField";
+import { type AppliedAnnotation, annotationFromCandidate } from "@/lib/weedScout/applyToField";
 import { type EventContext, describeEvent, fetchEventContext } from "@/lib/weedScout/context";
 import { describeFeedback } from "@/lib/weedScout/feedback";
 import {
-  type ObservationRow, type Verdict, VERDICTS, listObservations, loadFeedback, saveObservation,
+  type ObservationRow, type Verdict, VERDICTS, identificationColumns, listObservations, loadFeedback, saveObservation,
 } from "@/lib/weedScout/observations";
+import {
+  type Identification, REJECTED, UNIDENTIFIED, identificationFromEntry, identificationFromText, isStatedFinding,
+  sourceTextFor,
+} from "@/lib/weedCatalog/identification";
+import { cropContextFor, fieldRegion } from "@/lib/weedCatalog/region";
+import { loadCatalog } from "@/lib/weedCatalog/repo";
+import {
+  type Suggestion, evidenceLabel, narrowCatalog, presenceNote, regulatoryNote, searchRanked, suggestionsFor,
+} from "@/lib/weedCatalog/suggest";
+import type { CatalogEntry } from "@/lib/weedCatalog/types";
 import { runWeedScout } from "@/lib/weedScout/pipeline";
 import {
   type Candidate, type FeedbackRow, type RegionClass, type ScoutParams, type ScoutProgress, type ScoutResult,
@@ -126,10 +136,7 @@ export function WeedScoutTab({
    * null on failure - never throws, so a failed apply reads the same way a
    * failed save already does elsewhere on this screen.
    */
-  applyAnnotation: (input: {
-    name: string; issue_type: string; color: string; notes: string | null;
-    ring: LatLng2[]; areaHa: number;
-  }) => Promise<string | null>;
+  applyAnnotation: (input: AppliedAnnotation & { weed_observation_id?: string | null }) => Promise<string | null>;
   removeAnnotation: (id: string) => Promise<void>;
 }) {
   const units = useUnitSystem();
@@ -149,8 +156,17 @@ export function WeedScoutTab({
   const [saved, setSaved] = useState<Record<string, ObservationRow>>({});
   const [feedback, setFeedback] = useState<FeedbackRow[]>([]);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
-  const [species, setSpecies] = useState("");
   const [notes, setNotes] = useState("");
+  // The reference catalog for the field's (assumed) state, and the operator's
+  // identification of the selected candidate. The identification is theirs:
+  // the scout may put a name on screen only as a suggestion drawn from their
+  // own past verdicts (lib/weedCatalog/suggest.ts), and a suggestion is never
+  // saved as the label.
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [identification, setIdentification] = useState<Identification>(UNIDENTIFIED);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [freeText, setFreeText] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // Candidate id -> the user_annotations row it became. Tracked for this run
@@ -171,8 +187,21 @@ export function WeedScoutTab({
   const capturedAt = scanCreatedAt ?? new Date().toISOString();
   const crop = settings.crop_type ?? "";
   const stage = growthStage(crop, settings.planting_date);
+  const region = fieldRegion();
+  const cropContext = cropContextFor(crop);
 
   useEffect(() => { try { localStorage.setItem(PARAMS_KEY, JSON.stringify(params)); } catch { /* private mode */ } }, [params]);
+
+  // The reference list, once. A failed read is said, not hidden: the panel
+  // then offers free text only.
+  useEffect(() => {
+    let cancelled = false;
+    loadCatalog(region.state)
+      .then(rows => { if (!cancelled) { setCatalog(rows); setCatalogError(null); } })
+      .catch(e => { if (!cancelled) setCatalogError((e as Error).message); });
+    return () => { cancelled = true; };
+  }, [region.state]);
+  const narrowed = useMemo(() => narrowCatalog(catalog, { region, crop: cropContext }), [catalog, region, cropContext]);
 
   // The event context for this capture, once. Failure is a context with nulls.
   useEffect(() => {
@@ -196,13 +225,40 @@ export function WeedScoutTab({
     () => result?.candidates.find(c => c.id === selectedId) ?? null,
     [result, selectedId],
   );
+  // The suggestion for the selected candidate, if the archive supports one.
+  const suggestions = useMemo(() => (selected ? suggestionsFor(selected, catalog) : []), [selected, catalog]);
+  const suggestion: Suggestion | null = suggestions[0] ?? null;
+
   useEffect(() => {
     const row = selectedId ? saved[selectedId] : undefined;
     setVerdict((row?.verdict as Verdict | null) ?? null);
-    setSpecies(row?.species ?? "");
     setNotes(row?.notes ?? "");
     setSaveError(null);
-  }, [selectedId, saved]);
+    setPickerQuery("");
+    setFreeText("");
+    // Restore what the operator said last time, from the archive row. A
+    // confirmation whose suggestion is no longer the one on screen (the
+    // archive moved on) is restored as the operator's own pick: the label
+    // stands on their authority either way, and the database only accepts
+    // "confirmed" for the id that was suggested.
+    if (!row) { setIdentification(UNIDENTIFIED); return; }
+    const status = row.identification_status;
+    if (status === "rejected") { setIdentification(REJECTED); return; }
+    if ((status === "confirmed" || status === "edited") && row.species) {
+      const entry = row.catalog_id ? catalog.find(e => e.catalog_id === row.catalog_id) : undefined;
+      if (entry) {
+        const stillSuggested = status === "confirmed" && suggestion?.entry.catalog_id === entry.catalog_id;
+        setIdentification(identificationFromEntry(entry, stillSuggested ? "confirmed" : "edited",
+          row.identification_basis ?? "Picked by the operator from the reference list."));
+      } else {
+        setIdentification(identificationFromText(row.species));
+      }
+      return;
+    }
+    // Legacy rows: free species text typed before identifications existed is
+    // the operator's own label, so it is restored as one.
+    setIdentification(row.species ? identificationFromText(row.species) : UNIDENTIFIED);
+  }, [selectedId, saved, catalog, suggestion]);
 
   const run = useCallback(async () => {
     if (!rings.length || !tileUrl || running) return;
@@ -231,6 +287,7 @@ export function WeedScoutTab({
     if (!selected || !user || !context || !result) return;
     setSaving(true);
     setSaveError(null);
+    const suggestionIn = suggestion ? { catalogId: suggestion.entry.catalog_id, basis: suggestion.basis } : null;
     const r = await saveObservation({
       userId: user.id,
       fieldId,
@@ -242,12 +299,15 @@ export function WeedScoutTab({
       params,
       gsdM: result.sweep.gsdM ?? result.gsdM,
       verdict,
-      species: species.trim() || null,
+      species: null,
       notes: notes.trim() || null,
+      suggestion: suggestionIn,
+      identification,
     });
     setSaving(false);
     // strict:false, so the boolean discriminant does not narrow; test the key.
     if ("error" in r) { setSaveError(r.error); return; }
+    const idCols = identificationColumns({ species: null, suggestion: suggestionIn, identification });
     setSaved(s => ({
       ...s,
       [selected.id]: {
@@ -255,13 +315,42 @@ export function WeedScoutTab({
         lat: selected.centroid.lat, lng: selected.centroid.lng, captured_at: context.capturedAt,
         place: context.place, local_time: context.localTime, season: context.season,
         kind: selected.kind, score: selected.score, chip_path: null,
-        verdict, species: species.trim() || null, notes: notes.trim() || null,
+        verdict, species: idCols.species, notes: notes.trim() || null,
         created_at: new Date().toISOString(),
+        suggested_catalog_id: idCols.suggested_catalog_id, suggestion_basis: idCols.suggestion_basis,
+        identification_status: idCols.identification_status, catalog_id: idCols.catalog_id,
+        identification_source: idCols.identification_source, identification_basis: idCols.identification_basis,
       },
     }));
     // The next run learns from this verdict.
     loadFeedback().then(setFeedback).catch(() => { /* keep what we had */ });
-  }, [selected, user, context, result, fieldId, taskId, crop, stage, params, verdict, species, notes]);
+  }, [selected, user, context, result, fieldId, taskId, crop, stage, params, verdict, notes, suggestion, identification]);
+
+  // Identification actions. Each one is the operator's, on the record.
+  const confirmSuggestion = useCallback(() => {
+    if (!suggestion) return;
+    setIdentification(identificationFromEntry(suggestion.entry, "confirmed", suggestion.basis));
+    setFreeText("");
+    setVerdict(v => v ?? "weed");
+  }, [suggestion]);
+  const rejectSuggestion = useCallback(() => { setIdentification(REJECTED); setFreeText(""); }, []);
+  const pickEntry = useCallback((e: CatalogEntry, why: string) => {
+    const isSuggested = suggestion?.entry.catalog_id === e.catalog_id;
+    setIdentification(identificationFromEntry(e, isSuggested ? "confirmed" : "edited",
+      isSuggested ? suggestion!.basis : `Picked by the operator from the ${region.stateName} reference list. ${why}`));
+    setPickerQuery("");
+    setFreeText("");
+    setVerdict(v => v ?? "weed");
+  }, [suggestion, region.stateName]);
+  const typeName = useCallback((text: string) => {
+    setFreeText(text);
+    setIdentification(text.trim() ? identificationFromText(text) : (suggestion ? UNIDENTIFIED : UNIDENTIFIED));
+  }, [suggestion]);
+  const clearIdentification = useCallback(() => { setIdentification(UNIDENTIFIED); setFreeText(""); setPickerQuery(""); }, []);
+  const pickerResults = useMemo(
+    () => (pickerQuery.trim() ? searchRanked(narrowed.ranked, pickerQuery).slice(0, 8) : []),
+    [narrowed, pickerQuery],
+  );
 
   // Puts a candidate on Field View and in reach of the Flight Planner, as an
   // ordinary hand-drawn-shaped annotation - see lib/weedScout/applyToField.ts
@@ -270,12 +359,14 @@ export function WeedScoutTab({
     if (!selected) return;
     setApplying(true);
     setApplyError(null);
-    const a = annotationFromCandidate(selected);
-    const id = await applyAnnotation(a);
+    // The identification travels only if the operator stated one; a
+    // suggestion on screen does not (annotationFromCandidate enforces it).
+    const a = annotationFromCandidate(selected, identification);
+    const id = await applyAnnotation({ ...a, weed_observation_id: saved[selected.id]?.id ?? null });
     setApplying(false);
     if (!id) { setApplyError("Couldn't apply this to Field View. Check your connection and try again."); return; }
     setApplied(prev => ({ ...prev, [selected.id]: id }));
-  }, [selected, applyAnnotation]);
+  }, [selected, applyAnnotation, identification, saved]);
 
   const unapply = useCallback(async () => {
     if (!selected) return;
@@ -637,6 +728,9 @@ export function WeedScoutTab({
                 <p className="text-[11px] text-neutral-500">
                   Applying draws this on Field View as a marked area and puts it in reach of the Flight Planner,
                   exactly like a polygon you had drawn by hand. Click it on the map to read what it is.
+                  {isStatedFinding(identification)
+                    ? ` It will carry your identification (${identification.label}).`
+                    : " It will be marked as not identified unless you identify it below first."}
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
                   {!applied[selected.id] ? (
@@ -671,7 +765,79 @@ export function WeedScoutTab({
                     </button>
                   ))}
                 </div>
-                <input className={inputCls} placeholder="Species or group, if you know it" value={species} onChange={e => setSpecies(e.target.value)} />
+                {/* Identification: the operator's statement. The scout may only
+                    suggest, and only from their own past verdicts. */}
+                <div className="border border-[#222] rounded-sm p-3 space-y-2" style={{ background: "#161616" }}>
+                  <div className={labelCls}>Identification (yours, never the scout's)</div>
+                  <div className="text-[10px] text-neutral-500">{narrowed.note}</div>
+
+                  {suggestion && identification.status !== "confirmed" && identification.status !== "rejected" && (
+                    <div className="border border-[#38bdf8]/40 rounded-sm p-2 space-y-1.5" style={{ background: "#0f171c" }}>
+                      <div className="text-[11px] text-neutral-200">
+                        Suggested name: <span className="font-semibold">{suggestion.entry.common_name}</span>{" "}
+                        <span className="italic text-neutral-400">{suggestion.entry.scientific_name_as_source}</span>
+                      </div>
+                      <div className="text-[10px] text-neutral-400">{suggestion.basis}</div>
+                      <div className="text-[10px] text-neutral-500">{evidenceLabel(suggestion.entry)}. {presenceNote(suggestion.entry)}</div>
+                      {regulatoryNote(suggestion.entry) && <div className="text-[10px] text-amber-400/90">{regulatoryNote(suggestion.entry)}</div>}
+                      <div className="text-[10px] text-neutral-600 break-all">Source: {sourceTextFor(suggestion.entry)}</div>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={confirmSuggestion}
+                          className="text-[11px] bg-[#38bdf8] hover:bg-[#0ea5e9] text-black rounded-sm px-2.5 py-1 font-semibold">Confirm</button>
+                        <button type="button" onClick={rejectSuggestion}
+                          className="text-[11px] border border-[#333] text-neutral-300 hover:bg-[#1f1f1f] rounded-sm px-2.5 py-1">Reject</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {identification.status !== "unidentified" && (
+                    <div className="text-[11px] flex items-start justify-between gap-2">
+                      <div>
+                        {identification.status === "rejected" ? (
+                          <span className="text-neutral-400">Suggestion rejected. Not identified.</span>
+                        ) : (
+                          <>
+                            <span className="text-[#7dd3fc] font-semibold">{identification.label}</span>
+                            <span className="text-neutral-500"> ({identification.status === "confirmed" ? "confirmed from the suggestion" : "your own identification"})</span>
+                            <div className="text-[10px] text-neutral-600 break-all">Source: {identification.source}</div>
+                          </>
+                        )}
+                      </div>
+                      <button type="button" onClick={clearIdentification} className="text-[10px] underline text-neutral-500 hover:text-neutral-200 shrink-0">Clear</button>
+                    </div>
+                  )}
+
+                  <div className="relative">
+                    <input className={inputCls}
+                      placeholder={catalog.length ? `Search the ${region.stateName} reference list (${narrowed.ranked.length} names)` : "Reference list loading"}
+                      value={pickerQuery} onChange={e => setPickerQuery(e.target.value)} disabled={!catalog.length} />
+                    {pickerResults.length > 0 && (
+                      <ul className="mt-1 border border-[#222] rounded-sm divide-y divide-[#1f1f1f] max-h-56 overflow-y-auto" style={{ background: "#0f0f0f" }}>
+                        {pickerResults.map(({ entry: e, why }) => (
+                          <li key={e.catalog_id}>
+                            <button type="button" onClick={() => pickEntry(e, why)} className="w-full text-left px-2 py-1.5 hover:bg-[#1a1a1a]">
+                              <div className="text-[11px] text-neutral-200">
+                                {e.common_name} <span className="italic text-neutral-500">{e.scientific_name_as_source}</span>
+                                {e.regulatory_tier && <span className="ml-1 text-[9px] uppercase tracking-wider text-amber-400/90 border border-amber-400/40 rounded-sm px-1">{e.regulatory_tier} noxious (legal status)</span>}
+                                {e.usda_status === "unmatched_requires_review" && <span className="ml-1 text-[9px] uppercase tracking-wider text-neutral-500 border border-[#333] rounded-sm px-1">name unresolved</span>}
+                              </div>
+                              <div className="text-[10px] text-neutral-500">{evidenceLabel(e)}. {why}</div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {pickerQuery.trim() && catalog.length > 0 && pickerResults.length === 0 && (
+                      <div className="text-[10px] text-neutral-500 mt-1">No name in the {region.stateName} list matches. Type it below if you know it.</div>
+                    )}
+                  </div>
+                  {catalogError && <div className="text-[10px] text-amber-400/90">Reference list unavailable ({catalogError}). You can still type a name.</div>}
+                  <input className={inputCls} placeholder="Or type a name or group yourself" value={freeText} onChange={e => typeName(e.target.value)} maxLength={120} />
+                  <div className="text-[10px] text-neutral-600">
+                    A name here is your statement, saved with its source and whether you confirmed a suggestion or chose it yourself.
+                    Suggestions come only from your own past verdicts on similar candidates; nothing here recognises a species from the pixels.
+                  </div>
+                </div>
                 <input className={inputCls} placeholder="Notes" value={notes} onChange={e => setNotes(e.target.value)} maxLength={300} />
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={save} disabled={saving || !user || !context}

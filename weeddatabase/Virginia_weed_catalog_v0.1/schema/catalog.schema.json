@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "State source inventory",
+  "type": "object",
+  "required": ["catalog_version", "state", "as_of", "scope", "source_ids", "records"],
+  "additionalProperties": false,
+  "properties": {
+    "catalog_version": {"const": "0.1.0"},
+    "state": {"const": "VA"},
+    "as_of": {"type": "string", "format": "date"},
+    "scope": {"type": "string", "minLength": 1},
+    "source_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "records": {"type": "array", "minItems": 1, "items": {
+      "type": "object", "required": ["catalog_id", "common_name", "scientific_name_as_source", "plant_type_as_source", "usda_virginia", "crop_evidence", "catalog_status", "aerial_identification_validated", "source_ids"],
+      "properties": {
+        "catalog_id": {"type": "string", "minLength": 1},
+        "common_name": {"type": "string", "minLength": 1},
+        "scientific_name_as_source": {"type": "string", "minLength": 1},
+        "plant_type_as_source": {"type": "string"},
+        "vt_profile_url": {"type": ["string", "null"]},
+        "usda_virginia": {"type": "object", "required": ["status", "candidate_accepted_symbols", "usda_symbol"], "properties": {"status": {"enum": ["matched", "unmatched_requires_review", "not_crosswalked"]}, "candidate_accepted_symbols": {"type": "array", "items": {"type": "string"}}, "usda_symbol": {"type": ["string", "null"]}}},
+        "crop_evidence": {"type": "array", "items": {"type": "object", "required": ["crop", "source_id", "locator"], "properties": {"crop": {"type": "string"}, "source_id": {"type": "string"}, "locator": {"type": "string"}}}},
+        "regulatory": {"type": ["object", "null"]},
+        "catalog_status": {"enum": ["source_index_only", "crop_context_sourced", "regulatory_only"]},
+        "aerial_identification_validated": {"type": "boolean"},
+        "source_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}
+      }
+    }}
+  }
+}

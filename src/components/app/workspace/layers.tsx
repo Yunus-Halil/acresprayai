@@ -677,7 +677,26 @@ export type UserPoly = {
   ring: { lat: number; lng: number }[];
   area_hectares: number;
   created_at?: string;
+  /**
+   * Operator-stated weed identification carried from Weed Scout, or null.
+   * Null on every hand-drawn polygon and on every applied candidate the
+   * operator did not identify; a suggestion never reaches these columns.
+   */
+  weed_label?: string | null;
+  weed_label_status?: "confirmed" | "edited" | string | null;
+  weed_label_source?: string | null;
+  weed_catalog_id?: string | null;
 };
+
+/** The popup's identification line. Exported so the rule is testable without a map. */
+export function userPolyIdentificationText(p: Pick<UserPoly, "name" | "weed_label" | "weed_label_status" | "weed_label_source">): string | null {
+  if (p.weed_label) {
+    const how = p.weed_label_status === "confirmed" ? "confirmed by the operator" : "identified by the operator";
+    return `Identified as ${p.weed_label} (${how}).${p.weed_label_source ? ` Source: ${p.weed_label_source}` : ""}`;
+  }
+  if (p.name.startsWith("Weed Scout:")) return "Not identified by the operator. A candidate, not a finding.";
+  return null;
+}
 
 export const USER_POLY_COLORS: Record<string, string> = {
   orange: "#fb923c", red: "#ef4444", yellow: "#facc15",
@@ -714,6 +733,10 @@ export function UserPolyLayer({
       });
       poly.bindTooltip(safeLabel(p.name), { sticky: true, opacity: 1, className: "ai-zone-label", direction: "top" });
       const areaText = escapeHtml(fmtAreaHa(p.area_hectares, units).text);
+      const identText = userPolyIdentificationText(p);
+      const identHtml = identText
+        ? `<div style="font-size:11px;color:${p.weed_label ? "#7dd3fc" : "#9ca3af"};margin-bottom:6px">${escapeHtml(identText)}</div>`
+        : "";
       const html = `
         <div style="font-family:inherit;color:#f0f0f0;background:#161616;padding:10px 12px;min-width:220px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
@@ -721,6 +744,7 @@ export function UserPolyLayer({
             <div style="font-weight:600;font-size:13px">${escapeHtml(p.name)}</div>
           </div>
           <div style="font-size:11px;color:#9ca3af;margin-bottom:6px">${escapeHtml(p.issue_type)}</div>
+          ${identHtml}
           <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">Area: <span style="color:#f0f0f0;font-family:ui-monospace,monospace">${areaText}</span></div>
           ${p.notes ? `<div style="font-size:11px;color:#d1d5db;border-top:1px solid #222;padding-top:6px;margin-bottom:8px">${escapeHtml(p.notes)}</div>` : ""}
           <button data-uap-delete="${escapeHtml(p.id)}" style="font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
