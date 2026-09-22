@@ -396,19 +396,41 @@ export function WeedScoutTab({
     if (err) setSingleError(err); else loadFeedback().then(setFeedback).catch(() => { /* keep */ });
   }, [selected, saveAndSync]);
 
-  /** Save every spot as it stands; kept weed spots land on the field, removed ones come off it. */
+  /**
+   * Whether a spot has anything left to write.
+   *
+   * Saving is one network round trip per spot, in sequence, and a scan can
+   * carry hundreds. A spot whose archive row is already written, which the
+   * operator has not touched this run, and whose presence on the field already
+   * matches its verdict has nothing to say, so it is not said again. The last
+   * of those three matters as much as the others: a spot saved as a weed whose
+   * annotation was deleted from Field View is not in agreement with the
+   * archive, and "already saved" must not be read as "already correct".
+   */
+  const isDirty = useCallback((c: Candidate): boolean => {
+    if (!saved[c.id]) return true;
+    if (c.id in verdicts || c.id in identifications || c.id in notesById) return true;
+    return (verdictOf(c) === "weed") !== !!applied[c.id];
+  }, [saved, verdicts, identifications, notesById, applied, verdictOf]);
+
+  /** Save every spot that has something to write; kept weed spots land on the field, removed ones come off it. */
   const saveAll = useCallback(async () => {
     if (!candidates.length || bulk.phase !== "idle") return;
+    const pending = candidates.filter(isDirty);
+    if (!pending.length) {
+      setBulk({ phase: "idle", done: 0, total: 0, failed: 0, error: null });
+      return;
+    }
     let failed = 0;
-    setBulk({ phase: "saving", done: 0, total: candidates.length, error: null, failed: 0 });
-    for (let i = 0; i < candidates.length; i++) {
-      const err = await saveAndSync(candidates[i]);
+    setBulk({ phase: "saving", done: 0, total: pending.length, error: null, failed: 0 });
+    for (let i = 0; i < pending.length; i++) {
+      const err = await saveAndSync(pending[i]);
       if (err) failed += 1;
       setBulk(b => ({ ...b, done: i + 1, failed }));
     }
     setBulk({ phase: "idle", done: 0, total: 0, failed, error: failed ? `${failed} spot${failed === 1 ? "" : "s"} could not be saved. Check your connection and save again; nothing is duplicated.` : null });
     loadFeedback().then(setFeedback).catch(() => { /* keep */ });
-  }, [candidates, bulk.phase, saveAndSync]);
+  }, [candidates, bulk.phase, saveAndSync, isDirty]);
 
   /**
    * Save everything, then hand over to the Flight Planner.

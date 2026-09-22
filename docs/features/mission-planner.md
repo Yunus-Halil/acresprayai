@@ -255,3 +255,31 @@ or a pond). It returns a `fullyInside` flag when no legal route exists.
 
 Nothing calls it yet — `buildMission` currently connects passes with straight lines at transit
 altitude. Wiring it up is the natural next step for irregular fields.
+
+## Which shapes, and how big
+
+`lib/treatment/plannedArea.ts` is the single place a marked shape becomes a planned shape and
+an area: drop any zone whose ring centroid falls outside the boundary, inset the rest by the
+headland (`applyHeadland`, which refuses rather than collapsing a zone too narrow to take
+one), then take the zone's own measured area scaled by the headland's proportional bite when
+it has one, or the geodesic area of the inset ring when it does not. Grid zones carry a true
+clipped-cell area that ring geometry cannot reproduce, which is why theirs is scaled rather
+than recomputed; hand-drawn polygons and applied Weed Scout spots are measured from the ring.
+
+It lives in a module rather than inside the planner because the Weed Scout results screen has
+to quote the same acreage this screen will, and it cannot do that by summing the
+`area_hectares` stored on the annotation rows: this step ignores them.
+
+## No aircraft, no aircraft figures
+
+With no drone selected, nothing about an aircraft is claimed. `fp.custom_specs` is a complete
+`DroneSpec` with no nulls, so passing it to `resolveDroneSpec` as overrides used to mark all
+fifteen fields as stated: `tankIsStated` and `swathIsStated` answered true off the generic
+30 L / 6 m fallback shape, and the planner printed a refill plan against a tank that does not
+exist. Both placeholder warnings were gated on there being an active drone, so neither could
+correct it. Overrides now travel only when there is an aircraft for them to describe, an
+unstated tank reaches `planRefills` as zero so the refill plan and its map markers empty out
+as that warning has always promised, and the no-aircraft case says so in its own words.
+
+The chemical figure is untouched by any of this: it is treated area times the operator's rate
+and owes the aircraft nothing.

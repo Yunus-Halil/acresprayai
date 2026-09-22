@@ -102,13 +102,22 @@ was never gated on developer mode to begin with.
 
 ## Review flow, identification and treatment (2026-09-22)
 
-The sidebar was rebuilt around one flow: scan, click a spot, keep or remove it, identify it if
-you can, save all. Spots carry stable ids (`spotId.ts`), verdicts are weed / not a weed /
-unsure with a default shown per row, "Save all" writes every spot and optionally puts the kept
-weed spots on Field View and the Flight Planner, and identification comes from the Virginia
-reference catalog with a suggestion only when the operator's own past verdicts support one.
-Treatment is a separate, operator-entered decision priced in the planner. All of it is in
-[weed-catalog.md](weed-catalog.md).
+A finished run lands on a **scan results screen** rather than a map and a 400 px sidebar:
+three headline numbers, a row per spot worst-first carrying the chip, the describer's own
+sentence, keep / remove / unsure and the identification block, then one button that saves
+everything and opens the Flight Planner. "Show map" returns to the scouting map with the
+same spot selected; both surfaces write to the same session, so neither is a second copy of
+the review.
+
+That screen computes nothing of its own. It composes `lib/weedScout` (the spots and their
+order), `describe.ts` (the sentence, attached to each candidate by the pipeline),
+`lib/treatment/plannedArea.ts` (the acreage, the same function the Flight Planner prices
+with) and `weedCatalog/suggest.ts` (the names and every caveat). Spots carry stable ids
+(`spotId.ts`); verdicts are weed / not a weed / unsure with a default shown per row; saving
+puts the kept weed spots on the field and takes removed ones off; identification comes from
+the Virginia reference catalog, with a suggestion only when the operator's own past verdicts
+support one. Treatment is a separate, operator-entered decision priced in the planner. All
+of it is in [weed-catalog.md](weed-catalog.md).
 
 ## The archive tunes the scout
 

@@ -92,18 +92,65 @@ spot: the archive row under `weed_observations.candidate_id`, the Field View ann
 
 ## Review flow
 
-Scan, click a spot on the map or in the list, keep it as a weed or remove it (or leave it
-unsure), identify it if you can, then "Save all to the field". Removing is one click on the X
-of a row. Every spot starts with a default, shown on its row and flipped with one click: when
-the archive's nearest saved verdicts mostly dismissed spots like it, it starts removed; when
-they mostly confirmed, it starts as a weed; otherwise plant candidates and vegetation regions
-start as weeds and bare, dark or thin ground as unsure.
+A finished run lands on the **scan results screen** (`ScanResults.tsx`): a headline of three
+numbers, a row per spot worst-first, and one button. "Show map" goes back to the scouting
+map with the same spot selected, and both surfaces write to the same session, so neither is
+a second copy of the review. Rows carry the chip, the describer's own sentence, keep /
+remove / unsure, and the identification block; expanding a row is what opens that block.
+
+**The screen computes nothing.** Every figure on it is produced by the module that is
+already the authority for it: the spots and their order from `lib/weedScout`, the
+description from `describe.ts` (attached to the candidate by the pipeline, never re-derived
+in the UI, which could not do it anyway since the plant baseline is not on the result), the
+acreage from `lib/treatment/plannedArea.ts`, the names and every caveat from
+`weedCatalog/suggest.ts`. A figure none of those will state is a sign of overreach, not a
+reason to compute one.
+
+The headline's percentage is refused outright when the field has no `boundary_area_hectares`
+on file: it says "Not known" and why, rather than dividing by a number nobody recorded.
+
+Every spot starts with a default, shown on its row and flipped with one click: when the
+archive's nearest saved verdicts mostly dismissed spots like it, it starts removed; when
+they mostly confirmed, it starts as a weed; otherwise plant candidates and vegetation
+regions start as weeds and bare, dark or thin ground as unsure.
 
 **Saving means it is on the field.** Every save writes the archive row and then makes the
 field match the verdict: a kept weed spot is put on Field View and the Flight Planner as an
 ordinary annotation (refreshed when its label changed since the last save), and a spot
 removed as "not a weed" or left unsure is taken off. Corrections made later are saved to the
-same archive row (upsert on scan and spot id) and the annotation follows.
+same archive row (upsert on scan and spot id) and the annotation follows. "Save all" skips
+spots whose archive row is already written, which the operator has not touched this run, and
+whose presence on the field already matches their verdict, since saving is one round trip
+per spot in sequence.
+
+The button then opens the Flight Planner, which owns litres, tanks and the mission. It
+chooses no product and writes no rate: it applies the rates the operator already set, and
+the planner's own "Quantity not calculated" refusals still stand.
+
+**Acreage agrees across the two screens by construction.** `lib/treatment/plannedArea.ts` is
+the single place a marked shape becomes a planned shape and an area: drop any zone whose ring
+centroid is outside the boundary, inset by the headland, then take the zone's own measured
+area scaled by the headland's bite or the geodesic area of the inset ring. The planner calls
+it and so does the results screen. Before it existed they could not agree, because the
+planner ignores the `area_hectares` stored on an annotation row, so a scout-side sum was out
+by the whole headland bite on every region wide enough to take one. A spot centred outside
+the boundary says "outside boundary" on its row instead of contributing.
+
+**Picking a name without typing.** With no suggestion, the identification block offers two
+click-to-pick routes before the search box, and neither favours an entry:
+
+- **The state crop guide's own list** for the field's crop. Virginia names the *same sixteen
+  weeds* for corn as for soybean (tables 5.12 and 5.47 are one list), ten for small grains
+  and thirty-seven for pasture and hay, so `cropShortlist` reports `tooMany` for every crop
+  in the catalog and the list says so on itself: "16 names are listed for corn in Virginia's
+  crop guide. Too many to narrow, so none is favoured." The chips exist because clicking
+  beats typing into a box over 755 names, not because the first is more likely.
+- **Names the operator has used before** (`recentLabels`), this field's first. A
+  recently-used list, not a claim about the spot on screen: it is their own vocabulary handed
+  back, which is the same basis `suggestionsFor` rests on.
+
+Leaving a spot unidentified is one click and stays a valid outcome with its own treatment
+group.
 
 **The run and the review survive leaving the tab.** Both live in
 `lib/weedScout/runStore.ts`, per scan, for the life of the page; opening Field View mid-scan
