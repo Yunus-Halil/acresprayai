@@ -3,10 +3,12 @@
 //
 // The flow, in the operator's order: scan the field, click a spot on the map
 // to see what was found, keep it as a weed or remove it (or leave it unsure),
-// identify it if you can, then save everything in one go and, if you want,
-// put the kept weed spots on Field View and the Flight Planner. Every spot
-// carries a stable id (lib/weedScout/spotId.ts), so the archive row and the
-// applied annotation for it are found again on the next run.
+// identify it if you can, then save everything in one go. Saving puts the
+// kept weed spots on the field (Field View and the Flight Planner) and takes
+// removed ones off; there is no separate apply step. The run and the review
+// live in runStore.ts, so leaving the tab stops neither. Every spot carries a
+// stable id (lib/weedScout/spotId.ts), so the archive row and the applied
+// annotation for it are found again on the next run.
 //
 // Everything on this screen is a candidate until the operator says otherwise.
 // The only place the word "weed" is applied to a plant is the verdict button
@@ -34,7 +36,7 @@ import {
   type ObservationRow, type Verdict, VERDICTS, identificationColumns, isDismissal, listObservations, loadFeedback,
   saveObservation,
 } from "@/lib/weedScout/observations";
-import { runWeedScout } from "@/lib/weedScout/pipeline";
+import { patchSession, startRun, stopRun, useScoutSession } from "@/lib/weedScout/runStore";
 import {
   type Candidate, type FeedbackRow, type RegionClass, type ScoutParams, type ScoutProgress, type ScoutResult,
   DEFAULT_SCOUT_PARAMS,
@@ -116,13 +118,20 @@ const CLASS_COLOUR: Record<RegionClass, string> = {
 const GROUND_CLASSES = new Set<RegionClass>(["bare or dry ground", "dark ground (wet, shadow or residue)", "thin stand"]);
 
 /**
- * The verdict a spot starts with, before the operator touches it. The scout
- * flags "possible weed spots", so a plant candidate or a vegetation region
- * starts as a weed and the operator removes the wrong ones; ground that is
- * bare, dark or thin is not a plant and starts as unsure. The default is
- * shown on every row and can be flipped with one click.
+ * The verdict a spot starts with, before the operator touches it.
+ *
+ * The archive speaks first: when the archived spots most like this one were
+ * mostly dismissed by the operator (feedback.ts, factor below 1), it starts
+ * removed; when they were mostly confirmed, it starts as a weed. That is the
+ * one place the scout's learning changes what is proposed rather than only
+ * the order. Otherwise the scout flags "possible weed spots", so a plant
+ * candidate or a vegetation region starts as a weed and the operator removes
+ * the wrong ones; ground that is bare, dark or thin is not a plant and starts
+ * as unsure. The default is shown on every row and flipped with one click.
  */
 export function defaultVerdict(c: Candidate): Verdict {
+  if (c.feedback && c.feedback.factor < 1) return "not_weed";
+  if (c.feedback && c.feedback.factor > 1) return "weed";
   if (c.region) return GROUND_CLASSES.has(c.region.klass) ? "unsure" : "weed";
   if (c.kind === "field outlier") return "unsure";
   return "weed";
@@ -157,7 +166,7 @@ const labelCls = "text-[10px] uppercase tracking-wider text-neutral-500 mb-1 blo
 const btnPrimary = "inline-flex items-center gap-1.5 text-xs bg-[#4CAF50] hover:bg-[#43a047] disabled:opacity-40 text-black rounded-sm px-3 py-1.5 font-semibold";
 const btnQuiet = "inline-flex items-center gap-1.5 text-xs border border-[#333] text-neutral-300 hover:bg-[#1f1f1f] disabled:opacity-40 rounded-sm px-3 py-1.5";
 
-type Bulk = { phase: "idle" | "saving" | "applying"; done: number; total: number; error: string | null; failed: number };
+type Bulk = { phase: "idle" | "saving"; done: number; total: number; error: string | null; failed: number };
 
 export function WeedScoutTab({
   boundary, tileUrl, bounds, maxNative, fieldId, taskId, scanCreatedAt, settings, center, setActiveTab,
@@ -190,30 +199,26 @@ export function WeedScoutTab({
     const p = loadParams();
     return { ...p, headlandM: settings.flight_plan?.boundary_buffer_m ?? p.headlandM };
   });
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<ScoutProgress | null>(null);
-  const [result, setResult] = useState<ScoutResult | null>(null);
-  const [runError, setRunError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The run and the review live in lib/weedScout/runStore.ts, per scan, so
+  // switching tabs neither stops the scan nor loses a keep / remove decision.
+  const session = useScoutSession(taskId);
+  const { running, progress, result, error: runError, selectedId, verdicts, identifications, notes: notesById, localApplied } = session;
+  const setSelectedId = useCallback((id: string | null) => patchSession(taskId, { selectedId: id }), [taskId]);
+  const setVerdicts = useCallback((f: (m: Record<string, Verdict>) => Record<string, Verdict>) => patchSession(taskId, s => ({ verdicts: f(s.verdicts) })), [taskId]);
+  const setIdentifications = useCallback((f: (m: Record<string, Identification>) => Record<string, Identification>) => patchSession(taskId, s => ({ identifications: f(s.identifications) })), [taskId]);
+  const setNotesById = useCallback((f: (m: Record<string, string>) => Record<string, string>) => patchSession(taskId, s => ({ notes: f(s.notes) })), [taskId]);
+  const setLocalApplied = useCallback((f: (m: Record<string, string>) => Record<string, string>) => patchSession(taskId, s => ({ localApplied: f(s.localApplied) })), [taskId]);
   const [context, setContext] = useState<EventContext | null>(null);
   const [saved, setSaved] = useState<Record<string, ObservationRow>>({});
   const [feedback, setFeedback] = useState<FeedbackRow[]>([]);
-  // The operator's edits for this run, by spot id. Anything not edited reads
-  // from the archive row, then from the default.
-  const [verdicts, setVerdicts] = useState<Record<string, Verdict>>({});
-  const [identifications, setIdentifications] = useState<Record<string, Identification>>({});
-  const [notesById, setNotesById] = useState<Record<string, string>>({});
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [pickerQuery, setPickerQuery] = useState("");
   const [freeText, setFreeText] = useState("");
-  const [localApplied, setLocalApplied] = useState<Record<string, string>>({});
   const [bulk, setBulk] = useState<Bulk>({ phase: "idle", done: 0, total: 0, error: null, failed: 0 });
-  const [applyToo, setApplyToo] = useState(true);
-  const [singleBusy, setSingleBusy] = useState<"save" | "apply" | null>(null);
+  const [singleBusy, setSingleBusy] = useState<"save" | null>(null);
   const [singleError, setSingleError] = useState<string | null>(null);
   const [showAbout, setShowAbout] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
 
   const rings = useMemo(() => (boundary ?? []) as unknown as LatLng2[][], [boundary]);
   const capturedAt = scanCreatedAt ?? new Date().toISOString();
@@ -247,7 +252,6 @@ export function WeedScoutTab({
     loadFeedback().then(setFeedback).catch(() => setFeedback([]));
   }, [taskId]);
   useEffect(() => { reloadArchive(); }, [reloadArchive]);
-  useEffect(() => () => abortRef.current?.abort(), []);
 
   const candidates = useMemo(() => result?.candidates ?? [], [result]);
   const selected = useMemo(() => candidates.find(c => c.id === selectedId) ?? null, [candidates, selectedId]);
@@ -266,30 +270,12 @@ export function WeedScoutTab({
 
   useEffect(() => { setPickerQuery(""); setFreeText(""); setSingleError(null); }, [selectedId]);
 
-  const run = useCallback(async () => {
+  const run = useCallback(() => {
     if (!rings.length || !tileUrl || running) return;
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    setRunning(true);
-    setRunError(null);
-    setResult(null);
-    setSelectedId(null);
-    setVerdicts({});
-    setIdentifications({});
-    setNotesById({});
-    try {
-      const res = await runWeedScout(
-        { boundary: rings, tileUrl, maxNative, params, feedback },
-        { onProgress: setProgress, signal: ctrl.signal, context, crop, growthStage: stage, fieldId, unitSystem: units },
-      );
-      setResult(res);
-    } catch (e) {
-      if ((e as Error)?.name !== "Aborted") setRunError((e as Error)?.message ?? String(e));
-    } finally {
-      setRunning(false);
-      setProgress(null);
-    }
-  }, [rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId, units]);
+    startRun(taskId,
+      { boundary: rings, tileUrl, maxNative, params, feedback },
+      { context, crop, growthStage: stage, fieldId, unitSystem: units });
+  }, [taskId, rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId, units]);
 
   /** Save one spot with its effective verdict, identification and notes. */
   const saveOne = useCallback(async (c: Candidate): Promise<string | null> => {
@@ -320,60 +306,67 @@ export function WeedScoutTab({
     return null;
   }, [user, context, result, suggestionById, identificationOf, verdictOf, notesOf, fieldId, taskId, crop, stage, params]);
 
-  /** Put one spot on Field View, carrying the identification only if stated. */
-  const applyOne = useCallback(async (c: Candidate): Promise<string | null> => {
+  /** Put one spot on the field (Field View and the Flight Planner), carrying the identification only if stated. */
+  const applyOne = useCallback(async (c: Candidate, observationId: string | null): Promise<string | null> => {
     const a = annotationFromCandidate(c, identificationOf(c));
-    const id = await applyAnnotation({ ...a, spot_id: c.id, weed_observation_id: saved[c.id]?.id ?? null });
-    if (!id) return "Couldn't apply to Field View.";
+    const id = await applyAnnotation({ ...a, spot_id: c.id, weed_observation_id: observationId });
+    if (!id) return "Couldn't put this spot on the field.";
     setLocalApplied(prev => ({ ...prev, [c.id]: id }));
     return null;
-  }, [applyAnnotation, identificationOf, saved]);
+  }, [applyAnnotation, identificationOf, setLocalApplied]);
 
   const unapplyOne = useCallback(async (c: Candidate) => {
     const id = applied[c.id];
     if (!id) return;
     await removeAnnotation(id);
     setLocalApplied(prev => { const next = { ...prev }; delete next[c.id]; return next; });
-  }, [applied, removeAnnotation]);
+  }, [applied, removeAnnotation, setLocalApplied]);
+
+  /**
+   * Saving a spot means it is on the field: the archive row is written, and
+   * the Field View annotation follows the verdict. A kept weed spot is put on
+   * the field (or refreshed when its label changed since it was last saved);
+   * a spot removed as "not a weed" or left unsure comes off it.
+   */
+  const saveAndSync = useCallback(async (c: Candidate): Promise<string | null> => {
+    const before = saved[c.id];
+    const err = await saveOne(c);
+    if (err) return err;
+    const verdict = verdictOf(c);
+    const onField = !!applied[c.id];
+    if (verdict === "weed") {
+      const id = identificationOf(c);
+      const labelNow = isStatedFinding(id) ? id.label : null;
+      const labelBefore = before && (before.identification_status === "confirmed" || before.identification_status === "edited") ? before.species : null;
+      if (onField && labelNow !== labelBefore) await unapplyOne(c);
+      if (!onField || labelNow !== labelBefore) return applyOne(c, before?.id ?? null);
+      return null;
+    }
+    if (onField) await unapplyOne(c);
+    return null;
+  }, [saved, saveOne, verdictOf, applied, identificationOf, unapplyOne, applyOne]);
 
   const saveSelected = useCallback(async () => {
     if (!selected) return;
     setSingleBusy("save"); setSingleError(null);
-    const err = await saveOne(selected);
+    const err = await saveAndSync(selected);
     setSingleBusy(null);
     if (err) setSingleError(err); else loadFeedback().then(setFeedback).catch(() => { /* keep */ });
-  }, [selected, saveOne]);
+  }, [selected, saveAndSync]);
 
-  const applySelected = useCallback(async () => {
-    if (!selected) return;
-    setSingleBusy("apply"); setSingleError(null);
-    const err = await applyOne(selected);
-    setSingleBusy(null);
-    if (err) setSingleError(err);
-  }, [selected, applyOne]);
-
-  /** Save every spot as it stands, then put the kept weed spots on Field View. */
+  /** Save every spot as it stands; kept weed spots land on the field, removed ones come off it. */
   const saveAll = useCallback(async () => {
     if (!candidates.length || bulk.phase !== "idle") return;
     let failed = 0;
     setBulk({ phase: "saving", done: 0, total: candidates.length, error: null, failed: 0 });
     for (let i = 0; i < candidates.length; i++) {
-      const err = await saveOne(candidates[i]);
+      const err = await saveAndSync(candidates[i]);
       if (err) failed += 1;
       setBulk(b => ({ ...b, done: i + 1, failed }));
     }
-    if (applyToo) {
-      const toApply = candidates.filter(c => verdictOf(c) === "weed" && !applied[c.id]);
-      setBulk({ phase: "applying", done: 0, total: toApply.length, error: null, failed });
-      for (let i = 0; i < toApply.length; i++) {
-        const err = await applyOne(toApply[i]);
-        if (err) failed += 1;
-        setBulk(b => ({ ...b, done: i + 1, failed }));
-      }
-    }
-    setBulk({ phase: "idle", done: 0, total: 0, failed, error: failed ? `${failed} spot${failed === 1 ? "" : "s"} could not be saved or applied. Check your connection and save again; nothing is duplicated.` : null });
+    setBulk({ phase: "idle", done: 0, total: 0, failed, error: failed ? `${failed} spot${failed === 1 ? "" : "s"} could not be saved. Check your connection and save again; nothing is duplicated.` : null });
     loadFeedback().then(setFeedback).catch(() => { /* keep */ });
-  }, [candidates, bulk.phase, saveOne, applyToo, verdictOf, applied, applyOne]);
+  }, [candidates, bulk.phase, saveAndSync]);
 
   // Identification actions for the selected spot.
   const setIdent = (id: Identification) => { if (selected) setIdentifications(m => ({ ...m, [selected.id]: id })); };
@@ -507,7 +500,7 @@ export function WeedScoutTab({
             {!running ? (
               <button type="button" onClick={run} disabled={!tileUrl || busy} className={btnPrimary}><Play className="h-3.5 w-3.5" /> Scan this field</button>
             ) : (
-              <button type="button" onClick={() => abortRef.current?.abort()} className={btnQuiet}><Square className="h-3.5 w-3.5" /> Stop</button>
+              <button type="button" onClick={() => stopRun(taskId)} className={btnQuiet}><Square className="h-3.5 w-3.5" /> Stop</button>
             )}
             {progress && (
               <div className="text-[11px] text-neutral-400 inline-flex items-center gap-1.5 min-w-0">
@@ -515,7 +508,8 @@ export function WeedScoutTab({
                 <span className="truncate">{STAGE_LABEL[progress.stage]}{progress.fraction != null ? ` ${Math.round(progress.fraction * 100)}%` : ""}</span>
               </div>
             )}
-            {!running && feedback.length > 0 && <span className="text-[10px] text-neutral-600">learning from {feedback.length} saved verdict{feedback.length === 1 ? "" : "s"}</span>}
+            {running && <span className="text-[10px] text-neutral-600">keeps running if you open another tab</span>}
+            {!running && feedback.length > 0 && <span className="text-[10px] text-neutral-600" title="Spots that resemble ones you dismissed start removed and rank lower; spots that resemble ones you confirmed start as weeds and rank higher. Needs at least three similar saved verdicts.">learning from {feedback.length} saved verdict{feedback.length === 1 ? "" : "s"}</span>}
           </div>
           {runError && <div className="text-[11px] text-red-400 flex items-start gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {runError}</div>}
           <details className="text-[11px]">
@@ -594,12 +588,11 @@ export function WeedScoutTab({
                   <div className="flex items-center gap-2 flex-wrap">
                     <button type="button" onClick={saveAll} disabled={busy || !user || !context} className={btnPrimary}>
                       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                      {bulk.phase === "saving" ? `Saving ${bulk.done}/${bulk.total}` : bulk.phase === "applying" ? `Applying ${bulk.done}/${bulk.total}` : `Save all ${candidates.length}`}
+                      {bulk.phase === "saving" ? `Saving ${bulk.done}/${bulk.total}` : `Save all ${candidates.length} to the field`}
                     </button>
-                    <label className="text-[11px] text-neutral-400 inline-flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={applyToo} onChange={e => setApplyToo(e.target.checked)} className="accent-[#38bdf8]" />
-                      also put the {kept.length} weed spot{kept.length === 1 ? "" : "s"} on Field View and the Flight Planner
-                    </label>
+                    <span className="text-[11px] text-neutral-400">
+                      puts the {kept.length} kept weed spot{kept.length === 1 ? "" : "s"} on Field View and the Flight Planner and takes removed ones off
+                    </span>
                   </div>
                   {bulk.error && <div className="text-[11px] text-red-400">{bulk.error}</div>}
                   {!user && <div className="text-[11px] text-neutral-500">Sign in to save.</div>}
@@ -744,25 +737,21 @@ export function WeedScoutTab({
               <div className="flex items-center gap-2 flex-wrap">
                 <button type="button" onClick={saveSelected} disabled={singleBusy !== null || busy || !user || !context} className={btnQuiet}>
                   {singleBusy === "save" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                  {saved[selected.id] ? "Update this spot" : "Save this spot"}
+                  {saved[selected.id] ? "Update this spot" : "Save this spot to the field"}
                 </button>
-                {!applied[selected.id] ? (
-                  <button type="button" onClick={applySelected} disabled={singleBusy !== null || busy || !user} className={btnQuiet}>
-                    {singleBusy === "apply" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MapPin className="h-3.5 w-3.5 text-[#38bdf8]" />}
-                    Put on Field View
-                  </button>
-                ) : (
+                {applied[selected.id] ? (
                   <>
-                    <span className="text-[11px] text-[#38bdf8] inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> On Field View</span>
-                    <button type="button" onClick={() => setActiveTab("planner")} className="text-[11px] underline text-neutral-300 hover:text-white">Open Flight Planner</button>
-                    <button type="button" onClick={() => unapplyOne(selected)} disabled={singleBusy !== null || busy} className="text-[11px] underline text-neutral-500 hover:text-red-400">Remove from Field View</button>
+                    <span className="text-[11px] text-[#38bdf8] inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> On the field</span>
+                    <button type="button" onClick={() => setActiveTab("field")} className="text-[11px] underline text-neutral-300 hover:text-white">Field View</button>
+                    <button type="button" onClick={() => setActiveTab("planner")} className="text-[11px] underline text-neutral-300 hover:text-white">Flight Planner</button>
                   </>
-                )}
-                {saved[selected.id] && <span className="text-[11px] text-[#4CAF50] inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Saved</span>}
+                ) : saved[selected.id] ? (
+                  <span className="text-[11px] text-[#4CAF50] inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Saved{verdictOf(selected) === "weed" ? "" : ", not on the field"}</span>
+                ) : null}
               </div>
-              {applied[selected.id] && isStatedFinding(identification) && (
-                <div className="text-[10px] text-neutral-600">A label change here reaches Field View when you remove and re-apply the spot.</div>
-              )}
+              <div className="text-[10px] text-neutral-600">
+                Saving writes your review and puts this spot on Field View and the Flight Planner if it is kept as a weed; removed or unsure spots stay off the field.
+              </div>
               {singleError && <div className="text-[11px] text-red-400">{singleError}</div>}
 
               <details className="text-[11px]">
@@ -825,7 +814,10 @@ export function WeedScoutTab({
                             {saved[c.id] && <CheckCircle2 className="h-3 w-3 text-[#4CAF50] shrink-0" />}
                             {applied[c.id] && <MapPin className="h-3 w-3 text-[#38bdf8] shrink-0" />}
                           </span>
-                          <span className={`text-[10px] ${v === "weed" ? "text-[#4CAF50]" : gone ? "text-neutral-500" : "text-amber-400"}`}>{VERDICT_LABEL[v]}{isStatedFinding(identificationOf(c)) ? ", identified" : ""}</span>
+                          <span className={`text-[10px] ${v === "weed" ? "text-[#4CAF50]" : gone ? "text-neutral-500" : "text-amber-400"}`}>
+                            {VERDICT_LABEL[v]}{isStatedFinding(identificationOf(c)) ? ", identified" : ""}
+                            {!verdicts[c.id] && !saved[c.id] && c.feedback && c.feedback.factor !== 1 && <span className="text-neutral-600"> (from your past verdicts)</span>}
+                          </span>
                         </span>
                       </button>
                       <button type="button" title={gone ? "Put it back" : "Not a weed: remove"} onClick={() => setVerdict(c, gone ? defaultVerdict(c) : "not_weed")}

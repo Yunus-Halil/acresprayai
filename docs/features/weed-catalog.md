@@ -93,12 +93,33 @@ spot: the archive row under `weed_observations.candidate_id`, the Field View ann
 ## Review flow
 
 Scan, click a spot on the map or in the list, keep it as a weed or remove it (or leave it
-unsure), identify it if you can, then "Save all". Removing is one click on the X of a row.
-Every spot starts with a default (plant candidates and vegetation regions as weeds, bare or
-dark or thin ground as unsure), shown on its row and flipped with one click. "Save all" writes
-every spot with its current verdict and identification and, when the box is ticked, puts the
-kept weed spots on Field View and the Flight Planner as ordinary annotations. Corrections
-made later are saved to the same row (upsert on scan and spot id).
+unsure), identify it if you can, then "Save all to the field". Removing is one click on the X
+of a row. Every spot starts with a default, shown on its row and flipped with one click: when
+the archive's nearest saved verdicts mostly dismissed spots like it, it starts removed; when
+they mostly confirmed, it starts as a weed; otherwise plant candidates and vegetation regions
+start as weeds and bare, dark or thin ground as unsure.
+
+**Saving means it is on the field.** Every save writes the archive row and then makes the
+field match the verdict: a kept weed spot is put on Field View and the Flight Planner as an
+ordinary annotation (refreshed when its label changed since the last save), and a spot
+removed as "not a weed" or left unsure is taken off. Corrections made later are saved to the
+same archive row (upsert on scan and spot id) and the annotation follows.
+
+**The run and the review survive leaving the tab.** Both live in
+`lib/weedScout/runStore.ts`, per scan, for the life of the page; opening Field View mid-scan
+no longer stops the scan or drops the keep / remove decisions. Only Stop stops it.
+
+## What "learns from you" means today
+
+Retrieval, not training (`lib/weedScout/feedback.ts`). Each candidate is compared with the
+archived verdicts most like it, by size, colour, shape and position on fixed physical
+scales. With at least three near neighbours of the same family (plants with plants, ground
+with ground), a spot whose neighbours were mostly dismissed starts removed and ranks lower,
+and one whose neighbours were mostly confirmed starts as a weed, ranks higher and offers the
+name those neighbours carried. Same-field verdicts are preferred once there are ten. Rows
+saved as "unsure" teach nothing. It never changes the thresholds that decide what is flagged
+in the first place, and no model is trained; those are the next steps, and they need a
+real field's verdicts to be set from.
 
 Field View's popup on an applied spot says "Identified as X (confirmed by the operator)" with
 the source, or "Not identified by the operator. A candidate, not a finding."
