@@ -89,7 +89,7 @@ export function featureVectorOf(c: Candidate, rowSpacingM: number): number[] {
   ];
 }
 
-const isDismissed = (v: FeedbackRow["verdict"]) => v === "crop" || v === "not_vegetation";
+const isDismissed = (v: FeedbackRow["verdict"]) => v === "not_weed" || v === "crop" || v === "not_vegetation";
 
 /**
  * Compare every candidate with the archive and adjust its score.

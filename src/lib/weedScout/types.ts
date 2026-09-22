@@ -331,7 +331,7 @@ export type ScoutProgress = {
 /** A past verdict, as the pipeline consumes it. */
 export type FeedbackRow = {
   kind: CandidateKind;
-  verdict: "weed" | "crop" | "not_vegetation" | "unsure";
+  verdict: "weed" | "not_weed" | "unsure" | "crop" | "not_vegetation";
   species: string | null;
   /** Feature vector as featureVectorOf() produced it when the row was saved. */
   vector: number[];

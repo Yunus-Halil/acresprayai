@@ -314,7 +314,7 @@ export default function OrthomosaicViewer() {
     (async () => {
       const { data, error } = await supabase
         .from("user_annotations")
-        .select("id, name, issue_type, color, notes, ring, area_hectares, created_at, weed_label, weed_label_status, weed_label_source, weed_catalog_id")
+        .select("id, name, issue_type, color, notes, ring, area_hectares, created_at, weed_label, weed_label_status, weed_label_source, weed_catalog_id, spot_id")
         .eq("task_id", taskId)
         .order("created_at", { ascending: true });
       if (cancelled) return;
@@ -326,6 +326,7 @@ export default function OrthomosaicViewer() {
         created_at: r.created_at,
         weed_label: r.weed_label ?? null, weed_label_status: r.weed_label_status ?? null,
         weed_label_source: r.weed_label_source ?? null, weed_catalog_id: r.weed_catalog_id ?? null,
+        spot_id: r.spot_id ?? null,
       })));
     })();
     return () => { cancelled = true; };
@@ -636,6 +637,7 @@ export default function OrthomosaicViewer() {
     weed_label?: string | null; weed_label_status?: "confirmed" | "edited" | null;
     weed_catalog_id?: string | null; weed_label_source?: string | null;
     weed_observation_id?: string | null;
+    spot_id?: string | null;
   }): Promise<string | null> => {
     if (!taskId) return null;
     const { data: s } = await supabase.auth.getSession();
@@ -657,6 +659,7 @@ export default function OrthomosaicViewer() {
       weed_catalog_id: labelled ? (input.weed_catalog_id ?? null) : null,
       weed_label_source: labelled ? (input.weed_label_source ?? null) : null,
       weed_observation_id: input.weed_observation_id ?? null,
+      spot_id: input.spot_id ?? null,
     };
     const { data, error } = await supabase.from("user_annotations").insert(row).select("*").single();
     if (error) {
@@ -669,9 +672,17 @@ export default function OrthomosaicViewer() {
       created_at: data.created_at,
       weed_label: data.weed_label ?? null, weed_label_status: data.weed_label_status ?? null,
       weed_label_source: data.weed_label_source ?? null, weed_catalog_id: data.weed_catalog_id ?? null,
+      spot_id: data.spot_id ?? null,
     }]);
     return data.id as string;
   };
+
+  // Weed Scout spots already on Field View, by their stable spot id, so the
+  // scout can say "already applied" after a reopen or a re-run.
+  const appliedSpots = useMemo(
+    () => Object.fromEntries(userPolys.filter(p => p.spot_id).map(p => [p.spot_id as string, p.id])) as Record<string, string>,
+    [userPolys],
+  );
 
   const saveUserPolygon = async (form: { name: string; issue_type: string; color: string; notes: string }) => {
     if (!draftUserPoly) return;
@@ -1123,6 +1134,7 @@ export default function OrthomosaicViewer() {
             setActiveTab={setActiveTab}
             applyAnnotation={insertUserAnnotation}
             removeAnnotation={deleteUserPolygon}
+            appliedSpots={appliedSpots}
           />
         )}
         {activeTab === "treatment" && !dev.weedScout && (

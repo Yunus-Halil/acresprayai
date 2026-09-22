@@ -89,6 +89,8 @@ import {
   volumeValue,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
+import { groupZonesForTreatment } from "@/lib/treatment/groups";
+import TreatmentPanel from "./TreatmentPanel";
 
 
 /**
@@ -595,6 +597,19 @@ export function PlannerTab({
   const treatedAreaM2 = useMemo(
     () => zonesWithRates.reduce((a, z) => a + Math.max(0, z.areaM2 ?? polygonAreaM2(z.ring)), 0),
     [zonesWithRates],
+  );
+
+  // Zones grouped for the treatment decision (lib/treatment/groups.ts): the
+  // same areas the route flies and the chemical figure is priced on, so a
+  // product quantity and the application volume never disagree about the
+  // ground. Recomputed with the zones, so a headland or boundary change moves
+  // the quantities too.
+  const treatmentGroups = useMemo(
+    () => groupZonesForTreatment(
+      zonesWithRates.map(z => ({ id: z.id, source: z.source, areaM2: z.areaM2 ?? polygonAreaM2(z.ring) })),
+      userPolys ?? [],
+    ),
+    [zonesWithRates, userPolys],
   );
 
   // What the job actually needs, and how many trips back to the nurse tank.
@@ -1821,6 +1836,22 @@ export function PlannerTab({
           <div className="flex justify-between"><span className="text-neutral-500">Spray activations</span>
             <span className="font-mono">{mission?.sprayOnCount ?? 0}</span></div>
         </div>
+
+        {/* Operator-reviewed product choices and the quantities they imply.
+            Separate from the application-volume figure above: that is water
+            per hectare from the settings; this is a product from a label the
+            operator says they checked. */}
+        <TreatmentPanel
+          groups={treatmentGroups}
+          settings={settings}
+          onSaveSettings={onSaveSettings}
+          fieldId={fieldId}
+          fieldCrop={settings.crop_type || null}
+          tankCapacityL={tankStated ? spec.tank_l : null}
+          tankLoadPct={fp.tank_load_pct}
+          applicationVolumeLha={rates.medium > 0 ? rates.medium : null}
+          units={units}
+        />
 
         <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2 flex items-center justify-between">
           <span>Battery / endurance (estimated)</span>

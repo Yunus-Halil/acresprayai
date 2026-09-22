@@ -9,7 +9,7 @@ import {
 import { REVIEW_OWNED_COLUMNS } from "@/lib/weedCatalog/types";
 
 const PKG = join(__dirname, "..", "..", "weeddatabase", "Virginia_weed_catalog_v0.1");
-const readJson = (name: string) => JSON.parse(readFileSync(join(PKG, name), "utf8").replace(/^ /, ""));
+const readJson = (name: string) => JSON.parse(readFileSync(join(PKG, name), "utf8").replace(/^﻿/, ""));
 const loadPackage = () => ({
   catalog: readJson("catalog.json"),
   sources: readJson("sources.json"),

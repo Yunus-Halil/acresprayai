@@ -26,6 +26,7 @@ import { type UnitSystem, fmtLengthCm } from "../units";
 import { type BlobBaseline, blobBaseline, scoreBlob } from "./blobs";
 import { distanceToRowM } from "./rows";
 import type { AnalysisTile, Blob, Candidate, CandidateKind, Region, RowModel, ScoutParams, TileFlag } from "./types";
+import { assignSpotIds } from "./spotId";
 
 /** Ceiling on the queue handed to the UI. The rest is still counted. */
 export const MAX_CANDIDATES = 500;
@@ -155,6 +156,10 @@ export function rankCandidates(input: RankInput): RankResult {
   }
 
   out.sort((a, b) => b.score - a.score);
+  // Stable ids, assigned after the final centroid is known (a field-outlier
+  // tile re-centres on its largest plant above) and in score order, so a
+  // collision suffix lands on the weaker of two neighbours.
+  assignSpotIds(out);
   const overflow = Math.max(0, out.length - MAX_CANDIDATES);
   return { candidates: out.slice(0, MAX_CANDIDATES), overflow, headlandExcluded, plants };
 }

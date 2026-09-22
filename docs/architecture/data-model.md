@@ -69,10 +69,42 @@ See [pipeline/resilience.md](../pipeline/resilience.md).
 
 ### `user_annotations`
 
-Farmer-drawn polygons. These feed the mission planner alongside AI zones.
+Farmer-drawn polygons, and Weed Scout spots the operator applied. These feed the mission
+planner alongside grid zones.
 
 `id`, `user_id`, `task_id`, `field_id`, `name`, `issue_type`, `color`, `notes`,
-`ring` (jsonb), `area_hectares`.
+`ring` (jsonb), `area_hectares`, plus for applied scout spots: `spot_id` (the stable spot
+id), `weed_label`, `weed_label_status` (`confirmed` or `edited`, the operator's statement),
+`weed_catalog_id`, `weed_label_source`, `weed_observation_id`. A check keeps label, status
+and catalog id together: no label, no status.
+
+### `weed_catalog_sources`, `weed_catalog_entries`, `weed_catalog_review_queue`
+
+The state weed reference catalog (see [features/weed-catalog.md](../features/weed-catalog.md)).
+Reference data: readable by every signed-in user, written only by
+`import_weed_catalog(jsonb)` under the service role. Entries split into source-owned columns
+(the importer's) and review-owned columns (`review_status`, `review_notes`, `reviewed_by`,
+`reviewed_at`, `resolved_scientific_name`, `pending_source_update`) that an import never
+touches. Checks: `aerial_identification_validated` is always false, a Tier 1 listing cannot
+be a USDA checklist match, crop status requires crop evidence.
+
+### `weed_observations`
+
+The Weed Scout archive (see [features/weed-scout.md](../features/weed-scout.md)). As of
+2026-09-22 also carries the suggestion shown (`suggested_catalog_id`, `suggestion_basis`)
+apart from the operator's identification (`identification_status`, `catalog_id`, `species`,
+`identification_source`, `identification_basis`, `identified_at`); a confirmed row's
+`catalog_id` must equal its `suggested_catalog_id`. Verdicts: `weed`, `not_weed`, `unsure`,
+plus the older `crop` and `not_vegetation`.
+
+### `treatment_choices`
+
+The operator's product and the label they verified for it: `product_name`, `epa_reg_no`,
+`label_source`, `label_checked_on`, `label_crop`, `application_method`, `restrictions`,
+`rate_value`, `rate_unit`, `carrier_volume_value`, `carrier_unit`, `label_verified`, and the
+weed it is for (`weed_catalog_id`, `weed_label`, both nullable). Owner-scoped. Never
+prefilled from the catalog; a verified row must carry a date and a source. Assigned per zone
+group in `fields.settings.treatment_assignments`.
 
 ### `flight_logs`
 

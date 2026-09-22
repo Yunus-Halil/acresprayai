@@ -126,6 +126,15 @@ export type FarmerSettings = {
    * moves every zone the farmer has not explicitly pinned.
    */
   zone_rate_overrides: Record<string, number>;
+  /**
+   * Operator-reviewed treatment per zone group in the Flight Planner, keyed by
+   * the group (a catalog weed, an operator label, unidentified weed spots,
+   * hand-drawn zones, grid zones). The value names a `treatment_choices` row
+   * the operator picked and the group's label as shown, so the report can
+   * print the choice without re-deriving the grouping. Never filled in by
+   * anything but the operator's own selection.
+   */
+  treatment_assignments: Record<string, { choice_id: string; label: string }>;
   // Denormalized copy of the latest completed mission for this field. The
   // canonical record is still public.flight_logs; this snapshot makes the
   // Reports tab resilient across tab switches.
@@ -182,6 +191,7 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
   },
   spray_rates_lha: { low: 15, medium: 25, high: 40 },
   zone_rate_overrides: {},
+  treatment_assignments: {},
   last_flown_mission: null,
   application_record: null,
   condition_limits: { wind_mph: 10, temp_f: 85 },
@@ -221,6 +231,10 @@ export function mergeFarmerSettings(saved: unknown): FarmerSettings {
     },
     zone_rate_overrides: (s.zone_rate_overrides && typeof s.zone_rate_overrides === "object")
       ? s.zone_rate_overrides
+      : {},
+    treatment_assignments: (s.treatment_assignments && typeof s.treatment_assignments === "object")
+      ? Object.fromEntries(Object.entries(s.treatment_assignments).filter(([, v]) =>
+        !!v && typeof v === "object" && typeof (v as { choice_id?: unknown }).choice_id === "string"))
       : {},
     flight_plan: {
       ...DEFAULT_FARMER_SETTINGS.flight_plan,

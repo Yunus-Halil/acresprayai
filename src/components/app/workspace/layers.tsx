@@ -686,6 +686,8 @@ export type UserPoly = {
   weed_label_status?: "confirmed" | "edited" | string | null;
   weed_label_source?: string | null;
   weed_catalog_id?: string | null;
+  /** The Weed Scout spot this row came from, so the scout can find it again. */
+  spot_id?: string | null;
 };
 
 /** The popup's identification line. Exported so the rule is testable without a map. */

@@ -21,13 +21,20 @@ import { dataUrlToBase64 } from "./zoom";
 export const PIPELINE_VERSION = "weed-scout-v2";
 export const CHIP_BUCKET = "weed-chips";
 
-export type Verdict = "weed" | "crop" | "not_vegetation" | "unsure";
+/**
+ * The operator's label. The review flow offers three: weed, not a weed
+ * (removed), unsure. `crop` and `not_vegetation` are older, finer dismissals
+ * that existing rows carry; they read as "not a weed" everywhere.
+ */
+export type Verdict = "weed" | "not_weed" | "unsure" | "crop" | "not_vegetation";
 export const VERDICTS: { value: Verdict; label: string }[] = [
   { value: "weed", label: "Weed" },
-  { value: "crop", label: "Crop" },
-  { value: "not_vegetation", label: "Not vegetation" },
+  { value: "not_weed", label: "Not a weed" },
   { value: "unsure", label: "Unsure" },
 ];
+export const ALL_VERDICTS: readonly Verdict[] = ["weed", "not_weed", "unsure", "crop", "not_vegetation"];
+/** True for every verdict that means "remove this from the weed set". */
+export const isDismissal = (v: Verdict | null | undefined): boolean => v === "not_weed" || v === "crop" || v === "not_vegetation";
 
 const KINDS = new Set<CandidateKind>([
   "not-average region", "field outlier", "off-row vegetation", "vegetation outlier", "off-row and outlier",
@@ -223,7 +230,7 @@ export async function loadFeedback(): Promise<FeedbackRow[]> {
   for (const r of (data ?? []) as unknown as { kind: string; verdict: string; species: string | null; vector: unknown; field_id: string | null }[]) {
     if (!KINDS.has(r.kind as CandidateKind)) continue;
     if (!Array.isArray(r.vector) || !r.vector.every(v => typeof v === "number" && Number.isFinite(v))) continue;
-    if (!["weed", "crop", "not_vegetation", "unsure"].includes(r.verdict)) continue;
+    if (!ALL_VERDICTS.includes(r.verdict as Verdict)) continue;
     out.push({
       kind: r.kind as CandidateKind,
       verdict: r.verdict as FeedbackRow["verdict"],

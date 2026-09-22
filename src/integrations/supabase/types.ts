@@ -881,6 +881,75 @@ export type Database = {
           },
         ]
       }
+      treatment_choices: {
+        Row: {
+          application_method: string | null
+          carrier_unit: string | null
+          carrier_volume_value: number | null
+          created_at: string
+          epa_reg_no: string | null
+          field_id: string | null
+          id: string
+          label_checked_on: string | null
+          label_crop: string | null
+          label_source: string | null
+          label_verified: boolean
+          notes: string | null
+          product_name: string
+          rate_unit: string | null
+          rate_value: number | null
+          restrictions: string | null
+          updated_at: string
+          user_id: string
+          weed_catalog_id: string | null
+          weed_label: string | null
+        }
+        Insert: {
+          application_method?: string | null
+          carrier_unit?: string | null
+          carrier_volume_value?: number | null
+          created_at?: string
+          epa_reg_no?: string | null
+          field_id?: string | null
+          id?: string
+          label_checked_on?: string | null
+          label_crop?: string | null
+          label_source?: string | null
+          label_verified?: boolean
+          notes?: string | null
+          product_name: string
+          rate_unit?: string | null
+          rate_value?: number | null
+          restrictions?: string | null
+          updated_at?: string
+          user_id: string
+          weed_catalog_id?: string | null
+          weed_label?: string | null
+        }
+        Update: {
+          application_method?: string | null
+          carrier_unit?: string | null
+          carrier_volume_value?: number | null
+          created_at?: string
+          epa_reg_no?: string | null
+          field_id?: string | null
+          id?: string
+          label_checked_on?: string | null
+          label_crop?: string | null
+          label_source?: string | null
+          label_verified?: boolean
+          notes?: string | null
+          product_name?: string
+          rate_unit?: string | null
+          rate_value?: number | null
+          restrictions?: string | null
+          updated_at?: string
+          user_id?: string
+          weed_catalog_id?: string | null
+          weed_label?: string | null
+        }
+        Relationships: []
+      }
       user_annotations: {
         Row: {
           area_hectares: number | null
@@ -892,6 +961,7 @@ export type Database = {
           name: string
           notes: string | null
           ring: Json
+          spot_id: string | null
           task_id: string
           updated_at: string
           user_id: string
@@ -911,6 +981,7 @@ export type Database = {
           name: string
           notes?: string | null
           ring: Json
+          spot_id?: string | null
           task_id: string
           updated_at?: string
           user_id: string
@@ -930,6 +1001,7 @@ export type Database = {
           name?: string
           notes?: string | null
           ring?: Json
+          spot_id?: string | null
           task_id?: string
           updated_at?: string
           user_id?: string

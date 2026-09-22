@@ -32,7 +32,7 @@ const readJson = (name: string, optional = false): unknown => {
     console.error(`missing ${p}`);
     process.exit(2);
   }
-  return JSON.parse(readFileSync(p, "utf8").replace(/^ /, ""));
+  return JSON.parse(readFileSync(p, "utf8").replace(/^﻿/, ""));
 };
 
 const payload = parseCatalog({

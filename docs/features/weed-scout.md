@@ -100,6 +100,16 @@ highlights on the same map with no way to tell them from whatever the scout foun
 Applied candidates are unaffected: they draw through the ordinary `UserPoly` layer, which
 was never gated on developer mode to begin with.
 
+## Review flow, identification and treatment (2026-09-22)
+
+The sidebar was rebuilt around one flow: scan, click a spot, keep or remove it, identify it if
+you can, save all. Spots carry stable ids (`spotId.ts`), verdicts are weed / not a weed /
+unsure with a default shown per row, "Save all" writes every spot and optionally puts the kept
+weed spots on Field View and the Flight Planner, and identification comes from the Virginia
+reference catalog with a suggestion only when the operator's own past verdicts support one.
+Treatment is a separate, operator-entered decision priced in the planner. All of it is in
+[weed-catalog.md](weed-catalog.md).
+
 ## The archive tunes the scout
 
 Every saved verdict is a labelled example. Before the queue is shown, each candidate is

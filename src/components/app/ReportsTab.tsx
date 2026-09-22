@@ -24,6 +24,8 @@ import {
 } from "@/lib/reportRecord";
 import { reconcileReport } from "@/lib/reportReconcile";
 import { type IdentificationRow, identificationCaveat, summariseIdentifications } from "@/lib/weedCatalog/identification";
+import { listTreatmentChoices } from "@/lib/treatment/choices";
+import type { TreatmentChoice } from "@/lib/treatment/quantities";
 import ConditionLookup from "@/components/app/workspace/ConditionLookup";
 
 // The report standardises on ACRES for every area it prints. fmtAreaAc
@@ -144,6 +146,19 @@ export default function ReportsTab({
   }, [task.id]);
   const weedIds = summariseIdentifications(weedRows);
   const hasWeedRows = weedIds.stated.length > 0 || weedIds.unidentified > 0 || weedIds.rejected > 0;
+
+  // The operator's treatment choices assigned in the Flight Planner: product,
+  // registration number, label provenance and rate, as recorded. Quantities
+  // live in the planner; the record lists the choices, never a recommendation.
+  const [treatmentRows, setTreatmentRows] = useState<TreatmentChoice[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    listTreatmentChoices().then(rows => { if (!cancelled) setTreatmentRows(rows); }).catch(() => { /* listed as none */ });
+    return () => { cancelled = true; };
+  }, []);
+  const assignedTreatments = Object.entries(settings.treatment_assignments ?? {})
+    .map(([key, a]) => ({ key, label: a.label, choice: treatmentRows.find(t => t.id === a.choice_id) ?? null }))
+    .filter(a => a.choice);
 
   // ---- Editable mission fields. Prefilled from the last logged flight when
   //      available, but always overridable so the pilot can double-check / fix
@@ -962,6 +977,31 @@ export default function ReportsTab({
         y += caveat.length * 9 + 6;
       }
 
+      // Treatment choices: the operator's products with label provenance.
+      if (assignedTreatments.length) {
+        ensure(40 + assignedTreatments.length * 22);
+        pdf.setDrawColor(220); pdf.line(M, y, W - M, y); y += 12;
+        pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(110);
+        pdf.text("TREATMENT CHOICES (OPERATOR-REVIEWED)", M, y); y += 11;
+        for (const a of assignedTreatments) {
+          const c = a.choice!;
+          ensure(22);
+          pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(30);
+          pdf.text(`${a.label}: ${c.product_name}${c.epa_reg_no ? `, EPA Reg. No. ${c.epa_reg_no}` : ""}${c.rate_value != null && c.rate_unit ? `, ${c.rate_value} ${c.rate_unit}` : ", no rate recorded"}`, M, y);
+          y += 10;
+          pdf.setFontSize(7.5); pdf.setTextColor(110);
+          const prov = c.label_verified
+            ? `Label checked ${c.label_checked_on}${c.label_crop ? ` for ${c.label_crop}` : ""}; source: ${c.label_source}`
+            : "Label not marked as verified by the operator";
+          pdf.text((pdf.splitTextToSize(prov, W - 2 * M) as string[])[0] ?? "", M, y);
+          y += 12;
+        }
+        pdf.setFontSize(8); pdf.setTextColor(110);
+        const note = pdf.splitTextToSize("Products, rates and label details were entered by the operator from the product label. SwathWise recommends no product or rate.", W - 2 * M) as string[];
+        pdf.text(note, M, y);
+        y += note.length * 9 + 6;
+      }
+
       // Applicator notes — only when the applicator wrote any.
       if (pilotNotes?.trim()) {
         const wrapped = pdf.splitTextToSize(pilotNotes.trim(), W - 2 * M);
@@ -1106,6 +1146,15 @@ export default function ReportsTab({
         })),
         weed_candidates_unidentified: weedIds.unidentified,
         weed_suggestions_rejected: weedIds.rejected,
+        // The operator's product choices with their label provenance, as
+        // assigned in the planner. A record of decisions, not advice.
+        treatment_choices: assignedTreatments.map(a => ({
+          group: a.label, product_name: a.choice!.product_name, epa_reg_no: a.choice!.epa_reg_no,
+          rate_value: a.choice!.rate_value, rate_unit: a.choice!.rate_unit,
+          label_source: a.choice!.label_source, label_checked_on: a.choice!.label_checked_on,
+          label_crop: a.choice!.label_crop, label_verified: a.choice!.label_verified,
+          weed_catalog_id: a.choice!.weed_catalog_id,
+        })),
       };
       const ins = await supabase.from("field_reports").insert({
         user_id: uid,
@@ -1270,6 +1319,29 @@ export default function ReportsTab({
                 <div className="text-xs text-neutral-400">No operator-stated identifications.</div>
               )}
               <div className="text-[11px] text-neutral-500">{identificationCaveat(weedIds)}</div>
+            </div>
+          )}
+
+          {assignedTreatments.length > 0 && (
+            <div className="pt-3 border-t border-[#1f1f1f] space-y-2" data-testid="treatment-choices">
+              <div className="text-[10px] uppercase tracking-wider text-neutral-500">Treatment choices (operator-reviewed)</div>
+              <ul className="text-xs space-y-1.5">
+                {assignedTreatments.map(a => (
+                  <li key={a.key}>
+                    <div className="text-neutral-200">
+                      {a.label}: {a.choice!.product_name}
+                      {a.choice!.epa_reg_no ? `, EPA Reg. No. ${a.choice!.epa_reg_no}` : ""}
+                      {a.choice!.rate_value != null && a.choice!.rate_unit ? `, ${a.choice!.rate_value} ${a.choice!.rate_unit}` : ", no rate recorded"}
+                    </div>
+                    <div className="text-[10px] text-neutral-500">
+                      {a.choice!.label_verified
+                        ? `Label checked ${a.choice!.label_checked_on}${a.choice!.label_crop ? ` for ${a.choice!.label_crop}` : ""}. Source: ${a.choice!.label_source}`
+                        : "Label not marked as verified by the operator."}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="text-[11px] text-neutral-500">Entered by the operator from the product label. Quantities are shown in the Flight Planner; SwathWise recommends no product or rate.</div>
             </div>
           )}
 

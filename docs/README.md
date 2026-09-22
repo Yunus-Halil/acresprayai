@@ -49,6 +49,7 @@ that treats only those patches instead of the whole field.
 | [agras-export-notes.md](agras-export-notes.md) | DJI Agras Rx + WPML: what is confirmed, what is a labelled guess, and how to close it |
 | [features/pilot-applications.md](features/pilot-applications.md) | The pilot application form, its table, and how applications reach you |
 | [features/weed-scout.md](features/weed-scout.md) | Weed Scout: the experimental developer-mode replacement for the Treatment Grid, its pipeline, event context, brain and observation archive |
+| [features/weed-catalog.md](features/weed-catalog.md) | The Virginia weed reference catalog, the Weed Library, spot identification, and operator-entered treatments with planner quantities |
 
 ### Operations
 | Document | Covers |

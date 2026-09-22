@@ -11,6 +11,7 @@
 | `/app/fields/:id` | Field detail | Upload images, watch progress, browse and recover scans |
 | `/app/fleet` | Drone fleet | Register drones, view endurance forecast |
 | `/app/weather` | Weather radar | Saved locations, current conditions, 7-day outlook |
+| `/app/weeds` | Weed Library | Developer mode: the state weed reference catalog, its sources and review queue. See [weed-catalog.md](weed-catalog.md) |
 | `/app/orthomosaic/:taskId` | Workspace | Everything else — see [workspace.md](workspace.md) |
 
 `/app/*` routes render inside `AppLayout`, which holds the sidebar and wraps its shell in
