@@ -27,6 +27,7 @@ import { storageKey } from "@/lib/storage";
 import { fmtArea, fmtAreaCm2, fmtDistance, fmtLengthCm } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { describeCandidate } from "@/lib/weedScout/candidates";
+import { annotationFromCandidate } from "@/lib/weedScout/applyToField";
 import { type EventContext, describeEvent, fetchEventContext } from "@/lib/weedScout/context";
 import { describeFeedback } from "@/lib/weedScout/feedback";
 import {
@@ -105,6 +106,7 @@ const labelCls = "text-[10px] uppercase tracking-wider text-neutral-500 mb-1 blo
 
 export function WeedScoutTab({
   boundary, tileUrl, bounds, maxNative, fieldId, taskId, scanCreatedAt, settings, center, setActiveTab,
+  applyAnnotation, removeAnnotation,
 }: {
   boundary: BoundaryRing[] | null;
   tileUrl: string;
@@ -116,6 +118,19 @@ export function WeedScoutTab({
   settings: FarmerSettings;
   center: [number, number];
   setActiveTab: (k: "field") => void;
+  /**
+   * Writes an ordinary `user_annotations` row - the same shape a hand-drawn
+   * polygon produces. Field View and the Flight Planner already draw and
+   * route over that table; nothing about this candidate having come from the
+   * scout needs to reach either of them. Resolves to the new row's id, or
+   * null on failure - never throws, so a failed apply reads the same way a
+   * failed save already does elsewhere on this screen.
+   */
+  applyAnnotation: (input: {
+    name: string; issue_type: string; color: string; notes: string | null;
+    ring: LatLng2[]; areaHa: number;
+  }) => Promise<string | null>;
+  removeAnnotation: (id: string) => Promise<void>;
 }) {
   const units = useUnitSystem();
   const { user } = useAuth();
@@ -138,6 +153,15 @@ export function WeedScoutTab({
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Candidate id -> the user_annotations row it became. Tracked for this run
+  // only: candidate ids are not stable across runs (they derive from blob
+  // labelling order), so there is nothing durable to key "already applied"
+  // against on reopen - the same limitation the archive's own `saved` lookup
+  // already has. Re-running and re-applying the same ground twice is
+  // harmless; Field View just shows two overlapping shapes.
+  const [applied, setApplied] = useState<Record<string, string>>({});
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
   const [showRegions, setShowRegions] = useState(true);
   const [showPoints, setShowPoints] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
@@ -239,6 +263,30 @@ export function WeedScoutTab({
     loadFeedback().then(setFeedback).catch(() => { /* keep what we had */ });
   }, [selected, user, context, result, fieldId, taskId, crop, stage, params, verdict, species, notes]);
 
+  // Puts a candidate on Field View and in reach of the Flight Planner, as an
+  // ordinary hand-drawn-shaped annotation - see lib/weedScout/applyToField.ts
+  // for why that is the right target rather than a new zone system.
+  const apply = useCallback(async () => {
+    if (!selected) return;
+    setApplying(true);
+    setApplyError(null);
+    const a = annotationFromCandidate(selected);
+    const id = await applyAnnotation(a);
+    setApplying(false);
+    if (!id) { setApplyError("Couldn't apply this to Field View. Check your connection and try again."); return; }
+    setApplied(prev => ({ ...prev, [selected.id]: id }));
+  }, [selected, applyAnnotation]);
+
+  const unapply = useCallback(async () => {
+    if (!selected) return;
+    const id = applied[selected.id];
+    if (!id) return;
+    setApplying(true);
+    await removeAnnotation(id);
+    setApplying(false);
+    setApplied(prev => { const next = { ...prev }; delete next[selected.id]; return next; });
+  }, [selected, applied, removeAnnotation]);
+
   if (!rings.length) {
     return (
       <div className="absolute inset-0 grid place-items-center" style={{ background: "#0f0f0f" }}>
@@ -293,23 +341,25 @@ export function WeedScoutTab({
           {showRegions && regionCandidates.map(c => {
             const colour = CLASS_COLOUR[c.region!.klass];
             const active = c.id === selectedId;
+            const isApplied = !!applied[c.id];
             return (
               <Polygon key={c.id}
                 positions={c.region!.rings.map(ring => ring.map(p => [p.lat, p.lng] as [number, number]))}
                 eventHandlers={{ click: () => setSelectedId(c.id) }}
                 pathOptions={{
-                  color: active ? "#ffffff" : colour, weight: active ? 2.5 : 1.5,
+                  color: active ? "#ffffff" : isApplied ? "#38bdf8" : colour,
+                  weight: active ? 2.5 : isApplied ? 2.5 : 1.5,
                   fillColor: colour, fillOpacity: saved[c.id] ? 0.45 : 0.22,
                 }} />
             );
           })}
           {showPoints && pointCandidates.map(c => (
             <CircleMarker key={c.id} center={[c.centroid.lat, c.centroid.lng]}
-              radius={c.id === selectedId ? 9 : 5}
+              radius={c.id === selectedId ? 9 : applied[c.id] ? 8 : 5}
               eventHandlers={{ click: () => setSelectedId(c.id) }}
               pathOptions={{
-                color: c.id === selectedId ? "#ffffff" : KIND_COLOUR[c.kind],
-                weight: c.id === selectedId ? 2 : 1.5,
+                color: c.id === selectedId ? "#ffffff" : applied[c.id] ? "#38bdf8" : KIND_COLOUR[c.kind],
+                weight: c.id === selectedId ? 2 : applied[c.id] ? 2.5 : 1.5,
                 fillColor: KIND_COLOUR[c.kind],
                 fillOpacity: saved[c.id] ? 0.9 : 0.35,
               }} />
@@ -336,6 +386,7 @@ export function WeedScoutTab({
           <div className="flex items-center gap-2 pl-4"><span className="inline-block w-3 h-3 rounded-full" style={{ background: KIND_COLOUR["off-row and outlier"] }} /> Both</div>
           <div className="flex items-center gap-2 pl-4"><span className="inline-block w-3 h-3 rounded-full" style={{ background: KIND_COLOUR["field outlier"] }} /> Single not-average tile</div>
           <div className="text-neutral-500">Solid: saved to the archive</div>
+          <div className="flex items-center gap-2 text-neutral-500"><span className="inline-block w-3 h-3 rounded-full border-2" style={{ borderColor: "#38bdf8" }} /> Blue ring: applied to Field View and the Flight Planner</div>
         </div>
       </div>
 
@@ -506,6 +557,7 @@ export function WeedScoutTab({
                           <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: c.region ? CLASS_COLOUR[c.region.klass] : KIND_COLOUR[c.kind] }} />
                           <span className="truncate">{c.region ? `${c.region.klass}, ${areaText(c.areaM2)}` : c.kind}</span>
                           {saved[c.id] && <CheckCircle2 className="h-3 w-3 text-[#4CAF50] shrink-0" />}
+                          {applied[c.id] && <MapPin className="h-3 w-3 text-[#38bdf8] shrink-0" />}
                         </div>
                         <div className="text-[10px] text-neutral-500 truncate">{describeCandidate(c, units)}</div>
                       </div>
@@ -575,6 +627,36 @@ export function WeedScoutTab({
                   <div className="text-neutral-600 font-mono">{selected.estimate.model}, computed in this browser</div>
                 </div>
               )}
+
+              {/* Apply: put this on the field the operator actually works from.
+                  Separate from the archive verdict on purpose - one is "flag
+                  this ground on my map and my flight plan", the other is "teach
+                  the scout what this was". Either can happen without the other. */}
+              <div className="border border-[#222] rounded-sm p-3 space-y-2" style={{ background: "#161616" }}>
+                <div className="text-xs font-semibold inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-[#38bdf8]" /> Field View and Flight Planner</div>
+                <p className="text-[11px] text-neutral-500">
+                  Applying draws this on Field View as a marked area and puts it in reach of the Flight Planner,
+                  exactly like a polygon you had drawn by hand. Click it on the map to read what it is.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {!applied[selected.id] ? (
+                    <button type="button" onClick={apply} disabled={applying || !user}
+                      className="inline-flex items-center gap-1.5 text-xs bg-[#38bdf8] hover:bg-[#0ea5e9] disabled:opacity-40 text-black rounded-sm px-3 py-1.5 font-semibold">
+                      {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MapPin className="h-3.5 w-3.5" />}
+                      Apply to Field View
+                    </button>
+                  ) : (
+                    <>
+                      <span className="text-[11px] text-[#38bdf8] inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Applied</span>
+                      <button type="button" onClick={() => setActiveTab("field")}
+                        className="text-[11px] underline text-neutral-300 hover:text-white">Open Field View</button>
+                      <button type="button" onClick={unapply} disabled={applying}
+                        className="text-[11px] underline text-neutral-500 hover:text-red-400 disabled:opacity-40">Remove</button>
+                    </>
+                  )}
+                </div>
+                {applyError && <div className="text-[11px] text-red-400">{applyError}</div>}
+              </div>
 
               {/* Verdict */}
               <div className="space-y-2">

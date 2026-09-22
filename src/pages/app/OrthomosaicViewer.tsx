@@ -621,34 +621,51 @@ export default function OrthomosaicViewer() {
   };
 
   // ---- User annotations CRUD (DB-backed) ------------------------------------
-  const saveUserPolygon = async (form: { name: string; issue_type: string; color: string; notes: string }) => {
-    if (!draftUserPoly || !taskId) return;
+  // One insert path, two callers: the hand-drawn tool (below, reading its own
+  // draft state) and Weed Scout's "Apply to Field View" (WeedScoutTab, which
+  // already has a ring and an area computed from the candidate and has
+  // nothing to do with a draft). Neither is a second system - both produce
+  // the exact same row Field View and the Flight Planner already understand.
+  const insertUserAnnotation = async (input: {
+    name: string; issue_type: string; color: string; notes: string | null;
+    ring: { lat: number; lng: number }[]; areaHa: number;
+  }): Promise<string | null> => {
+    if (!taskId) return null;
     const { data: s } = await supabase.auth.getSession();
-    if (!s.session) return;
+    if (!s.session) return null;
     const row = {
       user_id: s.session.user.id,
       task_id: taskId,
       field_id: field?.id ?? null,
-      name: form.name.trim() || "Annotation",
-      issue_type: form.issue_type,
-      color: form.color,
-      notes: form.notes.trim() || null,
-      ring: draftUserPoly.ring as any,
-      area_hectares: Number(draftUserPoly.areaHa.toFixed(4)),
+      name: input.name.trim() || "Annotation",
+      issue_type: input.issue_type,
+      color: input.color,
+      notes: input.notes?.trim() || null,
+      ring: input.ring as any,
+      area_hectares: Number(input.areaHa.toFixed(4)),
     };
     const { data, error } = await supabase.from("user_annotations").insert(row).select("*").single();
     if (error) {
       console.error(error);
-      toast.error("Couldn't save this annotation", {
-        description: "Nothing was saved. Your drawing is still on screen; check your connection and press Save again.",
-      });
-      return;
+      return null;
     }
     setUserPolys(prev => [...prev, {
       id: data.id, name: data.name, issue_type: data.issue_type, color: data.color,
       notes: data.notes, ring: data.ring as any, area_hectares: Number(data.area_hectares ?? 0),
       created_at: data.created_at,
     }]);
+    return data.id as string;
+  };
+
+  const saveUserPolygon = async (form: { name: string; issue_type: string; color: string; notes: string }) => {
+    if (!draftUserPoly) return;
+    const id = await insertUserAnnotation({ ...form, ring: draftUserPoly.ring, areaHa: draftUserPoly.areaHa });
+    if (!id) {
+      toast.error("Couldn't save this annotation", {
+        description: "Nothing was saved. Your drawing is still on screen; check your connection and press Save again.",
+      });
+      return;
+    }
     setDraftUserPoly(null);
     setUserPolyToolActive(false);
   };
@@ -1088,6 +1105,8 @@ export default function OrthomosaicViewer() {
             settings={settings}
             center={center}
             setActiveTab={setActiveTab}
+            applyAnnotation={insertUserAnnotation}
+            removeAnnotation={deleteUserPolygon}
           />
         )}
         {activeTab === "treatment" && !dev.weedScout && (

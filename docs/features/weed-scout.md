@@ -76,6 +76,30 @@ Region classes, from the direction of the deviations: bare or dry ground; dark g
 (wet, shadow or residue); thin stand; dense vegetation; pale vegetation; greener than the
 field; different from the field. Descriptive, never a verdict.
 
+## Apply to Field View and the Flight Planner
+
+The scout's own map is a separate, disposable review surface — nothing there is real until
+the operator says so. "Apply to Field View" (`lib/weedScout/applyToField.ts`) is that
+"say so": it writes an ordinary `user_annotations` row, the exact shape a hand-drawn
+anomaly polygon already produces. Field View already draws that table (`UserPolyLayer`)
+and answers a click with a popup naming the issue, the area and any notes; the Flight
+Planner already routes over it and prices it at the settings' default rate, with no
+"promotion" step for either — see `gridAnomaliesLayer.ts`'s own note that grid zones and
+`user_annotations` are the only two shape sources those two surfaces read. A region
+candidate's own ring is used as-is; a plant candidate gets a small square around its
+centroid, sized like its own chip. `issue_type` is picked from the same vocabulary a
+hand-drawn polygon uses (Bare soil, Waterlogging, Weed pressure, Other), and `notes`
+carries the in-house estimate's summary and position, already in the operator's own units
+— which is what answers "what is this" on a map click. Applying writes no rate and makes
+no claim beyond what the estimate already says.
+
+Because developer mode *replaces* the Treatment Grid tab rather than sitting beside it,
+Field View also stops loading and drawing the grid's own zones while `weedScout` is on
+(`FieldViewTab.tsx`) — a farmer testing the scout was otherwise seeing the old grid's
+highlights on the same map with no way to tell them from whatever the scout found.
+Applied candidates are unaffected: they draw through the ordinary `UserPoly` layer, which
+was never gated on developer mode to begin with.
+
 ## The archive tunes the scout
 
 Every saved verdict is a labelled example. Before the queue is shown, each candidate is
@@ -141,10 +165,15 @@ row line among 10 cm crop is a plant outlier with no row model; a region and a p
 outlier arrive together without a dot storm; sweep windows' owned rectangles tile the
 field exactly; feedback lowers dismissed-looking candidates and raises confirmed-looking
 ones and stays silent with too few neighbours; the describer never says weed, spray, apply
-or rate.
+or rate. `src/test/weedScoutApplyToField.test.ts` covers the Apply mapping: a region's own
+ring and area pass through unchanged, a point candidate gets a correctly-sized and
+correctly-centred square, the issue vocabulary matches what a hand-drawn polygon offers,
+and the colour never varies with score or kind (a display choice carries no claim).
 
 Both migrations are applied to the linked project and the weather function is deployed
 (2026-09-21). Not verified: any flown imagery. The thresholds (`anomalyZ` 3.5, `blobZ` 3.5, band 0.30,
 1 cm squared floor, hysteresis 0.6) are starting values that the operator's verdicts and a
 false-positives-per-acre count from a real field are meant to set. The sweep and the chips
-are browser-only and have run under no signed-in session.
+are browser-only and have run under no signed-in session, and neither has Apply — a real
+candidate reaching Field View and the Flight Planner as a routable, correctly-priced
+polygon has not been clicked through end to end.

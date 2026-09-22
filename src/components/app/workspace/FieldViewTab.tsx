@@ -60,6 +60,7 @@ import GridAnomaliesLayer from "./GridAnomaliesLayer";
 import { type GridZonesLoad, clearGridZones, loadGridZones } from "@/lib/gridAnomalies";
 import { fmtAreaHa, fmtArea } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
+import { useDeveloperMode } from "@/hooks/useDeveloperMode";
 import { GRID_CHANGED_EVENT, snapshotGridAssessmentFromStore } from "@/lib/scanAssessment";
 import { ScanPanel, useFieldScans, useScanInfo } from "./ScanTimeline";
 import {
@@ -254,14 +255,22 @@ export function FieldViewTab(props: {
   const [clearingZones, setClearingZones] = useState(false);
   const gridUnits = useUnitSystem();
   const [gridZoneNonce, setGridZoneNonce] = useState(0);
+  // Developer mode swaps the Treatment Grid tab for the experimental Weed
+  // Scout (see WeedScoutTab.tsx). While that is on, the grid's OWN zones stop
+  // being drawn here too - a farmer testing the scout was seeing the old
+  // grid's highlights on the map with no way to tell them apart from
+  // whatever the scout found. Applied Weed Scout candidates draw through the
+  // existing UserPoly layer just below instead, unaffected by this gate.
+  const dev = useDeveloperMode();
   useEffect(() => {
+    if (dev.weedScout) { setGridZoneLoad(null); return; }
     let cancelled = false;
     setGridZoneLoad(null);
     loadGridZones(props.fieldId, props.boundary as LatLng2[][] | null)
       .then(r => { if (!cancelled) setGridZoneLoad(r); })
       .catch(e => console.error("[fieldview] grid zones load failed", e));
     return () => { cancelled = true; };
-  }, [props.fieldId, props.boundary, gridZoneNonce]);
+  }, [props.fieldId, props.boundary, gridZoneNonce, dev.weedScout]);
 
   // This tab is PERMANENTLY MOUNTED (only hidden on tab switch, to keep the
   // Leaflet map alive), so the load above never re-ran after the operator
