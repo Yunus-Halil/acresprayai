@@ -62,7 +62,24 @@ export function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression | null 
   return null;
 }
 
-export function MouseReadout({ coordRef, zoomRef }: { coordRef: { current: HTMLDivElement | null }; zoomRef: { current: HTMLDivElement | null } }) {
+/**
+ * Writes the shared bottom-status-bar readout (lat/lng under the cursor, and
+ * the zoom level) from THIS map.
+ *
+ * The workspace has several tabs, each with its own independent Leaflet map
+ * (Field View, Weed Scout, the Treatment Grid, the Flight Planner), but only
+ * one shared status bar in the parent. Field View stays mounted (hidden, not
+ * unmounted) when another tab is active, so without a guard its map would
+ * keep answering `mousemove`/`zoomend` for events that cannot reach it while
+ * hidden - but a bounds change can still call `fitBounds` on a hidden map and
+ * fire `zoomend`, overwriting the status bar with a number for a map nobody
+ * is looking at. `active` names which map currently owns the status bar: it
+ * gates every write, and re-syncs the bar the instant a tab becomes active
+ * again rather than waiting for the next mouse move on it.
+ */
+export function MouseReadout({
+  coordRef, zoomRef, active = true,
+}: { coordRef: { current: HTMLDivElement | null }; zoomRef: { current: HTMLDivElement | null }; active?: boolean }) {
   const map = useMap();
   const write = (lat: number, lng: number, z: number) => {
     if (coordRef.current) {
@@ -70,9 +87,14 @@ export function MouseReadout({ coordRef, zoomRef }: { coordRef: { current: HTMLD
     }
     if (zoomRef.current) zoomRef.current.textContent = `Zoom ${Math.round(z)}`;
   };
+  // Sync immediately on becoming active, so switching tabs shows the right
+  // zoom without waiting for a mouse move over the newly-shown map.
+  useEffect(() => {
+    if (active) write(NaN, NaN, map.getZoom());
+  }, [map, active]);
   useMapEvents({
-    mousemove: (e) => write(e.latlng.lat, e.latlng.lng, map.getZoom()),
-    zoomend: () => write(NaN, NaN, map.getZoom()),
+    mousemove: (e) => { if (active) write(e.latlng.lat, e.latlng.lng, map.getZoom()); },
+    zoomend: () => { if (active) write(NaN, NaN, map.getZoom()); },
   });
   return null;
 }

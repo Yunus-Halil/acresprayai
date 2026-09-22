@@ -47,7 +47,7 @@ import { type MigrationPlan, applyMigration, planMigration } from "@/lib/gridMig
 import { SupabaseTreatmentGridRepository } from "@/lib/treatmentGridRepo";
 import type { GridRenderInfo } from "./TreatmentGridLayer";
 import TreatmentGridLayer from "./TreatmentGridLayer";
-import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, USER_POLY_ISSUES, loadBasemap, saveBasemap } from "./layers";
+import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, MouseReadout, USER_POLY_ISSUES, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
 import {
   fmtAltitude, fmtArea, fmtAreaHa, fmtRate, fmtVolume, rateToLha, rateUnit, rateValue,
@@ -61,12 +61,16 @@ type Tool = "inspect" | "paint";
 
 export function TreatmentTab({
   boundary, tileUrl, bounds, maxNative, fieldId, taskId, scanCreatedAt, spec, settings, setActiveTab,
+  cursorCoordRef, cursorZoomRef,
 }: {
   boundary: BoundaryRing[] | null;
   tileUrl: string;
   bounds: L.LatLngBoundsExpression | null;
   maxNative: number;
   fieldId: string | null;
+  /** The workspace's shared bottom-status-bar readout; see WeedScoutTab's note. */
+  cursorCoordRef?: React.MutableRefObject<HTMLDivElement | null>;
+  cursorZoomRef?: React.MutableRefObject<HTMLDivElement | null>;
   /**
    * The scan whose imagery is on screen. Every successful grid write made here
    * snapshots the zones onto this scan (lib/scanAssessment.ts) — that is what
@@ -710,6 +714,7 @@ export function TreatmentTab({
             />
           )}
           <FitBounds bounds={bounds} />
+          {cursorCoordRef && cursorZoomRef && <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />}
           {grid && (
             <TreatmentGridLayer
               grid={grid}

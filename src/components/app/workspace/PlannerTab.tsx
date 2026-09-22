@@ -126,6 +126,7 @@ function InfoTip({ children, className = "" }: { children: React.ReactNode; clas
 export function PlannerTab({
   boundary, tileUrl, bounds, maxNative, taskId, setActiveTab,
   settings, onSaveSettings, onFlightLogged, center, userPolys, fieldId, fieldName,
+  cursorCoordRef, cursorZoomRef,
 }: {
   boundary: BoundaryRing[] | null;
   tileUrl: string;
@@ -133,6 +134,9 @@ export function PlannerTab({
   maxNative: number;
   taskId: string;
   fieldId: string | null;
+  /** The workspace's shared bottom-status-bar readout; see WeedScoutTab's note. */
+  cursorCoordRef?: React.MutableRefObject<HTMLDivElement | null>;
+  cursorZoomRef?: React.MutableRefObject<HTMLDivElement | null>;
   /** Used to pre-fill the schedule form's location label. */
   fieldName?: string;
   setActiveTab: (k: any) => void;
@@ -976,6 +980,7 @@ export function PlannerTab({
               bounds={bounds} noWrap zIndex={10}
             />
           )}
+          {cursorCoordRef && cursorZoomRef && <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />}
           <PlannerOverlay
             boundary={boundary} zones={validZones}
             rawZones={flightReady?.enabled ? gridZones : []}

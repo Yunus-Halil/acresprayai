@@ -51,7 +51,7 @@ import {
   type Suggestion, evidenceLabel, narrowCatalog, presenceNote, regulatoryNote, searchRanked, suggestionsFor,
 } from "@/lib/weedCatalog/suggest";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
-import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, loadBasemap, saveBasemap } from "./layers";
+import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, MouseReadout, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
 
 const PARAMS_KEY = storageKey("weedScout", "params");
@@ -170,7 +170,7 @@ type Bulk = { phase: "idle" | "saving"; done: number; total: number; error: stri
 
 export function WeedScoutTab({
   boundary, tileUrl, bounds, maxNative, fieldId, taskId, scanCreatedAt, settings, center, setActiveTab,
-  applyAnnotation, removeAnnotation, appliedSpots,
+  applyAnnotation, removeAnnotation, appliedSpots, cursorCoordRef, cursorZoomRef,
 }: {
   boundary: BoundaryRing[] | null;
   tileUrl: string;
@@ -182,6 +182,13 @@ export function WeedScoutTab({
   settings: FarmerSettings;
   center: [number, number];
   setActiveTab: (k: "field" | "planner") => void;
+  /**
+   * The workspace's shared bottom-status-bar readout. This tab only exists
+   * while it is the one on screen, so it always owns the bar while mounted -
+   * unlike Field View, which stays mounted hidden and needs its own guard.
+   */
+  cursorCoordRef?: React.MutableRefObject<HTMLDivElement | null>;
+  cursorZoomRef?: React.MutableRefObject<HTMLDivElement | null>;
   /**
    * Writes an ordinary `user_annotations` row, the same shape a hand-drawn
    * polygon produces, plus the spot id and the operator's identification if
@@ -435,6 +442,7 @@ export function WeedScoutTab({
             <TileLayer key={tileUrl} url={tileUrl} maxNativeZoom={Math.min(20, maxNative)} maxZoom={22} tileSize={256} keepBuffer={4} bounds={bounds} noWrap zIndex={10} />
           )}
           <FitBounds bounds={bounds} />
+          {cursorCoordRef && cursorZoomRef && <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />}
           {rings.map((r, i) => (
             <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])} pathOptions={{ color: "#4CAF50", weight: 1.5, fill: false, dashArray: "4 4" }} />
           ))}

@@ -106,6 +106,14 @@ export function FieldViewTab(props: {
   } | null;
   cursorCoordRef: React.MutableRefObject<HTMLDivElement | null>;
   cursorZoomRef: React.MutableRefObject<HTMLDivElement | null>;
+  /**
+   * Whether Field View is the tab actually on screen. This component stays
+   * mounted (hidden, not unmounted) while another tab is active, so its own
+   * `MouseReadout` needs to know when it does and does not own the shared
+   * bottom status bar - otherwise a background bounds change here could
+   * overwrite the zoom another tab's map is showing.
+   */
+  active: boolean;
   layersOpen: boolean;
   setLayersOpen: (v: boolean) => void;
   taskId: string;
@@ -154,7 +162,7 @@ export function FieldViewTab(props: {
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
-    cursorCoordRef, cursorZoomRef, layersOpen, setLayersOpen,
+    cursorCoordRef, cursorZoomRef, active, layersOpen, setLayersOpen,
     taskId, annotations, setAnnotations,
     boundary, boundaryMode, setBoundaryMode, boundaryDirty, boundarySaving,
     saveBoundary, clearBoundary, handleBoundaryCreated, handleBoundaryEdited, handleBoundaryDeleteRing,
@@ -417,7 +425,7 @@ export function FieldViewTab(props: {
         )}
         <FitBounds bounds={bounds} />
         <FitOnCapture bounds={bounds} />
-        <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />
+        <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} active={active} />
         <MapControls fitTo={bounds} />
         <BasemapToggle value={basemap} onChange={(id) => { setBasemap(id); saveBasemap(id); }} />
         {compareActive && aScan && bScan && (

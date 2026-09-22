@@ -1073,6 +1073,7 @@ export default function OrthomosaicViewer() {
             ndviInfo={ndviInfo}
             cursorCoordRef={cursorCoordRef}
             cursorZoomRef={cursorZoomRef}
+            active={activeTab === "field"}
             layersOpen={layersOpen}
             setLayersOpen={setLayersOpen}
             taskId={taskId!}
@@ -1135,6 +1136,8 @@ export default function OrthomosaicViewer() {
             applyAnnotation={insertUserAnnotation}
             removeAnnotation={deleteUserPolygon}
             appliedSpots={appliedSpots}
+            cursorCoordRef={cursorCoordRef}
+            cursorZoomRef={cursorZoomRef}
           />
         )}
         {activeTab === "treatment" && !dev.weedScout && (
@@ -1152,6 +1155,8 @@ export default function OrthomosaicViewer() {
             ).spec}
             settings={settings}
             setActiveTab={setActiveTab}
+            cursorCoordRef={cursorCoordRef}
+            cursorZoomRef={cursorZoomRef}
           />
         )}
         {activeTab === "planner" && (
@@ -1169,6 +1174,8 @@ export default function OrthomosaicViewer() {
             onFlightLogged={setParentLastLog}
             center={center}
             userPolys={userPolys}
+            cursorCoordRef={cursorCoordRef}
+            cursorZoomRef={cursorZoomRef}
           />
         )}
         {activeTab === "reports" && (
