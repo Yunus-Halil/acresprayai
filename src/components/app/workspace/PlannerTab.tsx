@@ -28,9 +28,8 @@ import {
   resolveDroneSpec, swathIsStated, tankIsStated,
 } from "@/lib/droneSpecs";
 import { isCustomAircraft } from "@/lib/aircraftDirectory";
-import {
-  DEFAULT_HEADLAND_M, MAX_HEADLAND_M, applyHeadland, headlandAreaScale, headlandReason,
-} from "@/lib/headland";
+import { MAX_HEADLAND_M, headlandReason } from "@/lib/headland";
+import { clampHeadlandM, plannedZones } from "@/lib/treatment/plannedArea";
 import {
   type CustomInput, type FarmerSettings, type LastFlownMission,
   COST_MAP, DEFAULT_FARMER_SETTINGS, INPUT_LABELS,
@@ -40,7 +39,7 @@ import {
 import {
   type LatLng2,
   bboxOfRings, centroidOfRings, centroidSafe, distM, lerp, mPerDegLng,
-  pointInAnyRing, pointInRing, polygonAreaM2, polylineLengthM,
+  pointInRing, polygonAreaM2, polylineLengthM,
   ringContaining, ringsAreaM2,
   routeInsideBoundary, segRingIntersections, segSegT, segmentInsideRings,
 } from "@/lib/geo";
@@ -266,10 +265,22 @@ export function PlannerTab({
   // whichever was selected got the other one's tank. A custom aircraft now
   // carries its own specs on its own fleet row, and `fp.custom_specs` is only
   // the last resort for rows saved before that was true.
+  //
+  // WITH NO DRONE SELECTED, NOTHING IS KNOWN. `fp.custom_specs` is a COMPLETE
+  // DroneSpec with no nulls, so handing it over as overrides made
+  // resolveDroneSpec mark all fifteen fields as stated — and `tankIsStated` and
+  // `swathIsStated` then answered true off the generic 30 L / 6 m shape in
+  // DEFAULT_SPEC, which nobody chose. The planner printed a refill plan and
+  // tank quantities against a tank that does not exist, and the two "this is a
+  // placeholder" warnings could not correct it because both are gated on there
+  // being an active drone. DEFAULT_SPEC's own doc says the opposite is meant to
+  // happen: "every field taken from here is reported as unknown by
+  // resolveDroneSpec so the UI can label it". So the overrides only travel when
+  // there is an aircraft for them to describe.
   const droneModelKey = activeDrone?.model ?? "Custom";
   const resolved = resolveDroneSpec(
     activeDrone?.model ?? null,
-    (activeDrone?.specs as never) ?? fp.custom_specs,
+    activeDrone ? ((activeDrone.specs as never) ?? fp.custom_specs) : undefined,
   );
   const isCustom = resolved.isCustom;
   const spec: DroneSpec = resolved.spec;
@@ -399,44 +410,28 @@ export function PlannerTab({
         rateLha: z.rateLha, areaM2: z.areaM2, issue: z.issue,
       }));
   const allZonesRaw: PlannerZone[] = [...userZonesRaw, ...gridZonesRaw];
-  const zonesInField = (() => {
-    if (!boundary || boundary.length === 0) return [];
-    return allZonesRaw.filter(z => {
-      if (!z.ring || z.ring.length < 3) return false;
-      const cx = z.ring.reduce((a, p) => a + p.lng, 0) / z.ring.length;
-      const cy = z.ring.reduce((a, p) => a + p.lat, 0) / z.ring.length;
-      return pointInAnyRing({ lat: cy, lng: cx }, boundary as LatLng2[][]);
-    });
-  })();
 
-  // ---- Headland ------------------------------------------------------------
+  // ---- Which shapes, and how big -------------------------------------------
   //
-  // Applied HERE, once, and to the zone list that everything downstream reads.
-  // The route is flown inside these rings and the chemical is priced on these
-  // areas, so the plan cannot end up spraying one shape and billing another —
-  // which is exactly what would happen if the inset were applied inside the
-  // route builder and the volume kept using the original ring.
+  // Applied ONCE, in lib/treatment/plannedArea.ts, to the zone list that
+  // everything downstream reads: the centroid-in-boundary filter, the headland
+  // inset, and the area rule. The route is flown inside these rings and the
+  // chemical is priced on these areas, so the plan cannot end up spraying one
+  // shape and billing another — which is exactly what would happen if the inset
+  // were applied inside the route builder and the volume kept using the
+  // original ring.
+  //
+  // It lives in a module rather than here because the Weed Scout results screen
+  // has to quote the same acreage this screen will, and it cannot do that by
+  // summing the areas stored on the annotation rows: this step ignores those.
   //
   // A zone too narrow to take the headland keeps its full extent rather than
   // disappearing from the plan, and says so through `headlandNotes` below.
-  const bufferM = Math.max(0, Math.min(MAX_HEADLAND_M, fp.boundary_buffer_m ?? DEFAULT_HEADLAND_M));
-  const headlandZones = useMemo(() => zonesInField.map(z => {
-    const outcome = applyHeadland(z.ring, bufferM, {
-      label: z.source === "grid" ? "A treatment-grid zone" : "A zone",
-    });
-    return {
-      ...z,
-      ring: outcome.ring,
-      // The zone's own measured area, reduced by the headland's proportional
-      // bite. Grid zones carry a true clipped-cell area that ring geometry
-      // cannot reproduce, so it is scaled rather than recomputed.
-      areaM2: z.areaM2 != null
-        ? z.areaM2 * headlandAreaScale(outcome)
-        : Math.abs(polygonAreaM2(outcome.ring)),
-      headland: outcome,
-    };
-  // `zonesInField` is rebuilt every render; its contents are what matter.
-  }), [JSON.stringify(zonesInField.map(z => [z.id, z.ring.length, z.areaM2])), bufferM]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bufferM = clampHeadlandM(fp.boundary_buffer_m);
+  const headlandZones = useMemo(
+    () => plannedZones(allZonesRaw, boundary as LatLng2[][] | null, bufferM),
+  // `allZonesRaw` is rebuilt every render; its contents are what matter.
+  [JSON.stringify(allZonesRaw.map(z => [z.id, z.ring.length, z.areaM2])), boundary, bufferM]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const validZones = headlandZones;
 
@@ -619,9 +614,17 @@ export function PlannerTab({
   // What the job actually needs, and how many trips back to the nurse tank.
   // Memoised: `refillPoints` and the live telemetry both depend on it, and the
   // overlay redraws every map layer when its deps change identity.
+  //
+  // An UNSTATED tank is passed as zero rather than as DEFAULT_SPEC's 30 L,
+  // which is what the warning beside the aircraft picker has always promised:
+  // "the refill plan below cannot be computed and will simply not appear".
+  // `planRefills` answers a zero capacity with no loads, no refills and no dry
+  // points, so the readouts and the map's refill markers all empty out on their
+  // own instead of each needing its own guard. The chemical figure is untouched
+  // by this: it is area times rate and owes the aircraft nothing.
   const refill = useMemo(
-    () => planRefills(requiredLitres, spec.tank_l, fp.tank_load_pct),
-    [requiredLitres, spec.tank_l, fp.tank_load_pct],
+    () => planRefills(requiredLitres, tankStated ? spec.tank_l : 0, fp.tank_load_pct),
+    [requiredLitres, tankStated, spec.tank_l, fp.tank_load_pct],
   );
 
   /** Fractions of sprayed distance at which a load runs dry. */
@@ -1539,6 +1542,8 @@ export function PlannerTab({
           {drones.length === 0 ? (
             <div className="text-[11px] text-neutral-400 leading-relaxed">
               No drones in your fleet yet. Register one on the <span className="text-[#4CAF50]">Fleet</span> page to get accurate battery estimates.
+              {" "}Until then this plan carries no tank and no boom width, so the refill plan and
+              the product quantities stay blank rather than being priced on a machine nobody chose.
             </div>
           ) : (
             <div>
@@ -1555,6 +1560,17 @@ export function PlannerTab({
                   </option>
                 ))}
               </select>
+              {/* With nothing selected there is no aircraft to describe, so
+                  nothing about one is claimed. Said here because the two
+                  warnings below are about a CHOSEN aircraft missing a figure,
+                  and neither can speak for the case where none was chosen. */}
+              {!activeDrone && (
+                <div className="mt-2 rounded-sm border border-amber-500/40 bg-amber-500/5 px-2 py-1.5 text-[10px] leading-relaxed text-amber-300">
+                  No aircraft selected, so this plan has no tank and no boom width. Acres and
+                  litres below are still real; the refill plan and the product quantities stay
+                  blank until you pick one.
+                </div>
+              )}
               {activeDrone && (
                 <div className="mt-2 text-[10px] text-neutral-500 font-mono">
                   Battery now: <span className="text-neutral-300">{activeDrone.battery}%</span> · Spec: {tankStated ? fmtVolume(spec.tank_l, units, 0).text : "tank not set"} / {spec.max_flight_min} min / {fmtSpeed(spec.max_speed_ms, units).text}
@@ -1775,7 +1791,7 @@ export function PlannerTab({
             </p>
           </div>
         )}
-        {refill.refills === 0 && refill.requiredLitres > 0 && (
+        {tankStated && refill.refills === 0 && refill.requiredLitres > 0 && (
           <div className="text-[10px] text-neutral-500 mb-3 leading-relaxed">
             One tank covers this job, {fmtVolume(refill.leftoverLitres, units).text} to spare.
           </div>
@@ -1831,12 +1847,19 @@ export function PlannerTab({
           </div>
           <div className="flex justify-between">
             <span className="text-neutral-500">Tank loads</span>
-            <span className={`font-mono ${refill.refills > 0 ? "text-amber-300" : "text-neutral-200"}`}>
-              {refill.loads} × {fmtVolume(refill.perLoadLitres, units, 0).text}
-              {refill.refills > 0 && (
-                <span className="text-amber-500"> · {refill.refills} refill{refill.refills === 1 ? "" : "s"}</span>
-              )}
-            </span>
+            {tankStated ? (
+              <span className={`font-mono ${refill.refills > 0 ? "text-amber-300" : "text-neutral-200"}`}>
+                {refill.loads} × {fmtVolume(refill.perLoadLitres, units, 0).text}
+                {refill.refills > 0 && (
+                  <span className="text-amber-500"> · {refill.refills} refill{refill.refills === 1 ? "" : "s"}</span>
+                )}
+              </span>
+            ) : (
+              /* A labelled gap, not a zero. The tank this would be divided by
+                 is not on file, and inventing one is how a pilot ends up
+                 planning a nurse-tank run against a capacity nobody set. */
+              <span className="text-neutral-500">{activeDrone ? "tank not set" : "no aircraft selected"}</span>
+            )}
           </div>
           <div className="flex justify-between"><span className="text-neutral-500">Spray activations</span>
             <span className="font-mono">{mission?.sprayOnCount ?? 0}</span></div>

@@ -20,6 +20,8 @@ import {
   drainPerMin,
   resolveDroneSpec,
   specSheet,
+  swathIsStated,
+  tankIsStated,
 } from "@/lib/droneSpecs";
 
 describe("issueToCostKey", () => {
@@ -283,6 +285,38 @@ describe("drone specs", () => {
     expect(MODEL_IDS).not.toContain("Custom");
     expect(DRONE_SPEC_KNOWN["Custom"].size).toBe(0);
     expect(DRONE_SPECS["Custom"].spray_swath_m).toBeGreaterThan(0);
+  });
+
+  // The defect this pins: the planner used to hand `fp.custom_specs` to
+  // resolveDroneSpec even when NO aircraft was selected. Because that blob is a
+  // complete DroneSpec with no nulls, every one of its fields was carried into
+  // `known`, and tankIsStated/swathIsStated then answered true off the generic
+  // 30 L / 6 m fallback shape that nobody chose. The planner printed a refill
+  // plan against a tank that does not exist, and the two "this is a
+  // placeholder" warnings could not correct it because both are gated on there
+  // being an active drone to warn about.
+  it("claims nothing when there is no aircraft at all", () => {
+    const resolved = resolveDroneSpec(null, undefined);
+    expect(resolved.known.size).toBe(0);
+    expect(tankIsStated(resolved)).toBe(false);
+    expect(swathIsStated(resolved)).toBe(false);
+    // The arithmetic still needs finite numbers; they are simply not claimed.
+    expect(resolved.spec.tank_l).toBeGreaterThan(0);
+    expect(resolved.spec.spray_swath_m).toBeGreaterThan(0);
+  });
+
+  it("treats a full default spec blob as a claim, which is why it must not be passed without an aircraft", () => {
+    // Handing the complete fallback shape over as overrides marks all of it
+    // known. That is correct FOR a custom aircraft whose specs those are, and
+    // wrong for "no aircraft" - so the call site, not this function, decides.
+    const asOverrides = resolveDroneSpec(null, DRONE_SPECS["Custom"]);
+    expect(asOverrides.known.size).toBeGreaterThan(0);
+    expect(tankIsStated(asOverrides)).toBe(true);
+    // A real custom aircraft carrying its own measured tank is still honoured.
+    const realCustom = resolveDroneSpec("Homebrew Hexacopter", { tank_l: 7 });
+    expect(tankIsStated(realCustom)).toBe(true);
+    expect(realCustom.spec.tank_l).toBe(7);
+    expect(swathIsStated(realCustom)).toBe(false);
   });
 
   it("renders a spec sheet with no blank values", () => {
