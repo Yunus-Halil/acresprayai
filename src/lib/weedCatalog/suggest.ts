@@ -15,7 +15,7 @@
 //
 // Importing the catalog changes none of the detector's numbers. It gives the
 // operator a sourced name to pick instead of free text. That is all.
-import type { Candidate } from "../weedScout/types";
+import type { Candidate, FeedbackRow } from "../weedScout/types";
 import type { CatalogEntry, CropContext, FieldRegion } from "./types";
 import { CROP_CONTEXT_LABEL } from "./types";
 
@@ -164,4 +164,94 @@ export function evidenceLabel(e: CatalogEntry): string {
     case "regulatory_only": return "Law listing only";
     default: return "Identification index only";
   }
+}
+
+// ---------------------------------------------------------------------------
+// Picking a name when there is no suggestion
+// ---------------------------------------------------------------------------
+
+/**
+ * The entries the state's crop guide actually names for this field's crop.
+ *
+ * HOW LITTLE THIS NARROWS, SAID OUT LOUD. Virginia's guide names the SAME
+ * sixteen weeds for corn and for soybean (tables 5.12 and 5.47 are the same
+ * list), ten for small grains and thirty-seven for pasture and hay. So the
+ * crop axis separates row crops from small grains from pasture and nothing
+ * finer, and for every crop in the catalog the list is longer than a person
+ * can be asked to treat as a shortlist.
+ *
+ * That is why `tooMany` exists and why it is effectively always true: a list
+ * this long must not be presented as though the top of it were a favourite.
+ * The entries are still worth showing, because clicking one beats typing into
+ * a search box over 755 names, but they are shown as a list to read, not as a
+ * ranking to trust.
+ */
+export type CropShortlist = {
+  entries: RankedEntry[];
+  /** True when the list is too long for any member of it to be favoured. */
+  tooMany: boolean;
+  /** What the list is, and what it is not. Always shown with it. */
+  note: string;
+};
+
+/** Above this many, no member of the list may be presented as a favourite. */
+export const SHORTLIST_LIMIT = 4;
+
+export function cropShortlist(
+  ranked: readonly RankedEntry[],
+  crop: CropContext | null,
+  region: FieldRegion,
+  limit: number = SHORTLIST_LIMIT,
+): CropShortlist {
+  const entries = ranked.filter(r => r.rank === 0);
+  const tooMany = entries.length > limit;
+  const where = `${region.stateName}'s crop guide`;
+  const what = crop ? CROP_CONTEXT_LABEL[crop] : "this crop";
+  const note = entries.length === 0
+    ? `No entry in ${where} is named for ${what}.`
+    : tooMany
+      ? `${entries.length} names are listed for ${what} in ${where}. Too many to narrow, so none is favoured.`
+      : `${entries.length} name${entries.length === 1 ? " is" : "s are"} listed for ${what} in ${where}. The order is not evidence.`;
+  return { entries, tooMany, note };
+}
+
+export type RecentLabel = { name: string; count: number; thisField: boolean };
+
+/**
+ * Names the operator has written on spots they confirmed as weeds, most used
+ * first, the ones from this field ahead of the rest.
+ *
+ * This is a recently-used list, not a claim about the spot on screen. It makes
+ * no assertion at all: it is the operator's own vocabulary handed back to save
+ * them typing, which is the same basis `suggestionsFor` rests on and the only
+ * narrowing in this file that does not depend on the catalog's own ordering.
+ * Rows saved as anything but "weed", and rows with no name on them, teach
+ * nothing and are not counted.
+ */
+export function recentLabels(
+  rows: readonly FeedbackRow[],
+  fieldId: string | null,
+  limit = 6,
+): RecentLabel[] {
+  const tally = new Map<string, RecentLabel>();
+  for (const r of rows) {
+    if (r.verdict !== "weed") continue;
+    const name = r.species?.trim();
+    if (!name) continue;
+    const key = norm(name);
+    const here = !!fieldId && r.fieldId === fieldId;
+    const cur = tally.get(key);
+    if (cur) {
+      cur.count += 1;
+      cur.thisField = cur.thisField || here;
+    } else {
+      tally.set(key, { name, count: 1, thisField: here });
+    }
+  }
+  return [...tally.values()]
+    .sort((a, b) =>
+      Number(b.thisField) - Number(a.thisField) ||
+      b.count - a.count ||
+      a.name.localeCompare(b.name))
+    .slice(0, limit);
 }

@@ -20,7 +20,7 @@ import { CircleMarker, MapContainer, Polygon, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  AlertTriangle, CheckCircle2, ExternalLink, FlaskConical, Loader2, MapPin, Play, Save, Square, X,
+  AlertTriangle, CheckCircle2, FlaskConical, Loader2, MapPin, Play, Save, Square, X,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { type FarmerSettings, growthStage } from "@/lib/farmerSettings";
@@ -43,13 +43,15 @@ import {
 } from "@/lib/weedScout/types";
 import {
   type Identification, REJECTED, UNIDENTIFIED, identificationFromEntry, identificationFromText, isStatedFinding,
-  sourceTextFor,
 } from "@/lib/weedCatalog/identification";
 import { cropContextFor, fieldRegion } from "@/lib/weedCatalog/region";
 import { loadCatalog } from "@/lib/weedCatalog/repo";
 import {
-  type Suggestion, evidenceLabel, narrowCatalog, presenceNote, regulatoryNote, searchRanked, suggestionsFor,
+  type Suggestion, cropShortlist, narrowCatalog, recentLabels, searchRanked, suggestionsFor,
 } from "@/lib/weedCatalog/suggest";
+import { plannedAreaM2, plannedZones } from "@/lib/treatment/plannedArea";
+import { IdentificationBlock } from "./IdentificationBlock";
+import { ScanResults } from "./ScanResults";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, MouseReadout, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
@@ -170,7 +172,7 @@ type Bulk = { phase: "idle" | "saving"; done: number; total: number; error: stri
 
 export function WeedScoutTab({
   boundary, tileUrl, bounds, maxNative, fieldId, taskId, scanCreatedAt, settings, center, setActiveTab,
-  applyAnnotation, removeAnnotation, appliedSpots, cursorCoordRef, cursorZoomRef,
+  applyAnnotation, removeAnnotation, appliedSpots, fieldAreaHa, cursorCoordRef, cursorZoomRef,
 }: {
   boundary: BoundaryRing[] | null;
   tileUrl: string;
@@ -198,6 +200,12 @@ export function WeedScoutTab({
   removeAnnotation: (id: string) => Promise<void>;
   /** Spot id to annotation id, for spots already on Field View. */
   appliedSpots: Record<string, string>;
+  /**
+   * The field's own area, hectares, or null when no boundary area is on file.
+   * Only used to say what share of the field needs nothing; with no number
+   * here the results screen says so rather than inventing a percentage.
+   */
+  fieldAreaHa: number | null;
 }) {
   const units = useUnitSystem();
   const { user } = useAuth();
@@ -226,6 +234,10 @@ export function WeedScoutTab({
   const [singleBusy, setSingleBusy] = useState<"save" | null>(null);
   const [singleError, setSingleError] = useState<string | null>(null);
   const [showAbout, setShowAbout] = useState(false);
+  // Results or map. A finished run lands on the results; "Show map" goes back
+  // to the scouting surface with the same spot selected, and starting another
+  // run returns there too.
+  const [showMap, setShowMap] = useState(false);
 
   const rings = useMemo(() => (boundary ?? []) as unknown as LatLng2[][], [boundary]);
   const capturedAt = scanCreatedAt ?? new Date().toISOString();
@@ -251,6 +263,12 @@ export function WeedScoutTab({
     return () => { cancelled = true; };
   }, [region.state]);
   const narrowed = useMemo(() => narrowCatalog(catalog, { region, crop: cropContext }), [catalog, region, cropContext]);
+  // The state's crop-guide list for this crop, and whether it is short enough
+  // for any member of it to be favoured. For every crop in Virginia's catalog
+  // it is not: see cropShortlist.
+  const shortlist = useMemo(() => cropShortlist(narrowed.ranked, cropContext, region), [narrowed, cropContext, region]);
+  // The operator's own vocabulary, for the chips. Not a claim about any spot.
+  const recent = useMemo(() => recentLabels(feedback, fieldId), [feedback, fieldId]);
 
   const reloadArchive = useCallback(() => {
     listObservations(taskId)
@@ -267,6 +285,22 @@ export function WeedScoutTab({
     [candidates, catalog],
   );
 
+  // ---- How much ground, answered by the planner's own function -------------
+  //
+  // Not by summing the areas these spots would store. The planner ignores
+  // those: it drops any zone centred outside the boundary, insets the rest by
+  // the headland and re-measures (lib/treatment/plannedArea.ts). Calling the
+  // same function here is the only way the acreage on this screen and the
+  // acreage one tab over can be the same number, and a region wide enough to
+  // take a headland is where they used to differ most.
+  const plannedById = useMemo(() => {
+    const rings = candidates.map(c => ({ id: c.id, ring: annotationFromCandidate(c).ring, source: "user" as const }));
+    const planned = plannedZones(rings, rings.length ? (boundary as LatLng2[][] | null) : null, params.headlandM);
+    return new Map(planned.map(z => [z.id, z.areaM2]));
+  }, [candidates, boundary, params.headlandM]);
+  /** Planned area for one spot, or null when the planner would not carry it. */
+  const areaOf = useCallback((c: Candidate): number | null => plannedById.get(c.id) ?? null, [plannedById]);
+
   // Effective state per spot: the operator's edit, else the archive, else the default.
   const verdictOf = useCallback((c: Candidate): Verdict => verdicts[c.id] ?? saved[c.id]?.verdict ?? defaultVerdict(c), [verdicts, saved]);
   const identificationOf = useCallback(
@@ -279,6 +313,7 @@ export function WeedScoutTab({
 
   const run = useCallback(() => {
     if (!rings.length || !tileUrl || running) return;
+    setShowMap(false);
     startRun(taskId,
       { boundary: rings, tileUrl, maxNative, params, feedback },
       { context, crop, growthStage: stage, fieldId, unitSystem: units });
@@ -375,6 +410,19 @@ export function WeedScoutTab({
     loadFeedback().then(setFeedback).catch(() => { /* keep */ });
   }, [candidates, bulk.phase, saveAndSync]);
 
+  /**
+   * Save everything, then hand over to the Flight Planner.
+   *
+   * The hand-off is the whole point of the button: the planner already groups
+   * these zones by what the operator said they are, prices them at the rates
+   * the operator already set, and refuses to compute quantities it cannot
+   * defend. Nothing about a product or a rate is decided here.
+   */
+  const buildMission = useCallback(async () => {
+    await saveAll();
+    setActiveTab("planner");
+  }, [saveAll, setActiveTab]);
+
   // Identification actions for the selected spot.
   const setIdent = (id: Identification) => { if (selected) setIdentifications(m => ({ ...m, [selected.id]: id })); };
   const setVerdict = (c: Candidate, v: Verdict) => setVerdicts(m => ({ ...m, [c.id]: v }));
@@ -395,6 +443,19 @@ export function WeedScoutTab({
     if (verdictOf(selected) !== "weed") setVerdict(selected, "weed");
   };
   const typeName = (text: string) => { setFreeText(text); setIdent(text.trim() ? identificationFromText(text) : UNIDENTIFIED); };
+  /**
+   * A name the operator has used before. If it is in the catalog it is picked
+   * as that entry, with the entry's source; if it is not, it is their own text,
+   * recorded as such. Either way it is their statement, never a suggestion.
+   */
+  const pickName = (name: string) => {
+    if (!selected) return;
+    const hit = narrowed.ranked.find(r => r.entry.common_name.toLowerCase() === name.trim().toLowerCase());
+    if (hit) { pickEntry(hit.entry, `You have used this name before. ${hit.why}`); return; }
+    setIdent(identificationFromText(name));
+    setPickerQuery(""); setFreeText("");
+    if (verdictOf(selected) !== "weed") setVerdict(selected, "weed");
+  };
   const pickerResults = useMemo(
     () => (pickerQuery.trim() ? searchRanked(narrowed.ranked, pickerQuery).slice(0, 8) : []),
     [narrowed, pickerQuery],
@@ -431,6 +492,58 @@ export function WeedScoutTab({
   };
   const spotColour = (c: Candidate) => (c.region ? CLASS_COLOUR[c.region.klass] : KIND_COLOUR[c.kind]);
   const selectedIndex = selected ? candidates.indexOf(selected) : -1;
+
+  /** The identification wiring, shared by the results rows and the map panel. */
+  const identificationProps = {
+    shortlist, recent,
+    searchResults: pickerResults,
+    searchQuery: pickerQuery,
+    onSearchQuery: setPickerQuery,
+    freeText,
+    onFreeText: typeName,
+    listNote: narrowed.note,
+    region,
+    catalogSize: catalog.length,
+    catalogError,
+    onConfirmSuggestion: confirmSuggestion,
+    onSetIdentification: setIdent,
+    onPickEntry: pickEntry,
+    onPickRecent: pickName,
+  };
+
+  // ---- Results ------------------------------------------------------------
+  //
+  // A finished run shows what it found rather than leaving the operator to
+  // work a map and a 400 px sidebar. The map is a click away and keeps the
+  // same selection; every decision on both surfaces writes to the same
+  // session, so neither is a second copy of the review.
+  if (result && !showMap && !running) {
+    return (
+      <ScanResults
+        candidates={candidates}
+        units={units}
+        treatAreaM2={plannedAreaM2(kept.map(c => ({ areaM2: areaOf(c) ?? 0 })))}
+        fieldAreaM2={fieldAreaHa != null && fieldAreaHa > 0 ? fieldAreaHa * 10_000 : null}
+        areaOf={areaOf}
+        verdictOf={verdictOf}
+        setVerdict={setVerdict}
+        identificationOf={identificationOf}
+        notesOf={notesOf}
+        setNotes={(c, text) => setNotesById(m => ({ ...m, [c.id]: text }))}
+        suggestionOf={c => suggestionById.get(c.id) ?? null}
+        isSaved={c => !!saved[c.id]}
+        isOnField={c => !!applied[c.id]}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        {...identificationProps}
+        onShowMap={() => setShowMap(true)}
+        onBuildMission={buildMission}
+        building={bulk.phase === "saving" ? { done: bulk.done, total: bulk.total } : null}
+        buildError={bulk.error}
+        canBuild={!!user && !!context}
+      />
+    );
+  }
 
   return (
     <div className="absolute inset-0 flex" style={{ background: "#0f0f0f" }}>
@@ -509,6 +622,11 @@ export function WeedScoutTab({
               <button type="button" onClick={run} disabled={!tileUrl || busy} className={btnPrimary}><Play className="h-3.5 w-3.5" /> Scan this field</button>
             ) : (
               <button type="button" onClick={() => stopRun(taskId)} className={btnQuiet}><Square className="h-3.5 w-3.5" /> Stop</button>
+            )}
+            {result && !running && (
+              <button type="button" onClick={() => setShowMap(false)} className={btnQuiet}>
+                <FlaskConical className="h-3.5 w-3.5 text-[#4CAF50]" /> Back to results
+              </button>
             )}
             {progress && (
               <div className="text-[11px] text-neutral-400 inline-flex items-center gap-1.5 min-w-0">
@@ -665,79 +783,14 @@ export function WeedScoutTab({
                 })}
               </div>
 
-              {/* Identification */}
+              {/* Identification. The same component the results rows use, so
+                  the two surfaces cannot drift into two different decisions. */}
               {!isDismissal(verdictOf(selected)) && (
-                <div className="border border-[#222] rounded-sm p-3 space-y-2" style={{ background: "#161616" }}>
-                  <div className={labelCls}>What weed is it? (your call)</div>
-                  {suggestion && identification.status !== "confirmed" && identification.status !== "rejected" && (
-                    <div className="border border-[#38bdf8]/40 rounded-sm p-2 space-y-1.5" style={{ background: "#0f171c" }}>
-                      <div className="text-[11px] text-neutral-200">
-                        Suggested: <span className="font-semibold">{suggestion.entry.common_name}</span>{" "}
-                        <span className="italic text-neutral-400">{suggestion.entry.scientific_name_as_source}</span>
-                        <span className="ml-1 text-[9px] uppercase tracking-wider text-[#7dd3fc] border border-[#38bdf8]/40 rounded-sm px-1">suggested</span>
-                      </div>
-                      <div className="text-[10px] text-neutral-400">{suggestion.basis}</div>
-                      <div className="text-[10px] text-neutral-500">{evidenceLabel(suggestion.entry)}. {presenceNote(suggestion.entry)}</div>
-                      {regulatoryNote(suggestion.entry) && <div className="text-[10px] text-amber-400/90">{regulatoryNote(suggestion.entry)}</div>}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button type="button" onClick={confirmSuggestion} className="text-[11px] bg-[#38bdf8] hover:bg-[#0ea5e9] text-black rounded-sm px-2.5 py-1 font-semibold">Confirm</button>
-                        <button type="button" onClick={() => setIdent(REJECTED)} className="text-[11px] border border-[#333] text-neutral-300 hover:bg-[#1f1f1f] rounded-sm px-2.5 py-1">Reject</button>
-                        <a href={`/app/weeds?id=${encodeURIComponent(suggestion.entry.catalog_id)}`} target="_blank" rel="noreferrer" className="text-[10px] underline text-neutral-400 inline-flex items-center gap-1">Weed Library <ExternalLink className="h-3 w-3" /></a>
-                      </div>
-                    </div>
-                  )}
-                  {identification.status !== "unidentified" ? (
-                    <div className="text-[11px] flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        {identification.status === "rejected" ? (
-                          <span className="text-neutral-400">Suggestion rejected. Not identified.</span>
-                        ) : (
-                          <>
-                            <span className="text-[#7dd3fc] font-semibold">{identification.label}</span>
-                            <span className="ml-1 text-[9px] uppercase tracking-wider text-[#7dd3fc] border border-[#38bdf8]/40 rounded-sm px-1">{identification.status === "confirmed" ? "user confirmed" : "user identified"}</span>
-                            <div className="text-[10px] text-neutral-600 break-all">Source: {identification.source}</div>
-                            {identification.catalogId && (
-                              <a href={`/app/weeds?id=${encodeURIComponent(identification.catalogId)}`} target="_blank" rel="noreferrer" className="text-[10px] underline text-neutral-400 inline-flex items-center gap-1">Open in Weed Library <ExternalLink className="h-3 w-3" /></a>
-                            )}
-                          </>
-                        )}
-                      </div>
-                      <button type="button" onClick={() => { setIdent(UNIDENTIFIED); setFreeText(""); }} className="text-[10px] underline text-neutral-500 hover:text-neutral-200 shrink-0">Change</button>
-                    </div>
-                  ) : (
-                    <div className="text-[11px] text-neutral-500">Not identified. <span className="text-[9px] uppercase tracking-wider border border-[#333] rounded-sm px-1">unidentified</span> It stays a weed spot without a name unless you pick one.</div>
-                  )}
-                  {(identification.status === "unidentified" || identification.status === "rejected") && (
-                    <>
-                      <div className="relative">
-                        <input className={inputCls}
-                          placeholder={catalog.length ? `Search the ${region.stateName} list by common or scientific name` : catalogError ? "Reference list unavailable" : "Reference list loading"}
-                          value={pickerQuery} onChange={e => setPickerQuery(e.target.value)} disabled={!catalog.length} />
-                        {pickerResults.length > 0 && (
-                          <ul className="mt-1 border border-[#222] rounded-sm divide-y divide-[#1f1f1f] max-h-56 overflow-y-auto" style={{ background: "#0f0f0f" }}>
-                            {pickerResults.map(({ entry: e, why }) => (
-                              <li key={e.catalog_id}>
-                                <button type="button" onClick={() => pickEntry(e, why)} className="w-full text-left px-2 py-1.5 hover:bg-[#1a1a1a]">
-                                  <div className="text-[11px] text-neutral-200">
-                                    {e.common_name} <span className="italic text-neutral-500">{e.scientific_name_as_source}</span>
-                                    {e.regulatory_tier && <span className="ml-1 text-[9px] uppercase tracking-wider text-amber-400/90 border border-amber-400/40 rounded-sm px-1">{e.regulatory_tier} noxious (legal status)</span>}
-                                    {e.usda_status === "unmatched_requires_review" && <span className="ml-1 text-[9px] uppercase tracking-wider text-neutral-500 border border-[#333] rounded-sm px-1">name unresolved</span>}
-                                  </div>
-                                  <div className="text-[10px] text-neutral-500">{evidenceLabel(e)}. {why}</div>
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        {pickerQuery.trim() && catalog.length > 0 && pickerResults.length === 0 && (
-                          <div className="text-[10px] text-neutral-500 mt-1">No name in the {region.stateName} list matches. Type it below if you know it.</div>
-                        )}
-                      </div>
-                      <input className={inputCls} placeholder="Or type a name or group yourself" value={freeText} onChange={e => typeName(e.target.value)} maxLength={120} />
-                      <div className="text-[10px] text-neutral-600">{narrowed.note}</div>
-                    </>
-                  )}
-                </div>
+                <IdentificationBlock
+                  identification={identification}
+                  suggestion={suggestion}
+                  {...identificationProps}
+                />
               )}
 
               <input className={inputCls} placeholder="Notes" value={notesOf(selected)} onChange={e => setNotesById(m => ({ ...m, [selected.id]: e.target.value }))} maxLength={300} />

@@ -3,10 +3,11 @@
 import { describe, expect, it } from "vitest";
 import { cropContextFor, fieldRegion } from "@/lib/weedCatalog/region";
 import {
-  entriesNamed, evidenceLabel, narrowCatalog, presenceNote, regulatoryNote, searchRanked, suggestionsFor,
+  SHORTLIST_LIMIT, cropShortlist, entriesNamed, evidenceLabel, narrowCatalog, presenceNote, recentLabels,
+  regulatoryNote, searchRanked, suggestionsFor,
 } from "@/lib/weedCatalog/suggest";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
-import type { Candidate, Feedback } from "@/lib/weedScout/types";
+import type { Candidate, Feedback, FeedbackRow } from "@/lib/weedScout/types";
 
 const entry = (over: Partial<CatalogEntry>): CatalogEntry => ({
   catalog_id: "VT-0", state: "VA", catalog_version: "0.1.0", as_of: "2026-09-22",
@@ -134,3 +135,126 @@ describe("cropContextFor maps the field's crop setting to a guide table, or to n
     expect(cropContextFor(undefined)).toBeNull();
   });
 });
+
+describe("cropShortlist: a list to read, not a ranking to trust", () => {
+  const region = fieldRegion();
+
+  it("says how many there are and refuses to favour one when there are too many", () => {
+    // Virginia's guide names the same sixteen weeds for corn as for soybean,
+    // so in the real catalog this state is permanent for every row crop.
+    const many = narrowCatalog([...CATALOG, ...moreCornEntries(5)], { region, crop: "corn" });
+    const s = cropShortlist(many.ranked, "corn", region);
+    expect(s.entries.length).toBe(6);
+    expect(s.tooMany).toBe(true);
+    expect(s.note).toMatch(/^6 names are listed for corn in Virginia's crop guide\./);
+    expect(s.note).toMatch(/Too many to narrow, so none is favoured\./);
+  });
+
+  it("keeps every crop-named entry in the list even when it refuses to favour one", () => {
+    const many = narrowCatalog([...CATALOG, ...moreCornEntries(5)], { region, crop: "corn" });
+    const s = cropShortlist(many.ranked, "corn", region);
+    // The point of the list is that clicking beats typing. Nothing is hidden.
+    expect(s.entries.every(r => r.rank === 0)).toBe(true);
+    expect(s.entries.map(r => r.entry.catalog_id)).toContain("VT-10");
+  });
+
+  it("states the order is not evidence when the list is short enough to show plainly", () => {
+    const { ranked } = narrowCatalog(CATALOG, { region, crop: "corn" });
+    const s = cropShortlist(ranked, "corn", region);
+    expect(s.entries.length).toBe(1);
+    expect(s.tooMany).toBe(false);
+    expect(s.note).toMatch(/1 name is listed for corn/);
+    expect(s.note).toMatch(/The order is not evidence\./);
+  });
+
+  it("says so plainly when the guide names nothing for this crop", () => {
+    const { ranked } = narrowCatalog(CATALOG, { region, crop: null });
+    const s = cropShortlist(ranked, null, region);
+    expect(s.entries).toEqual([]);
+    expect(s.note).toMatch(/No entry in Virginia's crop guide is named for this crop\./);
+  });
+
+  it("never carries an entry the guide does not name for this crop", () => {
+    const { ranked } = narrowCatalog(CATALOG, { region, crop: "corn" });
+    const s = cropShortlist(ranked, "corn", region);
+    // buttercup is pasture-only and salvinia is law-only: neither is corn.
+    const ids = s.entries.map(r => r.entry.catalog_id);
+    expect(ids).not.toContain("VT-50");
+    expect(ids).not.toContain("VAC-1");
+  });
+
+  it("the limit is the documented one", () => {
+    expect(SHORTLIST_LIMIT).toBe(4);
+    const four = narrowCatalog([...CATALOG, ...moreCornEntries(3)], { region, crop: "corn" });
+    expect(cropShortlist(four.ranked, "corn", region).tooMany).toBe(false);
+    const five = narrowCatalog([...CATALOG, ...moreCornEntries(4)], { region, crop: "corn" });
+    expect(cropShortlist(five.ranked, "corn", region).tooMany).toBe(true);
+  });
+});
+
+describe("recentLabels: the operator's own vocabulary, handed back", () => {
+  const row = (over: Partial<FeedbackRow>): FeedbackRow => ({
+    kind: "off-row vegetation", verdict: "weed", species: "common ragweed",
+    vector: [1], fieldId: "field-1", ...over,
+  });
+
+  it("counts only names the operator wrote on spots they confirmed as weeds", () => {
+    const out = recentLabels([
+      row({ species: "common ragweed" }),
+      row({ species: "common ragweed" }),
+      row({ species: "Johnsongrass" }),
+      row({ verdict: "not_weed", species: "should not count" }),
+      row({ verdict: "unsure", species: "should not count either" }),
+      row({ verdict: "crop", species: "nor this" }),
+      row({ species: null }),
+      row({ species: "   " }),
+    ], "field-1");
+    expect(out.map(r => r.name)).toEqual(["common ragweed", "Johnsongrass"]);
+    expect(out[0].count).toBe(2);
+    expect(out.every(r => r.thisField)).toBe(true);
+  });
+
+  it("puts names used on this field ahead of names used elsewhere, however often", () => {
+    const out = recentLabels([
+      row({ species: "elsewhere", fieldId: "other", }),
+      row({ species: "elsewhere", fieldId: "other" }),
+      row({ species: "elsewhere", fieldId: "other" }),
+      row({ species: "here", fieldId: "field-1" }),
+    ], "field-1");
+    expect(out.map(r => r.name)).toEqual(["here", "elsewhere"]);
+    expect(out[0].thisField).toBe(true);
+    expect(out[1].thisField).toBe(false);
+  });
+
+  it("treats differently-cased spellings as one name and keeps the first spelling seen", () => {
+    const out = recentLabels([
+      row({ species: "Common Ragweed" }),
+      row({ species: "common ragweed" }),
+    ], "field-1");
+    expect(out.length).toBe(1);
+    expect(out[0].name).toBe("Common Ragweed");
+    expect(out[0].count).toBe(2);
+  });
+
+  it("is empty with no archive, and honours the limit", () => {
+    expect(recentLabels([], "field-1")).toEqual([]);
+    const many = Array.from({ length: 12 }, (_, i) => row({ species: `weed ${i}` }));
+    expect(recentLabels(many, "field-1").length).toBe(6);
+    expect(recentLabels(many, "field-1", 2).length).toBe(2);
+  });
+
+  it("works with no field on the scan, marking nothing as this field's", () => {
+    const out = recentLabels([row({ fieldId: "field-1" })], null);
+    expect(out.length).toBe(1);
+    expect(out[0].thisField).toBe(false);
+  });
+});
+
+/** Extra corn-named entries, for sizing the shortlist's refusal. */
+function moreCornEntries(n: number): CatalogEntry[] {
+  return Array.from({ length: n }, (_, i) => entry({
+    catalog_id: `VT-90${i}`, common_name: `corn weed ${i}`,
+    crop_evidence: [{ crop: "corn", source_id: "VT_PMG_2026", locator: "Table 5.12" }],
+    crop_contexts: ["corn"], catalog_status: "crop_context_sourced",
+  }));
+}

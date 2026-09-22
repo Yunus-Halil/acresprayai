@@ -1132,10 +1132,15 @@ export default function OrthomosaicViewer() {
             scanCreatedAt={task.created_at ?? null}
             settings={settings}
             center={center}
-            setActiveTab={setActiveTab}
+            /* openTab, not setActiveTab: this one navigates to a tab the
+               operator may never have opened, and the tab strip renders only
+               what is in `openTabs` while the content guard reads `activeTab`.
+               Selecting an unopened tab renders it with nothing highlighted. */
+            setActiveTab={openTab}
             applyAnnotation={insertUserAnnotation}
             removeAnnotation={deleteUserPolygon}
             appliedSpots={appliedSpots}
+            fieldAreaHa={field?.boundary_area_hectares ?? null}
             cursorCoordRef={cursorCoordRef}
             cursorZoomRef={cursorZoomRef}
           />
