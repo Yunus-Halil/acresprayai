@@ -33,6 +33,7 @@ export type ResolutionMethod =
   | "colorinterp"    // GDAL colour interpretation named the RGB roles.
   | "convention"     // RGB named + exactly one spare spectral band = NIR.
   | "profile"        // Matched a known sensor arrangement by band count.
+  | "operator"       // The operator identified the bands directly (ortho-import).
   | "unresolved";    // Could not be established. No index claim is made.
 
 export type VegetationIndex = "ndvi" | "ndre" | "vari";
@@ -279,6 +280,34 @@ export function expressionFor(
     expression: "(b2-b1)/(b2+b1-b3)",
     index: "vari",
     label: INDEX_DEFS.vari.label,
+  };
+}
+
+/**
+ * Build a `BandAnalysis` from bands the OPERATOR identified directly, rather
+ * than from heuristics run over a `/cog/info` response.
+ *
+ * This is the ortho-import path: a farmer uploading their own GeoTIFF (a
+ * Phantom 4 Multispectral capture, for instance) is told the band count and
+ * picks which is red, green and blue themselves. That is more reliable than
+ * any heuristic here — a human looking at the sensor's own documentation
+ * beats guessing from a band count TiTiler happens to report — so `method`
+ * is recorded as "operator" and `roles` is used exactly as given, never
+ * second-guessed. Reuses `indicesFor`/`fingerprintOf` so an operator-supplied
+ * green+red+blue still resolves VARI and an eventual nir/rededge pick still
+ * resolves NDVI/NDRE through the same logic every other path uses.
+ */
+export function operatorBandAnalysis(total: number, roles: BandRoles): BandAnalysis {
+  const available = indicesFor(roles);
+  const hasNDVI = available.includes("ndvi");
+  const best: VegetationIndex | null = hasNDVI ? "ndvi" : available.includes("vari") ? "vari" : null;
+  const named = (Object.entries(roles) as [BandRole, number][])
+    .map(([role, idx]) => `${role} b${idx}`).join(", ");
+  return {
+    total, spectral: total, hasAlpha: false, roles, method: "operator",
+    available, hasNDVI, ambiguousMultispectral: false,
+    fingerprint: fingerprintOf(best, roles),
+    reason: `${total} band(s), mapped by the operator at import: ${named || "none identified"}.`,
   };
 }
 

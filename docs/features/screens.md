@@ -35,6 +35,18 @@ because it cascades to every scan.
 Creating a field asks only for name, location and notes — crop and size come later, since size is
 *measured* from the drawn boundary rather than typed.
 
+Two tabs in the creation dialog, not two flows for the same thing: **Fly & upload images** is
+the flow above, unchanged. **Import an orthomosaic** skips reconstruction entirely - the
+operator uploads an already-finished GeoTIFF (their own, or one from a Phantom 4 Multispectral
+or similar sensor), and the file's own header supplies the CRS, dimensions and bounds, so no
+boundary drawing is required to start (one can still be drawn afterward in Field View to narrow
+the scan area). The dialog shows exactly what it read - dimensions, GSD, CRS, band count - and
+refuses plainly if the file is ungeoreferenced, geographic rather than projected, not in
+metres, non-square-pixel or rotated. A file that is not 3-band (the P4 Multispectral case, five
+bands) requires the operator to say which band is red, green and blue before Import unlocks;
+nothing here ever assumes bands 1-3, which on a five-band file would be a plausible-looking,
+wrong-coloured image. See `docs/pipeline/edge-functions.md`'s `ortho-import` entry.
+
 Empty state walks a new user into creating their first field.
 
 ## Field detail — `/app/fields/:id`

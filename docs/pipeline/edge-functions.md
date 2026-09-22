@@ -45,6 +45,51 @@ UI stops polling.
 
 ---
 
+## `ortho-import` — bring in an already-finished GeoTIFF, no ODM involved
+
+**Auth:** JWT required. A single `POST` endpoint switched by `?action=`.
+
+The second way a field gets its first scan: the operator already has a finished orthomosaic
+(their own GeoTIFF, or one from a Phantom 4 Multispectral or similar sensor) and wants it in
+without flying it through OpenDroneMap. The client validates the file's own header first
+(`src/lib/orthoImport.ts`, via geotiff.js) - refusing anything ungeoreferenced, geographic,
+non-metre, non-square-pixel or rotated, the same conditions `offrow/io.py` refuses - and only
+then calls this function. The function never re-parses the TIFF; its job is auth, ownership and
+storage, the same trust boundary `odm-submit` already draws around the client's own GPS-EXIF
+check on drone photos.
+
+### `action=init`
+Body: `{ field_id }`.
+
+Verifies the field belongs to the caller, mints a `crypto.randomUUID()` to stand in for
+`odm_uuid` (nothing on this path ever talks to the processing node), and a signed **upload**
+URL for `orthos/{user_id}/{odm_uuid}.tif` via `createSignedUploadUrl`. Inserts the `odm_tasks`
+row as `status: "uploading"` so a dropped upload leaves a visible, deletable scan rather than
+nothing.
+
+Returns `{ task_id, odm_uuid, path, token }`. The client uploads the file straight to storage
+with `uploadToSignedUrl(path, token, file)` - the GeoTIFF itself never passes through this
+function's request body, for the same reason `odm-poll` streams `all.zip` rather than buffering
+it.
+
+### `action=commit`
+Body: `{ task_id, band_count, band_mapping }`. `band_mapping` must name `red`, `green` and
+`blue` band indices (1-based); `nir`/`rededge` are accepted too but not required.
+
+Confirms the object actually landed in `orthos` (a `storage.list` check), builds a
+`BandAnalysis` via `_shared/bands.ts`'s `operatorBandAnalysis` — an operator-supplied mapping is
+recorded with `method: "operator"`, never re-derived — and writes `status: "completed"`,
+`ortho_path`, `band_mapping`. From here `ortho-url` and `bake-tiles` treat the row exactly like
+a scan ODM finished: `ortho_path` is already set, so `ortho-url` skips its ODM branch entirely,
+and `bake-tiles` reads `band_mapping.roles` straight off the row without probing TiTiler for
+band order.
+
+Refuses (422) if the file never reached storage, and (400) if `band_mapping` omits red, green
+or blue - a 3-band file still carries an explicit `{red:1,green:2,blue:3}` from the client,
+never an implicit one.
+
+---
+
 ## `odm-poll` — advance status, mirror outputs
 
 **Auth:** JWT required. **Body:** `{ task_id, retry? }`.

@@ -467,7 +467,12 @@ export default function FieldDetail() {
               <div className="min-w-0">
                 <div className="font-medium flex items-center gap-2">
                   <MapIcon className="h-4 w-4 text-primary" />
-                  Scan · {t.image_count} image{t.image_count === 1 ? "" : "s"}
+                  {/* An imported orthomosaic never had drone images of its own
+                      to count - image_count stays 0, and "0 images" would
+                      read as a broken scan rather than a different origin. */}
+                  {t.image_count > 0
+                    ? <>Scan · {t.image_count} image{t.image_count === 1 ? "" : "s"}</>
+                    : <>Imported orthomosaic</>}
                 </div>
                 <div className="text-xs text-muted-foreground mt-0.5">
                   {new Date(t.created_at).toLocaleString()}
@@ -514,7 +519,12 @@ export default function FieldDetail() {
                       </a>
                     </Button>
                   )}
-                  <Button size="sm" variant="outline" onClick={() => downloadZip(t)}><Download className="h-3.5 w-3.5" /> Download</Button>
+                  {/* An imported orthomosaic never had a raw-image archive to
+                      download - there is no `all.zip` for it, so the button
+                      that would silently no-op on click does not render. */}
+                  {t.output_path && (
+                    <Button size="sm" variant="outline" onClick={() => downloadZip(t)}><Download className="h-3.5 w-3.5" /> Download</Button>
+                  )}
                 </>
               )}
               {ACTIVE_STATUSES.includes(t.status) && t.status !== "uploading" && (

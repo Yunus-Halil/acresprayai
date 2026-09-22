@@ -10,10 +10,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Trash2, ArrowRight, Leaf, MapPin, Pencil, Check, X } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, Trash2, ArrowRight, Leaf, MapPin, Pencil, Check, X, Upload, FileUp } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { PAGE_SIZE, appendPage, hasMore, pageRange } from "@/lib/pagination";
+import ImportOrthomosaicForm from "@/components/app/ImportOrthomosaicForm";
 
 type DBField = {
   id: string;
@@ -120,18 +122,29 @@ export default function Fields() {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild><Button><Plus className="h-4 w-4" /> New field</Button></DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Step 1 · Create a field</DialogTitle>
-              <div className="text-xs text-muted-foreground">After saving, you'll be taken to the field where you can upload drone images.</div>
+              <div className="text-xs text-muted-foreground">After saving, you'll be taken to the field where you can review it.</div>
             </DialogHeader>
-            <form onSubmit={add} className="space-y-3">
-              <div><Label>Name</Label><Input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="North vineyard" /></div>
-              <div><Label>Location</Label><Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="optional" /></div>
-              <div><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="optional" /></div>
-              <p className="text-xs text-muted-foreground">Crop and field size are set later, crop in Settings, size measured from your boundary.</p>
-              <Button type="submit" className="w-full">Create field & continue <ArrowRight className="h-4 w-4" /></Button>
-            </form>
+            <Tabs defaultValue="fly" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="fly" className="gap-1.5"><Upload className="h-3.5 w-3.5" /> Fly & upload images</TabsTrigger>
+                <TabsTrigger value="import" className="gap-1.5"><FileUp className="h-3.5 w-3.5" /> Import an orthomosaic</TabsTrigger>
+              </TabsList>
+              <TabsContent value="fly" className="pt-1">
+                <form onSubmit={add} className="space-y-3">
+                  <div><Label>Name</Label><Input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="North vineyard" /></div>
+                  <div><Label>Location</Label><Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="optional" /></div>
+                  <div><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="optional" /></div>
+                  <p className="text-xs text-muted-foreground">Crop and field size are set later, crop in Settings, size measured from your boundary.</p>
+                  <Button type="submit" className="w-full">Create field & continue <ArrowRight className="h-4 w-4" /></Button>
+                </form>
+              </TabsContent>
+              <TabsContent value="import" className="pt-1">
+                <ImportOrthomosaicForm onImported={(id) => { setOpen(false); navigate(`/app/fields/${id}`); }} />
+              </TabsContent>
+            </Tabs>
           </DialogContent>
         </Dialog>
       </header>

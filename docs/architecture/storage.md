@@ -6,7 +6,7 @@ signed URLs minted by an edge function, or streams bytes through the `tile` prox
 | Bucket | Path convention | Contents |
 |---|---|---|
 | `scans` | `{user_id}/odm/{odm_uuid}/all.zip` | The complete OpenDroneMap output archive, mirrored off the processing node |
-| `orthos` | `{user_id}/{odm_uuid}.tif` | The extracted orthophoto GeoTIFF. This is the file TiTiler renders from |
+| `orthos` | `{user_id}/{odm_uuid}.tif` | The extracted orthophoto GeoTIFF. This is the file TiTiler renders from | An imported orthomosaic (`ortho-import`) lands at the identical path, keyed on a locally-generated `odm_uuid` rather than one ODM issued - every downstream reader only ever looks at the path, never at where the uuid came from |
 | `tiles` | `{user_id}/{odm_uuid}/{z}/{x}/{y}.png` | Pre-baked XYZ map tiles |
 | `field-reports` | `{user_id}/{field_id}/{task_id}/{timestamp}.pdf` | Generated mission report PDFs |
 
