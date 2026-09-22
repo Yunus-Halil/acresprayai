@@ -2,12 +2,14 @@
 // reconstruction involved.
 //
 // The client has already parsed the file's own header (src/lib/orthoImport.ts,
-// using geotiff.js) and refused anything ungeoreferenced, geographic, non-metre,
-// non-square-pixel or rotated — the same conditions offrow/io.py checks, and
-// for the same reason: fail at the door, not three screens later as a black
-// map or a wrong-coloured one. This function trusts that check the way
-// odm-submit trusts the client's own GPS-EXIF check on drone photos; the
-// server's job is auth, ownership and storage, not re-parsing a TIFF.
+// using geotiff.js) and refused only what would make it unplaceable on a map
+// at all: not a TIFF, or no identifiable CRS. A geographic CRS, a non-metre
+// unit, non-square pixels and a rotated transform are all accepted - TiTiler
+// (bake-tiles) reprojects any of that onto standard web tiles as a matter of
+// routine, the same way it already handles ODM's own orthophotos. This
+// function trusts the client's TIFF check the way odm-submit trusts the
+// client's own GPS-EXIF check on drone photos; the server's job is auth,
+// ownership and storage, not re-parsing a TIFF.
 //
 // TWO CALLS, like odm-submit's init/commit, because the file itself never
 // touches this function. `init` mints a signed upload URL so the browser PUTs

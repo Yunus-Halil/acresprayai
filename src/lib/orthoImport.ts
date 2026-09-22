@@ -5,14 +5,31 @@
 //
 //   readOrthoMetadata   reads the file's OWN header (geotiff.js, header only —
 //                       never the pixel data, so this is cheap even on a
-//                       multi-gigabyte COG) and refuses anything the rest of
-//                       the pipeline could not honestly render: no
-//                       georeferencing, a geographic CRS, a non-metre
-//                       projected CRS, non-square pixels, or a rotated
-//                       transform. These are exactly the conditions
-//                       offrow/io.py already refuses, for the same reason:
-//                       say which one, and stop, rather than fail three
-//                       screens later as a black map or a wrong-coloured one.
+//                       multi-gigabyte COG) and refuses only what THIS
+//                       pipeline could not honestly render: an unparseable
+//                       file, or one with no identifiable CRS at all.
+//
+//                       EARLIER VERSIONS ALSO REFUSED a geographic CRS, a
+//                       non-metre unit, non-square pixels and a rotated
+//                       transform — borrowed from offrow/io.py, which refuses
+//                       those because it does row-spacing and blob-area math
+//                       directly against raw pixels in the file's own CRS.
+//                       This pipeline never does that: every imported file
+//                       goes through TiTiler (bake-tiles), which reprojects
+//                       ANY CRS — geographic or projected, square pixels or
+//                       not, rotated or not — onto standard web tiles as a
+//                       matter of routine, the same way it already handles
+//                       ODM's own orthophotos (commonly plain WGS84
+//                       geographic to begin with). By the time Weed Scout or
+//                       anything else in this app reads a pixel, it has come
+//                       from that already-reprojected WebMercator tile
+//                       pyramid, in lat/lng, regardless of what CRS the
+//                       original GeoTIFF was in. Refusing a valid geographic
+//                       file here was refusing normal photogrammetry output
+//                       for a constraint that belongs to a different
+//                       pipeline. GSD is still computed and shown for a
+//                       geographic file, converted from degrees to metres at
+//                       the raster's own latitude, for the read-out only.
 //
 //   runOrthoImport      uploads the file straight to Supabase Storage via a
 //                       signed URL the server mints (ortho-import's `init`),
@@ -32,6 +49,7 @@
 // failure mode worth refusing outright rather than rendering.
 import { fromBlob } from "geotiff";
 import { supabase } from "@/integrations/supabase/client";
+import { M_PER_DEG_LAT, mPerDegLng } from "@/lib/geo";
 
 // Mirrors supabase/functions/_shared/bands.ts's BandRole. Duplicated rather
 // than imported: the edge functions are a separate Deno program (their own
@@ -50,19 +68,22 @@ async function authHeader(): Promise<string> {
 // GeoTIFF GTModelTypeGeoKey values (GeoTIFF 1.1 spec, section 6.3.1.1).
 const MODEL_TYPE_PROJECTED = 1;
 const MODEL_TYPE_GEOGRAPHIC = 2;
-// ProjLinearUnitsGeoKey / GeogLinearUnitsGeoKey value for the metre (EPSG 9001).
-const LINEAR_UNIT_METRE = 9001;
-/** Non-square pixels beyond this relative difference are refused. */
-const SQUARE_PIXEL_TOLERANCE = 0.01;
-/** A shear/rotation term this large relative to the pixel scale is refused. */
-const ROTATION_TOLERANCE = 1e-6;
+// Linear unit codes (EPSG) this module can convert to metres for the GSD
+// read-out. Anything else is shown as-is with the unit named rather than
+// guessed — the display is informational, never a gate.
+const LINEAR_UNIT_TO_METRES: Record<number, number> = {
+  9001: 1,            // metre
+  9002: 0.3048006096, // US survey foot
+  9003: 0.3048,       // international foot
+  9005: 0.9144,       // international yard
+};
 
 export type OrthoMetadata = {
   ok: true;
   widthPx: number;
   heightPx: number;
   bandCount: number;
-  /** Ground sample distance in metres per pixel, averaged over x and y (they agree within tolerance). */
+  /** Ground sample distance in metres per pixel, averaged over x and y. For a geographic CRS this is converted from degrees at the raster's own latitude, for display only. */
   gsdM: number;
   epsg: number | null;
   crsLabel: string;
@@ -74,7 +95,15 @@ export type OrthoRefusal = { ok: false; reason: string };
 
 const bail = (reason: string): OrthoRefusal => ({ ok: false, reason });
 
-/** Read and validate a GeoTIFF's header. Never reads pixel data. */
+/**
+ * Read a GeoTIFF's header. Never reads pixel data.
+ *
+ * Refuses only what would make the file unplaceable on a map at all: not a
+ * TIFF, or no identifiable CRS. Everything else — geographic or projected,
+ * any linear unit, non-square pixels, a rotated transform — TiTiler
+ * reprojects onto web tiles the same way it already does for ODM's own
+ * output, so none of it is this module's business to gate on.
+ */
 export async function readOrthoMetadata(file: File): Promise<OrthoMetadata | OrthoRefusal> {
   let image;
   try {
@@ -107,77 +136,64 @@ export async function readOrthoMetadata(file: File): Promise<OrthoMetadata | Ort
       "not just a pixel scale and an origin.",
     );
   }
-  if (modelType === MODEL_TYPE_GEOGRAPHIC) {
+  // Anything other than projected or geographic (geocentric, or a model type
+  // this spec version does not define) has no meaningful 2D ground footprint
+  // to place on a map at all.
+  if (modelType !== MODEL_TYPE_PROJECTED && modelType !== MODEL_TYPE_GEOGRAPHIC) {
     return bail(
-      "This file is in a geographic CRS (latitude/longitude, in degrees), not a projected one. " +
-      "Reproject it to a projected CRS in metres, such as UTM, before importing.",
-    );
-  }
-  if (modelType !== MODEL_TYPE_PROJECTED) {
-    return bail(
-      "This file's CRS is not a recognised projected coordinate system. " +
-      "Reproject it to a projected CRS in metres, such as UTM, before importing.",
-    );
-  }
-  const linearUnit = keys.ProjLinearUnitsGeoKey as number | undefined;
-  if (linearUnit !== undefined && linearUnit !== LINEAR_UNIT_METRE) {
-    return bail(
-      "This file's projected CRS is not in metres (it declares a different linear unit, such as feet). " +
-      "Reproject it to a metric CRS, such as UTM, before importing.",
+      "This file's CRS model type is not one this app can place on a map (neither projected nor geographic). " +
+      "Re-export it with a standard projected or geographic CRS.",
     );
   }
 
   const [xRes, yRes] = resolution;
-  const px = Math.abs(xRes), py = Math.abs(yRes);
-  if (!(px > 0) || !(py > 0)) {
+  const rx = Math.abs(xRes), ry = Math.abs(yRes);
+  if (!(rx > 0) || !(ry > 0)) {
     return bail("This file's pixel size could not be determined.");
-  }
-  const rel = Math.abs(px - py) / Math.max(px, py);
-  if (rel > SQUARE_PIXEL_TOLERANCE) {
-    return bail(
-      `This file has non-square pixels (${px.toFixed(3)} m x ${py.toFixed(3)} m, ${(rel * 100).toFixed(1)}% ` +
-      "different). Re-export the orthomosaic with square pixels.",
-    );
-  }
-
-  // ImageFileDirectory is a class wrapping raw tag entries behind getValue(),
-  // not a plain object - `fileDirectory.ModelTransformation` is always
-  // undefined regardless of whether the tag is present.
-  const transform = image.getFileDirectory().getValue("ModelTransformation") as number[] | undefined;
-  // geotiff.js hands this back as a Float64Array, not a plain Array -
-  // Array.isArray() is false for a typed array, so that check silently never
-  // ran and a rotated file passed straight through.
-  if (transform && transform.length >= 6) {
-    const scale = Math.max(Math.abs(transform[0]), Math.abs(transform[5]), 1e-9);
-    const shearB = Math.abs(transform[1]) / scale;
-    const shearE = Math.abs(transform[4]) / scale;
-    if (shearB > ROTATION_TOLERANCE || shearE > ROTATION_TOLERANCE) {
-      return bail(
-        "This file has a rotated transform (it is not north-up). Re-export the orthomosaic without rotation, " +
-        "or reproject it so north is up.",
-      );
-    }
   }
 
   const bandCount = image.getSamplesPerPixel();
   if (!(bandCount >= 1)) {
     return bail("This file has no readable bands.");
   }
-
   const bits = image.getBitsPerSample(0);
   const sampleFormat = image.getSampleFormat(0);
   const dtype = sampleFormat === 3 ? `${bits}-bit float` : `${bits}-bit`;
 
-  const epsg = keys.ProjectedCSTypeGeoKey as number | undefined;
-  const crsLabel = epsg && epsg !== 32767 ? `EPSG:${epsg}` : "Projected CRS (code not embedded in the file)";
+  let gsdM: number;
+  let epsg: number | null;
+  let crsLabel: string;
+  if (modelType === MODEL_TYPE_GEOGRAPHIC) {
+    // Resolution is in degrees here; boundingBox is [west, south, east, north]
+    // in the same degrees, so its own centre latitude converts them to an
+    // approximate ground metre figure for the read-out. Assumes a WGS84-like
+    // datum, same as every other place this app treats geographic coordinates
+    // as plain lat/lng (ortho-url's own sanity check does the same).
+    const [, south, , north] = boundingBox;
+    const centreLat = (south + north) / 2;
+    const xM = rx * mPerDegLng(centreLat);
+    const yM = ry * M_PER_DEG_LAT;
+    gsdM = (xM + yM) / 2;
+    const geoEpsg = keys.GeographicTypeGeoKey as number | undefined;
+    epsg = geoEpsg && geoEpsg !== 32767 ? geoEpsg : null;
+    crsLabel = epsg ? `EPSG:${epsg} (geographic)` : "Geographic CRS (code not embedded)";
+  } else {
+    const linearUnit = keys.ProjLinearUnitsGeoKey as number | undefined;
+    const toMetres = linearUnit === undefined ? 1 : LINEAR_UNIT_TO_METRES[linearUnit] ?? null;
+    gsdM = toMetres !== null ? ((rx + ry) / 2) * toMetres : (rx + ry) / 2;
+    const projEpsg = keys.ProjectedCSTypeGeoKey as number | undefined;
+    epsg = projEpsg && projEpsg !== 32767 ? projEpsg : null;
+    const unitNote = toMetres !== null ? "" : ` (linear unit code ${linearUnit}, not converted for display)`;
+    crsLabel = (epsg ? `EPSG:${epsg}` : "Projected CRS (code not embedded)") + unitNote;
+  }
 
   return {
     ok: true,
     widthPx: image.getWidth(),
     heightPx: image.getHeight(),
     bandCount,
-    gsdM: (px + py) / 2,
-    epsg: epsg && epsg !== 32767 ? epsg : null,
+    gsdM,
+    epsg,
     crsLabel,
     dtype,
   };

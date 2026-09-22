@@ -41,8 +41,10 @@ operator uploads an already-finished GeoTIFF (their own, or one from a Phantom 4
 or similar sensor), and the file's own header supplies the CRS, dimensions and bounds, so no
 boundary drawing is required to start (one can still be drawn afterward in Field View to narrow
 the scan area). The dialog shows exactly what it read - dimensions, GSD, CRS, band count - and
-refuses plainly if the file is ungeoreferenced, geographic rather than projected, not in
-metres, non-square-pixel or rotated. A file that is not 3-band (the P4 Multispectral case, five
+refuses plainly only if the file is not a readable TIFF or has no identifiable CRS at all -
+a geographic CRS, a non-metre unit, non-square pixels and a rotated transform are all
+accepted, since TiTiler reprojects any of that the same way it already handles ODM's own
+orthophotos. A file that is not 3-band (the P4 Multispectral case, five
 bands) requires the operator to say which band is red, green and blue before Import unlocks;
 nothing here ever assumes bands 1-3, which on a five-band file would be a plausible-looking,
 wrong-coloured image. See `docs/pipeline/edge-functions.md`'s `ortho-import` entry.

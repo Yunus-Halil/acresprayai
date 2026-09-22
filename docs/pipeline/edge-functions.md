@@ -52,9 +52,11 @@ UI stops polling.
 The second way a field gets its first scan: the operator already has a finished orthomosaic
 (their own GeoTIFF, or one from a Phantom 4 Multispectral or similar sensor) and wants it in
 without flying it through OpenDroneMap. The client validates the file's own header first
-(`src/lib/orthoImport.ts`, via geotiff.js) - refusing anything ungeoreferenced, geographic,
-non-metre, non-square-pixel or rotated, the same conditions `offrow/io.py` refuses - and only
-then calls this function. The function never re-parses the TIFF; its job is auth, ownership and
+(`src/lib/orthoImport.ts`, via geotiff.js) - refusing only what would make the file
+unplaceable on a map at all (not a TIFF, or no identifiable CRS). A geographic CRS, a
+non-metre unit, non-square pixels and a rotated transform are all accepted; TiTiler
+(`bake-tiles`) reprojects all of that onto standard web tiles as a matter of routine, the
+same way it already handles ODM's own orthophotos - only then calls this function. The function never re-parses the TIFF; its job is auth, ownership and
 storage, the same trust boundary `odm-submit` already draws around the client's own GPS-EXIF
 check on drone photos.
 

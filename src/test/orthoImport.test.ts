@@ -168,48 +168,74 @@ describe("readOrthoMetadata: refuses at the door", () => {
     expect(result.reason).toMatch(/no georeferencing/i);
   });
 
-  it("refuses a geographic CRS (degrees), naming it specifically", async () => {
+  // A geographic CRS is normal photogrammetry output (ODM's own default,
+  // absent a UTM request) and TiTiler reprojects it exactly like any other
+  // CRS - it must be ACCEPTED, with the read-out converting degrees to an
+  // approximate ground metre figure at the raster's own latitude, purely for
+  // display. Refusing this was the bug: it turned away a real, usable file.
+  it("accepts a geographic CRS and converts its degree resolution to an approximate metre GSD", async () => {
+    // ~0.05 m/px at this latitude: 1 deg longitude is about 87.4 km at 37 deg N.
+    const degPerPixel = 0.05 / 87_400;
     const file = toFile(buildTiff({
       width: 32, height: 32, bands: 3,
-      scale: [0.0000005, 0.0000005],
+      scale: [degPerPixel, degPerPixel],
       geoKeys: [[1024, MODEL_GEOGRAPHIC], [2048, 4326]],
     }));
     const result = await readOrthoMetadata(file);
-    if (!("reason" in result)) throw new Error("should have been refused");
-    expect(result.reason).toMatch(/geographic CRS/i);
-    expect(result.reason).toMatch(/UTM/i);
+    if ("reason" in result) throw new Error(`unexpectedly refused: ${result.reason}`);
+    expect(result.epsg).toBe(4326);
+    expect(result.crsLabel).toMatch(/geographic/i);
+    // Loose tolerance: the tiepoint's fixed latitude (4000000, used as a raw
+    // degree value here) isn't exactly 37 N, this only checks the conversion
+    // is in the right ballpark rather than left as raw degrees (which would
+    // be ~0.05, not ~0.05 m - the point is it does NOT read as ~0.0000006).
+    expect(result.gsdM).toBeGreaterThan(0.01);
+    expect(result.gsdM).toBeLessThan(1);
   });
 
-  it("refuses a projected CRS not in metres", async () => {
+  it("accepts a projected CRS in a non-metre unit and converts it for the GSD read-out", async () => {
+    const feetPerPixel = 0.5; // 0.5 US survey feet/px
     const file = toFile(buildTiff({
-      width: 32, height: 32, bands: 3, scale: [0.16, 0.16],
+      width: 32, height: 32, bands: 3, scale: [feetPerPixel, feetPerPixel],
       geoKeys: [[1024, MODEL_PROJECTED], [3072, 2229], [3076, 9002]], // 9002 = US survey foot
     }));
     const result = await readOrthoMetadata(file);
-    if (!("reason" in result)) throw new Error("should have been refused");
-    expect(result.reason).toMatch(/not in metres/i);
+    if ("reason" in result) throw new Error(`unexpectedly refused: ${result.reason}`);
+    // 0.5 US survey feet = 0.1524003048 m.
+    expect(result.gsdM).toBeCloseTo(0.1524003, 6);
   });
 
-  it("refuses non-square pixels", async () => {
+  it("accepts non-square pixels", async () => {
     const file = toFile(buildTiff({
       width: 32, height: 32, bands: 3, scale: [0.05, 0.08], geoKeys: PROJECTED_METRES,
     }));
     const result = await readOrthoMetadata(file);
-    if (!("reason" in result)) throw new Error("should have been refused");
-    expect(result.reason).toMatch(/non-square pixels/i);
-    expect(result.reason).toMatch(/0\.050/);
-    expect(result.reason).toMatch(/0\.080/);
+    if ("reason" in result) throw new Error(`unexpectedly refused: ${result.reason}`);
+    expect(result.gsdM).toBeCloseTo(0.065, 6); // reported as the average, not gated on
   });
 
-  it("refuses a rotated (non north-up) transform", async () => {
+  it("accepts a rotated (non north-up) transform", async () => {
     // a=pixel width, b=shear, e=shear, f=-pixel height; a visibly rotated frame.
     const transform = [0.05, 0.02, 0, 500000, 0.02, -0.05, 0, 4000000, 0, 0, 1, 0, 0, 0, 0, 1];
     const file = toFile(buildTiff({
       width: 32, height: 32, bands: 3, transform, geoKeys: PROJECTED_METRES,
     }));
     const result = await readOrthoMetadata(file);
+    if ("reason" in result) throw new Error(`unexpectedly refused: ${result.reason}`);
+    // sqrt(0.05^2 + 0.02^2) - TiTiler reprojects the rotation away; this is
+    // only ever a display figure, so an approximate magnitude is fine.
+    expect(result.gsdM).toBeGreaterThan(0.05);
+    expect(result.gsdM).toBeLessThan(0.06);
+  });
+
+  it("refuses a CRS model type that is neither projected nor geographic", async () => {
+    const file = toFile(buildTiff({
+      width: 32, height: 32, bands: 3, scale: [0.05, 0.05],
+      geoKeys: [[1024, 3]], // 3 = ModelTypeGeocentric: no 2D ground footprint
+    }));
+    const result = await readOrthoMetadata(file);
     if (!("reason" in result)) throw new Error("should have been refused");
-    expect(result.reason).toMatch(/rotated transform/i);
+    expect(result.reason).toMatch(/neither projected nor geographic/i);
   });
 
   it("accepts an unrotated ModelTransformation the same as pixel-scale + tiepoint", async () => {
