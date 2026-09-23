@@ -1243,6 +1243,33 @@ export default function OrthomosaicViewer() {
           font-family: inherit;
         }
         .ai-zone-label::before { display: none; }
+        /* Weed Scout's own map labels: one per spot, so they have to be small
+           enough that thirty of them on a small field stay readable. Muted on
+           purpose, since the shape's outline carries the decision. */
+        .scout-label {
+          background: rgba(10,10,10,0.82);
+          color: #e5e5e5;
+          border: 1px solid #333;
+          font-size: 10px;
+          line-height: 1.2;
+          padding: 1px 5px;
+          border-radius: 2px;
+          box-shadow: none;
+          white-space: nowrap;
+          pointer-events: none;
+          font-family: inherit;
+        }
+        .scout-label::before { display: none; }
+        /* The review popup is a panel, not a speech bubble. */
+        .leaflet-popup-content-wrapper:has(> .leaflet-popup-content .scout-popup) {
+          background: #161616;
+          color: #f0f0f0;
+          border: 1px solid #2a2a2a;
+          border-radius: 3px;
+          box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+        }
+        .leaflet-popup-content:has(.scout-popup) { margin: 10px 12px; }
+        .leaflet-popup-tip:has(~ *) { background: #161616; }
         .leaflet-container { background: #0a0a0a; }
       `}</style>
     </div>

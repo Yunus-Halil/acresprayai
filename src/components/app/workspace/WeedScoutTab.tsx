@@ -16,22 +16,21 @@
 // from their own past verdicts (lib/weedCatalog/suggest.ts). Nothing here
 // calls anything outside the tile server and the operator's own archive.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleMarker, MapContainer, Polygon, TileLayer } from "react-leaflet";
+import { CircleMarker, MapContainer, Polygon, Popup, TileLayer, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  AlertTriangle, CheckCircle2, FlaskConical, Loader2, MapPin, Play, Save, Square, X,
+  AlertTriangle, FlaskConical, Loader2, MapPin, Play, Square,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { type FarmerSettings, growthStage } from "@/lib/farmerSettings";
 import type { LatLng2 } from "@/lib/geo";
 import { storageKey } from "@/lib/storage";
-import { fmtArea, fmtAreaCm2, fmtDistance, fmtLengthCm } from "@/lib/units";
+import { fmtArea, fmtLengthCm } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { describeCandidate } from "@/lib/weedScout/candidates";
 import { type AppliedAnnotation, annotationFromCandidate } from "@/lib/weedScout/applyToField";
 import { type EventContext, describeEvent, fetchEventContext } from "@/lib/weedScout/context";
-import { describeFeedback } from "@/lib/weedScout/feedback";
 import {
   type ObservationRow, type Verdict, VERDICTS, identificationColumns, isDismissal, listObservations, loadFeedback,
   saveObservation,
@@ -50,8 +49,8 @@ import {
   type Suggestion, cropShortlist, narrowCatalog, recentLabels, searchRanked, suggestionsFor,
 } from "@/lib/weedCatalog/suggest";
 import { plannedAreaM2, plannedZones } from "@/lib/treatment/plannedArea";
-import { IdentificationBlock } from "./IdentificationBlock";
-import { ScanResults } from "./ScanResults";
+import { ScanSummary } from "./ScanSummary";
+import { SpotPopup } from "./SpotPopup";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, MouseReadout, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
@@ -114,6 +113,21 @@ const CLASS_COLOUR: Record<RegionClass, string> = {
   "pale vegetation": "#facc15",
   "greener than the field": "#4ade80",
   "different from the field": "#38bdf8",
+};
+
+/**
+ * The colour of a decision, not of a measurement.
+ *
+ * The map's job here is to show what the scout already decided about every
+ * spot, so the operator can find the wrong ones at a glance rather than read
+ * a list. The class still tints the fill, but the outline is the verdict.
+ */
+const VERDICT_COLOUR: Record<string, string> = {
+  weed: "#4CAF50",
+  not_weed: "#525252",
+  unsure: "#fbbf24",
+  crop: "#525252",
+  not_vegetation: "#525252",
 };
 
 /** Region classes that read as ground, not plants: never a weed by default. */
@@ -234,10 +248,9 @@ export function WeedScoutTab({
   const [singleBusy, setSingleBusy] = useState<"save" | null>(null);
   const [singleError, setSingleError] = useState<string | null>(null);
   const [showAbout, setShowAbout] = useState(false);
-  // Results or map. A finished run lands on the results; "Show map" goes back
-  // to the scouting surface with the same spot selected, and starting another
-  // run returns there too.
-  const [showMap, setShowMap] = useState(false);
+  // The map says what the scout thinks without being asked. Thirty labels on a
+  // small field can crowd each other, so it is a toggle, defaulting to on.
+  const [showLabels, setShowLabels] = useState(true);
 
   const rings = useMemo(() => (boundary ?? []) as unknown as LatLng2[][], [boundary]);
   const capturedAt = scanCreatedAt ?? new Date().toISOString();
@@ -313,7 +326,6 @@ export function WeedScoutTab({
 
   const run = useCallback(() => {
     if (!rings.length || !tileUrl || running) return;
-    setShowMap(false);
     startRun(taskId,
       { boundary: rings, tileUrl, maxNative, params, feedback },
       { context, crop, growthStage: stage, fieldId, unitSystem: units });
@@ -501,21 +513,21 @@ export function WeedScoutTab({
   const kept = candidates.filter(c => verdictOf(c) === "weed");
   const removed = candidates.filter(c => isDismissal(verdictOf(c)));
   const unsure = candidates.length - kept.length - removed.length;
-  const savedCount = candidates.filter(c => saved[c.id]).length;
   const rowSpacingShown = units === "metric" ? (params.rowSpacingM * 100).toFixed(1) : (params.rowSpacingM / 0.0254).toFixed(1);
   const rowSpacingUnit = units === "metric" ? "cm" : "in";
   const setRowSpacingShown = (v: number) => setParams(p => ({ ...p, rowSpacingM: units === "metric" ? v / 100 : v * 0.0254 }));
   const areaText = (m2: number) => fmtArea(m2, units).text;
   const busy = bulk.phase !== "idle";
-  const nameOf = (c: Candidate) => {
+  const spotColour = (c: Candidate) => (c.region ? CLASS_COLOUR[c.region.klass] : KIND_COLOUR[c.kind]);
+  /** What the map says about a spot without being clicked. Short, or it crowds. */
+  const spotLabel = (c: Candidate): string => {
     const id = identificationOf(c);
     if (isStatedFinding(id)) return id.label!;
-    return c.region ? `${c.region.klass}, ${areaText(c.areaM2)}` : c.kind;
+    if (c.region) return c.region.klass;
+    return c.kind;
   };
-  const spotColour = (c: Candidate) => (c.region ? CLASS_COLOUR[c.region.klass] : KIND_COLOUR[c.kind]);
-  const selectedIndex = selected ? candidates.indexOf(selected) : -1;
 
-  /** The identification wiring, shared by the results rows and the map panel. */
+  /** The identification wiring, handed to every spot's popup. */
   const identificationProps = {
     shortlist, recent,
     searchResults: pickerResults,
@@ -533,40 +545,6 @@ export function WeedScoutTab({
     onPickRecent: pickName,
   };
 
-  // ---- Results ------------------------------------------------------------
-  //
-  // A finished run shows what it found rather than leaving the operator to
-  // work a map and a 400 px sidebar. The map is a click away and keeps the
-  // same selection; every decision on both surfaces writes to the same
-  // session, so neither is a second copy of the review.
-  if (result && !showMap && !running) {
-    return (
-      <ScanResults
-        candidates={candidates}
-        units={units}
-        treatAreaM2={plannedAreaM2(kept.map(c => ({ areaM2: areaOf(c) ?? 0 })))}
-        fieldAreaM2={fieldAreaHa != null && fieldAreaHa > 0 ? fieldAreaHa * 10_000 : null}
-        areaOf={areaOf}
-        verdictOf={verdictOf}
-        setVerdict={setVerdict}
-        identificationOf={identificationOf}
-        notesOf={notesOf}
-        setNotes={(c, text) => setNotesById(m => ({ ...m, [c.id]: text }))}
-        suggestionOf={c => suggestionById.get(c.id) ?? null}
-        isSaved={c => !!saved[c.id]}
-        isOnField={c => !!applied[c.id]}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        {...identificationProps}
-        onShowMap={() => setShowMap(true)}
-        onBuildMission={buildMission}
-        building={bulk.phase === "saving" ? { done: bulk.done, total: bulk.total } : null}
-        buildError={bulk.error}
-        canBuild={!!user && !!context}
-      />
-    );
-  }
-
   return (
     <div className="absolute inset-0 flex" style={{ background: "#0f0f0f" }}>
       <div className="flex-1 relative">
@@ -581,44 +559,88 @@ export function WeedScoutTab({
           {rings.map((r, i) => (
             <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])} pathOptions={{ color: "#4CAF50", weight: 1.5, fill: false, dashArray: "4 4" }} />
           ))}
-          {regionCandidates.map(c => {
-            const colour = spotColour(c);
+          {/* Every spot carries its own decision and its own review panel.
+              The outline is the verdict, the fill is what it reads as, and the
+              popup is where the operator disagrees with either. */}
+          {candidates.map((c, i) => {
+            const v = verdictOf(c);
+            const gone = isDismissal(v);
             const active = c.id === selectedId;
-            const gone = isDismissal(verdictOf(c));
-            return (
-              <Polygon key={c.id}
-                positions={c.region!.rings.map(ring => ring.map(p => [p.lat, p.lng] as [number, number]))}
-                eventHandlers={{ click: () => setSelectedId(c.id) }}
-                pathOptions={{
-                  color: active ? "#ffffff" : gone ? "#525252" : applied[c.id] ? "#38bdf8" : colour,
-                  weight: active ? 2.5 : applied[c.id] ? 2.5 : 1.5,
-                  fillColor: gone ? "#525252" : colour, fillOpacity: gone ? 0.08 : saved[c.id] ? 0.45 : 0.22,
-                  dashArray: gone ? "3 3" : undefined,
-                }} />
+            const klass = spotColour(c);
+            const outline = active ? "#ffffff" : VERDICT_COLOUR[v] ?? klass;
+            const label = spotLabel(c);
+            const popup = (
+              <Popup closeOnClick={false} maxWidth={400} minWidth={300} autoPan
+                eventHandlers={{ remove: () => setSelectedId(null) }}>
+                <SpotPopup
+                  candidate={c}
+                  index={i}
+                  total={candidates.length}
+                  units={units}
+                  areaM2={areaOf(c)}
+                  verdict={v}
+                  onVerdict={next => setVerdict(c, next)}
+                  identification={identificationOf(c)}
+                  suggestion={suggestionById.get(c.id) ?? null}
+                  notes={notesOf(c)}
+                  onNotes={text => setNotesById(m => ({ ...m, [c.id]: text }))}
+                  saved={!!saved[c.id]}
+                  onField={!!applied[c.id]}
+                  {...identificationProps}
+                />
+              </Popup>
             );
-          })}
-          {pointCandidates.map(c => {
-            const gone = isDismissal(verdictOf(c));
-            const active = c.id === selectedId;
+            const tooltip = showLabels && (
+              <Tooltip permanent direction="top" opacity={1} className="scout-label">
+                {label}
+              </Tooltip>
+            );
+            if (c.region) {
+              return (
+                <Polygon key={c.id}
+                  positions={c.region.rings.map(ring => ring.map(p => [p.lat, p.lng] as [number, number]))}
+                  eventHandlers={{ click: () => setSelectedId(c.id) }}
+                  pathOptions={{
+                    color: outline,
+                    weight: active ? 3 : gone ? 1 : 2,
+                    fillColor: gone ? "#525252" : klass,
+                    fillOpacity: gone ? 0.06 : saved[c.id] ? 0.4 : 0.22,
+                    dashArray: gone ? "3 3" : undefined,
+                  }}>
+                  {tooltip}
+                  {popup}
+                </Polygon>
+              );
+            }
             return (
               <CircleMarker key={c.id} center={[c.centroid.lat, c.centroid.lng]}
-                radius={active ? 9 : applied[c.id] ? 8 : 5}
+                radius={active ? 10 : gone ? 4 : 7}
                 eventHandlers={{ click: () => setSelectedId(c.id) }}
                 pathOptions={{
-                  color: active ? "#ffffff" : gone ? "#525252" : applied[c.id] ? "#38bdf8" : KIND_COLOUR[c.kind],
-                  weight: active ? 2 : applied[c.id] ? 2.5 : 1.5,
-                  fillColor: gone ? "#525252" : KIND_COLOUR[c.kind], fillOpacity: gone ? 0.15 : saved[c.id] ? 0.9 : 0.35,
-                }} />
+                  color: outline,
+                  weight: active ? 3 : 2,
+                  fillColor: gone ? "#525252" : klass,
+                  fillOpacity: gone ? 0.15 : saved[c.id] ? 0.9 : 0.5,
+                }}>
+                {tooltip}
+                {popup}
+              </CircleMarker>
             );
           })}
           <BasemapToggle value={basemap} onChange={(id) => { setBasemap(id); saveBasemap(id); }} className="absolute bottom-4 right-4 z-[1000]" />
         </MapContainer>
 
         <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1">
-          <div className="flex items-center gap-2 text-neutral-300"><FlaskConical className="h-3 w-3 text-[#4CAF50]" /> Click a spot to review it</div>
-          <div className="flex items-center gap-2 text-neutral-500"><span className="inline-block w-3 h-3 rounded-full" style={{ background: "#525252" }} /> Grey: removed (not a weed)</div>
-          <div className="flex items-center gap-2 text-neutral-500"><span className="inline-block w-3 h-3 rounded-full border-2" style={{ borderColor: "#38bdf8" }} /> Blue ring: on Field View and the Flight Planner</div>
-          <div className="text-neutral-500">Solid: saved to the archive</div>
+          <div className="flex items-center gap-2 text-neutral-300"><FlaskConical className="h-3 w-3 text-[#4CAF50]" /> Click a spot to change it</div>
+          {/* The outline is the decision. Everything is already decided. */}
+          <div className="flex items-center gap-2 text-neutral-400"><span className="inline-block w-3 h-3 rounded-full border-2" style={{ borderColor: VERDICT_COLOUR.weed }} /> Kept as a weed</div>
+          <div className="flex items-center gap-2 text-neutral-400"><span className="inline-block w-3 h-3 rounded-full border-2" style={{ borderColor: VERDICT_COLOUR.unsure }} /> Unsure, left off the field</div>
+          <div className="flex items-center gap-2 text-neutral-500"><span className="inline-block w-3 h-3 rounded-full border-2 border-dashed" style={{ borderColor: VERDICT_COLOUR.not_weed }} /> Removed</div>
+          <div className="text-neutral-500">Fill colour is what it reads as. Solid: saved.</div>
+          <label className="flex items-center gap-2 cursor-pointer pt-0.5 border-t border-[#222] mt-0.5">
+            <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} className="accent-[#4CAF50]" />
+            Labels on the map
+          </label>
         </div>
       </div>
 
@@ -644,11 +666,6 @@ export function WeedScoutTab({
               <button type="button" onClick={run} disabled={!tileUrl || busy} className={btnPrimary}><Play className="h-3.5 w-3.5" /> Scan this field</button>
             ) : (
               <button type="button" onClick={() => stopRun(taskId)} className={btnQuiet}><Square className="h-3.5 w-3.5" /> Stop</button>
-            )}
-            {result && !running && (
-              <button type="button" onClick={() => setShowMap(false)} className={btnQuiet}>
-                <FlaskConical className="h-3.5 w-3.5 text-[#4CAF50]" /> Back to results
-              </button>
             )}
             {progress && (
               <div className="text-[11px] text-neutral-400 inline-flex items-center gap-1.5 min-w-0">
@@ -722,30 +739,24 @@ export function WeedScoutTab({
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto">
-          {/* Results summary and bulk actions */}
+          {/* What the scan found, and the hand-off. The spots themselves are
+              reviewed on the map by clicking them, not from a list here. */}
           {result && (
+            <>
+              <ScanSummary
+                spots={candidates.length}
+                kept={kept.length}
+                removed={removed.length}
+                unsure={unsure}
+                treatAreaM2={plannedAreaM2(kept.map(c => ({ areaM2: areaOf(c) ?? 0 })))}
+                fieldAreaM2={fieldAreaHa != null && fieldAreaHa > 0 ? fieldAreaHa * 10_000 : null}
+                units={units}
+                onBuildMission={buildMission}
+                building={bulk.phase === "saving" ? { done: bulk.done, total: bulk.total } : null}
+                buildError={bulk.error}
+                canBuild={!!user && !!context}
+              />
             <section className="p-4 border-b border-[#1f1f1f] space-y-2">
-              <div className="text-xs text-neutral-200">
-                {candidates.length === 0
-                  ? "Nothing stood out at these settings. That is a result, not an absence."
-                  : <>{candidates.length} spot{candidates.length === 1 ? "" : "s"}: <span className="text-[#4CAF50]">{kept.length} kept as weeds</span>, {removed.length} removed, {unsure} unsure{savedCount ? `, ${savedCount} saved` : ""}.</>}
-              </div>
-              {candidates.length > 0 && (
-                <>
-                  <p className="text-[11px] text-neutral-500">Click a spot on the map or in the list. Press its X to remove a wrong one. Then save everything at once.</p>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button type="button" onClick={saveAll} disabled={busy || !user || !context} className={btnPrimary}>
-                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                      {bulk.phase === "saving" ? `Saving ${bulk.done}/${bulk.total}` : `Save all ${candidates.length} to the field`}
-                    </button>
-                    <span className="text-[11px] text-neutral-400">
-                      puts the {kept.length} kept weed spot{kept.length === 1 ? "" : "s"} on Field View and the Flight Planner and takes removed ones off
-                    </span>
-                  </div>
-                  {bulk.error && <div className="text-[11px] text-red-400">{bulk.error}</div>}
-                  {!user && <div className="text-[11px] text-neutral-500">Sign in to save.</div>}
-                </>
-              )}
               <details className="text-[11px]">
                 <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">Run details</summary>
                 <div className="pt-2 space-y-1">
@@ -766,152 +777,7 @@ export function WeedScoutTab({
                 </div>
               </details>
             </section>
-          )}
-
-          {/* Selected spot */}
-          {selected && (
-            <section className="p-4 border-b border-[#1f1f1f] space-y-3" style={{ background: "#151515" }}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className={labelCls}>Spot #{selectedIndex + 1} of {candidates.length}</div>
-                  <div className="text-xs text-neutral-200 truncate">{nameOf(selected)}</div>
-                  <div className="text-[10px] text-neutral-500">{describeCandidate(selected, units)}</div>
-                </div>
-                <button type="button" onClick={() => setSelectedId(null)} className="text-neutral-500 hover:text-neutral-200"><X className="h-3.5 w-3.5" /></button>
-              </div>
-              {selected.chip ? (
-                <div>
-                  <img src={selected.chip} alt="Chip of the spot" className="w-full rounded-sm border border-[#222]" style={{ imageRendering: "pixelated" }} />
-                  <div className="text-[10px] text-neutral-500 mt-1">
-                    {selected.chipSpanM ? `${fmtDistance(selected.chipSpanM, units).text} across` : ""}
-                    {selected.chipGsdM ? ` at ${fmtLengthCm(selected.chipGsdM * 100, units).text}/px, real pixels, north up` : ""}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-[10px] text-neutral-500">No close-up for this spot (only the top {params.maxChips} get one). Its location is highlighted on the map.</div>
-              )}
-
-              {/* Verdict: one click */}
-              <div className="grid grid-cols-3 gap-1">
-                {VERDICTS.map(v => {
-                  const on = verdictOf(selected) === v.value || (v.value === "not_weed" && isDismissal(verdictOf(selected)));
-                  const tone = v.value === "weed" ? "bg-[#4CAF50] text-black border-[#4CAF50]" : v.value === "not_weed" ? "bg-[#525252] text-white border-[#525252]" : "bg-amber-400 text-black border-amber-400";
-                  return (
-                    <button key={v.value} type="button" onClick={() => setVerdict(selected, v.value)}
-                      className={`text-[11px] rounded-sm px-2 py-1.5 border font-semibold ${on ? tone : "border-[#222] text-neutral-300 hover:bg-[#1f1f1f]"}`}>
-                      {v.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Identification. The same component the results rows use, so
-                  the two surfaces cannot drift into two different decisions. */}
-              {!isDismissal(verdictOf(selected)) && (
-                <IdentificationBlock
-                  identification={identification}
-                  suggestion={suggestion}
-                  {...identificationProps}
-                />
-              )}
-
-              <input className={inputCls} placeholder="Notes" value={notesOf(selected)} onChange={e => setNotesById(m => ({ ...m, [selected.id]: e.target.value }))} maxLength={300} />
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <button type="button" onClick={saveSelected} disabled={singleBusy !== null || busy || !user || !context} className={btnQuiet}>
-                  {singleBusy === "save" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                  {saved[selected.id] ? "Update this spot" : "Save this spot to the field"}
-                </button>
-                {applied[selected.id] ? (
-                  <>
-                    <span className="text-[11px] text-[#38bdf8] inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> On the field</span>
-                    <button type="button" onClick={() => setActiveTab("field")} className="text-[11px] underline text-neutral-300 hover:text-white">Field View</button>
-                    <button type="button" onClick={() => setActiveTab("planner")} className="text-[11px] underline text-neutral-300 hover:text-white">Flight Planner</button>
-                  </>
-                ) : saved[selected.id] ? (
-                  <span className="text-[11px] text-[#4CAF50] inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Saved{verdictOf(selected) === "weed" ? "" : ", not on the field"}</span>
-                ) : null}
-              </div>
-              <div className="text-[10px] text-neutral-600">
-                Saving writes your review and puts this spot on Field View and the Flight Planner if it is kept as a weed; removed or unsure spots stay off the field.
-              </div>
-              {singleError && <div className="text-[11px] text-red-400">{singleError}</div>}
-
-              <details className="text-[11px]">
-                <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">Measurements and description</summary>
-                <dl className="grid grid-cols-2 gap-x-3 gap-y-1 pt-2">
-                  <Dt k="Score" v={selected.score.toFixed(2)} />
-                  {selected.region ? (
-                    <>
-                      <Dt k="Area" v={areaText(selected.areaM2)} />
-                      <Dt k="Tiles" v={`${selected.region.tileCount} (${selected.region.coreTiles} core)`} />
-                      <Dt k="Deviation" v={`mean ${selected.region.meanStrength.toFixed(1)}, max ${selected.region.maxStrength.toFixed(1)}`} />
-                      <Dt k="Drivers" v={selected.region.drivers.map(d => `${d.feature} ${d.z > 0 ? "+" : "-"}${Math.abs(d.z).toFixed(1)}`).join("; ")} />
-                    </>
-                  ) : (
-                    <>
-                      <Dt k="Off row" v={selected.distanceToRowM != null ? fmtLengthCm(Math.abs(selected.distanceToRowM) * 100, units).text : "no row model"} />
-                      <Dt k="Unlike plants" v={selected.blobZ != null ? `${selected.blobZ.toFixed(1)} z on ${selected.blobZFeature}` : "within the field's plants"} />
-                      <Dt k="Tile deviation" v={selected.anomalyZ != null ? `${selected.anomalyZ.toFixed(1)} z on ${selected.anomalyFeature}` : "within the field average"} />
-                      <Dt k="Size" v={selected.blob ? `${fmtLengthCm(selected.blob.equivDiameterM * 100, units).text}, ${fmtAreaCm2(selected.blob.areaM2 * 1e4, units).text}` : "no vegetation"} />
-                      <Dt k="Greenness" v={selected.blob ? selected.blob.exgMean.toFixed(3) : "n/a"} />
-                      <Dt k="Measured at" v={selected.blob ? `${fmtLengthCm(selected.blob.gsdM * 100, units).text}/px` : "n/a"} />
-                    </>
-                  )}
-                </dl>
-                {selected.estimate && (
-                  <div className="mt-2 space-y-1 text-neutral-400">
-                    <p className="text-neutral-200">{selected.estimate.summary}</p>
-                    <p>{selected.estimate.positionNote}</p>
-                    <p>{selected.estimate.seasonNote}</p>
-                    {selected.feedback && <p className={selected.feedback.factor < 1 ? "text-neutral-500" : "text-[#4CAF50]"}>{describeFeedback(selected.feedback)}</p>}
-                    <p>To confirm on the ground: {selected.estimate.whatWouldConfirm.join(" ")}</p>
-                    <p className="text-neutral-600">{selected.estimate.caveats.join(" ")}</p>
-                    <p className="text-neutral-600 font-mono">{selected.estimate.model}, computed in this browser. Spot id {selected.id}</p>
-                  </div>
-                )}
-              </details>
-            </section>
-          )}
-
-          {/* Spot list */}
-          {result && candidates.length > 0 && (
-            <section>
-              <div className="px-4 pt-3 pb-1"><div className={labelCls}>Spots, strongest first</div></div>
-              <ul>
-                {candidates.map((c, i) => {
-                  const v = verdictOf(c);
-                  const gone = isDismissal(v);
-                  return (
-                    <li key={c.id} className={`flex items-center gap-2 border-t border-[#1a1a1a] pr-2 ${c.id === selectedId ? "bg-[#1a1a1a]" : "hover:bg-[#181818]"} ${gone ? "opacity-50" : ""}`}>
-                      <button type="button" onClick={() => setSelectedId(c.id)} className="flex-1 min-w-0 text-left px-4 py-1.5 flex items-center gap-2">
-                        {c.chip ? (
-                          <img src={c.chip} alt="" className="h-8 w-8 rounded-sm object-cover shrink-0 border border-[#222]" style={{ imageRendering: "pixelated" }} />
-                        ) : (
-                          <span className="h-8 w-8 rounded-sm shrink-0 border border-[#222] grid place-items-center"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: spotColour(c) }} /></span>
-                        )}
-                        <span className="min-w-0 flex-1">
-                          <span className="text-xs text-neutral-200 flex items-center gap-1.5">
-                            <span className="font-mono text-neutral-500">#{i + 1}</span>
-                            <span className="truncate">{nameOf(c)}</span>
-                            {saved[c.id] && <CheckCircle2 className="h-3 w-3 text-[#4CAF50] shrink-0" />}
-                            {applied[c.id] && <MapPin className="h-3 w-3 text-[#38bdf8] shrink-0" />}
-                          </span>
-                          <span className={`text-[10px] ${v === "weed" ? "text-[#4CAF50]" : gone ? "text-neutral-500" : "text-amber-400"}`}>
-                            {VERDICT_LABEL[v]}{isStatedFinding(identificationOf(c)) ? ", identified" : ""}
-                            {!verdicts[c.id] && !saved[c.id] && c.feedback && c.feedback.factor !== 1 && <span className="text-neutral-600"> (from your past verdicts)</span>}
-                          </span>
-                        </span>
-                      </button>
-                      <button type="button" title={gone ? "Put it back" : "Not a weed: remove"} onClick={() => setVerdict(c, gone ? defaultVerdict(c) : "not_weed")}
-                        className={`shrink-0 h-6 w-6 grid place-items-center rounded-sm border ${gone ? "border-[#333] text-neutral-500 hover:text-neutral-200" : "border-[#333] text-neutral-400 hover:border-red-500 hover:text-red-400"}`}>
-                        {gone ? <Play className="h-3 w-3 rotate-180" /> : <X className="h-3.5 w-3.5" />}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
+            </>
           )}
         </div>
       </aside>

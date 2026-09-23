@@ -92,13 +92,24 @@ spot: the archive row under `weed_observations.candidate_id`, the Field View ann
 
 ## Review flow
 
-A finished run lands on the **scan results screen** (`ScanResults.tsx`): a headline of three
-numbers, a row per spot worst-first, and one button. "Show map" goes back to the scouting
-map with the same spot selected, and both surfaces write to the same session, so neither is
-a second copy of the review. Rows carry the chip, the describer's own sentence, keep /
-remove / unsure, and the identification block; expanding a row is what opens that block.
+A finished run shows its answer **on the map**. Every spot is already decided before the
+operator arrives, so the job is correcting the wrong ones, not working a list: the outline of
+each shape is the verdict (green kept, amber unsure, dashed grey removed), the fill is what
+it reads as, and a label says what the scout thinks without being clicked. Labels can be
+turned off when a small field gets crowded.
 
-**The screen computes nothing.** Every figure on it is produced by the module that is
+Clicking a spot opens a **popup over that spot** (`SpotPopup.tsx`): what it is, its planned
+area, the describer's sentence, and the three verdict buttons. Naming sits behind a "Name it"
+button, because an unidentified spot is a valid outcome with its own treatment group and must
+not read as an unfinished one; a suggestion, when there is one, shows unasked because it is
+worth seeing. Measurements are behind a second disclosure, for the case where the operator
+wants to argue with the machine.
+
+The sidebar keeps only what is not per-spot: the three headline numbers, the run controls and
+the hand-off button (`ScanSummary.tsx`). There is no list of spots. An earlier build had one
+and it made thirty already-made decisions read as thirty tasks.
+
+**Neither surface computes anything.** Every figure on it is produced by the module that is
 already the authority for it: the spots and their order from `lib/weedScout`, the
 description from `describe.ts` (attached to the candidate by the pipeline, never re-derived
 in the UI, which could not do it anyway since the plant baseline is not on the result), the
