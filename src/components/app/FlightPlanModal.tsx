@@ -20,7 +20,9 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "@geoman-io/leaflet-geoman-free";
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
-import { AlertTriangle, Camera, Download, Loader2, Pencil, Save, Search, Trash2 } from "lucide-react";
+import {
+  AlertTriangle, Camera, Download, ListOrdered, Loader2, Pencil, Save, Search, Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,27 +41,75 @@ import {
 } from "@/lib/units";
 import { CAMERAS } from "@/lib/flightPlan/camera";
 import {
-  DEFAULT_FLIGHT_PLAN_PARAMS, type FlightPlanParams, LOW_ALTITUDE_M, generateKmz, kmzFilename,
-  lowAltitudeCaution, resolveFlightPlan,
+  DEFAULT_FLIGHT_PLAN_PARAMS, type FlightPlanParams, LOW_ALTITUDE_M, MAX_ALTITUDE_M,
+  MIN_ALTITUDE_M, generateKmz, kmzFilename, lowAltitudeCaution, resolveFlightPlan,
 } from "@/lib/flightPlan/generateKmz";
 import type { FlightDirection } from "@/lib/flightPlan/grid";
 import { bearingDeg, cornerName, routeEnds, routeSteps } from "@/lib/flightPlan/routeSteps";
 import { type FlightPlan, markExported, saveFlightPlan } from "@/lib/flightPlan/repo";
 
 /**
- * A small round badge on the map.
+ * A number box you can actually empty.
  *
- * Built as HTML rather than an image so the number is real text: it stays
- * legible at any zoom and survives a screenshot, which is how these previews
- * actually get shared.
+ * A controlled `<input type="number">` whose handler rejects whatever it cannot
+ * parse snaps straight back to the old number, so the LAST DIGIT CANNOT BE
+ * DELETED. At "3" the backspace produces "", the handler keeps 3 because "" is
+ * not a number, React re-renders "3", and the operator is stuck on 3 with
+ * nothing on screen to explain it. That is not a hypothetical: it was reported
+ * as "I can't make the altitude go below 3".
+ *
+ * So the box keeps whatever was typed for as long as it has focus, including
+ * nothing at all, and commits only the values that parse. On blur the draft is
+ * dropped and the canonical number returns, which is what makes an abandoned
+ * empty box harmless rather than a way to store a blank altitude.
+ *
+ * `min` and `max` stay advisory here, as HTML defines them: they bound the
+ * spinner and mark the field, and they never silently rewrite a typed number.
  */
-const badgeIcon = (label: string, bg: string, fg: string, size = 18) => L.divIcon({
+function NumBox({ id, value, onCommit, min, max, step }: {
+  id: string;
+  value: number;
+  onCommit: (n: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      id={id} type="number" className={NUM} min={min} max={max} step={step}
+      value={draft ?? String(value)}
+      onChange={e => {
+        const raw = e.target.value;
+        setDraft(raw);
+        const n = Number(raw);
+        if (raw.trim() !== "" && Number.isFinite(n)) onCommit(n);
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
+}
+
+/**
+ * A numbered map pin, the shape everybody already reads as "a stop on a route".
+ *
+ * Built as HTML rather than an image so the number is real text: legible at any
+ * zoom, and it survives a screenshot, which is how these previews get shared.
+ *
+ * The teardrop is a square with three rounded corners rotated 45 degrees, so
+ * the one square corner ends up pointing straight down. That rotation moves the
+ * tip to 0.707 of the box diagonal below centre, which is where the anchor has
+ * to sit or every pin floats above the point it is marking.
+ */
+const pinIcon = (label: string, bg: string, fg: string, size = 26) => L.divIcon({
   className: "",
-  html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};`
-    + `border:2px solid #0b1220;box-shadow:0 0 0 1px rgba(255,255,255,.7);display:grid;`
-    + `place-items:center;font:700 ${size <= 18 ? 9 : 10}px/1 ui-monospace,monospace;color:${fg}">`
-    + `${label}</div>`,
-  iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+  html: `<div style="width:${size}px;height:${size}px;border-radius:50% 50% 50% 0;`
+    + `transform:rotate(-45deg);background:${bg};border:2px solid #fff;`
+    + `box-shadow:0 2px 6px rgba(0,0,0,.55);display:grid;place-items:center">`
+    + `<span style="transform:rotate(45deg);font:700 ${Math.round(size * 0.42)}px/1 `
+    + `ui-sans-serif,system-ui,sans-serif;color:${fg}">${label}</span></div>`,
+  iconSize: [size, size],
+  iconAnchor: [size / 2, size / 2 + size * 0.707],
 });
 
 /**
@@ -71,10 +121,20 @@ const badgeIcon = (label: string, bg: string, fg: string, size = 18) => L.divIco
  */
 const arrowIcon = (headingDeg: number, color: string) => L.divIcon({
   className: "",
-  html: `<div style="transform:rotate(${headingDeg}deg);font:16px/1 sans-serif;color:${color};`
-    + `text-shadow:0 0 3px #000,0 0 3px #000">&#9650;</div>`,
-  iconSize: [16, 16], iconAnchor: [8, 8],
+  html: `<div style="transform:rotate(${headingDeg}deg);font:18px/1 sans-serif;color:${color};`
+    + `text-shadow:0 0 4px #000,0 0 4px #000">&#9650;</div>`,
+  iconSize: [18, 18], iconAnchor: [9, 9],
 });
+
+/**
+ * The route's colours.
+ *
+ * Red on a casing of near-black, which is the standard way a route is drawn
+ * over aerial imagery: satellite is green, brown and grey, and a thin line in
+ * any of those disappears into it. The casing is what keeps the line readable
+ * over a bright roof and a dark treeline in the same frame.
+ */
+const ROUTE = { line: "#ef4444", casing: "#1a0505", transit: "#fb923c", area: "#4ade80" };
 
 const midpoint = (a: LatLng2, b: LatLng2) => ({ lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 });
 
@@ -172,11 +232,6 @@ export default function FlightPlanModal({
   );
   const set = <K extends keyof FlightPlanParams>(k: K, v: FlightPlanParams[K]) =>
     setParams(p => ({ ...p, [k]: v }));
-  const num = (v: string, fallback: number) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : fallback;
-  };
-
   // The boxes follow the one unit setting, like every readout beside them.
   // What is STORED and EXPORTED stays metres and m/s; only the box changes.
   // A panel that reports feet and asks for metres is how "100 ft" becomes
@@ -185,17 +240,12 @@ export default function FlightPlanModal({
   const shown = (v: number) => Math.round(v * 100) / 100;
   const lenUnit = altitudeUnit(units);
   const lenShown = (m: number) => shown(altitudeValue(m, units));
-  const lenToM = (v: string, keepM: number) => {
-    if (v.trim() === "") return keepM;
-    const n = Number(v);
-    return Number.isFinite(n) ? altitudeToM(n, units) : keepM;
-  };
   const spdShown = (ms: number) => shown(speedValue(ms, units));
-  const spdToMs = (v: string, keepMs: number) => {
-    if (v.trim() === "") return keepMs;
-    const n = Number(v);
-    return Number.isFinite(n) ? speedToMs(n, units) : keepMs;
-  };
+  // The spinner's ends, in the operator's units and on a round number. The
+  // floor is 3 ft rather than the 3.28 the conversion gives, because a bound
+  // that reads as an arbitrary decimal invites exactly the fight this box just
+  // had with someone trying to type a whole number.
+  const lenFloor = (m: number) => Math.floor(altitudeValue(m, units));
 
   const centre = rings.length ? centroidOfRings(rings) : { lat: 39, lng: -98 };
 
@@ -204,6 +254,25 @@ export default function FlightPlanModal({
   const steps = useMemo(() => (resolved ? routeSteps(resolved.grid) : []), [resolved]);
   const ends = useMemo(() => (resolved ? routeEnds(resolved.grid) : null), [resolved]);
   const startCorner = ends && rings[0] ? cornerName(ends.start, rings[0]) : "";
+
+  // The numbered pins: the two ends of every line, carrying the waypoint
+  // number the exported file gives them. Numbering all several hundred capture
+  // points would be illegible; numbering the corners is what a hand-placed
+  // mission looks like and is what the operator is checking.
+  const corners = useMemo(() => {
+    if (!resolved) return [] as { waypoint: number; at: LatLng2; line: number; role: string }[];
+    const out: { waypoint: number; at: LatLng2; line: number; role: string }[] = [];
+    let n = 0;
+    resolved.grid.legs.forEach((leg, i) => {
+      if (!leg.captures.length) return;
+      out.push({ waypoint: n + 1, at: leg.captures[0], line: i + 1, role: "start" });
+      n += leg.captures.length;
+      if (leg.captures.length > 1) {
+        out.push({ waypoint: n, at: leg.captures[leg.captures.length - 1], line: i + 1, role: "end" });
+      }
+    });
+    return out;
+  }, [resolved]);
 
   // One wording, from the same module that decides the threshold, so the
   // panel and the confirmation cannot say different things.
@@ -292,335 +361,343 @@ export default function FlightPlanModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl">
-        <DialogHeader>
-          <DialogTitle>{existing ? "Edit flight plan" : "Create flight plan"} · {fieldName}</DialogTitle>
+      {/* The map IS the screen. The previous layout squeezed it into two thirds
+          of a medium dialog beside a 300px column of inputs, and the thing the
+          operator was trying to read - where the aircraft goes - was the
+          smallest element on it. */}
+      <DialogContent className="max-w-[min(1400px,96vw)] w-[96vw] h-[92vh] p-0 gap-0 flex flex-col overflow-hidden">
+        <DialogHeader className="px-4 py-3 border-b shrink-0">
+          <DialogTitle className="text-base">
+            {existing ? "Edit flight plan" : "Create flight plan"} · {fieldName}
+          </DialogTitle>
           <div className="text-xs text-muted-foreground">
             A survey flight over this field. Download it as a KMZ, fly it, then upload the photographs in step 2.
           </div>
         </DialogHeader>
 
-        <div className="grid md:grid-cols-[1fr_300px] gap-4">
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
-                <Input className="pl-8" placeholder="Search an address or place"
-                  value={query} onChange={e => setQuery(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void search(); } }} />
-              </div>
-              <Button type="button" variant="outline" onClick={() => void search()} disabled={searching}>
-                {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Find"}
-              </Button>
-            </div>
-            {searchError && <div className="text-xs text-destructive">{searchError}</div>}
+        {/* One row of things you do to the map, above the map. */}
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b shrink-0">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+            <Input className="pl-8 h-9" placeholder="Search an address or place"
+              value={query} onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void search(); } }} />
+          </div>
+          <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => void search()} disabled={searching}>
+            {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Find"}
+          </Button>
+          <div className="w-px h-6 bg-border" />
+          <Button type="button" variant={drawing ? "default" : "outline"} size="sm" className="h-9"
+            onClick={() => setDrawing(d => !d)}>
+            <Pencil className="h-3.5 w-3.5" /> {drawing ? "Cancel" : rings.length ? "Redraw area" : "Draw area"}
+          </Button>
+          {rings.length > 0 && (
+            <Button type="button" variant="ghost" size="sm" className="h-9" onClick={() => setRings([])}>
+              <Trash2 className="h-3.5 w-3.5" /> Clear
+            </Button>
+          )}
+          {resolved && steps.length > 0 && (
+            <Button type="button" variant={showRoute ? "default" : "outline"} size="sm" className="h-9"
+              onClick={() => setShowRoute(v => !v)}>
+              <ListOrdered className="h-3.5 w-3.5" /> Step by step
+            </Button>
+          )}
+          {searchError && <span className="text-xs text-destructive">{searchError}</span>}
+        </div>
 
-            <div className="h-[420px] rounded overflow-hidden border">
-              <MapContainer center={[centre.lat, centre.lng]} zoom={rings.length ? 16 : 4}
-                style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
-                ref={m => { mapRef.current = m; }}>
-                {/* Satellite by default: a farmer recognises their own field
-                    from the imagery, not from a road map of open farmland. */}
-                <TileLayer
-                  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                  maxNativeZoom={19} maxZoom={21} />
-                <FitTo rings={rings} />
-                <DrawTool active={drawing} onDrawn={ring => { setRings([ring]); setDrawing(false); }} />
-                {rings.map((r, i) => (
-                  <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])}
-                    pathOptions={{ color: "#4CAF50", weight: 2, fillOpacity: 0.08 }} />
-                ))}
-                {/* The route, exactly as the exporter will write it. */}
-                {resolved?.grid.legs.map((leg, i) => (
-                  <Polyline key={`leg${i}`}
-                    positions={[[leg.a.lat, leg.a.lng], [leg.b.lat, leg.b.lng]]}
-                    pathOptions={{ color: "#38bdf8", weight: 2 }} />
-                ))}
-                {resolved && resolved.grid.legs.length > 1 && (
-                  <Polyline
-                    positions={resolved.grid.legs.slice(0, -1).flatMap((leg, i) => [
-                      [leg.b.lat, leg.b.lng] as [number, number],
-                      [resolved.grid.legs[i + 1].a.lat, resolved.grid.legs[i + 1].a.lng] as [number, number],
-                    ])}
-                    pathOptions={{ color: "#38bdf8", weight: 1, dashArray: "4 4", opacity: 0.6 }} />
-                )}
-                {/* Every point the camera fires at, one marker per Placemark in
-                    the file. The density of a survey is decided by altitude and
-                    overlap, and it has to be visible here, before the download,
-                    not discovered in a viewer afterwards. Past the airframe's
-                    ceiling the plan is refused anyway, so the markers stop. */}
-                {resolved && resolved.grid.waypoints.length <= 400 && resolved.grid.waypoints.map((p, i) => (
-                  <CircleMarker key={`wp${i}`} center={[p.lat, p.lng]} radius={3}
-                    pathOptions={{ color: "#38bdf8", weight: 1, fillColor: "#ffffff", fillOpacity: 1 }}>
-                    <Tooltip direction="top" offset={[0, -4]}>
-                      Waypoint {i + 1} of {resolved.grid.waypoints.length}, photo {i + 1}
-                    </Tooltip>
-                  </CircleMarker>
-                ))}
+        {/* The map, and everything that belongs on top of it rather than beside it. */}
+        <div className="relative flex-1 min-h-0">
+          <MapContainer center={[centre.lat, centre.lng]} zoom={rings.length ? 17 : 4}
+            style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
+            ref={m => { mapRef.current = m; }}>
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              maxNativeZoom={19} maxZoom={21} />
+            <FitTo rings={rings} />
+            <DrawTool active={drawing} onDrawn={ring => { setRings([ring]); setDrawing(false); }} />
 
-                {/* Which way each line runs. Placed at the midpoint so it never
-                    sits under a numbered badge at the corner. */}
-                {resolved?.grid.legs.map((leg, i) => {
-                  const m = midpoint(leg.a, leg.b);
-                  return (
-                    <Marker key={`dir${i}`} position={[m.lat, m.lng]} interactive={false}
-                      icon={arrowIcon(bearingDeg(leg.a, leg.b), "#38bdf8")} />
-                  );
-                })}
+            {rings.map((r, i) => (
+              <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])}
+                pathOptions={{ color: ROUTE.area, weight: 2, fillOpacity: 0.06, dashArray: "6 5" }} />
+            ))}
 
-                {/* The transit between lines: the ground the aircraft crosses
-                    without photographing it. Drawn dimmer, and arrowed, because
-                    it is still flight and it is where the turn happens. */}
-                {resolved?.grid.legs.slice(0, -1).map((leg, i) => {
-                  const next = resolved.grid.legs[i + 1].a;
-                  const m = midpoint(leg.b, next);
-                  return (
-                    <Marker key={`turn${i}`} position={[m.lat, m.lng]} interactive={false}
-                      icon={arrowIcon(bearingDeg(leg.b, next), "#7dd3fc")} />
-                  );
-                })}
+            {/* Casing first, then the line on top: a bare stroke vanishes over a
+                bright roof or a dark treeline, and a survey crosses both. */}
+            {resolved?.grid.legs.map((leg, i) => (
+              <Polyline key={`case${i}`}
+                positions={[[leg.a.lat, leg.a.lng], [leg.b.lat, leg.b.lng]]}
+                pathOptions={{ color: ROUTE.casing, weight: 9, opacity: 0.75 }} />
+            ))}
+            {resolved?.grid.legs.map((leg, i) => (
+              <Polyline key={`leg${i}`}
+                positions={[[leg.a.lat, leg.a.lng], [leg.b.lat, leg.b.lng]]}
+                pathOptions={{ color: ROUTE.line, weight: 5 }} />
+            ))}
 
-                {/* The line numbers, matching the written list beside the map.
-                    Skipped when there are too many to read, which is the point
-                    at which they would be clutter rather than an answer. */}
-                {resolved && resolved.grid.legs.length <= 40 && resolved.grid.legs.map((leg, i) => (
-                  <Marker key={`num${i}`} position={[leg.a.lat, leg.a.lng]}
-                    icon={badgeIcon(String(i + 1), "#0ea5e9", "#001018")}>
-                    <Tooltip direction="top" offset={[0, -10]}>
-                      Line {i + 1} starts here, {leg.captures.length} photo{leg.captures.length === 1 ? "" : "s"}
-                    </Tooltip>
-                  </Marker>
-                ))}
-
-                {ends && (
-                  <>
-                    <Marker position={[ends.start.lat, ends.start.lng]}
-                      icon={badgeIcon("S", "#22c55e", "#04230f", 22)} zIndexOffset={1000}>
-                      <Tooltip direction="top" offset={[0, -12]}>
-                        Start, waypoint 1, {startCorner} corner
-                      </Tooltip>
-                    </Marker>
-                    <Marker position={[ends.end.lat, ends.end.lng]}
-                      icon={badgeIcon("E", "#f43f5e", "#2a0410", 22)} zIndexOffset={1000}>
-                      <Tooltip direction="top" offset={[0, -12]}>
-                        Last photo, waypoint {resolved!.grid.waypoints.length}
-                      </Tooltip>
-                    </Marker>
-                  </>
-                )}
-              </MapContainer>
-            </div>
-
-            {/* What the colours mean. The green outline is the area, not a
-                path: nothing flies it and no photo is taken on it, which is
-                not obvious when it is the most prominent thing on the map. */}
-            {resolved && rings.length > 0 && (
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="inline-block w-4 border-t-2 border-[#4CAF50]" />
-                  Area you drew, not flown
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="inline-block w-4 border-t-2 border-[#38bdf8]" />
-                  Flight line, camera firing
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="inline-block w-4 border-t-2 border-dashed border-[#7dd3fc]" />
-                  Turn, no photos
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="inline-block h-2 w-2 rounded-full bg-white ring-1 ring-[#38bdf8]" />
-                  One photo
-                </span>
-              </div>
+            {/* The transit between lines, in a different colour because it is a
+                different thing: flight with the camera off. */}
+            {resolved && resolved.grid.legs.length > 1 && (
+              <Polyline
+                positions={resolved.grid.legs.slice(0, -1).flatMap((leg, i) => [
+                  [leg.b.lat, leg.b.lng] as [number, number],
+                  [resolved.grid.legs[i + 1].a.lat, resolved.grid.legs[i + 1].a.lng] as [number, number],
+                ])}
+                pathOptions={{ color: ROUTE.transit, weight: 3, dashArray: "6 6", opacity: 0.9 }} />
             )}
 
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setDrawing(d => !d)}>
-                <Pencil className="h-3.5 w-3.5" /> {drawing ? "Cancel drawing" : rings.length ? "Redraw area" : "Draw area"}
-              </Button>
-              {rings.length > 0 && (
-                <Button type="button" variant="ghost" size="sm" onClick={() => setRings([])}>
-                  <Trash2 className="h-3.5 w-3.5" /> Clear
-                </Button>
-              )}
-              {!rings.length && (
-                <span className="text-xs text-muted-foreground">
-                  {fieldBoundary?.length
-                    ? "Draw the area to survey."
-                    : "This field has no boundary yet. Draw the area to survey."}
-                </span>
-              )}
+            {resolved?.grid.legs.map((leg, i) => {
+              const m = midpoint(leg.a, leg.b);
+              return (
+                <Marker key={`dir${i}`} position={[m.lat, m.lng]} interactive={false}
+                  icon={arrowIcon(bearingDeg(leg.a, leg.b), "#fff")} />
+              );
+            })}
+
+            {/* Every point the camera fires at. Small, because they are the
+                texture of the route rather than its structure. */}
+            {resolved && resolved.grid.waypoints.length <= 400 && resolved.grid.waypoints.map((p, i) => (
+              <CircleMarker key={`wp${i}`} center={[p.lat, p.lng]} radius={2.5}
+                pathOptions={{ color: ROUTE.casing, weight: 1, fillColor: "#ffffff", fillOpacity: 1 }}>
+                <Tooltip direction="top" offset={[0, -4]}>
+                  Waypoint {i + 1} of {resolved.grid.waypoints.length}, photo {i + 1}
+                </Tooltip>
+              </CircleMarker>
+            ))}
+
+            {/* The numbered pins, on the corners where the route turns, carrying
+                the real waypoint number from the exported file. Two per line, so
+                a plan reads 1 to 2N the way a hand-placed mission does. */}
+            {corners.map(c => (
+              <Marker key={`pin${c.waypoint}`} position={[c.at.lat, c.at.lng]} zIndexOffset={500}
+                icon={pinIcon(String(c.waypoint), ROUTE.line, "#fff")}>
+                <Tooltip direction="top" offset={[0, -24]}>
+                  Waypoint {c.waypoint}: {c.role} of line {c.line}
+                </Tooltip>
+              </Marker>
+            ))}
+
+            {ends && (
+              <>
+                <Marker position={[ends.start.lat, ends.start.lng]} zIndexOffset={1000}
+                  icon={pinIcon("S", "#22c55e", "#04230f", 32)}>
+                  <Tooltip direction="top" offset={[0, -30]}>
+                    Start, waypoint 1, {startCorner} corner
+                  </Tooltip>
+                </Marker>
+                <Marker position={[ends.end.lat, ends.end.lng]} zIndexOffset={1000}
+                  icon={pinIcon("E", "#0ea5e9", "#001018", 32)}>
+                  <Tooltip direction="top" offset={[0, -30]}>
+                    Last photo, waypoint {resolved!.grid.waypoints.length}
+                  </Tooltip>
+                </Marker>
+              </>
+            )}
+          </MapContainer>
+
+          {/* What the plan comes to, over the map rather than in a column of
+              its own, so the numbers sit next to the thing they describe. */}
+          {resolved && rings.length > 0 && (
+            <div className="absolute top-3 right-3 z-[1100] rounded-lg bg-background/92 backdrop-blur border shadow-lg p-3 text-xs w-52 space-y-1">
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-semibold leading-none">{resolved.stats.photoCount}</span>
+                <span className="text-muted-foreground">photos</span>
+              </div>
+              <div className="pt-1 space-y-0.5 border-t">
+                <Row k="Lines" v={String(resolved.grid.lineCount)} />
+                <Row k="Photo every" v={dist(resolved.computed.captureIntervalM)} />
+                <Row k="Line spacing" v={dist(resolved.computed.lineSpacingM)} />
+                <Row k="Each covers" v={`${dist(resolved.computed.footprintAcrossM)} x ${dist(resolved.computed.footprintAlongM)}`} />
+                <Row k="Distance" v={dist(resolved.stats.distanceM)} />
+                <Row k="Time" v={mins(resolved.stats.flightTimeS)} />
+                <Row k="Area" v={area(resolved.stats.boundaryAreaM2)} />
+              </div>
+              <div className="text-[10px] text-muted-foreground pt-1 border-t leading-snug">
+                Time is distance over speed. No climb, no turn slowdown, no battery swaps.
+              </div>
+            </div>
+          )}
+
+          {/* The order, in words, over the map so it can be read against it. */}
+          {showRoute && resolved && steps.length > 0 && (
+            <div className="absolute top-3 left-3 z-[1100] rounded-lg bg-background/92 backdrop-blur border shadow-lg w-80 max-h-[calc(100%-1.5rem)] flex flex-col">
+              <div className="px-3 py-2 border-b text-xs font-medium flex items-center justify-between">
+                <span>What the drone does, in order</span>
+                <button type="button" className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowRoute(false)}>Close</button>
+              </div>
+              <ol className="overflow-y-auto divide-y text-xs">
+                <li className="px-3 py-2 flex gap-2">
+                  <span className="text-muted-foreground w-4 shrink-0">0</span>
+                  <span>
+                    Take off, climb to {fmtAltitude(params.altitudeM, units).text}, fly to
+                    waypoint 1 at the {startCorner} corner.
+                  </span>
+                </li>
+                {steps.map(step => (
+                  <li key={step.n} className="px-3 py-2 flex gap-2">
+                    <span className="text-muted-foreground w-4 shrink-0">{step.n}</span>
+                    {step.kind === "line" && (
+                      <span>
+                        <strong>Line {step.lineNumber}</strong>: fly {step.compass} for {dist(step.distanceM)},
+                        taking {step.photos} photo{step.photos === 1 ? "" : "s"}{" "}
+                        (waypoints {step.firstWaypoint} to {step.lastWaypoint}).
+                      </span>
+                    )}
+                    {step.kind === "turn" && (
+                      <span className="text-muted-foreground">
+                        Turn and cross {dist(step.distanceM)} to the {step.compass}. No photos.
+                      </span>
+                    )}
+                    {step.kind === "finish" && (
+                      <span>
+                        Last photo taken. The aircraft then follows its own return-to-home
+                        setting, from the point it took off at. This plan does not set that point.
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {/* What the colours mean. The green outline is the area, not a path:
+              nothing flies it and no photo is taken on it, which is not obvious
+              when it is the most prominent thing on the map. */}
+          {resolved && rings.length > 0 && (
+            <div className="absolute bottom-3 left-3 z-[1100] rounded-lg bg-background/92 backdrop-blur border shadow-lg px-3 py-2 text-[11px] space-y-1">
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-5 border-t-[3px]" style={{ borderColor: ROUTE.line }} />
+                Flight line, camera firing
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-5 border-t-[3px] border-dashed" style={{ borderColor: ROUTE.transit }} />
+                Turn, no photos
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-5 border-t-2 border-dashed" style={{ borderColor: ROUTE.area }} />
+                Area you drew, never flown
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-block h-2 w-2 rounded-full bg-white ring-1 ring-black" />
+                One photo
+              </span>
+            </div>
+          )}
+
+          {!rings.length && (
+            <div className="absolute inset-0 z-[1100] grid place-items-center pointer-events-none">
+              <div className="rounded-lg bg-background/92 backdrop-blur border shadow-lg px-4 py-3 text-sm">
+                {fieldBoundary?.length
+                  ? "Draw the area to survey."
+                  : "This field has no boundary yet. Draw the area to survey."}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Settings, in one band under the map instead of a narrow column. */}
+        <div className="border-t shrink-0 px-4 py-2.5 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+          <div className="sm:col-span-2 lg:col-span-1">
+            <Label htmlFor="fp-camera" className="text-[11px] text-muted-foreground">Camera</Label>
+            <select id="fp-camera" className={NUM} value={params.cameraKey} onChange={e => set("cameraKey", e.target.value)}>
+              {Object.entries(CAMERAS).map(([k, c]) => <option key={k} value={k}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="sm:col-span-2 lg:col-span-1">
+            <Label className="text-[11px] text-muted-foreground">Flight direction</Label>
+            <div className="grid grid-cols-3 gap-1">
+              {([["auto", "Auto"], ["ew", "E-W"], ["ns", "N-S"]] as [FlightDirection, string][]).map(([v, label]) => (
+                <button key={v} type="button" onClick={() => set("direction", v)}
+                  className={`text-xs rounded border px-1 py-1.5 ${params.direction === v ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"}`}>
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
-
-          {/* Settings and what they work out to. */}
-          <div className="space-y-3 text-sm">
+          <div className="grid grid-cols-2 gap-2 sm:col-span-2 lg:col-span-2">
             <div>
-              <Label className="text-xs">Camera</Label>
-              <select className={NUM} value={params.cameraKey} onChange={e => set("cameraKey", e.target.value)}>
-                {Object.entries(CAMERAS).map(([k, c]) => <option key={k} value={k}>{c.name}</option>)}
-              </select>
+              <Label htmlFor="fp-altitude" className="text-[11px] text-muted-foreground">Altitude ({lenUnit})</Label>
+              <NumBox id="fp-altitude" value={lenShown(params.altitudeM)} min={lenFloor(MIN_ALTITUDE_M)}
+                max={lenFloor(MAX_ALTITUDE_M)}
+                onCommit={n => set("altitudeM", altitudeToM(n, units))} />
             </div>
-
             <div>
-              <Label className="text-xs">Flight direction</Label>
-              <div className="grid grid-cols-3 gap-1">
-                {([["auto", "Auto"], ["ew", "East-west"], ["ns", "North-south"]] as [FlightDirection, string][]).map(([v, label]) => (
-                  <button key={v} type="button" onClick={() => set("direction", v)}
-                    className={`text-xs rounded border px-2 py-1.5 ${params.direction === v ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <Label htmlFor="fp-speed" className="text-[11px] text-muted-foreground">Speed ({speedUnit(units)})</Label>
+              <NumBox id="fp-speed" value={spdShown(params.speedMs)} min={1} max={Math.ceil(speedValue(15, units))}
+                step={0.5} onCommit={n => set("speedMs", speedToMs(n, units))} />
             </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="text-xs">Altitude ({lenUnit})</Label>
-                <input type="number" min={lenShown(5)} max={lenShown(500)} className={NUM}
-                  value={lenShown(params.altitudeM)}
-                  onChange={e => set("altitudeM", lenToM(e.target.value, params.altitudeM))} />
-              </div>
-              <div>
-                <Label className="text-xs">Speed ({speedUnit(units)})</Label>
-                <input type="number" min={spdShown(1)} max={spdShown(15)} step={0.5} className={NUM}
-                  value={spdShown(params.speedMs)}
-                  onChange={e => set("speedMs", spdToMs(e.target.value, params.speedMs))} />
-              </div>
-              <div>
-                <Label className="text-xs">Front overlap (%)</Label>
-                <input type="number" min={0} max={95} className={NUM} value={params.frontOverlapPct}
-                  onChange={e => set("frontOverlapPct", num(e.target.value, 75))} />
-              </div>
-              <div>
-                <Label className="text-xs">Side overlap (%)</Label>
-                <input type="number" min={0} max={95} className={NUM} value={params.sideOverlapPct}
-                  onChange={e => set("sideOverlapPct", num(e.target.value, 75))} />
-              </div>
-              <div>
-                <Label className="text-xs">Gimbal (deg)</Label>
-                <input type="number" min={-90} max={30} className={NUM} value={params.gimbalPitchDeg}
-                  onChange={e => set("gimbalPitchDeg", num(e.target.value, -90))} />
-              </div>
-              <div>
-                <Label className="text-xs">Inset ({lenUnit})</Label>
-                <input type="number" min={0} max={lenShown(100)} className={NUM}
-                  value={lenShown(params.insetM)}
-                  onChange={e => set("insetM", lenToM(e.target.value, params.insetM))} />
-              </div>
-            </div>
-
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:col-span-2 lg:col-span-2">
             <div>
-              <Label className="text-xs">
-                Line spacing ({lenUnit})
-                {!params.lineSpacingM && resolved && (
-                  <span className="text-muted-foreground"> · {dist(resolved.computed.lineSpacingM)} from side overlap</span>
-                )}
+              <Label htmlFor="fp-front" className="text-[11px] text-muted-foreground">Front overlap (%)</Label>
+              <NumBox id="fp-front" value={params.frontOverlapPct} min={0} max={95}
+                onCommit={n => set("frontOverlapPct", n)} />
+            </div>
+            <div>
+              <Label htmlFor="fp-side" className="text-[11px] text-muted-foreground">Side overlap (%)</Label>
+              <NumBox id="fp-side" value={params.sideOverlapPct} min={0} max={95}
+                onCommit={n => set("sideOverlapPct", n)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:col-span-2 lg:col-span-4 xl:col-span-2">
+            <div>
+              <Label htmlFor="fp-gimbal" className="text-[11px] text-muted-foreground">Gimbal (deg)</Label>
+              <NumBox id="fp-gimbal" value={params.gimbalPitchDeg} min={-90} max={30}
+                onCommit={n => set("gimbalPitchDeg", n)} />
+            </div>
+            <div>
+              <Label htmlFor="fp-inset" className="text-[11px] text-muted-foreground">Inset ({lenUnit})</Label>
+              <NumBox id="fp-inset" value={lenShown(params.insetM)} min={0} max={lenFloor(100)}
+                onCommit={n => set("insetM", altitudeToM(n, units))} />
+            </div>
+            <div>
+              <Label htmlFor="fp-spacing" className="text-[11px] text-muted-foreground">
+                Spacing ({lenUnit}){!params.lineSpacingM && <span className="ml-1 opacity-70">auto</span>}
               </Label>
-              <div className="flex gap-1">
-                <input type="number" min={lenShown(1)} className={NUM} placeholder="from overlap"
-                  value={params.lineSpacingM == null ? "" : lenShown(params.lineSpacingM)}
-                  onChange={e => set("lineSpacingM", e.target.value.trim() === "" ? null : lenToM(e.target.value, params.lineSpacingM ?? 0))} />
-                {params.lineSpacingM != null && (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => set("lineSpacingM", null)}>Auto</Button>
-                )}
-              </div>
+              {/* Not a NumBox: here an empty box is a real answer. It means
+                  "work it out from the side overlap", so clearing it already
+                  commits null rather than being rejected. */}
+              <input id="fp-spacing" type="number" min={lenFloor(1)} className={NUM} placeholder="auto"
+                value={params.lineSpacingM == null ? "" : lenShown(params.lineSpacingM)}
+                onChange={e => {
+                  const raw = e.target.value.trim();
+                  if (raw === "") { set("lineSpacingM", null); return; }
+                  const n = Number(raw);
+                  if (Number.isFinite(n)) set("lineSpacingM", altitudeToM(n, units));
+                }} />
             </div>
+          </div>
+        </div>
 
-            {/* What the settings actually produce. Every figure is the
-                resolver's, and the map above is drawing the same object. */}
-            {resolved && rings.length > 0 && (
-              <div className="rounded border p-2 space-y-1 text-xs bg-muted/30">
-                <Row k="Lines" v={String(resolved.grid.lineCount)} />
-                <Row k="Photos" v={String(resolved.stats.photoCount)} />
-                <Row k="Photo every" v={dist(resolved.computed.captureIntervalM)} />
-                <Row k="Each photo covers" v={`${dist(resolved.computed.footprintAcrossM)} x ${dist(resolved.computed.footprintAlongM)}`} />
-                <Row k="Flight distance" v={dist(resolved.stats.distanceM)} />
-                <Row k="Flight time" v={`${mins(resolved.stats.flightTimeS)} at ${params.speedMs} m/s`} />
-                <Row k="Area" v={area(resolved.stats.boundaryAreaM2)} />
-                <div className="text-[10px] text-muted-foreground pt-1 border-t">
-                  Time is distance over speed. It does not include climb, turns slowing the aircraft, or battery swaps.
-                </div>
-              </div>
-            )}
-
-            {/* Shown while they are still adjusting, not only at the button.
-                The confirmation below repeats it, deliberately: one is a
-                warning, the other is a decision. */}
-            {lowAltitude && rings.length > 0 && (
-              <div className="rounded border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive flex items-start gap-1.5">
-                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <span><strong>Low altitude.</strong> {caution}</span>
-              </div>
-            )}
-
-            {/* The order, in words. The map shows the same numbers. */}
-            {resolved && steps.length > 0 && (
-              <div className="rounded border">
-                <button type="button" className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-medium"
-                  onClick={() => setShowRoute(v => !v)}>
-                  <span>What the drone does, in order</span>
-                  <span className="text-muted-foreground">{showRoute ? "Hide" : `${steps.length} steps`}</span>
-                </button>
-                {showRoute && (
-                  <ol className="border-t divide-y max-h-56 overflow-y-auto text-xs">
-                    <li className="px-2 py-1.5 flex gap-2">
-                      <span className="text-muted-foreground w-5 shrink-0">0</span>
-                      <span>
-                        Take off, climb to {fmtAltitude(params.altitudeM, units).text}, and fly to waypoint 1
-                        at the {startCorner} corner.
-                      </span>
-                    </li>
-                    {steps.map(step => (
-                      <li key={step.n} className="px-2 py-1.5 flex gap-2">
-                        <span className="text-muted-foreground w-5 shrink-0">{step.n}</span>
-                        {step.kind === "line" && (
-                          <span>
-                            <strong>Line {step.lineNumber}</strong>: fly {step.compass} for {dist(step.distanceM)},
-                            taking {step.photos} photo{step.photos === 1 ? "" : "s"}{" "}
-                            (waypoints {step.firstWaypoint} to {step.lastWaypoint}).
-                          </span>
-                        )}
-                        {step.kind === "turn" && (
-                          <span className="text-muted-foreground">
-                            Turn and cross {dist(step.distanceM)} to the {step.compass}. No photos.
-                          </span>
-                        )}
-                        {step.kind === "finish" && (
-                          <span>
-                            Last photo taken. The aircraft then does whatever its own return-to-home
-                            setting says, from the point it took off at. This plan does not set that point.
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </div>
-            )}
-
-            {resolved?.blocker && (
-              <div className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-500 flex items-start gap-1.5">
-                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <span>{resolved.blocker}</span>
-              </div>
-            )}
-
-            <div className="flex flex-col gap-2 pt-1">
-              <Button type="button" onClick={() => run("save")} disabled={!rings.length || saving || !user}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {existing ? "Save changes" : "Save flight plan"}
-              </Button>
+        {/* Warnings and the two things you can do, always in the same place. */}
+        <div className="border-t shrink-0 px-4 py-2.5 space-y-2">
+          {lowAltitude && rings.length > 0 && (
+            <div className="rounded border border-destructive/50 bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive flex items-start gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span><strong>Low altitude.</strong> {caution}</span>
+            </div>
+          )}
+          {resolved?.blocker && (
+            <div className="rounded border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-500 flex items-start gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>{resolved.blocker}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+              <Camera className="h-3 w-3 shrink-0" />
+              The camera fires every {resolved ? dist(resolved.computed.captureIntervalM) : "interval"} along
+              each line, not only at the turns.
+            </p>
+            <div className="flex items-center gap-2">
               <Button type="button" variant="outline" onClick={() => run("download")}
                 disabled={!resolved || !!resolved.blocker || !rings.length}>
                 <Download className="h-4 w-4" /> Download KMZ
               </Button>
-              <p className="text-[10px] text-muted-foreground">
-                <Camera className="h-3 w-3 inline mr-1" />
-                The camera fires every {resolved ? dist(resolved.computed.captureIntervalM) : "interval"} along each
-                line, not only at the turns.
-              </p>
+              <Button type="button" onClick={() => run("save")} disabled={!rings.length || saving || !user}>
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {existing ? "Save changes" : "Save flight plan"}
+              </Button>
             </div>
           </div>
         </div>
@@ -648,6 +725,7 @@ export default function FlightPlanModal({
     </Dialog>
   );
 }
+
 
 function Row({ k, v }: { k: string; v: string }) {
   return (

@@ -17,7 +17,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
-  DEFAULT_FLIGHT_PLAN_PARAMS, LOW_ALTITUDE_M, isLowAltitude, lowAltitudeCaution, resolveFlightPlan,
+  DEFAULT_FLIGHT_PLAN_PARAMS, LOW_ALTITUDE_M, MAX_ALTITUDE_M, MIN_ALTITUDE_M, isLowAltitude,
+  lowAltitudeCaution, resolveFlightPlan,
 } from "@/lib/flightPlan/generateKmz";
 import { type LatLng2, M_PER_DEG_LAT, mPerDegLng } from "@/lib/geo";
 import { setUnitSystem } from "@/hooks/useUnitSystem";
@@ -240,5 +241,78 @@ describe("the confirmation the operator has to answer", () => {
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog).toHaveTextContent("Fly at 10 m?");
     expect(dialog).toHaveTextContent(/trees, poles, wires/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The number boxes
+// ---------------------------------------------------------------------------
+//
+// Reported as "I can't make the altitude go below 3".
+//
+// A controlled `<input type="number">` whose handler rejects whatever it cannot
+// parse snaps straight back to the old number, so the LAST DIGIT CANNOT BE
+// DELETED: at "3" the backspace produces "", the handler keeps 3 because "" is
+// not a number, React re-renders "3". Every value above 9 is still reachable by
+// deleting down to two digits, which is why it presents as a floor at 3 rather
+// than as a field that does not work.
+describe("the number boxes", () => {
+  // In feet, because that is where it was reported and where the symptom is
+  // clearest: a default of 328 deletes down to 3 and then stops.
+  beforeEach(() => setUnitSystem("imperial"));
+  const altitudeBox = () => screen.getByLabelText(/Altitude/i) as HTMLInputElement;
+
+  it("can be emptied, which is how any smaller number gets typed", () => {
+    open(30.48);
+    const box = altitudeBox();
+    expect(box.value).toBe("100");
+
+    fireEvent.change(box, { target: { value: "10" } });
+    fireEvent.change(box, { target: { value: "1" } });
+    expect(box.value).toBe("1");
+
+    // The step that used to be impossible: the handler rejected "", the box
+    // snapped back, and the last digit could never be deleted.
+    fireEvent.change(box, { target: { value: "" } });
+    expect(box.value).toBe("");
+
+    fireEvent.change(box, { target: { value: "5" } });
+    expect(box.value).toBe("5");
+  });
+
+  it("holds the last good value while the box is empty, rather than planning on nothing", () => {
+    setUnitSystem("metric");
+    open(9);
+    expect(screen.getByText(/This plan flies at 9 m/)).toBeInTheDocument();
+    fireEvent.change(altitudeBox(), { target: { value: "" } });
+    // An empty box is a half-typed number, not an instruction to fly at zero.
+    expect(screen.getByText(/This plan flies at 9 m/)).toBeInTheDocument();
+  });
+
+  it("puts the real number back when an emptied box is abandoned", () => {
+    open(30.48);
+    const box = altitudeBox();
+    fireEvent.change(box, { target: { value: "" } });
+    fireEvent.blur(box);
+    expect(box.value).toBe("100");
+  });
+
+  it("commits every valid value as it is typed, so the preview keeps up", () => {
+    open(100);
+    expect(screen.queryByText(/Low altitude/i)).not.toBeInTheDocument();
+    fireEvent.change(altitudeBox(), { target: { value: "30" } });
+    // 30 ft is 9.1 m, below the threshold, and the caution appears without
+    // waiting for a blur or for a button to be pressed.
+    expect(screen.getByText(/Low altitude/i)).toBeInTheDocument();
+  });
+
+  it("does not floor the altitude at an arbitrary height", () => {
+    // The floor was 5 m, which reads as 16 ft and was picked for no reason.
+    // MIN_ALTITUDE_M is 1 m, which is a real bound: DJI's own take-off
+    // security height bottoms out at 1.2 m.
+    expect(MIN_ALTITUDE_M).toBe(1);
+    expect(MAX_ALTITUDE_M).toBe(500);
+    open(30.48);
+    expect(Number(altitudeBox().min)).toBeLessThanOrEqual(3);
   });
 });

@@ -147,6 +147,22 @@ export function blockerFor(waypointCount: number): string | null {
 }
 
 /**
+ * The range of altitudes the planner offers.
+ *
+ * NOT a safety limit. `LOW_ALTITUDE_M` and the confirmation it triggers are the
+ * safety limit, and they warn rather than refuse. This pair is the range in
+ * which the arithmetic still describes a survey: DJI's own take-off security
+ * height bottoms out at 1.2 m, and below a metre a frame covers less ground
+ * than the aircraft is wide.
+ *
+ * The floor was 5 m, picked for no stated reason, and an operator trying to
+ * plan lower met a box that went orange and said nothing. A limit nobody can
+ * read is not a limit, it is a fault.
+ */
+export const MIN_ALTITUDE_M = 1;
+export const MAX_ALTITUDE_M = 500;
+
+/**
  * Below this height the aircraft is inside the landscape rather than above it.
  *
  * 20 m is roughly 65 ft, which is under the mature height of the trees that

@@ -74,16 +74,38 @@ The tests for this read `pkg.kmz`, the Blob the download button hands to the bro
 the way a viewer would and count Placemarks per leg in the bytes on disk. A regression between
 waypoint generation and the file is the one thing the pre-zip tests could never catch.
 
+## The layout: the map is the screen
+
+The modal was a medium dialog split into a map and a 300px column of inputs, and the thing the
+operator was actually trying to read, where the aircraft goes, was the smallest element on it.
+It is now a near full-screen dialog in four bands: a toolbar of things you do to the map, the
+map itself taking all the remaining height, a single row of settings under it, and a footer that
+always holds the warnings and the two buttons.
+
+Everything that describes the plan sits **on** the map rather than beside it: the photo count and
+stats card, the legend, and the step-by-step list, each a translucent panel over the imagery, so
+a number is next to the thing it describes.
+
+The route is drawn as a thick red line over a near-black casing, which is how a route is drawn
+over aerial imagery for a reason: satellite is green, brown and grey, and a thin stroke in any of
+those disappears. The casing keeps it readable over a bright roof and a dark treeline in the same
+frame. The transit between lines is orange and dashed, because it is a different thing: flight
+with the camera off.
+
 ## The preview says what order, not only what shape
 
 A grid drawn as coloured lines answers "where" and says nothing about "in what order". Two plans
 can draw the identical picture and fly it in opposite directions from opposite corners, and the
 operator finds out once the aircraft is moving. So the preview carries:
 
-- **A numbered badge at the start of each line**, matching the written list beside the map.
+- **A numbered pin on every corner the route turns at**, carrying the real waypoint number from
+  the exported file. Two per line, so a plan reads 1 to 2N the way a hand-placed mission does.
+  Numbering all several hundred capture points would be illegible; the corners are what the
+  operator is checking.
 - **An arrowhead at each line's midpoint**, and a dimmer one on each transit, showing the
   direction of travel. This is the thing a drawn grid cannot say on its own.
-- **S and E markers** at the first and last waypoint, with the corner named in the tooltip.
+- **S and E pins**, larger and in their own colours, at the first and last waypoint, with the
+  corner named in the tooltip.
 - **A tooltip on every capture point** giving its waypoint number out of the total, so the
   ordering is available per point without numbering hundreds of dots into illegibility.
 - **A legend.** The green outline is the area, not a path: nothing flies it and no photograph is
@@ -129,6 +151,27 @@ file format and one enforcement of the waypoint ceiling.
 **The spray-actuator vocabulary is still unconfirmed and still absent**, and a test still
 asserts no spray-shaped tag appears in any output. Camera actions are documented by DJI; spray
 actions are not.
+
+## The number boxes
+
+`MIN_ALTITUDE_M` is 1 m and `MAX_ALTITUDE_M` is 500 m. The floor was 5 m, chosen for no stated
+reason; 1 m is a real bound, since DJI's own take-off security height bottoms out at 1.2 m and
+below a metre a frame covers less ground than the aircraft is wide. Neither is a safety limit.
+The safety limit is the confirmation below, and it warns rather than refuses.
+
+Every numeric field goes through `NumBox`, which exists because of a bug worth remembering. A
+controlled `<input type="number">` whose handler rejects whatever it cannot parse snaps straight
+back to the old number, so **the last digit cannot be deleted**: at "3" the backspace produces
+"", the handler keeps 3 because "" is not a number, React re-renders "3". Every value above 9 is
+still reachable by deleting down to two digits, which is why it presents as a mysterious floor at
+3 rather than as a field that plainly does not work. It was reported exactly that way: "I can't
+make the altitude go below 3."
+
+`NumBox` keeps whatever was typed for as long as the box has focus, including nothing at all, and
+commits only the values that parse. On blur the draft is dropped and the canonical number returns,
+which is what makes an abandoned empty box harmless rather than a way to store a blank altitude.
+The line spacing box is deliberately **not** a `NumBox`: there an empty box is a real answer,
+meaning "work it out from the side overlap".
 
 ## Flying low is allowed. Flying low by accident is not.
 
