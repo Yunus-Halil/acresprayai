@@ -48,6 +48,7 @@
 // silently would produce a plausible-looking, wrong-coloured image — the one
 // failure mode worth refusing outright rather than rendering.
 import { fromBlob } from "geotiff";
+import * as tus from "tus-js-client";
 import { supabase } from "@/integrations/supabase/client";
 import { M_PER_DEG_LAT, mPerDegLng } from "@/lib/geo";
 
@@ -230,32 +231,39 @@ export const bandsNeedMapping = (bandCount: number): boolean => bandCount !== 3 
 // ---------------------------------------------------------------------------
 
 /**
- * The ceiling of the upload path this app uses.
+ * The largest orthomosaic this app will take.
  *
- * `runOrthoImport` sends the file in ONE request (`uploadToSignedUrl`), and
- * Supabase's standard upload tops out at 5 GB. Past that the browser does not
- * get a polite refusal: the request dies mid-flight and surfaces as a bare
- * "Failed to fetch", which tells the operator nothing about what went wrong or
- * what to do next. So the size is checked here, before anything is sent.
+ * Two ceilings sit under this number and both have to hold for it to mean
+ * anything. Supabase's STANDARD upload (one request, `uploadToSignedUrl`) stops
+ * at 5 GB, so anything past that must go through the RESUMABLE path, which is
+ * why `resumableUpload` exists. And the project's own storage limit, set in the
+ * dashboard and invisible from here, caps everything: if it is lower than this,
+ * the storage service refuses and this number is a promise the server will not
+ * keep.
  *
- * Lifting this properly means a resumable (TUS) upload, which chunks the file
- * and can resume after a dropped connection. Until that exists, a file past
- * this size has to be made smaller, and converting it to a compressed COG is
- * the right way to do that anyway: it shrinks most orthomosaics severalfold AND
- * makes the tile bake dramatically faster, because the tile server can then
- * read a window of the image instead of pulling the whole thing.
+ * Set to 10 GB against a project configured for 20 GB. Raising it means
+ * checking the project limit first; the resumable path itself goes to 50 GB.
  */
-export const MAX_UPLOAD_BYTES = 5 * 1024 ** 3;
+export const MAX_UPLOAD_BYTES = 10 * 1024 ** 3;
 
 /**
- * Where a single-request upload starts being a gamble rather than a certainty.
+ * Above this, upload in resumable chunks rather than one request.
  *
- * Well under the hard ceiling, but a multi-gigabyte PUT over a farm broadband
- * connection is one dropped packet away from starting over, with no resume.
- * Worth saying out loud rather than letting the operator discover it after a
- * twenty-minute wait.
+ * Not only about the 5 GB hard ceiling. A multi-gigabyte single PUT over farm
+ * broadband is one dropped packet away from starting from zero, and the
+ * operator has no way to tell a stall from slow progress. Chunks survive that,
+ * and they are what makes a byte-level progress figure honest.
+ *
+ * Small files stay on the standard path: three round trips to negotiate a
+ * resumable session is the wrong trade for a file that uploads in one.
  */
-export const LARGE_UPLOAD_BYTES = 750 * 1024 ** 2;
+export const RESUMABLE_ABOVE_BYTES = 200 * 1024 ** 2;
+
+/** Supabase's resumable endpoint requires exactly this chunk size. */
+export const RESUMABLE_CHUNK_BYTES = 6 * 1024 * 1024;
+
+/** Whether a file of this size should take the resumable path. */
+export const shouldResume = (bytes: number): boolean => bytes > RESUMABLE_ABOVE_BYTES;
 
 export const formatBytes = (bytes: number): string => {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
@@ -269,19 +277,19 @@ export function sizeVerdict(bytes: number): { kind: "refuse" | "warn"; message: 
     return {
       kind: "refuse",
       message:
-        `This file is ${formatBytes(bytes)}. The upload sends it in one request, which tops out at ` +
-        `${formatBytes(MAX_UPLOAD_BYTES)}, so it cannot be sent as it is. Converting it to a compressed ` +
-        `cloud-optimised GeoTIFF usually shrinks an orthomosaic severalfold and makes the map build much ` +
-        `faster too: gdal_translate -of COG -co COMPRESS=DEFLATE in.tif out.tif`,
+        `This file is ${formatBytes(bytes)}, past the ${formatBytes(MAX_UPLOAD_BYTES)} limit. Converting it ` +
+        `to a compressed cloud-optimised GeoTIFF usually shrinks an orthomosaic severalfold and makes the ` +
+        `map build much faster too, because the tile server can then read a window of the image instead of ` +
+        `pulling all of it: gdal_translate -of COG -co COMPRESS=DEFLATE in.tif out.tif`,
     };
   }
-  if (bytes > LARGE_UPLOAD_BYTES) {
+  if (shouldResume(bytes)) {
     return {
       kind: "warn",
       message:
-        `This file is ${formatBytes(bytes)}. It will be sent in a single request with no resume, so a ` +
-        `dropped connection means starting over. A compressed cloud-optimised GeoTIFF would upload and ` +
-        `render faster: gdal_translate -of COG -co COMPRESS=DEFLATE in.tif out.tif`,
+        `This file is ${formatBytes(bytes)}, so it uploads in chunks and survives a dropped connection. ` +
+        `Expect it to take a while. A compressed cloud-optimised GeoTIFF would upload and render faster: ` +
+        `gdal_translate -of COG -co COMPRESS=DEFLATE in.tif out.tif`,
     };
   }
   return null;
@@ -291,6 +299,67 @@ export function sizeVerdict(bytes: number): { kind: "refuse" | "warn"; message: 
 export const hasAlphaBand = (bandCount: number): boolean => bandCount === 4;
 
 export type ImportPhase = "uploading" | "finishing" | "done";
+
+/** Where the import has got to. `sent`/`total` are bytes, and only while uploading. */
+export type ImportProgress = {
+  phase: ImportPhase;
+  sent?: number;
+  total?: number;
+};
+
+/**
+ * Send the file in resumable chunks.
+ *
+ * Supabase's standard upload is a single request and stops at 5 GB; this is the
+ * path that goes past it, and the one that survives a dropped connection. It
+ * does NOT use the signed upload token the init step mints, because the
+ * resumable endpoint authenticates the user directly: the object path is
+ * `<user id>/<uuid>.tif`, and the `orthos` bucket policy already grants a user
+ * write access to their own first path segment, so the same upload is
+ * permitted by the same rule either way.
+ *
+ * `chunkSize` is not tunable. Supabase's resumable endpoint requires exactly
+ * 6 MB parts and rejects anything else.
+ */
+async function resumableUpload(
+  path: string,
+  file: File,
+  onProgress?: (p: ImportProgress) => void,
+): Promise<void> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Not signed in.");
+
+  await new Promise<void>((resolve, reject) => {
+    const upload = new tus.Upload(file, {
+      endpoint: `https://${PROJECT_REF}.supabase.co/storage/v1/upload/resumable`,
+      // Backs off rather than giving up the moment a farm connection hiccups.
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      headers: { authorization: `Bearer ${token}`, "x-upsert": "true" },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      chunkSize: RESUMABLE_CHUNK_BYTES,
+      metadata: {
+        bucketName: "orthos",
+        objectName: path,
+        contentType: "image/tiff",
+        cacheControl: "3600",
+      },
+      onError: err => reject(new Error(`Upload failed: ${err.message}`)),
+      onProgress: (sent, total) => onProgress?.({ phase: "uploading", sent, total }),
+      onSuccess: () => resolve(),
+    });
+    // An interrupted upload of the same file can pick up where it stopped
+    // rather than starting from zero, which on a multi-gigabyte orthomosaic is
+    // the difference between a retry and an afternoon.
+    upload.findPreviousUploads()
+      .then(prior => {
+        if (prior.length) upload.resumeFromPreviousUpload(prior[0]);
+        upload.start();
+      })
+      .catch(() => upload.start());
+  });
+}
 
 /**
  * Upload the file and write the scan row. `fieldId` must already exist —
@@ -302,7 +371,7 @@ export async function runOrthoImport(opts: {
   file: File;
   metadata: OrthoMetadata;
   mapping: OrthoBandMapping;
-  onProgress?: (phase: ImportPhase) => void;
+  onProgress?: (p: ImportProgress) => void;
 }): Promise<{ taskId: string; odmUuid: string }> {
   const { fieldId, file, metadata, mapping, onProgress } = opts;
 
@@ -315,12 +384,19 @@ export async function runOrthoImport(opts: {
   if (!initRes.ok) throw new Error(initJson?.error ?? "Could not start the import");
   const { task_id: taskId, path, token } = initJson as { task_id: string; odm_uuid: string; path: string; token: string };
 
-  onProgress?.("uploading");
-  const { error: upErr } = await supabase.storage.from("orthos")
-    .uploadToSignedUrl(path, token, file, { contentType: "image/tiff" });
-  if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+  onProgress?.({ phase: "uploading", sent: 0, total: file.size });
+  if (shouldResume(file.size)) {
+    // Chunked, resumable, and the only path that reaches past 5 GB.
+    await resumableUpload(path, file, onProgress);
+  } else {
+    // A small file uploads in one request; negotiating a resumable session for
+    // it would cost more round trips than the upload itself.
+    const { error: upErr } = await supabase.storage.from("orthos")
+      .uploadToSignedUrl(path, token, file, { contentType: "image/tiff" });
+    if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+  }
 
-  onProgress?.("finishing");
+  onProgress?.({ phase: "finishing" });
   const commitRes = await fetch(`${FN_BASE}/ortho-import?action=commit`, {
     method: "POST",
     headers: { Authorization: await authHeader(), "Content-Type": "application/json" },
@@ -333,6 +409,6 @@ export async function runOrthoImport(opts: {
   const commitJson = await commitRes.json().catch(() => ({}));
   if (!commitRes.ok) throw new Error(commitJson?.error ?? "Could not finish the import");
 
-  onProgress?.("done");
+  onProgress?.({ phase: "done" });
   return { taskId, odmUuid: commitJson.odm_uuid as string };
 }

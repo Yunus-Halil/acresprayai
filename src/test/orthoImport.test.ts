@@ -8,8 +8,8 @@
 // reader reports.
 import { describe, expect, it } from "vitest";
 import {
-  LARGE_UPLOAD_BYTES, MAX_UPLOAD_BYTES, bandsNeedMapping, defaultThreeBandMapping, formatBytes,
-  hasAlphaBand, readOrthoMetadata, sizeVerdict,
+  MAX_UPLOAD_BYTES, RESUMABLE_ABOVE_BYTES, RESUMABLE_CHUNK_BYTES, bandsNeedMapping,
+  defaultThreeBandMapping, formatBytes, hasAlphaBand, readOrthoMetadata, shouldResume, sizeVerdict,
 } from "@/lib/orthoImport";
 
 // ---------------------------------------------------------------------------
@@ -291,35 +291,45 @@ describe("which files have to be answered for, and which do not", () => {
   });
 });
 
-describe("a file too big to send says so, instead of dying mid-flight", () => {
-  // The upload is one request. Past the standard-upload ceiling the browser
-  // does not get a refusal, the request simply dies and surfaces as a bare
-  // "Failed to fetch", naming neither the cause nor the fix.
-  it("refuses past the single-request ceiling and names the size and the way out", () => {
-    const v = sizeVerdict(6 * 1024 ** 3)!;
+describe("how big a file may be, and how it gets sent", () => {
+  it("takes a 6 GB orthomosaic, which the single-request path could never carry", () => {
+    // The whole point of the resumable path: 6 GB is past Supabase's 5 GB
+    // standard-upload ceiling, where the request used to die mid-flight and
+    // reach the operator as a bare "Failed to fetch".
+    expect(sizeVerdict(6 * 1024 ** 3)!.kind).toBe("warn");
+    expect(shouldResume(6 * 1024 ** 3)).toBe(true);
+  });
+
+  it("refuses past the stated limit, naming the size and the way out", () => {
+    const v = sizeVerdict(MAX_UPLOAD_BYTES + 1)!;
     expect(v.kind).toBe("refuse");
-    expect(v.message).toMatch(/6\.0 GB/);
-    expect(v.message).toMatch(/one request/);
+    expect(v.message).toMatch(/10\.0 GB limit/);
     expect(v.message).toMatch(/gdal_translate -of COG/);
   });
 
-  it("warns, but does not block, where a single request is merely a gamble", () => {
-    const v = sizeVerdict(LARGE_UPLOAD_BYTES + 1)!;
+  it("warns without blocking where the upload will simply take a while", () => {
+    const v = sizeVerdict(RESUMABLE_ABOVE_BYTES + 1)!;
     expect(v.kind).toBe("warn");
-    expect(v.message).toMatch(/no resume/);
+    expect(v.message).toMatch(/uploads in chunks and survives a dropped connection/);
   });
 
-  it("says nothing about an ordinary file", () => {
-    expect(sizeVerdict(200 * 1024 ** 2)).toBeNull();
+  it("says nothing about an ordinary file, and sends it in one request", () => {
+    expect(sizeVerdict(100 * 1024 ** 2)).toBeNull();
     expect(sizeVerdict(0)).toBeNull();
+    expect(shouldResume(100 * 1024 ** 2)).toBe(false);
   });
 
-  it("puts the boundaries where the upload path actually breaks", () => {
-    // 5 GB is the documented limit of the standard upload, not a guess.
-    expect(MAX_UPLOAD_BYTES).toBe(5 * 1024 ** 3);
-    expect(sizeVerdict(MAX_UPLOAD_BYTES)).not.toBeNull();
+  it("puts the limit where the project was configured for it", () => {
+    // 10 GB against a project set to 20 GB. The project limit is invisible
+    // from here and caps everything, so this number is a promise that only
+    // holds while the dashboard agrees with it.
+    expect(MAX_UPLOAD_BYTES).toBe(10 * 1024 ** 3);
     expect(sizeVerdict(MAX_UPLOAD_BYTES)!.kind).toBe("warn");
-    expect(sizeVerdict(MAX_UPLOAD_BYTES + 1)!.kind).toBe("refuse");
+  });
+
+  it("uses the chunk size the resumable endpoint demands", () => {
+    // Supabase rejects any other part size; this is not a tuning knob.
+    expect(RESUMABLE_CHUNK_BYTES).toBe(6 * 1024 * 1024);
   });
 
   it("formats a size the way a person would say it", () => {

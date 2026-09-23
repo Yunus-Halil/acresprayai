@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import {
-  type ImportPhase, type OrthoBandMapping, type OrthoMetadata,
+  type ImportProgress, type OrthoBandMapping, type OrthoMetadata,
   bandsNeedMapping, defaultThreeBandMapping, formatBytes, hasAlphaBand, readOrthoMetadata,
   runOrthoImport, sizeVerdict,
 } from "@/lib/orthoImport";
@@ -32,7 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, ArrowRight, CheckCircle2, FileUp, Loader2, Settings2 } from "lucide-react";
 
-const PHASE_LABEL: Record<ImportPhase, string> = {
+const PHASE_LABEL: Record<ImportProgress["phase"], string> = {
   uploading: "Uploading the orthomosaic…",
   finishing: "Finishing the import…",
   done: "Done.",
@@ -63,7 +63,7 @@ export default function ImportOrthomosaicForm({ onImported, existingField }: {
   const [customizeMapping, setCustomizeMapping] = useState(false);
   const [sizeNote, setSizeNote] = useState<{ kind: "refuse" | "warn"; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [phase, setPhase] = useState<ImportPhase | null>(null);
+  const [phase, setPhase] = useState<ImportProgress | null>(null);
 
   const needsMapping = !!meta && bandsNeedMapping(meta.bandCount);
   const bandOptions = useMemo(
@@ -273,8 +273,24 @@ export default function ImportOrthomosaicForm({ onImported, existingField }: {
       )}
 
       {phase && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> {PHASE_LABEL[phase]}
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> {PHASE_LABEL[phase.phase]}
+            {/* A multi-gigabyte upload behind a bare spinner is
+                indistinguishable from a stalled one. */}
+            {phase.total ? (
+              <span className="font-mono text-xs">
+                {formatBytes(phase.sent ?? 0)} / {formatBytes(phase.total)}
+                {" "}({Math.floor(((phase.sent ?? 0) / phase.total) * 100)}%)
+              </span>
+            ) : null}
+          </div>
+          {phase.total ? (
+            <div className="h-1 w-full rounded bg-muted overflow-hidden">
+              <div className="h-full bg-primary transition-all"
+                style={{ width: `${Math.min(100, ((phase.sent ?? 0) / phase.total) * 100)}%` }} />
+            </div>
+          ) : null}
         </div>
       )}
 
