@@ -7,7 +7,10 @@
 // logic agrees with itself, not that it agrees with what a real GeoTIFF
 // reader reports.
 import { describe, expect, it } from "vitest";
-import { bandsNeedMapping, defaultThreeBandMapping, hasAlphaBand, readOrthoMetadata } from "@/lib/orthoImport";
+import {
+  LARGE_UPLOAD_BYTES, MAX_UPLOAD_BYTES, bandsNeedMapping, defaultThreeBandMapping, formatBytes,
+  hasAlphaBand, readOrthoMetadata, sizeVerdict,
+} from "@/lib/orthoImport";
 
 // ---------------------------------------------------------------------------
 // A minimal, uncompressed, single-strip TIFF builder - just enough of the
@@ -285,5 +288,43 @@ describe("which files have to be answered for, and which do not", () => {
 
   it("assumes file order, never an invented one", () => {
     expect(defaultThreeBandMapping()).toEqual({ red: 1, green: 2, blue: 3 });
+  });
+});
+
+describe("a file too big to send says so, instead of dying mid-flight", () => {
+  // The upload is one request. Past the standard-upload ceiling the browser
+  // does not get a refusal, the request simply dies and surfaces as a bare
+  // "Failed to fetch", naming neither the cause nor the fix.
+  it("refuses past the single-request ceiling and names the size and the way out", () => {
+    const v = sizeVerdict(6 * 1024 ** 3)!;
+    expect(v.kind).toBe("refuse");
+    expect(v.message).toMatch(/6\.0 GB/);
+    expect(v.message).toMatch(/one request/);
+    expect(v.message).toMatch(/gdal_translate -of COG/);
+  });
+
+  it("warns, but does not block, where a single request is merely a gamble", () => {
+    const v = sizeVerdict(LARGE_UPLOAD_BYTES + 1)!;
+    expect(v.kind).toBe("warn");
+    expect(v.message).toMatch(/no resume/);
+  });
+
+  it("says nothing about an ordinary file", () => {
+    expect(sizeVerdict(200 * 1024 ** 2)).toBeNull();
+    expect(sizeVerdict(0)).toBeNull();
+  });
+
+  it("puts the boundaries where the upload path actually breaks", () => {
+    // 5 GB is the documented limit of the standard upload, not a guess.
+    expect(MAX_UPLOAD_BYTES).toBe(5 * 1024 ** 3);
+    expect(sizeVerdict(MAX_UPLOAD_BYTES)).not.toBeNull();
+    expect(sizeVerdict(MAX_UPLOAD_BYTES)!.kind).toBe("warn");
+    expect(sizeVerdict(MAX_UPLOAD_BYTES + 1)!.kind).toBe("refuse");
+  });
+
+  it("formats a size the way a person would say it", () => {
+    expect(formatBytes(6 * 1024 ** 3)).toBe("6.0 GB");
+    expect(formatBytes(200 * 1024 ** 2)).toBe("200 MB");
+    expect(formatBytes(12 * 1024)).toBe("12 KB");
   });
 });

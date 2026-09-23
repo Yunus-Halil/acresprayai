@@ -22,7 +22,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import {
   type ImportPhase, type OrthoBandMapping, type OrthoMetadata,
-  bandsNeedMapping, defaultThreeBandMapping, hasAlphaBand, readOrthoMetadata, runOrthoImport,
+  bandsNeedMapping, defaultThreeBandMapping, formatBytes, hasAlphaBand, readOrthoMetadata,
+  runOrthoImport, sizeVerdict,
 } from "@/lib/orthoImport";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +61,7 @@ export default function ImportOrthomosaicForm({ onImported, existingField }: {
   const [refusal, setRefusal] = useState<string | null>(null);
   const [mapping, setMapping] = useState<OrthoBandMapping | null>(null);
   const [customizeMapping, setCustomizeMapping] = useState(false);
+  const [sizeNote, setSizeNote] = useState<{ kind: "refuse" | "warn"; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<ImportPhase | null>(null);
 
@@ -77,7 +79,13 @@ export default function ImportOrthomosaicForm({ onImported, existingField }: {
     setRefusal(null);
     setMapping(null);
     setCustomizeMapping(false);
+    setSizeNote(null);
     if (!f) return;
+    // Checked before the header is read: a file this path cannot send is worth
+    // saying so about at once, rather than after parsing it successfully.
+    const size = sizeVerdict(f.size);
+    setSizeNote(size);
+    if (size?.kind === "refuse") return;
     setChecking(true);
     try {
       const result = await readOrthoMetadata(f);
@@ -101,7 +109,7 @@ export default function ImportOrthomosaicForm({ onImported, existingField }: {
     setMapping(m => ({ ...(m ?? { red: 0, green: 0, blue: 0 }), [role]: band }));
   };
 
-  const canSubmit = !!user && !!file && !!meta && !checking && !busy &&
+  const canSubmit = !!user && !!file && !!meta && !checking && !busy && sizeNote?.kind !== "refuse" &&
     (!!existingField || form.name.trim().length > 0) && mappingComplete && mappingDistinct;
 
   const submit = async () => {
@@ -169,6 +177,25 @@ export default function ImportOrthomosaicForm({ onImported, existingField }: {
         </div>
       )}
 
+      {/* Size is its own answer. A file too large for a single-request upload
+          used to die mid-flight as a bare "Failed to fetch", which named
+          neither the cause nor the fix. */}
+      {sizeNote && (
+        <div className={`flex items-start gap-2 text-sm p-3 rounded border ${sizeNote.kind === "refuse"
+          ? "bg-destructive/10 border-destructive/30 text-destructive"
+          : "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-500"}`}>
+          <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <div className="space-y-1">
+            <div>{sizeNote.message.split(": gdal_translate")[0]}</div>
+            {sizeNote.message.includes("gdal_translate") && (
+              <code className="block text-xs bg-background/60 rounded px-2 py-1 font-mono break-all">
+                gdal_translate -of COG -co COMPRESS=DEFLATE in.tif out.tif
+              </code>
+            )}
+          </div>
+        </div>
+      )}
+
       {meta && (
         <div className="rounded border p-3 space-y-2 bg-muted/30">
           <div className="flex items-center gap-1.5 text-sm font-medium">
@@ -183,6 +210,8 @@ export default function ImportOrthomosaicForm({ onImported, existingField }: {
             <dd className="font-mono">{meta.crsLabel}</dd>
             <dt className="text-muted-foreground">Bands</dt>
             <dd className="font-mono">{meta.bandCount} ({meta.dtype})</dd>
+            <dt className="text-muted-foreground">File size</dt>
+            <dd className="font-mono">{file ? formatBytes(file.size) : "-"}</dd>
           </dl>
 
           {!needsMapping && !customizeMapping && (

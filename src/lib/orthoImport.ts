@@ -225,6 +225,68 @@ export const defaultThreeBandMapping = (): OrthoBandMapping => ({ red: 1, green:
  */
 export const bandsNeedMapping = (bandCount: number): boolean => bandCount !== 3 && bandCount !== 4;
 
+// ---------------------------------------------------------------------------
+// How big a file this path can actually carry
+// ---------------------------------------------------------------------------
+
+/**
+ * The ceiling of the upload path this app uses.
+ *
+ * `runOrthoImport` sends the file in ONE request (`uploadToSignedUrl`), and
+ * Supabase's standard upload tops out at 5 GB. Past that the browser does not
+ * get a polite refusal: the request dies mid-flight and surfaces as a bare
+ * "Failed to fetch", which tells the operator nothing about what went wrong or
+ * what to do next. So the size is checked here, before anything is sent.
+ *
+ * Lifting this properly means a resumable (TUS) upload, which chunks the file
+ * and can resume after a dropped connection. Until that exists, a file past
+ * this size has to be made smaller, and converting it to a compressed COG is
+ * the right way to do that anyway: it shrinks most orthomosaics severalfold AND
+ * makes the tile bake dramatically faster, because the tile server can then
+ * read a window of the image instead of pulling the whole thing.
+ */
+export const MAX_UPLOAD_BYTES = 5 * 1024 ** 3;
+
+/**
+ * Where a single-request upload starts being a gamble rather than a certainty.
+ *
+ * Well under the hard ceiling, but a multi-gigabyte PUT over a farm broadband
+ * connection is one dropped packet away from starting over, with no resume.
+ * Worth saying out loud rather than letting the operator discover it after a
+ * twenty-minute wait.
+ */
+export const LARGE_UPLOAD_BYTES = 750 * 1024 ** 2;
+
+export const formatBytes = (bytes: number): string => {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
+  return `${Math.round(bytes / 1024)} KB`;
+};
+
+/** The one line to show a person about this file's size, or null when it is unremarkable. */
+export function sizeVerdict(bytes: number): { kind: "refuse" | "warn"; message: string } | null {
+  if (bytes > MAX_UPLOAD_BYTES) {
+    return {
+      kind: "refuse",
+      message:
+        `This file is ${formatBytes(bytes)}. The upload sends it in one request, which tops out at ` +
+        `${formatBytes(MAX_UPLOAD_BYTES)}, so it cannot be sent as it is. Converting it to a compressed ` +
+        `cloud-optimised GeoTIFF usually shrinks an orthomosaic severalfold and makes the map build much ` +
+        `faster too: gdal_translate -of COG -co COMPRESS=DEFLATE in.tif out.tif`,
+    };
+  }
+  if (bytes > LARGE_UPLOAD_BYTES) {
+    return {
+      kind: "warn",
+      message:
+        `This file is ${formatBytes(bytes)}. It will be sent in a single request with no resume, so a ` +
+        `dropped connection means starting over. A compressed cloud-optimised GeoTIFF would upload and ` +
+        `render faster: gdal_translate -of COG -co COMPRESS=DEFLATE in.tif out.tif`,
+    };
+  }
+  return null;
+}
+
 /** True when the file carries a fourth band, which is assumed to be alpha. */
 export const hasAlphaBand = (bandCount: number): boolean => bandCount === 4;
 
