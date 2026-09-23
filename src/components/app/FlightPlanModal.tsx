@@ -24,15 +24,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/lib/auth";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { type LatLng2, centroidOfRings } from "@/lib/geo";
 import {
-  altitudeToM, altitudeUnit, altitudeValue, fmtArea, fmtDistance, speedToMs, speedUnit, speedValue,
+  altitudeToM, altitudeUnit, altitudeValue, fmtAltitude, fmtArea, fmtDistance, speedToMs, speedUnit,
+  speedValue,
 } from "@/lib/units";
 import { CAMERAS } from "@/lib/flightPlan/camera";
 import {
-  DEFAULT_FLIGHT_PLAN_PARAMS, type FlightPlanParams, generateKmz, kmzFilename, resolveFlightPlan,
+  DEFAULT_FLIGHT_PLAN_PARAMS, type FlightPlanParams, LOW_ALTITUDE_M, generateKmz, kmzFilename,
+  lowAltitudeCaution, resolveFlightPlan,
 } from "@/lib/flightPlan/generateKmz";
 import type { FlightDirection } from "@/lib/flightPlan/grid";
 import { type FlightPlan, markExported, saveFlightPlan } from "@/lib/flightPlan/repo";
@@ -102,6 +108,11 @@ export default function FlightPlanModal({
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  // Which action is waiting on a low-altitude confirmation, if any. Held per
+  // action rather than as a sticky "acknowledged" flag: saving a low plan and
+  // exporting a file someone will fly are two different commitments, and an
+  // acknowledgement made at 19 m must not still be in force at 5 m.
+  const [confirming, setConfirming] = useState<null | "save" | "download">(null);
   const mapRef = useRef<L.Map | null>(null);
 
   // Reopening a plan restores exactly what it stored; a new plan starts from
@@ -116,6 +127,7 @@ export default function FlightPlanModal({
       setParams(DEFAULT_FLIGHT_PLAN_PARAMS);
     }
     setDrawing(false);
+    setConfirming(null);
   }, [open, existing, fieldBoundary]);
 
   const resolved = useMemo(
@@ -151,6 +163,14 @@ export default function FlightPlanModal({
 
   const centre = rings.length ? centroidOfRings(rings) : { lat: 39, lng: -98 };
 
+  // One wording, from the same module that decides the threshold, so the
+  // panel and the confirmation cannot say different things.
+  const lowAltitude = !!resolved?.lowAltitude;
+  const caution = lowAltitudeCaution(
+    fmtAltitude(params.altitudeM, units).text,
+    fmtAltitude(LOW_ALTITUDE_M, units).text,
+  );
+
   /**
    * Address search through Nominatim, which is free and needs no key.
    * Failure is reported rather than swallowed: a search box that silently does
@@ -184,6 +204,25 @@ export default function FlightPlanModal({
     toast.success(existing ? "Flight plan updated." : "Flight plan saved.");
     onSaved();
     onOpenChange(false);
+  };
+
+  /**
+   * Both buttons go through here.
+   *
+   * A low plan is not refused: flying low is a real choice and sometimes the
+   * right one. It is interrupted once, so the altitude is something the
+   * operator states rather than something they inherit from a default they
+   * changed an hour ago.
+   */
+  const run = (action: "save" | "download") => {
+    if (lowAltitude) { setConfirming(action); return; }
+    void (action === "save" ? save() : download());
+  };
+
+  const confirmed = () => {
+    const action = confirming;
+    setConfirming(null);
+    void (action === "save" ? save() : download());
   };
 
   const download = async () => {
@@ -385,6 +424,16 @@ export default function FlightPlanModal({
               </div>
             )}
 
+            {/* Shown while they are still adjusting, not only at the button.
+                The confirmation below repeats it, deliberately: one is a
+                warning, the other is a decision. */}
+            {lowAltitude && rings.length > 0 && (
+              <div className="rounded border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive flex items-start gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span><strong>Low altitude.</strong> {caution}</span>
+              </div>
+            )}
+
             {resolved?.blocker && (
               <div className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-500 flex items-start gap-1.5">
                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
@@ -393,11 +442,11 @@ export default function FlightPlanModal({
             )}
 
             <div className="flex flex-col gap-2 pt-1">
-              <Button type="button" onClick={save} disabled={!rings.length || saving || !user}>
+              <Button type="button" onClick={() => run("save")} disabled={!rings.length || saving || !user}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 {existing ? "Save changes" : "Save flight plan"}
               </Button>
-              <Button type="button" variant="outline" onClick={download}
+              <Button type="button" variant="outline" onClick={() => run("download")}
                 disabled={!resolved || !!resolved.blocker || !rings.length}>
                 <Download className="h-4 w-4" /> Download KMZ
               </Button>
@@ -410,6 +459,26 @@ export default function FlightPlanModal({
           </div>
         </div>
       </DialogContent>
+
+      {/* Not a block. An interruption that has to be answered, and whose
+          confirm button says what is being accepted rather than "OK". */}
+      <AlertDialog open={confirming !== null} onOpenChange={o => { if (!o) setConfirming(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+              Fly at {fmtAltitude(params.altitudeM, units).text}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>{caution}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Change the altitude</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmed}>
+              I have checked the route, {confirming === "save" ? "save it" : "download it"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

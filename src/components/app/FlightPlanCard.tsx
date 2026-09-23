@@ -5,14 +5,20 @@
 // states what it is and offers the two things anyone comes back for: change it,
 // or get the file again.
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, MapPin, Plane, Plus } from "lucide-react";
+import { AlertTriangle, Loader2, MapPin, Plane, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import type { LatLng2 } from "@/lib/geo";
 import { fmtAltitude, fmtDistance } from "@/lib/units";
-import { generateKmz, kmzFilename, resolveFlightPlan } from "@/lib/flightPlan/generateKmz";
+import {
+  LOW_ALTITUDE_M, generateKmz, isLowAltitude, kmzFilename, lowAltitudeCaution, resolveFlightPlan,
+} from "@/lib/flightPlan/generateKmz";
 import { type FlightPlan, listFlightPlans, markExported } from "@/lib/flightPlan/repo";
 import FlightPlanModal from "./FlightPlanModal";
 
@@ -29,6 +35,11 @@ export default function FlightPlanCard({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<FlightPlan | null>(null);
   const [showAll, setShowAll] = useState(false);
+  // A saved plan is re-exported straight from this card, without the modal
+  // ever opening, so the low-altitude confirmation has to live here too. A
+  // warning that only appears on the screen where the plan was written is no
+  // warning at all the second time somebody flies it.
+  const [confirming, setConfirming] = useState<FlightPlan | null>(null);
 
   const load = useCallback(() => {
     listFlightPlans(fieldId)
@@ -40,6 +51,11 @@ export default function FlightPlanCard({
   useEffect(() => { load(); }, [load]);
 
   const latest = plans?.[0] ?? null;
+
+  const exportOrConfirm = (plan: FlightPlan) => {
+    if (isLowAltitude(plan.params.altitudeM)) { setConfirming(plan); return; }
+    reExport(plan);
+  };
 
   const reExport = (plan: FlightPlan) => {
     try {
@@ -66,6 +82,7 @@ export default function FlightPlanCard({
       spacing: fmtDistance(r.computed.lineSpacingM, units).text,
       altitude: fmtAltitude(plan.params.altitudeM, units).text,
       blocker: r.blocker,
+      lowAltitude: r.lowAltitude,
     };
   };
 
@@ -128,11 +145,17 @@ export default function FlightPlanCard({
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <Button size="sm" variant="outline" onClick={() => { setEditing(plan); setOpen(true); }}>Edit</Button>
-                    <Button size="sm" variant="outline" disabled={!!s.blocker} onClick={() => reExport(plan)}>
+                    <Button size="sm" variant="outline" disabled={!!s.blocker} onClick={() => exportOrConfirm(plan)}>
                       Re-export KMZ
                     </Button>
                   </div>
                 </div>
+                {s.lowAltitude && (
+                  <div className="text-xs text-destructive inline-flex items-start gap-1.5">
+                    <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                    <span>Low altitude. Re-exporting asks you to confirm.</span>
+                  </div>
+                )}
                 {s.blocker && <div className="text-xs text-amber-700 dark:text-amber-500">{s.blocker}</div>}
               </div>
             );
@@ -159,6 +182,33 @@ export default function FlightPlanCard({
         existing={editing}
         onSaved={load}
       />
+
+      <AlertDialog open={confirming !== null} onOpenChange={o => { if (!o) setConfirming(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+              Fly at {confirming ? fmtAltitude(confirming.params.altitudeM, units).text : ""}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirming && lowAltitudeCaution(
+                fmtAltitude(confirming.params.altitudeM, units).text,
+                fmtAltitude(LOW_ALTITUDE_M, units).text,
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              const plan = confirming;
+              setConfirming(null);
+              if (plan) reExport(plan);
+            }}>
+              I have checked the route, download it
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

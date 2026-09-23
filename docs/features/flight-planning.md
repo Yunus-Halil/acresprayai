@@ -92,6 +92,36 @@ file format and one enforcement of the waypoint ceiling.
 asserts no spray-shaped tag appears in any output. Camera actions are documented by DJI; spray
 actions are not.
 
+## Flying low is allowed. Flying low by accident is not.
+
+Below `LOW_ALTITUDE_M` (20 m, roughly 65 ft) the panel shows a caution and both **Save** and
+**Download** stop for a confirmation the operator has to answer. Re-exporting a saved low plan
+from the card asks again, because the card exports without the modal ever opening.
+
+It is not a block, and the button is not disabled. A low pass is a legitimate plan and refusing
+it would be this planner overruling the person who can see the field. What it must not be is a
+default someone inherits without noticing, which is what happened: a test flight at 10 m nearly
+hit a tree.
+
+The threshold is a judgement, not a regulation. Nothing in Part 107 sets a floor; the ceiling
+(400 ft AGL) is the limit with a number. 20 m is where it is because that is under the mature
+height of the trees that line most field edges, and under a grain leg, a pole or a span of wire.
+
+The wording lives in `lowAltitudeCaution()` beside the threshold, so the panel, the card and the
+confirmation cannot drift apart, and it takes altitudes already formatted in the operator's own
+units. It names the hazards and then says what the planner does not know: no terrain model, no
+obstacle data, no forward sensing. It does **not** suggest a height to fly instead, which this
+planner has no basis for.
+
+Two details that matter:
+
+- **The acknowledgement is per action, not sticky.** Saving a low plan and exporting a file
+  somebody is about to fly are different commitments, and an acknowledgement made at 19 m must
+  not still be in force after the operator drops it to 5 m.
+- **The caution and the waypoint ceiling are independent, and a low plan can hit both.** At 10 m
+  the line spacing is 3.75 m, so anything field-sized needs thousands of waypoints against a
+  limit of 200. Over a small area the plan is flyable and only the caution applies.
+
 ## Two things the planner refuses to guess
 
 - **The waypoint ceiling.** Consumer airframes cap a route at `MAX_CONSUMER_WAYPOINTS` (200),

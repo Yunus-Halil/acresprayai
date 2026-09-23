@@ -79,6 +79,12 @@ export type FlightPlanResolved = {
    * not after they press the button.
    */
   blocker: string | null;
+  /**
+   * True when the altitude is low enough that the aircraft is flying among
+   * things rather than over them. Not a blocker: a low pass is a legitimate
+   * plan. It is surfaced so the UI can make the operator say so out loud.
+   */
+  lowAltitude: boolean;
 };
 
 /**
@@ -116,6 +122,7 @@ export function resolveFlightPlan(rings: LatLng2[][], params: FlightPlanParams):
     grid,
     stats: { ...gridStats(grid, params.speedMs), boundaryAreaM2: ringsAreaM2(rings) },
     blocker: blockerFor(grid.waypoints.length),
+    lowAltitude: isLowAltitude(params.altitudeM),
   };
 }
 
@@ -137,6 +144,42 @@ export function blockerFor(waypointCount: number): string | null {
       "Fly higher, reduce the overlap, or split the field into two flights.";
   }
   return null;
+}
+
+/**
+ * Below this height the aircraft is inside the landscape rather than above it.
+ *
+ * 20 m is roughly 65 ft, which is under the mature height of the trees that
+ * line most field edges, and under the top of a grain leg, a pole or a span of
+ * wire. The figure is a judgement, not a regulation: nothing in FAA Part 107
+ * sets a floor, and the ceiling (400 ft AGL) is the limit that has a number.
+ * It is set where it is because the planner CANNOT see obstacles. It flies
+ * straight lines across a polygon from an aerial outline, with no terrain
+ * model, no obstacle database and no forward sensing in the plan itself.
+ */
+export const LOW_ALTITUDE_M = 20;
+
+/** Whether a plan flies low enough to need the operator to confirm it. */
+export const isLowAltitude = (altitudeM: number): boolean =>
+  Number.isFinite(altitudeM) && altitudeM > 0 && altitudeM < LOW_ALTITUDE_M;
+
+/**
+ * What the operator is told, in one place so the card, the panel and the
+ * confirmation cannot drift apart.
+ *
+ * Takes altitudes already formatted in the operator's own units, because this
+ * module knows metres and the unit setting belongs to the UI.
+ *
+ * DELIBERATELY NOT REASSURING, and deliberately not a prescription. It names
+ * what the planner does not know rather than promising a safe alternative,
+ * because "fly at 30 m instead" would be exactly the kind of confident
+ * instruction this planner has no basis for.
+ */
+export function lowAltitudeCaution(shownAltitude: string, shownThreshold: string): string {
+  return `This plan flies at ${shownAltitude}. Below about ${shownThreshold} the aircraft is at the ` +
+    "height of mature trees, poles, wires and farm structures. This planner draws straight lines " +
+    "over a boundary: it has no terrain model, no obstacle data, and no knowledge of what is " +
+    "standing in this field. Walk or overfly the route before flying it.";
 }
 
 export class EmptyPlanError extends Error {
