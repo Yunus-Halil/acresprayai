@@ -13,7 +13,9 @@
 // This component chooses nothing: it collects parameters, draws what the
 // resolver returns, and hands the same object to the exporter.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, useMap } from "react-leaflet";
+import {
+  CircleMarker, MapContainer, Marker, Polygon, Polyline, TileLayer, Tooltip, useMap,
+} from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "@geoman-io/leaflet-geoman-free";
@@ -41,7 +43,40 @@ import {
   lowAltitudeCaution, resolveFlightPlan,
 } from "@/lib/flightPlan/generateKmz";
 import type { FlightDirection } from "@/lib/flightPlan/grid";
+import { bearingDeg, cornerName, routeEnds, routeSteps } from "@/lib/flightPlan/routeSteps";
 import { type FlightPlan, markExported, saveFlightPlan } from "@/lib/flightPlan/repo";
+
+/**
+ * A small round badge on the map.
+ *
+ * Built as HTML rather than an image so the number is real text: it stays
+ * legible at any zoom and survives a screenshot, which is how these previews
+ * actually get shared.
+ */
+const badgeIcon = (label: string, bg: string, fg: string, size = 18) => L.divIcon({
+  className: "",
+  html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${bg};`
+    + `border:2px solid #0b1220;box-shadow:0 0 0 1px rgba(255,255,255,.7);display:grid;`
+    + `place-items:center;font:700 ${size <= 18 ? 9 : 10}px/1 ui-monospace,monospace;color:${fg}">`
+    + `${label}</div>`,
+  iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+});
+
+/**
+ * An arrowhead pointing along the direction of travel.
+ *
+ * The one thing a drawn grid cannot say on its own. Two plans can draw the
+ * identical picture and fly it in opposite directions, and the operator only
+ * finds out once the aircraft is moving.
+ */
+const arrowIcon = (headingDeg: number, color: string) => L.divIcon({
+  className: "",
+  html: `<div style="transform:rotate(${headingDeg}deg);font:16px/1 sans-serif;color:${color};`
+    + `text-shadow:0 0 3px #000,0 0 3px #000">&#9650;</div>`,
+  iconSize: [16, 16], iconAnchor: [8, 8],
+});
+
+const midpoint = (a: LatLng2, b: LatLng2) => ({ lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 });
 
 /** Fits the map to the boundary whenever it changes. */
 function FitTo({ rings }: { rings: LatLng2[][] }) {
@@ -113,6 +148,7 @@ export default function FlightPlanModal({
   // exporting a file someone will fly are two different commitments, and an
   // acknowledgement made at 19 m must not still be in force at 5 m.
   const [confirming, setConfirming] = useState<null | "save" | "download">(null);
+  const [showRoute, setShowRoute] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
 
   // Reopening a plan restores exactly what it stored; a new plan starts from
@@ -162,6 +198,12 @@ export default function FlightPlanModal({
   };
 
   const centre = rings.length ? centroidOfRings(rings) : { lat: 39, lng: -98 };
+
+  // The route in words, and the same object the map labels read, so the list
+  // and the picture cannot describe different flights.
+  const steps = useMemo(() => (resolved ? routeSteps(resolved.grid) : []), [resolved]);
+  const ends = useMemo(() => (resolved ? routeEnds(resolved.grid) : null), [resolved]);
+  const startCorner = ends && rings[0] ? cornerName(ends.start, rings[0]) : "";
 
   // One wording, from the same module that decides the threshold, so the
   // panel and the confirmation cannot say different things.
@@ -309,10 +351,89 @@ export default function FlightPlanModal({
                     ceiling the plan is refused anyway, so the markers stop. */}
                 {resolved && resolved.grid.waypoints.length <= 400 && resolved.grid.waypoints.map((p, i) => (
                   <CircleMarker key={`wp${i}`} center={[p.lat, p.lng]} radius={3}
-                    pathOptions={{ color: "#38bdf8", weight: 1, fillColor: "#ffffff", fillOpacity: 1 }} />
+                    pathOptions={{ color: "#38bdf8", weight: 1, fillColor: "#ffffff", fillOpacity: 1 }}>
+                    <Tooltip direction="top" offset={[0, -4]}>
+                      Waypoint {i + 1} of {resolved.grid.waypoints.length}, photo {i + 1}
+                    </Tooltip>
+                  </CircleMarker>
                 ))}
+
+                {/* Which way each line runs. Placed at the midpoint so it never
+                    sits under a numbered badge at the corner. */}
+                {resolved?.grid.legs.map((leg, i) => {
+                  const m = midpoint(leg.a, leg.b);
+                  return (
+                    <Marker key={`dir${i}`} position={[m.lat, m.lng]} interactive={false}
+                      icon={arrowIcon(bearingDeg(leg.a, leg.b), "#38bdf8")} />
+                  );
+                })}
+
+                {/* The transit between lines: the ground the aircraft crosses
+                    without photographing it. Drawn dimmer, and arrowed, because
+                    it is still flight and it is where the turn happens. */}
+                {resolved?.grid.legs.slice(0, -1).map((leg, i) => {
+                  const next = resolved.grid.legs[i + 1].a;
+                  const m = midpoint(leg.b, next);
+                  return (
+                    <Marker key={`turn${i}`} position={[m.lat, m.lng]} interactive={false}
+                      icon={arrowIcon(bearingDeg(leg.b, next), "#7dd3fc")} />
+                  );
+                })}
+
+                {/* The line numbers, matching the written list beside the map.
+                    Skipped when there are too many to read, which is the point
+                    at which they would be clutter rather than an answer. */}
+                {resolved && resolved.grid.legs.length <= 40 && resolved.grid.legs.map((leg, i) => (
+                  <Marker key={`num${i}`} position={[leg.a.lat, leg.a.lng]}
+                    icon={badgeIcon(String(i + 1), "#0ea5e9", "#001018")}>
+                    <Tooltip direction="top" offset={[0, -10]}>
+                      Line {i + 1} starts here, {leg.captures.length} photo{leg.captures.length === 1 ? "" : "s"}
+                    </Tooltip>
+                  </Marker>
+                ))}
+
+                {ends && (
+                  <>
+                    <Marker position={[ends.start.lat, ends.start.lng]}
+                      icon={badgeIcon("S", "#22c55e", "#04230f", 22)} zIndexOffset={1000}>
+                      <Tooltip direction="top" offset={[0, -12]}>
+                        Start, waypoint 1, {startCorner} corner
+                      </Tooltip>
+                    </Marker>
+                    <Marker position={[ends.end.lat, ends.end.lng]}
+                      icon={badgeIcon("E", "#f43f5e", "#2a0410", 22)} zIndexOffset={1000}>
+                      <Tooltip direction="top" offset={[0, -12]}>
+                        Last photo, waypoint {resolved!.grid.waypoints.length}
+                      </Tooltip>
+                    </Marker>
+                  </>
+                )}
               </MapContainer>
             </div>
+
+            {/* What the colours mean. The green outline is the area, not a
+                path: nothing flies it and no photo is taken on it, which is
+                not obvious when it is the most prominent thing on the map. */}
+            {resolved && rings.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block w-4 border-t-2 border-[#4CAF50]" />
+                  Area you drew, not flown
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block w-4 border-t-2 border-[#38bdf8]" />
+                  Flight line, camera firing
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block w-4 border-t-2 border-dashed border-[#7dd3fc]" />
+                  Turn, no photos
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block h-2 w-2 rounded-full bg-white ring-1 ring-[#38bdf8]" />
+                  One photo
+                </span>
+              </div>
+            )}
 
             <div className="flex items-center gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setDrawing(d => !d)}>
@@ -431,6 +552,51 @@ export default function FlightPlanModal({
               <div className="rounded border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive flex items-start gap-1.5">
                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                 <span><strong>Low altitude.</strong> {caution}</span>
+              </div>
+            )}
+
+            {/* The order, in words. The map shows the same numbers. */}
+            {resolved && steps.length > 0 && (
+              <div className="rounded border">
+                <button type="button" className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-medium"
+                  onClick={() => setShowRoute(v => !v)}>
+                  <span>What the drone does, in order</span>
+                  <span className="text-muted-foreground">{showRoute ? "Hide" : `${steps.length} steps`}</span>
+                </button>
+                {showRoute && (
+                  <ol className="border-t divide-y max-h-56 overflow-y-auto text-xs">
+                    <li className="px-2 py-1.5 flex gap-2">
+                      <span className="text-muted-foreground w-5 shrink-0">0</span>
+                      <span>
+                        Take off, climb to {fmtAltitude(params.altitudeM, units).text}, and fly to waypoint 1
+                        at the {startCorner} corner.
+                      </span>
+                    </li>
+                    {steps.map(step => (
+                      <li key={step.n} className="px-2 py-1.5 flex gap-2">
+                        <span className="text-muted-foreground w-5 shrink-0">{step.n}</span>
+                        {step.kind === "line" && (
+                          <span>
+                            <strong>Line {step.lineNumber}</strong>: fly {step.compass} for {dist(step.distanceM)},
+                            taking {step.photos} photo{step.photos === 1 ? "" : "s"}{" "}
+                            (waypoints {step.firstWaypoint} to {step.lastWaypoint}).
+                          </span>
+                        )}
+                        {step.kind === "turn" && (
+                          <span className="text-muted-foreground">
+                            Turn and cross {dist(step.distanceM)} to the {step.compass}. No photos.
+                          </span>
+                        )}
+                        {step.kind === "finish" && (
+                          <span>
+                            Last photo taken. The aircraft then does whatever its own return-to-home
+                            setting says, from the point it took off at. This plan does not set that point.
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                )}
               </div>
             )}
 

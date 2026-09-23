@@ -74,6 +74,44 @@ The tests for this read `pkg.kmz`, the Blob the download button hands to the bro
 the way a viewer would and count Placemarks per leg in the bytes on disk. A regression between
 waypoint generation and the file is the one thing the pre-zip tests could never catch.
 
+## The preview says what order, not only what shape
+
+A grid drawn as coloured lines answers "where" and says nothing about "in what order". Two plans
+can draw the identical picture and fly it in opposite directions from opposite corners, and the
+operator finds out once the aircraft is moving. So the preview carries:
+
+- **A numbered badge at the start of each line**, matching the written list beside the map.
+- **An arrowhead at each line's midpoint**, and a dimmer one on each transit, showing the
+  direction of travel. This is the thing a drawn grid cannot say on its own.
+- **S and E markers** at the first and last waypoint, with the corner named in the tooltip.
+- **A tooltip on every capture point** giving its waypoint number out of the total, so the
+  ordering is available per point without numbering hundreds of dots into illegibility.
+- **A legend.** The green outline is the area, not a path: nothing flies it and no photograph is
+  taken on it. That is not obvious when it is the most prominent thing on the map, and it was
+  asked about directly.
+- **"What the drone does, in order"**, a numbered list: take off and fly to waypoint 1 at the
+  north-west corner, line 1 east for 42 m taking 8 photos (waypoints 1 to 8), turn and cross
+  11 m north, line 2 west, and so on.
+
+`lib/flightPlan/routeSteps.ts` produces that list and the map labels read the same object, so the
+picture and the words cannot describe different flights. It computes nothing new: every position
+and count is already on the grid, and the rest is bearing and distance between points the planner
+already placed. Turns are steps in their own right rather than a footnote on the line before,
+because the transit is where the aircraft crosses ground it is not photographing.
+
+## Why the turns are straight lines and not curves
+
+A DJI-planned mission often shows waypoints strung around a rounded U at each end of a line. Ours
+puts none there: the last waypoint of one line joins the first of the next, and the transit is a
+straight segment.
+
+Those curve waypoints exist to let the aircraft arc through the turn at speed instead of stopping
+dead, and they do it by flying **outside the survey area**. That is a reasonable trade over open
+farmland and the wrong one over a small parcel with trees at the edge, which is the case that
+prompted the low-altitude confirmation. Nothing here is missing: the file is complete and the
+aircraft flies the turn either way. What changes is whether the planner is allowed to route the
+aircraft over ground the operator did not draw, which is a decision, not a detail.
+
 ## The export
 
 `lib/flightPlan/generateKmz.ts` is a pure `(boundary, params) -> KMZ`, testable without a

@@ -117,7 +117,9 @@ vi.mock("react-leaflet", () => ({
   TileLayer: () => null,
   Polygon: () => null,
   Polyline: () => null,
-  CircleMarker: () => null,
+  CircleMarker: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  Marker: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  Tooltip: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
   useMap: () => ({ setView: vi.fn() }),
 }));
 vi.mock("@geoman-io/leaflet-geoman-free", () => ({}));
