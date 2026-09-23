@@ -402,6 +402,15 @@ export default function FlightPlanModal({
               <ListOrdered className="h-3.5 w-3.5" /> Step by step
             </Button>
           )}
+          {/* The prompt to draw lives next to the button that does it. It used
+              to be a panel in the middle of the map, which put it over the exact
+              ground the operator was drawing on, and it showed while there was
+              no boundary, which is the whole time they are making one. */}
+          {!rings.length && !drawing && (
+            <span className="text-xs text-muted-foreground">
+              {fieldBoundary?.length ? "Draw the area to survey." : "No boundary yet. Draw the area to survey."}
+            </span>
+          )}
           {searchError && <span className="text-xs text-destructive">{searchError}</span>}
         </div>
 
@@ -584,15 +593,6 @@ export default function FlightPlanModal({
             </div>
           )}
 
-          {!rings.length && (
-            <div className="absolute inset-0 z-[1100] grid place-items-center pointer-events-none">
-              <div className="rounded-lg bg-background/92 backdrop-blur border shadow-lg px-4 py-3 text-sm">
-                {fieldBoundary?.length
-                  ? "Draw the area to survey."
-                  : "This field has no boundary yet. Draw the area to survey."}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Settings, in one band under the map instead of a narrow column. */}
