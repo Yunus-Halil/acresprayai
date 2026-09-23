@@ -45,10 +45,12 @@ the scan area). The dialog shows exactly what it read - dimensions, GSD, CRS, ba
 refuses plainly only if the file is not a readable TIFF or has no identifiable CRS at all -
 a geographic CRS, a non-metre unit, non-square pixels and a rotated transform are all
 accepted, since TiTiler reprojects any of that the same way it already handles ODM's own
-orthophotos. A file that is not 3-band (the P4 Multispectral case, five
-bands) requires the operator to say which band is red, green and blue before Import unlocks;
-nothing here ever assumes bands 1-3, which on a five-band file would be a plausible-looking,
-wrong-coloured image. See `docs/pipeline/edge-functions.md`'s `ortho-import` entry.
+orthophotos. Band order is assumed where there is one sensible answer and asked where there is
+not (`bandsNeedMapping`): three bands are R, G, B in file order and four are that plus an alpha
+mask, which is what OpenDroneMap itself writes, so the most ordinary orthomosaic imports without
+a question. Five or more is a multispectral capture whose first three bands are not R, G and B,
+and the operator must say which is which before Import unlocks. The assumption is always shown
+and always overridable. See `docs/pipeline/edge-functions.md`'s `ortho-import` entry.
 
 Empty state walks a new user into creating their first field.
 
@@ -56,8 +58,10 @@ Empty state walks a new user into creating their first field.
 
 The upload and monitoring screen.
 
-- **Upload card** — file picker, GPS pre-flight check, progress, pause control, and a resume
-  banner when an interrupted upload has saved progress
+- **Add imagery card** — two tabs. *Drone images*: file picker, GPS pre-flight check, progress,
+  pause control, and a resume banner when an interrupted upload has saved progress.
+  *Finished orthomosaic*: the same importer the create-a-field dialog offers, pointed at this
+  field, so an operator who already has a GeoTIFF does not have to make a second field to use it
 - **Stat row** — total scans, in progress, orthomosaics ready
 - **Scan history** — one card per scan with status, progress, and per-status controls:
 
