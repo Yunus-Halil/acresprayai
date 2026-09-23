@@ -58,7 +58,8 @@ Empty state walks a new user into creating their first field.
 
 The upload and monitoring screen.
 
-- **Add imagery card** — two tabs. *Drone images*: file picker, GPS pre-flight check, progress,
+- **Create flight plan card (step 1)** — plan the survey flight before anything has been flown: draw or reuse the boundary, set altitude and overlap, preview the route and its photo count, save it, export a DJI KMZ. See [flight-planning.md](flight-planning.md)
+- **Add imagery card (step 2)** — two tabs. *Drone images*: file picker, GPS pre-flight check, progress,
   pause control, and a resume banner when an interrupted upload has saved progress.
   *Finished orthomosaic*: the same importer the create-a-field dialog offers, pointed at this
   field, so an operator who already has a GeoTIFF does not have to make a second field to use it

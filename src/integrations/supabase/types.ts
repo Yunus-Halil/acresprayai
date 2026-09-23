@@ -293,6 +293,66 @@ export type Database = {
           },
         ]
       }
+      flight_plans: {
+        Row: {
+          altitude_m: number
+          boundary: Json
+          camera_key: string
+          created_at: string
+          direction: string
+          field_id: string
+          front_overlap_pct: number
+          gimbal_pitch_deg: number
+          id: string
+          inset_m: number
+          last_exported_at: string | null
+          line_spacing_m: number | null
+          name: string | null
+          side_overlap_pct: number
+          speed_ms: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          altitude_m: number
+          boundary: Json
+          camera_key: string
+          created_at?: string
+          direction: string
+          field_id: string
+          front_overlap_pct: number
+          gimbal_pitch_deg: number
+          id?: string
+          inset_m?: number
+          last_exported_at?: string | null
+          line_spacing_m?: number | null
+          name?: string | null
+          side_overlap_pct: number
+          speed_ms: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          altitude_m?: number
+          boundary?: Json
+          camera_key?: string
+          created_at?: string
+          direction?: string
+          field_id?: string
+          front_overlap_pct?: number
+          gimbal_pitch_deg?: number
+          id?: string
+          inset_m?: number
+          last_exported_at?: string | null
+          line_spacing_m?: number | null
+          name?: string | null
+          side_overlap_pct?: number
+          speed_ms?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       fields: {
         Row: {
           area_hectares: number

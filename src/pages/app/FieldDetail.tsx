@@ -20,6 +20,8 @@ import {
 } from "@/lib/scanUpload";
 import { PAGE_SIZE, appendPage, hasMore, pageRange } from "@/lib/pagination";
 import ImportOrthomosaicForm from "@/components/app/ImportOrthomosaicForm";
+import FlightPlanCard from "@/components/app/FlightPlanCard";
+import { normalizeBoundary } from "@/lib/farmerSettings";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type Task = {
@@ -37,6 +39,8 @@ type Field = {
   // stays 0 for fields created before boundary drawing existed — the same
   // fallback every other screen (Dashboard, Fields list) already applies.
   boundary_area_hectares: number | null;
+  /** The drawn outline, shared by every scan. The flight planner's default survey area. */
+  boundary: unknown | null;
   location: string | null; notes: string | null; created_at: string;
 };
 
@@ -358,6 +362,15 @@ export default function FieldDetail() {
           </div>
         </div>
       </Card>
+
+      {/* Step 1: plan the flight that will produce the imagery. Above the
+          upload because it comes first in time: there is nothing to upload
+          until this has been flown. */}
+      <FlightPlanCard
+        fieldId={field.id}
+        fieldName={field.name}
+        fieldBoundary={normalizeBoundary(field.boundary)}
+      />
 
       {/* Step 2: upload */}
       <Card className="p-5 space-y-4">

@@ -50,6 +50,7 @@ that treats only those patches instead of the whole field.
 | [features/pilot-applications.md](features/pilot-applications.md) | The pilot application form, its table, and how applications reach you |
 | [features/weed-scout.md](features/weed-scout.md) | Weed Scout: the experimental developer-mode replacement for the Treatment Grid, its pipeline, event context, brain and observation archive |
 | [features/weed-catalog.md](features/weed-catalog.md) | The Virginia weed reference catalog, the Weed Library, spot identification, and operator-entered treatments with planner quantities |
+| [features/flight-planning.md](features/flight-planning.md) | Survey flight planning: the grid, the capture geometry, and the DJI KMZ export |
 
 ### Operations
 | Document | Covers |
