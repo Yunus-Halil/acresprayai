@@ -36,21 +36,11 @@ because it cascades to every scan.
 Creating a field asks only for name, location and notes — crop and size come later, since size is
 *measured* from the drawn boundary rather than typed.
 
-Two tabs in the creation dialog, not two flows for the same thing: **Fly & upload images** is
-the flow above, unchanged. **Import an orthomosaic** skips reconstruction entirely - the
-operator uploads an already-finished GeoTIFF (their own, or one from a Phantom 4 Multispectral
-or similar sensor), and the file's own header supplies the CRS, dimensions and bounds, so no
-boundary drawing is required to start (one can still be drawn afterward in Field View to narrow
-the scan area). The dialog shows exactly what it read - dimensions, GSD, CRS, band count - and
-refuses plainly only if the file is not a readable TIFF or has no identifiable CRS at all -
-a geographic CRS, a non-metre unit, non-square pixels and a rotated transform are all
-accepted, since TiTiler reprojects any of that the same way it already handles ODM's own
-orthophotos. Band order is assumed where there is one sensible answer and asked where there is
-not (`bandsNeedMapping`): three bands are R, G, B in file order and four are that plus an alpha
-mask, which is what OpenDroneMap itself writes, so the most ordinary orthomosaic imports without
-a question. Five or more is a multispectral capture whose first three bands are not R, G and B,
-and the operator must say which is which before Import unlocks. The assumption is always shown
-and always overridable. See `docs/pipeline/edge-functions.md`'s `ortho-import` entry.
+The dialog asks one question and offers one button. It used to carry a two-tab switcher for
+choosing between flying the field and importing a finished orthomosaic, which asked the operator
+to decide how imagery would arrive before the field they were creating even existed. That choice
+belongs on the field page's step 2, where imagery is actually added, and it lives there. See the
+Add imagery card below.
 
 Empty state walks a new user into creating their first field.
 
@@ -61,8 +51,21 @@ The upload and monitoring screen.
 - **Create flight plan card (step 1)** — plan the survey flight before anything has been flown: draw or reuse the boundary, set altitude and overlap, preview the route and its photo count, save it, export a DJI KMZ. See [flight-planning.md](flight-planning.md)
 - **Add imagery card (step 2)** — two tabs. *Drone images*: file picker, GPS pre-flight check, progress,
   pause control, and a resume banner when an interrupted upload has saved progress.
-  *Finished orthomosaic*: the same importer the create-a-field dialog offers, pointed at this
-  field, so an operator who already has a GeoTIFF does not have to make a second field to use it
+  *Finished orthomosaic*: **the only place the importer lives.** It skips reconstruction
+  entirely - the operator uploads an already-finished GeoTIFF (their own, or one from a Phantom 4
+  Multispectral or similar sensor), and the file's own header supplies the CRS, dimensions and
+  bounds, so no boundary drawing is required to start; one can still be drawn afterward in Field
+  View to narrow the scan area. The card shows exactly what it read - dimensions, GSD, CRS, band
+  count - and refuses plainly only if the file is not a readable TIFF or has no identifiable CRS
+  at all; a geographic CRS, a non-metre unit, non-square pixels and a rotated transform are all
+  accepted, since TiTiler reprojects any of that the same way it already handles ODM's own
+  orthophotos. Band order is assumed where there is one sensible answer and asked where there is
+  not (`bandsNeedMapping`): three bands are R, G, B in file order and four are that plus an alpha
+  mask, which is what OpenDroneMap itself writes, so the most ordinary orthomosaic imports
+  without a question. Five or more is a multispectral capture whose first three bands are not R,
+  G and B, and the operator must say which is which before Import unlocks. The assumption is
+  always shown and always overridable. See `docs/pipeline/edge-functions.md`'s `ortho-import`
+  entry
 - **Stat row** — total scans, in progress, orthomosaics ready
 - **Scan history** — one card per scan with status, progress, and per-status controls:
 
