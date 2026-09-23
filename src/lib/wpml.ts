@@ -64,7 +64,26 @@ import { unzipSync, zipSync } from "fflate";
  */
 export const MAX_CONSUMER_WAYPOINTS = 200;
 
-export type WpmlWaypoint = { lat: number; lng: number; alt: number; speed: number };
+export type WpmlWaypoint = {
+  lat: number; lng: number; alt: number; speed: number;
+  /**
+   * Fire the shutter on arriving here.
+   *
+   * A SURVEY ROUTE LIVES OR DIES ON THIS. A spray route only needs navigation,
+   * which is all this module used to emit. A mapping route that flies the right
+   * path and never triggers the camera produces nothing, and the operator finds
+   * out on the ground with a flat battery. Every capture position the grid
+   * computes carries this flag.
+   */
+  takePhoto?: boolean;
+  /**
+   * Point the gimbal here, degrees: -90 is straight down, 0 is the horizon.
+   * Emitted as its own action rather than only as template.kml's
+   * `gimbalPitchAngle`, because that field is a default for the editor and does
+   * not command the gimbal during execution.
+   */
+  gimbalPitchDeg?: number;
+};
 
 export type WpmlOptions = {
   author?: string;
@@ -189,9 +208,14 @@ export function buildTemplateKml(wps: WpmlWaypoint[], o: WpmlOptions): string {
     `      <wpml:useGlobalSpeed>1</wpml:useGlobalSpeed>`,
     `      <wpml:useGlobalHeadingParam>1</wpml:useGlobalHeadingParam>`,
     `      <wpml:useGlobalTurnParam>1</wpml:useGlobalTurnParam>`,
-    `      <wpml:gimbalPitchAngle>0</wpml:gimbalPitchAngle>`,
+    // The editor's default for this point. It does NOT command the gimbal in
+    // flight, which is what the gimbalRotate action in waylines.wpml is for,
+    // but leaving it at 0 while the route flies nadir makes the mission read
+    // wrongly to anyone who opens it to check.
+    `      <wpml:gimbalPitchAngle>${(w.gimbalPitchDeg ?? 0).toFixed(1)}</wpml:gimbalPitchAngle>`,
+    actionGroup(w, i),
     `    </Placemark>`,
-  ].join("\n")).join("\n");
+  ].filter(Boolean).join("\n")).join("\n");
 
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
@@ -222,6 +246,80 @@ export function buildTemplateKml(wps: WpmlWaypoint[], o: WpmlOptions): string {
   ].join("\n") + "\n";
 }
 
+/**
+ * The action group attached to one waypoint, or "" when it has nothing to do.
+ *
+ * SCHEMA IS DJI'S, NOT OURS. Element names and nesting follow the published
+ * WPML reference (dji-sdk/Cloud-API-Doc, waylines-wpml): actionGroup carries an
+ * id, a start and end index, a mode and a trigger; each action carries an id, an
+ * actuator function and that function's parameter block. `takePhoto` takes
+ * fileSuffix and payloadPositionIndex; `gimbalRotate` takes the rotate mode, a
+ * per-axis enable and angle, and a time enable. Nothing here is invented, and
+ * the spray-actuator warning at the top of this file still stands: camera
+ * actions are documented, spray actions are not.
+ *
+ * One group per waypoint, start index equal to end index, triggered on
+ * `reachPoint`. That is the arrangement DJI's own example uses for a shutter
+ * release at a specific point, and it is what makes the trigger positional
+ * rather than timed: a timed trigger would drift against ground speed and leave
+ * the overlap to luck.
+ */
+function actionGroup(w: WpmlWaypoint, index: number): string {
+  const acts: string[] = [];
+  const push = (func: string, params: string[]) => {
+    acts.push([
+      `        <wpml:action>`,
+      `          <wpml:actionId>${acts.length}</wpml:actionId>`,
+      `          <wpml:actionActuatorFunc>${func}</wpml:actionActuatorFunc>`,
+      `          <wpml:actionActuatorFuncParam>`,
+      ...params.map(l => `            ${l}`),
+      `          </wpml:actionActuatorFuncParam>`,
+      `        </wpml:action>`,
+    ].join("\n"));
+  };
+
+  if (w.gimbalPitchDeg !== undefined) {
+    push("gimbalRotate", [
+      `<wpml:gimbalHeadingYawBase>aircraft</wpml:gimbalHeadingYawBase>`,
+      `<wpml:gimbalRotateMode>absoluteAngle</wpml:gimbalRotateMode>`,
+      `<wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable>`,
+      `<wpml:gimbalPitchRotateAngle>${clamp(w.gimbalPitchDeg, -90, 30).toFixed(1)}</wpml:gimbalPitchRotateAngle>`,
+      `<wpml:gimbalRollRotateEnable>0</wpml:gimbalRollRotateEnable>`,
+      `<wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle>`,
+      `<wpml:gimbalYawRotateEnable>0</wpml:gimbalYawRotateEnable>`,
+      `<wpml:gimbalYawRotateAngle>0</wpml:gimbalYawRotateAngle>`,
+      `<wpml:gimbalRotateTimeEnable>0</wpml:gimbalRotateTimeEnable>`,
+      `<wpml:gimbalRotateTime>0</wpml:gimbalRotateTime>`,
+      `<wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>`,
+    ]);
+  }
+  if (w.takePhoto) {
+    push("takePhoto", [
+      `<wpml:fileSuffix></wpml:fileSuffix>`,
+      `<wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>`,
+      `<wpml:useGlobalPayloadLensIndex>1</wpml:useGlobalPayloadLensIndex>`,
+    ]);
+  }
+  if (!acts.length) return "";
+
+  return [
+    `      <wpml:actionGroup>`,
+    `        <wpml:actionGroupId>${index}</wpml:actionGroupId>`,
+    `        <wpml:actionGroupStartIndex>${index}</wpml:actionGroupStartIndex>`,
+    `        <wpml:actionGroupEndIndex>${index}</wpml:actionGroupEndIndex>`,
+    `        <wpml:actionGroupMode>sequence</wpml:actionGroupMode>`,
+    `        <wpml:actionTrigger>`,
+    `          <wpml:actionTriggerType>reachPoint</wpml:actionTriggerType>`,
+    `        </wpml:actionTrigger>`,
+    acts.join("\n"),
+    `      </wpml:actionGroup>`,
+  ].join("\n");
+}
+
+/** True when any waypoint asks the camera to do something. */
+export const hasCameraActions = (wps: WpmlWaypoint[]): boolean =>
+  wps.some(w => w.takePhoto || w.gimbalPitchDeg !== undefined);
+
 /** waylines.wpml — the executable route. */
 export function buildWaylinesWpml(wps: WpmlWaypoint[], o: WpmlOptions): string {
   const placemarks = wps.map((w, i) => [
@@ -241,8 +339,9 @@ export function buildWaylinesWpml(wps: WpmlWaypoint[], o: WpmlOptions): string {
     // turn modes, and DJI's own waylines example omits it alongside exactly this
     // mode — the aircraft stops at each point, so there is no curve to
     // straighten. Matching the published example beats adding a defensible tag.
+    actionGroup(w, i),
     `    </Placemark>`,
-  ].join("\n")).join("\n");
+  ].filter(Boolean).join("\n")).join("\n");
 
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
@@ -279,7 +378,19 @@ export type WpmlPackage = {
  * named after the mission, which DJI Pilot will not look inside.
  */
 export function buildWpmlKmz(m: Mission, o: WpmlOptions): WpmlPackage {
-  const wps = missionToWpmlWaypoints(m);
+  return buildWpmlKmzFromWaypoints(missionToWpmlWaypoints(m), o);
+}
+
+/**
+ * The same build, from waypoints the caller already has.
+ *
+ * A spray mission arrives as a `Mission` and is converted; a survey grid
+ * (lib/flightPlan) computes its waypoints directly, at the camera's capture
+ * interval, and has no Mission to make. Both end up here, so there is one
+ * implementation of the file format and one place the waypoint ceiling is
+ * enforced.
+ */
+export function buildWpmlKmzFromWaypoints(wps: WpmlWaypoint[], o: WpmlOptions): WpmlPackage {
   if (!wps.length) throw new Error("WPML export: mission produced no waypoints");
   if (wps.length > MAX_CONSUMER_WAYPOINTS) throw new WaypointLimitError(wps.length);
 
