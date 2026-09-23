@@ -202,8 +202,31 @@ export async function readOrthoMetadata(file: File): Promise<OrthoMetadata | Ort
 /** The role each band plays. Red, green and blue are required; the rest are optional. */
 export type OrthoBandMapping = Partial<Record<BandRole, number>> & { red: number; green: number; blue: number };
 
-/** The default mapping for a plain 3-band camera GeoTIFF: file order is R, G, B. */
+/** The default mapping when the file's band order can be assumed: R, G, B in file order. */
 export const defaultThreeBandMapping = (): OrthoBandMapping => ({ red: 1, green: 2, blue: 3 });
+
+/**
+ * Whether the operator has to say which band is which.
+ *
+ * THE RULE, AND WHY IT IS NOT "ANYTHING BUT THREE". An ordinary camera
+ * orthomosaic is three bands in R, G, B order, and a FOUR-band one is that
+ * plus an alpha mask, which is what OpenDroneMap itself writes and what most
+ * drone software exports. Demanding a manual mapping for four bands therefore
+ * stopped the most common file anyone would bring, to ask a question with only
+ * one sensible answer.
+ *
+ * Five or more bands is a different thing: a multispectral capture, where the
+ * first three are not R, G and B and reading them as though they were produces
+ * a plausible-looking, wrong picture. That case still has to be answered by a
+ * person. Fewer than three cannot make a colour image at all.
+ *
+ * Either way the assumption is stated on screen, and the operator can override
+ * it, so a file whose order is unusual is never silently misread.
+ */
+export const bandsNeedMapping = (bandCount: number): boolean => bandCount !== 3 && bandCount !== 4;
+
+/** True when the file carries a fourth band, which is assumed to be alpha. */
+export const hasAlphaBand = (bandCount: number): boolean => bandCount === 4;
 
 export type ImportPhase = "uploading" | "finishing" | "done";
 

@@ -7,11 +7,14 @@
 //
 // Refuses at the door, not three screens later: readOrthoMetadata (lib/
 // orthoImport.ts) reads the file's own header and stops on anything the rest
-// of the pipeline could not honestly render. Band count gets no benefit of
-// the doubt either — a plain 3-band file is assumed R,G,B in file order, and
-// anything else requires the operator to say which band is which before
-// Import unlocks, so a 5-band Phantom 4 Multispectral capture can never be
-// silently rendered from the wrong three bands.
+// of the pipeline could not honestly render.
+//
+// Band count is assumed where there is only one sensible answer and asked
+// where there is not (bandsNeedMapping): three bands are R, G, B in file
+// order, four are that plus an alpha mask, which is what OpenDroneMap itself
+// writes. Five or more is a multispectral capture whose first three bands are
+// not R, G and B, and that one a person has to answer. The assumption is
+// always stated and always overridable, so nothing is silently misread.
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -19,7 +22,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import {
   type ImportPhase, type OrthoBandMapping, type OrthoMetadata,
-  defaultThreeBandMapping, readOrthoMetadata, runOrthoImport,
+  bandsNeedMapping, defaultThreeBandMapping, hasAlphaBand, readOrthoMetadata, runOrthoImport,
 } from "@/lib/orthoImport";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +37,20 @@ const PHASE_LABEL: Record<ImportPhase, string> = {
   done: "Done.",
 };
 
-export default function ImportOrthomosaicForm({ onImported }: { onImported: (fieldId: string) => void }) {
+export default function ImportOrthomosaicForm({ onImported, existingField }: {
+  onImported: (fieldId: string) => void;
+  /**
+   * Import into a field that already exists, rather than creating one.
+   *
+   * The failure path below has always told the operator to "open the field and
+   * retry the import from there", which was advice with nowhere to go: this
+   * form only existed on the create-a-field dialog. It is also simply where
+   * the job lives. Someone who has made a field and is looking at "upload
+   * drone images for this field" is in exactly the place where handing over a
+   * finished orthomosaic instead should be an option.
+   */
+  existingField?: { id: string; name: string } | null;
+}) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: "", location: "", notes: "" });
@@ -47,7 +63,7 @@ export default function ImportOrthomosaicForm({ onImported }: { onImported: (fie
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<ImportPhase | null>(null);
 
-  const needsMapping = !!meta && meta.bandCount !== 3;
+  const needsMapping = !!meta && bandsNeedMapping(meta.bandCount);
   const bandOptions = useMemo(
     () => (meta ? Array.from({ length: meta.bandCount }, (_, i) => i + 1) : []),
     [meta],
@@ -72,7 +88,7 @@ export default function ImportOrthomosaicForm({ onImported }: { onImported: (fie
         setRefusal(result.reason);
       } else {
         setMeta(result);
-        setMapping(result.bandCount === 3 ? defaultThreeBandMapping() : null);
+        setMapping(bandsNeedMapping(result.bandCount) ? null : defaultThreeBandMapping());
       }
     } catch (e) {
       setRefusal(`Could not read this file: ${(e as Error)?.message ?? e}`);
@@ -86,34 +102,38 @@ export default function ImportOrthomosaicForm({ onImported }: { onImported: (fie
   };
 
   const canSubmit = !!user && !!file && !!meta && !checking && !busy &&
-    form.name.trim().length > 0 && mappingComplete && mappingDistinct;
+    (!!existingField || form.name.trim().length > 0) && mappingComplete && mappingDistinct;
 
   const submit = async () => {
     if (!canSubmit || !file || !meta || !mapping || !user) return;
     setBusy(true);
-    let fieldId: string | null = null;
+    let fieldId: string | null = existingField?.id ?? null;
     try {
-      const { data, error } = await supabase.from("fields").insert({
-        user_id: user.id, name: form.name.trim(), crop: "",
-        area_hectares: 0,
-        location: form.location.trim() || null, notes: form.notes.trim() || null,
-      }).select().single();
-      if (error) throw new Error(`Couldn't create the field: ${error.message}`);
-      fieldId = data.id;
+      let fieldName = existingField?.name ?? "";
+      if (!existingField) {
+        const { data, error } = await supabase.from("fields").insert({
+          user_id: user.id, name: form.name.trim(), crop: "",
+          area_hectares: 0,
+          location: form.location.trim() || null, notes: form.notes.trim() || null,
+        }).select().single();
+        if (error) throw new Error(`Couldn't create the field: ${error.message}`);
+        fieldId = data.id;
+        fieldName = data.name;
+      }
 
-      await runOrthoImport({ fieldId, file, metadata: meta, mapping, onProgress: setPhase });
+      await runOrthoImport({ fieldId: fieldId!, file, metadata: meta, mapping, onProgress: setPhase });
 
-      toast.success(`Imported. ${data.name} is ready to view.`);
-      onImported(fieldId);
+      toast.success(`Imported. ${fieldName} is ready to view.`);
+      onImported(fieldId!);
     } catch (e) {
       // The field may already exist even though the import failed midway — it
       // is not deleted, so the operator's work (name, location, notes) is not
       // lost and they can open the field and retry the import from there.
       toast.error(e instanceof Error ? e.message : "Import failed", {
-        description: fieldId ? "The field was created; open it to retry the import." : undefined,
+        description: fieldId && !existingField ? "The field was created; open it to retry the import." : undefined,
         duration: 8000,
       });
-      if (fieldId) navigate(`/app/fields/${fieldId}`);
+      if (fieldId && !existingField) navigate(`/app/fields/${fieldId}`);
     } finally {
       setBusy(false);
       setPhase(null);
@@ -167,7 +187,10 @@ export default function ImportOrthomosaicForm({ onImported }: { onImported: (fie
 
           {!needsMapping && !customizeMapping && (
             <div className="text-xs text-muted-foreground flex items-center justify-between pt-1 border-t mt-2">
-              <span>3 bands, assumed R = 1, G = 2, B = 3 (standard camera order).</span>
+              <span>
+                {meta.bandCount} bands, assumed R = 1, G = 2, B = 3 (standard camera order)
+                {hasAlphaBand(meta.bandCount) ? ", band 4 transparency" : ""}.
+              </span>
               <button type="button" className="underline inline-flex items-center gap-1 shrink-0"
                 onClick={() => setCustomizeMapping(true)}>
                 <Settings2 className="h-3 w-3" /> Not right? Customize
@@ -179,9 +202,9 @@ export default function ImportOrthomosaicForm({ onImported }: { onImported: (fie
             <div className="text-xs text-amber-700 dark:text-amber-500 flex items-start gap-1.5 pt-1 border-t mt-2">
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
               <span>
-                {meta.bandCount} bands, not 3. Reading the first three would risk plausible-looking, wrong
-                colours (this is common on Phantom 4 Multispectral and similar sensors). Say which band is
-                red, green and blue below before importing.
+                {meta.bandCount} bands. On a multispectral capture the first three are not red, green and
+                blue, and reading them as though they were gives plausible-looking, wrong colours (Phantom 4
+                Multispectral and similar). Say which band is which before importing.
               </span>
             </div>
           )}
@@ -210,9 +233,15 @@ export default function ImportOrthomosaicForm({ onImported }: { onImported: (fie
         </div>
       )}
 
-      <div><Label>Name</Label><Input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="North vineyard" /></div>
-      <div><Label>Location</Label><Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="optional" /></div>
-      <div><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="optional" /></div>
+      {/* Only when this form is also creating the field. Importing into one
+          that exists already has its name and its notes. */}
+      {!existingField && (
+        <>
+          <div><Label>Name</Label><Input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="North vineyard" /></div>
+          <div><Label>Location</Label><Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="optional" /></div>
+          <div><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="optional" /></div>
+        </>
+      )}
 
       {phase && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -222,7 +251,7 @@ export default function ImportOrthomosaicForm({ onImported }: { onImported: (fie
 
       <Button type="button" className="w-full" disabled={!canSubmit} onClick={submit}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-        {busy ? "Importing…" : "Create field & import"} <ArrowRight className="h-4 w-4" />
+        {busy ? "Importing…" : existingField ? "Import into this field" : "Create field & import"} <ArrowRight className="h-4 w-4" />
       </Button>
       <p className="text-xs text-muted-foreground">
         Once imported, this field works exactly like any other: Field View, the Treatment Grid and Weed

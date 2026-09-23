@@ -7,7 +7,7 @@
 // logic agrees with itself, not that it agrees with what a real GeoTIFF
 // reader reports.
 import { describe, expect, it } from "vitest";
-import { defaultThreeBandMapping, readOrthoMetadata } from "@/lib/orthoImport";
+import { bandsNeedMapping, defaultThreeBandMapping, hasAlphaBand, readOrthoMetadata } from "@/lib/orthoImport";
 
 // ---------------------------------------------------------------------------
 // A minimal, uncompressed, single-strip TIFF builder - just enough of the
@@ -253,5 +253,37 @@ describe("readOrthoMetadata: refuses at the door", () => {
     const result = await readOrthoMetadata(file);
     if (!("reason" in result)) throw new Error("should have been refused");
     expect(result.reason).toMatch(/could not be read as a TIFF/i);
+  });
+});
+
+describe("which files have to be answered for, and which do not", () => {
+  // The rule used to be "anything but three bands", which stopped the most
+  // common orthomosaic there is: OpenDroneMap writes RGB plus an alpha mask,
+  // and so does most drone software. That asked a question with exactly one
+  // sensible answer, and it blocked the import until it was answered.
+  it("assumes RGB for three bands and RGB plus alpha for four", () => {
+    expect(bandsNeedMapping(3)).toBe(false);
+    expect(bandsNeedMapping(4)).toBe(false);
+    expect(hasAlphaBand(4)).toBe(true);
+    expect(hasAlphaBand(3)).toBe(false);
+  });
+
+  it("still makes a person answer for a multispectral capture", () => {
+    // Five bands is a Phantom 4 Multispectral or similar, where bands one to
+    // three are not red, green and blue. Reading them as though they were
+    // gives a plausible-looking, wrong picture, which is the whole reason
+    // this gate exists.
+    expect(bandsNeedMapping(5)).toBe(true);
+    expect(bandsNeedMapping(6)).toBe(true);
+    expect(hasAlphaBand(5)).toBe(false);
+  });
+
+  it("makes a person answer when there are not enough bands for a colour image", () => {
+    expect(bandsNeedMapping(1)).toBe(true);
+    expect(bandsNeedMapping(2)).toBe(true);
+  });
+
+  it("assumes file order, never an invented one", () => {
+    expect(defaultThreeBandMapping()).toEqual({ red: 1, green: 2, blue: 3 });
   });
 });

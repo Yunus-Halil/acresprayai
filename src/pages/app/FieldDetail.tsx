@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
-  Upload, Loader2, AlertCircle, Download, RefreshCcw, Trash2,
+  Upload, FileUp, Loader2, AlertCircle, Download, RefreshCcw, Trash2,
   ArrowLeft, Leaf, Pencil, Check, X, Map as MapIcon, RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -19,6 +19,8 @@ import {
   clearCheckpoint, effectiveMaxImages, fetchNodeCapabilities, readCheckpoint, uploadScan,
 } from "@/lib/scanUpload";
 import { PAGE_SIZE, appendPage, hasMore, pageRange } from "@/lib/pagination";
+import ImportOrthomosaicForm from "@/components/app/ImportOrthomosaicForm";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type Task = {
   id: string; field_id: string; odm_uuid: string | null;
@@ -361,13 +363,35 @@ export default function FieldDetail() {
       <Card className="p-5 space-y-4">
         <div>
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Step 2</div>
-          <h2 className="font-display text-xl">Upload drone images for this field</h2>
+          <h2 className="font-display text-xl">Add imagery to this field</h2>
           <p className="text-sm text-muted-foreground">
-            Drag a folder of overlapping drone images. We'll send them to OpenDroneMap, build an orthomosaic,
-            and save the result as a scan tied to <strong>{field.name}</strong>.
+            Either fly it and upload the photographs, or hand over an orthomosaic you already have. Both
+            end the same way: a scan tied to <strong>{field.name}</strong>.
           </p>
         </div>
 
+        {/* The import used to live only on the create-a-field dialog, which
+            meant an operator who already had a field and a finished GeoTIFF
+            had nowhere to put it, and the import's own failure message told
+            them to come here and retry. */}
+        <Tabs defaultValue="images">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="images" className="gap-1.5"><Upload className="h-3.5 w-3.5" /> Drone images</TabsTrigger>
+            <TabsTrigger value="ortho" className="gap-1.5"><FileUp className="h-3.5 w-3.5" /> Finished orthomosaic</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="ortho" className="pt-3">
+            <p className="text-sm text-muted-foreground mb-3">
+              A georeferenced GeoTIFF that has already been stitched, from OpenDroneMap, Pix4D, Agisoft or
+              anything else. It goes straight to tiles; no processing node is involved.
+            </p>
+            <ImportOrthomosaicForm
+              existingField={{ id: field.id, name: field.name }}
+              onImported={() => { void loadField(); void loadTasks({ reload: true }); }}
+            />
+          </TabsContent>
+
+          <TabsContent value="images" className="pt-3 space-y-4">
         <div>
           <input
             type="file"
@@ -440,6 +464,8 @@ export default function FieldDetail() {
             {" "}Uploads resume where they stopped, so a dropped connection costs you nothing.
           </div>
         </div>
+          </TabsContent>
+        </Tabs>
       </Card>
 
       {/* Scan history */}

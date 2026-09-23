@@ -8,7 +8,7 @@
 | `/admin/pilot-applications` | Pilot pipeline | Every application, newest first. Signed in **and** on the admin allowlist |
 | `/app` | Operations dashboard | KPI row and field list |
 | `/app/fields` | Fields | Create, rename inline, delete fields |
-| `/app/fields/:id` | Field detail | Upload images, watch progress, browse and recover scans |
+| `/app/fields/:id` | Field detail | Add imagery (drone images or a finished orthomosaic), watch progress, browse and recover scans |
 | `/app/fleet` | Drone fleet | Register drones, view endurance forecast |
 | `/app/weather` | Weather radar | Saved locations, current conditions, 7-day outlook |
 | `/app/weeds` | Weed Library | Developer mode: the state weed reference catalog, its sources and review queue. See [weed-catalog.md](weed-catalog.md) |
