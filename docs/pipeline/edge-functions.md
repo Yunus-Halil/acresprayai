@@ -291,3 +291,24 @@ Both normalise to one shape:
 ```
 
 Temperature in °C, wind in km/h, precipitation in mm.
+
+## Deploying is a separate act from writing
+
+`ortho-import` sat in this repository, fully written and documented, for a day without ever
+being deployed. Every import failed at its first call, and because a preflight against a URL
+with nothing behind it returns 404, the browser reported it as a CORS policy failure and the
+client showed a bare "Failed to fetch". That is indistinguishable from an offline device or a
+blocked request, and it sent one investigation after file sizes instead.
+
+Two things now guard against it. `runOrthoImport` turns an unreachable service into a message
+that names the likely cause and the command that fixes it, rather than passing the browser's
+own wording through. And the check itself is one command:
+
+```
+npx supabase functions list        # compare against supabase/functions/*/
+npx supabase functions deploy <slug>
+```
+
+Worth running after any session that adds a function, because nothing else in the repo will
+tell you. Migrations are applied by `supabase db push`; functions are not, and a green test
+suite says nothing about either.

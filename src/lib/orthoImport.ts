@@ -362,6 +362,41 @@ async function resumableUpload(
 }
 
 /**
+ * Call an ortho-import action, turning a network-level failure into something
+ * that names itself.
+ *
+ * A `fetch` that never reaches the server throws a bare `TypeError: Failed to
+ * fetch`, and the browser console calls it a CORS error. Both are true and
+ * neither is useful: the same message appears when the function is not
+ * deployed, when the project is unreachable, and when the operator's
+ * connection dropped. The undeployed case is not hypothetical, it is how this
+ * import failed for its entire life before 2026-09-23 - the preflight hit a
+ * URL with nothing behind it, got a 404, and the browser reported a CORS
+ * policy failure, which sent the investigation after file sizes instead.
+ */
+async function importAction<T>(action: "init" | "commit", body: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${FN_BASE}/ortho-import?action=${action}`, {
+      method: "POST",
+      headers: { Authorization: await authHeader(), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error(
+      "Could not reach the import service. It may not be deployed yet, or this device is offline. " +
+      "If this persists, deploy it with: npx supabase functions deploy ortho-import",
+    );
+  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const stated = (json as { error?: string })?.error;
+    throw new Error(stated ?? `The import service answered ${res.status}.`);
+  }
+  return json as T;
+}
+
+/**
  * Upload the file and write the scan row. `fieldId` must already exist —
  * this does not create the field; the caller does that first, exactly as
  * the existing drone-image path creates the field before uploading to it.
@@ -375,14 +410,9 @@ export async function runOrthoImport(opts: {
 }): Promise<{ taskId: string; odmUuid: string }> {
   const { fieldId, file, metadata, mapping, onProgress } = opts;
 
-  const initRes = await fetch(`${FN_BASE}/ortho-import?action=init`, {
-    method: "POST",
-    headers: { Authorization: await authHeader(), "Content-Type": "application/json" },
-    body: JSON.stringify({ field_id: fieldId }),
-  });
-  const initJson = await initRes.json().catch(() => ({}));
-  if (!initRes.ok) throw new Error(initJson?.error ?? "Could not start the import");
-  const { task_id: taskId, path, token } = initJson as { task_id: string; odm_uuid: string; path: string; token: string };
+  const { task_id: taskId, path, token } = await importAction<{
+    task_id: string; odm_uuid: string; path: string; token: string;
+  }>("init", { field_id: fieldId });
 
   onProgress?.({ phase: "uploading", sent: 0, total: file.size });
   if (shouldResume(file.size)) {
@@ -397,17 +427,11 @@ export async function runOrthoImport(opts: {
   }
 
   onProgress?.({ phase: "finishing" });
-  const commitRes = await fetch(`${FN_BASE}/ortho-import?action=commit`, {
-    method: "POST",
-    headers: { Authorization: await authHeader(), "Content-Type": "application/json" },
-    body: JSON.stringify({
-      task_id: taskId,
-      band_count: metadata.bandCount,
-      band_mapping: mapping,
-    }),
+  const commitJson = await importAction<{ odm_uuid: string }>("commit", {
+    task_id: taskId,
+    band_count: metadata.bandCount,
+    band_mapping: mapping,
   });
-  const commitJson = await commitRes.json().catch(() => ({}));
-  if (!commitRes.ok) throw new Error(commitJson?.error ?? "Could not finish the import");
 
   onProgress?.({ phase: "done" });
   return { taskId, odmUuid: commitJson.odm_uuid as string };
