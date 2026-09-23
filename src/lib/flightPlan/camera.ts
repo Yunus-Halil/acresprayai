@@ -40,6 +40,30 @@ import { M_PER_DEG_LAT, mPerDegLng } from "../geo";
 export const SENSOR_LONG_EDGE_ACROSS_TRACK = true;
 
 /**
+ * How a KMZ names the aircraft it was written for.
+ *
+ * DJI publishes these codes for its enterprise airframes only. Nothing public
+ * covers the consumer Air and Mini series, so any value here came from reading
+ * a file that a real aircraft accepted, and it is recorded with that
+ * provenance rather than presented as documented fact.
+ */
+export type DroneIdentity = { enumValue: number; subEnumValue: number };
+
+/**
+ * DJI Air 3S.
+ *
+ * PROVENANCE: read from a working Air 3S KMZ, not from DJI's published
+ * reference, which documents enterprise airframes only (M30 is 67) and lists no
+ * consumer model. It has not been flight tested from this app.
+ *
+ * TO REVERT: set this to `null`. `generateKmz` omits the whole `droneInfo`
+ * block when no identity is available, which is what it did before these values
+ * existed and is the safe failure mode: a wrong code is a silent rejection at
+ * import time, an absent block is not. Nothing else has to change.
+ */
+export const DJI_AIR_3S: DroneIdentity | null = { enumValue: 68, subEnumValue: 0 };
+
+/**
  * A camera, described by the two numbers that actually determine footprint.
  *
  * `focalLength35mm` is the 35mm-equivalent focal length, which is how drone
@@ -60,6 +84,12 @@ export type CameraSpec = {
    * figure with no source is a figure nobody has checked.
    */
   source: string | null;
+  /**
+   * The aircraft code the exported file should carry, when one is known for
+   * this airframe. Absent means the export omits `droneInfo` entirely, which is
+   * valid and is better than a guess.
+   */
+  drone?: DroneIdentity | null;
 };
 
 /** The 35mm frame, by definition. Every equivalent focal length is relative to this. */
@@ -80,6 +110,10 @@ export const CAMERAS: Record<string, CameraSpec> = {
     focalLength35mm: 24,
     aspect: 4 / 3,
     source: "DJI Air 3S published specifications",
+    // Attached to the aircraft rather than applied as a global default, so
+    // choosing a different camera cannot silently stamp an Air 3S code onto a
+    // file meant for another airframe.
+    drone: DJI_AIR_3S,
   },
   "dji-mavic-3e-wide": {
     name: "DJI Mavic 3 Enterprise, wide camera",

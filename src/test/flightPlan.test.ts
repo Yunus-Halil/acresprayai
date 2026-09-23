@@ -9,7 +9,8 @@
 import { describe, expect, it } from "vitest";
 import { type LatLng2, M_PER_DEG_LAT, distM, mPerDegLng } from "@/lib/geo";
 import {
-  CAMERAS, DEFAULT_CAMERA_KEY, captureIntervalM, footprintM, lineSpacingM, pointsAlongLeg,
+  CAMERAS, DEFAULT_CAMERA_KEY, DJI_AIR_3S, captureIntervalM, footprintM, lineSpacingM,
+  pointsAlongLeg,
 } from "@/lib/flightPlan/camera";
 import { buildSurveyGrid, gridStats, headingForDirection } from "@/lib/flightPlan/grid";
 import {
@@ -250,11 +251,28 @@ describe("the exported KMZ", () => {
     expect(xml).toMatch(/<wpml:gimbalPitchRotateAngle>-45\.0<\/wpml:gimbalPitchRotateAngle>/);
   });
 
-  it("omits the drone identity rather than guessing it", () => {
-    // No public enum table covers consumer airframes. A wrong code is a silent
-    // rejection at import; an absent block is not.
+  it("names the Air 3S, using the codes read off a file it accepted", () => {
+    // 68 / 0 came from a working Air 3S KMZ, not from DJI's published table,
+    // which covers enterprise airframes only. If a flight test shows DJI Fly
+    // rejecting the file, DJI_AIR_3S goes back to null and this test goes with
+    // it; nothing else has to change.
     const xml = read(square(200));
-    expect(xml).not.toMatch(/droneEnumValue/);
+    expect(xml).toMatch(/<wpml:droneEnumValue>68<\/wpml:droneEnumValue>/);
+    expect(xml).toMatch(/<wpml:droneSubEnumValue>0<\/wpml:droneSubEnumValue>/);
+    expect(DJI_AIR_3S).toEqual({ enumValue: 68, subEnumValue: 0 });
+  });
+
+  it("keeps that identity on the Air 3S and off every other airframe", () => {
+    // The whole reason the code lives on the camera entry: choosing a different
+    // aircraft must not stamp an Air 3S code onto a file meant for something
+    // else. There is no verified code for the other two, so they carry none.
+    expect(CAMERAS["dji-air-3s-wide"].drone).toEqual(DJI_AIR_3S);
+    for (const key of ["dji-mavic-3e-wide", "generic24"]) {
+      expect(CAMERAS[key].drone ?? null).toBeNull();
+      const xml = read(square(200), { ...DEFAULT_FLIGHT_PLAN_PARAMS, cameraKey: key });
+      expect(xml).not.toMatch(/droneEnumValue/);
+      expect(xml).not.toMatch(/droneInfo/);
+    }
   });
 
   it("emits the drone identity when the caller supplies a verified one", () => {
@@ -264,6 +282,18 @@ describe("the exported KMZ", () => {
     const xml = new TextDecoder().decode(pkg.files["wpmz/waylines.wpml"]);
     expect(xml).toMatch(/<wpml:droneEnumValue>99<\/wpml:droneEnumValue>/);
     expect(xml).toMatch(/<wpml:droneSubEnumValue>1<\/wpml:droneSubEnumValue>/);
+    expect(xml).not.toMatch(/<wpml:droneEnumValue>68</);
+  });
+
+  it("omits the block entirely when the caller passes an explicit null", () => {
+    // The revert path, available per export without editing the table: a wrong
+    // code is a silent rejection at import time, and an absent one is not.
+    const { pkg } = generateKmz(square(200), DEFAULT_FLIGHT_PLAN_PARAMS, {
+      ...opts, drone: null,
+    });
+    const xml = new TextDecoder().decode(pkg.files["wpmz/waylines.wpml"]);
+    expect(xml).not.toMatch(/droneEnumValue/);
+    expect(xml).not.toMatch(/droneInfo/);
   });
 
   it("still emits no spray vocabulary, which remains unconfirmed", () => {

@@ -71,10 +71,21 @@ actions are not.
   last waypoints flies a partial survey the operator believes was complete. The limit is
   surfaced on the resolved plan, so a route forty waypoints over says so in the live preview
   while the operator can still fly higher or reduce overlap, not after they press download.
-- **The drone identity.** `droneEnumValue` and `droneSubEnumValue` are omitted unless a caller
-  supplies them. DJI publishes these for enterprise airframes only; no public table covers the
-  consumer Air and Mini series. A wrong code is a silent rejection at import time and an absent
-  block is not. **Fill this in from a known-working KMZ produced by the target aircraft.**
+- **The drone identity.** `droneEnumValue` and `droneSubEnumValue` are never guessed. DJI
+  publishes them for enterprise airframes only; nothing public covers the consumer Air and Mini
+  series. A wrong code is a silent rejection at import time and an absent block is not, so where
+  no verified code exists the whole `droneInfo` block is omitted.
+
+  The Air 3S carries **68 / 0**, read off a KMZ that a real Air 3S accepted, and the code is
+  recorded with that provenance rather than presented as documented fact. It is attached to the
+  camera entry in `camera.ts`, not applied as a global default, so choosing a different aircraft
+  cannot stamp an Air 3S code onto a file meant for something else. The other two entries have
+  no verified code and so emit no `droneInfo` at all.
+
+  **To revert it**, if a flight test shows DJI Fly rejecting the file: set `DJI_AIR_3S` to
+  `null` in `camera.ts`. Nothing else changes; the export falls back to omitting the block,
+  which is what it did before the value existed. A single export can also force the omission by
+  passing `drone: null`.
 
 ## Storage
 
@@ -99,8 +110,6 @@ is needed. A flight plan needs neither. The shape is kept as functions in
 
 ## Still needs
 
-- **The Air 3S drone enum**, from a known-working KMZ. Until it is supplied the file omits the
-  block, which is valid but unverified against that airframe.
 - **One real flight.** Nothing here has been flown. The geometry is tested against synthetic
   polygons with known answers; whether DJI Fly accepts the file and triggers the shutter where
   intended is not something a test in this repo can establish.

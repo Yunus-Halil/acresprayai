@@ -9,7 +9,9 @@ import { ringsAreaM2 } from "../geo";
 import {
   MAX_CONSUMER_WAYPOINTS, type WpmlPackage, type WpmlWaypoint, buildWpmlKmzFromWaypoints,
 } from "../wpml";
-import { CAMERAS, DEFAULT_CAMERA_KEY, captureIntervalM, footprintM, lineSpacingM } from "./camera";
+import {
+  CAMERAS, DEFAULT_CAMERA_KEY, type DroneIdentity, captureIntervalM, footprintM, lineSpacingM,
+} from "./camera";
 import { type SurveyGrid, buildSurveyGrid, gridStats } from "./grid";
 import type { FlightDirection } from "./grid";
 
@@ -45,16 +47,15 @@ export const DEFAULT_FLIGHT_PLAN_PARAMS: FlightPlanParams = {
 /**
  * Aircraft identity for the KMZ.
  *
- * UNKNOWN BY DEFAULT, ON PURPOSE. DJI publishes `droneEnumValue` only for its
- * enterprise airframes; no public table covers the consumer Air and Mini
- * series. `buildWpmlKmz` omits the whole `droneInfo` block when this is absent,
- * which is the existing behaviour and the safe one: a wrong code is a silent
- * rejection at import time, and an absent one is not.
+ * Normally comes from the chosen camera (see `CAMERAS` in camera.ts, where each
+ * known airframe carries its own code and its provenance). A caller may pass
+ * one to override that, and passing `null` forces the block to be omitted.
  *
- * Fill it in from a known-working KMZ produced by the target aircraft, never
- * from a guess.
+ * Where no identity is available the export writes no `droneInfo` at all, which
+ * is deliberate: DJI publishes these codes for enterprise airframes only, and a
+ * wrong code is a silent rejection at import time where an absent block is not.
  */
-export type DroneIdentity = { enumValue: number; subEnumValue: number } | null;
+export type { DroneIdentity } from "./camera";
 
 export type FlightPlanResolved = {
   params: FlightPlanParams;
@@ -148,7 +149,11 @@ export class EmptyPlanError extends Error {
 export type GenerateKmzOptions = {
   /** Epoch ms stamped into the file. Injectable so tests are deterministic. */
   createTimeMs: number;
-  drone?: DroneIdentity;
+  /**
+   * Override the chosen camera's aircraft code. `null` forces the `droneInfo`
+   * block to be omitted; omitting the field entirely uses the camera's own.
+   */
+  drone?: DroneIdentity | null;
   author?: string;
 };
 
@@ -168,6 +173,11 @@ export function generateKmz(
 ): { pkg: WpmlPackage; resolved: FlightPlanResolved } {
   const resolved = resolveFlightPlan(rings, params);
   if (!resolved.grid.waypoints.length) throw new EmptyPlanError();
+  // The caller's override wins, including an explicit null, which is how a
+  // caller forces the block to be omitted. Otherwise the chosen airframe's own
+  // code, when one has been read off a file that aircraft accepted.
+  const camera = CAMERAS[params.cameraKey] ?? CAMERAS[DEFAULT_CAMERA_KEY];
+  const droneId = opts.drone !== undefined ? opts.drone : (camera.drone ?? null);
 
   const wps: WpmlWaypoint[] = resolved.grid.waypoints.map(p => ({
     lat: p.lat,
@@ -189,7 +199,7 @@ export function generateKmz(
     finishAction: "goHome",
     exitOnRCLost: "executeLostAction",
     executeRCLostAction: "goBack",
-    ...(opts.drone ? { drone: opts.drone } : {}),
+    ...(droneId ? { drone: droneId } : {}),
   });
 
   return { pkg, resolved };
