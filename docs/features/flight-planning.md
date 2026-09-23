@@ -46,6 +46,34 @@ exactly where overlap otherwise fails unseen.
 The bug this replaces fired the camera only where the path turned. On a 400 m leg that is two
 photographs covering the ends and nothing in between, and the operator finds out on the ground.
 
+## Altitude decides the density, and the operator has to be able to see that
+
+Every number on the panel follows from altitude and overlap. At 100 m an Air 3S frame covers
+150 m x 112 m, so the lines sit 37.5 m apart and the shutter fires every 28 m. At 30.48 m,
+which is 100 ft, every one of those figures is a third the size and the plan has an order of
+magnitude more photographs. Both plans are correct; they are different plans.
+
+That difference produced a real report of "waypoints only at the turns". The exported file was
+opened next to a reference KMZ that had been flown at 100 ft, while the plan had been made at
+100 m from a box labelled metres, on a panel whose every readout was in feet. The file was
+checked by unzipping the downloaded bytes and counting Placemarks per leg against the "Photos"
+stat: they matched exactly, interior points included. Nothing was dropped; the altitude was 3.3x
+what the operator pictured.
+
+Two things changed because of it:
+
+- **The inputs follow the unit setting**, like every readout beside them. Altitude, inset and
+  line spacing are asked in feet or metres and speed in mph or m/s, whichever the operator
+  chose in Settings. What is stored and what is written into the file stays metres and m/s; only
+  the boxes change. A panel that reports feet and asks for metres is how 100 ft becomes 100 m.
+- **The preview draws every capture point**, one marker per Placemark the file will contain, so
+  the density of a survey is visible before the download rather than discovered in a viewer
+  afterwards.
+
+The tests for this read `pkg.kmz`, the Blob the download button hands to the browser, unzip it
+the way a viewer would and count Placemarks per leg in the bytes on disk. A regression between
+waypoint generation and the file is the one thing the pre-zip tests could never catch.
+
 ## The export
 
 `lib/flightPlan/generateKmz.ts` is a pure `(boundary, params) -> KMZ`, testable without a

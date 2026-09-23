@@ -16,7 +16,7 @@ import { buildSurveyGrid, gridStats, headingForDirection } from "@/lib/flightPla
 import {
   DEFAULT_FLIGHT_PLAN_PARAMS, EmptyPlanError, blockerFor, generateKmz, kmzFilename, resolveFlightPlan,
 } from "@/lib/flightPlan/generateKmz";
-import { MAX_CONSUMER_WAYPOINTS } from "@/lib/wpml";
+import { MAX_CONSUMER_WAYPOINTS, readKmzEntries } from "@/lib/wpml";
 
 const LAT0 = 38.95, LNG0 = -77.45;
 
@@ -312,5 +312,98 @@ describe("the exported KMZ", () => {
     expect(kmzFilename("North Vineyard", new Date("2026-09-23T10:00:00Z")))
       .toBe("north-vineyard-survey-2026-09-23.kmz");
     expect(kmzFilename("", new Date("2026-09-23T10:00:00Z"))).toBe("field-survey-2026-09-23.kmz");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The file that is actually downloaded
+// ---------------------------------------------------------------------------
+//
+// Everything above reads `pkg.files`, the XML before it is zipped. These read
+// `pkg.kmz`, the Blob the download button hands to the browser, unzip it the
+// way a viewer would, and count Placemarks in the bytes on disk. That is the
+// only way to catch a regression BETWEEN waypoint generation and the file.
+//
+// The lot is the size of a residential parcel, 57 m on a side, because that is
+// where a sparse grid is most visible and where a real report of "waypoints
+// only at the turns" came from. It turned out to be altitude: a sample flown
+// at 30.48 m (100 ft) beside a plan at 100 m. The grid is 3.3x coarser and
+// has a tenth of the photographs, and both files were correct.
+describe("the file that is actually downloaded", () => {
+  const opts = { createTimeMs: 1_700_000_000_000 };
+  const lot = (sideM = 57, rotDeg = 30): LatLng2[][] => {
+    const r = (rotDeg * Math.PI) / 180, h = sideM / 2;
+    return [[[-h, -h], [h, -h], [h, h], [-h, h]].map(([x, y]) => {
+      const xr = x * Math.cos(r) - y * Math.sin(r), yr = x * Math.sin(r) + y * Math.cos(r);
+      return { lat: LAT0 + yr / M_PER_DEG_LAT, lng: LNG0 + xr / mPerDegLng(LAT0) };
+    })];
+  };
+
+  // What the browser receives, byte for byte.
+  const downloaded = (b: Blob) => new Promise<Uint8Array>((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(new Uint8Array(fr.result as ArrayBuffer));
+    fr.onerror = () => reject(fr.error);
+    fr.readAsArrayBuffer(b);
+  });
+
+  type Mark = { lat: number; lng: number; photo: boolean };
+  const placemarksIn = (bytes: Uint8Array): Mark[] => {
+    const entries = readKmzEntries(bytes);
+    const xml = new TextDecoder().decode(entries["wpmz/waylines.wpml"]);
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    return Array.from(doc.getElementsByTagName("Placemark")).map(pm => {
+      const [lng, lat] = pm.getElementsByTagName("coordinates")[0].textContent!.trim().split(",").map(Number);
+      return { lat, lng, photo: /takePhoto/.test(pm.textContent ?? "") };
+    });
+  };
+  const near = (a: LatLng2, b: LatLng2) => Math.abs(a.lat - b.lat) < 2e-6 && Math.abs(a.lng - b.lng) < 2e-6;
+
+  it("holds one Placemark per planned capture, on every leg, interior points included", async () => {
+    const { pkg, resolved } = generateKmz(lot(), { ...DEFAULT_FLIGHT_PLAN_PARAMS, altitudeM: 30.48 }, opts);
+    const marks = placemarksIn(await downloaded(pkg.kmz));
+
+    // The number the UI states is the number in the file.
+    expect(marks.length).toBe(resolved.stats.photoCount);
+    expect(marks.every(m => m.photo)).toBe(true);
+
+    // Per leg, not only in total: a leg longer than two intervals has points
+    // BETWEEN its ends, in the file, where a viewer will draw them.
+    const interval = resolved.computed.captureIntervalM;
+    let longLegs = 0;
+    for (const leg of resolved.grid.legs) {
+      const onLeg = marks.filter(m => leg.captures.some(c => near(c, m)));
+      expect(onLeg.length).toBe(leg.captures.length);
+      if (distM(leg.a, leg.b) > 2 * interval) {
+        longLegs += 1;
+        expect(onLeg.length).toBeGreaterThan(2);
+      }
+    }
+    expect(longLegs).toBeGreaterThan(0);
+  });
+
+  it("is dense at 100 ft and coarse at 100 m, and says so in both cases", async () => {
+    const low = generateKmz(lot(), { ...DEFAULT_FLIGHT_PLAN_PARAMS, altitudeM: 30.48 }, opts);
+    const high = generateKmz(lot(), { ...DEFAULT_FLIGHT_PLAN_PARAMS, altitudeM: 100 }, opts);
+    const lowMarks = placemarksIn(await downloaded(low.pkg.kmz));
+    const highMarks = placemarksIn(await downloaded(high.pkg.kmz));
+
+    // Both files match their own stat. Neither is wrong; they are different plans.
+    expect(lowMarks.length).toBe(low.resolved.stats.photoCount);
+    expect(highMarks.length).toBe(high.resolved.stats.photoCount);
+
+    // The same footprint arithmetic at a third of the height: roughly a third
+    // of the line spacing, a third of the interval, an order of magnitude more
+    // photographs. This is the difference the operator saw.
+    expect(low.resolved.computed.lineSpacingM).toBeCloseTo(high.resolved.computed.lineSpacingM * 0.3048, 1);
+    expect(low.resolved.grid.lineCount).toBeGreaterThanOrEqual(5);
+    expect(high.resolved.grid.lineCount).toBeLessThanOrEqual(3);
+    expect(lowMarks.length).toBeGreaterThan(highMarks.length * 4);
+  });
+
+  it("ships both files DJI requires, under wpmz/, and nothing else", async () => {
+    const { pkg } = generateKmz(lot(), DEFAULT_FLIGHT_PLAN_PARAMS, opts);
+    const entries = readKmzEntries(await downloaded(pkg.kmz));
+    expect(Object.keys(entries).sort()).toEqual(["wpmz/template.kml", "wpmz/waylines.wpml"]);
   });
 });

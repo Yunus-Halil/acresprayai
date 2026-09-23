@@ -13,7 +13,7 @@
 // This component chooses nothing: it collects parameters, draws what the
 // resolver returns, and hands the same object to the exporter.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, Polygon, Polyline, TileLayer, useMap } from "react-leaflet";
+import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "@geoman-io/leaflet-geoman-free";
@@ -27,7 +27,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useAuth } from "@/lib/auth";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { type LatLng2, centroidOfRings } from "@/lib/geo";
-import { fmtArea, fmtDistance } from "@/lib/units";
+import {
+  altitudeToM, altitudeUnit, altitudeValue, fmtArea, fmtDistance, speedToMs, speedUnit, speedValue,
+} from "@/lib/units";
 import { CAMERAS } from "@/lib/flightPlan/camera";
 import {
   DEFAULT_FLIGHT_PLAN_PARAMS, type FlightPlanParams, generateKmz, kmzFilename, resolveFlightPlan,
@@ -125,6 +127,26 @@ export default function FlightPlanModal({
   const num = (v: string, fallback: number) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : fallback;
+  };
+
+  // The boxes follow the one unit setting, like every readout beside them.
+  // What is STORED and EXPORTED stays metres and m/s; only the box changes.
+  // A panel that reports feet and asks for metres is how "100 ft" becomes
+  // 100 m, which is a grid three times as coarse as the one the operator
+  // pictured, with a tenth of the photographs, and nothing on screen says so.
+  const shown = (v: number) => Math.round(v * 100) / 100;
+  const lenUnit = altitudeUnit(units);
+  const lenShown = (m: number) => shown(altitudeValue(m, units));
+  const lenToM = (v: string, keepM: number) => {
+    if (v.trim() === "") return keepM;
+    const n = Number(v);
+    return Number.isFinite(n) ? altitudeToM(n, units) : keepM;
+  };
+  const spdShown = (ms: number) => shown(speedValue(ms, units));
+  const spdToMs = (v: string, keepMs: number) => {
+    if (v.trim() === "") return keepMs;
+    const n = Number(v);
+    return Number.isFinite(n) ? speedToMs(n, units) : keepMs;
   };
 
   const centre = rings.length ? centroidOfRings(rings) : { lat: 39, lng: -98 };
@@ -241,6 +263,15 @@ export default function FlightPlanModal({
                     ])}
                     pathOptions={{ color: "#38bdf8", weight: 1, dashArray: "4 4", opacity: 0.6 }} />
                 )}
+                {/* Every point the camera fires at, one marker per Placemark in
+                    the file. The density of a survey is decided by altitude and
+                    overlap, and it has to be visible here, before the download,
+                    not discovered in a viewer afterwards. Past the airframe's
+                    ceiling the plan is refused anyway, so the markers stop. */}
+                {resolved && resolved.grid.waypoints.length <= 400 && resolved.grid.waypoints.map((p, i) => (
+                  <CircleMarker key={`wp${i}`} center={[p.lat, p.lng]} radius={3}
+                    pathOptions={{ color: "#38bdf8", weight: 1, fillColor: "#ffffff", fillOpacity: 1 }} />
+                ))}
               </MapContainer>
             </div>
 
@@ -286,14 +317,16 @@ export default function FlightPlanModal({
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label className="text-xs">Altitude (m)</Label>
-                <input type="number" min={5} max={500} className={NUM} value={params.altitudeM}
-                  onChange={e => set("altitudeM", num(e.target.value, 100))} />
+                <Label className="text-xs">Altitude ({lenUnit})</Label>
+                <input type="number" min={lenShown(5)} max={lenShown(500)} className={NUM}
+                  value={lenShown(params.altitudeM)}
+                  onChange={e => set("altitudeM", lenToM(e.target.value, params.altitudeM))} />
               </div>
               <div>
-                <Label className="text-xs">Speed (m/s)</Label>
-                <input type="number" min={1} max={15} step={0.5} className={NUM} value={params.speedMs}
-                  onChange={e => set("speedMs", num(e.target.value, 6))} />
+                <Label className="text-xs">Speed ({speedUnit(units)})</Label>
+                <input type="number" min={spdShown(1)} max={spdShown(15)} step={0.5} className={NUM}
+                  value={spdShown(params.speedMs)}
+                  onChange={e => set("speedMs", spdToMs(e.target.value, params.speedMs))} />
               </div>
               <div>
                 <Label className="text-xs">Front overlap (%)</Label>
@@ -311,23 +344,24 @@ export default function FlightPlanModal({
                   onChange={e => set("gimbalPitchDeg", num(e.target.value, -90))} />
               </div>
               <div>
-                <Label className="text-xs">Inset (m)</Label>
-                <input type="number" min={0} max={100} className={NUM} value={params.insetM}
-                  onChange={e => set("insetM", num(e.target.value, 0))} />
+                <Label className="text-xs">Inset ({lenUnit})</Label>
+                <input type="number" min={0} max={lenShown(100)} className={NUM}
+                  value={lenShown(params.insetM)}
+                  onChange={e => set("insetM", lenToM(e.target.value, params.insetM))} />
               </div>
             </div>
 
             <div>
               <Label className="text-xs">
-                Line spacing (m)
+                Line spacing ({lenUnit})
                 {!params.lineSpacingM && resolved && (
-                  <span className="text-muted-foreground"> · {resolved.computed.lineSpacingM.toFixed(1)} from side overlap</span>
+                  <span className="text-muted-foreground"> · {dist(resolved.computed.lineSpacingM)} from side overlap</span>
                 )}
               </Label>
               <div className="flex gap-1">
-                <input type="number" min={1} className={NUM} placeholder="from overlap"
-                  value={params.lineSpacingM ?? ""}
-                  onChange={e => set("lineSpacingM", e.target.value.trim() === "" ? null : num(e.target.value, 0))} />
+                <input type="number" min={lenShown(1)} className={NUM} placeholder="from overlap"
+                  value={params.lineSpacingM == null ? "" : lenShown(params.lineSpacingM)}
+                  onChange={e => set("lineSpacingM", e.target.value.trim() === "" ? null : lenToM(e.target.value, params.lineSpacingM ?? 0))} />
                 {params.lineSpacingM != null && (
                   <Button type="button" variant="ghost" size="sm" onClick={() => set("lineSpacingM", null)}>Auto</Button>
                 )}
