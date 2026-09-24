@@ -74,6 +74,18 @@ The tests for this read `pkg.kmz`, the Blob the download button hands to the bro
 the way a viewer would and count Placemarks per leg in the bytes on disk. A regression between
 waypoint generation and the file is the one thing the pre-zip tests could never catch.
 
+## What is deliberately NOT drawn on the route
+
+Numbered pins sat on every corner, two per line, and an arrowhead sat at every line's midpoint.
+Both were removed: on a small parcel they covered the imagery and each other, and the map they
+were meant to explain became the thing they obscured.
+
+Nothing was lost. The turnaround arc shows which way the route runs, because it visibly leaves
+one line and enters the next, so the serpentine reads off the shape itself. The S and E pins
+still mark where it starts and ends. Every heading, distance and waypoint range is stated in
+words in the flight sequence, which is the right place for a number somebody reads rather than
+glances at.
+
 ## The layout: the map is the screen
 
 The modal was a medium dialog split into a map and a 300px column of inputs, and the thing the
@@ -98,16 +110,13 @@ A grid drawn as coloured lines answers "where" and says nothing about "in what o
 can draw the identical picture and fly it in opposite directions from opposite corners, and the
 operator finds out once the aircraft is moving. So the preview carries:
 
-- **A numbered pin on every corner the route turns at**, carrying the real waypoint number from
-  the exported file. Two per line, so a plan reads 1 to 2N the way a hand-placed mission does.
-  Numbering all several hundred capture points would be illegible; the corners are what the
-  operator is checking.
-- **An arrowhead at each line's midpoint**, and a dimmer one on each transit, showing the
-  direction of travel. This is the thing a drawn grid cannot say on its own.
+- **Large photo points**, one per frame, the biggest thing on the route because they are what
+  the flight is for. Turnaround points are smaller and hollow, so "photographed here" and "merely
+  flew through here" are distinguishable at a glance.
 - **S and E pins**, larger and in their own colours, at the first and last waypoint, with the
   corner named in the tooltip.
-- **A tooltip on every capture point** giving its waypoint number out of the total, so the
-  ordering is available per point without numbering hundreds of dots into illegibility.
+- **A tooltip on every point** giving its waypoint number out of the total, so the ordering is
+  available per point without numbering hundreds of dots into illegibility.
 - **A legend.** The green outline is the area, not a path: nothing flies it and no photograph is
   taken on it. That is not obvious when it is the most prominent thing on the map, and it was
   asked about directly.

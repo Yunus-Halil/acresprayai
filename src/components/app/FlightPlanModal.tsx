@@ -45,7 +45,7 @@ import {
   MIN_ALTITUDE_M, generateKmz, kmzFilename, lowAltitudeCaution, resolveFlightPlan,
 } from "@/lib/flightPlan/generateKmz";
 import type { FlightDirection } from "@/lib/flightPlan/grid";
-import { bearingDeg, cornerName, routeEnds, routeSteps } from "@/lib/flightPlan/routeSteps";
+import { cornerName, routeEnds, routeSteps } from "@/lib/flightPlan/routeSteps";
 import { type FlightPlan, markExported, saveFlightPlan } from "@/lib/flightPlan/repo";
 
 /**
@@ -113,20 +113,6 @@ const pinIcon = (label: string, bg: string, fg: string, size = 26) => L.divIcon(
 });
 
 /**
- * An arrowhead pointing along the direction of travel.
- *
- * The one thing a drawn grid cannot say on its own. Two plans can draw the
- * identical picture and fly it in opposite directions, and the operator only
- * finds out once the aircraft is moving.
- */
-const arrowIcon = (headingDeg: number, color: string) => L.divIcon({
-  className: "",
-  html: `<div style="transform:rotate(${headingDeg}deg);font:18px/1 sans-serif;color:${color};`
-    + `text-shadow:0 0 4px #000,0 0 4px #000">&#9650;</div>`,
-  iconSize: [18, 18], iconAnchor: [9, 9],
-});
-
-/**
  * The route's colours.
  *
  * Red on a casing of near-black, which is the standard way a route is drawn
@@ -135,8 +121,6 @@ const arrowIcon = (headingDeg: number, color: string) => L.divIcon({
  * over a bright roof and a dark treeline in the same frame.
  */
 const ROUTE = { line: "#ef4444", casing: "#1a0505", transit: "#fb923c", area: "#4ade80" };
-
-const midpoint = (a: LatLng2, b: LatLng2) => ({ lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 });
 
 /** Fits the map to the boundary whenever it changes. */
 function FitTo({ rings }: { rings: LatLng2[][] }) {
@@ -254,28 +238,6 @@ export default function FlightPlanModal({
   const steps = useMemo(() => (resolved ? routeSteps(resolved.grid) : []), [resolved]);
   const ends = useMemo(() => (resolved ? routeEnds(resolved.grid) : null), [resolved]);
   const startCorner = ends && rings[0] ? cornerName(ends.start, rings[0]) : "";
-
-  // The numbered pins: the two ends of every line, carrying the waypoint
-  // number the exported file gives them. Numbering all several hundred capture
-  // points would be illegible; numbering the corners is what a hand-placed
-  // mission looks like and is what the operator is checking.
-  const corners = useMemo(() => {
-    if (!resolved) return [] as { waypoint: number; at: LatLng2; line: number; role: string }[];
-    const out: { waypoint: number; at: LatLng2; line: number; role: string }[] = [];
-    let line = 0;
-    let previous = false;
-    resolved.grid.route.forEach((p, i) => {
-      if (!p.photo) { previous = false; return; }
-      const startsLine = !previous;
-      previous = true;
-      const next = resolved.grid.route[i + 1];
-      const endsLine = !next || !next.photo;
-      if (startsLine) line += 1;
-      if (startsLine) out.push({ waypoint: i + 1, at: p.at, line, role: "start" });
-      else if (endsLine) out.push({ waypoint: i + 1, at: p.at, line, role: "end" });
-    });
-    return out;
-  }, [resolved]);
 
   // The turnaround drawn as it will be flown: the line end, the arc, the next
   // line start. Both ends included so the path joins the route with no gap.
@@ -468,20 +430,12 @@ export default function FlightPlanModal({
                 pathOptions={{ color: ROUTE.transit, weight: 4 }} />
             ))}
 
-            {resolved?.grid.legs.map((leg, i) => {
-              const m = midpoint(leg.a, leg.b);
-              return (
-                <Marker key={`dir${i}`} position={[m.lat, m.lng]} interactive={false}
-                  icon={arrowIcon(bearingDeg(leg.a, leg.b), "#fff")} />
-              );
-            })}
-
             {/* Every point the camera fires at. Small, because they are the
                 texture of the route rather than its structure. */}
             {resolved && resolved.grid.route.length <= 400 && resolved.grid.route.map((p, i) => (
               p.photo ? (
-                <CircleMarker key={`wp${i}`} center={[p.at.lat, p.at.lng]} radius={2.5}
-                  pathOptions={{ color: ROUTE.casing, weight: 1, fillColor: "#ffffff", fillOpacity: 1 }}>
+                <CircleMarker key={`wp${i}`} center={[p.at.lat, p.at.lng]} radius={5}
+                  pathOptions={{ color: ROUTE.casing, weight: 1.5, fillColor: "#ffffff", fillOpacity: 1 }}>
                   <Tooltip direction="top" offset={[0, -4]}>
                     Waypoint {i + 1} of {resolved.grid.route.length}
                   </Tooltip>
@@ -491,25 +445,13 @@ export default function FlightPlanModal({
 
             {resolved && resolved.grid.route.length <= 400 && resolved.grid.route.map((p, i) => (
               !p.photo ? (
-                <CircleMarker key={`tw${i}`} center={[p.at.lat, p.at.lng]} radius={2.5}
+                <CircleMarker key={`tw${i}`} center={[p.at.lat, p.at.lng]} radius={3}
                   pathOptions={{ color: ROUTE.transit, weight: 2, fillColor: ROUTE.casing, fillOpacity: 1 }}>
                   <Tooltip direction="top" offset={[0, -4]}>
                     Waypoint {i + 1}, turnaround, no photo
                   </Tooltip>
                 </CircleMarker>
               ) : null
-            ))}
-
-            {/* The numbered pins, on the corners where the route turns, carrying
-                the real waypoint number from the exported file. Two per line, so
-                a plan reads 1 to 2N the way a hand-placed mission does. */}
-            {corners.map(c => (
-              <Marker key={`pin${c.waypoint}`} position={[c.at.lat, c.at.lng]} zIndexOffset={500}
-                icon={pinIcon(String(c.waypoint), ROUTE.line, "#fff")}>
-                <Tooltip direction="top" offset={[0, -24]}>
-                  Waypoint {c.waypoint}: {c.role} of line {c.line}
-                </Tooltip>
-              </Marker>
             ))}
 
             {ends && (
