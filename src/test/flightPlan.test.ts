@@ -359,13 +359,15 @@ describe("the file that is actually downloaded", () => {
   };
   const near = (a: LatLng2, b: LatLng2) => Math.abs(a.lat - b.lat) < 2e-6 && Math.abs(a.lng - b.lng) < 2e-6;
 
-  it("holds one Placemark per planned capture, on every leg, interior points included", async () => {
+  it("holds one Placemark per planned waypoint, and a photo on every capture", async () => {
     const { pkg, resolved } = generateKmz(lot(), { ...DEFAULT_FLIGHT_PLAN_PARAMS, altitudeM: 30.48 }, opts);
     const marks = placemarksIn(await downloaded(pkg.kmz));
 
-    // The number the UI states is the number in the file.
-    expect(marks.length).toBe(resolved.stats.photoCount);
-    expect(marks.every(m => m.photo)).toBe(true);
+    // Both numbers the UI states are the numbers in the file, and they are
+    // different numbers: the turnaround points are flown but not photographed.
+    expect(marks.length).toBe(resolved.stats.waypointCount);
+    expect(marks.filter(m => m.photo).length).toBe(resolved.stats.photoCount);
+    expect(resolved.stats.waypointCount).toBeGreaterThan(resolved.stats.photoCount);
 
     // Per leg, not only in total: a leg longer than two intervals has points
     // BETWEEN its ends, in the file, where a viewer will draw them.
@@ -389,8 +391,8 @@ describe("the file that is actually downloaded", () => {
     const highMarks = placemarksIn(await downloaded(high.pkg.kmz));
 
     // Both files match their own stat. Neither is wrong; they are different plans.
-    expect(lowMarks.length).toBe(low.resolved.stats.photoCount);
-    expect(highMarks.length).toBe(high.resolved.stats.photoCount);
+    expect(lowMarks.filter(m => m.photo).length).toBe(low.resolved.stats.photoCount);
+    expect(highMarks.filter(m => m.photo).length).toBe(high.resolved.stats.photoCount);
 
     // The same footprint arithmetic at a third of the height: roughly a third
     // of the line spacing, a third of the interval, an order of magnitude more
@@ -398,7 +400,8 @@ describe("the file that is actually downloaded", () => {
     expect(low.resolved.computed.lineSpacingM).toBeCloseTo(high.resolved.computed.lineSpacingM * 0.3048, 1);
     expect(low.resolved.grid.lineCount).toBeGreaterThanOrEqual(5);
     expect(high.resolved.grid.lineCount).toBeLessThanOrEqual(3);
-    expect(lowMarks.length).toBeGreaterThan(highMarks.length * 4);
+    expect(lowMarks.filter(m => m.photo).length)
+      .toBeGreaterThan(highMarks.filter(m => m.photo).length * 4);
   });
 
   it("ships both files DJI requires, under wpmz/, and nothing else", async () => {

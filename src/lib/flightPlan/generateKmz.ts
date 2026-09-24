@@ -13,6 +13,9 @@ import {
   CAMERAS, DEFAULT_CAMERA_KEY, type DroneIdentity, captureIntervalM, footprintM, lineSpacingM,
 } from "./camera";
 import { type SurveyGrid, buildSurveyGrid, gridStats } from "./grid";
+import {
+  DEFAULT_TURNAROUND, minTurnRadiusM, turnIsTight, turnRadiusM, turnaroundExcursionM,
+} from "./turnaround";
 import type { FlightDirection } from "./grid";
 
 /** Everything the operator chose. Stored verbatim, so a plan can be reopened. */
@@ -30,6 +33,12 @@ export type FlightPlanParams = {
   cameraKey: string;
   /** Hold the lines this far inside the boundary, metres. */
   insetM: number;
+  /**
+   * How far past the end of a line the aircraft carries on before it turns,
+   * metres. Zero gives a clean half circle, which is already flyable; raising
+   * it buys settling distance and flies further outside the boundary.
+   */
+  turnOvershootM: number;
 };
 
 export const DEFAULT_FLIGHT_PLAN_PARAMS: FlightPlanParams = {
@@ -42,6 +51,7 @@ export const DEFAULT_FLIGHT_PLAN_PARAMS: FlightPlanParams = {
   speedMs: 6,
   cameraKey: DEFAULT_CAMERA_KEY,
   insetM: 0,
+  turnOvershootM: 0,
 };
 
 /**
@@ -67,6 +77,10 @@ export type FlightPlanResolved = {
     captureIntervalM: number;
     footprintAcrossM: number;
     footprintAlongM: number;
+    turnRadiusM: number;
+    minTurnRadiusM: number;
+    turnExcursionM: number;
+    turnsAreTight: boolean;
   };
   grid: SurveyGrid;
   stats: ReturnType<typeof gridStats> & { boundaryAreaM2: number };
@@ -108,6 +122,7 @@ export function resolveFlightPlan(rings: LatLng2[][], params: FlightPlanParams):
     lineSpacingM: spacing,
     captureIntervalM: interval,
     insetM: params.insetM,
+    turnaround: { ...DEFAULT_TURNAROUND, overshootM: params.turnOvershootM ?? 0 },
   });
 
   return {
@@ -118,10 +133,24 @@ export function resolveFlightPlan(rings: LatLng2[][], params: FlightPlanParams):
       captureIntervalM: interval,
       footprintAcrossM: fp.acrossTrackM,
       footprintAlongM: fp.alongTrackM,
+      /** Radius of the turn the line spacing implies. */
+      turnRadiusM: turnRadiusM(spacing),
+      /** Tightest turn the aircraft holds at the planned speed. */
+      minTurnRadiusM: minTurnRadiusM(params.speedMs),
+      /**
+       * How far outside the survey lines the turn reaches. The distance beyond
+       * the end of every line that has to be clear of trees, poles and
+       * buildings, and the only place the route leaves the drawn area.
+       */
+      turnExcursionM: turnaroundExcursionM(spacing, {
+        ...DEFAULT_TURNAROUND, overshootM: params.turnOvershootM ?? 0,
+      }),
+      /** The turns are tighter than the aircraft can hold at this speed. */
+      turnsAreTight: turnIsTight(spacing, params.speedMs),
     },
     grid,
     stats: { ...gridStats(grid, params.speedMs), boundaryAreaM2: ringsAreaM2(rings) },
-    blocker: blockerFor(grid.waypoints.length),
+    blocker: blockerFor(grid.route.length),
     lowAltitude: isLowAltitude(params.altitudeM),
   };
 }
@@ -231,19 +260,22 @@ export function generateKmz(
   opts: GenerateKmzOptions,
 ): { pkg: WpmlPackage; resolved: FlightPlanResolved } {
   const resolved = resolveFlightPlan(rings, params);
-  if (!resolved.grid.waypoints.length) throw new EmptyPlanError();
+  if (!resolved.grid.route.length) throw new EmptyPlanError();
   // The caller's override wins, including an explicit null, which is how a
   // caller forces the block to be omitted. Otherwise the chosen airframe's own
   // code, when one has been read off a file that aircraft accepted.
   const camera = CAMERAS[params.cameraKey] ?? CAMERAS[DEFAULT_CAMERA_KEY];
   const droneId = opts.drone !== undefined ? opts.drone : (camera.drone ?? null);
 
-  const wps: WpmlWaypoint[] = resolved.grid.waypoints.map(p => ({
-    lat: p.lat,
-    lng: p.lng,
+  // The whole route, turns included. A turnaround point is a real waypoint the
+  // aircraft flies; it just does not photograph there, because it is outside
+  // the survey area and pointing the wrong way.
+  const wps: WpmlWaypoint[] = resolved.grid.route.map(p => ({
+    lat: p.at.lat,
+    lng: p.at.lng,
     alt: params.altitudeM,
     speed: params.speedMs,
-    takePhoto: true,
+    takePhoto: p.photo,
     gimbalPitchDeg: params.gimbalPitchDeg,
   }));
 

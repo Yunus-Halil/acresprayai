@@ -121,18 +121,40 @@ and count is already on the grid, and the rest is bearing and distance between p
 already placed. Turns are steps in their own right rather than a footnote on the line before,
 because the transit is where the aircraft crosses ground it is not photographing.
 
-## Why the turns are straight lines and not curves
+## The turn at the end of a line
 
-A DJI-planned mission often shows waypoints strung around a rounded U at each end of a line. Ours
-puts none there: the last waypoint of one line joins the first of the next, and the transit is a
-straight segment.
+The grid used to join the end of one line to the start of the next with a bare segment: arrive
+at speed, reverse direction in zero distance, leave down the next line. Nothing flies that. A
+real aircraft stops, yaws and accelerates at every turn, and the first frames of the next line
+are taken in the middle of that acceleration.
 
-Those curve waypoints exist to let the aircraft arc through the turn at speed instead of stopping
-dead, and they do it by flying **outside the survey area**. That is a reasonable trade over open
-farmland and the wrong one over a small parcel with trees at the edge, which is the case that
-prompted the low-altitude confirmation. Nothing here is missing: the file is complete and the
-aircraft flies the turn either way. What changes is whether the planner is allowed to route the
-aircraft over ground the operator did not draw, which is a decision, not a detail.
+So the turn has a shape, in `lib/flightPlan/turnaround.ts`: an optional straight run-out, a half
+circle whose diameter is the gap between the two lines, and a straight run-in. Its radius is half
+the line spacing, the aircraft leaves on its own heading and rejoins the next line already
+pointing down it.
+
+**That shape is outside the survey area, necessarily.** It is the only part of the route that
+crosses ground the operator did not draw, which is why `turnExcursionM` is computed and shown as
+**Turn reach** in the stats: on a small parcel that is a distance somebody walks and checks
+before taking off. **Turn overshoot** is the operator's control over it; zero gives a clean half
+circle and raising it buys settling distance at the cost of reaching further out.
+
+Two consequences that touch everything else:
+
+- **Waypoints and photos are now different numbers.** A turnaround point is a real waypoint, the
+  aircraft flies it and it counts against the 200 ceiling, but the shutter stays shut: the point
+  is outside the survey area and pointing the wrong way, and a frame taken there is one the
+  reconstruction has to reject. `grid.route` is the authoritative ordered list, each entry
+  carrying a `photo` flag, and the export writes all of it.
+- **The distance is the distance flown.** A half circle is pi/2 times the straight gap, so
+  quoting the gap would understate every turn and therefore the flight time.
+
+`minTurnRadiusM(speed)` is the standard coordinated-turn radius, v^2 / (g tan bank), at the
+`TURN_BANK_DEG` (20 degrees) a survey aircraft is actually flown at: about 10 m at 6 m/s. When
+the line spacing implies something tighter, the panel says so. It is **not** enforced. The
+aircraft will simply slow for each turn, so the flight runs longer than the estimate; forcing the
+radius instead would push the aircraft further outside the boundary than the operator asked for,
+which is the more dangerous of the two failures.
 
 ## The export
 

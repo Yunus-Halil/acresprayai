@@ -12,6 +12,7 @@
 // planner already placed.
 import { type LatLng2, M_PER_DEG_LAT, distM, mPerDegLng } from "../geo";
 import type { SurveyGrid } from "./grid";
+import { pathLengthM } from "./turnaround";
 
 /**
  * Compass bearing from `a` to `b`, degrees clockwise from north.
@@ -88,19 +89,28 @@ export function routeSteps(grid: SurveyGrid): RouteStep[] {
   grid.legs.forEach((leg, i) => {
     if (i > 0) {
       const previous = grid.legs[i - 1];
-      const gap = distM(previous.b, leg.a);
+      const arc = grid.turns[i - 1] ?? [];
+      // The distance flown, not the distance between the two line ends. With a
+      // turnaround the aircraft covers a half circle, which is pi/2 times the
+      // straight gap, and quoting the gap would understate every turn.
+      const flown = pathLengthM([previous.b, ...arc, leg.a]);
       // A serpentine grid sometimes turns in place, where the end of one line
       // is the start of the next. Nothing travelled, nothing to announce.
-      if (gap > 0.5) {
+      if (flown > 0.5) {
         n += 1;
         steps.push({
           n, kind: "turn", lineNumber: null,
           headingDeg: bearingDeg(previous.b, leg.a),
           compass: compassPoint(bearingDeg(previous.b, leg.a)),
-          distanceM: gap, photos: 0,
-          firstWaypoint: null, lastWaypoint: null, at: previous.b,
+          distanceM: flown, photos: 0,
+          // Turnaround points are waypoints in the file and have to be counted,
+          // or every line number after the first turn would be wrong.
+          firstWaypoint: arc.length ? waypoint + 1 : null,
+          lastWaypoint: arc.length ? waypoint + arc.length : null,
+          at: previous.b,
         });
       }
+      waypoint += arc.length;
     }
     const first = waypoint + 1;
     waypoint += leg.captures.length;

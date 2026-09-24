@@ -81,19 +81,21 @@ describe("the route, step by step", () => {
 
   it("accounts for every waypoint exactly once, in order", () => {
     // The numbers in the list are the numbers in the exported file. If these
-    // drift, the operator counting photos on the remote counts something else.
+    // drift, the operator checking a waypoint on the remote checks the wrong
+    // one. Turnaround points are waypoints too and are numbered with the rest.
     const resolved = plan(300);
-    const lines = routeSteps(resolved.grid).filter(s => s.kind === "line");
+    const steps = routeSteps(resolved.grid);
+    const lines = steps.filter(s => s.kind === "line");
     expect(lines.map(s => s.photos).reduce((a, b) => a + b, 0))
-      .toBe(resolved.grid.waypoints.length);
+      .toBe(resolved.stats.photoCount);
 
     let expected = 1;
-    for (const line of lines) {
-      expect(line.firstWaypoint).toBe(expected);
-      expect(line.lastWaypoint).toBe(expected + line.photos - 1);
-      expected += line.photos;
+    for (const step of steps) {
+      if (step.firstWaypoint == null) continue;
+      expect(step.firstWaypoint).toBe(expected);
+      expected = step.lastWaypoint! + 1;
     }
-    expect(expected - 1).toBe(resolved.stats.photoCount);
+    expect(expected - 1).toBe(resolved.stats.waypointCount);
   });
 
   it("gives every line a number matching its place in the grid", () => {
@@ -123,11 +125,19 @@ describe("the route, step by step", () => {
       expect(t.photos).toBe(0);
       expect(t.distanceM).toBeGreaterThan(0.5);
       expect(t.lineNumber).toBeNull();
-      expect(t.firstWaypoint).toBeNull();
+      // A turn carries waypoints of its own now: the aircraft flies the arc,
+      // it just does not photograph it. They are numbered with the rest,
+      // because they are numbered with the rest inside the exported file.
+      expect(t.firstWaypoint).not.toBeNull();
+      expect(t.lastWaypoint!).toBeGreaterThanOrEqual(t.firstWaypoint!);
     }
     // The turns are the transit the grid already measured. One number, not two.
     const total = turns.reduce((a, t) => a + t.distanceM, 0);
     expect(total).toBeCloseTo(resolved.grid.turnDistanceM, 5);
+    // And that is the distance FLOWN, a half circle, not the straight gap.
+    // Quoting the gap would understate every turn by a third.
+    const gap = distM(resolved.grid.legs[0].b, resolved.grid.legs[1].a);
+    expect(turns[0].distanceM).toBeGreaterThan(gap * 1.4);
   });
 
   it("puts each line's badge where that line actually begins", () => {

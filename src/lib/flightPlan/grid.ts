@@ -22,6 +22,9 @@ import {
   rotateLL, segRingIntersections,
 } from "../geo";
 import { type CameraSpec, pointsAlongLeg } from "./camera";
+import {
+  DEFAULT_TURNAROUND, type TurnaroundParams, pathLengthM, turnaroundPath,
+} from "./turnaround";
 
 /**
  * Which way the lines run.
@@ -45,6 +48,14 @@ export type GridParams = {
    * fence line.
    */
   insetM?: number;
+  /**
+   * The shape of the turn between lines, or null for a bare segment.
+   *
+   * A bare segment asks the aircraft to arrive at the end of a line at speed,
+   * reverse direction in zero distance, and leave down the next one. Nothing
+   * flies that: it stops, yaws and accelerates, at every turn.
+   */
+  turnaround?: TurnaroundParams | null;
 };
 
 /** One straight line of the grid, already clipped to the polygon. */
@@ -55,8 +66,22 @@ export type GridLeg = {
   captures: LatLng2[];
 };
 
+/**
+ * One waypoint of the finished route, in flight order.
+ *
+ * `photo` is false on the turnaround points. They are real waypoints, the
+ * aircraft flies them and they count against the airframe's ceiling, but the
+ * shutter stays shut: they are outside the survey area and pointing the wrong
+ * way, and a frame taken there is one the reconstruction has to reject.
+ */
+export type RoutePoint = { at: LatLng2; photo: boolean };
+
 export type SurveyGrid = {
   legs: GridLeg[];
+  /** The turnaround path between each consecutive pair of lines. */
+  turns: LatLng2[][];
+  /** Every waypoint the file will carry, in order, captures and turns alike. */
+  route: RoutePoint[];
   /** Every capture position in flight order. These become the waypoints. */
   waypoints: LatLng2[];
   /** Bearing the lines run along, degrees clockwise from north. */
@@ -95,7 +120,8 @@ export function headingForDirection(direction: FlightDirection, rings: LatLng2[]
 export function buildSurveyGrid(rings: LatLng2[][], params: GridParams): SurveyGrid {
   const headingDeg = headingForDirection(params.direction, rings);
   const empty: SurveyGrid = {
-    legs: [], waypoints: [], headingDeg, lineCount: 0, lineDistanceM: 0, turnDistanceM: 0,
+    legs: [], turns: [], route: [], waypoints: [],
+    headingDeg, lineCount: 0, lineDistanceM: 0, turnDistanceM: 0,
   };
   if (!rings.length || !rings[0] || rings[0].length < 3) return empty;
 
@@ -157,25 +183,49 @@ export function buildSurveyGrid(rings: LatLng2[][], params: GridParams): SurveyG
   // into the next line rather than flying back to the same side each time.
   const ordered = legs.map((leg, i) => (i % 2 === 1 ? { ...leg, a: leg.b, b: leg.a } : leg));
 
+  // Undefined means "the usual turn"; null is an explicit request for the bare
+  // segment, which exists for tests and for anyone who wants the old shape.
+  const turnParams = params.turnaround === undefined ? DEFAULT_TURNAROUND : params.turnaround;
+
   const out: GridLeg[] = [];
   const waypoints: LatLng2[] = [];
+  const turns: LatLng2[][] = [];
+  const route: RoutePoint[] = [];
   let lineDistanceM = 0;
   let turnDistanceM = 0;
-  let previousEnd: LatLng2 | null = null;
+  let previous: GridLeg | null = null;
 
   for (const leg of ordered) {
     const a = fromGrid(leg.a);
     const b = fromGrid(leg.b);
     const captures = pointsAlongLeg(a, b, params.captureIntervalM);
+
+    if (previous) {
+      // The direction of travel at the end of the previous line is the
+      // direction THAT LINE ran, not the direction of the gap to this one, and
+      // it cannot be recovered from the two endpoints: at the moment of the
+      // turn the aircraft is still travelling along the line it is leaving.
+      const ahead = {
+        lat: previous.b.lat + (previous.b.lat - previous.a.lat),
+        lng: previous.b.lng + (previous.b.lng - previous.a.lng),
+      };
+      const arc = turnParams ? turnaroundPath(previous.b, a, ahead, turnParams) : [];
+      turns.push(arc);
+      turnDistanceM += pathLengthM([previous.b, ...arc, a]);
+      for (const p of arc) route.push({ at: p, photo: false });
+    }
+
     out.push({ a, b, captures });
     lineDistanceM += distM(a, b);
-    if (previousEnd) turnDistanceM += distM(previousEnd, a);
-    previousEnd = b;
+    previous = { a, b, captures };
     waypoints.push(...captures);
+    for (const p of captures) route.push({ at: p, photo: true });
   }
 
   return {
     legs: out,
+    turns,
+    route,
     waypoints,
     headingDeg,
     lineCount: out.length,
@@ -204,8 +254,11 @@ export function gridStats(grid: SurveyGrid, speedMs: number): GridStats {
   const distanceM = grid.lineDistanceM + grid.turnDistanceM;
   const speed = Math.max(0.5, speedMs);
   return {
-    waypointCount: grid.waypoints.length,
-    photoCount: grid.waypoints.length,
+    // Two numbers now that the turns carry waypoints of their own. The
+    // airframe's ceiling is a limit on waypoints; the operator plans, and the
+    // reconstruction runs, on photos.
+    waypointCount: grid.route.length,
+    photoCount: grid.route.reduce((n, p) => n + (p.photo ? 1 : 0), 0),
     distanceM,
     flightTimeS: distanceM / speed,
   };

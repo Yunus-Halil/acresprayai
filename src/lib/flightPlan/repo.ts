@@ -31,7 +31,8 @@ export type FlightPlan = {
 
 const COLUMNS =
   "id, field_id, name, boundary, direction, altitude_m, line_spacing_m, front_overlap_pct, " +
-  "side_overlap_pct, gimbal_pitch_deg, speed_ms, camera_key, inset_m, last_exported_at, " +
+  "side_overlap_pct, gimbal_pitch_deg, speed_ms, camera_key, inset_m, turn_overshoot_m, " +
+  "last_exported_at, " +
   "created_at, updated_at";
 
 type Row = Record<string, unknown>;
@@ -56,6 +57,7 @@ function fromRow(r: Row): FlightPlan {
       speedMs: num(r.speed_ms, 6),
       cameraKey: String(r.camera_key ?? ""),
       insetM: num(r.inset_m, 0),
+      turnOvershootM: num(r.turn_overshoot_m, 0),
     },
     lastExportedAt: (r.last_exported_at as string | null) ?? null,
     createdAt: String(r.created_at),
@@ -106,6 +108,7 @@ export async function saveFlightPlan(
     speed_ms: input.params.speedMs,
     camera_key: input.params.cameraKey,
     inset_m: input.params.insetM,
+    turn_overshoot_m: input.params.turnOvershootM ?? 0,
   };
   const q = input.id
     ? supabase.from("flight_plans").update(row as never).eq("id", input.id).select(COLUMNS).single()

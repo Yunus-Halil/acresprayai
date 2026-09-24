@@ -262,16 +262,28 @@ export default function FlightPlanModal({
   const corners = useMemo(() => {
     if (!resolved) return [] as { waypoint: number; at: LatLng2; line: number; role: string }[];
     const out: { waypoint: number; at: LatLng2; line: number; role: string }[] = [];
-    let n = 0;
-    resolved.grid.legs.forEach((leg, i) => {
-      if (!leg.captures.length) return;
-      out.push({ waypoint: n + 1, at: leg.captures[0], line: i + 1, role: "start" });
-      n += leg.captures.length;
-      if (leg.captures.length > 1) {
-        out.push({ waypoint: n, at: leg.captures[leg.captures.length - 1], line: i + 1, role: "end" });
-      }
+    let line = 0;
+    let previous = false;
+    resolved.grid.route.forEach((p, i) => {
+      if (!p.photo) { previous = false; return; }
+      const startsLine = !previous;
+      previous = true;
+      const next = resolved.grid.route[i + 1];
+      const endsLine = !next || !next.photo;
+      if (startsLine) line += 1;
+      if (startsLine) out.push({ waypoint: i + 1, at: p.at, line, role: "start" });
+      else if (endsLine) out.push({ waypoint: i + 1, at: p.at, line, role: "end" });
     });
     return out;
+  }, [resolved]);
+
+  // The turnaround drawn as it will be flown: the line end, the arc, the next
+  // line start. Both ends included so the path joins the route with no gap.
+  const turnPaths = useMemo(() => {
+    if (!resolved) return [] as LatLng2[][];
+    return resolved.grid.turns.map((arc, i) => [
+      resolved.grid.legs[i].b, ...arc, resolved.grid.legs[i + 1].a,
+    ]);
   }, [resolved]);
 
   // One wording, from the same module that decides the threshold, so the
@@ -445,14 +457,16 @@ export default function FlightPlanModal({
 
             {/* The transit between lines, in a different colour because it is a
                 different thing: flight with the camera off. */}
-            {resolved && resolved.grid.legs.length > 1 && (
-              <Polyline
-                positions={resolved.grid.legs.slice(0, -1).flatMap((leg, i) => [
-                  [leg.b.lat, leg.b.lng] as [number, number],
-                  [resolved.grid.legs[i + 1].a.lat, resolved.grid.legs[i + 1].a.lng] as [number, number],
-                ])}
-                pathOptions={{ color: ROUTE.transit, weight: 3, dashArray: "6 6", opacity: 0.9 }} />
-            )}
+            {turnPaths.map((path, i) => (
+              <Polyline key={`turncase${i}`}
+                positions={path.map(p => [p.lat, p.lng] as [number, number])}
+                pathOptions={{ color: ROUTE.casing, weight: 7, opacity: 0.7 }} />
+            ))}
+            {turnPaths.map((path, i) => (
+              <Polyline key={`turn${i}`}
+                positions={path.map(p => [p.lat, p.lng] as [number, number])}
+                pathOptions={{ color: ROUTE.transit, weight: 4 }} />
+            ))}
 
             {resolved?.grid.legs.map((leg, i) => {
               const m = midpoint(leg.a, leg.b);
@@ -464,13 +478,26 @@ export default function FlightPlanModal({
 
             {/* Every point the camera fires at. Small, because they are the
                 texture of the route rather than its structure. */}
-            {resolved && resolved.grid.waypoints.length <= 400 && resolved.grid.waypoints.map((p, i) => (
-              <CircleMarker key={`wp${i}`} center={[p.lat, p.lng]} radius={2.5}
-                pathOptions={{ color: ROUTE.casing, weight: 1, fillColor: "#ffffff", fillOpacity: 1 }}>
-                <Tooltip direction="top" offset={[0, -4]}>
-                  Waypoint {i + 1} of {resolved.grid.waypoints.length}, photo {i + 1}
-                </Tooltip>
-              </CircleMarker>
+            {resolved && resolved.grid.route.length <= 400 && resolved.grid.route.map((p, i) => (
+              p.photo ? (
+                <CircleMarker key={`wp${i}`} center={[p.at.lat, p.at.lng]} radius={2.5}
+                  pathOptions={{ color: ROUTE.casing, weight: 1, fillColor: "#ffffff", fillOpacity: 1 }}>
+                  <Tooltip direction="top" offset={[0, -4]}>
+                    Waypoint {i + 1} of {resolved.grid.route.length}
+                  </Tooltip>
+                </CircleMarker>
+              ) : null
+            ))}
+
+            {resolved && resolved.grid.route.length <= 400 && resolved.grid.route.map((p, i) => (
+              !p.photo ? (
+                <CircleMarker key={`tw${i}`} center={[p.at.lat, p.at.lng]} radius={2.5}
+                  pathOptions={{ color: ROUTE.transit, weight: 2, fillColor: ROUTE.casing, fillOpacity: 1 }}>
+                  <Tooltip direction="top" offset={[0, -4]}>
+                    Waypoint {i + 1}, turnaround, no photo
+                  </Tooltip>
+                </CircleMarker>
+              ) : null
             ))}
 
             {/* The numbered pins, on the corners where the route turns, carrying
@@ -496,7 +523,7 @@ export default function FlightPlanModal({
                 <Marker position={[ends.end.lat, ends.end.lng]} zIndexOffset={1000}
                   icon={pinIcon("E", "#0ea5e9", "#001018", 32)}>
                   <Tooltip direction="top" offset={[0, -30]}>
-                    Last photo, waypoint {resolved!.grid.waypoints.length}
+                    Last photo, waypoint {resolved!.grid.route.length}
                   </Tooltip>
                 </Marker>
               </>
@@ -506,62 +533,65 @@ export default function FlightPlanModal({
           {/* What the plan comes to, over the map rather than in a column of
               its own, so the numbers sit next to the thing they describe. */}
           {resolved && rings.length > 0 && (
-            <div className="absolute top-3 right-3 z-[1100] rounded-lg bg-background/92 backdrop-blur border shadow-lg p-3 text-xs w-52 space-y-1">
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-semibold leading-none">{resolved.stats.photoCount}</span>
-                <span className="text-muted-foreground">photos</span>
+            <div className="absolute top-3 right-3 z-[1100] rounded-lg bg-background border shadow-xl p-3 text-xs w-56 space-y-1.5">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-semibold leading-none tabular-nums">{resolved.stats.photoCount}</span>
+                <span className="text-foreground/60">photos</span>
               </div>
-              <div className="pt-1 space-y-0.5 border-t">
+              <div className="pt-1.5 space-y-1 border-t">
                 <Row k="Lines" v={String(resolved.grid.lineCount)} />
-                <Row k="Photo every" v={dist(resolved.computed.captureIntervalM)} />
                 <Row k="Line spacing" v={dist(resolved.computed.lineSpacingM)} />
-                <Row k="Each covers" v={`${dist(resolved.computed.footprintAcrossM)} x ${dist(resolved.computed.footprintAlongM)}`} />
+                <Row k="Photo interval" v={dist(resolved.computed.captureIntervalM)} />
+                <Row k="Frame" v={`${dist(resolved.computed.footprintAcrossM)} x ${dist(resolved.computed.footprintAlongM)}`} />
                 <Row k="Distance" v={dist(resolved.stats.distanceM)} />
                 <Row k="Time" v={mins(resolved.stats.flightTimeS)} />
                 <Row k="Area" v={area(resolved.stats.boundaryAreaM2)} />
+                <Row k="Waypoints" v={String(resolved.stats.waypointCount)} />
+                <Row k="Turn reach" v={dist(resolved.computed.turnExcursionM)} />
               </div>
-              <div className="text-[10px] text-muted-foreground pt-1 border-t leading-snug">
-                Time is distance over speed. No climb, no turn slowdown, no battery swaps.
+              <div className="text-[10px] text-foreground/50 pt-1.5 border-t leading-snug">
+                Time excludes climb, turn slowdown and battery swaps.
               </div>
             </div>
           )}
 
           {/* The order, in words, over the map so it can be read against it. */}
           {showRoute && resolved && steps.length > 0 && (
-            <div className="absolute top-3 left-3 z-[1100] rounded-lg bg-background/92 backdrop-blur border shadow-lg w-80 max-h-[calc(100%-1.5rem)] flex flex-col">
+            <div className="absolute top-3 left-3 z-[1100] rounded-lg bg-background border shadow-xl w-[22rem] max-h-[calc(100%-1.5rem)] flex flex-col">
               <div className="px-3 py-2 border-b text-xs font-medium flex items-center justify-between">
-                <span>What the drone does, in order</span>
+                <span>Flight sequence</span>
                 <button type="button" className="text-muted-foreground hover:text-foreground"
                   onClick={() => setShowRoute(false)}>Close</button>
               </div>
               <ol className="overflow-y-auto divide-y text-xs">
-                <li className="px-3 py-2 flex gap-2">
-                  <span className="text-muted-foreground w-4 shrink-0">0</span>
-                  <span>
-                    Take off, climb to {fmtAltitude(params.altitudeM, units).text}, fly to
-                    waypoint 1 at the {startCorner} corner.
-                  </span>
+                <li className="px-3 py-1.5 flex gap-2 items-baseline">
+                  <span className="text-foreground/50 w-4 shrink-0 tabular-nums">0</span>
+                  <span className="flex-1">Take off, climb to {fmtAltitude(params.altitudeM, units).text}</span>
+                  <span className="text-foreground/50 capitalize">{startCorner}</span>
                 </li>
                 {steps.map(step => (
-                  <li key={step.n} className="px-3 py-2 flex gap-2">
-                    <span className="text-muted-foreground w-4 shrink-0">{step.n}</span>
+                  <li key={step.n} className="px-3 py-1.5 flex gap-2 items-baseline">
+                    <span className="text-foreground/50 w-4 shrink-0 tabular-nums">{step.n}</span>
                     {step.kind === "line" && (
-                      <span>
-                        <strong>Line {step.lineNumber}</strong>: fly {step.compass} for {dist(step.distanceM)},
-                        taking {step.photos} photo{step.photos === 1 ? "" : "s"}{" "}
-                        (waypoints {step.firstWaypoint} to {step.lastWaypoint}).
-                      </span>
+                      <>
+                        <span className="font-medium w-12 shrink-0">Line {step.lineNumber}</span>
+                        <span className="text-foreground/60 w-16 shrink-0 capitalize">{step.compass}</span>
+                        <span className="flex-1 tabular-nums">{dist(step.distanceM)}</span>
+                        <span className="text-foreground/60 tabular-nums">
+                          WP {step.firstWaypoint}-{step.lastWaypoint}
+                        </span>
+                      </>
                     )}
                     {step.kind === "turn" && (
-                      <span className="text-muted-foreground">
-                        Turn and cross {dist(step.distanceM)} to the {step.compass}. No photos.
-                      </span>
+                      <>
+                        <span className="w-12 shrink-0 text-foreground/60">Turn</span>
+                        <span className="text-foreground/60 w-16 shrink-0 capitalize">{step.compass}</span>
+                        <span className="flex-1 tabular-nums text-foreground/60">{dist(step.distanceM)}</span>
+                        <span className="text-foreground/40">no photos</span>
+                      </>
                     )}
                     {step.kind === "finish" && (
-                      <span>
-                        Last photo taken. The aircraft then follows its own return-to-home
-                        setting, from the point it took off at. This plan does not set that point.
-                      </span>
+                      <span className="flex-1">Route ends. Return to home per aircraft setting.</span>
                     )}
                   </li>
                 ))}
@@ -573,22 +603,22 @@ export default function FlightPlanModal({
               nothing flies it and no photo is taken on it, which is not obvious
               when it is the most prominent thing on the map. */}
           {resolved && rings.length > 0 && (
-            <div className="absolute bottom-3 left-3 z-[1100] rounded-lg bg-background/92 backdrop-blur border shadow-lg px-3 py-2 text-[11px] space-y-1">
+            <div className="absolute bottom-3 left-3 z-[1100] rounded-lg bg-background border shadow-xl px-3 py-2 text-[11px] space-y-1">
               <span className="flex items-center gap-2">
                 <span className="inline-block w-5 border-t-[3px]" style={{ borderColor: ROUTE.line }} />
-                Flight line, camera firing
+                Flight line
               </span>
               <span className="flex items-center gap-2">
                 <span className="inline-block w-5 border-t-[3px] border-dashed" style={{ borderColor: ROUTE.transit }} />
-                Turn, no photos
+                Turnaround
               </span>
               <span className="flex items-center gap-2">
                 <span className="inline-block w-5 border-t-2 border-dashed" style={{ borderColor: ROUTE.area }} />
-                Area you drew, never flown
+                Survey area
               </span>
               <span className="flex items-center gap-2">
                 <span className="inline-block h-2 w-2 rounded-full bg-white ring-1 ring-black" />
-                One photo
+                Photo point
               </span>
             </div>
           )}
@@ -639,7 +669,7 @@ export default function FlightPlanModal({
                 onCommit={n => set("sideOverlapPct", n)} />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 sm:col-span-2 lg:col-span-4 xl:col-span-2">
+          <div className="grid grid-cols-4 gap-2 sm:col-span-2 lg:col-span-4 xl:col-span-2">
             <div>
               <Label htmlFor="fp-gimbal" className="text-[11px] text-muted-foreground">Gimbal (deg)</Label>
               <NumBox id="fp-gimbal" value={params.gimbalPitchDeg} min={-90} max={30}
@@ -649,6 +679,13 @@ export default function FlightPlanModal({
               <Label htmlFor="fp-inset" className="text-[11px] text-muted-foreground">Inset ({lenUnit})</Label>
               <NumBox id="fp-inset" value={lenShown(params.insetM)} min={0} max={lenFloor(100)}
                 onCommit={n => set("insetM", altitudeToM(n, units))} />
+            </div>
+            <div>
+              <Label htmlFor="fp-overshoot" className="text-[11px] text-muted-foreground">
+                Turn overshoot ({lenUnit})
+              </Label>
+              <NumBox id="fp-overshoot" value={lenShown(params.turnOvershootM)} min={0} max={lenFloor(200)}
+                onCommit={n => set("turnOvershootM", altitudeToM(n, units))} />
             </div>
             <div>
               <Label htmlFor="fp-spacing" className="text-[11px] text-muted-foreground">
@@ -677,6 +714,18 @@ export default function FlightPlanModal({
               <span><strong>Low altitude.</strong> {caution}</span>
             </div>
           )}
+          {resolved?.computed.turnsAreTight && rings.length > 0 && (
+            <div className="rounded border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-500 flex items-start gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>
+                Turn radius {dist(resolved.computed.turnRadiusM)}, tighter than the{" "}
+                {dist(resolved.computed.minTurnRadiusM)} this aircraft holds at{" "}
+                {spdShown(params.speedMs)} {speedUnit(units)}. It will slow for each turn, so the
+                flight runs longer than the estimate.
+              </span>
+            </div>
+          )}
+
           {resolved?.blocker && (
             <div className="rounded border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-500 flex items-start gap-1.5">
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
@@ -686,8 +735,7 @@ export default function FlightPlanModal({
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
               <Camera className="h-3 w-3 shrink-0" />
-              The camera fires every {resolved ? dist(resolved.computed.captureIntervalM) : "interval"} along
-              each line, not only at the turns.
+              Shutter every {resolved ? dist(resolved.computed.captureIntervalM) : "interval"} along each line
             </p>
             <div className="flex items-center gap-2">
               <Button type="button" variant="outline" onClick={() => run("download")}
@@ -730,8 +778,8 @@ export default function FlightPlanModal({
 function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex justify-between gap-2">
-      <span className="text-muted-foreground">{k}</span>
-      <span className="font-mono">{v}</span>
+      <span className="text-foreground/60">{k}</span>
+      <span className="font-medium tabular-nums">{v}</span>
     </div>
   );
 }
