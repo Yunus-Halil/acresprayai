@@ -1,6 +1,3 @@
-// Generated from the live schema with:
-//   npx supabase gen types typescript --project-id iftkcpcwxnpbllyfadit
-// Do not edit by hand.
 export type Json =
   | string
   | number
@@ -13,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.5"
   }
   graphql_public: {
     Tables: {
@@ -293,66 +290,6 @@ export type Database = {
           },
         ]
       }
-      flight_plans: {
-        Row: {
-          altitude_m: number
-          boundary: Json
-          camera_key: string
-          created_at: string
-          direction: string
-          field_id: string
-          front_overlap_pct: number
-          gimbal_pitch_deg: number
-          id: string
-          inset_m: number
-          last_exported_at: string | null
-          line_spacing_m: number | null
-          name: string | null
-          side_overlap_pct: number
-          speed_ms: number
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          altitude_m: number
-          boundary: Json
-          camera_key: string
-          created_at?: string
-          direction: string
-          field_id: string
-          front_overlap_pct: number
-          gimbal_pitch_deg: number
-          id?: string
-          inset_m?: number
-          last_exported_at?: string | null
-          line_spacing_m?: number | null
-          name?: string | null
-          side_overlap_pct: number
-          speed_ms: number
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          altitude_m?: number
-          boundary?: Json
-          camera_key?: string
-          created_at?: string
-          direction?: string
-          field_id?: string
-          front_overlap_pct?: number
-          gimbal_pitch_deg?: number
-          id?: string
-          inset_m?: number
-          last_exported_at?: string | null
-          line_spacing_m?: number | null
-          name?: string | null
-          side_overlap_pct?: number
-          speed_ms?: number
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       fields: {
         Row: {
           area_hectares: number
@@ -360,6 +297,7 @@ export type Database = {
           boundary_area_hectares: number | null
           created_at: string
           crop: string
+          derived_location: Json | null
           id: string
           location: string | null
           name: string
@@ -373,6 +311,7 @@ export type Database = {
           boundary_area_hectares?: number | null
           created_at?: string
           crop: string
+          derived_location?: Json | null
           id?: string
           location?: string | null
           name: string
@@ -386,6 +325,7 @@ export type Database = {
           boundary_area_hectares?: number | null
           created_at?: string
           crop?: string
+          derived_location?: Json | null
           id?: string
           location?: string | null
           name?: string
@@ -468,6 +408,77 @@ export type Database = {
           },
         ]
       }
+      flight_plans: {
+        Row: {
+          altitude_m: number
+          boundary: Json
+          camera_key: string
+          created_at: string
+          direction: string
+          field_id: string
+          front_overlap_pct: number
+          gimbal_pitch_deg: number
+          id: string
+          inset_m: number
+          last_exported_at: string | null
+          line_spacing_m: number | null
+          name: string | null
+          side_overlap_pct: number
+          speed_ms: number
+          turn_overshoot_m: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          altitude_m: number
+          boundary: Json
+          camera_key: string
+          created_at?: string
+          direction?: string
+          field_id: string
+          front_overlap_pct: number
+          gimbal_pitch_deg: number
+          id?: string
+          inset_m?: number
+          last_exported_at?: string | null
+          line_spacing_m?: number | null
+          name?: string | null
+          side_overlap_pct: number
+          speed_ms: number
+          turn_overshoot_m?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          altitude_m?: number
+          boundary?: Json
+          camera_key?: string
+          created_at?: string
+          direction?: string
+          field_id?: string
+          front_overlap_pct?: number
+          gimbal_pitch_deg?: number
+          id?: string
+          inset_m?: number
+          last_exported_at?: string | null
+          line_spacing_m?: number | null
+          name?: string | null
+          side_overlap_pct?: number
+          speed_ms?: number
+          turn_overshoot_m?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flight_plans_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
           area_ha: number | null
@@ -476,10 +487,13 @@ export type Database = {
           dose_l_ha: number | null
           drone_id: string | null
           field_id: string | null
+          flight_plan_id: string | null
           id: string
+          location: Json | null
           notes: string | null
           scan_id: string | null
           scheduled_at: string
+          stats: Json | null
           status: string
           type: string
           user_id: string
@@ -491,10 +505,13 @@ export type Database = {
           dose_l_ha?: number | null
           drone_id?: string | null
           field_id?: string | null
+          flight_plan_id?: string | null
           id?: string
+          location?: Json | null
           notes?: string | null
           scan_id?: string | null
           scheduled_at?: string
+          stats?: Json | null
           status?: string
           type?: string
           user_id: string
@@ -506,10 +523,13 @@ export type Database = {
           dose_l_ha?: number | null
           drone_id?: string | null
           field_id?: string | null
+          flight_plan_id?: string | null
           id?: string
+          location?: Json | null
           notes?: string | null
           scan_id?: string | null
           scheduled_at?: string
+          stats?: Json | null
           status?: string
           type?: string
           user_id?: string
@@ -1008,7 +1028,22 @@ export type Database = {
           weed_catalog_id?: string | null
           weed_label?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "treatment_choices_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "treatment_choices_weed_catalog_id_fkey"
+            columns: ["weed_catalog_id"]
+            isOneToOne: false
+            referencedRelation: "weed_catalog_entries"
+            referencedColumns: ["catalog_id"]
+          },
+        ]
       }
       user_annotations: {
         Row: {
@@ -1071,7 +1106,22 @@ export type Database = {
           weed_label_status?: string | null
           weed_observation_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_annotations_weed_catalog_id_fkey"
+            columns: ["weed_catalog_id"]
+            isOneToOne: false
+            referencedRelation: "weed_catalog_entries"
+            referencedColumns: ["catalog_id"]
+          },
+          {
+            foreignKeyName: "user_annotations_weed_observation_id_fkey"
+            columns: ["weed_observation_id"]
+            isOneToOne: false
+            referencedRelation: "weed_observations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       weed_catalog_entries: {
         Row: {
@@ -1176,7 +1226,15 @@ export type Database = {
           usda_symbol?: string | null
           vt_profile_url?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "weed_catalog_entries_regulatory_source_id_fkey"
+            columns: ["regulatory_source_id"]
+            isOneToOne: false
+            referencedRelation: "weed_catalog_sources"
+            referencedColumns: ["source_id"]
+          },
+        ]
       }
       weed_catalog_review_queue: {
         Row: {
@@ -1221,7 +1279,22 @@ export type Database = {
           source_id?: string | null
           state?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "weed_catalog_review_queue_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "weed_catalog_entries"
+            referencedColumns: ["catalog_id"]
+          },
+          {
+            foreignKeyName: "weed_catalog_review_queue_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "weed_catalog_sources"
+            referencedColumns: ["source_id"]
+          },
+        ]
       }
       weed_catalog_sources: {
         Row: {
@@ -1258,32 +1331,35 @@ export type Database = {
       }
       weed_observations: {
         Row: {
+          anomaly_feature: string | null
+          anomaly_z: number | null
           area_m2: number | null
           blob_z: number | null
           blob_z_feature: string | null
-          class: string | null
-          estimate: Json | null
-          estimate_model: string | null
-          geometry: Json | null
-          tile_count: number | null
-          vector: Json | null
-          anomaly_feature: string | null
-          anomaly_z: number | null
           brain: Json | null
           brain_model: string | null
           candidate_id: string
           captured_at: string
+          catalog_id: string | null
           chip_gsd_m: number | null
           chip_path: string | null
           chip_span_m: number | null
+          class: string | null
           created_at: string
           crop: string | null
           distance_to_row_m: number | null
+          estimate: Json | null
+          estimate_model: string | null
           features: Json | null
           field_id: string | null
+          geometry: Json | null
           growth_stage: string | null
           gsd_m: number | null
           id: string
+          identification_basis: string | null
+          identification_source: string | null
+          identification_status: string
+          identified_at: string | null
           kind: string
           lat: number
           lng: number
@@ -1299,48 +1375,48 @@ export type Database = {
           score: number
           season: string
           species: string | null
+          suggested_catalog_id: string | null
+          suggestion_basis: string | null
+          tile_count: number | null
           tile_id: string
           time_zone: string | null
           updated_at: string
           user_id: string
+          vector: Json | null
           verdict: string | null
           verdict_at: string | null
           weather: Json | null
-          suggested_catalog_id: string | null
-          suggestion_basis: string | null
-          identification_status: string
-          catalog_id: string | null
-          identification_source: string | null
-          identification_basis: string | null
-          identified_at: string | null
         }
         Insert: {
+          anomaly_feature?: string | null
+          anomaly_z?: number | null
           area_m2?: number | null
           blob_z?: number | null
           blob_z_feature?: string | null
-          class?: string | null
-          estimate?: Json | null
-          estimate_model?: string | null
-          geometry?: Json | null
-          tile_count?: number | null
-          vector?: Json | null
-          anomaly_feature?: string | null
-          anomaly_z?: number | null
           brain?: Json | null
           brain_model?: string | null
           candidate_id: string
           captured_at: string
+          catalog_id?: string | null
           chip_gsd_m?: number | null
           chip_path?: string | null
           chip_span_m?: number | null
+          class?: string | null
           created_at?: string
           crop?: string | null
           distance_to_row_m?: number | null
+          estimate?: Json | null
+          estimate_model?: string | null
           features?: Json | null
           field_id?: string | null
+          geometry?: Json | null
           growth_stage?: string | null
           gsd_m?: number | null
           id?: string
+          identification_basis?: string | null
+          identification_source?: string | null
+          identification_status?: string
+          identified_at?: string | null
           kind: string
           lat: number
           lng: number
@@ -1356,48 +1432,48 @@ export type Database = {
           score: number
           season: string
           species?: string | null
+          suggested_catalog_id?: string | null
+          suggestion_basis?: string | null
+          tile_count?: number | null
           tile_id: string
           time_zone?: string | null
           updated_at?: string
           user_id: string
+          vector?: Json | null
           verdict?: string | null
           verdict_at?: string | null
           weather?: Json | null
-          suggested_catalog_id?: string | null
-          suggestion_basis?: string | null
-          identification_status?: string
-          catalog_id?: string | null
-          identification_source?: string | null
-          identification_basis?: string | null
-          identified_at?: string | null
         }
         Update: {
+          anomaly_feature?: string | null
+          anomaly_z?: number | null
           area_m2?: number | null
           blob_z?: number | null
           blob_z_feature?: string | null
-          class?: string | null
-          estimate?: Json | null
-          estimate_model?: string | null
-          geometry?: Json | null
-          tile_count?: number | null
-          vector?: Json | null
-          anomaly_feature?: string | null
-          anomaly_z?: number | null
           brain?: Json | null
           brain_model?: string | null
           candidate_id?: string
           captured_at?: string
+          catalog_id?: string | null
           chip_gsd_m?: number | null
           chip_path?: string | null
           chip_span_m?: number | null
+          class?: string | null
           created_at?: string
           crop?: string | null
           distance_to_row_m?: number | null
+          estimate?: Json | null
+          estimate_model?: string | null
           features?: Json | null
           field_id?: string | null
+          geometry?: Json | null
           growth_stage?: string | null
           gsd_m?: number | null
           id?: string
+          identification_basis?: string | null
+          identification_source?: string | null
+          identification_status?: string
+          identified_at?: string | null
           kind?: string
           lat?: number
           lng?: number
@@ -1413,22 +1489,48 @@ export type Database = {
           score?: number
           season?: string
           species?: string | null
+          suggested_catalog_id?: string | null
+          suggestion_basis?: string | null
+          tile_count?: number | null
           tile_id?: string
           time_zone?: string | null
           updated_at?: string
           user_id?: string
+          vector?: Json | null
           verdict?: string | null
           verdict_at?: string | null
           weather?: Json | null
-          suggested_catalog_id?: string | null
-          suggestion_basis?: string | null
-          identification_status?: string
-          catalog_id?: string | null
-          identification_source?: string | null
-          identification_basis?: string | null
-          identified_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "weed_observations_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "weed_catalog_entries"
+            referencedColumns: ["catalog_id"]
+          },
+          {
+            foreignKeyName: "weed_observations_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weed_observations_scan_id_fkey"
+            columns: ["scan_id"]
+            isOneToOne: false
+            referencedRelation: "odm_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weed_observations_suggested_catalog_id_fkey"
+            columns: ["suggested_catalog_id"]
+            isOneToOne: false
+            referencedRelation: "weed_catalog_entries"
+            referencedColumns: ["catalog_id"]
+          },
+        ]
       }
     }
     Views: {
@@ -1677,10 +1779,6 @@ export type Database = {
       }
     }
     Functions: {
-      import_weed_catalog: {
-        Args: { p: Json }
-        Returns: Json
-      }
       _postgis_deprecate: {
         Args: { newname: string; oldname: string; version: string }
         Returns: undefined
@@ -1978,6 +2076,7 @@ export type Database = {
       }
       geomfromewkt: { Args: { "": string }; Returns: unknown }
       gettransactionid: { Args: never; Returns: unknown }
+      import_weed_catalog: { Args: { p: Json }; Returns: Json }
       longtransactionsenabled: { Args: never; Returns: boolean }
       populate_geometry_columns:
         | { Args: { tbl_oid: unknown; use_typmod?: boolean }; Returns: number }
@@ -2641,12 +2740,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2670,11 +2769,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2695,11 +2794,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2720,11 +2819,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2737,11 +2836,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

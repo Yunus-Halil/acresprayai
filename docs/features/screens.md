@@ -22,11 +22,40 @@ workspace deliberately sits outside that shell and opens full-screen in a new ta
 
 ## Dashboard — `/app`
 
-Four KPI cards: total fields, total area (ha and acres), boundaries defined, spray logs recorded.
+Four cards, each a link to where the work is done: **Total fields** with the boundary split in
+its subtitle, **Weed-affected area**, **Missions ready**, **Spray logs**. Total area and
+Boundaries defined used to hold two of those places and were both restatements of Total fields;
+they are replaced by the two questions an operator opens this screen with, which are what the
+last scan found and what is waiting to be flown.
 
-Below, a field list with a status dot, real measured area, flights logged, last flown date, and a
-boundary-set badge. Fields with no boundary are visually distinct because boundary is the gate
-for the treatment grid and mission planning.
+**Weed-affected area** totals the operator's own saved findings, **one scan per field**. A field
+flown in June and again in August has two sets of annotations over one piece of ground; summing
+both would roughly double the headline and would grow every time somebody re-flew a field they
+had already dealt with. The scan chosen is the most recent one that actually has findings, so a
+scan uploaded this morning and not yet reviewed cannot erase last week's result. What counts as a
+weed is `isWeedPoly` from `treatment/groups.ts`, imported rather than restated, so a wet corner
+and a rock pile stay out of the total and this card cannot disagree with the screen it links to.
+It is the area found, **not the treated area**: the planner clips zones to the boundary and
+insets a headland before it prices anything, and it recomputes rather than trusting the stored
+figure.
+
+**Missions ready** counts scheduled missions still ahead. A mission row exists only once the
+planner produced its stats and the operator saved it, so the row is the evidence that planning
+finished; an unfinished plan never becomes one. There is no completed status, because nothing
+writes one and completion is recorded separately as a `flight_logs` entry, so a mission whose
+slot has passed is treated as done. That last part is a judgement and it can be wrong in one
+direction: a mission rained off on Tuesday stops being counted though it still needs flying. The
+alternative, counting it forever, would grow a number that only ever goes up.
+
+All four share one `Stat` component, which is what stops them drifting into four subtitle voices.
+A dash is the empty state for both "nothing found" and "could not read", with the subtitle
+carrying the difference: a zero in that position would be a claim neither case has earned. The
+page re-reads on focus, because it is the screen people come back to after doing the work
+somewhere else.
+
+Below, a field list with a status dot, real measured area, its location, flights logged, last
+flown date, and a boundary-set badge. Fields with no boundary are visually distinct because
+boundary is the gate for the treatment grid and mission planning.
 
 ## Fields — `/app/fields`
 
@@ -41,6 +70,34 @@ choosing between flying the field and importing a finished orthomosaic, which as
 to decide how imagery would arrive before the field they were creating even existed. That choice
 belongs on the field page's step 2, where imagery is actually added, and it lives there. See the
 Add imagery card below.
+
+Each card shows where the field is. A field mapped to the metre used to say "No location set",
+which was absurd: the app knew exactly where it was and could not say so. The boundary's centre
+is reverse-geocoded through Nominatim, the provider the flight planner's address search already
+uses, and the answer is persisted on the field.
+
+**Two locations, stored apart, and the order between them never varies.** `fields.location` is
+the operator's own text and nothing in the app overwrites it; `fields.derived_location` is what
+the boundary geocodes to. The card shows the operator's words when there are any, the derived
+label otherwise, and clearing the box brings the derived label back, which is the only way to
+undo an override. Editing either one never touches the geometry.
+
+**The label is a locality and a state, never a street address.** Reverse-geocoding the middle of
+a field returns the nearest addressable thing, which is a neighbour's house: "1164 Millwood Pond
+Dr" for a hundred acres of corn is not a location. A road name is kept when the provider gives
+one, as secondary detail; a house number is discarded.
+
+**It is asked once.** A field is sent to the geocoder only when it has no operator text, has
+somewhere to ask about, and its boundary centre has moved more than `RELOCATE_THRESHOLD_M`
+(100 m) since the last answer. Requests are serialised a second apart, which is Nominatim's
+stated limit and a condition of use rather than a tuning knob, and each answer is written as it
+arrives so navigating away keeps what was learned. A failure writes nothing, leaves the geometry
+untouched, and the operator can type a location themselves. The geocoder is called from the
+Fields page only; every other screen reads the stored answer.
+
+Where there is no boundary, the centre of an orthomosaic's bounds is used instead: that imagery
+was flown over this field and its extent came from the aircraft's own GPS. Per-image EXIF GPS is
+not a third fallback because nothing in the database persists it.
 
 Empty state walks a new user into creating their first field.
 

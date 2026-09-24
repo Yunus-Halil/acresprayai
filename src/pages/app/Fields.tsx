@@ -11,6 +11,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Trash2, ArrowRight, Leaf, MapPin, Pencil, Check, X } from "lucide-react";
+import { backfillLocations } from "@/lib/fields/geocode";
+import {
+  type DerivedLocation, displayLocation, fieldsNeedingGeocode,
+} from "@/lib/fields/location";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { PAGE_SIZE, appendPage, hasMore, pageRange } from "@/lib/pagination";
@@ -21,11 +25,14 @@ type DBField = {
   name: string;
   crop: string;
   area_hectares: number;
+  /** The operator's own words for where this is. Nothing in the app overwrites it. */
   location: string | null;
   notes: string | null;
   created_at: string;
   boundary: unknown | null;
   boundary_area_hectares: number | null;
+  /** What the boundary reverse-geocodes to. Always second to `location`. */
+  derived_location: DerivedLocation | null;
 };
 
 const HA_TO_AC = 2.4710538147;
@@ -59,7 +66,7 @@ export default function Fields() {
       return;
     }
     setLoadFailed(null);
-    const rows = (fields as DBField[]) ?? [];
+    const rows = (fields as unknown as DBField[]) ?? [];
     setDbFields(prev => (opts.reload || targetPage === 0 ? rows : appendPage(prev, rows)));
     setMore(hasMore(rows, span[1] - span[0] + 1));
     if (!opts.reload) setPage(targetPage);
@@ -95,6 +102,37 @@ export default function Fields() {
       return;
     }
     load({ reload: true });
+  };
+
+  // Fields that have a boundary and no location get one, worked out from that
+  // boundary. Only the ones that need it, one request per second, and each
+  // answer is written as it arrives so navigating away keeps what was learned.
+  //
+  // Deliberately here and not on the dashboard: the service is asked in one
+  // place in the app, and everywhere else reads the persisted answer.
+  useEffect(() => {
+    const todo = fieldsNeedingGeocode(dbFields);
+    if (!todo.length) return;
+    const ac = new AbortController();
+    void backfillLocations(todo, ({ id, derived }) => {
+      setDbFields(prev => prev.map(f => (f.id === id ? { ...f, derived_location: derived } : f)));
+    }, ac.signal);
+    return () => ac.abort();
+  }, [dbFields]);
+
+  /**
+   * Save the operator's own words for where a field is.
+   *
+   * Writes `location` and never `derived_location`, and an empty box clears it
+   * back to null so the derived answer shows again. That is the whole
+   * arrangement: the operator can override, and can also take the override off.
+   */
+  const setLocation = async (id: string, text: string) => {
+    const value = text.trim() || null;
+    const { error } = await supabase.from("fields").update({ location: value }).eq("id", id);
+    if (error) { toast.error("Couldn't save the location", { description: error.message }); return; }
+    setDbFields(prev => prev.map(f => (f.id === id ? { ...f, location: value } : f)));
+    toast.success(value ? "Location saved" : "Location cleared");
   };
 
   const rename = async (id: string, name: string) => {
@@ -190,9 +228,13 @@ export default function Fields() {
                   </Badge>
                 )}
               </div>
-              <div className="mt-3 pt-3 border-t text-xs text-muted-foreground flex items-center justify-between">
-                <span className="truncate">{f.location ?? "No location set"}</span>
-                <span className="inline-flex items-center gap-1 text-primary opacity-0 group-hover:opacity-100 transition">
+              <div className="mt-3 pt-3 border-t text-xs text-muted-foreground flex items-center justify-between gap-2">
+                <InlineLocation
+                  value={displayLocation(f)}
+                  own={f.location}
+                  road={f.location ? null : f.derived_location?.road ?? null}
+                  onSave={(v) => setLocation(f.id, v)} />
+                <span className="inline-flex items-center gap-1 text-primary opacity-0 group-hover:opacity-100 transition shrink-0">
                   Open <ArrowRight className="h-3 w-3" />
                 </span>
               </div>
@@ -209,6 +251,65 @@ export default function Fields() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The location line, editable in place.
+ *
+ * Mirrors InlineRename above rather than introducing a second way to edit a
+ * field on this card. Two differences, both deliberate:
+ *
+ *   an empty value is allowed, and clears the operator's override so the
+ *   derived label comes back, which is the only way to undo an override
+ *
+ *   the derived answer is shown greyed with the road under it, so it is visible
+ *   that the app worked it out rather than the operator having typed it
+ */
+function InlineLocation({ value, own, road, onSave }: {
+  value: string | null;
+  own: string | null;
+  road: string | null;
+  onSave: (v: string) => Promise<void> | void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(own ?? value ?? "");
+  useEffect(() => { setVal(own ?? value ?? ""); }, [own, value]);
+  const stop = (e: React.SyntheticEvent) => { e.stopPropagation(); };
+
+  if (!editing) {
+    return (
+      <span className="flex items-center gap-1.5 min-w-0">
+        <span className="truncate">
+          {value ?? "No location set"}
+          {road && <span className="opacity-60"> · {road}</span>}
+        </span>
+        <button onClick={(e) => { stop(e); setEditing(true); }}
+          className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition p-0.5 shrink-0"
+          aria-label="Edit location">
+          <Pencil className="h-3 w-3" />
+        </button>
+      </span>
+    );
+  }
+  const commit = async () => { await onSave(val); setEditing(false); };
+  return (
+    <span className="flex items-center gap-1 min-w-0 flex-1" onClick={stop}>
+      <input autoFocus value={val} onChange={e => setVal(e.target.value)} onClick={stop}
+        placeholder={value ?? "Where is this field?"}
+        onKeyDown={e => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") { setEditing(false); setVal(own ?? value ?? ""); }
+        }}
+        className="text-xs bg-transparent border-b border-primary outline-none min-w-0 flex-1" />
+      <button onClick={(e) => { stop(e); commit(); }} className="p-0.5" aria-label="Save location">
+        <Check className="h-3 w-3 text-emerald-500" />
+      </button>
+      <button onClick={(e) => { stop(e); setEditing(false); setVal(own ?? value ?? ""); }}
+        className="p-0.5" aria-label="Cancel">
+        <X className="h-3 w-3" />
+      </button>
+    </span>
   );
 }
 

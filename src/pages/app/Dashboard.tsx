@@ -10,6 +10,7 @@ import { listMissions } from "@/lib/schedule";
 import {
   type AnnotationRow, type MissionRow, type ScanRow, missionsReady, tallyFields, weedArea,
 } from "@/lib/dashboard/overview";
+import { type DerivedLocation, displayLocation } from "@/lib/fields/location";
 
 type Field = {
   id: string;
@@ -17,6 +18,8 @@ type Field = {
   area_hectares: number | null;
   boundary: unknown | null;
   boundary_area_hectares: number | null;
+  location: string | null;
+  derived_location: DerivedLocation | null;
 };
 
 
@@ -35,7 +38,7 @@ export default function Dashboard() {
   const load = useCallback(async () => {
     const f = await supabase
       .from("fields")
-      .select("id, name, area_hectares, boundary, boundary_area_hectares")
+      .select("id, name, area_hectares, boundary, boundary_area_hectares, location, derived_location")
       .order("created_at", { ascending: false });
     if (f.error) {
       // A failed load is not an empty account.
@@ -44,7 +47,7 @@ export default function Dashboard() {
       return;
     }
     setLoadFailed(null);
-    const list = (f.data as Field[]) ?? [];
+    const list = (f.data as unknown as Field[]) ?? [];
     setFields(list);
 
     // Pull flight logs so each field row can show "Flights logged" / last flown
@@ -191,6 +194,9 @@ export default function Dashboard() {
                         <div className="text-xs text-muted-foreground tabular-nums">
                           {area ? fmtAreaHa(area, units).text : "-"}
                           {defined && <span className="ml-2 text-emerald-500">(measured)</span>}
+                          {/* Read, never fetched. The geocoder is asked in one
+                              place in the app, on the Fields page. */}
+                          {displayLocation(f) && <span className="ml-2">· {displayLocation(f)}</span>}
                         </div>
                       </div>
                       <div className="text-right text-xs tabular-nums">
