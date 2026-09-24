@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { areaUnit, areaValueHa, fmtAreaHa } from "@/lib/units";
@@ -6,6 +6,10 @@ import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpRight } from "lucide-react";
+import { listMissions } from "@/lib/schedule";
+import {
+  type AnnotationRow, type MissionRow, type ScanRow, missionsReady, tallyFields, weedArea,
+} from "@/lib/dashboard/overview";
 
 type Field = {
   id: string;
@@ -22,48 +26,88 @@ export default function Dashboard() {
   const [fields, setFields] = useState<Field[]>([]);
   const [flightCounts, setFlightCounts] = useState<Record<string, number>>({});
   const [lastFlight, setLastFlight] = useState<Record<string, string>>({});
+  const [annotations, setAnnotations] = useState<AnnotationRow[] | null>(null);
+  const [scans, setScans] = useState<ScanRow[]>([]);
+  const [missions, setMissions] = useState<MissionRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const f = await supabase
-        .from("fields")
-        .select("id, name, area_hectares, boundary, boundary_area_hectares")
-        .order("created_at", { ascending: false });
-      if (f.error) {
-        // A failed load is not an empty account.
-        setLoadFailed(f.error.message);
-        setLoading(false);
-        return;
-      }
-      setLoadFailed(null);
-      const list = (f.data as Field[]) ?? [];
-      setFields(list);
-
-      // Pull flight logs so each field row can show "Flights logged" / last flown
-      const logs = await supabase
-        .from("flight_logs")
-        .select("field_id, date_flown")
-        .order("date_flown", { ascending: false });
-      const counts: Record<string, number> = {};
-      const last: Record<string, string> = {};
-      ((logs.data as { field_id: string; date_flown: string }[]) ?? []).forEach(l => {
-        counts[l.field_id] = (counts[l.field_id] ?? 0) + 1;
-        if (!last[l.field_id]) last[l.field_id] = l.date_flown;
-      });
-      setFlightCounts(counts);
-      setLastFlight(last);
+  const load = useCallback(async () => {
+    const f = await supabase
+      .from("fields")
+      .select("id, name, area_hectares, boundary, boundary_area_hectares")
+      .order("created_at", { ascending: false });
+    if (f.error) {
+      // A failed load is not an empty account.
+      setLoadFailed(f.error.message);
       setLoading(false);
-    })();
+      return;
+    }
+    setLoadFailed(null);
+    const list = (f.data as Field[]) ?? [];
+    setFields(list);
+
+    // Pull flight logs so each field row can show "Flights logged" / last flown
+    const logs = await supabase
+      .from("flight_logs")
+      .select("field_id, date_flown")
+      .order("date_flown", { ascending: false });
+    const counts: Record<string, number> = {};
+    const last: Record<string, string> = {};
+    ((logs.data as { field_id: string; date_flown: string }[]) ?? []).forEach(l => {
+      counts[l.field_id] = (counts[l.field_id] ?? 0) + 1;
+      if (!last[l.field_id]) last[l.field_id] = l.date_flown;
+    });
+    setFlightCounts(counts);
+    setLastFlight(last);
+
+    // Saved weed findings, and the scans they belong to, so the newest review
+    // of each field is the one that counts. Null on failure and never an empty
+    // array: an empty array reads as "looked and found nothing", which a failed
+    // request has not earned the right to say.
+    const [anns, tasks] = await Promise.all([
+      supabase.from("user_annotations")
+        .select("id, field_id, task_id, name, issue_type, weed_label, weed_catalog_id, area_hectares, created_at"),
+      supabase.from("odm_tasks").select("id, field_id, created_at"),
+    ]);
+    setAnnotations(anns.error ? null : ((anns.data as unknown as AnnotationRow[]) ?? []));
+    setScans(tasks.error ? [] : ((tasks.data as unknown as ScanRow[]) ?? []));
+
+    // A wide window, because the card counts what is still outstanding and a
+    // mission booked months out is still outstanding.
+    const from = new Date(); from.setFullYear(from.getFullYear() - 1);
+    const to = new Date(); to.setFullYear(to.getFullYear() + 2);
+    try {
+      setMissions(await listMissions(from.toISOString(), to.toISOString()));
+    } catch {
+      setMissions(null);
+    }
+
+    setLoading(false);
   }, []);
 
+  useEffect(() => { void load(); }, [load]);
+
+  // This is the screen people come back to after doing the work somewhere else,
+  // so it re-reads when the tab regains focus rather than showing whatever
+  // happened to be true when it first mounted.
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === "visible") void load(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [load]);
+
   const realArea = (f: Field) => Number(f.boundary_area_hectares ?? f.area_hectares ?? 0);
-  const definedCount = fields.filter(f => f.boundary).length;
-  const totalAreaHa = useMemo(
-    () => fields.reduce((a, f) => a + realArea(f), 0),
-    [fields],
+  const tally = useMemo(() => tallyFields(fields), [fields]);
+  const weeds = useMemo(
+    () => (annotations ? weedArea(annotations, scans) : null),
+    [annotations, scans],
   );
+  const ready = useMemo(() => (missions ? missionsReady(missions) : null), [missions]);
   const totalFlights = useMemo(
     () => Object.values(flightCounts).reduce((a, n) => a + n, 0),
     [flightCounts],
@@ -80,28 +124,37 @@ export default function Dashboard() {
 
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-5">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Total fields</div>
-          <div className="font-display text-4xl mt-1 tabular-nums">{fields.length}</div>
-          <div className="text-xs text-muted-foreground mt-1">
-            {definedCount} with mapped boundary · {fields.length - definedCount} undefined
-          </div>
-        </Card>
-        <Card className="p-5">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Total area</div>
-          <div className="font-display text-4xl mt-1 tabular-nums">{areaValueHa(totalAreaHa, units).toFixed(1)}<span className="text-base text-muted-foreground ml-1">{areaUnit(units)}</span></div>
-          <div className="text-xs text-muted-foreground mt-1 tabular-nums">across {fields.length} field{fields.length === 1 ? "" : "s"}</div>
-        </Card>
-        <Card className="p-5">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Boundaries defined</div>
-          <div className="font-display text-4xl mt-1 tabular-nums">{definedCount}<span className="text-base text-muted-foreground ml-1">/ {fields.length || 0}</span></div>
-          <div className="text-xs text-muted-foreground mt-1">After a scan finishes, open its map and outline the field to unlock the treatment grid and mission planning.</div>
-        </Card>
-        <Card className="p-5">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Spray logs</div>
-          <div className="font-display text-4xl mt-1 tabular-nums">{totalFlights}</div>
-          <div className="text-xs text-muted-foreground mt-1">Completed missions logged across all fields.</div>
-        </Card>
+        <Stat label="Total fields" to="/app/fields"
+          value={loading ? null : String(tally.total)}
+          sub={loading ? "Loading"
+            : `${tally.mapped} mapped, ${tally.awaiting} awaiting boundaries`} />
+
+        {/* Ground the operator's own review found weeds on, counted once per
+            field. NOT the treated area: the planner clips zones to the boundary
+            and insets a headland before it prices anything, and it recomputes
+            rather than trusting the stored figure. Both are right for their own
+            question and they are not the same number. */}
+        <Stat label="Weed-affected area" to="/app/fields"
+          value={loading ? null
+            : !weeds || weeds.hectares === null ? "-"
+            : areaValueHa(weeds.hectares, units).toFixed(1)}
+          unit={!loading && weeds && weeds.hectares !== null ? areaUnit(units) : undefined}
+          sub={loading ? "Loading"
+            : !weeds ? "Could not read your scan results"
+            : weeds.hectares === null ? "No scans reviewed yet"
+            : `${weeds.zones} zone${weeds.zones === 1 ? "" : "s"} across `
+              + `${weeds.fields} field${weeds.fields === 1 ? "" : "s"}, latest scan each`} />
+
+        <Stat label="Missions ready" to="/app/schedule"
+          value={loading ? null : ready === null ? "-" : String(ready)}
+          sub={loading ? "Loading"
+            : ready === null ? "Could not read your schedule"
+            : ready === 0 ? "Plan a treatment and schedule it to see it here"
+            : "Planned and scheduled, not yet flown"} />
+
+        <Stat label="Spray logs" to="/app/fields"
+          value={loading ? null : String(totalFlights)}
+          sub={loading ? "Loading" : "Applications recorded across all fields"} />
       </div>
 
       <div className="grid grid-cols-1 gap-4">
@@ -160,5 +213,38 @@ export default function Dashboard() {
         </Card>
       </div>
     </div>
+  );
+}
+
+
+/**
+ * One headline figure and one line under it.
+ *
+ * These were four hand-written blocks, which is how they came to have four
+ * different subtitle voices. A dash is the empty state and it serves both
+ * "nothing found" and "could not read", with the subtitle carrying the
+ * difference: a zero in this position would be a claim, and neither case has
+ * earned the right to make one.
+ */
+function Stat({ label, value, unit, sub, to }: {
+  label: string;
+  value: string | null;
+  unit?: string;
+  sub: string;
+  to: string;
+}) {
+  return (
+    <Link to={to} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <Card className="p-5 h-full transition-colors hover:bg-muted/30">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+        <div className="font-display text-4xl mt-1 tabular-nums">
+          {value === null
+            ? <span className="inline-block h-9 w-12 rounded bg-muted animate-pulse align-bottom" />
+            : value}
+          {unit && <span className="text-base text-muted-foreground ml-1">{unit}</span>}
+        </div>
+        <div className="text-xs text-muted-foreground mt-1">{sub}</div>
+      </Card>
+    </Link>
   );
 }

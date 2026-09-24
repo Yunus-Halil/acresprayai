@@ -32,11 +32,22 @@ export const GRID_GROUP = "grid";
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 
+/**
+ * Whether a polygon is a weed finding at all.
+ *
+ * The same test `groupFor` makes, pulled out so anything that needs to count
+ * weeds reads this rule rather than writing a second one. A hand-drawn zone
+ * marking a wet patch or a rock is not a weed and must not be totalled as one.
+ */
+export const isWeedPoly = (p: GroupablePoly): boolean =>
+  !!p.weed_label || !!p.weed_catalog_id
+  || p.name.startsWith("Weed Scout:") || p.issue_type === "Weed pressure";
+
 /** The group a hand-drawn or applied polygon belongs to, and its label. */
 export function groupFor(p: GroupablePoly): { key: TreatmentGroupKey; label: string } {
   if (p.weed_catalog_id && p.weed_label) return { key: `catalog:${p.weed_catalog_id}`, label: p.weed_label };
   if (p.weed_label) return { key: `label:${norm(p.weed_label)}`, label: p.weed_label };
-  if (p.name.startsWith("Weed Scout:") || p.issue_type === "Weed pressure") return { key: UNIDENTIFIED_GROUP, label: "Unidentified weed spots" };
+  if (isWeedPoly(p)) return { key: UNIDENTIFIED_GROUP, label: "Unidentified weed spots" };
   return { key: HAND_DRAWN_GROUP, label: "Hand-drawn zones (not weeds)" };
 }
 
