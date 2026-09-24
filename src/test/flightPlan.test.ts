@@ -14,8 +14,17 @@ import {
 } from "@/lib/flightPlan/camera";
 import { buildSurveyGrid, gridStats, headingForDirection } from "@/lib/flightPlan/grid";
 import {
-  DEFAULT_FLIGHT_PLAN_PARAMS, EmptyPlanError, blockerFor, generateKmz, kmzFilename, resolveFlightPlan,
+  DEFAULT_ALTITUDE_M, DEFAULT_FLIGHT_PLAN_PARAMS as REAL_DEFAULTS, EmptyPlanError, blockerFor,
+  generateKmz, kmzFilename, resolveFlightPlan,
 } from "@/lib/flightPlan/generateKmz";
+
+/**
+ * Most tests below predate the 100 ft default and are about geometry, not about
+ * which altitude the product opens on. They pin 100 m so that changing the
+ * default cannot quietly change what they mean; the default gets its own test.
+ */
+const DEFAULT_FLIGHT_PLAN_PARAMS = { ...REAL_DEFAULTS, altitudeM: 100 };
+import { isLowAltitude } from "@/lib/flightPlan/generateKmz";
 import { MAX_CONSUMER_WAYPOINTS, readKmzEntries } from "@/lib/wpml";
 
 const LAT0 = 38.95, LNG0 = -77.45;
@@ -181,12 +190,14 @@ describe("the grid", () => {
 });
 
 describe("resolving a plan", () => {
+  const HIGH = DEFAULT_FLIGHT_PLAN_PARAMS;
+
   it("derives line spacing from side overlap, and says when it was overridden", () => {
-    const auto = resolveFlightPlan(square(200), DEFAULT_FLIGHT_PLAN_PARAMS);
+    const auto = resolveFlightPlan(square(200), HIGH);
     expect(auto.computed.lineSpacingOverridden).toBe(false);
     expect(auto.computed.lineSpacingM).toBeCloseTo(lineSpacingM(camera, 100, 75), 6);
 
-    const manual = resolveFlightPlan(square(200), { ...DEFAULT_FLIGHT_PLAN_PARAMS, lineSpacingM: 20 });
+    const manual = resolveFlightPlan(square(200), { ...HIGH, lineSpacingM: 20 });
     expect(manual.computed.lineSpacingOverridden).toBe(true);
     expect(manual.computed.lineSpacingM).toBe(20);
     expect(manual.grid.lineCount).toBeGreaterThan(auto.grid.lineCount);
@@ -204,8 +215,8 @@ describe("resolving a plan", () => {
   });
 
   it("passes a plan the aircraft can hold", () => {
-    const ok = resolveFlightPlan(square(200), DEFAULT_FLIGHT_PLAN_PARAMS);
-    expect(ok.grid.waypoints.length).toBeLessThanOrEqual(MAX_CONSUMER_WAYPOINTS);
+    const ok = resolveFlightPlan(square(200), HIGH);
+    expect(ok.stats.waypointCount).toBeLessThanOrEqual(MAX_CONSUMER_WAYPOINTS);
     expect(ok.blocker).toBeNull();
   });
 
@@ -408,5 +419,20 @@ describe("the file that is actually downloaded", () => {
     const { pkg } = generateKmz(lot(), DEFAULT_FLIGHT_PLAN_PARAMS, opts);
     const entries = readKmzEntries(await downloaded(pkg.kmz));
     expect(Object.keys(entries).sort()).toEqual(["wpmz/template.kml", "wpmz/waylines.wpml"]);
+  });
+});
+
+describe("the altitude a plan opens on", () => {
+  it("is 100 feet, a round number in the units it is flown in", () => {
+    // Not 100 m. That reads as 328 ft, which is not an altitude anybody
+    // chooses, and the one time the two were confused the grid came out three
+    // times too coarse with a tenth of the photographs.
+    expect(DEFAULT_ALTITUDE_M).toBeCloseTo(30.48, 6);
+    expect(DEFAULT_ALTITUDE_M / 0.3048).toBeCloseTo(100, 6);
+    expect(REAL_DEFAULTS.altitudeM).toBe(DEFAULT_ALTITUDE_M);
+  });
+
+  it("is high enough that the default carries no low-altitude caution", () => {
+    expect(isLowAltitude(REAL_DEFAULTS.altitudeM)).toBe(false);
   });
 });

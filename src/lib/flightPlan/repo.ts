@@ -15,7 +15,7 @@
 // declared in the migration rather than reimplemented here.
 import { supabase } from "@/integrations/supabase/client";
 import type { LatLng2 } from "../geo";
-import type { FlightPlanParams } from "./generateKmz";
+import { DEFAULT_ALTITUDE_M, type FlightPlanParams } from "./generateKmz";
 import type { FlightDirection } from "./grid";
 
 export type FlightPlan = {
@@ -46,7 +46,7 @@ function fromRow(r: Row): FlightPlan {
     boundary: (r.boundary as LatLng2[][]) ?? [],
     params: {
       direction: (r.direction as FlightDirection) ?? "auto",
-      altitudeM: num(r.altitude_m, 100),
+      altitudeM: num(r.altitude_m, DEFAULT_ALTITUDE_M),
       // Null is meaningful: it says the operator left the spacing to the
       // overlap rather than typing one, and reopening the plan has to show
       // them that choice rather than a number they never made.

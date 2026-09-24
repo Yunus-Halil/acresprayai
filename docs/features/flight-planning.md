@@ -183,6 +183,22 @@ file format and one enforcement of the waypoint ceiling.
 asserts no spray-shaped tag appears in any output. Camera actions are documented by DJI; spray
 actions are not.
 
+## The default altitude
+
+`DEFAULT_ALTITUDE_M` is 100 feet, written as `100 * 0.3048` so the intent survives the
+conversion. A round number in the units most of this product's operators fly in, rather than a
+round number in the units it happens to store: 100 m reads as 328 ft, which is not an altitude
+anybody chooses, and the one time the two were confused the resulting grid was three times too
+coarse with a tenth of the photographs.
+
+It is well clear of `LOW_ALTITUDE_M`, so opening the planner carries no caution.
+
+One consequence for tests: at 100 ft the line spacing is 11 m rather than 37, so a field-sized
+boundary now exceeds the waypoint ceiling on the default. Tests about geometry and export
+mechanics therefore state `altitudeM: 100` rather than inheriting the default, and the default
+gets a test of its own. A test that silently changes meaning when a product default moves is a
+test that stops testing what it says.
+
 ## The number boxes
 
 `MIN_ALTITUDE_M` is 1 m and `MAX_ALTITUDE_M` is 500 m. The floor was 5 m, chosen for no stated

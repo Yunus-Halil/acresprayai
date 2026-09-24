@@ -41,9 +41,22 @@ export type FlightPlanParams = {
   turnOvershootM: number;
 };
 
+/**
+ * 100 feet, exactly, in metres.
+ *
+ * The default survey altitude. A round number in the units most of this
+ * product's operators fly in, rather than a round number in the units it
+ * happens to store: 100 m would read as 328 ft, which is not an altitude
+ * anybody chooses, and the last time the two were confused the resulting grid
+ * was three times too coarse.
+ *
+ * Well clear of `LOW_ALTITUDE_M`, so the default carries no caution.
+ */
+export const DEFAULT_ALTITUDE_M = 100 * 0.3048;
+
 export const DEFAULT_FLIGHT_PLAN_PARAMS: FlightPlanParams = {
   direction: "auto",
-  altitudeM: 100,
+  altitudeM: DEFAULT_ALTITUDE_M,
   lineSpacingM: null,
   frontOverlapPct: 75,
   sideOverlapPct: 75,

@@ -191,6 +191,10 @@ describe("the grid with turns in it", () => {
 });
 
 describe("the turns in the exported file", () => {
+  // 100 m, stated. At the 100 ft default a 300 m square is over the waypoint
+  // ceiling, which is true and is not what these tests are about.
+  const PARAMS = { ...DEFAULT_FLIGHT_PLAN_PARAMS, altitudeM: 100 };
+
   const downloaded = (b: Blob) => new Promise<Uint8Array>((resolve, reject) => {
     const fr = new FileReader();
     fr.onload = () => resolve(new Uint8Array(fr.result as ArrayBuffer));
@@ -199,7 +203,7 @@ describe("the turns in the exported file", () => {
   });
 
   it("writes the turnaround waypoints with the shutter shut", async () => {
-    const { pkg, resolved } = generateKmz(square(300), DEFAULT_FLIGHT_PLAN_PARAMS, {
+    const { pkg, resolved } = generateKmz(square(300), PARAMS, {
       createTimeMs: 1_700_000_000_000,
     });
     const entries = readKmzEntries(await downloaded(pkg.kmz));
@@ -218,7 +222,7 @@ describe("the turns in the exported file", () => {
   });
 
   it("keeps the turn points in flight order, not appended at the end", async () => {
-    const { pkg, resolved } = generateKmz(square(300), DEFAULT_FLIGHT_PLAN_PARAMS, {
+    const { pkg, resolved } = generateKmz(square(300), PARAMS, {
       createTimeMs: 1_700_000_000_000,
     });
     const entries = readKmzEntries(await downloaded(pkg.kmz));
