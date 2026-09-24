@@ -1,6 +1,7 @@
 import { LandingNav } from "@/components/landing/LandingNav";
 import { Hero } from "@/components/landing/Hero";
 import { FeatureCards } from "@/components/landing/FeatureCards";
+import { DetectionSection } from "@/components/landing/DetectionSection";
 import { WhySection } from "@/components/landing/WhySection";
 import { CockpitSection } from "@/components/landing/CockpitSection";
 import { ComplianceSection } from "@/components/landing/ComplianceSection";
@@ -14,8 +15,8 @@ import Seo from "@/components/Seo";
 const Index = () => (
   <main className="relative min-h-screen overflow-hidden bg-sw-paper font-grotesk text-sw-ink">
     <Seo
-      title="SwathWise: Precision spray missions from drone imagery"
-      description="Upload drone images, get a stitched map of your farm, mark the ground worth treating, and leave with flight plans and an application record for the job you flew."
+      title="SwathWise: Every weed on your farm, found from the air"
+      description="Fly any drone over any field. SwathWise measures every plant against your own crop, shows you every weed on the map, plans the flight that treats only those spots, and writes the record."
       path="/"
     />
     {/* Faint ink grid, fading out below the hero. */}
@@ -35,6 +36,7 @@ const Index = () => (
     <LandingNav />
     <Hero />
     <FeatureCards />
+    <DetectionSection />
     <WhySection />
     <CockpitSection />
     <ComplianceSection />

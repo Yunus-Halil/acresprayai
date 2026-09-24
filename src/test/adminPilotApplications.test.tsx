@@ -125,7 +125,7 @@ describe("the list", () => {
 
     render(<PilotApplications />);
 
-    expect(await screen.findByText(/limited to the pilot programme admins/i)).toBeInTheDocument();
+    expect(await screen.findByText(/limited to the closed-testing admins/i)).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 

@@ -1,14 +1,25 @@
-# Pilot applications
+# Access requests (closed testing)
 
-The form behind "Apply to Pilot", the table it writes to, and the two ways an application
-becomes visible.
+The form behind "Request access", the table it writes to, and the two ways a request becomes
+visible.
+
+**Since 2026-09-24 this is the only way into the product.** SwathWise is in closed testing:
+the landing page no longer offers a pilot programme or a sign-up, and `/auth` is sign-in only.
+Anyone who is not already a tester fills in this form, and a person decides. The table, the
+function and the admin page kept their `pilot_*` names because renaming a table that holds
+personal data buys nothing and risks a lot; only the words a visitor reads changed.
+
+One thing this repository cannot do: Supabase still creates an account the first time an
+unknown address signs in with Google, unless **"Allow new users to sign up"** is switched off in
+the project's Auth settings. That switch is in the dashboard. Until it is off, the front door is
+shut and the side door is on the latch.
 
 ## Route map
 
 | Route | Auth | What it is |
 |---|---|---|
-| `/apply` | none | The application form. Linked from the landing page's pilot band. |
-| `/admin/pilot-applications` | signed in **and** on the admin allowlist | The whole pipeline, newest first |
+| `/apply` | none | The access request form. Linked from the landing page's closed-testing band and from `/auth`. |
+| `/admin/pilot-applications` | signed in **and** on the admin allowlist | Every request, newest first |
 
 ## The form
 
@@ -35,7 +46,7 @@ Behaviour worth knowing:
 
 ## Submission path
 
-The form posts to the **`pilot-apply`** edge function rather than inserting through PostgREST.
+The form posts to the **`pilot-apply`** edge function (the name predates closed testing) rather than inserting through PostgREST.
 
 That is the whole reason the function exists: the notification email has to happen on every
 submission, and a client-side insert cannot be relied on to trigger one. Doing both in one

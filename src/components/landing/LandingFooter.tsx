@@ -2,8 +2,8 @@ import { Wordmark } from "./Wordmark";
 import { CONTACT_EMAIL } from "./copy";
 
 const LINKS = [
-  { label: "About", href: "#why" },
-  { label: "Pricing", href: "#pilot" },
+  { label: "How it works", href: "#how" },
+  { label: "Closed testing", href: "#pilot" },
   { label: "Contact", href: `mailto:${CONTACT_EMAIL}` },
 ];
 

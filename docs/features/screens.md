@@ -20,6 +20,26 @@ note that guard only proves someone is signed in; the allowlist that actually pr
 applicants is enforced server-side by the `pilot-applications` function. The
 workspace deliberately sits outside that shell and opens full-screen in a new tab.
 
+## Landing page — `/`
+
+Sells one thing: weed detection from the air, for any drone, with the flight and the record
+that follow from it. Rewritten 2026-09-24 from a spray-mission page that read as an Agras
+accessory and opened with a pilot programme.
+
+All copy lives in `src/components/landing/copy.ts` under four rules: nothing the product cannot
+do, no social proof, no em or en dashes in anything visible, and not tied to one aircraft.
+`src/test/landingCopy.test.ts` enforces the last two mechanically and pins the closed-testing
+state: one CTA ("Request access"), no "Sign up", no "Apply to Pilot", no savings percentage, no
+species named from pixels, no autonomous flight, and the closed-canopy limit stated beside the
+detection claims.
+
+Sections in order: hero, four feature cards, **How it finds them** (six steps that track
+`src/lib/weedScout` in the order the scan runs them, with the limit stated in the same type as
+the claims), **From the finding to the flight** (acres and price, the mission file, weather
+windows, your inputs and units), the cockpit simulation, the application record, three steps,
+who it is for, and the closed-testing band. The status badge is a date, not "this season", so a
+reader can tell when it has gone stale.
+
 ## Dashboard — `/app`
 
 Four cards, each a link to where the work is done: **Total fields** with the boundary split in

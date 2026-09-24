@@ -29,7 +29,7 @@ const json = (body: unknown, status = 200) =>
 function notification(row: Record<string, string | null>): string {
   const line = (label: string, value: string | null) => (value ? `${label}: ${value}\n` : "");
   return (
-    `New pilot application\n\n` +
+    `New closed-testing access request\n\n` +
     line("Name", row.full_name) +
     line("Email", row.email) +
     line("Phone", row.phone) +
@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
   const to = Deno.env.get("PILOT_NOTIFY_TO") ?? "yunus@swathwise.com";
   const result = await sendEmail({
     to,
-    subject: `Pilot application: ${row.farm_name} (${row.location})`,
+    subject: `Access request: ${row.farm_name} (${row.location})`,
     text: notification(row),
   });
   if (!result.sent) {

@@ -50,7 +50,7 @@ describe("required fields", () => {
     const user = userEvent.setup();
     render(<PilotApply />);
 
-    await user.click(screen.getByRole("button", { name: /submit application/i }));
+    await user.click(screen.getByRole("button", { name: /request access/i }));
 
     expect(submitApplication).not.toHaveBeenCalled();
     expect(await screen.findByText("Your name is required")).toBeInTheDocument();
@@ -122,7 +122,7 @@ describe("the conditional drone model question", () => {
     // Changed their mind: the input disappears, and the answer must go with it.
     await user.selectOptions(screen.getByLabelText(/own a drone/i), "No drone yet");
 
-    await user.click(screen.getByRole("button", { name: /submit application/i }));
+    await user.click(screen.getByRole("button", { name: /request access/i }));
 
     await waitFor(() => expect(submitApplication).toHaveBeenCalledTimes(1));
     // The page keeps the typed value in state; what matters is that the server
@@ -139,7 +139,7 @@ describe("submission", () => {
     render(<PilotApply />);
 
     await fillRequired(user);
-    await user.click(screen.getByRole("button", { name: /submit application/i }));
+    await user.click(screen.getByRole("button", { name: /request access/i }));
 
     await waitFor(() => expect(submitApplication).toHaveBeenCalledTimes(1));
     expect(submitApplication.mock.calls[0][0]).toMatchObject({
@@ -154,8 +154,8 @@ describe("submission", () => {
       availability: "This fall (Aug–Oct)",
     });
 
-    expect(await screen.findByText(/we'll be in touch within a few days/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /submit application/i })).not.toBeInTheDocument();
+    expect(await screen.findByText(/we'll be in touch when a place opens/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /request access/i })).not.toBeInTheDocument();
   });
 
   it("keeps the answers on screen when the server refuses", async () => {
@@ -166,7 +166,7 @@ describe("submission", () => {
     render(<PilotApply />);
 
     await fillRequired(user);
-    await user.click(screen.getByRole("button", { name: /submit application/i }));
+    await user.click(screen.getByRole("button", { name: /request access/i }));
 
     expect(await screen.findByText("Something went wrong (500).")).toBeInTheDocument();
     expect(screen.getByLabelText(/full name/i)).toHaveValue("Dale Hutchins");
@@ -182,7 +182,7 @@ describe("submission", () => {
     render(<PilotApply />);
 
     await fillRequired(user);
-    await user.click(screen.getByRole("button", { name: /submit application/i }));
+    await user.click(screen.getByRole("button", { name: /request access/i }));
 
     expect(await screen.findByText("That address is already on the list")).toBeInTheDocument();
   });

@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Wordmark } from "@/components/landing/Wordmark";
-import { PILOT_BADGE } from "@/components/landing/copy";
+import { STATUS_BADGE } from "@/components/landing/copy";
 import { submitApplication } from "@/lib/pilotApply";
 import {
   ACREAGE_RANGES,
@@ -133,8 +133,8 @@ export default function PilotApply() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-sw-paper font-grotesk text-sw-ink">
       <Seo
-        title="Apply to the SwathWise pilot, 10 farms, free usage"
-        description="Ten farms, free usage, this season. Tell us about your land and what you fly. It takes about two minutes."
+        title="Request access to SwathWise closed testing"
+        description="SwathWise is in closed testing. Tell us about your land and what you fly, and we will be in touch when a place opens. About two minutes."
         path="/apply"
       />
       <div
@@ -159,15 +159,16 @@ export default function PilotApply() {
           <>
             <div className="mt-12 inline-flex items-center gap-2.5 rounded-[3px] border border-sw-rule bg-sw-card px-3.5 py-1.5 font-plex text-[11px] tracking-[0.04em] text-[#40483c] sm:text-xs">
               <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-sw-bright" />
-              {PILOT_BADGE}
+              {STATUS_BADGE}
             </div>
 
             <h1 className="mt-6 text-[clamp(34px,6vw,52px)] font-semibold leading-[1.02] tracking-[-0.03em]">
-              Apply to the pilot.
+              Request access.
             </h1>
             <p className="mt-4 max-w-[560px] text-[17px] leading-[1.55] text-sw-muted">
-              Ten farms, free usage, this season. Tell us about your land and what you fly. It
-              takes about two minutes, and we read every one.
+              SwathWise is in closed testing with a small number of farms, and public sign-up is
+              closed while we fly with them. Tell us about your land and what you fly. It takes
+              about two minutes, we read every one, and we will be in touch when a place opens.
             </p>
 
             <form onSubmit={onSubmit} noValidate className="mt-12 grid gap-12">
@@ -421,7 +422,7 @@ export default function PilotApply() {
                   disabled={submitting}
                   className="inline-flex items-center gap-2.5 rounded bg-sw-green px-8 py-4 text-base font-semibold text-white transition-colors hover:bg-sw-green-deep disabled:opacity-60"
                 >
-                  {submitting ? "Sending…" : "Submit application"}
+                  {submitting ? "Sending…" : "Request access"}
                   <span className="font-plex" aria-hidden="true">→</span>
                 </button>
                 <p className="mt-4 font-plex text-[11px] leading-relaxed tracking-[0.06em] text-sw-faint">
@@ -438,13 +439,13 @@ export default function PilotApply() {
 
 const Confirmation = () => (
   <div className="mt-16 max-w-[560px] border-l-2 border-sw-bright pl-6">
-    <div className="font-plex text-xs tracking-[0.1em] text-sw-green">APPLICATION RECEIVED</div>
+    <div className="font-plex text-xs tracking-[0.1em] text-sw-green">REQUEST RECEIVED</div>
     <h1 className="mt-4 text-[clamp(30px,5vw,44px)] font-semibold leading-[1.05] tracking-[-0.03em]">
-      Thanks, we'll be in touch within a few days.
+      Thanks, you are on the list. We'll be in touch when a place opens.
     </h1>
     <p className="mt-4 text-[17px] leading-[1.55] text-sw-muted">
-      Nothing else to do for now. If anything changes about your fields or your timing, reply to
-      the email we send and tell us.
+      Places open in small batches as testing goes. If anything changes about your fields or your
+      timing, reply to the email we send and tell us.
     </p>
     <a href="/" className="mt-8 inline-flex items-center gap-2 text-sw-green hover:text-sw-green-deep">
       <span className="font-plex" aria-hidden="true">←</span> Back to SwathWise

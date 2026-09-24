@@ -73,10 +73,10 @@ export default function PilotApplications() {
 
   return (
     <div className="min-h-screen bg-background p-6 sm:p-10">
-      <Seo title="Pilot applications, SwathWise" noindex />
+      <Seo title="Access requests, SwathWise" noindex />
       <header className="mb-8">
         <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          Pilot programme
+          Closed testing
         </div>
         <h1 className="mt-1 font-display text-2xl font-semibold">Applications</h1>
       </header>
@@ -89,7 +89,7 @@ export default function PilotApplications() {
 
       {state.status === "denied" && (
         <p className="text-muted-foreground">
-          This page is limited to the pilot programme admins.
+          This page is limited to the closed-testing admins.
         </p>
       )}
 

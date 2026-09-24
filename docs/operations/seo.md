@@ -112,3 +112,9 @@ curl -sI https://swathwise.com/share-card.png | head -3   # expect 200 image/png
 Then paste the URL into <https://www.opengraph.xyz> or a Slack message to yourself. A preview
 crawler caches aggressively — LinkedIn's Post Inspector has a "scrape again" button, and it is
 usually needed after changing a tag.
+
+## 2026-09-24: titles moved with the product
+
+`index.html`, `Seo` on `/` and the share card text now say "Every weed on your farm, found from
+the air". `/apply` is titled as the closed-testing access request. Routes, sitemap and robots are
+unchanged: `/apply` is still the one public form.

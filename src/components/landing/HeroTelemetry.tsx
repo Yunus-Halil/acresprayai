@@ -104,7 +104,7 @@ export const HeroTelemetry = () => {
     <div ref={host} className="rounded-b-lg bg-sw-panel px-4 py-5 sm:px-5">
       <div className="mb-5 flex items-center justify-between gap-4">
         <div className="font-plex text-[11px] tracking-[0.1em] text-sw-on-dark">
-          LIVE FLIGHT MODEL · DJI AGRAS T40
+          LIVE FLIGHT MODEL · EXAMPLE SPRAY DRONE
         </div>
         <div className="flex items-center gap-2 font-plex text-[11px] tracking-[0.1em]">
           <span

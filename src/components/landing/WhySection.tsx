@@ -23,43 +23,42 @@ const Row = ({ title, body, footnote, media, mediaFirst = false }: RowProps) => 
         {title}
       </h3>
       <p className="m-0 mt-4 text-base leading-[1.55] text-sw-muted">{body}</p>
-      {/* Mono data line naming what the capture shows. Set in sw-muted, not
-          sw-faint: it is the caption that tells a sceptic what they are looking
-          at, so it has to survive being read on a laptop in daylight. */}
       <div className="mt-5 font-plex text-xs leading-[2] text-sw-muted">{footnote}</div>
     </div>
     <div className={mediaFirst ? "order-1 lg:order-2" : ""}>{media}</div>
   </Reveal>
 );
 
+/**
+ * From the finding to the flight. The detection section above says how the
+ * weeds are found; this one says what happens to them, in the order it happens:
+ * sized and priced, flown, flown in the right weather, costed in your numbers.
+ *
+ * Not one aircraft. The route capture happens to be from a spray drone, and the
+ * caption says which; the copy talks about the file, because the file is what
+ * the product actually produces and what any DJI or QGC controller reads.
+ */
 export const WhySection = () => (
   <section id="why" className="relative mx-auto max-w-[1200px] px-5 pt-24 sm:px-10 sm:pt-[130px]">
-    {/* "A smarter farm management engine" was the vaguest line on the page and
-        it overclaimed: SwathWise plans spray missions, and a farmer who reads
-        "farm management" arrives expecting inventory and books. The replacement
-        says who it is for and what it saves them, in their own terms. */}
-    <Reveal className="max-w-[680px]">
+    <Reveal className="max-w-[720px]">
       <div className="font-plex text-xs tracking-[0.1em] text-sw-green">
-        WHY OPERATORS CHOOSE SWATHWISE
+        FROM THE FINDING TO THE FLIGHT
       </div>
       <h2 className="m-0 mt-4 text-[clamp(30px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.03em] text-sw-ink sm:mt-[18px]">
-        Built for operators who bill by the acre and can&rsquo;t afford a wasted trip.
+        Found it. Sized it. Priced it. Flew it. Filed it.
       </h2>
-      <p className="m-0 mt-5 max-w-[600px] text-[17px] leading-[1.55] text-sw-muted">
-        Scout the field, mark the ground worth treating, price it against your own input
-        costs, and leave with a route your Agras will fly. The chemical, the batteries and
-        every refill are settled before the truck moves.
+      <p className="m-0 mt-5 max-w-[620px] text-[17px] leading-[1.55] text-sw-muted">
+        A weed you can see on a map is a weed you can put a number on. SwathWise turns every
+        confirmed finding into acres, into a cost against your own inputs, into a spray route
+        for whatever you fly, and into the record you would have had to write anyway.
       </p>
     </Reveal>
 
-    {/* The only route capture we have is portrait, so it sits centred at its
-        own aspect on the dark panel rather than stretched or cropped to a
-        band - cropping would cut off START and END, which is the mission. */}
     <Reveal className="mt-12 sm:mt-16">
       <Shot
         src="/screens/mission-route.jpg"
         alt="SwathWise flight planner: a spray mission over a stitched orthomosaic, start to end"
-        caption="FLIGHT PLANNER · MISSION SIMULATION"
+        caption="FLIGHT PLANNER · SPRAY MISSION OVER CONFIRMED FINDINGS"
         status={<span className="text-sw-bright-hi">● SPRAYING</span>}
         padding="p-2.5"
         className="shadow-[0_40px_80px_-32px_rgba(20,23,18,0.45)]"
@@ -69,9 +68,9 @@ export const WhySection = () => (
 
     <div className="mt-16 flex flex-col gap-16 sm:mt-[90px] sm:gap-[90px]">
       <Row
-        title="You mark it, it measures it"
-        body="Mark the patches worth treating and SwathWise finds the ground that matches, sizes every zone in acres, and estimates what it will cost to treat, before anything flies. On a field you have not scanned before, it surfaces what stands out so you know where to look first."
-        footnote="ZONE AREA · EST. COST · RECOMMENDED TREATMENT"
+        title="Every finding comes with an acreage and a price"
+        body="Each weed zone is measured in acres, clipped to your boundary and inset by the headland your aircraft needs, so the acres you see are the acres you will treat. Price them against the inputs you carry, at your own per-acre cost. Nothing is suggested that you do not have."
+        footnote="ZONE AREA · TREATED AREA AFTER HEADLAND · EST. COST"
         media={
           <Shot
             src="/screens/treatment-zone.png"
@@ -82,9 +81,9 @@ export const WhySection = () => (
 
       <Row
         mediaFirst
-        title="Flight plans that fly themselves"
-        body="Click a button, get flight plans for your drone that only target crops that need spraying. Simulate the mission first: spray distance, transit time, battery use, tank load."
-        footnote="236 WAYPOINTS · 29 SPRAY ACTIVATIONS · 1 BATTERY"
+        title="One button, one flight, only those spots"
+        body="Confirm the findings and the spray mission is built: a route that crosses treated ground and nothing else, the litres it needs, the batteries, where the tank runs dry and where to refill. Simulate it first. Then download a standard waypoint file and fly it on your own aircraft."
+        footnote="WPML AND QGC WAYPOINTS · DJI FLY · DJI PILOT · ANY WPML CONTROLLER"
         media={
           <Frame>
             <div className="grid gap-2 sm:grid-cols-[220px_1fr]">
@@ -104,8 +103,8 @@ export const WhySection = () => (
       />
 
       <Row
-        title="Weather that speaks spray windows"
-        body="Track weather, flight plans, and recommendations, all in a browser-style interface that doesn't take a degree to use. SwathWise reads the forecast and tells you when it's safe to spray."
+        title="It tells you when the sky will let you"
+        body="Wind, humidity, rain and temperature for your field, read against spray conditions, so the best windows over the next three days are named for you. Schedule the mission into one of them and the forecast rides along with it."
         footnote="WIND · HUMIDITY · RAIN · BEST WINDOWS, NEXT 3 DAYS"
         media={
           <Shot src="/screens/weather.png" alt="Weather dashboard with best spray windows" />
@@ -114,9 +113,9 @@ export const WhySection = () => (
 
       <Row
         mediaFirst
-        title="Costs on every acre"
-        body="Tell SwathWise what inputs you carry and what they cost per acre. Every zone you confirm is priced against your numbers, and it never suggests a product you don't have."
-        footnote="ACRES × YOUR PER-ACRE COST"
+        title="Your inputs, your prices, your units"
+        body="Tell it what you carry and what it costs you per acre. Every zone is priced in your numbers, in acres or hectares, gallons or litres, whichever you set once. It never invents a product, a rate or a saving."
+        footnote="ACRES × YOUR PER-ACRE COST · ONE UNIT SETTING, EVERYWHERE"
         media={
           <Shot src="/screens/field-settings.png" alt="Field settings with per-acre input costs" />
         }

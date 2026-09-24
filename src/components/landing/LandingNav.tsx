@@ -2,17 +2,22 @@ import { Wordmark } from "./Wordmark";
 import { CTA_PRIMARY } from "./copy";
 
 const LINKS = [
-  { label: "Why SwathWise", href: "#why" },
+  { label: "How it finds them", href: "#detection" },
+  { label: "From finding to flight", href: "#why" },
   { label: "How it works", href: "#how" },
-  { label: "The record", href: "#record" },
   { label: "Who it's for", href: "#who" },
 ];
 
+/**
+ * "Sign in" stays and "Sign up" does not. Testers already have accounts and
+ * need the door; everyone else is sent to the access request, which is the
+ * only way in during closed testing.
+ */
 export const LandingNav = () => (
   <nav className="sw-load relative mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-x-6 gap-y-4 px-5 pt-6 sm:px-10 sm:pt-7">
     <a href="#top" className="flex items-center gap-2.5">
       <Wordmark />
-      <span className="font-plex text-[11px] tracking-[0.08em] text-sw-muted">PRECISION AG</span>
+      <span className="font-plex text-[11px] tracking-[0.08em] text-sw-muted">WEED DETECTION FROM THE AIR</span>
     </a>
 
     <div className="flex items-center gap-6 text-[15px] sm:gap-8">

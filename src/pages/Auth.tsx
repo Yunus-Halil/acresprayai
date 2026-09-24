@@ -10,14 +10,26 @@ import { toast } from "sonner";
 import { Leaf, Loader2 } from "lucide-react";
 import Seo from "@/components/Seo";
 
+/**
+ * Sign in only.
+ *
+ * SwathWise is in closed testing. The sign-up mode this page used to carry
+ * created an account for anyone with an email address, which is the opposite
+ * of closed. Testers already have accounts and need this door; everyone else
+ * is sent to the access request, which a person reads.
+ *
+ * WHAT THIS PAGE CANNOT DO ON ITS OWN: the Google button and the auth API still
+ * create a user the first time an unknown address signs in, because Supabase
+ * does that unless "Allow new users to sign up" is switched off in the
+ * project's Auth settings. That switch lives in the dashboard, not in this
+ * repository. Until it is off, removing the form here closes the front door
+ * and leaves the side one on the latch.
+ */
 export default function Auth() {
   const nav = useNavigate();
   const { session } = useAuth();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [farmName, setFarmName] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => { if (session) nav("/app", { replace: true }); }, [session, nav]);
@@ -26,27 +38,15 @@ export default function Auth() {
     e.preventDefault();
     setLoading(true);
     try {
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email, password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/app`,
-            data: { full_name: fullName, farm_name: farmName },
-          },
-        });
-        if (error) throw error;
-        toast.success("Check your email to confirm your account.");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      }
-    } catch (err: any) {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    } catch (err) {
       // Map the raw Supabase strings an operator actually meets to plain
       // language; anything unmapped keeps its detail as the description.
-      const raw = String(err?.message ?? "");
+      const raw = String((err as { message?: string } | null)?.message ?? "");
       if (/invalid login credentials/i.test(raw)) {
         toast.error("That email and password didn't match", {
-          description: "Check both and try again, or use the sign-up link below if you don't have an account yet.",
+          description: "Check both and try again. If you don't have an account yet, request access below.",
         });
       } else if (/email not confirmed/i.test(raw)) {
         toast.error("Confirm your email first", {
@@ -66,10 +66,6 @@ export default function Auth() {
 
   // Native Supabase OAuth. This redirects the browser, so `error` only fires if
   // the redirect could not be started at all.
-  //
-  // Requires the Google provider to be enabled in the Supabase project's auth
-  // settings, with a client ID/secret from Google Cloud Console and
-  // <project>.supabase.co/auth/v1/callback listed as an authorised redirect URI.
   const google = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -87,19 +83,19 @@ export default function Auth() {
             <Leaf className="h-5 w-5 text-[hsl(var(--accent))]" /> SwathWise
           </Link>
           <div className="space-y-4 max-w-md">
-            <h1 className="font-display text-4xl leading-tight">Precision spraying, powered by AI.</h1>
-            {/* Keep in step with the landing page: the product targets treatment
-                to specific patches; it does not promise a reduction figure or
-                early pest detection, neither of which it measures. */}
-            <p className="opacity-80">Fly your field, find the patches that need treating, and send the drone back to spray only those.</p>
+            <h1 className="font-display text-4xl leading-tight">Every weed on your farm. Found from the air.</h1>
+            {/* Keep in step with the landing page: it finds what departs from
+                the field and plans the flight that treats it. No savings
+                figure, no species from pixels. */}
+            <p className="opacity-80">Fly any drone over any field. See every plant that does not match your crop, then spray only those.</p>
           </div>
         </div>
       </div>
       <div className="flex items-center justify-center p-6">
         <Card className="w-full max-w-md p-8 space-y-6">
           <div>
-            <h2 className="font-display text-2xl">{mode === "signin" ? "Welcome back" : "Start your trial"}</h2>
-            <p className="text-sm text-muted-foreground">{mode === "signin" ? "Sign in to your SwathWise cockpit." : "Create an account to monitor your first field."}</p>
+            <h2 className="font-display text-2xl">Welcome back</h2>
+            <p className="text-sm text-muted-foreground">Sign in to your SwathWise cockpit.</p>
           </div>
 
           <Button type="button" variant="outline" className="w-full" onClick={google}>
@@ -112,26 +108,22 @@ export default function Auth() {
           </div>
 
           <form onSubmit={submit} className="space-y-3">
-            {mode === "signup" && (
-              <>
-                <div><Label>Full name</Label><Input value={fullName} onChange={e => setFullName(e.target.value)} required /></div>
-                <div><Label>Farm name</Label><Input value={farmName} onChange={e => setFarmName(e.target.value)} required /></div>
-              </>
-            )}
             <div><Label>Email</Label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></div>
             <div><Label>Password</Label><Input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} /></div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === "signin" ? "Sign in" : "Create account"}
+              Sign in
             </Button>
           </form>
 
-          <p className="text-sm text-center text-muted-foreground">
-            {mode === "signin" ? "No account? " : "Already have one? "}
-            <button onClick={() => setMode(mode === "signin" ? "signup" : "signin")} className="text-foreground underline">
-              {mode === "signin" ? "Sign up" : "Sign in"}
-            </button>
-          </p>
+          <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+            <div className="font-medium text-foreground">SwathWise is in closed testing.</div>
+            <p className="mt-1">
+              New accounts are by invitation. If you farm, spray, or scout and want in,{" "}
+              <Link to="/apply" className="text-foreground underline underline-offset-4">request access</Link>{" "}
+              and we will be in touch when a place opens.
+            </p>
+          </div>
         </Card>
       </div>
     </div>
