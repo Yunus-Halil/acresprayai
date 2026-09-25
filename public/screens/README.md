@@ -12,6 +12,7 @@ dress up an old one.
 | `mission-summary.png` | Mission summary panel (tall; cropped to top) | "Flight plans that fly themselves" |
 | `weather.png` | Weather dashboard with spray windows | "Weather that speaks spray windows" |
 | `field-settings.png` | Field settings / per-acre input costs | "Costs on every acre" |
+| `scout-findings.png` | A finished scan over a stitched field: regions outlined and labelled bare or dry ground, thin stand, different from the field, plus one region the operator named barnyardgrass. 2.2 MB PNG because no encoder is in the project; lazy-loaded, below the fold. Re-encode to JPEG if one arrives | Detection section, full width |
 | `flight-planner-tank.png` | *(never captured — the Cockpit section uses video instead, see `public/video/`)* | — |
 
 A missing file does not break the page: `Screenshot` in
