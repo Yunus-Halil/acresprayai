@@ -17,7 +17,7 @@ export const LandingNav = () => (
   <nav className="sw-load relative mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-x-6 gap-y-4 px-5 pt-6 sm:px-10 sm:pt-7">
     <a href="#top" className="flex items-center gap-2.5">
       <Wordmark />
-      <span className="font-plex text-[11px] tracking-[0.08em] text-sw-muted">WEED DETECTION FROM THE AIR</span>
+      <span className="font-plex text-[11px] tracking-[0.08em] text-sw-muted">PRECISION AG</span>
     </a>
 
     <div className="flex items-center gap-6 text-[15px] sm:gap-8">

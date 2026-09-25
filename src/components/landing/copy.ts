@@ -47,22 +47,30 @@ export const DEMO_VIDEO_URL =
 /**
  * The hero.
  *
+ * SwathWise is precision agriculture: map the field, find what is wrong with
+ * it, treat only that, keep the record. Weeds are the flagship job and the
+ * one the page leads with, because they are the one most farms lose money on
+ * every season, but they are not the category. The same scan surfaces bare
+ * ground, thin stand and waterlogged patches, and the same planner treats
+ * whatever the operator confirms.
+ *
  * Every clause is a capability that ships. "Every plant that does not match
  * the field" is the exact thing the detector does: it builds the field's own
- * baseline from the field's own pixels and flags what departs from it, tile by
- * tile and plant by plant. It is not a promise of perfect recall and the page
- * never makes one.
+ * baseline from the field's own pixels and flags what departs from it. It is
+ * not a promise of perfect recall and the page never makes one.
  */
 export const HERO = {
+  kicker: "PRECISION AGRICULTURE, FROM THE AIR",
   headline: "Every weed on your farm. Found from the air.",
   sub:
-    "Fly any drone over any field. SwathWise reads every square foot of the imagery, "
-    + "measures every plant against your own crop, and shows you exactly where the weeds are. "
-    + "Then it plans the flight that treats only those spots, and writes the record when you land.",
+    "SwathWise is precision agriculture for any drone and any field. It maps your farm from "
+    + "the imagery, measures every plant against your own crop, and shows you exactly where the "
+    + "weeds are, along with the bare ground, the thin stand and the wet patches. Then it plans "
+    + "the flight that treats only those spots, and writes the record when you land.",
   bullets: [
     "Any drone, any camera, any crop",
     "Every plant compared to your field",
-    "Spray only what it found",
+    "Treat only what it found",
     "Nothing sprays until you say so",
   ],
 };
@@ -71,7 +79,7 @@ export const FEATURES = [
   {
     num: "01",
     title: "It reads the whole farm",
-    body: "Not a sample. Every square foot of your imagery is measured: colour, brightness, vegetation, texture, and how each patch compares to the field around it and to the field as a whole.",
+    body: "Not a sample. Every square foot of your imagery is measured: colour, brightness, vegetation, texture, and how each patch compares to the field around it and to the field as a whole. Weeds, bare ground, thin stand, wet patches, all from the same pass.",
   },
   {
     num: "02",
@@ -118,7 +126,7 @@ export const DETECTION = {
     {
       label: "REGIONS",
       title: "Flagged ground grows into shapes with an area",
-      body: "Touching squares join into a region with an outline, an acreage and a class: bare ground, thin stand, dense vegetation, paler, greener, different. Descriptive, never a diagnosis. You see the shape on the map before anything is decided.",
+      body: "Touching squares join into a region with an outline, an acreage and a class: bare or dry ground, wet ground, thin stand, dense vegetation, paler, greener, different. This is where precision agriculture starts: not only weeds, but every part of the field that is not behaving like the rest of it. Descriptive, never a diagnosis.",
     },
     {
       label: "PLANT BY PLANT",

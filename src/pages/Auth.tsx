@@ -83,11 +83,11 @@ export default function Auth() {
             <Leaf className="h-5 w-5 text-[hsl(var(--accent))]" /> SwathWise
           </Link>
           <div className="space-y-4 max-w-md">
-            <h1 className="font-display text-4xl leading-tight">Every weed on your farm. Found from the air.</h1>
+            <h1 className="font-display text-4xl leading-tight">Precision agriculture, from the air.</h1>
             {/* Keep in step with the landing page: it finds what departs from
                 the field and plans the flight that treats it. No savings
                 figure, no species from pixels. */}
-            <p className="opacity-80">Fly any drone over any field. See every plant that does not match your crop, then spray only those.</p>
+            <p className="opacity-80">Map the field from any drone, find every weed and every patch that is not behaving like the rest, then treat only those.</p>
           </div>
         </div>
       </div>

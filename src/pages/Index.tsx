@@ -15,8 +15,8 @@ import Seo from "@/components/Seo";
 const Index = () => (
   <main className="relative min-h-screen overflow-hidden bg-sw-paper font-grotesk text-sw-ink">
     <Seo
-      title="SwathWise: Every weed on your farm, found from the air"
-      description="Fly any drone over any field. SwathWise measures every plant against your own crop, shows you every weed on the map, plans the flight that treats only those spots, and writes the record."
+      title="SwathWise: Precision agriculture from the air"
+      description="Map your farm from any drone, find every weed and every patch that is not behaving like the rest of the field, treat only those spots, and keep the record. Any drone, any camera, any crop."
       path="/"
     />
     {/* Faint ink grid, fading out below the hero. */}

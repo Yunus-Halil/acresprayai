@@ -20,7 +20,7 @@ const LANDING = join(__dirname, "..", "components", "landing");
 /** Every string a visitor can read, flattened out of copy.ts. */
 const VISIBLE: string[] = [
   STATUS_BADGE, CTA_PRIMARY, CTA_SECONDARY,
-  HERO.headline, HERO.sub, ...HERO.bullets,
+  HERO.kicker, HERO.headline, HERO.sub, ...HERO.bullets,
   ...FEATURES.flatMap(f => [f.title, f.body]),
   DETECTION.eyebrow, DETECTION.headline, DETECTION.sub, DETECTION.caveat,
   ...DETECTION.steps.flatMap(s => [s.label, s.title, s.body]),
@@ -87,6 +87,23 @@ describe("closed testing", () => {
 
   it("keeps the sign-in door for the testers who already have accounts", () => {
     expect(componentSource()).toMatch(/href="\/auth"/);
+  });
+});
+
+describe("the category", () => {
+  it("says precision agriculture, not only weeds", () => {
+    // Weeds are the flagship job and the page leads with them. They are not the
+    // whole product, and a rewrite narrowed the brand to one feature once
+    // already. The category has to be on the page, above the headline.
+    expect(HERO.kicker).toMatch(/precision agriculture/i);
+    expect(HERO.sub).toMatch(/precision agriculture/i);
+  });
+
+  it("names the findings that are not weeds", () => {
+    const all = VISIBLE.join(" ");
+    expect(all).toMatch(/bare ground/i);
+    expect(all).toMatch(/thin stand/i);
+    expect(all).toMatch(/wet/i);
   });
 });
 

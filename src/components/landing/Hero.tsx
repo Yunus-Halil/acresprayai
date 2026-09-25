@@ -13,10 +13,19 @@ export const Hero = () => (
     </div>
 
     <div className="mt-7">
+      {/* The category first, in mono, so the headline below is read as the
+          flagship job of a precision agriculture product and not as the whole
+          product. */}
+      <div
+        className="sw-load font-plex text-xs tracking-[0.1em] text-sw-green"
+        style={{ animationDelay: "0.1s" }}
+      >
+        {HERO.kicker}
+      </div>
       {/* Capped rather than full-bleed so the headline breaks after "farm."
           at the largest sizes and the second line lands alone. */}
       <h1
-        className="sw-load m-0 max-w-[860px] text-balance text-[clamp(40px,7.4vw,88px)] font-semibold leading-[0.98] tracking-[-0.035em] text-sw-ink"
+        className="sw-load m-0 mt-4 max-w-[860px] text-balance text-[clamp(40px,7.4vw,88px)] font-semibold leading-[0.98] tracking-[-0.035em] text-sw-ink"
         style={{ animationDelay: "0.15s" }}
       >
         {HERO.headline}

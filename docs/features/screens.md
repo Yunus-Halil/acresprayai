@@ -22,9 +22,12 @@ workspace deliberately sits outside that shell and opens full-screen in a new ta
 
 ## Landing page — `/`
 
-Sells one thing: weed detection from the air, for any drone, with the flight and the record
-that follow from it. Rewritten 2026-09-24 from a spray-mission page that read as an Agras
-accessory and opened with a pilot programme.
+Sells precision agriculture from the air, for any drone, with weed detection as the flagship
+job the page leads with: map the field, find every weed and every patch that is not behaving
+like the rest of it, treat only those, keep the record. Rewritten 2026-09-24 from a spray-mission
+page that read as an Agras accessory and opened with a pilot programme; a first draft narrowed
+the brand to weeds alone and the category kicker above the headline is what stops that
+happening again.
 
 All copy lives in `src/components/landing/copy.ts` under four rules: nothing the product cannot
 do, no social proof, no em or en dashes in anything visible, and not tied to one aircraft.
