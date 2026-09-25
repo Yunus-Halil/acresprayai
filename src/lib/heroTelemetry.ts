@@ -29,16 +29,32 @@ import { type TankProfile, type TankSample, buildTankProfile, sampleTankAt } fro
  * keyframe percentages in index.css. All three move together or the panel
  * narrates a flight the picture is not flying.
  */
-export const HERO_LOOP_MS = 16_000;
-export const HERO_FLIGHT_FROM = 0.28;
-export const HERO_FLIGHT_TO = 0.96;
+export const HERO_LOOP_MS = 24_000;
+
+/**
+ * The three acts of the loop, as fractions of it. Find, identify, fly.
+ *
+ * Every keyframe in index.css, every keyTime in FlightPath.tsx and every
+ * readout in HeroTelemetry.tsx is derived from these. Change one here and the
+ * picture, the chips and the numbers move together; change one anywhere else
+ * and the panel narrates a flight the picture is not flying.
+ */
+export const HERO_SCAN_FROM = 0.05;
+export const HERO_SCAN_TO = 0.28;
+export const HERO_IDENTIFY_FROM = 0.30;
+export const HERO_IDENTIFY_TO = 0.46;
+export const HERO_ROUTE_FROM = 0.47;
+export const HERO_ROUTE_TO = 0.59;
+export const HERO_FLIGHT_FROM = 0.60;
+export const HERO_FLIGHT_TO = 0.97;
 
 /**
  * SVG units to metres.
  *
- * The drawing is 1120×520 units. At 0.5 m per unit that is a 560 × 260 m
- * field — about 14.5 ha, a normal block — and the route comes out around 3.4 km,
- * which a T40 can fly inside its endurance. Chosen so the numbers on screen are
+ * The drawing is 1120×520 units. At 0.5 m per unit the field polygon, which
+ * sits inside a 560 × 260 m box and does not fill it, is about 9.7 ha, a
+ * normal block, and the route comes out around 3.4 km,
+ * which the example spray drone flies inside its endurance. Chosen so the numbers on screen are
  * ones a grower would recognise rather than ones that merely fit the picture.
  */
 export const METRES_PER_UNIT = 0.5;
@@ -59,6 +75,83 @@ export const ZONE_POLYS: [number, number][][] = [
   [[620, 238], [900, 232], [912, 300], [895, 345], [628, 342], [612, 285]],
   [[436, 344], [592, 338], [598, 438], [448, 446]],
 ];
+
+/**
+ * A finding the scan surfaces and the route does NOT spray.
+ *
+ * The picture's precision-agriculture point in one shape: the aircraft flies
+ * straight over it in transit and the shutter of the boom stays shut. It is
+ * deliberately not in ZONE_POLYS, so the flight model never sprays it either.
+ */
+export const WET_POLY: [number, number][] = [
+  [700, 118], [822, 110], [838, 192], [706, 200],
+];
+
+export type HeroFinding = {
+  id: string;
+  /** The detector's class, as the app labels it. */
+  label: string;
+  /** A species name, when the operator typed one. Never from pixels. */
+  name?: string;
+  poly: [number, number][];
+  /** Whether the route sprays it. */
+  treat: boolean;
+  /** Top-left of the label chip, SVG units. */
+  chipAt: [number, number];
+};
+
+/**
+ * What the scan finds, in the order the sweep reaches them (top to bottom).
+ *
+ * Three are treated and one is left alone. The one carrying a species name is
+ * there to show identification as it actually happens: an operator's call,
+ * shown as such.
+ */
+export const FINDINGS: HeroFinding[] = [
+  { id: "f1", label: "WEED PRESSURE", name: "barnyardgrass", poly: ZONE_POLYS[0], treat: true, chipAt: [205, 72] },
+  { id: "f2", label: "WET GROUND", poly: WET_POLY, treat: false, chipAt: [700, 94] },
+  { id: "f3", label: "WEED PRESSURE", poly: ZONE_POLYS[1], treat: true, chipAt: [620, 216] },
+  { id: "f4", label: "THIN STAND", poly: ZONE_POLYS[2], treat: true, chipAt: [436, 322] },
+];
+
+/** Shoelace area of a polygon in SVG units, converted to square metres. */
+export function polyAreaM2(poly: [number, number][]): number {
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const [x0, y0] = poly[i];
+    const [x1, y1] = poly[(i + 1) % poly.length];
+    a += x0 * y1 - x1 * y0;
+  }
+  return Math.abs(a) / 2 * METRES_PER_UNIT * METRES_PER_UNIT;
+}
+
+export const FIELD_AREA_M2 = polyAreaM2(FIELD_POLY);
+export const FLAGGED_AREA_M2 = FINDINGS.reduce((n, f) => n + polyAreaM2(f.poly), 0);
+export const TREATED_ZONE_AREA_M2 = FINDINGS.filter(f => f.treat).reduce((n, f) => n + polyAreaM2(f.poly), 0);
+
+const FIELD_TOP = Math.min(...FIELD_POLY.map(p => p[1]));
+const FIELD_BOTTOM = Math.max(...FIELD_POLY.map(p => p[1]));
+
+/** Where the scan line is, SVG y, at a loop fraction inside the scan act. */
+export function scanLineY(loopFraction: number): number {
+  const f = Math.max(0, Math.min(1, (loopFraction - HERO_SCAN_FROM) / (HERO_SCAN_TO - HERO_SCAN_FROM)));
+  return FIELD_TOP + (FIELD_BOTTOM - FIELD_TOP) * f;
+}
+
+/** The loop fraction at which the sweep reaches a finding's top edge and it appears. */
+export function appearAt(f: HeroFinding): number {
+  const top = Math.min(...f.poly.map(p => p[1]));
+  return HERO_SCAN_FROM + (HERO_SCAN_TO - HERO_SCAN_FROM) * ((top - FIELD_TOP) / (FIELD_BOTTOM - FIELD_TOP));
+}
+
+/** The identify act's window for finding `i`, one after another. */
+export function identifyWindow(i: number): [number, number] {
+  const each = (HERO_IDENTIFY_TO - HERO_IDENTIFY_FROM) / FINDINGS.length;
+  return [HERO_IDENTIFY_FROM + each * i, HERO_IDENTIFY_FROM + each * (i + 1)];
+}
+
+/** Effective boom swath of the example aircraft, metres. */
+export const HERO_SWATH_M = 9;
 
 /** Altitudes the demo mission flies, metres AGL — the planner's own defaults. */
 export const SPRAY_ALT_M = 3;
@@ -163,7 +256,7 @@ export function buildHeroMission(): HeroMission {
   void routeM;
 
   // Chemical for the sprayed ground: swath × sprayed distance × rate.
-  const SWATH_M = 9;              // T40's effective swath
+  const SWATH_M = HERO_SWATH_M;
   const RATE_LHA = 22;
   const sprayedM = segs.reduce((a, s) => a + (s.spray ? s.distEnd - s.distStart : 0), 0);
   const requiredLitres = ((sprayedM * SWATH_M) / 10_000) * RATE_LHA;

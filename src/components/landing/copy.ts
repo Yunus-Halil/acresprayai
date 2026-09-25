@@ -144,10 +144,6 @@ export const DETECTION = {
       body: "Keep it, remove it, unsure. Each answer goes into an archive that the next scan compares itself against, so a mark you made in June is remembered in August. Identification is suggested from your own past confirmations and a sourced reference catalog, and it is always your call.",
     },
   ],
-  caveat:
-    "It finds what departs from your field. It does not name a species from pixels, it does not "
-    + "certify a field clean, and a closed canopy hides individual plants from any camera. Where it "
-    + "cannot see, it says so on the scan.",
 };
 
 export const STEPS = [

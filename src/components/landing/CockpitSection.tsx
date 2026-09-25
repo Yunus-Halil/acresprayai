@@ -106,14 +106,6 @@ export const CockpitSection = () => (
         </Reveal>
       </div>
 
-      <Reveal className="mt-14 border-t border-white/10 pt-6 sm:mt-16">
-        <p className="m-0 max-w-[720px] font-plex text-[12px] leading-[1.9] tracking-[0.03em] text-sw-on-dark">
-          Endurance, slosh and centre-of-gravity figures are engineering estimates for
-          planning, not certified flight-dynamics data. The app labels them as such
-          wherever it shows them. We would rather you trusted the number you can check
-          than the number that sounds best.
-        </p>
-      </Reveal>
     </div>
   </section>
 );

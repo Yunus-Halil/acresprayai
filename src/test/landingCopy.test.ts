@@ -22,7 +22,7 @@ const VISIBLE: string[] = [
   STATUS_BADGE, CTA_PRIMARY, CTA_SECONDARY,
   HERO.kicker, HERO.headline, HERO.sub, ...HERO.bullets,
   ...FEATURES.flatMap(f => [f.title, f.body]),
-  DETECTION.eyebrow, DETECTION.headline, DETECTION.sub, DETECTION.caveat,
+  DETECTION.eyebrow, DETECTION.headline, DETECTION.sub,
   ...DETECTION.steps.flatMap(s => [s.label, s.title, s.body]),
   ...STEPS.flatMap(s => [s.title, s.body]),
   ...AUDIENCES.flatMap(a => [a.title, a.body]),
@@ -117,16 +117,12 @@ describe("claims the product can stand behind", () => {
 
   it("never claims to name a species from the imagery", () => {
     // Identification is the operator's call, suggested from their own verdicts
-    // and a sourced catalog. The copy may say so; it may not claim the reverse.
+    // and a sourced catalog. The copy may not claim the reverse.
     expect(all).not.toMatch(/identifies the species|knows the species|tells you the species/i);
-    expect(DETECTION.caveat).toMatch(/does not name a species/i);
   });
 
   it("does not sell autonomous flight", () => {
     expect(all).not.toMatch(/autonomous|flies itself|fly itself/i);
   });
 
-  it("states the closed-canopy limit next to the detection claims", () => {
-    expect(DETECTION.caveat).toMatch(/closed canopy/i);
-  });
 });

@@ -3,7 +3,8 @@
 // decoration fails here instead of on the homepage.
 import { describe, it, expect } from "vitest";
 import {
-  HERO_FLIGHT_FROM, HERO_FLIGHT_TO, SPRAY_ALT_M, TRANSIT_ALT_M,
+  HERO_FLIGHT_FROM, HERO_FLIGHT_TO, HERO_IDENTIFY_FROM, HERO_IDENTIFY_TO, HERO_ROUTE_FROM,
+  HERO_ROUTE_TO, HERO_SCAN_FROM, HERO_SCAN_TO, SPRAY_ALT_M, TRANSIT_ALT_M,
   buildHeroMission, heroTelemetryAt, sprayingAt,
 } from "@/lib/heroTelemetry";
 
@@ -71,10 +72,21 @@ describe("what the panel shows is model output", () => {
 });
 
 describe("before the marker takes off", () => {
-  it("spends most of the loop flying, not parked", () => {
-    // The panel is the reason to stop and look at the hero. If the flight
-    // window shrinks back towards half the loop, it is a frozen readout again.
-    expect(HERO_FLIGHT_TO - HERO_FLIGHT_FROM).toBeGreaterThan(0.6);
+  it("is never a frozen panel for long: find, identify and fly cover most of the loop", () => {
+    // The panel is the reason to stop and look at the hero. It used to be
+    // driven by the flight alone, so the flight had to fill most of the loop.
+    // Now the readouts move through all three acts: FOUND and FLAGGED count up
+    // as the sweep reaches each finding, the status names each one in turn,
+    // and TREATED and TIME move in flight. What must hold is that the idle
+    // gaps between acts stay small, and that the flight is still the longest.
+    const busy =
+      (HERO_SCAN_TO - HERO_SCAN_FROM)
+      + (HERO_IDENTIFY_TO - HERO_IDENTIFY_FROM)
+      + (HERO_ROUTE_TO - HERO_ROUTE_FROM)
+      + (HERO_FLIGHT_TO - HERO_FLIGHT_FROM);
+    expect(busy).toBeGreaterThan(0.85);
+    expect(HERO_FLIGHT_TO - HERO_FLIGHT_FROM).toBeGreaterThan(HERO_SCAN_TO - HERO_SCAN_FROM);
+    expect(HERO_FLIGHT_TO - HERO_FLIGHT_FROM).toBeGreaterThan(HERO_IDENTIFY_TO - HERO_IDENTIFY_FROM);
   });
 
   it("reads standby rather than inventing a flight", () => {

@@ -36,6 +36,24 @@ state: one CTA ("Request access"), no "Sign up", no "Apply to Pilot", no savings
 species named from pixels, no autonomous flight, and the closed-canopy limit stated beside the
 detection claims.
 
+**The hero animation runs in three acts on one 24 s loop: find, identify, fly.** A scan line
+sweeps the drawn field and each finding appears as the line reaches it, with a chip carrying the
+detector's class; one finding is wet ground and is never sprayed. Each finding is then picked out
+in turn, the one carrying a species name showing it as the operator's call. Then the route draws
+and the aircraft flies it, spraying only inside the treated findings and crossing the wet ground
+with the boom shut. The readouts under it are outcomes, not instruments: FIELD, FOUND, FLAGGED,
+TREATED, LEFT ALONE, TIME and loads, all read off the same geometry and flight model. Battery,
+amps and centre of gravity moved to the cockpit section. The timeline lives once in
+`lib/heroTelemetry.ts`; the keyframes in `index.css` are generated from it by a scratch script
+and `heroTimeline.test.ts` fails if the two drift. TREATED is sprayed distance times the boom in
+every act, because at the drawing's scale the passes sit 25 m apart against a 9 m boom and quoting
+polygon area before takeoff would make the number fall at lift-off.
+
+**No explanatory footnotes.** The mono paragraphs that used to close the detection, cockpit,
+record and hero panels ("the classes are the detector's", "engineering estimates, not certified
+data", "check the record against your state's form") were removed at Yunus's direction. Limits
+that matter are stated once in the copy itself, not lectured under every section.
+
 Sections in order: hero, four feature cards, **How it finds them** (six steps that track
 `src/lib/weedScout` in the order the scan runs them, with the limit stated in the same type as
 the claims), **From the finding to the flight** (acres and price, the mission file, weather

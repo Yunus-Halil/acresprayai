@@ -29,28 +29,18 @@ export const DetectionSection = () => (
         </p>
       </Reveal>
 
-      {/* A real scan, as the operator saw it. Every outline is a region the
-          detector grew from flagged ground, labelled with its class: bare or
-          dry ground, thin stand, different from the field. One region carries
-          a species name, and that name was typed by the operator after
-          looking, which is the only way a name gets onto this map. The caption
-          says so, because a visitor who assumes the software named it has been
-          told something the product does not do. */}
+      {/* A real scan, as the operator saw it. The one species name on it was
+          typed by the operator; the classes are the detector's. */}
       <Reveal className="mt-12 sm:mt-16">
         <Shot
           src="/screens/scout-findings.png"
           alt="A stitched field with the scan's findings outlined and labelled: bare or dry ground, thin stand, and ground different from the field, with one region the operator has named barnyardgrass"
-          caption="ONE SCAN · EVERY REGION LABELLED BY WHAT MADE IT STAND OUT"
-          status={<span className="text-sw-bright-hi">● REAL FIELD, REAL FINDINGS</span>}
+          caption="ONE SCAN · REAL FIELD"
+          status={<span className="text-sw-bright-hi">● FINDINGS</span>}
           padding="p-2.5"
           className="shadow-[0_40px_90px_-30px_rgba(0,0,0,0.7)]"
           imgClassName="mx-auto w-full max-h-[760px] object-contain"
         />
-        <p className="m-0 mt-4 max-w-[760px] font-plex text-[12px] leading-[1.9] tracking-[0.03em] text-sw-on-dark">
-          BARE OR DRY GROUND · THIN STAND · DIFFERENT FROM THE FIELD. The classes are the
-          detector&rsquo;s. The one species name on this map, barnyardgrass, was entered by the
-          operator after looking at the chip. No name comes from the pixels.
-        </p>
       </Reveal>
 
       <div className="mt-14 grid gap-x-10 gap-y-12 sm:mt-20 sm:grid-cols-2 lg:grid-cols-3">
@@ -74,11 +64,6 @@ export const DetectionSection = () => (
         ))}
       </div>
 
-      <Reveal className="mt-14 border-t border-white/10 pt-6 sm:mt-16">
-        <p className="m-0 max-w-[760px] font-plex text-[12px] leading-[1.9] tracking-[0.03em] text-sw-on-dark">
-          {DETECTION.caveat}
-        </p>
-      </Reveal>
     </div>
   </section>
 );

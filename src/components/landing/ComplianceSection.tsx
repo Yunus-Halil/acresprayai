@@ -79,14 +79,6 @@ export const ComplianceSection = () => (
         </div>
       </div>
 
-      <div className="mt-14 border-t border-sw-line pt-6 sm:mt-16">
-        <p className="m-0 max-w-[720px] font-plex text-[12px] leading-[1.9] tracking-[0.03em] text-sw-muted">
-          We generate the record from what was flown. We do not certify that it meets any
-          particular state's requirements, and we have not verified it against them. Meeting
-          the rules you are licensed under stays your responsibility. Check the record
-          against your state's form before you file it.
-        </p>
-      </div>
     </section>
   </Reveal>
 );
