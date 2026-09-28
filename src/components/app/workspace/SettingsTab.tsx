@@ -319,8 +319,9 @@ export function SettingsTab({
           <h2 className="text-sm font-semibold mb-1">3. Application Condition Flags</h2>
           <p className="text-[11px] text-neutral-500 mb-4">
             Wind or temperature beyond these values gets flagged in the Log Flight dialog and
-            on the spray report. Flagged, never blocked, and never a compliance claim: product
-            labels vary and only you know yours.
+            on the spray report, and the Weather tab judges each forecast hour against them.
+            Flagged, never blocked, and never a compliance claim: product labels vary and only
+            you know yours.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -359,6 +360,7 @@ export function SettingsTab({
             <li>Marked treatment zones are priced as <span className="font-mono text-neutral-200">{units === "metric" ? "hectares × your per-hectare cost" : "acres × your per-acre cost"}</span>.</li>
             <li>Issues map to inputs via a fixed table (e.g. <span className="text-neutral-300">bare soil → reseeding</span>, <span className="text-neutral-300">nitrogen deficiency → nitrogen fertilizer</span>).</li>
             <li>Your product list is what the mission log and application record offer for prefill.</li>
+            <li>The wind and temperature flags above are the limits the Weather tab checks the forecast against.</li>
             <li>Waterlogged zones show "Drainage work required, consult agronomist" instead of a cost.</li>
           </ul>
         </section>

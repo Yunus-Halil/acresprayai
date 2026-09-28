@@ -6,7 +6,7 @@ const NotFound = () => {
   const location = useLocation();
 
   useEffect(() => {
-    console.error("404 Error: User attempted to access non-existent route:", location.pathname);
+    console.error("404: no route for", location.pathname);
   }, [location.pathname]);
 
   return (
@@ -14,10 +14,11 @@ const NotFound = () => {
       <Seo title="Page not found, SwathWise" noindex />
       <div className="text-center">
         <h1 className="mb-4 text-4xl font-bold">404</h1>
-        <p className="mb-4 text-xl text-muted-foreground">Oops! Page not found</p>
-        <a href="/" className="text-primary underline hover:text-primary/90">
-          Return to Home
-        </a>
+        <p className="mb-4 text-xl text-muted-foreground">That page does not exist.</p>
+        <div className="flex items-center justify-center gap-6">
+          <a href="/" className="text-primary underline hover:text-primary/90">Back to the site</a>
+          <a href="/app/fields" className="text-primary underline hover:text-primary/90">Your fields</a>
+        </div>
       </div>
     </div>
   );

@@ -50,6 +50,23 @@ function notification(row: Record<string, string | null>): string {
   );
 }
 
+/** What the applicant gets. Plain text, no promises beyond a reply. */
+function confirmation(row: Record<string, string | null>): string {
+  const name = row.full_name?.split(" ")[0] || "there";
+  return (
+    `Hi ${name},\n\n` +
+    `We have your request for access to SwathWise closed testing` +
+    (row.farm_name ? ` for ${row.farm_name}` : "") +
+    `.\n\n` +
+    `Testing is with a small number of farms and places open as they come up. ` +
+    `We read every request and will be in touch when there is a place, or sooner if we ` +
+    `have a question.\n\n` +
+    `If anything changes on your side, reply to this email.\n\n` +
+    `SwathWise\n` +
+    `swathwise.com`
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -89,6 +106,20 @@ Deno.serve(async (req) => {
   });
   if (!result.sent) {
     console.error(`[pilot-apply] saved ${data?.id} but notification not sent: ${result.reason}`);
+  }
+
+  // The applicant hears back at once, so "we will be in touch" on the form is
+  // backed by something in their inbox. Best-effort like the notification: a
+  // failed confirmation never fails the saved application.
+  if (row.email) {
+    const ack = await sendEmail({
+      to: row.email,
+      subject: "SwathWise: we have your access request",
+      text: confirmation(row),
+    });
+    if (!ack.sent) {
+      console.error(`[pilot-apply] saved ${data?.id} but confirmation not sent: ${ack.reason}`);
+    }
   }
 
   return json({ ok: true, id: data?.id, notified: result.sent });

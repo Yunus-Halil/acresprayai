@@ -58,7 +58,7 @@ import {
   readCachedWeather,
 } from "@/lib/weather";
 import {
-  DEFAULT_SPRAY_LIMITS, findSprayWindows, formatReason, rainAhead,
+  DEFAULT_SPRAY_LIMITS, type SprayLimits, findSprayWindows, formatReason, rainAhead,
   sprayVerdict as verdictOf,
 } from "@/lib/sprayWindow";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
@@ -152,7 +152,12 @@ export function OwGlyph({ icon, code, className }: { icon: string; code: number;
 export type { Verdict } from "@/lib/sprayWindow";
 export { sprayVerdict } from "@/lib/sprayWindow";
 
-export function WeatherTab({ center, fieldName }: { center: [number, number]; fieldName: string }) {
+export function WeatherTab({ center, fieldName, limits }: {
+  center: [number, number];
+  fieldName: string;
+  /** The operator's limits from Settings. Absent means the conventional defaults. */
+  limits?: SprayLimits;
+}) {
   const [lat, lng] = center;
   // Fetching and caching live in @/lib/weather so this tab, the standalone
   // Weather screen and the planner all share one normalisation path and one
@@ -167,7 +172,7 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
   // The thresholds, stated in the operator's own units. A green tick that does
   // not say what it checked is a green tick nobody can argue with, and this is
   // a decision a person is legally responsible for.
-  const L = DEFAULT_SPRAY_LIMITS;
+  const L = limits ?? DEFAULT_SPRAY_LIMITS;
   const wind = (kmh: number) => fmtWindSpeed(kmh / 3.6, units).text;
   const limitsLine =
     `Wind ≤ ${wind(L.windMaxKmh)} · gusts ≤ ${wind(L.gustMaxKmh)} · no rain 6h · ` +
@@ -214,9 +219,9 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
     precip_mm: cur.precip_mm, precip_prob: 0, clouds: cur.clouds,
     code: cur.code, icon: cur.icon, desc: cur.desc,
   };
-  const now = verdictOf(nowHour, rainNext6);
+  const now = verdictOf(nowHour, rainNext6, L);
 
-  const bestWindows = findSprayWindows(hourly).slice(0, 3).map(w => ({
+  const bestWindows = findSprayWindows(hourly, { limits: L }).slice(0, 3).map(w => ({
     ...w,
     dayLabel: new Date(w.startTs * 1000).toLocaleDateString([], { weekday: "long" }),
   }));
@@ -227,8 +232,8 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
   const verdictColor = now.verdict === "green" ? "#4CAF50" : now.verdict === "yellow" ? "#facc15" : "#ef4444";
   const verdictBorder = now.verdict === "green" ? "border-[#4CAF50]/40" : now.verdict === "yellow" ? "border-yellow-400/40" : "border-red-500/40";
   const verdictLabel =
-    now.verdict === "green" ? "Good to spray right now" :
-    now.verdict === "yellow" ? "Marginal, proceed with caution" : "Do not spray right now";
+    now.verdict === "green" ? "Within your limits right now" :
+    now.verdict === "yellow" ? "Marginal, check your label" : "Outside your limits right now";
 
   return (
     <div className="absolute inset-0 overflow-auto p-8" style={{ background: "#0f0f0f" }}>
@@ -259,6 +264,10 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
             <div>
               <div className="text-base font-semibold" style={{ color: verdictColor }}>{verdictLabel}</div>
               <div className="text-[11px] text-neutral-500">{limitsLine}</div>
+              <div className="mt-1 text-[11px] text-neutral-500">
+                A forecast, judged against the wind and temperature limits in Settings. The product
+                label sets the legal limits: read it before you mix.
+              </div>
             </div>
           </div>
           {now.reasons.length > 0 && (
@@ -307,7 +316,7 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
           <div className="rounded-sm border border-[#222] p-5 md:col-span-2" style={{ background: "#1a1a1a" }}>
             <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-3">Best spray windows · next 3 days</div>
             {bestWindows.length === 0 ? (
-              <div className="text-sm text-neutral-500">No GREEN windows of 2+ hours in the next 72 hours. Recheck after weather shifts.</div>
+              <div className="text-sm text-neutral-500">No two-hour window inside your limits in the next 72 hours. Recheck after the weather shifts.</div>
             ) : (
               <div className="space-y-2">
                 {bestWindows.map((w, i) => (
@@ -334,7 +343,7 @@ export function WeatherTab({ center, fieldName }: { center: [number, number]; fi
           <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-3">Next 24 hours</div>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {hourly.slice(0, 24).map((h, i) => {
-              const v = verdictOf(h, rainAhead(hourly, i)).verdict;
+              const v = verdictOf(h, rainAhead(hourly, i), L).verdict;
               const dot = v === "green" ? "bg-[#4CAF50]" : v === "yellow" ? "bg-yellow-400" : "bg-red-500";
               return (
                 <div key={i} className="min-w-[88px] rounded-sm border border-[#222] p-2 text-center" style={{ background: "#0f0f0f" }}>

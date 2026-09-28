@@ -1567,7 +1567,7 @@ export function PlannerTab({
               {!activeDrone && (
                 <div className="mt-2 rounded-sm border border-amber-500/40 bg-amber-500/5 px-2 py-1.5 text-[10px] leading-relaxed text-amber-300">
                   No aircraft selected, so this plan has no tank and no boom width. Acres and
-                  litres below are still real; the refill plan and the product quantities stay
+                  liters below are still real; the refill plan and the product quantities stay
                   blank until you pick one.
                 </div>
               )}
@@ -1673,9 +1673,9 @@ export function PlannerTab({
             ))}
           </div>
           <div className="mt-2 text-[10px] text-neutral-500 leading-relaxed">
-            Litres per hectare, by zone severity. This is the dose the DJI prescription raster is
-            built from, the .waypoints export only carries a pump on/off, so it has no rate to
-            inherit. Set it from your product label, not from the AI's written recommendation.
+            Liters per hectare, by zone severity. This is the dose the prescription raster is
+            built from; the .waypoints export only carries a pump on/off, so it has no rate to
+            inherit. Set it from your product label.
           </div>
           {zonesWithRates.length > 0 && (
             <div className="mt-2 border-t border-[#1f3a1f] pt-2 space-y-1">
@@ -1993,7 +1993,8 @@ export function PlannerTab({
           </div>
           <div className="mt-1 text-amber-200/70">
             We write rates in <b>{RX_RATE_UNIT}</b>. The file does not state its own unit, so a
-            different selection here mis-doses the field without any warning.
+            different selection here mis-doses the field without any warning. After import, check
+            the rate the controller shows against the rate here before takeoff.
           </div>
         </div>
         <button

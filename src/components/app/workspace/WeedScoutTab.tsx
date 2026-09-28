@@ -636,7 +636,7 @@ export function WeedScoutTab({
           <div className="flex items-center gap-2 text-neutral-400"><span className="inline-block w-3 h-3 rounded-full border-2" style={{ borderColor: VERDICT_COLOUR.weed }} /> Kept as a weed</div>
           <div className="flex items-center gap-2 text-neutral-400"><span className="inline-block w-3 h-3 rounded-full border-2" style={{ borderColor: VERDICT_COLOUR.unsure }} /> Unsure, left off the field</div>
           <div className="flex items-center gap-2 text-neutral-500"><span className="inline-block w-3 h-3 rounded-full border-2 border-dashed" style={{ borderColor: VERDICT_COLOUR.not_weed }} /> Removed</div>
-          <div className="text-neutral-500">Fill colour is what it reads as. Solid: saved.</div>
+          <div className="text-neutral-500">Fill color is what it reads as. Solid: saved.</div>
           <label className="flex items-center gap-2 cursor-pointer pt-0.5 border-t border-[#222] mt-0.5">
             <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} className="accent-[#4CAF50]" />
             Labels on the map

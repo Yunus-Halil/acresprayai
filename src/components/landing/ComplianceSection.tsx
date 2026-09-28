@@ -20,7 +20,7 @@ import { Reveal } from "./Reveal";
 const RECORD_FIELDS = [
   { label: "PRODUCT", detail: "What was applied, and the rate it went out at." },
   { label: "ACRES", detail: "Treated area, summed from the zones that were sprayed." },
-  { label: "CONDITIONS", detail: "Wind and temperature, as you recorded them on site at the time of the application." },
+  { label: "CONDITIONS", detail: "Wind and temperature at the time of the application, as you recorded them on site or accepted from a nearby weather station, labeled either way." },
   { label: "APPLICATOR", detail: "Certification number, date and time of the job." },
   { label: "FIELD", detail: "Field identification, with the boundary it was flown on." },
   { label: "SIGNATURE", detail: "A line for the applicator to sign the record." },

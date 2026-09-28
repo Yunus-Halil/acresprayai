@@ -92,7 +92,7 @@ export default function Fleet() {
 
   const groups = useMemo(() => aircraftByMake(), []);
   const [form, setForm] = useState({
-    name: "", choice: "DJI Agras T40", battery: 100, serial: "", notes: "",
+    name: "", choice: "", battery: 100, serial: "", notes: "",
   });
   // Operator-entered figures. Two shapes, deliberately separate: `custom` is a
   // whole airframe the operator described, `seededOverride` is the one or two
@@ -108,7 +108,7 @@ export default function Fleet() {
   const missing = entry ? missingSeededFields(entry, seededOverride) : { tank: false, swath: false };
 
   const resetForm = () => {
-    setForm({ name: "", choice: "DJI Agras T40", battery: 100, serial: "", notes: "" });
+    setForm({ name: "", choice: "", battery: 100, serial: "", notes: "" });
     setCustom(EMPTY_CUSTOM_AIRCRAFT);
     setSeededOverride({ kind: "override", tank_l: null, swath_m: null });
   };
@@ -164,8 +164,6 @@ export default function Fleet() {
       name: parsed.data.name,
       model: parsed.data.model,
       battery: parsed.data.battery,
-      signal: 100,
-      health: 100,
       status: "idle",
       serial: parsed.data.serial ?? null,
       notes: parsed.data.notes ?? null,
@@ -177,7 +175,7 @@ export default function Fleet() {
       });
       return;
     }
-    toast.success("Drone added · forecasting telemetry");
+    toast.success("Aircraft added");
     setActive(data as any);
     setOpen(false);
     resetForm();
@@ -400,7 +398,7 @@ export default function Fleet() {
                 <Label>Serial number <span className="text-muted-foreground font-normal">(optional)</span></Label>
                 <Input maxLength={60} value={form.serial}
                   onChange={e => setForm({ ...form, serial: e.target.value })}
-                  placeholder="e.g. T40-2024-001847" />
+                  placeholder="As printed on the airframe" />
               </div>
 
               <div>
@@ -463,7 +461,7 @@ export default function Fleet() {
         <Card className="p-5">
           {!active || !f || !activeResolved ? (
             <div className="h-80 flex items-center justify-center text-muted-foreground text-sm">
-              Select a drone to see its predicted telemetry.
+              Select an aircraft to see its predicted endurance.
             </div>
           ) : (
             <>

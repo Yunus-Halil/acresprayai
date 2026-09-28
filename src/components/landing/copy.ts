@@ -12,11 +12,13 @@
  * 2. No social proof until it is approved in writing.
  * 3. No em dashes and no en dashes in anything a visitor reads, labels
  *    included. Use a colon, a comma, a period or a middot.
- * 4. Not tied to one supplier. Imagery can come from any drone with a camera,
- *    RGB or multispectral, and the flight files are standard files a drone's
- *    controller already reads. The page names no drone maker, controller app
- *    or vendor file format: the customer base includes government work, and
- *    the copy must not tie the product to any one supplier.
+ * 4. Not tied to one supplier, and not claiming more than ships. Imagery can
+ *    come from any drone with a camera, RGB or multispectral. Spray files ship
+ *    for the aircraft in src/lib/exporters.ts and no others, so the page says
+ *    "the spray aircraft we support today" and never "any spray aircraft". It
+ *    names no drone maker, controller app or vendor file format: the customer
+ *    base includes government work, and the copy must not tie the product to
+ *    any one supplier.
  * 5. Written for a farmer, in US English. No jargon a farmer would have to
  *    look up (orthomosaic, RGB, waypoint, baseline, sub-swath), no British
  *    spelling (colour, centre, litre), and no jabs at other tools: say what
@@ -87,8 +89,8 @@ export const FEATURES = [
   },
   {
     num: "03",
-    title: "It flies whatever you fly",
-    body: "Survey flights and spray flights come out as standard flight files your drone's controller already reads. Map with any drone that has a camera. Spray with your own spray aircraft.",
+    title: "Files for the aircraft you fly",
+    body: "Map with any drone that has a camera. Spray missions come out as files for the spray aircraft we support today, and as ground-station waypoints for the rest. The list grows as we test each one.",
   },
   {
     num: "04",

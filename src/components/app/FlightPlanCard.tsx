@@ -93,7 +93,7 @@ export default function FlightPlanCard({
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Step 1</div>
           <h2 className="font-display text-xl">Create flight plan</h2>
           <p className="text-sm text-muted-foreground">
-            Plan the survey flight over <strong>{fieldName}</strong>, download it as a DJI KMZ, and fly it.
+            Plan the survey flight over <strong>{fieldName}</strong>, download the flight file, and fly it.
             The photographs come back here in step 2.
           </p>
         </div>

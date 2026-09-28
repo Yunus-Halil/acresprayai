@@ -345,7 +345,7 @@ export default function FlightPlanModal({
             {existing ? "Edit flight plan" : "Create flight plan"} · {fieldName}
           </DialogTitle>
           <div className="text-xs text-muted-foreground">
-            A survey flight over this field. Download it as a KMZ, fly it, then upload the photographs in step 2.
+            A survey flight over this field. Download the flight file, fly it, then upload the photographs in step 2.
           </div>
         </DialogHeader>
 
@@ -574,6 +574,14 @@ export default function FlightPlanModal({
             <select id="fp-camera" className={NUM} value={params.cameraKey} onChange={e => set("cameraKey", e.target.value)}>
               {Object.entries(CAMERAS).map(([k, c]) => <option key={k} value={k}>{c.name}</option>)}
             </select>
+            {/* Whether a real aircraft has accepted a file for this camera's
+                drone. A file that follows the published format can still be
+                refused at import, and the operator finds out in the field. */}
+            <div className="mt-1 text-[10px] leading-snug text-muted-foreground">
+              {CAMERAS[params.cameraKey]?.drone
+                ? "Import checked on a real aircraft for this drone."
+                : "Not yet checked on this aircraft: the file follows the published format. Try the import before the day."}
+            </div>
           </div>
           <div className="sm:col-span-2 lg:col-span-1">
             <Label className="text-[11px] text-muted-foreground">Flight direction</Label>

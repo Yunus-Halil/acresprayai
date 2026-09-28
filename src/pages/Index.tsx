@@ -16,7 +16,7 @@ const Index = () => (
   <main className="relative min-h-screen overflow-hidden bg-sw-paper font-grotesk text-sw-ink">
     <Seo
       title="SwathWise: Precision agriculture from the air"
-      description="Map your farm from any drone, find every weed and every patch that is not behaving like the rest of the field, treat only those spots, and keep the record. Any drone, any camera, any crop."
+      description="Map your farm from any drone, find the weeds and every patch that is not behaving like the rest of the field, treat only those spots, and keep the record. Any drone, any camera, any crop."
       path="/"
     />
     {/* Faint ink grid, fading out below the hero. */}

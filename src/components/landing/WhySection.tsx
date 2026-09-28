@@ -82,8 +82,8 @@ export const WhySection = () => (
       <Row
         mediaFirst
         title="One button, one flight, only the spots you confirmed"
-        body="Confirm the findings and the spray mission is built: a route that crosses treated ground and nothing else, the gallons it needs, the batteries, where the tank runs dry and where to refill. Simulate it first. Then download the flight file and fly it on your own spray aircraft."
-        footnote="STANDARD FLIGHT FILES · YOUR SPRAY AIRCRAFT · ANY CONTROLLER"
+        body="Confirm the findings and the spray mission is built: a route that crosses treated ground and nothing else, the gallons it needs, the batteries, where the tank runs dry and where to refill. Simulate it first. Then download the file for your aircraft and fly it yourself."
+        footnote="FILES FOR SUPPORTED SPRAY AIRCRAFT · GROUND-STATION WAYPOINTS"
         media={
           <Frame>
             <div className="grid gap-2 sm:grid-cols-[220px_1fr]">
@@ -114,7 +114,7 @@ export const WhySection = () => (
       <Row
         mediaFirst
         title="Your inputs, your prices, your units"
-        body="Tell it what you carry and what it costs you per acre. Every zone is priced in your numbers, in acres or hectares, gallons or liters, whichever you set once. It never invents a product, a rate or a saving."
+        body="Tell it what you carry and what it costs you per acre. Every zone is priced in your numbers, in acres or hectares, gallons or liters, whichever you set once. It never invents a product or a rate. The only comparison it draws is against spraying your whole field at your own rate."
         footnote="ACRES × YOUR PER-ACRE COST · ONE UNIT SETTING, EVERYWHERE"
         media={
           <Shot src="/screens/field-settings.png" alt="Field settings with per-acre input costs" />

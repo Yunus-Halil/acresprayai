@@ -42,12 +42,13 @@ import {
   checkScheduled, conflictsOnly, outlookFor, sortOutlooks, suggestedMove, summarise,
 } from "@/lib/sprayBoard";
 import {
-  type SprayWindow, type Verdict, DEFAULT_SPRAY_LIMITS, VERDICT_LABEL,
-  formatReason, rainAhead, shortReason, sprayVerdict,
+  type SprayLimits, type SprayWindow, type Verdict, DEFAULT_SPRAY_LIMITS, VERDICT_LABEL,
+  formatReason, rainAhead, shortReason, sprayLimitsFrom, sprayVerdict,
 } from "@/lib/sprayWindow";
+import { mergeFarmerSettings } from "@/lib/farmerSettings";
 import { type ScheduledMission, listMissions } from "@/lib/schedule";
 
-type Farm = BoardSite & { address: string };
+type Farm = BoardSite & { address: string; limits?: SprayLimits };
 type Suggestion = { id: number; name: string; admin1?: string; country?: string; latitude: number; longitude: number };
 
 const WMO: Record<number, { label: string; Icon: LucideIcon }> = {
@@ -274,7 +275,7 @@ export default function Weather() {
         if (!user) return;
         const { data: rows, error } = await supabase
           .from("fields")
-          .select("id,name,location,boundary")
+          .select("id,name,location,boundary,settings")
           .eq("user_id", user.id);
         if (error) throw error;
         if (!rows?.length) return;
@@ -291,6 +292,7 @@ export default function Weather() {
               id: key, name: row.name,
               address: row.location ?? "Defined boundary",
               lat: c[0], lng: c[1], source: "field",
+              limits: sprayLimitsFrom(mergeFarmerSettings(row.settings).condition_limits),
             });
             continue;
           }
@@ -383,7 +385,7 @@ export default function Weather() {
   // ------------------------------------------------------------- derived board
   const outlooks = useMemo(() => {
     const rows = farms.map(f =>
-      outlookFor(f, hourlyBySite.get(f.id) ?? null, { error: errBySite.get(f.id) ?? null }));
+      outlookFor(f, hourlyBySite.get(f.id) ?? null, { error: errBySite.get(f.id) ?? null, limits: f.limits }));
     return sortOutlooks(rows);
   }, [farms, hourlyBySite, errBySite]);
 
@@ -520,8 +522,8 @@ export default function Weather() {
   const L_ = DEFAULT_SPRAY_LIMITS;
   const windTxt = (kmh: number) => fmtWindSpeed(kmh / 3.6, units).text;
   const limitsLine =
-    `Wind ≤ ${windTxt(L_.windMaxKmh)}, gusts ≤ ${windTxt(L_.gustMaxKmh)}, ` +
-    `no rain within 6 hours, ${L_.humidityMin}-${L_.humidityMax}% humidity, ` +
+    `each field's own wind and temperature limits from its Settings (default wind ≤ ${windTxt(L_.windMaxKmh)}), ` +
+    `gusts ≤ ${windTxt(L_.gustMaxKmh)}, no rain within 6 hours, ${L_.humidityMin}-${L_.humidityMax}% humidity, ` +
     `at least ${fmtTemp(L_.tempMinC, units).text}`;
 
   const headline =
@@ -679,7 +681,7 @@ export default function Weather() {
           </ul>
         )}
         <p className="text-[11px] text-muted-foreground mt-3">
-          Sprayable means: {limitsLine}. These are conventional drift thresholds, not label law. Your product label may be stricter.
+          Sprayable means: {limitsLine}. These are the limits you set and conventional drift thresholds, not label law. The product label sets the legal limits and may be stricter.
         </p>
       </Card>
 
@@ -705,7 +707,7 @@ export default function Weather() {
             />
           </div>
           <div className="px-3 pb-3 text-[11px] text-muted-foreground">
-            Pins are coloured by whether that field is sprayable right now. Radar from RainViewer.
+            Pins are colored by whether that field is sprayable right now. Radar from RainViewer.
           </div>
         </Card>
 
@@ -749,7 +751,7 @@ export default function Weather() {
                   </div>
                   <div className="flex gap-1 overflow-x-auto pb-1">
                     {selectedHourly.slice(0, 24).map((h, i) => {
-                      const v = sprayVerdict(h, rainAhead(selectedHourly, i)).verdict;
+                      const v = sprayVerdict(h, rainAhead(selectedHourly, i), selectedFarm?.limits).verdict;
                       return (
                         <div key={h.time} className="min-w-[52px] rounded border p-1.5 text-center"
                              title={`${fmtHour(h.time)}: ${VERDICT_LABEL[v]}`}>
@@ -872,7 +874,7 @@ function FieldRow({
           <button className="hidden md:flex items-end gap-px h-8 flex-shrink-0" onClick={onSelect}
                   aria-label={`72 hour outlook for ${site.name}`}>
             {hourly.slice(0, 72).map((h, i) => {
-              const v = sprayVerdict(h, rainAhead(hourly, i)).verdict;
+              const v = sprayVerdict(h, rainAhead(hourly, i), (site as Farm).limits).verdict;
               return (
                 <span key={h.time} className="w-[3px] rounded-sm"
                       style={{ height: v === "green" ? 28 : v === "yellow" ? 18 : 9, background: VERDICT_HEX[v] }} />

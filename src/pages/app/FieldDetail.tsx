@@ -187,7 +187,7 @@ export default function FieldDetail() {
       );
       if (!proceed) return;
     } else if (withGPS < sample.length) {
-      toast.warning(`Only ${withGPS}/${sample.length} sampled images have GPS, orthomosaic accuracy may suffer.`);
+      toast.warning(`Only ${withGPS}/${sample.length} sampled images have GPS, so the stitched map may be less accurate.`);
     }
 
     setBusy(true);

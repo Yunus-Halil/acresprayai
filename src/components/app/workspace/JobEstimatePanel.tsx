@@ -295,7 +295,7 @@ export function JobEstimatePanel({
         <p className="m-0 text-[11px] leading-relaxed text-neutral-400">
           For quoting a job and loading the tender truck the night before, when nothing is
           powered on and the aircraft cannot tell you anything yet. Once the mission is on
-          the Agras, the aircraft is measuring and this is modelling, so the aircraft wins.
+          the aircraft, it is measuring and this is modeling, so the aircraft wins.
           Every assumption behind these numbers is on the right and every one is editable:
           if this disagrees with your controller, the input that differs is in that column.
         </p>
@@ -531,9 +531,8 @@ export function JobEstimatePanel({
                   In-canopy work
                   <span className="mt-0.5 block text-[10px] leading-relaxed text-neutral-500">
                     Caps effective swath at {fmtAltitude(IN_CANOPY_SWATH_CAP_M, units).text}.
-                    Field measurement on T50-class aircraft found
-                    no more than that for in-canopy fungicide passes, whatever the advertised
-                    width said.
+                    Sprayers101 measured no more than that on T50-class aircraft doing in-canopy
+                    fungicide passes, whatever the advertised width said.
                   </span>
                 </span>
               </label>
@@ -609,7 +608,7 @@ export function JobEstimatePanel({
                 min={0}
                 toShown={(m) => altitudeValue(m, units)}
                 fromShown={(v) => altitudeToM(v, units)}
-                hint={`DJI derates payload by ${fmtMass(PAYLOAD_DERATE_KG_PER_1000M, units).text} per ` +
+                hint={`The maker derates payload by ${fmtMass(PAYLOAD_DERATE_KG_PER_1000M, units).text} per ` +
                   `${fmtAltitude(1000, units).text}, so a full tank is smaller up high.`}
               />
               <label className="block">

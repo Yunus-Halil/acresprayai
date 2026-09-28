@@ -93,7 +93,7 @@ export default function Schedule() {
     try {
       await deleteMission(m.id);
       setOpen(null);
-      toast.success("Mission cancelled");
+      toast.success("Mission canceled");
       void load();
     } catch (e) {
       toast.error("Couldn't cancel the mission", {

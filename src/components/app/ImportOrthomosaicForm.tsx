@@ -232,7 +232,7 @@ export default function ImportOrthomosaicForm({ onImported, existingField }: {
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
               <span>
                 {meta.bandCount} bands. On a multispectral capture the first three are not red, green and
-                blue, and reading them as though they were gives plausible-looking, wrong colours (Phantom 4
+                blue, and reading them as though they were gives plausible-looking, wrong colors (Phantom 4
                 Multispectral and similar). Say which band is which before importing.
               </span>
             </div>

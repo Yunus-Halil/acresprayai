@@ -60,6 +60,7 @@ import { useDeveloperMode } from "@/hooks/useDeveloperMode";
 import FlightLogTab from "@/components/app/workspace/FlightLogTab";
 import { seedUnitSystem } from "@/hooks/useUnitSystem";
 import WeatherTab, { HeaderWeather } from "@/components/app/workspace/WeatherTab";
+import { sprayLimitsFrom } from "@/lib/sprayWindow";
 import SettingsTab from "@/components/app/workspace/SettingsTab";
 import { loadAnnotations } from "@/components/app/workspace/layers";
 import Seo from "@/components/Seo";
@@ -1120,7 +1121,9 @@ export default function OrthomosaicViewer() {
             }}
           />
         </div>
-        {activeTab === "weather" && <WeatherTab center={center} fieldName={taskName} />}
+        {activeTab === "weather" && (
+          <WeatherTab center={center} fieldName={taskName} limits={sprayLimitsFrom(settings.condition_limits)} />
+        )}
         {activeTab === "treatment" && dev.weedScout && (
           <WeedScoutTab
             boundary={boundary}

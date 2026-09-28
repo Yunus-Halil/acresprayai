@@ -653,8 +653,8 @@ export default function ReportsTab({
         pdf.setFont("helvetica", "normal"); pdf.setFontSize(7); pdf.setTextColor(150);
         pdf.text(
           hasGridAssessment && zoneRows.length > 0
-            ? "Framed to the flown area: orthomosaic, field boundary, and the treatment-grid zones summarised below. Surrounding basemap is outside the flight."
-            : "Framed to the flown area: orthomosaic and field boundary; surrounding basemap is outside the flight. No treatment zones are drawn because none were marked.",
+            ? "Framed to the flown area: field map, field boundary, and the treatment-grid zones summarized below. Surrounding basemap is outside the flight."
+            : "Framed to the flown area: field map and field boundary; surrounding basemap is outside the flight. No treatment zones are drawn because none were marked.",
           M, y,
         );
         y += 10;
@@ -857,12 +857,12 @@ export default function ReportsTab({
           pdf.text(fmtVol(litersApplied!, unit), W - M, y, { align: "right" });
           y += 12;
           pdf.setTextColor(76, 175, 80);
-          pdf.text("Reduction vs that baseline (measured, rate-weighted)", M, y);
+          pdf.text("Less than spraying the whole field at your medium rate (measured, rate-weighted)", M, y);
           pdf.text(`${savings.pct}%`, W - M, y, { align: "right" });
           y += 14;
         } else if (savings.kind === "projected") {
           pdf.setTextColor(76, 175, 80);
-          pdf.text("Planned reduction vs that baseline (projection, not measured)", M, y);
+          pdf.text("Less than spraying the whole field at your medium rate (planned, not measured)", M, y);
           pdf.text(`${savings.pct}%`, W - M, y, { align: "right" });
           y += 14;
         } else {
@@ -1071,7 +1071,7 @@ export default function ReportsTab({
         pdf.line(M, H - FOOTER_H + 8, W - M, H - FOOTER_H + 8);
         pdf.setFont("helvetica", "normal"); pdf.setFontSize(7.5); pdf.setTextColor(130);
         pdf.text(
-          "Retain this application record for the period required by federal and state regulation (typically two years or longer).",
+          "Keep this application record for as long as your state and federal rules require.",
           M, H - 28,
         );
         pdf.setFontSize(8); pdf.setTextColor(150);

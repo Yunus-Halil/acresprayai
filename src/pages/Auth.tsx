@@ -87,7 +87,7 @@ export default function Auth() {
             {/* Keep in step with the landing page: it finds what departs from
                 the field and plans the flight that treats it. No savings
                 figure, no species from pixels. */}
-            <p className="opacity-80">Map the field from any drone, find every weed and every patch that is not behaving like the rest, then treat only those.</p>
+            <p className="opacity-80">Map the field from any drone, find the weeds and every patch that is not behaving like the rest, then treat only those.</p>
           </div>
         </div>
       </div>

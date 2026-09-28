@@ -232,7 +232,32 @@ export const verdictRank = (v: Verdict): number =>
   v === "green" ? 0 : v === "yellow" ? 1 : 2;
 
 export const VERDICT_LABEL: Record<Verdict, string> = {
-  green: "Go",
+  green: "Within limits",
   yellow: "Marginal",
-  red: "No go",
+  red: "Outside limits",
 };
+
+/**
+ * The operator's own limits, from the field's settings, over the defaults.
+ *
+ * Settings carries a wind ceiling and a hot-temperature flag (the same two the
+ * Log Flight dialog and the report use), so the weather verdict judges against
+ * the numbers the operator chose rather than a ceiling they never saw. The
+ * marginal wind band sits at 80% of the ceiling. Everything else stays at the
+ * conventional default until Settings grows a field for it. None of this is
+ * the product label: the label sets the legal limits and only the operator has
+ * read theirs.
+ */
+export function sprayLimitsFrom(
+  cl: { wind_mph: number; temp_f: number } | null | undefined,
+  base: SprayLimits = DEFAULT_SPRAY_LIMITS,
+): SprayLimits {
+  if (!cl) return base;
+  const windMaxKmh = cl.wind_mph * 1.609344;
+  return {
+    ...base,
+    windMaxKmh,
+    windWarnKmh: windMaxKmh * 0.8,
+    tempWarnC: (cl.temp_f - 32) * 5 / 9,
+  };
+}
