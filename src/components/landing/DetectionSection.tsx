@@ -7,11 +7,9 @@ import { DETECTION } from "./copy";
  * planning because a farmer who does not believe the finding will not read
  * about the flying.
  *
- * Every card is a real step in src/lib/weedScout, in the order the scan runs
- * them, and the wording tracks what the code does. The closing caveat is not a
- * legal line tucked under the fold: it is set in the same type as the claims,
- * because a limit a reader finds for themselves later costs the whole page its
- * credibility.
+ * A headline and a real scan, nothing more. Farmers want to see the finding,
+ * not how the scan gets there, so the steps of the method stay in
+ * docs/features/weed-scout.md and off this page.
  */
 export const DetectionSection = () => (
   <section
@@ -42,27 +40,6 @@ export const DetectionSection = () => (
           imgClassName="mx-auto w-full max-h-[760px] object-contain"
         />
       </Reveal>
-
-      <div className="mt-14 grid gap-x-10 gap-y-12 sm:mt-20 sm:grid-cols-2 lg:grid-cols-3">
-        {DETECTION.steps.map((step, i) => (
-          <Reveal key={step.label}>
-            <div className="border-t border-white/15 pt-5">
-              <div className="flex items-baseline justify-between gap-4">
-                <div className="font-plex text-[11px] tracking-[0.1em] text-sw-bright-hi">
-                  {step.label}
-                </div>
-                <div className="font-plex text-[11px] text-sw-on-dark-faint">
-                  {String(i + 1).padStart(2, "0")}
-                </div>
-              </div>
-              <h3 className="m-0 mt-3 text-[20px] font-semibold leading-[1.2] tracking-[-0.015em] text-sw-paper">
-                {step.title}
-              </h3>
-              <p className="m-0 mt-3 text-[15px] leading-[1.55] text-sw-on-dark">{step.body}</p>
-            </div>
-          </Reveal>
-        ))}
-      </div>
 
     </div>
   </section>

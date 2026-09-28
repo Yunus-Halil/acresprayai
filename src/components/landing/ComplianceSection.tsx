@@ -4,7 +4,7 @@ import { Reveal } from "./Reveal";
  * The application record, between the cockpit and the three steps.
  *
  * It sits here because the record is the last thing that happens in a job and
- * the first thing an operator gets asked for afterwards. The licence is theirs,
+ * the first thing an operator gets asked for afterwards. The license is theirs,
  * so the paperwork is their exposure and not the grower's.
  *
  * The rule in copy.ts about not claiming a capability we lack binds hardest
@@ -20,7 +20,7 @@ import { Reveal } from "./Reveal";
 const RECORD_FIELDS = [
   { label: "PRODUCT", detail: "What was applied, and the rate it went out at." },
   { label: "ACRES", detail: "Treated area, summed from the zones that were sprayed." },
-  { label: "CONDITIONS", detail: "Wind and temperature at the time of the application." },
+  { label: "CONDITIONS", detail: "Wind and temperature, as you recorded them on site at the time of the application." },
   { label: "APPLICATOR", detail: "Certification number, date and time of the job." },
   { label: "FIELD", detail: "Field identification, with the boundary it was flown on." },
   { label: "SIGNATURE", detail: "A line for the applicator to sign the record." },
@@ -36,10 +36,10 @@ export const ComplianceSection = () => (
         The record you would have to write anyway.
       </h2>
       <p className="m-0 mt-5 max-w-[640px] text-[17px] leading-[1.55] text-sw-muted">
-        Every state wants a record after the job. Most of them get one written at the
-        kitchen table from memory, hours after the tank was empty. SwathWise already holds
-        every field that record asks for, because it held them while you were flying. The
-        record comes off the job that was flown. Nothing is retyped.
+        Most states want a record after the job, and most of those get written from
+        memory, hours after the tank was empty. SwathWise already holds what that record
+        asks for, because it held it while you were flying. The record comes off the job
+        that was flown. Nothing is retyped.
       </p>
 
       <div className="mt-10 grid gap-x-10 gap-y-7 sm:mt-14 sm:grid-cols-2 lg:grid-cols-3">
@@ -63,8 +63,9 @@ export const ComplianceSection = () => (
           <p className="m-0 mt-4 text-base leading-[1.55] text-sw-muted">
             The zones you confirmed are the zones that get recorded. There is no second
             pass where the paperwork drifts away from the job, because there is no second
-            pass. If a grower disputes an application, or a neighbour calls in a drift
-            complaint, this is the document that says what left the tank and where.
+            pass. If a grower asks what was applied, or a neighbor has a question about
+            drift, this is the record of the job: the zones, the product, the rate and the
+            acres.
           </p>
         </div>
         <div>
@@ -73,11 +74,20 @@ export const ComplianceSection = () => (
           </h3>
           <p className="m-0 mt-4 text-base leading-[1.55] text-sw-muted">
             Hand it over at the end of the job. It has the field, the product, the rate and
-            the acres on it, signed. That is a different conversation from a photo of a
-            notebook page, and it is the one that gets you called back next season.
+            the acres on it, with a line for your signature. That is a different conversation
+            from a photo of a notebook page, and it is the one that gets you called back next
+            season.
           </p>
         </div>
       </div>
+
+      {/* The limit, in the same type as the claims. The record is built from the
+          job; whether it satisfies a given state's rules has not been checked
+          and the page does not say it has. The flight is the pilot's too. */}
+      <p className="m-0 mt-10 max-w-[640px] font-plex text-xs leading-[1.6] tracking-[0.06em] text-sw-muted sm:mt-14">
+        THE RECORD IS BUILT FROM THE JOB. CHECKING IT AGAINST YOUR STATE'S REQUIREMENTS IS
+        STILL THE APPLICATOR'S RESPONSIBILITY, AND SO IS THE FLIGHT.
+      </p>
 
     </section>
   </Reveal>

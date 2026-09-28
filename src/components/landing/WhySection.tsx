@@ -36,7 +36,7 @@ const Row = ({ title, body, footnote, media, mediaFirst = false }: RowProps) => 
  *
  * Not one aircraft. The route capture happens to be from a spray drone, and the
  * caption says which; the copy talks about the file, because the file is what
- * the product actually produces and what any DJI or QGC controller reads.
+ * the product actually produces. No manufacturer is named (copy.ts, rule 4).
  */
 export const WhySection = () => (
   <section id="why" className="relative mx-auto max-w-[1200px] px-5 pt-24 sm:px-10 sm:pt-[130px]">
@@ -50,14 +50,14 @@ export const WhySection = () => (
       <p className="m-0 mt-5 max-w-[620px] text-[17px] leading-[1.55] text-sw-muted">
         A weed you can see on a map is a weed you can put a number on. SwathWise turns every
         confirmed finding into acres, into a cost against your own inputs, into a spray route
-        for whatever you fly, and into the record you would have had to write anyway.
+        for your spray aircraft, and into the record you would have had to write anyway.
       </p>
     </Reveal>
 
     <Reveal className="mt-12 sm:mt-16">
       <Shot
         src="/screens/mission-route.jpg"
-        alt="SwathWise flight planner: a spray mission over a stitched orthomosaic, start to end"
+        alt="SwathWise flight planner: a spray mission over a stitched field map, start to end"
         caption="FLIGHT PLANNER · SPRAY MISSION OVER CONFIRMED FINDINGS"
         status={<span className="text-sw-bright-hi">● SPRAYING</span>}
         padding="p-2.5"
@@ -81,9 +81,9 @@ export const WhySection = () => (
 
       <Row
         mediaFirst
-        title="One button, one flight, only those spots"
-        body="Confirm the findings and the spray mission is built: a route that crosses treated ground and nothing else, the litres it needs, the batteries, where the tank runs dry and where to refill. Simulate it first. Then download a standard waypoint file and fly it on your own aircraft."
-        footnote="WPML AND QGC WAYPOINTS · DJI FLY · DJI PILOT · ANY WPML CONTROLLER"
+        title="One button, one flight, only the spots you confirmed"
+        body="Confirm the findings and the spray mission is built: a route that crosses treated ground and nothing else, the gallons it needs, the batteries, where the tank runs dry and where to refill. Simulate it first. Then download the flight file and fly it on your own spray aircraft."
+        footnote="STANDARD FLIGHT FILES · YOUR SPRAY AIRCRAFT · ANY CONTROLLER"
         media={
           <Frame>
             <div className="grid gap-2 sm:grid-cols-[220px_1fr]">
@@ -94,7 +94,7 @@ export const WhySection = () => (
               />
               <Screenshot
                 src="/screens/mission-route.jpg"
-                alt="Stitched orthomosaic with the planned route"
+                alt="Stitched field map with the planned route"
                 className="h-[300px] w-full object-cover sm:h-[460px]"
               />
             </div>
@@ -114,7 +114,7 @@ export const WhySection = () => (
       <Row
         mediaFirst
         title="Your inputs, your prices, your units"
-        body="Tell it what you carry and what it costs you per acre. Every zone is priced in your numbers, in acres or hectares, gallons or litres, whichever you set once. It never invents a product, a rate or a saving."
+        body="Tell it what you carry and what it costs you per acre. Every zone is priced in your numbers, in acres or hectares, gallons or liters, whichever you set once. It never invents a product, a rate or a saving."
         footnote="ACRES × YOUR PER-ACRE COST · ONE UNIT SETTING, EVERYWHERE"
         media={
           <Shot src="/screens/field-settings.png" alt="Field settings with per-acre input costs" />

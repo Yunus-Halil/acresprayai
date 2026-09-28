@@ -1,5 +1,5 @@
 import { FlightPath } from "./FlightPath";
-import { DemoLink, PilotLink } from "./Cta";
+import { PilotLink } from "./Cta";
 import { HERO, STATUS_BADGE } from "./copy";
 
 export const Hero = () => (
@@ -55,7 +55,6 @@ export const Hero = () => (
         style={{ animationDelay: "0.4s" }}
       >
         <PilotLink className="bg-sw-green text-white hover:bg-sw-green-deep" />
-        <DemoLink className="border border-sw-edge bg-sw-card text-sw-ink hover:border-sw-ink" />
       </div>
     </div>
 

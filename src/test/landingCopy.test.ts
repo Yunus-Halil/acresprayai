@@ -1,9 +1,9 @@
 // The landing page's copy, held to its own rules.
 //
 // copy.ts states four rules at the top: no capability the product lacks, no
-// social proof, no em or en dashes in anything a visitor reads, and not tied to
-// one aircraft. The first two are judgement and get reviewed by a person. The
-// last two are mechanical, and a mechanical rule that is not enforced is a rule
+// social proof, no em or en dashes in anything a visitor reads, and data
+// agnostic with no manufacturer named. The first two are judgement and get
+// reviewed by a person. The last two are mechanical, and a mechanical rule that is not enforced is a rule
 // every later edit breaks. This is the enforcement.
 //
 // It also pins the closed-testing state: no "Sign up", no "Apply to Pilot", one
@@ -12,18 +12,17 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  AUDIENCES, CTA_PRIMARY, CTA_SECONDARY, DETECTION, FEATURES, HERO, STATUS_BADGE, STEPS,
+  AUDIENCES, CTA_PRIMARY, DETECTION, FEATURES, HERO, STATUS_BADGE, STEPS,
 } from "@/components/landing/copy";
 
 const LANDING = join(__dirname, "..", "components", "landing");
 
 /** Every string a visitor can read, flattened out of copy.ts. */
 const VISIBLE: string[] = [
-  STATUS_BADGE, CTA_PRIMARY, CTA_SECONDARY,
+  STATUS_BADGE, CTA_PRIMARY,
   HERO.kicker, HERO.headline, HERO.sub, ...HERO.bullets,
   ...FEATURES.flatMap(f => [f.title, f.body]),
   DETECTION.eyebrow, DETECTION.headline, DETECTION.sub,
-  ...DETECTION.steps.flatMap(s => [s.label, s.title, s.body]),
   ...STEPS.flatMap(s => [s.title, s.body]),
   ...AUDIENCES.flatMap(a => [a.title, a.body]),
 ];
@@ -49,25 +48,72 @@ describe("the dash rule", () => {
   });
 });
 
-describe("not one aircraft", () => {
-  it("the visible copy does not tie the product to the Agras", () => {
-    // Rule 4. The product emits WPML and QGC waypoint files, which DJI Fly, DJI
-    // Pilot and most ground stations read, and imagery can come from any camera.
-    // "No Agras required" is the one permitted mention, because it says so.
-    const offenders = VISIBLE.filter(s => /agras/i.test(s) && !/no agras required/i.test(s));
-    expect(offenders).toEqual([]);
+describe("data agnostic", () => {
+  // Rule 4. No drone maker, controller app or vendor file format is named
+  // anywhere a visitor reads, the landing components included.
+  const BRANDS = /\b(dji|agras|mavic|matrice|wpml|qgc)\b|dji fly|dji pilot/i;
+
+  it("the visible copy names no manufacturer or vendor format", () => {
+    expect(VISIBLE.filter(s => BRANDS.test(s))).toEqual([]);
   });
 
-  it("no landing component names the Agras as the aircraft either", () => {
-    const lines = componentSource().split("\n").filter(l => /agras/i.test(l));
+  it("nor does any inline string in the landing components", () => {
+    const lines = componentSource().split("\n").filter(l => BRANDS.test(l));
     expect(lines).toEqual([]);
   });
 
-  it("says which files it produces and what reads them", () => {
-    const all = VISIBLE.join(" ");
-    expect(all).toMatch(/WPML/);
-    expect(all).toMatch(/DJI Fly/);
-    expect(all).toMatch(/QGC/);
+  it("still says any drone will do for the imagery", () => {
+    expect(VISIBLE.join(" ")).toMatch(/any drone/i);
+  });
+});
+
+describe("written for a farmer", () => {
+  // Rule 5. Mechanical half: no British spelling and no jargon a farmer would
+  // have to look up. The judgement half (tone, jabs at other tools) is read by
+  // a person.
+  const BRITISH = /\b(colour(ed|s)?|centre|litres?|neighbours?|modelled|licence|programme|metres?)\b/i;
+  const JARGON = /\b(orthomosaic|multispectral|waypoint|sub-swath|prescription grid|data agnostic|amp-seconds)\b/i;
+
+  it("the visible copy is in US English", () => {
+    expect(VISIBLE.filter(s => BRITISH.test(s))).toEqual([]);
+  });
+
+  it("nor is any inline string in the landing components in British English", () => {
+    const lines = componentSource().split("\n").filter(l => BRITISH.test(l));
+    expect(lines).toEqual([]);
+  });
+
+  it("uses no jargon a farmer would have to look up", () => {
+    expect(VISIBLE.filter(s => JARGON.test(s))).toEqual([]);
+    const lines = componentSource().split("\n").filter(l => JARGON.test(l));
+    expect(lines).toEqual([]);
+  });
+
+  it("puts no unmeasured time saving on the page", () => {
+    expect(VISIBLE.join(" ")).not.toMatch(/\b(ten|\d+) minutes\b/i);
+  });
+});
+
+describe("the pilot flies", () => {
+  it("says the flight and the record are the applicator's", () => {
+    const src = componentSource();
+    expect(src).toMatch(/APPLICATOR'S RESPONSIBILITY/);
+    expect(VISIBLE.join(" ")).toMatch(/your license/i);
+  });
+
+  it("never puts 'any drone' in the same sentence as spraying on its own", () => {
+    // "Any drone" is the imagery claim. Only a spray aircraft sprays.
+    const sentences = VISIBLE.flatMap(s => s.split(/(?<=[.!?])\s+/));
+    const offenders = sentences.filter(s => /any drone/i.test(s) && /spray/i.test(s) && !/spray aircraft/i.test(s));
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("nothing points off-site", () => {
+  it("has no demo video link and no second call to action", () => {
+    const src = componentSource();
+    expect(src).not.toMatch(/drive\.google|youtube|vimeo/i);
+    expect(src).not.toMatch(/Watch it work/);
   });
 });
 

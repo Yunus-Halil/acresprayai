@@ -6,7 +6,7 @@ export const Steps = () => (
     <section id="how">
       <div className="font-plex text-xs tracking-[0.1em] text-sw-green">HOW IT WORKS</div>
       <h2 className="m-0 mt-4 text-[clamp(30px,5vw,48px)] font-semibold tracking-[-0.03em] text-sw-ink sm:mt-[18px]">
-        Get started in 3 steps
+        How a job works
       </h2>
 
       <div className="mt-10 grid gap-8 sm:mt-14 sm:gap-10 md:grid-cols-3">

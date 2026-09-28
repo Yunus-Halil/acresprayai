@@ -27,7 +27,7 @@ export const Audiences = () => (
       </div>
 
       <p className="mt-7 font-plex text-xs leading-relaxed text-sw-muted">
-        YOUR FIELDS, YOUR DATA. IMAGERY AND ANALYSIS STAY IN YOUR ACCOUNT.
+        YOUR FIELDS, YOUR DATA. IMAGERY AND ANALYSIS STAY IN YOUR ACCOUNT AND ARE NOT SHARED WITH ANYONE ELSE.
       </p>
     </section>
   </Reveal>

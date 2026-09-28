@@ -1,16 +1,16 @@
 import { Reveal } from "./Reveal";
-import { DemoLink } from "./Cta";
 import { Frame } from "./Shot";
 import { SimVideo } from "./SimVideo";
 
 /**
  * The flagship shot: the flight planner mid-simulation, tank dynamics live.
  *
- * Every claim on this page is checkable against the product. The specifics
- * below are chosen because they are TRUE and unusual, which is the only kind
- * of boast worth making: a farmer who buys on a promise and finds it missing
- * does not buy twice. Where a number is a model rather than a measurement, the
- * app says so on its own face, and so does the last line here.
+ * Every claim on this page is checkable against the product, and every one is
+ * put in terms of what the operator gets out of it: loads, batteries, refill
+ * stops. The physics underneath (slosh, center-of-gravity shift, load-dependent
+ * draw) is what makes those numbers honest, but it stays in the code and in
+ * offrow/FLIGHT.md. A farmer reading this page wants to know how many batteries
+ * to bring, not how the estimate is integrated.
  */
 
 type SpecProps = { value: string; label: string; detail: string };
@@ -41,11 +41,11 @@ export const CockpitSection = () => (
           Fly the whole job before you fly it.
         </h2>
         <p className="m-0 mt-5 max-w-[620px] text-[17px] leading-[1.55] text-sw-on-dark">
-          Press play and watch the aircraft work: every pass, every turn, the tank
-          draining, the centre of gravity shifting as the liquid moves, the battery
-          going down faster while it is heavy. Scrub to any minute of the mission and
-          the numbers are the numbers for <em>that</em> minute. Nothing here is a
-          progress bar pretending to be physics.
+          Press play and watch the aircraft work the field: every pass, every turn, the
+          tank draining, the battery going down faster while it is heavy. Scrub to any
+          minute of the mission and you see the tank, the battery and the distance for
+          <em>that</em> minute. Before you leave the yard, you know how many loads it takes,
+          how many batteries, and where you will stop to refill.
         </p>
       </Reveal>
 
@@ -62,46 +62,39 @@ export const CockpitSection = () => (
               { src: "/video/cockpit-sim.webm", type: "video/webm" },
               { src: "/video/cockpit-sim.mp4", type: "video/mp4" },
             ]}
-            label="The SwathWise flight planner running a mission simulation: the aircraft flying its spray passes over the orthomosaic while the tank dynamics panel, battery, spray tank and distance readouts update in step"
+            label="The SwathWise flight planner running a mission simulation: the aircraft flying its spray passes over the stitched field map while the tank dynamics panel, battery, spray tank and distance readouts update in step"
             className="mx-auto w-full"
           />
         </Frame>
       </Reveal>
 
-      {/* The full recording, from the section that shows a clip of it. The demo
-          used to have exactly one door, in the hero, which a visitor has
-          usually scrolled past by the time they want it. */}
-      <Reveal className="mt-8">
-        <DemoLink className="border border-white/20 text-sw-paper hover:border-sw-bright-hi hover:text-sw-bright-hi" />
-      </Reveal>
-
       <div className="mt-14 grid gap-x-10 gap-y-9 sm:mt-16 sm:grid-cols-2 lg:grid-cols-4">
         <Reveal>
           <Spec
-            value="Slosh"
-            label="FLUID DYNAMICS"
-            detail="Liquid does not teleport. Pitch into a turn and the tank leans, the centre of gravity moves, and the motors pay for it, modelled continuously rather than as an on/off state."
+            value="Refills"
+            label="TANK PLANNING"
+            detail="It works out where the tank runs dry on the route and plans the refill stops before you take off, so you are not guessing at the truck."
           />
         </Reveal>
         <Reveal>
           <Spec
-            value="Amp-seconds"
-            label="ENDURANCE MODEL"
-            detail="A full tank costs more per second than an empty one. Battery prediction integrates real draw across the mission instead of drawing a straight line through time."
+            value="Batteries"
+            label="BATTERY PLANNING"
+            detail="A full tank drains a battery faster than an empty one. The estimate follows the load through the whole mission, so the battery count is for your job, not a rule of thumb."
           />
         </Reveal>
         <Reveal>
           <Spec
-            value="One swath"
-            label="PRESCRIPTION GRID"
-            detail="Rates are assigned in cells the size of your boom. Sub-swath precision is refused rather than promised, because no aircraft can fly it."
+            value="One pass"
+            label="RATE PER PASS"
+            detail="Rates are set in strips the width of your boom, because that is what the aircraft can actually fly. Nothing finer is promised."
           />
         </Reveal>
         <Reveal>
           <Spec
             value="Your call"
             label="EVERY SUGGESTION"
-            detail="Mark a few patches and it finds the rest. Scan a fresh field and it surfaces what stands out. Nothing sprays until you say so."
+            detail="Mark a few patches and it finds the rest. Scan a fresh field and it shows you what stands out. You decide what gets sprayed, and you fly it."
           />
         </Reveal>
       </div>

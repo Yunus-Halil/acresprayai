@@ -360,7 +360,7 @@ export default function PilotApply() {
                     <input
                       id="drone_model"
                       name="drone_model"
-                      placeholder="e.g. DJI Agras T40"
+                      placeholder="Make and model"
                       value={values.drone_model}
                       onChange={(e) => set("drone_model")(e.target.value)}
                       onBlur={blur("drone_model")}

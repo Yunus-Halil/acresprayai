@@ -12,37 +12,35 @@
  * 2. No social proof until it is approved in writing.
  * 3. No em dashes and no en dashes in anything a visitor reads, labels
  *    included. Use a colon, a comma, a period or a middot.
- * 4. Not tied to one aircraft. Imagery can come from any drone with a camera,
- *    RGB or multispectral, and the flight files are DJI WPML and QGC WPL,
- *    which is what DJI Fly, DJI Pilot and most ground stations read. The
- *    product is not an Agras accessory and the page must not read like one.
+ * 4. Not tied to one supplier. Imagery can come from any drone with a camera,
+ *    RGB or multispectral, and the flight files are standard files a drone's
+ *    controller already reads. The page names no drone maker, controller app
+ *    or vendor file format: the customer base includes government work, and
+ *    the copy must not tie the product to any one supplier.
+ * 5. Written for a farmer, in US English. No jargon a farmer would have to
+ *    look up (orthomosaic, RGB, waypoint, baseline, sub-swath), no British
+ *    spelling (colour, centre, litre), and no jabs at other tools: say what
+ *    this one does, not what the others get wrong.
+ * 6. The pilot flies. Every mention of spraying keeps the operator in the
+ *    seat: their aircraft, their license, their say-so. "Any drone" is a
+ *    mapping claim and never sits next to spraying on its own.
+ * 7. Nothing is said more than once. Each idea has one home on the page.
  */
 
 /**
  * The status band, top of the hero and again above the request button.
  *
- * Closed testing, not a pilot programme with an open door. The form still
+ * Closed testing, not a pilot program with an open door. The form still
  * exists, it just asks for access rather than promising a place. The window is
  * a date and not "this season" so a reader can tell when it has gone stale.
  */
 export const STATUS_BADGE = "CLOSED TESTING · INVITE ONLY · OPENING Q4 2026";
 
-/** Both CTAs, in one place, so every button on the page says the same thing. */
+/** The one call to action, in one place, so every button on the page says the same thing. */
 export const CTA_PRIMARY = "Request access";
-export const CTA_SECONDARY = "Watch it work";
 
-/** The one address the site hands out. Used by the footer and the status band. */
+/** The one address the site hands out. Used by the footer and the closed-testing band. */
 export const CONTACT_EMAIL = "yunus@swathwise.com";
-
-/**
- * The full walkthrough recording, hosted on Google Drive.
- *
- * Kept here rather than inline so there is one place to change when the demo
- * is re-recorded. Anything linking to it opens a new tab and carries
- * rel="noopener".
- */
-export const DEMO_VIDEO_URL =
-  "https://drive.google.com/file/d/1JvYL2-GxRVNG5r9Lvd31x5iYHF6C8NRx/view?usp=sharing";
 
 /**
  * The hero.
@@ -64,14 +62,15 @@ export const HERO = {
   headline: "Every weed on your farm. Found from the air.",
   sub:
     "SwathWise is precision agriculture for any drone and any field. It maps your farm from "
-    + "the imagery, measures every plant against your own crop, and shows you exactly where the "
-    + "weeds are, along with the bare ground, the thin stand and the wet patches. Then it plans "
-    + "the flight that treats only those spots, and writes the record when you land.",
+    + "the imagery, measures every plant against your own crop, and shows you where the weeds "
+    + "are, along with every patch that is not behaving like the rest of the field. Confirm what "
+    + "you want treated, and it plans the spray flight that covers only those spots and writes "
+    + "the record when you land. For the farmer who owns the fields and the operator who sprays them.",
   bullets: [
     "Any drone, any camera, any crop",
-    "Every plant compared to your field",
-    "Treat only what it found",
+    "Every plant measured against your own field",
     "Nothing sprays until you say so",
+    "Runs in a browser. Nothing to install",
   ],
 };
 
@@ -79,17 +78,17 @@ export const FEATURES = [
   {
     num: "01",
     title: "It reads the whole farm",
-    body: "Not a sample. Every square foot of your imagery is measured: colour, brightness, vegetation, texture, and how each patch compares to the field around it and to the field as a whole. Weeds, bare ground, thin stand, wet patches, all from the same pass.",
+    body: "Not a sample. Every square foot of your imagery is measured: color, brightness, how much of it is plant, and how each patch compares to the ground around it. Weeds, bare ground, thin stand, wet patches, all from one flight.",
   },
   {
     num: "02",
     title: "It knows what your crop looks like",
-    body: "The baseline is your own field, not a textbook. Every plant is sized and coloured against the plants beside it, so a weed stands out because it is not corn, not because someone told it what corn is.",
+    body: "It learns from your own field, not a textbook. Every plant is sized and colored against the plants beside it, so a weed stands out because it is not corn, not because someone told it what corn is.",
   },
   {
     num: "03",
     title: "It flies whatever you fly",
-    body: "Survey flights and spray flights come out as standard waypoint files. Load them into DJI Fly, DJI Pilot, or any controller that reads WPML or QGC waypoints. No Agras required.",
+    body: "Survey flights and spray flights come out as standard flight files your drone's controller already reads. Map with any drone that has a camera. Spray with your own spray aircraft.",
   },
   {
     num: "04",
@@ -99,68 +98,33 @@ export const FEATURES = [
 ];
 
 /**
- * The detection section. This is the product, so it gets the most words.
- *
- * Each card is a real step in src/lib/weedScout and the phrasing tracks what
- * the code does. Where a step has a limit, the limit is stated in the same
- * breath, because a farmer who finds it later trusts nothing else on the page.
+ * The detection section: a headline, one paragraph, and a real scan. No
+ * walkthrough of the method. Farmers care what it finds, not how.
  */
 export const DETECTION = {
   eyebrow: "HOW IT FINDS THEM",
   headline: "It does not guess where the weeds are. It measures.",
   sub:
-    "Most tools look for a picture of a weed. SwathWise does something harder and more honest: "
-    + "it learns what your field looks like today, from your field, and then finds everything that "
-    + "does not fit. It runs in your browser, on your imagery, with no model anyone else trained.",
-  steps: [
-    {
-      label: "TILE BY TILE",
-      title: "The whole field becomes a grid of measurements",
-      body: "Your boundary is cut into ground squares, sized to the field so a trial plot and a quarter section both get a fair baseline. Every square is measured for colour, greenness, brightness and how much of it is plant. Nothing is skipped.",
-    },
-    {
-      label: "THE FIELD IS THE BASELINE",
-      title: "Normal is whatever most of your field is doing",
-      body: "The baseline is the tightest band that holds half your field, so a weed patch covering a third of it cannot hide by being common. Every square is scored against the field and against its own neighbours, and a square is flagged only when two independent signals agree.",
-    },
-    {
-      label: "REGIONS",
-      title: "Flagged ground grows into shapes with an area",
-      body: "Touching squares join into a region with an outline, an acreage and a class: bare or dry ground, wet ground, thin stand, dense vegetation, paler, greener, different. This is where precision agriculture starts: not only weeds, but every part of the field that is not behaving like the rest of it. Descriptive, never a diagnosis.",
-    },
-    {
-      label: "PLANT BY PLANT",
-      title: "Every plant is compared to every other plant",
-      body: "Where plants can be separated, each one is sized and coloured against the population. A tall broadleaf among short corn is found even when the canopy has hidden the rows. Where crop rows can be fitted, anything growing between them is found too.",
-    },
-    {
-      label: "THE DEEP PASS",
-      title: "Then it does it all again at full resolution",
-      body: "A second sweep reads the entire interior at the sharpest zoom your imagery has, window by window, so a single plant the size of your hand is not lost in a coarse first look. It says how deep it went and where it had to back off.",
-    },
-    {
-      label: "IT LEARNS YOUR CALLS",
-      title: "Every verdict you give makes the next scan sharper",
-      body: "Keep it, remove it, unsure. Each answer goes into an archive that the next scan compares itself against, so a mark you made in June is remembered in August. Identification is suggested from your own past confirmations and a sourced reference catalog, and it is always your call.",
-    },
-  ],
+    "Most tools look for a picture of a weed. SwathWise learns what your field looks like today, "
+    + "from your own imagery, and then shows you everything that does not fit. It runs in your "
+    + "browser, on your fields.",
 };
 
 export const STEPS = [
   {
     num: "01",
     title: "Fly it with anything",
-    body: "Plan the survey in SwathWise, load the file into your drone, fly it. Or drop in photos you already have, or a finished orthomosaic from any sensor. RGB, multispectral, it all reads.",
+    body: "Plan the survey in SwathWise, load the flight into your drone, fly it. Or drop in photos you already have, or a finished field map from any camera. All you need is a drone with a camera and a browser.",
   },
   {
     num: "02",
     title: "See every weed on the map",
-    body: "The scan lands as a map with every finding drawn on it, worst first, each with a real photo chip. Tap one, keep it or throw it out, name it if you know it. Ten minutes for a field, not a morning walking it.",
+    body: "The scan comes back as a map with every finding drawn on it, worst first, each with a photo of the spot. Tap one, keep it or throw it out, name it if you know it.",
   },
   {
     num: "03",
     title: "Spray exactly those, then file it",
-    body: "One button turns your confirmed findings into a spray mission for your aircraft: route, loads, batteries, refills. Fly it. The application record is already written.",
+    body: "One button turns the findings you kept into a spray mission for your aircraft: route, loads, batteries, refills. You fly it, on your license, on your say-so. The application record is already written when you land.",
   },
 ];
 
@@ -173,7 +137,7 @@ export const AUDIENCES = [
   {
     label: "SPRAY OPERATORS",
     title: "Quote the acres you will actually treat",
-    body: "Arrive with the zones already found, sized and priced. Fly a mission that only crosses treated ground. Hand over a signed record before you leave the yard.",
+    body: "Arrive with the zones already found, sized and priced. Keep every grower's fields in one account. Fly a mission that only crosses treated ground, and hand the grower a record ready to sign before you leave the yard.",
   },
   {
     label: "AGRONOMISTS AND AGENCIES",
