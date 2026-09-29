@@ -195,9 +195,10 @@ sub-4 cm bin is synthetic only; no public set has a labelled weed that small.
    shown to nobody by default.
 2. **Derived negatives.** USU's crop and other labels come from the vegetation mask, not a
    person. A mask error is a label error. They are marked as derived, but v1 trains on them.
-3. **Synthetic dominance.** The synthetic source will outnumber the real one by an order of
-   magnitude. Class weights do not correct source imbalance. A model that learned to
-   recognise rendered leaves is a risk; the per-source scorecard is the check, not a fix.
+3. **Synthetic share.** Synthetic chips are 45% of the training set (13,680 of 30,162) and
+   the only source for weeds under 8 cm. Class weights do not correct source imbalance. A
+   model that learned rendered leaves for small weeds is a risk; the per-source scorecard
+   is the check, not a fix, and the sub-4 cm recall of 0.999 is a synthetic number.
 4. **Calibration is local to the sources.** The temperature is fitted on validation data
    from the same sources. On a new field the "80%" may not be 80%. Stored predictions
    against verdicts are how this will be measured; nothing corrects it yet.
