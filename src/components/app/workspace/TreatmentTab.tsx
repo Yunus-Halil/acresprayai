@@ -920,7 +920,7 @@ export function TreatmentTab({
             ))}
           </div>
           <div className="text-[11px] text-neutral-500 font-mono">
-            {(swathM * cellMultiple).toFixed(1)} m cells · {swathM.toFixed(1)} m swath
+            {fmtAltitude(swathM * cellMultiple, units).text} cells · {fmtAltitude(swathM, units).text} swath
           </div>
           <div className="text-[10px] text-neutral-600 mt-1.5 leading-relaxed">
             Cells are whole multiples of the swath because the aircraft cannot vary its

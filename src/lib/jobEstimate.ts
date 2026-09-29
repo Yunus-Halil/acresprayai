@@ -685,11 +685,11 @@ function simulateLoads(s: SimInput): {
   return { loads, batteryChanges: endurance != null ? swaps : null, coolingWaitMin: coolingWait };
 }
 
-/** Minutes as "1h 24m" / "24m". For a panel, not for storage. */
+/** Minutes as "1h 24 min" / "24 min". "m" alone reads as metres in an app full of distances. */
 export function fmtMinutes(min: number): string {
-  if (!Number.isFinite(min) || min <= 0) return "0m";
+  if (!Number.isFinite(min) || min <= 0) return "0 min";
   const total = Math.round(min);
   const h = Math.floor(total / 60);
   const m = total % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  return h > 0 ? `${h}h ${m} min` : `${m} min`;
 }

@@ -26,7 +26,7 @@ import { useAuth } from "@/lib/auth";
 import { type FarmerSettings, growthStage } from "@/lib/farmerSettings";
 import type { LatLng2 } from "@/lib/geo";
 import { storageKey } from "@/lib/storage";
-import { fmtArea, fmtLengthCm } from "@/lib/units";
+import { fmtArea, fmtLengthCm, fmtDistance } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { describeCandidate } from "@/lib/weedScout/candidates";
 import { type AppliedAnnotation, annotationFromCandidate } from "@/lib/weedScout/applyToField";
@@ -680,7 +680,7 @@ export function WeedScoutTab({
           <details className="text-[11px]">
             <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">
               Settings: {params.rowMode === "none" ? "not a row crop" : params.rowMode === "rows" ? `rows at ${rowSpacingShown} ${rowSpacingUnit}` : "detect rows"},
-              {" "}{params.autoTile ? "auto tiles" : `${params.tileM} m tiles`}, headland {params.headlandM} m{params.sweep ? ", full-depth sweep" : ""}
+              {" "}{params.autoTile ? "auto tiles" : `${fmtDistance(params.tileM, units).text} tiles`}, headland {fmtDistance(params.headlandM, units).text}{params.sweep ? ", full-depth sweep" : ""}
             </summary>
             <div className="grid grid-cols-2 gap-3 pt-3">
               <div className="col-span-2">

@@ -203,6 +203,8 @@ export function savingsBasisLabel(claim: SavingsClaim): string {
 // The result banner
 // ---------------------------------------------------------------------------
 
+import { AC_PER_HA, type UnitSystem } from "./units";
+
 export type BannerTone = "none" | "clean" | "legacy" | "success";
 export type Banner = {
   tone: BannerTone;
@@ -212,7 +214,9 @@ export type Banner = {
   note: string | null;
 };
 
-const ac = (n: number) => `${n.toFixed(2)} ac`;
+/** One area unit per document, the operator's. Acres in, printed as acres or hectares. */
+const area = (n: number, sys: UnitSystem) =>
+  sys === "metric" ? `${(n / AC_PER_HA).toFixed(2)} ha` : `${n.toFixed(2)} ac`;
 
 /**
  * Decides the one banner the report shows.
@@ -229,6 +233,8 @@ const ac = (n: number) => `${n.toFixed(2)} ac`;
  *   - assessed, zones    → the only state that earns success styling
  */
 export function bannerFor(input: {
+  /** The operator's display units. Defaults to imperial for callers that predate the choice. */
+  units?: UnitSystem;
   hasAnalysis: boolean;
   /** "grid" for treatment-grid assessments; "legacy" for retired-path results. */
   source?: "grid" | "legacy";
@@ -257,6 +263,7 @@ export function bannerFor(input: {
     applied?: string | null;
   };
 }): Banner {
+  const sys: UnitSystem = input.units ?? "imperial";
   if (!input.hasAnalysis) {
     return {
       tone: "none",
@@ -270,7 +277,7 @@ export function bannerFor(input: {
       tone: "legacy",
       big: input.zoneCount === 0
         ? "Legacy analysis on file: no zones"
-        : `Legacy analysis on file: ${input.zoneCount} zone${input.zoneCount === 1 ? "" : "s"}, ${ac(input.targetedAcres)}`,
+        : `Legacy analysis on file: ${input.zoneCount} zone${input.zoneCount === 1 ? "" : "s"}, ${area(input.targetedAcres, sys)}`,
       sub: "Produced by the retired vision-analysis system, not the treatment grid.",
       note: "Re-assess this scan with the treatment grid before acting on these figures.",
     };
@@ -279,7 +286,7 @@ export function bannerFor(input: {
     return {
       tone: "clean",
       big: "Assessment found nothing marked for treatment",
-      sub: `From your reference points, across ${ac(input.fieldAcres)} of field.`,
+      sub: `From your reference points, across ${area(input.fieldAcres, sys)} of field.`,
       note: null,
     };
   }
@@ -295,7 +302,7 @@ export function bannerFor(input: {
         big: savingsRefusalHeadline(claim.reason),
         sub: chem?.applied != null
           ? `${chem.applied} applied vs ${chem.fullField} whole-field at ${chem.baselineRate}`
-          : `across ${ac(input.targetedAcres)} of ${ac(input.fieldAcres)} total`,
+          : `across ${area(input.targetedAcres, sys)} of ${area(input.fieldAcres, sys)} total`,
         note: savingsRefusalNote(claim.reason),
       };
     }
@@ -313,13 +320,13 @@ export function bannerFor(input: {
       big: `${claim.pct}% less chemical planned`,
       sub: chem
         ? `${chem.planned} planned vs ${chem.fullField} whole-field at ${chem.baselineRate}`
-        : `across ${ac(input.targetedAcres)} of ${ac(input.fieldAcres)} total`,
+        : `across ${area(input.targetedAcres, sys)} of ${area(input.fieldAcres, sys)} total`,
       note: "No applied volume is logged yet; this is the plan's projection, not measured performance.",
     };
   }
   return {
     tone: "success",
-    big: `Targeting ${ac(input.targetedAcres)} of ${ac(input.fieldAcres)}`,
+    big: `Targeting ${area(input.targetedAcres, sys)} of ${area(input.fieldAcres, sys)}`,
     sub: "Treatment area extrapolated from your reference points by the treatment grid.",
     note: null,
   };

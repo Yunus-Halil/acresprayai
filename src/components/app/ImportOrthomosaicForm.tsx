@@ -20,6 +20,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
+import { fmtLengthCm } from "@/lib/units";
 import {
   type ImportProgress, type OrthoBandMapping, type OrthoMetadata,
   bandsNeedMapping, defaultThreeBandMapping, formatBytes, hasAlphaBand, readOrthoMetadata,
@@ -53,6 +55,7 @@ export default function ImportOrthomosaicForm({ onImported, existingField }: {
   existingField?: { id: string; name: string } | null;
 }) {
   const { user } = useAuth();
+  const units = useUnitSystem();
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: "", location: "", notes: "" });
   const [file, setFile] = useState<File | null>(null);
@@ -205,7 +208,7 @@ export default function ImportOrthomosaicForm({ onImported, existingField }: {
             <dt className="text-muted-foreground">Dimensions</dt>
             <dd className="font-mono">{meta.widthPx.toLocaleString()} × {meta.heightPx.toLocaleString()} px</dd>
             <dt className="text-muted-foreground">GSD</dt>
-            <dd className="font-mono">{(meta.gsdM * 100).toFixed(2)} cm/px</dd>
+            <dd className="font-mono">{fmtLengthCm(meta.gsdM * 100, units).text}/px</dd>
             <dt className="text-muted-foreground">CRS</dt>
             <dd className="font-mono">{meta.crsLabel}</dd>
             <dt className="text-muted-foreground">Bands</dt>

@@ -732,6 +732,7 @@ export function PlannerTab({
     transitSpeed,
     spraySpeed,
     transitAltM,
+    units,
   };
 
   const runExport = (exporter: ReturnType<typeof userFacingExporters>[number]) => {
@@ -1590,7 +1591,7 @@ export function PlannerTab({
                   No swath on file for this aircraft. Passes below are spaced on the generic
                   {" "}{fmtAltitude(DRONE_SPECS["Custom"].spray_swath_m, units).text} fallback, which is a placeholder and not your boom.
                   {resolved.entry?.swath_published_m && (
-                    <> {resolved.entry.make} publishes {resolved.entry.swath_published_m[0]}-{resolved.entry.swath_published_m[1]} m for this airframe.</>
+                    <> {resolved.entry.make} publishes {fmtAltitude(resolved.entry.swath_published_m[0], units).value}-{fmtAltitude(resolved.entry.swath_published_m[1], units).text} for this airframe.</>
                   )} Set the width you fly on the Fleet page.
                 </div>
               )}

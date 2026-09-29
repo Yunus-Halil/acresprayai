@@ -24,9 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
-  AC_PER_HA, areaValueAc, costPerAreaToPerAcre, costPerAreaValue, costPerAreaUnit,
-  fmtAreaAc, fmtVolume, tempFFromShown, tempFShown, tempUnit,
-  volumeToLitres, volumeUnit, volumeValue, windMphFromShown, windMphShown, windUnit,
+  AC_PER_HA, areaValueAc, costPerAreaToPerAcre, costPerAreaUnit, costPerAreaValue, fmtAreaAc, fmtRate, fmtVolume, tempFFromShown, tempFShown, tempUnit, volumeToLitres, volumeUnit, volumeValue, windMphFromShown, windMphShown, windUnit,
 } from "@/lib/units";
 import { setUnitSystem, useUnitSystem } from "@/hooks/useUnitSystem";
 import { setDeveloperFlag, useDeveloperMode } from "@/hooks/useDeveloperMode";
@@ -219,7 +217,7 @@ export function SettingsTab({
                 ))}
               </div>
               <div className="text-[10px] text-neutral-500 mt-1">
-                Applies everywhere, areas, volumes, rates, altitudes, speeds and
+                Saved to your account and applied on every device. Areas, volumes, rates, altitudes, speeds and
                 temperatures across the whole app. Display only: your stored figures
                 never change, so switching can never alter a dose or a bill.
               </div>
@@ -587,7 +585,7 @@ export function LogFlightModal({
       ? rateVsBaselineNote(
           litersApplied != null && acresDone > 0 ? litersApplied / acresDone : null,
           baselineRateLha,
-          (lPerAc) => `${fmtVolume(lPerAc, units, 2).text}/ac`,
+          (lPerAc) => fmtRate(lPerAc * AC_PER_HA, units).text,
         )
       : null,
     endBeforeStartNote(rec.start_time, rec.end_time),

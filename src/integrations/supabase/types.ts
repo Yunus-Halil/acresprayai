@@ -802,18 +802,21 @@ export type Database = {
           farm_name: string | null
           full_name: string | null
           id: string
+          unit_system: string | null
         }
         Insert: {
           created_at?: string
           farm_name?: string | null
           full_name?: string | null
           id: string
+          unit_system?: string | null
         }
         Update: {
           created_at?: string
           farm_name?: string | null
           full_name?: string | null
           id?: string
+          unit_system?: string | null
         }
         Relationships: []
       }

@@ -344,11 +344,11 @@ describe("degenerate input", () => {
 
 describe("fmtMinutes", () => {
   it("reads like a day, not like a float", () => {
-    expect(fmtMinutes(0)).toBe("0m");
-    expect(fmtMinutes(24.4)).toBe("24m");
-    expect(fmtMinutes(84)).toBe("1h 24m");
-    expect(fmtMinutes(120)).toBe("2h 0m");
-    expect(fmtMinutes(NaN)).toBe("0m");
+    expect(fmtMinutes(0)).toBe("0 min");
+    expect(fmtMinutes(24.4)).toBe("24 min");
+    expect(fmtMinutes(84)).toBe("1h 24 min");
+    expect(fmtMinutes(120)).toBe("2h 0 min");
+    expect(fmtMinutes(NaN)).toBe("0 min");
   });
 });
 

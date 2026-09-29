@@ -485,7 +485,7 @@ export default function Fleet() {
                 <Card className="p-3">
                   <div className="text-[11px] text-muted-foreground">Recall window</div>
                   <div className={`font-display text-2xl ${f.recallAt && f.recallAt < 10 ? "text-destructive" : f.recallAt && f.recallAt < 25 ? "text-amber-500" : "text-emerald-500"}`}>
-                    {f.recallAt != null ? `T-${f.recallAt}m` : "60+ m"}
+                    {f.recallAt != null ? `T-${f.recallAt} min` : "60+ min"}
                   </div>
                 </Card>
                 <Card className="p-3">
@@ -498,7 +498,7 @@ export default function Fleet() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={f.series} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
                     <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" />
-                    <XAxis dataKey="t" tickFormatter={v => `${v}m`} fontSize={11} stroke="hsl(var(--muted-foreground))" />
+                    <XAxis dataKey="t" tickFormatter={v => `${v} min`} fontSize={11} stroke="hsl(var(--muted-foreground))" />
                     <YAxis domain={[0, 100]} fontSize={11} stroke="hsl(var(--muted-foreground))" tickFormatter={v => `${v}%`} />
                     <Tooltip
                       contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", fontSize: 12 }}

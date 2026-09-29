@@ -12,8 +12,7 @@ import { baselineRateIsShippedDefault,
 import { type AnalysisState, analysisStateOf, zoneAcres } from "@/lib/compareGround";
 import { storageKey } from "@/lib/storage";
 import {
-  M2_PER_ACRE, fmtAreaAc, fmtRate, fmtVolume, volumeToLitres, volumeUnit, volumeValue,
-  tempFFromShown, tempFShown, tempUnit, windMphFromShown, windMphShown, windUnit,
+  AC_PER_HA, M2_PER_ACRE, fmtAreaAc, fmtRate, fmtTempF, fmtVolume, fmtWindMph, tempFFromShown, tempFShown, tempUnit, volumeToLitres, volumeUnit, volumeValue, windMphFromShown, windMphShown, windUnit,
 } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import {
@@ -28,10 +27,14 @@ import { listTreatmentChoices } from "@/lib/treatment/choices";
 import type { TreatmentChoice } from "@/lib/treatment/quantities";
 import ConditionLookup from "@/components/app/workspace/ConditionLookup";
 
-// The report standardises on ACRES for every area it prints. fmtAreaAc
-// elsewhere may drop to ft² for small areas, which is how one page came to say
-// "0 ft²" beside "11.07 ac". One unit, one document.
-const acres = (n: number) => `${n.toFixed(2)} ac`;
+// The report prints every area in ONE unit, the operator's: acres or hectares,
+// never both and never ft² for a small zone. fmtAreaAc elsewhere may drop to
+// ft², which is how one page came to say "0 ft²" beside "11.07 ac".
+const area = (acresIn: number, system: FarmerSettings["unit_system"]) =>
+  system === "metric" ? `${(acresIn / AC_PER_HA).toFixed(2)} ha` : `${acresIn.toFixed(2)} ac`;
+// A rate stored per acre, printed per acre or per hectare with the matching volume.
+const ratePerArea = (lPerAc: number, system: FarmerSettings["unit_system"]) =>
+  fmtRate(lPerAc * AC_PER_HA, system ?? "imperial").text;
 
 // Conversion now comes from lib/units.ts. The helpers that used to live here
 // carried their own rounded constants — 0.264172 gal/L and an acre of 4047 m²
@@ -433,6 +436,7 @@ export default function ReportsTab({
   // post-flight savings figure is rate-weighted, so the banner carries the two
   // volumes it is computed from — the page must let a reader reproduce it.
   const banner = bannerFor({
+    units: unit,
     hasAnalysis: isDone,
     source: source ?? undefined,
     zoneCount: zoneRows.length,
@@ -479,8 +483,8 @@ export default function ReportsTab({
     // flagging runs on it even when the operator recorded different values.
     modelCheck: record.model_check ?? null,
     fmtVolume: (l) => fmtVol(l, unit),
-    fmtAcres: (ac2) => acres(ac2),
-    fmtRatePerAc: (lPerAc) => `${fmtVol(lPerAc, unit, 2)}/ac`,
+    fmtAcres: (ac2) => area(ac2, unit),
+    fmtRatePerAc: (lPerAc) => ratePerArea(lPerAc, unit),
   });
 
   // ---- PDF generation ----
@@ -604,7 +608,7 @@ export default function ReportsTab({
       // Field identity line
       pdf.setFont("helvetica", "normal"); pdf.setTextColor(90); pdf.setFontSize(10);
       pdf.text(
-        `${field.name} · ${settings.crop_type ? settings.crop_type.replace(/_/g, " ") : "crop not set"} · ${fieldAcres > 0 ? acres(fieldAcres) : "boundary not set"}`,
+        `${field.name} · ${settings.crop_type ? settings.crop_type.replace(/_/g, " ") : "crop not set"} · ${fieldAcres > 0 ? area(fieldAcres, unit) : "boundary not set"}`,
         M, y,
       );
       y += 12;
@@ -623,7 +627,7 @@ export default function ReportsTab({
       // Metadata grid, two columns; all areas in acres.
       const metaL: [string, string | null][] = [
         ["FIELD", field.name],
-        ["TOTAL AREA", fieldAcres > 0 ? acres(fieldAcres) : null],
+        ["TOTAL AREA", fieldAcres > 0 ? area(fieldAcres, unit) : null],
         ["SCAN DATE", scanDate],
         ["MISSION DATE", missionDateNice],
       ];
@@ -776,7 +780,7 @@ export default function ReportsTab({
           pdf.setFont("helvetica", "normal"); pdf.setTextColor(70);
           pdf.text(g.rateLha != null ? fmtRate(g.rateLha, unit).text : "-", COL.rate, y, { align: "right" });
           pdf.setTextColor(30);
-          pdf.text(acres(g.acres), COL.area, y, { align: "right" });
+          pdf.text(area(g.acres, unit), COL.area, y, { align: "right" });
           pdf.setTextColor(70);
           pdf.text(String(g.count), COL.zones, y, { align: "right" });
           if (g.flownState === "all") {
@@ -796,16 +800,16 @@ export default function ReportsTab({
         pdf.setDrawColor(200); pdf.line(M, y - 4, W - M, y - 4);
         pdf.setFont("helvetica", "bold"); pdf.setTextColor(30); pdf.setFontSize(9.5);
         pdf.text("Marked for treatment (grid)", M, y);
-        pdf.text(acres(zoneSummary.totals.treatedAcres), COL.area, y, { align: "right" });
+        pdf.text(area(zoneSummary.totals.treatedAcres, unit), COL.area, y, { align: "right" });
         pdf.text(String(zoneSummary.totals.zoneCount), COL.zones, y, { align: "right" });
         pdf.text(`${zoneSummary.totals.flownCount}/${zoneSummary.totals.zoneCount}`, COL.flown, y, { align: "right" });
         y += 12;
         pdf.setFont("helvetica", "normal"); pdf.setTextColor(90); pdf.setFontSize(9);
         pdf.text("Untreated", M, y);
-        pdf.text(acres(zoneSummary.totals.untreatedAcres), COL.area, y, { align: "right" });
+        pdf.text(area(zoneSummary.totals.untreatedAcres, unit), COL.area, y, { align: "right" });
         y += 12;
         pdf.text("Field total", M, y);
-        pdf.text(acres(zoneSummary.totals.fieldAcres), COL.area, y, { align: "right" });
+        pdf.text(area(zoneSummary.totals.fieldAcres, unit), COL.area, y, { align: "right" });
         y += 13;
       }
       y += 4;
@@ -896,20 +900,20 @@ export default function ReportsTab({
       // computed rate. Each is labelled as itself wherever it appears.
       const recR: [string, string | null][] = [
         ["RATE (COMPUTED)", rateLPerAc != null
-          ? `${fmtVol(rateLPerAc, unit, 2)}/ac (logged volume ÷ logged treated area)` : null],
-        ["TREATED (LOGGED)", acresTreatedLogged != null ? acres(acresTreatedLogged) : null],
-        ["MARKED (GRID)", hasGridAssessment ? acres(zoneSummary.totals.treatedAcres) : null],
-        ["FIELD TOTAL", fieldAcres > 0 ? acres(fieldAcres) : null],
+          ? `${ratePerArea(rateLPerAc, unit)} (logged volume ÷ logged treated area)` : null],
+        ["TREATED (LOGGED)", acresTreatedLogged != null ? area(acresTreatedLogged, unit) : null],
+        ["MARKED (GRID)", hasGridAssessment ? area(zoneSummary.totals.treatedAcres, unit) : null],
+        ["FIELD TOTAL", fieldAcres > 0 ? area(fieldAcres, unit) : null],
         // Provenance prints with the value: "(observed)" for what the
         // applicator entered, "(model data — KMIC, 4.2 mi)" for an accepted
         // NOAA station value. Records from before provenance existed print
         // bare rather than being stamped with a provenance nobody recorded.
         ["WIND", record.wind_speed_mph != null && record.wind_direction
-          ? `${record.wind_speed_mph} mph ${record.wind_direction}`
+          ? `${fmtWindMph(record.wind_speed_mph, unit).text} ${record.wind_direction}`
             + conditionSourceLabel(record.wind_source, record.conditions_source)
           : null],
         ["TEMPERATURE", record.temperature_f != null
-          ? `${record.temperature_f} °F`
+          ? fmtTempF(record.temperature_f, unit).text
             + conditionSourceLabel(record.temp_source, record.conditions_source)
           : null],
         ["APPLICATOR CERT.", has(record.applicator_cert_no)],
@@ -1055,7 +1059,7 @@ export default function ReportsTab({
           pdf.setTextColor(30);
           pdf.text(z.issue || "Unclassified", M + 150, y);
           pdf.text(z.rateLha != null ? fmtRate(z.rateLha, unit).text : "-", AC.rate, y, { align: "right" });
-          pdf.text(acres(z.acres), AC.area, y, { align: "right" });
+          pdf.text(area(z.acres, unit), AC.area, y, { align: "right" });
           pdf.setTextColor(z.flown ? 34 : 150);
           pdf.text(z.flown ? "yes" : "no", AC.flown, y, { align: "right" });
           y += 10.5;
@@ -1238,7 +1242,7 @@ export default function ReportsTab({
               <>
                 <div className="text-[10px] uppercase tracking-wider text-neutral-500">Assessment</div>
                 <div className="text-lg font-medium text-neutral-200">Nothing marked</div>
-                <div className="text-[11px] text-neutral-500">over {acres(fieldAcres)}</div>
+                <div className="text-[11px] text-neutral-500">over {area(fieldAcres, unit)}</div>
               </>
             ) : (
               <>
@@ -1253,12 +1257,12 @@ export default function ReportsTab({
                 <div className={`text-3xl font-semibold tabular-nums ${
                   !isPostFlight || savings.kind !== "none" ? "text-[#4CAF50]" : "text-neutral-500"
                 }`}>
-                  {!isPostFlight ? acres(targetedAcres)
+                  {!isPostFlight ? area(targetedAcres, unit)
                     : savings.kind === "none" ? "Not claimed"
                     : `${savings.pct}%`}
                 </div>
                 <div className="text-[11px] text-neutral-500">
-                  {!isPostFlight ? `of ${acres(fieldAcres)} total`
+                  {!isPostFlight ? `of ${area(fieldAcres, unit)} total`
                     : savings.kind === "measured" ? `vs. whole field at ${baselineLabel}`
                     : savings.kind === "projected" ? "projection, no volume logged"
                     : "see the report banner"}
@@ -1276,7 +1280,7 @@ export default function ReportsTab({
             </div>
             <div>
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Total area</div>
-              <div className="text-neutral-200">{fieldAcres > 0 ? acres(fieldAcres) : "Boundary not defined"}</div>
+              <div className="text-neutral-200">{fieldAcres > 0 ? area(fieldAcres, unit) : "Boundary not defined"}</div>
             </div>
             <div>
               <div className="text-neutral-500 uppercase tracking-wider text-[10px] mb-1">Crop</div>

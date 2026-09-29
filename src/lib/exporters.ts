@@ -24,6 +24,7 @@ import type { LatLng2 } from "./geo";
 import { type Mission, exportMissionFile } from "./mission";
 import { AGRAS_IMPORT_STEPS, RX_RATE_UNIT, type RateZone, buildAgrasPackage } from "./djiAgras";
 import { buildWpmlKmz } from "./wpml";
+import { type UnitSystem, fmtLengthCm } from "./units";
 
 export type ExporterStatus =
   /** Registered, offered to growers, verified as far as we can verify it. */
@@ -39,6 +40,8 @@ export type ExportContext = {
   transitSpeed: number;
   spraySpeed: number;
   transitAltM: number;
+  /** Display units for the success toast. Nothing in the file depends on it. */
+  units?: UnitSystem;
 };
 
 export type ExportResult = {
@@ -86,7 +89,7 @@ export const EXPORTERS: Exporter[] = [
         blob: pkg.zip,
         filename: `dji-agras-${ctx.taskId}.zip`,
         detail:
-          `${pkg.raster.width}×${pkg.raster.height} px at ${pkg.raster.resolutionM.toFixed(2)} m/px · ` +
+          `${pkg.raster.width}×${pkg.raster.height} px at ${fmtLengthCm(pkg.raster.resolutionM * 100, ctx.units ?? "imperial").text}/px · ` +
           `${v.rateRange.min}–${v.rateRange.max} ${RX_RATE_UNIT} · ` +
           `import with Map Source “${AGRAS_IMPORT_STEPS.mapSource}”, ` +
           `Source Unit “${AGRAS_IMPORT_STEPS.sourceUnit}”`,
