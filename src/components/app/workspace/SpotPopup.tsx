@@ -16,6 +16,7 @@
 //
 // Everything it renders comes from a module that already owns it. It composes;
 // it does not decide.
+import { describePrediction } from "@/lib/weedScout/classify";
 import { useState } from "react";
 import { CheckCircle2, MapPin } from "lucide-react";
 import type { Identification } from "@/lib/weedCatalog/identification";
@@ -113,6 +114,11 @@ export function SpotPopup(props: SpotPopupProps) {
       <p className="mt-2 text-[11px] text-neutral-300 leading-relaxed">
         {c.estimate ? c.estimate.summary : describeCandidate(c, units)}
       </p>
+      {c.prediction && (
+        <p className="mt-1 text-[10px] text-neutral-500 leading-relaxed" title="Trained on public corn imagery and synthetic scenes; the number is calibrated on held-out data, not on this field.">
+          {describePrediction(c.prediction)}
+        </p>
+      )}
 
       <div className="mt-2 grid grid-cols-3 gap-1">
         {VERDICTS.map(o => {

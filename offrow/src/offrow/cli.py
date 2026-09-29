@@ -20,12 +20,15 @@ from offrow import io as io_mod
 from offrow import rows as rows_mod
 from offrow import sensor as sensor_mod
 from offrow import synth as synth_mod
+from offrow.learn import cli as learn_cli
 
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
     help="Off-row vegetation detection in early-season corn from RGB drone imagery.",
 )
+
+app.add_typer(learn_cli.app, name="learn")
 
 DEFAULT_ALTITUDES = "10,20,30,60,120"
 

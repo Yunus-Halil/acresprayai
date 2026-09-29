@@ -1,0 +1,157 @@
+// The classifier boundary: the contract the browser shares with the trainer,
+// the registry's refusal to load what it does not understand, the default
+// verdict's order of authority, and the scoring step's degradation to "no
+// prediction" rather than a failed scan.
+import { describe, expect, it, vi } from "vitest";
+import {
+  DEFAULT_DIAMETER_M, DEFAULT_SPAN_RULE, batchInputs, chipToInput, objectSpanM, softmax,
+} from "@/lib/weedScout/classify/preprocess";
+import { currentModel, fetchManifest } from "@/lib/weedScout/classify/registry";
+import { classifyCandidates, isScorable } from "@/lib/weedScout/classify";
+import { EXPECTED_CLASSES, NOT_WEED_BELOW, WEED_AT_OR_ABOVE, describePrediction, isUsableMeta } from "@/lib/weedScout/classify/types";
+import type { ModelMeta } from "@/lib/weedScout/classify/types";
+import type { Blob, Candidate } from "@/lib/weedScout/types";
+import { defaultVerdict } from "@/components/app/workspace/WeedScoutTab";
+
+describe("the chip contract mirrors offrow/learn/examples.py", () => {
+  it("pins the span rule: 4x the diameter, clamped to 0.24..1.2 m, 0.15 m when unknown", () => {
+    expect(DEFAULT_SPAN_RULE).toEqual({ per_diameter: 4, min_m: 0.24, max_m: 1.2 });
+    expect(DEFAULT_DIAMETER_M).toBe(0.15);
+    expect(objectSpanM(0.001)).toBe(0.24);
+    expect(objectSpanM(10)).toBe(1.2);
+    expect(objectSpanM(0.1)).toBeCloseTo(0.4);
+    expect(objectSpanM(null)).toBeCloseTo(0.6);
+  });
+
+  it("crops the centre to the object span and box-filters to the model size, in [0, 1] CHW", () => {
+    // A 40 px chip covering 2 m: the centre 20 px are red, the rest blue.
+    const w = 40, h = 40;
+    const rgba = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const inner = x >= 10 && x < 30 && y >= 10 && y < 30;
+      const i = (y * w + x) * 4;
+      rgba[i] = inner ? 255 : 0; rgba[i + 1] = 0; rgba[i + 2] = inner ? 0 : 255; rgba[i + 3] = 255;
+    }
+    // Object span 1 m of a 2 m chip: exactly the red centre.
+    const t = chipToInput({ rgba, width: w, height: h, spanM: 2 }, 1.0, 4);
+    expect(t.length).toBe(3 * 16);
+    for (let i = 0; i < 16; i++) {
+      expect(t[i]).toBeCloseTo(1);          // R plane
+      expect(t[16 + i]).toBeCloseTo(0);     // G plane
+      expect(t[32 + i]).toBeCloseTo(0);     // B plane
+    }
+    // The whole chip: three quarters blue, a quarter red, averaged in the box filter.
+    const whole = chipToInput({ rgba, width: w, height: h, spanM: 2 }, 2.0, 2);
+    const sum = Array.from(whole.subarray(0, 4)).reduce((a, b) => a + b, 0);
+    expect(sum).toBeCloseTo(4 * 0.25, 5);
+  });
+
+  it("batches inputs contiguously and softmax sums to one", () => {
+    const a = new Float32Array([1, 2, 3]), b = new Float32Array([4, 5, 6]);
+    expect(Array.from(batchInputs([a, b], 1))).toEqual([1, 2, 3, 4, 5, 6]);
+    const p = softmax([2, 1, 0]);
+    expect(p.reduce((x, y) => x + y, 0)).toBeCloseTo(1);
+    expect(p[0]).toBeGreaterThan(p[1]);
+  });
+});
+
+const META: ModelMeta = {
+  version: "weed-v1", file: "weed-v1.onnx", bytes: 1, quantized: true,
+  classes: [...EXPECTED_CLASSES], input: { layout: "NCHW", px: 96, range: "0..1", span_rule: DEFAULT_SPAN_RULE },
+  output: "logits", temperature: 1.2, trained_at: null, sources: [],
+  scorecard: { test_examples: 10, weed_recall: 0.9, weed_precision: 0.8, weed_auroc: 0.95, ece: 0.03 },
+  caveat: "A bootstrap.", exported_at: "2026-09-29T00:00:00Z",
+};
+
+describe("the registry", () => {
+  it("returns no model when the manifest is missing, malformed, or names an unknown contract", async () => {
+    const missing = vi.fn(async () => new Response("", { status: 404 }));
+    expect(await fetchManifest(missing as unknown as typeof fetch)).toBeNull();
+    const bad = vi.fn(async () => new Response("not json", { status: 200 }));
+    expect(await fetchManifest(bad as unknown as typeof fetch)).toBeNull();
+    expect(currentModel({ current: "x", models: {} })).toBeNull();
+    expect(currentModel({ current: "weed-v1", models: { "weed-v1": { ...META, classes: ["crop", "weed", "other"] } } })).toBeNull();
+    expect(currentModel({ current: "weed-v1", models: { "weed-v1": META } })).toEqual(META);
+  });
+
+  it("refuses a sidecar with the wrong class order or no input contract", () => {
+    expect(isUsableMeta(META)).toBe(true);
+    expect(isUsableMeta({ ...META, classes: ["weed", "crop"] })).toBe(false);
+    expect(isUsableMeta({ ...META, input: undefined })).toBe(false);
+  });
+});
+
+const blob = (d: number): Blob => ({
+  id: "b", tileId: "t", centroid: { lat: 0, lng: 0 }, areaM2: Math.PI * (d / 2) ** 2, equivDiameterM: d,
+  widthM: d, heightM: d, extent: 0.7, chromaR: 0.3, chromaG: 0.4, chromaB: 0.3, exgMean: 0.2, brightness: 120,
+  gsdM: 0.01, touchesBorder: false,
+});
+
+const plant = (over: Partial<Candidate> = {}): Candidate => ({
+  id: "c", tileId: "t", centroid: { lat: 0, lng: 0 }, kind: "off-row vegetation", score: 0.5,
+  distanceToRowM: 0.3, rowConfidence: 0.9, anomalyZ: null, anomalyFeature: null, blobZ: null, blobZFeature: null,
+  blob: blob(0.1), region: null, areaM2: 0.01, feedback: null, estimate: null, prediction: null,
+  chip: "data:image/png;base64,AAAA", chipSpanM: 0.6, chipGsdM: 0.01, ...over,
+});
+
+describe("the default verdict's order of authority", () => {
+  it("the operator's own past verdicts beat the model", () => {
+    const c = plant({ feedback: { confirmed: 0, dismissed: 5, species: [], factor: 0.4 }, prediction: { pWeed: 0.95, pCrop: 0.03, pOther: 0.02, modelVersion: "weed-v1" } });
+    expect(defaultVerdict(c)).toBe("not_weed");
+  });
+
+  it("a confident model sets the default; the middle starts unsure", () => {
+    expect(defaultVerdict(plant({ prediction: { pWeed: WEED_AT_OR_ABOVE, pCrop: 0.2, pOther: 0.2, modelVersion: "v" } }))).toBe("weed");
+    expect(defaultVerdict(plant({ prediction: { pWeed: NOT_WEED_BELOW - 0.01, pCrop: 0.5, pOther: 0.11, modelVersion: "v" } }))).toBe("not_weed");
+    expect(defaultVerdict(plant({ prediction: { pWeed: 0.5, pCrop: 0.3, pOther: 0.2, modelVersion: "v" } }))).toBe("unsure");
+  });
+
+  it("without a prediction the old rule stands: a plant starts as a weed", () => {
+    expect(defaultVerdict(plant())).toBe("weed");
+  });
+
+  it("never wording a prediction as a finding", () => {
+    const line = describePrediction({ pWeed: 0.82, pCrop: 0.1, pOther: 0.08, modelVersion: "weed-v1" });
+    expect(line).toMatch(/82% weed/);
+    expect(line).toMatch(/suggestion, not a finding/);
+    expect(line).not.toMatch(/is a weed/);
+  });
+});
+
+describe("scoring the candidates", () => {
+  it("scores plant spots with a chip and leaves regions and unchipped spots alone", async () => {
+    const region = plant({ id: "r", kind: "not-average region", blob: null, region: { id: "g", tileIds: ["t"], rings: [[]], centroid: { lat: 0, lng: 0 }, areaM2: 50, tileCount: 5, coreTiles: 3, meanStrength: 4, maxStrength: 5, meanFieldZ: [], drivers: [], klass: "thin stand" } });
+    const unchipped = plant({ id: "u", chip: null });
+    const scorable = plant({ id: "s" });
+    expect(isScorable(region)).toBe(false);
+    expect(isScorable(unchipped)).toBe(false);
+    expect(isScorable(scorable)).toBe(true);
+
+    const decode = vi.fn(async () => ({ rgba: new Uint8ClampedArray(4 * 4 * 4), width: 4, height: 4, spanM: 0.6 }));
+    const classify = vi.fn(async (chips: unknown[]) => chips.map(() => ({ pWeed: 0.7, pCrop: 0.2, pOther: 0.1, modelVersion: "weed-v1" })));
+    const outcome = await classifyCandidates([region, unchipped, scorable], {
+      loadModel: async () => META,
+      decode,
+      classifierFor: async () => ({ meta: META, classify }),
+    });
+    expect(outcome.scored).toBe(1);
+    expect(outcome.candidates[2].prediction?.pWeed).toBe(0.7);
+    expect(outcome.candidates[0].prediction).toBeNull();
+    expect(outcome.candidates[1].prediction).toBeNull();
+    expect(outcome.note).toMatch(/scored 1 plant spot/);
+    expect(decode).toHaveBeenCalledTimes(1);
+  });
+
+  it("with no model, says so and changes nothing", async () => {
+    const c = plant();
+    const outcome = await classifyCandidates([c], { loadModel: async () => null });
+    expect(outcome.candidates[0]).toBe(c);
+    expect(outcome.note).toMatch(/No classifier is shipped/);
+  });
+
+  it("a classifier that fails to load degrades to no predictions, not a failed scan", async () => {
+    const outcome = await classifyCandidates([plant()], { loadModel: async () => META, classifierFor: async () => null });
+    expect(outcome.scored).toBe(0);
+    expect(outcome.candidates[0].prediction).toBeNull();
+  });
+});

@@ -22,6 +22,7 @@ is by construction not the planted crop. That is geometry, not prediction.
 | 7 | `blobs.py`, `candidates.py`, `grid.py` | implemented |
 | 8 | `eval.py` | matching and binned recall done; curves and sweep outstanding |
 | - | `ingest.py` | field triage for flown captures |
+| 9 | `learn/` | examples, training, scorecard, ONNX export: implemented, first model pending flown truth |
 
 Every stub raises `NotImplementedError`, and `tests/test_scaffold.py` enforces that.
 `tests/test_required.py` holds the spec's list of must-pass tests as skips, each naming
@@ -35,9 +36,8 @@ python -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"         # POSIX
 ```
 
-Python 3.11+. No GDAL command line dependency. No torch, no tensorflow, no pretrained
-models: the current phase is geometric, and scikit-learn is permitted only for the
-one-class anomaly step, which does not exist yet.
+Python 3.11+. No GDAL command line dependency. The geometric core has no ML
+dependency; the learning track needs the extra: `pip install -e ".[dev,learn]"`.
 
 ## Run
 
@@ -187,3 +187,30 @@ Exits non-zero on **NOT USABLE**. Needs no camera database: sensor width comes o
 `data/` is gitignored. Synthetic scenes and public datasets carry development; flown
 imagery is arriving. Anything not captured by a camera at the GSD it claims is labelled
 as what it is, and synthetic numbers are never quoted outside this repo.
+
+## The learning track
+
+The geometric detector finds what is not average and not where the crop should be;
+`offrow.learn` is what makes it able to say "weed". It rests on three things that exist
+before any model: one ground-truth store, a scorecard per version, and a boundary the
+browser can hold.
+
+```
+offrow learn build-examples --source synth          # exact truth, every diameter bin
+offrow learn build-examples --source usu            # USU-Corn-WeedDB boxes, mask-labelled clear ground
+offrow learn pull-verdicts && offrow learn build-examples --source operator
+offrow learn summary                                # counts by source, label, split, weed size
+offrow learn train --version weed-v1                # best epoch on val, temperature-scaled
+offrow learn evaluate --version weed-v1             # reports/weed-v1.json, and the gate
+offrow learn publish --version weed-v1              # ONNX + sidecar into ../public/models
+```
+
+Splits are assigned by group (a frame, a scene, a field), never by chip, from a hash of
+the group name, so they are the same on every machine and never move. Every label carries
+its basis: an annotated box, synthetic truth, an operator verdict, or "derived by the
+vegetation mask away from every box", and the scorecard breaks results down by source and
+by weed diameter bin so a pooled number cannot hide what was actually learned.
+
+Model contract: `N x 3 x 96 x 96` floats in [0, 1], cut at `4 x diameter` (0.24 to 1.2 m)
+around the object; ImageNet normalisation and the calibration temperature are inside the
+graph. `public/models/manifest.json` names the current version and its scorecard.

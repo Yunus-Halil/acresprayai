@@ -47,10 +47,16 @@ known truth, and is still not flying.
 
 ## Hard constraints
 
-1. **No machine learning in the current phase.** No torch, no tensorflow, no
-   pretrained models, no classifiers. scikit-learn is allowed only for the
-   one-class anomaly step, which is not built yet. If a task seems to need a
-   model, the geometric approach has not been exhausted.
+1. **Learning lives in `offrow.learn` and nowhere else.** The geometric core
+   (rows, vegetation, blobs, candidates, grid) imports no ML library and keeps
+   every threshold in ground units; it generates the candidates. The
+   classifier in `offrow.learn` says how likely each one is a weed, and it
+   ships only with a scorecard on the frozen test split (`offrow learn
+   evaluate`) that the gate has passed. The rule that was here before, "no
+   machine learning", was a phase, not a principle: the principle is that
+   geometry is checked against truth and a model is checked against a
+   scorecard, and neither is trusted on its say-so. The output is still a
+   ranked queue with probabilities, never a verdict.
 
 2. **Never load a full raster into memory.** A 100 acre field at 5 mm/px is on the
    order of 16 billion pixels. All raster access goes through windowed reads with

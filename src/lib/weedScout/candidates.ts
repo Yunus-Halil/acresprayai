@@ -58,7 +58,7 @@ const empty = (id: string, tileId: string, centroid: LatLng2, kind: CandidateKin
   anomalyZ: null, anomalyFeature: null,
   blobZ: null, blobZFeature: null,
   blob: null, region: null, areaM2: 0,
-  feedback: null, estimate: null,
+  feedback: null, estimate: null, prediction: null,
   chip: null, chipSpanM: null, chipGsdM: null,
 });
 

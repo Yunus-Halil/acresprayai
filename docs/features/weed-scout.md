@@ -172,6 +172,29 @@ cross-user read. A national dataset is a later, consented, separate step.
 
 The `brain` and `brain_model` columns from the first migration remain, unused.
 
+## The classifier (2026-09-29)
+
+The scout can now carry a learned opinion on each plant spot. After the chips are
+rendered, `lib/weedScout/classify/` scores every single-plant candidate with the model this
+build ships (`public/models/manifest.json`, written by `offrow learn publish`) and attaches
+a `prediction` ({pWeed, pCrop, pOther, modelVersion}) to the candidate. Regions get none:
+the model was trained on chips centred on one object and knows nothing about ground.
+
+The model runs in the browser (onnxruntime-web, WebAssembly served from our own origin
+under a `'wasm-unsafe-eval'` CSP allowance). Imagery does not leave the page. No manifest,
+or a sidecar whose contract the app does not recognise, means no classifier: the run says so
+in its notes and everything else is as before.
+
+What the prediction changes: the default verdict, after the operator's own past verdicts.
+At or above 0.6 weed a plant starts as a weed, below 0.4 it starts removed, between it
+starts unsure. The popup shows the number in words that never say "is a weed". Saving
+writes the prediction and model version beside the verdict (`weed_observations.prediction`,
+`model_version`), so agreement between the model and the operator is a query per version and
+the next training export carries both.
+
+How the model is made, scored and gated is in `offrow/README.md` ("The learning track")
+and the living plan in [weed-detection-foundation.md](weed-detection-foundation.md).
+
 ## What is and is not verified
 
 Verified, in `src/test/weedScout.test.ts` against synthetic scenes with known truth: a dry

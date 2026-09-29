@@ -45,6 +45,7 @@ import {
 import { type UnitSystem, fmtLengthCm } from "../units";
 import { globalThreshold, indexRaster, maskWindow } from "./vegetation";
 import { boundsAround, fetchRaster, renderChip } from "./zoom";
+import { classifyCandidates } from "./classify";
 
 const yieldToUi = () => new Promise<void>(r => setTimeout(r, 0));
 
@@ -58,6 +59,8 @@ export type RunOptions = {
   fieldId?: string | null;
   /** Follows the operator's display setting; defaults to metric for callers (tests) that omit it. */
   unitSystem?: UnitSystem;
+  /** Score chipped plant candidates with the shipped classifier. Default: only in a browser. */
+  classify?: boolean;
 };
 
 class Aborted extends Error {
@@ -264,6 +267,21 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
     }
     check();
     if (i % 4 === 3) await yieldToUi();
+  }
+
+  // The classifier, on the chips just rendered. Plant spots only: a region is
+  // ground and the model was never shown ground. No model means no change.
+  const classify = opts.classify ?? (typeof document !== "undefined");
+  if (classify && chipCount > 0) {
+    report("classifying");
+    try {
+      const outcome = await classifyCandidates(candidates);
+      candidates = outcome.candidates;
+      notes.push(outcome.note);
+    } catch (e) {
+      notes.push(`Classifier skipped: ${(e as Error).message}`);
+    }
+    check();
   }
 
   report("done");

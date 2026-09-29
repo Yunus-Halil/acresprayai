@@ -15,6 +15,7 @@
 // the operator presses, and the only name ever suggested for a spot comes
 // from their own past verdicts (lib/weedCatalog/suggest.ts). Nothing here
 // calls anything outside the tile server and the operator's own archive.
+import { NOT_WEED_BELOW, WEED_AT_OR_ABOVE } from "@/lib/weedScout/classify";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleMarker, MapContainer, Polygon, Popup, TileLayer, Tooltip } from "react-leaflet";
 import L from "leaflet";
@@ -94,6 +95,7 @@ const STAGE_LABEL: Record<ScoutProgress["stage"], string> = {
   sweeping: "Sweeping the field at full depth",
   ranking: "Ranking candidates",
   chips: "Rendering chips",
+  classifying: "Scoring plant spots",
   done: "Done",
 };
 
@@ -148,6 +150,14 @@ const GROUND_CLASSES = new Set<RegionClass>(["bare or dry ground", "dark ground 
 export function defaultVerdict(c: Candidate): Verdict {
   if (c.feedback && c.feedback.factor < 1) return "not_weed";
   if (c.feedback && c.feedback.factor > 1) return "weed";
+  // The shipped classifier's word, after the operator's own verdicts and only
+  // where it is sure: confident weed starts as a weed, confident not-weed
+  // starts removed, the middle starts unsure so the operator looks.
+  if (c.prediction) {
+    if (c.prediction.pWeed >= WEED_AT_OR_ABOVE) return "weed";
+    if (c.prediction.pWeed < NOT_WEED_BELOW) return "not_weed";
+    return "unsure";
+  }
   if (c.region) return GROUND_CLASSES.has(c.region.klass) ? "unsure" : "weed";
   if (c.kind === "field outlier") return "unsure";
   return "weed";

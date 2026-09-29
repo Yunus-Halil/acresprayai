@@ -24,6 +24,8 @@ MODULES = [
     "offrow.sensor",
     "offrow.synth",
     "offrow.vegetation",
+    "offrow.learn.examples",
+    "offrow.learn.sources",
 ]
 
 #: Implemented modules are exempt from the stub checks below. Removing a name
@@ -47,6 +49,8 @@ IMPLEMENTED = (
     "offrow.ingest",
     "offrow.eval",
     "offrow.ingest",
+    "offrow.learn.examples",
+    "offrow.learn.sources",
 )
 
 STUB_MODULES = [m for m in MODULES if m not in IMPLEMENTED]
@@ -90,8 +94,13 @@ def test_stubs_are_documented(name):
             assert obj.__doc__, f"{name}.{obj_name} has no docstring"
 
 
-def test_no_machine_learning_dependency():
-    """The current phase is geometric. A model import here is a spec violation."""
+def test_no_machine_learning_dependency_in_the_geometric_core():
+    """Learning lives in offrow.learn and nowhere else.
+
+    The core (rows, vegetation, blobs, candidates, grid, io, synth, datasets)
+    generates candidates from geometry in ground units and must stay runnable
+    without a model. A framework import outside offrow/learn is a spec violation.
+    """
     import pathlib
 
     banned = (
@@ -100,9 +109,33 @@ def test_no_machine_learning_dependency():
         "from torch",
         "from tensorflow",
         "import sklearn",
+        "from sklearn",
+        "import onnxruntime",
     )
     root = pathlib.Path(__file__).resolve().parents[1] / "src" / "offrow"
     for path in root.rglob("*.py"):
+        if "learn" in path.relative_to(root).parts:
+            continue
         text = path.read_text(encoding="utf-8")
         for token in banned:
-            assert token not in text, f"{path.name} imports a machine learning framework"
+            assert token not in text, (
+                f"{path.name} imports a machine learning framework outside offrow.learn"
+            )
+
+
+def test_the_learning_track_imports_without_its_extra():
+    """offrow.learn.examples and .sources are the store; they must not need torch."""
+    import sys
+
+    for name in ("offrow.learn.examples", "offrow.learn.sources"):
+        text = (
+            __import__("pathlib").Path(__file__).resolve().parents[1]
+            / "src"
+            / "offrow"
+            / "learn"
+            / f"{name.rsplit('.', 1)[1]}.py"
+        ).read_text(encoding="utf-8")
+        assert "import torch" not in text and "from torch" not in text, (
+            f"{name} must not import torch"
+        )
+    assert "offrow.learn.examples" in sys.modules or __import__("offrow.learn.examples")

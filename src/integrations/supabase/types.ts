@@ -1371,6 +1371,8 @@ export type Database = {
           notes: string | null
           params: Json | null
           pipeline_version: string
+          prediction: Json | null
+          model_version: string | null
           place: string | null
           row_confidence: number | null
           row_spacing_m: number | null
@@ -1428,6 +1430,8 @@ export type Database = {
           notes?: string | null
           params?: Json | null
           pipeline_version?: string
+          prediction?: Json | null
+          model_version?: string | null
           place?: string | null
           row_confidence?: number | null
           row_spacing_m?: number | null
@@ -1485,6 +1489,8 @@ export type Database = {
           notes?: string | null
           params?: Json | null
           pipeline_version?: string
+          prediction?: Json | null
+          model_version?: string | null
           place?: string | null
           row_confidence?: number | null
           row_spacing_m?: number | null

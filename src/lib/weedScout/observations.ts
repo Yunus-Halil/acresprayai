@@ -189,6 +189,9 @@ export async function saveObservation(input: SaveObservationInput): Promise<{ ok
     vector: featureVectorOf(c, input.params.rowSpacingM),
     estimate: c.estimate,
     estimate_model: c.estimate?.model ?? null,
+    // The model's word beside the operator's. Null when no model was on the page.
+    prediction: c.prediction ?? null,
+    model_version: c.prediction?.modelVersion ?? null,
     verdict: input.verdict,
     notes: input.notes,
     verdict_at: input.verdict ? new Date().toISOString() : null,

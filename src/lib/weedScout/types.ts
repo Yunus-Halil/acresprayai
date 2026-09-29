@@ -21,6 +21,7 @@
 // look at. Nothing in this module tree may call a blob a weed; the operator
 // does that, on the record, with the chip in front of them.
 import type { LatLng2 } from "../geo";
+import type { Prediction } from "./classify/types";
 
 /** Everything the pipeline needs about the imagery, and nothing about the UI. */
 export type ScoutInputs = {
@@ -311,6 +312,11 @@ export type Candidate = {
   areaM2: number;
   feedback: Feedback | null;
   estimate: Estimate | null;
+  /**
+   * The shipped classifier's word on a single plant, when one scored it. A
+   * suggestion beside the feedback and the estimate; never the verdict.
+   */
+  prediction?: Prediction | null;
   /** PNG data URL of the chip, when one was rendered. */
   chip: string | null;
   chipSpanM: number | null;
@@ -319,7 +325,7 @@ export type Candidate = {
 
 export type ScoutStage =
   | "stitching" | "tiling" | "masking" | "baseline" | "regions" | "rows" | "blobs"
-  | "sweeping" | "ranking" | "chips" | "done";
+  | "sweeping" | "ranking" | "chips" | "classifying" | "done";
 
 export type ScoutProgress = {
   stage: ScoutStage;

@@ -10,9 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 
-# No torch, no tensorflow, no pretrained models. scikit-learn is permitted only
-# for the one-class anomaly step, which is not built yet, so it is not a
-# dependency yet either.
+# The geometric core has no ML dependency. Learning lives behind the "learn"
+# extra below and in the offrow.learn package only.
 dependencies = [
     "numpy>=1.26",
     "scipy>=1.11",
@@ -28,6 +27,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The learning track (offrow.learn). Torch trains, onnxruntime checks the export,
+# the browser runs the result. Nothing in the geometric core imports these.
+learn = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "onnx>=1.15",
+    "onnxscript>=0.2",
+    "onnxruntime>=1.17",
+    "scikit-learn>=1.4",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -62,3 +71,4 @@ select = ["E", "F", "I", "UP", "B"]
 "src/offrow/*.py" = ["ARG001"]
 # typer declares options as call-valued defaults. That is the framework, not a bug.
 "src/offrow/cli.py" = ["B008"]
+"src/offrow/learn/cli.py" = ["B008"]
