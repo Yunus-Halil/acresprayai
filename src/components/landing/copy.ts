@@ -47,81 +47,96 @@ export const CONTACT_EMAIL = "yunus@swathwise.com";
 /**
  * The hero.
  *
- * SwathWise is precision agriculture: map the field, find what is wrong with
- * it, treat only that, keep the record. Weeds are the flagship job and the
- * one the page leads with, because they are the one most farms lose money on
- * every season, but they are not the category. The same scan surfaces bare
- * ground, thin stand and waterlogged patches, and the same planner treats
- * whatever the operator confirms.
- *
- * Every clause is a capability that ships. "Every plant that does not match
- * the field" is the exact thing the detector does: it builds the field's own
- * baseline from the field's own pixels and flags what departs from it. It is
- * not a promise of perfect recall and the page never makes one.
+ * The product is the weed map. Everything else on the page (acres, cost,
+ * mission, record) is what happens after SwathWise finds and measures the
+ * weeds, and the hero says so in that order. "Likely weeds", "abnormal
+ * vegetation", "findings": the detector proposes, the operator confirms,
+ * and no sentence here claims a recall nobody has measured on a flown field.
  */
 export const HERO = {
-  kicker: "PRECISION AGRICULTURE, FROM THE AIR",
-  headline: "Every weed on your farm. Found from the air.",
-  sub:
-    "SwathWise is precision agriculture for any drone and any field. It maps your farm from "
-    + "the imagery, measures every plant against your own crop, and shows you where the weeds "
-    + "are, along with every patch that is not behaving like the rest of the field. Confirm what "
-    + "you want treated, and it plans the spray flight that covers only those spots and writes "
-    + "the record when you land. For the farmer who owns the fields and the operator who sprays them.",
+  headline: "Turn ordinary drone imagery into a weed map.",
+  /** The brand line, under the headline. Kept verbatim. */
+  brand: "Precision Agriculture, Precisely Simple.",
+  body: [
+    "SwathWise analyzes RGB drone imagery, learns what the crop looks like in that field, and maps likely weeds and abnormal vegetation for you to review.",
+    "Every finding is measured and placed directly on the field map. Confirm what needs treatment, and SwathWise turns those areas into a spray mission and application record.",
+  ],
   bullets: [
-    "Any drone, any camera, any crop",
-    "Every plant measured against your own field",
-    "Nothing sprays until you say so",
-    "Runs in a browser. Nothing to install",
+    "Built for standard RGB drone imagery",
+    "Field-specific weed detection",
+    "Every finding measured in real-world area",
+    "Nothing gets treated until you confirm it",
+    "Runs in the browser",
   ],
 };
 
-export const FEATURES = [
-  {
-    num: "01",
-    title: "It reads the whole farm",
-    body: "Not a sample. Every square foot of your imagery is measured: color, brightness, how much of it is plant, and how each patch compares to the ground around it. Weeds, bare ground, thin stand, wet patches, all from one flight.",
-  },
-  {
-    num: "02",
-    title: "It knows what your crop looks like",
-    body: "It learns from your own field, not a textbook. Every plant is sized and colored against the plants beside it, so a weed stands out because it is not corn, not because someone told it what corn is.",
-  },
-  {
-    num: "03",
-    title: "Files for the aircraft you fly",
-    body: "Map with any drone that has a camera. Spray missions come out as files for the spray aircraft we support today, and as ground-station waypoints for the rest. The list grows as we test each one.",
-  },
-  {
-    num: "04",
-    title: "It writes the paperwork",
-    body: "Product, acres, conditions, applicator, field, signature line. The application record comes off the job you flew. Nothing retyped, nothing remembered at the kitchen table.",
-  },
-];
+/**
+ * One flight, the whole field. What the scan reads and what it can turn up,
+ * in the words a farmer uses, with no method and no absolutes.
+ */
+export const WHOLE_FIELD = {
+  eyebrow: "WHOLE-FIELD ANALYSIS",
+  headline: "One flight. The whole field.",
+  body: [
+    "SwathWise analyzes the entire stitched field map, not a handful of sample points.",
+    "It finds vegetation, measures how it compares with the crop around it, and maps the areas that deserve attention.",
+  ],
+  findingsLead: "Potential findings include",
+  findings: [
+    "likely weeds",
+    "weed patches",
+    "thin stand",
+    "bare or wet ground",
+    "unusual vegetation",
+    "areas behaving differently from the rest of the field",
+  ],
+  close: "Every finding is drawn directly on the map so the operator can inspect it before anything becomes a treatment zone.",
+};
 
 /**
  * The detection section: a headline, one paragraph, and a real scan. No
  * walkthrough of the method. Farmers care what it finds, not how.
  */
 export const DETECTION = {
-  eyebrow: "HOW IT FINDS THEM",
-  headline: "It does not guess where the weeds are. It measures.",
-  sub:
-    "Most tools look for a picture of a weed. SwathWise learns what your field looks like today, "
-    + "from your own imagery, and then shows you everything that does not fit. It runs in your "
-    + "browser, on your fields.",
+  eyebrow: "FIELD-SPECIFIC DETECTION",
+  headline: "It learns the field before it looks for weeds.",
+  body: [
+    "SwathWise does not assume every field looks the same.",
+    "It measures the crop already growing in your imagery, including plant position, spacing, size, color, density, and surrounding vegetation. Then it looks for plants and patches that do not fit that pattern.",
+    "A weed stands out because it does not behave like the crop around it.",
+    "Every finding includes its location, size, confidence, and affected area. The operator decides whether it should be treated.",
+  ],
 };
+
+/**
+ * The core product flow. Five steps, one line each, and the weed map is the
+ * first one because everything after it is derived from it.
+ */
+export const FLOW = {
+  headline: "Found it. Sized it. Priced it. Flew it. Filed it.",
+  sub: "The weed map is the foundation. Everything after it is derived from what you confirmed on it.",
+  steps: [
+    { label: "FOUND IT", body: "SwathWise identifies likely weeds and abnormal vegetation from the field imagery." },
+    { label: "SIZED IT", body: "Every confirmed finding becomes a measured treatment area." },
+    { label: "PRICED IT", body: "Estimate treatment cost using your own inputs and per-acre costs." },
+    { label: "FLEW IT", body: "Turn confirmed treatment areas into a spray mission for supported aircraft. You fly it, on your license." },
+    { label: "FILED IT", body: "Build the application record directly from the job that was flown." },
+  ],
+  /** The architecture, as one line. Arrows, not dashes. */
+  chain: "RGB imagery → field-specific analysis → likely weed findings → operator review → treatment zones → cost → mission → application record",
+};
+
 
 export const STEPS = [
   {
     num: "01",
-    title: "Fly it with anything",
-    body: "Plan the survey in SwathWise, load the flight into your drone, fly it. Or drop in photos you already have, or a finished field map from any camera. All you need is a drone with a camera and a browser.",
+    title: "Fly the field you already fly",
+    body: "Plan the survey in SwathWise and load it into the drone you already have, or drop in the photos or the stitched map from a flight you already made. Standard RGB imagery and a browser are all it takes.",
   },
   {
     num: "02",
-    title: "See every weed on the map",
-    body: "The scan comes back as a map with every finding drawn on it, worst first, each with a photo of the spot. Tap one, keep it or throw it out, name it if you know it.",
+    title: "Review the findings on the map",
+    body: "The scan comes back as a map with every finding drawn on it, worst first, each with a photo of the spot. Keep it, remove it, or mark it unsure; name it if you know it.",
   },
   {
     num: "03",
@@ -133,8 +148,8 @@ export const STEPS = [
 export const AUDIENCES = [
   {
     label: "FARMERS",
-    title: "Walk the whole farm from a chair",
-    body: "Every field, every plant, every week if you want. Spot the patch before it goes to seed and spray a strip instead of a section. If you can use a browser, you can run it.",
+    title: "Scout the whole field without walking every acre",
+    body: "Every field, every week if you want. Spot weed pressure before it goes to seed and treat a strip instead of a section. If you can use a browser, you can run it.",
   },
   {
     label: "SPRAY OPERATORS",

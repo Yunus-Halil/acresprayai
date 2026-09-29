@@ -12,7 +12,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  AUDIENCES, CTA_PRIMARY, DETECTION, FEATURES, HERO, STATUS_BADGE, STEPS,
+  AUDIENCES, CTA_PRIMARY, DETECTION, FLOW, HERO, STATUS_BADGE, STEPS, WHOLE_FIELD,
 } from "@/components/landing/copy";
 
 const LANDING = join(__dirname, "..", "components", "landing");
@@ -20,9 +20,10 @@ const LANDING = join(__dirname, "..", "components", "landing");
 /** Every string a visitor can read, flattened out of copy.ts. */
 const VISIBLE: string[] = [
   STATUS_BADGE, CTA_PRIMARY,
-  HERO.kicker, HERO.headline, HERO.sub, ...HERO.bullets,
-  ...FEATURES.flatMap(f => [f.title, f.body]),
-  DETECTION.eyebrow, DETECTION.headline, DETECTION.sub,
+  HERO.headline, HERO.brand, ...HERO.body, ...HERO.bullets,
+  WHOLE_FIELD.eyebrow, WHOLE_FIELD.headline, ...WHOLE_FIELD.body, WHOLE_FIELD.findingsLead, ...WHOLE_FIELD.findings, WHOLE_FIELD.close,
+  DETECTION.eyebrow, DETECTION.headline, ...DETECTION.body,
+  FLOW.headline, FLOW.sub, ...FLOW.steps.flatMap(s => [s.label, s.body]), FLOW.chain,
   ...STEPS.flatMap(s => [s.title, s.body]),
   ...AUDIENCES.flatMap(a => [a.title, a.body]),
 ];
@@ -62,8 +63,10 @@ describe("data agnostic", () => {
     expect(lines).toEqual([]);
   });
 
-  it("still says any drone will do for the imagery", () => {
-    expect(VISIBLE.join(" ")).toMatch(/any drone/i);
+  it("says the imagery is ordinary RGB from the drones operators already fly, and never 'any drone'", () => {
+    const all = VISIBLE.join(" ");
+    expect(all).toMatch(/RGB drone imagery|standard RGB/i);
+    expect(all).not.toMatch(/any drone|any camera|any crop/i);
   });
 });
 
@@ -141,13 +144,13 @@ describe("the category", () => {
     // Weeds are the flagship job and the page leads with them. They are not the
     // whole product, and a rewrite narrowed the brand to one feature once
     // already. The category has to be on the page, above the headline.
-    expect(HERO.kicker).toMatch(/precision agriculture/i);
-    expect(HERO.sub).toMatch(/precision agriculture/i);
+    expect(HERO.brand).toBe("Precision Agriculture, Precisely Simple.");
+    expect(HERO.headline).toMatch(/weed map/i);
   });
 
   it("names the findings that are not weeds", () => {
     const all = VISIBLE.join(" ");
-    expect(all).toMatch(/bare ground/i);
+    expect(all).toMatch(/bare (or wet )?ground/i);
     expect(all).toMatch(/thin stand/i);
     expect(all).toMatch(/wet/i);
   });
@@ -165,6 +168,12 @@ describe("claims the product can stand behind", () => {
     // Identification is the operator's call, suggested from their own verdicts
     // and a sourced catalog. The copy may not claim the reverse.
     expect(all).not.toMatch(/identifies the species|knows the species|tells you the species/i);
+  });
+
+  it("makes no absolute claim about coverage or certainty", () => {
+    // Still validating across fields, crops, altitudes and cameras. Ambitious,
+    // not absolute: "likely weeds", "findings", never "every weed".
+    expect(all).not.toMatch(/every weed|every plant|does not guess|any drone, any camera/i);
   });
 
   it("does not sell autonomous flight", () => {

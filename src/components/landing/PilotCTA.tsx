@@ -21,8 +21,8 @@ export const PilotCTA = () => (
           We are in closed testing with a small number of farms.
         </h2>
         <p className="m-0 mt-4 max-w-[560px] text-[17px] leading-[1.55] text-sw-on-dark sm:mt-[18px]">
-          Public sign-up is closed while we fly with them. If you have fields, a drone of any
-          kind, and weeds you would rather find from the air, tell us about your operation and we
+          Public sign-up is closed while we fly with them. If you have fields, a drone
+          that takes ordinary RGB imagery, and weeds you would rather find from the air, tell us about your operation and we
           will be in touch when a place opens.
         </p>
       </div>

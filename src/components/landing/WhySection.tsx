@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Reveal } from "./Reveal";
 import { Frame, Screenshot, Shot } from "./Shot";
+import { FLOW } from "./copy";
 
 type RowProps = {
   title: string;
@@ -45,13 +46,30 @@ export const WhySection = () => (
         FROM THE FINDING TO THE FLIGHT
       </div>
       <h2 className="m-0 mt-4 text-[clamp(30px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.03em] text-sw-ink sm:mt-[18px]">
-        Found it. Sized it. Priced it. Flew it. Filed it.
+        {FLOW.headline}
       </h2>
       <p className="m-0 mt-5 max-w-[620px] text-[17px] leading-[1.55] text-sw-muted">
-        A weed you can see on a map is a weed you can put a number on. SwathWise turns every
-        confirmed finding into acres, into a cost against your own inputs, into a spray route
-        for your spray aircraft, and into the record you would have had to write anyway.
+        {FLOW.sub}
       </p>
+    </Reveal>
+
+    {/* The five steps, as one strip. The first is the weed map; the rest are
+        derived from it, and the chain underneath says so in one line. */}
+    <Reveal className="mt-10 sm:mt-14">
+      <ol className="grid gap-6 sm:grid-cols-2 lg:grid-cols-5 lg:gap-8">
+        {FLOW.steps.map((step, i) => (
+          <li key={step.label} className="border-t-2 border-sw-ink pt-4">
+            <div className="flex items-baseline justify-between font-plex text-xs tracking-[0.1em] text-sw-green">
+              <span>{step.label}</span>
+              <span className="text-sw-muted">{String(i + 1).padStart(2, "0")}</span>
+            </div>
+            <p className="m-0 mt-2.5 text-[15px] leading-[1.5] text-sw-muted">{step.body}</p>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-6 font-plex text-[11px] leading-[1.8] tracking-[0.04em] text-sw-muted sm:text-xs">
+        {FLOW.chain}
+      </div>
     </Reveal>
 
     <Reveal className="mt-12 sm:mt-16">

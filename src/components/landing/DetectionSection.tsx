@@ -22,9 +22,9 @@ export const DetectionSection = () => (
         <h2 className="m-0 mt-4 text-[clamp(30px,5vw,56px)] font-semibold leading-[1.02] tracking-[-0.03em] text-sw-paper sm:mt-[18px]">
           {DETECTION.headline}
         </h2>
-        <p className="m-0 mt-5 max-w-[680px] text-[17px] leading-[1.55] text-sw-on-dark sm:text-lg">
-          {DETECTION.sub}
-        </p>
+        <div className="mt-5 max-w-[680px] space-y-3 text-[17px] leading-[1.55] text-sw-on-dark sm:text-lg">
+          {DETECTION.body.map(p => <p key={p} className="m-0">{p}</p>)}
+        </div>
       </Reveal>
 
       {/* A real scan, as the operator saw it. The one species name on it was
