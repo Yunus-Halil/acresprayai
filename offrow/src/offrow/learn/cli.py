@@ -32,6 +32,9 @@ def build_examples(
     examples: Path = typer.Option(DEFAULT_EXAMPLES, "--examples", help="Where manifests live."),
     seeds: int = typer.Option(24, "--seeds", help="Synthetic scenes to render."),
     limit_frames: int = typer.Option(0, "--limit-frames", help="For a quick USU build; 0 is all."),
+    negatives_per_frame: int = typer.Option(
+        10, "--negatives-per-frame", help="Clear-ground chips sampled per USU frame."
+    ),
     export_dir: Path = typer.Option(
         None, "--export-dir", help="Operator export from pull-verdicts."
     ),
@@ -40,7 +43,12 @@ def build_examples(
     from offrow.learn import sources
 
     if source == "usu":
-        m = sources.build_usu(root, examples / "usu-corn-weeddb", limit_frames=limit_frames or None)
+        m = sources.build_usu(
+            root,
+            examples / "usu-corn-weeddb",
+            negatives_per_frame=negatives_per_frame,
+            limit_frames=limit_frames or None,
+        )
     elif source == "synth":
         m = sources.build_synth(examples / "synth", seeds=range(seeds))
     elif source == "operator":

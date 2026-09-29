@@ -1,0 +1,74 @@
+{
+ "current": "weed-v1",
+ "models": {
+  "weed-v1": {
+   "version": "weed-v1",
+   "file": "weed-v1.onnx",
+   "bytes": 1810614,
+   "quantized": true,
+   "classes": [
+    "weed",
+    "crop",
+    "other"
+   ],
+   "input": {
+    "layout": "NCHW",
+    "px": 96,
+    "range": "0..1 (divide RGB by 255; ImageNet normalisation is inside the graph)",
+    "span_rule": {
+     "per_diameter": 4.0,
+     "min_m": 0.24,
+     "max_m": 1.2
+    }
+   },
+   "output": "calibrated logits; softmax gives probabilities",
+   "temperature": 1.1752800941467285,
+   "trained_at": "2026-09-29T21:08:34Z",
+   "sources": [
+    "data/examples/synth",
+    "data/examples/usu-corn-weeddb"
+   ],
+   "scorecard": {
+    "test_examples": 7008,
+    "weed_recall": 0.9904882688649335,
+    "weed_precision": 0.9923761118170267,
+    "weed_auroc": 0.998881920210254,
+    "ece": 0.004598319424171743,
+    "by_source": {
+     "synth": {
+      "n": 2850,
+      "weed_recall": 0.9983333333333333
+     },
+     "usu-corn-weeddb": {
+      "n": 4158,
+      "weed_recall": 0.9856704196519959
+     }
+    },
+    "weed_recall_by_diameter": {
+     "<4 cm": {
+      "n": 729,
+      "recall": 0.9986282578875172
+     },
+     "4-8 cm": {
+      "n": 585,
+      "recall": 0.9965811965811966
+     },
+     "8-16 cm": {
+      "n": 577,
+      "recall": 0.9480069324090121
+     },
+     "16-32 cm": {
+      "n": 2495,
+      "recall": 0.995190380761523
+     },
+     ">=32 cm": {
+      "n": 345,
+      "recall": 1.0
+     }
+    }
+   },
+   "caveat": "A bootstrap trained on public corn imagery flown at 10 m, synthetic scenes and the operators' own verdicts. Its number is a suggestion with a probability; the operator decides.",
+   "exported_at": "2026-09-29T21:09:36Z"
+  }
+ }
+}

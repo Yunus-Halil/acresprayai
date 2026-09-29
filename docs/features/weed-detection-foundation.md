@@ -22,7 +22,7 @@ Five parts, in dependency order:
 | 1 | One ground-truth store: every labelled chip in one format, split by group | `offrow/src/offrow/learn/examples.py`, `sources.py` | **done** |
 | 2 | Evaluation harness and gate: scorecard per version, by source and weed size | `offrow/src/offrow/learn/evaluate.py` | **done** |
 | 3 | Model boundary in the app: contract, registry, browser inference | `src/lib/weedScout/classify/` | **done** (wired into the pipeline, popup, default verdict, archive) |
-| 4 | First learned model (weed-v1) trained on USU + synthetic, published with scorecard | `offrow learn train / evaluate / publish` | waiting on USU download |
+| 4 | First learned model (weed-v1) trained on USU + synthetic, published with scorecard | `offrow learn train / evaluate / publish` | **done** 2026-09-29: published to `public/models/`, gate passed |
 | 5 | The loop: prediction stored with every verdict, defaults from the model, retrain command | app + `weed_observations.prediction` | **done** in code; migration applied 2026-09-29 |
 
 ## Decisions taken (2026-09-29)
@@ -95,13 +95,19 @@ Five parts, in dependency order:
 ## Next (in order)
 
 1. ~~Wire the classifier into the pipeline, verdict default, popup, archive, CSP, wasm copy, tests.~~ Done.
-2. USU download finishes: `build-examples --source usu`, `summary`, `train --version
-   weed-v1`, `evaluate`, `publish`. Commit the ONNX, sidecar, scorecard and manifest.
-3. Apply the prediction migration (`supabase db push`).
+2. ~~USU examples, train, evaluate, publish weed-v1.~~ Done. 30,162 examples; test accuracy 0.966, USU weed recall 0.986, ECE 0.005. In-distribution numbers; see the review brief.
+3. ~~Apply the prediction migration.~~ Done.
 4. Click-through in a signed-in session on a real scan: chips scored, popup line shows,
    verdicts saved with predictions.
 5. DRONEWEED when downloaded (adds labelled maize, the only public crop labels).
 6. Flown imagery with staked truth becomes the test set the moment it exists.
+
+## weed-v1 in one line
+
+Trained on 19,535 chips, scored on 7,008 held out by frame: weed recall 0.990, precision
+0.992, calibration error 0.005; on the real source alone, weed recall 0.986, crop recall
+0.762 (mask-derived labels). In-distribution; the flown test set is still the missing piece.
+Full results and caveats: [the review brief](../review/weed-detection-foundation-review-brief.md).
 
 ## Precautions and known weaknesses (for review)
 
