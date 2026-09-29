@@ -41,11 +41,10 @@ export const CockpitSection = () => (
           Fly the whole job before you fly it.
         </h2>
         <p className="m-0 mt-5 max-w-[620px] text-[17px] leading-[1.55] text-sw-on-dark">
-          Press play and watch the aircraft work the field: every pass, every turn, the
-          tank draining, the battery going down faster while it is heavy. Scrub to any
-          minute of the mission and you see the tank, the battery and the distance for
-          <em>that</em> minute. Before you leave the yard, you know how many loads it takes,
-          how many batteries, and where you will stop to refill.
+          Press play and watch the aircraft work the field: each pass, each turn, the tank
+          draining, the battery going down faster while it is heavy. Scrub to any minute and
+          the numbers are for <em>that</em> minute. Before you leave the yard you know the
+          loads, the batteries and where you will stop to refill.
         </p>
       </Reveal>
 
@@ -73,28 +72,28 @@ export const CockpitSection = () => (
           <Spec
             value="Refills"
             label="TANK PLANNING"
-            detail="It works out where the tank runs dry on the route and plans the refill stops before you take off, so you are not guessing at the truck."
+            detail="Where the tank runs dry on the route, and the refill stops, planned before you take off."
           />
         </Reveal>
         <Reveal>
           <Spec
             value="Batteries"
             label="BATTERY PLANNING"
-            detail="A full tank drains a battery faster than an empty one. The estimate follows the load through the whole mission, so the battery count is for your job, not a rule of thumb."
+            detail="A full tank drains a battery faster than an empty one. The estimate follows the load through the mission, so the battery count is for your job, not a rule of thumb."
           />
         </Reveal>
         <Reveal>
           <Spec
             value="One pass"
             label="RATE PER PASS"
-            detail="Rates are set in strips the width of your boom, because that is what the aircraft can actually fly. Nothing finer is promised."
+            detail="Rates are set in strips the width of your boom, because that is what the aircraft can fly. Nothing finer is promised."
           />
         </Reveal>
         <Reveal>
           <Spec
             value="Your call"
             label="EVERY SUGGESTION"
-            detail="Mark a few patches and it finds the rest. Scan a fresh field and it shows you what stands out. You decide what gets sprayed, and you fly it."
+            detail="SwathWise detects and proposes. You decide what gets sprayed, and you fly it."
           />
         </Reveal>
       </div>

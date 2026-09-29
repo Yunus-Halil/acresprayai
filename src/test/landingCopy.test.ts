@@ -173,7 +173,11 @@ describe("claims the product can stand behind", () => {
   it("makes no absolute claim about coverage or certainty", () => {
     // Still validating across fields, crops, altitudes and cameras. Ambitious,
     // not absolute: "likely weeds", "findings", never "every weed".
-    expect(all).not.toMatch(/every weed|every plant|does not guess|any drone, any camera/i);
+    expect(all).not.toMatch(/every weed|every plant|does not guess|any drone, any camera|every field, every week|finds every/i);
+    // "Every finding" is allowed in exactly one place: the hero bullet that says
+    // findings are measured, which is true of each one the scan makes.
+    const everyFinding = VISIBLE.filter(s => /every finding/i.test(s));
+    expect(everyFinding).toEqual(["Every finding measured in real-world area"]);
   });
 
   it("does not sell autonomous flight", () => {

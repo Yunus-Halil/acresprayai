@@ -86,8 +86,8 @@ export const WhySection = () => (
 
     <div className="mt-16 flex flex-col gap-16 sm:mt-[90px] sm:gap-[90px]">
       <Row
-        title="Every finding comes with an acreage and a price"
-        body="Each weed zone is measured in acres, clipped to your boundary and inset by the headland your aircraft needs, so the acres you see are the acres you will treat. Price them against the inputs you carry, at your own per-acre cost. Nothing is suggested that you do not have."
+        title="Each confirmed finding comes with an acreage and a price"
+        body="A confirmed zone is measured in acres, clipped to your boundary and inset by the headland your aircraft needs, so the acres you see are the acres you will treat. It is priced against the inputs you carry, at your own per-acre cost."
         footnote="ZONE AREA · TREATED AREA AFTER HEADLAND · EST. COST"
         media={
           <Shot
@@ -100,7 +100,7 @@ export const WhySection = () => (
       <Row
         mediaFirst
         title="One button, one flight, only the spots you confirmed"
-        body="Confirm the findings and the spray mission is built: a route that crosses treated ground and nothing else, the gallons it needs, the batteries, where the tank runs dry and where to refill. Simulate it first. Then download the file for your aircraft and fly it yourself."
+        body="Confirm the findings and the mission is built: a route that crosses treated ground and nothing else, the gallons, the batteries, where the tank runs dry and where to refill. Simulate it first, then download the file for your aircraft and fly it yourself."
         footnote="FILES FOR SUPPORTED SPRAY AIRCRAFT · GROUND-STATION WAYPOINTS"
         media={
           <Frame>
@@ -121,9 +121,9 @@ export const WhySection = () => (
       />
 
       <Row
-        title="It tells you when the sky will let you"
-        body="Wind, humidity, rain and temperature for your field, read against spray conditions, so the best windows over the next three days are named for you. Schedule the mission into one of them and the forecast rides along with it."
-        footnote="WIND · HUMIDITY · RAIN · BEST WINDOWS, NEXT 3 DAYS"
+        title="Forecast conditions for planning a spray window"
+        body="Wind, gusts, humidity, rain and temperature for your field over the next three days, checked against the limits you set, so the likely windows are easy to see. Schedule the mission into one and the forecast rides along with it. The product label sets the legal limits; that call stays yours."
+        footnote="WIND · HUMIDITY · RAIN · LIKELY WINDOWS, NEXT 3 DAYS"
         media={
           <Shot src="/screens/weather.png" alt="Weather dashboard with best spray windows" />
         }
@@ -132,7 +132,7 @@ export const WhySection = () => (
       <Row
         mediaFirst
         title="Your inputs, your prices, your units"
-        body="Tell it what you carry and what it costs you per acre. Every zone is priced in your numbers, in acres or hectares, gallons or liters, whichever you set once. It never invents a product or a rate. The only comparison it draws is against spraying your whole field at your own rate."
+        body="Enter the products you carry and what they cost you per acre. Confirmed zones are priced in your numbers, in acres or hectares, gallons or liters, whichever you set once. It never invents a product or a rate. The one comparison it draws is targeted treatment against spraying the whole field, with the same inputs."
         footnote="ACRES × YOUR PER-ACRE COST · ONE UNIT SETTING, EVERYWHERE"
         media={
           <Shot src="/screens/field-settings.png" alt="Field settings with per-acre input costs" />

@@ -36,10 +36,9 @@ export const ComplianceSection = () => (
         The record you would have to write anyway.
       </h2>
       <p className="m-0 mt-5 max-w-[640px] text-[17px] leading-[1.55] text-sw-muted">
-        Most states want a record after the job, and most of those get written from
-        memory, hours after the tank was empty. SwathWise already holds what that record
-        asks for, because it held it while you were flying. The record comes off the job
-        that was flown. Nothing is retyped.
+        Most states want a record after the job, and most get written from memory hours
+        after the tank was empty. SwathWise already holds what the record asks for, because
+        it held it while you were flying. Nothing is retyped.
       </p>
 
       <div className="mt-10 grid gap-x-10 gap-y-7 sm:mt-14 sm:grid-cols-2 lg:grid-cols-3">
@@ -61,11 +60,10 @@ export const ComplianceSection = () => (
             Sprayed and documented are the same list.
           </h3>
           <p className="m-0 mt-4 text-base leading-[1.55] text-sw-muted">
-            The zones you confirmed are the zones that get recorded. There is no second
-            pass where the paperwork drifts away from the job, because there is no second
-            pass. If a grower asks what was applied, or a neighbor has a question about
-            drift, this is the record of the job: the zones, the product, the rate and the
-            acres.
+            The zones you confirmed are the zones that get recorded; there is no second pass
+            where the paperwork drifts from the job. If a grower asks what was applied, or a
+            neighbor has a question about drift, this is the record: the zones, the product,
+            the rate and the acres.
           </p>
         </div>
         <div>
@@ -73,10 +71,9 @@ export const ComplianceSection = () => (
             The grower gets a document, not a text message.
           </h3>
           <p className="m-0 mt-4 text-base leading-[1.55] text-sw-muted">
-            Hand it over at the end of the job. It has the field, the product, the rate and
-            the acres on it, with a line for your signature. That is a different conversation
-            from a photo of a notebook page, and it is the one that gets you called back next
-            season.
+            Hand it over at the end of the job: the field, the product, the rate and the acres,
+            with a line for your signature. A different conversation from a photo of a notebook
+            page, and the one that gets you called back next season.
           </p>
         </div>
       </div>
