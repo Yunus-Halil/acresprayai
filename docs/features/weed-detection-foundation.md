@@ -143,18 +143,67 @@ Scope: prove the existing flow works in the app; no retraining, no species work.
   verdict source rule, popup stored-score line. Full suite green.
 - Browser (Chrome, app page, not signed in): model loads from `/models/manifest.json`, runs,
   returns the normalized object. Production build bundles the wasm entry.
+- `npm run test:live` is the release check for every future model version: loads, scores,
+  popup, override, (with `--write`) saves, reopens with the model gone, keeps the stored
+  prediction, keeps operator truth separate, and survives a missing manifest or model
+  file. It drives a Chrome the person signed into themselves (`--remote-debugging-port`);
+  no credential passes through it.
 
-### Not yet verified (needs a signed-in localhost session)
-The scripted end-to-end run (scan, popup, correct two spots, save, read rows back, reopen
-with the manifest blocked, reopen with the ONNX file blocked, delete the test rows) is
-written and ready. It stopped at sign-in: Google OAuth from localhost is redirected to
-production because `http://localhost:8080` is not in Supabase Auth's redirect URL list.
+### Live run in production (2026-10-01, signed in, www.swathwise.com at 0e15dcb)
+Driven by `npm run test:live` (`tests/integration/weed-v1-live-validation.mjs`, read-only
+mode) against the only scans with baked tiles. **The scripted save / reopen / re-save
+checks did not run live**: on no scan did the pipeline produce a single-plant candidate,
+so there was nothing for the model to score and nothing to save. They remain covered by
+unit tests only.
+
+- **Testing Field 2** (scan `389aca49`, 180 images, RGB, tiles to z20 = 8.7 cm/px at
+  54°N): 473 s. 6,935 tiles, rows fitted at 0.48 confidence, base pass 35 cm/px, sweep
+  183 windows at 4.3 cm/px, smallest measurable 13 cm, **plants measured 0, 30 candidates,
+  all regions, classifier scored 0**. 5,575 of 6,935 tiles had no soil-to-plant contrast
+  (closed stand). The verifier never ran because the generator never handed it a plant.
+  That is the documented limitation, met on the first real field.
+- **Testing Field** (scans `ce1fc13a`, `e06281aa`, `2a2152f6`): 1 candidate each, 0
+  scored. This mosaic is **2-band NIR + red** (band_mapping `ndvi:2-1`); its tiles are
+  false colour. weed-v1 is an RGB model, so nothing from this field is evidence either
+  way. Separately: the scout ran on false-colour imagery without saying so.
+- Fallbacks verified live on `ce1fc13a`: manifest 404 -> "No classifier is shipped in this
+  build", scan completes; ONNX 404 -> "Classifier weed-v1 could not be loaded", scan
+  completes. No console errors from the classifier path.
+
+### Does weed-v1 discriminate at the GSD operators fly? No evidence that it does.
+Since the pipeline produced no chips, 120 random 1.5 m ground patches were cut from
+Testing Field 2's own tiles (z20, 8.7 cm/px) and scored in Node with the app's exact
+preprocessing (`objectSpanM(null)` = 0.6 m crop, so 7 px of real image resized to 96).
+
+| | pWeed |
+|---|---|
+| min / p10 / p25 | 0.76 / 0.89 / 0.93 |
+| median / p75 / p90 | 0.96 / 0.98 / 0.99 |
+| below 0.40 / 0.40-0.60 / at or above 0.60 | 0 / 0 / **120** |
+| predicted class | weed: 120 |
+
+What the patches were (contact sheet, eyeballed): closed green canopy almost everywhere
+(0.90-0.99), bare grey ground and a track (0.76-0.88), one pink object (0.99). On the
+NIR/red field the same test gave median 0.89, 114 of 120 at or above 0.60, on blue pixels.
+
+Reading: at 8.7 cm/px the model calls everything weed. Soil scores lower than canopy, so
+there is a faint vegetation signal, but nothing that separates crop, pasture, residue or
+weeds, and the 0.60 default would keep every spot. Two causes are confounded and this
+test cannot separate them: (1) the training data is 4.8 mm/px corn with augmentation to
+22 mm/px at coarsest, and 43-148 mm/px is 2-7x beyond that; (2) these fields have no
+labelled weeds, so even a correct score cannot be checked. **Do not tune the threshold.**
+Threshold tuning on a model that returns 0.96 for a dirt track is tuning noise.
+
+What has to happen before weed-v1 can be judged, in order: imagery at or under 2 cm/px
+(the `offrow/FLIGHT.md` spec, which no flight has met), with staked weeds, so that the
+generator produces plant candidates and the scorecard has a real-field test set. Until
+then weed-v1 should be read as "runs correctly, unproven", and the product keeps saying
+so (the popup's "A suggestion, not a finding").
 
 ### Observed, not acted on
-- A synthetic chip of uniform bare soil scored 94% weed. Flat colour is out of
-  distribution, so this proves nothing, but it is the first thing to check on real chips:
-  if real soil and crop chips also read as weed, the 0.6 default will keep almost
-  everything and the model adds little over the old "plants start as weeds" rule.
+- The scout accepts a NIR/red mosaic and runs its RGB chain (ExG mask, chromaticity) on
+  false colour with no note. It should say so, or refuse the sweep, on `hasNDVI && !blue`.
+- `fields.area_hectares` is 0 on both test fields, so the results screen says "Not known".
 - Altitude and camera are not linked to a scan (they live on `flight_plans`, which no scan
   references), so they are not stored. GSD is (`gsd_m`, `chip_gsd_m`).
 - The build now also emits an unused hashed copy of the 14 MB wasm under `assets/`.

@@ -70,7 +70,7 @@ export async function classifyCandidates(candidates: Candidate[], deps: Classify
   }
   const skipped = candidates.length - scored;
   const note = `Classifier ${meta.version} scored ${scored} plant spot${scored === 1 ? "" : "s"}` +
-    (skipped ? ` (${skipped} region or unchipped spot${skipped === 1 ? "" : "s"} not scored)` : "") +
+    (skipped ? ` (${skipped} not scored: only single plants with a chip are; regions and whole-tile outliers are not)` : "") +
     `. ${meta.caveat}`;
   return { candidates: out, meta, scored, note };
 }
