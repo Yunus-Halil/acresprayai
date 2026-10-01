@@ -14,12 +14,48 @@
 // the model shipped with. A model whose sidecar the app does not understand
 // is not loaded.
 
+export type PredictedClass = "weed" | "crop" | "other";
+
+/**
+ * The one shape the rest of the app consumes, whatever model produced it. A
+ * replacement model only has to yield three probabilities and a version;
+ * `makePrediction` derives the rest.
+ */
 export type Prediction = {
   pWeed: number;
   pCrop: number;
   pOther: number;
+  /** The shipped model's id, e.g. "weed-v1". Identifies the weights, so it is also the model id. */
   modelVersion: string;
+  /** The highest of the three. */
+  predictedClass: PredictedClass;
+  /** The probability of `predictedClass`. */
+  confidence: number;
+  /** When this browser ran the model, ISO. */
+  inferredAt: string;
 };
+
+export function makePrediction(p: { pWeed: number; pCrop: number; pOther: number }, modelVersion: string, inferredAt = new Date().toISOString()): Prediction {
+  const predictedClass: PredictedClass = p.pWeed >= Math.max(p.pCrop, p.pOther) ? "weed" : p.pCrop >= p.pOther ? "crop" : "other";
+  const confidence = predictedClass === "weed" ? p.pWeed : predictedClass === "crop" ? p.pCrop : p.pOther;
+  return { pWeed: p.pWeed, pCrop: p.pCrop, pOther: p.pOther, modelVersion, predictedClass, confidence, inferredAt };
+}
+
+/**
+ * A stored `weed_observations.prediction`, read back. Rows written before the
+ * derived fields existed carry only the probabilities and the version; those
+ * are completed here (with a null time, which is the truth about them). Anything
+ * that is not a prediction reads as none.
+ */
+export function readPrediction(json: unknown): (Omit<Prediction, "inferredAt"> & { inferredAt: string | null }) | null {
+  if (!json || typeof json !== "object") return null;
+  const j = json as Record<string, unknown>;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const pWeed = num(j.pWeed), pCrop = num(j.pCrop), pOther = num(j.pOther);
+  if (pWeed == null || pCrop == null || pOther == null || typeof j.modelVersion !== "string") return null;
+  const full = makePrediction({ pWeed, pCrop, pOther }, j.modelVersion);
+  return { ...full, inferredAt: typeof j.inferredAt === "string" ? j.inferredAt : null };
+}
 
 export type SpanRule = { per_diameter: number; min_m: number; max_m: number };
 
@@ -76,8 +112,8 @@ export function isUsableMeta(meta: unknown): meta is ModelMeta {
 }
 
 /** Plain words for a popup. Never says "is a weed". */
-export function describePrediction(p: Prediction): string {
+export function describePrediction(p: Pick<Prediction, "pWeed" | "predictedClass" | "modelVersion">): string {
   const pct = Math.round(p.pWeed * 100);
-  const lead = p.pWeed >= Math.max(p.pCrop, p.pOther) ? "weed" : p.pCrop >= p.pOther ? "crop" : "not a plant";
+  const lead = p.predictedClass === "other" ? "not a plant" : p.predictedClass;
   return `Model: ${pct}% weed (reads most like ${lead}), ${p.modelVersion}. A suggestion, not a finding.`;
 }

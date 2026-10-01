@@ -33,8 +33,8 @@ import { describeCandidate } from "@/lib/weedScout/candidates";
 import { type AppliedAnnotation, annotationFromCandidate } from "@/lib/weedScout/applyToField";
 import { type EventContext, describeEvent, fetchEventContext } from "@/lib/weedScout/context";
 import {
-  type ObservationRow, type Verdict, VERDICTS, identificationColumns, isDismissal, listObservations, loadFeedback,
-  saveObservation,
+  type ObservationRow, type StoredPrediction, type Verdict, VERDICTS, identificationColumns, isDismissal, listObservations,
+  loadFeedback, saveObservation, verdictSourceFor,
 } from "@/lib/weedScout/observations";
 import { patchSession, startRun, stopRun, useScoutSession } from "@/lib/weedScout/runStore";
 import {
@@ -261,6 +261,9 @@ export function WeedScoutTab({
   // The map says what the scout thinks without being asked. Thirty labels on a
   // small field can crowd each other, so it is a toggle, defaulting to on.
   const [showLabels, setShowLabels] = useState(true);
+  // Spot id to its map layer, so the diagnostics list can open a spot's popup.
+  const layers = useRef(new Map<string, L.Layer>());
+  const layerRef = (id: string) => (el: L.Layer | null) => { if (el) layers.current.set(id, el); else layers.current.delete(id); };
 
   const rings = useMemo(() => (boundary ?? []) as unknown as LatLng2[][], [boundary]);
   const capturedAt = scanCreatedAt ?? new Date().toISOString();
@@ -349,9 +352,10 @@ export function WeedScoutTab({
     const identification = identificationOf(c);
     const verdict = verdictOf(c);
     const notes = notesOf(c).trim() || null;
+    const verdictSource = verdictSourceFor(c.id in verdicts || c.id in identifications, !!saved[c.id]);
     const r = await saveObservation({
       userId: user.id, fieldId, scanId: taskId, candidate: c, context, crop, growthStage: stage, params,
-      gsdM: result.sweep.gsdM ?? result.gsdM, verdict, species: null, notes, suggestion: suggestionIn, identification,
+      gsdM: result.sweep.gsdM ?? result.gsdM, verdict, verdictSource, species: null, notes, suggestion: suggestionIn, identification,
     });
     if ("error" in r) return r.error;
     const idCols = identificationColumns({ species: null, suggestion: suggestionIn, identification });
@@ -365,10 +369,14 @@ export function WeedScoutTab({
         suggested_catalog_id: idCols.suggested_catalog_id, suggestion_basis: idCols.suggestion_basis,
         identification_status: idCols.identification_status, catalog_id: idCols.catalog_id,
         identification_source: idCols.identification_source, identification_basis: idCols.identification_basis,
+        // Mirrors predictionColumns: with no prediction on the page, the stored one stands.
+        prediction: c.prediction ?? s[c.id]?.prediction ?? null,
+        model_version: c.prediction?.modelVersion ?? s[c.id]?.model_version ?? null,
+        verdict_source: verdictSource ?? s[c.id]?.verdict_source ?? null,
       },
     }));
     return null;
-  }, [user, context, result, suggestionById, identificationOf, verdictOf, notesOf, fieldId, taskId, crop, stage, params]);
+  }, [user, context, result, suggestionById, identificationOf, verdictOf, notesOf, fieldId, taskId, crop, stage, params, verdicts, identifications, saved]);
 
   /** Put one spot on the field (Field View and the Flight Planner), carrying the identification only if stated. */
   const applyOne = useCallback(async (c: Candidate, observationId: string | null): Promise<string | null> => {
@@ -595,6 +603,7 @@ export function WeedScoutTab({
                   notes={notesOf(c)}
                   onNotes={text => setNotesById(m => ({ ...m, [c.id]: text }))}
                   saved={!!saved[c.id]}
+                  savedPrediction={saved[c.id]?.prediction ?? null}
                   onField={!!applied[c.id]}
                   {...identificationProps}
                 />
@@ -607,7 +616,7 @@ export function WeedScoutTab({
             );
             if (c.region) {
               return (
-                <Polygon key={c.id}
+                <Polygon key={c.id} ref={layerRef(c.id)}
                   positions={c.region.rings.map(ring => ring.map(p => [p.lat, p.lng] as [number, number]))}
                   eventHandlers={{ click: () => setSelectedId(c.id) }}
                   pathOptions={{
@@ -623,7 +632,7 @@ export function WeedScoutTab({
               );
             }
             return (
-              <CircleMarker key={c.id} center={[c.centroid.lat, c.centroid.lng]}
+              <CircleMarker key={c.id} ref={layerRef(c.id)} center={[c.centroid.lat, c.centroid.lng]}
                 radius={active ? 10 : gone ? 4 : 7}
                 eventHandlers={{ click: () => setSelectedId(c.id) }}
                 pathOptions={{
@@ -786,12 +795,81 @@ export function WeedScoutTab({
                   ))}
                 </div>
               </details>
+              <ClassifierDiagnostics
+                candidates={pointCandidates.filter(c => c.chip)}
+                verdictOf={verdictOf}
+                verdictSource={c => (c.id in verdicts || c.id in identifications ? "set by you, unsaved"
+                  : saved[c.id]?.verdict ? `saved, ${saved[c.id].verdict_source ?? "source unknown"}` : "proposed")}
+                onOpen={id => { setSelectedId(id); layers.current.get(id)?.openPopup(); }}
+                onSave={saveOne}
+                stored={c => saved[c.id]?.prediction ?? null}
+              />
             </section>
             </>
           )}
         </div>
       </aside>
     </div>
+  );
+}
+
+/**
+ * Developer check on the classifier: per chipped plant spot, the three
+ * probabilities, the class they point to, and what the operator's verdict is
+ * now. For validating the pipeline, not for deciding anything.
+ */
+function ClassifierDiagnostics({ candidates, verdictOf, verdictSource, stored, onOpen, onSave }: {
+  candidates: Candidate[];
+  verdictOf: (c: Candidate) => Verdict;
+  verdictSource: (c: Candidate) => string;
+  stored: (c: Candidate) => StoredPrediction | null;
+  onOpen: (id: string) => void;
+  /** Archive row only, no Field View change: the same write Build mission makes, for one spot. */
+  onSave: (c: Candidate) => Promise<string | null>;
+}) {
+  const pct = (p: number) => `${Math.round(p * 100)}`;
+  const [saveState, setSaveState] = useState<Record<string, string>>({});
+  const save = async (c: Candidate) => {
+    setSaveState(s => ({ ...s, [c.id]: "saving" }));
+    const err = await onSave(c);
+    setSaveState(s => ({ ...s, [c.id]: err ? `error: ${err}` : "saved" }));
+  };
+  return (
+    <details className="text-[11px]" data-testid="classifier-diagnostics">
+      <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">Classifier diagnostics ({candidates.length} chipped plant spots)</summary>
+      <table className="mt-2 w-full text-[10px] font-mono">
+        <thead className="text-neutral-500">
+          <tr><th></th><th className="text-right">W%</th><th className="text-right">C%</th><th className="text-right">O%</th><th className="text-left pl-1">class</th><th className="text-left">verdict</th><th className="text-left">model</th><th></th></tr>
+        </thead>
+        <tbody>
+          {candidates.map(c => {
+            const live = c.prediction;
+            const p = live ?? stored(c);
+            return (
+              <tr key={c.id} data-testid="diag-row" data-spot={c.id} className="border-t border-[#1f1f1f] cursor-pointer hover:bg-[#1a1a1a]" onClick={() => onOpen(c.id)}>
+                <td className="py-0.5"><img src={c.chip!} alt="" className="h-7 w-7 rounded-sm" style={{ imageRendering: "pixelated" }} /></td>
+                {p ? (
+                  <>
+                    <td className="text-right">{pct(p.pWeed)}</td>
+                    <td className="text-right">{pct(p.pCrop)}</td>
+                    <td className="text-right">{pct(p.pOther)}</td>
+                    <td className="pl-1">{p.predictedClass}</td>
+                  </>
+                ) : <td colSpan={4} className="text-neutral-600 pl-1">not scored</td>}
+                <td>{VERDICT_LABEL[verdictOf(c)]} <span className="text-neutral-600">({verdictSource(c)})</span></td>
+                <td className="text-neutral-500">{p ? `${p.modelVersion}${live ? "" : " (stored)"}` : "-"}</td>
+                <td data-testid="diag-save-state" title={saveState[c.id]}>
+                  {saveState[c.id] && saveState[c.id] !== "saving"
+                    ? <span className={saveState[c.id] === "saved" ? "text-[#4CAF50]" : "text-red-400"}>{saveState[c.id] === "saved" ? "saved" : "error"}</span>
+                    : <button type="button" data-testid="diag-save" disabled={saveState[c.id] === "saving"} className="underline text-neutral-400 hover:text-neutral-200"
+                        onClick={e => { e.stopPropagation(); void save(c); }}>save</button>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </details>
   );
 }
 

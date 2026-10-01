@@ -6,6 +6,11 @@
 // one. A candidate with no chip, or a chip that will not decode, gets none
 // either. The scout's notes say how many were scored and by which version,
 // or that no model was available.
+//
+// CURRENT LIMITATION: this is a verifier, not a detector. It only sees what
+// the geometric candidate generator already flagged (and only the top
+// `maxChips` of those). If candidate generation misses a weed, the model never
+// evaluates it, so its recall is bounded by the generator's.
 
 import type { Candidate } from "../types";
 import { getClassifier } from "./onnxClassifier";
@@ -70,5 +75,5 @@ export async function classifyCandidates(candidates: Candidate[], deps: Classify
   return { candidates: out, meta, scored, note };
 }
 
-export { describePrediction, NOT_WEED_BELOW, WEED_AT_OR_ABOVE } from "./types";
-export type { ModelMeta, Prediction } from "./types";
+export { describePrediction, makePrediction, readPrediction, NOT_WEED_BELOW, WEED_AT_OR_ABOVE } from "./types";
+export type { ModelMeta, PredictedClass, Prediction } from "./types";

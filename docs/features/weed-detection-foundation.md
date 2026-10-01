@@ -3,7 +3,7 @@
 Objective, in the founder's words: the scout can find strands and shapes but cannot say
 "weed". Build the strongest possible foundation for a detection system that can, then
 improve accuracy on top of it. This document is the plan and its status; it is updated as
-each piece lands. Last updated 2026-09-29.
+each piece lands. Last updated 2026-10-01.
 
 ## The shape of it
 
@@ -29,9 +29,9 @@ Five parts, in dependency order:
 
 - Machine learning is allowed, in `offrow.learn` only. The old "no ML" rule was a phase.
   The geometric core still imports no ML library (a test enforces it).
-- Inference runs in the browser (onnxruntime-web, WebAssembly, single-threaded). Imagery
-  never leaves the browser. The runtime is served from our origin under a
-  `'wasm-unsafe-eval'` CSP allowance, the only CSP change.
+- Inference runs in the browser (onnxruntime-web's wasm-only entry, single-threaded).
+  Imagery never leaves the browser. The binary is served from our origin (`/ort/`). The
+  production CSP (vercel.json) sets no script-src, so nothing there gates WebAssembly.
 - Training data now: USU-Corn-WeedDB (CC BY 4.0, auto-fetched) and synthetic scenes.
   DRONEWEED will be added when the founder downloads it manually (bot-protected host).
   No flown imagery yet; the Friday flight in `offrow/FLIGHT.md` has not happened.
@@ -97,10 +97,69 @@ Five parts, in dependency order:
 1. ~~Wire the classifier into the pipeline, verdict default, popup, archive, CSP, wasm copy, tests.~~ Done.
 2. ~~USU examples, train, evaluate, publish weed-v1.~~ Done. 30,162 examples; test accuracy 0.966, USU weed recall 0.986, ECE 0.005. In-distribution numbers; see the review brief.
 3. ~~Apply the prediction migration.~~ Done.
-4. Click-through in a signed-in session on a real scan: chips scored, popup line shows,
-   verdicts saved with predictions.
+4. Click-through in a signed-in session on a real scan. **Partly done 2026-10-01**, see
+   "Validation pass" below; the signed-in run itself is still owed.
 5. DRONEWEED when downloaded (adds labelled maize, the only public crop labels).
-6. Flown imagery with staked truth becomes the test set the moment it exists.
+6. Collect SwathWise-flown imagery, ground-truth real weeds, and build a real-field
+   benchmark from it (stake and photograph, then fly).
+7. Evaluate by GSD and altitude on that benchmark.
+8. Only then, species identification. Not before 6 and 7.
+
+## Validation pass (2026-10-01)
+
+Scope: prove the existing flow works in the app; no retraining, no species work.
+
+### Bugs found and fixed
+- **The classifier never ran in the browser.** `import("onnxruntime-web")` is the WebGPU
+  (jsep) build and fetched `ort-wasm-simd-threaded.jsep.mjs`, which `public/ort/` does not
+  ship; every scan silently fell back to geometry. Unit tests passed because they run the
+  model in Node. Now `onnxruntime-web/wasm` with `wasmPaths = { wasm }` (the loader is
+  bundled; Vite's dev server will not serve a module from `public/`). Verified in headless
+  Chrome inside the app page: weed-v1 loads and scores chips (about 25 ms per chip).
+- **A reopened scan lost the model's score.** `listObservations` did not select
+  `prediction` / `model_version`. It does now, and the popup shows "When saved: Model: …"
+  when no live score exists; the dev diagnostics mark it "(stored)".
+- **A re-save without a model would null the stored prediction.** The upsert always sent
+  `prediction: null`. `predictionColumns()` now omits the columns when nothing scored the
+  spot, so an earlier prediction survives.
+- **Untouched spots were indistinguishable from operator verdicts.** Build mission saves
+  every spot, including ones never opened, with the proposed verdict (often the model's).
+  New column `verdict_source` (migration `20261001100000`, applied): `operator` when a
+  person pressed a verdict (pressing the one already shown counts) or named the spot,
+  `default` when saved as proposed, null on older rows. **Only `operator` rows are ground
+  truth**; evaluating the model against `default` rows measures it against itself.
+
+### Added
+- Normalized prediction (`classify/types.ts`): `pWeed, pCrop, pOther, modelVersion,
+  predictedClass, confidence, inferredAt`, built by `makePrediction` so a replacement model
+  only yields three probabilities. `readPrediction` completes rows stored before the
+  derived fields existed (their `inferredAt` is null).
+- Developer diagnostics in the Weed Scout tab (Run details): each chipped plant spot with
+  its chip, W/C/O %, class, verdict and where it came from, model version; a row opens the
+  spot's popup; "save" writes the archive row only (no Field View change).
+
+### Verified
+- Unit: prediction shape, threshold defaults, legacy reads, the no-null re-save rule,
+  verdict source rule, popup stored-score line. Full suite green.
+- Browser (Chrome, app page, not signed in): model loads from `/models/manifest.json`, runs,
+  returns the normalized object. Production build bundles the wasm entry.
+
+### Not yet verified (needs a signed-in localhost session)
+The scripted end-to-end run (scan, popup, correct two spots, save, read rows back, reopen
+with the manifest blocked, reopen with the ONNX file blocked, delete the test rows) is
+written and ready. It stopped at sign-in: Google OAuth from localhost is redirected to
+production because `http://localhost:8080` is not in Supabase Auth's redirect URL list.
+
+### Observed, not acted on
+- A synthetic chip of uniform bare soil scored 94% weed. Flat colour is out of
+  distribution, so this proves nothing, but it is the first thing to check on real chips:
+  if real soil and crop chips also read as weed, the 0.6 default will keep almost
+  everything and the model adds little over the old "plants start as weeds" rule.
+- Altitude and camera are not linked to a scan (they live on `flight_plans`, which no scan
+  references), so they are not stored. GSD is (`gsd_m`, `chip_gsd_m`).
+- The build now also emits an unused hashed copy of the 14 MB wasm under `assets/`.
+  Harmless for downloads; dropping the copy script in favour of Vite's asset would remove
+  the duplicate.
 
 ## weed-v1 in one line
 
@@ -128,3 +187,7 @@ Full results and caveats: [the review brief](../review/weed-detection-foundation
   precached by the service worker.
 - **Nothing here changes what gets flagged.** The model reorders and proposes defaults on
   candidates geometry found. A weed geometry never surfaces is still missed.
+  **Current limitation: if candidate generation misses a weed, weed-v1 never evaluates
+  it.** It is a verifier, not a detector, and only the top `maxChips` candidates get a chip.
+- **The scorecard is a training diagnostic, not production accuracy.** Nothing in the
+  product shows it; the popup shows only the one spot's probability.

@@ -13,7 +13,7 @@
 
 import { type ChipPixels, batchInputs, chipToInput, objectSpanM, softmax } from "./preprocess";
 import { modelUrl } from "./registry";
-import type { ModelMeta, Prediction } from "./types";
+import { type ModelMeta, type Prediction, makePrediction } from "./types";
 
 type Session = {
   run(feeds: Record<string, unknown>): Promise<Record<string, { data: Float32Array | ArrayLike<number> }>>;
@@ -29,8 +29,13 @@ let sessions = new Map<string, Promise<Classifier | null>>();
 
 async function createSession(meta: ModelMeta): Promise<Classifier | null> {
   try {
-    const ort = await import("onnxruntime-web");
-    ort.env.wasm.wasmPaths = "/ort/";
+    // The wasm-only entry: the default one is the WebGPU (jsep) build, which
+    // fetches ort-wasm-simd-threaded.jsep.mjs, a file public/ort/ does not ship.
+    const ort = await import("onnxruntime-web/wasm");
+    // Only the binary is fetched; this entry bundles its own loader. Pointing
+    // at a directory instead makes it import the .mjs loader from public/,
+    // which the Vite dev server refuses to serve as a module.
+    ort.env.wasm.wasmPaths = { wasm: "/ort/ort-wasm-simd-threaded.wasm" };
     // A classifier over a few dozen 96 px chips gains nothing from threads,
     // and single-threaded needs no cross-origin isolation headers.
     ort.env.wasm.numThreads = 1;
@@ -47,9 +52,10 @@ async function createSession(meta: ModelMeta): Promise<Classifier | null> {
       const out = await session.run({ chips: tensor });
       const logits = out.logits.data as Float32Array;
       const k = meta.classes.length;
+      const at = new Date().toISOString();
       return chips.map((_, i) => {
         const p = softmax(Array.from(logits.subarray(i * k, (i + 1) * k)));
-        return { pWeed: p[0], pCrop: p[1], pOther: p[2], modelVersion: meta.version };
+        return makePrediction({ pWeed: p[0], pCrop: p[1], pOther: p[2] }, meta.version, at);
       });
     };
     return { meta, classify };

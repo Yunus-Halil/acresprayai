@@ -24,7 +24,7 @@ import { isStatedFinding } from "@/lib/weedCatalog/identification";
 import type { CropShortlist, RankedEntry, RecentLabel, Suggestion } from "@/lib/weedCatalog/suggest";
 import type { CatalogEntry, FieldRegion } from "@/lib/weedCatalog/types";
 import { describeCandidate } from "@/lib/weedScout/candidates";
-import { type Verdict, VERDICTS, isDismissal } from "@/lib/weedScout/observations";
+import { type StoredPrediction, type Verdict, VERDICTS, isDismissal } from "@/lib/weedScout/observations";
 import type { Candidate } from "@/lib/weedScout/types";
 import { type UnitSystem, fmtArea, fmtAreaCm2, fmtLengthCm } from "@/lib/units";
 import { IdentificationBlock } from "./IdentificationBlock";
@@ -49,6 +49,8 @@ export type SpotPopupProps = {
   notes: string;
   onNotes: (text: string) => void;
   saved: boolean;
+  /** What the model said when this spot was last saved, for a reopened scan with no live score. */
+  savedPrediction: StoredPrediction | null;
   onField: boolean;
 
   // Identification wiring, handed straight to the shared block.
@@ -72,7 +74,7 @@ export type SpotPopupProps = {
 export function SpotPopup(props: SpotPopupProps) {
   const {
     candidate: c, index, total, units, areaM2, verdict, onVerdict, identification, suggestion,
-    notes, onNotes, saved, onField,
+    notes, onNotes, saved, savedPrediction, onField,
   } = props;
   const named = isStatedFinding(identification);
   // A suggestion is worth showing unasked; an empty picker is not.
@@ -114,9 +116,13 @@ export function SpotPopup(props: SpotPopupProps) {
       <p className="mt-2 text-[11px] text-neutral-300 leading-relaxed">
         {c.estimate ? c.estimate.summary : describeCandidate(c, units)}
       </p>
-      {c.prediction && (
+      {c.prediction ? (
         <p className="mt-1 text-[10px] text-neutral-500 leading-relaxed" title="Trained on public corn imagery and synthetic scenes; the number is calibrated on held-out data, not on this field.">
           {describePrediction(c.prediction)}
+        </p>
+      ) : savedPrediction && (
+        <p className="mt-1 text-[10px] text-neutral-500 leading-relaxed" title="No model scored this spot on this run; this is the score stored with your saved verdict.">
+          When saved: {describePrediction(savedPrediction)}
         </p>
       )}
 

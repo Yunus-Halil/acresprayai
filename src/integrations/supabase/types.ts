@@ -1390,6 +1390,7 @@ export type Database = {
           vector: Json | null
           verdict: string | null
           verdict_at: string | null
+          verdict_source: string | null
           weather: Json | null
         }
         Insert: {
@@ -1449,6 +1450,7 @@ export type Database = {
           vector?: Json | null
           verdict?: string | null
           verdict_at?: string | null
+          verdict_source?: string | null
           weather?: Json | null
         }
         Update: {
@@ -1508,6 +1510,7 @@ export type Database = {
           vector?: Json | null
           verdict?: string | null
           verdict_at?: string | null
+          verdict_source?: string | null
           weather?: Json | null
         }
         Relationships: [

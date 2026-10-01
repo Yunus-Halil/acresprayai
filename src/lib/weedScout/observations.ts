@@ -13,6 +13,7 @@
 // later, separate, consented step; nothing here shares anything.
 import { supabase } from "@/integrations/supabase/client";
 import { type Identification, type IdentificationStatus, isStatedFinding } from "../weedCatalog/identification";
+import { type Prediction, readPrediction } from "./classify/types";
 import type { EventContext } from "./context";
 import { featureVectorOf } from "./feedback";
 import type { Candidate, CandidateKind, FeedbackRow, ScoutParams } from "./types";
@@ -66,7 +67,17 @@ export type ObservationRow = {
   catalog_id: string | null;
   identification_source: string | null;
   identification_basis: string | null;
+  /** The model's word on this spot when it was saved, or null when no model scored it. Never the label. */
+  prediction: StoredPrediction | null;
+  model_version: string | null;
+  /** Whether a person set the verdict, or it was saved as proposed. Null on rows older than the column. */
+  verdict_source: VerdictSource | null;
 };
+
+/** `operator`: a person set it on this spot. `default`: saved as the scout proposed it. */
+export type VerdictSource = "operator" | "default";
+
+export type StoredPrediction = NonNullable<ReturnType<typeof readPrediction>>;
 
 export type SaveObservationInput = {
   userId: string;
@@ -79,6 +90,8 @@ export type SaveObservationInput = {
   params: ScoutParams;
   gsdM: number;
   verdict: Verdict | null;
+  /** Null keeps whatever an earlier save recorded (see `verdictSourceFor`). */
+  verdictSource: VerdictSource | null;
   /** Free species text when no identification was made; ignored when one was (the label wins). */
   species: string | null;
   notes: string | null;
@@ -108,6 +121,27 @@ export function identificationColumns(input: Pick<SaveObservationInput, "species
     identified_at: stated ? new Date().toISOString() : null,
     species: stated ? id.label!.trim() : (input.species?.trim() || null),
   };
+}
+
+/**
+ * The model columns for a row. Only sent when a model scored this spot on this
+ * page: a re-save with no model loaded (runtime failed, model withdrawn) must
+ * not null out the prediction an earlier save recorded, and an upsert only
+ * touches the columns it is given. The verdict never passes through here.
+ */
+export function predictionColumns(c: Pick<Candidate, "prediction">): { prediction: Prediction; model_version: string } | Record<string, never> {
+  return c.prediction ? { prediction: c.prediction, model_version: c.prediction.modelVersion } : {};
+}
+
+/**
+ * Who decided this save's verdict. A spot the operator touched this run (a
+ * verdict press, including pressing the one already shown, or a name) is
+ * theirs. An untouched spot already in the archive keeps what the archive says
+ * (null: send nothing). An untouched new spot was saved as proposed.
+ */
+export function verdictSourceFor(touchedThisRun: boolean, alreadySaved: boolean): VerdictSource | null {
+  if (touchedThisRun) return "operator";
+  return alreadySaved ? null : "default";
 }
 
 const base64ToBytes = (b64: string): Uint8Array => {
@@ -189,10 +223,10 @@ export async function saveObservation(input: SaveObservationInput): Promise<{ ok
     vector: featureVectorOf(c, input.params.rowSpacingM),
     estimate: c.estimate,
     estimate_model: c.estimate?.model ?? null,
-    // The model's word beside the operator's. Null when no model was on the page.
-    prediction: c.prediction ?? null,
-    model_version: c.prediction?.modelVersion ?? null,
+    // The model's word beside the operator's, never in its place.
+    ...predictionColumns(c),
     verdict: input.verdict,
+    ...(input.verdictSource ? { verdict_source: input.verdictSource } : {}),
     notes: input.notes,
     verdict_at: input.verdict ? new Date().toISOString() : null,
     pipeline_version: PIPELINE_VERSION,
@@ -210,11 +244,12 @@ export async function saveObservation(input: SaveObservationInput): Promise<{ ok
 
 export async function listObservations(scanId: string): Promise<ObservationRow[]> {
   const { data, error } = await supabase.from("weed_observations")
-    .select("id, candidate_id, scan_id, tile_id, lat, lng, captured_at, place, local_time, season, kind, score, chip_path, verdict, species, notes, created_at, suggested_catalog_id, suggestion_basis, identification_status, catalog_id, identification_source, identification_basis")
+    .select("id, candidate_id, scan_id, tile_id, lat, lng, captured_at, place, local_time, season, kind, score, chip_path, verdict, species, notes, created_at, suggested_catalog_id, suggestion_basis, identification_status, catalog_id, identification_source, identification_basis, prediction, model_version, verdict_source")
     .eq("scan_id", scanId)
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []) as unknown as ObservationRow[];
+  return ((data ?? []) as unknown as (Omit<ObservationRow, "prediction"> & { prediction: unknown })[])
+    .map(r => ({ ...r, prediction: readPrediction(r.prediction) }));
 }
 
 /**

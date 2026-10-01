@@ -8,7 +8,8 @@ import {
 } from "@/lib/weedScout/classify/preprocess";
 import { currentModel, fetchManifest } from "@/lib/weedScout/classify/registry";
 import { classifyCandidates, isScorable } from "@/lib/weedScout/classify";
-import { EXPECTED_CLASSES, NOT_WEED_BELOW, WEED_AT_OR_ABOVE, describePrediction, isUsableMeta } from "@/lib/weedScout/classify/types";
+import { EXPECTED_CLASSES, NOT_WEED_BELOW, WEED_AT_OR_ABOVE, describePrediction, isUsableMeta, makePrediction, readPrediction } from "@/lib/weedScout/classify/types";
+import { predictionColumns, verdictSourceFor } from "@/lib/weedScout/observations";
 import type { ModelMeta } from "@/lib/weedScout/classify/types";
 import type { Blob, Candidate } from "@/lib/weedScout/types";
 import { defaultVerdict } from "@/components/app/workspace/WeedScoutTab";
@@ -96,14 +97,14 @@ const plant = (over: Partial<Candidate> = {}): Candidate => ({
 
 describe("the default verdict's order of authority", () => {
   it("the operator's own past verdicts beat the model", () => {
-    const c = plant({ feedback: { confirmed: 0, dismissed: 5, species: [], factor: 0.4 }, prediction: { pWeed: 0.95, pCrop: 0.03, pOther: 0.02, modelVersion: "weed-v1" } });
+    const c = plant({ feedback: { confirmed: 0, dismissed: 5, species: [], factor: 0.4 }, prediction: makePrediction({ pWeed: 0.95, pCrop: 0.03, pOther: 0.02 }, "weed-v1") });
     expect(defaultVerdict(c)).toBe("not_weed");
   });
 
   it("a confident model sets the default; the middle starts unsure", () => {
-    expect(defaultVerdict(plant({ prediction: { pWeed: WEED_AT_OR_ABOVE, pCrop: 0.2, pOther: 0.2, modelVersion: "v" } }))).toBe("weed");
-    expect(defaultVerdict(plant({ prediction: { pWeed: NOT_WEED_BELOW - 0.01, pCrop: 0.5, pOther: 0.11, modelVersion: "v" } }))).toBe("not_weed");
-    expect(defaultVerdict(plant({ prediction: { pWeed: 0.5, pCrop: 0.3, pOther: 0.2, modelVersion: "v" } }))).toBe("unsure");
+    expect(defaultVerdict(plant({ prediction: makePrediction({ pWeed: WEED_AT_OR_ABOVE, pCrop: 0.2, pOther: 0.2 }, "v") }))).toBe("weed");
+    expect(defaultVerdict(plant({ prediction: makePrediction({ pWeed: NOT_WEED_BELOW - 0.01, pCrop: 0.5, pOther: 0.11 }, "v") }))).toBe("not_weed");
+    expect(defaultVerdict(plant({ prediction: makePrediction({ pWeed: 0.5, pCrop: 0.3, pOther: 0.2 }, "v") }))).toBe("unsure");
   });
 
   it("without a prediction the old rule stands: a plant starts as a weed", () => {
@@ -111,10 +112,48 @@ describe("the default verdict's order of authority", () => {
   });
 
   it("never wording a prediction as a finding", () => {
-    const line = describePrediction({ pWeed: 0.82, pCrop: 0.1, pOther: 0.08, modelVersion: "weed-v1" });
+    const line = describePrediction(makePrediction({ pWeed: 0.82, pCrop: 0.1, pOther: 0.08 }, "weed-v1"));
     expect(line).toMatch(/82% weed/);
     expect(line).toMatch(/suggestion, not a finding/);
     expect(line).not.toMatch(/is a weed/);
+  });
+});
+
+describe("the normalized prediction", () => {
+  it("derives the class and its confidence from the probabilities, for any model", () => {
+    const p = makePrediction({ pWeed: 0.1, pCrop: 0.25, pOther: 0.65 }, "other-model-v9", "2026-10-01T00:00:00Z");
+    expect(p).toMatchObject({ predictedClass: "other", confidence: 0.65, modelVersion: "other-model-v9", inferredAt: "2026-10-01T00:00:00Z" });
+    expect(makePrediction({ pWeed: 0.4, pCrop: 0.4, pOther: 0.2 }, "v").predictedClass).toBe("weed");
+  });
+
+  it("reads a stored prediction, completing rows written before the derived fields existed", () => {
+    const legacy = readPrediction({ pWeed: 0.81, pCrop: 0.15, pOther: 0.04, modelVersion: "weed-v1" });
+    expect(legacy).toMatchObject({ predictedClass: "weed", confidence: 0.81, inferredAt: null });
+    const full = makePrediction({ pWeed: 0.2, pCrop: 0.7, pOther: 0.1 }, "weed-v1");
+    expect(readPrediction(JSON.parse(JSON.stringify(full)))).toEqual(full);
+    expect(readPrediction(null)).toBeNull();
+    expect(readPrediction({ pWeed: "x" })).toBeNull();
+  });
+});
+
+describe("the model's word is stored beside the verdict, never over it", () => {
+  it("sends the prediction and its version when a model scored the spot", () => {
+    const p = makePrediction({ pWeed: 0.81, pCrop: 0.15, pOther: 0.04 }, "weed-v1");
+    expect(predictionColumns({ prediction: p })).toEqual({ prediction: p, model_version: "weed-v1" });
+  });
+
+  it("records whether a person set the verdict, and never relabels an untouched archived row", () => {
+    expect(verdictSourceFor(true, false)).toBe("operator");
+    expect(verdictSourceFor(true, true)).toBe("operator");
+    expect(verdictSourceFor(false, false)).toBe("default");
+    expect(verdictSourceFor(false, true)).toBeNull();
+  });
+
+  it("sends no model columns without a prediction, so a re-save cannot null a stored one", () => {
+    const cols = predictionColumns({ prediction: null });
+    expect(cols).toEqual({});
+    expect("prediction" in cols).toBe(false);
+    expect("model_version" in cols).toBe(false);
   });
 });
 
@@ -128,7 +167,7 @@ describe("scoring the candidates", () => {
     expect(isScorable(scorable)).toBe(true);
 
     const decode = vi.fn(async () => ({ rgba: new Uint8ClampedArray(4 * 4 * 4), width: 4, height: 4, spanM: 0.6 }));
-    const classify = vi.fn(async (chips: unknown[]) => chips.map(() => ({ pWeed: 0.7, pCrop: 0.2, pOther: 0.1, modelVersion: "weed-v1" })));
+    const classify = vi.fn(async (chips: unknown[]) => chips.map(() => (makePrediction({ pWeed: 0.7, pCrop: 0.2, pOther: 0.1 }, "weed-v1"))));
     const outcome = await classifyCandidates([region, unchipped, scorable], {
       loadModel: async () => META,
       decode,

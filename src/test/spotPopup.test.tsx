@@ -12,6 +12,7 @@ import { UNIDENTIFIED, identificationFromEntry } from "@/lib/weedCatalog/identif
 import { fieldRegion } from "@/lib/weedCatalog/region";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
 import type { Candidate, RegionClass } from "@/lib/weedScout/types";
+import { makePrediction } from "@/lib/weedScout/classify/types";
 
 const ragweed: CatalogEntry = {
   catalog_id: "VT-10", state: "VA", catalog_version: "0.1.0", as_of: "2026-09-22",
@@ -49,7 +50,7 @@ function renderPopup(over: Partial<SpotPopupProps> = {}) {
     candidate: spot(), index: 0, total: 30, units: "imperial", areaM2: 189,
     verdict: "unsure", onVerdict: vi.fn(),
     identification: UNIDENTIFIED, suggestion: null,
-    notes: "", onNotes: vi.fn(), saved: false, onField: false,
+    notes: "", onNotes: vi.fn(), saved: false, savedPrediction: null, onField: false,
     shortlist: { entries: [], tooMany: false, note: "" },
     recent: [], searchResults: [], searchQuery: "", onSearchQuery: vi.fn(),
     freeText: "", onFreeText: vi.fn(),
@@ -132,6 +133,15 @@ describe("state the operator can see at a glance", () => {
     renderPopup({ saved: true, onField: true });
     expect(screen.getByLabelText("saved")).toBeInTheDocument();
     expect(screen.getByLabelText("on the field")).toBeInTheDocument();
+  });
+
+  it("shows the live model score, and on a reopened scan the score stored with the verdict", () => {
+    const live = makePrediction({ pWeed: 0.81, pCrop: 0.15, pOther: 0.04 }, "weed-v1");
+    const { unmount } = renderPopup({ candidate: spot({ prediction: live }) });
+    expect(screen.getByText(/Model: 81% weed \(reads most like weed\), weed-v1/)).toBeInTheDocument();
+    unmount();
+    renderPopup({ savedPrediction: { ...makePrediction({ pWeed: 0.2, pCrop: 0.7, pOther: 0.1 }, "weed-v1"), inferredAt: null } });
+    expect(screen.getByText(/When saved: Model: 20% weed \(reads most like crop\)/)).toBeInTheDocument();
   });
 
   it("keeps the measurements out of the way but reachable", () => {
