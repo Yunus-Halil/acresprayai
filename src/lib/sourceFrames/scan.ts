@@ -43,22 +43,30 @@ async function downloadJson(path: string): Promise<unknown | null> {
   try { return JSON.parse(await data.text()); } catch { return null; }
 }
 
-/** Size of a stored object via a one-byte range request; signed URLs do not answer HEAD reliably. */
-async function sizeOf(url: string): Promise<number> {
-  const res = await fetch(url, { headers: { Range: "bytes=0-0" } });
-  const m = /\/(\d+)$/.exec(res.headers.get("content-range") ?? "");
-  if (m) return Number(m[1]);
-  const len = Number(res.headers.get("content-length") ?? 0);
-  if (res.status === 200 && len > 1) return len;
-  throw new Error("could not size the archive");
+/** Names and sizes of the objects under a prefix. */
+async function listDir(prefix: string): Promise<Map<string, number>> {
+  const { data } = await supabase.storage.from(BUCKET).list(prefix, { limit: 100 });
+  return new Map((data ?? []).map(o => [o.name, Number((o.metadata as { size?: number } | null)?.size ?? 0)]));
+}
+
+/**
+ * Size of a stored object, from the listing. A one-byte range request would
+ * also say, but the browser is not allowed to read Content-Range on a
+ * cross-origin response, so the listing is the only honest source.
+ */
+async function sizeOf(path: string): Promise<number> {
+  const i = path.lastIndexOf("/");
+  const size = (await listDir(path.slice(0, i))).get(path.slice(i + 1));
+  if (!size) throw new Error("could not size the archive");
+  return size;
 }
 
 /** Pull the reconstruction members out of the mirrored archive and store them. */
 async function extractReconstruction(userId: string, odmUuid: string, outputPath: string): Promise<Record<keyof typeof MEMBERS, unknown> | null> {
+  const total = await sizeOf(outputPath);
   const { data: signed, error } = await supabase.storage.from(BUCKET).createSignedUrl(outputPath, 1800);
   if (error || !signed?.signedUrl) return null;
   const read = rangeReaderFor(signed.signedUrl);
-  const total = await sizeOf(signed.signedUrl);
   const entries = await listZip(read, total);
   const out: Partial<Record<keyof typeof MEMBERS, unknown>> = {};
   for (const [key, name] of Object.entries(MEMBERS) as [keyof typeof MEMBERS, string][]) {
@@ -81,8 +89,12 @@ export async function loadScanSources(input: { userId: string; odmUuid: string; 
   const prefix = reconstructionPrefix(userId, odmUuid);
   let reconstruction: ScanSources["reconstruction"] = "none";
   let files: Partial<Record<keyof typeof MEMBERS, unknown>> = {};
+  // One listing says what was stored before; nothing is fetched that is not there.
+  const present = await listDir(prefix);
   const stored = await Promise.all(
-    (Object.entries(MEMBERS) as [keyof typeof MEMBERS, string][]).map(async ([k, name]) => [k, await downloadJson(`${prefix}/${memberKey(name)}`)] as const),
+    (Object.entries(MEMBERS) as [keyof typeof MEMBERS, string][])
+      .filter(([, name]) => present.has(memberKey(name)))
+      .map(async ([k, name]) => [k, await downloadJson(`${prefix}/${memberKey(name)}`)] as const),
   );
   for (const [k, v] of stored) if (v) files[k] = v;
   if (files.cameras && files.shots) {
@@ -105,7 +117,9 @@ export async function loadScanSources(input: { userId: string; odmUuid: string; 
     }
   }
   const stats = (files.stats as OdmStats | undefined) ?? null;
-  const manifest = (await downloadJson(framesManifestPath(userId, odmUuid))) as FrameManifestEntry[] | null;
+  const manifestPath = framesManifestPath(userId, odmUuid);
+  const hasManifest = (await listDir(manifestPath.slice(0, manifestPath.lastIndexOf("/")))).has("frames.json");
+  const manifest = hasManifest ? ((await downloadJson(manifestPath)) as FrameManifestEntry[] | null) : null;
   const frames = Array.isArray(manifest) ? Object.fromEntries(manifest.map(m => [m.filename, m])) : null;
   return {
     set, stats,
