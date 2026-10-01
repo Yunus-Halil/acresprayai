@@ -1,0 +1,20 @@
+{
+ "odm_processing_statistics": {
+  "total_time": 1277.911747,
+  "total_time_human": "21.0m:18.0s",
+  "average_gsd": 6.309406424974625
+ },
+ "reconstruction_statistics": {
+  "reconstructed_shots_count": 180,
+  "reprojection_error_pixels": 0.8026220586799454,
+  "has_gps": true,
+  "has_gcp": false
+ },
+ "gps_errors": {
+  "error": {
+   "x": 0.25323670856500474,
+   "y": 0.32245241067585695,
+   "z": 0.674737631063735
+  }
+ }
+}
