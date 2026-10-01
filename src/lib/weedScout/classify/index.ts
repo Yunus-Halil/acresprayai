@@ -76,4 +76,5 @@ export async function classifyCandidates(candidates: Candidate[], deps: Classify
 }
 
 export { describePrediction, makePrediction, readPrediction, NOT_WEED_BELOW, WEED_AT_OR_ABOVE } from "./types";
+export { loadCurrentModel } from "./registry";
 export type { ModelMeta, PredictedClass, Prediction } from "./types";

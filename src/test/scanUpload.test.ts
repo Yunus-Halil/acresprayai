@@ -16,14 +16,16 @@ vi.mock("@/lib/imagePrep", () => ({
 
 // vi.mock is hoisted above ordinary consts, so the spies have to be created
 // inside vi.hoisted to exist by the time the factory runs.
-const { refreshSession, getSession } = vi.hoisted(() => ({
+const { refreshSession, getSession, storageUpload } = vi.hoisted(() => ({
   refreshSession: vi.fn(async () => ({ data: {}, error: null })),
   getSession: vi.fn(async () => ({
     data: { session: { access_token: "jwt-token", user: { id: "user-1" } } },
   })),
+  // The `scans` bucket: originals and the frame list land here, untouched.
+  storageUpload: vi.fn(async (path: string) => ({ data: { path }, error: null })),
 }));
 vi.mock("@/integrations/supabase/client", () => ({
-  supabase: { auth: { refreshSession, getSession } },
+  supabase: { auth: { refreshSession, getSession }, storage: { from: () => ({ upload: storageUpload }) } },
 }));
 
 import {
@@ -129,6 +131,52 @@ describe("uploadScan · happy path", () => {
     expect(phases).toContain("uploading");
     expect(phases).toContain("committing");
     expect(phases[phases.length - 1]).toBe("done");
+  });
+});
+
+describe("uploadScan · the original of every frame is kept", () => {
+  it("stores each original untouched under the owner's scan folder, then the frame list", async () => {
+    const s = scenario(); installFetch(s);
+    const files = makeFiles(3);
+    await uploadScan({ fieldId: FIELD, files, onProgress: noop });
+    const calls = storageUpload.mock.calls as unknown as [string, File | string, Record<string, unknown>][];
+    const frames = calls.filter(c => !c[0].endsWith("frames.json"));
+    expect(frames.map(c => c[0])).toEqual(files.map(f => `user-1/uuid-1/frames/${f.name}`));
+    // The same File object, not a re-encode: EXIF and XMP go up as the camera wrote them.
+    frames.forEach((c, i) => expect(c[1]).toBe(files[i]));
+    const manifestCall = calls.find(c => c[0] === "user-1/uuid-1/frames.json")!;
+    expect(manifestCall).toBeDefined();
+    const manifest = JSON.parse(manifestCall[1] as string);
+    expect(manifest.map((m: { filename: string; path: string }) => [m.filename, m.path]))
+      .toEqual(files.map(f => [f.name, `user-1/uuid-1/frames/${f.name}`]));
+    expect(manifest[0].bytes).toBe(files[0].size);
+  });
+
+  it("keeps the original before sending the frame on, and a frame it cannot keep is never sent", async () => {
+    const s = scenario(); installFetch(s);
+    const files = makeFiles(3);
+    storageUpload.mockImplementation(async (path: string) =>
+      path.endsWith("IMG_1.jpg") ? { data: null, error: { message: "quota" } } : { data: { path }, error: null });
+    try {
+      await expect(uploadScan({ fieldId: FIELD, files, onProgress: noop })).rejects.toMatchObject({ resumable: true });
+    } finally {
+      storageUpload.mockImplementation(async (path: string) => ({ data: { path }, error: null }));
+    }
+    expect(s.uploadAttempts).toEqual(["IMG_0.jpg", "IMG_2.jpg"]);
+    expect(s.commitCalls).toBe(0);
+    // The kept originals are remembered, so the retry sends only what is missing.
+    expect(readCheckpoint(FIELD)?.kept).toHaveLength(2);
+  });
+
+  it("gives storage keys to names a camera might write and keeps the real name in the list", async () => {
+    const s = scenario(); installFetch(s);
+    const f = new File([new Uint8Array([1])], "DJI 0001 (2).JPG", { type: "image/jpeg" });
+    Object.defineProperty(f, "lastModified", { value: 1 });
+    const files = [...makeFiles(4), f];
+    await uploadScan({ fieldId: FIELD, files, onProgress: noop });
+    const manifestCall = (storageUpload.mock.calls as unknown as [string, string][]).find(c => c[0].endsWith("frames.json"))!;
+    const manifest = JSON.parse(manifestCall[1]);
+    expect(manifest.at(-1)).toMatchObject({ filename: "DJI 0001 (2).JPG", path: "user-1/uuid-1/frames/DJI_0001__2_.JPG" });
   });
 });
 

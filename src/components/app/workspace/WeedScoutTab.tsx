@@ -51,7 +51,13 @@ import {
 } from "@/lib/weedCatalog/suggest";
 import { plannedAreaM2, plannedZones } from "@/lib/treatment/plannedArea";
 import { ScanSummary } from "./ScanSummary";
-import { SpotPopup } from "./SpotPopup";
+import { type NativeComparison, SpotPopup } from "./SpotPopup";
+import { chipSpanM } from "@/lib/weedScout/candidates";
+import { type Prediction, loadCurrentModel } from "@/lib/weedScout/classify";
+import { getClassifier } from "@/lib/weedScout/classify/onnxClassifier";
+import { cropNative } from "@/lib/sourceFrames/crop";
+import { type ScanSources, downloadFrame, loadScanSources } from "@/lib/sourceFrames/scan";
+import { spotSources } from "@/lib/sourceFrames/spot";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, MouseReadout, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
@@ -195,7 +201,7 @@ const btnQuiet = "inline-flex items-center gap-1.5 text-xs border border-[#333] 
 type Bulk = { phase: "idle" | "saving"; done: number; total: number; error: string | null; failed: number };
 
 export function WeedScoutTab({
-  boundary, tileUrl, bounds, maxNative, fieldId, taskId, scanCreatedAt, settings, center, setActiveTab,
+  boundary, tileUrl, bounds, maxNative, fieldId, taskId, odmUuid, outputPath, scanCreatedAt, settings, center, setActiveTab,
   applyAnnotation, removeAnnotation, appliedSpots, fieldAreaHa, cursorCoordRef, cursorZoomRef,
 }: {
   boundary: BoundaryRing[] | null;
@@ -204,6 +210,9 @@ export function WeedScoutTab({
   maxNative: number;
   fieldId: string | null;
   taskId: string;
+  /** The ODM task behind this scan and its mirrored archive; the source frames hang off both. */
+  odmUuid: string | null;
+  outputPath: string | null;
   scanCreatedAt: string | null;
   settings: FarmerSettings;
   center: [number, number];
@@ -261,6 +270,17 @@ export function WeedScoutTab({
   // The map says what the scout thinks without being asked. Thirty labels on a
   // small field can crowd each other, so it is a toggle, defaulting to on.
   const [showLabels, setShowLabels] = useState(true);
+  // The photographs behind the mosaic, when the archive and the originals exist.
+  const [sources, setSources] = useState<ScanSources | null>(null);
+  const [comparisons, setComparisons] = useState<Record<string, NativeComparison>>({});
+  useEffect(() => {
+    if (!user || !odmUuid) { setSources(null); return; }
+    let cancelled = false;
+    loadScanSources({ userId: user.id, odmUuid, outputPath })
+      .then(s => { if (!cancelled) setSources(s); })
+      .catch(() => { if (!cancelled) setSources(null); });
+    return () => { cancelled = true; };
+  }, [user, odmUuid, outputPath]);
   // Spot id to its map layer, so the diagnostics list can open a spot's popup.
   const layers = useRef(new Map<string, L.Layer>());
   const layerRef = (id: string) => (el: L.Layer | null) => { if (el) layers.current.set(id, el); else layers.current.delete(id); };
@@ -306,6 +326,33 @@ export function WeedScoutTab({
 
   const candidates = useMemo(() => result?.candidates ?? [], [result]);
   const selected = useMemo(() => candidates.find(c => c.id === selectedId) ?? null, [candidates, selectedId]);
+  const sourcesById = useMemo(() => new Map(candidates.map(c => [c.id, spotSources(sources, c)])), [candidates, sources]);
+
+  /**
+   * The key experiment, one spot at a time: the same finding cut from the
+   * original photograph at its own resolution, scored by the same model, next
+   * to the ortho chip. Nothing is saved; the numbers are for looking at.
+   */
+  const compareNative = useCallback(async (c: Candidate) => {
+    const s = sourcesById.get(c.id);
+    const entry = s?.best && sources?.frames?.[s.best.filename];
+    if (!s?.best || !entry || !s.nativeScale) return;
+    setComparisons(m => ({ ...m, [c.id]: { status: "loading" } }));
+    try {
+      const blob = await downloadFrame(entry);
+      if (!blob) throw new Error("the original could not be read from storage");
+      const spanM = c.chipSpanM ?? chipSpanM(c, 1);
+      const crop = await cropNative(blob, s.best.centre.u, s.best.centre.v, s.best.gsdM, s.nativeScale, spanM);
+      if (!crop) throw new Error("the original could not be decoded");
+      let prediction: Prediction | null = null;
+      const meta = await loadCurrentModel();
+      const clf = meta ? await getClassifier(meta) : null;
+      if (clf) [prediction] = await clf.classify([{ pixels: crop.pixels, diameterM: c.blob?.equivDiameterM ?? null }]);
+      setComparisons(m => ({ ...m, [c.id]: { status: "done", crop, prediction } }));
+    } catch (e) {
+      setComparisons(m => ({ ...m, [c.id]: { status: "error", error: (e as Error).message } }));
+    }
+  }, [sourcesById, sources]);
   const suggestionById = useMemo(
     () => new Map(candidates.map(c => [c.id, suggestionsFor(c, catalog)[0] ?? null])),
     [candidates, catalog],
@@ -605,6 +652,10 @@ export function WeedScoutTab({
                   saved={!!saved[c.id]}
                   savedPrediction={saved[c.id]?.prediction ?? null}
                   onField={!!applied[c.id]}
+                  sourceFrames={sourcesById.get(c.id) ?? null}
+                  sourcesOrigin={sources?.reconstruction ?? "none"}
+                  comparison={comparisons[c.id] ?? null}
+                  onCompare={() => compareNative(c)}
                   {...identificationProps}
                 />
               </Popup>

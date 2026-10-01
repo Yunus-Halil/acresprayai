@@ -346,7 +346,7 @@ export default function OrthomosaicViewer() {
       setToken(s.session.access_token);
 
       const { data: t } = await supabase.from("odm_tasks")
-        .select("odm_uuid, field_id, created_at, ai_analysis, ai_analysis_at").eq("id", taskId).maybeSingle();
+        .select("odm_uuid, field_id, created_at, ai_analysis, ai_analysis_at, output_path").eq("id", taskId).maybeSingle();
       console.log("[OrthoViewer] task row:", t);
       if (!t?.odm_uuid) { setErr("Scan not found"); return; }
       setTask(t as TaskRow);
@@ -1132,6 +1132,8 @@ export default function OrthomosaicViewer() {
             maxNative={maxNative}
             fieldId={field?.id ?? null}
             taskId={taskId!}
+            odmUuid={task.odm_uuid}
+            outputPath={task.output_path ?? null}
             scanCreatedAt={task.created_at ?? null}
             settings={settings}
             center={center}

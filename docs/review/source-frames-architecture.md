@@ -182,20 +182,36 @@ Built (pure library, no pipeline or UI change, 13 tests on the real reconstructi
   camera-native frame, motion blur from speed and shutter, a score whose parts are named and
   whose unavailable parts (sharpness, exposure, occlusion) are null, best first.
 
-Next, in order, each small:
+Decided 2026-10-01 (founder): keep the originals in SwathWise storage, keep sending the
+2,400 px copy to ODM, preserve every byte of metadata, no DSM until the flat-ground
+approximation is shown to fail, no threshold or species work. Built the same day:
 
-1. **Stop discarding the frames.** Keep the original file. Two options: upload the original
-   to ODM (more upload time and node cost; poses then come at native scale), or upload the
-   original to our `scans` bucket and the 2,400 px copy to ODM as now (same node cost; poses
-   scale by `exif_width / width`, exactly). The second keeps today's processing unchanged.
-   Either way, preserve XMP (copy the whole APP1 set, not only EXIF). Cost: this scan's 180
-   frames at full size are about 1.4 GB against 0.15 GB today.
-2. **Persist the reconstruction at mirror time.** `odm-poll` already streams `all.zip`;
-   `ortho-url` already stream-extracts one member with `fflate`. Extract the three small
-   files and `stats.json` the same way and write `scan_reconstructions`.
-3. **`dsm: true`** on commit, and `ground_altitude_basis = 'dsm'`.
-4. Then the crop: fetch the frame, cut `objectSpanM(diameter)` around `(u, v)` at native scale,
-   and only then the side-by-side.
+1. **Originals are kept** (`scanUpload.ts`). Each file goes to the `scans` bucket under
+   `<user>/<scan>/frames/<name>` exactly as the camera wrote it (no decode, so EXIF and XMP
+   survive), *before* the 2,400 px copy goes to ODM; a frame that cannot be kept is not sent
+   on. `frames.json` next to them maps the camera's filename (what ODM's `images.json` uses)
+   to the storage key, with size and type. Resume remembers which originals landed. Cost on
+   this camera: about 1.4 GB per 180 frames.
+2. **The reconstruction is read from the archive on first open** (`sourceFrames/scan.ts`).
+   The four small members are pulled out of the mirrored `all.zip` with range requests on a
+   signed URL (`zipRange.ts`: end-of-central-directory, central directory, member; zip64
+   aware) and stored under `<user>/odm/<scan>/reconstruction/`; later opens read those. No
+   edge function, no migration, and it works on every scan that has an archive, including
+   the old ones with no frames.
+3. **The popup says what the frames can offer** (`sourceFrames/spot.ts`, `SpotPopup`
+   "Measurements"): how many frames saw the spot, the best one and its pixel, tilt, edge
+   distance and blur estimate, and the spot's width in pixels in the ortho chip, the uploaded
+   frame and the camera's frame. When there is nothing it says why: imported mosaic, no
+   archive, not seen, or "the original was not kept for this scan".
+4. **The side-by-side** (`sourceFrames/crop.ts`, `WeedScoutTab.compareNative`): with the
+   original kept, cut the same ground span around the projected pixel at native scale, score
+   it with the same weed-v1, and show both chips with GSD, spot width and the model's
+   number. Nothing is saved. Exercised only by unit tests until a scan with kept frames
+   exists; the first such scan must also be used to validate the projection on real pixels
+   before the comparison is read.
+
+Still ahead: `dsm: true` only if sloped fields show the ground-plane error; a persisted
+`inference_source` on stored predictions once the comparison has been looked at.
 
 ## 7. Diagnostic plan: orthomosaic crop against native crop
 

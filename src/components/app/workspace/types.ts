@@ -5,6 +5,8 @@ export type TaskRow = {
   odm_uuid: string | null;
   field_id: string;
   created_at: string;
+  /** The mirrored ODM archive in the scans bucket; null for imported orthomosaics. */
+  output_path?: string | null;
   /** Saved analysis JSON, incl. the last_run success/failure marker. */
   ai_analysis?: unknown;
   ai_analysis_at?: string | null;

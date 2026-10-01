@@ -51,6 +51,7 @@ function renderPopup(over: Partial<SpotPopupProps> = {}) {
     verdict: "unsure", onVerdict: vi.fn(),
     identification: UNIDENTIFIED, suggestion: null,
     notes: "", onNotes: vi.fn(), saved: false, savedPrediction: null, onField: false,
+    sourceFrames: null, sourcesOrigin: "none", comparison: null, onCompare: vi.fn(),
     shortlist: { entries: [], tooMany: false, note: "" },
     recent: [], searchResults: [], searchQuery: "", onSearchQuery: vi.fn(),
     freeText: "", onFreeText: vi.fn(),

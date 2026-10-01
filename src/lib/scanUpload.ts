@@ -10,6 +10,14 @@
 // This module keeps per-image state, retries each image independently with
 // backoff, and checkpoints progress so an interrupted batch resumes where it
 // stopped rather than starting over.
+//
+// TWO COPIES OF EVERY FRAME, ON PURPOSE. The processing node gets a 2,400 px
+// re-encode (imagePrep.ts), which is all it needs for the orthomosaic and is a
+// fifth of the bytes. SwathWise keeps the original file, untouched, in the
+// `scans` bucket under <user>/<scan>/frames/. The original is the only copy
+// with the camera's full resolution and its XMP (altitude above ground, gimbal,
+// yaw), and a finding on the map is read back from it (lib/sourceFrames). The
+// original lands first; an image counts as uploaded only when both copies have.
 import { supabase } from "@/integrations/supabase/client";
 import { prepareForODM } from "@/lib/imagePrep";
 import { storageKey } from "@/lib/storage";
@@ -75,6 +83,8 @@ type Checkpoint = {
   fieldId: string;
   /** File identity (name+size+mtime) of every image ODM has accepted. */
   done: string[];
+  /** Identity of every original already kept in storage, so a resume does not re-send it. */
+  kept?: string[];
   /** Identity of EVERY file in the batch, so resume matches the selection
    *  itself — a different batch with the same count must never merge into
    *  this task, and a changed selection must never silently re-upload. */
@@ -86,6 +96,21 @@ type Checkpoint = {
 const ckptKey = (fieldId: string) => storageKey("upload", fieldId);
 /** Files have no stable id across page loads; name+size+mtime is close enough. */
 const fileKey = (f: File) => `${f.name}:${f.size}:${f.lastModified}`;
+
+/** Where a scan's original frames live. First segment is the owner, which the bucket policy keys on. */
+export const framesPrefix = (userId: string, odmUuid: string) => `${userId}/${odmUuid}/frames`;
+export const framesManifestPath = (userId: string, odmUuid: string) => `${userId}/${odmUuid}/frames.json`;
+/** Storage keys are plainer than file names; the manifest maps the real name to the key. */
+export const frameStorageName = (name: string) => name.replace(/[^A-Za-z0-9._-]/g, "_");
+
+/** One kept original. `filename` is what the camera wrote and what ODM's images.json calls it. */
+export type FrameManifestEntry = {
+  filename: string;
+  path: string;
+  bytes: number;
+  type: string;
+  lastModified: number;
+};
 
 export function readCheckpoint(fieldId: string): Checkpoint | null {
   try {
@@ -217,6 +242,31 @@ async function uploadOne(
 }
 
 /**
+ * Keep the original bytes in storage, retrying transient failures. Resolves to
+ * the storage key. The file is sent as-is: no decode, no re-encode, so EXIF and
+ * XMP survive exactly as the camera wrote them.
+ */
+async function keepOriginal(userId: string, odmUuid: string, file: File, onRetry: () => void): Promise<string> {
+  const path = `${framesPrefix(userId, odmUuid)}/${frameStorageName(file.name)}`;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= PER_IMAGE_ATTEMPTS; attempt++) {
+    try {
+      const { error } = await supabase.storage.from("scans")
+        .upload(path, file, { contentType: file.type || "image/jpeg", upsert: true });
+      if (!error) return path;
+      lastErr = new Error(`${file.name}: could not keep the original (${error.message})`);
+    } catch (e) {
+      lastErr = e;
+    }
+    if (attempt < PER_IMAGE_ATTEMPTS) {
+      onRetry();
+      await sleep(Math.random() * BASE_BACKOFF_MS * 2 ** (attempt - 1));
+    }
+  }
+  throw lastErr ?? new Error(`${file.name}: could not keep the original`);
+}
+
+/**
  * Run a full scan upload: init (or resume), upload every image, then commit.
  *
  * Individual images that exhaust their retries do NOT kill the run — they are
@@ -233,6 +283,8 @@ export async function uploadScan(opts: {
 
   // Start from a fresh, long-lived token: a 200-image batch easily outlives one.
   await supabase.auth.refreshSession().catch(() => {});
+  const userId = (await supabase.auth.getSession()).data.session?.user?.id;
+  if (!userId) throw new UploadError("Please sign in to upload a scan.", false);
 
   // ---- Resume or init ----------------------------------------------------
   const prior = readCheckpoint(fieldId);
@@ -271,10 +323,11 @@ export async function uploadScan(opts: {
     taskId = initJson.task_id;
   }
 
+  const kept = new Set<string>(resumable ? prior!.kept ?? [] : []);
   const checkpoint: Checkpoint = {
     odmUuid, taskId, fieldId, total: files.length,
     fileKeys: files.map(fileKey),
-    done: [...alreadyDone], savedAt: Date.now(),
+    done: [...alreadyDone], kept: [...kept], savedAt: Date.now(),
   };
   writeCheckpoint(checkpoint);
 
@@ -293,11 +346,20 @@ export async function uploadScan(opts: {
       const i = cursor++;
       if (i >= pending.length) return;
       const file = pending[i];
+      const retrying = () => {
+        onProgress({ phase: "uploading", done, total: files.length, failed: failures.length, retrying: true });
+      };
       try {
+        // The original first: if it cannot be kept, the frame is not sent on
+        // at all, so a scan never exists without its source truth.
+        if (!kept.has(fileKey(file))) {
+          await keepOriginal(userId, odmUuid, file, retrying);
+          kept.add(fileKey(file));
+          checkpoint.kept = [...kept];
+          writeCheckpoint(checkpoint);
+        }
         const prepared = await prepareForODM(file);
-        await uploadOne(odmUuid, prepared, () => {
-          onProgress({ phase: "uploading", done, total: files.length, failed: failures.length, retrying: true });
-        });
+        await uploadOne(odmUuid, prepared, retrying);
         alreadyDone.add(fileKey(file));
         done++;
         // Checkpoint every image. An interrupted batch resumes from here.
@@ -327,8 +389,22 @@ export async function uploadScan(opts: {
     );
   }
 
-  // ---- Commit ------------------------------------------------------------
+  // ---- The frame list, then commit ----------------------------------------
+  // Written once every original is in, so a reader never sees a partial list.
   onProgress({ phase: "committing", done, total: files.length, failed: 0 });
+  const manifest: FrameManifestEntry[] = files.map(f => ({
+    filename: f.name, path: `${framesPrefix(userId, odmUuid)}/${frameStorageName(f.name)}`,
+    bytes: f.size, type: f.type || "image/jpeg", lastModified: f.lastModified,
+  }));
+  const { error: manifestErr } = await supabase.storage.from("scans").upload(
+    framesManifestPath(userId, odmUuid), JSON.stringify(manifest), { contentType: "application/json", upsert: true },
+  );
+  if (manifestErr) {
+    throw new UploadError(
+      `Every image is uploaded, but the frame list could not be saved (${manifestErr.message}). Retry to save it and start the scan.`,
+      true,
+    );
+  }
   await supabase.auth.refreshSession().catch(() => {});
   const cRes = await fetch(`${FN_BASE}/odm-submit`, {
     method: "POST",
