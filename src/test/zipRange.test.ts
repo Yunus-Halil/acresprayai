@@ -2,7 +2,7 @@
 // and a member is found from it without touching the rest of the archive.
 import { zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
-import { cropWindow } from "@/lib/sourceFrames/crop";
+import { MIN_WINDOW_PX, areaWindow } from "@/lib/sourceFrames/crop";
 import { type RangeReader, listZip, rangeReaderFor, readZipEntry } from "@/lib/sourceFrames/zipRange";
 
 const enc = new TextEncoder();
@@ -50,20 +50,25 @@ describe("listZip and readZipEntry", () => {
   });
 });
 
-describe("cropWindow", () => {
-  it("centres the native window on the scaled pixel and clamps it to the frame", () => {
-    // A point at (1200, 800) in a 2400 px frame, scale 2.28, 100 px window.
-    const w = cropWindow(1200, 800, 2.28, 100, 5472, 3648);
-    expect(w).toEqual({ x: 2686, y: 1774, size: 100, scale: 2.28 });
-    const edge = cropWindow(5, 5, 2.28, 100, 5472, 3648);
-    expect(edge.x).toBe(0);
-    expect(edge.y).toBe(0);
-    const far = cropWindow(2399, 1599, 2.28, 100, 5472, 3648);
-    expect(far.x + far.size).toBeLessThanOrEqual(5472);
-    expect(far.y + far.size).toBeLessThanOrEqual(3648);
+describe("areaWindow", () => {
+  it("cuts the area's box at native scale with context around it, centred", () => {
+    // A 400 x 200 px box in the uploaded frame, scale 2: 800 x 400 native centred on
+    // (2400, 1600), plus 25% of 800 each side: 1200 x 800 starting at (1800, 1200).
+    const w = areaWindow({ x0: 1000, y0: 700, x1: 1400, y1: 900 }, 2, 5472, 3648);
+    expect(w).toEqual({ x: 1800, y: 1200, width: 1200, height: 800 });
   });
 
-  it("never asks for a window larger than the frame", () => {
-    expect(cropWindow(10, 10, 1, 9999, 640, 480).size).toBe(480);
+  it("gives a tiny area a minimum window so it has surroundings", () => {
+    const w = areaWindow({ x0: 1200, y0: 800, x1: 1201, y1: 801 }, 2.28, 5472, 3648);
+    expect(w.width).toBe(MIN_WINDOW_PX);
+    expect(w.height).toBe(MIN_WINDOW_PX);
+  });
+
+  it("stays inside the frame at its edges and never exceeds it", () => {
+    const corner = areaWindow({ x0: 0, y0: 0, x1: 50, y1: 50 }, 2.28, 5472, 3648);
+    expect(corner.x).toBe(0);
+    expect(corner.y).toBe(0);
+    const huge = areaWindow({ x0: 0, y0: 0, x1: 2400, y1: 1600 }, 2.28, 5472, 3648);
+    expect(huge).toEqual({ x: 0, y: 0, width: 5472, height: 3648 });
   });
 });

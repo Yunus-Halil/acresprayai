@@ -16,8 +16,7 @@
 //
 // Everything it renders comes from a module that already owns it. It composes;
 // it does not decide.
-import { type Prediction, describePrediction } from "@/lib/weedScout/classify";
-import type { NativeCrop } from "@/lib/sourceFrames/crop";
+import { describePrediction } from "@/lib/weedScout/classify";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
 import type { SpotSources } from "@/lib/sourceFrames/spot";
 import { useState } from "react";
@@ -55,11 +54,10 @@ export type SpotPopupProps = {
   /** What the model said when this spot was last saved, for a reopened scan with no live score. */
   savedPrediction: StoredPrediction | null;
   onField: boolean;
-  /** The photographs that saw this spot, from lib/sourceFrames. Null while loading. */
+  /** The original photos that saw this area, from lib/sourceFrames. Null while loading. */
   sourceFrames: SpotSources | null;
   sourcesOrigin: ScanSources["reconstruction"];
-  comparison: NativeComparison | null;
-  onCompare: () => void;
+  onCloserLook: () => void;
 
   // Identification wiring, handed straight to the shared block.
   shortlist: CropShortlist;
@@ -82,7 +80,7 @@ export type SpotPopupProps = {
 export function SpotPopup(props: SpotPopupProps) {
   const {
     candidate: c, index, total, units, areaM2, verdict, onVerdict, identification, suggestion,
-    notes, onNotes, saved, savedPrediction, onField, sourceFrames, sourcesOrigin, comparison, onCompare,
+    notes, onNotes, saved, savedPrediction, onField, sourceFrames, sourcesOrigin, onCloserLook,
   } = props;
   const named = isStatedFinding(identification);
   // A suggestion is worth showing unasked; an empty picker is not.
@@ -151,6 +149,8 @@ export function SpotPopup(props: SpotPopupProps) {
         })}
       </div>
 
+      <CloserLookLine sources={sourceFrames} origin={sourcesOrigin} onCloserLook={onCloserLook} />
+
       {!gone && !showIdentification && (
         <button type="button" onClick={() => setNaming(true)}
           className="mt-2 w-full text-[11px] rounded-sm border border-[#333] px-2 py-1.5 text-neutral-300 hover:bg-[#1f1f1f]">
@@ -213,63 +213,34 @@ export function SpotPopup(props: SpotPopupProps) {
             <p className="font-mono text-neutral-600">{c.id}</p>
           </div>
         )}
-        <SourceFramesBlock c={c} units={units} sources={sourceFrames} origin={sourcesOrigin} comparison={comparison} onCompare={onCompare} />
       </details>
     </div>
   );
 }
 
-export type NativeComparison =
-  | { status: "loading" }
-  | { status: "done"; crop: NativeCrop; prediction: Prediction | null; orthoPrediction: Prediction | null; belowTrained: boolean; requiredGsdM: number | null }
-  | { status: "error"; error: string };
-
 /**
- * The developer's view of where better pixels would come from: which frames
- * saw the spot, the best one, and how many pixels the spot would get in it.
- * With the original kept, the same spot can be cut from it and scored, and
- * the two sit side by side. Reads only; decides nothing.
+ * Step two, offered on the spot itself: the original photos of this area. A
+ * button when they exist, one plain line saying why when they do not.
  */
-function SourceFramesBlock({ c, units, sources, origin, comparison, onCompare }: {
-  c: Candidate; units: UnitSystem; sources: SpotSources | null; origin: ScanSources["reconstruction"];
-  comparison: NativeComparison | null; onCompare: () => void;
+function CloserLookLine({ sources, origin, onCloserLook }: {
+  sources: SpotSources | null; origin: ScanSources["reconstruction"]; onCloserLook: () => void;
 }) {
-  const gsd = (m: number | null | undefined) => (m ? `${fmtLengthCm(m * 100, units).text}/px` : "unknown");
-  const px = (n: number | null) => (n == null ? "unknown" : `${n.toFixed(1)} px`);
-  if (!sources) return <p className="pt-1.5 text-[10px] text-neutral-600" data-testid="source-frames">Source frames: loading.</p>;
-  if (sources.unavailable) {
-    const why = sources.unavailable === "no reconstruction"
-      ? (origin === "none" ? "no camera poses for this scan (imported orthomosaic, or the archive is missing)" : "poses could not be read")
-      : sources.unavailable;
-    return <p className="pt-1.5 text-[10px] text-neutral-600" data-testid="source-frames">Source frames: {why}.</p>;
+  const note = (text: string) => <p className="mt-2 text-[10px] text-neutral-600" data-testid="source-frames">{text}</p>;
+  if (!sources) return note("Looking up the original photos of this area.");
+  if (sources.unavailable === "no reconstruction") {
+    return note(origin === "none" ? "No original photos for this scan (an imported map, or the processing archive is missing)." : "The camera positions for this scan could not be read.");
   }
-  const b = sources.best!;
+  if (sources.unavailable === "no ground height") return note("The original photos cannot be lined up with the map for this scan.");
+  if (sources.unavailable) return note("No original photo shows this area.");
+  if (!sources.lookable.length) {
+    return note(`${sources.views.length} original photo${sources.views.length === 1 ? "" : "s"} saw this area, but they were not kept for this scan. "Keep original photos" on the field page adds them.`);
+  }
   return (
-    <div className="pt-1.5 text-[10px] text-neutral-500 space-y-0.5" data-testid="source-frames">
-      <p className="text-neutral-400">Source frames: seen by {sources.views}. Best <span className="font-mono">{b.filename}</span> at pixel ({b.centre.u.toFixed(0)}, {b.centre.v.toFixed(0)}), {b.centre.viewAngleDeg.toFixed(0)} deg off nadir, {b.centre.edgeDistancePx.toFixed(0)} px from the edge{b.fullyInside ? "" : ", not fully inside"}{b.blurPx != null ? `, ~${b.blurPx.toFixed(1)} px motion blur` : ""}.</p>
-      <p>Spot width: ortho chip {px(sources.targetPx.ortho)} at {gsd(c.chipGsdM)}; uploaded frame {px(sources.targetPx.uploaded)} at {gsd(b.gsdM)}; camera frame {px(sources.targetPx.native)} at {gsd(b.nativeGsdM)}.</p>
-      {!sources.frameKept && <p className="text-neutral-600">The original photograph was not kept for this scan, so there is nothing to cut from it.</p>}
-      {sources.frameKept && !comparison && (
-        <button type="button" onClick={onCompare} className="underline text-neutral-300 hover:text-white" data-testid="compare-native">Compare the native crop</button>
-      )}
-      {comparison?.status === "loading" && <p>Reading the original and scoring it.</p>}
-      {comparison?.status === "error" && <p className="text-red-400">Could not compare: {comparison.error}</p>}
-      {comparison?.status === "done" && (
-        <div className="grid grid-cols-2 gap-2 pt-1" data-testid="native-comparison">
-          <div>
-            {c.chip && <img src={c.chip} alt="" className="w-full rounded-sm border border-[#222]" style={{ imageRendering: "pixelated" }} />}
-            <p className="pt-0.5">Ortho: {gsd(c.chipGsdM)}, spot {px(sources.targetPx.ortho)}{comparison.orthoPrediction ? `, model ${Math.round(comparison.orthoPrediction.pWeed * 100)}% weed` : ", no model"}</p>
-          </div>
-          <div>
-            <img src={comparison.crop.dataUrl} alt="" className="w-full rounded-sm border border-[#222]" style={{ imageRendering: "pixelated" }} />
-            <p className="pt-0.5">Native: {gsd(comparison.crop.gsdM)}, spot {px(sources.targetPx.native)}{comparison.prediction ? `, model ${Math.round(comparison.prediction.pWeed * 100)}% weed` : ", no model"}</p>
-          </div>
-          {comparison.belowTrained && (
-            <p className="col-span-2 text-amber-500/80">Both are coarser than the {gsd(comparison.requiredGsdM)} the model was trained on; the numbers are the experiment, not a finding.</p>
-          )}
-        </div>
-      )}
-    </div>
+    <button type="button" onClick={onCloserLook} data-testid="closer-look-open"
+      className="mt-2 w-full text-[11px] rounded-sm border border-[#4CAF50]/60 px-2 py-1.5 text-[#4CAF50] hover:bg-[#4CAF50]/10 font-semibold">
+      Closer look
+      <span className="font-normal text-neutral-500"> (in the original photo{sources.lookable.length === 1 ? "" : "s"}, {sources.views.length} saw it)</span>
+    </button>
   );
 }
 

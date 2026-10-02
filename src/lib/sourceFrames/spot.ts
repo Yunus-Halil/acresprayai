@@ -1,46 +1,67 @@
-// What the source frames can say about one scout spot: which photographs saw
-// it, which one to read it from, and how many pixels it would get there
-// against the orthomosaic chip it has now. Pure; the popup only prints it.
+// Step two of the two-step look: a finding the orthomosaic flagged, and the
+// original photographs that show that same area up close. Pure; the popup
+// prints it and the closer-look viewer draws it.
+import type { LatLng2 } from "../geo";
+import { chipSpanM } from "../weedScout/candidates";
 import type { Candidate } from "../weedScout/types";
+import type { LatLngAlt } from "./odm";
 import type { ScanSources } from "./scan";
-import { type FrameCandidate, selectFrames } from "./select";
+import { type AreaView, selectFramesForArea } from "./select";
+
+/** Outline vertices sent through the projection; a region's ring is thinned to this. */
+const MAX_OUTLINE_POINTS = 64;
+/** A point finding is looked at as a square this many metres across, at least. */
+const MIN_POINT_SPAN_M = 3;
 
 export type SpotSources = {
   /** Why there is nothing to show, when there is nothing. */
-  unavailable: "no reconstruction" | "no ground height" | "not seen by any frame" | null;
-  views: number;
-  best: FrameCandidate | null;
-  /** The best frame's original exists in storage. */
-  frameKept: boolean;
-  /** Camera-native over uploaded: how much larger the original is. Null when EXIF did not say. */
+  unavailable: "no reconstruction" | "no ground height" | "not seen by any photo" | null;
+  /** Every photograph that holds part of the area, best first. */
+  views: AreaView[];
+  /** Up to three of them whose originals were kept, best first. */
+  lookable: AreaView[];
+  /** Camera-native over uploaded size. Null when EXIF did not say. */
   nativeScale: number | null;
-  /** The spot's ground diameter in pixels: in the ortho chip, in the uploaded frame, in the camera's frame. */
-  targetPx: { ortho: number | null; uploaded: number | null; native: number | null };
+  /** Map detail and photo detail at this finding, metres per pixel. */
+  orthoGsdM: number | null;
+  nativeGsdM: number | null;
+  /** The outline on the ground, for drawing it over a photograph. */
+  outline: LatLngAlt[];
 };
 
+/** The area a finding covers: its region's outer ring, or a square around a point. */
+export function findingOutline(c: Candidate, groundAltM: number): LatLngAlt[] {
+  const ring: LatLng2[] | undefined = c.region?.rings[0];
+  if (ring && ring.length >= 3) {
+    const step = Math.max(1, Math.ceil(ring.length / MAX_OUTLINE_POINTS));
+    return ring.filter((_, i) => i % step === 0).map(p => ({ lat: p.lat, lng: p.lng, altM: groundAltM }));
+  }
+  const half = Math.max(MIN_POINT_SPAN_M, chipSpanM(c)) / 2;
+  const dLat = half / 111_320, dLng = half / (111_320 * Math.cos((c.centroid.lat * Math.PI) / 180));
+  const { lat, lng } = c.centroid;
+  return [
+    { lat: lat + dLat, lng: lng - dLng, altM: groundAltM }, { lat: lat + dLat, lng: lng + dLng, altM: groundAltM },
+    { lat: lat - dLat, lng: lng + dLng, altM: groundAltM }, { lat: lat - dLat, lng: lng - dLng, altM: groundAltM },
+  ];
+}
+
 export function spotSources(sources: ScanSources | null, c: Candidate): SpotSources {
-  const none = (why: SpotSources["unavailable"]): SpotSources =>
-    ({ unavailable: why, views: 0, best: null, frameKept: false, nativeScale: null, targetPx: { ortho: null, uploaded: null, native: null } });
-  if (!sources?.set) return none("no reconstruction");
-  if (sources.groundAltM == null) return none("no ground height");
-  const diameterM = c.blob?.equivDiameterM ?? (c.areaM2 > 0 ? 2 * Math.sqrt(c.areaM2 / Math.PI) : null);
-  const r = selectFrames(sources.set, {
-    centroid: { lat: c.centroid.lat, lng: c.centroid.lng, altM: sources.groundAltM },
-    radiusM: diameterM ? diameterM / 2 : 0,
-  });
-  if (!r.best) return none("not seen by any frame");
-  const meta = sources.set.images[r.best.filename];
+  const empty = (why: SpotSources["unavailable"]): SpotSources =>
+    ({ unavailable: why, views: [], lookable: [], nativeScale: null, orthoGsdM: c.chipGsdM, nativeGsdM: null, outline: [] });
+  if (!sources?.set) return empty("no reconstruction");
+  if (sources.groundAltM == null) return empty("no ground height");
+  const outline = findingOutline(c, sources.groundAltM);
+  const views = selectFramesForArea(sources.set, outline, { ...c.centroid, altM: sources.groundAltM });
+  if (!views.length) return { ...empty("not seen by any photo"), outline };
+  const meta = sources.set.images[views[0].filename];
   const nativeScale = meta?.exifWidth && meta.width ? meta.exifWidth / meta.width : null;
   return {
     unavailable: null,
-    views: r.views,
-    best: r.best,
-    frameKept: !!sources.frames?.[r.best.filename],
+    views,
+    lookable: views.filter(v => sources.frames?.[v.filename]).slice(0, 3),
     nativeScale,
-    targetPx: {
-      ortho: diameterM && c.chipGsdM ? diameterM / c.chipGsdM : null,
-      uploaded: diameterM ? diameterM / r.best.gsdM : null,
-      native: diameterM && r.best.nativeGsdM ? diameterM / r.best.nativeGsdM : null,
-    },
+    orthoGsdM: c.chipGsdM,
+    nativeGsdM: nativeScale ? views[0].gsdM / nativeScale : null,
+    outline,
   };
 }

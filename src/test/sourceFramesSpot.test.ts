@@ -1,65 +1,95 @@
 // @vitest-environment node
-// What the popup is told about a spot's source frames, from the real
-// reconstruction: pixel counts in each layer, and plain reasons when there is
-// nothing to say.
+// Step two of the two-step look, on the real reconstruction: an area the map
+// flagged, and the original photos that hold it, best first.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { groundAltitudeFromOdm, parseOdmOutputs } from "@/lib/sourceFrames/odm";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
-import { spotSources } from "@/lib/sourceFrames/spot";
-import type { Blob as ScoutBlob, Candidate } from "@/lib/weedScout/types";
+import { findingOutline, spotSources } from "@/lib/sourceFrames/spot";
+import type { Candidate, Region } from "@/lib/weedScout/types";
 
 const DIR = join(process.cwd(), "src", "test", "fixtures", "odm-dd0f6314");
 const read = (f: string) => JSON.parse(readFileSync(join(DIR, f), "utf-8"));
 const set = parseOdmOutputs({ camerasJson: read("cameras.json"), shotsGeojson: read("shots.geojson"), imagesJson: read("images.json") });
-const stats = read("stats.json");
-const groundAltM = groundAltitudeFromOdm(set, stats.odm_processing_statistics.average_gsd);
+const groundAltM = groundAltitudeFromOdm(set, read("stats.json").odm_processing_statistics.average_gsd)!;
+const CENTRE = { lat: 54.17259, lng: 12.30625 };
 
-const blob = (d: number): ScoutBlob => ({
-  id: "b", tileId: "t", centroid: { lat: 54.17259, lng: 12.30625 }, areaM2: Math.PI * (d / 2) ** 2, equivDiameterM: d,
-  widthM: d, heightM: d, extent: 0.7, chromaR: 0.3, chromaG: 0.4, chromaB: 0.3, exgMean: 0.2, brightness: 120,
-  gsdM: 0.087, touchesBorder: false,
-});
-const spot = (over: Partial<Candidate> = {}): Candidate => ({
-  id: "c", tileId: "t", centroid: { lat: 54.17259, lng: 12.30625 }, kind: "off-row vegetation", score: 0.5,
-  distanceToRowM: 0.3, rowConfidence: 0.9, anomalyZ: null, anomalyFeature: null, blobZ: null, blobZFeature: null,
-  blob: blob(0.3), region: null, areaM2: 0.07, feedback: null, estimate: null, prediction: null,
-  chip: "data:image/png;base64,AAAA", chipSpanM: 1.2, chipGsdM: 0.087, ...over,
+/** A square region `sideM` across around the field centre. */
+const squareRegion = (sideM: number): Region => {
+  const dLat = sideM / 2 / 111_320, dLng = sideM / 2 / (111_320 * Math.cos((CENTRE.lat * Math.PI) / 180));
+  const ring = [
+    { lat: CENTRE.lat + dLat, lng: CENTRE.lng - dLng }, { lat: CENTRE.lat + dLat, lng: CENTRE.lng + dLng },
+    { lat: CENTRE.lat - dLat, lng: CENTRE.lng + dLng }, { lat: CENTRE.lat - dLat, lng: CENTRE.lng - dLng },
+  ];
+  return { id: "r", tileIds: [], rings: [ring], centroid: CENTRE, areaM2: sideM * sideM, tileCount: 1, coreTiles: 1, meanStrength: 4, maxStrength: 5, meanFieldZ: [], drivers: [], klass: "bare or dry ground" };
+};
+const finding = (over: Partial<Candidate> = {}): Candidate => ({
+  id: "c", tileId: "t", centroid: CENTRE, kind: "not-average region", score: 0.5,
+  distanceToRowM: null, rowConfidence: null, anomalyZ: null, anomalyFeature: null, blobZ: null, blobZFeature: null,
+  blob: null, region: squareRegion(20), areaM2: 400, feedback: null, estimate: null, prediction: null,
+  chip: null, chipSpanM: 24, chipGsdM: 0.087, ...over,
 });
 const sources = (over: Partial<ScanSources> = {}): ScanSources =>
-  ({ set, stats, groundAltM, frames: null, reconstruction: "stored", ...over });
+  ({ set, stats: null, groundAltM, frames: null, reconstruction: "stored", ...over });
+const keptAll = Object.fromEntries(set.shots.map(s => [s.filename, { filename: s.filename, path: `p/${s.filename}`, bytes: 1, type: "image/jpeg", lastModified: 0 }]));
 
-describe("spotSources", () => {
-  it("says a 30 cm spot gets 3 px in the ortho chip, 5 in the uploaded frame and 11 in the camera's", () => {
-    const s = spotSources(sources(), spot());
+describe("the photos that hold a flagged area", () => {
+  it("a 20 m area is held whole by several photos, the best one first", () => {
+    const s = spotSources(sources(), finding());
     expect(s.unavailable).toBeNull();
-    expect(s.views).toBeGreaterThanOrEqual(5);
-    expect(s.targetPx.ortho!).toBeCloseTo(0.3 / 0.087, 1);
-    expect(s.targetPx.uploaded!).toBeGreaterThan(4);
-    expect(s.targetPx.uploaded!).toBeLessThan(6);
-    expect(s.targetPx.native!).toBeGreaterThan(10);
-    expect(s.targetPx.native!).toBeLessThan(13);
+    expect(s.views.length).toBeGreaterThanOrEqual(3);
+    expect(s.views[0].coverage).toBe(1);
+    expect(s.views.map(v => v.score)).toEqual([...s.views.map(v => v.score)].sort((a, b) => b - a));
+    // The outline lands inside the best frame, and its box is a sensible size: 20 m at ~6.3 cm/px.
+    const b = s.views[0].box;
+    expect(b.x1 - b.x0).toBeGreaterThan(250);
+    expect(b.x1 - b.x0).toBeLessThan(450);
+  });
+
+  it("an area bigger than any one photo is still shown, with the coverage it got", () => {
+    const s = spotSources(sources(), finding({ region: squareRegion(300), areaM2: 90_000 }));
+    expect(s.views.length).toBeGreaterThan(0);
+    expect(s.views[0].coverage).toBeLessThan(1);
+    expect(s.views[0].coverage).toBeGreaterThan(0);
+  });
+
+  it("only photos whose originals were kept can be opened, at most three", () => {
+    expect(spotSources(sources(), finding()).lookable).toEqual([]);
+    const s = spotSources(sources({ frames: keptAll }), finding());
+    expect(s.lookable.length).toBe(3);
+    expect(s.lookable[0].filename).toBe(s.views[0].filename);
+  });
+
+  it("reports the map's detail against the photo's", () => {
+    const s = spotSources(sources(), finding());
+    expect(s.orthoGsdM).toBe(0.087);
     expect(s.nativeScale!).toBeCloseTo(5472 / 2400, 3);
-    expect(s.frameKept).toBe(false);
+    expect(s.nativeGsdM!).toBeGreaterThan(0.02);
+    expect(s.nativeGsdM!).toBeLessThan(0.035);
   });
 
-  it("knows when the best frame's original was kept", () => {
-    const s = spotSources(sources(), spot());
-    const kept = spotSources(sources({ frames: { [s.best!.filename]: { filename: s.best!.filename, path: "p", bytes: 1, type: "image/jpeg", lastModified: 0 } } }), spot());
-    expect(kept.frameKept).toBe(true);
+  it("gives a reason instead of a view when it cannot answer", () => {
+    expect(spotSources(null, finding()).unavailable).toBe("no reconstruction");
+    expect(spotSources(sources({ set: null, reconstruction: "none" }), finding()).unavailable).toBe("no reconstruction");
+    expect(spotSources(sources({ groundAltM: null }), finding()).unavailable).toBe("no ground height");
+    const far = { lat: 54.0, lng: 12.0 };
+    expect(spotSources(sources(), finding({ centroid: far, region: { ...squareRegion(20), rings: [squareRegion(20).rings[0].map(p => ({ lat: p.lat - 0.17, lng: p.lng - 0.3 }))] } })).unavailable).toBe("not seen by any photo");
+  });
+});
+
+describe("findingOutline", () => {
+  it("uses a region's ring, thinned to at most 64 points", () => {
+    const ring = Array.from({ length: 500 }, (_, i) => ({ lat: CENTRE.lat + Math.sin(i / 80) * 1e-4, lng: CENTRE.lng + Math.cos(i / 80) * 1e-4 }));
+    const out = findingOutline(finding({ region: { ...squareRegion(10), rings: [ring] } }), groundAltM);
+    expect(out.length).toBeLessThanOrEqual(64);
+    expect(out[0]).toEqual({ ...ring[0], altM: groundAltM });
   });
 
-  it("gives a reason instead of a number when it cannot answer", () => {
-    expect(spotSources(null, spot()).unavailable).toBe("no reconstruction");
-    expect(spotSources(sources({ set: null, reconstruction: "none" }), spot()).unavailable).toBe("no reconstruction");
-    expect(spotSources(sources({ groundAltM: null }), spot()).unavailable).toBe("no ground height");
-    expect(spotSources(sources(), spot({ centroid: { lat: 54.0, lng: 12.0 } })).unavailable).toBe("not seen by any frame");
-  });
-
-  it("uses a region's area for its size when it has no plant blob", () => {
-    const s = spotSources(sources(), spot({ blob: null, areaM2: 50, chipGsdM: 0.35 }));
-    expect(s.unavailable).toBeNull();
-    expect(s.targetPx.uploaded!).toBeGreaterThan(100);
+  it("gives a point finding a square at least 3 m across", () => {
+    const out = findingOutline(finding({ region: null, kind: "field outlier", chipSpanM: null }), groundAltM);
+    expect(out).toHaveLength(4);
+    const widthM = (out[1].lng - out[0].lng) * 111_320 * Math.cos((CENTRE.lat * Math.PI) / 180);
+    expect(widthM).toBeGreaterThanOrEqual(2.99);
   });
 });

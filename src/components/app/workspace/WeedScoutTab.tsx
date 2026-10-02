@@ -51,13 +51,9 @@ import {
 } from "@/lib/weedCatalog/suggest";
 import { plannedAreaM2, plannedZones } from "@/lib/treatment/plannedArea";
 import { ScanSummary } from "./ScanSummary";
-import { type NativeComparison, SpotPopup } from "./SpotPopup";
-import { chipSpanM } from "@/lib/weedScout/candidates";
-import { type Prediction, loadCurrentModel, resolutionUsable } from "@/lib/weedScout/classify";
-import { getClassifier } from "@/lib/weedScout/classify/onnxClassifier";
-import { dataUrlToPixels } from "@/lib/weedScout/classify/preprocess";
-import { cropNative } from "@/lib/sourceFrames/crop";
-import { type ScanSources, downloadFrame, loadScanSources } from "@/lib/sourceFrames/scan";
+import { SpotPopup } from "./SpotPopup";
+import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
+import { type ScanSources, loadScanSources } from "@/lib/sourceFrames/scan";
 import { spotSources } from "@/lib/sourceFrames/spot";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, MouseReadout, loadBasemap, saveBasemap } from "./layers";
@@ -270,7 +266,8 @@ export function WeedScoutTab({
   const [showLabels, setShowLabels] = useState(true);
   // The photographs behind the mosaic, when the archive and the originals exist.
   const [sources, setSources] = useState<ScanSources | null>(null);
-  const [comparisons, setComparisons] = useState<Record<string, NativeComparison>>({});
+  // Step two: the finding whose original photos are open in the closer-look viewer.
+  const [closerLook, setCloserLook] = useState<CloserLookTarget | null>(null);
   useEffect(() => {
     if (!user || !odmUuid) { setSources(null); return; }
     let cancelled = false;
@@ -326,42 +323,6 @@ export function WeedScoutTab({
   const selected = useMemo(() => candidates.find(c => c.id === selectedId) ?? null, [candidates, selectedId]);
   const sourcesById = useMemo(() => new Map(candidates.map(c => [c.id, spotSources(sources, c)])), [candidates, sources]);
 
-  /**
-   * The key experiment, one spot at a time: the same finding cut from the
-   * original photograph at its own resolution, scored by the same model, next
-   * to the ortho chip. Nothing is saved; the numbers are for looking at.
-   */
-  const compareNative = useCallback(async (c: Candidate) => {
-    const s = sourcesById.get(c.id);
-    const entry = s?.best && sources?.frames?.[s.best.filename];
-    if (!s?.best || !entry || !s.nativeScale) return;
-    setComparisons(m => ({ ...m, [c.id]: { status: "loading" } }));
-    try {
-      const blob = await downloadFrame(entry);
-      if (!blob) throw new Error("the original could not be read from storage");
-      const spanM = c.chipSpanM ?? chipSpanM(c, 1);
-      const crop = await cropNative(blob, s.best.centre.u, s.best.centre.v, s.best.gsdM, s.nativeScale, spanM);
-      if (!crop) throw new Error("the original could not be decoded");
-      // The comparison runs the model regardless of the resolution gate: it is
-      // the experiment that decides whether these pixels are good enough. The
-      // record says when they are still coarser than the model was trained on.
-      let prediction: Prediction | null = null;
-      let orthoPrediction: Prediction | null = c.prediction ?? null;
-      const meta = await loadCurrentModel();
-      const clf = meta ? await getClassifier(meta) : null;
-      if (clf) {
-        const diameterM = c.blob?.equivDiameterM ?? null;
-        [prediction] = await clf.classify([{ pixels: crop.pixels, diameterM }]);
-        // The same model on the ortho chip, also ungated, so the two numbers are comparable.
-        const orthoPixels = !orthoPrediction && c.chip && c.chipSpanM ? await dataUrlToPixels(c.chip, c.chipSpanM) : null;
-        if (orthoPixels) [orthoPrediction] = await clf.classify([{ pixels: orthoPixels, diameterM }]);
-      }
-      const belowTrained = !!meta && !resolutionUsable(meta, crop.gsdM);
-      setComparisons(m => ({ ...m, [c.id]: { status: "done", crop, prediction, orthoPrediction, belowTrained, requiredGsdM: meta?.max_gsd_m ?? null } }));
-    } catch (e) {
-      setComparisons(m => ({ ...m, [c.id]: { status: "error", error: (e as Error).message } }));
-    }
-  }, [sourcesById, sources]);
   const suggestionById = useMemo(
     () => new Map(candidates.map(c => [c.id, suggestionsFor(c, catalog)[0] ?? null])),
     [candidates, catalog],
@@ -665,8 +626,10 @@ export function WeedScoutTab({
                   onField={!!applied[c.id]}
                   sourceFrames={sourcesById.get(c.id) ?? null}
                   sourcesOrigin={sources?.reconstruction ?? "none"}
-                  comparison={comparisons[c.id] ?? null}
-                  onCompare={() => compareNative(c)}
+                  onCloserLook={() => {
+                    const spot = sourcesById.get(c.id);
+                    if (spot) setCloserLook({ title: spotLabel(c), spot });
+                  }}
                   {...identificationProps}
                 />
               </Popup>
@@ -710,6 +673,7 @@ export function WeedScoutTab({
           })}
           <BasemapToggle value={basemap} onChange={(id) => { setBasemap(id); saveBasemap(id); }} className="absolute bottom-4 right-4 z-[1000]" />
         </MapContainer>
+        <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} />
 
         <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2 text-neutral-300"><FlaskConical className="h-3 w-3 text-[#4CAF50]" /> Click a spot to change it</div>
