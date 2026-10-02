@@ -213,6 +213,27 @@ approximation is shown to fail, no threshold or species work. Built the same day
 Still ahead: `dsm: true` only if sloped fields show the ground-plane error; a persisted
 `inference_source` on stored predictions once the comparison has been looked at.
 
+### Validated on real pixels (2026-10-02)
+
+Scan `cf8f8230` ("Weed detection Test Field", 189 senseFly S.O.D.A. frames, originals kept
+after the fact with "Keep original photos": 187 of 189 landed at 5,472 x 3,648). The
+projection check: take frame 0097's centre pixel, intersect its ray with the estimated
+ground plane (ODM average GSD implies 56.9 m), project that point into the three best
+other frames (tilts 11, 21 and 28 degrees, edge distances 136 to 514 px), cut 700 px at
+native scale around each projected pixel.
+
+Result: every crop shows the same ground, the crosshair on or between the same pair of
+wheel tracks with the same pale patch beside them. The spread between frames is about
+30 to 50 cm (25 to 40 native pixels), the size of error a 1 m ground-height mistake makes
+at 28 degrees of tilt, and no worse. So the poses, the lens model and the pixel
+conventions are right, and the remaining error is the ground height, as predicted. At
+1.2 cm/px the individual plants in the pale patch are resolved; the ortho chip of the same
+ground at 5.5 cm/px shows a smear.
+
+Not yet done: a DSM would take the residual down; it is not needed until a sloped field
+shows the ground-plane error mattering. The check script lives in the scratch tooling
+for now and should become a repo test when a second scan with originals exists.
+
 ## 7. Diagnostic plan: orthomosaic crop against native crop
 
 For each candidate the scout produces on a scan with retained frames:
