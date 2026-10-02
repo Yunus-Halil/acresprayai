@@ -1,12 +1,13 @@
-// Step two of the two-step look: a finding the orthomosaic flagged, and the
-// original photographs that show that same area up close. Pure; the popup
-// prints it and the closer-look viewer draws it.
+// Step three of the engine: a shape the mosaic flagged, and the original
+// photos to check for it. Pure; the scan stores the short form, the map
+// lights up the chosen photos' positions, and the closer-look viewer shows
+// them.
 import type { LatLng2 } from "../geo";
 import { chipSpanM } from "../weedScout/candidates";
 import type { Candidate, SourceImages } from "../weedScout/types";
 import type { LatLngAlt } from "./odm";
 import type { ScanSources } from "./scan";
-import { type AreaView, selectFramesForArea } from "./select";
+import { type AreaView, coverZone, selectFramesForArea } from "./select";
 
 /** Outline vertices sent through the projection; a region's ring is thinned to this. */
 const MAX_OUTLINE_POINTS = 64;
@@ -16,16 +17,18 @@ const MIN_POINT_SPAN_M = 3;
 export type SpotSources = {
   /** Why there is nothing to show, when there is nothing. */
   unavailable: "no reconstruction" | "no ground height" | "not seen by any photo" | null;
-  /** Every photograph that holds part of the area, best first. */
+  /** Every photo that holds part of the shape, best first. */
   views: AreaView[];
-  /** Up to three of them whose originals were kept, best first. */
+  /** The photos to check: the fewest that together hold the whole shape (see coverZone). */
+  chosen: AreaView[];
+  /** The chosen photos whose originals were kept, so they can be opened. */
   lookable: AreaView[];
   /** Camera-native over uploaded size. Null when EXIF did not say. */
   nativeScale: number | null;
-  /** Map detail and photo detail at this finding, metres per pixel. */
+  /** Map detail and photo detail at this shape, metres per pixel. */
   orthoGsdM: number | null;
   nativeGsdM: number | null;
-  /** The outline on the ground, for drawing it over a photograph. */
+  /** The outline on the ground, for drawing it over a photo. */
   outline: LatLngAlt[];
 };
 
@@ -49,7 +52,13 @@ export function findingOutline(c: Candidate, groundAltM: number): LatLngAlt[] {
 export function sourceImagesOf(spot: SpotSources): SourceImages | null {
   if (spot.unavailable === "no reconstruction" || spot.unavailable === "no ground height") return null;
   const best = spot.views[0] ?? null;
-  return { photos: spot.views.length, best: best?.filename ?? null, coverage: best?.coverage ?? null, kept: spot.lookable.length > 0 };
+  return {
+    photos: spot.views.length,
+    best: best?.filename ?? null,
+    coverage: best?.coverage ?? null,
+    chosen: spot.chosen.map(v => v.filename),
+    kept: spot.lookable.length > 0,
+  };
 }
 
 /** One line for the run's notes: did step three find the photos. */
@@ -63,25 +72,28 @@ export function sourceImagesNote(candidates: readonly { sourceImages?: SourceIma
   const seen = shapes.filter(c => c.sourceImages!.photos > 0);
   const kept = seen.filter(c => c.sourceImages!.kept);
   const whole = seen.filter(c => (c.sourceImages!.coverage ?? 0) >= 0.999);
-  const photos = new Set(seen.map(c => c.sourceImages!.best)).size;
-  return `Source images: ${seen.length} of ${shapes.length} shapes matched to original photos (${whole.length} held whole by one photo, ${photos} photos chosen as best). ` +
+  const counts = seen.map(c => c.sourceImages!.chosen.length);
+  const range = counts.length ? (Math.min(...counts) === Math.max(...counts) ? `${counts[0]}` : `${Math.min(...counts)} to ${Math.max(...counts)}`) : "0";
+  return `Source images: ${seen.length} of ${shapes.length} shapes matched to original photos; ${whole.length} held whole by one photo; ${range} photo${range === "1" ? "" : "s"} to check per shape. ` +
     (kept.length ? `${kept.length} can be opened at full resolution.` : "None can be opened: the originals were not kept for this scan.");
 }
 
 export function spotSources(sources: ScanSources | null, c: Candidate): SpotSources {
   const empty = (why: SpotSources["unavailable"]): SpotSources =>
-    ({ unavailable: why, views: [], lookable: [], nativeScale: null, orthoGsdM: c.chipGsdM, nativeGsdM: null, outline: [] });
+    ({ unavailable: why, views: [], chosen: [], lookable: [], nativeScale: null, orthoGsdM: c.chipGsdM, nativeGsdM: null, outline: [] });
   if (!sources?.set) return empty("no reconstruction");
   if (sources.groundAltM == null) return empty("no ground height");
   const outline = findingOutline(c, sources.groundAltM);
   const views = selectFramesForArea(sources.set, outline, { ...c.centroid, altM: sources.groundAltM });
   if (!views.length) return { ...empty("not seen by any photo"), outline };
+  const chosen = coverZone(views);
   const meta = sources.set.images[views[0].filename];
   const nativeScale = meta?.exifWidth && meta.width ? meta.exifWidth / meta.width : null;
   return {
     unavailable: null,
     views,
-    lookable: views.filter(v => sources.frames?.[v.filename]).slice(0, 3),
+    chosen,
+    lookable: chosen.filter(v => sources.frames?.[v.filename]),
     nativeScale,
     orthoGsdM: c.chipGsdM,
     nativeGsdM: nativeScale ? views[0].gsdM / nativeScale : null,

@@ -37,7 +37,9 @@ export type SourceImages = {
   /** The one that holds it best, and how much of it (0..1). */
   best: string | null;
   coverage: number | null;
-  /** Whether the best photo's original was kept, so it can be opened. */
+  /** The photos to check: one for a small shape, more for one wider than a photo. */
+  chosen: string[];
+  /** Whether any chosen photo's original was kept, so it can be opened. */
   kept: boolean;
 };
 

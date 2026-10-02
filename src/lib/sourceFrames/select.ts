@@ -69,6 +69,8 @@ export type AreaView = {
   outlinePx: { u: number; v: number }[];
   /** Fraction of outline vertices inside the frame, 0..1. */
   coverage: number;
+  /** Which outline vertices the frame holds, in outline order. */
+  insideMask: boolean[];
   /** The outline's bounding box in uploaded-frame pixels, clamped to the frame. */
   box: { x0: number; y0: number; x1: number; y1: number };
   viewAngleDeg: number;
@@ -94,7 +96,8 @@ export function selectFramesForArea(set: SourceFrameSet, outline: LatLngAlt[], c
     const projected = outline.map(p => projectToFrame(set, shot, p));
     if (projected.some(q => !q)) continue;
     const pts = projected.map(q => ({ u: q!.u, v: q!.v }));
-    const inside = projected.filter(q => q!.inside).length;
+    const insideMask = projected.map(q => q!.inside);
+    const inside = insideMask.filter(Boolean).length;
     if (inside === 0) continue;
     const us = pts.map(p => p.u), vs = pts.map(p => p.v);
     const box = {
@@ -104,7 +107,7 @@ export function selectFramesForArea(set: SourceFrameSet, outline: LatLngAlt[], c
     const offCentre = Math.hypot((box.x0 + box.x1) / 2 - cam.width / 2, (box.y0 + box.y1) / 2 - cam.height / 2);
     found.push({
       view: {
-        filename: shot.filename, shot, outlinePx: pts, coverage: inside / outline.length, box,
+        filename: shot.filename, shot, outlinePx: pts, coverage: inside / outline.length, insideMask, box,
         viewAngleDeg: mid.viewAngleDeg, gsdM: mid.gsdM, score: 0,
       },
       centrality: 1 - Math.min(1, offCentre / Math.hypot(cam.width / 2, cam.height / 2)),
@@ -117,6 +120,37 @@ export function selectFramesForArea(set: SourceFrameSet, outline: LatLngAlt[], c
     view.score = (3 * view.coverage + centrality + angle + resolution) / 6;
   }
   return found.map(f => f.view).sort((a, b) => b.score - a.score);
+}
+
+/** The most photos ever chosen for one zone. Past this a zone is better walked than browsed. */
+export const MAX_PHOTOS_PER_ZONE = 6;
+
+/**
+ * How many photos a zone needs, and which: the fewest that between them hold
+ * the whole outline. One photo when the best holds it whole, which is every
+ * small zone; for a zone wider than a photo, the best is taken first and each
+ * next pick is the one holding most of what is still uncovered, until the
+ * outline is covered, nothing more can be added, or the cap is reached.
+ * Views come in best-first order from `selectFramesForArea`.
+ */
+export function coverZone(views: readonly AreaView[], max = MAX_PHOTOS_PER_ZONE): AreaView[] {
+  if (!views.length) return [];
+  const n = views[0].insideMask.length;
+  const covered = new Array<boolean>(n).fill(false);
+  const chosen: AreaView[] = [];
+  const take = (v: AreaView) => { chosen.push(v); v.insideMask.forEach((m, i) => { if (m) covered[i] = true; }); };
+  take(views[0]);
+  while (chosen.length < max && covered.some(c => !c)) {
+    let best: AreaView | null = null, gain = 0;
+    for (const v of views) {
+      if (chosen.includes(v)) continue;
+      const g = v.insideMask.filter((m, i) => m && !covered[i]).length;
+      if (g > gain) { gain = g; best = v; }
+    }
+    if (!best) break;
+    take(best);
+  }
+  return chosen;
 }
 
 export function selectFrames(set: SourceFrameSet, finding: Finding): SelectionResult {

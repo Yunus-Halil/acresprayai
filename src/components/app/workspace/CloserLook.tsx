@@ -69,11 +69,12 @@ export function CloserLookDialog({ target, sources, units, onClose }: {
           {views.map((v, i) => (
             <button key={v.filename} type="button" onClick={() => setViewIndex(i)}
               className={`rounded-sm border px-2 py-1 ${i === viewIndex ? "border-[#4CAF50] text-[#4CAF50]" : "border-[#333] text-neutral-300 hover:bg-[#1f1f1f]"}`}>
-              Photo {i + 1} · {Math.round(v.coverage * 100)}% · {v.viewAngleDeg.toFixed(0)}°
+              Photo {i + 1} of {views.length} · holds {Math.round(v.coverage * 100)}% · {v.viewAngleDeg.toFixed(0)}°
             </button>
           ))}
           <span className="text-neutral-600">
-            {target && target.spot.views.length > views.length ? `${target.spot.views.length} photos saw this area; ${views.length} originals shown.` : ""}
+            {target ? `${target.spot.chosen.length} photo${target.spot.chosen.length === 1 ? "" : "s"} chosen to cover this shape, of ${target.spot.views.length} that saw it` : ""}
+            {target && target.spot.chosen.length > views.length ? `; ${target.spot.chosen.length - views.length} not kept as originals.` : "."}
           </span>
           <button type="button" onClick={() => setFull(f => !f)} className="ml-auto rounded-sm border border-[#333] px-2 py-1 text-neutral-300 hover:bg-[#1f1f1f]" data-testid="closer-look-zoom">
             {full ? "Fit to window" : "Full resolution"}

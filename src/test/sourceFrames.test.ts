@@ -15,7 +15,7 @@ import {
   frameFootprint, groundAltitudeFromOdm, offNadirDeg, parseCameras, parseOdmOutputs, pixelToGround, projectToFrame,
   UnsupportedCameraError,
 } from "@/lib/sourceFrames/odm";
-import { selectFrames } from "@/lib/sourceFrames/select";
+import { type AreaView, coverZone, selectFrames } from "@/lib/sourceFrames/select";
 
 const DIR = join(process.cwd(), "src", "test", "fixtures", "odm-dd0f6314");
 const read = (f: string) => JSON.parse(readFileSync(join(DIR, f), "utf-8"));
@@ -107,6 +107,32 @@ describe("footprints", () => {
     expect(widthM / 2400 / p.gsdM).toBeLessThan(1.15);
     expect(widthM).toBeGreaterThan(120);
     expect(widthM).toBeLessThan(200);
+  });
+});
+
+describe("coverZone", () => {
+  const view = (name: string, mask: boolean[]): AreaView =>
+    ({ filename: name, shot: {} as never, outlinePx: [], coverage: mask.filter(Boolean).length / mask.length, insideMask: mask, box: { x0: 0, y0: 0, x1: 1, y1: 1 }, viewAngleDeg: 0, gsdM: 0.06, score: 0 });
+
+  it("takes one photo when the best holds the whole shape", () => {
+    const whole = view("a", [true, true, true, true]);
+    expect(coverZone([whole, view("b", [true, true, false, false])]).map(v => v.filename)).toEqual(["a"]);
+  });
+
+  it("adds the photo that covers most of what is still uncovered, until the outline is covered", () => {
+    const a = view("a", [true, true, false, false, false, false]);
+    const b = view("b", [false, true, true, false, false, false]);
+    const c = view("c", [false, false, false, true, true, true]);
+    expect(coverZone([a, b, c]).map(v => v.filename)).toEqual(["a", "c", "b"]);
+  });
+
+  it("stops when nothing more can be added, and never exceeds the cap", () => {
+    const a = view("a", [true, false, false]);
+    const b = view("b", [true, false, false]);
+    expect(coverZone([a, b]).map(v => v.filename)).toEqual(["a"]);
+    const many = Array.from({ length: 10 }, (_, i) => view(`v${i}`, Array.from({ length: 10 }, (_, j) => j === i)));
+    expect(coverZone(many, 4)).toHaveLength(4);
+    expect(coverZone([])).toEqual([]);
   });
 });
 

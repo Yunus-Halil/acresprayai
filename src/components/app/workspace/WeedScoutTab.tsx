@@ -265,6 +265,9 @@ export function WeedScoutTab({
   // The map says what the scout thinks without being asked. Thirty labels on a
   // small field can crowd each other, so it is a toggle, defaulting to on.
   const [showLabels, setShowLabels] = useState(true);
+  // Where each photo was taken, as dots; the ones chosen for the selected
+  // shape light up, so step three can be seen rather than trusted.
+  const [showPhotos, setShowPhotos] = useState(true);
   // The photographs behind the mosaic, when the archive and the originals exist.
   const [sources, setSources] = useState<ScanSources | null>(null);
   // Step two: the finding whose original photos are open in the closer-look viewer.
@@ -594,6 +597,18 @@ export function WeedScoutTab({
           )}
           <FitBounds bounds={bounds} />
           {cursorCoordRef && cursorZoomRef && <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />}
+          {showPhotos && sources?.set && (() => {
+            const chosen = new Set(selectedId ? sourcesById.get(selectedId)?.chosen.map(v => v.filename) ?? [] : []);
+            return sources.set.shots.map(s => {
+              const on = chosen.has(s.filename);
+              return (
+                <CircleMarker key={`photo-${s.filename}`} center={[s.centre.lat, s.centre.lng]} radius={on ? 7 : 3} interactive={false}
+                  pathOptions={{ color: on ? "#ffffff" : "#e5e7eb", weight: on ? 2 : 1, fillColor: on ? "#4CAF50" : "#9ca3af", fillOpacity: on ? 1 : 0.55 }}>
+                  {on && <Tooltip permanent direction="right" opacity={0.95} className="scout-label">{s.filename}</Tooltip>}
+                </CircleMarker>
+              );
+            });
+          })()}
           {rings.map((r, i) => (
             <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])} pathOptions={{ color: "#4CAF50", weight: 1.5, fill: false, dashArray: "4 4" }} />
           ))}
@@ -687,6 +702,12 @@ export function WeedScoutTab({
             <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} className="accent-[#4CAF50]" />
             Labels on the map
           </label>
+          {sources?.set && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={showPhotos} onChange={e => setShowPhotos(e.target.checked)} className="accent-[#4CAF50]" />
+              Photo positions ({sources.set.shots.length}); chosen ones light up
+            </label>
+          )}
         </div>
       </div>
 

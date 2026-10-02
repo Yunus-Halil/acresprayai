@@ -54,11 +54,22 @@ describe("the photos that hold a flagged area", () => {
     expect(s.views[0].coverage).toBeGreaterThan(0);
   });
 
-  it("only photos whose originals were kept can be opened, at most three", () => {
+  it("a small shape needs one photo; a shape wider than a photo needs several, capped at six", () => {
+    const small = spotSources(sources(), finding());
+    expect(small.chosen).toHaveLength(1);
+    expect(small.chosen[0].filename).toBe(small.views[0].filename);
+    const big = spotSources(sources(), finding({ region: squareRegion(300), areaM2: 90_000 }));
+    expect(big.chosen.length).toBeGreaterThan(1);
+    expect(big.chosen.length).toBeLessThanOrEqual(6);
+    // Together the chosen photos hold more of the outline than the best one alone.
+    const union = big.chosen[0].insideMask.map((_, i) => big.chosen.some(v => v.insideMask[i]));
+    expect(union.filter(Boolean).length).toBeGreaterThan(big.chosen[0].insideMask.filter(Boolean).length);
+  });
+
+  it("only chosen photos whose originals were kept can be opened", () => {
     expect(spotSources(sources(), finding()).lookable).toEqual([]);
     const s = spotSources(sources({ frames: keptAll }), finding());
-    expect(s.lookable.length).toBe(3);
-    expect(s.lookable[0].filename).toBe(s.views[0].filename);
+    expect(s.lookable.map(v => v.filename)).toEqual(s.chosen.map(v => v.filename));
   });
 
   it("reports the map's detail against the photo's", () => {
@@ -91,7 +102,8 @@ describe("what the scan stores and says about step three", () => {
     const src = sources({ frames: keptAll });
     const shapes = [finding(), finding({ id: "far", centroid: { lat: 54.0, lng: 12.0 }, region: null, kind: "field outlier" })]
       .map(c => ({ ...c, sourceImages: sourceImagesOf(spotSources(src, c)) }));
-    expect(sourceImagesNote(shapes, src)).toMatch(/^Source images: 1 of 2 shapes matched to original photos \(1 held whole by one photo, 1 photos chosen as best\)\. 1 can be opened at full resolution\.$/);
+    expect(sourceImagesNote(shapes, src)).toMatch(/^Source images: 1 of 2 shapes matched to original photos; 1 held whole by one photo; 1 photo to check per shape\. 1 can be opened at full resolution\.$/);
+    expect(shapes[0].sourceImages).toMatchObject({ chosen: [shapes[0].sourceImages!.best] });
     expect(sourceImagesNote(shapes, sources({ set: null, reconstruction: "none" }))).toMatch(/no camera positions for this scan/);
     expect(sourceImagesNote(shapes, null)).toMatch(/had not loaded/);
     const unkept = [finding()].map(c => ({ ...c, sourceImages: sourceImagesOf(spotSources(sources(), c)) }));
