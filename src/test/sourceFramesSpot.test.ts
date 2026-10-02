@@ -84,8 +84,18 @@ describe("the photos that hold a flagged area", () => {
     expect(spotSources(null, finding()).unavailable).toBe("no reconstruction");
     expect(spotSources(sources({ set: null, reconstruction: "none" }), finding()).unavailable).toBe("no reconstruction");
     expect(spotSources(sources({ groundAltM: null }), finding()).unavailable).toBe("no ground height");
-    const far = { lat: 54.0, lng: 12.0 };
-    expect(spotSources(sources(), finding({ centroid: far, region: { ...squareRegion(20), rings: [squareRegion(20).rings[0].map(p => ({ lat: p.lat - 0.17, lng: p.lng - 0.3 }))] } })).unavailable).toBe("not seen by any photo");
+  });
+
+  it("a shape no photo holds gets the nearest photos instead, and says so", () => {
+    const far = { lat: 54.1660, lng: 12.3062 };
+    const shifted = squareRegion(20).rings[0].map(p => ({ lat: p.lat - (CENTRE.lat - far.lat), lng: p.lng }));
+    const s = spotSources(sources(), finding({ centroid: far, region: { ...squareRegion(20), rings: [shifted] } }));
+    expect(s.unavailable).toBeNull();
+    expect(s.views).toEqual([]);
+    expect(s.nearestOnly).toBe(true);
+    expect(s.chosen).toHaveLength(2);
+    expect(s.chosen[0].coverage).toBe(0);
+    expect(sourceImagesOf(s)).toMatchObject({ photos: 0, nearestOnly: true, chosen: s.chosen.map(v => v.filename) });
   });
 });
 
@@ -95,14 +105,14 @@ describe("what the scan stores and says about step three", () => {
     expect(s).toMatchObject({ photos: expect.any(Number), kept: true, coverage: 1 });
     expect(s!.best).toMatch(/\.JPG$/);
     expect(sourceImagesOf(spotSources(null, finding()))).toBeNull();
-    expect(sourceImagesOf(spotSources(sources(), finding({ centroid: { lat: 54.0, lng: 12.0 }, region: null, kind: "field outlier" })))).toMatchObject({ photos: 0, best: null, kept: false });
+    expect(sourceImagesOf(spotSources(sources(), finding({ centroid: { lat: 54.0, lng: 12.0 }, region: null, kind: "field outlier" })))).toMatchObject({ photos: 0, best: null, kept: false, nearestOnly: true });
   });
 
   it("writes one honest line for the run notes", () => {
     const src = sources({ frames: keptAll });
     const shapes = [finding(), finding({ id: "far", centroid: { lat: 54.0, lng: 12.0 }, region: null, kind: "field outlier" })]
       .map(c => ({ ...c, sourceImages: sourceImagesOf(spotSources(src, c)) }));
-    expect(sourceImagesNote(shapes, src)).toMatch(/^Source images: 1 of 2 shapes matched to original photos; 1 held whole by one photo; 1 photo to check per shape\. 1 can be opened at full resolution\.$/);
+    expect(sourceImagesNote(shapes, src)).toMatch(/^Source images: 1 of 2 shapes matched to original photos; 1 held whole by one photo; 1 photo to check per shape; 1 not held by any photo, given the nearest instead\. 2 can be opened at full resolution\.$/);
     expect(shapes[0].sourceImages).toMatchObject({ chosen: [shapes[0].sourceImages!.best] });
     expect(sourceImagesNote(shapes, sources({ set: null, reconstruction: "none" }))).toMatch(/no camera positions for this scan/);
     expect(sourceImagesNote(shapes, null)).toMatch(/had not loaded/);

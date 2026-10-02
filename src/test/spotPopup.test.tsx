@@ -51,7 +51,7 @@ function renderPopup(over: Partial<SpotPopupProps> = {}) {
     verdict: "unsure", onVerdict: vi.fn(),
     identification: UNIDENTIFIED, suggestion: null,
     notes: "", onNotes: vi.fn(), saved: false, savedPrediction: null, onField: false,
-    sourceFrames: null, sourcesOrigin: "none", onCloserLook: vi.fn(),
+    sourceFrames: null, sourcesOrigin: "none", photo: null, onCloserLook: vi.fn(),
     shortlist: { entries: [], tooMany: false, note: "" },
     recent: [], searchResults: [], searchQuery: "", onSearchQuery: vi.fn(),
     freeText: "", onFreeText: vi.fn(),
@@ -161,20 +161,20 @@ describe("state the operator can see at a glance", () => {
 
   it("offers a closer look in the original photos when they were kept", () => {
     const view = { filename: "DJI_0042.JPG", coverage: 1, insideMask: [true], viewAngleDeg: 8, gsdM: 0.06, score: 0.9, outlinePx: [], box: { x0: 0, y0: 0, x1: 1, y1: 1 }, shot: {} as never };
-    const sourceFrames = { unavailable: null, views: [view, view, view, view], chosen: [view], lookable: [view], nativeScale: 2.28, orthoGsdM: 0.087, nativeGsdM: 0.026, outline: [] };
+    const sourceFrames = { unavailable: null, views: [view, view, view, view], chosen: [view], nearestOnly: false, lookable: [view], nativeScale: 2.28, orthoGsdM: 0.087, nativeGsdM: 0.026, outline: [] };
     const { props } = renderPopup({ sourceFrames, sourcesOrigin: "stored" });
     const btn = screen.getByTestId("closer-look-open");
     expect(btn.textContent).toMatch(/Closer look/);
-    expect(btn.textContent).toMatch(/4 saw it/);
+    expect(btn.textContent).toMatch(/1 photo chosen, 4 saw it/);
     fireEvent.click(btn);
     expect(props.onCloserLook).toHaveBeenCalled();
   });
 
   it("says plainly why there is no closer look", () => {
     const view = { filename: "A.JPG", coverage: 1, insideMask: [true], viewAngleDeg: 8, gsdM: 0.06, score: 0.9, outlinePx: [], box: { x0: 0, y0: 0, x1: 1, y1: 1 }, shot: {} as never };
-    const notKept = { unavailable: null, views: [view, view], chosen: [view], lookable: [], nativeScale: 2.28, orthoGsdM: 0.087, nativeGsdM: 0.026, outline: [] };
+    const notKept = { unavailable: null, views: [view, view], chosen: [view], nearestOnly: false, lookable: [], nativeScale: 2.28, orthoGsdM: 0.087, nativeGsdM: 0.026, outline: [] };
     const { unmount } = renderPopup({ sourceFrames: notKept, sourcesOrigin: "stored" });
-    expect(screen.getByTestId("source-frames").textContent).toMatch(/2 original photos saw this area, but they were not kept/);
+    expect(screen.getByTestId("source-frames").textContent).toMatch(/1 original photo chosen for this area, but they were not kept/);
     expect(screen.queryByTestId("closer-look-open")).toBeNull();
     unmount();
     renderPopup({ sourceFrames: { ...notKept, unavailable: "no reconstruction", views: [] }, sourcesOrigin: "none" });

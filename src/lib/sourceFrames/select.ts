@@ -122,6 +122,30 @@ export function selectFramesForArea(set: SourceFrameSet, outline: LatLngAlt[], c
   return found.map(f => f.view).sort((a, b) => b.score - a.score);
 }
 
+/**
+ * The photos taken nearest a point, as views that make no claim: coverage 0,
+ * the whole frame as the box. The fallback when the geometry finds no photo
+ * holding a shape, so the operator still gets the closest picture rather
+ * than nothing, told plainly that the shape is not confirmed in it.
+ */
+export function nearestViews(set: SourceFrameSet, centre: LatLngAlt, outline: LatLngAlt[], n = 2): AreaView[] {
+  const c = toEnu(centre, set.reference);
+  return [...set.shots]
+    .map(shot => { const s = toEnu(shot.centre, set.reference); return { shot, d: Math.hypot(s[0] - c[0], s[1] - c[1]) }; })
+    .sort((a, b) => a.d - b.d)
+    .slice(0, n)
+    .map(({ shot }) => {
+      const cam = set.cameras[shot.cameraKey];
+      const mid = projectToFrame(set, shot, centre);
+      const pts = outline.map(p => projectToFrame(set, shot, p)).filter((q): q is Projection => !!q).map(q => ({ u: q.u, v: q.v }));
+      return {
+        filename: shot.filename, shot, outlinePx: pts.length === outline.length ? pts : [], coverage: 0,
+        insideMask: outline.map(() => false), box: { x0: 0, y0: 0, x1: cam.width, y1: cam.height },
+        viewAngleDeg: mid?.viewAngleDeg ?? 0, gsdM: mid?.gsdM ?? 0, score: 0,
+      };
+    });
+}
+
 /** The most photos ever chosen for one zone. Past this a zone is better walked than browsed. */
 export const MAX_PHOTOS_PER_ZONE = 6;
 

@@ -17,7 +17,7 @@
 // calls anything outside the tile server and the operator's own archive.
 import { NOT_WEED_BELOW, WEED_AT_OR_ABOVE } from "@/lib/weedScout/classify";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleMarker, MapContainer, Polygon, Popup, TileLayer, Tooltip } from "react-leaflet";
+import { CircleMarker, MapContainer, Polygon, Polyline, Popup, TileLayer, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
@@ -51,9 +51,10 @@ import {
 } from "@/lib/weedCatalog/suggest";
 import { plannedAreaM2, plannedZones } from "@/lib/treatment/plannedArea";
 import { ScanSummary } from "./ScanSummary";
-import { SpotPopup } from "./SpotPopup";
+import { type SpotPhoto, SpotPopup } from "./SpotPopup";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
-import { type ScanSources, loadScanSources } from "@/lib/sourceFrames/scan";
+import { renderCloserLook } from "@/lib/sourceFrames/crop";
+import { type ScanSources, downloadFrame, loadScanSources } from "@/lib/sourceFrames/scan";
 import { spotSources } from "@/lib/sourceFrames/spot";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, MouseReadout, loadBasemap, saveBasemap } from "./layers";
@@ -272,6 +273,12 @@ export function WeedScoutTab({
   const [sources, setSources] = useState<ScanSources | null>(null);
   // Step two: the finding whose original photos are open in the closer-look viewer.
   const [closerLook, setCloserLook] = useState<CloserLookTarget | null>(null);
+  // The photo a clicked spot shows in its popup: the chosen original, cut to
+  // the shape, rendered once per spot and kept for the life of the page.
+  const [photos, setPhotos] = useState<Record<string, SpotPhoto>>({});
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+  useEffect(() => () => { for (const p of Object.values(photosRef.current)) if (p.status === "ready") URL.revokeObjectURL(p.url); }, []);
   useEffect(() => {
     if (!user || !odmUuid) { setSources(null); return; }
     let cancelled = false;
@@ -326,6 +333,27 @@ export function WeedScoutTab({
   const candidates = useMemo(() => result?.candidates ?? [], [result]);
   const selected = useMemo(() => candidates.find(c => c.id === selectedId) ?? null, [candidates, selectedId]);
   const sourcesById = useMemo(() => new Map(candidates.map(c => [c.id, spotSources(sources, c)])), [candidates, sources]);
+
+  // When a spot is opened, fetch and cut its chosen original for the popup.
+  useEffect(() => {
+    if (!selectedId || photos[selectedId]) return;
+    const spot = sourcesById.get(selectedId);
+    const view = spot?.lookable[0];
+    const entry = view && sources?.frames?.[view.filename];
+    if (!spot || !view || !entry || !spot.nativeScale) return;
+    const scale = spot.nativeScale;
+    let cancelled = false;
+    setPhotos(m => ({ ...m, [selectedId]: { status: "loading" } }));
+    (async () => {
+      const blob = await downloadFrame(entry);
+      const look = blob ? await renderCloserLook(blob, view.outlinePx, view.box, scale, view.gsdM) : null;
+      if (cancelled) { if (look) URL.revokeObjectURL(look.url); return; }
+      setPhotos(m => ({ ...m, [selectedId]: look
+        ? { status: "ready", url: look.url, filename: view.filename, gsdM: look.gsdM, nearestOnly: spot.nearestOnly }
+        : { status: "error" } }));
+    })().catch(() => { if (!cancelled) setPhotos(m => ({ ...m, [selectedId]: { status: "error" } })); });
+    return () => { cancelled = true; };
+  }, [selectedId, sourcesById, sources, photos]);
 
   const suggestionById = useMemo(
     () => new Map(candidates.map(c => [c.id, suggestionsFor(c, catalog)[0] ?? null])),
@@ -598,8 +626,14 @@ export function WeedScoutTab({
           <FitBounds bounds={bounds} />
           {cursorCoordRef && cursorZoomRef && <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />}
           {showPhotos && sources?.set && (() => {
-            const chosen = new Set(selectedId ? sourcesById.get(selectedId)?.chosen.map(v => v.filename) ?? [] : []);
-            return sources.set.shots.map(s => {
+            const spot = selectedId ? sourcesById.get(selectedId) : null;
+            const chosen = new Set(spot?.chosen.map(v => v.filename) ?? []);
+            const from = selected ? [selected.centroid.lat, selected.centroid.lng] as [number, number] : null;
+            const links = from && spot ? spot.chosen.map(v => (
+              <Polyline key={`link-${v.filename}`} positions={[from, [v.shot.centre.lat, v.shot.centre.lng]]} interactive={false}
+                pathOptions={{ color: "#ffffff", weight: 1.5, dashArray: spot.nearestOnly ? "2 6" : "6 4", opacity: 0.9 }} />
+            )) : null;
+            return [links, ...sources.set.shots.map(s => {
               const on = chosen.has(s.filename);
               return (
                 <CircleMarker key={`photo-${s.filename}`} center={[s.centre.lat, s.centre.lng]} radius={on ? 7 : 3} interactive={false}
@@ -607,7 +641,7 @@ export function WeedScoutTab({
                   {on && <Tooltip permanent direction="right" opacity={0.95} className="scout-label">{s.filename}</Tooltip>}
                 </CircleMarker>
               );
-            });
+            })];
           })()}
           {rings.map((r, i) => (
             <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])} pathOptions={{ color: "#4CAF50", weight: 1.5, fill: false, dashArray: "4 4" }} />
@@ -642,6 +676,7 @@ export function WeedScoutTab({
                   onField={!!applied[c.id]}
                   sourceFrames={sourcesById.get(c.id) ?? null}
                   sourcesOrigin={sources?.reconstruction ?? "none"}
+                  photo={photos[c.id] ?? null}
                   onCloserLook={() => {
                     const spot = sourcesById.get(c.id);
                     if (spot) setCloserLook({ title: spotLabel(c), spot });

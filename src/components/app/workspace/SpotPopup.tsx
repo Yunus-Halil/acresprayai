@@ -37,6 +37,11 @@ const VERDICT_TONE: Record<string, string> = {
   unsure: "bg-amber-400 text-black border-amber-400",
 };
 
+export type SpotPhoto =
+  | { status: "loading" }
+  | { status: "ready"; url: string; filename: string; gsdM: number; nearestOnly: boolean }
+  | { status: "error" };
+
 export type SpotPopupProps = {
   candidate: Candidate;
   index: number;
@@ -57,6 +62,8 @@ export type SpotPopupProps = {
   /** The original photos that saw this area, from lib/sourceFrames. Null while loading. */
   sourceFrames: SpotSources | null;
   sourcesOrigin: ScanSources["reconstruction"];
+  /** The chosen original photo, cut to this spot. Null before it is asked for. */
+  photo: SpotPhoto | null;
   onCloserLook: () => void;
 
   // Identification wiring, handed straight to the shared block.
@@ -80,7 +87,7 @@ export type SpotPopupProps = {
 export function SpotPopup(props: SpotPopupProps) {
   const {
     candidate: c, index, total, units, areaM2, verdict, onVerdict, identification, suggestion,
-    notes, onNotes, saved, savedPrediction, onField, sourceFrames, sourcesOrigin, onCloserLook,
+    notes, onNotes, saved, savedPrediction, onField, sourceFrames, sourcesOrigin, photo, onCloserLook,
   } = props;
   const named = isStatedFinding(identification);
   // A suggestion is worth showing unasked; an empty picker is not.
@@ -114,7 +121,20 @@ export function SpotPopup(props: SpotPopupProps) {
         </div>
       </div>
 
-      {c.chip && (
+      {/* The photo of the spot, from the dot, when its original was kept; the
+          mosaic chip only when there is no photo to show. */}
+      {photo?.status === "ready" ? (
+        <div className="mt-2" data-testid="spot-photo">
+          <img src={photo.url} alt={`The spot in ${photo.filename}`} className="w-full rounded-sm border border-[#222]"
+            style={{ maxHeight: 200, objectFit: "contain", background: "#000" }} />
+          <p className="text-[10px] text-neutral-500 mt-0.5">
+            From photo <span className="font-mono">{photo.filename}</span> at {fmtLengthCm(photo.gsdM * 100, units).text}/px
+            {photo.nearestOnly ? "; the nearest photo, the shape is not confirmed in it" : ""}.
+          </p>
+        </div>
+      ) : photo?.status === "loading" ? (
+        <p className="mt-2 text-[10px] text-neutral-500">Reading the photo of this spot.</p>
+      ) : c.chip && (
         <img src={c.chip} alt="" className="mt-2 w-full rounded-sm border border-[#222]"
           style={{ imageRendering: "pixelated", maxHeight: 130, objectFit: "cover" }} />
       )}
@@ -233,13 +253,18 @@ function CloserLookLine({ sources, origin, onCloserLook }: {
   if (sources.unavailable === "no ground height") return note("The original photos cannot be lined up with the map for this scan.");
   if (sources.unavailable) return note("No original photo shows this area.");
   if (!sources.lookable.length) {
-    return note(`${sources.views.length} original photo${sources.views.length === 1 ? "" : "s"} saw this area, but they were not kept for this scan. "Keep original photos" on the field page adds them.`);
+    return note(`${sources.chosen.length} original photo${sources.chosen.length === 1 ? "" : "s"} chosen for this area, but they were not kept for this scan. "Keep original photos" on the field page adds them.`);
   }
+  const n = sources.lookable.length;
   return (
     <button type="button" onClick={onCloserLook} data-testid="closer-look-open"
       className="mt-2 w-full text-[11px] rounded-sm border border-[#4CAF50]/60 px-2 py-1.5 text-[#4CAF50] hover:bg-[#4CAF50]/10 font-semibold">
       Closer look
-      <span className="font-normal text-neutral-500"> (in the original photo{sources.lookable.length === 1 ? "" : "s"}, {sources.views.length} saw it)</span>
+      <span className="font-normal text-neutral-500">
+        {sources.nearestOnly
+          ? ` (nearest photo${n === 1 ? "" : "s"}; none confirmed to hold it)`
+          : ` (${n} photo${n === 1 ? "" : "s"} chosen, ${sources.views.length} saw it)`}
+      </span>
     </button>
   );
 }

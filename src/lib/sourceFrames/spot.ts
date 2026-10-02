@@ -7,7 +7,7 @@ import { chipSpanM } from "../weedScout/candidates";
 import type { Candidate, SourceImages } from "../weedScout/types";
 import type { LatLngAlt } from "./odm";
 import type { ScanSources } from "./scan";
-import { type AreaView, coverZone, selectFramesForArea } from "./select";
+import { type AreaView, coverZone, nearestViews, selectFramesForArea } from "./select";
 
 /** Outline vertices sent through the projection; a region's ring is thinned to this. */
 const MAX_OUTLINE_POINTS = 64;
@@ -21,6 +21,8 @@ export type SpotSources = {
   views: AreaView[];
   /** The photos to check: the fewest that together hold the whole shape (see coverZone). */
   chosen: AreaView[];
+  /** True when no photo was found to hold the shape and `chosen` is the nearest photos instead. */
+  nearestOnly: boolean;
   /** The chosen photos whose originals were kept, so they can be opened. */
   lookable: AreaView[];
   /** Camera-native over uploaded size. Null when EXIF did not say. */
@@ -57,6 +59,7 @@ export function sourceImagesOf(spot: SpotSources): SourceImages | null {
     best: best?.filename ?? null,
     coverage: best?.coverage ?? null,
     chosen: spot.chosen.map(v => v.filename),
+    nearestOnly: spot.nearestOnly,
     kept: spot.lookable.length > 0,
   };
 }
@@ -70,33 +73,39 @@ export function sourceImagesNote(candidates: readonly { sourceImages?: SourceIma
   }
   const shapes = candidates.filter(c => c.sourceImages);
   const seen = shapes.filter(c => c.sourceImages!.photos > 0);
-  const kept = seen.filter(c => c.sourceImages!.kept);
+  const nearest = shapes.filter(c => c.sourceImages!.nearestOnly);
+  const kept = shapes.filter(c => c.sourceImages!.kept);
   const whole = seen.filter(c => (c.sourceImages!.coverage ?? 0) >= 0.999);
   const counts = seen.map(c => c.sourceImages!.chosen.length);
   const range = counts.length ? (Math.min(...counts) === Math.max(...counts) ? `${counts[0]}` : `${Math.min(...counts)} to ${Math.max(...counts)}`) : "0";
-  return `Source images: ${seen.length} of ${shapes.length} shapes matched to original photos; ${whole.length} held whole by one photo; ${range} photo${range === "1" ? "" : "s"} to check per shape. ` +
+  return `Source images: ${seen.length} of ${shapes.length} shapes matched to original photos; ${whole.length} held whole by one photo; ${range} photo${range === "1" ? "" : "s"} to check per shape` +
+    (nearest.length ? `; ${nearest.length} not held by any photo, given the nearest instead. ` : ". ") +
     (kept.length ? `${kept.length} can be opened at full resolution.` : "None can be opened: the originals were not kept for this scan.");
 }
 
 export function spotSources(sources: ScanSources | null, c: Candidate): SpotSources {
   const empty = (why: SpotSources["unavailable"]): SpotSources =>
-    ({ unavailable: why, views: [], chosen: [], lookable: [], nativeScale: null, orthoGsdM: c.chipGsdM, nativeGsdM: null, outline: [] });
+    ({ unavailable: why, views: [], chosen: [], nearestOnly: false, lookable: [], nativeScale: null, orthoGsdM: c.chipGsdM, nativeGsdM: null, outline: [] });
   if (!sources?.set) return empty("no reconstruction");
   if (sources.groundAltM == null) return empty("no ground height");
   const outline = findingOutline(c, sources.groundAltM);
-  const views = selectFramesForArea(sources.set, outline, { ...c.centroid, altM: sources.groundAltM });
-  if (!views.length) return { ...empty("not seen by any photo"), outline };
-  const chosen = coverZone(views);
-  const meta = sources.set.images[views[0].filename];
+  const centre = { ...c.centroid, altM: sources.groundAltM };
+  const views = selectFramesForArea(sources.set, outline, centre);
+  // No photo holds any of it: offer the nearest photos, and say they are only that.
+  const nearestOnly = views.length === 0;
+  const chosen = nearestOnly ? nearestViews(sources.set, centre, outline) : coverZone(views);
+  if (!chosen.length) return { ...empty("not seen by any photo"), outline };
+  const meta = sources.set.images[chosen[0].filename];
   const nativeScale = meta?.exifWidth && meta.width ? meta.exifWidth / meta.width : null;
   return {
     unavailable: null,
     views,
     chosen,
+    nearestOnly,
     lookable: chosen.filter(v => sources.frames?.[v.filename]),
     nativeScale,
     orthoGsdM: c.chipGsdM,
-    nativeGsdM: nativeScale ? views[0].gsdM / nativeScale : null,
+    nativeGsdM: nativeScale && chosen[0].gsdM ? chosen[0].gsdM / nativeScale : null,
     outline,
   };
 }

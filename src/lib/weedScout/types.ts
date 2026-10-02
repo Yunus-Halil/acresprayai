@@ -39,6 +39,8 @@ export type SourceImages = {
   coverage: number | null;
   /** The photos to check: one for a small shape, more for one wider than a photo. */
   chosen: string[];
+  /** True when no photo holds the shape and `chosen` is simply the nearest photos. */
+  nearestOnly: boolean;
   /** Whether any chosen photo's original was kept, so it can be opened. */
   kept: boolean;
 };

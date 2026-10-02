@@ -57,7 +57,7 @@ export function CloserLookDialog({ target, sources, units, onClose }: {
           <DialogDescription className="text-[11px] text-neutral-400">
             {view ? (
               <>
-                Original photo <span className="font-mono">{view.filename}</span>, holding {Math.round(view.coverage * 100)}% of the area,
+                Original photo <span className="font-mono">{view.filename}</span>, {target?.spot.nearestOnly ? "the nearest photo (the area is not confirmed in it)" : `holding ${Math.round(view.coverage * 100)}% of the area`},
                 {" "}{view.viewAngleDeg.toFixed(0)}° from straight down. {look ? `${gsd(look.gsdM)} here` : ""}
                 {orthoGsd && look ? `, against ${gsd(orthoGsd)} on the map (${(orthoGsd / look.gsdM).toFixed(1)}x the detail).` : "."}
                 {" "}The dashed line is the area the map flagged.
