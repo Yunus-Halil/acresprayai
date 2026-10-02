@@ -217,6 +217,34 @@ Trained on 19,535 chips, scored on 7,008 held out by frame: weed recall 0.990, p
 0.762 (mask-derived labels). In-distribution; the flown test set is still the missing piece.
 Full results and caveats: [the review brief](../review/weed-detection-foundation-review-brief.md).
 
+## Sprint of 2026-10-01: gating, classes, benchmark, history
+
+Order set by the founder: native-frame verification, resolution gating, finding classes,
+benchmark harness, field history. weed-v1 frozen throughout.
+
+- **Resolution gate** (`classify/index.ts`, sidecar `max_gsd_m`). The sidecar states the
+  coarsest GSD the model was trained on: 2.0 cm/px, the coarsest *real* imagery (USU at
+  4.8 mm/px degraded 4x; synthetic goes coarser and is not evidence). Any chip coarser
+  than that is recorded as `UNKNOWN_RESOLUTION` with both numbers, and the model is not
+  asked. On today's fields (4-15 cm/px) that means weed-v1 scores nothing, which is the
+  truth. The native-crop comparison runs ungated, labelled as the experiment it is.
+- **Finding classes** (`candidates.ts: findingClassOf`): vegetation, bare ground, thin
+  stand, wet or dark ground, other anomaly. Only vegetation reaches the classifier; the
+  rest start as "unsure" and are never scored as weeds. Stored as `finding_class`; the
+  inference record is stored as `inference`.
+- **Benchmark harness** (`offrow learn benchmark`): stored predictions against operator
+  verdicts per model version, operator rows only, with unsure / default / declined rows
+  counted and left out. Precision, recall, FPR, AUROC, median pWeed by class, operator
+  correction rate; by source, GSD bin, crop, field and finding class. Gate: at least 30
+  verdicts, no regression. This is the release gate once an archive with operator verdicts
+  and predictions exists; today the archive has none at a usable resolution.
+- **Field history** (migration `20261001130000`): the stable spot id already keys the same
+  ground across scans; an index on `(field_id, candidate_id)` and the `finding_history`
+  view (times flagged, first and last seen, verdicts over time, operator-confirmed) make
+  it queryable. No comparison UI; the data model only.
+- **Originals for an existing scan**: "Keep original photos" on a completed scan stores
+  the same files without reprocessing, for scans uploaded before originals were kept.
+
 ## Precautions and known weaknesses (for review)
 
 - **Domain gap.** v1 learns from corn at 10 m (4.8 mm/px) and synthetic scenes. Operators
