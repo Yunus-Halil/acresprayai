@@ -230,6 +230,27 @@ conventions are right, and the remaining error is the ground height, as predicte
 1.2 cm/px the individual plants in the pale patch are resolved; the ortho chip of the same
 ground at 5.5 cm/px shows a smear.
 
+### The ortho-vs-native experiment (2026-10-02): resolution is not weed-v1's bottleneck
+
+64 random points across the same field, the same 1.2 m of ground cut from the ortho tiles
+(8.74 cm/px, 14 px across) and from the best kept original (2.81 cm/px, 43 px across),
+both scored by weed-v1 with the app's preprocessing, ungated:
+
+| | pWeed median | p25..p75 | sd | at or above 0.6 | AUROC, palest third vs rest |
+|---|---|---|---|---|---|
+| ortho | 0.97 | 0.95..0.99 | 0.03 | 64 / 64 | 0.71 |
+| native | 0.98 | 0.96..0.99 | 0.04 | 64 / 64 | 0.78 |
+
+The native crops visibly carry more texture (contact sheet in the scratch tooling), and
+the model's output barely moves: it calls every patch a weed at either resolution, pale
+or green. 3x finer pixels did not turn weed-v1 into a discriminator. The bottleneck is the
+model and what it was trained on (single corn-field plants at 4.8 mm/px), not the pixels.
+
+Founder's direction the same day: plant-level detection was never the goal. The goal is
+to estimate the weed from the patch pattern together with location, season and crop.
+Source frames stay useful as evidence for operator review and for the prototype library;
+weed-v1 stays frozen and is not the path to that goal.
+
 Not yet done: a DSM would take the residual down; it is not needed until a sloped field
 shows the ground-plane error mattering. The check script lives in the scratch tooling
 for now and should become a repo test when a second scan with originals exists.
