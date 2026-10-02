@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
   Upload, FileUp, Loader2, AlertCircle, Download, RefreshCcw, Trash2,
-  ArrowLeft, Leaf, Pencil, Check, X, Map as MapIcon, RotateCcw,
+  ArrowLeft, Leaf, Pencil, Check, X, Map as MapIcon, RotateCcw, Footprints,
 } from "lucide-react";
 import { toast } from "sonner";
 import { hasGPS } from "@/lib/imagePrep";
@@ -597,6 +597,11 @@ export default function FieldDetail() {
                   {/* An imported orthomosaic never had a raw-image archive to
                       download - there is no `all.zip` for it, so the button
                       that would silently no-op on click does not render. */}
+                  {t.odm_uuid && (
+                    <Button size="sm" variant="outline" asChild>
+                      <Link to={`/app/fields/${t.field_id}/walk?scan=${t.id}`}><Footprints className="h-3.5 w-3.5" /> Field walk</Link>
+                    </Button>
+                  )}
                   {t.output_path && (
                     <Button size="sm" variant="outline" onClick={() => downloadZip(t)}><Download className="h-3.5 w-3.5" /> Download</Button>
                   )}

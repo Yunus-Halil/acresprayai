@@ -479,6 +479,84 @@ export type Database = {
           },
         ]
       }
+      ground_truth: {
+        Row: {
+          candidate_id: string | null
+          confidence: string
+          created_at: string
+          crop: string | null
+          field_id: string | null
+          growth_stage: string | null
+          id: string
+          identified_by: string
+          notes: string | null
+          observation_id: string | null
+          patch_cover_pct: number | null
+          patch_lat: number
+          patch_lng: number
+          photo_paths: string[]
+          scan_id: string | null
+          species: Json
+          updated_at: string
+          user_id: string
+          visited_at: string
+          visitor_accuracy_m: number | null
+          visitor_lat: number | null
+          visitor_lng: number | null
+          what_is_here: string
+        }
+        Insert: {
+          candidate_id?: string | null
+          confidence?: string
+          created_at?: string
+          crop?: string | null
+          field_id?: string | null
+          growth_stage?: string | null
+          id?: string
+          identified_by?: string
+          notes?: string | null
+          observation_id?: string | null
+          patch_cover_pct?: number | null
+          patch_lat: number
+          patch_lng: number
+          photo_paths?: string[]
+          scan_id?: string | null
+          species?: Json
+          updated_at?: string
+          user_id: string
+          visited_at?: string
+          visitor_accuracy_m?: number | null
+          visitor_lat?: number | null
+          visitor_lng?: number | null
+          what_is_here: string
+        }
+        Update: {
+          candidate_id?: string | null
+          confidence?: string
+          created_at?: string
+          crop?: string | null
+          field_id?: string | null
+          growth_stage?: string | null
+          id?: string
+          identified_by?: string
+          notes?: string | null
+          observation_id?: string | null
+          patch_cover_pct?: number | null
+          patch_lat?: number
+          patch_lng?: number
+          photo_paths?: string[]
+          scan_id?: string | null
+          species?: Json
+          updated_at?: string
+          user_id?: string
+          visited_at?: string
+          visitor_accuracy_m?: number | null
+          visitor_lat?: number | null
+          visitor_lng?: number | null
+          what_is_here?: string
+        }
+        Relationships: []
+      }
       jobs: {
         Row: {
           area_ha: number | null

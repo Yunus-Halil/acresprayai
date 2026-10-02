@@ -16,6 +16,7 @@ import Fleet from "./pages/app/Fleet.tsx";
 import Weather from "./pages/app/Weather.tsx";
 import Schedule from "./pages/app/Schedule";
 import FieldDetail from "./pages/app/FieldDetail.tsx";
+import FieldWalk from "./pages/app/FieldWalk.tsx";
 import OrthomosaicViewer from "./pages/app/OrthomosaicViewer.tsx";
 import WeedLibrary from "./pages/app/WeedLibrary.tsx";
 import { AuthProvider } from "./lib/auth";
@@ -41,6 +42,7 @@ const App = () => (
               <Route index element={<Dashboard />} />
               <Route path="fields" element={<Fields />} />
               <Route path="fields/:id" element={<FieldDetail />} />
+              <Route path="fields/:id/walk" element={<FieldWalk />} />
               <Route path="fleet" element={<Fleet />} />
               <Route path="weather" element={<Weather />} />
               <Route path="schedule" element={<Schedule />} />
