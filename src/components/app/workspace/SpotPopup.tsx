@@ -253,7 +253,10 @@ function CloserLookLine({ sources, origin, onCloserLook }: {
   if (sources.unavailable === "no ground height") return note("The original photos cannot be lined up with the map for this scan.");
   if (sources.unavailable) return note("No original photo shows this area.");
   if (!sources.lookable.length) {
-    return note(`${sources.chosen.length} original photo${sources.chosen.length === 1 ? "" : "s"} chosen for this area, but they were not kept for this scan. "Keep original photos" on the field page adds them.`);
+    const n = sources.chosen.length;
+    return note(sources.originalsKept
+      ? `${n} original photo${n === 1 ? "" : "s"} chosen for this area (${sources.chosen.map(v => v.filename).join(", ")}), but the photos kept for this scan do not include ${n === 1 ? "it" : "them"}.`
+      : `${n} original photo${n === 1 ? "" : "s"} chosen for this area, but no originals were kept for this scan. "Keep original photos" on the field page adds them.`);
   }
   const n = sources.lookable.length;
   return (

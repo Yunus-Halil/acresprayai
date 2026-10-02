@@ -161,7 +161,7 @@ describe("state the operator can see at a glance", () => {
 
   it("offers a closer look in the original photos when they were kept", () => {
     const view = { filename: "DJI_0042.JPG", coverage: 1, insideMask: [true], viewAngleDeg: 8, gsdM: 0.06, score: 0.9, outlinePx: [], box: { x0: 0, y0: 0, x1: 1, y1: 1 }, shot: {} as never };
-    const sourceFrames = { unavailable: null, views: [view, view, view, view], chosen: [view], nearestOnly: false, lookable: [view], nativeScale: 2.28, orthoGsdM: 0.087, nativeGsdM: 0.026, outline: [] };
+    const sourceFrames = { unavailable: null, views: [view, view, view, view], chosen: [view], nearestOnly: false, lookable: [view], originalsKept: true, nativeScale: 2.28, orthoGsdM: 0.087, nativeGsdM: 0.026, outline: [] };
     const { props } = renderPopup({ sourceFrames, sourcesOrigin: "stored" });
     const btn = screen.getByTestId("closer-look-open");
     expect(btn.textContent).toMatch(/Closer look/);
@@ -172,11 +172,14 @@ describe("state the operator can see at a glance", () => {
 
   it("says plainly why there is no closer look", () => {
     const view = { filename: "A.JPG", coverage: 1, insideMask: [true], viewAngleDeg: 8, gsdM: 0.06, score: 0.9, outlinePx: [], box: { x0: 0, y0: 0, x1: 1, y1: 1 }, shot: {} as never };
-    const notKept = { unavailable: null, views: [view, view], chosen: [view], nearestOnly: false, lookable: [], nativeScale: 2.28, orthoGsdM: 0.087, nativeGsdM: 0.026, outline: [] };
+    const notKept = { unavailable: null, views: [view, view], chosen: [view], nearestOnly: false, lookable: [], originalsKept: false, nativeScale: 2.28, orthoGsdM: 0.087, nativeGsdM: 0.026, outline: [] };
     const { unmount } = renderPopup({ sourceFrames: notKept, sourcesOrigin: "stored" });
-    expect(screen.getByTestId("source-frames").textContent).toMatch(/1 original photo chosen for this area, but they were not kept/);
+    expect(screen.getByTestId("source-frames").textContent).toMatch(/1 original photo chosen for this area, but no originals were kept for this scan/);
     expect(screen.queryByTestId("closer-look-open")).toBeNull();
     unmount();
+    const { unmount: unmount2 } = renderPopup({ sourceFrames: { ...notKept, originalsKept: true }, sourcesOrigin: "stored" });
+    expect(screen.getByTestId("source-frames").textContent).toMatch(/\(A\.JPG\), but the photos kept for this scan do not include it/);
+    unmount2();
     renderPopup({ sourceFrames: { ...notKept, unavailable: "no reconstruction", views: [] }, sourcesOrigin: "none" });
     expect(screen.getByTestId("source-frames").textContent).toMatch(/No original photos for this scan/);
   });

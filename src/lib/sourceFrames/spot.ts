@@ -25,6 +25,8 @@ export type SpotSources = {
   nearestOnly: boolean;
   /** The chosen photos whose originals were kept, so they can be opened. */
   lookable: AreaView[];
+  /** Whether any originals were kept for this scan at all, matching or not. */
+  originalsKept: boolean;
   /** Camera-native over uploaded size. Null when EXIF did not say. */
   nativeScale: number | null;
   /** Map detail and photo detail at this shape, metres per pixel. */
@@ -85,7 +87,7 @@ export function sourceImagesNote(candidates: readonly { sourceImages?: SourceIma
 
 export function spotSources(sources: ScanSources | null, c: Candidate): SpotSources {
   const empty = (why: SpotSources["unavailable"]): SpotSources =>
-    ({ unavailable: why, views: [], chosen: [], nearestOnly: false, lookable: [], nativeScale: null, orthoGsdM: c.chipGsdM, nativeGsdM: null, outline: [] });
+    ({ unavailable: why, views: [], chosen: [], nearestOnly: false, lookable: [], originalsKept: !!sources?.frames && Object.keys(sources.frames).length > 0, nativeScale: null, orthoGsdM: c.chipGsdM, nativeGsdM: null, outline: [] });
   if (!sources?.set) return empty("no reconstruction");
   if (sources.groundAltM == null) return empty("no ground height");
   const outline = findingOutline(c, sources.groundAltM);
@@ -103,6 +105,7 @@ export function spotSources(sources: ScanSources | null, c: Candidate): SpotSour
     chosen,
     nearestOnly,
     lookable: chosen.filter(v => sources.frames?.[v.filename]),
+    originalsKept: !!sources.frames && Object.keys(sources.frames).length > 0,
     nativeScale,
     orthoGsdM: c.chipGsdM,
     nativeGsdM: nativeScale && chosen[0].gsdM ? chosen[0].gsdM / nativeScale : null,
