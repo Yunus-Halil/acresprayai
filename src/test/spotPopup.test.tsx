@@ -67,7 +67,7 @@ function renderPopup(over: Partial<SpotPopupProps> = {}) {
 describe("what the popup opens on", () => {
   it("leads with what the spot is, its place in the scan and its planned area", () => {
     renderPopup();
-    expect(screen.getByText("bare or dry ground")).toBeInTheDocument();
+    expect(screen.getAllByText("bare or dry ground")[0]).toBeInTheDocument();
     expect(screen.getByText(/Spot 1 of 30/)).toBeInTheDocument();
     expect(screen.getByText(/0\.05 ac|2,0\d\d ft²/)).toBeInTheDocument();
   });
@@ -143,6 +143,20 @@ describe("state the operator can see at a glance", () => {
     unmount();
     renderPopup({ savedPrediction: { ...makePrediction({ pWeed: 0.2, pCrop: 0.7, pOther: 0.1 }, "weed-v1"), inferredAt: null } });
     expect(screen.getByText(/When saved: Model: 20% weed \(reads most like crop\)/)).toBeInTheDocument();
+  });
+
+  it("says when the model declined the pixels, with both numbers", () => {
+    renderPopup({ candidate: spot({ inference: { modelVersion: "weed-v1", source: "orthomosaic", effectiveGsdM: 0.087, requiredGsdM: 0.02, status: "unknown_resolution" } }) });
+    const line = screen.getByTestId("unknown-resolution").textContent!;
+    expect(line).toMatch(/Model: not run/);
+    expect(line).toMatch(/UNKNOWN_RESOLUTION/);
+    expect(line).toMatch(/3\.4 in per pixel/);
+    expect(line).toMatch(/0\.8 in per pixel/);
+  });
+
+  it("names what the finding is, before any weed question", () => {
+    renderPopup();
+    expect(screen.getByText("bare or dry ground", { selector: "dd" })).toBeInTheDocument();
   });
 
   it("keeps the measurements out of the way but reachable", () => {

@@ -8,7 +8,8 @@ import {
 } from "@/lib/weedScout/classify/preprocess";
 import { currentModel, fetchManifest } from "@/lib/weedScout/classify/registry";
 import { classifyCandidates, isScorable } from "@/lib/weedScout/classify";
-import { EXPECTED_CLASSES, NOT_WEED_BELOW, WEED_AT_OR_ABOVE, describePrediction, isUsableMeta, makePrediction, readPrediction } from "@/lib/weedScout/classify/types";
+import { EXPECTED_CLASSES, NOT_WEED_BELOW, WEED_AT_OR_ABOVE, describePrediction, isUsableMeta, makePrediction, readPrediction, resolutionUsable } from "@/lib/weedScout/classify/types";
+import { findingClassOf } from "@/lib/weedScout/candidates";
 import { predictionColumns, verdictSourceFor } from "@/lib/weedScout/observations";
 import type { ModelMeta } from "@/lib/weedScout/classify/types";
 import type { Blob, Candidate } from "@/lib/weedScout/types";
@@ -119,6 +120,29 @@ describe("the default verdict's order of authority", () => {
   });
 });
 
+describe("what a finding is, before the weed question", () => {
+  const region = (klass: string) => ({ kind: "not-average region" as const, region: { klass } as never, blob: null });
+  it("maps the pipeline's classes onto the five finding classes", () => {
+    expect(findingClassOf(region("bare or dry ground"))).toBe("bare_ground");
+    expect(findingClassOf(region("dark ground (wet, shadow or residue)"))).toBe("wet_or_dark_ground");
+    expect(findingClassOf(region("thin stand"))).toBe("thin_stand");
+    expect(findingClassOf(region("dense vegetation"))).toBe("vegetation");
+    expect(findingClassOf(region("pale vegetation"))).toBe("vegetation");
+    expect(findingClassOf(region("greener than the field"))).toBe("vegetation");
+    expect(findingClassOf(region("different from the field"))).toBe("other_anomaly");
+    expect(findingClassOf({ kind: "field outlier", region: null, blob: blob(0.1) })).toBe("vegetation");
+    expect(findingClassOf({ kind: "off-row vegetation", region: null, blob: null })).toBe("vegetation");
+    expect(findingClassOf({ kind: "field outlier", region: null, blob: null })).toBe("other_anomaly");
+  });
+
+  it("the resolution gate: no limit means no gate; a limit refuses coarser pixels and unknown ones", () => {
+    expect(resolutionUsable({ max_gsd_m: null }, 0.5)).toBe(true);
+    expect(resolutionUsable({ max_gsd_m: 0.02 }, 0.02)).toBe(true);
+    expect(resolutionUsable({ max_gsd_m: 0.02 }, 0.021)).toBe(false);
+    expect(resolutionUsable({ max_gsd_m: 0.02 }, null)).toBe(false);
+  });
+});
+
 describe("the normalized prediction", () => {
   it("derives the class and its confidence from the probabilities, for any model", () => {
     const p = makePrediction({ pWeed: 0.1, pCrop: 0.25, pOther: 0.65 }, "other-model-v9", "2026-10-01T00:00:00Z");
@@ -179,6 +203,34 @@ describe("scoring the candidates", () => {
     expect(outcome.candidates[1].prediction).toBeNull();
     expect(outcome.note).toMatch(/scored 1 plant spot/);
     expect(decode).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses pixels coarser than the model was trained on, and says so instead of scoring", async () => {
+    const gated: ModelMeta = { ...META, max_gsd_m: 0.02 };
+    const coarse = plant({ id: "coarse", chipGsdM: 0.087 });
+    const fine = plant({ id: "fine", chipGsdM: 0.01 });
+    const classify = vi.fn(async (chips: unknown[]) => chips.map(() => makePrediction({ pWeed: 0.9, pCrop: 0.05, pOther: 0.05 }, "weed-v1")));
+    const outcome = await classifyCandidates([coarse, fine], {
+      loadModel: async () => gated,
+      decode: async () => ({ rgba: new Uint8ClampedArray(4 * 4 * 4), width: 4, height: 4, spanM: 0.6 }),
+      classifierFor: async () => ({ meta: gated, classify }),
+    });
+    expect(outcome.scored).toBe(1);
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(outcome.candidates[0].prediction).toBeNull();
+    expect(outcome.candidates[0].inference).toMatchObject({ status: "unknown_resolution", effectiveGsdM: 0.087, requiredGsdM: 0.02, modelVersion: "weed-v1", source: "orthomosaic" });
+    expect(outcome.candidates[1].inference).toMatchObject({ status: "scored" });
+    expect(outcome.candidates[1].prediction?.pWeed).toBe(0.9);
+    expect(outcome.note).toMatch(/1 plant spot not scored: the chips are 8\.7 cm\/px, coarser than the 2\.0 cm\/px the model was trained on \(UNKNOWN_RESOLUTION\)/);
+  });
+
+  it("records why a non-vegetation finding or a vegetation region was never the model's question", async () => {
+    const bare = plant({ id: "bare", kind: "not-average region", blob: null, region: { id: "g", tileIds: ["t"], rings: [[]], centroid: { lat: 0, lng: 0 }, areaM2: 50, tileCount: 5, coreTiles: 3, meanStrength: 4, maxStrength: 5, meanFieldZ: [], drivers: [], klass: "bare or dry ground" } });
+    const dense = plant({ id: "dense", kind: "not-average region", blob: null, region: { ...bare.region!, klass: "dense vegetation" } });
+    const outcome = await classifyCandidates([bare, dense], { loadModel: async () => META, classifierFor: async () => ({ meta: META, classify: vi.fn(async () => []) }) });
+    expect(outcome.candidates[0].inference?.status).toBe("not_vegetation");
+    expect(outcome.candidates[1].inference?.status).toBe("not_a_single_plant");
+    expect(outcome.note).toMatch(/1 not vegetation/);
   });
 
   it("with no model, says so and changes nothing", async () => {

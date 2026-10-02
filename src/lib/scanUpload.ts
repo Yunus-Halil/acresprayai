@@ -266,6 +266,57 @@ async function keepOriginal(userId: string, odmUuid: string, file: File, onRetry
   throw lastErr ?? new Error(`${file.name}: could not keep the original`);
 }
 
+/** The frame list beside the originals. Resolves to an error message, or null. */
+async function writeFrameManifest(userId: string, odmUuid: string, files: File[]): Promise<string | null> {
+  const manifest: FrameManifestEntry[] = files.map(f => ({
+    filename: f.name, path: `${framesPrefix(userId, odmUuid)}/${frameStorageName(f.name)}`,
+    bytes: f.size, type: f.type || "image/jpeg", lastModified: f.lastModified,
+  }));
+  const { error } = await supabase.storage.from("scans").upload(
+    framesManifestPath(userId, odmUuid), JSON.stringify(manifest), { contentType: "application/json", upsert: true },
+  );
+  return error ? error.message : null;
+}
+
+/**
+ * Keep the originals for a scan that already exists, without touching the
+ * processing node: the same photographs, selected again, stored exactly as
+ * the camera wrote them. For scans uploaded before originals were kept.
+ * Frames that fail are reported, not retried across runs; running it again
+ * re-sends only what the caller selects.
+ */
+export async function attachOriginals(opts: {
+  odmUuid: string;
+  files: File[];
+  onProgress: (p: { done: number; total: number; failed: number }) => void;
+}): Promise<{ kept: number; failed: { name: string; message: string }[] }> {
+  const { odmUuid, files, onProgress } = opts;
+  await supabase.auth.refreshSession().catch(() => {});
+  const userId = (await supabase.auth.getSession()).data.session?.user?.id;
+  if (!userId) throw new UploadError("Please sign in to keep the photographs.", false);
+  let done = 0, cursor = 0;
+  const failed: { name: string; message: string }[] = [];
+  const worker = async () => {
+    for (;;) {
+      const i = cursor++;
+      if (i >= files.length) return;
+      try {
+        await keepOriginal(userId, odmUuid, files[i], () => {});
+        done++;
+      } catch (e) {
+        failed.push({ name: files[i].name, message: (e as Error)?.message ?? String(e) });
+      }
+      onProgress({ done, total: files.length, failed: failed.length });
+    }
+  };
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  if (!failed.length) {
+    const err = await writeFrameManifest(userId, odmUuid, files);
+    if (err) throw new UploadError(`The photographs are stored, but the frame list could not be saved (${err}). Run this again.`, true);
+  }
+  return { kept: done, failed };
+}
+
 /**
  * Run a full scan upload: init (or resume), upload every image, then commit.
  *
@@ -392,16 +443,10 @@ export async function uploadScan(opts: {
   // ---- The frame list, then commit ----------------------------------------
   // Written once every original is in, so a reader never sees a partial list.
   onProgress({ phase: "committing", done, total: files.length, failed: 0 });
-  const manifest: FrameManifestEntry[] = files.map(f => ({
-    filename: f.name, path: `${framesPrefix(userId, odmUuid)}/${frameStorageName(f.name)}`,
-    bytes: f.size, type: f.type || "image/jpeg", lastModified: f.lastModified,
-  }));
-  const { error: manifestErr } = await supabase.storage.from("scans").upload(
-    framesManifestPath(userId, odmUuid), JSON.stringify(manifest), { contentType: "application/json", upsert: true },
-  );
+  const manifestErr = await writeFrameManifest(userId, odmUuid, files);
   if (manifestErr) {
     throw new UploadError(
-      `Every image is uploaded, but the frame list could not be saved (${manifestErr.message}). Retry to save it and start the scan.`,
+      `Every image is uploaded, but the frame list could not be saved (${manifestErr}). Retry to save it and start the scan.`,
       true,
     );
   }

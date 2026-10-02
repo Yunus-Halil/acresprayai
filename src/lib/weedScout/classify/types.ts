@@ -57,6 +57,38 @@ export function readPrediction(json: unknown): (Omit<Prediction, "inferredAt"> &
   return { ...full, inferredAt: typeof j.inferredAt === "string" ? j.inferredAt : null };
 }
 
+export type InferenceStatus =
+  /** The model ran on this spot's pixels. */
+  | "scored"
+  /** The pixels are coarser than anything the model was trained on; it was not asked. */
+  | "unknown_resolution"
+  /** Bare ground, residue, shadow, a thin stand: not a plant, so not the model's question. */
+  | "not_vegetation"
+  /** A vegetation region, not a single plant; the model knows single plants only. */
+  | "not_a_single_plant"
+  | "no_chip";
+
+/**
+ * Whether the model was asked about a spot, and on what. Kept beside the
+ * prediction (which exists only when status is "scored") so a stored row can
+ * say "not run: 8.7 cm/px" rather than carry a silent null.
+ */
+export type Inference = {
+  modelVersion: string;
+  /** Where the pixels came from. */
+  source: "orthomosaic" | "source_frame";
+  effectiveGsdM: number | null;
+  /** The coarsest GSD the model may be asked about; null when the sidecar set none. */
+  requiredGsdM: number | null;
+  status: InferenceStatus;
+};
+
+/** True when the model may be asked about pixels this coarse. A sidecar with no limit sets none. */
+export function resolutionUsable(meta: Pick<ModelMeta, "max_gsd_m">, gsdM: number | null | undefined): boolean {
+  if (meta.max_gsd_m == null) return true;
+  return gsdM != null && gsdM <= meta.max_gsd_m;
+}
+
 export type SpanRule = { per_diameter: number; min_m: number; max_m: number };
 
 export type ModelScorecard = {
@@ -78,6 +110,9 @@ export type ModelMeta = {
   input: { layout: string; px: number; range: string; span_rule: SpanRule };
   output: string;
   temperature: number | null;
+  /** Coarsest ground sample distance the model was trained on, metres per pixel. Absent on older sidecars. */
+  max_gsd_m?: number | null;
+  max_gsd_basis?: string | null;
   trained_at: string | null;
   sources: string[];
   scorecard: ModelScorecard;

@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { hasGPS } from "@/lib/imagePrep";
 import {
   MAX_IMAGES, MIN_IMAGES, UploadError, type NodeCapabilities, type UploadProgress,
-  clearCheckpoint, effectiveMaxImages, fetchNodeCapabilities, readCheckpoint, uploadScan,
+  attachOriginals, clearCheckpoint, effectiveMaxImages, fetchNodeCapabilities, readCheckpoint, uploadScan,
 } from "@/lib/scanUpload";
 import { PAGE_SIZE, appendPage, hasMore, pageRange } from "@/lib/pagination";
 import ImportOrthomosaicForm from "@/components/app/ImportOrthomosaicForm";
@@ -249,6 +249,38 @@ export default function FieldDetail() {
       });
     }
     loadTasks();
+  };
+
+  // Originals for a scan uploaded before they were kept: the same photographs,
+  // selected again, stored as the camera wrote them. No reprocessing.
+  const attachInputRef = useRef<HTMLInputElement | null>(null);
+  const [attachTarget, setAttachTarget] = useState<Task | null>(null);
+  const [attaching, setAttaching] = useState<{ id: string; done: number; total: number; failed: number } | null>(null);
+  const pickOriginals = (t: Task) => { setAttachTarget(t); attachInputRef.current?.click(); };
+  const onOriginalsPicked = async (list: FileList | null) => {
+    const t = attachTarget;
+    if (attachInputRef.current) attachInputRef.current.value = "";
+    if (!t?.odm_uuid || !list?.length) return;
+    const files = Array.from(list);
+    if (files.length !== t.image_count) {
+      const go = window.confirm(`This scan was made from ${t.image_count} images and you selected ${files.length}. Keep these anyway?`);
+      if (!go) return;
+    }
+    setAttaching({ id: t.id, done: 0, total: files.length, failed: 0 });
+    try {
+      const r = await attachOriginals({ odmUuid: t.odm_uuid, files, onProgress: p => setAttaching({ id: t.id, ...p }) });
+      if (r.failed.length) {
+        toast.error(`${r.failed.length} photograph${r.failed.length === 1 ? "" : "s"} could not be kept`, {
+          description: `${r.kept} stored. First error: ${r.failed[0].message}. Select the files again to retry; nothing is duplicated.`,
+        });
+      } else {
+        toast.success(`${r.kept} original photographs kept for this scan.`);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not keep the photographs");
+    } finally {
+      setAttaching(null);
+    }
   };
 
   const downloadZip = async (t: Task) => {
@@ -500,6 +532,8 @@ export default function FieldDetail() {
           </Card>
         )}
 
+        <input ref={attachInputRef} type="file" accept="image/jpeg,image/png,image/tiff" multiple className="hidden"
+          onChange={e => { void onOriginalsPicked(e.target.files); }} />
         {tasks.map(t => (
           <Card key={t.id} className="p-4">
             <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -563,6 +597,13 @@ export default function FieldDetail() {
                       that would silently no-op on click does not render. */}
                   {t.output_path && (
                     <Button size="sm" variant="outline" onClick={() => downloadZip(t)}><Download className="h-3.5 w-3.5" /> Download</Button>
+                  )}
+                  {t.odm_uuid && t.image_count > 0 && (
+                    attaching?.id === t.id
+                      ? <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Keeping originals {attaching.done} / {attaching.total}{attaching.failed ? ` (${attaching.failed} failed)` : ""}</span>
+                      : <Button size="sm" variant="outline" onClick={() => pickOriginals(t)} title="Store the photographs this scan was made from, at full size, for plant-level evidence. Select the same files again.">
+                          <FileUp className="h-3.5 w-3.5" /> Keep original photos
+                        </Button>
                   )}
                 </>
               )}

@@ -29,7 +29,7 @@ import type { LatLng2 } from "@/lib/geo";
 import { storageKey } from "@/lib/storage";
 import { fmtArea, fmtLengthCm, fmtDistance } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
-import { describeCandidate } from "@/lib/weedScout/candidates";
+import { describeCandidate, findingClassOf } from "@/lib/weedScout/candidates";
 import { type AppliedAnnotation, annotationFromCandidate } from "@/lib/weedScout/applyToField";
 import { type EventContext, describeEvent, fetchEventContext } from "@/lib/weedScout/context";
 import {
@@ -53,7 +53,7 @@ import { plannedAreaM2, plannedZones } from "@/lib/treatment/plannedArea";
 import { ScanSummary } from "./ScanSummary";
 import { type NativeComparison, SpotPopup } from "./SpotPopup";
 import { chipSpanM } from "@/lib/weedScout/candidates";
-import { type Prediction, loadCurrentModel } from "@/lib/weedScout/classify";
+import { type Prediction, loadCurrentModel, resolutionUsable } from "@/lib/weedScout/classify";
 import { getClassifier } from "@/lib/weedScout/classify/onnxClassifier";
 import { cropNative } from "@/lib/sourceFrames/crop";
 import { type ScanSources, downloadFrame, loadScanSources } from "@/lib/sourceFrames/scan";
@@ -138,9 +138,6 @@ const VERDICT_COLOUR: Record<string, string> = {
   not_vegetation: "#525252",
 };
 
-/** Region classes that read as ground, not plants: never a weed by default. */
-const GROUND_CLASSES = new Set<RegionClass>(["bare or dry ground", "dark ground (wet, shadow or residue)", "thin stand"]);
-
 /**
  * The verdict a spot starts with, before the operator touches it.
  *
@@ -150,8 +147,9 @@ const GROUND_CLASSES = new Set<RegionClass>(["bare or dry ground", "dark ground 
  * one place the scout's learning changes what is proposed rather than only
  * the order. Otherwise the scout flags "possible weed spots", so a plant
  * candidate or a vegetation region starts as a weed and the operator removes
- * the wrong ones; ground that is bare, dark or thin is not a plant and starts
- * as unsure. The default is shown on every row and flipped with one click.
+ * the wrong ones; anything that is not vegetation (bare, wet or dark ground,
+ * a thin stand, an anomaly of no known kind) is not a weed question and
+ * starts as unsure. The default is shown on every row and flipped with one click.
  */
 export function defaultVerdict(c: Candidate): Verdict {
   if (c.feedback && c.feedback.factor < 1) return "not_weed";
@@ -164,9 +162,8 @@ export function defaultVerdict(c: Candidate): Verdict {
     if (c.prediction.pWeed < NOT_WEED_BELOW) return "not_weed";
     return "unsure";
   }
-  if (c.region) return GROUND_CLASSES.has(c.region.klass) ? "unsure" : "weed";
   if (c.kind === "field outlier") return "unsure";
-  return "weed";
+  return findingClassOf(c) === "vegetation" ? "weed" : "unsure";
 }
 
 const VERDICT_LABEL: Record<Verdict, string> = {
@@ -344,11 +341,15 @@ export function WeedScoutTab({
       const spanM = c.chipSpanM ?? chipSpanM(c, 1);
       const crop = await cropNative(blob, s.best.centre.u, s.best.centre.v, s.best.gsdM, s.nativeScale, spanM);
       if (!crop) throw new Error("the original could not be decoded");
+      // The comparison runs the model regardless of the resolution gate: it is
+      // the experiment that decides whether these pixels are good enough. The
+      // record says when they are still coarser than the model was trained on.
       let prediction: Prediction | null = null;
       const meta = await loadCurrentModel();
       const clf = meta ? await getClassifier(meta) : null;
       if (clf) [prediction] = await clf.classify([{ pixels: crop.pixels, diameterM: c.blob?.equivDiameterM ?? null }]);
-      setComparisons(m => ({ ...m, [c.id]: { status: "done", crop, prediction } }));
+      const belowTrained = !!meta && !resolutionUsable(meta, crop.gsdM);
+      setComparisons(m => ({ ...m, [c.id]: { status: "done", crop, prediction, belowTrained, requiredGsdM: meta?.max_gsd_m ?? null } }));
     } catch (e) {
       setComparisons(m => ({ ...m, [c.id]: { status: "error", error: (e as Error).message } }));
     }
@@ -420,6 +421,8 @@ export function WeedScoutTab({
         prediction: c.prediction ?? s[c.id]?.prediction ?? null,
         model_version: c.prediction?.modelVersion ?? s[c.id]?.model_version ?? null,
         verdict_source: verdictSource ?? s[c.id]?.verdict_source ?? null,
+        finding_class: findingClassOf(c),
+        inference: c.inference ?? s[c.id]?.inference ?? null,
       },
     }));
     return null;
@@ -906,7 +909,7 @@ function ClassifierDiagnostics({ candidates, verdictOf, verdictSource, stored, o
                     <td className="text-right">{pct(p.pOther)}</td>
                     <td className="pl-1">{p.predictedClass}</td>
                   </>
-                ) : <td colSpan={4} className="text-neutral-600 pl-1">not scored</td>}
+                ) : <td colSpan={4} className="text-neutral-600 pl-1">{c.inference ? c.inference.status.replace(/_/g, " ") : "not scored"}</td>}
                 <td>{VERDICT_LABEL[verdictOf(c)]} <span className="text-neutral-600">({verdictSource(c)})</span></td>
                 <td className="text-neutral-500">{p ? `${p.modelVersion}${live ? "" : " (stored)"}` : "-"}</td>
                 <td data-testid="diag-save-state" title={saveState[c.id]}>

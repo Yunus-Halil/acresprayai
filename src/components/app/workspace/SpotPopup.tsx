@@ -26,7 +26,7 @@ import type { Identification } from "@/lib/weedCatalog/identification";
 import { isStatedFinding } from "@/lib/weedCatalog/identification";
 import type { CropShortlist, RankedEntry, RecentLabel, Suggestion } from "@/lib/weedCatalog/suggest";
 import type { CatalogEntry, FieldRegion } from "@/lib/weedCatalog/types";
-import { describeCandidate } from "@/lib/weedScout/candidates";
+import { FINDING_CLASS_LABEL, describeCandidate, findingClassOf } from "@/lib/weedScout/candidates";
 import { type StoredPrediction, type Verdict, VERDICTS, isDismissal } from "@/lib/weedScout/observations";
 import type { Candidate } from "@/lib/weedScout/types";
 import { type UnitSystem, fmtArea, fmtAreaCm2, fmtLengthCm } from "@/lib/units";
@@ -128,9 +128,14 @@ export function SpotPopup(props: SpotPopupProps) {
         <p className="mt-1 text-[10px] text-neutral-500 leading-relaxed" title="Trained on public corn imagery and synthetic scenes; the number is calibrated on held-out data, not on this field.">
           {describePrediction(c.prediction)}
         </p>
-      ) : savedPrediction && (
+      ) : savedPrediction ? (
         <p className="mt-1 text-[10px] text-neutral-500 leading-relaxed" title="No model scored this spot on this run; this is the score stored with your saved verdict.">
           When saved: {describePrediction(savedPrediction)}
+        </p>
+      ) : c.inference?.status === "unknown_resolution" && (
+        <p className="mt-1 text-[10px] text-neutral-500 leading-relaxed" data-testid="unknown-resolution">
+          Model: not run. This chip is {fmtLengthCm((c.inference.effectiveGsdM ?? 0) * 100, units).text} per pixel;
+          {" "}{c.inference.modelVersion} was trained on nothing coarser than {fmtLengthCm((c.inference.requiredGsdM ?? 0) * 100, units).text} per pixel (UNKNOWN_RESOLUTION).
         </p>
       )}
 
@@ -185,6 +190,7 @@ export function SpotPopup(props: SpotPopupProps) {
       <details className="mt-2">
         <summary className="cursor-pointer text-[10px] text-neutral-500 hover:text-neutral-300">Measurements</summary>
         <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5 pt-1.5 text-[10px]">
+          <Dt k="Class" v={FINDING_CLASS_LABEL[findingClassOf(c)]} />
           <Dt k="Score" v={c.score.toFixed(2)} />
           {c.region ? (
             <>
@@ -215,7 +221,7 @@ export function SpotPopup(props: SpotPopupProps) {
 
 export type NativeComparison =
   | { status: "loading" }
-  | { status: "done"; crop: NativeCrop; prediction: Prediction | null }
+  | { status: "done"; crop: NativeCrop; prediction: Prediction | null; belowTrained: boolean; requiredGsdM: number | null }
   | { status: "error"; error: string };
 
 /**
@@ -258,6 +264,9 @@ function SourceFramesBlock({ c, units, sources, origin, comparison, onCompare }:
             <img src={comparison.crop.dataUrl} alt="" className="w-full rounded-sm border border-[#222]" style={{ imageRendering: "pixelated" }} />
             <p className="pt-0.5">Native: {gsd(comparison.crop.gsdM)}, spot {px(sources.targetPx.native)}{comparison.prediction ? `, model ${Math.round(comparison.prediction.pWeed * 100)}% weed` : ", no model"}</p>
           </div>
+          {comparison.belowTrained && (
+            <p className="col-span-2 text-amber-500/80">Both are coarser than the {gsd(comparison.requiredGsdM)} the model was trained on; the numbers are the experiment, not a finding.</p>
+          )}
         </div>
       )}
     </div>

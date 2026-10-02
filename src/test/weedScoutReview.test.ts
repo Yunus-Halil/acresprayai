@@ -26,6 +26,12 @@ describe("defaultVerdict", () => {
     expect(defaultVerdict(region("bare or dry ground"))).toBe("unsure");
     expect(defaultVerdict(plant({ kind: "field outlier" }))).toBe("unsure");
   });
+  it("a region that is merely different from the field is not a weed question and starts unsure", () => {
+    expect(defaultVerdict(region("different from the field"))).toBe("unsure");
+    expect(defaultVerdict(region("dark ground (wet, shadow or residue)"))).toBe("unsure");
+    expect(defaultVerdict(region("thin stand"))).toBe("unsure");
+    expect(defaultVerdict(region("pale vegetation"))).toBe("weed");
+  });
   it("lets the operator's past verdicts override the default", () => {
     const dismissed = { confirmed: 0, dismissed: 4, species: [], factor: 0.4 };
     const confirmed = { confirmed: 4, dismissed: 0, species: [], factor: 1.25 };

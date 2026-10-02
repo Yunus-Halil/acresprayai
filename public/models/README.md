@@ -7,8 +7,11 @@ Written by `offrow learn publish`, never by hand. Each version is three files:
   the graph). Output `logits` is `N x 3` for the classes `weed, crop, other`; softmax gives
   probabilities. Int8 weight-quantised unless the sidecar says otherwise.
 - `<version>.json`: the sidecar. Version, file, classes, the input contract and chip span
-  rule the browser must follow, the temperature, the training sources, a scorecard summary
-  and a caveat. The app refuses a sidecar whose contract it does not recognise.
+  rule the browser must follow, the temperature, `max_gsd_m` (the coarsest ground sample
+  distance the model may be asked about, with its basis; the app records
+  `UNKNOWN_RESOLUTION` instead of a score for anything coarser), the training sources, a
+  scorecard summary and a caveat. The app refuses a sidecar whose contract it does not
+  recognise.
 - `<version>.scorecard.json`: the full scorecard on the frozen test split, by source and
   by weed diameter bin, with calibration and the confusion matrix. The same file lives in
   `offrow/reports/`.

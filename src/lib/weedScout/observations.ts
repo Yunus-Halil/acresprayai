@@ -13,10 +13,11 @@
 // later, separate, consented step; nothing here shares anything.
 import { supabase } from "@/integrations/supabase/client";
 import { type Identification, type IdentificationStatus, isStatedFinding } from "../weedCatalog/identification";
-import { type Prediction, readPrediction } from "./classify/types";
+import { type Inference, type Prediction, readPrediction } from "./classify/types";
+import { findingClassOf } from "./candidates";
 import type { EventContext } from "./context";
 import { featureVectorOf } from "./feedback";
-import type { Candidate, CandidateKind, FeedbackRow, ScoutParams } from "./types";
+import type { Candidate, CandidateKind, FeedbackRow, FindingClass, ScoutParams } from "./types";
 import { dataUrlToBase64 } from "./zoom";
 
 export const PIPELINE_VERSION = "weed-scout-v2";
@@ -72,6 +73,9 @@ export type ObservationRow = {
   model_version: string | null;
   /** Whether a person set the verdict, or it was saved as proposed. Null on rows older than the column. */
   verdict_source: VerdictSource | null;
+  finding_class: FindingClass | null;
+  /** Whether the model was asked about this spot when it was saved. Null on rows older than the column. */
+  inference: Inference | null;
 };
 
 /** `operator`: a person set it on this spot. `default`: saved as the scout proposed it. */
@@ -225,6 +229,9 @@ export async function saveObservation(input: SaveObservationInput): Promise<{ ok
     estimate_model: c.estimate?.model ?? null,
     // The model's word beside the operator's, never in its place.
     ...predictionColumns(c),
+    // What the finding is, and whether the model was asked about it.
+    finding_class: findingClassOf(c),
+    ...(c.inference ? { inference: c.inference } : {}),
     verdict: input.verdict,
     ...(input.verdictSource ? { verdict_source: input.verdictSource } : {}),
     notes: input.notes,
@@ -244,7 +251,7 @@ export async function saveObservation(input: SaveObservationInput): Promise<{ ok
 
 export async function listObservations(scanId: string): Promise<ObservationRow[]> {
   const { data, error } = await supabase.from("weed_observations")
-    .select("id, candidate_id, scan_id, tile_id, lat, lng, captured_at, place, local_time, season, kind, score, chip_path, verdict, species, notes, created_at, suggested_catalog_id, suggestion_basis, identification_status, catalog_id, identification_source, identification_basis, prediction, model_version, verdict_source")
+    .select("id, candidate_id, scan_id, tile_id, lat, lng, captured_at, place, local_time, season, kind, score, chip_path, verdict, species, notes, created_at, suggested_catalog_id, suggestion_basis, identification_status, catalog_id, identification_source, identification_basis, prediction, model_version, verdict_source, finding_class, inference")
     .eq("scan_id", scanId)
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);

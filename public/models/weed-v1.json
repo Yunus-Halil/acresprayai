@@ -20,6 +20,8 @@
  },
  "output": "calibrated logits; softmax gives probabilities",
  "temperature": 1.1752800941467285,
+ "max_gsd_m": 0.02,
+ "max_gsd_basis": "Coarsest REAL training imagery: USU-Corn-WeedDB at 4.8 mm/px degraded up to 4x in training (synthetic scenes go coarser, which is not evidence).",
  "trained_at": "2026-09-29T21:08:34Z",
  "sources": [
   "data/examples/synth",

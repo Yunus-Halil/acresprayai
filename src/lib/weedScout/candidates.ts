@@ -25,7 +25,7 @@ import type { LatLng2 } from "../geo";
 import { type UnitSystem, fmtLengthCm } from "../units";
 import { type BlobBaseline, blobBaseline, scoreBlob } from "./blobs";
 import { distanceToRowM } from "./rows";
-import type { AnalysisTile, Blob, Candidate, CandidateKind, Region, RowModel, ScoutParams, TileFlag } from "./types";
+import type { AnalysisTile, Blob, Candidate, CandidateKind, FindingClass, Region, RowModel, ScoutParams, TileFlag } from "./types";
 import { assignSpotIds } from "./spotId";
 
 /** Ceiling on the queue handed to the UI. The rest is still counted. */
@@ -165,6 +165,31 @@ export function rankCandidates(input: RankInput): RankResult {
 }
 
 /** One line describing why a candidate is in the queue. Never a verdict. `sys` follows the operator's display setting. */
+/** Derived from what the pipeline measured, never stored on the candidate; the archive records it at save time. */
+export function findingClassOf(c: Pick<Candidate, "kind" | "region" | "blob">): FindingClass {
+  if (c.region) {
+    switch (c.region.klass) {
+      case "bare or dry ground": return "bare_ground";
+      case "dark ground (wet, shadow or residue)": return "wet_or_dark_ground";
+      case "thin stand": return "thin_stand";
+      case "dense vegetation": case "pale vegetation": case "greener than the field": return "vegetation";
+      default: return "other_anomaly";
+    }
+  }
+  // A plant candidate is vegetation by construction; a flagged tile with no
+  // plant behind it is an anomaly of no known kind.
+  if (c.blob || c.kind !== "field outlier") return "vegetation";
+  return "other_anomaly";
+}
+
+export const FINDING_CLASS_LABEL: Record<FindingClass, string> = {
+  vegetation: "vegetation",
+  bare_ground: "bare or dry ground",
+  thin_stand: "thin stand",
+  wet_or_dark_ground: "wet or dark ground",
+  other_anomaly: "other anomaly",
+};
+
 export function describeCandidate(c: Candidate, sys: UnitSystem = "metric"): string {
   const parts: string[] = [];
   if (c.region) {

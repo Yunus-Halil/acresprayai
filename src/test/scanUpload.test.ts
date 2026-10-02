@@ -30,7 +30,7 @@ vi.mock("@/integrations/supabase/client", () => ({
 
 import {
   MAX_IMAGES, MIN_IMAGES, UploadError,
-  clearCheckpoint, readCheckpoint, uploadScan,
+  attachOriginals, clearCheckpoint, readCheckpoint, uploadScan,
 } from "@/lib/scanUpload";
 import { migrateLegacyStorage } from "@/lib/storage";
 
@@ -177,6 +177,37 @@ describe("uploadScan · the original of every frame is kept", () => {
     const manifestCall = (storageUpload.mock.calls as unknown as [string, string][]).find(c => c[0].endsWith("frames.json"))!;
     const manifest = JSON.parse(manifestCall[1]);
     expect(manifest.at(-1)).toMatchObject({ filename: "DJI 0001 (2).JPG", path: "user-1/uuid-1/frames/DJI_0001__2_.JPG" });
+  });
+});
+
+describe("attachOriginals · originals for a scan that already exists", () => {
+  it("stores the files and the frame list without a single call to the processing node", async () => {
+    const s = scenario(); const fetchFn = installFetch(s);
+    const files = makeFiles(4);
+    const progress: number[] = [];
+    const r = await attachOriginals({ odmUuid: "uuid-old", files, onProgress: p => progress.push(p.done) });
+    expect(r).toEqual({ kept: 4, failed: [] });
+    expect(fetchFn).not.toHaveBeenCalled();
+    const calls = storageUpload.mock.calls as unknown as [string, File | string][];
+    expect(calls.filter(c => c[0].startsWith("user-1/uuid-old/frames/")).map(c => c[1])).toEqual(files);
+    const manifest = JSON.parse(calls.find(c => c[0] === "user-1/uuid-old/frames.json")![1] as string);
+    expect(manifest).toHaveLength(4);
+    expect(progress.at(-1)).toBe(4);
+  });
+
+  it("reports a file it could not keep and writes no frame list, so a partial set is never read as complete", async () => {
+    installFetch(scenario());
+    const files = makeFiles(3);
+    storageUpload.mockImplementation(async (path: string) =>
+      path.endsWith("IMG_2.jpg") ? { data: null, error: { message: "quota" } } : { data: { path }, error: null });
+    try {
+      const r = await attachOriginals({ odmUuid: "uuid-old", files, onProgress: noop });
+      expect(r.kept).toBe(2);
+      expect(r.failed).toEqual([{ name: "IMG_2.jpg", message: expect.stringMatching(/quota/) }]);
+    } finally {
+      storageUpload.mockImplementation(async (path: string) => ({ data: { path }, error: null }));
+    }
+    expect((storageUpload.mock.calls as unknown as [string][]).some(c => c[0].endsWith("frames.json"))).toBe(false);
   });
 });
 

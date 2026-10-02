@@ -1391,6 +1391,8 @@ export type Database = {
           verdict: string | null
           verdict_at: string | null
           verdict_source: string | null
+          finding_class: string | null
+          inference: Json | null
           weather: Json | null
         }
         Insert: {
@@ -1451,6 +1453,8 @@ export type Database = {
           verdict?: string | null
           verdict_at?: string | null
           verdict_source?: string | null
+          finding_class?: string | null
+          inference?: Json | null
           weather?: Json | null
         }
         Update: {
@@ -1511,6 +1515,8 @@ export type Database = {
           verdict?: string | null
           verdict_at?: string | null
           verdict_source?: string | null
+          finding_class?: string | null
+          inference?: Json | null
           weather?: Json | null
         }
         Relationships: [

@@ -21,7 +21,14 @@
 // look at. Nothing in this module tree may call a blob a weed; the operator
 // does that, on the record, with the chip in front of them.
 import type { LatLng2 } from "../geo";
-import type { Prediction } from "./classify/types";
+import type { Inference, Prediction } from "./classify/types";
+
+/**
+ * What a finding is, before anyone asks whether it is a weed. Only
+ * `vegetation` goes to the weed classifier; the rest are findings in their
+ * own right (a washout, a wet patch, a planter skip) and start as "unsure".
+ */
+export type FindingClass = "vegetation" | "bare_ground" | "thin_stand" | "wet_or_dark_ground" | "other_anomaly";
 
 /** Everything the pipeline needs about the imagery, and nothing about the UI. */
 export type ScoutInputs = {
@@ -317,6 +324,8 @@ export type Candidate = {
    * suggestion beside the feedback and the estimate; never the verdict.
    */
   prediction?: Prediction | null;
+  /** Whether the classifier was asked about this spot, and why not when it was not. */
+  inference?: Inference | null;
   /** PNG data URL of the chip, when one was rendered. */
   chip: string | null;
   chipSpanM: number | null;

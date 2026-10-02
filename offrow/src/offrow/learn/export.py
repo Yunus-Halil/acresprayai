@@ -99,6 +99,18 @@ def agreement(float_path: Path, quant_path: Path, batch: int = 32, seed: int = 0
     return float((a.argmax(-1) == b.argmax(-1)).mean())
 
 
+#: Coarsest ground sample distance the model may be asked about, metres per
+#: pixel: the coarsest REAL training imagery (USU-Corn-WeedDB, 4.8 mm/px,
+#: degraded up to ``degrade_max_factor`` = 4x in training). Synthetic scenes go
+#: coarser than this, and that is not evidence about real plants. Raise it only
+#: with real imagery at the new resolution in the test split.
+MAX_GSD_M = 0.02
+MAX_GSD_BASIS = (
+    "Coarsest REAL training imagery: USU-Corn-WeedDB at 4.8 mm/px degraded up to 4x in "
+    "training (synthetic scenes go coarser, which is not evidence)."
+)
+
+
 def sidecar(
     version: str, state: dict, card: dict | None, quantized: bool, file_name: str, size_bytes: int
 ) -> dict:
@@ -122,6 +134,9 @@ def sidecar(
         },
         "output": "calibrated logits; softmax gives probabilities",
         "temperature": state.get("temperature"),
+        # The app refuses to ask the model about pixels coarser than this.
+        "max_gsd_m": MAX_GSD_M,
+        "max_gsd_basis": MAX_GSD_BASIS,
         "trained_at": state.get("trained_at"),
         "sources": state.get("sources", []),
         "scorecard": {
