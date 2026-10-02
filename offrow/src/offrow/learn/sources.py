@@ -339,8 +339,9 @@ def _clear_ground(
 
 #: Columns pulled from weed_observations. The verdict is the label; the rest is provenance.
 OBSERVATION_COLUMNS = (
-    "id,user_id,field_id,scan_id,candidate_id,kind,verdict,species,crop,growth_stage,"
-    "gsd_m,chip_gsd_m,chip_span_m,chip_path,area_m2,features,captured_at,pipeline_version"
+    "id,user_id,field_id,scan_id,candidate_id,kind,verdict,verdict_source,species,crop,growth_stage,"
+    "gsd_m,chip_gsd_m,chip_span_m,chip_path,area_m2,features,captured_at,pipeline_version,"
+    "prediction,model_version,inference,finding_class,lat,lng"
 )
 
 

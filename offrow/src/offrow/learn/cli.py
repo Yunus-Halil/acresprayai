@@ -166,6 +166,40 @@ def evaluate(
 
 
 @app.command()
+def benchmark(
+    export_dir: Path = typer.Option(
+        DEFAULT_EXAMPLES / "operator", "--export-dir", help="Operator export from pull-verdicts."
+    ),
+    reports: Path = typer.Option(DEFAULT_REPORTS, "--reports"),
+    version: str = typer.Option("weed-v1", "--version", help="The version the gate judges."),
+    threshold: float = typer.Option(
+        0.6, "--threshold", help="pWeed at or above which the model calls a weed."
+    ),
+) -> None:
+    """The real-field benchmark: stored predictions against operator verdicts, per model version.
+
+    Reads observations.json from pull-verdicts. Only verdict_source = operator
+    rows count; unsure, declined (UNKNOWN_RESOLUTION) and default rows are
+    reported, not scored. Needs no model and no torch.
+    """
+    from offrow.learn import benchmark as bm
+
+    rows = json.loads((export_dir / "observations.json").read_text())
+    card = bm.benchmark(rows, threshold=threshold)
+    previous = bm.latest_benchmark(reports)
+    path = bm.write_benchmark(card, reports)
+    for line in bm.summary_lines(card):
+        typer.echo(line)
+    g = bm.gate(previous, card, version)
+    typer.secho(
+        f"gate ({version}): {'PASS' if g.passed else 'FAIL'}  " + "; ".join(g.reasons),
+        fg=typer.colors.GREEN if g.passed else typer.colors.RED,
+        bold=True,
+    )
+    typer.secho(f"wrote {path}", bold=True)
+
+
+@app.command()
 def publish(
     version: str = typer.Option("weed-v1", "--version"),
     models: Path = typer.Option(DEFAULT_MODELS, "--models"),
