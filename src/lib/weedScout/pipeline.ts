@@ -12,6 +12,8 @@
 //   5. candidates are ranked, compared with the archive, and
 //      described in-house                                    (candidates.ts,
 //                                                             feedback.ts, describe.ts)
+//   6. every shape is matched to the original photos that
+//      hold it, from the camera positions                    (sourceFrames/spot.ts)
 //
 // ANY CROP, ANY FIELD. Nothing here assumes corn, rows, or a size. The tile
 // edge is picked from the field's area unless the operator pins it. Rows are
@@ -46,6 +48,8 @@ import { type UnitSystem, fmtLengthCm } from "../units";
 import { globalThreshold, indexRaster, maskWindow } from "./vegetation";
 import { boundsAround, fetchRaster, renderChip } from "./zoom";
 import { classifyCandidates } from "./classify";
+import type { ScanSources } from "../sourceFrames/scan";
+import { sourceImagesNote, sourceImagesOf, spotSources } from "../sourceFrames/spot";
 
 const yieldToUi = () => new Promise<void>(r => setTimeout(r, 0));
 
@@ -61,6 +65,8 @@ export type RunOptions = {
   unitSystem?: UnitSystem;
   /** Score chipped plant candidates with the shipped classifier. Default: only in a browser. */
   classify?: boolean;
+  /** The scan's camera positions and kept originals, for matching shapes to photos. */
+  sources?: ScanSources | null;
 };
 
 class Aborted extends Error {
@@ -281,6 +287,19 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
     } catch (e) {
       notes.push(`Classifier skipped: ${(e as Error).message}`);
     }
+    check();
+  }
+
+  // 6. The source images: which original photos hold each shape. -------------
+  // Pure geometry from the camera positions ODM recovered; no pixels are read.
+  report("sourcing");
+  if (opts.sources !== undefined) {
+    const sources = opts.sources;
+    candidates = candidates.map((c, i) => {
+      if (i % 20 === 19) report("sourcing", i / candidates.length);
+      return { ...c, sourceImages: sources?.set ? sourceImagesOf(spotSources(sources, c)) : null };
+    });
+    notes.push(sourceImagesNote(candidates, sources));
     check();
   }
 

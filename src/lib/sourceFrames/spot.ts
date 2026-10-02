@@ -3,7 +3,7 @@
 // prints it and the closer-look viewer draws it.
 import type { LatLng2 } from "../geo";
 import { chipSpanM } from "../weedScout/candidates";
-import type { Candidate } from "../weedScout/types";
+import type { Candidate, SourceImages } from "../weedScout/types";
 import type { LatLngAlt } from "./odm";
 import type { ScanSources } from "./scan";
 import { type AreaView, selectFramesForArea } from "./select";
@@ -43,6 +43,29 @@ export function findingOutline(c: Candidate, groundAltM: number): LatLngAlt[] {
     { lat: lat + dLat, lng: lng - dLng, altM: groundAltM }, { lat: lat + dLat, lng: lng + dLng, altM: groundAltM },
     { lat: lat - dLat, lng: lng + dLng, altM: groundAltM }, { lat: lat - dLat, lng: lng - dLng, altM: groundAltM },
   ];
+}
+
+/** The short form the scan stores on each shape. */
+export function sourceImagesOf(spot: SpotSources): SourceImages | null {
+  if (spot.unavailable === "no reconstruction" || spot.unavailable === "no ground height") return null;
+  const best = spot.views[0] ?? null;
+  return { photos: spot.views.length, best: best?.filename ?? null, coverage: best?.coverage ?? null, kept: spot.lookable.length > 0 };
+}
+
+/** One line for the run's notes: did step three find the photos. */
+export function sourceImagesNote(candidates: readonly { sourceImages?: SourceImages | null }[], sources: ScanSources | null): string {
+  if (!sources?.set) {
+    return sources?.reconstruction === "none"
+      ? "Source images: no camera positions for this scan (an imported map, or its processing archive is missing), so no shape can be matched to a photo."
+      : "Source images: the camera positions had not loaded when the scan ran; run it again to match shapes to photos.";
+  }
+  const shapes = candidates.filter(c => c.sourceImages);
+  const seen = shapes.filter(c => c.sourceImages!.photos > 0);
+  const kept = seen.filter(c => c.sourceImages!.kept);
+  const whole = seen.filter(c => (c.sourceImages!.coverage ?? 0) >= 0.999);
+  const photos = new Set(seen.map(c => c.sourceImages!.best)).size;
+  return `Source images: ${seen.length} of ${shapes.length} shapes matched to original photos (${whole.length} held whole by one photo, ${photos} photos chosen as best). ` +
+    (kept.length ? `${kept.length} can be opened at full resolution.` : "None can be opened: the originals were not kept for this scan.");
 }
 
 export function spotSources(sources: ScanSources | null, c: Candidate): SpotSources {

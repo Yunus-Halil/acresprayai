@@ -99,6 +99,7 @@ const STAGE_LABEL: Record<ScoutProgress["stage"], string> = {
   ranking: "Ranking candidates",
   chips: "Rendering chips",
   classifying: "Scoring plant spots",
+  sourcing: "Finding source images",
   done: "Done",
 };
 
@@ -358,8 +359,8 @@ export function WeedScoutTab({
     if (!rings.length || !tileUrl || running) return;
     startRun(taskId,
       { boundary: rings, tileUrl, maxNative, params, feedback },
-      { context, crop, growthStage: stage, fieldId, unitSystem: units });
-  }, [taskId, rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId, units]);
+      { context, crop, growthStage: stage, fieldId, unitSystem: units, sources });
+  }, [taskId, rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId, units, sources]);
 
   /** Save one spot with its effective verdict, identification and notes. */
   const saveOne = useCallback(async (c: Candidate): Promise<string | null> => {
@@ -816,6 +817,11 @@ export function WeedScoutTab({
                   <Row k="Regions" v={`${result.regions.length} (${areaText(result.regions.reduce((s, r) => s + r.areaM2, 0))})`} />
                   {result.rows?.usable && <Row k="Row model" v={`confidence ${result.rows.confidence.toFixed(2)}, ${result.rows.medianAngleDeg.toFixed(0)} deg, pitch ${fmtLengthCm(result.rows.medianPitchM * 100, units).text}`} />}
                   <Row k="Candidates" v={`${candidates.length} (${regionCandidates.length} regions, ${pointCandidates.length} points)`} />
+                  <Row k="Source images" v={
+                    candidates.some(c => c.sourceImages)
+                      ? `${candidates.filter(c => c.sourceImages && c.sourceImages.photos > 0).length} of ${candidates.length} shapes matched to photos, ${candidates.filter(c => c.sourceImages?.kept).length} openable`
+                      : "no camera positions for this scan"
+                  } />
                   {result.notes.map((n, i) => (
                     <div key={i} className="text-neutral-500 flex items-start gap-1.5 pt-1"><AlertTriangle className="h-3 w-3 shrink-0 mt-0.5 text-amber-500/80" /> {n}</div>
                   ))}

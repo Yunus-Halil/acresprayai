@@ -30,6 +30,17 @@ import type { Inference, Prediction } from "./classify/types";
  */
 export type FindingClass = "vegetation" | "bare_ground" | "thin_stand" | "wet_or_dark_ground" | "other_anomaly";
 
+/** Which original photos hold a shape, in short: the full list lives in lib/sourceFrames. */
+export type SourceImages = {
+  /** Photos that hold at least part of the shape. */
+  photos: number;
+  /** The one that holds it best, and how much of it (0..1). */
+  best: string | null;
+  coverage: number | null;
+  /** Whether the best photo's original was kept, so it can be opened. */
+  kept: boolean;
+};
+
 /** Everything the pipeline needs about the imagery, and nothing about the UI. */
 export type ScoutInputs = {
   /** Field outline, WGS84, one or more rings. */
@@ -326,6 +337,8 @@ export type Candidate = {
   prediction?: Prediction | null;
   /** Whether the classifier was asked about this spot, and why not when it was not. */
   inference?: Inference | null;
+  /** Step three: the original photos that hold this shape. Null when the scan has no camera positions. */
+  sourceImages?: SourceImages | null;
   /** PNG data URL of the chip, when one was rendered. */
   chip: string | null;
   chipSpanM: number | null;
@@ -334,7 +347,7 @@ export type Candidate = {
 
 export type ScoutStage =
   | "stitching" | "tiling" | "masking" | "baseline" | "regions" | "rows" | "blobs"
-  | "sweeping" | "ranking" | "chips" | "classifying" | "done";
+  | "sweeping" | "ranking" | "chips" | "classifying" | "sourcing" | "done";
 
 export type ScoutProgress = {
   stage: ScoutStage;
