@@ -259,9 +259,11 @@ export default function FieldDetail() {
   const pickOriginals = (t: Task) => { setAttachTarget(t); attachInputRef.current?.click(); };
   const onOriginalsPicked = async (list: FileList | null) => {
     const t = attachTarget;
+    // Copy first: a FileList is live, and resetting the input empties it.
+    const files = list ? Array.from(list) : [];
     if (attachInputRef.current) attachInputRef.current.value = "";
-    if (!t?.odm_uuid || !list?.length) return;
-    const files = Array.from(list);
+    if (!t?.odm_uuid) return;
+    if (!files.length) { toast.info("No photographs were selected."); return; }
     if (files.length !== t.image_count) {
       const go = window.confirm(`This scan was made from ${t.image_count} images and you selected ${files.length}. Keep these anyway?`);
       if (!go) return;
