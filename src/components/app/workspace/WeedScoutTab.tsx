@@ -55,6 +55,7 @@ import { type NativeComparison, SpotPopup } from "./SpotPopup";
 import { chipSpanM } from "@/lib/weedScout/candidates";
 import { type Prediction, loadCurrentModel, resolutionUsable } from "@/lib/weedScout/classify";
 import { getClassifier } from "@/lib/weedScout/classify/onnxClassifier";
+import { dataUrlToPixels } from "@/lib/weedScout/classify/preprocess";
 import { cropNative } from "@/lib/sourceFrames/crop";
 import { type ScanSources, downloadFrame, loadScanSources } from "@/lib/sourceFrames/scan";
 import { spotSources } from "@/lib/sourceFrames/spot";
@@ -345,11 +346,18 @@ export function WeedScoutTab({
       // the experiment that decides whether these pixels are good enough. The
       // record says when they are still coarser than the model was trained on.
       let prediction: Prediction | null = null;
+      let orthoPrediction: Prediction | null = c.prediction ?? null;
       const meta = await loadCurrentModel();
       const clf = meta ? await getClassifier(meta) : null;
-      if (clf) [prediction] = await clf.classify([{ pixels: crop.pixels, diameterM: c.blob?.equivDiameterM ?? null }]);
+      if (clf) {
+        const diameterM = c.blob?.equivDiameterM ?? null;
+        [prediction] = await clf.classify([{ pixels: crop.pixels, diameterM }]);
+        // The same model on the ortho chip, also ungated, so the two numbers are comparable.
+        const orthoPixels = !orthoPrediction && c.chip && c.chipSpanM ? await dataUrlToPixels(c.chip, c.chipSpanM) : null;
+        if (orthoPixels) [orthoPrediction] = await clf.classify([{ pixels: orthoPixels, diameterM }]);
+      }
       const belowTrained = !!meta && !resolutionUsable(meta, crop.gsdM);
-      setComparisons(m => ({ ...m, [c.id]: { status: "done", crop, prediction, belowTrained, requiredGsdM: meta?.max_gsd_m ?? null } }));
+      setComparisons(m => ({ ...m, [c.id]: { status: "done", crop, prediction, orthoPrediction, belowTrained, requiredGsdM: meta?.max_gsd_m ?? null } }));
     } catch (e) {
       setComparisons(m => ({ ...m, [c.id]: { status: "error", error: (e as Error).message } }));
     }

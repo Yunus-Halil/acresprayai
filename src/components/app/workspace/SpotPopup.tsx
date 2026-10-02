@@ -221,7 +221,7 @@ export function SpotPopup(props: SpotPopupProps) {
 
 export type NativeComparison =
   | { status: "loading" }
-  | { status: "done"; crop: NativeCrop; prediction: Prediction | null; belowTrained: boolean; requiredGsdM: number | null }
+  | { status: "done"; crop: NativeCrop; prediction: Prediction | null; orthoPrediction: Prediction | null; belowTrained: boolean; requiredGsdM: number | null }
   | { status: "error"; error: string };
 
 /**
@@ -258,7 +258,7 @@ function SourceFramesBlock({ c, units, sources, origin, comparison, onCompare }:
         <div className="grid grid-cols-2 gap-2 pt-1" data-testid="native-comparison">
           <div>
             {c.chip && <img src={c.chip} alt="" className="w-full rounded-sm border border-[#222]" style={{ imageRendering: "pixelated" }} />}
-            <p className="pt-0.5">Ortho: {gsd(c.chipGsdM)}, spot {px(sources.targetPx.ortho)}{c.prediction ? `, model ${Math.round(c.prediction.pWeed * 100)}% weed` : ""}</p>
+            <p className="pt-0.5">Ortho: {gsd(c.chipGsdM)}, spot {px(sources.targetPx.ortho)}{comparison.orthoPrediction ? `, model ${Math.round(comparison.orthoPrediction.pWeed * 100)}% weed` : ", no model"}</p>
           </div>
           <div>
             <img src={comparison.crop.dataUrl} alt="" className="w-full rounded-sm border border-[#222]" style={{ imageRendering: "pixelated" }} />
