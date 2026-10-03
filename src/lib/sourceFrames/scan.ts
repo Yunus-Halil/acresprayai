@@ -1,135 +1,18 @@
-// A scan's source material, as far as it exists: the reconstruction ODM left
-// in the mirrored archive, and the original frames the uploader kept.
-//
-// The reconstruction files are small and sit near the end of a gigabyte zip.
-// The first time a scan is opened they are pulled out with range requests on a
-// signed URL (lib/sourceFrames/zipRange.ts) and written back next to the zip,
-// so every later open reads four small files. Scans made before originals were
-// kept have a reconstruction and no frames; imported orthomosaics have neither.
-// `origin` says which, so the UI can say "no frames were kept" rather than
-// "none found".
+// The app's view of a scan's source material: lib/sourceFrames/sources.ts
+// bound to the browser's Supabase client. Everything that reads the archive
+// or the frame list is in sources.ts, so the developer benchmark runs the
+// same code against the same storage with its own credentials.
 import { supabase } from "@/integrations/supabase/client";
-import type { FrameManifestEntry } from "@/lib/scanUpload";
-import { framesManifestPath } from "@/lib/scanUpload";
-import { type SourceFrameSet, groundAltitudeFromOdm, parseOdmOutputs } from "./odm";
-import { listZip, rangeReaderFor, readZipEntry } from "./zipRange";
+import type { FrameManifestEntry } from "./manifest";
+import { type ScanSources, downloadFrameWith, loadScanSourcesWith } from "./sources";
 
-const BUCKET = "scans";
-const MEMBERS = {
-  cameras: "cameras.json",
-  shots: "odm_report/shots.geojson",
-  images: "images.json",
-  stats: "odm_report/stats.json",
-} as const;
+export type { OdmStats, ScanSources } from "./sources";
 
-export type OdmStats = { odm_processing_statistics?: { average_gsd?: number } };
-
-export type ScanSources = {
-  set: SourceFrameSet | null;
-  stats: OdmStats | null;
-  /** Estimated from ODM's average GSD; null when the archive did not say. */
-  groundAltM: number | null;
-  /** Retained originals by camera filename. Null when none were kept for this scan. */
-  frames: Record<string, FrameManifestEntry> | null;
-  reconstruction: "stored" | "extracted" | "none";
-};
-
-const reconstructionPrefix = (userId: string, odmUuid: string) => `${userId}/odm/${odmUuid}/reconstruction`;
-const memberKey = (name: string) => name.replace(/\//g, "__");
-
-async function downloadJson(path: string): Promise<unknown | null> {
-  const { data, error } = await supabase.storage.from(BUCKET).download(path);
-  if (error || !data) return null;
-  try { return JSON.parse(await data.text()); } catch { return null; }
-}
-
-/** Names and sizes of the objects under a prefix. */
-async function listDir(prefix: string): Promise<Map<string, number>> {
-  const { data } = await supabase.storage.from(BUCKET).list(prefix, { limit: 100 });
-  return new Map((data ?? []).map(o => [o.name, Number((o.metadata as { size?: number } | null)?.size ?? 0)]));
-}
-
-/**
- * Size of a stored object, from the listing. A one-byte range request would
- * also say, but the browser is not allowed to read Content-Range on a
- * cross-origin response, so the listing is the only honest source.
- */
-async function sizeOf(path: string): Promise<number> {
-  const i = path.lastIndexOf("/");
-  const size = (await listDir(path.slice(0, i))).get(path.slice(i + 1));
-  if (!size) throw new Error("could not size the archive");
-  return size;
-}
-
-/** Pull the reconstruction members out of the mirrored archive and store them. */
-async function extractReconstruction(userId: string, odmUuid: string, outputPath: string): Promise<Record<keyof typeof MEMBERS, unknown> | null> {
-  const total = await sizeOf(outputPath);
-  const { data: signed, error } = await supabase.storage.from(BUCKET).createSignedUrl(outputPath, 1800);
-  if (error || !signed?.signedUrl) return null;
-  const read = rangeReaderFor(signed.signedUrl);
-  const entries = await listZip(read, total);
-  const out: Partial<Record<keyof typeof MEMBERS, unknown>> = {};
-  for (const [key, name] of Object.entries(MEMBERS) as [keyof typeof MEMBERS, string][]) {
-    const entry = entries.find(e => e.name === name || e.name.endsWith(`/${name}`));
-    if (!entry) continue;
-    const bytes = await readZipEntry(read, entry);
-    const text = new TextDecoder().decode(bytes);
-    try { out[key] = JSON.parse(text); } catch { continue; }
-    await supabase.storage.from(BUCKET).upload(
-      `${reconstructionPrefix(userId, odmUuid)}/${memberKey(name)}`,
-      new Blob([text], { type: "application/json" }),
-      { contentType: "application/json", upsert: true },
-    );
-  }
-  return out.cameras && out.shots ? (out as Record<keyof typeof MEMBERS, unknown>) : null;
-}
-
-export async function loadScanSources(input: { userId: string; odmUuid: string; outputPath: string | null }): Promise<ScanSources> {
-  const { userId, odmUuid, outputPath } = input;
-  const prefix = reconstructionPrefix(userId, odmUuid);
-  let reconstruction: ScanSources["reconstruction"] = "none";
-  let files: Partial<Record<keyof typeof MEMBERS, unknown>> = {};
-  // One listing says what was stored before; nothing is fetched that is not there.
-  const present = await listDir(prefix);
-  const stored = await Promise.all(
-    (Object.entries(MEMBERS) as [keyof typeof MEMBERS, string][])
-      .filter(([, name]) => present.has(memberKey(name)))
-      .map(async ([k, name]) => [k, await downloadJson(`${prefix}/${memberKey(name)}`)] as const),
-  );
-  for (const [k, v] of stored) if (v) files[k] = v;
-  if (files.cameras && files.shots) {
-    reconstruction = "stored";
-  } else if (outputPath) {
-    try {
-      const extracted = await extractReconstruction(userId, odmUuid, outputPath);
-      if (extracted) { files = extracted; reconstruction = "extracted"; }
-    } catch (e) {
-      console.warn("[source-frames] reconstruction extraction failed:", (e as Error)?.message ?? e);
-    }
-  }
-  let set: SourceFrameSet | null = null;
-  if (reconstruction !== "none") {
-    try {
-      set = parseOdmOutputs({ camerasJson: files.cameras, shotsGeojson: files.shots, imagesJson: files.images ?? [] });
-    } catch (e) {
-      console.warn("[source-frames] reconstruction not usable:", (e as Error)?.message ?? e);
-      reconstruction = "none";
-    }
-  }
-  const stats = (files.stats as OdmStats | undefined) ?? null;
-  const manifestPath = framesManifestPath(userId, odmUuid);
-  const hasManifest = (await listDir(manifestPath.slice(0, manifestPath.lastIndexOf("/")))).has("frames.json");
-  const manifest = hasManifest ? ((await downloadJson(manifestPath)) as FrameManifestEntry[] | null) : null;
-  const frames = Array.isArray(manifest) ? Object.fromEntries(manifest.map(m => [m.filename, m])) : null;
-  return {
-    set, stats,
-    groundAltM: set ? groundAltitudeFromOdm(set, stats?.odm_processing_statistics?.average_gsd ?? null) : null,
-    frames, reconstruction,
-  };
+export function loadScanSources(input: { userId: string; odmUuid: string; outputPath: string | null }): Promise<ScanSources> {
+  return loadScanSourcesWith(supabase, input);
 }
 
 /** The original bytes of one kept frame. */
-export async function downloadFrame(entry: FrameManifestEntry): Promise<Blob | null> {
-  const { data, error } = await supabase.storage.from(BUCKET).download(entry.path);
-  return error ? null : data;
+export function downloadFrame(entry: FrameManifestEntry): Promise<Blob | null> {
+  return downloadFrameWith(supabase, entry);
 }

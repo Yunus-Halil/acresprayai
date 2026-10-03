@@ -312,3 +312,42 @@ Yes, it can be added without destabilising anything, and the review changes what
 - The hypothesis itself is plausible on the arithmetic (2.3x) and unproven on pixels. It
   gets its test on the next flight, the same flight the detection foundation and the species
   layer are waiting for, provided the frames from it are kept.
+
+## 7. The Layer 2 benchmark by scan id (2026-10-03)
+
+`npm run bench:frames -- --scan <id>` runs the ortho-against-native comparison on a scan
+that was uploaded through the product, with no local folders: the scan row, the archive, the
+frame list, the originals and the saved findings all come from the project, read with a
+service-role key on a developer's machine. Nothing under `scripts/bench/` is imported by the
+app; a test walks `src/` to keep it that way.
+
+What it reuses, unchanged: the projection and ranking (`sourceFrames/odm.ts`, `select.ts`),
+the app's own choice of photographs for a shape (`spot.ts`), the crop rectangle (`crop.ts`),
+and the archive reader (`sourceFrames/sources.ts`, which `scan.ts` now binds to the browser
+client; the benchmark binds the same function to its own client). The frame-list contract
+moved to `sourceFrames/manifest.ts`: ODM's filename, to the manifest entry, to the storage
+key, with the uploader's own rename rule for a PNG that ODM saw as a JPEG. No key is ever
+built from a name, and the 2,400 px copy is never read as the original (it is not in our
+storage).
+
+| Question | Answer |
+|---|---|
+| Which id | `odm_tasks.id` (the scan id in the app's URL and in `weed_observations.scan_id`), or `odm_uuid`, or an unambiguous prefix of the uuid |
+| Findings | `weed_observations` rows for the scan, best score first: what the operator saved with "Save all". `--finding <candidate_id or row id>` for one; `--limit N`; `--point lat,lng[,spanM]` for a plumbing check on a scan with nothing saved |
+| Reconstruction | the four stored members under `<user>/odm/<uuid>/reconstruction/`, else range-read out of `all.zip` and stored there, exactly as the app does on first open |
+| Originals | `scans/<user>/<uuid>/frames.json` to the entry, the entry's `path` to the bytes; sha-256 and byte count in the record |
+| Ortho side | the stored chip in `weed-chips`, scored by the same detector (`--no-ortho` to skip) |
+| Detector | Roboflow `weeds-nxe1w/1` through `ROBOFLOW_API_KEY`, confidence 40 by default; an experimental baseline, never ground truth, never a treatment input. Unset key or `--no-model`: crops and geometry only |
+| Output | `<out>/index.html` (ortho chip, native crop, native crop with boxes, per finding), `<out>/results.json`, `<out>/crops/`; default `data/bench/<scan prefix>-<date>/`, gitignored |
+| Statuses | `SUCCESS`, `SUCCESS_NO_DETECTIONS`, `MODEL_SKIPPED`, `RECONSTRUCTION_UNAVAILABLE`, `PROJECTION_FAILED`, `NO_MANIFEST`, `NO_NATIVE_SOURCE_FRAME`, `ORIGINAL_DOWNLOAD_FAILED`, `ORIGINAL_DECODE_FAILED`, `CROP_OUT_OF_BOUNDS`, `API_ERROR`; one per finding, with the reason |
+| Writes | none to any table. The operator's verdict, its source and the stored prediction are copied into the record |
+| Offline | `--odm <dir>` (the four reconstruction files, the shape of the test fixture) and `--frames <dir>` (photos by camera filename); the record says the photo came from a folder |
+
+Old scans without originals are not repaired here: a photograph holds the shape, the record
+says `NO_MANIFEST` (no frame list) or `NO_NATIVE_SOURCE_FRAME` (that photograph was not kept),
+and no other image is substituted. "Keep original photos" on the scan card is the repair.
+
+Known limits: the ground height is still the estimate from ODM's average GSD (a DSM would
+remove it); the scale between the uploaded frame and the original is measured on the decoded
+original, with EXIF's figure recorded beside it; the ortho side exists only for findings that
+were saved with a chip.

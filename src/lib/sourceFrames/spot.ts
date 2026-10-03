@@ -5,8 +5,9 @@
 import type { LatLng2 } from "../geo";
 import { chipSpanM } from "../weedScout/candidates";
 import type { Candidate, SourceImages } from "../weedScout/types";
+import { lookupOriginal } from "./manifest";
 import type { LatLngAlt } from "./odm";
-import type { ScanSources } from "./scan";
+import type { ScanSources } from "./sources";
 import { type AreaView, coverZone, nearestViews, selectFramesForArea } from "./select";
 
 /** Outline vertices sent through the projection; a region's ring is thinned to this. */
@@ -104,7 +105,7 @@ export function spotSources(sources: ScanSources | null, c: Candidate): SpotSour
     views,
     chosen,
     nearestOnly,
-    lookable: chosen.filter(v => sources.frames?.[v.filename]),
+    lookable: chosen.filter(v => lookupOriginal(sources.frames, v.filename).ok),
     originalsKept: !!sources.frames && Object.keys(sources.frames).length > 0,
     nativeScale,
     orthoGsdM: c.chipGsdM,

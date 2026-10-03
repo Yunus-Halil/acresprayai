@@ -20,6 +20,7 @@
 // original lands first; an image counts as uploaded only when both copies have.
 import { supabase } from "@/integrations/supabase/client";
 import { prepareForODM } from "@/lib/imagePrep";
+import { type FrameManifestEntry, frameStorageName, framesManifestPath, framesPrefix } from "@/lib/sourceFrames/manifest";
 import { storageKey } from "@/lib/storage";
 
 const PROJECT_REF = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -97,20 +98,10 @@ const ckptKey = (fieldId: string) => storageKey("upload", fieldId);
 /** Files have no stable id across page loads; name+size+mtime is close enough. */
 const fileKey = (f: File) => `${f.name}:${f.size}:${f.lastModified}`;
 
-/** Where a scan's original frames live. First segment is the owner, which the bucket policy keys on. */
-export const framesPrefix = (userId: string, odmUuid: string) => `${userId}/${odmUuid}/frames`;
-export const framesManifestPath = (userId: string, odmUuid: string) => `${userId}/${odmUuid}/frames.json`;
-/** Storage keys are plainer than file names; the manifest maps the real name to the key. */
-export const frameStorageName = (name: string) => name.replace(/[^A-Za-z0-9._-]/g, "_");
-
-/** One kept original. `filename` is what the camera wrote and what ODM's images.json calls it. */
-export type FrameManifestEntry = {
-  filename: string;
-  path: string;
-  bytes: number;
-  type: string;
-  lastModified: number;
-};
+// The frame list's shape and paths live in lib/sourceFrames/manifest.ts, which
+// is pure so the developer tooling reads the same contract; re-exported here
+// for the readers that always imported them from the uploader.
+export { type FrameManifestEntry, frameStorageName, framesManifestPath, framesPrefix } from "@/lib/sourceFrames/manifest";
 
 export function readCheckpoint(fieldId: string): Checkpoint | null {
   try {

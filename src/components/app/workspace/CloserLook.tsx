@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { type UnitSystem, fmtLengthCm } from "@/lib/units";
 import { type CloserLook as Look, renderCloserLook } from "@/lib/sourceFrames/crop";
+import { lookupOriginal } from "@/lib/sourceFrames/manifest";
 import { type ScanSources, downloadFrame } from "@/lib/sourceFrames/scan";
 import type { SpotSources } from "@/lib/sourceFrames/spot";
 
@@ -30,8 +31,9 @@ export function CloserLookDialog({ target, sources, units, onClose }: {
 
   useEffect(() => {
     if (!view || !scale) return;
-    const entry = sources?.frames?.[view.filename];
-    if (!entry) return;
+    const found = lookupOriginal(sources?.frames ?? null, view.filename);
+    if (found.ok === false) return;
+    const entry = found.entry;
     let cancelled = false;
     let made: string | null = null;
     setLook(null); setError(null);

@@ -40,3 +40,7 @@ src/test/videos/
 # The onnxruntime-web WebAssembly runtime, copied from node_modules by
 # scripts/copy-ort-wasm.cjs before dev and build. Fourteen megabytes npm already ships.
 public/ort/
+
+# Benchmark output (scripts/bench): crops cut from kept originals, records,
+# pages. Imagery from real fields; never committed.
+data/

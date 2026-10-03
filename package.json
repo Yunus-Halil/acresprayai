@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "build:share-card": "node scripts/build-share-card.cjs",
     "build:favicons": "node scripts/build-favicons.cjs",
-    "test:live": "node tests/integration/weed-v1-live-validation.mjs"
+    "test:live": "node tests/integration/weed-v1-live-validation.mjs",
+    "bench:frames": "vite-node scripts/bench/sourceFrameBench.ts --"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",
@@ -99,6 +100,7 @@
     "@testing-library/user-event": "^14.6.4",
     "@types/node": "^22.16.5",
     "@types/piexifjs": "^1.0.0",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react-swc": "^3.11.0",
@@ -107,6 +109,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
+    "jpeg-js": "^0.4.4",
     "jsdom": "^20.0.3",
     "playwright-core": "^1.63.0",
     "pngjs": "^7.0.0",

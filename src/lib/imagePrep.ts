@@ -5,6 +5,7 @@
 // Without this, ODM falls back to a local meter grid anchored at (0,0) and
 // the resulting ortho lands in the Gulf of Guinea.
 import piexif from "piexifjs";
+import { odmFilenameFor } from "@/lib/sourceFrames/manifest";
 
 function fileToDataURL(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -93,6 +94,7 @@ export async function prepareForODM(
     }
   }
 
-  const newName = file.name.replace(/\.(png|tiff?|heic|webp)$/i, ".jpg");
+  // One rule, shared with the frame-list lookup: ODM will know this frame by this name.
+  const newName = odmFilenameFor(file.name);
   return new File([finalBlob], newName, { type: "image/jpeg", lastModified: file.lastModified });
 }
