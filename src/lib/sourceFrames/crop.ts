@@ -35,6 +35,8 @@ export function areaWindow(
 export type CloserLook = {
   /** Object URL of the rendered JPEG; revoke when done. */
   url: string;
+  /** The same window with nothing drawn on it, for a detector. */
+  clean: Blob;
   width: number;
   height: number;
   window: AreaWindow;
@@ -57,6 +59,9 @@ export async function renderCloserLook(
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(bitmap, win.x, win.y, win.width, win.height, 0, 0, win.width, win.height);
+    // The same pixels before anything is drawn on them: what a detector is shown.
+    const clean = await new Promise<Blob | null>(res => canvas.toBlob(res, "image/jpeg", 0.92));
+    if (!clean) return null;
     if (outlinePx.length >= 3) {
       ctx.lineWidth = Math.max(3, Math.round(win.width / 500));
       ctx.strokeStyle = "#fbbf24";
@@ -71,7 +76,7 @@ export async function renderCloserLook(
     }
     const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, "image/jpeg", 0.92));
     if (!blob) return null;
-    return { url: URL.createObjectURL(blob), width: win.width, height: win.height, window: win, gsdM: uploadedGsdM / scale };
+    return { url: URL.createObjectURL(blob), clean, width: win.width, height: win.height, window: win, gsdM: uploadedGsdM / scale };
   } finally {
     bitmap.close?.();
   }
