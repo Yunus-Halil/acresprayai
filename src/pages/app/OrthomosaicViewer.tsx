@@ -1101,6 +1101,8 @@ export default function OrthomosaicViewer() {
             saveUserPolygon={saveUserPolygon}
             fieldId={field?.id ?? null}
             deleteUserPolygon={deleteUserPolygon}
+            odmUuid={task.odm_uuid ?? null}
+            outputPath={task.output_path ?? null}
             openSettings={() => openTab("settings")}
             settings={settings}
             scansApi={{

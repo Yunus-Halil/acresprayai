@@ -23,6 +23,10 @@ import {
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
+import { useAuth } from "@/lib/auth";
+import { type ScanSources, loadScanSources } from "@/lib/sourceFrames/scan";
+import { ringCandidate, spotSources } from "@/lib/sourceFrames/spot";
+import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
 import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
 } from "@/lib/droneSpecs";
@@ -139,6 +143,9 @@ export function FieldViewTab(props: {
   setDraftUserPoly: React.Dispatch<React.SetStateAction<DraftPolygon | null>>;
   saveUserPolygon: (f: { name: string; issue_type: string; color: string; notes: string }) => Promise<void>;
   deleteUserPolygon: (id: string) => Promise<void>;
+  /** The ODM task behind this scan and its mirrored archive, so a marked area can be read from the photos that saw it. */
+  odmUuid?: string | null;
+  outputPath?: string | null;
   settings: FarmerSettings;
   /** Opens the workspace's Settings tab, which may not currently be open. */
   openSettings: () => void;
@@ -159,6 +166,7 @@ export function FieldViewTab(props: {
   };
 }) {
   const units = useUnitSystem();
+  const { user } = useAuth();
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
@@ -170,6 +178,27 @@ export function FieldViewTab(props: {
     userPolys, userPolyToolActive, setUserPolyToolActive,
     draftUserPoly, setDraftUserPoly, saveUserPolygon, deleteUserPolygon,
   } = props;
+
+  // ---- The closer look on a marked area --------------------------------------
+  // The photographs behind the mosaic, loaded once per scan, so an area the
+  // operator drew (or applied from the scout) opens in the original photos
+  // that saw it, exactly as a scout spot does.
+  const [sources, setSources] = useState<ScanSources | null>(null);
+  const [closerLook, setCloserLook] = useState<CloserLookTarget | null>(null);
+  useEffect(() => {
+    const odmUuid = props.odmUuid ?? null;
+    if (!user || !odmUuid) { setSources(null); return; }
+    let cancelled = false;
+    loadScanSources({ userId: user.id, odmUuid, outputPath: props.outputPath ?? null })
+      .then(s => { if (!cancelled) setSources(s); })
+      .catch(() => { if (!cancelled) setSources(null); });
+    return () => { cancelled = true; };
+  }, [user, props.odmUuid, props.outputPath]);
+  const lookAt = useCallback((id: string) => {
+    const p = userPolys.find(x => x.id === id);
+    if (!p) return;
+    setCloserLook({ title: p.name, spot: spotSources(sources, ringCandidate(p.id, p.ring)) });
+  }, [userPolys, sources]);
 
   // ---- Scan panel + single-map compare --------------------------------------
   // The scan history lives HERE, beside the one map, replacing the old History
@@ -469,7 +498,7 @@ export function FieldViewTab(props: {
           removeVertexOnTap={removePointMode}
         />
         {layers.userAnnotations && userPolys.length > 0 && (
-          <UserPolyLayer polys={userPolys} onDelete={deleteUserPolygon} />
+          <UserPolyLayer polys={userPolys} onDelete={deleteUserPolygon} onLook={props.odmUuid ? lookAt : undefined} />
         )}
         {layers.gridZones && gridZoneLoad && gridZoneLoad.zones.length > 0 && (
           // fieldId and boundary are what let the popup write a classification
@@ -975,6 +1004,8 @@ export function FieldViewTab(props: {
           </div>
         </div>
       )}
+
+      <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} />
 
       {/* User polygon metadata form */}
       {draftUserPoly && (

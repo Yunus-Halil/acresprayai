@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { groundAltitudeFromOdm, parseOdmOutputs } from "@/lib/sourceFrames/odm";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
-import { findingOutline, sourceImagesNote, sourceImagesOf, spotSources } from "@/lib/sourceFrames/spot";
+import { findingOutline, ringCandidate, sourceImagesNote, sourceImagesOf, spotSources } from "@/lib/sourceFrames/spot";
 import type { Candidate, Region } from "@/lib/weedScout/types";
 
 const DIR = join(process.cwd(), "src", "test", "fixtures", "odm-dd0f6314");
@@ -134,5 +134,24 @@ describe("findingOutline", () => {
     expect(out).toHaveLength(4);
     const widthM = (out[1].lng - out[0].lng) * 111_320 * Math.cos((CENTRE.lat * Math.PI) / 180);
     expect(widthM).toBeGreaterThanOrEqual(2.99);
+  });
+});
+
+describe("ringCandidate: a shape the operator drew, read like a scout spot", () => {
+  it("takes the ring as its outline and is held by the same photos as a scout region there", () => {
+    const ring = squareRegion(20).rings[0];
+    const c = ringCandidate("drawn-1", ring);
+    expect(c.region?.rings[0]).toBe(ring);
+    expect(c.centroid.lat).toBeCloseTo(CENTRE.lat, 6);
+    expect(c.centroid.lng).toBeCloseTo(CENTRE.lng, 6);
+    const drawn = spotSources(sources({ frames: keptAll }), c);
+    const scout = spotSources(sources({ frames: keptAll }), finding());
+    expect(drawn.unavailable).toBeNull();
+    expect(drawn.views[0].filename).toBe(scout.views[0].filename);
+    expect(drawn.lookable.length).toBe(drawn.chosen.length);
+  });
+
+  it("a ring with fewer than three points is a point, not a region", () => {
+    expect(ringCandidate("p", [CENTRE]).region).toBeNull();
   });
 });

@@ -728,8 +728,8 @@ export const USER_POLY_COLORS: Record<string, string> = {
 export const USER_POLY_ISSUES = ["Bare soil", "Waterlogging", "Pest damage", "Weed pressure", "Other"] as const;
 
 export function UserPolyLayer({
-  polys, onDelete,
-}: { polys: UserPoly[]; onDelete: (id: string) => void }) {
+  polys, onDelete, onLook,
+}: { polys: UserPoly[]; onDelete: (id: string) => void; onLook?: (id: string) => void }) {
   const map = useMap();
   const units = useUnitSystem();
   useEffect(() => {
@@ -748,8 +748,22 @@ export function UserPolyLayer({
       map.closePopup();
       onDelete(id);
     };
+    // The closer look: the shape in the original photographs that saw it.
+    const handlePopupLook = (evt: Event) => {
+      const btn = (evt.target as HTMLElement | null)?.closest?.("button[data-uap-look]") as HTMLButtonElement | null;
+      const id = btn?.dataset.uapLook;
+      if (!id || !onLook) return;
+      evt.preventDefault();
+      evt.stopPropagation();
+      if ("stopImmediatePropagation" in evt) evt.stopImmediatePropagation();
+      if (evt.type !== "click") return;
+      map.closePopup();
+      onLook(id);
+    };
     container.addEventListener("pointerdown", handlePopupDelete, true);
     container.addEventListener("click", handlePopupDelete, true);
+    container.addEventListener("pointerdown", handlePopupLook, true);
+    container.addEventListener("click", handlePopupLook, true);
     polys.forEach((p) => {
       const color = USER_POLY_COLORS[p.color] ?? "#fb923c";
       const poly = L.polygon(p.ring.map(pt => [pt.lat, pt.lng] as [number, number]), {
@@ -771,7 +785,10 @@ export function UserPolyLayer({
           ${identHtml}
           <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">Area: <span style="color:#f0f0f0;font-family:ui-monospace,monospace">${areaText}</span></div>
           ${p.notes ? `<div style="font-size:11px;color:#d1d5db;border-top:1px solid #222;padding-top:6px;margin-bottom:8px">${escapeHtml(p.notes)}</div>` : ""}
-          <button data-uap-delete="${escapeHtml(p.id)}" style="font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
+          <div style="display:flex;gap:6px;align-items:center">
+            ${onLook ? `<button data-uap-look="${escapeHtml(p.id)}" style="font-size:11px;color:#4CAF50;background:transparent;border:1px solid rgba(76,175,80,0.5);border-radius:3px;padding:3px 8px;cursor:pointer">Closer look</button>` : ""}
+            <button data-uap-delete="${escapeHtml(p.id)}" style="font-size:11px;color:#ef4444;background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:3px;padding:3px 8px;cursor:pointer">Delete</button>
+          </div>
         </div>
       `;
       poly.bindPopup(html, { className: "ai-zone-popup", maxWidth: 300, autoClose: true, closeOnClick: true });
@@ -781,9 +798,11 @@ export function UserPolyLayer({
     return () => {
       container.removeEventListener("pointerdown", handlePopupDelete, true);
       container.removeEventListener("click", handlePopupDelete, true);
+      container.removeEventListener("pointerdown", handlePopupLook, true);
+      container.removeEventListener("click", handlePopupLook, true);
       group.remove();
     };
-  }, [map, polys, onDelete, units]);
+  }, [map, polys, onDelete, onLook, units]);
   return null;
 }
 

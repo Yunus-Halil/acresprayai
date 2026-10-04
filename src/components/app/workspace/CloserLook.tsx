@@ -64,7 +64,7 @@ export function CloserLookDialog({ target, sources, units, onClose }: {
                 {orthoGsd && look ? `, against ${gsd(orthoGsd)} on the map (${(orthoGsd / look.gsdM).toFixed(1)}x the detail).` : "."}
                 {" "}The dashed line is the area the map flagged.
               </>
-            ) : "No photo to show."}
+            ) : noPhotoReason(target?.spot ?? null)}
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 flex-wrap text-[11px]">
@@ -93,4 +93,14 @@ export function CloserLookDialog({ target, sources, units, onClose }: {
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Why there is nothing to show, in the operator's terms. */
+export function noPhotoReason(spot: SpotSources | null): string {
+  if (!spot) return "No photo to show.";
+  if (spot.unavailable === "no reconstruction") return "No camera positions for this scan: an imported map, or its processing archive is missing, so no photo can be matched.";
+  if (spot.unavailable === "no ground height") return "The scan's archive carried no ground sample distance, so photos cannot be matched to this area.";
+  if (spot.unavailable === "not seen by any photo" || !spot.chosen.length) return "No photo holds this area.";
+  if (!spot.originalsKept) return "The original photos were not kept for this scan. \"Keep original photos\" on the field page adds them.";
+  return `${spot.chosen.length} photo${spot.chosen.length === 1 ? "" : "s"} hold this area, but ${spot.chosen.length === 1 ? "its original was" : "their originals were"} not kept.`;
 }

@@ -86,6 +86,25 @@ export function sourceImagesNote(candidates: readonly { sourceImages?: SourceIma
     (kept.length ? `${kept.length} can be opened at full resolution.` : "None can be opened: the originals were not kept for this scan.");
 }
 
+/**
+ * A shape the operator drew or applied, as the candidate step three reads:
+ * its ring is the outline, its centroid the centre. Nothing else is claimed
+ * about it, so the closer look works on a hand-marked area exactly as on a
+ * scout spot.
+ */
+export function ringCandidate(id: string, ring: LatLng2[]): Candidate {
+  const n = ring.length || 1;
+  const centroid = { lat: ring.reduce((s, p) => s + p.lat, 0) / n, lng: ring.reduce((s, p) => s + p.lng, 0) / n };
+  return {
+    id, tileId: "", centroid, kind: "not-average region", score: 0,
+    distanceToRowM: null, rowConfidence: null, anomalyZ: null, anomalyFeature: null, blobZ: null, blobZFeature: null,
+    blob: null, areaM2: 0, feedback: null, estimate: null, prediction: null, chip: null, chipSpanM: null, chipGsdM: null,
+    region: ring.length >= 3
+      ? { id, tileIds: [], rings: [ring], centroid, areaM2: 0, tileCount: 0, coreTiles: 0, meanStrength: 0, maxStrength: 0, meanFieldZ: [], drivers: [], klass: "different from the field" }
+      : null,
+  };
+}
+
 export function spotSources(sources: ScanSources | null, c: Candidate): SpotSources {
   const empty = (why: SpotSources["unavailable"]): SpotSources =>
     ({ unavailable: why, views: [], chosen: [], nearestOnly: false, lookable: [], originalsKept: !!sources?.frames && Object.keys(sources.frames).length > 0, nativeScale: null, orthoGsdM: c.chipGsdM, nativeGsdM: null, outline: [] });

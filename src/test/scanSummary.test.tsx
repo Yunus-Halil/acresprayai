@@ -71,10 +71,11 @@ describe("the hand-off", () => {
     expect(screen.getByText("Sign in to save.")).toBeInTheDocument();
   });
 
-  it("offers nothing to build when the scan found nothing, and says that is a result", () => {
+  it("offers nothing to build when the scan found nothing, and says the scan ran and found none", () => {
     renderSummary({ spots: 0, kept: 0, unsure: 0 });
     expect(screen.queryByRole("button", { name: /Flight Planner/ })).toBeNull();
-    expect(screen.getByText(/That is a result, not an absence/)).toBeInTheDocument();
+    expect(screen.getByText("No spots found.")).toBeInTheDocument();
+    expect(screen.getByText(/scanned successfully, and nothing exceeded the current detection threshold/)).toBeInTheDocument();
   });
 
   it("surfaces a failed save instead of implying everything landed", () => {

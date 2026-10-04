@@ -79,9 +79,10 @@ export function ScanSummary({
         </>
       )}
       {spots === 0 && (
-        <p className="text-[11px] text-neutral-400">
-          Nothing stood out at these settings. That is a result, not an absence.
-        </p>
+        <div className="space-y-0.5">
+          <p className="text-[12px] text-neutral-200">No spots found.</p>
+          <p className="text-[11px] text-neutral-500">The field was scanned successfully, and nothing exceeded the current detection threshold.</p>
+        </div>
       )}
     </section>
   );
