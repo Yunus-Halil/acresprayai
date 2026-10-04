@@ -11,7 +11,7 @@
 | `npm run preview` | Serve the built bundle |
 | `npm test` | Vitest, single run |
 | `npm run test:watch` | Vitest in watch mode |
-| `npm run bench:frames -- --scan <id>` | The Layer 2 benchmark on an uploaded scan: ortho chip against the native crop from the kept original, by `odm_tasks.id` or `odm_uuid`. Needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the environment or `.env`; `ROBOFLOW_API_KEY` for the baseline detector. Developer tooling; see `docs/review/source-frames-architecture.md` section 7 |
+| `npm run bench:frames -- --scan <id>` | The Layer 2 benchmark on an uploaded scan: ortho chip against the native crop from the kept original, by `odm_tasks.id` or `odm_uuid`. Needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the environment or `.env`; `ROBOFLOW_API_KEY` for the baseline detector. Developer tooling; see `docs/review/source-frames-architecture.md` section 7. The same comparison runs in the app under Weed Scout, "Benchmark", through the `bench-detect` function and its `ROBOFLOW_API_KEY` secret |
 | `npm run lint` | ESLint across the repo |
 
 Typecheck without emitting: `npx tsc --noEmit -p tsconfig.app.json`

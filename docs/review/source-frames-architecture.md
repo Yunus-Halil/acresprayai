@@ -351,3 +351,20 @@ Known limits: the ground height is still the estimate from ODM's average GSD (a 
 remove it); the scale between the uploaded frame and the original is measured on the decoded
 original, with EXIF's figure recorded beside it; the ortho side exists only for findings that
 were saved with a chip.
+
+### In the app (2026-10-04)
+
+The same benchmark runs inside Weed Scout, under "Benchmark: ortho chip against the native
+crop" below the run details, as the signed-in operator: the scout's top shapes are the
+findings (default 12), the kept original is read under the operator's own access, the crop
+is cut with a canvas (`sourceFrames/crop.ts`, `cutNativeWindow`, clean: no outline drawn),
+and the detector is asked through the `bench-detect` edge function, which holds
+`ROBOFLOW_API_KEY` as a function secret. The record and the page are the terminal tool's
+(`benchTypes.ts`, `benchCore.ts`, `benchReport.ts` are shared; `benchBrowser.ts` is the
+browser runner); "Save page" keeps the page as a file. Nothing is saved to any table. The
+browser imports the detector module's types only; a test walks `src/` to keep every
+reference to the shared module an `import type`.
+
+Set the secret once with `npx supabase secrets set ROBOFLOW_API_KEY=<key>`; without it
+the panel still cuts and shows the crops and every row says `API_ERROR: ROBOFLOW_API_KEY is
+not set on the server`.

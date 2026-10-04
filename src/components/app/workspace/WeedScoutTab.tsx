@@ -53,6 +53,7 @@ import { plannedAreaM2, plannedZones } from "@/lib/treatment/plannedArea";
 import { ScanSummary } from "./ScanSummary";
 import { type SpotPhoto, SpotPopup } from "./SpotPopup";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
+import { BenchmarkPanel } from "./BenchmarkPanel";
 import { renderCloserLook } from "@/lib/sourceFrames/crop";
 import { lookupOriginal } from "@/lib/sourceFrames/manifest";
 import { type ScanSources, downloadFrame, loadScanSources } from "@/lib/sourceFrames/scan";
@@ -893,6 +894,17 @@ export function WeedScoutTab({
                 onOpen={id => { setSelectedId(id); layers.current.get(id)?.openPopup(); }}
                 onSave={saveOne}
                 stored={c => saved[c.id]?.prediction ?? null}
+              />
+              <BenchmarkPanel
+                sources={sources}
+                candidates={candidates}
+                scan={{ taskId, odmUuid, userId: user?.id ?? null }}
+                verdictOf={c => ({
+                  verdict: verdictOf(c),
+                  verdictSource: c.id in verdicts || c.id in identifications ? "operator (unsaved)" : saved[c.id]?.verdict ? (saved[c.id].verdict_source ?? "saved") : "proposed",
+                  species: identificationOf(c).label ?? saved[c.id]?.species ?? null,
+                })}
+                stored={c => (saved[c.id]?.prediction ? { prediction: saved[c.id].prediction, modelVersion: saved[c.id].model_version } : null)}
               />
             </section>
             </>

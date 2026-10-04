@@ -13,7 +13,7 @@ import { groundAltitudeFromOdm, parseOdmOutputs } from "@/lib/sourceFrames/odm";
 import { type StorageClient, loadScanSourcesWith, memberKey, reconstructionPrefix } from "@/lib/sourceFrames/sources";
 import { spotSources } from "@/lib/sourceFrames/spot";
 import { decodeImage, encodeJpeg, encodePng, sha256 } from "../../scripts/bench/images";
-import { renderReport } from "../../scripts/bench/report";
+import { renderReport } from "@/lib/sourceFrames/benchReport";
 import { type ModelResult, type ModelRunner, SKIPPED, createRoboflowRunner, normalizeRoboflow } from "../../scripts/bench/roboflow";
 import {
   type BenchDeps, type DbClient, type ObservationLite, type ScanTask,
@@ -504,13 +504,15 @@ describe("credentials and the detector never reach the app", () => {
   const walk = (dir: string): string[] => readdirSync(dir).flatMap(n => { const p = join(dir, n); return statSync(p).isDirectory() ? walk(p) : [p]; });
   const appFiles = walk(join(process.cwd(), "src")).filter(p => /\.(ts|tsx)$/.test(p) && !p.includes(`${join("src", "test")}`));
 
-  it("no app module imports the benchmark, the service-role key or the detector", () => {
+  it("no app module imports the benchmark, the service-role key, the detector's key or its service", () => {
     for (const p of appFiles) {
       const text = readFileSync(p, "utf8");
-      expect(text, p).not.toMatch(/scripts\/bench/);
+      expect(text, p).not.toMatch(/from ["'][^"']*scripts\/bench/);
       expect(text, p).not.toMatch(/SERVICE_ROLE/);
-      expect(text, p).not.toMatch(/ROBOFLOW/i);
+      expect(text, p).not.toMatch(/ROBOFLOW_API/);
       expect(text, p).not.toMatch(/roboflow\.com/i);
+      // The detector's call lives in the shared module; the app may take its types and nothing else.
+      for (const line of text.split(/\r?\n/).filter(l => /_shared\/roboflow/.test(l))) expect(line, p).toMatch(/^import type /);
     }
   });
 

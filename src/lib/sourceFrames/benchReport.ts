@@ -1,8 +1,8 @@
 // The page: for each finding, the ortho chip, the native crop, and the native
 // crop with the detector's boxes, with the numbers that say what was cut from
-// where. Self-contained HTML next to the crops; opens from disk.
-import type { BenchRun, FindingResult } from "./scanBench";
-import type { Detection, ModelResult } from "./roboflow";
+// where. Self-contained HTML. On disk the images are files next to the page;
+// in the browser they are data URLs and the page is shown in a frame.
+import type { BenchRun, Detection, FindingResult, ModelResult } from "./benchTypes";
 
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 const cm = (m: number | null | undefined) => (m == null ? "unknown" : `${(m * 100).toFixed(2)} cm/px`);
@@ -40,9 +40,9 @@ function finding(r: FindingResult): string {
   const om = r.ortho.model;
   const orthoCap = r.ortho.status === "OK"
     ? `${cm(r.ortho.gsdM)}, ${fix(r.ortho.spanM)} m across. ${modelLine(om)}`
-    : r.ortho.status === "NOT_COMPARED" ? "ortho chip not compared (--no-ortho)" : r.ortho.status === "NO_ORTHO_CHIP" ? "no chip stored for this finding" : "the stored chip could not be read";
+    : r.ortho.status === "NOT_COMPARED" ? "ortho chip not compared" : r.ortho.status === "NO_ORTHO_CHIP" ? "no chip for this finding" : "the chip could not be read";
   const nativeCap = r.native
-    ? `${esc(r.selectedFrame)}, ${cm(r.nativeGsdM)} (${fix(r.nativeScale, 2)}x the uploaded frame), ${r.native.width}x${r.native.height} px`
+    ? `${r.selectedFrame}, ${cm(r.nativeGsdM)} (${fix(r.nativeScale, 2)}x the uploaded frame), ${r.native.width}x${r.native.height} px`
     : `${r.status}${r.reason ? `: ${r.reason}` : ""}`;
   const native = r.native ? panel("Native crop", r.native.file, r.native.width, r.native.height, outline(r.outlineCropPx), nativeCap) : panel("Native crop", null, null, null, "", nativeCap);
   const withDet = r.native
@@ -50,17 +50,17 @@ function finding(r: FindingResult): string {
     : panel("Native crop, detector", null, null, null, "", "no crop to score");
   const ortho = panel("Ortho chip", r.ortho.file, r.ortho.width, r.ortho.height, outline(r.ortho.outlinePx) + (om ? boxes(om.detections) : ""), orthoCap);
   const rows: [string, string][] = [
-    ["Finding", `${r.findingId}${r.rowId ? ` (row ${r.rowId})` : ""}, ${r.kind}${r.findingClass ? `, ${r.findingClass}` : ""}, from ${r.source}`],
-    ["Operator verdict", r.operatorVerdict.verdict ? `${r.operatorVerdict.verdict} (${r.operatorVerdict.verdictSource ?? "source unknown"})${r.operatorVerdict.species ? `, ${r.operatorVerdict.species}` : ""}` : "none recorded"],
-    ["Stored prediction", r.storedPrediction ? `${esc(JSON.stringify(r.storedPrediction.prediction))} by ${r.storedPrediction.modelVersion ?? "?"}` : "none"],
-    ["Status", `${r.status}${r.reason ? `: ${r.reason}` : ""}`],
-    ["Source frames", `${r.candidateFrames} hold part of the shape; chosen to cover it: ${r.chosenFrames.length ? r.chosenFrames.join(", ") : "none"}; selected ${r.selectedFrame ?? "none"}${r.coverage != null ? ` holding ${pct(r.coverage)}` : ""}`],
+    ["Finding", esc(`${r.findingId}${r.rowId ? ` (row ${r.rowId})` : ""}, ${r.kind}${r.findingClass ? `, ${r.findingClass}` : ""}, from ${r.source}`)],
+    ["Operator verdict", esc(r.operatorVerdict.verdict ? `${r.operatorVerdict.verdict} (${r.operatorVerdict.verdictSource ?? "source unknown"})${r.operatorVerdict.species ? `, ${r.operatorVerdict.species}` : ""}` : "none recorded")],
+    ["Stored prediction", r.storedPrediction ? `${esc(JSON.stringify(r.storedPrediction.prediction))} by ${esc(r.storedPrediction.modelVersion ?? "?")}` : "none"],
+    ["Status", esc(`${r.status}${r.reason ? `: ${r.reason}` : ""}`)],
+    ["Source frames", esc(`${r.candidateFrames} hold part of the shape; chosen to cover it: ${r.chosenFrames.length ? r.chosenFrames.join(", ") : "none"}; selected ${r.selectedFrame ?? "none"}${r.coverage != null ? ` holding ${pct(r.coverage)}` : ""}`)],
     ["Angles", `ray ${fix(r.viewAngleDeg)}° from straight down; camera ${fix(r.offNadirDeg)}° off nadir`],
     ["Pixels", `ortho ${cm(r.orthoGsdM)}; uploaded frame ${cm(r.uploadedGsdM)}; native ${cm(r.nativeGsdM)}; scale measured ${fix(r.nativeScale, 3)} (EXIF implied ${fix(r.exifScale, 3)})`],
-    ["Original", r.originalPath ? `${r.originalPath} (${r.originalSource}, matched by ${r.matchedBy}), ${r.originalBytes} bytes, ${r.originalWidth}x${r.originalHeight}, sha256 ${r.originalSha256}` : "none"],
+    ["Original", r.originalPath ? esc(`${r.originalPath} (${r.originalSource}, matched by ${r.matchedBy}), ${r.originalBytes} bytes, ${r.originalWidth}x${r.originalHeight}, sha256 ${r.originalSha256}`) : "none"],
     ["Crop window", r.cropWindow ? `x ${r.cropWindow.x}, y ${r.cropWindow.y}, ${r.cropWindow.width}x${r.cropWindow.height} native px` : "none"],
-    ["Detector, native", modelLine(nm) + (nm?.modelId ? ` (${nm.modelId})` : "")],
-    ["Detector, ortho", modelLine(om) + (om?.modelId ? ` (${om.modelId})` : "")],
+    ["Detector, native", esc(modelLine(nm) + (nm?.modelId ? ` (${nm.modelId})` : ""))],
+    ["Detector, ortho", esc(modelLine(om) + (om?.modelId ? ` (${om.modelId})` : ""))],
   ];
   return `<section class="finding ${esc(r.status)}"><h2>${esc(r.findingId)} <span class="status">${esc(r.status)}</span></h2>` +
     `<div class="panels">${ortho}${native}${withDet}</div>` +

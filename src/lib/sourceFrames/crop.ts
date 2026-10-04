@@ -76,3 +76,43 @@ export async function renderCloserLook(
     bitmap.close?.();
   }
 }
+
+export type NativeCut = {
+  /** JPEG of the window, clean: no outline, nothing drawn, for a detector or a page. */
+  blob: Blob;
+  width: number;
+  height: number;
+  window: AreaWindow;
+  originalWidth: number;
+  originalHeight: number;
+  /** Original width over the uploaded frame's width, measured on the decoded original. */
+  scale: number;
+};
+
+/**
+ * Browser only. Decode the original, measure its scale against the frame ODM
+ * saw, cut the window at native resolution and hand back clean pixels. The
+ * benchmark's crop; `renderCloserLook` is the operator's view with the outline.
+ */
+export async function cutNativeWindow(
+  frame: Blob, box: { x0: number; y0: number; x1: number; y1: number }, uploadedWidth: number,
+): Promise<NativeCut | null> {
+  if (typeof document === "undefined") return null;
+  const bitmap = await createImageBitmap(frame).catch(() => null);
+  if (!bitmap) return null;
+  try {
+    const scale = bitmap.width / uploadedWidth;
+    const win = areaWindow(box, scale, bitmap.width, bitmap.height);
+    if (win.width <= 0 || win.height <= 0) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = win.width; canvas.height = win.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(bitmap, win.x, win.y, win.width, win.height, 0, 0, win.width, win.height);
+    const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, "image/jpeg", 0.92));
+    if (!blob) return null;
+    return { blob, width: win.width, height: win.height, window: win, originalWidth: bitmap.width, originalHeight: bitmap.height, scale };
+  } finally {
+    bitmap.close?.();
+  }
+}

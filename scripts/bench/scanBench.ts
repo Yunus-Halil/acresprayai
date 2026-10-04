@@ -1,13 +1,15 @@
-// The Layer 2 benchmark on a real scan: for each finding the map flagged,
-// the photograph that saw it best, the kept original of that photograph,
-// the finding's ground cut out of it at the camera's resolution, and a
-// baseline detector's word on that crop next to its word on the ortho chip.
+// The Layer 2 benchmark on a real scan, from the terminal: for each finding
+// the map flagged, the photograph that saw it best, the kept original of that
+// photograph, the finding's ground cut out of it at the camera's resolution,
+// and a baseline detector's word on that crop next to its word on the ortho
+// chip.
 //
 // Nothing here is new geometry. Which photos hold a shape, which is best, and
-// what rectangle to cut are the app's own functions (lib/sourceFrames); the
-// archive and the frame list are read by the app's own loader with a
-// service-role client instead of the browser's. What this adds is the
-// wiring, the Node-side pixels, the detector, the record and the page.
+// what rectangle to cut are the app's own functions (lib/sourceFrames, shared
+// with the in-app panel through benchCore.ts); the archive and the frame list
+// are read by the app's own loader with a service-role client instead of the
+// browser's. What this adds is the wiring, the Node-side pixels, the detector,
+// the record and the page.
 //
 // What it never does: read the 2,400 px copy as if it were the original (it
 // is not in our storage), build a storage key from a filename (the manifest
@@ -15,35 +17,19 @@
 // into the record and nothing is written back.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type AreaWindow, areaWindow } from "@/lib/sourceFrames/crop";
+import { type FindingInput, baseResult, chooseFrame, outlineInChip, outlineInCrop, recordChoice } from "@/lib/sourceFrames/benchCore";
+import { type BenchRun, type BenchStatus, type FindingResult, type OriginalsSource, SKIPPED, statusFromModel, summarize } from "@/lib/sourceFrames/benchTypes";
+import { areaWindow } from "@/lib/sourceFrames/crop";
 import { type FrameIndex, lookupOriginal } from "@/lib/sourceFrames/manifest";
-import { offNadirDeg } from "@/lib/sourceFrames/odm";
 import {
   RECONSTRUCTION_MEMBERS, type ReconstructionFiles, type ScanSources, type StorageClient,
   downloadFrameWith, loadScanSourcesWith, sourcesFromFiles,
 } from "@/lib/sourceFrames/sources";
-import { spotSources } from "@/lib/sourceFrames/spot";
 import type { Candidate, Region, RegionClass } from "@/lib/weedScout/types";
 import { type Rgba, cropRgba, decodeImage, encodeJpeg, imageSize, sha256 } from "./images";
-import { type ModelResult, type ModelRunner, SKIPPED } from "./roboflow";
+import type { ModelRunner } from "./roboflow";
 
-// ---------------------------------------------------------------------------
-// Statuses
-// ---------------------------------------------------------------------------
-
-/** Why a finding's row in the report says what it says. One per finding. */
-export type BenchStatus =
-  | "SUCCESS"                   // native crop cut, detector ran, found something
-  | "SUCCESS_NO_DETECTIONS"     // native crop cut, detector ran, found nothing
-  | "MODEL_SKIPPED"             // native crop cut; no detector was configured
-  | "RECONSTRUCTION_UNAVAILABLE" // no camera poses, or no ground height, for this scan
-  | "PROJECTION_FAILED"         // poses exist; no photograph holds any of the shape
-  | "NO_MANIFEST"               // a photograph holds it; the scan kept no frame list
-  | "NO_NATIVE_SOURCE_FRAME"    // the frame list does not hold that photograph's original
-  | "ORIGINAL_DOWNLOAD_FAILED"  // the manifest's key could not be read
-  | "ORIGINAL_DECODE_FAILED"    // the bytes are not an image this tool can decode
-  | "CROP_OUT_OF_BOUNDS"        // the window collapsed to nothing inside the frame
-  | "API_ERROR";                // the detector call failed on the native crop
+export type { BenchRun, BenchStatus, FindingResult } from "@/lib/sourceFrames/benchTypes";
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -87,20 +73,7 @@ export const OBSERVATION_COLUMNS =
   "id, candidate_id, lat, lng, kind, score, geometry, area_m2, class, features, chip_path, chip_gsd_m, chip_span_m, verdict, verdict_source, finding_class, species, prediction, model_version";
 export const TASK_COLUMNS = "id, user_id, field_id, odm_uuid, status, output_path, image_count, created_at";
 
-export type Finding = {
-  id: string;
-  rowId: string | null;
-  source: "weed_observations" | "point";
-  candidate: Candidate;
-  kind: string;
-  findingClass: string | null;
-  verdict: string | null;
-  verdictSource: string | null;
-  species: string | null;
-  chipPath: string | null;
-  storedPrediction: unknown;
-  storedModelVersion: string | null;
-};
+export type Finding = FindingInput;
 
 type QueryResult<T> = { data: T | null; error: { message: string } | null };
 /** The slice of the PostgREST builder this module uses; the real client satisfies it structurally. */
@@ -116,7 +89,7 @@ export type DbClient = { from(table: string): Query };
 
 /** Where originals come from: the scan's manifest and storage, or a folder on disk for an offline check. */
 export type OriginalSource = {
-  kind: "retained-original" | "local-folder";
+  kind: OriginalsSource;
   resolve(odmFilename: string): Promise<
     | { ok: true; bytes: Uint8Array; path: string; matchedBy: "filename" | "odm-rename" }
     | { ok: false; status: "NO_MANIFEST" | "NO_NATIVE_SOURCE_FRAME" | "ORIGINAL_DOWNLOAD_FAILED"; reason: string }
@@ -148,88 +121,6 @@ export type BenchOptions = {
   /** Score the stored ortho chip with the same detector. Default true. */
   compareOrtho?: boolean;
   out: string;
-};
-
-// ---------------------------------------------------------------------------
-// Results
-// ---------------------------------------------------------------------------
-
-export type FindingResult = {
-  findingId: string;
-  rowId: string | null;
-  source: Finding["source"];
-  kind: string;
-  findingClass: string | null;
-  /** Copied from the archive, never written back. */
-  operatorVerdict: { verdict: string | null; verdictSource: string | null; species: string | null };
-  storedPrediction: { prediction: unknown; modelVersion: string | null } | null;
-  status: BenchStatus;
-  reason: string | null;
-  /** Photographs that hold some of the shape. */
-  candidateFrames: number;
-  /** The fewest photographs that together hold the whole shape (the app's choice). */
-  chosenFrames: string[];
-  selectedFrame: string | null;
-  matchedBy: string | null;
-  originalPath: string | null;
-  originalBytes: number | null;
-  originalSha256: string | null;
-  originalSource: OriginalSource["kind"] | null;
-  /** Fraction of the outline the selected frame holds. */
-  coverage: number | null;
-  /** Ray angle from straight down at the shape, and the camera's own tilt, degrees. */
-  viewAngleDeg: number | null;
-  offNadirDeg: number | null;
-  orthoGsdM: number | null;
-  uploadedGsdM: number | null;
-  nativeGsdM: number | null;
-  /** Original width over uploaded width, measured from the decoded original; and what EXIF implied. */
-  nativeScale: number | null;
-  exifScale: number | null;
-  originalWidth: number | null;
-  originalHeight: number | null;
-  cropWindow: AreaWindow | null;
-  /** The finding's outline in the native crop's pixels, for drawing. */
-  outlineCropPx: { x: number; y: number }[] | null;
-  native: { file: string; width: number; height: number; model: ModelResult } | null;
-  ortho: {
-    status: "OK" | "NO_ORTHO_CHIP" | "CHIP_DOWNLOAD_FAILED" | "NOT_COMPARED";
-    file: string | null; width: number | null; height: number | null;
-    gsdM: number | null; spanM: number | null;
-    outlinePx: { x: number; y: number }[] | null;
-    model: ModelResult | null;
-  };
-};
-
-export type BenchRun = {
-  generatedAt: string;
-  scan: {
-    taskId: string | null;
-    odmUuid: string | null;
-    userId: string | null;
-    fieldId: string | null;
-    status: string | null;
-    outputPath: string | null;
-    imageCount: number | null;
-    reconstruction: ScanSources["reconstruction"] | "local-folder";
-    groundAltM: number | null;
-    posedFrames: number;
-    framesKept: number | null;
-    originalsSource: OriginalSource["kind"];
-    findingsSource: string;
-  };
-  model: { configured: boolean; id: string | null; settings: Record<string, string | number> | null };
-  findings: FindingResult[];
-  summary: {
-    findings: number;
-    byStatus: Record<string, number>;
-    nativeDetections: number;
-    orthoDetections: number;
-    nativeWithDetections: number;
-    orthoWithDetections: number;
-    orthoScored: number;
-  };
-  notes: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -417,39 +308,18 @@ type Ctx = {
 const safeName = (id: string) => id.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 80);
 
 export async function benchFinding(f: Finding, ctx: Ctx): Promise<FindingResult> {
-  const base: FindingResult = {
-    findingId: f.id, rowId: f.rowId, source: f.source, kind: f.kind, findingClass: f.findingClass,
-    operatorVerdict: { verdict: f.verdict, verdictSource: f.verdictSource, species: f.species },
-    storedPrediction: f.storedPrediction ? { prediction: f.storedPrediction, modelVersion: f.storedModelVersion } : null,
-    status: "RECONSTRUCTION_UNAVAILABLE", reason: null,
-    candidateFrames: 0, chosenFrames: [], selectedFrame: null, matchedBy: null,
-    originalPath: null, originalBytes: null, originalSha256: null, originalSource: null,
-    coverage: null, viewAngleDeg: null, offNadirDeg: null,
-    orthoGsdM: f.candidate.chipGsdM, uploadedGsdM: null, nativeGsdM: null, nativeScale: null, exifScale: null,
-    originalWidth: null, originalHeight: null, cropWindow: null, outlineCropPx: null,
-    native: null,
-    ortho: { status: ctx.compareOrtho ? "NO_ORTHO_CHIP" : "NOT_COMPARED", file: null, width: null, height: null, gsdM: f.candidate.chipGsdM, spanM: f.candidate.chipSpanM, outlinePx: null, model: null },
-  };
+  const base = baseResult(f, ctx.compareOrtho);
   const fail = (status: BenchStatus, reason: string): FindingResult => ({ ...base, status, reason });
 
   // The ortho side is independent of the native side; score it first so a
   // native failure still leaves the comparison's left half in the record.
   if (ctx.compareOrtho) base.ortho = await orthoSide(f, ctx, base.ortho);
 
-  const spot = spotSources(ctx.sources, f.candidate);
-  if (spot.unavailable === "no reconstruction") return fail("RECONSTRUCTION_UNAVAILABLE", `no camera poses for this scan (reconstruction: ${ctx.sources.reconstruction})`);
-  if (spot.unavailable === "no ground height") return fail("RECONSTRUCTION_UNAVAILABLE", "no ground height: ODM's stats carried no average GSD");
-  base.candidateFrames = spot.views.length;
-  base.chosenFrames = spot.nearestOnly ? [] : spot.chosen.map(v => v.filename);
-  if (spot.nearestOnly || !spot.views.length) return fail("PROJECTION_FAILED", "no photograph holds any of this shape; the nearest photo would be a guess and is not cut");
-
-  const view = spot.views[0];
-  const meta = ctx.sources.set!.images[view.filename];
-  const cam = ctx.sources.set!.cameras[view.shot.cameraKey];
-  Object.assign(base, {
-    selectedFrame: view.filename, coverage: view.coverage, viewAngleDeg: view.viewAngleDeg, offNadirDeg: offNadirDeg(view.shot),
-    uploadedGsdM: view.gsdM, exifScale: spot.nativeScale,
-  });
+  const choice = chooseFrame(ctx.sources, f.candidate);
+  const failed = recordChoice(base, choice);
+  if (failed) return failed;
+  if (choice.ok === false) return failed!;
+  const { view, uploadedWidth } = choice;
 
   const original = await ctx.originals.resolve(view.filename);
   if (original.ok === false) return fail(original.status, original.reason);
@@ -462,7 +332,6 @@ export async function benchFinding(f: Finding, ctx: Ctx): Promise<FindingResult>
   try { decoded = decodeImage(original.bytes); } catch (e) {
     return fail("ORIGINAL_DECODE_FAILED", `${original.path}: ${(e as Error).message}`);
   }
-  const uploadedWidth = meta?.width ?? cam.width;
   const scale = decoded.width / uploadedWidth;
   Object.assign(base, { originalWidth: decoded.width, originalHeight: decoded.height, nativeScale: scale, nativeGsdM: view.gsdM / scale });
 
@@ -470,7 +339,7 @@ export async function benchFinding(f: Finding, ctx: Ctx): Promise<FindingResult>
   const win = areaWindow(view.box, scale, decoded.width, decoded.height);
   if (win.width <= 0 || win.height <= 0) return fail("CROP_OUT_OF_BOUNDS", "the window collapsed to nothing");
   base.cropWindow = win;
-  base.outlineCropPx = view.outlinePx.map(p => ({ x: p.u * scale - win.x, y: p.v * scale - win.y }));
+  base.outlineCropPx = outlineInCrop(view, scale, win);
 
   let crop: Rgba;
   try { crop = cropRgba(decoded, win); } catch (e) { return fail("CROP_OUT_OF_BOUNDS", (e as Error).message); }
@@ -480,8 +349,7 @@ export async function benchFinding(f: Finding, ctx: Ctx): Promise<FindingResult>
 
   const model = ctx.model ? await ctx.model.detect(jpegBytes, "image/jpeg") : SKIPPED;
   base.native = { file, width: crop.width, height: crop.height, model };
-  const status: BenchStatus = model.status;
-  return { ...base, status, reason: model.status === "API_ERROR" ? model.error : null };
+  return { ...base, status: statusFromModel(model), reason: model.status === "API_ERROR" ? model.error : null };
 }
 
 async function orthoSide(f: Finding, ctx: Ctx, prior: FindingResult["ortho"]): Promise<FindingResult["ortho"]> {
@@ -495,13 +363,7 @@ async function orthoSide(f: Finding, ctx: Ctx, prior: FindingResult["ortho"]): P
   const size = imageSize(bytes);
   const file = `crops/${safeName(f.id)}-ortho.png`;
   writeFileSync(join(ctx.outDir, file), bytes);
-  const outlinePx = size && f.candidate.chipSpanM && f.candidate.region
-    ? f.candidate.region.rings[0].map(p => {
-        const mPerLat = 111_320, mPerLng = 111_320 * Math.cos((f.candidate.centroid.lat * Math.PI) / 180);
-        const pxPerM = size.width / f.candidate.chipSpanM!;
-        return { x: size.width / 2 + (p.lng - f.candidate.centroid.lng) * mPerLng * pxPerM, y: size.height / 2 - (p.lat - f.candidate.centroid.lat) * mPerLat * pxPerM };
-      })
-    : null;
+  const outlinePx = size ? outlineInChip(f.candidate, size.width, size.height) : null;
   const model = ctx.model ? await ctx.model.detect(bytes, "image/png") : SKIPPED;
   return { ...prior, status: "OK", file, width: size?.width ?? null, height: size?.height ?? null, outlinePx, model };
 }
@@ -574,9 +436,7 @@ export async function runBench(opts: BenchOptions, deps: BenchDeps): Promise<Ben
     log(`  ${r.findingId}: ${r.status}${r.reason ? ` (${r.reason})` : ""}${r.selectedFrame ? `; frame ${r.selectedFrame} of ${r.candidateFrames}` : ""}${n ? `; native ${n.count} det${n.maxConfidence != null ? ` max ${n.maxConfidence.toFixed(2)}` : ""}` : ""}${o ? `; ortho ${o.count} det` : ""}`);
   }
 
-  const byStatus: Record<string, number> = {};
-  for (const r of results) byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
-  const run: BenchRun = {
+  return {
     generatedAt: deps.now(),
     scan: {
       taskId: task?.id ?? null, odmUuid: task?.odm_uuid ?? null, userId: task?.user_id ?? null, fieldId: task?.field_id ?? null,
@@ -587,24 +447,15 @@ export async function runBench(opts: BenchOptions, deps: BenchDeps): Promise<Ben
     },
     model: { configured: !!deps.model, id: deps.model?.id ?? null, settings: deps.model?.describe() ?? null },
     findings: results,
-    summary: {
-      findings: results.length, byStatus,
-      nativeDetections: results.reduce((n, r) => n + (r.native?.model.count ?? 0), 0),
-      orthoDetections: results.reduce((n, r) => n + (r.ortho.model?.count ?? 0), 0),
-      nativeWithDetections: results.filter(r => (r.native?.model.count ?? 0) > 0).length,
-      orthoWithDetections: results.filter(r => (r.ortho.model?.count ?? 0) > 0).length,
-      orthoScored: results.filter(r => r.ortho.model && r.ortho.model.status !== "MODEL_SKIPPED" && r.ortho.model.status !== "API_ERROR").length,
-    },
+    summary: summarize(results),
     notes,
   };
-  return run;
 }
 
-/** results.json beside the crops; the page is the caller's (report.ts). */
+/** results.json beside the crops; the page is the caller's (lib/sourceFrames/benchReport.ts). */
 export function writeResults(out: string, run: BenchRun): string {
   mkdirSync(out, { recursive: true });
   const p = join(out, "results.json");
   writeFileSync(p, JSON.stringify(run, null, 2));
   return p;
 }
-

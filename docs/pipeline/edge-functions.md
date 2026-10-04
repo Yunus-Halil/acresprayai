@@ -312,3 +312,13 @@ npx supabase functions deploy <slug>
 Worth running after any session that adds a function, because nothing else in the repo will
 tell you. Migrations are applied by `supabase db push`; functions are not, and a green test
 suite says nothing about either.
+
+## `bench-detect` — the baseline detector behind sign-in
+
+Developer tooling behind the operator's sign-in: one crop in, the baseline detector's
+normalised result out (`_shared/roboflow.ts`). The browser never holds the detector's key;
+`ROBOFLOW_API_KEY` is a function secret and `ROBOFLOW_API_URL` an optional override. The
+platform JWT gate is on and the user is resolved again inside. Nothing is read from or
+written to a scan. 401 without a session, 400 on a bad body, 413 over about 6 MB, 503 when
+the key is not set, otherwise 200 with the result even when the service itself failed
+(status `API_ERROR`, key scrubbed from the message). Called by `lib/sourceFrames/detectClient.ts`.

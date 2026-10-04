@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { parseArgs, parsePoint } from "./cli";
 import { readBenchEnv, redact } from "./env";
-import { renderReport } from "./report";
+import { renderReport } from "@/lib/sourceFrames/benchReport";
 import { DEFAULT_ROBOFLOW_MODEL, createRoboflowRunner } from "./roboflow";
 import { type BenchDeps, type BenchOptions, type DbClient, runBench, writeResults } from "./scanBench";
 
