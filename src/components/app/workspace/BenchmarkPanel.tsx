@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { runBrowserBench } from "@/lib/sourceFrames/benchBrowser";
 import { renderReport } from "@/lib/sourceFrames/benchReport";
 import type { BenchRun } from "@/lib/sourceFrames/benchTypes";
-import { baselineSettings, detectWithBaseline, getDetectorModel, isModelId, setDetectorModel } from "@/lib/sourceFrames/detectClient";
+import { baselineSettings, detectWithBaseline, getDetectorConfidence, getDetectorModel, isModelId, setDetectorConfidence, setDetectorModel } from "@/lib/sourceFrames/detectClient";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
 import type { Candidate } from "@/lib/weedScout/types";
 
@@ -28,6 +28,9 @@ export function BenchmarkPanel({ sources, candidates, scan, verdictOf, stored }:
   const [modelId, setModelId] = useState(getDetectorModel);
   const modelOk = !modelId || isModelId(modelId);
   useEffect(() => { if (modelOk) setDetectorModel(modelId); }, [modelId, modelOk]);
+  // The confidence floor to ask the service for; lower it to see whether a model sees anything at all.
+  const [confidence, setConfidence] = useState<string>(() => { const c = getDetectorConfidence(); return c == null ? "" : String(c); });
+  useEffect(() => { const n = Number(confidence); setDetectorConfidence(confidence.trim() && Number.isFinite(n) ? n : null); }, [confidence]);
   const [busy, setBusy] = useState<{ done: number; total: number; line: string } | null>(null);
   const [run, setRun] = useState<BenchRun | null>(null);
   const [open, setOpen] = useState(false);
@@ -85,6 +88,11 @@ export function BenchmarkPanel({ sources, candidates, scan, verdictOf, stored }:
             model
             <input type="text" value={modelId} onChange={e => setModelId(e.target.value)} placeholder="server default" spellCheck={false}
               className={`w-40 bg-[#0f0f0f] border rounded-sm px-1.5 py-0.5 text-[11px] text-neutral-200 ${modelOk ? "border-[#222]" : "border-red-500"}`} data-testid="benchmark-model" />
+          </label>
+          <label className="text-neutral-400 inline-flex items-center gap-1" title="The lowest confidence the service should return, in percent. Empty is the service's default, 40. Lower it to see whether a model sees anything at all; boxes carry their confidence either way.">
+            min conf %
+            <input type="number" min={1} max={100} value={confidence} onChange={e => setConfidence(e.target.value)} placeholder="40"
+              className="w-14 bg-[#0f0f0f] border border-[#222] rounded-sm px-1.5 py-0.5 text-[11px] text-neutral-200" data-testid="benchmark-confidence" />
           </label>
           <button type="button" className={btn} disabled={!ready} onClick={start} data-testid="benchmark-run">
             {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : null} Compare

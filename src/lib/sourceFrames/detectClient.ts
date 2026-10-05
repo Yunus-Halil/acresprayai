@@ -20,9 +20,18 @@ export function setDetectorModel(id: string): void {
 }
 export const isModelId = (id: string): boolean => MODEL_ID.test(id);
 
+/** The confidence floor to ask for, in percent; null means the service's default (40). Per browser. */
+const CONFIDENCE_KEY = "swathwise.detectorConfidence";
+export function getDetectorConfidence(): number | null {
+  try { const n = Number(localStorage.getItem(CONFIDENCE_KEY)); return Number.isFinite(n) && n >= 1 && n <= 100 ? n : null; } catch { return null; }
+}
+export function setDetectorConfidence(n: number | null): void {
+  try { if (n != null && n >= 1 && n <= 100) localStorage.setItem(CONFIDENCE_KEY, String(n)); else localStorage.removeItem(CONFIDENCE_KEY); } catch { /* private mode */ }
+}
+
 /** The settings the in-app run reports; the server decides the model unless the developer named one. */
 export function baselineSettings(): Record<string, string | number> {
-  return { provider: "bench-detect edge function", model: getDetectorModel() || "server default" };
+  return { provider: "bench-detect edge function", model: getDetectorModel() || "server default", confidencePercent: getDetectorConfidence() ?? "service default" };
 }
 
 const failed = (error: string): ModelResult => ({
@@ -46,7 +55,11 @@ export async function detectWithBaseline(blob: Blob, mime: "image/jpeg" | "image
     const res = await fetchImpl(`${FN_BASE}/bench-detect`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ image: await toBase64(blob), mime, ...(isModelId(getDetectorModel()) ? { model: getDetectorModel() } : {}) }),
+      body: JSON.stringify({
+        image: await toBase64(blob), mime,
+        ...(isModelId(getDetectorModel()) ? { model: getDetectorModel() } : {}),
+        ...(getDetectorConfidence() != null ? { confidence: getDetectorConfidence() } : {}),
+      }),
     });
     const json = await res.json().catch(() => null) as ModelResult | null;
     if (json && typeof json.status === "string") return json;
