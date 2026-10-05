@@ -11,38 +11,57 @@ import { type UnitSystem, fmtLengthCm } from "@/lib/units";
 import type { ModelResult } from "@/lib/sourceFrames/benchTypes";
 import { type CloserLook as Look, renderCloserLook } from "@/lib/sourceFrames/crop";
 import { detectWithBaseline } from "@/lib/sourceFrames/detectClient";
+import { type GroundedDetection, debugLine, groundDetections } from "@/lib/sourceFrames/detections";
 import { lookupOriginal } from "@/lib/sourceFrames/manifest";
 import { type ScanSources, downloadFrame } from "@/lib/sourceFrames/scan";
 import type { SpotSources } from "@/lib/sourceFrames/spot";
 
-export type CloserLookTarget = { title: string; spot: SpotSources };
+/** `id` names the finding on the map; the detector's boxes are filed under it. */
+export type CloserLookTarget = { id?: string; title: string; spot: SpotSources };
 
-export function CloserLookDialog({ target, sources, units, onClose }: {
+export function CloserLookDialog({ target, sources, units, onClose, onDetections }: {
   target: CloserLookTarget | null;
   sources: ScanSources | null;
   units: UnitSystem;
   onClose: () => void;
+  /** The detector's boxes carried to the ground, for the map's experimental overlay. */
+  onDetections?: (list: GroundedDetection[]) => void;
 }) {
   const [viewIndex, setViewIndex] = useState(0);
   const [look, setLook] = useState<Look | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [full, setFull] = useState(false);
   // The detector's word on the crop on screen: asked for, never automatic.
-  const [detection, setDetection] = useState<{ state: "asking" } | { state: "done"; result: ModelResult } | null>(null);
+  const [detection, setDetection] = useState<{ state: "asking" } | { state: "done"; result: ModelResult; grounded: GroundedDetection[] | null } | null>(null);
+  const [copied, setCopied] = useState(false);
   const views = target?.spot.lookable ?? [];
   const view = views[viewIndex] ?? null;
   const scale = target?.spot.nativeScale ?? null;
 
   useEffect(() => { setViewIndex(0); setFull(false); }, [target]);
-  useEffect(() => { setDetection(null); }, [look]);
+  useEffect(() => { setDetection(null); setCopied(false); }, [look]);
 
   const askDetector = async () => {
-    if (!look || detection?.state === "asking") return;
+    if (!look || !view || detection?.state === "asking") return;
     setDetection({ state: "asking" });
     const result = await detectWithBaseline(look.clean, "image/jpeg");
-    setDetection({ state: "done", result });
+    // Each box, back on the ground through the same pose that found this photo.
+    // Null when the scan has no ground height: the boxes stay on the photo only.
+    const grounded = sources?.set && sources.groundAltM != null && target
+      ? groundDetections({
+          set: sources.set, shot: view.shot, groundAltM: sources.groundAltM, window: look.window, scale: look.scale,
+          detections: result.detections, findingId: target.id ?? target.title, findingTitle: target.title, detectedAt: new Date().toISOString(),
+        })
+      : null;
+    setDetection({ state: "done", result, grounded });
+    if (grounded?.length) onDetections?.(grounded);
   };
   const boxes = detection?.state === "done" ? detection.result.detections : [];
+  const grounded = detection?.state === "done" ? detection.grounded : null;
+  const copyDebug = async () => {
+    if (!grounded) return;
+    try { await navigator.clipboard.writeText(grounded.map(debugLine).join("\n")); setCopied(true); } catch { setCopied(false); }
+  };
 
   useEffect(() => {
     if (!view || !scale) return;
@@ -55,7 +74,7 @@ export function CloserLookDialog({ target, sources, units, onClose }: {
     (async () => {
       const blob = await downloadFrame(entry);
       if (!blob) throw new Error("the original photo could not be read from storage");
-      const l = await renderCloserLook(blob, view.outlinePx, view.box, scale, view.gsdM);
+      const l = await renderCloserLook(blob, view.outlinePx, view.box, scale, view.gsdM, sources?.set?.cameras[view.shot.cameraKey]?.width);
       if (!l) throw new Error("the original photo could not be decoded");
       made = l.url;
       if (cancelled) URL.revokeObjectURL(l.url); else setLook(l);
@@ -103,7 +122,39 @@ export function CloserLookDialog({ target, sources, units, onClose }: {
           </button>
         </div>
         {detection?.state === "done" && (
-          <p className="text-[11px] text-neutral-400" data-testid="closer-look-detection">{detectionLine(detection.result)}</p>
+          <div className="text-[11px] text-neutral-400 space-y-1">
+            <p data-testid="closer-look-detection">
+              {detectionLine(detection.result)}
+              {grounded?.length ? ` ${grounded.filter(g => g.status === "ok").length} of ${grounded.length} placed on the map (experimental overlay).` : ""}
+              {detection.result.count > 0 && !grounded ? " Not placed on the map: this scan has no ground height." : ""}
+            </p>
+            {grounded && grounded.length > 0 && (
+              <details data-testid="closer-look-grounded">
+                <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">
+                  Where the boxes land: crop px → native px → frame px → ground
+                  <button type="button" onClick={e => { e.preventDefault(); copyDebug(); }} className="ml-2 rounded-sm border border-[#333] px-1.5 py-0.5 text-[10px] text-neutral-300 hover:bg-[#1f1f1f]">
+                    {copied ? "copied" : "copy"}
+                  </button>
+                </summary>
+                <table className="mt-1 w-full text-[10px] font-mono text-neutral-300">
+                  <thead className="text-neutral-500"><tr><th className="text-left">box</th><th className="text-left">crop</th><th className="text-left">native</th><th className="text-left">frame</th><th className="text-left">ground</th><th className="text-left">size</th></tr></thead>
+                  <tbody>
+                    {grounded.map((g, i) => (
+                      <tr key={g.id} className="border-t border-[#1f1f1f]">
+                        <td>{i + 1} {g.klass} {g.confidence.toFixed(2)}</td>
+                        <td>{g.cropPx.x.toFixed(0)},{g.cropPx.y.toFixed(0)}</td>
+                        <td>{g.nativePx.u.toFixed(0)},{g.nativePx.v.toFixed(0)}</td>
+                        <td>{g.framePx.u.toFixed(1)},{g.framePx.v.toFixed(1)}</td>
+                        <td>{g.centre ? `${g.centre.lat.toFixed(6)}, ${g.centre.lng.toFixed(6)}` : "off ground"}</td>
+                        <td>{g.widthM != null ? `${g.widthM.toFixed(2)}×${g.heightM!.toFixed(2)} m` : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-neutral-600 pt-1">Flat ground at {grounded[0].groundAltM.toFixed(1)} m; scale {look?.scale.toFixed(3)} measured on the original ({look?.originalWidth} px wide).</p>
+              </details>
+            )}
+          </div>
         )}
         <div className="rounded-sm border border-[#222] bg-black overflow-auto" style={{ maxHeight: "70vh" }}>
           {error && <p className="p-4 text-[12px] text-red-400">Could not show the photo: {error}</p>}

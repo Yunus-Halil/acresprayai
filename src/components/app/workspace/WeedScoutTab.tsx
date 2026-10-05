@@ -53,6 +53,8 @@ import { plannedAreaM2, plannedZones } from "@/lib/treatment/plannedArea";
 import { ScanSummary } from "./ScanSummary";
 import { type SpotPhoto, SpotPopup } from "./SpotPopup";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
+import { DetectionOverlay } from "./DetectionOverlay";
+import { addDetections, clearDetections, setDetectionsVisible, useDetectionLayer } from "@/lib/sourceFrames/detectionStore";
 import { BenchmarkPanel } from "./BenchmarkPanel";
 import { renderCloserLook } from "@/lib/sourceFrames/crop";
 import { lookupOriginal } from "@/lib/sourceFrames/manifest";
@@ -273,6 +275,8 @@ export function WeedScoutTab({
   const [showPhotos, setShowPhotos] = useState(true);
   // The photographs behind the mosaic, when the archive and the originals exist.
   const [sources, setSources] = useState<ScanSources | null>(null);
+  // The baseline detector's boxes, carried to the ground from a closer look. Experimental; drawn, never used.
+  const detectionLayer = useDetectionLayer(taskId);
   // Step two: the finding whose original photos are open in the closer-look viewer.
   const [closerLook, setCloserLook] = useState<CloserLookTarget | null>(null);
   // The photo a clicked spot shows in its popup: the chosen original, cut to
@@ -649,6 +653,7 @@ export function WeedScoutTab({
           {rings.map((r, i) => (
             <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])} pathOptions={{ color: "#4CAF50", weight: 1.5, fill: false, dashArray: "4 4" }} />
           ))}
+          <DetectionOverlay taskId={taskId} />
           {/* Every spot carries its own decision and its own review panel.
               The outline is the verdict, the fill is what it reads as, and the
               popup is where the operator disagrees with either. */}
@@ -682,7 +687,7 @@ export function WeedScoutTab({
                   photo={photos[c.id] ?? null}
                   onCloserLook={() => {
                     const spot = sourcesById.get(c.id);
-                    if (spot) setCloserLook({ title: spotLabel(c), spot });
+                    if (spot) setCloserLook({ id: c.id, title: spotLabel(c), spot });
                   }}
                   {...identificationProps}
                 />
@@ -727,7 +732,7 @@ export function WeedScoutTab({
           })}
           <BasemapToggle value={basemap} onChange={(id) => { setBasemap(id); saveBasemap(id); }} className="absolute bottom-4 right-4 z-[1000]" />
         </MapContainer>
-        <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} />
+        <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} onDetections={list => addDetections(taskId, list)} />
 
         <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2 text-neutral-300"><FlaskConical className="h-3 w-3 text-[#4CAF50]" /> Click a spot to change it</div>
@@ -744,6 +749,13 @@ export function WeedScoutTab({
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={showPhotos} onChange={e => setShowPhotos(e.target.checked)} className="accent-[#4CAF50]" />
               Photo positions ({sources.set.shots.length}); chosen ones light up
+            </label>
+          )}
+          {detectionLayer.detections.length > 0 && (
+            <label className="flex items-center gap-2 cursor-pointer" data-testid="detections-toggle">
+              <input type="checkbox" checked={detectionLayer.visible} onChange={e => setDetectionsVisible(taskId, e.target.checked)} className="accent-[#ff4d6d]" />
+              Detector boxes ({detectionLayer.detections.length}), experimental
+              <button type="button" onClick={() => clearDetections(taskId)} className="ml-auto text-neutral-600 hover:text-neutral-300">clear</button>
             </label>
           )}
         </div>

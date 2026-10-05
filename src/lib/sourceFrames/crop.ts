@@ -42,17 +42,27 @@ export type CloserLook = {
   window: AreaWindow;
   /** Ground metres per pixel in this image. */
   gsdM: number;
+  /** Native width over uploaded width, as used for this window: measured on the decoded original when `uploadedWidth` was given. */
+  scale: number;
+  originalWidth: number;
+  originalHeight: number;
 };
 
-/** Browser only. Decode the original, cut the window, draw the outline, hand back an object URL. */
+/**
+ * Browser only. Decode the original, cut the window, draw the outline, hand
+ * back an object URL. With `uploadedWidth` the scale is measured on the
+ * decoded original rather than taken from EXIF, so a box drawn on this crop
+ * can be carried back to the frame the pose is expressed in.
+ */
 export async function renderCloserLook(
   frame: Blob, outlinePx: { u: number; v: number }[], box: { x0: number; y0: number; x1: number; y1: number },
-  scale: number, uploadedGsdM: number,
+  exifScale: number, uploadedGsdM: number, uploadedWidth?: number,
 ): Promise<CloserLook | null> {
   if (typeof document === "undefined") return null;
   const bitmap = await createImageBitmap(frame).catch(() => null);
   if (!bitmap) return null;
   try {
+    const scale = uploadedWidth ? bitmap.width / uploadedWidth : exifScale;
     const win = areaWindow(box, scale, bitmap.width, bitmap.height);
     const canvas = document.createElement("canvas");
     canvas.width = win.width; canvas.height = win.height;
@@ -76,7 +86,7 @@ export async function renderCloserLook(
     }
     const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, "image/jpeg", 0.92));
     if (!blob) return null;
-    return { url: URL.createObjectURL(blob), clean, width: win.width, height: win.height, window: win, gsdM: uploadedGsdM / scale };
+    return { url: URL.createObjectURL(blob), clean, width: win.width, height: win.height, window: win, gsdM: uploadedGsdM / scale, scale, originalWidth: bitmap.width, originalHeight: bitmap.height };
   } finally {
     bitmap.close?.();
   }

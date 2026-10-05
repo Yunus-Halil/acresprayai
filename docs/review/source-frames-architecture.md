@@ -368,3 +368,31 @@ reference to the shared module an `import type`.
 Set the secret once with `npx supabase secrets set ROBOFLOW_API_KEY=<key>`; without it
 the panel still cuts and shows the crops and every row says `API_ERROR: ROBOFLOW_API_KEY is
 not set on the server`.
+
+## 8. Detections back on the map (2026-10-05)
+
+The loop closes: a box the baseline detector draws on a native crop is carried to the ground
+and drawn on the orthomosaic. Three pixel spaces, in order (`sourceFrames/detections.ts`):
+
+| Step | How |
+|---|---|
+| crop to native | add the crop window's offset (`CloserLook.window`, native pixels) |
+| native to frame | divide by the scale measured on the decoded original over the 2,400 px frame ODM posed (`renderCloserLook` with `uploadedWidth`) |
+| frame to ground | `odm.ts pixelToGround`: the ray through that pixel meets the flat ground plane at the scan's estimated height; centre and the four corners, so a box becomes a small ring |
+
+Where it shows: press "Ask the baseline detector" in any Closer look (scout spot or a marked
+area). The viewer draws the boxes on the photo and lists each box's crop, native, frame and
+ground coordinates ("Where the boxes land", with a copy button for a bug report); the map
+draws the ring (or a point when a corner misses the plane) in red with its confidence, on the
+Weed Scout map and on Field View alike (`DetectionOverlay.tsx`, fed by the in-memory
+`detectionStore.ts`). The toggle is "Detector boxes (N), experimental" in the Weed Scout legend
+and in Field View's Layers panel; "clear" empties the layer. Nothing is saved; nothing reads it.
+
+Statuses: `ok`, or `off_ground` when the ray never meets the plane; a scan with no ground
+height keeps the boxes on the photo only and says so.
+
+Known error sources, in order of size: the flat-ground height (tens of centimetres per metre
+of height error at the frame edge, near zero at the centre; a DSM would remove it); the
+detector's own box placement; the pose's reprojection error (sub-pixel on this scan). The
+round trip is tested on the real reconstruction: a box drawn on a known ground point lands
+back within 2 cm, and two boxes 2 m apart come back 2 m apart.

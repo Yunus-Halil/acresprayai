@@ -27,6 +27,8 @@ import { useAuth } from "@/lib/auth";
 import { type ScanSources, loadScanSources } from "@/lib/sourceFrames/scan";
 import { ringCandidate, spotSources } from "@/lib/sourceFrames/spot";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
+import { DetectionOverlay } from "./DetectionOverlay";
+import { addDetections, setDetectionsVisible, useDetectionLayer } from "@/lib/sourceFrames/detectionStore";
 import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
 } from "@/lib/droneSpecs";
@@ -185,6 +187,7 @@ export function FieldViewTab(props: {
   // that saw it, exactly as a scout spot does.
   const [sources, setSources] = useState<ScanSources | null>(null);
   const [closerLook, setCloserLook] = useState<CloserLookTarget | null>(null);
+  const detectionLayer = useDetectionLayer(taskId);
   useEffect(() => {
     const odmUuid = props.odmUuid ?? null;
     if (!user || !odmUuid) { setSources(null); return; }
@@ -197,7 +200,7 @@ export function FieldViewTab(props: {
   const lookAt = useCallback((id: string) => {
     const p = userPolys.find(x => x.id === id);
     if (!p) return;
-    setCloserLook({ title: p.name, spot: spotSources(sources, ringCandidate(p.id, p.ring)) });
+    setCloserLook({ id: p.id, title: p.name, spot: spotSources(sources, ringCandidate(p.id, p.ring)) });
   }, [userPolys, sources]);
 
   // ---- Scan panel + single-map compare --------------------------------------
@@ -497,6 +500,7 @@ export function FieldViewTab(props: {
           setActiveIdx={setActiveBoundaryIdx}
           removeVertexOnTap={removePointMode}
         />
+        <DetectionOverlay taskId={taskId} />
         {layers.userAnnotations && userPolys.length > 0 && (
           <UserPolyLayer polys={userPolys} onDelete={deleteUserPolygon} onLook={props.odmUuid ? lookAt : undefined} />
         )}
@@ -803,6 +807,11 @@ export function FieldViewTab(props: {
           <LayerRow label={`Annotations · my polygons (${userPolys.length})`} icon={Hexagon}
             checked={layers.userAnnotations}
             onToggle={() => setLayers(s => ({ ...s, userAnnotations: !s.userAnnotations }))} />
+          {detectionLayer.detections.length > 0 && (
+            <LayerRow label={`Detector boxes (${detectionLayer.detections.length}), experimental`} icon={Hexagon}
+              checked={detectionLayer.visible}
+              onToggle={() => setDetectionsVisible(taskId, !detectionLayer.visible)} />
+          )}
           <LayerRow
             label={`Treatment grid zones${gridZoneLoad ? ` (${gridZoneLoad.zones.length})` : ""}`}
             icon={Grid3x3}
@@ -1005,7 +1014,7 @@ export function FieldViewTab(props: {
         </div>
       )}
 
-      <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} />
+      <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} onDetections={list => addDetections(taskId, list)} />
 
       {/* User polygon metadata form */}
       {draftUserPoly && (
