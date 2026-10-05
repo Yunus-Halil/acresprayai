@@ -101,6 +101,44 @@ describe("bench-detect", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.status).toBe("API_ERROR");
-    expect(body.error).toBe("HTTP 403: denied for ***");
+    expect(body.error).toMatch(/^HTTP 403: denied for \*\*\* /);
+    expect(body.error).not.toContain(KEY);
+  });
+});
+
+describe("bench-detect: a refused call is explained", () => {
+  let db: ReturnType<typeof makeSupabase>;
+  beforeEach(() => { db = makeSupabase(); __setMockClient(db.client); });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("a 401 with a valid key names the workspace and blames the model; with a bad key blames the key", async () => {
+    installDenoGlobal({ ROBOFLOW_API_KEY: KEY });
+    vi.stubGlobal("fetch", mockFetch([
+      { match: "detect.roboflow.com", respond: () => new Response(JSON.stringify({ status: 401, message: `Unauthorized api_key ${KEY}` }), { status: 401 }) },
+      { match: "api.roboflow.com/?api_key", respond: () => jsonResponse({ workspace: "yunus-farm" }) },
+    ]));
+    let handler = await loadFunction(FN);
+    let body = await (await handler(post({ image: PNG_B64, mime: "image/png" }))).json();
+    expect(body.status).toBe("API_ERROR");
+    expect(body.error).toMatch(/HTTP 401.*valid for workspace "yunus-farm".*model "weeds-nxe1w\/1" is not one that workspace can run.*ROBOFLOW_MODEL/);
+    expect(body.error).not.toContain(KEY);
+
+    vi.stubGlobal("fetch", mockFetch([
+      { match: "detect.roboflow.com", respond: () => new Response("Unauthorized", { status: 401 }) },
+      { match: "api.roboflow.com/?api_key", respond: () => new Response("nope", { status: 401 }) },
+    ]));
+    handler = await loadFunction(FN);
+    body = await (await handler(post({ image: PNG_B64, mime: "image/png" }))).json();
+    expect(body.error).toMatch(/The key itself was refused.*private API key/);
+  });
+
+  it("ROBOFLOW_MODEL on the server sets the model; a request's model still wins", async () => {
+    installDenoGlobal({ ROBOFLOW_API_KEY: KEY, ROBOFLOW_MODEL: "my-weeds/3" });
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", mockFetch([{ match: "roboflow", respond: (url: string) => { calls.push(url); return jsonResponse({ predictions: [] }); } }]));
+    const handler = await loadFunction(FN);
+    expect((await (await handler(post({ image: PNG_B64, mime: "image/png" }))).json()).modelId).toBe("my-weeds/3");
+    expect(calls[0]).toContain("/my-weeds/3?");
+    expect((await (await handler(post({ image: PNG_B64, mime: "image/png", model: "other/7" }))).json()).modelId).toBe("other/7");
   });
 });

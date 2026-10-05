@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { runBrowserBench } from "@/lib/sourceFrames/benchBrowser";
 import { renderReport } from "@/lib/sourceFrames/benchReport";
 import type { BenchRun } from "@/lib/sourceFrames/benchTypes";
-import { BASELINE_SETTINGS, detectWithBaseline } from "@/lib/sourceFrames/detectClient";
+import { baselineSettings, detectWithBaseline, getDetectorModel, isModelId, setDetectorModel } from "@/lib/sourceFrames/detectClient";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
 import type { Candidate } from "@/lib/weedScout/types";
 
@@ -24,6 +24,10 @@ export function BenchmarkPanel({ sources, candidates, scan, verdictOf, stored }:
 }) {
   const [limit, setLimit] = useState(12);
   const [useDetector, setUseDetector] = useState(true);
+  // The detector model, per browser; the Closer look's button uses the same value.
+  const [modelId, setModelId] = useState(getDetectorModel);
+  const modelOk = !modelId || isModelId(modelId);
+  useEffect(() => { if (modelOk) setDetectorModel(modelId); }, [modelId, modelOk]);
   const [busy, setBusy] = useState<{ done: number; total: number; line: string } | null>(null);
   const [run, setRun] = useState<BenchRun | null>(null);
   const [open, setOpen] = useState(false);
@@ -48,7 +52,7 @@ export function BenchmarkPanel({ sources, candidates, scan, verdictOf, stored }:
       const result = await runBrowserBench({
         sources, candidates, limit, scan, verdictOf, stored,
         detect: useDetector ? detectWithBaseline : null,
-        modelSettings: useDetector ? BASELINE_SETTINGS : null,
+        modelSettings: useDetector ? baselineSettings() : null,
         onProgress: (done, total, line) => setBusy({ done, total, line }),
       });
       setRun(result);
@@ -76,6 +80,11 @@ export function BenchmarkPanel({ sources, candidates, scan, verdictOf, stored }:
           </label>
           <label className="text-neutral-400 inline-flex items-center gap-1">
             <input type="checkbox" checked={useDetector} onChange={e => setUseDetector(e.target.checked)} /> baseline detector
+          </label>
+          <label className="text-neutral-400 inline-flex items-center gap-1" title="A Roboflow model id, <project>/<version>, from the project's Deploy page. Empty uses the server's default. Also used by Ask the baseline detector in any Closer look.">
+            model
+            <input type="text" value={modelId} onChange={e => setModelId(e.target.value)} placeholder="server default" spellCheck={false}
+              className={`w-40 bg-[#0f0f0f] border rounded-sm px-1.5 py-0.5 text-[11px] text-neutral-200 ${modelOk ? "border-[#222]" : "border-red-500"}`} data-testid="benchmark-model" />
           </label>
           <button type="button" className={btn} disabled={!ready} onClick={start} data-testid="benchmark-run">
             {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : null} Compare

@@ -18,8 +18,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import {
-  DEFAULT_ROBOFLOW_MODEL, type ModelResult, callRoboflow,
+  DEFAULT_ROBOFLOW_MODEL, type ModelResult, callRoboflow, checkRoboflowKey, explainRefusal,
 } from "../_shared/roboflow.ts";
+
+const MODEL_ID = /^[A-Za-z0-9._-]+\/\d+$/;
 
 /** Base64 characters, so about 6 MB of image. A crop is tens of kilobytes; this is a sanity bound. */
 const MAX_IMAGE_B64 = 8_000_000;
@@ -52,13 +54,21 @@ Deno.serve(async (req) => {
   const image = body.image.replace(/^data:[^;]+;base64,/, "");
   if (!/^[A-Za-z0-9+/=\s]+$/.test(image.slice(0, 4096))) return refuse("image is not base64", 400);
   if (image.length > MAX_IMAGE_B64) return refuse("image too large for the detector", 413);
-  const model = typeof body.model === "string" && /^[A-Za-z0-9._-]+\/\d+$/.test(body.model) ? body.model : DEFAULT_ROBOFLOW_MODEL;
+  // The model: the request's, else the server's ROBOFLOW_MODEL, else the baseline.
+  const serverModel = (Deno.env.get("ROBOFLOW_MODEL") ?? "").trim();
+  const model = typeof body.model === "string" && MODEL_ID.test(body.model) ? body.model
+    : MODEL_ID.test(serverModel) ? serverModel : DEFAULT_ROBOFLOW_MODEL;
   const confidence = typeof body.confidence === "number" && body.confidence >= 0 && body.confidence <= 100 ? body.confidence : undefined;
 
-  const apiKey = (Deno.env.get("ROBOFLOW_API_KEY") ?? "").trim();
+  const apiKey = (Deno.env.get("ROBOFLOW_API_KEY") ?? "").trim().replace(/^['"]|['"]$/g, "");
   if (!apiKey) return refuse("ROBOFLOW_API_KEY is not set on the server", 503);
 
   const endpoint = (Deno.env.get("ROBOFLOW_API_URL") ?? "").trim() || undefined;
   const result = await callRoboflow({ apiKey, model, endpoint, confidence }, image, mime);
+  // A refusal is two different problems with one status code; say which.
+  if (result.status === "API_ERROR" && /^HTTP 40[13]/.test(result.error ?? "")) {
+    const check = await checkRoboflowKey(apiKey);
+    return json({ ...result, error: explainRefusal(model, result.error!, check) }, 200);
+  }
   return json(result, 200);
 });

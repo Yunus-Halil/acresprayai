@@ -106,6 +106,32 @@ export function describeRoboflow(opts: Omit<RoboflowCall, "apiKey" | "fetchImpl"
 }
 
 /**
+ * Whether a key is a working Roboflow key at all, and whose. The service's
+ * root answers with the key's workspace. Used only to turn a 401 from the
+ * model endpoint into a sentence a person can act on: "the key is fine, the
+ * model is not yours" against "the key is wrong". Never throws.
+ */
+export async function checkRoboflowKey(apiKey: string, fetchImpl: typeof fetch = fetch, timeoutMs = 15_000): Promise<{ valid: boolean; workspace: string | null; detail: string | null }> {
+  try {
+    const res = await fetchImpl(`https://api.roboflow.com/?api_key=${encodeURIComponent(apiKey)}`, { signal: AbortSignal.timeout(timeoutMs) });
+    const text = await res.text();
+    if (!res.ok) return { valid: false, workspace: null, detail: scrub(`HTTP ${res.status}: ${text.slice(0, 160)}`, [apiKey]) };
+    let json: { workspace?: unknown } = {};
+    try { json = JSON.parse(text); } catch { /* not JSON: treat as unknown */ }
+    const workspace = typeof json.workspace === "string" ? json.workspace : null;
+    return { valid: true, workspace, detail: null };
+  } catch (e) {
+    return { valid: false, workspace: null, detail: scrub((e as Error)?.message ?? String(e), [apiKey]) };
+  }
+}
+
+/** A 401 or 403 from the model endpoint, explained with the key check's answer. */
+export function explainRefusal(model: string, httpError: string, check: { valid: boolean; workspace: string | null; detail: string | null }): string {
+  if (!check.valid) return `${httpError} The key itself was refused by Roboflow${check.detail ? ` (${check.detail})` : ""}: set ROBOFLOW_API_KEY to the workspace's private API key.`;
+  return `${httpError} The key is valid${check.workspace ? ` for workspace "${check.workspace}"` : ""}, so the model "${model}" is not one that workspace can run: set ROBOFLOW_MODEL to a model of your own (its id is <project>/<version>, from the project's Deploy page).`;
+}
+
+/**
  * One image to the hosted model. `imageBase64` is the bare base64 of a JPEG or
  * PNG. Never throws: a failed call is an API_ERROR result with the key scrubbed.
  */
