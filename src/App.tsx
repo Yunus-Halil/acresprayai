@@ -18,6 +18,7 @@ import Schedule from "./pages/app/Schedule";
 import FieldDetail from "./pages/app/FieldDetail.tsx";
 import OrthomosaicViewer from "./pages/app/OrthomosaicViewer.tsx";
 import WeedLibrary from "./pages/app/WeedLibrary.tsx";
+import PhotoScout from "./pages/app/PhotoScout.tsx";
 import { AuthProvider } from "./lib/auth";
 
 const queryClient = new QueryClient();
@@ -45,6 +46,7 @@ const App = () => (
               <Route path="weather" element={<Weather />} />
               <Route path="schedule" element={<Schedule />} />
               <Route path="weeds" element={<WeedLibrary />} />
+              <Route path="photo" element={<PhotoScout />} />
             </Route>
             {/* Gated like the rest of /app. The viewer already refused to
                 load without a session, but it did so with a dead-end "Please

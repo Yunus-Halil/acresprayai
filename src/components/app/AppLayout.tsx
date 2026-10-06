@@ -5,7 +5,7 @@ import { setUnitSystem, useUnitSystem } from "@/hooks/useUnitSystem";
 import { loadUnitPreference, saveUnitPreference } from "@/lib/unitPreference";
 import { UnitsPrompt } from "@/components/app/UnitsPrompt";
 import type { UnitSystem } from "@/lib/units";
-import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays, Sprout } from "lucide-react";
+import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays, Sprout, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import RequireAuth from "@/components/RequireAuth";
@@ -26,6 +26,8 @@ const nav = [
 // catalog that Weed Scout's identification panel reads from.
 const devNav = [
   { to: "/app/weeds", label: "Weed Library", icon: Sprout, end: false },
+  // One photo, no orthomosaic: the planting pattern read in the browser.
+  { to: "/app/photo", label: "Photo Scout", icon: Camera, end: false },
 ];
 // Reports live per-scan, inside the orthomosaic viewer's Reports tab - there is
 // no cross-field reporting page.
