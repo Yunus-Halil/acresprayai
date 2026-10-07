@@ -343,6 +343,7 @@ function Summary({ pattern, units }: { pattern: PhotoPattern; units: "metric" | 
       : s.pitchKeptFromGiven > 0
         ? `${cm(s.medianPitchM)}: you gave ${cm(pattern.rowSpacingM)} and the fit kept it in ${s.pitchKeptFromGiven} of ${s.usableWindows} windows instead of what it measured`
         : `${cm(s.medianPitchM)} (you gave ${cm(pattern.rowSpacingM)})`],
+    ["Typical plant", s.plantDiameterM == null ? "–" : `${cm(s.plantDiameterM)} across`],
     ["Plant spacing along the row", s.seedSpacingM == null ? "not consistent enough to report" : `${cm(s.seedSpacingM)}, ${Math.round((s.seedAgreement ?? 0) * 100)}% of gaps agree`],
     ["Vegetation", `${(pattern.vegetationFraction * 100).toFixed(1)}% of pixels${pattern.canopyClosed ? " (closed canopy)" : ""}`],
     ["Blobs", `${s.blobs.toLocaleString()} kept, ${s.specks.toLocaleString()} specks dropped under ${fmtAreaCm2(pattern.minBlobAreaCm2, units).text}`],

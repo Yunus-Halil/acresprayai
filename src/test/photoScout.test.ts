@@ -9,7 +9,7 @@
 import piexif from "piexifjs";
 import { describe, expect, it } from "vitest";
 import { estimateGsd, parsePhotoHeader } from "@/lib/photoScout/exif";
-import { analysePhoto, fitWindowBrightness, lumaRaster, placeOnRows, planWindows, rowSegmentsPx, type PhotoPixels } from "@/lib/photoScout/pattern";
+import { analysePhoto, fitWindowBrightness, lumaRaster, mergeComponents, placeOnRows, planWindows, rowSegmentsPx, type PhotoPixels } from "@/lib/photoScout/pattern";
 
 function rng(seed: number) {
   let s = seed >>> 0;
@@ -78,7 +78,7 @@ describe("Photo Scout on a rendered stand at 1 cm/px", () => {
     widthPx: 1200, heightPx: 900, gsdM: 0.01,
     angleDeg: 20, pitchM: 0.762, seedM: 0.2, plantRadiusM: 0.04,
     skips: [{ row: 1, from: 1.0, to: 2.2 }],
-    extra: [{ row: 2, along: 0.08 }, { row: -2, along: 0.5 }],
+    extra: [{ row: 2, along: 0.1 }, { row: -2, along: 0.5 }],
     weeds: [
       { row: 0, along: -1, r: 0.05 }, { row: 1, along: 2.5, r: 0.06 }, { row: -1, along: 0.3, r: 0.04 },
       { row: 3, along: -2, r: 0.05 }, { row: -3, along: 1.4, r: 0.07 }, { row: 2, along: -0.7, r: 0.05 },
@@ -162,6 +162,47 @@ describe("Photo Scout on a rendered stand at 1 cm/px", () => {
     expect(Math.abs(b.recoveredPitchM - pitch) / pitch).toBeLessThan(0.08);
   });
 
+  it("reads a young orchard: trees 4.5 m between rows and 2 m along, over furrows at 50 cm", async () => {
+    // 2 cm/px, 40 m x 30 m. Tree canopies 1 m across on bare soil; the soil carries
+    // brightness furrows at 50 cm parallel to the rows, which must not win.
+    const W = 2000, H = 1500, g = 0.02, pitch = 4.5, seed = 2.0, th = (-12 * Math.PI) / 180;
+    const rand = rng(9);
+    const rgba = new Uint8ClampedArray(W * H * 4);
+    const cx = (W / 2) * g, cy = -(H / 2) * g;
+    const tx = Math.cos(th), ty = Math.sin(th), nx = -Math.sin(th), ny = Math.cos(th);
+    const trees: { x: number; y: number }[] = [];
+    let planted = 0;
+    for (let k = -6; k <= 6; k++) for (let a = -30; a <= 30; a += seed) {
+      if (k === 1 && a > 4 && a < 10) continue; // three missing trees
+      const t = { x: cx + a * tx + k * pitch * nx, y: cy + a * ty + k * pitch * ny };
+      trees.push(t);
+      if (t.x > 0.6 && t.x < W * g - 0.6 && t.y < -0.6 && t.y > -H * g + 0.6) planted++;
+    }
+    const weeds = [{ x: cx + 3 * tx + 2.25 * nx, y: cy + 3 * ty + 2.25 * ny }, { x: cx - 7 * tx - 1.5 * 4.5 * nx, y: cy - 7 * ty - 1.5 * 4.5 * ny }];
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      const x = i * g, y = -j * g;
+      const across = (x - cx) * nx + (y - cy) * ny;
+      const furrow = 0.85 + 0.15 * Math.cos((2 * Math.PI * across) / 0.5);
+      let R = 150 * furrow, G = 120 * furrow, B = 85 * furrow;
+      const near = (p: { x: number; y: number }, r: number) => (x - p.x) ** 2 + (y - p.y) ** 2 <= r * r;
+      if (trees.some(t => near(t, 0.5)) || weeds.some(w => near(w, 0.3))) { R = 60; G = 125; B = 45; }
+      R += (rand() - 0.5) * 12; G += (rand() - 0.5) * 12; B += (rand() - 0.5) * 12;
+      const o = (j * W + i) * 4; rgba[o] = R; rgba[o + 1] = G; rgba[o + 2] = B; rgba[o + 3] = 255;
+    }
+    const r = await analysePhoto({ width: W, height: H, rgba }, { gsdM: g, rowSpacingM: "auto" }, { yieldBetweenWindows: false });
+    expect(r.summary.usableWindows).toBeGreaterThan(r.summary.windows / 2);
+    expect(r.summary.brightnessWindows).toBe(0);
+    expect(angleDiff(r.summary.medianAngleDeg!, -12)).toBeLessThan(1.5);
+    expect(Math.abs(r.summary.medianPitchM! - pitch) / pitch).toBeLessThan(0.08);
+    expect(r.summary.seedSpacingM).not.toBeNull();
+    expect(Math.abs(r.summary.seedSpacingM! - seed) / seed).toBeLessThan(0.1);
+    expect(r.summary.onPattern).toBeGreaterThan(planted * 0.7);
+    // The two weeds, plus a few specks the soil noise still makes at six pixels.
+    expect(r.blobs.filter(b => b.cls === "off-row" && b.equivDiameterM > 0.4).length).toBe(2);
+    expect(r.summary.offRow).toBeLessThanOrEqual(8);
+    expect(r.summary.skips).toBeGreaterThanOrEqual(2);
+  }, 60_000);
+
   it("draws row segments through every usable window", async () => {
     const { px } = renderStand(stand);
     const r = await analysePhoto(px, { gsdM: 0.01, rowSpacingM: 0.762 }, { yieldBetweenWindows: false });
@@ -210,6 +251,16 @@ describe("placing a point on a window's rows", () => {
     expect(p.acrossM).toBeCloseTo(0.05, 6);
     expect(p.alongM).toBeCloseTo(2, 6);
   });
+  it("merges the pieces of one plant and leaves neighbours apart", () => {
+    const box = (x: number, y: number, s: number) => ({ n: s * s, sx: (x + s / 2) * s * s, sy: (y + s / 2) * s * s, minX: x, maxX: x + s - 1, minY: y, maxY: y + s - 1 });
+    // Two pieces 3 px apart, a third piece touching the second, and a neighbour 20 px away.
+    const merged = mergeComponents([box(0, 0, 10), box(13, 0, 10), box(23, 2, 4), box(47, 0, 10)], 4);
+    expect(merged.length).toBe(2);
+    const big = merged.find(m => m.n === 100 + 100 + 16)!;
+    expect(big.minX).toBe(0); expect(big.maxX).toBe(26);
+    expect(mergeComponents([box(0, 0, 10), box(13, 0, 10)], 0).length).toBe(2);
+  });
+
   it("tiles the photo so every pixel is in exactly one window", () => {
     const ws = planWindows(1000, 700, 0.01, 3);
     expect(ws.length).toBe(Math.round(1000 / 300) * Math.round(700 / 300));
