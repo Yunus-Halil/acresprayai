@@ -41,7 +41,7 @@ import { shorth } from "../weedScout/baseline";
 import { minAreaPx } from "../weedScout/blobs";
 import {
   type FloatImage, MIN_TILE_CONFIDENCE, VEGETATION_FRACTION_RANGE, checkPitch, downsampleFactor, fitWindow,
-  groundAngleToPixel, phaseFromImage, pixelAngleToGround, projectionProfile, rowAngle, rowPitch, toSparse,
+  groundAngleToPixel, phaseFromImage, pixelAngleToGround, poolWindow, projectionProfile, rowAngle, rowPitch, toSparse,
 } from "../weedScout/rows";
 import type { RowTileFit } from "../weedScout/types";
 import { globalThreshold, indexRaster, maskWindow } from "../weedScout/vegetation";
@@ -86,6 +86,25 @@ export const MIN_BLOB_PX = 6;
 export const DEFAULT_PHOTO_WINDOW_M = 4;
 /** A spacing is fitted over at least this many rows, widening the neighbourhood beyond the window when the window is small. */
 export const MIN_ROWS_PER_FIT = 12;
+/**
+ * But never over a neighbourhood wider than this. Twelve orchard rows at 5 m
+ * is 60 m, more than a photo from 36 m up, so every window was fitted on the
+ * whole photo and a road, a hedge or a second block at the far side voted on
+ * this window's rows: the fit took 7 m where the rows were 5 m apart. Wide
+ * rows get fewer rows under the fit instead, never fewer than
+ * MIN_ROWS_PER_FIT_WIDE, and the phase is referenced near the window.
+ */
+export const MAX_NEIGHBOURHOOD_M = 30;
+/** The floor on rows under a fit once MAX_NEIGHBOURHOOD_M bites. */
+export const MIN_ROWS_PER_FIT_WIDE = 5;
+/**
+ * The row phase of a window is measured on a patch this many rows across
+ * about the window itself (never smaller than the window), after the angle
+ * and the pitch came from the wider neighbourhood. Referenced to the
+ * neighbourhood's centre, up to 15 m from a window at the photo's edge, a
+ * pitch five percent off put the rows a metre across at the window.
+ */
+export const PHASE_PATCH_ROWS = 3;
 /** No crop is seeded closer than this along the row; a smaller "spacing" is mask speckle, not plants. */
 export const MIN_SEED_SPACING_M = 0.05;
 /** A row needs this many on-row blobs before its gaps say anything. */
@@ -514,10 +533,12 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   type Fitted = { fit: RowTileFit; signal: RowSignal };
   // A fit that measured its own spacing beats one that fell back on the
   // candidate it was handed: a harmonic of the true spacing is self-consistent
-  // at the harmonic's candidate too, but its peak is the weaker one. And a
-  // usable fit on vegetation beats any on brightness: plants against soil
-  // are the planting pattern itself, where brightness also sees furrows and
-  // tyre tracks. Brightness leads only where the mask has nothing.
+  // at the harmonic's candidate too, but its peak is the weaker one. And
+  // vegetation beats brightness: plants against soil are the planting pattern
+  // itself, where brightness also sees furrows and tyre tracks. Brightness is
+  // tried only where the mask is blind (closed canopy, or nothing green): in
+  // an orchard window whose trees the mask saw but whose rows no spacing
+  // fitted, brightness found the plough furrows at 40 cm and called them rows.
   const selfConsistent = (f: RowTileFit) => !f.pitchFromGrower && f.confidence >= MIN_TILE_CONFIDENCE;
   const rank = (f: Fitted) => (selfConsistent(f.fit) ? (f.signal === "vegetation" ? 30 : 10) : 0) + f.fit.confidence;
 
@@ -527,8 +548,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
    * MIN_ROWS_PER_FIT rows, within the photo. Rows are straight, so a model
    * fitted on the neighbourhood places the window's own blobs.
    */
-  const neighbourhood = (w: { x0: number; y0: number; x1: number; y1: number }, spacingM: number) => {
-    const need = Math.round((MIN_ROWS_PER_FIT * spacingM) / gsdM);
+  const regionAround = (w: { x0: number; y0: number; x1: number; y1: number }, need: number) => {
     const grow = (lo: number, hi: number, max: number) => {
       const have = hi - lo + 1;
       if (have >= need) return [lo, hi] as const;
@@ -541,8 +561,35 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     const [x0, x1] = grow(w.x0, w.x1, px.width - 1), [y0, y1] = grow(w.y0, w.y1, px.height - 1);
     return { x0, y0, x1, y1 };
   };
-  // Wide spacings widen every window to the same neighbourhood, often the
-  // whole photo; the fit is then the same for every window and is done once.
+  const neighbourhood = (w: { x0: number; y0: number; x1: number; y1: number }, spacingM: number) => {
+    const needM = Math.min(MIN_ROWS_PER_FIT * spacingM, Math.max(MIN_ROWS_PER_FIT_WIDE * spacingM, MAX_NEIGHBOURHOOD_M));
+    return regionAround(w, Math.round(needM / gsdM));
+  };
+
+  /**
+   * The same fit, with its phase measured on a patch about the window and
+   * referenced to the window's own centre. Angle and pitch are kept.
+   */
+  const localisePhase = (w: { x0: number; y0: number; x1: number; y1: number }, f: Fitted): Fitted => {
+    const { fit } = f;
+    if (!(fit.confidence > 0) || !(fit.pitchM > 0)) return f;
+    const r = regionAround(w, Math.round((PHASE_PATCH_ROWS * fit.pitchM) / gsdM));
+    const factor = downsampleFactor(gsdM, fit.pitchM);
+    const rw = r.x1 - r.x0 + 1, rh = r.y1 - r.y0 + 1;
+    const sampleM = gsdM * factor;
+    const pooled = f.signal === "vegetation"
+      ? poolWindow(mask, px.width, r.x0, r.y0, rw, rh, factor)
+      : highPassPositive(poolFloat(luma, px.width, r.x0, r.y0, rw, rh, factor), Math.max(2, Math.round((2 * fit.pitchM) / sampleM)));
+    if (pooled.width < 2 || pooled.height < 2) return f;
+    const sp = toSparse(pooled);
+    if (sp.xs.length === 0) return f;
+    const toGround = (sx: number, sy: number) => ({ x: r.x0 * gsdM + sx * sampleM, y: -r.y0 * gsdM - sy * sampleM });
+    const centre = { x: ((w.x0 + w.x1 + 1) / 2) * gsdM, y: -((w.y0 + w.y1 + 1) / 2) * gsdM };
+    const phaseM = phaseFromImage(sp, toGround, centre.x, centre.y, fit.angleDeg, fit.pitchM);
+    return { signal: f.signal, fit: { ...fit, centre, phaseM } };
+  };
+  // Narrow spacings on a small photo widen every window to the same
+  // neighbourhood; the fit is then the same for every window and is done once.
   const fitCache = new Map<string, RowTileFit>();
   const vegCache = new Map<string, number>();
 
@@ -583,8 +630,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     const fits: Fitted[] = [];
     for (const c of candidates) {
       const v = at(c, "vegetation");
-      if (v) fits.push(v);
-      fits.push(at(c, "brightness")!);
+      fits.push(v ?? at(c, "brightness")!);
     }
     // Second pass, auto only: every spacing a first-pass fit measured but
     // could not stand on (more than ten percent from its candidate) is tried
@@ -613,7 +659,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
       const ratio = best.fit.pitchM / f.fit.pitchM;
       if (Math.abs(ratio - Math.round(ratio)) <= 0.15 && Math.round(ratio) >= 2) best = f;
     }
-    return best;
+    return localisePhase(w, best);
   };
   const canopyClosed = vegetationFraction >= CANOPY_CLOSED;
   if (canopyClosed) notes.push("The canopy is closed in this photo: almost every pixel is vegetation, so no plant is separate and blobs are not placed. Rows can still be found from brightness.");

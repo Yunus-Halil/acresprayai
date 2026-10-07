@@ -203,6 +203,57 @@ describe("Photo Scout on a rendered stand at 1 cm/px", () => {
     expect(r.summary.skips).toBeGreaterThanOrEqual(2);
   }, 60_000);
 
+  it("fits each side of a photo on its own surroundings: two orchard blocks, two row directions", async () => {
+    // 2 cm/px, 40 m x 30 m. The left block's rows run at -12 degrees, the
+    // right block's at 40, both 4.5 m apart. Twelve rows at 4.5 m is more
+    // than the photo, so a fit over the whole photo would give every window
+    // one direction; each side must get its own, and each window's phase is
+    // referenced to the window itself.
+    const W = 2000, H = 1500, g = 0.02, pitch = 4.5, seed = 2.0;
+    const rand = rng(11);
+    const rgba = new Uint8ClampedArray(W * H * 4);
+    const blocks = [
+      { th: (-12 * Math.PI) / 180, cx: 10, cy: -15, from: 0, to: 20 },
+      { th: (40 * Math.PI) / 180, cx: 30, cy: -15, from: 20, to: 40 },
+    ];
+    const trees: { x: number; y: number }[] = [];
+    for (const b of blocks) {
+      const tx = Math.cos(b.th), ty = Math.sin(b.th), nx = -Math.sin(b.th), ny = Math.cos(b.th);
+      for (let k = -8; k <= 8; k++) for (let a = -30; a <= 30; a += seed) {
+        const t = { x: b.cx + a * tx + k * pitch * nx, y: b.cy + a * ty + k * pitch * ny };
+        if (t.x >= b.from && t.x < b.to) trees.push(t);
+      }
+    }
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      const x = i * g, y = -j * g;
+      let R = 150, G = 120, B = 85;
+      if (trees.some(t => (x - t.x) ** 2 + (y - t.y) ** 2 <= 0.25)) { R = 60; G = 125; B = 45; }
+      R += (rand() - 0.5) * 12; G += (rand() - 0.5) * 12; B += (rand() - 0.5) * 12;
+      const o = (j * W + i) * 4; rgba[o] = R; rgba[o + 1] = G; rgba[o + 2] = B; rgba[o + 3] = 255;
+    }
+    const r = await analysePhoto({ width: W, height: H, rgba }, { gsdM: g, rowSpacingM: "auto" }, { yieldBetweenWindows: false });
+    const usable = r.windows.filter(w => w.usable);
+    expect(usable.length).toBeGreaterThan(r.windows.length / 2);
+    const left = usable.filter(w => w.x1 * g <= 8), right = usable.filter(w => w.x0 * g >= 32);
+    expect(left.length).toBeGreaterThan(0);
+    expect(right.length).toBeGreaterThan(0);
+    for (const w of left) expect(angleDiff(w.fit.angleDeg, -12)).toBeLessThan(2);
+    for (const w of right) expect(angleDiff(w.fit.angleDeg, 40)).toBeLessThan(2);
+    for (const w of usable) {
+      expect(Math.abs(w.fit.pitchM - pitch) / pitch).toBeLessThan(0.1);
+      // The phase is referenced to the window's own centre.
+      expect(w.fit.centre.x).toBeGreaterThanOrEqual(w.x0 * g);
+      expect(w.fit.centre.x).toBeLessThanOrEqual((w.x1 + 1) * g);
+      expect(-w.fit.centre.y).toBeGreaterThanOrEqual(w.y0 * g);
+      expect(-w.fit.centre.y).toBeLessThanOrEqual((w.y1 + 1) * g);
+    }
+    // And the trees of each side sit on that side's rows.
+    const sideOf = (b: { x: number }) => (b.x * g < 20 ? 0 : 1);
+    const onPattern = r.blobs.filter(b => b.cls === "on pattern" && !b.touchesBorder);
+    expect(onPattern.filter(b => sideOf(b) === 0).length).toBeGreaterThan(40);
+    expect(onPattern.filter(b => sideOf(b) === 1).length).toBeGreaterThan(40);
+  }, 60_000);
+
   it("draws row segments through every usable window", async () => {
     const { px } = renderStand(stand);
     const r = await analysePhoto(px, { gsdM: 0.01, rowSpacingM: 0.762 }, { yieldBetweenWindows: false });
