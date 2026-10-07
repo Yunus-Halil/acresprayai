@@ -19,6 +19,14 @@
 //                              gaps that add up to one spacing is between
 //                              plants
 //
+// Two signals find the rows, and each window says which one it used:
+//   vegetation  the scout's mask: plants against soil, the early-season case
+//   brightness  luma with the slow variation removed: in a closed canopy the
+//               chromaticity mask is shadow-blind by design and sees only
+//               noise, but the plant lines are lighter than the shadowed gaps
+//               between them. Brightness is allowed to find the GEOMETRY of
+//               the rows here; it never decides what a blob is.
+//
 // Coordinates: the photo's own frame, metres, x right and y UP from the
 // photo's top-left corner (y = -row * gsd). That is the same convention
 // fitWindow uses for a north-up raster, so its angle, phase and distance
@@ -31,7 +39,10 @@
 import type { RasterSource } from "../cellFeatures";
 import { shorth } from "../weedScout/baseline";
 import { minAreaPx } from "../weedScout/blobs";
-import { DEFAULT_ROW_WINDOW_M, MIN_TILE_CONFIDENCE, fitWindow } from "../weedScout/rows";
+import {
+  type FloatImage, MIN_TILE_CONFIDENCE, VEGETATION_FRACTION_RANGE, checkPitch, downsampleFactor, fitWindow,
+  groundAngleToPixel, phaseFromImage, pixelAngleToGround, projectionProfile, rowAngle, rowPitch, toSparse,
+} from "../weedScout/rows";
 import type { RowTileFit } from "../weedScout/types";
 import { globalThreshold, indexRaster, maskWindow } from "../weedScout/vegetation";
 
@@ -40,8 +51,12 @@ export type PhotoPixels = { width: number; height: number; rgba: Uint8ClampedArr
 export type PhotoParams = {
   /** Ground sample distance of THESE pixels, metres. */
   gsdM: number;
-  /** The grower's row spacing, metres. The fit happens inside a band around it. */
-  rowSpacingM: number;
+  /**
+   * The grower's row spacing, metres, or "auto": every window is fitted at
+   * each of AUTO_SPACING_CANDIDATES_M, the best fit wins, and the window is
+   * refitted at the spacing it measured so the fit stands on that number.
+   */
+  rowSpacingM: number | "auto";
   /** Window edge for the row fit, metres. */
   windowM?: number;
   /** Blobs under this ground area are specks, not plants. */
@@ -49,10 +64,22 @@ export type PhotoParams = {
 };
 
 export const DEFAULT_MIN_BLOB_AREA_CM2 = 4;
+/**
+ * Candidate spacings for "auto". fitWindow searches 60 to 160 percent of its
+ * number and pools the mask so that number is about eight samples, so the
+ * candidates overlap and together cover about 12 cm to 1.6 m.
+ */
+export const AUTO_SPACING_CANDIDATES_M = [0.2, 0.3, 0.45, 0.76, 1.0];
 /** A blob further than this fraction of the pitch from its row is off-row. */
 export const OFF_ROW_FRACTION = 0.25;
 /** Gaps along a row must be at least this many pixels to count as two plants. */
 export const MIN_GAP_PX = 2;
+/** Window edge for a photo: the tiling blobs are placed in. Small plots and curved rows want less than the ortho's 12 m. */
+export const DEFAULT_PHOTO_WINDOW_M = 4;
+/** A spacing is fitted over at least this many rows, widening the neighbourhood beyond the window when the window is small. */
+export const MIN_ROWS_PER_FIT = 12;
+/** No crop is seeded closer than this along the row; a smaller "spacing" is mask speckle, not plants. */
+export const MIN_SEED_SPACING_M = 0.05;
 /** A row needs this many on-row blobs before its gaps say anything. */
 export const MIN_ROW_BLOBS = 5;
 /** A window needs this many gaps before a seed spacing is reported. */
@@ -99,10 +126,14 @@ export type SeedFit = {
   betweenPlants: number;
 };
 
+export type RowSignal = "vegetation" | "brightness";
+
 export type PhotoWindow = {
   index: number;
   x0: number; y0: number; x1: number; y1: number;
   fit: RowTileFit;
+  /** Which signal the fit stands on. */
+  signal: RowSignal;
   usable: boolean;
   seed: SeedFit | null;
   onRow: number;
@@ -112,8 +143,12 @@ export type PhotoWindow = {
 export type PhotoSummary = {
   windows: number;
   usableWindows: number;
+  /** Usable windows whose rows came from brightness rather than the vegetation mask. */
+  brightnessWindows: number;
   medianAngleDeg: number | null;
   medianPitchM: number | null;
+  /** Usable windows whose fit kept the given spacing instead of its own measurement. */
+  pitchKeptFromGiven: number;
   seedSpacingM: number | null;
   seedAgreement: number | null;
   blobs: number;
@@ -130,7 +165,8 @@ export type PhotoPattern = {
   width: number;
   height: number;
   gsdM: number;
-  rowSpacingM: number;
+  /** The spacing the operator gave; null when it was searched automatically. */
+  rowSpacingM: number | null;
   windowM: number;
   minBlobAreaCm2: number;
   vegetationFraction: number;
@@ -207,6 +243,111 @@ export function measureComponents(mask: Uint8Array, width: number, height: numbe
   return { blobs, specks };
 }
 
+/** Luma per pixel, 0..1. */
+export function lumaRaster(px: PhotoPixels): Float32Array {
+  const n = px.width * px.height, out = new Float32Array(n), d = px.rgba;
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    out[i] = (0.299 * d[o] + 0.587 * d[o + 1] + 0.114 * d[o + 2]) / 255;
+  }
+  return out;
+}
+
+/** Mean-pool a float raster window by `factor`. */
+export function poolFloat(values: Float32Array, width: number, x0: number, y0: number, w: number, h: number, factor: number): FloatImage {
+  const ow = Math.floor(w / factor), oh = Math.floor(h / factor);
+  const data = new Float32Array(ow * oh);
+  const inv = 1 / (factor * factor);
+  for (let oy = 0; oy < oh; oy++) {
+    for (let ox = 0; ox < ow; ox++) {
+      let s = 0;
+      for (let dy = 0; dy < factor; dy++) {
+        const row = (y0 + oy * factor + dy) * width + x0 + ox * factor;
+        for (let dx = 0; dx < factor; dx++) s += values[row + dx];
+      }
+      data[oy * ow + ox] = s * inv;
+    }
+  }
+  return { data, width: ow, height: oh };
+}
+
+/**
+ * The part of an image that is brighter than its surroundings: the image
+ * minus a box mean of radius `r`, negative values dropped. Vignetting and
+ * the slow fall of light across a window are wider than `r` and vanish; a
+ * row a few samples wide survives.
+ */
+export function highPassPositive(img: FloatImage, r: number): FloatImage {
+  const { width: w, height: h, data } = img;
+  const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let s = 0, n = 0;
+      for (let k = Math.max(0, x - r); k <= Math.min(w - 1, x + r); k++) { s += data[y * w + k]; n++; }
+      tmp[y * w + x] = s / n;
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      let s = 0, n = 0;
+      for (let k = Math.max(0, y - r); k <= Math.min(h - 1, y + r); k++) { s += tmp[k * w + x]; n++; }
+      const v = data[y * w + x] - s / n;
+      out[y * w + x] = v > 0 ? v : 0;
+    }
+  }
+  return { data: out, width: w, height: h };
+}
+
+export type SoftFitInput = {
+  luma: Float32Array;
+  width: number;
+  x0: number; y0: number; x1: number; y1: number;
+  gsdM: number;
+  growerSpacingM: number;
+  angleHintDeg?: number | null;
+  /** Vegetation share of the window, carried through for the record. */
+  vegetationFraction: number;
+};
+
+/**
+ * Fit one window on brightness: the same angle, pitch and phase steps as the
+ * scout's fitWindow, on the high-passed luma instead of the mask.
+ */
+export function fitWindowBrightness(input: SoftFitInput): RowTileFit {
+  const { luma, width, x0, y0, x1, y1, gsdM, growerSpacingM } = input;
+  const w = x1 - x0 + 1, h = y1 - y0 + 1;
+  const factor = downsampleFactor(gsdM, growerSpacingM);
+  const sampleM = gsdM * factor;
+  const pooled = poolFloat(luma, width, x0, y0, w, h, factor);
+  const originX = x0 * gsdM, originY = -y0 * gsdM;
+  const toGround = (px: number, py: number) => ({ x: originX + px * sampleM, y: originY - py * sampleM });
+  const centre = toGround(pooled.width / 2, pooled.height / 2);
+  const sizeM = Math.max(w, h) * gsdM;
+  const empty: RowTileFit = {
+    centre, sizeM, angleDeg: 0, pitchM: growerSpacingM, phaseM: 0,
+    confidence: 0, angleConfidence: 0, pitchConfidence: 0,
+    vegetationFraction: input.vegetationFraction, pitchFromGrower: true, recoveredPitchM: 0,
+  };
+  if (pooled.width < 8 || pooled.height < 8) return empty;
+  // The box radius is two spacings: wide enough to pass a row, narrow enough to drop the light's fall-off.
+  const img = highPassPositive(pooled, Math.max(2, Math.round((2 * growerSpacingM) / sampleM)));
+  const sp = toSparse(img);
+  if (sp.xs.length < 64) return empty;
+  const hintPx = input.angleHintDeg == null ? null : groundAngleToPixel(input.angleHintDeg);
+  const { anglePxDeg, confidence: angleConfidence } = rowAngle(sp, { hintPxDeg: hintPx });
+  const { profile } = projectionProfile(sp, anglePxDeg);
+  const { pitchM: recovered, confidence: rawPitchConf } = rowPitch(profile, sampleM, growerSpacingM);
+  let pitchM = recovered, pitchConfidence = rawPitchConf, pitchFromGrower = false;
+  if (!checkPitch(recovered, growerSpacingM)) { pitchM = growerSpacingM; pitchConfidence *= 0.5; pitchFromGrower = true; }
+  const angleDeg = pixelAngleToGround(anglePxDeg);
+  const phaseM = phaseFromImage(sp, toGround, centre.x, centre.y, angleDeg, pitchM);
+  return {
+    centre, sizeM, angleDeg, pitchM, phaseM,
+    confidence: Math.min(angleConfidence, pitchConfidence), angleConfidence, pitchConfidence,
+    vegetationFraction: input.vegetationFraction, pitchFromGrower, recoveredPitchM: recovered,
+  };
+}
+
 /** Tile the photo into near-square windows of about `windowM`, covering every pixel. */
 export function planWindows(width: number, height: number, gsdM: number, windowM: number): { x0: number; y0: number; x1: number; y1: number }[] {
   const target = Math.max(16, windowM / gsdM);
@@ -252,7 +393,7 @@ export function fitSeeds(onRow: PhotoBlob[], gsdM: number): SeedFit | null {
   }
   if (gaps.length < MIN_GAPS) return null;
   const spacingM = shorth(gaps).centre;
-  if (!(spacingM > 0)) return null;
+  if (!(spacingM >= MIN_SEED_SPACING_M)) return null;
   const agreement = gaps.filter(g => Math.abs(g - spacingM) <= 0.25 * spacingM).length / gaps.length;
   const usable = agreement >= MIN_SEED_AGREEMENT;
   let skips = 0, doubles = 0, betweenPlants = 0;
@@ -288,28 +429,98 @@ const tick = () => new Promise<void>(r => setTimeout(r, 0));
 
 /** The planting pattern of one photo. */
 export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: AnalyseOptions = {}): Promise<PhotoPattern> {
-  const { gsdM, rowSpacingM } = params;
+  const { gsdM } = params;
+  const auto = params.rowSpacingM === "auto";
+  const rowSpacingM = auto ? null : (params.rowSpacingM as number);
   if (!(gsdM > 0)) throw new Error("A pixel size is needed before a photo can be read.");
-  if (!(rowSpacingM > 0)) throw new Error("A row spacing is needed before rows can be fitted.");
-  const windowM = params.windowM ?? DEFAULT_ROW_WINDOW_M;
+  if (!auto && !(rowSpacingM! > 0)) throw new Error("A row spacing is needed before rows can be fitted.");
+  const candidates = auto ? AUTO_SPACING_CANDIDATES_M : [rowSpacingM!];
+  const windowM = params.windowM ?? DEFAULT_PHOTO_WINDOW_M;
   const notes: string[] = [];
   const plan = planWindows(px.width, px.height, gsdM, windowM);
   const windowPx = Math.max(16, Math.round(windowM / gsdM));
 
   const { mask, vegetationFraction } = photoMask(px, windowPx);
+  const luma = lumaRaster(px);
+
+  type Fitted = { fit: RowTileFit; signal: RowSignal };
+  // A fit that measured its own spacing beats one that fell back on the
+  // candidate it was handed: a harmonic of the true spacing is self-consistent
+  // at the harmonic's candidate too, but its peak is the weaker one.
+  const rank = (f: RowTileFit) => (!f.pitchFromGrower && f.confidence >= MIN_TILE_CONFIDENCE ? 10 : 0) + f.confidence;
+
+  /** One window at every candidate spacing on both signals; the best fit, refitted on the spacing it measured. */
+  const fitOne = (w: { x0: number; y0: number; x1: number; y1: number }, angleHintDeg: number | null): Fitted => {
+    const vegFraction = (() => {
+      let veg = 0;
+      for (let y = w.y0; y <= w.y1; y++) for (let x = w.x0; x <= w.x1; x++) veg += mask[y * px.width + x];
+      return veg / Math.max(1, (w.x1 - w.x0 + 1) * (w.y1 - w.y0 + 1));
+    })();
+    const maskable = vegFraction >= VEGETATION_FRACTION_RANGE[0] && vegFraction <= VEGETATION_FRACTION_RANGE[1];
+    const at = (growerSpacingM: number, signal: RowSignal): Fitted => {
+      // A spacing needs enough rows under it for the autocorrelation to mean
+      // anything: widen the fit's neighbourhood around this window to at
+      // least MIN_ROWS_PER_FIT rows, within the photo. Rows are straight, so
+      // a model fitted on the neighbourhood places this window's blobs.
+      const need = Math.round((MIN_ROWS_PER_FIT * growerSpacingM) / gsdM);
+      const grow = (lo: number, hi: number, max: number) => {
+        const have = hi - lo + 1;
+        if (have >= need) return [lo, hi] as const;
+        const extra = need - have;
+        let a = lo - Math.floor(extra / 2), b = hi + Math.ceil(extra / 2);
+        if (a < 0) { b = Math.min(max, b - a); a = 0; }
+        if (b > max) { a = Math.max(0, a - (b - max)); b = max; }
+        return [a, b] as const;
+      };
+      const [x0, x1] = grow(w.x0, w.x1, px.width - 1), [y0, y1] = grow(w.y0, w.y1, px.height - 1);
+      return {
+        signal,
+        fit: signal === "vegetation"
+          ? fitWindow({ mask, width: px.width, x0, y0, x1, y1, gsdM, originX: x0 * gsdM, originY: -y0 * gsdM, growerSpacingM, angleHintDeg })
+          : fitWindowBrightness({ luma, width: px.width, x0, y0, x1, y1, gsdM, growerSpacingM, angleHintDeg, vegetationFraction: vegFraction }),
+      };
+    };
+    const fits: Fitted[] = [];
+    for (const c of candidates) {
+      if (maskable) fits.push(at(c, "vegetation"));
+      fits.push(at(c, "brightness"));
+    }
+    // Second pass, auto only: every spacing a first-pass fit measured but
+    // could not stand on (more than ten percent from its candidate) is tried
+    // as a candidate of its own, so a 25 cm row found from the 20 cm and the
+    // 30 cm candidates gets a fit that agrees with itself.
+    if (auto) {
+      const seen = new Set<string>();
+      for (const f of [...fits]) {
+        if (!f.fit.pitchFromGrower || !(f.fit.recoveredPitchM > 0) || !(f.fit.confidence > 0)) continue;
+        const key = `${f.signal}:${f.fit.recoveredPitchM.toFixed(3)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        fits.push(at(f.fit.recoveredPitchM, f.signal));
+      }
+    }
+    let best = fits[0];
+    for (const f of fits) if (rank(f.fit) > rank(best.fit)) best = f;
+    // A spacing twice or three times the true one is self-consistent too (its
+    // autocorrelation peaks at every multiple), and pooled coarser it can look
+    // cleaner. The fundamental also peaks, so a self-consistent fit at a half
+    // or a third of the winner's spacing with most of its confidence is the
+    // truer one.
+    for (const f of fits) {
+      if (f.fit.pitchFromGrower || f.fit.confidence < MIN_TILE_CONFIDENCE || f.fit.confidence < 0.7 * best.fit.confidence) continue;
+      const ratio = best.fit.pitchM / f.fit.pitchM;
+      if (Math.abs(ratio - Math.round(ratio)) <= 0.15 && Math.round(ratio) >= 2) best = f;
+    }
+    return best;
+  };
   const canopyClosed = vegetationFraction >= CANOPY_CLOSED;
-  if (canopyClosed) notes.push("The canopy is closed in this photo: almost every pixel is vegetation, so no plant is separate and no row can be fitted. Earlier in the season the soil shows between rows.");
+  if (canopyClosed) notes.push("The canopy is closed in this photo: almost every pixel is vegetation, so no plant is separate and blobs are not placed. Rows can still be found from brightness.");
 
   const windows: PhotoWindow[] = [];
   for (let i = 0; i < plan.length; i++) {
     const w = plan[i];
-    const fit = canopyClosed
-      ? { centre: { x: ((w.x0 + w.x1 + 1) / 2) * gsdM, y: -((w.y0 + w.y1 + 1) / 2) * gsdM }, sizeM: (w.x1 - w.x0 + 1) * gsdM, angleDeg: 0, pitchM: rowSpacingM, phaseM: 0, confidence: 0, angleConfidence: 0, pitchConfidence: 0, vegetationFraction, pitchFromGrower: true, recoveredPitchM: 0 }
-      : fitWindow({
-        mask, width: px.width, x0: w.x0, y0: w.y0, x1: w.x1, y1: w.y1, gsdM,
-        originX: w.x0 * gsdM, originY: -w.y0 * gsdM, growerSpacingM: rowSpacingM,
-      });
-    windows.push({ index: i, ...w, fit, usable: fit.confidence >= MIN_TILE_CONFIDENCE, seed: null, onRow: 0, offRow: 0 });
+    const { fit, signal } = fitOne(w, null);
+    windows.push({ index: i, ...w, fit, signal, usable: fit.confidence >= MIN_TILE_CONFIDENCE, seed: null, onRow: 0, offRow: 0 });
     if (opts.onProgress?.(i + 1, plan.length) === false) break;
     if (opts.yieldBetweenWindows !== false) await tick();
   }
@@ -318,14 +529,11 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   // find the direction alone: a corner of mostly soil still has a row or two.
   const usableAngles = windows.filter(w => w.usable).map(w => w.fit.angleDeg);
   const hint = median(usableAngles);
-  if (hint != null && !canopyClosed) {
+  if (hint != null) {
     for (const w of windows) {
       if (w.usable) continue;
-      const fit = fitWindow({
-        mask, width: px.width, x0: w.x0, y0: w.y0, x1: w.x1, y1: w.y1, gsdM,
-        originX: w.x0 * gsdM, originY: -w.y0 * gsdM, growerSpacingM: rowSpacingM, angleHintDeg: hint,
-      });
-      if (fit.confidence >= MIN_TILE_CONFIDENCE) { w.fit = fit; w.usable = true; }
+      const { fit, signal } = fitOne(w, hint);
+      if (fit.confidence >= MIN_TILE_CONFIDENCE) { w.fit = fit; w.signal = signal; w.usable = true; }
     }
     if (opts.yieldBetweenWindows !== false) await tick();
   }
@@ -346,7 +554,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
       id, x, y, areaPx: b.n, areaM2, equivDiameterM: 2 * Math.sqrt(areaM2 / Math.PI), touchesBorder,
       window: w?.index ?? null, rowIndex: null, acrossM: null, alongM: null, cls: "unplaced",
     };
-    if (w && w.usable && !touchesBorder) {
+    if (w && w.usable && !touchesBorder && !canopyClosed) {
       const p = placeOnRows(w.fit, x * gsdM, -y * gsdM);
       blob.rowIndex = p.rowIndex; blob.acrossM = p.acrossM; blob.alongM = p.alongM;
       const tol = Math.max(OFF_ROW_FRACTION * w.fit.pitchM, 2 * gsdM);
@@ -357,7 +565,9 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   });
 
   for (const w of windows) {
-    if (!w.usable) continue;
+    // Seeds are counted only where plants are separate things in the mask; a
+    // row found from brightness has no such blobs, only canopy speckle.
+    if (!w.usable || w.signal !== "vegetation") continue;
     w.seed = fitSeeds(blobs.filter(b => b.window === w.index && (b.cls === "on pattern")), gsdM);
   }
 
@@ -367,8 +577,10 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   const summary: PhotoSummary = {
     windows: windows.length,
     usableWindows: usable.length,
+    brightnessWindows: usable.filter(w => w.signal === "brightness").length,
     medianAngleDeg: median(usable.map(w => w.fit.angleDeg)),
     medianPitchM: median(usable.map(w => w.fit.pitchM)),
+    pitchKeptFromGiven: usable.filter(w => w.fit.pitchFromGrower).length,
     seedSpacingM: median(seeds.map(s => s.spacingM)),
     seedAgreement: median(seeds.map(s => s.agreement)),
     blobs: blobs.length,
@@ -381,16 +593,20 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     skips: seeds.reduce((s, f) => s + f.skips, 0),
   };
 
-  if (!canopyClosed && usable.length === 0) {
+  if (usable.length === 0) {
     notes.push("No window of this photo showed a row pattern the fit would trust. Either the crop is not in rows, the row spacing is wrong, the photo is too high for the rows to resolve, or the soil does not show between rows.");
   } else if (usable.length > 0 && usable.length < windows.length / 2) {
     notes.push(`Rows were trusted in ${usable.length} of ${windows.length} windows. Blobs in the other windows are shown but not placed.`);
   }
+  if (summary.brightnessWindows > 0) {
+    notes.push(`${summary.brightnessWindows} of ${usable.length} windows with rows found them from brightness, not from vegetation against soil: the canopy is closed or nearly so there. The lines are the plant rows; blob classes in those windows are weaker evidence.`);
+  }
   if (usable.length > 0 && seeds.length === 0) {
     notes.push("Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants.");
   }
-  if (usable.some(w => w.fit.pitchFromGrower && w.fit.confidence > 0)) {
-    notes.push("At least one window measured a row spacing more than ten percent away from the one you gave. The fit kept your number; check it.");
+  if (!auto && summary.pitchKeptFromGiven > 0) {
+    const measured = median(usable.filter(w => w.fit.pitchFromGrower).map(w => w.fit.recoveredPitchM));
+    notes.push(`${summary.pitchKeptFromGiven} of ${usable.length} windows with rows measured a spacing more than ten percent away from the one you gave${measured ? ` (about ${(measured * 100).toFixed(0)} cm)` : ""}. The fit kept your number there, so rows at the measured spacing land between the drawn lines. Try that spacing, or "auto".`);
   }
   if (measured.specks > blobs.length * 5 && blobs.length > 0) {
     notes.push(`${measured.specks.toLocaleString()} specks under the minimum blob size were dropped against ${blobs.length.toLocaleString()} blobs kept. If plants are being dropped, lower the minimum blob size.`);

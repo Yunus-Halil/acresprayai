@@ -44,3 +44,6 @@ public/ort/
 # Benchmark output (scripts/bench): crops cut from kept originals, records,
 # pages. Imagery from real fields; never committed.
 data/
+
+# Local test photos for Photo Scout (tens of MB, Yunus's own)
+samplerowtestingimagery/

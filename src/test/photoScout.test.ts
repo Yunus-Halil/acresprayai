@@ -9,7 +9,7 @@
 import piexif from "piexifjs";
 import { describe, expect, it } from "vitest";
 import { estimateGsd, parsePhotoHeader } from "@/lib/photoScout/exif";
-import { analysePhoto, placeOnRows, planWindows, rowSegmentsPx, type PhotoPixels } from "@/lib/photoScout/pattern";
+import { analysePhoto, fitWindowBrightness, lumaRaster, placeOnRows, planWindows, rowSegmentsPx, type PhotoPixels } from "@/lib/photoScout/pattern";
 
 function rng(seed: number) {
   let s = seed >>> 0;
@@ -112,6 +112,54 @@ describe("Photo Scout on a rendered stand at 1 cm/px", () => {
     // The classes the UI colours are the only ones that exist, and none is a verdict.
     for (const b of r.blobs) expect(["on pattern", "double", "between plants", "off-row", "unplaced"]).toContain(b.cls);
     expect(JSON.stringify(r.notes).toLowerCase()).not.toContain("weed");
+  });
+
+  it("finds a 38 cm spacing on its own when told nothing, and says so when told 76 cm", async () => {
+    const narrow = { ...stand, pitchM: 0.381, skips: [], extra: [], weeds: [{ row: 0, along: -1, r: 0.05 }, { row: 2, along: 0.3, r: 0.05 }] };
+    const { px, plants } = renderStand(narrow);
+    const auto = await analysePhoto(px, { gsdM: 0.01, rowSpacingM: "auto" }, { yieldBetweenWindows: false });
+    expect(auto.rowSpacingM).toBeNull();
+    expect(auto.summary.usableWindows).toBeGreaterThan(0);
+    expect(Math.abs(auto.summary.medianPitchM! - 0.381) / 0.381).toBeLessThan(0.08);
+    expect(auto.summary.onPattern).toBeGreaterThan(plants * 0.85);
+    expect(auto.summary.offRow).toBeLessThanOrEqual(3);
+    // Told twice the true spacing, the fit either keeps the given number (every
+    // second row goes off-row and the note says why) or trusts no window at all.
+    // Either way far fewer plants land on pattern than the automatic search gives.
+    const wrong = await analysePhoto(px, { gsdM: 0.01, rowSpacingM: 0.762 }, { yieldBetweenWindows: false });
+    expect(wrong.summary.onPattern).toBeLessThan(auto.summary.onPattern * 0.6);
+    if (wrong.summary.usableWindows > 0) {
+      expect(wrong.summary.pitchKeptFromGiven).toBeGreaterThan(0);
+      expect(wrong.notes.join(" ")).toMatch(/kept your number/);
+    } else {
+      expect(wrong.notes.join(" ")).toMatch(/No window of this photo showed a row pattern/);
+    }
+  });
+
+  it("finds rows from brightness in a closed canopy, where the vegetation mask is blind", async () => {
+    // Every pixel is green; rows are lighter lines, gaps are shadowed, at 25 cm and 70 degrees.
+    const W = 1200, H = 900, g = 0.01, pitch = 0.25, th = (70 * Math.PI) / 180;
+    const rand = rng(5);
+    const rgba = new Uint8ClampedArray(W * H * 4);
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      const x = i * g, y = -j * g;
+      const across = -x * Math.sin(th) + y * Math.cos(th);
+      const row = 0.5 + 0.5 * Math.cos((2 * Math.PI * across) / pitch);
+      const k = 0.55 + 0.45 * row + (rand() - 0.5) * 0.15;
+      const o = (j * W + i) * 4;
+      rgba[o] = 58 * k; rgba[o + 1] = 128 * k; rgba[o + 2] = 40 * k; rgba[o + 3] = 255;
+    }
+    const r = await analysePhoto({ width: W, height: H, rgba }, { gsdM: g, rowSpacingM: "auto" }, { yieldBetweenWindows: false });
+    // Otsu still splits an all-green canopy into its lit and shaded halves, so the
+    // vegetation share does not read as closed; whichever signal wins, the rows are right.
+    expect(r.summary.usableWindows).toBeGreaterThan(0);
+    expect(angleDiff(r.summary.medianAngleDeg!, 70)).toBeLessThan(1.5);
+    expect(Math.abs(r.summary.medianPitchM! - pitch) / pitch).toBeLessThan(0.08);
+    // And the brightness signal finds them on its own.
+    const b = fitWindowBrightness({ luma: lumaRaster({ width: W, height: H, rgba }), width: W, x0: 0, y0: 0, x1: W - 1, y1: H - 1, gsdM: g, growerSpacingM: 0.3, vegetationFraction: 0.5 });
+    expect(b.confidence).toBeGreaterThanOrEqual(0.35);
+    expect(angleDiff(b.angleDeg, 70)).toBeLessThan(1.5);
+    expect(Math.abs(b.recoveredPitchM - pitch) / pitch).toBeLessThan(0.08);
   });
 
   it("draws row segments through every usable window", async () => {

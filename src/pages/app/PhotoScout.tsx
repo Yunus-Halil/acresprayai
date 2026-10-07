@@ -12,8 +12,7 @@ import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtAreaCm2, fmtLengthCm } from "@/lib/units";
 import { type DecodedPhoto, decodePhoto } from "@/lib/photoScout/decode";
 import { EMPTY_EXIF, type GsdEstimate, type PhotoExif, estimateGsd, readPhotoExif } from "@/lib/photoScout/exif";
-import { type BlobClass, DEFAULT_MIN_BLOB_AREA_CM2, type PhotoPattern, analysePhoto, rowSegmentsPx } from "@/lib/photoScout/pattern";
-import { DEFAULT_ROW_WINDOW_M } from "@/lib/weedScout/rows";
+import { type BlobClass, DEFAULT_MIN_BLOB_AREA_CM2, DEFAULT_PHOTO_WINDOW_M, type PhotoPattern, analysePhoto, rowSegmentsPx } from "@/lib/photoScout/pattern";
 
 type Status = "new" | "decoding" | "running" | "done" | "error";
 
@@ -40,6 +39,7 @@ const CLASS_COLOUR: Record<BlobClass, string> = {
 };
 const CLASS_ORDER: BlobClass[] = ["on pattern", "double", "between plants", "off-row", "unplaced"];
 
+const AUTO = "auto";
 const ROW_SPACINGS: { label: string; cm: number }[] = [
   { label: "30 in (76 cm)", cm: 76.2 },
   { label: "36 in (91 cm)", cm: 91.44 },
@@ -58,12 +58,12 @@ export default function PhotoScout() {
   const units = useUnitSystem();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [rowSpacingCm, setRowSpacingCm] = useState("76.2");
+  const [rowSpacingCm, setRowSpacingCm] = useState(AUTO);
   const [heightM, setHeightM] = useState("");
   const [gsdCm, setGsdCm] = useState("");
   const [minBlobCm2, setMinBlobCm2] = useState(String(DEFAULT_MIN_BLOB_AREA_CM2));
-  const [windowM, setWindowM] = useState(String(DEFAULT_ROW_WINDOW_M));
-  const [show, setShow] = useState({ rows: true, blobs: true, windows: true });
+  const [windowM, setWindowM] = useState(String(DEFAULT_PHOTO_WINDOW_M));
+  const [show, setShow] = useState({ rows: true, blobs: true, unplaced: false, windows: true });
   const selected = photos.find(p => p.id === selectedId) ?? null;
 
   const patch = useCallback((id: string, next: Partial<Photo>) => {
@@ -96,8 +96,8 @@ export default function PhotoScout() {
   }, [gsdCm, heightM]);
 
   const run = async (p: Photo) => {
-    const spacing = Number(rowSpacingCm) / 100;
-    if (!(spacing > 0)) { patch(p.id, { status: "error", error: "Type a row spacing first." }); return; }
+    const spacing: number | "auto" = rowSpacingCm === AUTO ? "auto" : Number(rowSpacingCm) / 100;
+    if (spacing !== "auto" && !(spacing > 0)) { patch(p.id, { status: "error", error: "Type a row spacing first, or choose auto." }); return; }
     try {
       let decoded = p.decoded;
       if (!decoded) {
@@ -149,13 +149,14 @@ export default function PhotoScout() {
             <div className="text-xs font-semibold">Settings</div>
             <Field label="Row spacing">
               <div className="flex gap-1">
-                <select className={input} value={ROW_SPACINGS.some(r => String(r.cm) === rowSpacingCm) ? rowSpacingCm : "custom"} onChange={e => { if (e.target.value !== "custom") setRowSpacingCm(e.target.value); }}>
+                <select className={input} value={rowSpacingCm === AUTO || ROW_SPACINGS.some(r => String(r.cm) === rowSpacingCm) ? rowSpacingCm : "custom"} onChange={e => setRowSpacingCm(e.target.value === "custom" ? "76.2" : e.target.value)}>
+                  <option value={AUTO}>auto (search 12 cm to 1.6 m)</option>
                   {ROW_SPACINGS.map(r => <option key={r.cm} value={String(r.cm)}>{r.label}</option>)}
                   <option value="custom">custom</option>
                 </select>
-                <input className={`${input} w-20`} value={rowSpacingCm} onChange={e => setRowSpacingCm(e.target.value)} aria-label="Row spacing, cm" />
+                {rowSpacingCm !== AUTO && <input className={`${input} w-20`} value={rowSpacingCm} onChange={e => setRowSpacingCm(e.target.value)} aria-label="Row spacing, cm" />}
               </div>
-              <div className="text-[10px] text-neutral-500">centimetres; the fit searches around this number</div>
+              <div className="text-[10px] text-neutral-500">{rowSpacingCm === AUTO ? "each window is fitted at several spacings and keeps the best" : "centimetres; the fit searches 60 to 160 percent of this number"}</div>
             </Field>
             <Field label="Flight height above ground, m (optional)">
               <input className={input} value={heightM} onChange={e => setHeightM(e.target.value)} placeholder="from the file when DJI" />
@@ -196,7 +197,7 @@ export default function PhotoScout() {
                   {(selected.status === "decoding" || selected.status === "running") && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   {selected.status === "decoding" ? "Decoding" : selected.status === "running" ? `Fitting${selected.progress ? ` ${selected.progress.done}/${selected.progress.total}` : ""}` : selected.pattern ? "Run again" : "Read this photo"}
                 </button>
-                {(["rows", "blobs", "windows"] as const).map(k => (
+                {(["rows", "blobs", "unplaced", "windows"] as const).map(k => (
                   <label key={k} className="text-xs text-neutral-400 inline-flex items-center gap-1">
                     <input type="checkbox" checked={show[k]} onChange={e => setShow(s => ({ ...s, [k]: e.target.checked }))} /> {k}
                   </label>
@@ -256,7 +257,7 @@ function ExifCard({ photo, units }: { photo: Photo; units: "metric" | "imperial"
   );
 }
 
-function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blobs: boolean; windows: boolean } }) {
+function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blobs: boolean; unplaced: boolean; windows: boolean } }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
   const holder = useRef<HTMLDivElement>(null);
@@ -293,7 +294,7 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
         ctx.fillRect(w.x0 * s + 2, w.y0 * s + 2, 44, 12);
         ctx.fillStyle = w.usable ? "#4CAF50" : "#9E9E9E";
         ctx.font = "10px system-ui";
-        ctx.fillText(`${w.fit.confidence.toFixed(2)}${w.seed?.usable ? " s" : ""}`, w.x0 * s + 4, w.y0 * s + 11);
+        ctx.fillText(`${w.fit.confidence.toFixed(2)}${w.signal === "brightness" ? " b" : ""}${w.seed?.usable ? " s" : ""}`, w.x0 * s + 4, w.y0 * s + 11);
       }
     }
     if (show.rows) {
@@ -313,6 +314,7 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
     }
     if (show.blobs) {
       for (const b of pattern.blobs) {
+        if (b.cls === "unplaced" && !show.unplaced) continue;
         const r = Math.max(2, ((b.equivDiameterM / pattern.gsdM) * s) / 2);
         ctx.beginPath();
         ctx.arc(b.x * s, b.y * s, r, 0, Math.PI * 2);
@@ -334,9 +336,13 @@ function Summary({ pattern, units }: { pattern: PhotoPattern; units: "metric" | 
   const s = pattern.summary;
   const cm = (m: number | null) => (m == null ? "–" : fmtLengthCm(m * 100, units).text);
   const rows: [string, string][] = [
-    ["Windows with rows", `${s.usableWindows} of ${s.windows} at ${pattern.windowM} m`],
+    ["Windows with rows", `${s.usableWindows} of ${s.windows} at ${pattern.windowM} m${s.brightnessWindows ? `, ${s.brightnessWindows} from brightness (b)` : ""}`],
     ["Row direction", s.medianAngleDeg == null ? "–" : `${s.medianAngleDeg.toFixed(1)}° from the photo's x axis`],
-    ["Row spacing measured", `${cm(s.medianPitchM)} (you gave ${cm(pattern.rowSpacingM)})`],
+    ["Row spacing measured", pattern.rowSpacingM == null
+      ? `${cm(s.medianPitchM)} (searched automatically)`
+      : s.pitchKeptFromGiven > 0
+        ? `${cm(s.medianPitchM)}: you gave ${cm(pattern.rowSpacingM)} and the fit kept it in ${s.pitchKeptFromGiven} of ${s.usableWindows} windows instead of what it measured`
+        : `${cm(s.medianPitchM)} (you gave ${cm(pattern.rowSpacingM)})`],
     ["Plant spacing along the row", s.seedSpacingM == null ? "not consistent enough to report" : `${cm(s.seedSpacingM)}, ${Math.round((s.seedAgreement ?? 0) * 100)}% of gaps agree`],
     ["Vegetation", `${(pattern.vegetationFraction * 100).toFixed(1)}% of pixels${pattern.canopyClosed ? " (closed canopy)" : ""}`],
     ["Blobs", `${s.blobs.toLocaleString()} kept, ${s.specks.toLocaleString()} specks dropped under ${fmtAreaCm2(pattern.minBlobAreaCm2, units).text}`],

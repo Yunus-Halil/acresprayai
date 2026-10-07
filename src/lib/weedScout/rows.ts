@@ -268,10 +268,19 @@ export function rowPitch(
     for (let i = 0; i + lag < n; i++) s += c[i] * c[i + lag];
     r.push(s / var0);
   }
-  let bi = 0;
-  for (let i = 1; i < r.length; i++) if (r[i] > r[bi]) bi = i;
+  // The best INTERIOR maximum. Autocorrelation of texture that is not
+  // periodic falls away from lag zero, so the smallest allowed lag is the
+  // largest value in the band whenever there is no row pattern at all; on
+  // real photos that chose the band's lower edge in nearly every window and
+  // called it rows. A maximum on the band's edge is not a peak.
+  let bi = -1;
+  for (let i = 1; i < r.length - 1; i++) {
+    if (r[i] < r[i - 1] || r[i] < r[i + 1]) continue;
+    if (bi < 0 || r[i] > r[bi]) bi = i;
+  }
+  if (bi < 0) return { pitchM: nominalSpacingM, confidence: 0 };
   let lag = low + bi;
-  if (bi > 0 && bi < r.length - 1) {
+  {
     const a = r[bi - 1], b = r[bi], d = r[bi + 1];
     const denom = a - 2 * b + d;
     if (denom < 0) lag += 0.5 * (a - d) / denom;
