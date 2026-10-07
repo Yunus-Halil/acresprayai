@@ -113,6 +113,14 @@ export const BLOCK_ANGLE_DEG = 2.5;
 export const BLOCK_PITCH_TOL = 0.1;
 /** ...and the two models put the rows at their shared edge within this fraction of a spacing of each other. */
 export const BLOCK_EDGE_TOL = 0.25;
+/** A block's spacing is halved when the block's own pixels show rows at half of it with at least this share of the full spacing's confidence. */
+export const BLOCK_HALF_PITCH_SHARE = 0.7;
+/** Each row line settles on the vegetation within this fraction of a spacing of the block's line for it. */
+export const ROW_LINE_BAND = 1 / 3;
+/** A row line is refined only from at least this much pooled vegetation, spread over at least one spacing along the row. */
+export const ROW_LINE_MIN_MASS = 30;
+/** A row line may tilt at most this far from the block's direction, degrees. */
+export const ROW_LINE_MAX_TILT_DEG = 3;
 /** A block needs this many fitted windows. A lone window that found rows beside a road found shrubs. */
 export const MIN_BLOCK_WINDOWS = 3;
 /** No crop is seeded closer than this along the row; a smaller "spacing" is mask speckle, not plants. */
@@ -165,6 +173,14 @@ export type SeedFit = {
 
 export type RowSignal = "vegetation" | "brightness";
 
+/**
+ * One row of a block, settled on its own vegetation: across the block's
+ * direction it sits at `phase + index * pitch + offsetM + slope * along`,
+ * where `along` is metres from the block's centre along the rows. Rows
+ * that fan or are unevenly spaced get their own line each.
+ */
+export type RowLine = { index: number; offsetM: number; slope: number };
+
 export type PhotoWindow = {
   index: number;
   x0: number; y0: number; x1: number; y1: number;
@@ -176,6 +192,8 @@ export type PhotoWindow = {
   block: number | null;
   /** What this window measured on its own before it took the block's model; null for a window that took it without rows of its own. */
   own: { angleDeg: number; pitchM: number; confidence: number } | null;
+  /** The block's row lines, each settled on its own row; shared by every window of the block. Null before blocks. */
+  rowLines: RowLine[] | null;
   seed: SeedFit | null;
   onRow: number;
   offRow: number;
@@ -459,12 +477,21 @@ export function planWindows(width: number, height: number, gsdM: number, windowM
 }
 
 /** Where a point sits relative to one window's rows: which row, how far across it, how far along it. */
-export function placeOnRows(fit: RowTileFit, x: number, y: number): { rowIndex: number; acrossM: number; alongM: number } {
+export function placeOnRows(fit: RowTileFit, x: number, y: number, rowLines: RowLine[] | null = null): { rowIndex: number; acrossM: number; alongM: number } {
   const th = (fit.angleDeg * Math.PI) / 180;
   const nx = -Math.sin(th), ny = Math.cos(th), tx = Math.cos(th), ty = Math.sin(th);
   const acrossRaw = (x - fit.centre.x) * nx + (y - fit.centre.y) * ny - fit.phaseM;
-  const rowIndex = Math.round(acrossRaw / fit.pitchM);
-  return { rowIndex, acrossM: acrossRaw - rowIndex * fit.pitchM, alongM: (x - fit.centre.x) * tx + (y - fit.centre.y) * ty };
+  const alongM = (x - fit.centre.x) * tx + (y - fit.centre.y) * ty;
+  const k0 = Math.round(acrossRaw / fit.pitchM);
+  if (!rowLines) return { rowIndex: k0, acrossM: acrossRaw - k0 * fit.pitchM, alongM };
+  // The nearest of the settled lines about the model's nearest row.
+  let rowIndex = k0, acrossM = Infinity;
+  for (let k = k0 - 1; k <= k0 + 1; k++) {
+    const line = rowLines.find(l => l.index === k);
+    const at = k * fit.pitchM + (line ? line.offsetM + line.slope * alongM : 0);
+    if (Math.abs(acrossRaw - at) < Math.abs(acrossM)) { rowIndex = k; acrossM = acrossRaw - at; }
+  }
+  return { rowIndex, acrossM, alongM };
 }
 
 /**
@@ -689,7 +716,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   for (let i = 0; i < plan.length; i++) {
     const w = plan[i];
     const { fit, signal } = fitOne(w, null);
-    windows.push({ index: i, ...w, fit, signal, usable: fit.confidence >= MIN_TILE_CONFIDENCE, block: null, own: null, seed: null, onRow: 0, offRow: 0 });
+    windows.push({ index: i, ...w, fit, signal, usable: fit.confidence >= MIN_TILE_CONFIDENCE, block: null, own: null, rowLines: null, seed: null, onRow: 0, offRow: 0 });
     if (opts.onProgress?.(i + 1, plan.length) === false) break;
     if (opts.yieldBetweenWindows !== false) await tick();
   }
@@ -893,12 +920,100 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     }
   }
   for (const w of windows) if (blockOf[w.index] < 0) w.usable = false;
+  // Refit on the block's own pixels. The windows' fits came from
+  // neighbourhoods that reach into whatever lies around them; a block is
+  // one planting, so its direction, spacing and phase are measured again
+  // on the vegetation (or brightness) of its windows alone. That is where a
+  // sliver of three rows at 2.8 m beside a planting at 5.1 m gets its own
+  // spacing instead of the neighbour's, which had left every second row
+  // without a line.
+  const pooledCache = new Map<string, FloatImage>();
+  const pooledWhole = (signal: RowSignal, factor: number, pitchM: number): FloatImage => {
+    const key = `${signal}:${factor}:${signal === "brightness" ? pitchM.toFixed(2) : ""}`;
+    let img = pooledCache.get(key);
+    if (!img) {
+      const w = Math.floor(px.width / factor), h = Math.floor(px.height / factor);
+      img = signal === "vegetation"
+        ? poolWindow(mask, px.width, 0, 0, w * factor, h * factor, factor)
+        : highPassPositive(poolFloat(luma, px.width, 0, 0, w * factor, h * factor, factor), Math.max(2, Math.round((2 * pitchM) / (gsdM * factor))));
+      pooledCache.set(key, img);
+    }
+    return img;
+  };
+  const refitOnPixels = (m: BlockModel, all: number[]): { model: BlockModel; rowLines: RowLine[] } => {
+    const factor = Math.max(1, Math.floor(m.pitchM / gsdM / PATCH_PITCH_PX));
+    const sampleM = gsdM * factor;
+    const whole = pooledWhole(m.signal, factor, m.pitchM);
+    // The block's cells only; everything else is zero and so absent from the sparse image.
+    const data = new Float32Array(whole.data.length);
+    for (const i of all) {
+      const w = windows[i];
+      const cx0 = Math.ceil(w.x0 / factor), cx1 = Math.min(whole.width - 1, Math.floor((w.x1 + 1) / factor) - 1);
+      const cy0 = Math.ceil(w.y0 / factor), cy1 = Math.min(whole.height - 1, Math.floor((w.y1 + 1) / factor) - 1);
+      for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) data[cy * whole.width + cx] = whole.data[cy * whole.width + cx];
+    }
+    const sp = toSparse({ data, width: whole.width, height: whole.height });
+    const toGround = (sx: number, sy: number) => ({ x: sx * sampleM, y: -sy * sampleM });
+    // Each row line settled on its own row: the vegetation within
+    // ROW_LINE_BAND of the model's line for that row, a straight line
+    // through it (offset and tilt about the model), so rows that fan or
+    // sit unevenly each get a line through them and not beside them.
+    const settle = (mm: BlockModel): RowLine[] => {
+      const t = (mm.angleDeg * Math.PI) / 180, nx = -Math.sin(t), ny = Math.cos(t), tx = Math.cos(t), ty = Math.sin(t);
+      const acc = new Map<number, { w: number; sl: number; sr: number; sll: number; slr: number }>();
+      for (let i = 0; i < sp.xs.length; i++) {
+        const g = toGround(sp.xs[i], sp.ys[i]), v = sp.vals[i];
+        const along = (g.x - mm.ref.x) * tx + (g.y - mm.ref.y) * ty;
+        const across = (g.x - mm.ref.x) * nx + (g.y - mm.ref.y) * ny - mm.phaseM;
+        const k = Math.round(across / mm.pitchM), r = across - k * mm.pitchM;
+        if (Math.abs(r) > ROW_LINE_BAND * mm.pitchM) continue;
+        let a = acc.get(k);
+        if (!a) { a = { w: 0, sl: 0, sr: 0, sll: 0, slr: 0 }; acc.set(k, a); }
+        a.w += v; a.sl += v * along; a.sr += v * r; a.sll += v * along * along; a.slr += v * along * r;
+      }
+      const lines: RowLine[] = [];
+      const maxSlope = Math.tan((ROW_LINE_MAX_TILT_DEG * Math.PI) / 180);
+      for (const [k, a] of acc) {
+        if (a.w < ROW_LINE_MIN_MASS) continue;
+        const lm = a.sl / a.w, rm = a.sr / a.w;
+        const sll = a.sll - a.w * lm * lm, slr = a.slr - a.w * lm * rm;
+        // Spread along the row of at least one spacing before a tilt is believed.
+        let slope = sll > mm.pitchM * mm.pitchM * a.w ? slr / sll : 0;
+        slope = Math.max(-maxSlope, Math.min(maxSlope, slope));
+        const offsetM = Math.max(-ROW_LINE_BAND * mm.pitchM, Math.min(ROW_LINE_BAND * mm.pitchM, rm - slope * lm));
+        lines.push({ index: k, offsetM, slope });
+      }
+      return lines;
+    };
+    if (sp.xs.length < 64) return { model: m, rowLines: [] };
+    const found = rowAngle(sp, { hintPxDeg: groundAngleToPixel(m.angleDeg) });
+    if (found.confidence < MIN_TILE_CONFIDENCE) return { model: m, rowLines: settle(m) };
+    const angleDeg = pixelAngleToGround(found.anglePxDeg);
+    const { profile } = projectionProfile(sp, found.anglePxDeg);
+    let pitchM = m.pitchM;
+    if (!m.fromGrower) {
+      // The block's own pixels outrank the neighbourhoods' spacing: a sliver
+      // of rows at 3.4 m beside a planting at 5.1 m was handed 5.6 m, and
+      // the peak in its own profile is at 3.4 m.
+      const full = rowPitch(profile, sampleM, m.pitchM);
+      if (full.confidence >= MIN_TILE_CONFIDENCE) pitchM = full.pitchM;
+      // The neighbourhoods may have handed the block a harmonic: rows at
+      // half the spacing, on the block's own pixels, are the truer ones.
+      const half = rowPitch(profile, sampleM, pitchM / 2);
+      if (half.confidence >= Math.max(MIN_TILE_CONFIDENCE, BLOCK_HALF_PITCH_SHARE * full.confidence) && checkPitch(half.pitchM, pitchM / 2)) pitchM = half.pitchM;
+    }
+    const phaseM = phaseFromImage(sp, toGround, m.ref.x, m.ref.y, angleDeg, pitchM);
+    const model = { ...m, angleDeg, pitchM, phaseM };
+    return { model, rowLines: settle(model) };
+  };
   const blockNotes: string[] = [];
   for (let id = 0; id < blocks.length; id++) {
-    const m = models[id];
+    let m = models[id];
     if (!m) continue;
     const all: number[] = [];
     for (let i = 0; i < windows.length; i++) if (blockOf[i] === id) all.push(i);
+    const refit = refitOnPixels(m, all);
+    m = refit.model;
     let sizeM = 0;
     for (const i of all) {
       const w = windows[i];
@@ -912,7 +1027,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
         confidence: own?.confidence ?? m.typical.confidence, angleConfidence: own?.angleConfidence ?? m.typical.angleConfidence, pitchConfidence: own?.pitchConfidence ?? m.typical.pitchConfidence,
         vegetationFraction: w.fit.vegetationFraction, pitchFromGrower: m.fromGrower, recoveredPitchM: own?.recoveredPitchM ?? m.typical.recoveredPitchM,
       };
-      w.signal = m.signal; w.usable = true; w.block = id;
+      w.signal = m.signal; w.usable = true; w.block = id; w.rowLines = refit.rowLines;
     }
     blockNotes.push(`${all.length} windows at ${m.angleDeg.toFixed(0)}° and ${(m.pitchM * 100).toFixed(0)} cm`);
   }
@@ -937,7 +1052,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
       window: w?.index ?? null, rowIndex: null, acrossM: null, alongM: null, cls: "unplaced",
     };
     if (w && w.usable && !touchesBorder && !canopyClosed) {
-      const p = placeOnRows(w.fit, x * gsdM, -y * gsdM);
+      const p = placeOnRows(w.fit, x * gsdM, -y * gsdM, w.rowLines);
       blob.rowIndex = p.rowIndex; blob.acrossM = p.acrossM; blob.alongM = p.alongM;
     }
     return blob;
@@ -981,7 +1096,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     const placed: Placed[] = [];
     for (const b of blobs) {
       if (b.touchesBorder || b.cls === "unplaced" || b.areaM2 < minSeedArea || b.x < n.x0 || b.x > n.x1 || b.y < n.y0 || b.y > n.y1) continue;
-      const p = placeOnRows(w.fit, b.x * gsdM, -b.y * gsdM);
+      const p = placeOnRows(w.fit, b.x * gsdM, -b.y * gsdM, w.rowLines);
       if (Math.abs(p.acrossM) <= tol) placed.push({ blob: b, rowIndex: p.rowIndex, alongM: p.alongM });
     }
     w.seed = fitSeeds(placed, gsdM, b => b.window === w.index && b.cls === "on pattern");
@@ -1045,9 +1160,10 @@ export function rowSegmentsPx(w: PhotoWindow, gsdM: number): { x1: number; y1: n
   const kMax = Math.ceil(fit.sizeM / fit.pitchM) + 1;
   const out: { x1: number; y1: number; x2: number; y2: number; rowIndex: number }[] = [];
   for (let k = -kMax; k <= kMax; k++) {
-    const off = fit.phaseM + k * fit.pitchM;
-    const cx = fit.centre.x + off * nx, cy = fit.centre.y + off * ny;
-    const a = { x: cx - tx * half, y: cy - ty * half }, b = { x: cx + tx * half, y: cy + ty * half };
+    const line = w.rowLines?.find(l => l.index === k);
+    const at = (along: number) => fit.phaseM + k * fit.pitchM + (line ? line.offsetM + line.slope * along : 0);
+    const a = { x: fit.centre.x - tx * half + at(-half) * nx, y: fit.centre.y - ty * half + at(-half) * ny };
+    const b = { x: fit.centre.x + tx * half + at(half) * nx, y: fit.centre.y + ty * half + at(half) * ny };
     out.push({ x1: a.x / gsdM, y1: -a.y / gsdM, x2: b.x / gsdM, y2: -b.y / gsdM, rowIndex: k });
   }
   return out;
