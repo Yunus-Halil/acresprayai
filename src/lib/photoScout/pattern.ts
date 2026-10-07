@@ -95,7 +95,7 @@ export const MIN_ROWS_PER_FIT = 12;
  * MIN_ROWS_PER_FIT_WIDE, and the phase is referenced near the window.
  */
 export const MAX_NEIGHBOURHOOD_M = 30;
-/** The floor on rows under a fit once MAX_NEIGHBOURHOOD_M bites. */
+/** The floor on rows under a fit once MAX_NEIGHBOURHOOD_M bites. Four rows was too few: most windows then fell back on a candidate. */
 export const MIN_ROWS_PER_FIT_WIDE = 5;
 /**
  * The row phase of a window is measured on a patch this many rows across
@@ -105,6 +105,16 @@ export const MIN_ROWS_PER_FIT_WIDE = 5;
  * pitch five percent off put the rows a metre across at the window.
  */
 export const PHASE_PATCH_ROWS = 3;
+/** Samples per row spacing on the patch, finer than the fit's TARGET_PITCH_PX so a small patch still resolves a degree. */
+export const PATCH_PITCH_PX = 32;
+/** A window joins a block when its rows run within this many degrees of the block's first window. */
+export const BLOCK_ANGLE_DEG = 2.5;
+/** ...its spacing is within this fraction of that window's... */
+export const BLOCK_PITCH_TOL = 0.1;
+/** ...and the two models put the rows at their shared edge within this fraction of a spacing of each other. */
+export const BLOCK_EDGE_TOL = 0.25;
+/** A block needs this many fitted windows. A lone window that found rows beside a road found shrubs. */
+export const MIN_BLOCK_WINDOWS = 3;
 /** No crop is seeded closer than this along the row; a smaller "spacing" is mask speckle, not plants. */
 export const MIN_SEED_SPACING_M = 0.05;
 /** A row needs this many on-row blobs before its gaps say anything. */
@@ -162,6 +172,10 @@ export type PhotoWindow = {
   /** Which signal the fit stands on. */
   signal: RowSignal;
   usable: boolean;
+  /** The block of windows sharing this window's row model, or null when the window has no rows. */
+  block: number | null;
+  /** What this window measured on its own before it took the block's model; null for a window that took it without rows of its own. */
+  own: { angleDeg: number; pitchM: number; confidence: number } | null;
   seed: SeedFit | null;
   onRow: number;
   offRow: number;
@@ -567,14 +581,19 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   };
 
   /**
-   * The same fit, with its phase measured on a patch about the window and
-   * referenced to the window's own centre. Angle and pitch are kept.
+   * The same fit, with its direction and phase measured again on a patch
+   * about the window and referenced to the window's own centre. The pitch
+   * is kept: it needs the rows of the wider neighbourhood. The direction is
+   * searched only near the neighbourhood's, which is a blur of the plantings
+   * the neighbourhood straddled; the patch is one planting's own, so two
+   * plantings a few degrees apart in one photo get their own directions and
+   * fall into their own blocks.
    */
   const localisePhase = (w: { x0: number; y0: number; x1: number; y1: number }, f: Fitted): Fitted => {
     const { fit } = f;
     if (!(fit.confidence > 0) || !(fit.pitchM > 0)) return f;
     const r = regionAround(w, Math.round((PHASE_PATCH_ROWS * fit.pitchM) / gsdM));
-    const factor = downsampleFactor(gsdM, fit.pitchM);
+    const factor = Math.max(1, Math.floor(fit.pitchM / gsdM / PATCH_PITCH_PX));
     const rw = r.x1 - r.x0 + 1, rh = r.y1 - r.y0 + 1;
     const sampleM = gsdM * factor;
     const pooled = f.signal === "vegetation"
@@ -585,8 +604,10 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     if (sp.xs.length === 0) return f;
     const toGround = (sx: number, sy: number) => ({ x: r.x0 * gsdM + sx * sampleM, y: -r.y0 * gsdM - sy * sampleM });
     const centre = { x: ((w.x0 + w.x1 + 1) / 2) * gsdM, y: -((w.y0 + w.y1 + 1) / 2) * gsdM };
-    const phaseM = phaseFromImage(sp, toGround, centre.x, centre.y, fit.angleDeg, fit.pitchM);
-    return { signal: f.signal, fit: { ...fit, centre, phaseM } };
+    const local = rowAngle(sp, { hintPxDeg: groundAngleToPixel(fit.angleDeg) });
+    const angleDeg = local.confidence >= MIN_TILE_CONFIDENCE ? pixelAngleToGround(local.anglePxDeg) : fit.angleDeg;
+    const phaseM = phaseFromImage(sp, toGround, centre.x, centre.y, angleDeg, fit.pitchM);
+    return { signal: f.signal, fit: { ...fit, centre, angleDeg, phaseM } };
   };
   // Narrow spacings on a small photo widen every window to the same
   // neighbourhood; the fit is then the same for every window and is done once.
@@ -668,7 +689,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   for (let i = 0; i < plan.length; i++) {
     const w = plan[i];
     const { fit, signal } = fitOne(w, null);
-    windows.push({ index: i, ...w, fit, signal, usable: fit.confidence >= MIN_TILE_CONFIDENCE, seed: null, onRow: 0, offRow: 0 });
+    windows.push({ index: i, ...w, fit, signal, usable: fit.confidence >= MIN_TILE_CONFIDENCE, block: null, own: null, seed: null, onRow: 0, offRow: 0 });
     if (opts.onProgress?.(i + 1, plan.length) === false) break;
     if (opts.yieldBetweenWindows !== false) await tick();
   }
@@ -685,6 +706,217 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     }
     if (opts.yieldBetweenWindows !== false) await tick();
   }
+
+  // Blocks. Rows are straight and run the same way across one planting, so
+  // windows whose rows are the same rows share one model: one direction, one
+  // spacing, one phase, referenced to the block's centre. The lines then run
+  // unbroken across the block instead of jogging or stopping at every window
+  // edge, and a window of bare soil inside a block takes the block's rows.
+  // Where the rows change, two plantings in one photo, the blocks are
+  // separate and the lines stop where they meet. Membership is by fit: a
+  // window belongs to a block only while the block's lines pass through the
+  // rows the window measured on its own, so two plantings two degrees apart
+  // whose rows do not line up are two blocks even though their directions
+  // nearly agree.
+  const cols = new Set(plan.map(w => w.x0)).size;
+  const angleDiff = (a: number, b: number) => { const d = Math.abs((((a - b) % 180) + 180) % 180); return Math.min(d, 180 - d); };
+  const neighbours = (i: number) => {
+    const r = Math.floor(i / cols), c = i % cols, out: number[] = [];
+    if (c > 0) out.push(i - 1);
+    if (c < cols - 1 && i + 1 < windows.length) out.push(i + 1);
+    if (r > 0) out.push(i - cols);
+    if (i + cols < windows.length) out.push(i + cols);
+    return out;
+  };
+  const centreOf = (w: { x0: number; y0: number; x1: number; y1: number }) => ({ x: ((w.x0 + w.x1 + 1) / 2) * gsdM, y: -((w.y0 + w.y1 + 1) / 2) * gsdM });
+  const wrapHalf = (d: number, p: number) => ((((d + p / 2) % p) + p) % p) - p / 2;
+  type BlockModel = { angleDeg: number; pitchM: number; phaseM: number; ref: { x: number; y: number }; fromGrower: boolean; signal: RowSignal; typical: { confidence: number; angleConfidence: number; pitchConfidence: number; recoveredPitchM: number } };
+  /**
+   * One straight model through a block's windows. Each window's phase is a
+   * measured row position near its centre; the block's direction is the
+   * mean of the windows' own, its phase the circular mean of the positions
+   * about the reference, and its spacing the median corrected by how the
+   * positions drift from the lines across the block.
+   */
+  const modelOf = (members: number[]): BlockModel => {
+    const fits = members.map(i => windows[i].fit);
+    const wts = fits.map(f => Math.max(1e-3, f.confidence));
+    const wsum = wts.reduce((a, b) => a + b, 0);
+    // A mean of doubled angles, since rows at 179 and 1 degree run the same way.
+    let cx2 = 0, sx2 = 0;
+    fits.forEach((f, k) => { const t = (2 * f.angleDeg * Math.PI) / 180; cx2 += wts[k] * Math.cos(t); sx2 += wts[k] * Math.sin(t); });
+    const angleDeg = ((((Math.atan2(sx2, cx2) / 2) * 180) / Math.PI) % 180 + 180) % 180;
+    let pitchM = median(fits.map(f => f.pitchM))!;
+    const ref = { x: 0, y: 0 };
+    members.forEach((i, k) => { const c = centreOf(windows[i]); ref.x += (wts[k] * c.x) / wsum; ref.y += (wts[k] * c.y) / wsum; });
+    const fromGrower = fits.filter(f => f.pitchFromGrower).length * 2 > fits.length;
+    const th = (angleDeg * Math.PI) / 180, nx = -Math.sin(th), ny = Math.cos(th);
+    const cRef = ref.x * nx + ref.y * ny;
+    const rowAt = fits.map(f => f.centre.x * nx + f.centre.y * ny + f.phaseM);
+    const circularPhase = (p: number) => {
+      let re = 0, im = 0;
+      rowAt.forEach((a, k) => { const t = (2 * Math.PI * (a - cRef)) / p; re += wts[k] * Math.cos(t); im += wts[k] * Math.sin(t); });
+      return ((((Math.atan2(im, re) / (2 * Math.PI)) * p) % p) + p) % p;
+    };
+    let phaseM = circularPhase(pitchM);
+    if (!fromGrower && members.length >= 3) {
+      const cs = members.map(i => { const c = centreOf(windows[i]); return c.x * nx + c.y * ny - cRef; });
+      const rs = rowAt.map(a => wrapHalf(a - cRef - phaseM, pitchM));
+      let cm = 0, rm = 0;
+      cs.forEach((c, k) => { cm += (wts[k] * c) / wsum; rm += (wts[k] * rs[k]) / wsum; });
+      let sxy = 0, sxx = 0;
+      cs.forEach((c, k) => { sxy += wts[k] * (c - cm) * (rs[k] - rm); sxx += wts[k] * (c - cm) * (c - cm); });
+      if (sxx > 0) {
+        pitchM = pitchM / (1 - Math.max(-0.15, Math.min(0.15, sxy / sxx)));
+        phaseM = circularPhase(pitchM);
+      }
+    }
+    const signal: RowSignal = members.filter(i => windows[i].signal === "brightness").length * 2 > members.length ? "brightness" : "vegetation";
+    return {
+      angleDeg, pitchM, phaseM, ref, fromGrower, signal,
+      typical: {
+        confidence: median(fits.map(f => f.confidence))!, angleConfidence: median(fits.map(f => f.angleConfidence))!,
+        pitchConfidence: median(fits.map(f => f.pitchConfidence))!, recoveredPitchM: median(fits.map(f => f.recoveredPitchM))!,
+      },
+    };
+  };
+  /** Signed metres from (x, y) to a model's nearest row. */
+  const rowOffset = (m: BlockModel, x: number, y: number) => {
+    const t = (m.angleDeg * Math.PI) / 180;
+    return wrapHalf((x - m.ref.x) * -Math.sin(t) + (y - m.ref.y) * Math.cos(t) - m.phaseM, m.pitchM);
+  };
+  /** A point on the row a window measured on its own. */
+  const rowPoint = (f: RowTileFit) => { const t = (f.angleDeg * Math.PI) / 180; return { x: f.centre.x + f.phaseM * -Math.sin(t), y: f.centre.y + f.phaseM * Math.cos(t) }; };
+  const agree = (seed: RowTileFit, b: RowTileFit) =>
+    angleDiff(seed.angleDeg, b.angleDeg) <= BLOCK_ANGLE_DEG && Math.abs(seed.pitchM - b.pitchM) <= BLOCK_PITCH_TOL * Math.max(seed.pitchM, b.pitchM);
+  // Rows that are the same rows continue across a window edge: two windows
+  // join only when their fits put the rows at the middle of their shared
+  // edge in the same place, not merely in the same direction, or a chain of
+  // windows each a little different from the last joins two plantings.
+  const edgeMid = (j: number, k: number) => {
+    const a = windows[j], b = windows[k];
+    return { x: ((Math.max(a.x0, b.x0) + Math.min(a.x1, b.x1) + 1) / 2) * gsdM, y: -((Math.max(a.y0, b.y0) + Math.min(a.y1, b.y1) + 1) / 2) * gsdM };
+  };
+  const rowsMeet = (j: number, k: number): boolean => {
+    const m = edgeMid(j, k), fa = windows[j].fit, fb = windows[k].fit;
+    const off = (f: RowTileFit) => { const t = (f.angleDeg * Math.PI) / 180; return (m.x - f.centre.x) * -Math.sin(t) + (m.y - f.centre.y) * Math.cos(t) - f.phaseM; };
+    const p = Math.min(fa.pitchM, fb.pitchM);
+    return Math.abs(wrapHalf(off(fa) - off(fb), p)) <= BLOCK_EDGE_TOL * p;
+  };
+  /** Connected groups within a pool of windows whose fits agree edge to edge. */
+  const flood = (pool: Set<number>): number[][] => {
+    const seen = new Set<number>(), out: number[][] = [];
+    for (const i of pool) {
+      if (seen.has(i)) continue;
+      const members: number[] = [], stack = [i];
+      seen.add(i);
+      while (stack.length) {
+        const j = stack.pop()!;
+        members.push(j);
+        for (const k of neighbours(j)) if (pool.has(k) && !seen.has(k) && agree(windows[i].fit, windows[k].fit) && rowsMeet(j, k)) { seen.add(k); stack.push(k); }
+      }
+      out.push(members);
+    }
+    return out;
+  };
+  // Too small a block is not a planting: a lone window that found rows
+  // beside a road found shrubs. Its window loses its rows.
+  let blocks = flood(new Set(windows.filter(w => w.usable).map(w => w.index))).filter(b => b.length >= MIN_BLOCK_WINDOWS);
+  let models: (BlockModel | null)[] = blocks.map(modelOf);
+  const blockOf = new Array<number>(windows.length).fill(-1);
+  const mapBlocks = () => { blockOf.fill(-1); blocks.forEach((b, id) => b.forEach(i => { blockOf[i] = id; })); };
+  // Merging: one noisy window edge splits a planting into two blocks whose
+  // models, fitted on dozens of windows each, agree. Adjacent blocks whose
+  // models put the rows in the same places along their shared edges are one
+  // block. Until nothing merges.
+  const mergeAll = () => {
+    for (;;) {
+      mapBlocks();
+      let merged = false;
+      for (let a = 0; a < blocks.length && !merged; a++) {
+        const ma = models[a];
+        if (!ma) continue;
+        for (let b = a + 1; b < blocks.length && !merged; b++) {
+          const mb = models[b];
+          if (!mb) continue;
+          if (angleDiff(ma.angleDeg, mb.angleDeg) > BLOCK_ANGLE_DEG || Math.abs(ma.pitchM - mb.pitchM) > BLOCK_PITCH_TOL * Math.max(ma.pitchM, mb.pitchM)) continue;
+          let shared = 0, meet = 0;
+          for (const i of blocks[a]) for (const k of neighbours(i)) {
+            if (blockOf[k] !== b) continue;
+            const m = edgeMid(i, k), p = Math.min(ma.pitchM, mb.pitchM);
+            shared++;
+            if (Math.abs(wrapHalf(rowOffset(ma, m.x, m.y) - rowOffset(mb, m.x, m.y), p)) <= BLOCK_EDGE_TOL * p) meet++;
+          }
+          if (shared === 0 || meet * 2 <= shared) continue;
+          blocks[a] = blocks[a].concat(blocks[b]);
+          blocks[b] = [];
+          models[a] = modelOf(blocks[a]);
+          models[b] = null;
+          merged = true;
+        }
+      }
+      if (!merged) break;
+    }
+  };
+  mergeAll();
+  // Membership by fit: windows whose own rows the block's lines miss leave
+  // the block, the block is refitted without them, and they regroup among
+  // themselves (alone if need be: a planting's edge is still that planting).
+  for (let pass = 0; pass < 3; pass++) {
+    const loose: number[] = [];
+    for (let id = 0; id < blocks.length; id++) {
+      const m = models[id];
+      if (!m) continue;
+      const out = blocks[id].filter(i => { const p = rowPoint(windows[i].fit); return Math.abs(rowOffset(m, p.x, p.y)) > BLOCK_EDGE_TOL * m.pitchM; });
+      if (out.length === 0 || blocks[id].length - out.length < MIN_BLOCK_WINDOWS) continue;
+      const outSet = new Set(out);
+      blocks[id] = blocks[id].filter(i => !outSet.has(i));
+      models[id] = modelOf(blocks[id]);
+      loose.push(...out);
+    }
+    if (loose.length === 0) break;
+    for (const g of flood(new Set(loose))) { blocks.push(g); models.push(modelOf(g)); }
+    mergeAll();
+  }
+  mapBlocks();
+  // Holes: a window without rows whose neighbours mostly belong to one block
+  // joins it. Twice, so a hole two windows wide closes from both sides.
+  const filled = new Set<number>();
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < windows.length; i++) {
+      if (blockOf[i] >= 0) continue;
+      const votes = new Map<number, number>();
+      for (const k of neighbours(i)) if (blockOf[k] >= 0) votes.set(blockOf[k], (votes.get(blockOf[k]) ?? 0) + 1);
+      let best = -1, n = 0;
+      for (const [b, v] of votes) if (v > n) { best = b; n = v; }
+      if (n >= 2) { blockOf[i] = best; filled.add(i); }
+    }
+  }
+  for (const w of windows) if (blockOf[w.index] < 0) w.usable = false;
+  const blockNotes: string[] = [];
+  for (let id = 0; id < blocks.length; id++) {
+    const m = models[id];
+    if (!m) continue;
+    const all: number[] = [];
+    for (let i = 0; i < windows.length; i++) if (blockOf[i] === id) all.push(i);
+    let sizeM = 0;
+    for (const i of all) {
+      const w = windows[i];
+      for (const [x, y] of [[w.x0, w.y0], [w.x1 + 1, w.y0], [w.x0, w.y1 + 1], [w.x1 + 1, w.y1 + 1]]) sizeM = Math.max(sizeM, Math.hypot(x * gsdM - m.ref.x, -y * gsdM - m.ref.y));
+    }
+    for (const i of all) {
+      const w = windows[i], own = filled.has(i) ? null : w.fit;
+      w.own = own ? { angleDeg: own.angleDeg, pitchM: own.pitchM, confidence: own.confidence } : null;
+      w.fit = {
+        centre: m.ref, sizeM, angleDeg: m.angleDeg, pitchM: m.pitchM, phaseM: m.phaseM,
+        confidence: own?.confidence ?? m.typical.confidence, angleConfidence: own?.angleConfidence ?? m.typical.angleConfidence, pitchConfidence: own?.pitchConfidence ?? m.typical.pitchConfidence,
+        vegetationFraction: w.fit.vegetationFraction, pitchFromGrower: m.fromGrower, recoveredPitchM: own?.recoveredPitchM ?? m.typical.recoveredPitchM,
+      };
+      w.signal = m.signal; w.usable = true; w.block = id;
+    }
+    blockNotes.push(`${all.length} windows at ${m.angleDeg.toFixed(0)}° and ${(m.pitchM * 100).toFixed(0)} cm`);
+  }
+  if (blockNotes.length > 1) notes.push(`Rows run ${blockNotes.length} ways in this photo: ${blockNotes.join("; ")}. Each block has its own lines, which stop where the blocks meet.`);
 
   const minBlobAreaCm2 = params.minBlobAreaCm2 ?? DEFAULT_MIN_BLOB_AREA_CM2;
   const floorPx = Math.max(MIN_BLOB_PX, minAreaPx(gsdM, minBlobAreaCm2));

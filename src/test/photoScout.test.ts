@@ -239,14 +239,15 @@ describe("Photo Scout on a rendered stand at 1 cm/px", () => {
     expect(right.length).toBeGreaterThan(0);
     for (const w of left) expect(angleDiff(w.fit.angleDeg, -12)).toBeLessThan(2);
     for (const w of right) expect(angleDiff(w.fit.angleDeg, 40)).toBeLessThan(2);
-    for (const w of usable) {
-      expect(Math.abs(w.fit.pitchM - pitch) / pitch).toBeLessThan(0.1);
-      // The phase is referenced to the window's own centre.
-      expect(w.fit.centre.x).toBeGreaterThanOrEqual(w.x0 * g);
-      expect(w.fit.centre.x).toBeLessThanOrEqual((w.x1 + 1) * g);
-      expect(-w.fit.centre.y).toBeGreaterThanOrEqual(w.y0 * g);
-      expect(-w.fit.centre.y).toBeLessThanOrEqual((w.y1 + 1) * g);
-    }
+    for (const w of usable) expect(Math.abs(w.fit.pitchM - pitch) / pitch).toBeLessThan(0.1);
+    // Each side is one block with one model, so its lines run unbroken; the
+    // two sides are two blocks, and the photo says so.
+    expect(new Set(left.map(w => w.block)).size).toBe(1);
+    expect(new Set(right.map(w => w.block)).size).toBe(1);
+    expect(left[0].block).not.toBe(right[0].block);
+    for (const w of left) expect(w.fit).toEqual(left[0].fit);
+    for (const w of right) expect(w.fit).toEqual(right[0].fit);
+    expect(r.notes.some(n => n.startsWith("Rows run 2 ways"))).toBe(true);
     // And the trees of each side sit on that side's rows.
     const sideOf = (b: { x: number }) => (b.x * g < 20 ? 0 : 1);
     const onPattern = r.blobs.filter(b => b.cls === "on pattern" && !b.touchesBorder);
