@@ -15,13 +15,18 @@ import { useSyncExternalStore } from "react";
 import type { Identification } from "../weedCatalog/identification";
 import type { Verdict } from "./observations";
 import { type RunOptions, runWeedScout } from "./pipeline";
+import { runPhotoPass } from "./photoPass";
 import type { ScoutInputs, ScoutProgress, ScoutResult } from "./types";
+
+/** The photo pass after the map pass: where it is, what it has found, and what it said when it finished. */
+export type PhotoPassState = { running: boolean; done: number; total: number; found: number; note: string | null };
 
 export type ScoutSession = {
   running: boolean;
   progress: ScoutProgress | null;
   result: ScoutResult | null;
   error: string | null;
+  photo: PhotoPassState | null;
   selectedId: string | null;
   /** The operator's edits for this run, by spot id. */
   verdicts: Record<string, Verdict>;
@@ -32,7 +37,7 @@ export type ScoutSession = {
 };
 
 export const EMPTY_SESSION: ScoutSession = {
-  running: false, progress: null, result: null, error: null, selectedId: null,
+  running: false, progress: null, result: null, error: null, photo: null, selectedId: null,
   verdicts: {}, identifications: {}, notes: {}, localApplied: {},
 };
 
@@ -72,23 +77,55 @@ export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOpti
   const ctrl = new AbortController();
   controllers.set(taskId, ctrl);
   patchSession(taskId, {
-    running: true, progress: null, result: null, error: null, selectedId: null,
+    running: true, progress: null, result: null, error: null, photo: null, selectedId: null,
     verdicts: {}, identifications: {}, notes: {},
   });
+  const mine = () => controllers.get(taskId) === ctrl;
   runWeedScout(inputs, {
     ...opts,
     signal: ctrl.signal,
-    onProgress: (p) => { if (controllers.get(taskId) === ctrl) patchSession(taskId, { progress: p }); },
-  }).then(result => {
-    if (controllers.get(taskId) !== ctrl) return;
+    onProgress: (p) => { if (mine()) patchSession(taskId, { progress: p }); },
+  }).then(async result => {
+    if (!mine()) return;
     patchSession(taskId, { running: false, progress: null, result });
+    // The photos, after the map pass has shown its result. The review can
+    // start now; findings from the photos join the list as they land, and
+    // Stop ends this too. Not on a connection the browser says to spare.
+    const sources = opts.sources;
+    if (!inputs.params.photoPass || !sources?.set || !sources.frames || sources.groundAltM == null) return;
+    if (frugalConnection()) { patchSession(taskId, { photo: { running: false, done: 0, total: 0, found: 0, note: "The photos were not read: the browser asks to spare this connection." } }); return; }
+    patchSession(taskId, { photo: { running: true, done: 0, total: 0, found: 0, note: null } });
+    try {
+      const pass = await runPhotoPass({
+        result, sources, boundary: inputs.boundary, params: inputs.params,
+        crop: opts.crop, growthStage: opts.growthStage, unitSystem: opts.unitSystem, signal: ctrl.signal,
+        onProgress: p => { if (mine()) patchSession(taskId, s => ({ photo: { ...(s.photo ?? { running: true, note: null }), running: true, done: p.done, total: p.total, found: p.found } })); },
+        onFound: found => { if (mine()) patchSession(taskId, s => ({ result: s.result ? { ...s.result, candidates: [...s.result.candidates, ...found] } : s.result })); },
+      });
+      if (!mine()) return;
+      patchSession(taskId, s => ({
+        photo: { running: false, done: pass.reads.length, total: pass.reads.length, found: pass.candidates.length, note: pass.notes.join(" ") },
+        result: s.result ? { ...s.result, notes: [...s.result.notes, ...pass.notes] } : s.result,
+      }));
+    } catch (e) {
+      if (!mine()) return;
+      const aborted = (e as Error)?.name === "Aborted";
+      patchSession(taskId, s => ({ photo: { ...(s.photo ?? { done: 0, total: 0, found: 0 }), running: false, note: aborted ? "Reading the photos was stopped." : `Reading the photos failed: ${(e as Error)?.message ?? String(e)}` } }));
+    }
   }).catch((e: unknown) => {
-    if (controllers.get(taskId) !== ctrl) return;
+    if (!mine()) return;
     const aborted = (e as Error)?.name === "Aborted";
     patchSession(taskId, { running: false, progress: null, error: aborted ? null : ((e as Error)?.message ?? String(e)) });
   }).finally(() => {
-    if (controllers.get(taskId) === ctrl) controllers.delete(taskId);
+    if (mine()) controllers.delete(taskId);
   });
+}
+
+/** The browser's own word that this connection is to be spared. */
+function frugalConnection(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const conn = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  return conn?.saveData === true || (conn?.effectiveType ? /^(slow-)?2g$/.test(conn.effectiveType) : false);
 }
 
 /** Stop a run. Only the operator calls this; leaving the tab does not. */

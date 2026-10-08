@@ -108,6 +108,10 @@ export type ScoutParams = {
   rowSpacingAuto: boolean;
   /** The grower's row direction, ground degrees counterclockwise from east, or null to let the pass decide. */
   rowAngleDeg: number | null;
+  /** After the map pass, read the kept original photos for the small weeds (photoPass.ts). */
+  photoPass: boolean;
+  /** Photos read per scan, the ones covering most of the field first. */
+  maxPhotoReads: number;
 };
 
 export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
@@ -127,6 +131,8 @@ export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
   pattern: true,
   rowSpacingAuto: true,
   rowAngleDeg: null,
+  photoPass: true,
+  maxPhotoReads: 150,
 };
 
 /** Fraction of `anomalyZ` a neighbour must reach to be grown into a region. */

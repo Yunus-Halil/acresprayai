@@ -91,6 +91,8 @@ function loadParams(): ScoutParams {
       pattern: p.pattern !== false,
       rowSpacingAuto: p.rowSpacingAuto !== false,
       rowAngleDeg: typeof p.rowAngleDeg === "number" && Number.isFinite(p.rowAngleDeg) ? p.rowAngleDeg : null,
+      photoPass: p.photoPass !== false,
+      maxPhotoReads: Math.round(num(p.maxPhotoReads, DEFAULT_SCOUT_PARAMS.maxPhotoReads)),
     };
   } catch {
     return DEFAULT_SCOUT_PARAMS;
@@ -257,6 +259,7 @@ export function WeedScoutTab({
   // The run and the review live in lib/weedScout/runStore.ts, per scan, so
   // switching tabs neither stops the scan nor loses a keep / remove decision.
   const session = useScoutSession(taskId);
+  const photo = session.photo;
   const { running, progress, result, error: runError, selectedId, verdicts, identifications, notes: notesById, localApplied } = session;
   const setSelectedId = useCallback((id: string | null) => patchSession(taskId, { selectedId: id }), [taskId]);
   const setVerdicts = useCallback((f: (m: Record<string, Verdict>) => Record<string, Verdict>) => patchSession(taskId, s => ({ verdicts: f(s.verdicts) })), [taskId]);
@@ -817,6 +820,14 @@ export function WeedScoutTab({
               </div>
             )}
             {running && <span className="text-[10px] text-neutral-600">keeps running if you open another tab</span>}
+            {!running && photo?.running && (
+              <div className="text-[11px] text-neutral-400 inline-flex items-center gap-1.5 min-w-0" data-testid="photo-pass">
+                <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                <span className="truncate">Reading photo {Math.min(photo.done + 1, Math.max(1, photo.total))} of {photo.total || "…"}, {photo.found} more plant{photo.found === 1 ? "" : "s"} found</span>
+                <button type="button" onClick={() => stopRun(taskId)} className="underline text-neutral-500 hover:text-neutral-300">stop</button>
+              </div>
+            )}
+            {!running && photo && !photo.running && photo.note && <span className="text-[10px] text-neutral-600" title={photo.note}>{photo.found} plant{photo.found === 1 ? "" : "s"} from {photo.done} photo{photo.done === 1 ? "" : "s"}</span>}
             {!running && feedback.length > 0 && <span className="text-[10px] text-neutral-600" title="Spots that resemble ones you dismissed start removed and rank lower; spots that resemble ones you confirmed start as weeds and rank higher. Needs at least three similar saved verdicts.">learning from {feedback.length} saved verdict{feedback.length === 1 ? "" : "s"}</span>}
           </div>
           {runError && <div className="text-[11px] text-red-400 flex items-start gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {runError}</div>}
@@ -883,6 +894,13 @@ export function WeedScoutTab({
                   <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer">
                     <input type="checkbox" checked={params.rowSpacingAuto} disabled={!params.pattern} onChange={e => setParams(p => ({ ...p, rowSpacingAuto: e.target.checked }))} className="accent-[#4CAF50]" />
                     Find the row spacing; off, use the number above
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer">
+                    <input type="checkbox" checked={params.photoPass} onChange={e => setParams(p => ({ ...p, photoPass: e.target.checked }))} className="accent-[#4CAF50]" />
+                    Then read up to
+                    <input type="number" min={1} max={2000} step={10} className={inputCls + " w-16"} value={params.maxPhotoReads} disabled={!params.photoPass}
+                      onChange={e => setParams(p => ({ ...p, maxPhotoReads: Math.max(1, Math.round(Number(e.target.value) || 150)) }))} />
+                    original photos for the small weeds
                   </label>
                 </div>
                 <div className="text-[11px] text-neutral-500">{crop || "crop not set"}{stage ? `, ${stage}` : ""}</div>

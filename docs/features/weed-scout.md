@@ -69,6 +69,16 @@ at is a new candidate kind, "between plants". Where the pattern reads nothing th
 per-window fit runs as before. `ScoutParams.pattern` turns it off; `rowSpacingAuto` searches
 the spacing; `rowAngleDeg` is the grower's "rows run this way". The plan and the measurements
 are in [field-intelligence-plan.md](field-intelligence-plan.md).
+## The photos, for the small weeds (2026-10-08)
+
+The field map at 5 cm per pixel keeps the pattern and the crop and loses the small weeds, so
+after the map pass has landed, `runStore` reads the kept originals (`photoPass.ts`): the photos
+covering most of the field first, up to `maxPhotoReads`, each through the same pass in the
+worker, each off-pattern blob carried to the ground through the ODM pose (`odm.ts`
+`pixelToGround`). A photo's row block counts only where it agrees with the map's pattern, a
+plant the map pass already has or another photo already gave is not added twice, and the
+rest join the candidates as they land, with the photo as their source and a chip cut from the
+photo. Stop ends it; a connection the browser says to spare is not used. `photoPass` turns it off.
 ## What a candidate is
 
 | Kind | Meaning | Drawn as |
