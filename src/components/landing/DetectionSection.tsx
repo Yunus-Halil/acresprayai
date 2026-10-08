@@ -1,5 +1,4 @@
 import { Reveal } from "./Reveal";
-import { Shot } from "./Shot";
 import { DETECTION } from "./copy";
 
 /**
@@ -8,7 +7,8 @@ import { DETECTION } from "./copy";
  * about the flying. WHAT it finds, never HOW: the method is a trade secret
  * (copy.ts, rule 9) and no sentence here may describe a step of it.
  *
- * Two sentences and a real scan, nothing more. It follows the hero's dark
+ * Two sentences, nothing more: the scan image that sat under them did not do
+ * the product justice (Yunus, 2026-10-08). It follows the hero's dark
  * band directly, so the page goes film, band, this, with no paper between.
  */
 export const DetectionSection = () => (
@@ -25,20 +25,6 @@ export const DetectionSection = () => (
         <div className="mt-5 max-w-[680px] space-y-3 text-[17px] leading-[1.55] text-sw-on-dark sm:text-lg">
           {DETECTION.body.map(p => <p key={p} className="m-0">{p}</p>)}
         </div>
-      </Reveal>
-
-      {/* A real scan, as the operator saw it. The one species name on it was
-          typed by the operator; the classes are the detector's. */}
-      <Reveal className="mt-12 sm:mt-16">
-        <Shot
-          src="/screens/scout-findings.png"
-          alt="A stitched field with the scan's findings outlined and labelled: bare or dry ground, thin stand, and ground different from the field, with one region the operator has named barnyardgrass"
-          caption="ONE SCAN · REAL FIELD"
-          status={<span className="text-sw-bright-hi">● FINDINGS</span>}
-          padding="p-2.5"
-          className="shadow-[0_40px_90px_-30px_rgba(0,0,0,0.7)]"
-          imgClassName="mx-auto w-full max-h-[760px] object-contain"
-        />
       </Reveal>
 
     </div>

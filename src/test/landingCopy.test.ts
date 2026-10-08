@@ -187,6 +187,8 @@ describe("claims the product can stand behind", () => {
     // may still not say is a savings number, a species from pixels, or that
     // the aircraft flies itself; those are checked beside this.
     expect(HERO.body.join(" ")).toMatch(/finds the weeds, all of them/i);
+    // And no "every" anywhere a visitor reads: Yunus, 2026-10-08.
+    expect(VISIBLE.filter(s => /every/i.test(s))).toEqual([]);
     expect(all).not.toMatch(/does not guess|any drone, any camera/i);
   });
 

@@ -74,7 +74,7 @@ export const HERO = {
   /** ...and the last, which turns through what it is built for. Each phrase completes the lead as one sentence. */
   shifts: [
     "for action.",
-    "for every acre.",
+    "for the whole farm.",
     "for the whole season.",
     "for your fields.",
   ],
@@ -91,7 +91,7 @@ export const HERO = {
  */
 export const DETECTION = {
   eyebrow: "WHAT IT FINDS",
-  headline: "Every weed on the map, measured, and the rest of the field read too.",
+  headline: "The weeds on the map, measured, and the rest of the field read too.",
   body: [
     "Weeds and weed patches, a thin stand, bare or wet ground, and any patch that is not behaving like the rest of the field. Each finding is drawn on the map with its size and area.",
     "You decide what gets treated. Nothing is sprayed on a finding you did not confirm.",
@@ -110,7 +110,7 @@ export const FLOW = {
   sub: "The weed map is the foundation. Everything after it is derived from what you confirmed on it.",
   steps: [
     { label: "FOUND IT", body: "The weeds and the abnormal vegetation, found on your field map." },
-    { label: "SIZED IT", body: "Every confirmed finding becomes a measured treatment area." },
+    { label: "SIZED IT", body: "Each confirmed finding becomes a measured treatment area." },
     { label: "TREATED IT", body: "Confirmed areas become a spray mission for supported aircraft. You fly it, on your license." },
   ],
 };
