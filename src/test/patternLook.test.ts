@@ -48,13 +48,22 @@ describe("the pattern on the photo", () => {
     expect(BLOB_COLOUR["off-row"]).not.toBe(BLOB_COLOUR["between plants"]);
   });
 
+  it("marks the spot: the nearest placed blob within reach, else a ring where the map put it", () => {
+    const near = overlayFromPattern(pattern, { x: 310, y: 108 });
+    expect(near.focus).toMatchObject({ x: 300, y: 100, cls: "between plants", matched: true });
+    const far = overlayFromPattern(pattern, { x: 900, y: 900, diameterM: 0.5 });
+    expect(far.focus).toMatchObject({ x: 900, y: 900, matched: false });
+    expect(far.focus!.r).toBeCloseTo(25, 5);
+    expect(overlayFromPattern(pattern).focus).toBeNull();
+  });
+
   it("says what the colours mean and sizes the cut from the row spacing", () => {
-    const o = overlayFromPattern(pattern);
-    expect(overlayLegend(o, pattern)).toBe("Rows in 1 planting: 1 plants on the pattern (green), 1 between plants (orange), 1 off the rows (red), 1 doubles (blue).");
+    const o = overlayFromPattern(pattern, { x: 310, y: 108 });
+    expect(overlayLegend(o, pattern)).toBe("The white ring is this spot, read here as between plants. Around it: 1 crop plants on the pattern (green), 1 between plants (orange), 1 off the rows (red), 1 doubles (blue), in 1 planting.");
     expect(overlayLegend({ ...o, blocks: 0 }, pattern)).toMatch(/No row pattern/);
-    expect(patternLookSideM(null)).toBe(12);
-    expect(patternLookSideM(0.76)).toBe(12);
-    expect(patternLookSideM(5.1)).toBeCloseTo(30.6, 5);
-    expect(patternLookSideM(9)).toBe(40);
+    expect(patternLookSideM(null)).toBe(8);
+    expect(patternLookSideM(0.76)).toBe(8);
+    expect(patternLookSideM(5.1)).toBeCloseTo(15.3, 5);
+    expect(patternLookSideM(9)).toBe(24);
   });
 });

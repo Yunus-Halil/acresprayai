@@ -23,7 +23,7 @@ import type { PhotoPattern } from "@/lib/photoScout/pattern";
 /** `id` names the finding on the map; the detector's boxes are filed under it. */
 export type CloserLookTarget = { id?: string; title: string; spot: SpotSources };
 
-export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null }: {
+export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null }: {
   target: CloserLookTarget | null;
   sources: ScanSources | null;
   units: UnitSystem;
@@ -32,6 +32,8 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   onDetections?: (list: GroundedDetection[]) => void;
   /** The field's row spacing from the scan's pattern, so the photo is read at it rather than searched. */
   rowSpacingM?: number | null;
+  /** The spot's own size on the map, metres across, for the ring when the photo pass places nothing at it. */
+  spotDiameterM?: number | null;
 }) {
   const [viewIndex, setViewIndex] = useState(0);
   const [look, setLook] = useState<Look | null>(null);
@@ -44,6 +46,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   const [patternOn, setPatternOn] = useState(true);
   const [patternLook, setPatternLook] = useState<{ cut: PatternCut; pattern: PhotoPattern; overlay: PatternOverlay } | null>(null);
   const [patternState, setPatternState] = useState<"idle" | "reading" | "failed">("idle");
+  const [patternProgress, setPatternProgress] = useState<number | null>(null);
   const frameRef = useRef<Blob | null>(null);
   const views = target?.spot.lookable ?? [];
   const view = views[viewIndex] ?? null;
@@ -109,13 +112,17 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
       const cut = await cutPatternWindow(frame, centre, patternLookSideM(rowSpacingM), look.gsdM);
       if (!cut) throw new Error("no cut");
       made = cut.url;
-      const pattern = await analysePhotoOffThread(cut.pixels, { gsdM: cut.gsdM, rowSpacingM: rowSpacingM && rowSpacingM > 0 ? rowSpacingM : "auto", windowM: Math.min(4, (cut.width * cut.gsdM) / 3) });
+      setPatternProgress(0);
+      const pattern = await analysePhotoOffThread(cut.pixels, { gsdM: cut.gsdM, rowSpacingM: rowSpacingM && rowSpacingM > 0 ? rowSpacingM : "auto", windowM: Math.min(4, (cut.width * cut.gsdM) / 3) },
+        { onProgress: (done, total) => { if (!cancelled) setPatternProgress(total ? done / total : null); } });
       if (cancelled) { URL.revokeObjectURL(cut.url); return; }
-      setPatternLook({ cut, pattern, overlay: overlayFromPattern(pattern) });
+      // The spot, in the cut's pixels: the centre of the area the map flagged.
+      const focus = { x: (centre.x - cut.window.x) / cut.factor, y: (centre.y - cut.window.y) / cut.factor, diameterM: spotDiameterM };
+      setPatternLook({ cut, pattern, overlay: overlayFromPattern(pattern, focus) });
       setPatternState("idle");
     })().catch(() => { if (!cancelled) setPatternState("failed"); });
     return () => { cancelled = true; if (made && cancelled) { /* revoked when the state is replaced */ } };
-  }, [look, patternOn, patternLook, patternState, rowSpacingM]);
+  }, [look, patternOn, patternLook, patternState, rowSpacingM, spotDiameterM]);
   useEffect(() => () => { if (patternLook) URL.revokeObjectURL(patternLook.cut.url); }, [patternLook]);
 
   const gsd = (m: number | null | undefined) => (m ? `${fmtLengthCm(m * 100, units).text}/px` : "unknown");
@@ -162,9 +169,9 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
         </div>
         {patternOn && look && (
           <p className="text-[11px] text-neutral-400" data-testid="closer-look-pattern-line">
-            {patternState === "reading" && <><Loader2 className="inline h-3 w-3 animate-spin mr-1" /> Reading the rows and plants around this spot in the photo.</>}
+            {patternState === "reading" && <><Loader2 className="inline h-3 w-3 animate-spin mr-1" /> Reading the rows and plants around this spot in the photo{patternProgress != null ? ` (${Math.round(patternProgress * 100)}%)` : ""}.</>}
             {patternState === "failed" && "The pattern could not be read in this photo."}
-            {patternLook && <>{overlayLegend(patternLook.overlay, patternLook.pattern)} Yellow lines are the rows. The dashed outline is the area the map flagged. {gsd(patternLook.cut.gsdM)} here.</>}
+            {patternLook && <>{overlayLegend(patternLook.overlay, patternLook.pattern)} Yellow lines are the rows. {gsd(patternLook.cut.gsdM)} here.</>}
           </p>
         )}
         {detection?.state === "done" && (
@@ -215,9 +222,23 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
                 <img src={cut.url} alt={`The rows and plants around the flagged area in ${view?.filename}`} data-testid="closer-look-pattern-image"
                   style={full ? { width: cut.width, maxWidth: "none", display: "block" } : { width: "100%", height: "auto", display: "block" }} />
                 <svg viewBox={`0 0 ${cut.width} ${cut.height}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none" data-testid="closer-look-pattern-overlay">
-                  {overlay.lines.map((l, i) => <line key={`l${i}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={ROW_COLOUR} strokeWidth={sw} strokeOpacity={0.85} />)}
-                  {overlay.circles.map((c, i) => <circle key={`c${i}`} cx={c.x} cy={c.y} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={sw} strokeOpacity={0.95} />)}
-                  {outline && <polygon points={outline} fill="none" stroke="#fbbf24" strokeWidth={sw * 1.5} strokeDasharray={`${sw * 4} ${sw * 2}`} />}
+                  {/* Context first and faint: the rows, then the crop plants. Then what is not crop, haloed so it reads over foliage. Then the spot, unmistakable. */}
+                  {overlay.lines.map((l, i) => <line key={`l${i}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={ROW_COLOUR} strokeWidth={sw * 0.8} strokeOpacity={0.55} />)}
+                  {overlay.circles.filter(c => c.cls === "on pattern").map((c, i) => <circle key={`p${i}`} cx={c.x} cy={c.y} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={sw * 0.8} strokeOpacity={0.45} />)}
+                  {overlay.circles.filter(c => c.cls !== "on pattern").map((c, i) => (
+                    <g key={`a${i}`}>
+                      <circle cx={c.x} cy={c.y} r={c.r} fill="none" stroke="#000" strokeWidth={sw * 2.2} strokeOpacity={0.6} />
+                      <circle cx={c.x} cy={c.y} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={sw} strokeOpacity={1} />
+                    </g>
+                  ))}
+                  {overlay.focus && (
+                    <g data-testid="closer-look-focus">
+                      <circle cx={overlay.focus.x} cy={overlay.focus.y} r={Math.max(overlay.focus.r * 1.6, sw * 6)} fill="none" stroke="#000" strokeWidth={sw * 3.5} strokeOpacity={0.7} />
+                      <circle cx={overlay.focus.x} cy={overlay.focus.y} r={Math.max(overlay.focus.r * 1.6, sw * 6)} fill="none" stroke="#ffffff" strokeWidth={sw * 2} />
+                      <circle cx={overlay.focus.x} cy={overlay.focus.y} r={Math.max(overlay.focus.r * 1.6, sw * 6) + sw * 3} fill="none" stroke={BLOB_COLOUR[overlay.focus.cls]} strokeWidth={sw} strokeOpacity={0.9} />
+                    </g>
+                  )}
+                  {outline && <polygon points={outline} fill="none" stroke="#fbbf24" strokeWidth={sw} strokeOpacity={0.5} strokeDasharray={`${sw * 4} ${sw * 2}`} />}
                 </svg>
               </div>
             );

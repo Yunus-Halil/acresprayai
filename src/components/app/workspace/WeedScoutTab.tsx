@@ -29,7 +29,7 @@ import type { LatLng2 } from "@/lib/geo";
 import { storageKey } from "@/lib/storage";
 import { fmtArea, fmtLengthCm, fmtDistance } from "@/lib/units";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
-import { describeCandidate, findingClassOf } from "@/lib/weedScout/candidates";
+import { describeCandidate, findingClassOf, findingTitle } from "@/lib/weedScout/candidates";
 import { type AppliedAnnotation, annotationFromCandidate } from "@/lib/weedScout/applyToField";
 import { type EventContext, describeEvent, fetchEventContext } from "@/lib/weedScout/context";
 import {
@@ -388,7 +388,7 @@ export function WeedScoutTab({
   // acreage one tab over can be the same number, and a region wide enough to
   // take a headland is where they used to differ most.
   const plannedById = useMemo(() => {
-    const rings = candidates.map(c => ({ id: c.id, ring: annotationFromCandidate(c).ring, source: "user" as const }));
+    const rings = candidates.map(c => ({ id: c.id, ring: annotationFromCandidate(c, undefined, units).ring, source: "user" as const }));
     const planned = plannedZones(rings, rings.length ? (boundary as LatLng2[][] | null) : null, params.headlandM);
     return new Map(planned.map(z => [z.id, z.areaM2]));
   }, [candidates, boundary, params.headlandM]);
@@ -463,7 +463,7 @@ export function WeedScoutTab({
 
   /** Put one spot on the field (Field View and the Flight Planner), carrying the identification only if stated. */
   const applyOne = useCallback(async (c: Candidate, observationId: string | null): Promise<string | null> => {
-    const a = annotationFromCandidate(c, identificationOf(c));
+    const a = annotationFromCandidate(c, identificationOf(c), units);
     const id = await applyAnnotation({ ...a, spot_id: c.id, weed_observation_id: observationId });
     if (!id) return "Couldn't put this spot on the field.";
     setLocalApplied(prev => ({ ...prev, [c.id]: id }));
@@ -624,8 +624,7 @@ export function WeedScoutTab({
   const spotLabel = (c: Candidate): string => {
     const id = identificationOf(c);
     if (isStatedFinding(id)) return id.label!;
-    if (c.region) return c.region.klass;
-    return c.kind;
+    return findingTitle(c, units);
   };
 
   /** The identification wiring, handed to every spot's popup. */
@@ -759,7 +758,8 @@ export function WeedScoutTab({
           <BasemapToggle value={basemap} onChange={(id) => { setBasemap(id); saveBasemap(id); }} className="absolute bottom-4 right-4 z-[1000]" />
         </MapContainer>
         <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} onDetections={list => addDetections(taskId, list)}
-          rowSpacingM={result?.pattern?.summary.rowSpacingM ?? null} />
+          rowSpacingM={result?.pattern?.summary.rowSpacingM ?? null}
+          spotDiameterM={closerLook ? (candidates.find(c => c.id === closerLook.id)?.blob?.equivDiameterM ?? null) : null} />
 
         <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2 text-neutral-300"><FlaskConical className="h-3 w-3 text-[#4CAF50]" /> Click a spot to change it</div>

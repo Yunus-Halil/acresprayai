@@ -59,7 +59,7 @@ describe("annotationFromCandidate: the row Field View and the Planner already un
     expect(a.ring).toBe(c.region!.rings[0]);
     expect(a.areaHa).toBeCloseTo(c.areaM2 / 10_000, 10);
     expect(a.issue_type).toBe("Bare soil");
-    expect(a.name).toContain("bare or dry ground");
+    expect(a.name.toLowerCase()).toContain("bare or dry ground");
     expect(a.notes).toContain("bare or dry ground");
   });
 
@@ -76,24 +76,25 @@ describe("annotationFromCandidate: the row Field View and the Planner already un
     expect(annotationFromCandidate(basePlant({ kind: "field outlier", blob: null })).issue_type).toBe("Other");
   });
 
-  it("builds a small square ring around a point candidate, sized like its chip, with a matching area", () => {
+  it("builds a circle around a point candidate, sized to the plant itself, with a matching area", () => {
     const c = basePlant();
     const a = annotationFromCandidate(c);
-    expect(a.ring.length).toBe(4);
-    // Roughly centred on the candidate.
-    const meanLat = a.ring.reduce((s, p) => s + p.lat, 0) / 4;
-    const meanLng = a.ring.reduce((s, p) => s + p.lng, 0) / 4;
-    expect(meanLat).toBeCloseTo(LAT0, 5);
-    expect(meanLng).toBeCloseTo(LNG0, 5);
+    expect(a.ring.length).toBe(24);
+    // Centred on the candidate.
+    const meanLat = a.ring.reduce((s, p) => s + p.lat, 0) / a.ring.length;
+    const meanLng = a.ring.reduce((s, p) => s + p.lng, 0) / a.ring.length;
+    expect(meanLat).toBeCloseTo(LAT0, 6);
+    expect(meanLng).toBeCloseTo(LNG0, 6);
     // The reported area matches the ring's own geodesic area (no separate,
     // possibly-disagreeing number invented for storage).
     expect(a.areaHa).toBeCloseTo(polygonAreaM2(a.ring) / 10_000, 10);
-    // A 16 cm blob's chip span is at least a couple of metres across.
-    const side = Math.hypot(
-      (a.ring[1].lng - a.ring[0].lng) * mPerDegLng(LAT0),
-      (a.ring[1].lat - a.ring[0].lat) * M_PER_DEG_LAT,
-    );
-    expect(side).toBeGreaterThan(0.5);
+    // A 16 cm plant is a 60 cm patch, the floor; a 1 m plant a 1.5 m patch.
+    const across = (ring: typeof a.ring) => 2 * Math.max(...ring.map(p => Math.hypot((p.lng - LNG0) * mPerDegLng(LAT0), (p.lat - LAT0) * M_PER_DEG_LAT)));
+    expect(across(a.ring)).toBeCloseTo(0.6, 2);
+    const big = annotationFromCandidate(basePlant({ blob: { ...c.blob!, equivDiameterM: 1.0 } }));
+    expect(across(big.ring)).toBeCloseTo(1.5, 2);
+    // And the name says what it is, with its size.
+    expect(a.name).toMatch(/^Likely weed, off the row · /);
   });
 
   it("carries the in-house estimate into notes, and marks itself experimental", () => {
@@ -104,11 +105,13 @@ describe("annotationFromCandidate: the row Field View and the Planner already un
     expect(a.notes.length).toBeLessThanOrEqual(480);
   });
 
-  it("never claims red as the colour of what it does not know", () => {
-    // The colour is a display choice, not a severity claim - it never varies
-    // with score or kind, which would fabricate confidence this app does not
-    // have (see the decision-support house rule).
-    expect(annotationFromCandidate(basePlant({ score: 0.99 })).color).toBe("orange");
+  it("colours by what the finding is, never by score: red is the operator's kept weed, orange is ground", () => {
+    // A plant reaches this function only once the operator kept it, so red is
+    // their word. The score never changes the colour: it is not a severity.
+    expect(annotationFromCandidate(basePlant({ score: 0.99 })).color).toBe("red");
+    expect(annotationFromCandidate(basePlant({ score: 0.1 })).color).toBe("red");
     expect(annotationFromCandidate(baseRegion("bare or dry ground")).color).toBe("orange");
+    expect(annotationFromCandidate(baseRegion("thin stand")).color).toBe("orange");
+    expect(annotationFromCandidate(baseRegion("dense vegetation")).color).toBe("yellow");
   });
 });

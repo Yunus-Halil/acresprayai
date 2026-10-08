@@ -22,11 +22,11 @@
 // Nothing here produces a verdict. No field, label or string in this module
 // describes a candidate as a weed; there is a test for that.
 import type { LatLng2 } from "../geo";
-import { type UnitSystem, fmtLengthCm } from "../units";
+import { type UnitSystem, fmtArea, fmtLengthCm } from "../units";
 import { type BlobBaseline, blobBaseline, scoreBlob } from "./blobs";
 import { type FieldPattern, betweenPlantsAt, nearestPlantFinder } from "./fieldPattern";
 import { distanceToRowM } from "./rows";
-import type { AnalysisTile, Blob, Candidate, CandidateKind, FindingClass, Region, RowModel, ScoutParams, TileFlag } from "./types";
+import type { AnalysisTile, Blob, Candidate, CandidateKind, FindingClass, Region, RowModel, ScoutParams, TileFlag, RegionClass } from "./types";
 import { assignSpotIds } from "./spotId";
 
 /** Ceiling on the queue handed to the UI. The rest is still counted. */
@@ -199,6 +199,37 @@ export const FINDING_CLASS_LABEL: Record<FindingClass, string> = {
   wet_or_dark_ground: "wet or dark ground",
   other_anomaly: "other anomaly",
 };
+
+/** Region classes in the words a person uses on the map. */
+export const REGION_TITLE: Record<RegionClass, string> = {
+  "bare or dry ground": "Bare or dry ground",
+  "dark ground (wet, shadow or residue)": "Wet or dark ground",
+  "thin stand": "Thin stand",
+  "dense vegetation": "Dense vegetation",
+  "pale vegetation": "Pale vegetation",
+  "greener than the field": "Greener than the field",
+  "different from the field": "Different from the field",
+};
+
+/**
+ * What a finding IS, in a few words with its size: "Likely weed, off the row
+ * · 40 cm", "Bare or dry ground · 0.1 ha". The map label, the popup's
+ * heading, the closer look's title and the saved shape's name all say this,
+ * so a spot is the same thing everywhere. "Likely": the operator decides.
+ */
+export function findingTitle(c: Pick<Candidate, "kind" | "region" | "blob" | "areaM2">, sys: UnitSystem = "metric", opts: { size?: boolean } = {}): string {
+  const withSize = opts.size !== false;
+  if (c.region) return withSize ? `${REGION_TITLE[c.region.klass]} · ${fmtArea(c.areaM2, sys).text}` : REGION_TITLE[c.region.klass];
+  const size = withSize && c.blob ? ` · ${fmtLengthCm(c.blob.equivDiameterM * 100, sys).text}` : "";
+  switch (c.kind) {
+    case "off-row vegetation": return `Likely weed, off the row${size}`;
+    case "between plants": return `Likely weed, between plants${size}`;
+    case "vegetation outlier": return `Plant unlike the crop${size}`;
+    case "off-row and outlier": return `Likely weed, off the row and unlike the crop${size}`;
+    case "field outlier": return c.blob ? `Plant unlike the field${size}` : "Patch unlike the field";
+    default: return c.kind;
+  }
+}
 
 export function describeCandidate(c: Candidate, sys: UnitSystem = "metric"): string {
   const parts: string[] = [];

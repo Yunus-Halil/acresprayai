@@ -200,6 +200,20 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
     check();
   }
 
+  // Where the pattern placed the crop, a region of vegetation unlike the
+  // field average is the crop: trees on bare ground read as "dense
+  // vegetation" against a field that is mostly soil. Only ground classes
+  // (bare, dark or wet, thin stand) remain findings there; off the pattern,
+  // every class still counts.
+  if (pattern) {
+    const onPattern = patternDistance(pattern);
+    const vegetationClass = new Set<Region["klass"]>(["dense vegetation", "pale vegetation", "greener than the field", "different from the field"]);
+    const before = regions.length;
+    regions = regions.filter(r => !(vegetationClass.has(r.klass) && onPattern(r.centroid) != null));
+    const dropped = before - regions.length;
+    if (dropped) notes.push(`${dropped} region(s) of vegetation unlike the field average sat on the planting pattern, where the crop itself is what stands out from the ground, and were not counted as findings.`);
+  }
+
   // Rows, where they can be found and where they are wanted. ------------------
   report("rows");
   let rows: RowModel | null = pattern ? patternRowModel(pattern) : null;

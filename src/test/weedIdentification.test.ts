@@ -122,7 +122,7 @@ describe("annotationFromCandidate carries only a stated identification", () => {
     expect(a.weed_label).toBeNull();
     expect(a.weed_label_status).toBeNull();
     expect(a.weed_catalog_id).toBeNull();
-    expect(a.name).toBe("Weed Scout: off-row vegetation");
+    expect(a.name).toMatch(/^Likely weed, off the row/);
     expect(a.notes).toMatch(/^Not identified by the operator/);
     expect(a.notes).not.toMatch(/ragweed/);
   });

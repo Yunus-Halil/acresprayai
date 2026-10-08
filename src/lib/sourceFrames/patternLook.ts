@@ -11,10 +11,12 @@
 import { type BlobClass, type PhotoPattern, type PhotoPixels, rowSegmentsPx } from "../photoScout/pattern";
 import type { AreaWindow } from "./crop";
 
-/** Rows to show around a spot, in row spacings; never under PATTERN_LOOK_MIN_M a side. */
-export const PATTERN_LOOK_ROWS = 6;
-export const PATTERN_LOOK_MIN_M = 12;
-export const PATTERN_LOOK_MAX_M = 40;
+/** Rows to show around a spot, in row spacings; never under PATTERN_LOOK_MIN_M a side. Three: the spot is the subject, its neighbours the context. */
+export const PATTERN_LOOK_ROWS = 3;
+export const PATTERN_LOOK_MIN_M = 8;
+export const PATTERN_LOOK_MAX_M = 24;
+/** The spot's own blob is the placed blob nearest the spot within this many metres. */
+export const FOCUS_REACH_M = 1.5;
 /** The crop is read at or under this many pixels a side; a wider cut is pooled down. */
 export const PATTERN_LOOK_MAX_EDGE = 2400;
 
@@ -82,7 +84,13 @@ export async function cutPatternWindow(frame: Blob, centreNative: { x: number; y
 
 export type OverlayLine = { x1: number; y1: number; x2: number; y2: number; block: number | null };
 export type OverlayCircle = { x: number; y: number; r: number; cls: BlobClass };
-export type PatternOverlay = { lines: OverlayLine[]; circles: OverlayCircle[]; blocks: number; usable: number; windows: number };
+export type PatternOverlay = {
+  lines: OverlayLine[];
+  circles: OverlayCircle[];
+  /** The spot itself: the placed blob nearest the focus, or a ring at the focus when none is near. Null without a focus. */
+  focus: (OverlayCircle & { matched: boolean }) | null;
+  blocks: number; usable: number; windows: number;
+};
 
 /** Liang-Barsky, for one window's rectangle. */
 function clip(x1: number, y1: number, x2: number, y2: number, r: { x0: number; y0: number; x1: number; y1: number }): [number, number] | null {
@@ -103,7 +111,7 @@ function clip(x1: number, y1: number, x2: number, y2: number, r: { x0: number; y
  * rows run across the union of the block's windows; every placed blob is a
  * circle of its own size in its class's colour.
  */
-export function overlayFromPattern(pattern: PhotoPattern): PatternOverlay {
+export function overlayFromPattern(pattern: PhotoPattern, focusPx: { x: number; y: number; diameterM?: number | null } | null = null): PatternOverlay {
   const lines: OverlayLine[] = [];
   const byBlock = new Map<number, typeof pattern.windows>();
   for (const w of pattern.windows) {
@@ -128,12 +136,26 @@ export function overlayFromPattern(pattern: PhotoPattern): PatternOverlay {
   const circles: OverlayCircle[] = pattern.blobs
     .filter(b => b.cls !== "unplaced")
     .map(b => ({ x: b.x, y: b.y, r: Math.max(3, b.equivDiameterM / pattern.gsdM / 2), cls: b.cls }));
-  return { lines, circles, blocks: pattern.summary.blocks, usable: pattern.summary.usableWindows, windows: pattern.summary.windows };
+  // The spot: the nearest placed blob within reach, else a ring where the map put it.
+  let focus: PatternOverlay["focus"] = null;
+  if (focusPx) {
+    const reach = FOCUS_REACH_M / pattern.gsdM;
+    let best: OverlayCircle | null = null, bestD = Infinity;
+    for (const c of circles) {
+      const d = Math.hypot(c.x - focusPx.x, c.y - focusPx.y);
+      if (d <= reach && d < bestD) { bestD = d; best = c; }
+    }
+    focus = best
+      ? { ...best, matched: true }
+      : { x: focusPx.x, y: focusPx.y, r: Math.max(6, ((focusPx.diameterM ?? 0.3) / pattern.gsdM) / 2), cls: "off-row", matched: false };
+  }
+  return { lines, circles, focus, blocks: pattern.summary.blocks, usable: pattern.summary.usableWindows, windows: pattern.summary.windows };
 }
 
 /** What the overlay means, in a line. */
 export function overlayLegend(o: PatternOverlay, pattern: PhotoPattern): string {
   const n = (cls: BlobClass) => pattern.blobs.filter(b => b.cls === cls).length;
-  if (o.blocks === 0) return "No row pattern was read in this part of the photo.";
-  return `Rows in ${o.blocks} planting${o.blocks === 1 ? "" : "s"}: ${n("on pattern")} plants on the pattern (green), ${n("between plants")} between plants (orange), ${n("off-row")} off the rows (red)${n("double") ? `, ${n("double")} doubles (blue)` : ""}.`;
+  const spot = o.focus ? (o.focus.matched ? `The white ring is this spot, read here as ${o.focus.cls}. ` : "The white ring is where the map put this spot; the pass placed no plant there. ") : "";
+  if (o.blocks === 0) return spot + "No row pattern was read in this part of the photo.";
+  return spot + `Around it: ${n("on pattern")} crop plants on the pattern (green), ${n("between plants")} between plants (orange), ${n("off-row")} off the rows (red)${n("double") ? `, ${n("double")} doubles (blue)` : ""}, in ${o.blocks} planting${o.blocks === 1 ? "" : "s"}.`;
 }

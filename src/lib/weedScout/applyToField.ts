@@ -18,7 +18,8 @@
 // verdict already put it (species text carried through describe.ts).
 import { type LatLng2, M_PER_DEG_LAT, m2ToHectares, mPerDegLng, polygonAreaM2 } from "../geo";
 import { type Identification, UNIDENTIFIED, identificationLine, isStatedFinding } from "../weedCatalog/identification";
-import { chipSpanM } from "./candidates";
+import { findingTitle } from "./candidates";
+import type { UnitSystem } from "../units";
 import type { Candidate, RegionClass } from "./types";
 
 export type AppliedAnnotation = {
@@ -40,17 +41,19 @@ export type AppliedAnnotation = {
   weed_label_source: string | null;
 };
 
-/** A small square around a point candidate's centroid, sized like its own chip. */
-function squareRing(centre: LatLng2, spanM: number): LatLng2[] {
-  const half = Math.max(0.5, spanM) / 2;
-  const dLat = half / M_PER_DEG_LAT;
-  const dLng = half / mPerDegLng(centre.lat);
-  return [
-    { lat: centre.lat + dLat, lng: centre.lng - dLng },
-    { lat: centre.lat + dLat, lng: centre.lng + dLng },
-    { lat: centre.lat - dLat, lng: centre.lng + dLng },
-    { lat: centre.lat - dLat, lng: centre.lng - dLng },
-  ];
+/** The patch a saved plant covers: this many times its diameter across, never under SPOT_MIN_DIAMETER_M. */
+export const SPOT_RING_SCALE = 1.5;
+export const SPOT_MIN_DIAMETER_M = 0.6;
+export const SPOT_RING_POINTS = 24;
+
+/** A circle around a point candidate, sized to the plant itself, so the shape on the map is the circle the scout drew. */
+export function circleRing(centre: LatLng2, diameterM: number): LatLng2[] {
+  const r = Math.max(SPOT_MIN_DIAMETER_M, diameterM * SPOT_RING_SCALE) / 2;
+  const dLat = r / M_PER_DEG_LAT, dLng = r / mPerDegLng(centre.lat);
+  return Array.from({ length: SPOT_RING_POINTS }, (_, i) => {
+    const a = (2 * Math.PI * i) / SPOT_RING_POINTS;
+    return { lat: centre.lat + dLat * Math.sin(a), lng: centre.lng + dLng * Math.cos(a) };
+  });
 }
 
 const ISSUE_FOR_REGION_CLASS: Record<RegionClass, string> = {
@@ -71,9 +74,20 @@ function issueTypeFor(c: Candidate): string {
   return "Other";
 }
 
-function nameFor(c: Candidate, id: Identification): string {
+/**
+ * The colour is the finding's class, as the scout drew it, and the operator's
+ * own: a plant reaches here only once they kept it as a weed, so red is their
+ * word, never the machine's. Ground is orange; anything else yellow.
+ */
+function colourFor(c: Candidate): string {
+  if (c.region) return c.region.klass === "bare or dry ground" || c.region.klass === "dark ground (wet, shadow or residue)" || c.region.klass === "thin stand" ? "orange" : "yellow";
+  if (c.kind === "off-row vegetation" || c.kind === "between plants" || c.kind === "off-row and outlier" || c.kind === "vegetation outlier") return "red";
+  return "yellow";
+}
+
+function nameFor(c: Candidate, id: Identification, sys: UnitSystem): string {
   if (isStatedFinding(id)) return `${id.label} (operator-identified)`;
-  return `Weed Scout: ${c.region ? c.region.klass : c.kind}`;
+  return findingTitle(c, sys);
 }
 
 /** What the Field View popup answers on a click - the "what is this" the operator asked for. */
@@ -89,19 +103,19 @@ function notesFor(c: Candidate, id: Identification): string {
  * A region candidate's own outer ring is used as-is (a hole, on the rare
  * donut-shaped region, is dropped - `user_annotations.ring` is a single ring,
  * the same limitation the hand-drawn tool already has). A point candidate
- * gets a small square around its centroid, sized like the chip already
- * rendered for it, so the shape on the map is roughly what the chip showed.
+ * gets a circle around its centroid sized to the plant itself, so the shape
+ * on the map is the circle the scout drew, not a box many times its size.
  */
-export function annotationFromCandidate(c: Candidate, identification: Identification = UNIDENTIFIED): AppliedAnnotation {
+export function annotationFromCandidate(c: Candidate, identification: Identification = UNIDENTIFIED, sys: UnitSystem = "metric"): AppliedAnnotation {
   const ring = c.region && c.region.rings[0]?.length >= 3
     ? c.region.rings[0]
-    : squareRing(c.centroid, chipSpanM(c));
+    : circleRing(c.centroid, c.blob?.equivDiameterM ?? SPOT_MIN_DIAMETER_M);
   const areaM2 = c.region ? c.areaM2 : polygonAreaM2(ring);
   const stated = isStatedFinding(identification);
   return {
-    name: nameFor(c, identification),
+    name: nameFor(c, identification, sys),
     issue_type: issueTypeFor(c),
-    color: "orange",
+    color: colourFor(c),
     notes: notesFor(c, identification),
     ring,
     areaHa: m2ToHectares(areaM2),

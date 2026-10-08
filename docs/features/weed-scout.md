@@ -80,6 +80,29 @@ worker, each off-pattern blob carried to the ground through the ODM pose (`odm.t
 plant the map pass already has or another photo already gave is not added twice, and the
 rest join the candidates as they land, with the photo as their source and a chip cut from the
 photo. Stop ends it; a connection the browser says to spare is not used. `photoPass` turns it off.
+## What a finding is called, and what it looks like once saved (2026-10-08, evening)
+
+Every finding has one title, `findingTitle` in candidates.ts: what it is and how big, "Likely
+weed, off the row · 40 cm", "Likely weed, between plants · 25 cm", "Plant unlike the crop ·
+60 cm", "Bare or dry ground · 0.1 ha". The map label, the popup heading (without the size,
+which the line under it carries), the closer look's title and the saved shape's name all say
+it, so a spot is the same thing everywhere. "Likely": the operator decides.
+
+Where the pattern placed the crop, a region of vegetation unlike the field average IS the
+crop (trees on bare ground read as "dense vegetation" against a field that is mostly soil),
+so those regions are not findings there; bare, dark or wet ground and a thin stand still are.
+
+A kept spot saved to the field is now the circle the scout drew: one and a half times the
+plant across, never under 60 cm, in its class's colour (red for the plant the operator kept
+as a weed, orange for ground, yellow for the rest), named as above. It used to be an orange
+square four times the plant across named "Weed Scout: off-row vegetation", which made the
+Planner's map a field of identical boxes.
+
+The closer look opens on a cut of three row spacings around the spot, marks the spot with a
+white ring (on the plant the pass placed there, or where the map put it when it placed none),
+halos the circles that are not crop so they read over foliage, and fades the rows and the crop
+plants to context. It says how far the read is while it reads.
+
 ## The pattern on the photo (2026-10-08)
 
 Closer look opens in the pattern view: a cut of six row spacings a side (12 to 40 m) around

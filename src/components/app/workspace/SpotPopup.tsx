@@ -25,7 +25,7 @@ import type { Identification } from "@/lib/weedCatalog/identification";
 import { isStatedFinding } from "@/lib/weedCatalog/identification";
 import type { CropShortlist, RankedEntry, RecentLabel, Suggestion } from "@/lib/weedCatalog/suggest";
 import type { CatalogEntry, FieldRegion } from "@/lib/weedCatalog/types";
-import { FINDING_CLASS_LABEL, describeCandidate, findingClassOf } from "@/lib/weedScout/candidates";
+import { FINDING_CLASS_LABEL, describeCandidate, findingClassOf, findingTitle } from "@/lib/weedScout/candidates";
 import { type StoredPrediction, type Verdict, VERDICTS, isDismissal } from "@/lib/weedScout/observations";
 import type { Candidate } from "@/lib/weedScout/types";
 import { type UnitSystem, fmtArea, fmtAreaCm2, fmtLengthCm } from "@/lib/units";
@@ -106,7 +106,7 @@ export function SpotPopup(props: SpotPopupProps) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="text-xs font-semibold truncate">
-            {named ? identification.label : (c.region ? c.region.klass : c.kind)}
+            {named ? identification.label : findingTitle(c, units, { size: false })}
           </div>
           <div className="text-[10px] text-neutral-500">
             Spot {index + 1} of {total}
