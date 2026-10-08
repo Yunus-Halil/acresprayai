@@ -58,6 +58,17 @@ thresholded with Otsu per tile and a whole-field fallback (`vegetation.ts`). No
 morphology: the ground-unit area floor in `blobs.ts` (1 cm squared) does the despeckling
 continuously in GSD, which a kernel cannot.
 
+## The planting pattern (2026-10-08)
+
+Between the baseline and the sweep the scout now reads the planting pattern from the field
+map (`fieldPattern.ts`, over `photoScout/pattern.ts` in a Web Worker): windows of 60 m at the
+baked zoom nearest 5 cm per pixel, each giving its row blocks, their settled row lines and
+every crop plant, placed in lat/lng. The pattern stands for the row model, the sweep measures
+its distances against the settled lines, and an on-row blob the pattern placed no crop plant
+at is a new candidate kind, "between plants". Where the pattern reads nothing the older
+per-window fit runs as before. `ScoutParams.pattern` turns it off; `rowSpacingAuto` searches
+the spacing; `rowAngleDeg` is the grower's "rows run this way". The plan and the measurements
+are in [field-intelligence-plan.md](field-intelligence-plan.md).
 ## What a candidate is
 
 | Kind | Meaning | Drawn as |

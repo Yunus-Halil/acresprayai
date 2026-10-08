@@ -143,6 +143,7 @@ export function describe(
     if (habit) parts.push(habit);
     if (colourNote) parts.push(colourNote);
     if (c.kind === "off-row vegetation" || c.kind === "off-row and outlier") parts.push("between the fitted rows");
+    if (c.kind === "between plants") parts.push("on the row, between two crop plants");
     if (c.kind === "vegetation outlier" || c.kind === "off-row and outlier") parts.push(`unlike the field's plants in ${c.blobZFeature ?? "size or colour"}`);
     summary = parts.join(", ") + ".";
     if (c.feedback?.factor && c.feedback.factor > 1 && c.feedback.species.length) {

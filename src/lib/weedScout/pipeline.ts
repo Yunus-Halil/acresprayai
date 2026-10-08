@@ -37,6 +37,7 @@ import { chipSpanM, rankCandidates } from "./candidates";
 import type { EventContext } from "./context";
 import { describe } from "./describe";
 import { applyFeedback } from "./feedback";
+import { type FieldPattern, patternDistance, patternRowModel, planPatternWindows, readFieldPattern } from "./fieldPattern";
 import { distanceToRowM, fitRowModel } from "./rows";
 import { planSweep, sweepWindow } from "./sweep";
 import { autoTileM, rasterGsdM, tessellate, tileIdAt, tileLattice, tileWindow } from "./tiles";
@@ -162,11 +163,48 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
   await yieldToUi();
   check();
 
+  // The planting pattern, from the field map at about 5 cm per pixel. -------
+  // Every row block, its settled lines and its plants, on the ground; it
+  // stands for the row model below and the sweep measures its distances
+  // against the settled lines. Where it finds no rows the older fit still
+  // runs, so a field it cannot read is no worse off than before.
+  let pattern: FieldPattern | null = null;
+  if (params.pattern && params.rowMode !== "none" && !canopy.closed) {
+    report("pattern", 0);
+    try {
+      const plan = planPatternWindows(bbox, boundary, maxNative);
+      const fp = await readFieldPattern(template, plan, { lat: bbox.north, lng: bbox.west }, {
+        rowSpacingM: params.rowSpacingAuto ? "auto" : params.rowSpacingM,
+        rowAngleDeg: params.rowAngleDeg,
+        signal: opts.signal,
+        onProgress: (i, n, note) => report("pattern", n ? i / n : null, note),
+      });
+      if (fp.summary.blocks > 0) {
+        pattern = fp;
+        const s = fp.summary;
+        notes.push(
+          `Planting pattern: rows ${s.rowSpacingM == null ? "" : fmtLengthCm(s.rowSpacingM * 100, sys).text + " apart"}` +
+          `${s.plantSpacingM == null ? "" : ", plants " + fmtLengthCm(s.plantSpacingM * 100, sys).text + " apart along the row"}` +
+          `, ${s.plantCount.toLocaleString()} crop plant(s) placed in ${s.blocks} block(s) over ${s.windowsWithRows} of ${s.windows} windows at ${fmtLengthCm(fp.gsdM * 100, sys).text} per pixel.`,
+        );
+        if (s.squareGrid) notes.push("The plants sit on a square grid, so rows fit both ways; the lines follow the brighter direction. If they run the wrong way, set the row direction.");
+        if (plan.grown) notes.push(`Pattern windows were widened to ${plan.windowM} m to read this field in ${plan.windows.length} windows.`);
+        if (s.missingTiles) notes.push(`${s.missingTiles} imagery tile(s) failed to load in the pattern pass; rows under them were not read.`);
+      } else {
+        notes.push("No planting pattern was read from the field map; the row fit below stands on its own.");
+      }
+    } catch (e) {
+      if ((e as Error)?.name === "Aborted") throw e;
+      notes.push(`The planting pattern pass failed: ${(e as Error).message}`);
+    }
+    check();
+  }
+
   // Rows, where they can be found and where they are wanted. ------------------
   report("rows");
-  let rows: RowModel | null = null;
-  let rowsUsed: ScoutResult["rowsUsed"] = "not a row crop";
-  if (params.rowMode !== "none" && !canopy.closed) {
+  let rows: RowModel | null = pattern ? patternRowModel(pattern) : null;
+  let rowsUsed: ScoutResult["rowsUsed"] = rows ? "fitted" : "not a row crop";
+  if (!rows && params.rowMode !== "none" && !canopy.closed) {
     try {
       rows = fitRowModel(mask, raster, params.rowSpacingM, { insideField });
       if (rows.usable) {
@@ -192,7 +230,8 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
   // 4. Plants: the full-depth sweep, or the base pass when it is off. --------
   let blobs: Blob[] = [];
   const sweep: SweepStats = { ran: false, windows: 0, gsdM: null, backedOff: 0, failed: 0, rowWindows: 0 };
-  const fitRowsInSweep = params.rowMode === "rows" || (params.rowMode === "auto" && !!rows?.usable);
+  // With a pattern the sweep measures against its settled lines and does not refit rows per window.
+  const fitRowsInSweep = !pattern && (params.rowMode === "rows" || (params.rowMode === "auto" && !!rows?.usable));
   const plan = params.sweep && !canopy.closed ? planSweep(bbox, tiles, maxNative, params.maxSweepWindows) : null;
   if (canopy.closed) {
     // Nothing to separate. Regions are the whole answer here.
@@ -201,7 +240,8 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
     sweep.gsdM = plan.gsdM;
     sweep.backedOff = plan.backedOff;
     const angleHint = rows?.usable ? rows.medianAngleDeg : null;
-    const coarseDistance = (p: { lat: number; lng: number }) => (rows ? distanceToRowM(rows, p) : null);
+    const patternDist = pattern ? patternDistance(pattern) : null;
+    const coarseDistance = (p: { lat: number; lng: number }) => (patternDist ? patternDist(p) : rows ? distanceToRowM(rows, p) : null);
     let canopyWindows = 0;
     for (let i = 0; i < plan.windows.length; i++) {
       report("sweeping", i / plan.windows.length, `window ${i + 1} of ${plan.windows.length}`);
@@ -240,7 +280,7 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
 
   // 5. Rank, learn from the archive, describe. --------------------------------
   report("ranking");
-  const ranked = rankCandidates({ blobs, tiles, flags, regions, rows, params });
+  const ranked = rankCandidates({ blobs, tiles, flags, regions, rows, params, pattern });
   let candidates: Candidate[] = applyFeedback(ranked.candidates, inputs.feedback ?? [], params.rowSpacingM, opts.fieldId ?? null);
   const measuredGsd = sweep.gsdM ?? gsdM;
   candidates = candidates.map(c => ({
@@ -306,7 +346,7 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
   report("done");
   return {
     tileM, rowsUsed, canopyClosed: canopy.closed,
-    tiles, samples, scores, flags, regions, rows, candidates,
+    tiles, samples, scores, flags, regions, rows, pattern, candidates,
     gsdM, sweep, missingTiles,
     baselineTiles: baseline?.tiles ?? 0,
     blobCount: blobs.length,

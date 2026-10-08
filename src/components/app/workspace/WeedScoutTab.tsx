@@ -86,6 +86,9 @@ function loadParams(): ScoutParams {
       sweep: p.sweep !== false,
       maxSweepWindows: Math.round(num(p.maxSweepWindows, DEFAULT_SCOUT_PARAMS.maxSweepWindows)),
       maxChips: Math.round(num(p.maxChips, DEFAULT_SCOUT_PARAMS.maxChips)),
+      pattern: p.pattern !== false,
+      rowSpacingAuto: p.rowSpacingAuto !== false,
+      rowAngleDeg: typeof p.rowAngleDeg === "number" && Number.isFinite(p.rowAngleDeg) ? p.rowAngleDeg : null,
     };
   } catch {
     return DEFAULT_SCOUT_PARAMS;
@@ -98,6 +101,7 @@ const STAGE_LABEL: Record<ScoutProgress["stage"], string> = {
   masking: "Separating plants from soil",
   baseline: "Measuring the field average",
   regions: "Merging not-average tiles into regions",
+  pattern: "Reading the planting pattern",
   rows: "Fitting the crop rows",
   blobs: "Finding vegetation",
   sweeping: "Sweeping the field at full depth",
@@ -114,6 +118,7 @@ const KIND_COLOUR: Record<Candidate["kind"], string> = {
   "off-row vegetation": "#f59e0b",
   "vegetation outlier": "#a78bfa",
   "off-row and outlier": "#f43f5e",
+  "between plants": "#fb923c",
 };
 
 const CLASS_COLOUR: Record<RegionClass, string> = {

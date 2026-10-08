@@ -22,6 +22,7 @@
 // does that, on the record, with the chip in front of them.
 import type { LatLng2 } from "../geo";
 import type { Inference, Prediction } from "./classify/types";
+import type { FieldPattern } from "./fieldPattern";
 
 /**
  * What a finding is, before anyone asks whether it is a weed. Only
@@ -98,6 +99,15 @@ export type ScoutParams = {
   maxSweepWindows: number;
   /** Chips rendered for the top candidates after ranking. */
   maxChips: number;
+  /**
+   * Read the planting pattern from the field map (fieldPattern.ts) and let
+   * it stand for the row model. Off, the older per-window row fit runs.
+   */
+  pattern: boolean;
+  /** Search for the row spacing rather than taking rowSpacingM. */
+  rowSpacingAuto: boolean;
+  /** The grower's row direction, ground degrees counterclockwise from east, or null to let the pass decide. */
+  rowAngleDeg: number | null;
 };
 
 export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
@@ -114,6 +124,9 @@ export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
   sweep: true,
   maxSweepWindows: 400,
   maxChips: 120,
+  pattern: true,
+  rowSpacingAuto: true,
+  rowAngleDeg: null,
 };
 
 /** Fraction of `anomalyZ` a neighbour must reach to be grown into a region. */
@@ -279,7 +292,9 @@ export type CandidateKind =
   | "field outlier"
   | "off-row vegetation"
   | "vegetation outlier"
-  | "off-row and outlier";
+  | "off-row and outlier"
+  /** On the row, where the planting pattern placed no crop plant, and small: a weed under the row. */
+  | "between plants";
 
 /** What the archive said about candidates like this one. */
 export type Feedback = {
@@ -350,7 +365,7 @@ export type Candidate = {
 };
 
 export type ScoutStage =
-  | "stitching" | "tiling" | "masking" | "baseline" | "regions" | "rows" | "blobs"
+  | "stitching" | "tiling" | "masking" | "baseline" | "regions" | "pattern" | "rows" | "blobs"
   | "sweeping" | "ranking" | "chips" | "classifying" | "sourcing" | "done";
 
 export type ScoutProgress = {
@@ -395,6 +410,8 @@ export type ScoutResult = {
   flags: TileFlag[];
   regions: Region[];
   rows: RowModel | null;
+  /** The planting pattern read from the field map, when the pass ran and found rows. */
+  pattern: FieldPattern | null;
   candidates: Candidate[];
   /** Ground sample distance of the base pass, metres per pixel. */
   gsdM: number;

@@ -39,7 +39,7 @@ export const ALL_VERDICTS: readonly Verdict[] = ["weed", "not_weed", "unsure", "
 export const isDismissal = (v: Verdict | null | undefined): boolean => v === "not_weed" || v === "crop" || v === "not_vegetation";
 
 const KINDS = new Set<CandidateKind>([
-  "not-average region", "field outlier", "off-row vegetation", "vegetation outlier", "off-row and outlier",
+  "not-average region", "field outlier", "off-row vegetation", "vegetation outlier", "off-row and outlier", "between plants",
 ]);
 
 export type ObservationRow = {

@@ -144,8 +144,8 @@ Before phase 3: whether photo reading may run in the background on a metered con
 
 | Phase | Status |
 |---|---|
-| 0 | not started; measured on 58 frames, gaps listed above |
-| 1 | not started |
+| 0 | **done** 2026-10-08 (e353618): square-grid tiebreak by brightness once per photo with `rowAngleDeg` override, stray blocks dropped, doubles merged, blocks on the result, `npm run bench:pattern`. Vineyard agreement 0.75 to 0.90; doubles 206 to 100 and 151 to 39. Two vineyard frames (0014, 0031) still read across the wire: brightness favoured across there, the override is the fix. |
+| 1 | **done** 2026-10-08: `lib/weedScout/fieldPattern.ts` plans windows at the baked zoom nearest 5 cm/px, reads each through `photoScout/runPattern.ts` (a Web Worker, inline fallback), and puts blocks, settled row lines and plants in lat/lng; `pipeline.ts` stage "pattern" stands for the row model, the sweep measures against the settled lines, and a new candidate kind "between plants" marks on-row blobs the pattern placed no crop plant at. Params `pattern`, `rowSpacingAuto`, `rowAngleDeg`. Tested on a synthetic georeferenced orchard. Not yet run on a real scan in the browser. |
 | 2 | not started |
 | 3 | not started |
 | 4 | not started |

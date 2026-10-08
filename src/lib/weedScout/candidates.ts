@@ -24,6 +24,7 @@
 import type { LatLng2 } from "../geo";
 import { type UnitSystem, fmtLengthCm } from "../units";
 import { type BlobBaseline, blobBaseline, scoreBlob } from "./blobs";
+import { type FieldPattern, betweenPlantsAt, nearestPlantFinder } from "./fieldPattern";
 import { distanceToRowM } from "./rows";
 import type { AnalysisTile, Blob, Candidate, CandidateKind, FindingClass, Region, RowModel, ScoutParams, TileFlag } from "./types";
 import { assignSpotIds } from "./spotId";
@@ -38,6 +39,8 @@ export type RankInput = {
   regions: Region[];
   rows: RowModel | null;
   params: Pick<ScoutParams, "bandFrac" | "anomalyZ" | "blobZ" | "rowSpacingM" | "minRegionTiles">;
+  /** The planting pattern, when read: on-row blobs that are not its plants are between plants. */
+  pattern?: FieldPattern | null;
 };
 
 export type RankResult = {
@@ -64,6 +67,9 @@ const empty = (id: string, tileId: string, centroid: LatLng2, kind: CandidateKin
 
 export function rankCandidates(input: RankInput): RankResult {
   const { blobs, tiles, flags, regions, rows, params } = input;
+  const pattern = input.pattern ?? null;
+  const nearestPlant = pattern ? nearestPlantFinder(pattern) : null;
+  const plantArea = pattern?.summary.plantDiameterM ? Math.PI * (pattern.summary.plantDiameterM / 2) ** 2 : null;
   const tileById = new Map(tiles.map(t => [t.id, t]));
   const flagByTile = new Map(flags.map(f => [f.tileId, f]));
   const regionByTile = new Map<string, Region>();
@@ -119,9 +125,13 @@ export function rankCandidates(input: RankInput): RankResult {
     const outlier = !!bs && bs.strength >= params.blobZ;
     const outlierScore = outlier ? clip01((bs!.strength - params.blobZ) / params.blobZ) : 0;
 
-    if (!offRow && !outlier) continue;
-    const kind: CandidateKind = offRow && outlier ? "off-row and outlier" : offRow ? "off-row vegetation" : "vegetation outlier";
-    let score = Math.max(offRowScore, outlierScore);
+    // On the row where the pattern placed no crop plant: a weed under the
+    // row, which the old scout could not tell from the crop beside it.
+    const onRow = d !== null && d !== undefined && !offRow;
+    const between = onRow && !outlier && !!pattern && !!nearestPlant && betweenPlantsAt(pattern, nearestPlant, blob.centroid, blob.areaM2);
+    if (!offRow && !outlier && !between) continue;
+    const kind: CandidateKind = between ? "between plants" : offRow && outlier ? "off-row and outlier" : offRow ? "off-row vegetation" : "vegetation outlier";
+    let score = between ? clip01(0.45 + 0.35 * (1 - blob.areaM2 / (plantArea ?? blob.areaM2))) : Math.max(offRowScore, outlierScore);
     if (offRow && outlier) score = clip01(score + 0.1);
     // A plant that is only "off-row" by a weak fit is ranked below one the fit is sure about.
     if (offRow && !outlier && rowConf != null && rowConf < 0.5) score *= 0.7;
@@ -201,6 +211,7 @@ export function describeCandidate(c: Candidate, sys: UnitSystem = "metric"): str
   if (c.distanceToRowM !== null && (c.kind === "off-row vegetation" || c.kind === "off-row and outlier")) {
     parts.push(`${fmtLengthCm(Math.abs(c.distanceToRowM) * 100, sys).text} off the nearest row`);
   }
+  if (c.kind === "between plants") parts.push("on the row, between crop plants");
   if (c.blobZ !== null && c.blobZFeature && (c.kind === "vegetation outlier" || c.kind === "off-row and outlier")) {
     parts.push(`${c.blobZFeature} ${c.blobZ.toFixed(1)} deviations from the field's plants`);
   }

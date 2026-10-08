@@ -1227,8 +1227,8 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   };
   // Too small a block is not a planting: a lone window that found rows
   // beside a road found shrubs. Its window loses its rows.
-  let blocks = flood(new Set(windows.filter(w => w.usable).map(w => w.index))).filter(b => b.length >= MIN_BLOCK_WINDOWS);
-  let models: (BlockModel | null)[] = blocks.map(modelOf);
+  const blocks = flood(new Set(windows.filter(w => w.usable).map(w => w.index))).filter(b => b.length >= MIN_BLOCK_WINDOWS);
+  const models: (BlockModel | null)[] = blocks.map(modelOf);
   const blockOf = new Array<number>(windows.length).fill(-1);
   const mapBlocks = () => { blockOf.fill(-1); blocks.forEach((b, id) => b.forEach(i => { blockOf[i] = id; })); };
   // Merging: one noisy window edge splits a planting into two blocks whose

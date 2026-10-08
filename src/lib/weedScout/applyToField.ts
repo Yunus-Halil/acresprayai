@@ -65,7 +65,7 @@ const ISSUE_FOR_REGION_CLASS: Record<RegionClass, string> = {
 
 function issueTypeFor(c: Candidate): string {
   if (c.region) return ISSUE_FOR_REGION_CLASS[c.region.klass];
-  if (c.kind === "off-row vegetation" || c.kind === "vegetation outlier" || c.kind === "off-row and outlier") {
+  if (c.kind === "off-row vegetation" || c.kind === "vegetation outlier" || c.kind === "off-row and outlier" || c.kind === "between plants") {
     return "Weed pressure";
   }
   return "Other";
