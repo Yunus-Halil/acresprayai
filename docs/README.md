@@ -48,6 +48,7 @@ that treats only those patches instead of the whole field.
 | [features/export-formats.md](features/export-formats.md) | GeoJSON and QGC WPL 110 waypoint output |
 | [agras-export-notes.md](agras-export-notes.md) | DJI Agras Rx + WPML: what is confirmed, what is a labelled guess, and how to close it |
 | [features/pilot-applications.md](features/pilot-applications.md) | The pilot application form, its table, and how applications reach you |
+| [features/field-intelligence-plan.md](features/field-intelligence-plan.md) | Living plan: the planting-pattern pass (Photo Scout) into the scan, the screen and the shipped Weed Scout, with what was measured at map resolution |
 | [features/weed-scout.md](features/weed-scout.md) | Weed Scout: the experimental developer-mode replacement for the Treatment Grid, its pipeline, event context, brain and observation archive |
 | [features/weed-catalog.md](features/weed-catalog.md) | The Virginia weed reference catalog, the Weed Library, spot identification, and operator-entered treatments with planner quantities |
 | [features/flight-planning.md](features/flight-planning.md) | Survey flight planning: the grid, the capture geometry, and the DJI KMZ export |
