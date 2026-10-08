@@ -80,6 +80,16 @@ worker, each off-pattern blob carried to the ground through the ODM pose (`odm.t
 plant the map pass already has or another photo already gave is not added twice, and the
 rest join the candidates as they land, with the photo as their source and a chip cut from the
 photo. Stop ends it; a connection the browser says to spare is not used. `photoPass` turns it off.
+## The pattern on the photo (2026-10-08)
+
+Closer look opens in the pattern view: a cut of six row spacings a side (12 to 40 m) around
+the spot, at the photo's native resolution, read by the pass at the field's own row spacing
+(`sourceFrames/patternLook.ts`), with the rows drawn as yellow lines across each block's
+windows and every placed plant as a circle in its class's colour: green on the pattern,
+orange between plants, red off the rows, blue a double. The map's dashed outline is drawn
+over it in the same pixels. A toggle shows the plain crop instead; the detector's boxes
+still belong to that view.
+
 ## The saved run (2026-10-08)
 
 A finished run is saved per scan (`runCache.ts`, migration `20261008150000`): `scan_patterns`

@@ -129,6 +129,18 @@ It gains the field read and the pattern layer:
 - Gate: one flown field reviewed end to end by the founder (scan, field read, findings,
   verdicts, mission built, record written), and the benchmark table not worse than today.
 
+## The founder's own list (2026-10-08, evening)
+
+His notes name five phases of his own: 0 master row crops in every condition including the
+non-obvious ones; 1 the ortho pass with the source photos checking the bigger weeds; 2 the
+single-image finding display stitched onto the map; 3 the detection system running this
+model; 4 speed. Against this plan: his 3 is phase 1 here; his 1 is phases 1 and 3, less the
+double-check of the map's own large findings against the photo; his 2 is phase 3 plus the
+closer-look pattern view (done the same evening); his 0 and 4 are not started, on his word:
+"hold off on speed", "first let's master real crops". A conditions suite for row crops
+(corn, soybeans closed along the row, twin rows, curved rows, emergence, heavy weeds,
+residue, broadcast) was drafted and set aside unrun.
+
 ## Where it stands (2026-10-08, end of the build day)
 
 All five phases are in main. Nothing has run on a real scan in a browser: every phase was
