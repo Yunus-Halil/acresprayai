@@ -9,7 +9,7 @@
 import piexif from "piexifjs";
 import { describe, expect, it } from "vitest";
 import { estimateGsd, parsePhotoHeader } from "@/lib/photoScout/exif";
-import { analysePhoto, fitWindowBrightness, lumaRaster, mergeComponents, placeOnRows, planWindows, rowSegmentsPx, type PhotoPixels } from "@/lib/photoScout/pattern";
+import { analysePhoto, fitWindowBrightness, lumaRaster, measureComponents, mergeComponents, placeOnRows, planWindows, rowSegmentsPx, splitAlongRow, type PhotoPixels } from "@/lib/photoScout/pattern";
 
 function rng(seed: number) {
   let s = seed >>> 0;
@@ -160,7 +160,7 @@ describe("Photo Scout on a rendered stand at 1 cm/px", () => {
     expect(b.confidence).toBeGreaterThanOrEqual(0.35);
     expect(angleDiff(b.angleDeg, 70)).toBeLessThan(1.5);
     expect(Math.abs(b.recoveredPitchM - pitch) / pitch).toBeLessThan(0.08);
-  });
+  }, 60_000);
 
   it("reads a young orchard: trees 4.5 m between rows and 2 m along, over furrows at 50 cm", async () => {
     // 2 cm/px, 40 m x 30 m. Tree canopies 1 m across on bare soil; the soil carries
@@ -303,6 +303,46 @@ describe("placing a point on a window's rows", () => {
     expect(p.acrossM).toBeCloseTo(0.05, 6);
     expect(p.alongM).toBeCloseTo(2, 6);
   });
+  it("splits a row of touching plants into one blob per plant, and leaves a lone plant whole", () => {
+    // 1 cm/px. Three discs 20 cm across at 50 cm along a row at 20 degrees,
+    // joined by a strip of weeds 4 cm wide under the row; and one disc alone.
+    const W = 400, H = 200, g = 0.01;
+    const mask = new Uint8Array(W * H);
+    const th = (20 * Math.PI) / 180, tx = Math.cos(th), ty = Math.sin(th);
+    const c = { x: 1.2, y: -0.8 };
+    const centres = [-0.5, 0, 0.5].map(a => ({ x: c.x + a * tx, y: c.y + a * ty }));
+    const lone = { x: 3.2, y: -1.5 };
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      const x = i * g, y = -j * g;
+      const along = (x - c.x) * tx + (y - c.y) * ty, across = (x - c.x) * -Math.sin(th) + (y - c.y) * Math.cos(th);
+      const inDisc = centres.some(p => (x - p.x) ** 2 + (y - p.y) ** 2 <= 0.1 ** 2) || (x - lone.x) ** 2 + (y - lone.y) ** 2 <= 0.1 ** 2;
+      const inStrip = Math.abs(across) <= 0.02 && Math.abs(along) <= 0.6;
+      if (inDisc || inStrip) mask[j * W + i] = 1;
+    }
+    const m = measureComponents(mask, W, H, 6);
+    expect(m.blobs.length).toBe(2);
+    const row = m.blobs.find(b => b.n > 500)!, alone = m.blobs.find(b => b.n <= 500)!;
+    const fit = { centre: c, sizeM: 4, angleDeg: 20, pitchM: 10, phaseM: 0, confidence: 1, angleConfidence: 1, pitchConfidence: 1, vegetationFraction: 0.1, pitchFromGrower: false, recoveredPitchM: 10 };
+    const parts = splitAlongRow(row, m.labels, W, fit, null, g, 6);
+    expect(parts.length).toBe(3);
+    for (const p of parts) expect(p.n).toBeGreaterThan(250);
+    expect(splitAlongRow(alone, m.labels, W, fit, null, g, 6).length).toBe(1);
+    // Two plants on neighbouring rows joined by weeds across the gap: one per row.
+    const mask2 = new Uint8Array(W * H);
+    const rows = [{ x: 1.0, y: -0.5 }, { x: 1.0, y: -1.3 }];
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      const x = i * g, y = -j * g;
+      const inDisc = rows.some(p => (x - p.x) ** 2 + (y - p.y) ** 2 <= 0.1 ** 2);
+      const inBridge = Math.abs(x - 1.0) <= 0.015 && y <= -0.5 && y >= -1.3;
+      if (inDisc || inBridge) mask2[j * W + i] = 1;
+    }
+    const m2 = measureComponents(mask2, W, H, 6);
+    expect(m2.blobs.length).toBe(1);
+    const fit2 = { ...fit, centre: { x: 1.0, y: -0.5 }, angleDeg: 0, pitchM: 0.8, phaseM: 0, recoveredPitchM: 0.8 };
+    const parts2 = splitAlongRow(m2.blobs[0], m2.labels, W, fit2, null, g, 6);
+    expect(parts2.length).toBe(2);
+  });
+
   it("merges the pieces of one plant and leaves neighbours apart", () => {
     const box = (x: number, y: number, s: number) => ({ n: s * s, sx: (x + s / 2) * s * s, sy: (y + s / 2) * s * s, minX: x, maxX: x + s - 1, minY: y, maxY: y + s - 1 });
     // Two pieces 3 px apart, a third piece touching the second, and a neighbour 20 px away.

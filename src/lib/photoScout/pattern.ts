@@ -253,17 +253,31 @@ export function photoMask(px: PhotoPixels, windowPx: number): { mask: Uint8Array
   const t = globalThreshold(index, px.width);
   const mask = new Uint8Array(px.width * px.height);
   let veg = 0, pixels = 0;
-  for (let y0 = 0; y0 < px.height; y0 += windowPx) {
-    for (let x0 = 0; x0 < px.width; x0 += windowPx) {
-      const w = { x0, y0, x1: Math.min(px.width, x0 + windowPx) - 1, y1: Math.min(px.height, y0 + windowPx) - 1 };
-      const s = maskWindow(index, px.width, w, mask, t);
-      veg += s.vegetation; pixels += s.pixels;
-    }
+  // Even tiles, as planWindows lays them: a thin leftover strip at the
+  // bottom or the right thresholded on its own found soil against soil.
+  for (const w of planWindows(px.width, px.height, 1, windowPx)) {
+    const s = maskWindow(index, px.width, w, mask, t);
+    veg += s.vegetation; pixels += s.pixels;
   }
   return { mask, vegetationFraction: pixels ? veg / pixels : 0 };
 }
 
-export type RawBlob = { n: number; sx: number; sy: number; minX: number; maxX: number; minY: number; maxY: number };
+export type RawBlob = { n: number; sx: number; sy: number; minX: number; maxX: number; minY: number; maxY: number; /** Component labels (1-based) in the label map this blob is made of. */ labels?: number[] };
+
+/** A blob is cut across the rows only when it reaches further across them than this share of the spacing. */
+export const SPLIT_ACROSS_SHARE = 0.6;
+/** A plant centre lies at least this deep inside its blob, pixels: shallower ridges are weeds along the row. */
+export const SPLIT_MIN_DEPTH_PX = 3;
+/** A blob that nowhere reaches this far from its edge, metres, is weeds and is never split. */
+export const SPLIT_MIN_DEEPEST_M = 0.08;
+/** Gaps narrower than twice this are closed before the depth is measured, so a young canopy's branch clusters are one shape. Capped at a quarter of the blob's depth, so two touching plants keep a narrow neck. */
+export const SPLIT_CLOSE_M = 0.15;
+/** ...and at least this share as deep as the blob's deepest point. */
+export const SPLIT_DEPTH_SHARE = 0.35;
+/** The depth map is smoothed over this radius, metres, before centres are found: a canopy at 2 cm/px is ragged with bays between branches. Capped at half the blob's depth so small plants keep their shape. */
+export const SPLIT_SMOOTH_M = 0.3;
+/** Two centres are two plants when the neck between them is shallower than this share of the lesser centre's depth: two touching discs meet at nearly zero, two lobes of one canopy over a deep neck. */
+export const SPLIT_NECK_SHARE = 0.4;
 
 /**
  * Join components whose bounding boxes come within `gapPx` of each other:
@@ -306,8 +320,9 @@ export function mergeComponents(blobs: RawBlob[], gapPx: number): RawBlob[] {
   blobs.forEach((b, i) => {
     const r = find(i);
     const m = merged.get(r);
-    if (!m) merged.set(r, { ...b });
+    if (!m) merged.set(r, { ...b, labels: b.labels ? [...b.labels] : undefined });
     else {
+      if (b.labels) m.labels = (m.labels ?? []).concat(b.labels);
       m.n += b.n; m.sx += b.sx; m.sy += b.sy;
       m.minX = Math.min(m.minX, b.minX); m.maxX = Math.max(m.maxX, b.maxX);
       m.minY = Math.min(m.minY, b.minY); m.maxY = Math.max(m.maxY, b.maxY);
@@ -322,19 +337,239 @@ export function mergeComponents(blobs: RawBlob[], gapPx: number): RawBlob[] {
  * stand has tens of thousands of plants and that is the point, not a fault.
  * Components under `floorPx` are counted as specks and dropped.
  */
-export function measureComponents(mask: Uint8Array, width: number, height: number, floorPx: number): { blobs: RawBlob[]; specks: number } {
+/**
+ * Split one blob into plants. First across the rows: each pixel goes to
+ * the row it is nearest, so weeds bridging two rows do not make one blob
+ * of both. Then along each row at the valleys of the vegetation profile:
+ * trees whose canopies touch, or a row with weeds running under it, mask
+ * as one component the length of the row and got one circle, but the
+ * profile along the row still rises at every plant and falls between.
+ * Needs the label map from measureComponents.
+ */
+export function splitAlongRow(b: RawBlob, labels: Int32Array, width: number, fit: RowTileFit, rowLines: RowLine[] | null, gsdM: number, floorPx: number): RawBlob[] {
+  if (!b.labels?.length) return [b];
+  const set = new Set(b.labels);
+  // Across the rows only when the blob straddles them: a weed midway
+  // between two rows is one weed, not two halves.
+  const th = (fit.angleDeg * Math.PI) / 180, nx = -Math.sin(th), ny = Math.cos(th);
+  let cMin = Infinity, cMax = -Infinity;
+  for (let y = b.minY; y <= b.maxY; y++) for (let x = b.minX; x <= b.maxX; x++) {
+    if (!set.has(labels[y * width + x])) continue;
+    const c = x * gsdM * nx + -y * gsdM * ny;
+    if (c < cMin) cMin = c; if (c > cMax) cMax = c;
+  }
+  const straddles = cMax - cMin > SPLIT_ACROSS_SHARE * fit.pitchM;
+  const byRow = new Map<number, number[]>();
+  for (let y = b.minY; y <= b.maxY; y++) {
+    for (let x = b.minX; x <= b.maxX; x++) {
+      const i = y * width + x;
+      if (!set.has(labels[i])) continue;
+      const k = straddles ? placeOnRows(fit, x * gsdM, -y * gsdM, rowLines).rowIndex : 0;
+      let list = byRow.get(k);
+      if (!list) { list = []; byRow.set(k, list); }
+      list.push(i);
+    }
+  }
+  if (byRow.size === 0) return [b];
+  const out: RawBlob[] = [];
+  for (const pixels of byRow.values()) out.push(...splitAlong(pixels, width, floorPx, b.labels, gsdM));
+  if (out.length === 0) return [b];
+  return out.length > 1 ? out : [b];
+}
+
+/**
+ * One row's pixels of a blob, split into plants by the distance to the
+ * blob's edge. A canopy is round-ish, so its centre is where the blob is
+ * deepest; two canopies that touch are two peaks of that depth with a
+ * neck between, and every pixel goes to the nearest peak. Weeds along
+ * the row are shallow and raise no peak of their own.
+ */
+function splitAlong(pixels: number[], width: number, floorPx: number, labelsOf: number[], gsdM: number): RawBlob[] {
+  const blobOf = (list: number[]): RawBlob => {
+    const r: RawBlob = { n: 0, sx: 0, sy: 0, minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, labels: labelsOf };
+    for (const i of list) { const x = i % width, y = (i - x) / width; r.n++; r.sx += x; r.sy += y; if (x < r.minX) r.minX = x; if (x > r.maxX) r.maxX = x; if (y < r.minY) r.minY = y; if (y > r.maxY) r.maxY = y; }
+    return r;
+  };
+  const b = blobOf(pixels);
+  if (b.n < floorPx) return [];
+  // A padded local grid; the pad is outside, so every pixel has a finite depth.
+  const pad = Math.ceil(SPLIT_CLOSE_M / gsdM) + 2;
+  const W = b.maxX - b.minX + 1 + 2 * pad, H = b.maxY - b.minY + 1 + 2 * pad;
+  const inside = new Uint8Array(W * H);
+  for (const i of pixels) { const x = i % width, y = (i - x) / width; inside[(y - b.minY + pad) * W + (x - b.minX + pad)] = 1; }
+  const raw0 = distanceInside(inside, W, H);
+  let rawDeepest = 0;
+  for (let k = 0; k < raw0.length; k++) if (raw0[k] > rawDeepest) rawDeepest = raw0[k];
+  if (rawDeepest * gsdM < SPLIT_MIN_DEEPEST_M) return [b];
+  // Closing: grow by k, then shrink by k. Fills bays and gaps narrower
+  // than 2k; a neck between two plants that touch at a point becomes 2k
+  // wide, still narrow against their depth.
+  const k = Math.round(Math.min(SPLIT_CLOSE_M / gsdM, rawDeepest / 4));
+  let shape = inside;
+  if (k >= 1) {
+    const outside = new Uint8Array(W * H);
+    for (let i = 0; i < outside.length; i++) outside[i] = inside[i] ? 0 : 1;
+    const toInside = distanceInside(outside, W, H);
+    const grown = new Uint8Array(W * H);
+    for (let i = 0; i < grown.length; i++) grown[i] = inside[i] || toInside[i] <= k ? 1 : 0;
+    const fromEdge = distanceInside(grown, W, H);
+    shape = new Uint8Array(W * H);
+    for (let i = 0; i < shape.length; i++) shape[i] = grown[i] && fromEdge[i] > k ? 1 : 0;
+    for (const i of pixels) { const x = i % width, y = (i - x) / width; shape[(y - b.minY + pad) * W + (x - b.minX + pad)] = 1; }
+  }
+  // Holes the shadow cut out of a canopy are filled, so the canopy is one
+  // clean cone of depth and not a ring of lobes: what the pad cannot reach
+  // around the outside is inside.
+  const reach = new Uint8Array(W * H);
+  const stack = [0];
+  reach[0] = 1;
+  while (stack.length) {
+    const kk = stack.pop()!, x = kk % W, y = (kk - x) / W;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+      const j = yy * W + xx;
+      if (!shape[j] && !reach[j]) { reach[j] = 1; stack.push(j); }
+    }
+  }
+  const filled = new Uint8Array(W * H);
+  for (let i = 0; i < filled.length; i++) filled[i] = shape[i] || !reach[i] ? 1 : 0;
+  const raw = distanceInside(filled, W, H);
+  rawDeepest = 0;
+  for (let i = 0; i < raw.length; i++) if (raw[i] > rawDeepest) rawDeepest = raw[i];
+  const depth = boxBlur(raw, W, H, Math.round(Math.min(SPLIT_SMOOTH_M / gsdM, rawDeepest / 2)));
+  let deepest = 0;
+  for (let k = 0; k < depth.length; k++) if (depth[k] > deepest) deepest = depth[k];
+  const floor = Math.max(SPLIT_MIN_DEPTH_PX, SPLIT_DEPTH_SHARE * deepest);
+  // Watershed from the deepest point down. Each basin starts at a local
+  // maximum of depth; where two basins meet, the depth there is the neck
+  // between their centres, and a neck deep enough for the lesser centre
+  // makes them one plant. Pixels are visited deepest first, so the first
+  // meeting is the highest neck.
+  const order: number[] = [];
+  for (let k = 0; k < W * H; k++) if (filled[k]) order.push(k);
+  order.sort((i, j) => depth[j] - depth[i]);
+  const label = new Int32Array(W * H).fill(-1);
+  const parent: number[] = [], peak: number[] = [];
+  const find = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  for (const k of order) {
+    const x = k % W, y = (k - x) / W, d = depth[k];
+    let first = -1;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+      const l = label[yy * W + xx];
+      if (l < 0) continue;
+      const r = find(l);
+      if (first < 0) { first = r; continue; }
+      if (r === first) continue;
+      // Two basins meet here, at a neck of depth d.
+      const lesser = Math.min(peak[r], peak[first]);
+      if (lesser < floor || d > SPLIT_NECK_SHARE * lesser) {
+        const keep = peak[r] >= peak[first] ? r : first, drop = keep === r ? first : r;
+        parent[drop] = keep; first = keep;
+      }
+    }
+    if (first < 0) { first = parent.length; parent.push(first); peak.push(d); }
+    label[k] = first;
+  }
+  const byRoot = new Map<number, number[]>();
+  for (const i of pixels) {
+    const x = i % width - b.minX + pad, y = (i - (i % width)) / width - b.minY + pad;
+    const r = find(label[y * W + x]);
+    let list = byRoot.get(r);
+    if (!list) { list = []; byRoot.set(r, list); }
+    list.push(i);
+  }
+  if (byRoot.size < 2) return [b];
+  const parts = [...byRoot.values()];
+  const kept = parts.filter(list => list.length >= floorPx).map(blobOf);
+  return kept.length > 1 ? kept : [b];
+}
+
+/** Separable box blur of radius r over a grid; outside the grid counts as zero. */
+export function boxBlur(src: Float32Array, w: number, h: number, r: number): Float32Array {
+  if (r < 1) return src;
+  const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+  const n = 2 * r + 1;
+  for (let y = 0; y < h; y++) {
+    let acc = 0;
+    for (let x = -r; x <= r; x++) if (x >= 0 && x < w) acc += src[y * w + x];
+    for (let x = 0; x < w; x++) {
+      tmp[y * w + x] = acc / n;
+      const add = x + r + 1, drop = x - r;
+      if (add < w) acc += src[y * w + add];
+      if (drop >= 0) acc -= src[y * w + drop];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let acc = 0;
+    for (let y = -r; y <= r; y++) if (y >= 0 && y < h) acc += tmp[y * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = acc / n;
+      const add = y + r + 1, drop = y - r;
+      if (add < h) acc += tmp[add * w + x];
+      if (drop >= 0) acc -= tmp[drop * w + x];
+    }
+  }
+  return out;
+}
+
+/**
+ * Euclidean distance of every inside pixel to the nearest outside pixel,
+ * in pixels; zero outside. Felzenszwalb and Huttenlocher's separable
+ * lower-envelope transform, exact and linear.
+ */
+export function distanceInside(inside: Uint8Array, w: number, h: number): Float32Array {
+  const FAR = 1e9;
+  const sq = new Float64Array(w * h);
+  for (let k = 0; k < sq.length; k++) sq[k] = inside[k] ? FAR : 0;
+  const n = Math.max(w, h);
+  const f = new Float64Array(n), d = new Float64Array(n), z = new Float64Array(n + 1), v = new Int32Array(n);
+  const pass = (len: number) => {
+    let k = 0;
+    v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
+    for (let q = 1; q < len; q++) {
+      let s = (f[q] + q * q - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+      while (s <= z[k]) { k--; s = (f[q] + q * q - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]); }
+      k++; v[k] = q; z[k] = s; z[k + 1] = Infinity;
+    }
+    k = 0;
+    for (let q = 0; q < len; q++) { while (z[k + 1] < q) k++; d[q] = (q - v[k]) * (q - v[k]) + f[v[k]]; }
+  };
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) f[y] = sq[y * w + x];
+    pass(h);
+    for (let y = 0; y < h; y++) sq[y * w + x] = d[y];
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) f[x] = sq[y * w + x];
+    pass(w);
+    for (let x = 0; x < w; x++) sq[y * w + x] = d[x];
+  }
+  const out = new Float32Array(w * h);
+  for (let k = 0; k < out.length; k++) out[k] = inside[k] ? Math.sqrt(sq[k]) : 0;
+  return out;
+}
+
+export function measureComponents(mask: Uint8Array, width: number, height: number, floorPx: number): { blobs: RawBlob[]; specks: number; labels: Int32Array } {
   const seen = new Uint8Array(mask.length);
+  const labels = new Int32Array(mask.length);
   const stack: number[] = [];
   const blobs: RawBlob[] = [];
   let specks = 0;
+  const pixels: number[] = [];
   for (let start = 0; start < mask.length; start++) {
     if (!mask[start] || seen[start]) continue;
     seen[start] = 1;
     stack.push(start);
+    pixels.length = 0;
     const b: RawBlob = { n: 0, sx: 0, sy: 0, minX: width, maxX: -1, minY: height, maxY: -1 };
     while (stack.length) {
       const i = stack.pop()!;
       const x = i % width, y = (i - x) / width;
+      pixels.push(i);
       b.n++; b.sx += x; b.sy += y;
       if (x < b.minX) b.minX = x; if (x > b.maxX) b.maxX = x;
       if (y < b.minY) b.minY = y; if (y > b.maxY) b.maxY = y;
@@ -350,9 +585,12 @@ export function measureComponents(mask: Uint8Array, width: number, height: numbe
         }
       }
     }
-    if (b.n < floorPx) specks++; else blobs.push(b);
+    if (b.n < floorPx) { specks++; continue; }
+    b.labels = [blobs.length + 1];
+    for (const i of pixels) labels[i] = blobs.length + 1;
+    blobs.push(b);
   }
-  return { blobs, specks };
+  return { blobs, specks, labels };
 }
 
 /** Luma per pixel, 0..1. */
@@ -1042,6 +1280,15 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     for (const w of windows) if (x >= w.x0 && x <= w.x1 && y >= w.y0 && y <= w.y1) return w;
     return null;
   };
+  // A row whose canopies touch, or that has weeds running under it, masks
+  // as one blob the length of the row; it is split at the valleys of its
+  // profile along the row, one plant per rise.
+  measured.blobs = measured.blobs.flatMap(b => {
+    const w = windowAt(Math.round(b.sx / b.n), Math.round(b.sy / b.n));
+    // A part on the photo's edge stays unplaced by its own bounding box; the rest of the row is placed.
+    // Nothing is placed in a closed canopy, and its one blob is the photo.
+    return w?.usable && !canopyClosed ? splitAlongRow(b, measured.labels, px.width, w.fit, w.rowLines, gsdM, floorPx) : [b];
+  });
   const blobs: PhotoBlob[] = measured.blobs.map((b, id) => {
     const x = b.sx / b.n, y = b.sy / b.n;
     const touchesBorder = b.minX === 0 || b.minY === 0 || b.maxX === px.width - 1 || b.maxY === px.height - 1;
@@ -1100,6 +1347,14 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
       if (Math.abs(p.acrossM) <= tol) placed.push({ blob: b, rowIndex: p.rowIndex, alongM: p.alongM });
     }
     w.seed = fitSeeds(placed, gsdM, b => b.window === w.index && b.cls === "on pattern");
+    // On the row but under a quarter of a plant, where the plants are
+    // separate enough to have a spacing: weeds along the row, not the crop.
+    if (w.seed?.usable) {
+      for (const b of blobs) {
+        if (b.window !== w.index || b.cls !== "on pattern" || b.areaM2 >= minSeedArea) continue;
+        b.cls = "between plants"; w.onRow--; w.seed.betweenPlants++;
+      }
+    }
   }
 
   const usable = windows.filter(w => w.usable);
