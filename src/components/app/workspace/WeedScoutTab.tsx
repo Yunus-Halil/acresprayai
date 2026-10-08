@@ -51,6 +51,8 @@ import {
 } from "@/lib/weedCatalog/suggest";
 import { plannedAreaM2, plannedZones } from "@/lib/treatment/plannedArea";
 import { ScanSummary } from "./ScanSummary";
+import { FieldRead } from "./FieldRead";
+import { PatternLayer } from "./PatternLayer";
 import { type SpotPhoto, SpotPopup } from "./SpotPopup";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
 import { DetectionOverlay } from "./DetectionOverlay";
@@ -278,6 +280,8 @@ export function WeedScoutTab({
   // Where each photo was taken, as dots; the ones chosen for the selected
   // shape light up, so step three can be seen rather than trusted.
   const [showPhotos, setShowPhotos] = useState(true);
+  /** The planting pattern on the map: on by default here, where it is the explanation of every spot. */
+  const [showPattern, setShowPattern] = useState(true);
   // The photographs behind the mosaic, when the archive and the originals exist.
   const [sources, setSources] = useState<ScanSources | null>(null);
   // The baseline detector's boxes, carried to the ground from a closer look. Experimental; drawn, never used.
@@ -402,6 +406,16 @@ export function WeedScoutTab({
     if (!rings.length || !tileUrl || running) return;
     startRun(taskId,
       { boundary: rings, tileUrl, maxNative, params, feedback },
+      { context, crop, growthStage: stage, fieldId, unitSystem: units, sources });
+  }, [taskId, rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId, units, sources]);
+
+  /** Change a setting and scan again with it, in one move: "rows run this way". */
+  const rerunWith = useCallback((patch: Partial<ScoutParams>) => {
+    const next = { ...params, ...patch };
+    setParams(next);
+    if (!rings.length || !tileUrl || running) return;
+    startRun(taskId,
+      { boundary: rings, tileUrl, maxNative, params: next, feedback },
       { context, crop, growthStage: stage, fieldId, unitSystem: units, sources });
   }, [taskId, rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId, units, sources]);
 
@@ -658,6 +672,7 @@ export function WeedScoutTab({
           {rings.map((r, i) => (
             <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])} pathOptions={{ color: "#4CAF50", weight: 1.5, fill: false, dashArray: "4 4" }} />
           ))}
+          <PatternLayer pattern={result?.pattern ?? null} visible={showPattern} />
           <DetectionOverlay taskId={taskId} />
           {/* Every spot carries its own decision and its own review panel.
               The outline is the verdict, the fill is what it reads as, and the
@@ -750,6 +765,12 @@ export function WeedScoutTab({
             <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} className="accent-[#4CAF50]" />
             Labels on the map
           </label>
+          {result?.pattern && (
+            <label className="flex items-center gap-2 cursor-pointer" data-testid="pattern-toggle">
+              <input type="checkbox" checked={showPattern} onChange={e => setShowPattern(e.target.checked)} className="accent-[#ffeb3b]" />
+              Planting pattern: {result.pattern.lines.length.toLocaleString()} row lines, {result.pattern.summary.plantCount.toLocaleString()} plants (zoom in for the plants)
+            </label>
+          )}
           {sources?.set && (
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={showPhotos} onChange={e => setShowPhotos(e.target.checked)} className="accent-[#4CAF50]" />
@@ -850,10 +871,20 @@ export function WeedScoutTab({
                   onChange={e => setParams(p => ({ ...p, maxSweepWindows: Math.max(0, Math.round(Number(e.target.value) || 0)) }))} />
               </div>
               <div className="col-span-2 flex items-center justify-between">
-                <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer">
-                  <input type="checkbox" checked={params.sweep} onChange={e => setParams(p => ({ ...p, sweep: e.target.checked }))} className="accent-[#4CAF50]" />
-                  Sweep the whole field at full depth
-                </label>
+                <div className="space-y-1">
+                  <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer">
+                    <input type="checkbox" checked={params.sweep} onChange={e => setParams(p => ({ ...p, sweep: e.target.checked }))} className="accent-[#4CAF50]" />
+                    Sweep the whole field at full depth
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer">
+                    <input type="checkbox" checked={params.pattern} onChange={e => setParams(p => ({ ...p, pattern: e.target.checked }))} className="accent-[#4CAF50]" />
+                    Read the planting pattern from the field map
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer">
+                    <input type="checkbox" checked={params.rowSpacingAuto} disabled={!params.pattern} onChange={e => setParams(p => ({ ...p, rowSpacingAuto: e.target.checked }))} className="accent-[#4CAF50]" />
+                    Find the row spacing; off, use the number above
+                  </label>
+                </div>
                 <div className="text-[11px] text-neutral-500">{crop || "crop not set"}{stage ? `, ${stage}` : ""}</div>
               </div>
             </div>
@@ -865,6 +896,34 @@ export function WeedScoutTab({
               reviewed on the map by clicking them, not from a list here. */}
           {result && (
             <>
+              <FieldRead
+                result={result}
+                candidates={candidates}
+                treatAreaM2={plannedAreaM2(kept.map(c => ({ areaM2: areaOf(c) ?? 0 })))}
+                fieldAreaM2={fieldAreaHa != null && fieldAreaHa > 0 ? fieldAreaHa * 10_000 : null}
+                units={units}
+              />
+              {result.pattern?.summary.squareGrid && result.pattern.summary.bearingDeg != null && (() => {
+                const found = Math.round(result.pattern.summary.bearingDeg);
+                const toGround = (bearing: number) => (((90 - bearing) % 180) + 180) % 180;
+                const chosen = (bearing: number) => params.rowAngleDeg != null && Math.abs((((params.rowAngleDeg - toGround(bearing)) % 180) + 180) % 180) < 1;
+                const name = (b: number) => ["N-S", "NNE-SSW", "NE-SW", "ENE-WSW", "E-W", "ESE-WNW", "SE-NW", "SSE-NNW"][Math.round(b / 22.5) % 8];
+                return (
+                  <section className="p-4 border-b border-[#1f1f1f] space-y-2" data-testid="row-direction">
+                    <div className="text-[10px] uppercase tracking-wider text-neutral-500">Rows run this way</div>
+                    <p className="text-[11px] text-neutral-500">The plants sit on a square grid, so the rows fit both ways. The lines follow the brighter direction. If they run the wrong way, pick the other and the field is read again.</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {[found, (found + 90) % 180].map(b => (
+                        <button key={b} type="button" disabled={running} onClick={() => rerunWith({ rowAngleDeg: toGround(b) })}
+                          className={chosen(b) ? btnPrimary : btnQuiet}>{name(b)} ({b}°)</button>
+                      ))}
+                      {params.rowAngleDeg != null && (
+                        <button type="button" disabled={running} onClick={() => rerunWith({ rowAngleDeg: null })} className="text-[11px] underline text-neutral-500 hover:text-neutral-300">let the scout decide</button>
+                      )}
+                    </div>
+                  </section>
+                );
+              })()}
               <ScanSummary
                 spots={candidates.length}
                 kept={kept.length}
@@ -891,6 +950,7 @@ export function WeedScoutTab({
                   <Row k="Smallest measurable" v={fmtLengthCm(result.smallestMeasurableM * 100, units).text} />
                   <Row k="Plants measured" v={result.blobCount.toLocaleString()} />
                   <Row k="Regions" v={`${result.regions.length} (${areaText(result.regions.reduce((s, r) => s + r.areaM2, 0))})`} />
+                  {result.pattern && <Row k="Pattern" v={`${result.pattern.summary.blocks} planting(s) over ${result.pattern.summary.windowsWithRows} of ${result.pattern.windows.length} windows at ${fmtLengthCm(result.pattern.gsdM * 100, units).text}/px, ${result.pattern.lines.length.toLocaleString()} row lines, ${result.pattern.summary.plantCount.toLocaleString()} crop plants${result.pattern.summary.seedAgreement != null ? `, plant spacing agreement ${Math.round(result.pattern.summary.seedAgreement * 100)}%` : ""}`} />}
                   {result.rows?.usable && <Row k="Row model" v={`confidence ${result.rows.confidence.toFixed(2)}, ${result.rows.medianAngleDeg.toFixed(0)} deg, pitch ${fmtLengthCm(result.rows.medianPitchM * 100, units).text}`} />}
                   <Row k="Candidates" v={`${candidates.length} (${regionCandidates.length} regions, ${pointCandidates.length} points)`} />
                   <Row k="Source images" v={
