@@ -800,13 +800,13 @@ export function WeedScoutTab({
             <h2 className="text-sm font-semibold inline-flex items-center gap-2"><FlaskConical className="h-4 w-4 text-[#4CAF50]" /> Weed Scout</h2>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => setShowAbout(s => !s)} className="text-[10px] underline text-neutral-500 hover:text-neutral-300">{showAbout ? "hide" : "what is this?"}</button>
-              <span className="text-[10px] uppercase tracking-wider text-amber-400/90 border border-amber-400/40 rounded-sm px-1.5 py-0.5">Experimental</span>
+              <span className="text-[10px] uppercase tracking-wider text-neutral-400 border border-[#333] rounded-sm px-1.5 py-0.5">Closed testing</span>
             </div>
           </div>
           {showAbout && (
             <p className="text-[11px] text-neutral-500">
-              Tiles the field, marks what is not average, fits crop rows where there are any, sweeps the field at full depth
-              for small plants, and shows you spots to keep or remove. It learns from what you save. Everything runs in this
+              Reads the field map, finds the weeds and the ground that is not crop, then reads the original photos for the
+              small ones, and shows you spots to keep or remove. It learns from what you save. Everything runs in this
               browser; nothing here names a species from the pixels.
             </p>
           )}

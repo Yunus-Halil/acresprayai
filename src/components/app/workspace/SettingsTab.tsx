@@ -363,22 +363,21 @@ export function SettingsTab({
           </ul>
         </section>
 
-        {/* Developer mode. Per browser, not per field: it is a preference of
-            the person testing, and it changes nothing stored on the field. */}
-        <section className="rounded-sm border border-amber-500/30 p-5" style={{ background: "#161616" }}>
-          <h2 className="text-sm font-semibold mb-1">5. Developer mode</h2>
+        {/* The analysis system and the developer tools. Per browser, not per
+            field: a preference of the person using it, changing nothing stored
+            on the field. Weed Scout has been the default since 2026-10-08. */}
+        <section className="rounded-sm border border-[#222] p-5" style={{ background: "#161616" }}>
+          <h2 className="text-sm font-semibold mb-1">5. Analysis system</h2>
           <p className="text-[11px] text-neutral-500 mb-4">
-            Experimental systems, swapped in for testing on real fields. These settings live in this browser
-            only and change nothing stored on the field. Turning one off brings the shipped system back as it was.
+            These settings live in this browser only and change nothing stored on the field.
           </p>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-xs text-neutral-200">Weed Scout replaces the Treatment Grid</div>
+              <div className="text-xs text-neutral-200">Weed Scout in the Treatment tab</div>
               <div className="text-[11px] text-neutral-500 mt-1 max-w-lg">
-                Tiles the field, marks the tiles that are not average, fits the crop rows and flags vegetation
-                between them, zooms in on the flagged ground, and asks the brain to describe each candidate with
-                the place, local time, season and weather of the capture. Saved verdicts build the observation
-                archive. Candidates, never verdicts; the grid's own state is untouched while this is on.
+                Reads the field map, finds the weeds and the ground that is not crop, measures each finding and
+                shows them for you to keep or remove; saved verdicts build your observation archive. Off, the
+                Treatment Grid is the Treatment tab instead, exactly as it was; its state is kept either way.
               </div>
             </div>
             <button
@@ -391,6 +390,26 @@ export function SettingsTab({
                 : "border-[#222] text-neutral-300 hover:bg-[#1f1f1f]"}`}
             >
               {dev.weedScout ? "On" : "Off"}
+            </button>
+          </div>
+          <div className="flex items-start justify-between gap-4 mt-4 pt-4 border-t border-[#222]">
+            <div>
+              <div className="text-xs text-neutral-200">Developer tools</div>
+              <div className="text-[11px] text-neutral-500 mt-1 max-w-lg">
+                The Weed Library and Photo Scout in the sidebar: the reference catalog's review view, and the
+                planting pattern read from one photo for tuning.
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={dev.developerTools}
+              onClick={() => setDeveloperFlag("developerTools", !dev.developerTools)}
+              className={`shrink-0 text-xs rounded-sm px-3 py-1.5 border font-semibold ${dev.developerTools
+                ? "bg-amber-400 text-black border-amber-400"
+                : "border-[#222] text-neutral-300 hover:bg-[#1f1f1f]"}`}
+            >
+              {dev.developerTools ? "On" : "Off"}
             </button>
           </div>
         </section>

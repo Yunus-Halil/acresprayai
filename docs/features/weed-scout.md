@@ -1,7 +1,8 @@
-# Weed Scout (experimental, developer mode)
+# Weed Scout
 
-The experimental replacement for the Treatment Grid, switched in per browser from
-Settings, section 5, "Developer mode". It is the `offrow/` research track ported into the
+The analysis system in the Treatment tab since 2026-10-08 (before that, the experimental
+replacement for the Treatment Grid behind developer mode; the grid is still one switch away
+in Settings, section 5, with its state untouched). It is the `offrow/` research track ported into the
 app and wired to the scan on screen, with a two-scale anomaly pass, regions, a full-depth
 sweep, an event context, an in-house describer and an observation archive the scout
 learns from. Nothing about it is a verdict. The Treatment Grid stays the shipped analysis

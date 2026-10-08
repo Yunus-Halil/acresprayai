@@ -129,6 +129,15 @@ It gains the field read and the pattern layer:
 - Gate: one flown field reviewed end to end by the founder (scan, field read, findings,
   verdicts, mission built, record written), and the benchmark table not worse than today.
 
+## Where it stands (2026-10-08, end of the build day)
+
+All five phases are in main. Nothing has run on a real scan in a browser: every phase was
+verified by unit tests (synthetic rasters, the real reconstruction fixture) and the
+58-frame benchmark. The first real scan will show whether the tile fetch, the worker and
+the photo download behave; the pipeline falls back to the older row fit when the pattern
+finds nothing, and both passes fail soft with a note. The benchmark is the regression
+gate for the pass itself.
+
 ## Order and what the founder decides
 
 Phases 0 and 1 first: they make the scan itself smarter and are invisible until the screen
@@ -149,4 +158,4 @@ Before phase 3: whether photo reading may run in the background on a metered con
 | 2 | **done** 2026-10-08 (14acf40): `FieldRead.tsx` (three lines in the grower's units, never the method), `PatternLayer.tsx` (row lines per block, crop plants as dots from zoom 19, legend toggle), "rows run this way" on a square grid (re-reads with `rowAngleDeg`), pattern and spacing-search switches in settings, the pattern's numbers in run details. CloserLook overlay not done: deferred to the photo pass, which has the photo's own pattern. |
 | 3 | **done** 2026-10-08: `lib/weedScout/photoPass.ts`. After the map pass shows its result, `runStore` reads the kept originals one by one in the worker (`maxPhotoReads`, 150 by default, the photos covering most of the field first), carries each off-pattern blob to the ground through the pose, keeps only blocks that agree with the map's pattern (10 degrees, 15 percent), drops plants the map pass already has or another photo already gave, and hands the rest over as candidates with a chip cut from the photo itself; the tab shows "Reading photo N of M, K more plants" with a stop. Skipped when the browser asks to spare the connection (`saveData`, 2g); the once-per-scan question was not built. Geometry tested on the real reconstruction fixture; not yet run on a real scan in the browser. |
 | 4 | **done** 2026-10-08: migration `20261008150000_scan_scout_runs.sql` (applied to the linked project the same day): `scan_patterns` (one row per scan: pattern + slim result + summary, pass version `weed-scout-v3-pattern`) and `scan_findings` (one row per candidate, the candidate minus its chip), owner-scoped. `runCache.ts` saves after the map pass and again after the photo pass, `restoreRun` loads on opening a scan with nothing running; the tab says the result was restored and that spot pictures are not kept; the scan card carries a Weed Scout line (rows, plants, spots). Verdicts stay in `weed_observations`. NOT done: `ai_analysis` source "weed-scout" and the readers (ScanTimeline, ReportsTab, compareGround): the grid keeps that column; the scout's record is its own tables. |
-| 5 | not started |
+| 5 | **done** 2026-10-08, on the founder's instruction to run every phase in one day, so WITHOUT the flown-field review the gate asked for: `weedScout` defaults to on (a stored false keeps the grid), the Treatment Grid stays reachable from Settings section 5 with its state untouched, and the Weed Library and Photo Scout sit behind a new `developerTools` flag. The scout's tab badge says "Closed testing". Still owed: one flown field reviewed end to end in the browser (scan, field read, findings, verdicts, mission, record), which no phase here has had. |

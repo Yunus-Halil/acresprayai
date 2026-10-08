@@ -62,8 +62,9 @@ farmer.
 
 ## The seven tabs
 
-Developer mode (Settings, section 5) swaps the Treatment Grid slot for the experimental
-[Weed Scout](weed-scout.md). Same tab key, same buttons; the grid's stored state is untouched.
+The Treatment slot holds [Weed Scout](weed-scout.md) by default since 2026-10-08; Settings,
+section 5, swaps the Treatment Grid back in. Same tab key, same buttons; the grid's stored
+state is untouched either way.
 
 | Tab | Purpose |
 |---|---|

@@ -22,7 +22,7 @@ const nav = [
   { to: "/app/weather", label: "Spray Conditions", icon: CloudRain },
   { to: "/app/schedule", label: "Schedule", icon: CalendarDays },
 ];
-// Developer mode only: the internal review view over the weed reference
+// Developer tools only: the internal review view over the weed reference
 // catalog that Weed Scout's identification panel reads from.
 const devNav = [
   { to: "/app/weeds", label: "Weed Library", icon: Sprout, end: false },
@@ -91,7 +91,7 @@ function AppShell() {
   // RequireAuth guarantees a user by the time this renders.
   const { user, signOut } = useAuth();
   const dev = useDeveloperMode();
-  const items = dev.weedScout ? [...nav, ...devNav] : nav;
+  const items = dev.developerTools ? [...nav, ...devNav] : nav;
   const { units, promptOpen, choose } = useAccountUnits(user.id);
 
   return (
