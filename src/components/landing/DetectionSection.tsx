@@ -7,14 +7,15 @@ import { DETECTION } from "./copy";
  * planning because a farmer who does not believe the finding will not read
  * about the flying.
  *
- * A headline and a real scan, nothing more. Farmers want to see the finding,
- * not how the scan gets there, so the steps of the method stay in
- * docs/features/weed-scout.md and off this page.
+ * Three sentences and a real scan, nothing more. Farmers want to see the
+ * finding, not how the scan gets there, so the method stays in
+ * docs/features/weed-scout.md and off this page. It follows the hero's dark
+ * band directly, so the page goes film, band, this, with no paper between.
  */
 export const DetectionSection = () => (
   <section
     id="detection"
-    className="relative mt-24 bg-sw-ink py-20 sm:mt-[130px] sm:py-[110px]"
+    className="relative bg-sw-ink py-20 sm:py-[110px]"
   >
     <div className="mx-auto max-w-[1200px] px-5 sm:px-10">
       <Reveal className="max-w-[760px]">

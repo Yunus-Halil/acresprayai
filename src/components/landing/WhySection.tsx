@@ -31,9 +31,10 @@ const Row = ({ title, body, footnote, media, mediaFirst = false }: RowProps) => 
 );
 
 /**
- * From the finding to the flight. The detection section above says how the
- * weeds are found; this one says what happens to them, in the order it happens:
- * sized and priced, flown, flown in the right weather, costed in your numbers.
+ * How it works. The detection section above says how the weeds are found;
+ * this one says what happens to them, in the order it happens, in one strip,
+ * one picture and two rows. It used to be four rows; the strip already says
+ * sized and priced, so those two went.
  *
  * Not one aircraft. The route capture happens to be from a spray drone, and the
  * caption says which; the copy talks about the file, because the file is what
@@ -43,7 +44,7 @@ export const WhySection = () => (
   <section id="why" className="relative mx-auto max-w-[1200px] px-5 pt-24 sm:px-10 sm:pt-[130px]">
     <Reveal className="max-w-[720px]">
       <div className="font-plex text-xs tracking-[0.1em] text-sw-green">
-        FROM THE FINDING TO THE FLIGHT
+        HOW IT WORKS
       </div>
       <h2 className="m-0 mt-4 text-[clamp(30px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.03em] text-sw-ink sm:mt-[18px]">
         {FLOW.headline}
@@ -85,22 +86,11 @@ export const WhySection = () => (
     </Reveal>
 
     <div className="mt-16 flex flex-col gap-16 sm:mt-[90px] sm:gap-[90px]">
-      <Row
-        title="Each confirmed finding comes with an acreage and a price"
-        body="A confirmed zone is measured in acres, clipped to your boundary and inset by the headland your aircraft needs, so the acres you see are the acres you will treat. It is priced against the inputs you carry, at your own per-acre cost."
-        footnote="ZONE AREA · TREATED AREA AFTER HEADLAND · EST. COST"
-        media={
-          <Shot
-            src="/screens/treatment-zone.png"
-            alt="A confirmed treatment zone with its area and cost estimate"
-          />
-        }
-      />
 
       <Row
         mediaFirst
         title="One button, one flight, only the spots you confirmed"
-        body="Confirm the findings and the mission is built: a route that crosses treated ground and nothing else, the gallons, the batteries, where the tank runs dry and where to refill. Simulate it first, then download the file for your aircraft and fly it yourself."
+        body="Confirm the findings and the mission is built: a route that crosses treated ground and nothing else, the gallons, the batteries, where the tank runs dry. Download the file for your aircraft and fly it."
         footnote="FILES FOR SUPPORTED SPRAY AIRCRAFT · GROUND-STATION WAYPOINTS"
         media={
           <Frame>
@@ -122,22 +112,13 @@ export const WhySection = () => (
 
       <Row
         title="Forecast conditions for planning a spray window"
-        body="Wind, gusts, humidity, rain and temperature for your field over the next three days, checked against the limits you set, so the likely windows are easy to see. Schedule the mission into one and the forecast rides along with it. The product label sets the legal limits; that call stays yours."
+        body="Wind, gusts, humidity, rain and temperature for your field over the next three days, checked against the limits you set, so the likely spray windows are easy to see."
         footnote="WIND · HUMIDITY · RAIN · LIKELY WINDOWS, NEXT 3 DAYS"
         media={
           <Shot src="/screens/weather.png" alt="Weather dashboard with best spray windows" />
         }
       />
 
-      <Row
-        mediaFirst
-        title="Your inputs, your prices, your units"
-        body="Enter the products you carry and what they cost you per acre. Confirmed zones are priced in your numbers, in acres or hectares, gallons or liters, whichever you set once. It never invents a product or a rate. The one comparison it draws is targeted treatment against spraying the whole field, with the same inputs."
-        footnote="ACRES × YOUR PER-ACRE COST · ONE UNIT SETTING, EVERYWHERE"
-        media={
-          <Shot src="/screens/field-settings.png" alt="Field settings with per-acre input costs" />
-        }
-      />
     </div>
   </section>
 );

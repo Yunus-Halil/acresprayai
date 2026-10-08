@@ -7,10 +7,10 @@ import { HERO, STATUS_BADGE } from "./copy";
 /**
  * The hero: the whole first screen is the film, real flights over real
  * fields, with the headline set in the middle of it. The first line stands
- * still and the second turns through what the imagery becomes, in the order
- * the product makes it. Everything the old hero said is still said: the body
- * and the bullets follow in the dark band under the film, with the flight
- * picture, so the film carries the feeling and the band carries the facts.
+ * still and the last turns through what the intelligence is built for, in the order
+ * the product makes it. The one paragraph under the film is the whole promise,
+ * with the flight picture, so the film carries the feeling and the band
+ * carries the facts.
  */
 export const Hero = () => (
   <>
@@ -73,14 +73,6 @@ export const Hero = () => (
           {HERO.body.map(p => <p key={p} className="m-0">{p}</p>)}
         </div>
 
-        <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-2 font-plex text-[11px] tracking-[0.04em] text-sw-on-dark sm:text-xs">
-          {HERO.bullets.map(item => (
-            <li key={item} className="flex items-center gap-2">
-              <span className="h-[3px] w-[3px] rounded-full bg-sw-bright-hi" />
-              {item}
-            </li>
-          ))}
-        </ul>
 
         <FlightPath />
       </div>

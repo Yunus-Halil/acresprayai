@@ -1,6 +1,6 @@
 // The landing page's copy, held to its own rules.
 //
-// copy.ts states four rules at the top: no capability the product lacks, no
+// copy.ts states eight rules at the top: no capability the product lacks, no
 // social proof, no em or en dashes in anything a visitor reads, and data
 // agnostic with no manufacturer named. The first two are judgement and get
 // reviewed by a person. The last two are mechanical, and a mechanical rule that is not enforced is a rule
@@ -12,7 +12,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  AUDIENCES, CTA_PRIMARY, DETECTION, FLOW, HERO, STATUS_BADGE, STEPS, WHOLE_FIELD,
+  AUDIENCES, CTA_PRIMARY, DETECTION, FLOW, HERO, STATUS_BADGE,
 } from "@/components/landing/copy";
 
 const LANDING = join(__dirname, "..", "components", "landing");
@@ -20,11 +20,9 @@ const LANDING = join(__dirname, "..", "components", "landing");
 /** Every string a visitor can read, flattened out of copy.ts. */
 const VISIBLE: string[] = [
   STATUS_BADGE, CTA_PRIMARY,
-  HERO.headline, HERO.lead, ...HERO.shifts, HERO.brand, ...HERO.body, ...HERO.bullets,
-  WHOLE_FIELD.eyebrow, WHOLE_FIELD.headline, ...WHOLE_FIELD.body, WHOLE_FIELD.findingsLead, ...WHOLE_FIELD.findings, WHOLE_FIELD.close,
+  HERO.headline, HERO.lead, ...HERO.shifts, HERO.brand, ...HERO.body,
   DETECTION.eyebrow, DETECTION.headline, ...DETECTION.body,
   FLOW.headline, FLOW.sub, ...FLOW.steps.flatMap(s => [s.label, s.body]), FLOW.chain,
-  ...STEPS.flatMap(s => [s.title, s.body]),
   ...AUDIENCES.flatMap(a => [a.title, a.body]),
 ];
 
@@ -63,9 +61,8 @@ describe("data agnostic", () => {
     expect(lines).toEqual([]);
   });
 
-  it("says the imagery is ordinary RGB from the drones operators already fly, and never 'any drone'", () => {
+  it("never says 'any drone' beside spraying", () => {
     const all = VISIBLE.join(" ");
-    expect(all).toMatch(/RGB drone imagery|standard RGB/i);
     expect(all).not.toMatch(/any drone|any camera|any crop/i);
   });
 });
@@ -145,7 +142,8 @@ describe("the category", () => {
     // whole product, and a rewrite narrowed the brand to one feature once
     // already. The category has to be on the page, above the headline.
     expect(HERO.brand).toBe("Precision Agriculture, Precisely Simple.");
-    expect(HERO.headline).toMatch(/weed map/i);
+    expect(HERO.lead + " " + HERO.shifts[0]).toBe("Field intelligence built for action.");
+    expect(HERO.body.join(" ")).toMatch(/weeds/i);
   });
 
   it("names the findings that are not weeds", () => {
@@ -170,14 +168,12 @@ describe("claims the product can stand behind", () => {
     expect(all).not.toMatch(/identifies the species|knows the species|tells you the species/i);
   });
 
-  it("makes no absolute claim about coverage or certainty", () => {
-    // Still validating across fields, crops, altitudes and cameras. Ambitious,
-    // not absolute: "likely weeds", "findings", never "every weed".
-    expect(all).not.toMatch(/every weed|every plant|does not guess|any drone, any camera|every field, every week|finds every/i);
-    // "Every finding" is allowed in exactly one place: the hero bullet that says
-    // findings are measured, which is true of each one the scan makes.
-    const everyFinding = VISIBLE.filter(s => /every finding/i.test(s));
-    expect(everyFinding).toEqual(["Every finding measured in real-world area"]);
+  it("is broad and bold about the weeds, by decision, and still sells nothing else it lacks", () => {
+    // Rule 8 as rewritten on 2026-10-08: the hero says all of them. What it
+    // may still not say is a savings number, a species from pixels, or that
+    // the aircraft flies itself; those are checked beside this.
+    expect(HERO.body.join(" ")).toMatch(/finds the weeds, all of them/i);
+    expect(all).not.toMatch(/does not guess|any drone, any camera/i);
   });
 
   it("does not sell autonomous flight", () => {

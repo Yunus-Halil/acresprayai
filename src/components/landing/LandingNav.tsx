@@ -3,8 +3,7 @@ import { CTA_PRIMARY } from "./copy";
 
 const LINKS = [
   { label: "How it finds weeds", href: "#detection" },
-  { label: "From finding to flight", href: "#why" },
-  { label: "How it works", href: "#how" },
+  { label: "How it works", href: "#why" },
   { label: "Who it's for", href: "#who" },
 ];
 

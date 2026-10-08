@@ -41,10 +41,9 @@ export const CockpitSection = () => (
           Fly the whole job before you fly it.
         </h2>
         <p className="m-0 mt-5 max-w-[620px] text-[17px] leading-[1.55] text-sw-on-dark">
-          Press play and watch the aircraft work the field: each pass, each turn, the tank
-          draining, the battery going down faster while it is heavy. Scrub to any minute and
-          the numbers are for <em>that</em> minute. Before you leave the yard you know the
-          loads, the batteries and where you will stop to refill.
+          Watch the aircraft work the field before it leaves the yard: each pass, the tank
+          draining, the battery going down faster while it is heavy. You know the loads, the
+          batteries and the refill stops before you take off.
         </p>
       </Reveal>
 

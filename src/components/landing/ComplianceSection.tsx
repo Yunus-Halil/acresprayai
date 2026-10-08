@@ -36,9 +36,9 @@ export const ComplianceSection = () => (
         The record you would have to write anyway.
       </h2>
       <p className="m-0 mt-5 max-w-[640px] text-[17px] leading-[1.55] text-sw-muted">
-        Most states want a record after the job, and most get written from memory hours
-        after the tank was empty. SwathWise already holds what the record asks for, because
-        it held it while you were flying. Nothing is retyped.
+        SwathWise already holds what the record asks for, because it held it while you
+        were flying. The zones you confirmed are the zones that get recorded, and nothing
+        is retyped.
       </p>
 
       <div className="mt-10 grid gap-x-10 gap-y-7 sm:mt-14 sm:grid-cols-2 lg:grid-cols-3">
@@ -52,30 +52,6 @@ export const ComplianceSection = () => (
             </p>
           </div>
         ))}
-      </div>
-
-      <div className="mt-14 grid gap-10 sm:mt-16 lg:grid-cols-2 lg:gap-[70px]">
-        <div>
-          <h3 className="m-0 text-[24px] font-semibold tracking-[-0.02em] text-sw-ink sm:text-[28px]">
-            Sprayed and documented are the same list.
-          </h3>
-          <p className="m-0 mt-4 text-base leading-[1.55] text-sw-muted">
-            The zones you confirmed are the zones that get recorded; there is no second pass
-            where the paperwork drifts from the job. If a grower asks what was applied, or a
-            neighbor has a question about drift, this is the record: the zones, the product,
-            the rate and the acres.
-          </p>
-        </div>
-        <div>
-          <h3 className="m-0 text-[24px] font-semibold tracking-[-0.02em] text-sw-ink sm:text-[28px]">
-            The grower gets a document, not a text message.
-          </h3>
-          <p className="m-0 mt-4 text-base leading-[1.55] text-sw-muted">
-            Hand it over at the end of the job: the field, the product, the rate and the acres,
-            with a line for your signature. A different conversation from a photo of a notebook
-            page, and the one that gets you called back next season.
-          </p>
-        </div>
       </div>
 
       {/* The limit, in the same type as the claims. The record is built from the
