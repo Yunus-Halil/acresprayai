@@ -99,6 +99,7 @@ export async function saveRun(input: SaveRunInput): Promise<{ ok: true } | { ok:
   try {
     const row = {
       user_id: userId, field_id: fieldId, scan_id: scanId, pass_version: RUN_CACHE_VERSION, params,
+      // Null when the map showed no row pattern: the run is still worth keeping.
       summary: result.pattern?.summary ?? null, result: slimResult(result),
     };
     const up = await supabase.from("scan_patterns").upsert(row as never, { onConflict: "scan_id" });

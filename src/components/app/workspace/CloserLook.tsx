@@ -2,9 +2,14 @@
 // in the original photographs the map was built from, at the camera's full
 // resolution, with the area's outline drawn where the map put it, and, in
 // the pattern view, what the pass sees there: the rows as lines and every
-// plant as a circle coloured by what it is. It shows; it does not judge. Nothing here saves anything. On request it asks the
-// baseline detector about the crop, through the server, and draws the boxes:
-// an experiment's yardstick, never a verdict and never a treatment input.
+// plant as a circle coloured by what it is. The scan's photo pass read that
+// photo whole during the run and left the spot its look (patternLook.ts), so
+// the pattern view opens on it at once; a spot without one has its photo read
+// here, whole, once, and the read is kept for the next spot in the same photo.
+// It shows; it does not judge. Nothing here saves anything. On request it
+// asks the baseline detector about the crop, through the server, and draws
+// the boxes: an experiment's yardstick, never a verdict and never a
+// treatment input.
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -16,14 +21,49 @@ import { type GroundedDetection, debugLine, groundDetections } from "@/lib/sourc
 import { lookupOriginal } from "@/lib/sourceFrames/manifest";
 import { type ScanSources, downloadFrame } from "@/lib/sourceFrames/scan";
 import type { SpotSources } from "@/lib/sourceFrames/spot";
-import { BLOB_COLOUR, type PatternCut, type PatternOverlay, ROW_COLOUR, cutPatternWindow, overlayFromPattern, overlayLegend, patternLookSideM } from "@/lib/sourceFrames/patternLook";
+import { BLOB_COLOUR, type LookCut, type PhotoLook, ROW_COLOUR, cutLookWindow, lookFromPattern, lookLegend, patternLookSideM } from "@/lib/sourceFrames/patternLook";
 import { analysePhotoOffThread } from "@/lib/photoScout/runPattern";
+import { decodePhoto } from "@/lib/photoScout/decode";
 import type { PhotoPattern } from "@/lib/photoScout/pattern";
+import { PHOTO_PASS_WINDOW_M } from "@/lib/weedScout/photoPass";
+
+/** A photo read whole in this session, kept so the next spot in it opens at once. */
+type WholePhotoRead = { pattern: PhotoPattern; nativeScale: number };
+const wholePhotoReads = new Map<string, Promise<WholePhotoRead>>();
+const WHOLE_PHOTO_READS_KEPT = 4;
+
+/** Read a whole original with the pass, once per photo per session. The pass needs several rows in view, so never a cut. */
+function readWholePhoto(frame: Blob, filename: string, nativeGsdM: number, rowSpacingM: number | null, onProgress: (fraction: number) => void): Promise<WholePhotoRead> {
+  const have = wholePhotoReads.get(filename);
+  if (have) return have;
+  const p = (async () => {
+    const decoded = await decodePhoto(frame);
+    decoded.bitmap.close?.();
+    const nativeScale = decoded.nativeWidth / decoded.pixels.width;
+    const pattern = await analysePhotoOffThread(
+      decoded.pixels,
+      { gsdM: nativeGsdM * nativeScale, rowSpacingM: rowSpacingM && rowSpacingM > 0 ? rowSpacingM : "auto", windowM: PHOTO_PASS_WINDOW_M },
+      { onProgress: (done, total) => onProgress(total ? done / total : 0), transfer: true },
+    );
+    return { pattern, nativeScale };
+  })();
+  wholePhotoReads.set(filename, p);
+  p.catch(() => wholePhotoReads.delete(filename));
+  while (wholePhotoReads.size > WHOLE_PHOTO_READS_KEPT) {
+    const oldest = wholePhotoReads.keys().next().value;
+    if (oldest == null) break;
+    wholePhotoReads.delete(oldest);
+  }
+  return p;
+}
+
+/** Test seam. */
+export function resetWholePhotoReads(): void { wholePhotoReads.clear(); }
 
 /** `id` names the finding on the map; the detector's boxes are filed under it. */
 export type CloserLookTarget = { id?: string; title: string; spot: SpotSources };
 
-export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null }: {
+export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null, spotLook = null }: {
   target: CloserLookTarget | null;
   sources: ScanSources | null;
   units: UnitSystem;
@@ -34,6 +74,8 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   rowSpacingM?: number | null;
   /** The spot's own size on the map, metres across, for the ring when the photo pass places nothing at it. */
   spotDiameterM?: number | null;
+  /** The look the scan's photo pass left on this spot, when it read the spot's photo. */
+  spotLook?: PhotoLook | null;
 }) {
   const [viewIndex, setViewIndex] = useState(0);
   const [look, setLook] = useState<Look | null>(null);
@@ -44,9 +86,10 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   const [copied, setCopied] = useState(false);
   // The pattern view: a wider cut around the spot, read by the pass, drawn as lines and circles.
   const [patternOn, setPatternOn] = useState(true);
-  const [patternLook, setPatternLook] = useState<{ cut: PatternCut; pattern: PhotoPattern; overlay: PatternOverlay } | null>(null);
+  const [patternLook, setPatternLook] = useState<{ cut: LookCut; look: PhotoLook; fromRun: boolean } | null>(null);
   const [patternState, setPatternState] = useState<"idle" | "reading" | "failed">("idle");
   const [patternProgress, setPatternProgress] = useState<number | null>(null);
+  const [patternError, setPatternError] = useState<string | null>(null);
   const frameRef = useRef<Blob | null>(null);
   const views = target?.spot.lookable ?? [];
   const view = views[viewIndex] ?? null;
@@ -97,32 +140,35 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
     return () => { cancelled = true; if (made) URL.revokeObjectURL(made); };
   }, [view, scale, sources]);
 
-  // The pattern around the spot, read once the photo is on screen: a cut of
-  // several row spacings a side at native resolution, at the field's own
-  // spacing when the scan knows it, drawn over the photo in the crop's pixels.
+  // The pattern around the spot, once the photo is on screen. The look the
+  // scan left on the spot is drawn at once when it is this photo's; otherwise
+  // the whole photo is read here (a cut of a few rows is not enough for the
+  // pass to trust a fit) and the same look is built from it.
   useEffect(() => {
-    if (!look || !patternOn || patternLook || patternState !== "idle") return;
+    if (!look || !patternOn || patternLook || patternState !== "idle" || !view) return;
     const frame = frameRef.current;
     if (!frame) return;
     let cancelled = false;
-    let made: string | null = null;
-    setPatternState("reading");
+    setPatternState("reading"); setPatternProgress(null); setPatternError(null);
     (async () => {
-      const centre = { x: look.window.x + look.window.width / 2, y: look.window.y + look.window.height / 2 };
-      const cut = await cutPatternWindow(frame, centre, patternLookSideM(rowSpacingM), look.gsdM);
-      if (!cut) throw new Error("no cut");
-      made = cut.url;
-      setPatternProgress(0);
-      const pattern = await analysePhotoOffThread(cut.pixels, { gsdM: cut.gsdM, rowSpacingM: rowSpacingM && rowSpacingM > 0 ? rowSpacingM : "auto", windowM: Math.min(4, (cut.width * cut.gsdM) / 3) },
-        { onProgress: (done, total) => { if (!cancelled) setPatternProgress(total ? done / total : null); } });
+      let pl: PhotoLook, fromRun = false;
+      if (spotLook && spotLook.filename === view.filename) {
+        pl = spotLook; fromRun = true;
+      } else {
+        const centre = { x: look.window.x + look.window.width / 2, y: look.window.y + look.window.height / 2 };
+        setPatternProgress(0);
+        const read = await readWholePhoto(frame, view.filename, look.gsdM, rowSpacingM, f => { if (!cancelled) setPatternProgress(f); });
+        pl = lookFromPattern(read.pattern, { x: centre.x / read.nativeScale, y: centre.y / read.nativeScale, diameterM: spotDiameterM },
+          { filename: view.filename, sideM: patternLookSideM(rowSpacingM), nativeScale: read.nativeScale });
+      }
+      const cut = await cutLookWindow(frame, pl.window);
+      if (!cut) throw new Error("the window could not be cut from the photo");
       if (cancelled) { URL.revokeObjectURL(cut.url); return; }
-      // The spot, in the cut's pixels: the centre of the area the map flagged.
-      const focus = { x: (centre.x - cut.window.x) / cut.factor, y: (centre.y - cut.window.y) / cut.factor, diameterM: spotDiameterM };
-      setPatternLook({ cut, pattern, overlay: overlayFromPattern(pattern, focus) });
+      setPatternLook({ cut, look: pl, fromRun });
       setPatternState("idle");
-    })().catch(() => { if (!cancelled) setPatternState("failed"); });
-    return () => { cancelled = true; if (made && cancelled) { /* revoked when the state is replaced */ } };
-  }, [look, patternOn, patternLook, patternState, rowSpacingM, spotDiameterM]);
+    })().catch(e => { if (!cancelled) { setPatternState("failed"); setPatternError((e as Error)?.message ?? String(e)); } });
+    return () => { cancelled = true; };
+  }, [look, patternOn, patternLook, patternState, rowSpacingM, spotDiameterM, spotLook, view]);
   useEffect(() => () => { if (patternLook) URL.revokeObjectURL(patternLook.cut.url); }, [patternLook]);
 
   const gsd = (m: number | null | undefined) => (m ? `${fmtLengthCm(m * 100, units).text}/px` : "unknown");
@@ -169,9 +215,9 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
         </div>
         {patternOn && look && (
           <p className="text-[11px] text-neutral-400" data-testid="closer-look-pattern-line">
-            {patternState === "reading" && <><Loader2 className="inline h-3 w-3 animate-spin mr-1" /> Reading the rows and plants around this spot in the photo{patternProgress != null ? ` (${Math.round(patternProgress * 100)}%)` : ""}.</>}
-            {patternState === "failed" && "The pattern could not be read in this photo."}
-            {patternLook && <>{overlayLegend(patternLook.overlay, patternLook.pattern)} Yellow lines are the rows. {gsd(patternLook.cut.gsdM)} here.</>}
+            {patternState === "reading" && <><Loader2 className="inline h-3 w-3 animate-spin mr-1" /> {patternProgress == null ? "Opening the pattern around this spot." : `Reading the rows and plants in this whole photo (${Math.round(patternProgress * 100)}%).`}</>}
+            {patternState === "failed" && `The pattern could not be read in this photo${patternError ? ` (${patternError})` : ""}.`}
+            {patternLook && <>{lookLegend(patternLook.look)} Yellow lines are the rows. {gsd(patternLook.look.gsdM)} in the photo{patternLook.fromRun ? ", read during the scan" : ""}.</>}
           </p>
         )}
         {detection?.state === "done" && (
@@ -213,10 +259,17 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
           {error && <p className="p-4 text-[12px] text-red-400">Could not show the photo: {error}</p>}
           {!error && !look && <p className="p-4 text-[12px] text-neutral-400 inline-flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the original photo.</p>}
           {look && patternOn && patternLook && (() => {
-            const { cut, overlay } = patternLook;
+            const { cut, look: pl } = patternLook;
             const sw = Math.max(1.5, cut.width / 600);
+            const f = 1 / cut.factor;
+            // The look is in the original's pixels from the window's corner; the cut is pooled by the factor.
+            const overlay = {
+              lines: pl.lines.map(l => ({ ...l, x1: l.x1 * f, y1: l.y1 * f, x2: l.x2 * f, y2: l.y2 * f })),
+              circles: pl.circles.map(c => ({ ...c, x: c.x * f, y: c.y * f, r: c.r * f })),
+              focus: pl.focus ? { ...pl.focus, x: pl.focus.x * f, y: pl.focus.y * f, r: pl.focus.r * f } : null,
+            };
             // The map's outline, from uploaded-frame pixels to this cut's pooled pixels.
-            const outline = (view?.outlinePx ?? []).map(p => `${(p.u * look.scale - cut.window.x) / cut.factor},${(p.v * look.scale - cut.window.y) / cut.factor}`).join(" ");
+            const outline = (view?.outlinePx ?? []).map(p => `${(p.u * look.scale - pl.window.x) * f},${(p.v * look.scale - pl.window.y) * f}`).join(" ");
             return (
               <div className="relative" style={full ? { width: cut.width } : { width: "100%" }}>
                 <img src={cut.url} alt={`The rows and plants around the flagged area in ${view?.filename}`} data-testid="closer-look-pattern-image"

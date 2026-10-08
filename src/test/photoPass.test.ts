@@ -12,7 +12,7 @@ import type { PhotoPattern } from "@/lib/photoScout/pattern";
 import { frameFootprint, groundAltitudeFromOdm, parseOdmOutputs, pixelToGround } from "@/lib/sourceFrames/odm";
 import type { FieldPattern } from "@/lib/weedScout/fieldPattern";
 import {
-  PHOTO_DUPLICATE_M, type PhotoFinding, choosePhotos, dedupeFindings, frameGsdM, groundPhotoFindings, photoCandidate,
+  PHOTO_DUPLICATE_M, type PhotoFinding, choosePhotos, dedupeFindings, frameGsdM, groundPhotoFindings, looksInPhoto, photoCandidate, photosOfSpots,
 } from "@/lib/weedScout/photoPass";
 import { localFrame } from "@/lib/weedScout/rows";
 
@@ -66,6 +66,50 @@ describe("the photo pass on a real reconstruction", () => {
     // A field nothing flew over chooses nothing.
     const far = ring.map(p => ({ lat: p.lat + 1, lng: p.lng }));
     expect(choosePhotos(set, groundAlt, [far], 10)).toHaveLength(0);
+  });
+
+  it("reads the photos the map's spots were matched to first, most spots first, then the rest by coverage", () => {
+    const ring = fieldRing();
+    const byShare = choosePhotos(set, groundAlt, [ring], 1000);
+    expect(byShare.length).toBeGreaterThan(10);
+    const a = byShare[byShare.length - 1].filename, b = byShare[byShare.length - 2].filename;
+    const spots = [
+      { sourceImages: { photos: 1, best: a, coverage: 1, chosen: [a], nearestOnly: false, kept: true } },
+      { sourceImages: { photos: 1, best: b, coverage: 1, chosen: [b], nearestOnly: false, kept: true } },
+      { sourceImages: { photos: 1, best: b, coverage: 1, chosen: [b], nearestOnly: false, kept: true } },
+      { sourceImages: null },
+    ];
+    expect(photosOfSpots(spots)).toEqual([b, a]);
+    const ordered = choosePhotos(set, groundAlt, [ring], 1000, photosOfSpots(spots));
+    expect(ordered[0].filename).toBe(b);
+    expect(ordered[1].filename).toBe(a);
+    expect(ordered.slice(2).map(s => s.filename)).toEqual(byShare.filter(s => s.filename !== a && s.filename !== b).map(s => s.filename));
+    // The budget still holds, and the spots' photos are inside it.
+    expect(choosePhotos(set, groundAlt, [ring], 3, photosOfSpots(spots)).map(s => s.filename).slice(0, 2)).toEqual([b, a]);
+  });
+
+  it("leaves each spot its look from the photo that holds it: a window in the original's pixels, the spot ringed", () => {
+    const shot = set.shots[0];
+    const g = frameGsdM(set, shot, groundAlt)!;
+    const pattern = fakePattern(g, cam.width, cam.height, 30);
+    // A spot on the ground where the photo's centre pixel lands, and one this photo is not the best photo of.
+    const centre = pixelToGround(set, shot, cam.width / 2, cam.height / 2, groundAlt)!;
+    const mine = { id: "c-1", centroid: { lat: centre.lat, lng: centre.lng }, sourceImages: { photos: 1, best: shot.filename, coverage: 1, chosen: [shot.filename], nearestOnly: false, kept: true }, blob: null, look: null };
+    const elsewhere = { ...mine, id: "c-2", sourceImages: { ...mine.sourceImages, best: "other.JPG" } };
+    const already = { ...mine, id: "c-3", look: { filename: shot.filename } as never };
+    const looks = looksInPhoto({ set, shot, groundAltM: groundAlt, pattern, decodedWidth: cam.width, nativeWidth: cam.width * 2, candidates: [mine, elsewhere, already], rowSpacingM: 5 });
+    expect(Object.keys(looks)).toEqual(["c-1"]);
+    const look = looks["c-1"];
+    expect(look.filename).toBe(shot.filename);
+    // 15 m (three rows of 5 m) a side at the photo's pixel size, in the original's pixels (twice the decoded size), inside the original.
+    expect(look.window.width).toBeCloseTo(Math.round(Math.min(cam.width, Math.round(15 / g)) * 2), -1);
+    expect(look.window.x).toBeGreaterThanOrEqual(0);
+    expect(look.window.x + look.window.width).toBeLessThanOrEqual(cam.width * 2 + 1);
+    expect(look.gsdM).toBeCloseTo(g / 2, 6);
+    // The spot is the off-row blob at the photo's centre: the window is centred on it, and the ring is on it.
+    expect(look.focus).toMatchObject({ cls: "off-row", matched: true });
+    expect(look.focus!.x).toBeCloseTo(cam.width - look.window.x, 0);
+    expect(look.counts.offRow).toBe(1);
   });
 
   it("knows the frame's pixel size from its footprint, near ODM's own average", () => {

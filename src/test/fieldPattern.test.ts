@@ -181,5 +181,30 @@ describe("the planting pattern on the field map", () => {
     const seen = new Set<string>();
     for (const p of fp.plants) { const k = `${p.centroid.lat.toFixed(7)},${p.centroid.lng.toFixed(7)}`; expect(seen.has(k)).toBe(false); seen.add(k); }
     expect(fp.summary.plantCount).toBeGreaterThan(o.planted * 0.8);
+    expect(fp.notes[0]).toMatch(new RegExp(`Pattern pass: ${plan.windows.length} of ${plan.windows.length} window\\(s\\) showed rows`));
   }, 180_000);
+
+  it("says why when it reads nothing, and one window failing is one window without rows", async () => {
+    const o = orchard();
+    const bbox = o.raster.bounds;
+    const ring = [o.at(1, -1), o.at(59, -1), o.at(59, -44), o.at(1, -44), o.at(1, -1)];
+    const plan = planPatternWindows(bbox, [ring], 21, { windowM: 40, overlapM: 10 });
+    const bare = (): RasterSource => ({ width: 64, height: 64, rgba: new Uint8ClampedArray(64 * 64 * 4).fill(120), bounds: bbox });
+    let n = 0;
+    const fp = await readFieldPattern(() => "", plan, { lat: bbox.north, lng: bbox.west }, {
+      rowSpacingM: "auto",
+      fetch: async () => ({ raster: bare(), missingTiles: 2 }),
+      analyse: async (px, params) => {
+        if (n++ === 0) throw new Error("the worker died");
+        return analysePhotoOffThread(px, params, { inline: true });
+      },
+    });
+    expect(fp.summary.blocks).toBe(0);
+    expect(fp.summary.windows).toBe(plan.windows.length);
+    expect(fp.windows.filter(w => w.failed).length).toBe(1);
+    expect(fp.notes[0]).toMatch(/Pattern pass: 0 of \d+ window\(s\) showed rows/);
+    expect(fp.notes[0]).toMatch(/tile\(s\) failed to load/);
+    expect(fp.notes[0]).toMatch(/1 window\(s\) failed \(the worker died\)/);
+    expect(fp.notes[1]).toMatch(/^The pass said of \d+ window\(s\): /);
+  }, 60_000);
 });

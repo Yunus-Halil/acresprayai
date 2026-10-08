@@ -13,6 +13,12 @@
 // finding, kept from the photo that holds it nearest its centre; one the
 // map pass already found is left to the map pass.
 //
+// The same read serves the closer look. The map pass found its spots first,
+// so the photos holding those spots are read first, and for every spot whose
+// best photo this is, the window around it (rows as lines, plants as
+// circles, in the original's pixels) is kept on the spot as its look. The
+// closer look opens on that; nothing is read one spot at a time.
+//
 // Budgeted: at most `maxPhotos` photos, the ones covering most of the field
 // first, one at a time in the pattern worker. The result lands as ordinary
 // candidates with the photo as their source and a chip cut from the photo
@@ -22,7 +28,8 @@ import { type DecodedPhoto, decodePhoto } from "../photoScout/decode";
 import { type PhotoParams, type PhotoPattern, type PhotoPixels, rowSegmentsPx } from "../photoScout/pattern";
 import { analysePhotoOffThread } from "../photoScout/runPattern";
 import { type FrameManifestEntry, lookupOriginal } from "../sourceFrames/manifest";
-import { type LatLngAlt, type Shot, type SourceFrameSet, frameFootprint, offNadirDeg, pixelToGround, toEnu } from "../sourceFrames/odm";
+import { type LatLngAlt, type Shot, type SourceFrameSet, frameFootprint, offNadirDeg, pixelToGround, projectToFrame, toEnu } from "../sourceFrames/odm";
+import { type PhotoLook, lookFromPattern, patternLookSideM } from "../sourceFrames/patternLook";
 import type { ScanSources } from "../sourceFrames/scan";
 import type { UnitSystem } from "../units";
 import { describe } from "./describe";
@@ -74,18 +81,33 @@ export type PhotoRead = {
   blocks: number;
   matchedBlocks: number;
   findings: number;
+  /** Spots of the map pass this photo is the best photo of, given their look here. */
+  looks: number;
   ms: number;
 };
 
-export type PhotoPassProgress = { done: number; total: number; found: number; note: string };
+export type PhotoPassProgress = { done: number; total: number; found: number; looks: number; note: string };
 
-export type PhotoPassResult = { reads: PhotoRead[]; candidates: Candidate[]; notes: string[] };
+export type PhotoPassResult = {
+  reads: PhotoRead[];
+  candidates: Candidate[];
+  /** Looks for spots the map pass found, by spot id; the photo pass's own findings carry theirs. */
+  looks: Record<string, PhotoLook>;
+  notes: string[];
+};
 
 const strip = (p: LatLngAlt): LatLng2 => ({ lat: p.lat, lng: p.lng });
 const angleDiff = (a: number, b: number) => { const d = Math.abs((((a - b) % 180) + 180) % 180); return Math.min(d, 180 - d); };
 
-/** The photos that cover the field, the ones covering most of it first, at most `max`. */
-export function choosePhotos(set: SourceFrameSet, groundAltM: number, boundary: LatLng2[][], max = PHOTO_PASS_MAX_PHOTOS): Shot[] {
+/** The photos the map's spots were matched to, the ones holding most spots first. They are read first: the spots are what the operator is waiting on. */
+export function photosOfSpots(candidates: readonly Pick<Candidate, "sourceImages">[]): string[] {
+  const counts = new Map<string, number>();
+  for (const c of candidates) { const f = c.sourceImages?.best; if (f) counts.set(f, (counts.get(f) ?? 0) + 1); }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
+}
+
+/** The photos that cover the field, at most `max`: those in `first` in that order, then the ones covering most of it first. */
+export function choosePhotos(set: SourceFrameSet, groundAltM: number, boundary: LatLng2[][], max = PHOTO_PASS_MAX_PHOTOS, first: string[] = []): Shot[] {
   const views: { shot: Shot; share: number; tilt: number }[] = [];
   for (const shot of set.shots) {
     const fp = frameFootprint(set, shot, groundAltM);
@@ -103,7 +125,36 @@ export function choosePhotos(set: SourceFrameSet, groundAltM: number, boundary: 
     views.push({ shot, share, tilt: offNadirDeg(shot) });
   }
   views.sort((a, b) => b.share - a.share || a.tilt - b.tilt);
+  if (first.length) {
+    const rank = new Map(first.map((f, i) => [f, i]));
+    const r = (v: { shot: Shot }) => rank.get(v.shot.filename) ?? Infinity;
+    views.sort((a, b) => r(a) - r(b));
+  }
   return views.slice(0, max).map(v => v.shot);
+}
+
+/**
+ * The look around each spot this photo is the best photo of: the spot
+ * carried into the photo through the pose, then the window around it from
+ * the photo's pattern. Pure. `decodedWidth` is the width the pattern was
+ * read on, `nativeWidth` the original's.
+ */
+export function looksInPhoto(input: {
+  set: SourceFrameSet; shot: Shot; groundAltM: number; pattern: PhotoPattern; decodedWidth: number; nativeWidth: number;
+  candidates: readonly Pick<Candidate, "id" | "centroid" | "sourceImages" | "blob" | "look">[]; rowSpacingM: number | null;
+}): Record<string, PhotoLook> {
+  const { set, shot, groundAltM, pattern, decodedWidth, nativeWidth } = input;
+  const cam = set.cameras[shot.cameraKey];
+  const k = cam.width / decodedWidth, nativeScale = nativeWidth / decodedWidth;
+  const sideM = patternLookSideM(input.rowSpacingM);
+  const out: Record<string, PhotoLook> = {};
+  for (const c of input.candidates) {
+    if (c.sourceImages?.best !== shot.filename || c.look) continue;
+    const pr = projectToFrame(set, shot, { ...c.centroid, altM: groundAltM });
+    if (!pr || !pr.inside) continue;
+    out[c.id] = lookFromPattern(pattern, { x: pr.u / k, y: pr.v / k, diameterM: c.blob?.equivDiameterM ?? null }, { filename: shot.filename, sideM, nativeScale });
+  }
+  return out;
 }
 
 /** Ground metres per pixel of the frame ODM posed, from its footprint's top edge. */
@@ -269,6 +320,8 @@ export type PhotoPassOptions = {
   onProgress?: (p: PhotoPassProgress) => void;
   /** New candidates, as each photo lands. */
   onFound?: (candidates: Candidate[]) => void;
+  /** Looks for the map pass's own spots, as each photo lands, by spot id. */
+  onLook?: (looks: Record<string, PhotoLook>) => void;
   /** Injected for tests. */
   fetchFrame?: (entry: FrameManifestEntry) => Promise<globalThis.Blob | null>;
   decode?: (blob: globalThis.Blob) => Promise<DecodedPhoto>;
@@ -285,10 +338,12 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
   const notes: string[] = [];
   const reads: PhotoRead[] = [];
   const out: Candidate[] = [];
-  if (!sources.set || sources.groundAltM == null) { notes.push("The photos were not read: this scan has no camera positions."); return { reads, candidates: out, notes }; }
-  if (!sources.frames) { notes.push("The photos were not read: no originals were kept for this scan."); return { reads, candidates: out, notes }; }
-  const shots = choosePhotos(sources.set, sources.groundAltM, boundary, params.maxPhotoReads);
-  if (!shots.length) { notes.push("The photos were not read: none of them covers the field."); return { reads, candidates: out, notes }; }
+  const looks: Record<string, PhotoLook> = {};
+  if (!sources.set || sources.groundAltM == null) { notes.push("The photos were not read: this scan has no camera positions."); return { reads, candidates: out, looks, notes }; }
+  if (!sources.frames) { notes.push("The photos were not read: no originals were kept for this scan."); return { reads, candidates: out, looks, notes }; }
+  const shots = choosePhotos(sources.set, sources.groundAltM, boundary, params.maxPhotoReads, photosOfSpots(result.candidates));
+  if (!shots.length) { notes.push("The photos were not read: none of them covers the field."); return { reads, candidates: out, looks, notes }; }
+  const rowSpacingM = result.pattern?.summary.rowSpacingM ?? null;
   const lattice = tileLattice(boundary, result.tileM);
   // The storage client is loaded only when a photo is actually fetched, so this module stays importable without a browser.
   const fetchFrame = opts.fetchFrame ?? (async (entry: FrameManifestEntry) => (await import("../sourceFrames/scan")).downloadFrame(entry));
@@ -296,14 +351,14 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
   const analyse = opts.analyse ?? ((px: PhotoPixels, p: PhotoParams) => analysePhotoOffThread(px, p, { signal: opts.signal }));
   const existing: LatLng2[] = result.candidates.filter(c => !c.region).map(c => c.centroid);
   const sys: UnitSystem = opts.unitSystem ?? "metric";
-  let found = 0, skipped = 0, failed = 0;
+  let found = 0, skipped = 0, failed = 0, looked = 0;
   const check = () => { if (opts.signal?.aborted) throw new Aborted(); };
   for (let i = 0; i < shots.length; i++) {
     const shot = shots[i];
     check();
-    opts.onProgress?.({ done: i, total: shots.length, found, note: `photo ${i + 1} of ${shots.length}` });
+    opts.onProgress?.({ done: i, total: shots.length, found, looks: looked, note: `photo ${i + 1} of ${shots.length}` });
     const t0 = Date.now();
-    const read: PhotoRead = { filename: shot.filename, status: "read", windows: 0, usableWindows: 0, blocks: 0, matchedBlocks: 0, findings: 0, ms: 0 };
+    const read: PhotoRead = { filename: shot.filename, status: "read", windows: 0, usableWindows: 0, blocks: 0, matchedBlocks: 0, findings: 0, looks: 0, ms: 0 };
     reads.push(read);
     const lookup = lookupOriginal(sources.frames, shot.filename);
     if (!lookup.ok) { read.status = "skipped"; read.reason = "reason" in lookup ? lookup.reason : "no original was kept"; skipped++; continue; }
@@ -335,10 +390,26 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
         batch.push(c);
         existing.push(f.centroid);
       }
+      // The look for every spot this photo is the best photo of: the map
+      // pass's own spots, handed over by id, and this photo's findings,
+      // which carry theirs from the start.
+      const ownLooks = looksInPhoto({
+        set: sources.set, shot, groundAltM: sources.groundAltM, pattern, decodedWidth: decoded.pixels.width, nativeWidth: decoded.nativeWidth,
+        candidates: batch, rowSpacingM,
+      });
+      for (const c of batch) c.look = ownLooks[c.id] ?? null;
+      const mapLooks = looksInPhoto({
+        set: sources.set, shot, groundAltM: sources.groundAltM, pattern, decodedWidth: decoded.pixels.width, nativeWidth: decoded.nativeWidth,
+        candidates: result.candidates, rowSpacingM,
+      });
+      for (const id of Object.keys(mapLooks)) looks[id] = mapLooks[id];
+      read.looks = Object.keys(mapLooks).length;
+      looked += read.looks;
       read.findings = batch.length;
       found += batch.length;
       out.push(...batch);
       if (batch.length) opts.onFound?.(batch);
+      if (read.looks) opts.onLook?.(mapLooks);
     } catch (e) {
       if ((e as Error)?.name === "Aborted") throw e;
       read.status = "failed"; read.reason = (e as Error)?.message ?? String(e); failed++;
@@ -346,12 +417,13 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
       read.ms = Date.now() - t0;
     }
   }
-  opts.onProgress?.({ done: shots.length, total: shots.length, found, note: "done" });
+  opts.onProgress?.({ done: shots.length, total: shots.length, found, looks: looked, note: "done" });
   const readCount = reads.filter(r => r.status === "read").length;
-  const gsds = reads.filter(r => r.status === "read").length;
+  const firstFailure = reads.find(r => r.status === "failed")?.reason;
+  const spots = result.candidates.filter(c => c.sourceImages?.best).length;
   notes.push(
-    `${readCount} of ${shots.length} photo(s) read at full resolution: ${found} more plant(s) off the pattern` +
-    `${skipped ? `, ${skipped} skipped` : ""}${failed ? `, ${failed} failed` : ""}${gsds && sources.set.shots.length > shots.length ? `; ${sources.set.shots.length - shots.length} photo(s) outside the field or over the limit were not read` : ""}.`,
+    `${readCount} of ${shots.length} photo(s) read at full resolution: ${found} more plant(s) off the pattern, ${looked} of ${spots} spot(s) shown in their photo` +
+    `${skipped ? `, ${skipped} skipped` : ""}${failed ? `, ${failed} failed (${firstFailure})` : ""}${readCount && sources.set.shots.length > shots.length ? `; ${sources.set.shots.length - shots.length} photo(s) outside the field or over the limit were not read` : ""}.`,
   );
-  return { reads, candidates: out, notes };
+  return { reads, candidates: out, looks, notes };
 }

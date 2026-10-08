@@ -150,6 +150,26 @@ the photo download behave; the pipeline falls back to the older row fit when the
 finds nothing, and both passes fail soft with a note. The benchmark is the regression
 gate for the pass itself.
 
+## The first real scan (2026-10-08, late)
+
+The founder ran the orchard scan. What it showed, and what was done:
+
+- "No row pattern was read" on the map, so the old by-area findings (dense vegetation,
+  patch unlike the field) stood over the trees. The built worker was checked in a headless
+  Chrome against the deployed bundle: it answers in 2 s for a map window and 8 s for a whole
+  photo, so it is not the worker. The run notes now say why the pass read nothing (windows
+  with rows, trusted fit windows, missing tiles, failed windows, pixel size, the pass's own
+  word), and a window that fails no longer ends the pass. The reason itself is still owed
+  by the next run's notes.
+- The save failed on a NOT NULL summary: migration `20261008210000`.
+- The photo pass read 71 photos and found nothing: the pixel buffer was transferred to the
+  worker and then read for the chip. Copied now.
+- The closer look read a three-spacing cut, too small for the pass to fit rows on an
+  orchard. The founder asked for the photos to be processed during the analysis, once an
+  anomaly is found, not one at a time afterwards: done, the photo pass reads the spots'
+  photos first and leaves each spot its look (`Candidate.look`), and the closer look opens
+  on it.
+
 ## Order and what the founder decides
 
 Phases 0 and 1 first: they make the scan itself smarter and are invisible until the screen
@@ -168,6 +188,6 @@ Before phase 3: whether photo reading may run in the background on a metered con
 | 0 | **done** 2026-10-08 (e353618): square-grid tiebreak by brightness once per photo with `rowAngleDeg` override, stray blocks dropped, doubles merged, blocks on the result, `npm run bench:pattern`. Vineyard agreement 0.75 to 0.90; doubles 206 to 100 and 151 to 39. Two vineyard frames (0014, 0031) still read across the wire: brightness favoured across there, the override is the fix. |
 | 1 | **done** 2026-10-08: `lib/weedScout/fieldPattern.ts` plans windows at the baked zoom nearest 5 cm/px, reads each through `photoScout/runPattern.ts` (a Web Worker, inline fallback), and puts blocks, settled row lines and plants in lat/lng; `pipeline.ts` stage "pattern" stands for the row model, the sweep measures against the settled lines, and a new candidate kind "between plants" marks on-row blobs the pattern placed no crop plant at. Params `pattern`, `rowSpacingAuto`, `rowAngleDeg`. Tested on a synthetic georeferenced orchard. Not yet run on a real scan in the browser. |
 | 2 | **done** 2026-10-08 (14acf40): `FieldRead.tsx` (three lines in the grower's units, never the method), `PatternLayer.tsx` (row lines per block, crop plants as dots from zoom 19, legend toggle), "rows run this way" on a square grid (re-reads with `rowAngleDeg`), pattern and spacing-search switches in settings, the pattern's numbers in run details. CloserLook overlay not done: deferred to the photo pass, which has the photo's own pattern. |
-| 3 | **done** 2026-10-08: `lib/weedScout/photoPass.ts`. After the map pass shows its result, `runStore` reads the kept originals one by one in the worker (`maxPhotoReads`, 150 by default, the photos covering most of the field first), carries each off-pattern blob to the ground through the pose, keeps only blocks that agree with the map's pattern (10 degrees, 15 percent), drops plants the map pass already has or another photo already gave, and hands the rest over as candidates with a chip cut from the photo itself; the tab shows "Reading photo N of M, K more plants" with a stop. Skipped when the browser asks to spare the connection (`saveData`, 2g); the once-per-scan question was not built. Geometry tested on the real reconstruction fixture; not yet run on a real scan in the browser. |
+| 3 | **done** 2026-10-08, revised late that night (spots' photos first, each spot keeps its look, the buffer is no longer handed away): `lib/weedScout/photoPass.ts`. After the map pass shows its result, `runStore` reads the kept originals one by one in the worker (`maxPhotoReads`, 150 by default, the photos covering most of the field first), carries each off-pattern blob to the ground through the pose, keeps only blocks that agree with the map's pattern (10 degrees, 15 percent), drops plants the map pass already has or another photo already gave, and hands the rest over as candidates with a chip cut from the photo itself; the tab shows "Reading photo N of M, K more plants" with a stop. Skipped when the browser asks to spare the connection (`saveData`, 2g); the once-per-scan question was not built. Geometry tested on the real reconstruction fixture; not yet run on a real scan in the browser. |
 | 4 | **done** 2026-10-08: migration `20261008150000_scan_scout_runs.sql` (applied to the linked project the same day): `scan_patterns` (one row per scan: pattern + slim result + summary, pass version `weed-scout-v3-pattern`) and `scan_findings` (one row per candidate, the candidate minus its chip), owner-scoped. `runCache.ts` saves after the map pass and again after the photo pass, `restoreRun` loads on opening a scan with nothing running; the tab says the result was restored and that spot pictures are not kept; the scan card carries a Weed Scout line (rows, plants, spots). Verdicts stay in `weed_observations`. NOT done: `ai_analysis` source "weed-scout" and the readers (ScanTimeline, ReportsTab, compareGround): the grid keeps that column; the scout's record is its own tables. |
 | 5 | **done** 2026-10-08, on the founder's instruction to run every phase in one day, so WITHOUT the flown-field review the gate asked for: `weedScout` defaults to on (a stored false keeps the grid), the Treatment Grid stays reachable from Settings section 5 with its state untouched, and the Weed Library and Photo Scout sit behind a new `developerTools` flag. The scout's tab badge says "Closed testing". Still owed: one flown field reviewed end to end in the browser (scan, field read, findings, verdicts, mission, record), which no phase here has had. |

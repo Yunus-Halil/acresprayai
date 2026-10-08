@@ -190,8 +190,9 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
         if (s.squareGrid) notes.push("The plants sit on a square grid, so rows fit both ways; the lines follow the brighter direction. If they run the wrong way, set the row direction.");
         if (plan.grown) notes.push(`Pattern windows were widened to ${plan.windowM} m to read this field in ${plan.windows.length} windows.`);
         if (s.missingTiles) notes.push(`${s.missingTiles} imagery tile(s) failed to load in the pattern pass; rows under them were not read.`);
+        if (s.windowsWithRows < s.windows) notes.push(fp.notes[0]);
       } else {
-        notes.push("No planting pattern was read from the field map; the row fit below stands on its own.");
+        notes.push(`No planting pattern was read from the field map; the row fit below stands on its own. ${fp.notes.join(" ")}`);
       }
     } catch (e) {
       if ((e as Error)?.name === "Aborted") throw e;

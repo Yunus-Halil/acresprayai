@@ -1,5 +1,14 @@
 // The planting pattern drawn on the original photo.
 //
+// Two ways in. During the run, the photo pass reads each photo whole and
+// keeps, for every spot whose best photo it is, a PhotoLook: the lines and
+// circles in a window around the spot, in the original's own pixels, so
+// the closer look opens on it with nothing left to compute. When a spot has
+// no look (the photos were not read, or that photo was over the budget) the
+// closer look reads the whole photo itself, once, and builds the same look.
+// A cut of a few row spacings is not enough: the pass needs several rows
+// in view to trust a fit, so it is always the whole photo that is read.
+//
 // When a spot's photo opens, the operator should see what the pass saw: the
 // rows as lines, every plant as a circle coloured by what it is (crop on the
 // pattern, a double, a weed between plants, a weed off the row), not a box.
@@ -158,4 +167,103 @@ export function overlayLegend(o: PatternOverlay, pattern: PhotoPattern): string 
   const spot = o.focus ? (o.focus.matched ? `The white ring is this spot, read here as ${o.focus.cls}. ` : "The white ring is where the map put this spot; the pass placed no plant there. ") : "";
   if (o.blocks === 0) return spot + "No row pattern was read in this part of the photo.";
   return spot + `Around it: ${n("on pattern")} crop plants on the pattern (green), ${n("between plants")} between plants (orange), ${n("off-row")} off the rows (red)${n("double") ? `, ${n("double")} doubles (blue)` : ""}, in ${o.blocks} planting${o.blocks === 1 ? "" : "s"}.`;
+}
+
+/** A rectangle in a photo's pixels. */
+export type LookWindow = { x: number; y: number; width: number; height: number };
+
+/** What the pass saw around a spot in one photo, in that photo's original pixels. */
+export type PhotoLook = {
+  filename: string;
+  /** The cut around the spot, in the original photo's pixels. */
+  window: LookWindow;
+  /** Ground metres per original pixel. */
+  gsdM: number;
+  /** Lines, circles and the spot, in the window's pixels (origin at its corner). */
+  lines: OverlayLine[];
+  circles: OverlayCircle[];
+  focus: PatternOverlay["focus"];
+  /** Row blocks the pass read in the whole photo. */
+  blocks: number;
+  /** Placed blobs inside the window, by class. */
+  counts: { onPattern: number; between: number; offRow: number; doubles: number };
+};
+
+/**
+ * The look around a spot, from a whole photo's pattern: a square of `sideM`
+ * around the spot (clamped to the photo), the rows clipped to it, the
+ * circles inside it, everything carried to the original's pixels by
+ * `nativeScale` (original pixels per pixel the pattern was read on). Pure.
+ */
+export function lookFromPattern(
+  pattern: PhotoPattern, focusPx: { x: number; y: number; diameterM?: number | null },
+  opts: { filename: string; sideM: number; nativeScale: number },
+): PhotoLook {
+  const o = overlayFromPattern(pattern, focusPx);
+  const s = opts.nativeScale;
+  const side = Math.max(16, Math.round(opts.sideM / pattern.gsdM));
+  const w = Math.min(side, pattern.width), h = Math.min(side, pattern.height);
+  const x0 = Math.round(Math.min(Math.max(0, focusPx.x - w / 2), pattern.width - w));
+  const y0 = Math.round(Math.min(Math.max(0, focusPx.y - h / 2), pattern.height - h));
+  const rect = { x0, y0, x1: x0 + w, y1: y0 + h };
+  const lines: OverlayLine[] = [];
+  for (const l of o.lines) {
+    const t = clip(l.x1, l.y1, l.x2, l.y2, rect);
+    if (!t || !(t[1] - t[0] > 1e-6)) continue;
+    const dx = l.x2 - l.x1, dy = l.y2 - l.y1;
+    lines.push({ x1: (l.x1 + dx * t[0] - x0) * s, y1: (l.y1 + dy * t[0] - y0) * s, x2: (l.x1 + dx * t[1] - x0) * s, y2: (l.y1 + dy * t[1] - y0) * s, block: l.block });
+  }
+  const inside = (c: OverlayCircle) => c.x + c.r >= rect.x0 && c.x - c.r <= rect.x1 && c.y + c.r >= rect.y0 && c.y - c.r <= rect.y1;
+  const move = <T extends OverlayCircle>(c: T): T => ({ ...c, x: (c.x - x0) * s, y: (c.y - y0) * s, r: c.r * s });
+  const circles = o.circles.filter(inside).map(move);
+  const counts = { onPattern: 0, between: 0, offRow: 0, doubles: 0 };
+  for (const c of circles) {
+    if (c.cls === "on pattern") counts.onPattern++;
+    else if (c.cls === "between plants") counts.between++;
+    else if (c.cls === "off-row") counts.offRow++;
+    else if (c.cls === "double") counts.doubles++;
+  }
+  return {
+    filename: opts.filename,
+    window: { x: Math.round(x0 * s), y: Math.round(y0 * s), width: Math.round(w * s), height: Math.round(h * s) },
+    gsdM: pattern.gsdM / s,
+    lines, circles, focus: o.focus ? move(o.focus) : null, blocks: o.blocks, counts,
+  };
+}
+
+/** What a look means, in a line. */
+export function lookLegend(look: PhotoLook): string {
+  const spot = look.focus
+    ? (look.focus.matched ? `The white ring is this spot, read here as ${look.focus.cls}. ` : "The white ring is where the map put this spot; the pass placed no plant there. ")
+    : "";
+  if (look.blocks === 0) return spot + "No row pattern was read in this photo.";
+  if (look.lines.length === 0) return spot + "The rows the pass read in this photo do not run through this cut.";
+  const c = look.counts;
+  return spot + `Around it: ${c.onPattern} crop plants on the pattern (green), ${c.between} between plants (orange), ${c.offRow} off the rows (red)${c.doubles ? `, ${c.doubles} doubles (blue)` : ""}.`;
+}
+
+export type LookCut = { url: string; width: number; height: number; factor: number };
+
+/** Browser only. A look's window cut from the original, pooled so the longer side is at most PATTERN_LOOK_MAX_EDGE. */
+export async function cutLookWindow(frame: Blob, window: LookWindow): Promise<LookCut | null> {
+  if (typeof document === "undefined") return null;
+  const bitmap = await createImageBitmap(frame).catch(() => null);
+  if (!bitmap) return null;
+  try {
+    const x0 = Math.max(0, Math.min(bitmap.width - 1, window.x)), y0 = Math.max(0, Math.min(bitmap.height - 1, window.y));
+    const w = Math.min(bitmap.width - x0, window.width), h = Math.min(bitmap.height - y0, window.height);
+    if (w < 16 || h < 16) return null;
+    const factor = Math.max(1, Math.ceil(Math.max(w, h) / PATTERN_LOOK_MAX_EDGE));
+    const width = Math.floor(w / factor), height = Math.floor(h / factor);
+    const canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(bitmap, x0, y0, width * factor, height * factor, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, "image/jpeg", 0.92));
+    if (!blob) return null;
+    return { url: URL.createObjectURL(blob), width, height, factor };
+  } finally {
+    bitmap.close?.();
+  }
 }

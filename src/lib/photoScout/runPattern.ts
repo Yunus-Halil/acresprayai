@@ -13,6 +13,12 @@ export type RunPatternOptions = {
   onProgress?: (done: number, total: number) => void;
   /** Force the inline path. Tests. */
   inline?: boolean;
+  /**
+   * Hand the pixel buffer to the worker instead of copying it. Only when the
+   * caller is done with the pixels: a transferred buffer is empty afterwards,
+   * and a chip cut from it later is a crash, not a picture.
+   */
+  transfer?: boolean;
 };
 
 class Aborted extends Error {
@@ -28,6 +34,7 @@ function runInline(px: PhotoPixels, params: PhotoParams, opts: RunPatternOptions
 
 export async function analysePhotoOffThread(px: PhotoPixels, params: PhotoParams, opts: RunPatternOptions = {}): Promise<PhotoPattern> {
   if (opts.signal?.aborted) throw new Aborted();
+  if (px.rgba.length === 0 && px.width * px.height > 0) throw new Error("The photo's pixels were already handed away.");
   if (opts.inline || typeof Worker === "undefined") return runInline(px, params, opts);
   let worker: Worker;
   try {
@@ -54,6 +61,6 @@ export async function analysePhotoOffThread(px: PhotoPixels, params: PhotoParams
       else reject(new Error(e.message || "The pattern worker failed."));
     };
     const req: PatternWorkerRequest = { type: "run", px, params };
-    worker.postMessage(req, [px.rgba.buffer]);
+    worker.postMessage(req, opts.transfer ? [px.rgba.buffer] : []);
   });
 }

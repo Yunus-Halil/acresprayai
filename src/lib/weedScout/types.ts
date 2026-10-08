@@ -23,6 +23,7 @@
 import type { LatLng2 } from "../geo";
 import type { Inference, Prediction } from "./classify/types";
 import type { FieldPattern } from "./fieldPattern";
+import type { PhotoLook } from "../sourceFrames/patternLook";
 
 /**
  * What a finding is, before anyone asks whether it is a weed. Only
@@ -364,6 +365,12 @@ export type Candidate = {
   inference?: Inference | null;
   /** Step three: the original photos that hold this shape. Null when the scan has no camera positions. */
   sourceImages?: SourceImages | null;
+  /**
+   * What the pass saw around this spot in its best photo, read during the
+   * run: the rows as lines and the plants as circles, in that photo's own
+   * pixels, so the closer look opens on it with nothing left to compute.
+   */
+  look?: PhotoLook | null;
   /** PNG data URL of the chip, when one was rendered. */
   chip: string | null;
   chipSpanM: number | null;

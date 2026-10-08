@@ -2,7 +2,7 @@
 // windows, a circle per placed plant in its class's colour, the legend plain.
 import { describe, expect, it } from "vitest";
 import type { PhotoPattern } from "@/lib/photoScout/pattern";
-import { BLOB_COLOUR, overlayFromPattern, overlayLegend, patternLookSideM } from "@/lib/sourceFrames/patternLook";
+import { BLOB_COLOUR, lookFromPattern, lookLegend, overlayFromPattern, overlayLegend, patternLookSideM } from "@/lib/sourceFrames/patternLook";
 
 const fit = (angleDeg: number) => ({
   centre: { x: 6, y: -6 }, sizeM: 12, angleDeg, pitchM: 2, phaseM: 0, confidence: 0.9, angleConfidence: 0.9, pitchConfidence: 0.9,
@@ -55,6 +55,37 @@ describe("the pattern on the photo", () => {
     expect(far.focus).toMatchObject({ x: 900, y: 900, matched: false });
     expect(far.focus!.r).toBeCloseTo(25, 5);
     expect(overlayFromPattern(pattern).focus).toBeNull();
+  });
+
+  it("cuts the look around a spot from the whole photo's pattern, in the original's pixels", () => {
+    // 6 m around (310, 108) at 1 cm/px: a 600 px window, clamped to the photo's top edge; the original is twice the size.
+    const look = lookFromPattern(pattern, { x: 310, y: 108 }, { filename: "DJI_0001.JPG", sideM: 6, nativeScale: 2 });
+    expect(look.filename).toBe("DJI_0001.JPG");
+    expect(look.window).toEqual({ x: 20, y: 0, width: 1200, height: 1200 });
+    expect(look.gsdM).toBeCloseTo(0.005, 6);
+    // The blobs at (100,100), (300,100), (300,300) fall inside; (700,100) and the unplaced one do not.
+    expect(look.circles).toHaveLength(3);
+    expect(look.counts).toEqual({ onPattern: 1, between: 1, offRow: 1, doubles: 0 });
+    const between = look.circles.find(c => c.cls === "between plants")!;
+    expect(between.x).toBeCloseTo((300 - 10) * 2, 5);
+    expect(between.y).toBeCloseTo(200, 5);
+    expect(between.r).toBeCloseTo((0.2257 / 0.01 / 2) * 2, 3);
+    // The rows are clipped to the window and scaled; none runs past its edge.
+    expect(look.lines.length).toBeGreaterThanOrEqual(3);
+    for (const l of look.lines) {
+      expect(Math.min(l.x1, l.x2)).toBeGreaterThanOrEqual(-1e-6);
+      expect(Math.max(l.x1, l.x2)).toBeLessThanOrEqual(1200 + 1e-6);
+      expect(Math.max(l.y1, l.y2)).toBeLessThanOrEqual(1200 + 1e-6);
+    }
+    expect(look.focus).toMatchObject({ cls: "between plants", matched: true });
+    expect(look.focus!.x).toBeCloseTo(580, 5);
+    expect(lookLegend(look)).toBe("The white ring is this spot, read here as between plants. Around it: 1 crop plants on the pattern (green), 1 between plants (orange), 1 off the rows (red).");
+    // A photo with no rows says so; rows elsewhere in the photo say the cut missed them.
+    expect(lookLegend({ ...look, blocks: 0 })).toMatch(/No row pattern was read in this photo/);
+    expect(lookLegend({ ...look, lines: [] })).toMatch(/do not run through this cut/);
+    // The window never leaves the photo: a spot at the far corner is cut from the corner.
+    const corner = lookFromPattern(pattern, { x: 1190, y: 1190 }, { filename: "x", sideM: 6, nativeScale: 1 });
+    expect(corner.window).toEqual({ x: 600, y: 600, width: 600, height: 600 });
   });
 
   it("says what the colours mean and sizes the cut from the row spacing", () => {

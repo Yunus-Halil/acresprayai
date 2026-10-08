@@ -101,6 +101,8 @@ export type PatternWindowResult = {
   canopyClosed: boolean;
   missingTiles: number;
   notes: string[];
+  /** Why this window gave nothing, when the pass itself failed on it. */
+  failed?: string | null;
 };
 
 export type PatternSummary = {
@@ -330,7 +332,31 @@ export function assembleFieldPattern(plan: PatternPlan, origin: LatLng2, results
     squareGrid: blocks.some(b => b.squareGrid),
     missingTiles: windows.reduce((s, w) => s + w.missingTiles, 0),
   };
-  return { z: plan.z, gsdM: plan.gsdM, windowM: plan.windowM, origin, windows, plants, lines, summary, notes: [] };
+  return { z: plan.z, gsdM: plan.gsdM, windowM: plan.windowM, origin, windows, plants, lines, summary, notes: patternNotes(plan, windows, summary) };
+}
+
+/**
+ * Why the field read as it did, in a line or two: how many windows showed
+ * rows, how many fit windows were trusted, what went missing or failed, and
+ * the pass's own most common word on the windows that showed nothing.
+ * The run notes carry this, so a field that reads nothing says why.
+ */
+export function patternNotes(plan: PatternPlan, windows: PatternWindowResult[], summary: PatternSummary): string[] {
+  const out: string[] = [];
+  const planned = plan.windows.length, read = windows.length;
+  const failed = windows.filter(w => w.failed), closed = windows.filter(w => w.canopyClosed);
+  out.push(
+    `Pattern pass: ${summary.windowsWithRows} of ${read} window(s) showed rows (${summary.usableFitWindows} of ${summary.fitWindows} fit windows trusted)` +
+    `${planned > read ? `, ${planned - read} window(s) had no imagery` : ""}${summary.missingTiles ? `, ${summary.missingTiles} tile(s) failed to load` : ""}` +
+    `${closed.length ? `, ${closed.length} window(s) read as closed canopy` : ""}${failed.length ? `, ${failed.length} window(s) failed (${failed[0].failed})` : ""}, at ${(plan.gsdM * 100).toFixed(1)} cm per pixel (zoom ${plan.z}).`,
+  );
+  if (summary.windowsWithRows === 0) {
+    const counts = new Map<string, number>();
+    for (const w of windows) for (const n of w.notes) counts.set(n, (counts.get(n) ?? 0) + 1);
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (top) out.push(`The pass said of ${top[1]} window(s): ${top[0]}`);
+  }
+  return out;
 }
 
 export type ReadPatternOptions = {
@@ -354,18 +380,27 @@ export async function readFieldPattern(
     const { raster, missingTiles } = await fetchRaster(template, win.fetch, z, PATTERN_MAX_TILES);
     return { raster, missingTiles };
   });
-  const analyse = opts.analyse ?? ((px: RasterSource, params: PhotoParams) => analysePhotoOffThread(px, params, { signal: opts.signal }));
+  const analyse = opts.analyse ?? ((px: RasterSource, params: PhotoParams) => analysePhotoOffThread(px, params, { signal: opts.signal, transfer: true }));
   for (let i = 0; i < plan.windows.length; i++) {
     const win = plan.windows[i];
     opts.onProgress?.(i, plan.windows.length, `window ${i + 1} of ${plan.windows.length}`);
     if (opts.signal?.aborted) throw Object.assign(new Error("Pattern pass cancelled."), { name: "Aborted" });
     const { raster, missingTiles } = await fetchWin(win, plan.z);
     if (raster.width < 16 || raster.height < 16) continue;
-    const pattern = await analyse(raster, {
-      gsdM: rasterGsdM(raster), rowSpacingM: opts.rowSpacingM, windowM: PATTERN_FIT_WINDOW_M,
-      minBlobAreaCm2: opts.minBlobAreaCm2, rowAngleDeg: opts.rowAngleDeg ?? null,
-    });
-    results.push(convertPattern(raster, win, pattern, missingTiles));
+    try {
+      const pattern = await analyse(raster, {
+        gsdM: rasterGsdM(raster), rowSpacingM: opts.rowSpacingM, windowM: PATTERN_FIT_WINDOW_M,
+        minBlobAreaCm2: opts.minBlobAreaCm2, rowAngleDeg: opts.rowAngleDeg ?? null,
+      });
+      results.push(convertPattern(raster, win, pattern, missingTiles));
+    } catch (e) {
+      if ((e as Error)?.name === "Aborted") throw e;
+      // One window failing is one window without rows, not a field without a pattern.
+      results.push({
+        win, origin: { lat: raster.bounds.north, lng: raster.bounds.west }, gsdM: rasterGsdM(raster), fitWindows: 0, usableWindows: 0, blocks: [],
+        plantDiameterM: null, seedSpacingM: null, seedAgreement: null, canopyClosed: false, missingTiles, notes: [], failed: (e as Error)?.message ?? String(e),
+      });
+    }
   }
   opts.onProgress?.(plan.windows.length, plan.windows.length, "done");
   return assembleFieldPattern(plan, origin, results);

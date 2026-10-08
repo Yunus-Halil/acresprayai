@@ -103,15 +103,37 @@ white ring (on the plant the pass placed there, or where the map put it when it 
 halos the circles that are not crop so they read over foliage, and fades the rows and the crop
 plants to context. It says how far the read is while it reads.
 
-## The pattern on the photo (2026-10-08)
+## The pattern on the photo (2026-10-08, revised late that night)
 
-Closer look opens in the pattern view: a cut of six row spacings a side (12 to 40 m) around
-the spot, at the photo's native resolution, read by the pass at the field's own row spacing
-(`sourceFrames/patternLook.ts`), with the rows drawn as yellow lines across each block's
-windows and every placed plant as a circle in its class's colour: green on the pattern,
-orange between plants, red off the rows, blue a double. The map's dashed outline is drawn
-over it in the same pixels. A toggle shows the plain crop instead; the detector's boxes
-still belong to that view.
+The spot's look is made during the scan, not when the spot is opened. The photo pass reads
+each photo whole, and the photos the map's spots were matched to come first, the ones holding
+most spots first (`photosOfSpots`, `choosePhotos`). For every spot whose best photo it is,
+`looksInPhoto` carries the spot into the photo through the pose and keeps a `PhotoLook`
+(`sourceFrames/patternLook.ts`): a window of three row spacings a side (8 to 24 m) in the
+original's own pixels, the rows clipped to it as lines, the plants inside it as circles in
+their class's colour (green on the pattern, orange between plants, red off the rows, blue a
+double), and the spot itself ringed in white (the nearest placed plant within 1.5 m, or a ring
+where the map put it). The look sits on the candidate (`Candidate.look`), so it is saved with
+the run and restored with it. The tab's photo line counts them: "N spots shown in their photo".
+
+Closer look opens on that look at once: it cuts the window from the original and draws the
+lines and circles over it, nothing to compute. A spot without a look (the photos were not read,
+or its photo was over the budget) has its whole photo read there, once, and the read is kept
+for the next spot in the same photo. Whole, because the pass needs several rows in view to
+trust a fit: the earlier cut of three spacings read nothing on an orchard, which is what
+"Reading the rows and plants (0%)" over a dashed box was. The map's dashed outline is still
+drawn in the same pixels; a toggle shows the plain crop, and the detector's boxes belong to
+that view.
+
+Two faults found the same night on the first real scan (the orchard), both fixed: the pixel
+buffer was handed to the pattern worker and then read again for the chip, so every photo with
+a finding failed and the pass reported "0 more plants" (the buffer is copied now unless the
+caller says it is done with it); and a run with no pattern could not be saved because
+`scan_patterns.summary` was NOT NULL (migration `20261008210000` makes it nullable). The
+pattern pass now also says why it read nothing: the run notes carry "Pattern pass: N of M
+windows showed rows (...), K tiles failed to load, J windows failed (why), at X cm per pixel",
+and the pass's most common word on the windows that showed nothing. One window failing is one
+window without rows, not a field without a pattern.
 
 ## The saved run (2026-10-08)
 

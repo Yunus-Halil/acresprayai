@@ -759,7 +759,8 @@ export function WeedScoutTab({
         </MapContainer>
         <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} onDetections={list => addDetections(taskId, list)}
           rowSpacingM={result?.pattern?.summary.rowSpacingM ?? null}
-          spotDiameterM={closerLook ? (candidates.find(c => c.id === closerLook.id)?.blob?.equivDiameterM ?? null) : null} />
+          spotDiameterM={closerLook ? (candidates.find(c => c.id === closerLook.id)?.blob?.equivDiameterM ?? null) : null}
+          spotLook={closerLook ? (candidates.find(c => c.id === closerLook.id)?.look ?? null) : null} />
 
         <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2 text-neutral-300"><FlaskConical className="h-3 w-3 text-[#4CAF50]" /> Click a spot to change it</div>
@@ -827,7 +828,7 @@ export function WeedScoutTab({
             {!running && photo?.running && (
               <div className="text-[11px] text-neutral-400 inline-flex items-center gap-1.5 min-w-0" data-testid="photo-pass">
                 <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-                <span className="truncate">Reading photo {Math.min(photo.done + 1, Math.max(1, photo.total))} of {photo.total || "…"}, {photo.found} more plant{photo.found === 1 ? "" : "s"} found</span>
+                <span className="truncate">Reading photo {Math.min(photo.done + 1, Math.max(1, photo.total))} of {photo.total || "…"}: {photo.found} more plant{photo.found === 1 ? "" : "s"} found, {photo.looks} spot{photo.looks === 1 ? "" : "s"} shown in their photo</span>
                 <button type="button" onClick={() => stopRun(taskId)} className="underline text-neutral-500 hover:text-neutral-300">stop</button>
               </div>
             )}

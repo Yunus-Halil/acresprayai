@@ -20,7 +20,7 @@ import { loadRun, saveRun } from "./runCache";
 import type { ScoutInputs, ScoutProgress, ScoutResult } from "./types";
 
 /** The photo pass after the map pass: where it is, what it has found, and what it said when it finished. */
-export type PhotoPassState = { running: boolean; done: number; total: number; found: number; note: string | null };
+export type PhotoPassState = { running: boolean; done: number; total: number; found: number; looks: number; note: string | null };
 
 export type ScoutSession = {
   running: boolean;
@@ -107,25 +107,27 @@ export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOpti
     // Stop ends this too. Not on a connection the browser says to spare.
     const sources = opts.sources;
     if (!inputs.params.photoPass || !sources?.set || !sources.frames || sources.groundAltM == null) return;
-    if (frugalConnection()) { patchSession(taskId, { photo: { running: false, done: 0, total: 0, found: 0, note: "The photos were not read: the browser asks to spare this connection." } }); return; }
-    patchSession(taskId, { photo: { running: true, done: 0, total: 0, found: 0, note: null } });
+    if (frugalConnection()) { patchSession(taskId, { photo: { running: false, done: 0, total: 0, found: 0, looks: 0, note: "The photos were not read: the browser asks to spare this connection." } }); return; }
+    patchSession(taskId, { photo: { running: true, done: 0, total: 0, found: 0, looks: 0, note: null } });
     try {
       const pass = await runPhotoPass({
         result, sources, boundary: inputs.boundary, params: inputs.params,
         crop: opts.crop, growthStage: opts.growthStage, unitSystem: opts.unitSystem, signal: ctrl.signal,
-        onProgress: p => { if (mine()) patchSession(taskId, s => ({ photo: { ...(s.photo ?? { running: true, note: null }), running: true, done: p.done, total: p.total, found: p.found } })); },
+        onProgress: p => { if (mine()) patchSession(taskId, s => ({ photo: { ...(s.photo ?? { running: true, note: null }), running: true, done: p.done, total: p.total, found: p.found, looks: p.looks } })); },
         onFound: found => { if (mine()) patchSession(taskId, s => ({ result: s.result ? { ...s.result, candidates: [...s.result.candidates, ...found] } : s.result })); },
+        // The map pass's spots get their look as their photo is read; the closer look opens on it.
+        onLook: looks => { if (mine()) patchSession(taskId, s => ({ result: s.result ? { ...s.result, candidates: s.result.candidates.map(c => looks[c.id] ? { ...c, look: looks[c.id] } : c) } : s.result })); },
       });
       if (!mine()) return;
       patchSession(taskId, s => ({
-        photo: { running: false, done: pass.reads.length, total: pass.reads.length, found: pass.candidates.length, note: pass.notes.join(" ") },
+        photo: { running: false, done: pass.reads.length, total: pass.reads.length, found: pass.candidates.length, looks: Object.keys(pass.looks).length, note: pass.notes.join(" ") },
         result: s.result ? { ...s.result, notes: [...s.result.notes, ...pass.notes] } : s.result,
       }));
-      if (pass.candidates.length) await persist("the scan and the photos");
+      if (pass.candidates.length || Object.keys(pass.looks).length) await persist("the scan and the photos");
     } catch (e) {
       if (!mine()) return;
       const aborted = (e as Error)?.name === "Aborted";
-      patchSession(taskId, s => ({ photo: { ...(s.photo ?? { done: 0, total: 0, found: 0 }), running: false, note: aborted ? "Reading the photos was stopped." : `Reading the photos failed: ${(e as Error)?.message ?? String(e)}` } }));
+      patchSession(taskId, s => ({ photo: { ...(s.photo ?? { done: 0, total: 0, found: 0, looks: 0 }), running: false, note: aborted ? "Reading the photos was stopped." : `Reading the photos failed: ${(e as Error)?.message ?? String(e)}` } }));
     }
   }).catch((e: unknown) => {
     if (!mine()) return;

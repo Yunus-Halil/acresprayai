@@ -888,7 +888,7 @@ export type Database = {
           pass_version: string
           result: Json
           scan_id: string
-          summary: Json
+          summary: Json | null
           updated_at: string
           user_id: string
         }
@@ -900,7 +900,7 @@ export type Database = {
           pass_version: string
           result: Json
           scan_id: string
-          summary: Json
+          summary: Json | null
           updated_at?: string
           user_id: string
         }
@@ -912,7 +912,7 @@ export type Database = {
           pass_version?: string
           result?: Json
           scan_id?: string
-          summary?: Json
+          summary?: Json | null
           updated_at?: string
           user_id?: string
         }
