@@ -86,34 +86,49 @@ export const HERO = {
 };
 
 /**
- * The findings section: what it finds and what you get for each one. Not
- * how (rule 9). A farmer wants to see the finding; the method is ours.
+ * The statement, in the narrow column under the rail: what the product is,
+ * in two sentences, with the words that matter picked out. The second line
+ * names what it finds. Never how (rule 9).
  */
-export const DETECTION = {
-  eyebrow: "WHAT IT FINDS",
-  headline: "The weeds on the map, measured, and the rest of the field read too.",
-  body: [
-    "Weeds and weed patches, a thin stand, bare or wet ground, and any patch that is not behaving like the rest of the field. Each finding is drawn on the map with its size and area.",
-    "You decide what gets treated. Nothing is sprayed on a finding you did not confirm.",
+export const STATEMENT = {
+  lead: [
+    { text: "SwathWise turns the field map from your drone into " },
+    { text: "decisions", hi: true },
+    { text: ": the weeds " },
+    { text: "found and measured", hi: true },
+    { text: ", the treatment confirmed by you, the mission flown by you." },
   ],
+  findings: "It finds weeds and weed patches, a thin stand, bare or wet ground, and any patch that is not behaving like the rest of the field, each drawn on the map with its size and area.",
+  softwareHeading: "The software",
 };
 
 /**
- * The core product flow. Three steps, one line each, and the weed map is the
- * first one because everything after it is derived from it. Pricing, the
- * flight simulation and the application record are real and are not on the
- * page: while the product is in closed testing the page stays vague about
- * everything after the finding (Yunus, 2026-10-08).
+ * The parts of the product, as a list of names with one small line each.
+ * Names, not features: a visitor reads the name and the line and moves on.
+ * The mission line keeps the pilot in the seat (rule 6).
  */
-export const FLOW = {
-  headline: "Found it. Sized it. Treated it.",
-  sub: "The weed map is the foundation. Everything after it is derived from what you confirmed on it.",
-  steps: [
-    { label: "FOUND IT", body: "The weeds and the abnormal vegetation, found on your field map." },
-    { label: "SIZED IT", body: "Each confirmed finding becomes a measured treatment area." },
-    { label: "TREATED IT", body: "Confirmed areas become a spray mission for supported aircraft. You fly it, on your license." },
-  ],
-};
+export const SOFTWARE = [
+  { name: "Scout", body: "Finds the weeds on your field map and measures each one." },
+  { name: "Zones", body: "Confirmed findings become treatment areas, sized in acres." },
+  { name: "Mission", body: "A spray mission over the zones you confirmed, for supported aircraft. You fly it, on your license." },
+  { name: "Weather", body: "Wind, rain and temperature for your field, so the spray windows are easy to see." },
+  { name: "Fields", body: "Your fields, your flights and your findings, in one account." },
+];
+
+/**
+ * The rail under the hero: frames from the film, each with a small label.
+ * The frames are cut from the hero master (public/film); the last card is a
+ * real screen of a mission. The labels are the page in seven lines.
+ */
+export const RAIL = [
+  { src: "/film/frame-10.jpg", eyebrow: "THE FLIGHT", title: "Fly the field you already fly", alt: "A spray drone on its trailer at the edge of a field" },
+  { src: "/film/frame-35.jpg", eyebrow: "THE FIELD", title: "One flight, the whole field", alt: "A field from the air under a summer sky" },
+  { src: "/film/frame-65.jpg", eyebrow: "THE MAP", title: "The field map, read for weeds", alt: "An orchard from above with the flight route drawn over it" },
+  { src: "/film/frame-125.jpg", eyebrow: "THE SCOUT", title: "The weeds, found and measured", alt: "A field map with the findings outlined" },
+  { src: "/film/frame-95.jpg", eyebrow: "THE ZONES", title: "Treat only what you confirmed", alt: "A spray drone lifting off beside a field" },
+  { src: "/film/frame-155.jpg", eyebrow: "THE MISSION", title: "Flown by you, on your license", alt: "A pilot's controller showing the mission over the field" },
+  { src: "/screens/mission-route.jpg", eyebrow: "THE PLAN", title: "The route before the flight", alt: "The flight planner with a spray mission drawn over a field map" },
+];
 
 export const AUDIENCES = [
   {

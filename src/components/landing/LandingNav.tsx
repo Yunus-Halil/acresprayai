@@ -3,7 +3,7 @@ import { CTA_PRIMARY } from "./copy";
 
 const LINKS = [
   { label: "What it finds", href: "#detection" },
-  { label: "How it works", href: "#why" },
+  { label: "The software", href: "#software" },
   { label: "Who it's for", href: "#who" },
 ];
 

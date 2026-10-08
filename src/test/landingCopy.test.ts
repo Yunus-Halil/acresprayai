@@ -12,7 +12,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  AUDIENCES, CTA_PRIMARY, DETECTION, FLOW, HERO, STATUS_BADGE,
+  AUDIENCES, CTA_PRIMARY, HERO, RAIL, SOFTWARE, STATEMENT, STATUS_BADGE,
 } from "@/components/landing/copy";
 
 const LANDING = join(__dirname, "..", "components", "landing");
@@ -21,8 +21,9 @@ const LANDING = join(__dirname, "..", "components", "landing");
 const VISIBLE: string[] = [
   STATUS_BADGE, CTA_PRIMARY,
   HERO.headline, HERO.lead, ...HERO.shifts, HERO.brand, ...HERO.body,
-  DETECTION.eyebrow, DETECTION.headline, ...DETECTION.body,
-  FLOW.headline, FLOW.sub, ...FLOW.steps.flatMap(s => [s.label, s.body]),
+  STATEMENT.lead.map(p => p.text).join(""), STATEMENT.findings, STATEMENT.softwareHeading,
+  ...SOFTWARE.flatMap(s => [s.name, s.body]),
+  ...RAIL.flatMap(r => [r.eyebrow, r.title, r.alt]),
   ...AUDIENCES.flatMap(a => [a.title, a.body]),
 ];
 

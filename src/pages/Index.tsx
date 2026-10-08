@@ -1,7 +1,7 @@
 import { LandingNav } from "@/components/landing/LandingNav";
 import { Hero } from "@/components/landing/Hero";
-import { DetectionSection } from "@/components/landing/DetectionSection";
-import { WhySection } from "@/components/landing/WhySection";
+import { CardRail } from "@/components/landing/CardRail";
+import { Statement } from "@/components/landing/Statement";
 import { Audiences } from "@/components/landing/Audiences";
 import { PilotCTA } from "@/components/landing/PilotCTA";
 import { LandingFooter } from "@/components/landing/LandingFooter";
@@ -17,8 +17,8 @@ const Index = () => (
     {/* The nav sits over the hero film, which is the first screen; nothing decorates the page behind it. */}
     <LandingNav />
     <Hero />
-    <DetectionSection />
-    <WhySection />
+    <CardRail />
+    <Statement />
     <Audiences />
     <PilotCTA />
     <LandingFooter />
