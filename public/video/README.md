@@ -6,7 +6,7 @@ dress up an old one.
 
 | File | Shows | Used by |
 |---|---|---|
-| `cockpit-sim.mp4` / `.webm` | The flight planner running a mission simulation at 32× | The Cockpit section |
+| `cockpit-sim.mp4` / `.webm` | The flight planner running a mission simulation at 32× | Nothing, since 2026-10-08: the cockpit section was cut while the product is in closed testing. Kept for when it comes back. |
 | `cockpit-sim-poster.jpg` | Frame 11s in — tank dynamics, transport and full telemetry all visible | Poster for the above |
 | `hero.mp4` / `hero-1280.mp4` | The hero film: real flights, the field, the route and the map, 18 s, muted | The hero, behind the headline; the 1280 cut for screens under 900 px |
 | `hero-poster.jpg` | Frame 6.5 s in, the orchard with the route drawn over it | Poster for the above, and all that anyone on reduced motion or a slow connection sees |

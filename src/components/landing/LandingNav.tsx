@@ -2,7 +2,7 @@ import { Wordmark } from "./Wordmark";
 import { CTA_PRIMARY } from "./copy";
 
 const LINKS = [
-  { label: "How it finds weeds", href: "#detection" },
+  { label: "What it finds", href: "#detection" },
   { label: "How it works", href: "#why" },
   { label: "Who it's for", href: "#who" },
 ];

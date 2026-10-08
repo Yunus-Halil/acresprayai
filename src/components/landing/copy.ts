@@ -36,6 +36,11 @@
  *    product has not yet proven on every field, crop, altitude and camera,
  *    and it stands because the founder chose it; it does not extend to
  *    invented numbers, a species named from pixels, or autonomous flight.
+ * 9. HOW it finds weeds is a trade secret and stays off the page entirely
+ *    (Yunus, 2026-10-08). The page says what it finds, what it measures and
+ *    what happens next; never the pattern it reads, the rows, the spacing,
+ *    the signal, or any step of the method. The method lives in
+ *    docs/features/weed-scout.md, for the team.
  */
 
 /**
@@ -58,8 +63,8 @@ export const CONTACT_EMAIL = "yunus@swathwise.com";
  *
  * The headline is a lead that stands still and a last line that turns: what
  * the intelligence is built for. The one paragraph under the film is the
- * whole promise, as broad as it is: upload the map, it learns the field,
- * finds the weeds, measures them, you confirm, it acts.
+ * whole promise, as broad as it is: upload the map, it finds the weeds,
+ * measures them, you confirm, it acts. Not a word about how.
  */
 export const HERO = {
   /** The full sentence, for anywhere that needs the headline as one line. */
@@ -76,51 +81,50 @@ export const HERO = {
   /** The brand line, under the headline. Kept verbatim. */
   brand: "Precision Agriculture, Precisely Simple.",
   body: [
-    "Upload your field map. SwathWise learns your field, finds the weeds, all of them, measures each one, and turns what you confirm into action.",
+    "Upload your field map. SwathWise finds the weeds, all of them, measures each one, and turns what you confirm into action.",
   ],
 };
 
 /**
- * The detection section: how it finds weeds, in three sentences a farmer can
- * repeat. The method stays in docs/features/weed-scout.md.
+ * The findings section: what it finds and what you get for each one. Not
+ * how (rule 9). A farmer wants to see the finding; the method is ours.
  */
 export const DETECTION = {
-  eyebrow: "HOW IT FINDS WEEDS",
-  headline: "It learns your rows, then it finds what is not your crop.",
+  eyebrow: "WHAT IT FINDS",
+  headline: "Every weed on the map, measured, and the rest of the field read too.",
   body: [
-    "Every field has a planting pattern: the rows, the spacing, the size of the plants. SwathWise measures that pattern from the field map itself, so it knows what the crop looks like before it looks for anything else.",
-    "Vegetation that does not fit the pattern is a finding: likely weeds and weed patches, a thin stand, bare or wet ground. Each one is drawn on the map with its size and area, and you decide what gets treated.",
+    "Weeds and weed patches, a thin stand, bare or wet ground, and any patch that is not behaving like the rest of the field. Each finding is drawn on the map with its size and area.",
+    "You decide what gets treated. Nothing is sprayed on a finding you did not confirm.",
   ],
 };
 
 /**
- * The core product flow. Five steps, one line each, and the weed map is the
- * first one because everything after it is derived from it.
+ * The core product flow. Three steps, one line each, and the weed map is the
+ * first one because everything after it is derived from it. Pricing, the
+ * flight simulation and the application record are real and are not on the
+ * page: while the product is in closed testing the page stays vague about
+ * everything after the finding (Yunus, 2026-10-08).
  */
 export const FLOW = {
-  headline: "Found it. Sized it. Priced it. Flew it. Filed it.",
+  headline: "Found it. Sized it. Treated it.",
   sub: "The weed map is the foundation. Everything after it is derived from what you confirmed on it.",
   steps: [
-    { label: "FOUND IT", body: "Weeds and abnormal vegetation, found against your field's own planting pattern." },
+    { label: "FOUND IT", body: "The weeds and the abnormal vegetation, found on your field map." },
     { label: "SIZED IT", body: "Every confirmed finding becomes a measured treatment area." },
-    { label: "PRICED IT", body: "Treatment cost from your own inputs and per-acre costs." },
-    { label: "FLEW IT", body: "Confirmed areas become a spray mission for supported aircraft. You fly it, on your license." },
-    { label: "FILED IT", body: "The application record, written from the job that was actually flown." },
+    { label: "TREATED IT", body: "Confirmed areas become a spray mission for supported aircraft. You fly it, on your license." },
   ],
-  /** The architecture, as one line. Arrows, not dashes. */
-  chain: "field map → planting pattern → weed findings → your review → treatment zones → cost → mission → record",
 };
 
 export const AUDIENCES = [
   {
     label: "FARMERS",
     title: "Scout the whole field without walking it",
-    body: "Fly it as often as the season demands, see the weed pressure before it goes to seed, and treat a strip instead of a section.",
+    body: "Fly it as often as the season demands, see the weed pressure before it goes to seed, and treat only what needs it.",
   },
   {
     label: "SPRAY OPERATORS",
     title: "Quote the acres you will actually treat",
-    body: "Arrive with the zones found, sized and priced, fly a mission that only crosses treated ground, and hand over a record ready to sign.",
+    body: "Arrive with the zones already found and sized, and fly only the ground that needs treating.",
   },
   {
     label: "AGRONOMISTS AND AGENCIES",

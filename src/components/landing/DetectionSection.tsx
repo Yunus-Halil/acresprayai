@@ -3,13 +3,12 @@ import { Shot } from "./Shot";
 import { DETECTION } from "./copy";
 
 /**
- * The detection section. This is the product, and it sits before the flight
+ * The findings section. This is the product, and it sits before the flight
  * planning because a farmer who does not believe the finding will not read
- * about the flying.
+ * about the flying. WHAT it finds, never HOW: the method is a trade secret
+ * (copy.ts, rule 9) and no sentence here may describe a step of it.
  *
- * Three sentences and a real scan, nothing more. Farmers want to see the
- * finding, not how the scan gets there, so the method stays in
- * docs/features/weed-scout.md and off this page. It follows the hero's dark
+ * Two sentences and a real scan, nothing more. It follows the hero's dark
  * band directly, so the page goes film, band, this, with no paper between.
  */
 export const DetectionSection = () => (

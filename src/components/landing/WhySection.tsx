@@ -1,40 +1,14 @@
-import type { ReactNode } from "react";
 import { Reveal } from "./Reveal";
-import { Frame, Screenshot, Shot } from "./Shot";
+import { Shot } from "./Shot";
 import { FLOW } from "./copy";
 
-type RowProps = {
-  title: string;
-  body: string;
-  /** Mono data line naming what the screenshot actually shows. */
-  footnote: string;
-  media: ReactNode;
-  /** Screenshot on the left on wide viewports. Text always comes first on mobile. */
-  mediaFirst?: boolean;
-};
-
-const Row = ({ title, body, footnote, media, mediaFirst = false }: RowProps) => (
-  <Reveal
-    className={`grid items-center gap-10 lg:gap-[70px] ${
-      mediaFirst ? "lg:grid-cols-[1fr_380px]" : "lg:grid-cols-[380px_1fr]"
-    }`}
-  >
-    <div className={mediaFirst ? "order-2 lg:order-1" : ""}>
-      <h3 className="m-0 text-[24px] font-semibold tracking-[-0.02em] text-sw-ink sm:text-[28px]">
-        {title}
-      </h3>
-      <p className="m-0 mt-4 text-base leading-[1.55] text-sw-muted">{body}</p>
-      <div className="mt-5 font-plex text-xs leading-[2] text-sw-muted">{footnote}</div>
-    </div>
-    <div className={mediaFirst ? "order-1 lg:order-2" : ""}>{media}</div>
-  </Reveal>
-);
-
 /**
- * How it works. The detection section above says how the weeds are found;
- * this one says what happens to them, in the order it happens, in one strip,
- * one picture and two rows. It used to be four rows; the strip already says
- * sized and priced, so those two went.
+ * How it works: three steps and one picture. The findings section above says
+ * what is found; this one says what happens to it. It used to carry four rows
+ * of screenshots, a cockpit section and the application record; Yunus cut
+ * them on 2026-10-08 ("field intelligence, finds all the weeds, the flight
+ * plan is too much"), so the page stays vague about the flying while the
+ * product is in closed testing.
  *
  * Not one aircraft. The route capture happens to be from a spray drone, and the
  * caption says which; the copy talks about the file, because the file is what
@@ -54,10 +28,9 @@ export const WhySection = () => (
       </p>
     </Reveal>
 
-    {/* The five steps, as one strip. The first is the weed map; the rest are
-        derived from it, and the chain underneath says so in one line. */}
+    {/* The three steps, as one strip. The first is the weed map; the rest are derived from it. */}
     <Reveal className="mt-10 sm:mt-14">
-      <ol className="grid gap-6 sm:grid-cols-2 lg:grid-cols-5 lg:gap-8">
+      <ol className="grid gap-6 sm:grid-cols-3 lg:gap-10">
         {FLOW.steps.map((step, i) => (
           <li key={step.label} className="border-t-2 border-sw-ink pt-4">
             <div className="flex items-baseline justify-between font-plex text-xs tracking-[0.1em] text-sw-green">
@@ -68,9 +41,6 @@ export const WhySection = () => (
           </li>
         ))}
       </ol>
-      <div className="mt-6 font-plex text-[11px] leading-[1.8] tracking-[0.04em] text-sw-muted sm:text-xs">
-        {FLOW.chain}
-      </div>
     </Reveal>
 
     <Reveal className="mt-12 sm:mt-16">
@@ -84,41 +54,5 @@ export const WhySection = () => (
         imgClassName="mx-auto max-h-[700px] w-auto max-w-full"
       />
     </Reveal>
-
-    <div className="mt-16 flex flex-col gap-16 sm:mt-[90px] sm:gap-[90px]">
-
-      <Row
-        mediaFirst
-        title="One button, one flight, only the spots you confirmed"
-        body="Confirm the findings and the mission is built: a route that crosses treated ground and nothing else, the gallons, the batteries, where the tank runs dry. Download the file for your aircraft and fly it."
-        footnote="FILES FOR SUPPORTED SPRAY AIRCRAFT · GROUND-STATION WAYPOINTS"
-        media={
-          <Frame>
-            <div className="grid gap-2 sm:grid-cols-[220px_1fr]">
-              <Screenshot
-                src="/screens/mission-summary.png"
-                alt="Mission summary with battery and spray estimates"
-                className="h-[300px] w-full object-cover object-top sm:h-[460px]"
-              />
-              <Screenshot
-                src="/screens/mission-route.jpg"
-                alt="Stitched field map with the planned route"
-                className="h-[300px] w-full object-cover sm:h-[460px]"
-              />
-            </div>
-          </Frame>
-        }
-      />
-
-      <Row
-        title="Forecast conditions for planning a spray window"
-        body="Wind, gusts, humidity, rain and temperature for your field over the next three days, checked against the limits you set, so the likely spray windows are easy to see."
-        footnote="WIND · HUMIDITY · RAIN · LIKELY WINDOWS, NEXT 3 DAYS"
-        media={
-          <Shot src="/screens/weather.png" alt="Weather dashboard with best spray windows" />
-        }
-      />
-
-    </div>
   </section>
 );

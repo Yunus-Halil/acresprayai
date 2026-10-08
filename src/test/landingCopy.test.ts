@@ -22,7 +22,7 @@ const VISIBLE: string[] = [
   STATUS_BADGE, CTA_PRIMARY,
   HERO.headline, HERO.lead, ...HERO.shifts, HERO.brand, ...HERO.body,
   DETECTION.eyebrow, DETECTION.headline, ...DETECTION.body,
-  FLOW.headline, FLOW.sub, ...FLOW.steps.flatMap(s => [s.label, s.body]), FLOW.chain,
+  FLOW.headline, FLOW.sub, ...FLOW.steps.flatMap(s => [s.label, s.body]),
   ...AUDIENCES.flatMap(a => [a.title, a.body]),
 ];
 
@@ -95,9 +95,7 @@ describe("written for a farmer", () => {
 });
 
 describe("the pilot flies", () => {
-  it("says the flight and the record are the applicator's", () => {
-    const src = componentSource();
-    expect(src).toMatch(/APPLICATOR'S RESPONSIBILITY/);
+  it("says the flight is the applicator's", () => {
     expect(VISIBLE.join(" ")).toMatch(/your license/i);
   });
 
@@ -151,6 +149,22 @@ describe("the category", () => {
     expect(all).toMatch(/bare (or wet )?ground/i);
     expect(all).toMatch(/thin stand/i);
     expect(all).toMatch(/wet/i);
+  });
+});
+
+describe("the method is a trade secret", () => {
+  // Rule 9. The page says what it finds and never how: no pattern, no rows,
+  // no spacing, no signal, no step of the method, in copy.ts or inline.
+  const METHOD = /planting pattern|crop pattern|\brows\b|row spacing|spacing|learns (your|the) (field|rows)|vegetation index|signal|threshold|algorithm|detector/i;
+
+  it("the visible copy describes no step of the method", () => {
+    expect(VISIBLE.filter(s => METHOD.test(s))).toEqual([]);
+  });
+
+  it("nor does any inline string in the landing components", () => {
+    // A line of visitor text is one with no tag, no brace and no equals sign: JSX text, nothing else.
+    const lines = componentSource().split("\n").filter(l => /^\s*[^<{}=]+$/.test(l) && !/^\s*(\*|\/\/)/.test(l) && METHOD.test(l));
+    expect(lines).toEqual([]);
   });
 });
 
