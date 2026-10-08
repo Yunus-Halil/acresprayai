@@ -16,7 +16,8 @@
     "build:share-card": "node scripts/build-share-card.cjs",
     "build:favicons": "node scripts/build-favicons.cjs",
     "test:live": "node tests/integration/weed-v1-live-validation.mjs",
-    "bench:frames": "vite-node scripts/bench/sourceFrameBench.ts --"
+    "bench:frames": "vite-node scripts/bench/sourceFrameBench.ts --",
+    "bench:pattern": "vite-node scripts/bench/patternBench.ts --"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",

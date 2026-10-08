@@ -40,7 +40,7 @@ import type { RasterSource } from "../cellFeatures";
 import { shorth } from "../weedScout/baseline";
 import { minAreaPx } from "../weedScout/blobs";
 import {
-  type FloatImage, MIN_TILE_CONFIDENCE, VEGETATION_FRACTION_RANGE, checkPitch, downsampleFactor, fitWindow,
+  type FloatImage, HINT_SEARCH_DEG, MIN_TILE_CONFIDENCE, VEGETATION_FRACTION_RANGE, checkPitch, downsampleFactor, fitWindow,
   groundAngleToPixel, phaseFromImage, pixelAngleToGround, poolWindow, projectionProfile, rowAngle, rowPitch, toSparse,
 } from "../weedScout/rows";
 import type { RowTileFit } from "../weedScout/types";
@@ -61,6 +61,13 @@ export type PhotoParams = {
   windowM?: number;
   /** Blobs under this ground area are specks, not plants. */
   minBlobAreaCm2?: number;
+  /**
+   * The direction the rows run, ground degrees counterclockwise from east,
+   * when the grower has said so ("rows run this way"). Every window then
+   * searches only near it and the square-grid tiebreak is off. Null or
+   * absent: the pass decides.
+   */
+  rowAngleDeg?: number | null;
 };
 
 export const DEFAULT_MIN_BLOB_AREA_CM2 = 4;
@@ -123,6 +130,30 @@ export const ROW_LINE_MIN_MASS = 30;
 export const ROW_LINE_MAX_TILT_DEG = 3;
 /** A block needs this many fitted windows. A lone window that found rows beside a road found shrubs. */
 export const MIN_BLOCK_WINDOWS = 3;
+/**
+ * A square grid: vines 3.5 m along the wire and rows 3.5 m apart fit both
+ * ways. The direction a quarter turn from a window's best fit, at the same
+ * spacing, is a square grid when its pitch confidence is at least this share
+ * of the fit's own.
+ */
+export const SQUARE_GRID_SHARE = 0.6;
+/**
+ * On a square grid the rows run the way the brightness profile is stronger:
+ * the wire, the net edge, the furrow or the wheel track runs along the row
+ * and is bright. Any preference for the quarter turn is enough (1.0): on
+ * the vineyard frames brightness favoured the wire by 1.02 to 1.7 where the
+ * vegetation had chosen across it, and on the orchard, which is not a
+ * square grid but can pass the pitch check, brightness favoured the tree
+ * rows by five to one. Vegetation alone cannot decide: across the rows the
+ * bare alleys cut deep in both crops.
+ */
+export const SQUARE_GRID_BRIGHTNESS_RATIO = 1.0;
+/** A block with under this share of the main block's windows... */
+export const STRAY_BLOCK_WINDOW_SHARE = 0.2;
+/** ...whose fits mostly fell back on a candidate spacing, or whose median confidence is under this share of the main block's, is shrubs by a road and not a planting. */
+export const STRAY_BLOCK_CONFIDENCE_SHARE = 0.85;
+/** Two parts of one component on the same row, nearer along it than this share of a plant, are one plant the split cut in two. Two plants that touch sit further apart, or they would be one canopy. */
+export const DOUBLE_MERGE_SHARE = 0.6;
 /** No crop is seeded closer than this along the row; a smaller "spacing" is mask speckle, not plants. */
 export const MIN_SEED_SPACING_M = 0.05;
 /** A row needs this many on-row blobs before its gaps say anything. */
@@ -194,6 +225,8 @@ export type PhotoWindow = {
   own: { angleDeg: number; pitchM: number; confidence: number } | null;
   /** The block's row lines, each settled on its own row; shared by every window of the block. Null before blocks. */
   rowLines: RowLine[] | null;
+  /** The plants here sit on a square grid, so the row direction was decided by brightness, not by the vegetation alone. */
+  squareGrid: boolean;
   seed: SeedFit | null;
   onRow: number;
   offRow: number;
@@ -220,6 +253,34 @@ export type PhotoSummary = {
   offRow: number;
   unplaced: number;
   skips: number;
+  /** Plantings in the photo, each with its own rows. */
+  blocks: number;
+  /** Any block sits on a square grid, where the direction is brightness's call or the grower's. */
+  squareGrid: boolean;
+};
+
+/**
+ * One planting: the windows that share a row model, the model, and its
+ * settled row lines. Coordinates are the photo's local metres, y up, like
+ * every RowTileFit here; the caller georeferences them.
+ */
+export type PhotoBlock = {
+  id: number;
+  /** Ground degrees counterclockwise from +x, in [0, 180). */
+  angleDeg: number;
+  pitchM: number;
+  phaseM: number;
+  /** The point the phase is referenced to. */
+  centre: { x: number; y: number };
+  signal: RowSignal;
+  /** Window indices. */
+  windows: number[];
+  rowLines: RowLine[];
+  squareGrid: boolean;
+  /** Blobs on pattern in this block's windows. */
+  plants: number;
+  /** Median spacing along the row where a window measured one. */
+  seedSpacingM: number | null;
 };
 
 export type PhotoPattern = {
@@ -234,10 +295,19 @@ export type PhotoPattern = {
   canopyClosed: boolean;
   windows: PhotoWindow[];
   blobs: PhotoBlob[];
+  blocks: PhotoBlock[];
   summary: PhotoSummary;
   /** Plain-language notes the UI shows verbatim. */
   notes: string[];
 };
+
+/** The mean direction of lines, which wrap at 180: a mean of doubled angles. */
+const meanAngleDeg = (angles: number[]): number => {
+  let c = 0, s = 0;
+  for (const a of angles) { const t = (2 * a * Math.PI) / 180; c += Math.cos(t); s += Math.sin(t); }
+  return ((((Math.atan2(s, c) / 2) * 180) / Math.PI) % 180 + 180) % 180;
+};
+const angleDiffDeg = (a: number, b: number): number => { const d = Math.abs((((a - b) % 180) + 180) % 180); return Math.min(d, 180 - d); };
 
 const median = (xs: number[]): number | null => {
   if (!xs.length) return null;
@@ -809,7 +879,16 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   const { mask, vegetationFraction } = photoMask(px, windowPx);
   const luma = lumaRaster(px);
 
-  type Fitted = { fit: RowTileFit; signal: RowSignal };
+  type Fitted = { fit: RowTileFit; signal: RowSignal; squareGrid?: boolean };
+  const profileVariance = (prof: Float64Array): number => {
+    let n = 0, m = 0;
+    for (let i = 0; i < prof.length; i++) if (Number.isFinite(prof[i])) { n++; m += prof[i]; }
+    if (n < 2) return 0;
+    m /= n;
+    let v = 0;
+    for (let i = 0; i < prof.length; i++) if (Number.isFinite(prof[i])) v += (prof[i] - m) ** 2;
+    return v / n;
+  };
   // A fit that measured its own spacing beats one that fell back on the
   // candidate it was handed: a harmonic of the true spacing is self-consistent
   // at the harmonic's candidate too, but its peak is the weaker one. And
@@ -900,15 +979,15 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
       }
       return f >= VEGETATION_FRACTION_RANGE[0] && f <= VEGETATION_FRACTION_RANGE[1];
     };
-    const at = (growerSpacingM: number, signal: RowSignal): Fitted | null => {
+    const at = (growerSpacingM: number, signal: RowSignal, hint: number | null = angleHintDeg): Fitted | null => {
       const { x0, y0, x1, y1 } = neighbourhood(w, growerSpacingM);
       if (signal === "vegetation" && !maskableOver(x0, y0, x1, y1)) return null;
-      const key = `${x0},${y0},${x1},${y1},${growerSpacingM.toFixed(4)},${signal},${angleHintDeg == null ? "" : angleHintDeg.toFixed(1)}`;
+      const key = `${x0},${y0},${x1},${y1},${growerSpacingM.toFixed(4)},${signal},${hint == null ? "" : hint.toFixed(1)}`;
       let fit = fitCache.get(key);
       if (!fit) {
         fit = signal === "vegetation"
-          ? fitWindow({ mask, width: px.width, x0, y0, x1, y1, gsdM, originX: x0 * gsdM, originY: -y0 * gsdM, growerSpacingM, angleHintDeg })
-          : fitWindowBrightness({ luma, width: px.width, x0, y0, x1, y1, gsdM, growerSpacingM, angleHintDeg, vegetationFraction: vegFraction });
+          ? fitWindow({ mask, width: px.width, x0, y0, x1, y1, gsdM, originX: x0 * gsdM, originY: -y0 * gsdM, growerSpacingM, angleHintDeg: hint })
+          : fitWindowBrightness({ luma, width: px.width, x0, y0, x1, y1, gsdM, growerSpacingM, angleHintDeg: hint, vegetationFraction: vegFraction });
         fitCache.set(key, fit);
       }
       return { signal, fit };
@@ -947,16 +1026,78 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     }
     return localisePhase(w, best);
   };
+  /** Is the quarter-turned direction as good a fit as this one on the window's neighbourhood, and which way is brighter? Cached per neighbourhood. */
+  const squareCache = new Map<string, { angleDeg: number; turn: boolean } | null>();
+  function squareCheck(w: { x0: number; y0: number; x1: number; y1: number }, fit: { angleDeg: number; pitchM: number }): { angleDeg: number; turn: boolean } | null {
+    const n = neighbourhood(w, fit.pitchM);
+    const key = `${n.x0},${n.y0},${n.x1},${n.y1},${fit.pitchM.toFixed(3)},${fit.angleDeg.toFixed(1)}`;
+    const cached = squareCache.get(key);
+    if (cached !== undefined) return cached;
+    const factor = downsampleFactor(gsdM, fit.pitchM), sampleM = gsdM * factor;
+    const nw = n.x1 - n.x0 + 1, nh = n.y1 - n.y0 + 1;
+    const veg = toSparse(poolWindow(mask, px.width, n.x0, n.y0, nw, nh, factor));
+    const perpDeg = (fit.angleDeg + 90) % 180;
+    let out: { angleDeg: number; turn: boolean } | null = null;
+    if (veg.xs.length > 0) {
+      const along = rowPitch(projectionProfile(veg, groundAngleToPixel(fit.angleDeg)).profile, sampleM, fit.pitchM);
+      const perpProfile = projectionProfile(veg, groundAngleToPixel(perpDeg)).profile;
+      const across = rowPitch(perpProfile, sampleM, fit.pitchM);
+      // Plants 20 cm apart along a 40 cm row also peak at 40 cm across the
+      // turn: a harmonic. The quarter turn is a grid only when its own
+      // fundamental is the row pitch, not half of it.
+      const half = rowPitch(perpProfile, sampleM, fit.pitchM / 2);
+      const harmonic = half.confidence >= 0.7 * across.confidence && checkPitch(half.pitchM, fit.pitchM / 2);
+      if (!harmonic && across.confidence >= Math.max(MIN_TILE_CONFIDENCE, SQUARE_GRID_SHARE * along.confidence) && checkPitch(across.pitchM, fit.pitchM)) {
+        const bri = toSparse(highPassPositive(poolFloat(luma, px.width, n.x0, n.y0, nw, nh, factor), Math.max(2, Math.round((2 * fit.pitchM) / sampleM))));
+        const v0 = profileVariance(projectionProfile(bri, groundAngleToPixel(fit.angleDeg)).profile);
+        const v1 = profileVariance(projectionProfile(bri, groundAngleToPixel(perpDeg)).profile);
+        out = { angleDeg: perpDeg, turn: v1 >= SQUARE_GRID_BRIGHTNESS_RATIO * v0 };
+      }
+    }
+    squareCache.set(key, out);
+    return out;
+  }
   const canopyClosed = vegetationFraction >= CANOPY_CLOSED;
   if (canopyClosed) notes.push("The canopy is closed in this photo: almost every pixel is vegetation, so no plant is separate and blobs are not placed. Rows can still be found from brightness.");
 
   const windows: PhotoWindow[] = [];
   for (let i = 0; i < plan.length; i++) {
     const w = plan[i];
-    const { fit, signal } = fitOne(w, null);
-    windows.push({ index: i, ...w, fit, signal, usable: fit.confidence >= MIN_TILE_CONFIDENCE, block: null, own: null, rowLines: null, seed: null, onRow: 0, offRow: 0 });
+    const { fit, signal } = fitOne(w, params.rowAngleDeg ?? null);
+    windows.push({ index: i, ...w, fit, signal, usable: fit.confidence >= MIN_TILE_CONFIDENCE, block: null, own: null, rowLines: null, squareGrid: false, seed: null, onRow: 0, offRow: 0 });
     if (opts.onProgress?.(i + 1, plan.length) === false) break;
     if (opts.yieldBetweenWindows !== false) await tick();
+  }
+
+  // A square grid fits both ways on vegetation (vines 3.5 m along the wire
+  // and rows 3.5 m apart), and the windows chose across the trellis, each on
+  // its own. Decided once per photo: the direction a quarter turn from the
+  // photo's main direction is tried at the main spacing on the whole photo;
+  // where it is nearly as good, brightness decides, because the wire, the
+  // net edge or the wheel track runs along the row and is bright. Every
+  // window is then refitted near the chosen direction, so the blocks come out
+  // whole. The grower's direction, when given, settles it without asking.
+  if (params.rowAngleDeg == null) {
+    const good = windows.filter(w => w.usable && w.signal === "vegetation" && selfConsistent(w.fit));
+    const mainPitch = median(good.map(w => w.fit.pitchM));
+    if (good.length >= plan.length / 4 && mainPitch != null) {
+      const mainAngle = meanAngleDeg(good.map(w => w.fit.angleDeg));
+      const sq = squareCheck({ x0: 0, y0: 0, x1: px.width - 1, y1: px.height - 1 }, { angleDeg: mainAngle, pitchM: mainPitch });
+      if (sq) {
+        // Whichever way was chosen, every window is refitted near it: on a
+        // square grid the first pass splits between the two directions
+        // window by window, and a split photo is two blocks of one planting.
+        const chosen = sq.turn ? sq.angleDeg : mainAngle;
+        for (const w of windows) {
+          if (w.usable && angleDiffDeg(w.fit.angleDeg, chosen) <= HINT_SEARCH_DEG) { w.squareGrid = true; continue; }
+          const { fit, signal } = fitOne(w, chosen);
+          if (fit.confidence >= MIN_TILE_CONFIDENCE && selfConsistent(fit) && angleDiffDeg(fit.angleDeg, chosen) <= HINT_SEARCH_DEG + 0.5 && checkPitch(fit.pitchM, mainPitch)) {
+            w.fit = fit; w.signal = signal; w.usable = true; w.squareGrid = true;
+          }
+        }
+        if (opts.yieldBetweenWindows !== false) await tick();
+      }
+    }
   }
 
   // Second pass with the median angle as a hint, for windows that could not
@@ -1144,6 +1285,26 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     mergeAll();
   }
   mapBlocks();
+  // Stray blocks: a few windows beside a road or a hedge that found rows in
+  // shrubs. Against the main block (the most windows), a block with under a
+  // fifth of its windows whose fits mostly fell back on a candidate spacing
+  // or whose median confidence is well under the main block's is dropped;
+  // its windows lose their rows. A second planting keeps its block: it has
+  // the windows, or the confidence, or both.
+  {
+    const live = blocks.map((b, id) => ({ id, b })).filter(x => models[x.id] && x.b.length > 0);
+    const main = live.reduce((best, x) => (x.b.length > best.b.length ? x : best), live[0] ?? { id: -1, b: [] as number[] });
+    if (main.id >= 0) {
+      const mainConf = median(main.b.map(i => windows[i].fit.confidence)) ?? 0;
+      for (const { id, b } of live) {
+        if (id === main.id || b.length >= STRAY_BLOCK_WINDOW_SHARE * main.b.length) continue;
+        const fromGrower = b.filter(i => windows[i].fit.pitchFromGrower).length * 2 > b.length;
+        const conf = median(b.map(i => windows[i].fit.confidence)) ?? 0;
+        if (fromGrower || conf < STRAY_BLOCK_CONFIDENCE_SHARE * mainConf) { blocks[id] = []; models[id] = null; }
+      }
+      mapBlocks();
+    }
+  }
   // Holes: a window without rows whose neighbours mostly belong to one block
   // joins it. Twice, so a hole two windows wide closes from both sides.
   const filled = new Set<number>();
@@ -1245,6 +1406,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     return { model, rowLines: settle(model) };
   };
   const blockNotes: string[] = [];
+  const blocksOut: PhotoBlock[] = [];
   for (let id = 0; id < blocks.length; id++) {
     let m = models[id];
     if (!m) continue;
@@ -1267,6 +1429,10 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
       };
       w.signal = m.signal; w.usable = true; w.block = id; w.rowLines = refit.rowLines;
     }
+    blocksOut.push({
+      id, angleDeg: m.angleDeg, pitchM: m.pitchM, phaseM: m.phaseM, centre: m.ref, signal: m.signal, windows: all, rowLines: refit.rowLines,
+      squareGrid: all.some(i => windows[i].squareGrid), plants: 0, seedSpacingM: null,
+    });
     blockNotes.push(`${all.length} windows at ${m.angleDeg.toFixed(0)}° and ${(m.pitchM * 100).toFixed(0)} cm`);
   }
   if (blockNotes.length > 1) notes.push(`Rows run ${blockNotes.length} ways in this photo: ${blockNotes.join("; ")}. Each block has its own lines, which stop where the blocks meet.`);
@@ -1289,7 +1455,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     // Nothing is placed in a closed canopy, and its one blob is the photo.
     return w?.usable && !canopyClosed ? splitAlongRow(b, measured.labels, px.width, w.fit, w.rowLines, gsdM, floorPx) : [b];
   });
-  const blobs: PhotoBlob[] = measured.blobs.map((b, id) => {
+  let blobs: PhotoBlob[] = measured.blobs.map((b, id) => {
     const x = b.sx / b.n, y = b.sy / b.n;
     const touchesBorder = b.minX === 0 || b.minY === 0 || b.maxX === px.width - 1 || b.maxY === px.height - 1;
     const areaM2 = b.n * gsdM * gsdM;
@@ -1328,6 +1494,44 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     const w = windows[b.window];
     if (Math.abs(b.acrossM) > onRowTolM(w.fit.pitchM)) { b.cls = "off-row"; w.offRow++; }
     else { b.cls = "on pattern"; w.onRow++; }
+  }
+
+  // Ragged canopies the split cut in two, and a branch cluster the mask
+  // holds apart from its tree: two on-row blobs on one row of one block,
+  // nearer along it than DOUBLE_MERGE_SHARE of a plant, are one plant. Two
+  // plants sit a seed spacing apart, further than that, or they would be
+  // one canopy.
+  if (plantDiameterM != null) {
+    const groups = new Map<string, PhotoBlob[]>();
+    for (const b of blobs) {
+      if (b.cls !== "on pattern" || b.rowIndex == null || b.alongM == null || b.window == null) continue;
+      const key = `${windows[b.window].block}:${b.rowIndex}`;
+      let g = groups.get(key);
+      if (!g) { g = []; groups.set(key, g); }
+      g.push(b);
+    }
+    const gone = new Set<PhotoBlob>();
+    for (const g of groups.values()) {
+      if (g.length < 2) continue;
+      g.sort((a, b) => a.alongM! - b.alongM!);
+      let keep = g[0];
+      for (let i = 1; i < g.length; i++) {
+        const b = g[i];
+        if (b.alongM! - keep.alongM! < DOUBLE_MERGE_SHARE * plantDiameterM) {
+          const n = keep.areaPx + b.areaPx;
+          keep.x = (keep.x * keep.areaPx + b.x * b.areaPx) / n; keep.y = (keep.y * keep.areaPx + b.y * b.areaPx) / n;
+          keep.acrossM = (keep.acrossM! * keep.areaPx + b.acrossM! * b.areaPx) / n; keep.alongM = (keep.alongM! * keep.areaPx + b.alongM! * b.areaPx) / n;
+          keep.areaPx = n; keep.areaM2 = n * gsdM * gsdM; keep.equivDiameterM = 2 * Math.sqrt(keep.areaM2 / Math.PI);
+          keep.touchesBorder = keep.touchesBorder || b.touchesBorder;
+          gone.add(b);
+          windows[b.window!].onRow--;
+          // The kept blob belongs to the window its centre now sits in.
+          const home = windowAt(Math.round(keep.x), Math.round(keep.y));
+          if (home && home.index !== keep.window) { windows[keep.window!].onRow--; home.onRow++; keep.window = home.index; }
+        } else keep = b;
+      }
+    }
+    if (gone.size) blobs = blobs.filter(b => !gone.has(b)).map((b, id) => ({ ...b, id }));
   }
 
   for (const w of windows) {
@@ -1378,7 +1582,17 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     offRow: count("off-row"),
     unplaced: count("unplaced"),
     skips: seeds.reduce((s, f) => s + f.skips, 0),
+    blocks: blocksOut.length,
+    squareGrid: blocksOut.some(b => b.squareGrid),
   };
+  for (const bl of blocksOut) {
+    const members = new Set(bl.windows);
+    bl.plants = blobs.filter(b => b.cls === "on pattern" && b.window != null && members.has(b.window)).length;
+    bl.seedSpacingM = median(bl.windows.map(i => windows[i].seed).filter((s): s is SeedFit => !!s && s.usable).map(s => s.spacingM));
+  }
+  if (summary.squareGrid && params.rowAngleDeg == null) {
+    notes.push("The plants sit on a square grid, so rows fit both ways. The lines follow the brighter direction (a trellis, a wire or a wheel track runs along the row). If they run the wrong way, set the row direction.");
+  }
 
   if (usable.length === 0) {
     notes.push("No window of this photo showed a row pattern the fit would trust. Either the crop is not in rows, the row spacing is wrong, the photo is too high for the rows to resolve, or the soil does not show between rows.");
@@ -1399,7 +1613,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     notes.push(`${measured.specks.toLocaleString()} specks under the minimum blob size were dropped against ${blobs.length.toLocaleString()} blobs kept. If plants are being dropped, lower the minimum blob size.`);
   }
 
-  return { width: px.width, height: px.height, gsdM, rowSpacingM, windowM, minBlobAreaCm2, vegetationFraction, canopyClosed, windows, blobs, summary, notes };
+  return { width: px.width, height: px.height, gsdM, rowSpacingM, windowM, minBlobAreaCm2, vegetationFraction, canopyClosed, windows, blobs, blocks: blocksOut, summary, notes };
 }
 
 /**

@@ -248,12 +248,92 @@ describe("Photo Scout on a rendered stand at 1 cm/px", () => {
     for (const w of left) expect(w.fit).toEqual(left[0].fit);
     for (const w of right) expect(w.fit).toEqual(right[0].fit);
     expect(r.notes.some(n => n.startsWith("Rows run 2 ways"))).toBe(true);
+    // And the blocks are on the result, one per side, with their windows and lines.
+    expect(r.blocks.length).toBe(2);
+    expect(r.summary.blocks).toBe(2);
+    for (const b of r.blocks) {
+      expect(b.windows.length).toBeGreaterThan(10);
+      expect(b.rowLines.length).toBeGreaterThan(3);
+      expect(b.plants).toBeGreaterThan(30);
+      expect(Math.abs(b.pitchM - pitch) / pitch).toBeLessThan(0.1);
+      for (const i of b.windows) expect(r.windows[i].block).toBe(b.id);
+    }
+    expect(r.summary.squareGrid).toBe(false);
     // And the trees of each side sit on that side's rows.
     const sideOf = (b: { x: number }) => (b.x * g < 20 ? 0 : 1);
     const onPattern = r.blobs.filter(b => b.cls === "on pattern" && !b.touchesBorder);
     expect(onPattern.filter(b => sideOf(b) === 0).length).toBeGreaterThan(40);
     expect(onPattern.filter(b => sideOf(b) === 1).length).toBeGreaterThan(40);
   }, 60_000);
+
+  it("reads a square grid by the bright wire along the row, and takes the grower's word over it", async () => {
+    // 2 cm/px, 40 m x 30 m. Vines 1 m across at 3.5 m along the row AND rows
+    // 3.5 m apart: the vegetation fits both ways. A bright trellis wire runs
+    // along each row (at 10 degrees); the rows are the wires, not the columns.
+    const W = 2000, H = 1500, g = 0.02, pitch = 3.5, th = (10 * Math.PI) / 180;
+    const rand = rng(21);
+    const rgba = new Uint8ClampedArray(W * H * 4);
+    const cx = (W / 2) * g, cy = -(H / 2) * g;
+    const tx = Math.cos(th), ty = Math.sin(th), nx = -Math.sin(th), ny = Math.cos(th);
+    const vines: { x: number; y: number }[] = [];
+    for (let k = -7; k <= 7; k++) for (let a = -30; a <= 30; a += pitch) vines.push({ x: cx + a * tx + k * pitch * nx, y: cy + a * ty + k * pitch * ny });
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      const x = i * g, y = -j * g;
+      const across = (x - cx) * nx + (y - cy) * ny;
+      const onWire = Math.abs(((((across + pitch / 2) % pitch) + pitch) % pitch) - pitch / 2) < 0.05;
+      let R = 150, G = 120, B = 85;
+      if (onWire) { R = 235; G = 232; B = 225; }
+      if (vines.some(v => (x - v.x) ** 2 + (y - v.y) ** 2 <= 0.25)) { R = 60; G = 125; B = 45; }
+      R += (rand() - 0.5) * 12; G += (rand() - 0.5) * 12; B += (rand() - 0.5) * 12;
+      const o = (j * W + i) * 4; rgba[o] = R; rgba[o + 1] = G; rgba[o + 2] = B; rgba[o + 3] = 255;
+    }
+    const r = await analysePhoto({ width: W, height: H, rgba }, { gsdM: g, rowSpacingM: "auto" }, { yieldBetweenWindows: false });
+    expect(r.summary.usableWindows).toBeGreaterThan(r.windows.length / 2);
+    expect(r.summary.squareGrid).toBe(true);
+    expect(angleDiff(r.summary.medianAngleDeg!, 10)).toBeLessThan(2);
+    expect(Math.abs(r.summary.medianPitchM! - pitch) / pitch).toBeLessThan(0.08);
+    expect(r.notes.some(n => /square grid/.test(n))).toBe(true);
+    // The grower says the rows run the other way: they do, and nothing argues.
+    const g2 = await analysePhoto({ width: W, height: H, rgba }, { gsdM: g, rowSpacingM: "auto", rowAngleDeg: 100 }, { yieldBetweenWindows: false });
+    expect(angleDiff(g2.summary.medianAngleDeg!, 100)).toBeLessThan(2);
+    expect(g2.notes.some(n => /square grid/.test(n))).toBe(false);
+  }, 90_000);
+
+  it("counts a ragged canopy once: two lobes on a thin neck are one tree, not a double", async () => {
+    // 2 cm/px. Trees 4.5 m between rows, 2 m along; each canopy is two
+    // discs 90 cm across, centres 80 cm apart along the row, joined by a
+    // 20 cm neck. Whatever the split makes of the neck, each tree is one plant.
+    const W = 2000, H = 1500, g = 0.02, pitch = 4.5, seed = 2.0, th = (-8 * Math.PI) / 180;
+    const rand = rng(33);
+    const rgba = new Uint8ClampedArray(W * H * 4);
+    const cx = (W / 2) * g, cy = -(H / 2) * g;
+    const tx = Math.cos(th), ty = Math.sin(th), nx = -Math.sin(th), ny = Math.cos(th);
+    const trees: { x: number; y: number }[] = [];
+    let planted = 0;
+    for (let k = -6; k <= 6; k++) for (let a = -30; a <= 30; a += seed) {
+      const t = { x: cx + a * tx + k * pitch * nx, y: cy + a * ty + k * pitch * ny };
+      trees.push(t);
+      if (t.x > 1 && t.x < W * g - 1 && t.y < -1 && t.y > -H * g + 1) planted++;
+    }
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      const x = i * g, y = -j * g;
+      let R = 150, G = 120, B = 85;
+      const green = trees.some(t => {
+        const dx = x - t.x, dy = y - t.y, along = dx * tx + dy * ty, across = dx * nx + dy * ny;
+        return (along - 0.4) ** 2 + across ** 2 <= 0.45 ** 2 || (along + 0.4) ** 2 + across ** 2 <= 0.45 ** 2 || (Math.abs(along) <= 0.4 && Math.abs(across) <= 0.1);
+      });
+      if (green) { R = 60; G = 125; B = 45; }
+      R += (rand() - 0.5) * 12; G += (rand() - 0.5) * 12; B += (rand() - 0.5) * 12;
+      const o = (j * W + i) * 4; rgba[o] = R; rgba[o + 1] = G; rgba[o + 2] = B; rgba[o + 3] = 255;
+    }
+    const r = await analysePhoto({ width: W, height: H, rgba }, { gsdM: g, rowSpacingM: "auto" }, { yieldBetweenWindows: false });
+    expect(Math.abs(r.summary.medianPitchM! - pitch) / pitch).toBeLessThan(0.08);
+    expect(r.summary.seedSpacingM).not.toBeNull();
+    expect(Math.abs(r.summary.seedSpacingM! - seed) / seed).toBeLessThan(0.1);
+    expect(r.summary.onPattern).toBeGreaterThan(planted * 0.85);
+    expect(r.summary.onPattern).toBeLessThan(planted * 1.1);
+    expect(r.summary.doubles).toBeLessThanOrEqual(Math.ceil(planted * 0.03));
+  }, 90_000);
 
   it("draws row segments through every usable window", async () => {
     const { px } = renderStand(stand);
