@@ -9,7 +9,6 @@ import { Steps } from "@/components/landing/Steps";
 import { Audiences } from "@/components/landing/Audiences";
 import { PilotCTA } from "@/components/landing/PilotCTA";
 import { LandingFooter } from "@/components/landing/LandingFooter";
-import { TileGrid } from "@/components/landing/TileGrid";
 import Seo from "@/components/Seo";
 
 const Index = () => (
@@ -19,20 +18,7 @@ const Index = () => (
       description="Map your farm from any drone, find the weeds and every patch that is not behaving like the rest of the field, treat only those spots, and keep the record. Any drone, any camera, any crop."
       path="/"
     />
-    {/* Faint ink grid, fading out below the hero. */}
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 opacity-[0.045]"
-      style={{
-        backgroundImage:
-          "linear-gradient(#141712 1px, transparent 1px), linear-gradient(90deg, #141712 1px, transparent 1px)",
-        backgroundSize: "72px 72px",
-        maskImage: "linear-gradient(to bottom, black 0, black 720px, transparent 1200px)",
-        WebkitMaskImage: "linear-gradient(to bottom, black 0, black 720px, transparent 1200px)",
-      }}
-    />
-    <TileGrid />
-
+    {/* The nav sits over the hero film, which is the first screen; nothing decorates the page behind it. */}
     <LandingNav />
     <Hero />
     <FeatureCards />

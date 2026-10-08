@@ -20,7 +20,7 @@ const LANDING = join(__dirname, "..", "components", "landing");
 /** Every string a visitor can read, flattened out of copy.ts. */
 const VISIBLE: string[] = [
   STATUS_BADGE, CTA_PRIMARY,
-  HERO.headline, HERO.brand, ...HERO.body, ...HERO.bullets,
+  HERO.headline, HERO.lead, ...HERO.shifts, HERO.brand, ...HERO.body, ...HERO.bullets,
   WHOLE_FIELD.eyebrow, WHOLE_FIELD.headline, ...WHOLE_FIELD.body, WHOLE_FIELD.findingsLead, ...WHOLE_FIELD.findings, WHOLE_FIELD.close,
   DETECTION.eyebrow, DETECTION.headline, ...DETECTION.body,
   FLOW.headline, FLOW.sub, ...FLOW.steps.flatMap(s => [s.label, s.body]), FLOW.chain,

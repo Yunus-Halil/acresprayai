@@ -59,7 +59,22 @@ export const CONTACT_EMAIL = "yunus@swathwise.com";
  * and no sentence here claims a recall nobody has measured on a flown field.
  */
 export const HERO = {
+  /** The full sentence, for anywhere that needs the headline as one line. */
   headline: "Turn ordinary drone imagery into a weed map.",
+  /** The first line of the hero, which stands still... */
+  lead: "Turn ordinary drone imagery into",
+  /**
+   * ...and the second, which turns through what the imagery becomes, in the
+   * order the product makes it: the weed map first, because everything else
+   * is derived from it. Each phrase completes the lead as one sentence.
+   */
+  shifts: [
+    "a weed map.",
+    "measured treatment areas.",
+    "a treatment cost.",
+    "a spray mission you fly.",
+    "an application record.",
+  ],
   /** The brand line, under the headline. Kept verbatim. */
   brand: "Precision Agriculture, Precisely Simple.",
   body: [

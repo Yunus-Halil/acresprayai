@@ -7,9 +7,12 @@ import logo from "@/assets/swathwise-logo.png";
  */
 export const Wordmark = ({
   size = "md",
+  tone = "ink",
   className = "",
 }: {
   size?: "sm" | "md";
+  /** Ink on paper, or paper on a dark surface such as the hero film. */
+  tone?: "ink" | "paper";
   className?: string;
 }) => (
   <span className={`flex items-center gap-2.5 ${className}`}>
@@ -22,8 +25,8 @@ export const Wordmark = ({
     <span
       className={
         size === "sm"
-          ? "font-semibold tracking-[-0.02em] text-sw-ink"
-          : "text-[22px] font-bold tracking-[-0.02em] text-sw-ink"
+          ? `font-semibold tracking-[-0.02em] ${tone === "paper" ? "text-white" : "text-sw-ink"}`
+          : `text-[22px] font-bold tracking-[-0.02em] ${tone === "paper" ? "text-white" : "text-sw-ink"}`
       }
     >
       SwathWise

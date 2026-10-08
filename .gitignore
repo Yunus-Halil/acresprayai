@@ -47,3 +47,6 @@ data/
 
 # Local test photos for Photo Scout (tens of MB, Yunus's own)
 samplerowtestingimagery/
+
+# The hero video master (50 MB 4K .mov). public/video/hero.* are the served derivatives.
+herovideo/
