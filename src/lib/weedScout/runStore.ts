@@ -16,6 +16,7 @@ import type { Identification } from "../weedCatalog/identification";
 import type { Verdict } from "./observations";
 import { type RunOptions, runWeedScout } from "./pipeline";
 import { runPhotoPass } from "./photoPass";
+import { loadRun, saveRun } from "./runCache";
 import type { ScoutInputs, ScoutProgress, ScoutResult } from "./types";
 
 /** The photo pass after the map pass: where it is, what it has found, and what it said when it finished. */
@@ -27,6 +28,8 @@ export type ScoutSession = {
   result: ScoutResult | null;
   error: string | null;
   photo: PhotoPassState | null;
+  /** What saving the run said, when it said anything. */
+  cache: string | null;
   selectedId: string | null;
   /** The operator's edits for this run, by spot id. */
   verdicts: Record<string, Verdict>;
@@ -37,7 +40,7 @@ export type ScoutSession = {
 };
 
 export const EMPTY_SESSION: ScoutSession = {
-  running: false, progress: null, result: null, error: null, photo: null, selectedId: null,
+  running: false, progress: null, result: null, error: null, photo: null, cache: null, selectedId: null,
   verdicts: {}, identifications: {}, notes: {}, localApplied: {},
 };
 
@@ -72,14 +75,24 @@ export function useScoutSession(taskId: string): ScoutSession {
  * alone (the caller sees `running` and offers Stop). Edits from the previous
  * run are cleared: they were keyed to spots that may no longer exist.
  */
-export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOptions, "onProgress" | "signal">): void {
+/** Where to save the run, when the operator is signed in. */
+export type PersistTo = { userId: string; fieldId: string | null };
+
+export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOptions, "onProgress" | "signal"> & { persist?: PersistTo }): void {
   if (getSession(taskId).running) return;
   const ctrl = new AbortController();
   controllers.set(taskId, ctrl);
   patchSession(taskId, {
-    running: true, progress: null, result: null, error: null, photo: null, selectedId: null,
+    running: true, progress: null, result: null, error: null, photo: null, cache: null, selectedId: null,
     verdicts: {}, identifications: {}, notes: {},
   });
+  const persist = async (what: string) => {
+    if (!opts.persist) return;
+    const s = getSession(taskId);
+    if (!s.result) return;
+    const out = await saveRun({ userId: opts.persist.userId, fieldId: opts.persist.fieldId, scanId: taskId, result: s.result, params: inputs.params });
+    if (mine()) patchSession(taskId, { cache: out.ok ? `Saved ${what}.` : `The run could not be saved (${"error" in out ? out.error : "unknown"}); it is still here until you leave.` });
+  };
   const mine = () => controllers.get(taskId) === ctrl;
   runWeedScout(inputs, {
     ...opts,
@@ -88,6 +101,7 @@ export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOpti
   }).then(async result => {
     if (!mine()) return;
     patchSession(taskId, { running: false, progress: null, result });
+    await persist("the scan");
     // The photos, after the map pass has shown its result. The review can
     // start now; findings from the photos join the list as they land, and
     // Stop ends this too. Not on a connection the browser says to spare.
@@ -107,6 +121,7 @@ export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOpti
         photo: { running: false, done: pass.reads.length, total: pass.reads.length, found: pass.candidates.length, note: pass.notes.join(" ") },
         result: s.result ? { ...s.result, notes: [...s.result.notes, ...pass.notes] } : s.result,
       }));
+      if (pass.candidates.length) await persist("the scan and the photos");
     } catch (e) {
       if (!mine()) return;
       const aborted = (e as Error)?.name === "Aborted";
@@ -126,6 +141,21 @@ function frugalConnection(): boolean {
   if (typeof navigator === "undefined") return false;
   const conn = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
   return conn?.saveData === true || (conn?.effectiveType ? /^(slow-)?2g$/.test(conn.effectiveType) : false);
+}
+
+/**
+ * The last saved run for a scan, into the session, when nothing is running
+ * and nothing is loaded. The chips are not kept, so spots open without one
+ * until the scan is run again.
+ */
+export async function restoreRun(taskId: string): Promise<boolean> {
+  const s = getSession(taskId);
+  if (s.running || s.result) return false;
+  const result = await loadRun(taskId);
+  const now = getSession(taskId);
+  if (!result || now.running || now.result) return false;
+  patchSession(taskId, { result, cache: null });
+  return true;
 }
 
 /** Stop a run. Only the operator calls this; leaving the tab does not. */

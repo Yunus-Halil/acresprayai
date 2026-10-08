@@ -36,7 +36,7 @@ import {
   type ObservationRow, type StoredPrediction, type Verdict, VERDICTS, identificationColumns, isDismissal, listObservations,
   loadFeedback, saveObservation, verdictSourceFor,
 } from "@/lib/weedScout/observations";
-import { patchSession, startRun, stopRun, useScoutSession } from "@/lib/weedScout/runStore";
+import { patchSession, restoreRun, startRun, stopRun, useScoutSession } from "@/lib/weedScout/runStore";
 import {
   type Candidate, type FeedbackRow, type RegionClass, type ScoutParams, type ScoutProgress, type ScoutResult,
   DEFAULT_SCOUT_PARAMS,
@@ -409,8 +409,11 @@ export function WeedScoutTab({
     if (!rings.length || !tileUrl || running) return;
     startRun(taskId,
       { boundary: rings, tileUrl, maxNative, params, feedback },
-      { context, crop, growthStage: stage, fieldId, unitSystem: units, sources });
-  }, [taskId, rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId, units, sources]);
+      { context, crop, growthStage: stage, fieldId, unitSystem: units, sources, persist: user ? { userId: user.id, fieldId } : undefined });
+  }, [taskId, rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId, units, sources, user]);
+
+  // The last saved run, when this scan has not been scanned in this session.
+  useEffect(() => { if (user) void restoreRun(taskId); }, [taskId, user]);
 
   /** Change a setting and scan again with it, in one move: "rows run this way". */
   const rerunWith = useCallback((patch: Partial<ScoutParams>) => {
@@ -419,8 +422,8 @@ export function WeedScoutTab({
     if (!rings.length || !tileUrl || running) return;
     startRun(taskId,
       { boundary: rings, tileUrl, maxNative, params: next, feedback },
-      { context, crop, growthStage: stage, fieldId, unitSystem: units, sources });
-  }, [taskId, rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId, units, sources]);
+      { context, crop, growthStage: stage, fieldId, unitSystem: units, sources, persist: user ? { userId: user.id, fieldId } : undefined });
+  }, [taskId, rings, tileUrl, maxNative, params, running, feedback, context, crop, stage, fieldId, units, sources, user]);
 
   /** Save one spot with its effective verdict, identification and notes. */
   const saveOne = useCallback(async (c: Candidate): Promise<string | null> => {
@@ -831,6 +834,12 @@ export function WeedScoutTab({
             {!running && feedback.length > 0 && <span className="text-[10px] text-neutral-600" title="Spots that resemble ones you dismissed start removed and rank lower; spots that resemble ones you confirmed start as weeds and rank higher. Needs at least three similar saved verdicts.">learning from {feedback.length} saved verdict{feedback.length === 1 ? "" : "s"}</span>}
           </div>
           {runError && <div className="text-[11px] text-red-400 flex items-start gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {runError}</div>}
+          {result?.restoredAt && !running && (
+            <p className="text-[11px] text-neutral-500" data-testid="restored-note">
+              Restored from the scan of {new Date(result.restoredAt).toLocaleString()}. Spot pictures are not kept between visits; scan again to see them.
+            </p>
+          )}
+          {session.cache && !running && <p className="text-[10px] text-neutral-600">{session.cache}</p>}
           <details className="text-[11px]">
             <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">
               Settings: {params.rowMode === "none" ? "not a row crop" : params.rowMode === "rows" ? `rows at ${rowSpacingShown} ${rowSpacingUnit}` : "detect rows"},

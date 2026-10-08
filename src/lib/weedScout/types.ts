@@ -432,4 +432,6 @@ export type ScoutResult = {
   notes: string[];
   startedAt: string;
   finishedAt: string;
+  /** Set when the result was restored from the saved run rather than computed in this session; chips are not kept. */
+  restoredAt?: string;
 };

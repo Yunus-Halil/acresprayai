@@ -79,6 +79,14 @@ worker, each off-pattern blob carried to the ground through the ODM pose (`odm.t
 plant the map pass already has or another photo already gave is not added twice, and the
 rest join the candidates as they land, with the photo as their source and a chip cut from the
 photo. Stop ends it; a connection the browser says to spare is not used. `photoPass` turns it off.
+## The saved run (2026-10-08)
+
+A finished run is saved per scan (`runCache.ts`, migration `20261008150000`): `scan_patterns`
+holds the pattern and the slim result, `scan_findings` one row per candidate as the review
+reads it, minus the chip. Opening a scan with nothing running restores the last run, says so,
+and renders spots without their pictures until the scan is run again. Verdicts are still
+`weed_observations`, joined by (scan_id, candidate_id). The scan card shows the Weed Scout
+line (rows, crop plants, spots) once a run is saved. The grid's `ai_analysis` column is untouched.
 ## What a candidate is
 
 | Kind | Meaning | Drawn as |

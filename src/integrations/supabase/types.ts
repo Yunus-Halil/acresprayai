@@ -820,6 +820,119 @@ export type Database = {
         }
         Relationships: []
       }
+      scan_findings: {
+        Row: {
+          area_m2: number | null
+          candidate: Json
+          candidate_id: string
+          created_at: string
+          finding_class: string | null
+          id: string
+          kind: string
+          lat: number
+          lng: number
+          scan_id: string
+          score: number
+          source_photo: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          area_m2?: number | null
+          candidate: Json
+          candidate_id: string
+          created_at?: string
+          finding_class?: string | null
+          id?: string
+          kind: string
+          lat: number
+          lng: number
+          scan_id: string
+          score: number
+          source_photo?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          area_m2?: number | null
+          candidate?: Json
+          candidate_id?: string
+          created_at?: string
+          finding_class?: string | null
+          id?: string
+          kind?: string
+          lat?: number
+          lng?: number
+          scan_id?: string
+          score?: number
+          source_photo?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_findings_scan_id_fkey"
+            columns: ["scan_id"]
+            isOneToOne: false
+            referencedRelation: "odm_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scan_patterns: {
+        Row: {
+          created_at: string
+          field_id: string | null
+          id: string
+          params: Json | null
+          pass_version: string
+          result: Json
+          scan_id: string
+          summary: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          field_id?: string | null
+          id?: string
+          params?: Json | null
+          pass_version: string
+          result: Json
+          scan_id: string
+          summary: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          field_id?: string | null
+          id?: string
+          params?: Json | null
+          pass_version?: string
+          result?: Json
+          scan_id?: string
+          summary?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_patterns_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scan_patterns_scan_id_fkey"
+            columns: ["scan_id"]
+            isOneToOne: true
+            referencedRelation: "odm_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scans: {
         Row: {
           ai_summary: string | null

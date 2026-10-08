@@ -16,7 +16,8 @@
 // lib/compareGround.
 import { useEffect, useRef, useState } from "react";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
-import { fmtAreaAc } from "@/lib/units";
+import { type UnitSystem, fmtAreaAc, fmtLengthCm } from "@/lib/units";
+import { loadPatternSummary } from "@/lib/weedScout/runCache";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -265,6 +266,27 @@ function AnalysisLine({ scan }: { scan: FieldScan }) {
   );
 }
 
+/** The Weed Scout field read saved for this scan, when there is one: rows, plants, spots. */
+function ScoutLine({ scanId, units }: { scanId: string; units: UnitSystem }) {
+  const [read, setRead] = useState<Awaited<ReturnType<typeof loadPatternSummary>>>(null);
+  useEffect(() => {
+    let live = true;
+    loadPatternSummary(scanId).then(r => { if (live) setRead(r); });
+    return () => { live = false; };
+  }, [scanId]);
+  if (!read) return null;
+  const s = read.summary;
+  return (
+    <div className="text-[11px] text-neutral-400" data-testid="scout-line">
+      <span className="text-neutral-500">Weed Scout</span>{" "}
+      {s && s.blocks > 0 && s.rowSpacingM != null
+        ? <>rows <span className="text-neutral-100">{fmtLengthCm(s.rowSpacingM * 100, units).text}</span> apart · <span className="text-neutral-100">{s.plantCount.toLocaleString()}</span> crop plants · </>
+        : <>no row pattern · </>}
+      <span className="text-neutral-100">{read.candidates.toLocaleString()}</span> spot{read.candidates === 1 ? "" : "s"}
+    </div>
+  );
+}
+
 function ScanCard({
   scan, index, isCurrent, flown, token,
   onOpenGrid, onOpenScan, onLegacyCleared,
@@ -287,6 +309,7 @@ function ScanCard({
   onRebake: (id: string) => void;
 }) {
   const state = analysisStateOf(scan);
+  const units = useUnitSystem();
   const blocked = notComparableReason(scan);
   const info = useScanInfo(scan.id, token);
   const imagery = rgbLayerLabel(info);
@@ -363,6 +386,7 @@ function ScanCard({
 
       <div className="mt-2 space-y-1">
         <AnalysisLine scan={scan} />
+        <ScoutLine scanId={scan.id} units={units} />
         <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
           {flown ? (
             <span className="inline-flex items-center gap-1 rounded-sm border border-emerald-700 px-1.5 py-0.5 text-emerald-400">
