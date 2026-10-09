@@ -21,7 +21,7 @@ import { type GroundedDetection, debugLine, groundDetections } from "@/lib/sourc
 import { lookupOriginal } from "@/lib/sourceFrames/manifest";
 import { type ScanSources, downloadFrame } from "@/lib/sourceFrames/scan";
 import type { SpotSources } from "@/lib/sourceFrames/spot";
-import { BLOB_COLOUR, type LookCut, type PhotoLook, ROW_COLOUR, cutLookWindow, lookFromPattern, lookLegend, patternLookSideM } from "@/lib/sourceFrames/patternLook";
+import { BLOB_COLOUR, type LookCut, type PhotoLook, ROW_COLOUR, cutLookWindow, lookFromPattern, patternLookSideM } from "@/lib/sourceFrames/patternLook";
 import { analysePhotoOffThread } from "@/lib/photoScout/runPattern";
 import { decodePhoto } from "@/lib/photoScout/decode";
 import type { PhotoPattern } from "@/lib/photoScout/pattern";
@@ -241,7 +241,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
           <p className="text-[11px] text-neutral-400" data-testid="closer-look-pattern-line">
             {patternState === "reading" && <><Loader2 className="inline h-3 w-3 animate-spin mr-1" /> {patternProgress == null ? "Opening the pattern around this spot." : `Reading the rows and plants in this whole photo (${Math.round(patternProgress * 100)}%).`}</>}
             {patternState === "failed" && `The pattern could not be read in this photo${patternError ? ` (${patternError})` : ""}.`}
-            {patternLook && <>{lookLegend(patternLook.look)} Yellow lines are the rows. {gsd(patternLook.look.gsdM)} in the photo{patternLook.fromRun ? ", read during the scan" : ""}.</>}
+            {patternLook && <PatternKey look={patternLook.look} detail={gsd(patternLook.look.gsdM)} />}
           </p>
         )}
         {detection?.state === "done" && (
@@ -327,6 +327,31 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The key to the pattern view, in a row above the photo: one swatch and one word per mark, with how many of each are in the cut. */
+export function PatternKey({ look, detail }: { look: PhotoLook; detail: string }) {
+  const c = look.counts;
+  const items: { colour: string; shape: "line" | "circle"; label: string; count: number | null }[] = [
+    { colour: ROW_COLOUR, shape: "line", label: "Row", count: null },
+    { colour: BLOB_COLOUR["on pattern"], shape: "circle", label: "Crop plant on the pattern", count: c.onPattern },
+    { colour: BLOB_COLOUR["off-row"], shape: "circle", label: "Plant off the row", count: c.offRow },
+    { colour: BLOB_COLOUR["between plants"], shape: "circle", label: "Plant between crop plants", count: c.between },
+    { colour: BLOB_COLOUR["double"], shape: "circle", label: "Two plants grown together", count: c.doubles },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-neutral-300" data-testid="closer-look-key">
+      {items.map(it => (
+        <span key={it.label} className="inline-flex items-center gap-1.5">
+          {it.shape === "line"
+            ? <span className="inline-block w-5 border-t-2" style={{ borderColor: it.colour }} aria-hidden="true" />
+            : <span className="inline-block h-3 w-3 rounded-full border-2" style={{ borderColor: it.colour }} aria-hidden="true" />}
+          {it.label}{it.count != null ? <span className="text-neutral-500">{it.count}</span> : null}
+        </span>
+      ))}
+      <span className="text-neutral-500">{look.blocks === 0 ? "No row pattern was read in this photo." : look.lines.length === 0 ? "The rows do not run through this cut." : ""} {detail}</span>
+    </div>
   );
 }
 
