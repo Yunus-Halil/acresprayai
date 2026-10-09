@@ -284,7 +284,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
           {!error && !look && <p className="p-4 text-[12px] text-neutral-400 inline-flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the original photo.</p>}
           {look && patternOn && patternLook && (() => {
             const { cut, look: pl } = patternLook;
-            const sw = Math.max(1.5, cut.width / 600);
+            const sw = Math.max(1, cut.width / 900);
             const f = 1 / cut.factor;
             // The look is in the original's pixels from the window's corner; the cut is pooled by the factor.
             const overlay = {
@@ -292,30 +292,16 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
               circles: pl.circles.map(c => ({ ...c, x: c.x * f, y: c.y * f, r: c.r * f })),
               focus: pl.focus ? { ...pl.focus, x: pl.focus.x * f, y: pl.focus.y * f, r: pl.focus.r * f } : null,
             };
-            // The map's outline, from uploaded-frame pixels to this cut's pooled pixels.
-            const outline = (view?.outlinePx ?? []).map(p => `${(p.u * look.scale - pl.window.x) * f},${(p.v * look.scale - pl.window.y) * f}`).join(" ");
             return (
               <div className="relative" style={full ? { width: cut.width } : { width: "100%" }}>
                 <img src={cut.url} alt={`The rows and plants around the flagged area in ${view?.filename}`} data-testid="closer-look-pattern-image"
                   style={full ? { width: cut.width, maxWidth: "none", display: "block" } : { width: "100%", height: "auto", display: "block" }} />
                 <svg viewBox={`0 0 ${cut.width} ${cut.height}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none" data-testid="closer-look-pattern-overlay">
-                  {/* Context first and faint: the rows, then the crop plants. Then what is not crop, haloed so it reads over foliage. Then the spot, unmistakable. */}
-                  {overlay.lines.map((l, i) => <line key={`l${i}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={ROW_COLOUR} strokeWidth={sw * 0.8} strokeOpacity={0.55} />)}
-                  {overlay.circles.filter(c => c.cls === "on pattern").map((c, i) => <circle key={`p${i}`} cx={c.x} cy={c.y} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={sw * 0.8} strokeOpacity={0.45} />)}
-                  {overlay.circles.filter(c => c.cls !== "on pattern").map((c, i) => (
-                    <g key={`a${i}`}>
-                      <circle cx={c.x} cy={c.y} r={c.r} fill="none" stroke="#000" strokeWidth={sw * 2.2} strokeOpacity={0.6} />
-                      <circle cx={c.x} cy={c.y} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={sw} strokeOpacity={1} />
-                    </g>
-                  ))}
-                  {overlay.focus && (
-                    <g data-testid="closer-look-focus">
-                      <circle cx={overlay.focus.x} cy={overlay.focus.y} r={Math.max(overlay.focus.r * 1.6, sw * 6)} fill="none" stroke="#000" strokeWidth={sw * 3.5} strokeOpacity={0.7} />
-                      <circle cx={overlay.focus.x} cy={overlay.focus.y} r={Math.max(overlay.focus.r * 1.6, sw * 6)} fill="none" stroke="#ffffff" strokeWidth={sw * 2} />
-                      <circle cx={overlay.focus.x} cy={overlay.focus.y} r={Math.max(overlay.focus.r * 1.6, sw * 6) + sw * 3} fill="none" stroke={BLOB_COLOUR[overlay.focus.cls]} strokeWidth={sw} strokeOpacity={0.9} />
-                    </g>
-                  )}
-                  {outline && <polygon points={outline} fill="none" stroke="#fbbf24" strokeWidth={sw} strokeOpacity={0.5} strokeDasharray={`${sw * 4} ${sw * 2}`} />}
+                  {/* Drawn the way the benchmark overlays are drawn, and no other way: the
+                      rows as thin yellow lines, every placed plant as a thin circle in its
+                      class colour. No halos, no ring, no outline. */}
+                  {overlay.lines.map((l, i) => <line key={`l${i}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={ROW_COLOUR} strokeWidth={sw} />)}
+                  {overlay.circles.map((c, i) => <circle key={`c${i}`} cx={c.x} cy={c.y} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={sw} />)}
                 </svg>
               </div>
             );
