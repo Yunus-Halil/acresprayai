@@ -1233,7 +1233,13 @@ export default function OrthomosaicViewer() {
            style={{ background: "#0f0f0f" }}>
         <div ref={cursorCoordRef} className="font-mono"></div>
         <div ref={cursorZoomRef} className="font-mono">Zoom 15</div>
-        <div className="ml-auto truncate font-mono text-neutral-600">{task.odm_uuid?.slice(0, 8)}</div>
+        {/* Two ids that answer two different questions: which scan this is, and which build is on screen. */}
+        <div className="ml-auto truncate font-mono text-neutral-600" title={task.odm_uuid ? `Processing job ${task.odm_uuid}` : undefined}>
+          {task.odm_uuid ? `scan ${task.odm_uuid.slice(0, 8)}` : ""}
+        </div>
+        <div className="shrink-0 font-mono text-neutral-600" title={`Built ${__BUILD_TIME__}${import.meta.env.DEV ? ", dev server" : ""}`} data-testid="build-stamp">
+          build {__BUILD_SHA__}{import.meta.env.DEV ? " (dev)" : ""}
+        </div>
       </div>
 
       {/* .ai-zone-label / .ai-zone-popup are the map tooltip/popup styles shared

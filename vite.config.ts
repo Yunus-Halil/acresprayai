@@ -2,9 +2,23 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
+import { execSync } from "child_process";
+
+// The commit the build came from, stamped into the bundle so the scan page's
+// footer can say which version is on screen. Vercel sets the SHA at build
+// time; a local build asks git; a checkout with neither says "dev".
+const buildSha = (): string => {
+  const given = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT_SHA;
+  if (given) return given.slice(0, 7);
+  try { return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || "dev"; } catch { return "dev"; }
+};
 
 // https://vitejs.dev/config/
 export default defineConfig(() => ({
+  define: {
+    __BUILD_SHA__: JSON.stringify(buildSha()),
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   server: {
     host: "::",
     port: 8080,
