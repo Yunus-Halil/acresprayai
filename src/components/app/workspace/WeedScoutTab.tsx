@@ -105,6 +105,17 @@ function loadParams(): ScoutParams {
   }
 }
 
+/** The stages in the order the pipeline runs them, so a bar can say how far along the whole run is. */
+const STAGE_ORDER: ScoutProgress["stage"][] = ["stitching", "tiling", "masking", "baseline", "regions", "pattern", "rows", "blobs", "sweeping", "ranking", "chips", "classifying", "sourcing", "done"];
+
+/** How far the whole run is, 0..1: the stage reached plus how far through it, over the stages there are. */
+export function runFraction(p: ScoutProgress | null): number {
+  if (!p) return 0;
+  const i = Math.max(0, STAGE_ORDER.indexOf(p.stage));
+  const n = STAGE_ORDER.length - 1;
+  return Math.min(1, (i + (p.fraction ?? 0.5)) / n);
+}
+
 const STAGE_LABEL: Record<ScoutProgress["stage"], string> = {
   stitching: "Reading the mosaic",
   tiling: "Cutting the field into tiles",
@@ -682,6 +693,18 @@ export function WeedScoutTab({
   return (
     <div className="absolute inset-0 flex" style={{ background: "#0f0f0f" }}>
       <div className="flex-1 relative">
+        {/* A hairline of progress along the top of the map while anything runs:
+            the map pass by stage, then the photos by count. Nothing else on
+            the map moves for it. */}
+        {(running || photo?.running) && (() => {
+          const frac = running ? runFraction(progress) : (photo && photo.total ? photo.done / photo.total : 0);
+          const title = running ? `${STAGE_LABEL[progress?.stage ?? "stitching"]} (${Math.round(frac * 100)}%)` : `Reading photo ${Math.min((photo?.done ?? 0) + 1, photo?.total ?? 1)} of ${photo?.total ?? "…"}`;
+          return (
+            <div className="absolute top-0 left-0 right-0 z-[600] h-[3px] bg-white/10 pointer-events-none" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(frac * 100)} aria-label={title} title={title} data-testid="run-progress-bar">
+              <div className="h-full bg-[#4CAF50] transition-[width] duration-500 ease-out" style={{ width: `${Math.max(2, frac * 100)}%` }} />
+            </div>
+          );
+        })()}
         <MapContainer bounds={bounds ?? undefined} boundsOptions={{ padding: [40, 40] }} minZoom={1} maxZoom={22} preferCanvas
           zoomControl={false} attributionControl={false} style={{ height: "100%", width: "100%", background: "#0a0a0a" }}>
           <BasemapLayer id={basemap} />
