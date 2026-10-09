@@ -3,7 +3,7 @@
 The form behind "Request access", the table it writes to, and the two ways a request becomes
 visible.
 
-**Since 2026-09-24 this is the only way into the product.** SwathWise is in closed testing:
+**Since 2026-09-24 this is the only way into the product.** Swardus is in closed testing:
 the landing page no longer offers a pilot programme or a sign-up, and `/auth` is sign-in only.
 Anyone who is not already a tester fills in this form, and a person decides. The table, the
 function and the admin page kept their `pilot_*` names because renaming a table that holds
@@ -81,7 +81,7 @@ Plain text, no template — it is read on a phone.
 |---|---|---|---|
 | `RESEND_API_KEY` | **yes, for mail to send at all** | — | Without it the application still saves; the function logs `[email] RESEND_API_KEY not set` and returns `notified: false` |
 | `PILOT_NOTIFY_TO` | no | `yunus@swathwise.com` | Where notifications go |
-| `PILOT_NOTIFY_FROM` | no | `SwathWise <onboarding@resend.dev>` | Resend's shared sender needs no domain verification but **only delivers to the Resend account's own address**. Set this to an address on a verified domain once swathwise.com is verified in Resend |
+| `PILOT_NOTIFY_FROM` | no | `Swardus <onboarding@resend.dev>` | Resend's shared sender needs no domain verification but **only delivers to the Resend account's own address**. Set this to an address on a verified domain once swathwise.com is verified in Resend |
 | `PILOT_ADMIN_EMAILS` | no | `yunus@swathwise.com` | Comma-separated allowlist for the admin read endpoint |
 
 ```bash

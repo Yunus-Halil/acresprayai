@@ -448,7 +448,7 @@ four per acre. A few real acres gives a number worth quoting.
 
 ---
 
-## 5. What SwathWise's pipeline needs to turn this into orthos
+## 5. What Swardus's pipeline needs to turn this into orthos
 
 The detector reads one orthomosaic per rung. What it needs from the ortho
 process is narrow but non-negotiable, and two of the requirements are ones that

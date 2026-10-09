@@ -221,7 +221,7 @@ export function buildTemplateKml(wps: WpmlWaypoint[], o: WpmlOptions): string {
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<kml xmlns="${KML_NS}" xmlns:wpml="${WPML_NS}">`,
     `<Document>`,
-    `  <wpml:author>${esc(o.author ?? "SwathWise")}</wpml:author>`,
+    `  <wpml:author>${esc(o.author ?? "Swardus")}</wpml:author>`,
     `  <wpml:createTime>${o.createTimeMs}</wpml:createTime>`,
     `  <wpml:updateTime>${o.createTimeMs}</wpml:updateTime>`,
     missionConfig(o),

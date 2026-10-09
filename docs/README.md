@@ -1,13 +1,13 @@
-# SwathWise — System Reference
+# Swardus — System Reference
 
-A complete description of what the SwathWise platform does today: every screen, every
+A complete description of what the Swardus platform does today: every screen, every
 table, every service contract, every algorithm, and — equally important — the things it
 deliberately does not do.
 
 Written to be read cold, by a person or a model, with no prior context. If you are handing
 this codebase to someone (or something) new, this directory is the handover.
 
-## What SwathWise is, in one paragraph
+## What Swardus is, in one paragraph
 
 A web application for farmers and agricultural drone operators. It takes a folder of
 overlapping drone photographs of a field, turns them into a single georeferenced aerial image

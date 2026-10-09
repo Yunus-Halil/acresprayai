@@ -2,7 +2,7 @@
  * Generates the favicon set from the single source mark.
  *
  * WHY A GENERATOR RATHER THAN CHECKED-IN ART. There is one mark
- * (src/assets/swathwise-logo.png) and five derived files. Hand-exporting five
+ * (src/assets/swardus-logo.png) and five derived files. Hand-exporting five
  * sizes is five chances for one of them to drift from the others, and the
  * drift is invisible until someone notices the tab icon disagrees with the
  * home-screen icon. Same reasoning as scripts/build-share-card.cjs.
@@ -21,7 +21,7 @@ const path = require("path");
 const { PNG } = require("pngjs");
 
 const repo = path.resolve(__dirname, "..");
-const SRC = path.join(repo, "src/assets/swathwise-logo.png");
+const SRC = path.join(repo, "src/assets/swardus-logo.png");
 
 /** Fraction of the tile left as margin on the tighter axis. */
 const MARGIN = 0.08;

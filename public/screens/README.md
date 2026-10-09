@@ -1,6 +1,6 @@
 # Landing page screenshots
 
-Real captures of the SwathWise app, used by `src/components/landing/`. These are
+Real captures of the Swardus app, used by `src/components/landing/`. These are
 product proof, so the rule is: never replace one with stock imagery, a mock-up,
 or a render. If a screenshot no longer matches the UI, take a new one — don't
 dress up an old one.

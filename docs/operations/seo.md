@@ -50,7 +50,7 @@ curl -sS -o /dev/null -w '%{http_code} -> %{redirect_url}
 
 | Tag | Value |
 |---|---|
-| `<title>` | SwathWise — Precision spray missions from drone imagery *(55 chars)* |
+| `<title>` | Swardus — Precision spray missions from drone imagery *(55 chars)* |
 | `description` | Upload drone images, get a stitched map of your farm, and let AI find the crops that need spraying — with flight plans ready for your drone. *(140 chars)* |
 | `canonical` / `og:url` | `https://swathwise.com/` |
 | `og:image` / `twitter:image` | `https://swathwise.com/share-card.png` (1200×630) |

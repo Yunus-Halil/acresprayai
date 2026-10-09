@@ -645,7 +645,7 @@ export function CompareStatsBar({
           </div>
           {legacySides.length > 0 && (
             <div className="mt-1 text-[10px] leading-snug text-amber-500/80">
-              Side {legacySides.join(" and side ")} shows a result from an older automatic analysis (no longer part of SwathWise), not a
+              Side {legacySides.join(" and side ")} shows a result from an older automatic analysis (no longer part of Swardus), not a
               treatment-grid assessment. Re-assess it before relying on this change figure.
             </div>
           )}

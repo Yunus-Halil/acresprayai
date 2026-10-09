@@ -1,6 +1,6 @@
 # Survey flight planning
 
-The step before a scan exists. SwathWise could process imagery and had no way to plan the
+The step before a scan exists. Swardus could process imagery and had no way to plan the
 flight that produces it; this fills that gap, on the field page, above the upload.
 
 It is a **survey** planner, not the spray planner. `lib/mission.ts` and the workspace's Flight

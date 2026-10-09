@@ -170,7 +170,7 @@ Two layers, and the difference between them is the whole point.
 an edit to a JSON file rather than a component change and a deploy. Thirty-seven entries covering
 the DJI Agras line (T10 through T100), XAG (P40, V40, P100, P100 Pro, P150, P150 Max), Hylio
 (the AG-1xx and AG-2xx series plus the current PEGASUS / ARES / ATLAS / PHOTON names) and the
-mapping aircraft SwathWise ingests imagery from. Every entry carries make, model, role
+mapping aircraft Swardus ingests imagery from. Every entry carries make, model, role
 (spray, mapping, or both), tank capacity in litres, swath, the manufacturer page the figures came
 off, and the date they were read.
 
@@ -182,9 +182,9 @@ a compliance record. Where the maker publishes a swath *range* rather than one o
 altitude, speed and nozzle. The operator states the width they actually fly.
 
 **The planning layer** is `PLANNING_PROFILES` in `src/lib/droneSpecs.ts`: hand-tuned operational
-figures for the seven airframes SwathWise has shipped flight planning against. They override the
+figures for the seven airframes Swardus has shipped flight planning against. They override the
 published numbers, deliberately. The T40 is the worked example: DJI publishes 11 m at 2.5 m AGL
-and 7 m/s; SwathWise plans 9 m, because lanes spaced on the outer edge of a pattern that is
+and 7 m/s; Swardus plans 9 m, because lanes spaced on the outer edge of a pattern that is
 thinnest exactly where it is widest leave under-dosed strips nobody sees until the pest comes
 back through them.
 

@@ -26,8 +26,8 @@ export default defineConfig(() => ({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "favicon.png", "apple-touch-icon.png", "robots.txt"],
       manifest: {
-        name: "SwathWise",
-        short_name: "SwathWise",
+        name: "Swardus",
+        short_name: "Swardus",
         description: "Precision drone spraying: scan, plan, spray, and keep the record.",
         theme_color: "#0f0f0f",
         background_color: "#0f0f0f",

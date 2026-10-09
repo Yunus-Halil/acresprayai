@@ -1,6 +1,6 @@
-# SwathWise Virginia weed catalog: sourced research build
+# Swardus Virginia weed catalog: sourced research build
 
-**As of September 22, 2026. Version 0.1.0.** This is a substantial Virginia source inventory, **not** a certified list of every agricultural weed in Virginia and **not** a species classifier. It is designed to let SwathWise curate and update a state at a time without silently treating a plant name as a proven field detection.
+**As of September 22, 2026. Version 0.1.0.** This is a substantial Virginia source inventory, **not** a certified list of every agricultural weed in Virginia and **not** a species classifier. It is designed to let Swardus curate and update a state at a time without silently treating a plant name as a proven field detection.
 
 ## Exactly what is included
 

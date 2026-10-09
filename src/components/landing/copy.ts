@@ -4,7 +4,7 @@
  * Standing rules for anything added here:
  *
  * 1. Nothing may claim a capability the product lacks. There is no 3D, no
- *    mobile app, and no autonomous flight: SwathWise emits a waypoint file a
+ *    mobile app, and no autonomous flight: Swardus emits a waypoint file a
  *    human loads into a flight controller. No invented metrics or savings
  *    percentages. No species named from pixels: identification is the
  *    operator's call, suggested from their own past verdicts and a sourced
@@ -81,7 +81,7 @@ export const HERO = {
   /** The brand line, under the headline. Kept verbatim. */
   brand: "Precision Agriculture, Precisely Simple.",
   body: [
-    "Upload your field map. SwathWise finds the weeds, all of them, measures each one, and turns what you confirm into action.",
+    "Upload your field map. Swardus finds the weeds, all of them, measures each one, and turns what you confirm into action.",
   ],
 };
 
@@ -92,7 +92,7 @@ export const HERO = {
  */
 export const STATEMENT = {
   lead: [
-    { text: "SwathWise turns the field map from your drone into " },
+    { text: "Swardus turns the field map from your drone into " },
     { text: "decisions", hi: true },
     { text: ": the weeds " },
     { text: "found and measured", hi: true },

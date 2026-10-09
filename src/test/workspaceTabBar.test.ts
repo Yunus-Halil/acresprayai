@@ -89,7 +89,7 @@ describe("workspace tab bar", () => {
   // Ctrl+T is a reserved browser shortcut: Chrome, Edge and Firefox never
   // deliver the keydown to the page, so the old handler could not fire and
   // preventDefault prevented nothing. Pressing the advertised shortcut opened a
-  // browser tab and navigated away from SwathWise. The UI promised a key it did
+  // browser tab and navigated away from Swardus. The UI promised a key it did
   // not have.
   it("does not advertise a keyboard shortcut the browser eats", () => {
     const handler = SRC.slice(SRC.indexOf("// Alt+T opens the new-tab menu"));

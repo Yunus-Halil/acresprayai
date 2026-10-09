@@ -203,7 +203,7 @@ sits in its own group and needs an explicit choice.
 
 The report prints stated identifications with source and status, counts the unidentified and
 rejected, and lists the assigned treatment choices with their label provenance under the
-sentence "SwathWise recommends no product or rate."
+sentence "Swardus recommends no product or rate."
 
 ## Tests
 

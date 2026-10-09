@@ -100,7 +100,7 @@ Five parts, in dependency order:
 4. Click-through in a signed-in session on a real scan. **Partly done 2026-10-01**, see
    "Validation pass" below; the signed-in run itself is still owed.
 5. DRONEWEED when downloaded (adds labelled maize, the only public crop labels).
-6. Collect SwathWise-flown imagery, ground-truth real weeds, and build a real-field
+6. Collect Swardus-flown imagery, ground-truth real weeds, and build a real-field
    benchmark from it (stake and photograph, then fly).
 7. Evaluate by GSD and altitude on that benchmark.
 8. Only then, species identification. Not before 6 and 7.

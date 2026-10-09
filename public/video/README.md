@@ -1,6 +1,6 @@
 # Landing page video
 
-Real screen captures of the SwathWise app, same rule as `public/screens/`:
+Real screen captures of the Swardus app, same rule as `public/screens/`:
 never a mock-up, never a render. If the UI moves on, take a new capture — don't
 dress up an old one.
 

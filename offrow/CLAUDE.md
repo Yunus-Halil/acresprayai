@@ -2,7 +2,7 @@
 
 Off-row vegetation detection in early-season corn from RGB drone imagery.
 
-Part of SwathWise. This repo is the research track: given an orthomosaic of a corn
+Part of Swardus. This repo is the research track: given an orthomosaic of a corn
 field at V2 to V6, a field boundary, and the grower's row spacing, find vegetation
 that is not the planted crop and rank grid cells for operator review.
 

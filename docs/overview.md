@@ -2,13 +2,13 @@
 
 ## What the product does
 
-SwathWise is a web application for farmers and agricultural drone operators. The job it does:
+Swardus is a web application for farmers and agricultural drone operators. The job it does:
 
 1. A farmer flies a drone over their field and gets a folder of overlapping photographs.
-2. SwathWise turns those into a single georeferenced aerial image â€” an **orthomosaic**.
+2. Swardus turns those into a single georeferenced aerial image â€” an **orthomosaic**.
 3. The farmer draws the exact outline of their land on that image.
-4. The operator marks stressed and healthy reference points on the treatment grid, and SwathWise extrapolates matching zones across the rest of the field.
-5. SwathWise generates a flyable spray mission that treats **only those patches**.
+4. The operator marks stressed and healthy reference points on the treatment grid, and Swardus extrapolates matching zones across the rest of the field.
+5. Swardus generates a flyable spray mission that treats **only those patches**.
 
 The end products a user walks away with:
 
@@ -43,7 +43,7 @@ Three positions are baked into the product. They are deliberate and should be pr
 
 ### The analysis is conservative by design
 
-SwathWise never diagnoses nutrient
+Swardus never diagnoses nutrient
 deficiency, disease, or pest pressure from imagery alone, because those cannot be seen in visible light. Zones exist
 only where the operator marked ground or accepted a suggested match against their own examples.
 

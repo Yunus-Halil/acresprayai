@@ -133,8 +133,8 @@ export default function PilotApply() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-sw-paper font-grotesk text-sw-ink">
       <Seo
-        title="Request access to SwathWise closed testing"
-        description="SwathWise is in closed testing. Tell us about your land and what you fly, and we will be in touch when a place opens. About two minutes."
+        title="Request access to Swardus closed testing"
+        description="Swardus is in closed testing. Tell us about your land and what you fly, and we will be in touch when a place opens. About two minutes."
         path="/apply"
       />
       <div
@@ -166,7 +166,7 @@ export default function PilotApply() {
               Request access.
             </h1>
             <p className="mt-4 max-w-[560px] text-[17px] leading-[1.55] text-sw-muted">
-              SwathWise is in closed testing with a small number of farms, and public sign-up is
+              Swardus is in closed testing with a small number of farms, and public sign-up is
               closed while we fly with them. Tell us about your land and what you fly. It takes
               about two minutes, we read every one, and we will be in touch when a place opens.
             </p>
@@ -387,7 +387,7 @@ export default function PilotApply() {
                   </select>
                 </Field>
 
-                <Field id="referral_source" label="How did you hear about SwathWise?" error={shown("referral_source")}>
+                <Field id="referral_source" label="How did you hear about Swardus?" error={shown("referral_source")}>
                   <input
                     id="referral_source"
                     name="referral_source"
@@ -448,7 +448,7 @@ const Confirmation = () => (
       timing, reply to the email we send and tell us.
     </p>
     <a href="/" className="mt-8 inline-flex items-center gap-2 text-sw-green hover:text-sw-green-deep">
-      <span className="font-plex" aria-hidden="true">←</span> Back to SwathWise
+      <span className="font-plex" aria-hidden="true">←</span> Back to Swardus
     </a>
   </div>
 );

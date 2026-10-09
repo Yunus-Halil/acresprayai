@@ -206,7 +206,7 @@ function LegacyFailureLine({ at }: { at: string | null; error: string }) {
   // it does not print.
   return (
     <div className="text-[10px] leading-snug text-amber-500/80">
-      An older automatic analysis (no longer part of SwathWise) failed here
+      An older automatic analysis (no longer part of Swardus) failed here
       {at && ` on ${new Date(at).toLocaleDateString()}`}. Not a treatment-grid
       result, and nothing the grid needs.
     </div>
@@ -245,7 +245,7 @@ function AnalysisLine({ scan }: { scan: FieldScan }) {
       {state.source === "legacy" && (
         <span
           className="mr-1.5 rounded-sm border border-amber-700/60 px-1 py-px text-[9px] uppercase tracking-wider text-amber-400"
-          title="Produced by an older automatic analysis that is no longer part of SwathWise, not by the treatment grid. Re-assess in the Treatment Grid tab; this result is kept until you clear it."
+          title="Produced by an older automatic analysis that is no longer part of Swardus, not by the treatment grid. Re-assess in the Treatment Grid tab; this result is kept until you clear it."
         >
           Old analysis
         </span>
@@ -327,7 +327,7 @@ function ScanCard({
   const clearLegacy = async () => {
     if (!window.confirm(
       failureOnly
-        ? "Remove the failed run an older automatic analysis (no longer part of SwathWise) " +
+        ? "Remove the failed run an older automatic analysis (no longer part of Swardus) " +
           "recorded on this scan? It is not a treatment-grid result and nothing depends on it. " +
           "Your grid assessment, if any, is kept."
         : "Remove this scan's old analysis result? An older automatic analysis produced it, " +

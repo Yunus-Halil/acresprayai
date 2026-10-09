@@ -356,7 +356,7 @@ describe("WPML .kmz export", () => {
     // The file-creation block belongs to template.kml, not the execution file.
     expect(wayline).not.toContain("<wpml:author>");
     expect(wayline).not.toContain("<wpml:createTime>");
-    expect(template).toContain("<wpml:author>SwathWise</wpml:author>");
+    expect(template).toContain("<wpml:author>Swardus</wpml:author>");
     expect(template).toContain("<wpml:createTime>");
   });
 

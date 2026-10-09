@@ -13,7 +13,7 @@
 //
 // TWO COPIES OF EVERY FRAME, ON PURPOSE. The processing node gets a 2,400 px
 // re-encode (imagePrep.ts), which is all it needs for the orthomosaic and is a
-// fifth of the bytes. SwathWise keeps the original file, untouched, in the
+// fifth of the bytes. Swardus keeps the original file, untouched, in the
 // `scans` bucket under <user>/<scan>/frames/. The original is the only copy
 // with the camera's full resolution and its XMP (altitude above ground, gimbal,
 // yaw), and a finding on the map is read back from it (lib/sourceFrames). The

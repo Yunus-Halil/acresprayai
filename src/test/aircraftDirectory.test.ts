@@ -166,7 +166,7 @@ describe("existing fleet rows are unaffected", () => {
   });
 
   it("keeps the conservative planning swath even though DJI publishes wider", () => {
-    // DJI quotes 11 m for the T40 at 2.5 m AGL. SwathWise plans 8.1 m lanes off
+    // DJI quotes 11 m for the T40 at 2.5 m AGL. Swardus plans 8.1 m lanes off
     // a 9 m boom on purpose; adopting the published figure would silently widen
     // every existing mission's lanes and open under-dosed strips between them.
     expect(aircraftById("DJI Agras T40")!.swath_m).toBe(11);

@@ -1,12 +1,12 @@
-# Review brief: the weed detection foundation in SwathWise
+# Review brief: the weed detection foundation in Swardus
 
 *Written to be handed to an independent reviewer (a person or another model) with one
 instruction: find every way this could fail before it reaches a farmer's laptop. Nothing
 below is confidential; nothing below is a claim of accuracy.*
 
-## 1. What SwathWise is, in one paragraph
+## 1. What Swardus is, in one paragraph
 
-SwathWise is a browser application for farmers, spray-drone operators and agronomists. A
+Swardus is a browser application for farmers, spray-drone operators and agronomists. A
 drone maps a field; the app stitches the imagery, finds the weeds and the patches of ground
 that are not behaving like the rest of the field, lets the operator confirm or reject each
 one, plans a spray flight that covers only the confirmed spots, and writes the pesticide

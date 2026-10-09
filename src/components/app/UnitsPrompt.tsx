@@ -39,7 +39,7 @@ export function UnitsPrompt({ open, initial, onChoose }: {
         <DialogHeader>
           <DialogTitle>Which units do you work in?</DialogTitle>
           <DialogDescription>
-            Every area, volume, rate, distance, speed and temperature in SwathWise will use
+            Every area, volume, rate, distance, speed and temperature in Swardus will use
             this, on every device you sign in from. You can change it later from the sidebar
             or any field's Settings.
           </DialogDescription>

@@ -162,7 +162,7 @@
       "flow_lpm": 12,
       "source": "https://www.dji.com/t40/specs",
       "verified": "2026-08-31",
-      "note": "Spray width 11 m quoted at 2.5 m relative altitude and 7 m/s. SwathWise plans this airframe at 9 m; see PLANNING_PROFILES in droneSpecs.ts for why the shipped default is narrower than the published figure."
+      "note": "Spray width 11 m quoted at 2.5 m relative altitude and 7 m/s. Swardus plans this airframe at 9 m; see PLANNING_PROFILES in droneSpecs.ts for why the shipped default is narrower than the published figure."
     },
     {
       "id": "DJI Agras T50",
@@ -487,7 +487,7 @@
       "flow_lpm": null,
       "source": "https://www.dji.com/downloads/products/air-3s",
       "verified": "2026-08-31",
-      "note": "RGB only, no multispectral bands. SwathWise ingests its imagery as an orthomosaic, and any vegetation index from it is the VARI proxy rather than true NDVI."
+      "note": "RGB only, no multispectral bands. Swardus ingests its imagery as an orthomosaic, and any vegetation index from it is the VARI proxy rather than true NDVI."
     },
     {
       "id": "DJI Mini 4 Pro",

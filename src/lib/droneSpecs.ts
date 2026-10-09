@@ -21,7 +21,7 @@
 //      null — it is never inferred from a model number or a predecessor.
 //
 //   2. PLANNING_PROFILES, below. Conservative operational figures for the
-//      airframes SwathWise has shipped against, NOT verified against current
+//      airframes Swardus has shipped against, NOT verified against current
 //      datasheets. They feed battery, tank and maneuverability estimates that a
 //      pilot relies on — treat them as defaults to be confirmed per airframe.
 //
@@ -110,7 +110,7 @@ export const DEFAULT_SPEC: DroneSpec = {
 /**
  * Hand-tuned operational profiles, keyed by directory id.
  *
- * These are the airframes SwathWise has shipped flight planning against. The
+ * These are the airframes Swardus has shipped flight planning against. The
  * figures are conservative real-world values rather than marketing maxima and
  * have NOT been verified against current manufacturer datasheets — which is
  * exactly why they override the published numbers rather than the other way

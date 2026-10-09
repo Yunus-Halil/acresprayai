@@ -34,7 +34,7 @@ const NWS = "https://api.weather.gov";
 const NWS_RETENTION_DAYS = 8;
 
 const nwsHeaders = () => ({
-  "User-Agent": `SwathWise (${Deno.env.get("WEATHER_CONTACT") ?? "https://swathwise.com"})`,
+  "User-Agent": `Swardus (${Deno.env.get("WEATHER_CONTACT") ?? "https://swathwise.com"})`,
   "Accept": "application/geo+json",
 });
 

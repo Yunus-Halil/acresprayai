@@ -1,4 +1,4 @@
-// The aircraft directory: which airframes SwathWise knows about, and what it
+// The aircraft directory: which airframes Swardus knows about, and what it
 // actually knows about each one.
 //
 // WHY THIS IS DATA. The registration picker used to be a list literal inside a

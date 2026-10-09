@@ -55,14 +55,14 @@ function confirmation(row: Record<string, string | null>): string {
   const name = row.full_name?.split(" ")[0] || "there";
   return (
     `Hi ${name},\n\n` +
-    `We have your request for access to SwathWise closed testing` +
+    `We have your request for access to Swardus closed testing` +
     (row.farm_name ? ` for ${row.farm_name}` : "") +
     `.\n\n` +
     `Testing is with a small number of farms and places open as they come up. ` +
     `We read every request and will be in touch when there is a place, or sooner if we ` +
     `have a question.\n\n` +
     `If anything changes on your side, reply to this email.\n\n` +
-    `SwathWise\n` +
+    `Swardus\n` +
     `swathwise.com`
   );
 }
@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
   if (row.email) {
     const ack = await sendEmail({
       to: row.email,
-      subject: "SwathWise: we have your access request",
+      subject: "Swardus: we have your access request",
       text: confirmation(row),
     });
     if (!ack.sent) {

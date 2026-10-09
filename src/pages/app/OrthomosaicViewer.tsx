@@ -806,7 +806,7 @@ export default function OrthomosaicViewer() {
   // It used to be Ctrl/Cmd+T, which never once worked: Ctrl+T is a RESERVED
   // browser shortcut, the keydown is swallowed before the page sees it, and
   // preventDefault on a handler that never runs prevents nothing. So the
-  // advertised shortcut opened a browser tab and left SwathWise instead — a
+  // advertised shortcut opened a browser tab and left Swardus instead — a
   // promise the app could not keep, printed in its own UI. Alt+T reaches the
   // page in Chrome, Edge, Firefox and Safari, and preventDefault does stop
   // Firefox's menu-bar access key.
@@ -933,7 +933,7 @@ export default function OrthomosaicViewer() {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden font-sans"
          style={{ background: "#0f0f0f", color: "#f0f0f0" }}>
-      <Seo title="SwathWise" noindex />
+      <Seo title="Swardus" noindex />
       {/* Top status bar: back · field · weather · analyze · health */}
       <div className="h-12 shrink-0 flex items-center gap-4 px-4 border-b border-[#1f1f1f]"
            style={{ background: "#0f0f0f" }}>

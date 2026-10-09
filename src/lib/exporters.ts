@@ -123,7 +123,7 @@ export const EXPORTERS: Exporter[] = [
     blockedReason: hasMission,
     build(ctx) {
       const pkg = buildWpmlKmz(ctx.mission!, {
-        author: "SwathWise",
+        author: "Swardus",
         createTimeMs: Date.now(),
         // Derived from the planned mission, not hardcoded placeholders.
         transitSpeed: ctx.transitSpeed,

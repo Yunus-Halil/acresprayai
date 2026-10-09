@@ -88,7 +88,7 @@ describe("weather · observation mode", () => {
     for (const call of fetchMock.mock.calls as unknown as [string, RequestInit?][]) {
       const headers = call[1]?.headers as Record<string, string> | undefined;
       if (String(call[0]).includes("api.weather.gov")) {
-        expect(headers?.["User-Agent"]).toMatch(/SwathWise/);
+        expect(headers?.["User-Agent"]).toMatch(/Swardus/);
         expect(headers?.["User-Agent"]).not.toMatch(/@/);
       }
     }

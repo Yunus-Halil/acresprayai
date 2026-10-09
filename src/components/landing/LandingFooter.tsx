@@ -20,7 +20,7 @@ export const LandingFooter = () => (
         ))}
       </div>
 
-      <span className="font-plex text-xs">© 2026 SWATHWISE</span>
+      <span className="font-plex text-xs">© 2026 SWARDUS</span>
     </div>
   </footer>
 );

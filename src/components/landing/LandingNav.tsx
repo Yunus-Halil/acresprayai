@@ -15,7 +15,7 @@ const LINKS = [
 export const LandingNav = () => (
   <nav className="sw-load absolute inset-x-0 top-0 z-20 mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-x-6 gap-y-4 px-5 pt-6 sm:px-10 sm:pt-7">
     <a href="#top" className="flex items-center gap-2.5">
-      <Wordmark tone="paper" />
+      <Wordmark tone="paper" glass />
       <span className="font-plex text-[11px] tracking-[0.08em] text-white/70">PRECISION AG</span>
     </a>
 

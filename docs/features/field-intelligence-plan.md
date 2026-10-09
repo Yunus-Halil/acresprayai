@@ -1,7 +1,7 @@
 # Field intelligence: from Photo Scout to production (living plan)
 
 Objective, in the founder's words (2026-10-08): the product is field intelligence. A
-grower uploads the field map, SwathWise finds the weeds, measures each one, and turns what
+grower uploads the field map, Swardus finds the weeds, measures each one, and turns what
 the grower confirms into action. The planting-pattern pass built as Photo Scout is the
 engine; this plan is how it becomes the scan, the screen and the shipped Weed Scout. It is
 updated as each piece lands. Nothing here is built until the founder says which phase.

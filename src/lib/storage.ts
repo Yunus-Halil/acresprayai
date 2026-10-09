@@ -1,7 +1,7 @@
 // Namespaced browser-storage keys.
 //
 // Everything the app persists locally lives under one prefix so the whole
-// namespace is greppable, and so a rename like AcreSpray -> SwathWise is a
+// namespace is greppable, and so a rename like AcreSpray -> SwathWise -> Swardus (2026-10-08) is a
 // one-line change rather than a hunt through four files.
 
 export const STORAGE_PREFIX = "swathwise";

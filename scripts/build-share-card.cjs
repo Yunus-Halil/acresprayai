@@ -20,7 +20,7 @@ const GRID = 72;                          // matches the landing page's grid
 const GRID_ALPHA = 0.045;
 
 const repo = path.resolve(__dirname, "..");
-const logoPath = path.join(repo, "src/assets/swathwise-logo.png");
+const logoPath = path.join(repo, "src/assets/swardus-logo.png");
 const outPath = path.join(repo, "public/share-card.png");
 
 const out = new PNG({ width: W, height: H });

@@ -18,4 +18,4 @@ Virginia is the first research build. For every later state, keep the same evide
 | `regulatory_only` | Named in state law; possibly absent locally | Compliance research with tier shown |
 | `aerial_identification_validated=false` | No field-image accuracy study in this build | Do not claim automated species identification |
 
-A production SwathWise catalog should add a distinct `expert_reviewed` state and separate county occurrence and visual-detection evidence. No records in v0.1 have those claims.
+A production Swardus catalog should add a distinct `expert_reviewed` state and separate county occurrence and visual-detection evidence. No records in v0.1 have those claims.

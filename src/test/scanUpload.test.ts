@@ -495,7 +495,7 @@ describe("uploadScan · batch bounds", () => {
 
 // ---------------------------------------------------------------------------
 
-describe("legacy storage migration (AcreSpray -> SwathWise rename)", () => {
+describe("legacy storage migration (AcreSpray -> Swardus rename)", () => {
   it("carries an in-flight upload checkpoint across the rename", async () => {
     // The checkpoint is what stops a dropped connection from re-sending images
     // that already landed. Orphaning it on a rename would silently cost a farmer

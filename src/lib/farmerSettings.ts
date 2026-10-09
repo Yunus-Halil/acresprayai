@@ -198,7 +198,7 @@ export const DEFAULT_FARMER_SETTINGS: FarmerSettings = {
 };
 
 /**
- * True when the medium rate is still the number SwathWise shipped.
+ * True when the medium rate is still the number Swardus shipped.
  *
  * The savings figure on every report is measured against this rate, so the
  * document has to be able to say where it came from. It cannot say the
@@ -263,7 +263,7 @@ export function resolveZoneRateLha(
 
 /**
  * Currencies offered in Settings. Not exhaustive by design — a short list of
- * the places SwathWise is aimed at beats a 180-entry dropdown. Any valid ISO
+ * the places Swardus is aimed at beats a 180-entry dropdown. Any valid ISO
  * 4217 code stored on a field still formats correctly.
  */
 export const CURRENCIES: { code: string; label: string }[] = [

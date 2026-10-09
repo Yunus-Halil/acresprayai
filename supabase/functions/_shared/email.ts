@@ -36,7 +36,7 @@ export async function sendEmail({ to, subject, text }: Email): Promise<SendResul
   // Resend's shared onboarding sender works without domain verification but can
   // only deliver to the Resend account's own address, which is exactly the case
   // here. Set PILOT_NOTIFY_FROM once swathwise.com is verified.
-  const from = Deno.env.get("PILOT_NOTIFY_FROM") ?? "SwathWise <onboarding@resend.dev>";
+  const from = Deno.env.get("PILOT_NOTIFY_FROM") ?? "Swardus <onboarding@resend.dev>";
 
   try {
     const res = await fetchResilient(RESEND_ENDPOINT, {

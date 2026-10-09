@@ -293,7 +293,7 @@ export function generateKmz(
   }));
 
   const pkg = buildWpmlKmzFromWaypoints(wps, {
-    author: opts.author ?? "SwathWise",
+    author: opts.author ?? "Swardus",
     createTimeMs: opts.createTimeMs,
     transitSpeed: params.speedMs,
     autoFlightSpeed: params.speedMs,

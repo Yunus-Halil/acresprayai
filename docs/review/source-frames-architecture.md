@@ -182,7 +182,7 @@ Built (pure library, no pipeline or UI change, 13 tests on the real reconstructi
   camera-native frame, motion blur from speed and shutter, a score whose parts are named and
   whose unavailable parts (sharpness, exposure, occlusion) are null, best first.
 
-Decided 2026-10-01 (founder): keep the originals in SwathWise storage, keep sending the
+Decided 2026-10-01 (founder): keep the originals in Swardus storage, keep sending the
 2,400 px copy to ODM, preserve every byte of metadata, no DSM until the flat-ground
 approximation is shown to fail, no threshold or species work. Built the same day:
 

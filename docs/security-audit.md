@@ -59,7 +59,7 @@ escaping is removed (verified by deliberately breaking it).
 
 **Where:** `vercel.json`. Only `Strict-Transport-Security` was set.
 
-**The concrete problem:** another site could load SwathWise in an invisible
+**The concrete problem:** another site could load Swardus in an invisible
 frame, float its own buttons on top, and harvest your clicks. In most apps that
 means an unwanted follow. Here the buttons underneath include **Clear all
 treatment grid zones** and boundary editing — a season of painted work.

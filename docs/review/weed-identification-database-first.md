@@ -204,7 +204,7 @@ Negatives in the same library: corn, soybean, bare soil, residue, shadow, the st
 crop patch. Without them UNKNOWN cannot be measured.
 
 **Data.** No species-labelled aerial imagery exists in this repo today, and none should
-be assumed. The PoC's first deliverable is a prototype set, from: (a) SwathWise flights
+be assumed. The PoC's first deliverable is a prototype set, from: (a) Swardus flights
 at 1 cm/px and 2 cm/px over staked, photographed plants (`offrow/FLIGHT.md`); (b)
 DRONEWEED once downloaded, if its labels are per species (unknown until read); (c) any
 licensed public set with per-species boxes, imported through the offrow `Example` format

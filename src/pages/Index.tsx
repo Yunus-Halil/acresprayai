@@ -10,8 +10,8 @@ import Seo from "@/components/Seo";
 const Index = () => (
   <main className="relative min-h-screen overflow-hidden bg-sw-paper font-grotesk text-sw-ink">
     <Seo
-      title="SwathWise: Precision agriculture from the air"
-      description="Field intelligence built for action. Upload your field map: SwathWise finds and measures the weeds, all of them, and turns what you confirm into a spray mission and a record."
+      title="Swardus: Precision agriculture from the air"
+      description="Field intelligence built for action. Upload your field map: Swardus finds and measures the weeds, all of them, and turns what you confirm into a spray mission and a record."
       path="/"
     />
     {/* The nav sits over the hero film, which is the first screen; nothing decorates the page behind it. */}

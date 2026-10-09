@@ -13,7 +13,7 @@ import Seo from "@/components/Seo";
 /**
  * Sign in only.
  *
- * SwathWise is in closed testing. The sign-up mode this page used to carry
+ * Swardus is in closed testing. The sign-up mode this page used to carry
  * created an account for anyone with an email address, which is the opposite
  * of closed. Testers already have accounts and need this door; everyone else
  * is sent to the access request, which a person reads.
@@ -76,11 +76,11 @@ export default function Auth() {
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
-      <Seo title="Sign in, SwathWise" noindex />
+      <Seo title="Sign in, Swardus" noindex />
       <div className="hidden lg:flex relative bg-[hsl(var(--field))] grid-bg-dark overflow-hidden">
         <div className="relative z-10 p-12 flex flex-col justify-between text-[hsl(var(--primary-foreground))]">
           <Link to="/" className="flex items-center gap-2 font-display text-xl">
-            <Leaf className="h-5 w-5 text-[hsl(var(--accent))]" /> SwathWise
+            <Leaf className="h-5 w-5 text-[hsl(var(--accent))]" /> Swardus
           </Link>
           <div className="space-y-4 max-w-md">
             <h1 className="font-display text-4xl leading-tight">Precision agriculture, from the air.</h1>
@@ -95,7 +95,7 @@ export default function Auth() {
         <Card className="w-full max-w-md p-8 space-y-6">
           <div>
             <h2 className="font-display text-2xl">Welcome back</h2>
-            <p className="text-sm text-muted-foreground">Sign in to your SwathWise cockpit.</p>
+            <p className="text-sm text-muted-foreground">Sign in to your Swardus cockpit.</p>
           </div>
 
           <Button type="button" variant="outline" className="w-full" onClick={google}>
@@ -117,7 +117,7 @@ export default function Auth() {
           </form>
 
           <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
-            <div className="font-medium text-foreground">SwathWise is in closed testing.</div>
+            <div className="font-medium text-foreground">Swardus is in closed testing.</div>
             <p className="mt-1">
               New accounts are by invitation. If you farm, spray, or scout and want in,{" "}
               <Link to="/apply" className="text-foreground underline underline-offset-4">request access</Link>{" "}
