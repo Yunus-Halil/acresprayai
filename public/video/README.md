@@ -8,22 +8,22 @@ dress up an old one.
 |---|---|---|
 | `cockpit-sim.mp4` / `.webm` | The flight planner running a mission simulation at 32× | Nothing, since 2026-10-08: the cockpit section was cut while the product is in closed testing. Kept for when it comes back. |
 | `cockpit-sim-poster.jpg` | Frame 11s in — tank dynamics, transport and full telemetry all visible | Poster for the above |
-| `hero.mp4` / `hero-1280.mp4` | The hero film: real flights, the field, the route and the map, 18 s, muted | The hero, behind the headline; the 1280 cut for screens under 900 px |
-| `hero-poster.jpg` | Frame 6.5 s in, the orchard with the route drawn over it | Poster for the above, and all that anyone on reduced motion or a slow connection sees |
+| `hero.mp4` / `hero-1280.mp4` | The hero film: real flights, the field, the route and the map, 20 s, muted (new cut 2026-10-09) | The hero, behind the headline; the 1280 cut for screens under 900 px |
+| `hero-poster.jpg` | Frame 2.5 s in, the drone lifting off the rig over the beans | Poster for the above, and all that anyone on reduced motion or a slow connection sees |
 
 ## The hero film
 
-The master is `herovideo/Timeline 1.mov` (50 MB, 3840×2160, 30 fps, 18 s),
+The master is `herovideo/Timeline 1.mov` (55 MB, 3840×2160, 30 fps, 20 s, the 2026-10-09 cut),
 gitignored for the same reason as the capture masters below. WebM was tried
 and came out larger than the MP4 on this footage, so only MP4 is served.
 
 ```sh
 SRC="herovideo/Timeline 1.mov"
 ffmpeg -y -i "$SRC" -an -vf "scale=1920:-2" -c:v libx264 -profile:v high -crf 30 -preset slow \
-  -movflags +faststart -pix_fmt yuv420p public/video/hero.mp4          # ~4.4 MB
+  -movflags +faststart -pix_fmt yuv420p public/video/hero.mp4          # ~5.6 MB
 ffmpeg -y -i "$SRC" -an -vf "scale=1280:-2" -c:v libx264 -profile:v high -crf 30 -preset slow \
-  -movflags +faststart -pix_fmt yuv420p public/video/hero-1280.mp4     # ~2.3 MB
-ffmpeg -y -ss 6.5 -i "$SRC" -vframes 1 -vf "scale=1920:-2" -q:v 4 public/video/hero-poster.jpg
+  -movflags +faststart -pix_fmt yuv420p public/video/hero-1280.mp4     # ~2.8 MB
+ffmpeg -y -ss 2.5 -i "$SRC" -vframes 1 -vf "scale=1920:-2" -q:v 4 public/video/hero-poster.jpg
 ```
 
 ## The master is not in git
