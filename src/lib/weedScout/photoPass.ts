@@ -28,7 +28,7 @@
 // candidates with the photo as their source and a chip cut from the photo
 // itself, so review, verdicts and the archive need nothing new.
 import { type LatLng2, pointInAnyRing } from "../geo";
-import { type DecodedPhoto, decodePhoto } from "../photoScout/decode";
+import { type DecodedPhoto, MAX_EDGE_PX, decodePhoto } from "../photoScout/decode";
 import { type PhotoParams, type PhotoPattern, type PhotoPixels, rowSegmentsPx } from "../photoScout/pattern";
 import { analysePhotoOffThread } from "../photoScout/runPattern";
 import { type FrameManifestEntry, lookupOriginal } from "../sourceFrames/manifest";
@@ -62,6 +62,29 @@ export const PHOTO_CHIP_MAX = 150;
 /** A finding the photo pass made, as opposed to one the map pass made. */
 export const isPhotoFinding = (c: Pick<Candidate, "id">): boolean => c.id.startsWith("c-p:");
 
+/** Bumped when the pass's result for a photo changes shape or meaning; older saved reads are left unread. */
+export const PHOTO_READ_VERSION = "photo-read-v1";
+
+/** What a later run or the closer look needs from a photo: the pass's result and the two widths that carry it to the ground and to the original's pixels. */
+export type SavedPhotoRead = { pattern: PhotoPattern; decodedWidth: number; nativeWidth: number };
+
+/** What the pass and the closer look ask of a store of saved reads: one by filename, and a place to put one. */
+export type PhotoReadStore = {
+  get: (filename: string) => SavedPhotoRead | undefined;
+  put: (filename: string, read: SavedPhotoRead) => void | Promise<unknown>;
+};
+
+/** The pass's settings for a photo, from the run's parameters: the one place both the pass and the closer look take them from. */
+export function photoPassParams(params: Pick<ScoutParams, "rowSpacingAuto" | "rowSpacingM" | "minBlobCm2">): Pick<PhotoParams, "rowSpacingM" | "windowM" | "minBlobAreaCm2"> {
+  return { rowSpacingM: params.rowSpacingAuto ? "auto" : params.rowSpacingM, windowM: PHOTO_PASS_WINDOW_M, minBlobAreaCm2: params.minBlobCm2 };
+}
+
+/** The settings a saved read depends on. Two reads of one photo under the same key are the same read. */
+export function photoReadKey(p: Pick<PhotoParams, "rowSpacingM" | "windowM" | "minBlobAreaCm2">, maxEdgePx = MAX_EDGE_PX): string {
+  const spacing = p.rowSpacingM === "auto" || p.rowSpacingM == null ? "auto" : (+p.rowSpacingM).toFixed(3);
+  return `${PHOTO_READ_VERSION}|spacing=${spacing}|window=${p.windowM ?? ""}|minBlob=${p.minBlobAreaCm2 ?? ""}|edge=${maxEdgePx}`;
+}
+
 export type PhotoFinding = {
   id: string;
   filename: string;
@@ -85,6 +108,8 @@ export type PhotoRead = {
   filename: string;
   status: "read" | "skipped" | "failed";
   reason?: string;
+  /** True when the read came from the saved reads rather than the photo. */
+  saved?: boolean;
   windows: number;
   usableWindows: number;
   blocks: number;
@@ -341,6 +366,8 @@ export type PhotoPassOptions = {
   onFound?: (candidates: Candidate[]) => void;
   /** Looks for the map pass's own spots, as each photo lands, by spot id. */
   onLook?: (looks: Record<string, PhotoLook>) => void;
+  /** Saved reads of this scan's photos: taken instead of the photo when present, written as photos are read. */
+  reads?: PhotoReadStore | null;
   /** Injected for tests. */
   fetchFrame?: (entry: FrameManifestEntry) => Promise<globalThis.Blob | null>;
   decode?: (blob: globalThis.Blob) => Promise<DecodedPhoto>;
@@ -368,9 +395,10 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
   const fetchFrame = opts.fetchFrame ?? (async (entry: FrameManifestEntry) => (await import("../sourceFrames/scan")).downloadFrame(entry));
   const decode = opts.decode ?? decodePhoto;
   const analyse = opts.analyse ?? ((px: PhotoPixels, p: PhotoParams) => analysePhotoOffThread(px, p, { signal: opts.signal }));
+  const passParams = photoPassParams(params);
   const existing: LatLng2[] = result.candidates.filter(c => !c.region).map(c => c.centroid);
   const sys: UnitSystem = opts.unitSystem ?? "metric";
-  let found = 0, skipped = 0, failed = 0, looked = 0;
+  let found = 0, skipped = 0, failed = 0, looked = 0, fromSaved = 0;
   const check = () => { if (opts.signal?.aborted) throw new Aborted(); };
   for (let i = 0; i < shots.length; i++) {
     const shot = shots[i];
@@ -382,29 +410,41 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
     const lookup = lookupOriginal(sources.frames, shot.filename);
     if (!lookup.ok) { read.status = "skipped"; read.reason = "reason" in lookup ? lookup.reason : "no original was kept"; skipped++; continue; }
     try {
-      const blob = await fetchFrame(lookup.entry);
-      if (!blob) { read.status = "skipped"; read.reason = "the original could not be downloaded"; skipped++; continue; }
-      check();
-      const decoded = await decode(blob);
-      decoded.bitmap?.close?.();
-      const fg = frameGsdM(sources.set, shot, sources.groundAltM);
-      if (!fg) { read.status = "skipped"; read.reason = "the photo's footprint does not reach the ground"; skipped++; continue; }
-      const gsdM = (fg * sources.set.cameras[shot.cameraKey].width) / decoded.pixels.width;
-      const pattern = await analyse(decoded.pixels, {
-        gsdM, rowSpacingM: params.rowSpacingAuto ? "auto" : params.rowSpacingM, windowM: PHOTO_PASS_WINDOW_M, minBlobAreaCm2: params.minBlobCm2,
-      });
-      check();
+      // The photo's read: saved from an earlier run of this scan, or made now
+      // from the photo and saved for the next. The pixels are only needed for
+      // the chips, so a saved read gives its findings no picture; their look
+      // opens them in the photo.
+      let pattern: PhotoPattern, decodedWidth: number, nativeWidth: number, pixels: PhotoPixels | null = null;
+      const saved = opts.reads?.get(shot.filename);
+      if (saved) {
+        ({ pattern, decodedWidth, nativeWidth } = saved);
+        read.saved = true; fromSaved++;
+      } else {
+        const blob = await fetchFrame(lookup.entry);
+        if (!blob) { read.status = "skipped"; read.reason = "the original could not be downloaded"; skipped++; continue; }
+        check();
+        const decoded = await decode(blob);
+        decoded.bitmap?.close?.();
+        const fg = frameGsdM(sources.set, shot, sources.groundAltM);
+        if (!fg) { read.status = "skipped"; read.reason = "the photo's footprint does not reach the ground"; skipped++; continue; }
+        const gsdM = (fg * sources.set.cameras[shot.cameraKey].width) / decoded.pixels.width;
+        pattern = await analyse(decoded.pixels, { gsdM, ...passParams });
+        check();
+        decodedWidth = decoded.pixels.width; nativeWidth = decoded.nativeWidth; pixels = decoded.pixels;
+        void opts.reads?.put(shot.filename, { pattern, decodedWidth, nativeWidth });
+      }
       read.windows = pattern.summary.windows; read.usableWindows = pattern.summary.usableWindows; read.blocks = pattern.summary.blocks;
       const grounded = groundPhotoFindings({
-        set: sources.set, shot, groundAltM: sources.groundAltM, pattern, decodedWidth: decoded.pixels.width, nativeWidth: decoded.nativeWidth, fieldPattern: result.pattern,
+        set: sources.set, shot, groundAltM: sources.groundAltM, pattern, decodedWidth, nativeWidth, fieldPattern: result.pattern,
       });
       read.matchedBlocks = grounded.blocks.filter(b => b.matched).length;
-      const fresh = dedupeFindings(grounded.findings.filter(f => pointInAnyRing(f.centroid, boundary)), existing);
+      // The photo's own plants join the map only when asked; the looks are what the photo is read for.
+      const fresh = params.photoFindings ? dedupeFindings(grounded.findings.filter(f => pointInAnyRing(f.centroid, boundary)), existing) : [];
       const batch: Candidate[] = [];
       for (const f of fresh) {
         const tileId = tileIdAt(lattice, f.centroid) ?? "photo";
         const span = Math.max(0.5, PHOTO_CHIP_SPAN_MULT * f.equivDiameterM);
-        const chip = found + batch.length < PHOTO_CHIP_MAX ? chipFromPhoto(decoded.pixels, f.photoPx.x, f.photoPx.y, span, f.gsdM) : null;
+        const chip = pixels && found + batch.length < PHOTO_CHIP_MAX ? chipFromPhoto(pixels, f.photoPx.x, f.photoPx.y, span, f.gsdM) : null;
         const c = photoCandidate(f, tileId, chip);
         c.estimate = describe(c, null, opts.crop ?? "", opts.growthStage ?? null, null, result.pattern?.summary.rowSpacingM ?? params.rowSpacingM, f.gsdM, sys);
         batch.push(c);
@@ -414,12 +454,12 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
       // pass's own spots, handed over by id, and this photo's findings,
       // which carry theirs from the start.
       const ownLooks = looksInPhoto({
-        set: sources.set, shot, groundAltM: sources.groundAltM, pattern, decodedWidth: decoded.pixels.width, nativeWidth: decoded.nativeWidth,
+        set: sources.set, shot, groundAltM: sources.groundAltM, pattern, decodedWidth, nativeWidth,
         candidates: batch, rowSpacingM,
       });
       for (const c of batch) c.look = ownLooks[c.id] ?? null;
       const mapLooks = looksInPhoto({
-        set: sources.set, shot, groundAltM: sources.groundAltM, pattern, decodedWidth: decoded.pixels.width, nativeWidth: decoded.nativeWidth,
+        set: sources.set, shot, groundAltM: sources.groundAltM, pattern, decodedWidth, nativeWidth,
         candidates: result.candidates, rowSpacingM,
       });
       for (const id of Object.keys(mapLooks)) looks[id] = mapLooks[id];
@@ -445,7 +485,7 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
   const spots = result.candidates.filter(c => c.sourceImages?.best).length;
   const wanted = photosOfSpots(result.candidates).length;
   notes.push(
-    `${readCount} of ${shots.length} photo(s) read at full resolution, the spots' own photos only: ${found} more plant(s) off the pattern, ${looked} of ${spots} spot(s) shown in their photo` +
+    `${readCount} of ${shots.length} photo(s) read at full resolution, the spots' own photos only${fromSaved ? ` (${fromSaved} from the saved reads of this scan)` : ""}: ${params.photoFindings ? `${found} more plant(s) off the pattern` : "the plants they hold were not put on the map"}, ${looked} of ${spots} spot(s) shown in their photo` +
     `${skipped ? `, ${skipped} skipped` : ""}${failed ? `, ${failed} failed (${firstFailure})` : ""}${wanted > shots.length ? `; ${wanted - shots.length} photo(s) over the limit were not read` : ""}${found > PHOTO_CHIP_MAX ? `; the first ${PHOTO_CHIP_MAX} carry a picture, the rest open in their photo` : ""}.`,
   );
   return { reads, candidates: out, looks, notes };

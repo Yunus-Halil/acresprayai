@@ -12,8 +12,9 @@ import type { PhotoPattern } from "@/lib/photoScout/pattern";
 import { frameFootprint, groundAltitudeFromOdm, parseOdmOutputs, pixelToGround } from "@/lib/sourceFrames/odm";
 import type { FieldPattern } from "@/lib/weedScout/fieldPattern";
 import {
-  PHOTO_DUPLICATE_M, type PhotoFinding, choosePhotos, dedupeFindings, frameGsdM, groundPhotoFindings, isPhotoFinding, looksInPhoto, photoCandidate, photosOfSpots, shotsOfSpots,
+  PHOTO_DUPLICATE_M, type PhotoFinding, type SavedPhotoRead, choosePhotos, dedupeFindings, frameGsdM, groundPhotoFindings, isPhotoFinding, looksInPhoto, photoCandidate, photoPassParams, photoReadKey, photosOfSpots, runPhotoPass, shotsOfSpots,
 } from "@/lib/weedScout/photoPass";
+import type { ScoutParams, ScoutResult } from "@/lib/weedScout/types";
 import { localFrame } from "@/lib/weedScout/rows";
 
 const DIR = join(process.cwd(), "src", "test", "fixtures", "odm-dd0f6314");
@@ -118,6 +119,40 @@ describe("the photo pass on a real reconstruction", () => {
     expect(look.focus).toMatchObject({ cls: "off-row", matched: true });
     expect(look.focus!.x).toBeCloseTo(cam.width - look.window.x, 0);
     expect(look.counts.offRow).toBe(1);
+  });
+
+  it("takes a photo's saved read instead of the photo, and saves the reads it makes", async () => {
+    const [a, b] = set.shots;
+    const g = frameGsdM(set, a, groundAlt)!;
+    const spotIn = (shot: typeof a) => {
+      const c = pixelToGround(set, shot, cam.width / 2, cam.height / 2, groundAlt)!;
+      return { id: `c-${shot.filename}`, centroid: { lat: c.lat, lng: c.lng }, region: null, blob: null, look: null, sourceImages: { photos: 1, best: shot.filename, coverage: 1, chosen: [shot.filename], nearestOnly: false, kept: true } };
+    };
+    const result = { tileM: 3, pattern: null, candidates: [spotIn(a), spotIn(b)] } as unknown as ScoutResult;
+    const frames = Object.fromEntries([a, b].map(s => [s.filename, { filename: s.filename, path: `x/${s.filename}`, bytes: 1, type: "image/jpeg", lastModified: 0 }]));
+    const sources = { set, stats: null, groundAltM: groundAlt, frames, reconstruction: "stored" as const };
+    const boundary = [fieldRing()];
+    // Photo a has a saved read; photo b must be fetched, decoded and analysed, and its read put in the store.
+    const saved = new Map<string, SavedPhotoRead>([[a.filename, { pattern: fakePattern(g, cam.width, cam.height, 30), decodedWidth: cam.width, nativeWidth: cam.width * 2 }]]);
+    const fetched: string[] = [], put: string[] = [];
+    const params = { rowSpacingAuto: true, rowSpacingM: 0.762, minBlobCm2: 1, maxPhotoReads: 10, photoFindings: true } as unknown as ScoutParams;
+    const pass = await runPhotoPass({
+      result, sources, boundary, params,
+      reads: { get: f => saved.get(f), put: (f, r) => { put.push(f); saved.set(f, r); } },
+      fetchFrame: async e => { fetched.push(e.filename); return new Blob([new Uint8Array(4)]); },
+      decode: async () => ({ pixels: { width: cam.width, height: cam.height, rgba: new Uint8ClampedArray(0) }, bitmap: undefined as never, nativeWidth: cam.width * 2, nativeHeight: cam.height * 2, scale: 0.5 }),
+      analyse: async () => fakePattern(g, cam.width, cam.height, 30),
+    });
+    expect(fetched).toEqual([b.filename]);
+    expect(put).toEqual([b.filename]);
+    expect(pass.reads.map(r => [r.filename, r.status, !!r.saved])).toEqual([[a.filename, "read", true], [b.filename, "read", false]]);
+    // Both photos gave their looks, the saved one without ever touching the photo; what they found inside the field is what the list holds.
+    expect(pass.candidates).toHaveLength(pass.reads.reduce((n, r) => n + r.findings, 0));
+    expect(Object.keys(pass.looks).sort()).toEqual([`c-${a.filename}`, `c-${b.filename}`].sort());
+    expect(pass.notes[0]).toMatch(/2 of 2 photo\(s\) read at full resolution, the spots' own photos only \(1 from the saved reads of this scan\)/);
+    // The key says what a read depends on, and only that.
+    expect(photoReadKey(photoPassParams(params))).toBe("photo-read-v1|spacing=auto|window=4|minBlob=1|edge=4096");
+    expect(photoReadKey(photoPassParams({ ...params, rowSpacingAuto: false }))).toBe("photo-read-v1|spacing=0.762|window=4|minBlob=1|edge=4096");
   });
 
   it("knows the frame's pixel size from its footprint, near ODM's own average", () => {

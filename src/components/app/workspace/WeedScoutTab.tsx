@@ -63,7 +63,8 @@ import { renderCloserLook } from "@/lib/sourceFrames/crop";
 import { lookupOriginal } from "@/lib/sourceFrames/manifest";
 import { type ScanSources, downloadFrame, loadScanSources } from "@/lib/sourceFrames/scan";
 import { type SpotSources, spotSources } from "@/lib/sourceFrames/spot";
-import { isPhotoFinding } from "@/lib/weedScout/photoPass";
+import { type PhotoReadStore, isPhotoFinding, photoPassParams, photoReadKey } from "@/lib/weedScout/photoPass";
+import { openPhotoReadStore } from "@/lib/weedScout/photoReadCache";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, MouseReadout, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
@@ -96,6 +97,7 @@ function loadParams(): ScoutParams {
       rowSpacingAuto: p.rowSpacingAuto !== false,
       rowAngleDeg: typeof p.rowAngleDeg === "number" && Number.isFinite(p.rowAngleDeg) ? p.rowAngleDeg : null,
       photoPass: p.photoPass !== false,
+      photoFindings: p.photoFindings === true,
       maxPhotoReads: Math.round(num(p.maxPhotoReads, DEFAULT_SCOUT_PARAMS.maxPhotoReads)),
     };
   } catch {
@@ -289,6 +291,16 @@ export function WeedScoutTab({
   const [showPhotos, setShowPhotos] = useState(true);
   /** The planting pattern on the map: on by default here, where it is the explanation of every spot. */
   const [showPattern, setShowPattern] = useState(true);
+  // The scan's saved photo reads, for the closer look: opened when signed in,
+  // reopened after a photo pass so the reads it just saved are in hand.
+  const [readStore, setReadStore] = useState<PhotoReadStore | null>(null);
+  const photoRunning = session.photo?.running ?? false;
+  useEffect(() => {
+    if (!user || photoRunning) return;
+    let on = true;
+    openPhotoReadStore({ userId: user.id, scanId: taskId, paramsKey: photoReadKey(photoPassParams(params)) }).then(s => { if (on) setReadStore(s); });
+    return () => { on = false; };
+  }, [user, taskId, params.rowSpacingAuto, params.rowSpacingM, params.minBlobCm2, photoRunning]);
   // Developer tools only: the pattern pass drawn as it runs, window by window.
   const dev = useDeveloperMode();
   const [watchPass, setWatchPass] = useState(true);
@@ -805,7 +817,8 @@ export function WeedScoutTab({
         <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} onDetections={list => addDetections(taskId, list)}
           rowSpacingM={result?.pattern?.summary.rowSpacingM ?? null}
           spotDiameterM={closerLook ? (candidates.find(c => c.id === closerLook.id)?.blob?.equivDiameterM ?? null) : null}
-          spotLook={closerLook ? (candidates.find(c => c.id === closerLook.id)?.look ?? null) : null} />
+          spotLook={closerLook ? (candidates.find(c => c.id === closerLook.id)?.look ?? null) : null}
+          passParams={params} readStore={readStore} />
 
         <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2 text-neutral-300"><FlaskConical className="h-3 w-3 text-[#4CAF50]" /> Click a spot to change it</div>
@@ -963,6 +976,10 @@ export function WeedScoutTab({
                     <input type="number" min={1} max={2000} step={10} className={inputCls + " w-16"} value={params.maxPhotoReads} disabled={!params.photoPass}
                       onChange={e => setParams(p => ({ ...p, maxPhotoReads: Math.max(1, Math.round(Number(e.target.value) || 150)) }))} />
                     original photos for the small weeds
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer" title="Experimental. The photos are read for each spot's look either way; this also puts every plant the pass finds in them on the map.">
+                    <input type="checkbox" checked={params.photoFindings} disabled={!params.photoPass} onChange={e => setParams(p => ({ ...p, photoFindings: e.target.checked }))} className="accent-[#4CAF50]" />
+                    Put the plants found in the photos on the map (experimental)
                   </label>
                 </div>
                 <div className="text-[11px] text-neutral-500">{crop || "crop not set"}{stage ? `, ${stage}` : ""}</div>

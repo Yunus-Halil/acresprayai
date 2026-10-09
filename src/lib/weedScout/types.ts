@@ -113,6 +113,12 @@ export type ScoutParams = {
   photoPass: boolean;
   /** Photos read per scan, the ones covering most of the field first. */
   maxPhotoReads: number;
+  /**
+   * Put the plants the photo pass finds on the map as findings. Off by
+   * default: on a real orchard that was a thousand dots the operator did not
+   * ask for. The pass still reads each spot's photo for its look.
+   */
+  photoFindings: boolean;
 };
 
 export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
@@ -133,6 +139,7 @@ export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
   rowSpacingAuto: true,
   rowAngleDeg: null,
   photoPass: true,
+  photoFindings: false,
   maxPhotoReads: 150,
 };
 

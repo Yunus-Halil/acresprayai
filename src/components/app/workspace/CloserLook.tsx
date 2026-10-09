@@ -25,26 +25,38 @@ import { BLOB_COLOUR, type LookCut, type PhotoLook, ROW_COLOUR, cutLookWindow, l
 import { analysePhotoOffThread } from "@/lib/photoScout/runPattern";
 import { decodePhoto } from "@/lib/photoScout/decode";
 import type { PhotoPattern } from "@/lib/photoScout/pattern";
-import { PHOTO_PASS_WINDOW_M } from "@/lib/weedScout/photoPass";
+import { type PhotoReadStore, photoPassParams } from "@/lib/weedScout/photoPass";
+import type { ScoutParams } from "@/lib/weedScout/types";
 
 /** A photo read whole in this session, kept so the next spot in it opens at once. */
 type WholePhotoRead = { pattern: PhotoPattern; nativeScale: number };
 const wholePhotoReads = new Map<string, Promise<WholePhotoRead>>();
 const WHOLE_PHOTO_READS_KEPT = 4;
 
-/** Read a whole original with the pass, once per photo per session. The pass needs several rows in view, so never a cut. */
-function readWholePhoto(frame: Blob, filename: string, nativeGsdM: number, rowSpacingM: number | null, onProgress: (fraction: number) => void): Promise<WholePhotoRead> {
+/**
+ * Read a whole original with the pass, once per photo per session: from the
+ * scan's saved reads when it has one (no download, no decode), else from the
+ * photo, and then saved for the next time. The pass needs several rows in
+ * view, so never a cut. The settings are the run's own, so a read made here
+ * and one made by the photo pass are the same read.
+ */
+function readWholePhoto(
+  frame: Blob, filename: string, nativeGsdM: number, passParams: ReturnType<typeof photoPassParams>, store: PhotoReadStore | null, onProgress: (fraction: number) => void,
+): Promise<WholePhotoRead> {
   const have = wholePhotoReads.get(filename);
   if (have) return have;
   const p = (async () => {
+    const saved = store?.get(filename);
+    if (saved) return { pattern: saved.pattern, nativeScale: saved.nativeWidth / saved.decodedWidth };
     const decoded = await decodePhoto(frame);
     decoded.bitmap.close?.();
     const nativeScale = decoded.nativeWidth / decoded.pixels.width;
     const pattern = await analysePhotoOffThread(
       decoded.pixels,
-      { gsdM: nativeGsdM * nativeScale, rowSpacingM: rowSpacingM && rowSpacingM > 0 ? rowSpacingM : "auto", windowM: PHOTO_PASS_WINDOW_M },
+      { gsdM: nativeGsdM * nativeScale, ...passParams },
       { onProgress: (done, total) => onProgress(total ? done / total : 0), transfer: true },
     );
+    void store?.put(filename, { pattern, decodedWidth: decoded.pixels.width, nativeWidth: decoded.nativeWidth });
     return { pattern, nativeScale };
   })();
   wholePhotoReads.set(filename, p);
@@ -63,7 +75,7 @@ export function resetWholePhotoReads(): void { wholePhotoReads.clear(); }
 /** `id` names the finding on the map; the detector's boxes are filed under it. */
 export type CloserLookTarget = { id?: string; title: string; spot: SpotSources };
 
-export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null, spotLook = null }: {
+export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null, spotLook = null, passParams = null, readStore = null }: {
   target: CloserLookTarget | null;
   sources: ScanSources | null;
   units: UnitSystem;
@@ -76,6 +88,10 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   spotDiameterM?: number | null;
   /** The look the scan's photo pass left on this spot, when it read the spot's photo. */
   spotLook?: PhotoLook | null;
+  /** The run's parameters, so a photo read here is read the way the pass reads it. Defaults when absent. */
+  passParams?: Pick<ScoutParams, "rowSpacingAuto" | "rowSpacingM" | "minBlobCm2"> | null;
+  /** The scan's saved photo reads, when signed in. */
+  readStore?: PhotoReadStore | null;
 }) {
   const [viewIndex, setViewIndex] = useState(0);
   const [look, setLook] = useState<Look | null>(null);
@@ -144,12 +160,19 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   // scan left on the spot is drawn at once when it is this photo's; otherwise
   // the whole photo is read here (a cut of a few rows is not enough for the
   // pass to trust a fit) and the same look is built from it.
+  //
+  // The run is owned by a counter, not by the effect's closure: setting the
+  // state to "reading" re-renders the dialog, and an effect that cancelled
+  // itself on every re-render threw away every read it finished. That was the
+  // spinner that never ended. A read is stale only when a newer one started.
+  const patternRun = useRef(0);
   useEffect(() => {
-    if (!look || !patternOn || patternLook || patternState !== "idle" || !view) return;
+    if (!look || !patternOn || !view) return;
     const frame = frameRef.current;
     if (!frame) return;
-    let cancelled = false;
-    setPatternState("reading"); setPatternProgress(null); setPatternError(null);
+    const run = ++patternRun.current;
+    const alive = () => patternRun.current === run;
+    setPatternLook(null); setPatternState("reading"); setPatternProgress(null); setPatternError(null);
     (async () => {
       let pl: PhotoLook, fromRun = false;
       if (spotLook && spotLook.filename === view.filename) {
@@ -157,18 +180,19 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
       } else {
         const centre = { x: look.window.x + look.window.width / 2, y: look.window.y + look.window.height / 2 };
         setPatternProgress(0);
-        const read = await readWholePhoto(frame, view.filename, look.gsdM, rowSpacingM, f => { if (!cancelled) setPatternProgress(f); });
+        const pp = photoPassParams(passParams ?? { rowSpacingAuto: true, rowSpacingM: 0.762, minBlobCm2: 1 });
+        const read = await readWholePhoto(frame, view.filename, look.gsdM, pp, readStore, f => { if (alive()) setPatternProgress(f); });
         pl = lookFromPattern(read.pattern, { x: centre.x / read.nativeScale, y: centre.y / read.nativeScale, diameterM: spotDiameterM },
           { filename: view.filename, sideM: patternLookSideM(rowSpacingM), nativeScale: read.nativeScale });
       }
       const cut = await cutLookWindow(frame, pl.window);
       if (!cut) throw new Error("the window could not be cut from the photo");
-      if (cancelled) { URL.revokeObjectURL(cut.url); return; }
+      if (!alive()) { URL.revokeObjectURL(cut.url); return; }
       setPatternLook({ cut, look: pl, fromRun });
       setPatternState("idle");
-    })().catch(e => { if (!cancelled) { setPatternState("failed"); setPatternError((e as Error)?.message ?? String(e)); } });
-    return () => { cancelled = true; };
-  }, [look, patternOn, patternLook, patternState, rowSpacingM, spotDiameterM, spotLook, view]);
+    })().catch(e => { if (alive()) { setPatternState("failed"); setPatternError((e as Error)?.message ?? String(e)); } });
+    return () => { patternRun.current++; };
+  }, [look, patternOn, view, spotLook, rowSpacingM, spotDiameterM, passParams, readStore]);
   useEffect(() => () => { if (patternLook) URL.revokeObjectURL(patternLook.cut.url); }, [patternLook]);
 
   const gsd = (m: number | null | undefined) => (m ? `${fmtLengthCm(m * 100, units).text}/px` : "unknown");

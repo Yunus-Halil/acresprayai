@@ -117,6 +117,12 @@ double), and the spot itself ringed in white (the nearest placed plant within 1.
 where the map put it). The look sits on the candidate (`Candidate.look`), so it is saved with
 the run and restored with it. The tab's photo line counts them: "N spots shown in their photo".
 
+A photo read once is a photo read: the pass's result per photo is saved per scan
+(`scan_photo_reads`, migration `20261009120000`, `photoReadCache.ts`) under a key of the pass
+version and settings, and the next run of the scan, or the closer look opening a spot in that
+photo, takes the saved read instead of downloading and decoding the photo again. A finding
+from a saved read carries no picture (the pixels are gone); its look opens it in the photo.
+
 Closer look opens on that look at once: it cuts the window from the original and draws the
 lines and circles over it, nothing to compute. A spot without a look (the photos were not read,
 or its photo was over the budget) has its whole photo read there, once, and the read is kept

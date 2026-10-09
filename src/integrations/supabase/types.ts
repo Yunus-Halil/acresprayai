@@ -879,6 +879,50 @@ export type Database = {
           },
         ]
       }
+      scan_photo_reads: {
+        Row: {
+          created_at: string
+          decoded_width: number
+          filename: string
+          id: string
+          native_width: number
+          params_key: string
+          pattern: Json
+          scan_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          decoded_width: number
+          filename: string
+          id?: string
+          native_width: number
+          params_key: string
+          pattern: Json
+          scan_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          decoded_width?: number
+          filename?: string
+          id?: string
+          native_width?: number
+          params_key?: string
+          pattern?: Json
+          scan_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_photo_reads_scan_id_fkey"
+            columns: ["scan_id"]
+            isOneToOne: false
+            referencedRelation: "odm_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scan_patterns: {
         Row: {
           created_at: string

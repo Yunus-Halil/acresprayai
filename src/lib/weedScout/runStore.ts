@@ -16,7 +16,8 @@ import type { Identification } from "../weedCatalog/identification";
 import type { Verdict } from "./observations";
 import type { PatternLive } from "./fieldPattern";
 import { type RunOptions, runWeedScout } from "./pipeline";
-import { runPhotoPass } from "./photoPass";
+import { photoPassParams, photoReadKey, runPhotoPass } from "./photoPass";
+import { openPhotoReadStore } from "./photoReadCache";
 import { loadRun, saveRun } from "./runCache";
 import type { ScoutInputs, ScoutProgress, ScoutResult } from "./types";
 
@@ -114,8 +115,10 @@ export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOpti
     if (frugalConnection()) { patchSession(taskId, { photo: { running: false, done: 0, total: 0, found: 0, looks: 0, note: "The photos were not read: the browser asks to spare this connection." } }); return; }
     patchSession(taskId, { photo: { running: true, done: 0, total: 0, found: 0, looks: 0, note: null } });
     try {
+      // The scan's saved photo reads, when signed in: a photo read by an earlier run is not read again.
+      const reads = opts.persist ? await openPhotoReadStore({ userId: opts.persist.userId, scanId: taskId, paramsKey: photoReadKey(photoPassParams(inputs.params)) }) : null;
       const pass = await runPhotoPass({
-        result, sources, boundary: inputs.boundary, params: inputs.params,
+        result, sources, boundary: inputs.boundary, params: inputs.params, reads,
         crop: opts.crop, growthStage: opts.growthStage, unitSystem: opts.unitSystem, signal: ctrl.signal,
         onProgress: p => { if (mine()) patchSession(taskId, s => ({ photo: { ...(s.photo ?? { running: true, note: null }), running: true, done: p.done, total: p.total, found: p.found, looks: p.looks } })); },
         onFound: found => { if (mine()) patchSession(taskId, s => ({ result: s.result ? { ...s.result, candidates: [...s.result.candidates, ...found] } : s.result })); },
