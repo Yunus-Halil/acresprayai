@@ -168,13 +168,19 @@ describe("the planting pattern on the field map", () => {
       return { width: w, height: h, rgba, bounds: { north: rb.north - (y0 / H) * (rb.north - rb.south), south: rb.north - (y1 / H) * (rb.north - rb.south), west: rb.west + (x0 / W) * (rb.east - rb.west), east: rb.west + (x1 / W) * (rb.east - rb.west) } };
     };
     const progress: string[] = [];
+    const lives: { done: number; current: string | null; rows: number }[] = [];
     const fp = await readFieldPattern(() => "", plan, { lat: bbox.north, lng: bbox.west }, {
       rowSpacingM: "auto",
       fetch: async win => ({ raster: cut(win.fetch), missingTiles: 0 }),
       analyse: (px, params) => analysePhotoOffThread(px, params, { inline: true }),
       onProgress: (_i, _n, note) => { progress.push(note); },
+      onWindow: live => { lives.push({ done: live.done, current: live.current?.id ?? null, rows: live.pattern.summary.windowsWithRows }); },
     });
     expect(progress[progress.length - 1]).toBe("done");
+    // Reported before the first window and after each: the count climbs, the current window moves, the rows accumulate.
+    expect(lives).toHaveLength(plan.windows.length + 1);
+    expect(lives[0]).toEqual({ done: 0, current: plan.windows[0].id, rows: 0 });
+    expect(lives[lives.length - 1]).toEqual({ done: plan.windows.length, current: null, rows: plan.windows.length });
     expect(fp.summary.windowsWithRows).toBe(plan.windows.length);
     expect(Math.abs(fp.summary.rowSpacingM! - o.pitch) / o.pitch).toBeLessThan(0.08);
     // No plant is counted twice: each lies in exactly one owned rectangle.

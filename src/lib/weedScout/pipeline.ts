@@ -37,7 +37,7 @@ import { chipSpanM, rankCandidates } from "./candidates";
 import type { EventContext } from "./context";
 import { describe } from "./describe";
 import { applyFeedback } from "./feedback";
-import { type FieldPattern, patternDistance, patternRowModel, planPatternWindows, readFieldPattern } from "./fieldPattern";
+import { type FieldPattern, type PatternLive, patternDistance, patternRowModel, planPatternWindows, readFieldPattern } from "./fieldPattern";
 import { distanceToRowM, fitRowModel } from "./rows";
 import { planSweep, sweepWindow } from "./sweep";
 import { autoTileM, rasterGsdM, tessellate, tileIdAt, tileLattice, tileWindow } from "./tiles";
@@ -56,6 +56,8 @@ const yieldToUi = () => new Promise<void>(r => setTimeout(r, 0));
 
 export type RunOptions = {
   onProgress?: (p: ScoutProgress) => void;
+  /** The pattern pass window by window, for a map that shows it working. */
+  onPatternWindow?: (live: PatternLive) => void;
   signal?: AbortSignal;
   /** For the describer. Optional; the estimate says when it is missing. */
   context?: EventContext | null;
@@ -178,6 +180,7 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
         rowAngleDeg: params.rowAngleDeg,
         signal: opts.signal,
         onProgress: (i, n, note) => report("pattern", n ? i / n : null, note),
+        onWindow: opts.onPatternWindow,
       });
       if (fp.summary.blocks > 0) {
         pattern = fp;

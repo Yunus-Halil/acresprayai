@@ -17,7 +17,8 @@
 // calls anything outside the tile server and the operator's own archive.
 import { NOT_WEED_BELOW, WEED_AT_OR_ABOVE } from "@/lib/weedScout/classify";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleMarker, MapContainer, Polygon, Polyline, Popup, TileLayer, Tooltip } from "react-leaflet";
+import { CircleMarker, MapContainer, Polygon, Polyline, Popup, Rectangle, TileLayer, Tooltip } from "react-leaflet";
+import { useDeveloperMode } from "@/hooks/useDeveloperMode";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
@@ -285,6 +286,10 @@ export function WeedScoutTab({
   const [showPhotos, setShowPhotos] = useState(true);
   /** The planting pattern on the map: on by default here, where it is the explanation of every spot. */
   const [showPattern, setShowPattern] = useState(true);
+  // Developer tools only: the pattern pass drawn as it runs, window by window.
+  const dev = useDeveloperMode();
+  const [watchPass, setWatchPass] = useState(true);
+  const live = session.live;
   // The photographs behind the mosaic, when the archive and the originals exist.
   const [sources, setSources] = useState<ScanSources | null>(null);
   // The baseline detector's boxes, carried to the ground from a closer look. Experimental; drawn, never used.
@@ -678,6 +683,26 @@ export function WeedScoutTab({
             <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])} pathOptions={{ color: "#4CAF50", weight: 1.5, fill: false, dashArray: "4 4" }} />
           ))}
           <PatternLayer pattern={result?.pattern ?? null} visible={showPattern} />
+          {/* The pass at work (developer tools): every planned window as a box, the
+              one being read in white, those with rows in yellow, those without in
+              grey, and the rows and plants found so far drawn as they land. */}
+          {dev.developerTools && watchPass && live && (() => {
+            const read = new Map(live.pattern.windows.map(w => [w.win.id, w.blocks.length]));
+            return (
+              <>
+                {live.plan.windows.map(w => {
+                  const blocks = read.get(w.id);
+                  const current = live.current?.id === w.id;
+                  const colour = current ? "#ffffff" : blocks == null ? "#6b7280" : blocks > 0 ? "#ffeb3b" : "#9ca3af";
+                  return (
+                    <Rectangle key={`pw-${w.id}`} bounds={[[w.owned.south, w.owned.west], [w.owned.north, w.owned.east]]} interactive={false}
+                      pathOptions={{ color: colour, weight: current ? 2.5 : 1, fill: current, fillOpacity: 0.08, dashArray: blocks == null && !current ? "3 5" : undefined }} />
+                  );
+                })}
+                <PatternLayer pattern={live.pattern} visible />
+              </>
+            );
+          })()}
           <DetectionOverlay taskId={taskId} />
           {/* Every spot carries its own decision and its own review panel.
               The outline is the verdict, the fill is what it reads as, and the
@@ -773,6 +798,12 @@ export function WeedScoutTab({
             <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} className="accent-[#4CAF50]" />
             Labels on the map
           </label>
+          {dev.developerTools && (
+            <label className="flex items-center gap-2 cursor-pointer" data-testid="watch-pass-toggle" title="Developer tools. Each planned window as a box while the pattern pass runs: white is being read, yellow found rows, grey found none; the rows and plants are drawn as each window lands.">
+              <input type="checkbox" checked={watchPass} onChange={e => setWatchPass(e.target.checked)} className="accent-[#ffffff]" />
+              Watch the pass on the map{live ? `: window ${Math.min(live.done + 1, live.plan.windows.length)} of ${live.plan.windows.length}, ${live.pattern.summary.windowsWithRows} with rows` : " (while a scan runs)"}
+            </label>
+          )}
           {result?.pattern && (
             <label className="flex items-center gap-2 cursor-pointer" data-testid="pattern-toggle">
               <input type="checkbox" checked={showPattern} onChange={e => setShowPattern(e.target.checked)} className="accent-[#ffeb3b]" />

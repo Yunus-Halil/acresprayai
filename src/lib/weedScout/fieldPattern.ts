@@ -359,8 +359,13 @@ export function patternNotes(plan: PatternPlan, windows: PatternWindowResult[], 
   return out;
 }
 
+/** The pass as it runs: the plan, how many windows are read, the one being read, and the field assembled from the windows so far. */
+export type PatternLive = { plan: PatternPlan; done: number; current: PatternWindow | null; pattern: FieldPattern };
+
 export type ReadPatternOptions = {
   rowSpacingM: number | "auto";
+  /** Called before the first window and after each one, for a map that shows the pass working. */
+  onWindow?: (live: PatternLive) => void;
   rowAngleDeg?: number | null;
   minBlobAreaCm2?: number;
   signal?: AbortSignal;
@@ -376,6 +381,8 @@ export async function readFieldPattern(
   template: (z: number, x: number, y: number) => string, plan: PatternPlan, origin: LatLng2, opts: ReadPatternOptions,
 ): Promise<FieldPattern> {
   const results: PatternWindowResult[] = [];
+  const live = (i: number) => opts.onWindow?.({ plan, done: results.length, current: plan.windows[i] ?? null, pattern: assembleFieldPattern(plan, origin, results) });
+  live(0);
   const fetchWin = opts.fetch ?? (async (win: PatternWindow, z: number) => {
     const { raster, missingTiles } = await fetchRaster(template, win.fetch, z, PATTERN_MAX_TILES);
     return { raster, missingTiles };
@@ -401,6 +408,7 @@ export async function readFieldPattern(
         plantDiameterM: null, seedSpacingM: null, seedAgreement: null, canopyClosed: false, missingTiles, notes: [], failed: (e as Error)?.message ?? String(e),
       });
     }
+    live(i + 1);
   }
   opts.onProgress?.(plan.windows.length, plan.windows.length, "done");
   return assembleFieldPattern(plan, origin, results);

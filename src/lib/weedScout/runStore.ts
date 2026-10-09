@@ -14,6 +14,7 @@
 import { useSyncExternalStore } from "react";
 import type { Identification } from "../weedCatalog/identification";
 import type { Verdict } from "./observations";
+import type { PatternLive } from "./fieldPattern";
 import { type RunOptions, runWeedScout } from "./pipeline";
 import { runPhotoPass } from "./photoPass";
 import { loadRun, saveRun } from "./runCache";
@@ -28,6 +29,8 @@ export type ScoutSession = {
   result: ScoutResult | null;
   error: string | null;
   photo: PhotoPassState | null;
+  /** The pattern pass as it runs, window by window; null once the result holds the whole pattern. */
+  live: PatternLive | null;
   /** What saving the run said, when it said anything. */
   cache: string | null;
   selectedId: string | null;
@@ -40,7 +43,7 @@ export type ScoutSession = {
 };
 
 export const EMPTY_SESSION: ScoutSession = {
-  running: false, progress: null, result: null, error: null, photo: null, cache: null, selectedId: null,
+  running: false, progress: null, result: null, error: null, photo: null, live: null, cache: null, selectedId: null,
   verdicts: {}, identifications: {}, notes: {}, localApplied: {},
 };
 
@@ -83,7 +86,7 @@ export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOpti
   const ctrl = new AbortController();
   controllers.set(taskId, ctrl);
   patchSession(taskId, {
-    running: true, progress: null, result: null, error: null, photo: null, cache: null, selectedId: null,
+    running: true, progress: null, result: null, error: null, photo: null, live: null, cache: null, selectedId: null,
     verdicts: {}, identifications: {}, notes: {},
   });
   const persist = async (what: string) => {
@@ -98,9 +101,10 @@ export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOpti
     ...opts,
     signal: ctrl.signal,
     onProgress: (p) => { if (mine()) patchSession(taskId, { progress: p }); },
+    onPatternWindow: (live) => { if (mine()) patchSession(taskId, { live }); },
   }).then(async result => {
     if (!mine()) return;
-    patchSession(taskId, { running: false, progress: null, result });
+    patchSession(taskId, { running: false, progress: null, result, live: null });
     await persist("the scan");
     // The photos, after the map pass has shown its result. The review can
     // start now; findings from the photos join the list as they land, and
