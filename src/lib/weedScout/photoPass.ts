@@ -316,7 +316,8 @@ export function photoCandidate(f: PhotoFinding, tileId: string, chip: PhotoChip 
     score: Math.min(0.6, (f.cls === "between plants" ? 0.35 : 0.3) + 0.3 * Math.min(1, f.equivDiameterM / 0.5)),
     distanceToRowM: f.distanceToRowM, rowConfidence: null, anomalyZ: null, anomalyFeature: null, blobZ: null, blobZFeature: null,
     blob, region: null, areaM2: f.areaM2, feedback: null, estimate: null, prediction: null,
-    inference: { asked: false, reason: "found in a photo, not chipped from the map" } as unknown as Candidate["inference"],
+    // The classifier was not asked: the plant was found in a photo, not chipped from the map. Null, never a half-made record.
+    inference: null,
     sourceImages, chip: chip?.dataUrl ?? null, chipSpanM: chip?.spanM ?? null, chipGsdM: chip?.gsdM ?? null,
   };
 }

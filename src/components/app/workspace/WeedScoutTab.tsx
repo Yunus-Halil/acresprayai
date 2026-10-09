@@ -1063,7 +1063,7 @@ function ClassifierDiagnostics({ candidates, verdictOf, verdictSource, stored, o
                     <td className="text-right">{pct(p.pOther)}</td>
                     <td className="pl-1">{p.predictedClass}</td>
                   </>
-                ) : <td colSpan={4} className="text-neutral-600 pl-1">{c.inference ? c.inference.status.replace(/_/g, " ") : "not scored"}</td>}
+                ) : <td colSpan={4} className="text-neutral-600 pl-1">{c.inference?.status ? c.inference.status.replace(/_/g, " ") : "not scored"}</td>}
                 <td>{VERDICT_LABEL[verdictOf(c)]} <span className="text-neutral-600">({verdictSource(c)})</span></td>
                 <td className="text-neutral-500">{p ? `${p.modelVersion}${live ? "" : " (stored)"}` : "-"}</td>
                 <td data-testid="diag-save-state" title={saveState[c.id]}>
