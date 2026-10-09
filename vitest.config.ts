@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
 export default defineConfig({
+  // The build stamp vite.config.ts defines for the bundle; tests render the scan page too.
+  define: { __BUILD_SHA__: JSON.stringify("test"), __BUILD_TIME__: JSON.stringify("1970-01-01T00:00:00.000Z") },
   plugins: [react()],
   test: {
     environment: "jsdom",
