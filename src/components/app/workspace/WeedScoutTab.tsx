@@ -62,12 +62,15 @@ import { BenchmarkPanel } from "./BenchmarkPanel";
 import { renderCloserLook } from "@/lib/sourceFrames/crop";
 import { lookupOriginal } from "@/lib/sourceFrames/manifest";
 import { type ScanSources, downloadFrame, loadScanSources } from "@/lib/sourceFrames/scan";
-import { spotSources } from "@/lib/sourceFrames/spot";
+import { type SpotSources, spotSources } from "@/lib/sourceFrames/spot";
+import { isPhotoFinding } from "@/lib/weedScout/photoPass";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, MouseReadout, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
 
 const PARAMS_KEY = storageKey("weedScout", "params");
+/** Above this many map-pass findings, labels show on hover rather than all at once. */
+const MAX_PERMANENT_LABELS = 150;
 
 function loadParams(): ScoutParams {
   try {
@@ -354,13 +357,27 @@ export function WeedScoutTab({
   useEffect(() => { reloadArchive(); }, [reloadArchive]);
 
   const candidates = useMemo(() => result?.candidates ?? [], [result]);
+  // Permanent labels only while the map pass's own findings are few enough to read at once.
+  const labelsFit = useMemo(() => candidates.filter(c => !isPhotoFinding(c)).length <= MAX_PERMANENT_LABELS, [candidates]);
   const selected = useMemo(() => candidates.find(c => c.id === selectedId) ?? null, [candidates, selectedId]);
-  const sourcesById = useMemo(() => new Map(candidates.map(c => [c.id, spotSources(sources, c)])), [candidates, sources]);
+  // Which photos hold a spot, computed when a spot is opened and kept until the
+  // spot itself changes. Doing it for every spot on every update was a thousand
+  // spots times every photo of the field, on each photo the pass finished.
+  const sourcesCache = useRef(new Map<string, { c: Candidate; spot: SpotSources }>());
+  useEffect(() => { sourcesCache.current.clear(); }, [sources]);
+  const sourcesFor = useCallback((c: Candidate | null | undefined): SpotSources | null => {
+    if (!c) return null;
+    const hit = sourcesCache.current.get(c.id);
+    if (hit && hit.c === c) return hit.spot;
+    const spot = spotSources(sources, c);
+    sourcesCache.current.set(c.id, { c, spot });
+    return spot;
+  }, [sources]);
 
   // When a spot is opened, fetch and cut its chosen original for the popup.
   useEffect(() => {
     if (!selectedId || photos[selectedId]) return;
-    const spot = sourcesById.get(selectedId);
+    const spot = sourcesFor(selected);
     const view = spot?.lookable[0];
     const found = view ? lookupOriginal(sources?.frames ?? null, view.filename) : null;
     if (!spot || !view || !found || found.ok === false || !spot.nativeScale) return;
@@ -377,7 +394,7 @@ export function WeedScoutTab({
         : { status: "error" } }));
     })().catch(() => { if (!cancelled) setPhotos(m => ({ ...m, [selectedId]: { status: "error" } })); });
     return () => { cancelled = true; };
-  }, [selectedId, sourcesById, sources, photos]);
+  }, [selectedId, selected, sourcesFor, sources, photos]);
 
   const suggestionById = useMemo(
     () => new Map(candidates.map(c => [c.id, suggestionsFor(c, catalog)[0] ?? null])),
@@ -662,7 +679,7 @@ export function WeedScoutTab({
           <FitBounds bounds={bounds} />
           {cursorCoordRef && cursorZoomRef && <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />}
           {showPhotos && sources?.set && (() => {
-            const spot = selectedId ? sourcesById.get(selectedId) : null;
+            const spot = sourcesFor(selected);
             const chosen = new Set(spot?.chosen.map(v => v.filename) ?? []);
             const from = selected ? [selected.centroid.lat, selected.centroid.lng] as [number, number] : null;
             const links = from && spot ? spot.chosen.map(v => (
@@ -714,6 +731,7 @@ export function WeedScoutTab({
             const klass = spotColour(c);
             const outline = active ? "#ffffff" : VERDICT_COLOUR[v] ?? klass;
             const label = spotLabel(c);
+            const photoFound = isPhotoFinding(c);
             const popup = (
               <Popup closeOnClick={false} maxWidth={400} minWidth={300} autoPan
                 eventHandlers={{ remove: () => setSelectedId(null) }}>
@@ -732,19 +750,21 @@ export function WeedScoutTab({
                   saved={!!saved[c.id]}
                   savedPrediction={saved[c.id]?.prediction ?? null}
                   onField={!!applied[c.id]}
-                  sourceFrames={sourcesById.get(c.id) ?? null}
+                  sourceFrames={active ? sourcesFor(c) : null}
                   sourcesOrigin={sources?.reconstruction ?? "none"}
                   photo={photos[c.id] ?? null}
                   onCloserLook={() => {
-                    const spot = sourcesById.get(c.id);
+                    const spot = sourcesFor(c);
                     if (spot) setCloserLook({ id: c.id, title: spotLabel(c), spot });
                   }}
                   {...identificationProps}
                 />
               </Popup>
             );
+            // A label on the map for the map pass's own findings, while there are few
+            // enough to read; a plant found in a photo says what it is on hover.
             const tooltip = showLabels && (
-              <Tooltip permanent direction="top" opacity={1} className="scout-label">
+              <Tooltip permanent={!photoFound && labelsFit} direction="top" opacity={1} className="scout-label">
                 {label}
               </Tooltip>
             );
@@ -767,7 +787,7 @@ export function WeedScoutTab({
             }
             return (
               <CircleMarker key={c.id} ref={layerRef(c.id)} center={[c.centroid.lat, c.centroid.lng]}
-                radius={active ? 10 : gone ? 4 : 7}
+                radius={active ? 10 : gone ? 3 : photoFound ? 4 : 7}
                 eventHandlers={{ click: () => setSelectedId(c.id) }}
                 pathOptions={{
                   color: outline,
@@ -796,7 +816,7 @@ export function WeedScoutTab({
           <div className="text-neutral-500">Fill color is what it reads as. Solid: saved.</div>
           <label className="flex items-center gap-2 cursor-pointer pt-0.5 border-t border-[#222] mt-0.5">
             <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} className="accent-[#4CAF50]" />
-            Labels on the map
+            Labels on the map{showLabels && !labelsFit ? " (on hover: too many to show at once)" : ""}
           </label>
           {dev.developerTools && (
             <label className="flex items-center gap-2 cursor-pointer" data-testid="watch-pass-toggle" title="Developer tools. Each planned window as a box while the pattern pass runs: white is being read, yellow found rows, grey found none; the rows and plants are drawn as each window lands.">

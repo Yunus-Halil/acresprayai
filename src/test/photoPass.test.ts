@@ -12,7 +12,7 @@ import type { PhotoPattern } from "@/lib/photoScout/pattern";
 import { frameFootprint, groundAltitudeFromOdm, parseOdmOutputs, pixelToGround } from "@/lib/sourceFrames/odm";
 import type { FieldPattern } from "@/lib/weedScout/fieldPattern";
 import {
-  PHOTO_DUPLICATE_M, type PhotoFinding, choosePhotos, dedupeFindings, frameGsdM, groundPhotoFindings, looksInPhoto, photoCandidate, photosOfSpots, shotsOfSpots,
+  PHOTO_DUPLICATE_M, type PhotoFinding, choosePhotos, dedupeFindings, frameGsdM, groundPhotoFindings, isPhotoFinding, looksInPhoto, photoCandidate, photosOfSpots, shotsOfSpots,
 } from "@/lib/weedScout/photoPass";
 import { localFrame } from "@/lib/weedScout/rows";
 
@@ -91,6 +91,9 @@ describe("the photo pass on a real reconstruction", () => {
     expect(shotsOfSpots(set, [...spots, { sourceImages: { photos: 1, best: "nowhere.JPG", coverage: 1, chosen: [], nearestOnly: false, kept: true } }]).map(s => s.filename)).toEqual([b, a]);
     expect(shotsOfSpots(set, spots, 1).map(s => s.filename)).toEqual([b]);
     expect(shotsOfSpots(set, [])).toEqual([]);
+    // The map's own findings and the photo pass's are told apart by id, so the map can label one and not the other.
+    expect(isPhotoFinding(photoCandidate({ id: "p:DJI_0001.JPG:3", filename: "DJI_0001.JPG", centroid: { lat: 0, lng: 0 }, areaM2: 0.01, equivDiameterM: 0.1, cls: "off-row", distanceToRowM: 1, photoPx: { x: 0, y: 0 }, nativePx: { u: 0, v: 0 }, centrality: 1, gsdM: 0.01 }, "t", null))).toBe(true);
+    expect(isPhotoFinding({ id: "c-blob-12" })).toBe(false);
   });
 
   it("leaves each spot its look from the photo that holds it: a window in the original's pixels, the spot ringed", () => {

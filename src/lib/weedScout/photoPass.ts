@@ -56,6 +56,11 @@ export const PHOTO_BLOCK_PITCH_TOL = 0.15;
 export const PHOTO_DUPLICATE_M = 0.4;
 /** The chip cut from the photo spans this many plant diameters, never under half a metre. */
 export const PHOTO_CHIP_SPAN_MULT = 4;
+/** Plants given a picture in the list; past this the pictures alone were tens of megabytes a run. The look still opens for every plant. */
+export const PHOTO_CHIP_MAX = 150;
+
+/** A finding the photo pass made, as opposed to one the map pass made. */
+export const isPhotoFinding = (c: Pick<Candidate, "id">): boolean => c.id.startsWith("c-p:");
 
 export type PhotoFinding = {
   id: string;
@@ -399,7 +404,7 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
       for (const f of fresh) {
         const tileId = tileIdAt(lattice, f.centroid) ?? "photo";
         const span = Math.max(0.5, PHOTO_CHIP_SPAN_MULT * f.equivDiameterM);
-        const chip = chipFromPhoto(decoded.pixels, f.photoPx.x, f.photoPx.y, span, f.gsdM);
+        const chip = found + batch.length < PHOTO_CHIP_MAX ? chipFromPhoto(decoded.pixels, f.photoPx.x, f.photoPx.y, span, f.gsdM) : null;
         const c = photoCandidate(f, tileId, chip);
         c.estimate = describe(c, null, opts.crop ?? "", opts.growthStage ?? null, null, result.pattern?.summary.rowSpacingM ?? params.rowSpacingM, f.gsdM, sys);
         batch.push(c);
@@ -441,7 +446,7 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
   const wanted = photosOfSpots(result.candidates).length;
   notes.push(
     `${readCount} of ${shots.length} photo(s) read at full resolution, the spots' own photos only: ${found} more plant(s) off the pattern, ${looked} of ${spots} spot(s) shown in their photo` +
-    `${skipped ? `, ${skipped} skipped` : ""}${failed ? `, ${failed} failed (${firstFailure})` : ""}${wanted > shots.length ? `; ${wanted - shots.length} photo(s) over the limit were not read` : ""}.`,
+    `${skipped ? `, ${skipped} skipped` : ""}${failed ? `, ${failed} failed (${firstFailure})` : ""}${wanted > shots.length ? `; ${wanted - shots.length} photo(s) over the limit were not read` : ""}${found > PHOTO_CHIP_MAX ? `; the first ${PHOTO_CHIP_MAX} carry a picture, the rest open in their photo` : ""}.`,
   );
   return { reads, candidates: out, looks, notes };
 }
