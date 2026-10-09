@@ -14,7 +14,7 @@ export default {
     },
     extend: {
       fontFamily: {
-        grotesk: ['"Space Grotesk"', "sans-serif"],
+        grotesk: ['"Manrope"', "sans-serif"],
         plex: ['"IBM Plex Mono"', "monospace"],
       },
       colors: {

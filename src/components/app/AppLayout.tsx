@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import RequireAuth from "@/components/RequireAuth";
 import { useDeveloperMode } from "@/hooks/useDeveloperMode";
-import logo from "@/assets/swardus-mark.png";
+import logo from "@/assets/brand/lockup-white.png";
 import Seo from "@/components/Seo";
 
 const nav = [
@@ -99,7 +99,7 @@ function AppShell() {
       <UnitsPrompt open={promptOpen} initial={units} onChoose={choose} />
       <aside className="w-60 border-r bg-[hsl(var(--field))] text-[hsl(var(--primary-foreground))] flex flex-col">
         <div className="p-5 flex items-center gap-2 font-display text-lg border-b border-white/10">
-          <img src={logo} alt="Swardus" className="h-7 w-7" /> Swardus
+          <img src={logo} alt="Swardus" className="h-7 w-auto" />
         </div>
         <nav className="p-3 flex-1 space-y-1">
           {items.map(item => (

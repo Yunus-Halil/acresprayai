@@ -1,13 +1,19 @@
-import mark from "@/assets/swardus-mark.png";
+import lockupWhite from "@/assets/brand/lockup-white.png";
+import lockupInk from "@/assets/brand/lockup-ink.png";
+
+/** Width over height of the lockup picture, so the glass variant can size itself from its height alone. */
+const LOCKUP_ASPECT = "1283 / 323";
 
 /**
- * The mark plus the name. The mark is white on nothing (swardus-mark.png is
- * the X with the octagon at its heart, transparent), so it sits on whatever
- * is behind it. With `glass` it sits in a frosted pill: a translucent,
- * blurred surface that takes its colour from what is behind it, so over the
- * hero film the mark reads against the film rather than on a box. On paper
- * (tone "ink") the mark is drawn in difference blend, which turns white into
- * ink over a light surface without a second asset.
+ * The lockup as the designer drew it: the mark and the name in one picture,
+ * on nothing (src/assets/brand, cut from the originals in brand/source). Ink
+ * on paper, or white on a dark surface such as the hero film.
+ *
+ * With `glass` the glyph and the letters ARE the glass: the lockup is a CSS
+ * mask over a frosted backdrop (index.css .sw-glass-mark), so each shape is a
+ * blurred, lightened window onto whatever is behind it, and there is nothing
+ * around them. Where a browser has no backdrop filter, the mask still shows
+ * the lockup in translucent white.
  */
 export const Wordmark = ({
   size = "md",
@@ -16,30 +22,26 @@ export const Wordmark = ({
   className = "",
 }: {
   size?: "sm" | "md";
-  /** Ink on paper, or paper on a dark surface such as the hero film. */
   tone?: "ink" | "paper";
-  /** A frosted-glass pill behind the mark and the name. */
   glass?: boolean;
   className?: string;
-}) => (
-  <span
-    className={`inline-flex items-center gap-2.5 ${glass ? "sw-glass rounded-full py-1.5 pl-2.5 pr-4" : ""} ${className}`}
-    data-glass={glass ? "true" : undefined}
-  >
-    <img
-      src={mark}
-      alt=""
-      aria-hidden="true"
-      className={`${size === "sm" ? "h-5 w-5" : "h-7 w-7"} ${tone === "ink" ? "mix-blend-difference" : ""}`}
-    />
-    <span
-      className={
-        size === "sm"
-          ? `font-semibold tracking-[-0.02em] ${tone === "paper" ? "text-white" : "text-sw-ink"}`
-          : `text-[22px] font-bold tracking-[-0.02em] ${tone === "paper" ? "text-white" : "text-sw-ink"}`
-      }
-    >
-      Swardus
+}) => {
+  const height = size === "sm" ? "h-6" : "h-9 sm:h-11";
+  if (glass) {
+    const mask = `url(${lockupWhite})`;
+    return (
+      <span
+        role="img"
+        aria-label="Swardus"
+        data-glass="true"
+        className={`sw-glass-mark inline-block ${height} ${className}`}
+        style={{ aspectRatio: LOCKUP_ASPECT, WebkitMaskImage: mask, maskImage: mask }}
+      />
+    );
+  }
+  return (
+    <span className={`inline-flex items-center ${className}`}>
+      <img src={tone === "paper" ? lockupWhite : lockupInk} alt="Swardus" className={`${height} w-auto`} />
     </span>
-  </span>
-);
+  );
+};
