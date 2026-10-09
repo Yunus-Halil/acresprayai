@@ -13,11 +13,15 @@
 // finding, kept from the photo that holds it nearest its centre; one the
 // map pass already found is left to the map pass.
 //
-// The same read serves the closer look. The map pass found its spots first,
-// so the photos holding those spots are read first, and for every spot whose
-// best photo this is, the window around it (rows as lines, plants as
-// circles, in the original's pixels) is kept on the spot as its look. The
-// closer look opens on that; nothing is read one spot at a time.
+// Which photos: one per spot, the spot's own best photo, and no others. The
+// map pass found the spots; the pass reads the photo each one was matched
+// to (the photo holding the most spots first), and for every spot whose best
+// photo it is, keeps the window around it (rows as lines, plants as circles,
+// in the original's pixels) on the spot as its look. The closer look opens
+// on that; nothing is read one spot at a time, and the field's other photos
+// are not read at all: a photo no spot sits in has nothing to show for a
+// spot, and reading every photo of a field was what ran the browser out of
+// memory. The photos are at most `maxPhotoReads`.
 //
 // Budgeted: at most `maxPhotos` photos, the ones covering most of the field
 // first, one at a time in the pattern worker. The result lands as ordinary
@@ -106,7 +110,15 @@ export function photosOfSpots(candidates: readonly Pick<Candidate, "sourceImages
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
 }
 
-/** The photos that cover the field, at most `max`: those in `first` in that order, then the ones covering most of it first. */
+/** The spots' own photos as shots, in `photosOfSpots` order, at most `max`; a filename with no shot is skipped. */
+export function shotsOfSpots(set: SourceFrameSet, candidates: readonly Pick<Candidate, "sourceImages">[], max = PHOTO_PASS_MAX_PHOTOS): Shot[] {
+  const byName = new Map(set.shots.map(s => [s.filename, s]));
+  const out: Shot[] = [];
+  for (const f of photosOfSpots(candidates)) { const s = byName.get(f); if (s) out.push(s); if (out.length >= max) break; }
+  return out;
+}
+
+/** The photos that cover the field, at most `max`: those in `first` in that order, then the ones covering most of it first. The benchmark's choice; the run reads `shotsOfSpots`. */
 export function choosePhotos(set: SourceFrameSet, groundAltM: number, boundary: LatLng2[][], max = PHOTO_PASS_MAX_PHOTOS, first: string[] = []): Shot[] {
   const views: { shot: Shot; share: number; tilt: number }[] = [];
   for (const shot of set.shots) {
@@ -127,7 +139,8 @@ export function choosePhotos(set: SourceFrameSet, groundAltM: number, boundary: 
   views.sort((a, b) => b.share - a.share || a.tilt - b.tilt);
   if (first.length) {
     const rank = new Map(first.map((f, i) => [f, i]));
-    const r = (v: { shot: Shot }) => rank.get(v.shot.filename) ?? Infinity;
+    // A finite rank for the rest: Infinity minus Infinity is NaN, which a comparator must never return.
+    const r = (v: { shot: Shot }) => rank.get(v.shot.filename) ?? first.length;
     views.sort((a, b) => r(a) - r(b));
   }
   return views.slice(0, max).map(v => v.shot);
@@ -341,8 +354,8 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
   const looks: Record<string, PhotoLook> = {};
   if (!sources.set || sources.groundAltM == null) { notes.push("The photos were not read: this scan has no camera positions."); return { reads, candidates: out, looks, notes }; }
   if (!sources.frames) { notes.push("The photos were not read: no originals were kept for this scan."); return { reads, candidates: out, looks, notes }; }
-  const shots = choosePhotos(sources.set, sources.groundAltM, boundary, params.maxPhotoReads, photosOfSpots(result.candidates));
-  if (!shots.length) { notes.push("The photos were not read: none of them covers the field."); return { reads, candidates: out, looks, notes }; }
+  const shots = shotsOfSpots(sources.set, result.candidates, params.maxPhotoReads);
+  if (!shots.length) { notes.push("The photos were not read: no spot was matched to a photo."); return { reads, candidates: out, looks, notes }; }
   const rowSpacingM = result.pattern?.summary.rowSpacingM ?? null;
   const lattice = tileLattice(boundary, result.tileM);
   // The storage client is loaded only when a photo is actually fetched, so this module stays importable without a browser.
@@ -367,6 +380,7 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
       if (!blob) { read.status = "skipped"; read.reason = "the original could not be downloaded"; skipped++; continue; }
       check();
       const decoded = await decode(blob);
+      decoded.bitmap?.close?.();
       const fg = frameGsdM(sources.set, shot, sources.groundAltM);
       if (!fg) { read.status = "skipped"; read.reason = "the photo's footprint does not reach the ground"; skipped++; continue; }
       const gsdM = (fg * sources.set.cameras[shot.cameraKey].width) / decoded.pixels.width;
@@ -416,14 +430,17 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
     } finally {
       read.ms = Date.now() - t0;
     }
+    // A breath between photos: the page paints and the collector runs before the next 45 MB of pixels.
+    await new Promise<void>(r => setTimeout(r, 0));
   }
   opts.onProgress?.({ done: shots.length, total: shots.length, found, looks: looked, note: "done" });
   const readCount = reads.filter(r => r.status === "read").length;
   const firstFailure = reads.find(r => r.status === "failed")?.reason;
   const spots = result.candidates.filter(c => c.sourceImages?.best).length;
+  const wanted = photosOfSpots(result.candidates).length;
   notes.push(
-    `${readCount} of ${shots.length} photo(s) read at full resolution: ${found} more plant(s) off the pattern, ${looked} of ${spots} spot(s) shown in their photo` +
-    `${skipped ? `, ${skipped} skipped` : ""}${failed ? `, ${failed} failed (${firstFailure})` : ""}${readCount && sources.set.shots.length > shots.length ? `; ${sources.set.shots.length - shots.length} photo(s) outside the field or over the limit were not read` : ""}.`,
+    `${readCount} of ${shots.length} photo(s) read at full resolution, the spots' own photos only: ${found} more plant(s) off the pattern, ${looked} of ${spots} spot(s) shown in their photo` +
+    `${skipped ? `, ${skipped} skipped` : ""}${failed ? `, ${failed} failed (${firstFailure})` : ""}${wanted > shots.length ? `; ${wanted - shots.length} photo(s) over the limit were not read` : ""}.`,
   );
   return { reads, candidates: out, looks, notes };
 }

@@ -56,6 +56,7 @@ import FieldViewTab from "@/components/app/workspace/FieldViewTab";
 import PlannerTab from "@/components/app/workspace/PlannerTab";
 import TreatmentTab from "@/components/app/workspace/TreatmentTab";
 import WeedScoutTab from "@/components/app/workspace/WeedScoutTab";
+import { TabErrorBoundary } from "@/components/app/TabErrorBoundary";
 import { useDeveloperMode } from "@/hooks/useDeveloperMode";
 import FlightLogTab from "@/components/app/workspace/FlightLogTab";
 import { seedUnitSystem } from "@/hooks/useUnitSystem";
@@ -1127,6 +1128,7 @@ export default function OrthomosaicViewer() {
           <WeatherTab center={center} fieldName={taskName} limits={sprayLimitsFrom(settings.condition_limits)} />
         )}
         {activeTab === "treatment" && dev.weedScout && (
+          <TabErrorBoundary name="Weed Scout">
           <WeedScoutTab
             boundary={boundary}
             tileUrl={tileUrl}
@@ -1151,6 +1153,7 @@ export default function OrthomosaicViewer() {
             cursorCoordRef={cursorCoordRef}
             cursorZoomRef={cursorZoomRef}
           />
+          </TabErrorBoundary>
         )}
         {activeTab === "treatment" && !dev.weedScout && (
           <TreatmentTab

@@ -12,7 +12,7 @@ import type { PhotoPattern } from "@/lib/photoScout/pattern";
 import { frameFootprint, groundAltitudeFromOdm, parseOdmOutputs, pixelToGround } from "@/lib/sourceFrames/odm";
 import type { FieldPattern } from "@/lib/weedScout/fieldPattern";
 import {
-  PHOTO_DUPLICATE_M, type PhotoFinding, choosePhotos, dedupeFindings, frameGsdM, groundPhotoFindings, looksInPhoto, photoCandidate, photosOfSpots,
+  PHOTO_DUPLICATE_M, type PhotoFinding, choosePhotos, dedupeFindings, frameGsdM, groundPhotoFindings, looksInPhoto, photoCandidate, photosOfSpots, shotsOfSpots,
 } from "@/lib/weedScout/photoPass";
 import { localFrame } from "@/lib/weedScout/rows";
 
@@ -86,6 +86,11 @@ describe("the photo pass on a real reconstruction", () => {
     expect(ordered.slice(2).map(s => s.filename)).toEqual(byShare.filter(s => s.filename !== a && s.filename !== b).map(s => s.filename));
     // The budget still holds, and the spots' photos are inside it.
     expect(choosePhotos(set, groundAlt, [ring], 3, photosOfSpots(spots)).map(s => s.filename).slice(0, 2)).toEqual([b, a]);
+    // The run itself reads the spots' photos and no others: one per spot, most spots first, a name with no shot skipped, the budget kept.
+    expect(shotsOfSpots(set, spots).map(s => s.filename)).toEqual([b, a]);
+    expect(shotsOfSpots(set, [...spots, { sourceImages: { photos: 1, best: "nowhere.JPG", coverage: 1, chosen: [], nearestOnly: false, kept: true } }]).map(s => s.filename)).toEqual([b, a]);
+    expect(shotsOfSpots(set, spots, 1).map(s => s.filename)).toEqual([b]);
+    expect(shotsOfSpots(set, [])).toEqual([]);
   });
 
   it("leaves each spot its look from the photo that holds it: a window in the original's pixels, the spot ringed", () => {

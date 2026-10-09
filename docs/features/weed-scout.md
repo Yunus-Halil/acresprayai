@@ -106,8 +106,9 @@ plants to context. It says how far the read is while it reads.
 ## The pattern on the photo (2026-10-08, revised late that night)
 
 The spot's look is made during the scan, not when the spot is opened. The photo pass reads
-each photo whole, and the photos the map's spots were matched to come first, the ones holding
-most spots first (`photosOfSpots`, `choosePhotos`). For every spot whose best photo it is,
+only the spots' own photos: each spot's best photo, the one holding most spots first
+(`photosOfSpots`, `shotsOfSpots`), each whole, and none of the field's other photos (reading
+all of them was what ran the browser out of memory on the first real scan, 2026-10-09). For every spot whose best photo it is,
 `looksInPhoto` carries the spot into the photo through the pose and keeps a `PhotoLook`
 (`sourceFrames/patternLook.ts`): a window of three row spacings a side (8 to 24 m) in the
 original's own pixels, the rows clipped to it as lines, the plants inside it as circles in
