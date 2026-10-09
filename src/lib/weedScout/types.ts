@@ -119,6 +119,8 @@ export type ScoutParams = {
    * ask for. The pass still reads each spot's photo for its look.
    */
   photoFindings: boolean;
+  /** In a photo, a plant off the pattern under this many metres across is not drawn: the picture shows what is worth treating. */
+  photoMinWeedM: number;
 };
 
 export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
@@ -140,6 +142,7 @@ export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
   rowAngleDeg: null,
   photoPass: true,
   photoFindings: false,
+  photoMinWeedM: 0.15,
   maxPhotoReads: 150,
 };
 

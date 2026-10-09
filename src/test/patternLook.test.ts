@@ -2,7 +2,7 @@
 // windows, a circle per placed plant in its class's colour, the legend plain.
 import { describe, expect, it } from "vitest";
 import type { PhotoPattern } from "@/lib/photoScout/pattern";
-import { BLOB_COLOUR, lookFromPattern, lookLegend, overlayFromPattern, overlayLegend, patternLookSideM } from "@/lib/sourceFrames/patternLook";
+import { BLOB_COLOUR, lookFromPattern, lookLegend, overlayFromPattern, overlayLegend, patternLookSideM, significantLook } from "@/lib/sourceFrames/patternLook";
 
 const fit = (angleDeg: number) => ({
   centre: { x: 6, y: -6 }, sizeM: 12, angleDeg, pitchM: 2, phaseM: 0, confidence: 0.9, angleConfidence: 0.9, pitchConfidence: 0.9,
@@ -86,6 +86,18 @@ describe("the pattern on the photo", () => {
     // The window never leaves the photo: a spot at the far corner is cut from the corner.
     const corner = lookFromPattern(pattern, { x: 1190, y: 1190 }, { filename: "x", sideM: 6, nativeScale: 1 });
     expect(corner.window).toEqual({ x: 600, y: 600, width: 600, height: 600 });
+  });
+
+  it("leaves the small weeds out of the picture, and the crop and the rows in", () => {
+    const look = lookFromPattern(pattern, { x: 310, y: 108 }, { filename: "x", sideM: 6, nativeScale: 2 });
+    // Every blob is 22.6 cm across. A floor of 20 cm keeps them; a floor of 30 cm drops the two weeds and keeps the crop plant.
+    expect(significantLook(look, 0.2).circles).toHaveLength(3);
+    const trimmed = significantLook(look, 0.3);
+    expect(trimmed.circles.map(c => c.cls)).toEqual(["on pattern"]);
+    expect(trimmed.counts).toEqual({ onPattern: 1, between: 0, offRow: 0, doubles: 0 });
+    expect(trimmed.lines).toEqual(look.lines);
+    expect(trimmed.focus!.matched).toBe(false);
+    expect(significantLook(look, 0)).toBe(look);
   });
 
   it("says what the colours mean and sizes the cut from the row spacing", () => {

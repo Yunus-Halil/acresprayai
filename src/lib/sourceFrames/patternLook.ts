@@ -231,6 +231,21 @@ export function lookFromPattern(
   };
 }
 
+/**
+ * The look with its small weeds left out: a plant off the row or between
+ * plants under `minWeedM` across is not drawn and not counted. The crop, the
+ * doubles and the rows stay as context. The stored look keeps everything, so
+ * the floor can change without the photo being read again.
+ */
+export function significantLook(look: PhotoLook, minWeedM: number): PhotoLook {
+  if (!(minWeedM > 0)) return look;
+  const weed = (c: OverlayCircle) => c.cls === "off-row" || c.cls === "between plants";
+  const circles = look.circles.filter(c => !weed(c) || 2 * c.r * look.gsdM >= minWeedM);
+  const counts = { ...look.counts, offRow: circles.filter(c => c.cls === "off-row").length, between: circles.filter(c => c.cls === "between plants").length };
+  const focus = look.focus && weed(look.focus) && 2 * look.focus.r * look.gsdM < minWeedM ? { ...look.focus, matched: false } : look.focus;
+  return { ...look, circles, counts, focus };
+}
+
 /** What a look means, in a line. */
 export function lookLegend(look: PhotoLook): string {
   const spot = look.focus

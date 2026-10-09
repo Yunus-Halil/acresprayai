@@ -98,6 +98,7 @@ function loadParams(): ScoutParams {
       rowAngleDeg: typeof p.rowAngleDeg === "number" && Number.isFinite(p.rowAngleDeg) ? p.rowAngleDeg : null,
       photoPass: p.photoPass !== false,
       photoFindings: p.photoFindings === true,
+      photoMinWeedM: typeof p.photoMinWeedM === "number" && p.photoMinWeedM >= 0 ? p.photoMinWeedM : DEFAULT_SCOUT_PARAMS.photoMinWeedM,
       maxPhotoReads: Math.round(num(p.maxPhotoReads, DEFAULT_SCOUT_PARAMS.maxPhotoReads)),
     };
   } catch {
@@ -662,6 +663,8 @@ export function WeedScoutTab({
   const rowSpacingShown = units === "metric" ? (params.rowSpacingM * 100).toFixed(1) : (params.rowSpacingM / 0.0254).toFixed(1);
   const rowSpacingUnit = units === "metric" ? "cm" : "in";
   const setRowSpacingShown = (v: number) => setParams(p => ({ ...p, rowSpacingM: units === "metric" ? v / 100 : v * 0.0254 }));
+  const minWeedShown = units === "metric" ? (params.photoMinWeedM * 100).toFixed(0) : (params.photoMinWeedM / 0.0254).toFixed(1);
+  const setMinWeedShown = (v: number) => setParams(p => ({ ...p, photoMinWeedM: Math.max(0, units === "metric" ? v / 100 : v * 0.0254) }));
   const areaText = (m2: number) => fmtArea(m2, units).text;
   const busy = bulk.phase !== "idle";
   const spotColour = (c: Candidate) => (c.region ? CLASS_COLOUR[c.region.klass] : KIND_COLOUR[c.kind]);
@@ -841,7 +844,7 @@ export function WeedScoutTab({
           rowSpacingM={result?.pattern?.summary.rowSpacingM ?? null}
           spotDiameterM={closerLook ? (candidates.find(c => c.id === closerLook.id)?.blob?.equivDiameterM ?? null) : null}
           spotLook={closerLook ? (candidates.find(c => c.id === closerLook.id)?.look ?? null) : null}
-          passParams={params} readStore={readStore} />
+          passParams={params} readStore={readStore} minWeedM={params.photoMinWeedM} />
 
         <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2 text-neutral-300"><FlaskConical className="h-3 w-3 text-[#4CAF50]" /> Click a spot to change it</div>
@@ -1003,6 +1006,11 @@ export function WeedScoutTab({
                   <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer" title="Experimental. The photos are read for each spot's look either way; this also puts every plant the pass finds in them on the map.">
                     <input type="checkbox" checked={params.photoFindings} disabled={!params.photoPass} onChange={e => setParams(p => ({ ...p, photoFindings: e.target.checked }))} className="accent-[#4CAF50]" />
                     Put the plants found in the photos on the map (experimental)
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer" title="In a spot's photo, plants off the pattern smaller than this are not drawn. The crop and the rows are always drawn. The photo is not read again when this changes.">
+                    In a photo, draw weeds from
+                    <input type="number" min={0} step={units === "metric" ? 1 : 0.5} className={inputCls + " w-16"} value={minWeedShown} onChange={e => setMinWeedShown(Number(e.target.value) || 0)} />
+                    {rowSpacingUnit} across
                   </label>
                 </div>
                 <div className="text-[11px] text-neutral-500">{crop || "crop not set"}{stage ? `, ${stage}` : ""}</div>

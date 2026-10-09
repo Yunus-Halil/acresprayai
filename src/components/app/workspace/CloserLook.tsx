@@ -21,7 +21,7 @@ import { type GroundedDetection, debugLine, groundDetections } from "@/lib/sourc
 import { lookupOriginal } from "@/lib/sourceFrames/manifest";
 import { type ScanSources, downloadFrame } from "@/lib/sourceFrames/scan";
 import type { SpotSources } from "@/lib/sourceFrames/spot";
-import { BLOB_COLOUR, type LookCut, type PhotoLook, ROW_COLOUR, cutLookWindow, lookFromPattern, patternLookSideM } from "@/lib/sourceFrames/patternLook";
+import { BLOB_COLOUR, type LookCut, type PhotoLook, ROW_COLOUR, cutLookWindow, lookFromPattern, patternLookSideM, significantLook } from "@/lib/sourceFrames/patternLook";
 import { analysePhotoOffThread } from "@/lib/photoScout/runPattern";
 import { decodePhoto } from "@/lib/photoScout/decode";
 import type { PhotoPattern } from "@/lib/photoScout/pattern";
@@ -75,7 +75,7 @@ export function resetWholePhotoReads(): void { wholePhotoReads.clear(); }
 /** `id` names the finding on the map; the detector's boxes are filed under it. */
 export type CloserLookTarget = { id?: string; title: string; spot: SpotSources };
 
-export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null, spotLook = null, passParams = null, readStore = null }: {
+export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null, spotLook = null, passParams = null, readStore = null, minWeedM = 0 }: {
   target: CloserLookTarget | null;
   sources: ScanSources | null;
   units: UnitSystem;
@@ -92,6 +92,8 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   passParams?: Pick<ScoutParams, "rowSpacingAuto" | "rowSpacingM" | "minBlobCm2"> | null;
   /** The scan's saved photo reads, when signed in. */
   readStore?: PhotoReadStore | null;
+  /** Weeds under this many metres across are not drawn in the photo. */
+  minWeedM?: number;
 }) {
   const [viewIndex, setViewIndex] = useState(0);
   const [look, setLook] = useState<Look | null>(null);
@@ -241,7 +243,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
           <p className="text-[11px] text-neutral-400" data-testid="closer-look-pattern-line">
             {patternState === "reading" && <><Loader2 className="inline h-3 w-3 animate-spin mr-1" /> {patternProgress == null ? "Opening the pattern around this spot." : `Reading the rows and plants in this whole photo (${Math.round(patternProgress * 100)}%).`}</>}
             {patternState === "failed" && `The pattern could not be read in this photo${patternError ? ` (${patternError})` : ""}.`}
-            {patternLook && <PatternKey look={patternLook.look} detail={gsd(patternLook.look.gsdM)} />}
+            {patternLook && <PatternKey look={significantLook(patternLook.look, minWeedM)} detail={gsd(patternLook.look.gsdM)} />}
           </p>
         )}
         {detection?.state === "done" && (
@@ -283,7 +285,8 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
           {error && <p className="p-4 text-[12px] text-red-400">Could not show the photo: {error}</p>}
           {!error && !look && <p className="p-4 text-[12px] text-neutral-400 inline-flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the original photo.</p>}
           {look && patternOn && patternLook && (() => {
-            const { cut, look: pl } = patternLook;
+            const { cut } = patternLook;
+            const pl = significantLook(patternLook.look, minWeedM);
             const sw = Math.max(1, cut.width / 900);
             const f = 1 / cut.factor;
             // The look is in the original's pixels from the window's corner; the cut is pooled by the factor.
