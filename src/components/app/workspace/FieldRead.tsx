@@ -9,7 +9,7 @@
 // Composes, never computes: the pattern summary comes off the result, the
 // spot counts off the candidates, the region areas off the regions.
 import type { Candidate, Region, ScoutResult } from "@/lib/weedScout/types";
-import { type UnitSystem, fmtArea, fmtLengthCm } from "@/lib/units";
+import { type UnitSystem, fmtArea, fmtAreaCm2, fmtLengthCm } from "@/lib/units";
 
 export type FieldReadProps = {
   result: ScoutResult;
@@ -66,6 +66,14 @@ export function FieldRead({ result, candidates, treatAreaM2, fieldAreaM2, units 
     const cur = byClass.get(name) ?? { count: 0, areaM2: 0 };
     byClass.set(name, { count: cur.count + 1, areaM2: cur.areaM2 + r.areaM2 });
   }
+  const v = result.vegetation ?? null;
+  const vs = v?.photos && (v.photos.individuals.length || v.photos.clusters.length || v.photos.zones.length) ? v.photos : v?.map ?? null;
+  let vegetationLine: string | null = null;
+  if (vs) {
+    const a = vs.accounting;
+    const zoneArea = vs.zones.reduce((s, z) => s + z.microAreaM2, 0);
+    vegetationLine = `Off the pattern: ${a.counts.individuals.toLocaleString()} plant${a.counts.individuals === 1 ? "" : "s"} measurable on ${a.counts.individuals === 1 ? "its" : "their"} own (${len(vs.minMeasurableM)} and over), ${a.counts.clusters.toLocaleString()} cluster${a.counts.clusters === 1 ? "" : "s"} of touching plants, and ${zoneArea < 1 ? fmtAreaCm2(zoneArea * 1e4, units).text : area(zoneArea)} of smaller vegetation as coverage in ${a.counts.zones.toLocaleString()} zone${a.counts.zones === 1 ? "" : "s"}, from ${vs.source === "photo" ? `${vs.frames.length} photo${vs.frames.length === 1 ? "" : "s"}` : "the field map"} at ${len(vs.gsdM)} per pixel.`;
+  }
   const groundLine = byClass.size === 0
     ? "No bare, thin or wet ground stands out from the rest of the field."
     : [...byClass.entries()].map(([name, v]) => `${name} ${area(v.areaM2)} in ${v.count} patch${v.count === 1 ? "" : "es"}`).join(", ") + ".";
@@ -75,6 +83,7 @@ export function FieldRead({ result, candidates, treatAreaM2, fieldAreaM2, units 
       <div className="text-[10px] uppercase tracking-wider text-neutral-500">The field read</div>
       <p className="text-xs text-neutral-200 leading-relaxed">{patternLine}</p>
       <p className="text-xs text-neutral-200 leading-relaxed">{weedLine}</p>
+      {vegetationLine && <p className="text-xs text-neutral-300 leading-relaxed" data-testid="field-read-vegetation">{vegetationLine}</p>}
       <p className="text-xs text-neutral-400 leading-relaxed">{groundLine}</p>
     </section>
   );

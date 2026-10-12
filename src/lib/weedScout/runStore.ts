@@ -126,6 +126,8 @@ export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOpti
         onLook: looks => { if (mine()) patchSession(taskId, s => ({ result: s.result ? { ...s.result, candidates: s.result.candidates.map(c => looks[c.id] ? { ...c, look: looks[c.id] } : c) } : s.result })); },
         // The map pass's spots get their size as their photo is read; the popup shows it.
         onMeasured: sizes => { if (mine()) patchSession(taskId, s => ({ result: s.result ? { ...s.result, candidates: s.result.candidates.map(c => sizes[c.id] ? { ...c, measurement: sizes[c.id] } : c) } : s.result })); },
+        // The photos' structure, merged so far, beside the map's.
+        onStructure: photos => { if (mine()) patchSession(taskId, s => ({ result: s.result ? { ...s.result, vegetation: { map: s.result.vegetation?.map ?? null, photos } } : s.result })); },
       });
       if (!mine()) return;
       const measured = Object.keys(pass.measurements).length + pass.candidates.filter(c => c.measurement).length;
@@ -133,7 +135,7 @@ export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOpti
         photo: { running: false, done: pass.reads.length, total: pass.reads.length, found: pass.candidates.length, looks: Object.keys(pass.looks).length, measured, note: pass.notes.join(" ") },
         result: s.result ? { ...s.result, notes: [...s.result.notes, ...pass.notes] } : s.result,
       }));
-      if (pass.candidates.length || Object.keys(pass.looks).length || measured) await persist("the scan and the photos");
+      if (pass.candidates.length || Object.keys(pass.looks).length || measured || pass.structure) await persist("the scan and the photos");
     } catch (e) {
       if (!mine()) return;
       const aborted = (e as Error)?.name === "Aborted";

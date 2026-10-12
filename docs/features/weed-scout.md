@@ -154,6 +154,10 @@ size line and its measurement table, the white outline in the closer look, and
 `npm run bench:size`. See `docs/features/weed-size.md`: v1 is checked for consistency
 on the sample imagery and NOT yet for accuracy against measured plants.
 
+## Plants, clusters and coverage (2026-10-12)
+
+The vegetation off the pattern is grouped at the scale the imagery supports (`src/lib/weedScout/structure/`): single plants measurable on their own (six pixels across and over, so 6 cm in a 1 cm/px photo and 24 cm on a 4 cm/px map), clusters of touching canopies (canopy summed, footprint hulled, no plant count claimed), and coverage zones for everything smaller, with every square centimetre in exactly one account. Read from the map in the pipeline and from each photo in the photo pass, saved with the run, drawn by `VegetationLayer` at the zoom's own scale, and said in the field read. See `docs/features/vegetation-structure.md`.
+
 ## The saved run (2026-10-08)
 
 A finished run is saved per scan (`runCache.ts`, migration `20261008150000`): `scan_patterns`

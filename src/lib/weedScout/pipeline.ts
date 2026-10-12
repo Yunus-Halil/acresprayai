@@ -51,6 +51,8 @@ import { boundsAround, fetchRaster, renderChip } from "./zoom";
 import { classifyCandidates } from "./classify";
 import type { ScanSources } from "../sourceFrames/scan";
 import { sourceImagesNote, sourceImagesOf, spotSources } from "../sourceFrames/spot";
+import { structureOfMap } from "./structure/map";
+import type { GroundStructure } from "./structure/ground";
 
 const yieldToUi = () => new Promise<void>(r => setTimeout(r, 0));
 
@@ -314,6 +316,23 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
   const adjusted = candidates.filter(c => c.feedback && c.feedback.factor !== 1).length;
   if (adjusted) notes.push(`${adjusted} candidate(s) were re-ranked from your past verdicts.`);
 
+  // The vegetation structure at the map's scale: every blob the sweep found,
+  // classed by the pattern, as individuals, clusters and coverage zones. The
+  // map's pixel size sets what is measured on its own; the photos add theirs.
+  let mapStructure: GroundStructure | null = null;
+  if (blobs.length) {
+    report("ranking", null, "grouping the vegetation");
+    try {
+      mapStructure = structureOfMap({ blobs, pattern, rows, boundary, gsdM: measuredGsd, bandM: params.bandFrac * (rows?.usable ? rows.medianPitchM : params.rowSpacingM), params: params.structure });
+      const a = mapStructure.accounting;
+      notes.push(`Vegetation on the map at ${fmtLengthCm(measuredGsd * 100, sys).text} per pixel: ${a.counts.individuals.toLocaleString()} plant(s) measurable on their own (${fmtLengthCm(mapStructure.minMeasurableM * 100, sys).text} and over), ${a.counts.clusters.toLocaleString()} cluster(s) of ${a.counts.clusterMembers.toLocaleString()} touching objects, ${a.counts.micro.toLocaleString()} smaller object(s) as coverage in ${a.counts.zones.toLocaleString()} zone(s).`);
+    } catch (e) {
+      notes.push(`The vegetation could not be grouped: ${(e as Error).message}`);
+    }
+    await yieldToUi();
+    check();
+  }
+
   // Chips for the top of the queue, read at the sweep depth. -----------------
   const chipZ = Math.min(plan?.z ?? 20, 21, maxNative);
   const chipCount = Math.min(params.maxChips, candidates.length);
@@ -372,6 +391,7 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
     notes,
     startedAt,
     finishedAt: new Date().toISOString(),
+    vegetation: { map: mapStructure, photos: null },
   };
 }
 

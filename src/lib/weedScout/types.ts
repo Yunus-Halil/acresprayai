@@ -25,6 +25,8 @@ import type { Inference, Prediction } from "./classify/types";
 import type { FieldPattern } from "./fieldPattern";
 import type { PhotoLook } from "../sourceFrames/patternLook";
 import { DEFAULT_SIZE_THRESHOLDS, type SizeThresholds, type WeedMeasurement } from "./sizing/types";
+import type { GroundStructure } from "./structure/ground";
+import { DEFAULT_STRUCTURE_PARAMS, type StructureParams } from "./structure/types";
 
 /**
  * What a finding is, before anyone asks whether it is a weed. Only
@@ -124,6 +126,8 @@ export type ScoutParams = {
   photoMinWeedM: number;
   /** Where a measured canopy stops being small and starts being large (sizing/types.ts). A setting, not a biological fact. */
   sizeThresholdsCm: SizeThresholds;
+  /** How vegetation is grouped into individuals, clusters and coverage zones (structure/types.ts). */
+  structure: StructureParams;
 };
 
 export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
@@ -148,6 +152,7 @@ export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
   photoMinWeedM: 0.15,
   maxPhotoReads: 150,
   sizeThresholdsCm: DEFAULT_SIZE_THRESHOLDS,
+  structure: DEFAULT_STRUCTURE_PARAMS,
 };
 
 /** Fraction of `anomalyZ` a neighbour must reach to be grown into a region. */
@@ -461,4 +466,11 @@ export type ScoutResult = {
   finishedAt: string;
   /** Set when the result was restored from the saved run rather than computed in this session; chips are not kept. */
   restoredAt?: string;
+  /**
+   * The vegetation off the pattern as individuals, clusters and coverage
+   * zones (structure/): from the field map at its pixel size, and from the
+   * original photos at theirs once the photo pass has read them. Absent on
+   * runs older than the structure.
+   */
+  vegetation?: { map: GroundStructure | null; photos: GroundStructure | null };
 };

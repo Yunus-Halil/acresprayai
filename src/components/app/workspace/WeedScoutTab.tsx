@@ -54,6 +54,7 @@ import { plannedAreaM2, plannedZones } from "@/lib/treatment/plannedArea";
 import { ScanSummary } from "./ScanSummary";
 import { FieldRead } from "./FieldRead";
 import { PatternLayer } from "./PatternLayer";
+import { VegetationLayer } from "./VegetationLayer";
 import { type SpotPhoto, SpotPopup } from "./SpotPopup";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
 import { DetectionOverlay } from "./DetectionOverlay";
@@ -68,6 +69,7 @@ import { openPhotoReadStore } from "@/lib/weedScout/photoReadCache";
 import { saveFindingCandidate } from "@/lib/weedScout/runCache";
 import { measureSpotInPhoto, openOriginal, wantsMeasurement } from "@/lib/weedScout/sizing/measure";
 import { readSizeThresholds } from "@/lib/weedScout/sizing/types";
+import { readStructureParams } from "@/lib/weedScout/structure/types";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, MouseReadout, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
@@ -104,6 +106,7 @@ function loadParams(): ScoutParams {
       photoMinWeedM: typeof p.photoMinWeedM === "number" && p.photoMinWeedM >= 0 ? p.photoMinWeedM : DEFAULT_SCOUT_PARAMS.photoMinWeedM,
       maxPhotoReads: Math.round(num(p.maxPhotoReads, DEFAULT_SCOUT_PARAMS.maxPhotoReads)),
       sizeThresholdsCm: readSizeThresholds(p.sizeThresholdsCm),
+      structure: readStructureParams(p.structure),
     };
   } catch {
     return DEFAULT_SCOUT_PARAMS;
@@ -307,6 +310,8 @@ export function WeedScoutTab({
   const [showPhotos, setShowPhotos] = useState(true);
   /** The planting pattern on the map: on by default here, where it is the explanation of every spot. */
   const [showPattern, setShowPattern] = useState(true);
+  /** The vegetation off the pattern as plants, clusters and coverage zones, drawn at the zoom's own scale. */
+  const [showVegetation, setShowVegetation] = useState(true);
   // The scan's saved photo reads, for the closer look: opened when signed in,
   // reopened after a photo pass so the reads it just saved are in hand.
   const [readStore, setReadStore] = useState<PhotoReadStore | null>(null);
@@ -771,6 +776,7 @@ export function WeedScoutTab({
             <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])} pathOptions={{ color: "#4CAF50", weight: 1.5, fill: false, dashArray: "4 4" }} />
           ))}
           <PatternLayer pattern={result?.pattern ?? null} visible={showPattern} />
+          <VegetationLayer vegetation={result?.vegetation ?? null} visible={showVegetation} units={units} />
           {/* The pass at work (developer tools): every planned window as a box, the
               one being read in white, those with rows in yellow, those without in
               grey, and the rows and plants found so far drawn as they land. */}
@@ -902,6 +908,12 @@ export function WeedScoutTab({
             <label className="flex items-center gap-2 cursor-pointer" data-testid="pattern-toggle">
               <input type="checkbox" checked={showPattern} onChange={e => setShowPattern(e.target.checked)} className="accent-[#ffeb3b]" />
               Planting pattern: {result.pattern.lines.length.toLocaleString()} row lines, {result.pattern.summary.plantCount.toLocaleString()} plants (zoom in for the plants)
+            </label>
+          )}
+          {result?.vegetation && (result.vegetation.map || result.vegetation.photos) && (
+            <label className="flex items-center gap-2 cursor-pointer" data-testid="vegetation-toggle" title="The vegetation off the pattern at the zoom's own scale: coverage zones zoomed out, clusters, and single plants as the map comes close. Hover for the numbers.">
+              <input type="checkbox" checked={showVegetation} onChange={e => setShowVegetation(e.target.checked)} className="accent-[#ab47bc]" />
+              Vegetation: plants, clusters and coverage zones{result.vegetation.photos ? " (from the photos where read)" : ""}
             </label>
           )}
           {sources?.set && (

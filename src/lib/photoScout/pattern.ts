@@ -283,10 +283,22 @@ export type PhotoBlock = {
   seedSpacingM: number | null;
 };
 
+/**
+ * The fragments under the component floor, counted per cell rather than
+ * kept: a photo has thousands, and what matters about them is how much of
+ * each square metre they cover. [col, row, count, areaPx] per non-empty cell.
+ */
+export type FragmentCells = { cellM: number; cells: [number, number, number, number][] };
+
+/** Fragment cell edge, metres. */
+export const FRAGMENT_CELL_M = 1;
+
 export type PhotoPattern = {
   width: number;
   height: number;
   gsdM: number;
+  /** Specks under the component floor, per cell. Absent on reads made before fragments were counted. */
+  fragments?: FragmentCells;
   /** The spacing the operator gave; null when it was searched automatically. */
   rowSpacingM: number | null;
   windowM: number;
@@ -630,7 +642,7 @@ export function distanceInside(inside: Uint8Array, w: number, h: number): Float3
   return out;
 }
 
-export function measureComponents(mask: Uint8Array, width: number, height: number, floorPx: number): { blobs: RawBlob[]; specks: number; labels: Int32Array } {
+export function measureComponents(mask: Uint8Array, width: number, height: number, floorPx: number, onSpeck?: (x: number, y: number, n: number) => void): { blobs: RawBlob[]; specks: number; labels: Int32Array } {
   const seen = new Uint8Array(mask.length);
   const labels = new Int32Array(mask.length);
   const stack: number[] = [];
@@ -662,7 +674,7 @@ export function measureComponents(mask: Uint8Array, width: number, height: numbe
         }
       }
     }
-    if (b.n < floorPx) { specks++; continue; }
+    if (b.n < floorPx) { specks++; onSpeck?.(b.sx / b.n, b.sy / b.n, b.n); continue; }
     b.labels = [blobs.length + 1];
     for (const i of pixels) labels[i] = blobs.length + 1;
     blobs.push(b);
@@ -1446,7 +1458,16 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
 
   const minBlobAreaCm2 = params.minBlobAreaCm2 ?? DEFAULT_MIN_BLOB_AREA_CM2;
   const floorPx = Math.max(MIN_BLOB_PX, minAreaPx(gsdM, minBlobAreaCm2));
-  const measured = measureComponents(mask, px.width, px.height, floorPx);
+  // The specks, per square metre: not plants, but vegetation the coverage zones account for.
+  const fragCellPx = Math.max(1, FRAGMENT_CELL_M / gsdM);
+  const fragCells = new Map<number, [number, number, number, number]>();
+  const fragCols = Math.ceil(px.width / fragCellPx);
+  const measured = measureComponents(mask, px.width, px.height, floorPx, (x, y, n) => {
+    const col = Math.floor(x / fragCellPx), row = Math.floor(y / fragCellPx), k = row * fragCols + col;
+    const c = fragCells.get(k);
+    if (c) { c[2]++; c[3] += n; } else fragCells.set(k, [col, row, 1, n]);
+  });
+  const fragments: FragmentCells = { cellM: FRAGMENT_CELL_M, cells: [...fragCells.values()] };
   const pitchForMerge = median(windows.filter(w => w.usable).map(w => w.fit.pitchM));
   if (pitchForMerge != null) measured.blobs = mergeComponents(measured.blobs, (MERGE_GAP_FRACTION * pitchForMerge) / gsdM);
   const windowAt = (x: number, y: number): PhotoWindow | null => {
@@ -1620,7 +1641,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     notes.push(`${measured.specks.toLocaleString()} specks under the minimum blob size were dropped against ${blobs.length.toLocaleString()} blobs kept. If plants are being dropped, lower the minimum blob size.`);
   }
 
-  return { width: px.width, height: px.height, gsdM, rowSpacingM, windowM, minBlobAreaCm2, vegetationFraction, canopyClosed, windows, blobs, blocks: blocksOut, summary, notes };
+  return { width: px.width, height: px.height, gsdM, fragments, rowSpacingM, windowM, minBlobAreaCm2, vegetationFraction, canopyClosed, windows, blobs, blocks: blocksOut, summary, notes };
 }
 
 /**

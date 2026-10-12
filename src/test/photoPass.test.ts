@@ -152,8 +152,8 @@ describe("the photo pass on a real reconstruction", () => {
     expect(Object.keys(pass.looks).sort()).toEqual([`c-${a.filename}`, `c-${b.filename}`].sort());
     expect(pass.notes[0]).toMatch(/2 of 2 photo\(s\) read at full resolution, the spots' own photos only \(1 from the saved reads of this scan\)/);
     // The key says what a read depends on, and only that.
-    expect(photoReadKey(photoPassParams(params))).toBe("photo-read-v1|spacing=auto|window=4|minBlob=1|edge=4096");
-    expect(photoReadKey(photoPassParams({ ...params, rowSpacingAuto: false }))).toBe("photo-read-v1|spacing=0.762|window=4|minBlob=1|edge=4096");
+    expect(photoReadKey(photoPassParams(params))).toBe("photo-read-v2|spacing=auto|window=4|minBlob=1|edge=4096");
+    expect(photoReadKey(photoPassParams({ ...params, rowSpacingAuto: false }))).toBe("photo-read-v2|spacing=0.762|window=4|minBlob=1|edge=4096");
   });
 
   it("knows the frame's pixel size from its footprint, near ODM's own average", () => {

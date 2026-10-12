@@ -28,6 +28,13 @@
 // candidates with the photo as their source and a chip cut from the photo
 // itself, so review, verdicts and the archive need nothing new.
 //
+// The structure of each photo (structure/): its off-pattern blobs and its
+// fragments as individuals, clusters and coverage zones at the photo's own
+// pixel size, carried to the ground through the pose and merged across the
+// photos read, an object seen twice kept once. With `photoFindings` on,
+// only the individuals and the clusters join the map as findings: the
+// small plants are coverage, never a thousand dots.
+//
 // The size of each spot (sizing/): once a photo's pattern is known, every
 // spot whose best photo it is and that has no measurement yet is measured
 // in the original at native resolution (measureSpotInPhoto), with the
@@ -48,6 +55,9 @@ import type { FieldPattern } from "./fieldPattern";
 import { localFrame } from "./rows";
 import { type OpenedOriginal, measureSpotInPhoto, openOriginal, wantsMeasurement } from "./sizing/measure";
 import { type WeedMeasurement, readSizeThresholds } from "./sizing/types";
+import { type GroundStructure, groundStructure, mergeGroundStructures } from "./structure/ground";
+import { structureOfPhoto } from "./structure/photo";
+import { readStructureParams } from "./structure/types";
 import { tileIdAt, tileLattice } from "./tiles";
 import type { Blob as ScoutBlob, Candidate, ScoutParams, ScoutResult, SourceImages } from "./types";
 
@@ -72,7 +82,7 @@ export const PHOTO_CHIP_MAX = 150;
 export const isPhotoFinding = (c: Pick<Candidate, "id">): boolean => c.id.startsWith("c-p:");
 
 /** Bumped when the pass's result for a photo changes shape or meaning; older saved reads are left unread. */
-export const PHOTO_READ_VERSION = "photo-read-v1";
+export const PHOTO_READ_VERSION = "photo-read-v2";
 
 /** What a later run or the closer look needs from a photo: the pass's result and the two widths that carry it to the ground and to the original's pixels. */
 export type SavedPhotoRead = { pattern: PhotoPattern; decodedWidth: number; nativeWidth: number };
@@ -140,6 +150,8 @@ export type PhotoPassResult = {
   looks: Record<string, PhotoLook>;
   /** Sizes for spots the map pass found, by spot id; the photo pass's own findings carry theirs. */
   measurements: Record<string, WeedMeasurement>;
+  /** The vegetation structure read from the photos, merged; null when no photo was read. */
+  structure: GroundStructure | null;
   notes: string[];
 };
 
@@ -381,6 +393,8 @@ export type PhotoPassOptions = {
   onLook?: (looks: Record<string, PhotoLook>) => void;
   /** Sizes for the map pass's own spots, as each photo lands, by spot id. */
   onMeasured?: (measurements: Record<string, WeedMeasurement>) => void;
+  /** The structure so far, merged over the photos read, as each photo lands. */
+  onStructure?: (structure: GroundStructure) => void;
   /** Saved reads of this scan's photos: taken instead of the photo when present, written as photos are read. */
   reads?: PhotoReadStore | null;
   /** Injected for tests. */
@@ -403,10 +417,13 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
   const out: Candidate[] = [];
   const looks: Record<string, PhotoLook> = {};
   const measurements: Record<string, WeedMeasurement> = {};
-  if (!sources.set || sources.groundAltM == null) { notes.push("The photos were not read: this scan has no camera positions."); return { reads, candidates: out, looks, measurements, notes }; }
-  if (!sources.frames) { notes.push("The photos were not read: no originals were kept for this scan."); return { reads, candidates: out, looks, measurements, notes }; }
+  const structures: GroundStructure[] = [];
+  let structure: GroundStructure | null = null;
+  if (!sources.set || sources.groundAltM == null) { notes.push("The photos were not read: this scan has no camera positions."); return { reads, candidates: out, looks, measurements, structure, notes }; }
+  if (!sources.frames) { notes.push("The photos were not read: no originals were kept for this scan."); return { reads, candidates: out, looks, measurements, structure, notes }; }
   const shots = shotsOfSpots(sources.set, result.candidates, params.maxPhotoReads);
-  if (!shots.length) { notes.push("The photos were not read: no spot was matched to a photo."); return { reads, candidates: out, looks, measurements, notes }; }
+  if (!shots.length) { notes.push("The photos were not read: no spot was matched to a photo."); return { reads, candidates: out, looks, measurements, structure, notes }; }
+  const structureParams = readStructureParams(params.structure);
   const thresholds = readSizeThresholds(params.sizeThresholdsCm);
   const open = opts.open ?? openOriginal;
   const rowSpacingM = result.pattern?.summary.rowSpacingM ?? null;
@@ -459,8 +476,32 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
         set: sources.set, shot, groundAltM: sources.groundAltM, pattern, decodedWidth, nativeWidth, fieldPattern: result.pattern,
       });
       read.matchedBlocks = grounded.blocks.filter(b => b.matched).length;
-      // The photo's own plants join the map only when asked; the looks are what the photo is read for.
-      const fresh = params.photoFindings ? dedupeFindings(grounded.findings.filter(f => pointInAnyRing(f.centroid, boundary)), existing) : [];
+      // The photo's structure: grouped in the photo's metres, carried to the
+      // ground through the same pose, merged with the photos before it.
+      const photoStructure = structureOfPhoto(pattern, structureParams);
+      const k = sources.set.cameras[shot.cameraKey].width / decodedWidth;
+      const g = pattern.gsdM;
+      const toLatLng = (x: number, y: number) => { const p = pixelToGround(sources.set!, shot, (x / g) * k, (y / g) * k, sources.groundAltM!); return p ? strip(p) : null; };
+      structures.push(groundStructure(photoStructure, "photo", toLatLng, shot.filename));
+      structure = mergeGroundStructures(structures);
+      if (structure) opts.onStructure?.(structure);
+      // The photo's own plants join the map only when asked, and then only
+      // the ones measurable on their own and the clusters: the small plants
+      // are coverage, not dots. The looks are what the photo is read for.
+      const individualIds = new Set(photoStructure.individuals.map(i => i.itemId));
+      const clusterFindings: PhotoFinding[] = params.photoFindings ? photoStructure.clusters.map(c => {
+        const gp = toLatLng(c.x, c.y);
+        const px = { x: c.x / g, y: c.y / g };
+        return gp ? {
+          id: `p:${shot.filename}:${c.id}`, filename: shot.filename, centroid: gp, areaM2: c.canopyAreaM2, equivDiameterM: 2 * Math.sqrt(c.canopyAreaM2 / Math.PI),
+          cls: (c.kinds.between > c.kinds.offRow ? "between plants" : "off-row") as PhotoFinding["cls"], distanceToRowM: null,
+          photoPx: px, nativePx: { u: px.x * (nativeWidth / decodedWidth), v: px.y * (nativeWidth / decodedWidth) },
+          centrality: 1 - Math.max(Math.abs(px.x / pattern.width - 0.5), Math.abs(px.y / pattern.height - 0.5)) * 2, gsdM: g,
+        } : null;
+      }).filter((f): f is PhotoFinding => !!f) : [];
+      const fresh = params.photoFindings
+        ? dedupeFindings([...grounded.findings.filter(f => individualIds.has(`b${f.id.split(":").pop()}`)), ...clusterFindings].filter(f => pointInAnyRing(f.centroid, boundary)), existing)
+        : [];
       const batch: Candidate[] = [];
       for (const f of fresh) {
         const tileId = tileIdAt(lattice, f.centroid) ?? "photo";
@@ -537,5 +578,6 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
     `${readCount} of ${shots.length} photo(s) read at full resolution, the spots' own photos only${fromSaved ? ` (${fromSaved} from the saved reads of this scan)` : ""}: ${params.photoFindings ? `${found} more plant(s) off the pattern` : "the plants they hold were not put on the map"}, ${looked} of ${spots} spot(s) shown in their photo, ${measured} measured there` +
     `${skipped ? `, ${skipped} skipped` : ""}${failed ? `, ${failed} failed (${firstFailure})` : ""}${wanted > shots.length ? `; ${wanted - shots.length} photo(s) over the limit were not read` : ""}${found > PHOTO_CHIP_MAX ? `; the first ${PHOTO_CHIP_MAX} carry a picture, the rest open in their photo` : ""}.`,
   );
-  return { reads, candidates: out, looks, measurements, notes };
+  if (structure) notes.push(structure.notes[structure.notes.length - 1] ?? "");
+  return { reads, candidates: out, looks, measurements, structure, notes };
 }
