@@ -217,10 +217,11 @@ export const REGION_TITLE: Record<RegionClass, string> = {
  * heading, the closer look's title and the saved shape's name all say this,
  * so a spot is the same thing everywhere. "Likely": the operator decides.
  */
-export function findingTitle(c: Pick<Candidate, "kind" | "region" | "blob" | "areaM2">, sys: UnitSystem = "metric", opts: { size?: boolean } = {}): string {
+export function findingTitle(c: Pick<Candidate, "kind" | "region" | "blob" | "areaM2" | "measurement">, sys: UnitSystem = "metric", opts: { size?: boolean } = {}): string {
   const withSize = opts.size !== false;
   if (c.region) return withSize ? `${REGION_TITLE[c.region.klass]} · ${fmtArea(c.areaM2, sys).text}` : REGION_TITLE[c.region.klass];
-  const size = withSize && c.blob ? ` · ${fmtLengthCm(c.blob.equivDiameterM * 100, sys).text}` : "";
+  const measuredCm = measuredDiameterCm(c);
+  const size = withSize && measuredCm != null ? ` · ${fmtLengthCm(measuredCm, sys).text}` : withSize && c.blob ? ` · ${fmtLengthCm(c.blob.equivDiameterM * 100, sys).text}` : "";
   switch (c.kind) {
     case "off-row vegetation": return `Likely weed, off the row${size}`;
     case "between plants": return `Likely weed, between plants${size}`;
@@ -249,9 +250,17 @@ export function describeCandidate(c: Candidate, sys: UnitSystem = "metric"): str
   if (c.kind === "field outlier" && c.anomalyZ !== null && c.anomalyFeature) {
     parts.push(`${c.anomalyFeature} ${c.anomalyZ.toFixed(1)} typical deviations from the field`);
   }
-  if (c.blob) parts.push(`${fmtLengthCm(c.blob.equivDiameterM * 100, sys).text} across`);
+  const measuredCm = measuredDiameterCm(c);
+  if (measuredCm != null) parts.push(`${fmtLengthCm(measuredCm, sys).text} across, measured in its photo`);
+  else if (c.blob) parts.push(`${fmtLengthCm(c.blob.equivDiameterM * 100, sys).text} across on the map`);
   else parts.push("no vegetation in the tile");
   return parts.join(", ");
+}
+
+/** The canopy diameter measured in the photo, centimetres, when there is a measured one. The map's blob otherwise says its own size. */
+export function measuredDiameterCm(c: Pick<Candidate, "measurement">): number | null {
+  const m = c.measurement;
+  return m && m.status === "measured" && m.canopyDiameterCm != null ? m.canopyDiameterCm : null;
 }
 
 /** Ground metres a chip should cover for a candidate. */

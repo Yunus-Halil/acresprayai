@@ -65,6 +65,9 @@ import { type ScanSources, downloadFrame, loadScanSources } from "@/lib/sourceFr
 import { type SpotSources, spotSources } from "@/lib/sourceFrames/spot";
 import { type PhotoReadStore, isPhotoFinding, photoPassParams, photoReadKey } from "@/lib/weedScout/photoPass";
 import { openPhotoReadStore } from "@/lib/weedScout/photoReadCache";
+import { saveFindingCandidate } from "@/lib/weedScout/runCache";
+import { measureSpotInPhoto, openOriginal, wantsMeasurement } from "@/lib/weedScout/sizing/measure";
+import { readSizeThresholds } from "@/lib/weedScout/sizing/types";
 import type { CatalogEntry } from "@/lib/weedCatalog/types";
 import { type BasemapId, BasemapLayer, BasemapToggle, FitBounds, MouseReadout, loadBasemap, saveBasemap } from "./layers";
 import type { BoundaryRing } from "./types";
@@ -100,6 +103,7 @@ function loadParams(): ScoutParams {
       photoFindings: p.photoFindings === true,
       photoMinWeedM: typeof p.photoMinWeedM === "number" && p.photoMinWeedM >= 0 ? p.photoMinWeedM : DEFAULT_SCOUT_PARAMS.photoMinWeedM,
       maxPhotoReads: Math.round(num(p.maxPhotoReads, DEFAULT_SCOUT_PARAMS.maxPhotoReads)),
+      sizeThresholdsCm: readSizeThresholds(p.sizeThresholdsCm),
     };
   } catch {
     return DEFAULT_SCOUT_PARAMS;
@@ -328,6 +332,8 @@ export function WeedScoutTab({
   const [photos, setPhotos] = useState<Record<string, SpotPhoto>>({});
   const photosRef = useRef(photos);
   photosRef.current = photos;
+  // The spot whose size is being measured in its photo right now, when it was opened without one.
+  const [measuringId, setMeasuringId] = useState<string | null>(null);
   useEffect(() => () => { for (const p of Object.values(photosRef.current)) if (p.status === "ready") URL.revokeObjectURL(p.url); }, []);
   useEffect(() => {
     if (!user || !odmUuid) { setSources(null); return; }
@@ -409,6 +415,11 @@ export function WeedScoutTab({
     const scale = spot.nativeScale;
     let cancelled = false;
     setPhotos(m => ({ ...m, [selectedId]: { status: "loading" } }));
+    // A spot opened without a size (a restored run, a photo the pass did not
+    // reach) is measured here from the same download, and the finding's
+    // record is updated in place so the size is there on the next visit.
+    const measure = !!selected && wantsMeasurement(selected) && !spot.nearestOnly && !!sources?.set && sources.groundAltM != null;
+    if (measure) setMeasuringId(selectedId);
     (async () => {
       const blob = await downloadFrame(entry);
       const look = blob ? await renderCloserLook(blob, view.outlinePx, view.box, scale, view.gsdM) : null;
@@ -416,9 +427,27 @@ export function WeedScoutTab({
       setPhotos(m => ({ ...m, [selectedId]: look
         ? { status: "ready", url: look.url, filename: view.filename, gsdM: look.gsdM, nearestOnly: spot.nearestOnly }
         : { status: "error" } }));
-    })().catch(() => { if (!cancelled) setPhotos(m => ({ ...m, [selectedId]: { status: "error" } })); });
+      if (measure && blob && selected && sources?.set && sources.groundAltM != null) {
+        const opened = await openOriginal(blob);
+        if (!opened) return;
+        let measured;
+        try {
+          measured = measureSpotInPhoto({
+            set: sources.set, shot: view.shot, groundAltM: sources.groundAltM, nativeWidth: opened.width, nativeHeight: opened.height,
+            candidate: selected, look: selected.look, thresholds: readSizeThresholds(params.sizeThresholdsCm), cut: opened.cut,
+          });
+        } finally {
+          opened.close();
+        }
+        if (cancelled) return;
+        const next = { ...selected, measurement: measured };
+        patchSession(taskId, s => ({ result: s.result ? { ...s.result, candidates: s.result.candidates.map(c => c.id === selected.id ? { ...c, measurement: measured } : c) } : s.result }));
+        if (user) void saveFindingCandidate(taskId, next);
+      }
+    })().catch(() => { if (!cancelled) setPhotos(m => ({ ...m, [selectedId]: { status: "error" } })); })
+      .finally(() => { if (measure) setMeasuringId(id => (id === selectedId ? null : id)); });
     return () => { cancelled = true; };
-  }, [selectedId, selected, sourcesFor, sources, photos]);
+  }, [selectedId, selected, sourcesFor, sources, photos, params.sizeThresholdsCm, taskId, user]);
 
   const suggestionById = useMemo(
     () => new Map(candidates.map(c => [c.id, suggestionsFor(c, catalog)[0] ?? null])),
@@ -665,6 +694,10 @@ export function WeedScoutTab({
   const setRowSpacingShown = (v: number) => setParams(p => ({ ...p, rowSpacingM: units === "metric" ? v / 100 : v * 0.0254 }));
   const minWeedShown = units === "metric" ? (params.photoMinWeedM * 100).toFixed(0) : (params.photoMinWeedM / 0.0254).toFixed(1);
   const setMinWeedShown = (v: number) => setParams(p => ({ ...p, photoMinWeedM: Math.max(0, units === "metric" ? v / 100 : v * 0.0254) }));
+  // The size classes, shown in the operator's unit, stored in centimetres.
+  const cmShown = (cm: number) => (units === "metric" ? cm.toFixed(0) : (cm / 2.54).toFixed(1));
+  const shownToCm = (v: number) => (units === "metric" ? v : v * 2.54);
+  const setSizeThreshold = (k: "smallMaxCm" | "mediumMaxCm", v: number) => setParams(p => ({ ...p, sizeThresholdsCm: readSizeThresholds({ ...p.sizeThresholdsCm, [k]: shownToCm(v) }) }));
   const areaText = (m2: number) => fmtArea(m2, units).text;
   const busy = bulk.phase !== "idle";
   const spotColour = (c: Candidate) => (c.region ? CLASS_COLOUR[c.region.klass] : KIND_COLOUR[c.kind]);
@@ -791,6 +824,7 @@ export function WeedScoutTab({
                   sourceFrames={active ? sourcesFor(c) : null}
                   sourcesOrigin={sources?.reconstruction ?? "none"}
                   photo={photos[c.id] ?? null}
+                  measuring={measuringId === c.id}
                   onCloserLook={() => {
                     const spot = sourcesFor(c);
                     if (spot) setCloserLook({ id: c.id, title: spotLabel(c), spot });
@@ -844,6 +878,7 @@ export function WeedScoutTab({
           rowSpacingM={result?.pattern?.summary.rowSpacingM ?? null}
           spotDiameterM={closerLook ? (candidates.find(c => c.id === closerLook.id)?.blob?.equivDiameterM ?? null) : null}
           spotLook={closerLook ? (candidates.find(c => c.id === closerLook.id)?.look ?? null) : null}
+          spotMeasurement={closerLook ? (candidates.find(c => c.id === closerLook.id)?.measurement ?? null) : null}
           passParams={params} readStore={readStore} minWeedM={params.photoMinWeedM} />
 
         <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1">
@@ -1010,6 +1045,13 @@ export function WeedScoutTab({
                   <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer" title="In a spot's photo, plants off the pattern smaller than this are not drawn. The crop and the rows are always drawn. The photo is not read again when this changes.">
                     In a photo, draw weeds from
                     <input type="number" min={0} step={units === "metric" ? 1 : 0.5} className={inputCls + " w-16"} value={minWeedShown} onChange={e => setMinWeedShown(Number(e.target.value) || 0)} />
+                    {rowSpacingUnit} across
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-neutral-300 cursor-pointer" title="A weed's canopy, measured in its photo, is small up to the first number, medium up to the second, large beyond. A setting, not a biological fact; the measurement itself does not change.">
+                    A measured weed is small to
+                    <input type="number" min={0} step={units === "metric" ? 1 : 0.5} className={inputCls + " w-16"} value={cmShown(params.sizeThresholdsCm.smallMaxCm)} onChange={e => setSizeThreshold("smallMaxCm", Number(e.target.value) || 0)} data-testid="size-small" />
+                    and medium to
+                    <input type="number" min={0} step={units === "metric" ? 1 : 0.5} className={inputCls + " w-16"} value={cmShown(params.sizeThresholdsCm.mediumMaxCm)} onChange={e => setSizeThreshold("mediumMaxCm", Number(e.target.value) || 0)} data-testid="size-medium" />
                     {rowSpacingUnit} across
                   </label>
                 </div>

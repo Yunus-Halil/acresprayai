@@ -26,6 +26,7 @@ import { isStatedFinding } from "@/lib/weedCatalog/identification";
 import type { CropShortlist, RankedEntry, RecentLabel, Suggestion } from "@/lib/weedCatalog/suggest";
 import type { CatalogEntry, FieldRegion } from "@/lib/weedCatalog/types";
 import { FINDING_CLASS_LABEL, describeCandidate, findingClassOf, findingTitle } from "@/lib/weedScout/candidates";
+import { measurementLine, measurementRows } from "@/lib/weedScout/sizing/describe";
 import { type StoredPrediction, type Verdict, VERDICTS, isDismissal } from "@/lib/weedScout/observations";
 import type { Candidate } from "@/lib/weedScout/types";
 import { type UnitSystem, fmtArea, fmtAreaCm2, fmtLengthCm } from "@/lib/units";
@@ -64,6 +65,8 @@ export type SpotPopupProps = {
   sourcesOrigin: ScanSources["reconstruction"];
   /** The chosen original photo, cut to this spot. Null before it is asked for. */
   photo: SpotPhoto | null;
+  /** True while the spot's size is being measured in its photo, for a spot that had none. */
+  measuring?: boolean;
   onCloserLook: () => void;
 
   // Identification wiring, handed straight to the shared block.
@@ -87,8 +90,9 @@ export type SpotPopupProps = {
 export function SpotPopup(props: SpotPopupProps) {
   const {
     candidate: c, index, total, units, areaM2, verdict, onVerdict, identification, suggestion,
-    notes, onNotes, saved, savedPrediction, onField, sourceFrames, sourcesOrigin, photo, onCloserLook,
+    notes, onNotes, saved, savedPrediction, onField, sourceFrames, sourcesOrigin, photo, measuring, onCloserLook,
   } = props;
+  const sizeLine = sizeLineFor(c, measuring ?? false, sourceFrames, units);
   const named = isStatedFinding(identification);
   // A suggestion is worth showing unasked; an empty picker is not.
   const [naming, setNaming] = useState(false);
@@ -142,6 +146,14 @@ export function SpotPopup(props: SpotPopupProps) {
       <p className="mt-2 text-[11px] text-neutral-300 leading-relaxed">
         {c.estimate ? c.estimate.summary : describeCandidate(c, units)}
       </p>
+      {/* How large it is on the ground, from its photo: the one number this
+          spot is most often opened for. Said plainly, with its caveats; the
+          table below has the rest. Regions have an area, not a canopy. */}
+      {!c.region && (
+        <p className={`mt-1 text-[11px] leading-relaxed ${c.measurement?.status === "measured" ? "text-[#f0f0f0]" : "text-neutral-500"}`} data-testid="spot-size">
+          {sizeLine}
+        </p>
+      )}
       {c.prediction ? (
         <p className="mt-1 text-[10px] text-neutral-500 leading-relaxed" title="Trained on public corn imagery and synthetic scenes; the number is calibrated on held-out data, not on this field.">
           {describePrediction(c.prediction)}
@@ -222,7 +234,8 @@ export function SpotPopup(props: SpotPopupProps) {
             <>
               <Dt k="Off row" v={c.distanceToRowM != null ? fmtLengthCm(Math.abs(c.distanceToRowM) * 100, units).text : "no row model"} />
               <Dt k="Unlike plants" v={c.blobZ != null ? `${c.blobZ.toFixed(1)} z on ${c.blobZFeature}` : "within the field's plants"} />
-              <Dt k="Size" v={c.blob ? `${fmtLengthCm(c.blob.equivDiameterM * 100, units).text}, ${fmtAreaCm2(c.blob.areaM2 * 1e4, units).text}` : "no vegetation"} />
+              <Dt k="Size on the map" v={c.blob ? `${fmtLengthCm(c.blob.equivDiameterM * 100, units).text}, ${fmtAreaCm2(c.blob.areaM2 * 1e4, units).text} at ${fmtLengthCm(c.blob.gsdM * 100, units).text}/px` : "no vegetation"} />
+              {c.measurement && measurementRows(c.measurement, units).map(([k, v]) => <Dt key={"m:" + k} k={k} v={v} />)}
             </>
           )}
         </dl>
@@ -270,6 +283,22 @@ function CloserLookLine({ sources, origin, onCloserLook }: {
       </span>
     </button>
   );
+}
+
+/**
+ * The size line: the measurement when the spot has one; otherwise why not,
+ * from what is known so far (the photos still being looked up, the
+ * measurement under way, no photo to measure in).
+ */
+export function sizeLineFor(c: Candidate, measuring: boolean, sources: SpotSources | null, units: UnitSystem): string {
+  if (c.measurement && !(c.measurement.status === "unavailable" && measuring)) return measurementLine(c.measurement, units);
+  if (measuring) return "Measuring the size in the photo.";
+  if (!sources) return "Size: looking up the original photos of this spot.";
+  if (sources.unavailable === "no reconstruction") return "Size not measured: no camera positions for this scan, so no photo can be read at full resolution.";
+  if (sources.unavailable === "no ground height") return "Size not measured: the photos cannot be lined up with the map for this scan.";
+  if (sources.unavailable) return "Size not measured: no original photo shows this spot.";
+  if (!sources.lookable.length) return sources.originalsKept ? "Size not measured: the photo of this spot was not kept." : "Size not measured: the original photos were not kept for this scan.";
+  return "Size not measured yet: open the spot again once its photo has been read.";
 }
 
 function Dt({ k, v }: { k: string; v: string }) {

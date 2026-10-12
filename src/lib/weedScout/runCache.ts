@@ -117,6 +117,22 @@ export async function saveRun(input: SaveRunInput): Promise<{ ok: true } | { ok:
   }
 }
 
+/**
+ * One finding's record replaced in place: a measurement made when the spot
+ * was opened (not during the run) is kept without rewriting the whole run.
+ * A row that does not exist (the run was never saved) is not created: the
+ * measurement lives in the session until the run is saved. Never throws.
+ */
+export async function saveFindingCandidate(scanId: string, candidate: Candidate): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const row = findingRow(candidate);
+    const up = await supabase.from("scan_findings").update({ candidate: row.candidate } as never).eq("scan_id", scanId).eq("candidate_id", candidate.id);
+    return up.error ? { ok: false, error: up.error.message } : { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? String(e) };
+  }
+}
+
 /** The last saved run for a scan, or null when there is none or it is from another version. Never throws. */
 export async function loadRun(scanId: string): Promise<ScoutResult | null> {
   try {

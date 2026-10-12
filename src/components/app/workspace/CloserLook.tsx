@@ -26,7 +26,11 @@ import { analysePhotoOffThread } from "@/lib/photoScout/runPattern";
 import { decodePhoto } from "@/lib/photoScout/decode";
 import type { PhotoPattern } from "@/lib/photoScout/pattern";
 import { type PhotoReadStore, photoPassParams } from "@/lib/weedScout/photoPass";
+import type { WeedMeasurement } from "@/lib/weedScout/sizing/types";
 import type { ScoutParams } from "@/lib/weedScout/types";
+
+/** The measured canopy's outline, drawn in this colour: it is neither a row nor a class. */
+export const MEASURED_COLOUR = "#ffffff";
 
 /** A photo read whole in this session, kept so the next spot in it opens at once. */
 type WholePhotoRead = { pattern: PhotoPattern; nativeScale: number };
@@ -75,7 +79,7 @@ export function resetWholePhotoReads(): void { wholePhotoReads.clear(); }
 /** `id` names the finding on the map; the detector's boxes are filed under it. */
 export type CloserLookTarget = { id?: string; title: string; spot: SpotSources };
 
-export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null, spotLook = null, passParams = null, readStore = null, minWeedM = 0 }: {
+export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null, spotLook = null, spotMeasurement = null, passParams = null, readStore = null, minWeedM = 0 }: {
   target: CloserLookTarget | null;
   sources: ScanSources | null;
   units: UnitSystem;
@@ -88,6 +92,8 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   spotDiameterM?: number | null;
   /** The look the scan's photo pass left on this spot, when it read the spot's photo. */
   spotLook?: PhotoLook | null;
+  /** The spot's size measurement, drawn as the canopy's outline when it was measured in the photo on screen. */
+  spotMeasurement?: WeedMeasurement | null;
   /** The run's parameters, so a photo read here is read the way the pass reads it. Defaults when absent. */
   passParams?: Pick<ScoutParams, "rowSpacingAuto" | "rowSpacingM" | "minBlobCm2"> | null;
   /** The scan's saved photo reads, when signed in. */
@@ -243,7 +249,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
           <p className="text-[11px] text-neutral-400" data-testid="closer-look-pattern-line">
             {patternState === "reading" && <><Loader2 className="inline h-3 w-3 animate-spin mr-1" /> {patternProgress == null ? "Opening the pattern around this spot." : `Reading the rows and plants in this whole photo (${Math.round(patternProgress * 100)}%).`}</>}
             {patternState === "failed" && `The pattern could not be read in this photo${patternError ? ` (${patternError})` : ""}.`}
-            {patternLook && <PatternKey look={significantLook(patternLook.look, minWeedM)} detail={gsd(patternLook.look.gsdM)} />}
+            {patternLook && <PatternKey look={significantLook(patternLook.look, minWeedM)} detail={gsd(patternLook.look.gsdM)} measured={spotMeasurement?.status === "measured" && spotMeasurement.sourceFrame === view?.filename ? spotMeasurement : null} units={units} />}
           </p>
         )}
         {detection?.state === "done" && (
@@ -295,6 +301,10 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
               circles: pl.circles.map(c => ({ ...c, x: c.x * f, y: c.y * f, r: c.r * f })),
               focus: pl.focus ? { ...pl.focus, x: pl.focus.x * f, y: pl.focus.y * f, r: pl.focus.r * f } : null,
             };
+            // The measured canopy, when it was measured in this photo: its outline is in the original's pixels, the cut starts at the window's corner.
+            const measured = spotMeasurement?.status === "measured" && spotMeasurement.sourceFrame === view?.filename && spotMeasurement.outlinePx?.length
+              ? spotMeasurement.outlinePx.map(p => `${(p.x - pl.window.x) * f},${(p.y - pl.window.y) * f}`).join(" ")
+              : null;
             return (
               <div className="relative" style={full ? { width: cut.width } : { width: "100%" }}>
                 <img src={cut.url} alt={`The rows and plants around the flagged area in ${view?.filename}`} data-testid="closer-look-pattern-image"
@@ -305,6 +315,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
                       class colour. No halos, no ring, no outline. */}
                   {overlay.lines.map((l, i) => <line key={`l${i}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={ROW_COLOUR} strokeWidth={sw} />)}
                   {overlay.circles.map((c, i) => <circle key={`c${i}`} cx={c.x} cy={c.y} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={sw} />)}
+                  {measured && <polygon points={measured} fill="none" stroke={MEASURED_COLOUR} strokeWidth={sw * 1.5} data-testid="closer-look-measured" />}
                 </svg>
               </div>
             );
@@ -334,22 +345,25 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
 }
 
 /** The key to the pattern view, in a row above the photo: one swatch and one word per mark, with how many of each are in the cut. */
-export function PatternKey({ look, detail }: { look: PhotoLook; detail: string }) {
+export function PatternKey({ look, detail, measured = null, units = "metric" }: { look: PhotoLook; detail: string; measured?: WeedMeasurement | null; units?: UnitSystem }) {
   const c = look.counts;
-  const items: { colour: string; shape: "line" | "circle"; label: string; count: number | null }[] = [
+  const items: { colour: string; shape: "line" | "circle" | "outline"; label: string; count: number | null }[] = [
     { colour: ROW_COLOUR, shape: "line", label: "Row", count: null },
     { colour: BLOB_COLOUR["on pattern"], shape: "circle", label: "Crop plant on the pattern", count: c.onPattern },
     { colour: BLOB_COLOUR["off-row"], shape: "circle", label: "Plant off the row", count: c.offRow },
     { colour: BLOB_COLOUR["between plants"], shape: "circle", label: "Plant between crop plants", count: c.between },
     { colour: BLOB_COLOUR["double"], shape: "circle", label: "Two plants grown together", count: c.doubles },
   ];
+  if (measured?.canopyDiameterCm != null) items.push({ colour: MEASURED_COLOUR, shape: "outline", label: `Measured canopy, ${fmtLengthCm(measured.canopyDiameterCm, units).text} across`, count: null });
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-neutral-300" data-testid="closer-look-key">
       {items.map(it => (
         <span key={it.label} className="inline-flex items-center gap-1.5">
           {it.shape === "line"
             ? <span className="inline-block w-5 border-t-2" style={{ borderColor: it.colour }} aria-hidden="true" />
-            : <span className="inline-block h-3 w-3 rounded-full border-2" style={{ borderColor: it.colour }} aria-hidden="true" />}
+            : it.shape === "outline"
+              ? <span className="inline-block h-3 w-3 border-2 border-dashed" style={{ borderColor: it.colour }} aria-hidden="true" />
+              : <span className="inline-block h-3 w-3 rounded-full border-2" style={{ borderColor: it.colour }} aria-hidden="true" />}
           {it.label}{it.count != null ? <span className="text-neutral-500">{it.count}</span> : null}
         </span>
       ))}

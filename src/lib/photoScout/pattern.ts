@@ -332,7 +332,7 @@ export function photoMask(px: PhotoPixels, windowPx: number): { mask: Uint8Array
   return { mask, vegetationFraction: pixels ? veg / pixels : 0 };
 }
 
-export type RawBlob = { n: number; sx: number; sy: number; minX: number; maxX: number; minY: number; maxY: number; /** Component labels (1-based) in the label map this blob is made of. */ labels?: number[] };
+export type RawBlob = { n: number; sx: number; sy: number; minX: number; maxX: number; minY: number; maxY: number; /** Component labels (1-based) in the label map this blob is made of. */ labels?: number[]; /** Pixel indices, only when a caller asked to keep them. */ pixels?: number[] };
 
 /** A blob is cut across the rows only when it reaches further across them than this share of the spacing. */
 export const SPLIT_ACROSS_SHARE = 0.6;
@@ -442,39 +442,46 @@ export function splitAlongRow(b: RawBlob, labels: Int32Array, width: number, fit
   }
   if (byRow.size === 0) return [b];
   const out: RawBlob[] = [];
-  for (const pixels of byRow.values()) out.push(...splitAlong(pixels, width, floorPx, b.labels, gsdM));
+  for (const pixels of byRow.values()) out.push(...splitTouchingPlants(pixels, width, floorPx, b.labels, gsdM));
   if (out.length === 0) return [b];
   return out.length > 1 ? out : [b];
 }
 
 /**
- * One row's pixels of a blob, split into plants by the distance to the
- * blob's edge. A canopy is round-ish, so its centre is where the blob is
- * deepest; two canopies that touch are two peaks of that depth with a
- * neck between, and every pixel goes to the nearest peak. Weeds along
- * the row are shallow and raise no peak of their own.
+ * One row's pixels of a blob (or any one component: the weed sizer calls
+ * this too), split into plants by the distance to the blob's edge. A
+ * canopy is round-ish, so its centre is where the blob is deepest; two
+ * canopies that touch are two peaks of that depth with a neck between, and
+ * every pixel goes to the nearest peak. Weeds along the row are shallow and
+ * raise no peak of their own. With `keepPixels` each part carries its
+ * pixel indices, for a caller that measures the part rather than counts it.
  */
-function splitAlong(pixels: number[], width: number, floorPx: number, labelsOf: number[], gsdM: number): RawBlob[] {
+/** The split's knobs, defaulting to the constants above. A caller sizing single weeds asks for a lighter touch than the pass needs for touching tree canopies. */
+export type SplitOptions = { closeM?: number; smoothM?: number; neckShare?: number; minDeepestM?: number; depthShare?: number };
+
+export function splitTouchingPlants(pixels: number[], width: number, floorPx: number, labelsOf: number[], gsdM: number, keepPixels = false, opts: SplitOptions = {}): RawBlob[] {
+  const closeM = opts.closeM ?? SPLIT_CLOSE_M, smoothM = opts.smoothM ?? SPLIT_SMOOTH_M, neckShare = opts.neckShare ?? SPLIT_NECK_SHARE;
+  const minDeepestM = opts.minDeepestM ?? SPLIT_MIN_DEEPEST_M, depthShare = opts.depthShare ?? SPLIT_DEPTH_SHARE;
   const blobOf = (list: number[]): RawBlob => {
-    const r: RawBlob = { n: 0, sx: 0, sy: 0, minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, labels: labelsOf };
+    const r: RawBlob = { n: 0, sx: 0, sy: 0, minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, labels: labelsOf, ...(keepPixels ? { pixels: list } : {}) };
     for (const i of list) { const x = i % width, y = (i - x) / width; r.n++; r.sx += x; r.sy += y; if (x < r.minX) r.minX = x; if (x > r.maxX) r.maxX = x; if (y < r.minY) r.minY = y; if (y > r.maxY) r.maxY = y; }
     return r;
   };
   const b = blobOf(pixels);
   if (b.n < floorPx) return [];
   // A padded local grid; the pad is outside, so every pixel has a finite depth.
-  const pad = Math.ceil(SPLIT_CLOSE_M / gsdM) + 2;
+  const pad = Math.ceil(closeM / gsdM) + 2;
   const W = b.maxX - b.minX + 1 + 2 * pad, H = b.maxY - b.minY + 1 + 2 * pad;
   const inside = new Uint8Array(W * H);
   for (const i of pixels) { const x = i % width, y = (i - x) / width; inside[(y - b.minY + pad) * W + (x - b.minX + pad)] = 1; }
   const raw0 = distanceInside(inside, W, H);
   let rawDeepest = 0;
   for (let k = 0; k < raw0.length; k++) if (raw0[k] > rawDeepest) rawDeepest = raw0[k];
-  if (rawDeepest * gsdM < SPLIT_MIN_DEEPEST_M) return [b];
+  if (rawDeepest * gsdM < minDeepestM) return [b];
   // Closing: grow by k, then shrink by k. Fills bays and gaps narrower
   // than 2k; a neck between two plants that touch at a point becomes 2k
   // wide, still narrow against their depth.
-  const k = Math.round(Math.min(SPLIT_CLOSE_M / gsdM, rawDeepest / 4));
+  const k = Math.round(Math.min(closeM / gsdM, rawDeepest / 4));
   let shape = inside;
   if (k >= 1) {
     const outside = new Uint8Array(W * H);
@@ -507,10 +514,10 @@ function splitAlong(pixels: number[], width: number, floorPx: number, labelsOf: 
   const raw = distanceInside(filled, W, H);
   rawDeepest = 0;
   for (let i = 0; i < raw.length; i++) if (raw[i] > rawDeepest) rawDeepest = raw[i];
-  const depth = boxBlur(raw, W, H, Math.round(Math.min(SPLIT_SMOOTH_M / gsdM, rawDeepest / 2)));
+  const depth = boxBlur(raw, W, H, Math.round(Math.min(smoothM / gsdM, rawDeepest / 2)));
   let deepest = 0;
   for (let k = 0; k < depth.length; k++) if (depth[k] > deepest) deepest = depth[k];
-  const floor = Math.max(SPLIT_MIN_DEPTH_PX, SPLIT_DEPTH_SHARE * deepest);
+  const floor = Math.max(SPLIT_MIN_DEPTH_PX, depthShare * deepest);
   // Watershed from the deepest point down. Each basin starts at a local
   // maximum of depth; where two basins meet, the depth there is the neck
   // between their centres, and a neck deep enough for the lesser centre
@@ -536,7 +543,7 @@ function splitAlong(pixels: number[], width: number, floorPx: number, labelsOf: 
       if (r === first) continue;
       // Two basins meet here, at a neck of depth d.
       const lesser = Math.min(peak[r], peak[first]);
-      if (lesser < floor || d > SPLIT_NECK_SHARE * lesser) {
+      if (lesser < floor || d > neckShare * lesser) {
         const keep = peak[r] >= peak[first] ? r : first, drop = keep === r ? first : r;
         parent[drop] = keep; first = keep;
       }

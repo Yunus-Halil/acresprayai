@@ -24,6 +24,7 @@ import type { LatLng2 } from "../geo";
 import type { Inference, Prediction } from "./classify/types";
 import type { FieldPattern } from "./fieldPattern";
 import type { PhotoLook } from "../sourceFrames/patternLook";
+import { DEFAULT_SIZE_THRESHOLDS, type SizeThresholds, type WeedMeasurement } from "./sizing/types";
 
 /**
  * What a finding is, before anyone asks whether it is a weed. Only
@@ -121,6 +122,8 @@ export type ScoutParams = {
   photoFindings: boolean;
   /** In a photo, a plant off the pattern under this many metres across is not drawn: the picture shows what is worth treating. */
   photoMinWeedM: number;
+  /** Where a measured canopy stops being small and starts being large (sizing/types.ts). A setting, not a biological fact. */
+  sizeThresholdsCm: SizeThresholds;
 };
 
 export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
@@ -144,6 +147,7 @@ export const DEFAULT_SCOUT_PARAMS: ScoutParams = {
   photoFindings: false,
   photoMinWeedM: 0.15,
   maxPhotoReads: 150,
+  sizeThresholdsCm: DEFAULT_SIZE_THRESHOLDS,
 };
 
 /** Fraction of `anomalyZ` a neighbour must reach to be grown into a region. */
@@ -381,6 +385,12 @@ export type Candidate = {
    * pixels, so the closer look opens on it with nothing left to compute.
    */
   look?: PhotoLook | null;
+  /**
+   * How large the plant is on the ground, measured in its original photo
+   * (sizing/). Absent on findings older than the measurement; unavailable
+   * when there was no photo to read; unknown when the photo could not say.
+   */
+  measurement?: WeedMeasurement | null;
   /** PNG data URL of the chip, when one was rendered. */
   chip: string | null;
   chipSpanM: number | null;

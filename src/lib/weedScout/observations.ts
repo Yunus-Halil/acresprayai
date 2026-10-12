@@ -232,6 +232,8 @@ export async function saveObservation(input: SaveObservationInput): Promise<{ ok
     // What the finding is, and whether the model was asked about it.
     finding_class: findingClassOf(c),
     ...(c.inference ? { inference: c.inference } : {}),
+    // How large it is on the ground, when its photo said (sizing/). Never the verdict.
+    ...(c.measurement ? { measurement: c.measurement } : {}),
     verdict: input.verdict,
     ...(input.verdictSource ? { verdict_source: input.verdictSource } : {}),
     notes: input.notes,

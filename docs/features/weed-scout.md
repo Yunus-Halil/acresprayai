@@ -142,6 +142,18 @@ windows showed rows (...), K tiles failed to load, J windows failed (why), at X 
 and the pass's most common word on the windows that showed nothing. One window failing is one
 window without rows, not a field without a pattern.
 
+## The size of each weed (2026-10-12)
+
+Every plant spot is measured in its original photo at the camera's own resolution once the
+photo pass has read that photo: the canopy as segmented pixels times the ground area of a
+native pixel at that point (from the pose), its equivalent-circle diameter, its longest
+axis, and its bounding box kept apart from it. A spot that cannot be measured says why
+(cut by the photo's edge, merged with the crop, too few pixels across, no contrast) and a
+spot with no photo is unavailable, never a number. `src/lib/weedScout/sizing/`, the popup's
+size line and its measurement table, the white outline in the closer look, and
+`npm run bench:size`. See `docs/features/weed-size.md`: v1 is checked for consistency
+on the sample imagery and NOT yet for accuracy against measured plants.
+
 ## The saved run (2026-10-08)
 
 A finished run is saved per scan (`runCache.ts`, migration `20261008150000`): `scan_patterns`

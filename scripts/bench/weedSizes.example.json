@@ -1,0 +1,11 @@
+[
+  {
+    "_comment": "Ground truth for npm run bench:size -- --truth <this file>. One entry per plant measured on the ground. `photo` is a path, or a filename under --dir. `x`, `y` are the plant's canopy centre in the photo's NATIVE pixels (open the original, not a downsized copy). `diameterCm` is the canopy's equivalent-circle diameter from a tape or a quadrat photo; `areaCm2` when a quadrat was used, else null. At least 20 plants are needed before the summary will claim accuracy. Delete this entry.",
+    "photo": "DJI_0303.JPG",
+    "x": 2560,
+    "y": 1710,
+    "diameterCm": 18,
+    "areaCm2": null,
+    "note": "example only: not a real measurement"
+  }
+]

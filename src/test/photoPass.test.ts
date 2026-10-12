@@ -143,7 +143,8 @@ describe("the photo pass on a real reconstruction", () => {
       decode: async () => ({ pixels: { width: cam.width, height: cam.height, rgba: new Uint8ClampedArray(0) }, bitmap: undefined as never, nativeWidth: cam.width * 2, nativeHeight: cam.height * 2, scale: 0.5 }),
       analyse: async () => fakePattern(g, cam.width, cam.height, 30),
     });
-    expect(fetched).toEqual([b.filename]);
+    // Photo a was not decoded or analysed (nothing was put for it); it was fetched once, after its saved read, for the sizes alone.
+    expect(fetched).toEqual([a.filename, b.filename]);
     expect(put).toEqual([b.filename]);
     expect(pass.reads.map(r => [r.filename, r.status, !!r.saved])).toEqual([[a.filename, "read", true], [b.filename, "read", false]]);
     // Both photos gave their looks, the saved one without ever touching the photo; what they found inside the field is what the list holds.
