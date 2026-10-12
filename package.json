@@ -18,7 +18,8 @@
     "test:live": "node tests/integration/weed-v1-live-validation.mjs",
     "bench:frames": "vite-node scripts/bench/sourceFrameBench.ts --",
     "bench:pattern": "vite-node scripts/bench/patternBench.ts --",
-    "bench:size": "vite-node scripts/bench/sizeBench.ts --"
+    "bench:size": "vite-node scripts/bench/sizeBench.ts --",
+    "validate:sizes": "vite-node scripts/bench/validateSizes.ts --"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",

@@ -70,6 +70,8 @@ export type SegmentationQuality = {
   cropContext: "known" | "unknown";
   /** The measured diameter over what the map (or the look) expected; null when nothing was expected. Far over 1 means the mask grew into something the map did not see as this plant. */
   sizeVsExpected: number | null;
+  /** Metres from where the map put the plant to the centre of the canopy that was measured. Past the plant's own size the canopy is another object: refused. */
+  centreOffsetM: number | null;
   touchesWindowEdge: boolean;
   touchesPhotoEdge: boolean;
 };
@@ -104,6 +106,8 @@ export type WeedMeasurement = {
   clump: { diameterCm: number; areaCm2: number; parts: number } | null;
   /** The canopy's outline in the photo's native pixels, thinned; for drawing. */
   outlinePx: { x: number; y: number }[] | null;
+  /** The same outline on the ground through the pose, when the measurement was made in a posed photo; for the map. */
+  outline: { lat: number; lng: number }[] | null;
   /** Where the plant's canopy centre landed in the photo's native pixels. */
   centrePx: { x: number; y: number } | null;
   measuredAt: string;
@@ -130,7 +134,7 @@ export function unavailableMeasurement(reason: string, thresholds: SizeThreshold
     version: MEASUREMENT_VERSION, status: "unavailable", reason, method: null, confidence: null,
     canopyDiameterCm: null, canopyAreaCm2: null, maxExtentCm: null, boxWidthCm: null, boxHeightCm: null,
     sizeCategory: null, thresholds, gsdCmPx: null, sourceFrame, source: null, quality: null, clump: null,
-    outlinePx: null, centrePx: null, measuredAt: new Date().toISOString(),
+    outlinePx: null, outline: null, centrePx: null, measuredAt: new Date().toISOString(),
   };
 }
 

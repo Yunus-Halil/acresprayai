@@ -15,6 +15,7 @@ export function measurementCaveats(m: WeedMeasurement): string[] {
   if (q.cropContext === "unknown") out.push("crop positions unknown");
   if ((q.pixelsAcross ?? 99) < 12) out.push(`${q.pixelsAcross} px across`);
   if (q.sizeVsExpected != null && q.sizeVsExpected > 3) out.push(`${q.sizeVsExpected.toFixed(1)}x the map's reading`);
+  if (q.centreOffsetM != null && q.centreOffsetM > 0.1) out.push(`centred ${Math.round(q.centreOffsetM * 100)} cm from the map's point`);
   if (m.source?.viewAngleDeg != null && m.source.viewAngleDeg > 15) out.push(`${m.source.viewAngleDeg.toFixed(0)}° off nadir`);
   return out;
 }
@@ -58,6 +59,7 @@ export function measurementRows(m: WeedMeasurement, units: UnitSystem): [string,
       q.touchesPhotoEdge ? "cut by the photo's edge" : q.touchesWindowEdge ? "runs past the window" : "",
       q.darkShare > 0.2 ? `${Math.round(q.darkShare * 100)}% of the window in deep shadow` : "",
       q.sizeVsExpected != null ? `${q.sizeVsExpected.toFixed(1)}x the map's reading` : "",
+      q.centreOffsetM != null ? `centred ${Math.round(q.centreOffsetM * 100)} cm from the map's point` : "",
     ].filter(Boolean);
     rows.push(["Mask", `${q.pixelsAcross != null ? `${q.pixelsAcross} px across, ` : ""}contrast ${q.maskContrast == null ? "none" : q.maskContrast.toFixed(2)} (threshold from the ${q.thresholdSource === "context" ? "surroundings" : "window"})${flags.length ? "; " + flags.join(", ") : ""}`]);
   }

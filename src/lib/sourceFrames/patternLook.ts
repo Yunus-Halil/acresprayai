@@ -17,7 +17,10 @@
 // own spacing when the scan knows it, and the result is turned into lines
 // and circles in the crop's pixels. Pure where it can be: the overlay from a
 // pattern is a function; only the cut touches the canvas.
-import { type BlobClass, type PhotoPattern, type PhotoPixels, rowSegmentsPx } from "../photoScout/pattern";
+import { MIN_BLOB_PX, type BlobClass, type PhotoPattern, type PhotoPixels, measureComponents, rowSegmentsPx } from "../photoScout/pattern";
+import { minAreaPx } from "../weedScout/blobs";
+import { traceOutline, thinRing, vegetationThreshold } from "../weedScout/sizing/segment";
+import { OTSU_MIN_SPREAD, indexRaster } from "../weedScout/vegetation";
 import type { AreaWindow } from "./crop";
 
 /** Rows to show around a spot, in row spacings; never under PATTERN_LOOK_MIN_M a side. Three: the spot is the subject, its neighbours the context. */
@@ -259,8 +262,45 @@ export function lookLegend(look: PhotoLook): string {
 
 export type LookCut = { url: string; width: number; height: number; factor: number };
 
+/** One vegetation component's outline in a cut's pixels, with the class of the pattern circle it belongs to. */
+export type CutOutline = { ring: { x: number; y: number }[]; cls: BlobClass | null; areaPx: number };
+
+/** Components in a cut with fewer pixels than this are not outlined: at the cut's scale they are specks. */
+export const CUT_OUTLINE_MIN_PX = MIN_BLOB_PX;
+/** The most outlines drawn on one cut; past this the cut is a canopy, not plants. */
+export const CUT_OUTLINE_MAX = 3000;
+
+/**
+ * The vegetation in a cut as outlines, not circles: the scout's index and
+ * threshold on the cut, its components, each traced and given the class of
+ * the pattern circle whose disc holds its centre (null when none does: a
+ * plant the pattern did not place). Pure; `circles` are in the cut's pixels.
+ * Null when the cut has no soil-to-plant contrast to threshold on.
+ */
+export function outlinesInCut(px: PhotoPixels, gsdM: number, circles: OverlayCircle[]): CutOutline[] | null {
+  const t = vegetationThreshold(px);
+  if (!t || t.spread < OTSU_MIN_SPREAD) return null;
+  const index = indexRaster({ ...px, bounds: { north: 1, south: 0, east: 1, west: 0 } });
+  const mask = new Uint8Array(px.width * px.height);
+  for (let i = 0; i < mask.length; i++) mask[i] = index[i] > t.threshold ? 1 : 0;
+  const floor = Math.max(CUT_OUTLINE_MIN_PX, minAreaPx(gsdM, 1));
+  const { blobs, labels } = measureComponents(mask, px.width, px.height, floor);
+  if (blobs.length > CUT_OUTLINE_MAX) return null;
+  const out: CutOutline[] = [];
+  for (const b of blobs) {
+    const label = b.labels![0];
+    const inside = (x: number, y: number) => x >= b.minX && y >= b.minY && x <= b.maxX && y <= b.maxY && labels[y * px.width + x] === label;
+    const ring = thinRing(traceOutline((x, y) => x >= 0 && y >= 0 && x < px.width && y < px.height && inside(x, y), px.width, px.height), 160);
+    const cx = b.sx / b.n, cy = b.sy / b.n;
+    let cls: BlobClass | null = null, best = Infinity;
+    for (const c of circles) { const d = Math.hypot(c.x - cx, c.y - cy); if (d <= Math.max(c.r, 3) && d < best) { best = d; cls = c.cls; } }
+    out.push({ ring, cls, areaPx: b.n });
+  }
+  return out;
+}
+
 /** Browser only. A look's window cut from the original, pooled so the longer side is at most PATTERN_LOOK_MAX_EDGE. */
-export async function cutLookWindow(frame: Blob, window: LookWindow): Promise<LookCut | null> {
+export async function cutLookWindow(frame: Blob, window: LookWindow): Promise<(LookCut & { pixels: PhotoPixels }) | null> {
   if (typeof document === "undefined") return null;
   const bitmap = await createImageBitmap(frame).catch(() => null);
   if (!bitmap) return null;
@@ -272,12 +312,13 @@ export async function cutLookWindow(frame: Blob, window: LookWindow): Promise<Lo
     const width = Math.floor(w / factor), height = Math.floor(h / factor);
     const canvas = document.createElement("canvas");
     canvas.width = width; canvas.height = height;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return null;
     ctx.drawImage(bitmap, x0, y0, width * factor, height * factor, 0, 0, width, height);
+    const { data } = ctx.getImageData(0, 0, width, height);
     const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, "image/jpeg", 0.92));
     if (!blob) return null;
-    return { url: URL.createObjectURL(blob), width, height, factor };
+    return { url: URL.createObjectURL(blob), width, height, factor, pixels: { width, height, rgba: data } };
   } finally {
     bitmap.close?.();
   }

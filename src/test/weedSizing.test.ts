@@ -74,6 +74,21 @@ describe("segmentWeed on painted discs", () => {
     }
   });
 
+  it("refuses a canopy centred further from the spot than the map's reading allows: the spot sits on a neighbour's canopy, not its own", () => {
+    // A 60 cm plant whose mask centre is 45 cm from where the map put a 20 cm plant: the map's plant is not this.
+    const px = scene(300, 300, 0.01, [{ x: 150, y: 150, rM: 0.3 }]);
+    const edge = segmentWeed({ px, centre: { x: 150 - 44, y: 150 }, gsdM: 0.01, thresholds: T, cropCircles: [], expectedDiameterM: 0.2 }).measurement;
+    expect(edge.status).toBe("unknown");
+    expect(edge.reason).toMatch(/centred 4\d cm away, further than the 30 cm/);
+    expect(edge.quality!.centreOffsetM).toBeCloseTo(0.44, 1);
+    expect(edge.centrePx!.x).toBeCloseTo(150, 0);
+    // The same canopy with the map's point at its centre, or with the map expecting a plant this size, is measured.
+    expect(segmentWeed({ px, centre: { x: 150, y: 150 }, gsdM: 0.01, thresholds: T, cropCircles: [], expectedDiameterM: 0.2 }).measurement.status).toBe("measured");
+    const big = segmentWeed({ px, centre: { x: 150 - 44, y: 150 }, gsdM: 0.01, thresholds: T, cropCircles: [], expectedDiameterM: 0.6 }).measurement;
+    expect(big.status).toBe("measured");
+    expect(big.quality!.centreOffsetM).toBeCloseTo(0.44, 1);
+  });
+
   it("finds the plant within reach when the map's point missed it, and not beyond", () => {
     const px = scene(300, 300, 0.01, [{ x: 150, y: 150, rM: 0.06 }]);
     const near = segmentWeed({ px, centre: { x: 150 + 15, y: 150 + 10 }, gsdM: 0.01, thresholds: T }).measurement;
@@ -183,7 +198,7 @@ describe("segmentWeed on painted discs", () => {
   });
 
   it("confidence: the weaker of resolution and contrast, scaled by view, touching and the crop", () => {
-    const q = { pixelsAcross: 16, maskContrast: 0.2, darkShare: 0, touchingNeighbours: 0, touchesCrop: false, cropContext: "known" as const, sizeVsExpected: null, thresholdSource: "window" as const, touchesWindowEdge: false, touchesPhotoEdge: false };
+    const q = { pixelsAcross: 16, maskContrast: 0.2, darkShare: 0, touchingNeighbours: 0, touchesCrop: false, cropContext: "known" as const, sizeVsExpected: null, centreOffsetM: null, thresholdSource: "window" as const, touchesWindowEdge: false, touchesPhotoEdge: false };
     expect(confidenceOf(q, 0, 6)).toBe(1);
     expect(confidenceOf({ ...q, pixelsAcross: 3 }, 0, 6)).toBe(0);
     expect(confidenceOf({ ...q, maskContrast: 0.05 }, 0, 6)).toBe(0);
@@ -290,8 +305,11 @@ describe("measureSpotInPhoto through the reconstruction", () => {
     expect(m.source!.window.x + m.source!.window.width).toBeGreaterThan(at.x);
     expect(m.source!.viewAngleDeg).not.toBeNull();
     expect(m.source!.groundAltM).toBe(groundAlt);
-    // The outline is in the photo's own pixels, around the plant.
+    // The outline is in the photo's own pixels, around the plant, and on the ground around where the spot is.
     for (const p of m.outlinePx!) expect(Math.hypot(p.x - at.x, p.y - at.y)).toBeLessThan(0.3 / gsdM + 2);
+    expect(m.outline!.length).toBeGreaterThanOrEqual(3);
+    expect(m.outline!.length).toBeLessThanOrEqual(48);
+    for (const p of m.outline!) expect(Math.hypot((p.lat - g.lat) * 111_320, (p.lng - g.lng) * 111_320 * Math.cos((g.lat * Math.PI) / 180))).toBeLessThan(0.4);
     expect(calls.length).toBe(0);
     // The context for the threshold, then the window.
     expect(painted.calls.length).toBe(2);

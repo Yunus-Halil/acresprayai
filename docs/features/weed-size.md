@@ -147,6 +147,16 @@ spot id, leaving a measured spot alone and retrying an unavailable one; the word
 - A canopy more than three times the diameter the map read is most likely the mask grown into
   something the pattern never placed (a vine, a tree skirt); the confidence is halved and the
   caveat says the ratio. The vineyard survey's 70 cm reading on a 12 cm map blob was this case.
+- Correspondence (2026-10-12): the spot is where the map put the plant's centre. When the
+  canopy under it is centred further away than the reach (30 cm) or the diameter the map
+  read, it is another object the mask joined to this spot (a vine row the pass had separated
+  by its spacing, joined again at native resolution), and the measurement is refused with
+  the offset named. The vineyard survey's one 1.4 m offset was this case; on that photo
+  canopy centres sit a median of 2.7 cm from the map's point, 12 of 193 past 30 cm, now
+  refused rather than reported.
+- The canopy's outline is carried to the ground through the pose (`measurement.outline`,
+  at most 48 points) and drawn on the map from zoom 20 as the only closed shape that means
+  "vegetation to here".
 - Only spots with a best photo whose original was kept get a number; imported orthomosaics
   and scans without originals are unavailable, and say so.
 - One measurement per spot, from its best photo; a second photo is not consulted.
@@ -157,3 +167,11 @@ spot id, leaving a measured spot alone and retrying an unavailable one; the word
 Twenty hand-measured plants with their photo and pixel, then `npm run bench:size -- --truth`.
 One flown field reviewed in the browser: the size line on a real spot, the outline in the
 closer look, the record after a reload.
+
+## Field validation (2026-10-12)
+
+`npm run validate:sizes -- --truth plants.json [--scan <id>]`: hand-measured plants matched
+to the scan's saved findings by id, position or photo pixel (`sizing/validate.ts`), with
+mean and median absolute diameter error, relative error, area and positional error where
+given, by pixel size and by confidence; under twenty measured plants the verdict says
+accuracy is not established. How to collect the plants: `docs/operations/ground-truth.md`.

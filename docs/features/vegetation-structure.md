@@ -112,6 +112,20 @@ measured**: no reference data exists. The harness for sizes (`npm run bench:size
 ground-truth file; a grouping truth (which fragments are one plant, which clump is how many)
 would need the same kind of file, and is owed with the twenty measured plants.
 
+## Touching crop canopies (2026-10-12)
+
+The upper tree row of DJI_0312 outlines as one continuous shape at native resolution. What
+separates those trees today is the pass, not the mask: at the pass's scale `splitAlongRow`
+cuts a row-long component at the valleys of its depth profile along the row, one plant per
+rise, and `fitSeeds` places them at the seed spacing (3.0 m here, 88 to 95% agreement), with
+doubles counted where a rise sits half a spacing from its neighbour. So the crop count is
+per plant, and its uncertainty is on the record as the seed agreement and the doubles count
+in the pattern summary. What no evidence supports is a boundary between two canopies that
+overlap with no neck: the sizer's outline of a tree in that row is the merged canopy, its
+area is the merged area, and the structure counts the row's crop canopy as crop without
+splitting it. That is left as it is. A boundary invented there would be a drawing, not a
+measurement.
+
 ## Limitations, stated
 
 - A cluster is a linkage of mask components. Two canopies that overlap into one component

@@ -1,0 +1,20 @@
+[
+  {
+    "_comment": "Reference plants for npm run validate:sizes -- --truth <this file> [--scan <scan id>]. One row per plant measured on the ground. diameterCm is required: the canopy's equivalent-circle diameter from a tape (average of two crossed widths) or a quadrat photo. Give at least one way to match the plant: plantId (the spot's id, shown at the bottom of its Measurements panel), or lat and lng from a receiver or a marker, or image (the camera's filename) with x and y (the canopy centre in the original's native pixels). areaCm2 when a quadrat or a traced photo gave it, else null. Twenty plants are needed before the verdict will call the accuracy measured. Delete this entry."
+  },
+  {
+    "fieldId": "my-field",
+    "scanId": null,
+    "image": "DJI_0303.JPG",
+    "x": 2560,
+    "y": 1710,
+    "plantId": null,
+    "lat": null,
+    "lng": null,
+    "diameterCm": 18,
+    "areaCm2": null,
+    "measuredBy": "Y.E.",
+    "measuredAt": "2026-10-20",
+    "notes": "example only: not a real measurement"
+  }
+]

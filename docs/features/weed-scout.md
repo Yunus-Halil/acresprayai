@@ -158,6 +158,14 @@ on the sample imagery and NOT yet for accuracy against measured plants.
 
 The vegetation off the pattern is grouped at the scale the imagery supports (`src/lib/weedScout/structure/`): single plants measurable on their own (six pixels across and over, so 6 cm in a 1 cm/px photo and 24 cm on a 4 cm/px map), clusters of touching canopies (canopy summed, footprint hulled, no plant count claimed), and coverage zones for everything smaller, with every square centimetre in exactly one account. Read from the map in the pipeline and from each photo in the photo pass, saved with the run, drawn by `VegetationLayer` at the zoom's own scale, and said in the field read. See `docs/features/vegetation-structure.md`.
 
+## The closer look draws outlines (2026-10-12)
+
+The pattern view outlines the vegetation itself (`outlinesInCut`: the scout's index and
+threshold on the cut, every component traced, classed by the pattern's circle that holds its
+centre, grey where none does) and falls back to circles of the equivalent diameter only when
+the cut has no soil-to-plant contrast. The measured canopy is drawn on the map from zoom 20,
+and the spots' labels sit on hover below zoom 18 whatever their number.
+
 ## The saved run (2026-10-08)
 
 A finished run is saved per scan (`runCache.ts`, migration `20261008150000`): `scan_patterns`

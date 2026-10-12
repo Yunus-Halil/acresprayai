@@ -17,7 +17,7 @@
 // calls anything outside the tile server and the operator's own archive.
 import { NOT_WEED_BELOW, WEED_AT_OR_ABOVE } from "@/lib/weedScout/classify";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleMarker, MapContainer, Polygon, Polyline, Popup, Rectangle, TileLayer, Tooltip } from "react-leaflet";
+import { CircleMarker, MapContainer, Polygon, Polyline, Popup, Rectangle, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
 import { useDeveloperMode } from "@/hooks/useDeveloperMode";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -54,7 +54,7 @@ import { plannedAreaM2, plannedZones } from "@/lib/treatment/plannedArea";
 import { ScanSummary } from "./ScanSummary";
 import { FieldRead } from "./FieldRead";
 import { PatternLayer } from "./PatternLayer";
-import { VegetationLayer } from "./VegetationLayer";
+import { type MeasuredOutline, VEG_DETAIL_ZOOM, VegetationLayer } from "./VegetationLayer";
 import { type SpotPhoto, SpotPopup } from "./SpotPopup";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
 import { DetectionOverlay } from "./DetectionOverlay";
@@ -77,6 +77,8 @@ import type { BoundaryRing } from "./types";
 const PARAMS_KEY = storageKey("weedScout", "params");
 /** Above this many map-pass findings, labels show on hover rather than all at once. */
 const MAX_PERMANENT_LABELS = 150;
+/** Below this zoom the labels overlap whatever their number; they show on hover until the map comes closer. */
+const LABEL_ZOOM = 18;
 
 function loadParams(): ScoutParams {
   try {
@@ -111,6 +113,13 @@ function loadParams(): ScoutParams {
   } catch {
     return DEFAULT_SCOUT_PARAMS;
   }
+}
+
+/** Reports the map's zoom to the tab, which keeps no map handle of its own. */
+function ZoomWatcher({ onZoom }: { onZoom: (z: number) => void }) {
+  const map = useMapEvents({ zoomend: () => onZoom(map.getZoom()) });
+  useEffect(() => { onZoom(map.getZoom()); }, [map, onZoom]);
+  return null;
 }
 
 /** The stages in the order the pipeline runs them, so a bar can say how far along the whole run is. */
@@ -312,6 +321,9 @@ export function WeedScoutTab({
   const [showPattern, setShowPattern] = useState(true);
   /** The vegetation off the pattern as plants, clusters and coverage zones, drawn at the zoom's own scale. */
   const [showVegetation, setShowVegetation] = useState(true);
+  /** The map's zoom, for the labels: far out they overlap whatever their number. */
+  const [mapZoom, setMapZoom] = useState<number | null>(null);
+  const labelsReadable = mapZoom == null || mapZoom >= LABEL_ZOOM;
   // The scan's saved photo reads, for the closer look: opened when signed in,
   // reopened after a photo pass so the reads it just saved are in hand.
   const [readStore, setReadStore] = useState<PhotoReadStore | null>(null);
@@ -394,6 +406,12 @@ export function WeedScoutTab({
   const candidates = useMemo(() => result?.candidates ?? [], [result]);
   // Permanent labels only while the map pass's own findings are few enough to read at once.
   const labelsFit = useMemo(() => candidates.filter(c => !isPhotoFinding(c)).length <= MAX_PERMANENT_LABELS, [candidates]);
+  // The measured canopies, for the vegetation layer to draw as outlines at the detail zoom.
+  const measuredOutlines = useMemo<MeasuredOutline[]>(() => candidates.flatMap(c => {
+    const m = c.measurement;
+    if (!m || m.status !== "measured" || !m.outline || m.outline.length < 3 || m.canopyDiameterCm == null || m.canopyAreaCm2 == null) return [];
+    return [{ id: c.id, ring: m.outline, diameterCm: m.canopyDiameterCm, areaCm2: m.canopyAreaCm2, boxWidthCm: m.boxWidthCm, boxHeightCm: m.boxHeightCm, category: m.sizeCategory, confidence: m.confidence, frame: m.sourceFrame }];
+  }), [candidates]);
   const selected = useMemo(() => candidates.find(c => c.id === selectedId) ?? null, [candidates, selectedId]);
   // Which photos hold a spot, computed when a spot is opened and kept until the
   // spot itself changes. Doing it for every spot on every update was a thousand
@@ -776,7 +794,8 @@ export function WeedScoutTab({
             <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])} pathOptions={{ color: "#4CAF50", weight: 1.5, fill: false, dashArray: "4 4" }} />
           ))}
           <PatternLayer pattern={result?.pattern ?? null} visible={showPattern} />
-          <VegetationLayer vegetation={result?.vegetation ?? null} visible={showVegetation} units={units} />
+          <VegetationLayer vegetation={result?.vegetation ?? null} visible={showVegetation} units={units} outlines={measuredOutlines} />
+          <ZoomWatcher onZoom={setMapZoom} />
           {/* The pass at work (developer tools): every planned window as a box, the
               one being read in white, those with rows in yellow, those without in
               grey, and the rows and plants found so far drawn as they land. */}
@@ -842,7 +861,7 @@ export function WeedScoutTab({
             // A label on the map for the map pass's own findings, while there are few
             // enough to read; a plant found in a photo says what it is on hover.
             const tooltip = showLabels && (
-              <Tooltip permanent={!photoFound && labelsFit} direction="top" opacity={1} className="scout-label">
+              <Tooltip permanent={!photoFound && labelsFit && labelsReadable} direction="top" opacity={1} className="scout-label">
                 {label}
               </Tooltip>
             );
@@ -896,7 +915,7 @@ export function WeedScoutTab({
           <div className="text-neutral-500">Fill color is what it reads as. Solid: saved.</div>
           <label className="flex items-center gap-2 cursor-pointer pt-0.5 border-t border-[#222] mt-0.5">
             <input type="checkbox" checked={showLabels} onChange={e => setShowLabels(e.target.checked)} className="accent-[#4CAF50]" />
-            Labels on the map{showLabels && !labelsFit ? " (on hover: too many to show at once)" : ""}
+            Labels on the map{showLabels && !labelsFit ? " (on hover: too many to show at once)" : showLabels && !labelsReadable ? " (on hover until the map is closer)" : ""}
           </label>
           {dev.developerTools && (
             <label className="flex items-center gap-2 cursor-pointer" data-testid="watch-pass-toggle" title="Developer tools. Each planned window as a box while the pattern pass runs: white is being read, yellow found rows, grey found none; the rows and plants are drawn as each window lands.">
@@ -913,7 +932,7 @@ export function WeedScoutTab({
           {result?.vegetation && (result.vegetation.map || result.vegetation.photos) && (
             <label className="flex items-center gap-2 cursor-pointer" data-testid="vegetation-toggle" title="The vegetation off the pattern at the zoom's own scale: coverage zones zoomed out, clusters, and single plants as the map comes close. Hover for the numbers.">
               <input type="checkbox" checked={showVegetation} onChange={e => setShowVegetation(e.target.checked)} className="accent-[#ab47bc]" />
-              Vegetation: plants, clusters and coverage zones{result.vegetation.photos ? " (from the photos where read)" : ""}
+              Vegetation: plants, clusters and coverage zones{result.vegetation.photos ? " (from the photos where read)" : ""}{measuredOutlines.length ? `; ${measuredOutlines.length} measured canopies outlined from zoom ${VEG_DETAIL_ZOOM}` : ""}
             </label>
           )}
           {sources?.set && (

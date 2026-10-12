@@ -18,7 +18,7 @@
 // see how far from nadir the plant was.
 import type { PhotoPixels } from "../../photoScout/pattern";
 import type { AreaWindow } from "../../sourceFrames/crop";
-import { type Shot, type SourceFrameSet, projectToFrame } from "../../sourceFrames/odm";
+import { type Shot, type SourceFrameSet, pixelToGround, projectToFrame } from "../../sourceFrames/odm";
 import type { PhotoLook } from "../../sourceFrames/patternLook";
 import type { Candidate } from "../types";
 import { segmentWeed, vegetationThreshold } from "./segment";
@@ -37,6 +37,8 @@ export const MAX_WINDOW_M = 8.0;
 export const FIRST_WINDOW_MAX_M = 4.0;
 /** When nothing says how big the plant is expected to be, metres. */
 export const DEFAULT_EXPECTED_M = 0.2;
+/** Outline points carried to the ground, so a saved finding stays small. */
+export const MAX_GROUND_OUTLINE_POINTS = 48;
 /** The soil-to-plant threshold is found on this many metres around the spot: the pass's own window, so the mask is the pass's mask at native resolution. */
 export const CONTEXT_M = 4;
 
@@ -101,11 +103,23 @@ export function measureSpotInPhoto(input: MeasureSpotInput): WeedMeasurement {
     });
     if (out.wider && attempt === 0 && sideM < MAX_WINDOW_M) { sideM = Math.min(MAX_WINDOW_M, sideM * 2); continue; }
     const m = out.measurement;
+    const outlinePx = m.outlinePx ? m.outlinePx.map(p => ({ x: p.x + win.x, y: p.y + win.y })) : null;
+    // The outline on the ground through the same pose, thinned: the map draws the canopy where the photo saw it.
+    let outline: { lat: number; lng: number }[] | null = null;
+    if (outlinePx) {
+      const step = Math.max(1, Math.ceil(outlinePx.length / MAX_GROUND_OUTLINE_POINTS));
+      outline = outlinePx.filter((_, i) => i % step === 0)
+        .map(p => pixelToGround(set, shot, p.x / nativeScale, p.y / nativeScale, groundAltM))
+        .filter((p): p is NonNullable<typeof p> => !!p)
+        .map(p => ({ lat: +p.lat.toFixed(8), lng: +p.lng.toFixed(8) }));
+      if (outline.length < 3) outline = null;
+    }
     return {
       ...m,
       sourceFrame: shot.filename,
       source: { frame: shot.filename, nativeWidth, nativeHeight, window: win, viewAngleDeg: +pr.viewAngleDeg.toFixed(1), groundAltM },
-      outlinePx: m.outlinePx ? m.outlinePx.map(p => ({ x: p.x + win.x, y: p.y + win.y })) : null,
+      outlinePx,
+      outline,
       centrePx: m.centrePx ? { x: +(m.centrePx.x + win.x).toFixed(1), y: +(m.centrePx.y + win.y).toFixed(1) } : null,
     };
   }

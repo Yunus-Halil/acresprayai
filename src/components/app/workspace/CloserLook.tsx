@@ -21,7 +21,7 @@ import { type GroundedDetection, debugLine, groundDetections } from "@/lib/sourc
 import { lookupOriginal } from "@/lib/sourceFrames/manifest";
 import { type ScanSources, downloadFrame } from "@/lib/sourceFrames/scan";
 import type { SpotSources } from "@/lib/sourceFrames/spot";
-import { BLOB_COLOUR, type LookCut, type PhotoLook, ROW_COLOUR, cutLookWindow, lookFromPattern, patternLookSideM, significantLook } from "@/lib/sourceFrames/patternLook";
+import { BLOB_COLOUR, type CutOutline, type LookCut, type PhotoLook, ROW_COLOUR, cutLookWindow, lookFromPattern, outlinesInCut, patternLookSideM, significantLook } from "@/lib/sourceFrames/patternLook";
 import { analysePhotoOffThread } from "@/lib/photoScout/runPattern";
 import { decodePhoto } from "@/lib/photoScout/decode";
 import type { PhotoPattern } from "@/lib/photoScout/pattern";
@@ -110,7 +110,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   const [copied, setCopied] = useState(false);
   // The pattern view: a wider cut around the spot, read by the pass, drawn as lines and circles.
   const [patternOn, setPatternOn] = useState(true);
-  const [patternLook, setPatternLook] = useState<{ cut: LookCut; look: PhotoLook; fromRun: boolean } | null>(null);
+  const [patternLook, setPatternLook] = useState<{ cut: LookCut; look: PhotoLook; fromRun: boolean; outlines: CutOutline[] | null } | null>(null);
   const [patternState, setPatternState] = useState<"idle" | "reading" | "failed">("idle");
   const [patternProgress, setPatternProgress] = useState<number | null>(null);
   const [patternError, setPatternError] = useState<string | null>(null);
@@ -196,7 +196,11 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
       const cut = await cutLookWindow(frame, pl.window);
       if (!cut) throw new Error("the window could not be cut from the photo");
       if (!alive()) { URL.revokeObjectURL(cut.url); return; }
-      setPatternLook({ cut, look: pl, fromRun });
+      // The vegetation's own outlines in the cut, classed by the pattern's circles: what is drawn, where they can be made.
+      const f = 1 / cut.factor;
+      const outlines = outlinesInCut(cut.pixels, pl.gsdM * cut.factor, pl.circles.map(c => ({ ...c, x: c.x * f, y: c.y * f, r: c.r * f })));
+      const { pixels: _px, ...cutOnly } = cut;
+      setPatternLook({ cut: cutOnly, look: pl, fromRun, outlines });
       setPatternState("idle");
     })().catch(e => { if (alive()) { setPatternState("failed"); setPatternError((e as Error)?.message ?? String(e)); } });
     return () => { patternRun.current++; };
@@ -249,7 +253,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
           <p className="text-[11px] text-neutral-400" data-testid="closer-look-pattern-line">
             {patternState === "reading" && <><Loader2 className="inline h-3 w-3 animate-spin mr-1" /> {patternProgress == null ? "Opening the pattern around this spot." : `Reading the rows and plants in this whole photo (${Math.round(patternProgress * 100)}%).`}</>}
             {patternState === "failed" && `The pattern could not be read in this photo${patternError ? ` (${patternError})` : ""}.`}
-            {patternLook && <PatternKey look={significantLook(patternLook.look, minWeedM)} detail={gsd(patternLook.look.gsdM)} measured={spotMeasurement?.status === "measured" && spotMeasurement.sourceFrame === view?.filename ? spotMeasurement : null} units={units} />}
+            {patternLook && <PatternKey look={significantLook(patternLook.look, minWeedM)} detail={`${gsd(patternLook.look.gsdM)}${patternLook.outlines ? "; the shapes are the vegetation's own outlines" : "; circles: the cut had no soil-to-plant contrast to outline on"}`} measured={spotMeasurement?.status === "measured" && spotMeasurement.sourceFrame === view?.filename ? spotMeasurement : null} units={units} outlines={!!patternLook.outlines} />}
           </p>
         )}
         {detection?.state === "done" && (
@@ -310,11 +314,22 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
                 <img src={cut.url} alt={`The rows and plants around the flagged area in ${view?.filename}`} data-testid="closer-look-pattern-image"
                   style={full ? { width: cut.width, maxWidth: "none", display: "block" } : { width: "100%", height: "auto", display: "block" }} />
                 <svg viewBox={`0 0 ${cut.width} ${cut.height}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none" data-testid="closer-look-pattern-overlay">
-                  {/* Drawn the way the benchmark overlays are drawn, and no other way: the
-                      rows as thin yellow lines, every placed plant as a thin circle in its
-                      class colour. No halos, no ring, no outline. */}
+                  {/* The rows as thin yellow lines. The plants as the vegetation's own
+                      outlines in their class colour, so no shape implies vegetation that
+                      is not there; a circle of the equivalent diameter stands in only
+                      when the cut could not be outlined. A plant the pattern did not place
+                      is outlined grey. The weeds the floor leaves out are not drawn. */}
                   {overlay.lines.map((l, i) => <line key={`l${i}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={ROW_COLOUR} strokeWidth={sw} />)}
-                  {overlay.circles.map((c, i) => <circle key={`c${i}`} cx={c.x} cy={c.y} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={sw} />)}
+                  {patternLook.outlines
+                    ? patternLook.outlines.map((o, i) => {
+                        const cls = o.cls ?? "unplaced";
+                        // The floor the circles keep: a weed under it is not drawn here either.
+                        const g = pl.gsdM * patternLook.cut.factor;
+                        const dM = 2 * Math.sqrt((o.areaPx * g * g) / Math.PI);
+                        if ((cls === "off-row" || cls === "between plants") && dM < minWeedM) return null;
+                        return <polygon key={`o${i}`} points={o.ring.map(p => `${p.x},${p.y}`).join(" ")} fill="none" stroke={BLOB_COLOUR[cls]} strokeWidth={sw} />;
+                      })
+                    : overlay.circles.map((c, i) => <circle key={`c${i}`} cx={c.x} cy={c.y} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={sw} />)}
                   {measured && <polygon points={measured} fill="none" stroke={MEASURED_COLOUR} strokeWidth={sw * 1.5} data-testid="closer-look-measured" />}
                 </svg>
               </div>
@@ -345,15 +360,17 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
 }
 
 /** The key to the pattern view, in a row above the photo: one swatch and one word per mark, with how many of each are in the cut. */
-export function PatternKey({ look, detail, measured = null, units = "metric" }: { look: PhotoLook; detail: string; measured?: WeedMeasurement | null; units?: UnitSystem }) {
+export function PatternKey({ look, detail, measured = null, units = "metric", outlines = false }: { look: PhotoLook; detail: string; measured?: WeedMeasurement | null; units?: UnitSystem; /** Whether the plants are drawn as their outlines (true) or as circles of their equivalent diameter. */ outlines?: boolean }) {
   const c = look.counts;
-  const items: { colour: string; shape: "line" | "circle" | "outline"; label: string; count: number | null }[] = [
+  const shape: "circle" | "blob" = outlines ? "blob" : "circle";
+  const items: { colour: string; shape: "line" | "circle" | "outline" | "blob"; label: string; count: number | null }[] = [
     { colour: ROW_COLOUR, shape: "line", label: "Row", count: null },
-    { colour: BLOB_COLOUR["on pattern"], shape: "circle", label: "Crop plant on the pattern", count: c.onPattern },
-    { colour: BLOB_COLOUR["off-row"], shape: "circle", label: "Plant off the row", count: c.offRow },
-    { colour: BLOB_COLOUR["between plants"], shape: "circle", label: "Plant between crop plants", count: c.between },
-    { colour: BLOB_COLOUR["double"], shape: "circle", label: "Two plants grown together", count: c.doubles },
+    { colour: BLOB_COLOUR["on pattern"], shape, label: "Crop plant on the pattern", count: c.onPattern },
+    { colour: BLOB_COLOUR["off-row"], shape, label: "Plant off the row", count: c.offRow },
+    { colour: BLOB_COLOUR["between plants"], shape, label: "Plant between crop plants", count: c.between },
+    { colour: BLOB_COLOUR["double"], shape, label: "Two plants grown together", count: c.doubles },
   ];
+  if (outlines) items.push({ colour: BLOB_COLOUR.unplaced, shape, label: "Vegetation the pattern did not place", count: null });
   if (measured?.canopyDiameterCm != null) items.push({ colour: MEASURED_COLOUR, shape: "outline", label: `Measured canopy, ${fmtLengthCm(measured.canopyDiameterCm, units).text} across`, count: null });
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-neutral-300" data-testid="closer-look-key">
@@ -363,7 +380,9 @@ export function PatternKey({ look, detail, measured = null, units = "metric" }: 
             ? <span className="inline-block w-5 border-t-2" style={{ borderColor: it.colour }} aria-hidden="true" />
             : it.shape === "outline"
               ? <span className="inline-block h-3 w-3 border-2 border-dashed" style={{ borderColor: it.colour }} aria-hidden="true" />
-              : <span className="inline-block h-3 w-3 rounded-full border-2" style={{ borderColor: it.colour }} aria-hidden="true" />}
+              : it.shape === "blob"
+                ? <span className="inline-block h-3 w-3 border-2" style={{ borderColor: it.colour, borderRadius: "40% 60% 55% 45%" }} aria-hidden="true" />
+                : <span className="inline-block h-3 w-3 rounded-full border-2" style={{ borderColor: it.colour }} aria-hidden="true" />}
           {it.label}{it.count != null ? <span className="text-neutral-500">{it.count}</span> : null}
         </span>
       ))}

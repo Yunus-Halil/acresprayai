@@ -16,7 +16,7 @@ const spot = (over: Partial<Candidate> = {}): Candidate => ({
 const measured: WeedMeasurement = {
   ...unavailableMeasurement("", T), status: "measured", reason: null, method: "native-photo-mask-v1", confidence: 0.82,
   canopyDiameterCm: 14.2, canopyAreaCm2: 158, maxExtentCm: 19, boxWidthCm: 17, boxHeightCm: 15, sizeCategory: "medium", gsdCmPx: 0.99, sourceFrame: "DJI_0303.JPG",
-  quality: { pixelsAcross: 14.3, maskContrast: 0.6, darkShare: 0, touchingNeighbours: 0, touchesCrop: false, cropContext: "known", sizeVsExpected: 1.1, thresholdSource: "context", touchesWindowEdge: false, touchesPhotoEdge: false },
+  quality: { pixelsAcross: 14.3, maskContrast: 0.6, darkShare: 0, touchingNeighbours: 0, touchesCrop: false, cropContext: "known", sizeVsExpected: 1.1, centreOffsetM: 0.02, thresholdSource: "context", touchesWindowEdge: false, touchesPhotoEdge: false },
 };
 const sources = (over: Partial<SpotSources>): SpotSources => ({
   unavailable: null, views: [], chosen: [], nearestOnly: false, lookable: [], originalsKept: false, nativeScale: null, orthoGsdM: null, nativeGsdM: null, outline: [], ...over,

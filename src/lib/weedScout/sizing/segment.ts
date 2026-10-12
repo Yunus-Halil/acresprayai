@@ -23,7 +23,12 @@
 //   6. the part checked against the edges: cut by the photo's edge it cannot
 //      be measured; running past the window it asks for a wider one
 //   7. area from the pixel count, diameter from the area, the longest axis
-//      from the convex hull, the box from the extremes, the outline traced
+//      from the convex hull, the box from the extremes, the outline traced;
+//      and the correspondence check: a canopy whose centre sits further
+//      from the spot than the reach or the plant's own expected size is
+//      not the plant the map put there (the pass separated a row of vines
+//      by their spacing; the mask at native joins them, and the part under
+//      the spot is a neighbour's), so it is refused with the offset named
 //   8. confidence from the quality indicators, by the rule in `confidenceOf`;
 //      under `minConfidence` the status is unknown and the numbers are
 //      withheld
@@ -201,7 +206,7 @@ function unknown(reason: string, input: SegmentInput, quality: SegmentationQuali
       version: MEASUREMENT_VERSION, status: "unknown", reason, method: "native-photo-mask-v1", confidence: null,
       canopyDiameterCm: null, canopyAreaCm2: null, maxExtentCm: null, boxWidthCm: null, boxHeightCm: null,
       sizeCategory: null, thresholds: input.thresholds, gsdCmPx: input.gsdM * 100, quality, clump: null,
-      outlinePx: null, centrePx: null, measuredAt: new Date().toISOString(),
+      outlinePx: null, outline: null, centrePx: null, measuredAt: new Date().toISOString(),
     },
     wider,
   };
@@ -219,7 +224,7 @@ export function segmentWeed(input: SegmentInput): SegmentOutput {
   const context = input.context && input.context.spread >= OTSU_MIN_SPREAD ? input.context : null;
   const quality: SegmentationQuality = {
     pixelsAcross: null, maskContrast: null, darkShare: 0, touchingNeighbours: 0, touchesCrop: false,
-    cropContext: input.cropCircles ? "known" : "unknown", sizeVsExpected: null, thresholdSource: context ? "context" : "window", touchesWindowEdge: false, touchesPhotoEdge: false,
+    cropContext: input.cropCircles ? "known" : "unknown", sizeVsExpected: null, centreOffsetM: null, thresholdSource: context ? "context" : "window", touchesWindowEdge: false, touchesPhotoEdge: false,
   };
 
   // 1. The index, the dark floor, the threshold: the context's, else Otsu on the window.
@@ -337,6 +342,18 @@ export function segmentWeed(input: SegmentInput): SegmentOutput {
   const ring = traceOutline((x, y) => x >= 0 && y >= 0 && x < W && y < H && inPart[y * W + x] === 1, W, H);
   // Pixel centres, as blobs.ts measures them: a disc drawn about (100, 100) reads as (100, 100).
   const centrePx = { x: part.sx / part.n + 0.5, y: part.sy / part.n + 0.5 };
+  // The correspondence check. The spot is where the map put the plant's
+  // centre; a canopy centred further away than the reach, or than the size
+  // the map read, is another object the mask joined to this spot.
+  const offsetM = Math.hypot(centrePx.x - input.centre.x, centrePx.y - input.centre.y) * gsdM;
+  quality.centreOffsetM = +offsetM.toFixed(3);
+  const offsetLimitM = Math.max(input.reachM ?? DEFAULT_REACH_M, input.expectedDiameterM ?? 0);
+  if (offsetM > offsetLimitM) {
+    const out = unknown(`the vegetation at the spot is part of an object centred ${Math.round(offsetM * 100)} cm away, further than the ${Math.round(offsetLimitM * 100)} cm the map's reading allows: not the plant the map placed here`, input, quality);
+    out.measurement.clump = parts.length > 1 ? { diameterCm: +(2 * Math.sqrt((pixels.length * gsdM * gsdM) / Math.PI) * 100).toFixed(1), areaCm2: +(pixels.length * gsdM * gsdM * 1e4).toFixed(0), parts: parts.length } : null;
+    out.measurement.centrePx = centrePx;
+    return out;
+  }
 
   // 8. The confidence, and the verdict on the number.
   const confidence = confidenceOf(quality, input.viewAngleDeg, minPixelsAcross);
@@ -356,7 +373,7 @@ export function segmentWeed(input: SegmentInput): SegmentOutput {
       canopyDiameterCm: diameterCm, canopyAreaCm2: +(areaM2 * 1e4).toFixed(0), maxExtentCm: cm(feretPx * gsdM),
       boxWidthCm: cm((part.maxX - part.minX + 1) * gsdM), boxHeightCm: cm((part.maxY - part.minY + 1) * gsdM),
       sizeCategory: sizeCategoryOf(diameterCm, thresholds), thresholds, gsdCmPx: gsdM * 100,
-      quality, clump, outlinePx: thinRing(ring), centrePx, measuredAt: new Date().toISOString(),
+      quality, clump, outlinePx: thinRing(ring), outline: null, centrePx, measuredAt: new Date().toISOString(),
     },
     wider: false,
   };

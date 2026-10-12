@@ -9,7 +9,13 @@
 //                                        rings
 //   zoomed in                            every measurable plant as a ring with its size
 //                                        on hover, the clusters, the photos' own finer
-//                                        zones where photos were read
+//                                        zones where photos were read, and the measured
+//                                        canopies as their own outlines on the ground
+//
+// A cluster's hull is dashed and labelled footprint: the ground the cluster
+// stands on, not its canopy, which the hover gives as a separate number. A
+// measured outline is the segmentation itself carried through the pose; it
+// is the only closed shape drawn that means "vegetation to here".
 //
 // Two sources: the field map (every blob at the map's pixel size, field
 // wide) and the original photos (at theirs, where the pass read them). Plants
@@ -37,6 +43,15 @@ export const PLANT_COLOUR = "#ef5350";
 export const UNKNOWN_COLOUR = "#9e9e9e";
 
 export type Vegetation = { map: GroundStructure | null; photos: GroundStructure | null };
+
+/** A measured canopy on the ground: the finding's id, its outline, and what to say about it. */
+export type MeasuredOutline = { id: string; ring: { lat: number; lng: number }[]; diameterCm: number; areaCm2: number; boxWidthCm: number | null; boxHeightCm: number | null; category: string | null; confidence: number | null; frame: string | null };
+
+export const OUTLINE_COLOUR: Record<string, string> = { small: "#ffffff", medium: "#ffa726", large: "#ef5350" };
+
+export function outlineLine(o: MeasuredOutline, units: UnitSystem): string {
+  return `Measured canopy: ${fmtLengthCm(o.diameterCm, units).text} across, ${fmtAreaCm2(o.areaCm2, units).text}${o.category ? `, ${o.category}` : ""}${o.boxWidthCm != null && o.boxHeightCm != null ? `; box ${fmtLengthCm(o.boxWidthCm, units).text} by ${fmtLengthCm(o.boxHeightCm, units).text} (extent, not canopy)` : ""}${o.confidence != null ? `; confidence ${o.confidence.toFixed(2)}` : ""}${o.frame ? `; from ${o.frame}` : ""}.`;
+}
 
 /** What is drawn at a zoom, from which source. Pure, for a test. */
 export function vegetationAtZoom(v: Vegetation, zoom: number): { individuals: GroundIndividual[]; clusters: GroundCluster[]; zones: GroundZone[]; objectsFrom: "photos" | "map" | null; zonesFrom: "photos" | "map" | null; minMeasurableM: number | null } {
@@ -69,7 +84,7 @@ export function zoneLine(z: GroundZone, units: UnitSystem, minMeasurableM: numbe
   return `Coverage zone, ${cellM} m: ${(z.coverage * 100).toFixed(z.coverage < 0.01 ? 2 : 1)}% small vegetation (${smallArea(z.microAreaM2, units)}), ${z.count.toLocaleString()} fragment${z.count === 1 ? "" : "s"} and objects under ${fmtLengthCm(minMeasurableM * 100, units).text}, ${z.density.toFixed(1)} per m²${z.measurableObjects ? `; ${z.measurableObjects} measurable plant${z.measurableObjects === 1 ? "" : "s"} counted beside them` : ""}.`;
 }
 
-export function VegetationLayer({ vegetation, visible, units }: { vegetation: Vegetation | null; visible: boolean; units: UnitSystem }) {
+export function VegetationLayer({ vegetation, visible, units, outlines = [] }: { vegetation: Vegetation | null; visible: boolean; units: UnitSystem; /** Measured canopies, drawn as outlines at the detail zoom. */ outlines?: MeasuredOutline[] }) {
   const [view, setView] = useState<{ zoom: number; bounds: LatLngBounds } | null>(null);
   const map = useMapEvents({
     zoomend: () => setView({ zoom: map.getZoom(), bounds: map.getBounds() }),
@@ -88,7 +103,11 @@ export function VegetationLayer({ vegetation, visible, units }: { vegetation: Ve
       zones: at.zones.filter(z => inView(z.centroid)).slice(0, VEG_MAX_MARKERS),
     };
   }, [vegetation, visible, zoom, bounds]);
-  if (!shown || !vegetation) return null;
+  const shownOutlines = useMemo(() => (visible && zoom >= VEG_DETAIL_ZOOM ? outlines.filter(o => o.ring.length >= 3 && bounds.contains([o.ring[0].lat, o.ring[0].lng])).slice(0, VEG_MAX_MARKERS) : []), [outlines, visible, zoom, bounds]);
+  if (!visible) return null;
+  if (!shown || !vegetation) {
+    return <>{shownOutlines.map(o => <MeasuredOutlinePolygon key={`o-${o.id}`} o={o} units={units} />)}</>;
+  }
   const objects = shown.objectsFrom === "photos" ? vegetation.photos! : vegetation.map;
   const zonesSrc = shown.zonesFrom === "photos" ? vegetation.photos! : vegetation.map;
   const minM = shown.minMeasurableM ?? 0;
@@ -102,7 +121,7 @@ export function VegetationLayer({ vegetation, visible, units }: { vegetation: Ve
       ))}
       {shown.clusters.map(c => (
         <Polygon key={`k-${c.frame ?? "map"}-${c.id}`} positions={c.hull.map(p => [p.lat, p.lng] as [number, number])}
-          pathOptions={{ color: CLUSTER_COLOUR, weight: 1.5, opacity: 0.9, fillColor: CLUSTER_COLOUR, fillOpacity: 0.25 }}>
+          pathOptions={{ color: CLUSTER_COLOUR, weight: 1.5, opacity: 0.9, dashArray: "6 4", fillColor: CLUSTER_COLOUR, fillOpacity: 0.12 }}>
           <Tooltip sticky>{clusterLine(c, units)}</Tooltip>
         </Polygon>
       ))}
@@ -112,6 +131,16 @@ export function VegetationLayer({ vegetation, visible, units }: { vegetation: Ve
           <Tooltip sticky>{individualLine(i, units, shown.objectsFrom ?? "map", objects?.gsdM ?? 0)}</Tooltip>
         </CircleMarker>
       ))}
+      {shownOutlines.map(o => <MeasuredOutlinePolygon key={`o-${o.id}`} o={o} units={units} />)}
     </>
+  );
+}
+
+function MeasuredOutlinePolygon({ o, units }: { o: MeasuredOutline; units: UnitSystem }) {
+  return (
+    <Polygon positions={o.ring.map(p => [p.lat, p.lng] as [number, number])}
+      pathOptions={{ color: OUTLINE_COLOUR[o.category ?? "small"] ?? "#ffffff", weight: 2, opacity: 0.95, fillOpacity: 0 }}>
+      <Tooltip sticky>{outlineLine(o, units)}</Tooltip>
+    </Polygon>
   );
 }
