@@ -84,6 +84,8 @@ export function measureSpotInPhoto(input: MeasureSpotInput): WeedMeasurement {
   // The threshold from the pass's scale around the spot, found once; the window's own when the context has no contrast.
   const contextPx = input.cut(squareWindow(centre, CONTEXT_M / gsdM, nativeWidth, nativeHeight));
   const context = contextPx ? vegetationThreshold(contextPx) : null;
+  // What the map (or the look) said the plant was; null when neither did, so a default never becomes an expectation.
+  const expected = candidate.blob && candidate.blob.equivDiameterM > 0 ? candidate.blob.equivDiameterM : look?.focus?.matched && look.focus.r > 0 ? 2 * look.focus.r * look.gsdM : null;
   let sideM = Math.min(FIRST_WINDOW_MAX_M, Math.max(MIN_WINDOW_M, WINDOW_DIAMETERS * expectedDiameterM(candidate, look)));
   for (let attempt = 0; ; attempt++) {
     const win = squareWindow(centre, sideM / gsdM, nativeWidth, nativeHeight);
@@ -93,7 +95,7 @@ export function measureSpotInPhoto(input: MeasureSpotInput): WeedMeasurement {
       ? look.circles.filter(c => c.cls === "on pattern" || c.cls === "double").map(c => ({ x: look.window.x + c.x - win.x, y: look.window.y + c.y - win.y, r: c.r }))
       : null;
     const out = segmentWeed({
-      px, centre: { x: centre.x - win.x, y: centre.y - win.y }, gsdM, thresholds, cropCircles, context,
+      px, centre: { x: centre.x - win.x, y: centre.y - win.y }, gsdM, thresholds, cropCircles, context, expectedDiameterM: expected,
       photoEdge: { left: win.x === 0, top: win.y === 0, right: win.x + win.width >= nativeWidth, bottom: win.y + win.height >= nativeHeight },
       viewAngleDeg: pr.viewAngleDeg,
     });

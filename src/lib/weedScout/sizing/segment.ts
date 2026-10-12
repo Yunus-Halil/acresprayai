@@ -62,6 +62,8 @@ export const FULL_RESOLUTION_PX = 16;
 export const FULL_CONTRAST = 0.2;
 /** View angle, degrees from straight down, at which the view term reaches its floor. */
 export const VIEW_ANGLE_FLOOR_DEG = 40;
+/** A canopy more than this many times the diameter the map expected has most likely grown into something else (a vine the pattern never placed); the confidence is halved and the caveat says so. */
+export const GROWN_RATIO = 3;
 
 export type Pt = { x: number; y: number };
 
@@ -92,6 +94,8 @@ export type SegmentInput = {
   cropCircles?: { x: number; y: number; r: number }[] | null;
   /** The soil-to-plant threshold from the wider context (vegetationThreshold), when the caller has one with contrast. */
   context?: { threshold: number; spread: number } | null;
+  /** How big the map (or the look) said this plant was, metres, when it said. */
+  expectedDiameterM?: number | null;
   /** Which of the window's edges are the photo's own edges. */
   photoEdge?: { left: boolean; top: boolean; right: boolean; bottom: boolean };
   viewAngleDeg?: number | null;
@@ -122,7 +126,8 @@ export function confidenceOf(q: SegmentationQuality, viewAngleDeg: number | null
   const view = viewAngleDeg == null ? 1 : Math.max(0.25, 1 - viewAngleDeg / VIEW_ANGLE_FLOOR_DEG);
   const touch = q.touchingNeighbours > 0 ? 0.6 : 1;
   const crop = q.touchesCrop ? 0.5 : q.cropContext === "unknown" ? 0.85 : 1;
-  return +(Math.min(res, con) * view * touch * crop).toFixed(3);
+  const grown = q.sizeVsExpected != null && q.sizeVsExpected > GROWN_RATIO ? 0.5 : 1;
+  return +(Math.min(res, con) * view * touch * crop * grown).toFixed(3);
 }
 
 /** Monotone-chain convex hull, points in any order. */
@@ -214,7 +219,7 @@ export function segmentWeed(input: SegmentInput): SegmentOutput {
   const context = input.context && input.context.spread >= OTSU_MIN_SPREAD ? input.context : null;
   const quality: SegmentationQuality = {
     pixelsAcross: null, maskContrast: null, darkShare: 0, touchingNeighbours: 0, touchesCrop: false,
-    cropContext: input.cropCircles ? "known" : "unknown", thresholdSource: context ? "context" : "window", touchesWindowEdge: false, touchesPhotoEdge: false,
+    cropContext: input.cropCircles ? "known" : "unknown", sizeVsExpected: null, thresholdSource: context ? "context" : "window", touchesWindowEdge: false, touchesPhotoEdge: false,
   };
 
   // 1. The index, the dark floor, the threshold: the context's, else Otsu on the window.
@@ -317,6 +322,7 @@ export function segmentWeed(input: SegmentInput): SegmentOutput {
   const areaM2 = n * gsdM * gsdM;
   const equivDiameterM = 2 * Math.sqrt(areaM2 / Math.PI);
   quality.pixelsAcross = +(equivDiameterM / gsdM).toFixed(1);
+  if (input.expectedDiameterM && input.expectedDiameterM > 0) quality.sizeVsExpected = +(equivDiameterM / input.expectedDiameterM).toFixed(2);
   if (quality.pixelsAcross < minPixelsAcross) {
     return unknown(`under ${minPixelsAcross} pixels across at ${(gsdM * 100).toFixed(1)} cm per pixel: too small to measure in this photo`, input, quality);
   }
@@ -365,5 +371,6 @@ function lowConfidenceWhy(q: SegmentationQuality, viewAngleDeg: number | null | 
   if (q.touchingNeighbours) parts.push(`touches ${q.touchingNeighbours} other plant${q.touchingNeighbours === 1 ? "" : "s"}`);
   if (q.touchesCrop) parts.push("reaches a crop plant");
   if (q.cropContext === "unknown") parts.push("the crop's positions were not known");
+  if (q.sizeVsExpected != null && q.sizeVsExpected > GROWN_RATIO) parts.push(`${q.sizeVsExpected.toFixed(1)}x the size the map read`);
   return parts.join(", ") || "the quality indicators";
 }

@@ -183,7 +183,7 @@ describe("segmentWeed on painted discs", () => {
   });
 
   it("confidence: the weaker of resolution and contrast, scaled by view, touching and the crop", () => {
-    const q = { pixelsAcross: 16, maskContrast: 0.2, darkShare: 0, touchingNeighbours: 0, touchesCrop: false, cropContext: "known" as const, thresholdSource: "window" as const, touchesWindowEdge: false, touchesPhotoEdge: false };
+    const q = { pixelsAcross: 16, maskContrast: 0.2, darkShare: 0, touchingNeighbours: 0, touchesCrop: false, cropContext: "known" as const, sizeVsExpected: null, thresholdSource: "window" as const, touchesWindowEdge: false, touchesPhotoEdge: false };
     expect(confidenceOf(q, 0, 6)).toBe(1);
     expect(confidenceOf({ ...q, pixelsAcross: 3 }, 0, 6)).toBe(0);
     expect(confidenceOf({ ...q, maskContrast: 0.05 }, 0, 6)).toBe(0);
@@ -192,6 +192,23 @@ describe("segmentWeed on painted discs", () => {
     expect(confidenceOf({ ...q, touchingNeighbours: 2 }, null, 6)).toBe(0.6);
     expect(confidenceOf({ ...q, touchesCrop: true }, null, 6)).toBe(0.5);
     expect(confidenceOf({ ...q, cropContext: "unknown" }, null, 6)).toBe(0.85);
+    expect(confidenceOf({ ...q, sizeVsExpected: 2.9 }, null, 6)).toBe(1);
+    expect(confidenceOf({ ...q, sizeVsExpected: 3.1 }, null, 6)).toBe(0.5);
+  });
+
+  it("doubts a canopy far larger than the map's reading, and records the ratio either way", () => {
+    const px = scene(300, 300, 0.01, [{ x: 150, y: 150, rM: 0.2 }]);
+    const asExpected = segmentWeed({ px, centre: { x: 150, y: 150 }, gsdM: 0.01, thresholds: T, cropCircles: [], expectedDiameterM: 0.35 }).measurement;
+    expect(asExpected.quality!.sizeVsExpected).toBeCloseTo(40 / 35, 1);
+    expect(asExpected.confidence).toBe(1);
+    const grown = segmentWeed({ px, centre: { x: 150, y: 150 }, gsdM: 0.01, thresholds: T, cropCircles: [], expectedDiameterM: 0.1 }).measurement;
+    expect(grown.quality!.sizeVsExpected).toBeCloseTo(4, 0);
+    expect(grown.confidence).toBe(0.5);
+    expect(grown.status).toBe("measured");
+    const unknown = segmentWeed({ px, centre: { x: 150, y: 150 }, gsdM: 0.01, thresholds: T, cropCircles: [], expectedDiameterM: 0.1, minConfidence: 0.6 }).measurement;
+    expect(unknown.status).toBe("unknown");
+    expect(unknown.reason).toMatch(/4\.0x the size the map read/);
+    expect(segmentWeed({ px, centre: { x: 150, y: 150 }, gsdM: 0.01, thresholds: T, cropCircles: [] }).measurement.quality!.sizeVsExpected).toBeNull();
   });
 });
 
@@ -292,10 +309,12 @@ describe("measureSpotInPhoto through the reconstruction", () => {
     const m = measureSpotInPhoto({ set, shot, groundAltM: groundAlt, nativeWidth, nativeHeight, candidate: { centroid: { lat: g.lat, lng: g.lng }, blob: { equivDiameterM: 0.2 } as never }, look: null, thresholds: T, cut: big.cut });
     expect(big.calls.length).toBe(3);
     expect(big.calls[2].width).toBeGreaterThan(big.calls[1].width);
-    expect(m.status).toBe("measured");
-    expect(m.canopyDiameterCm!).toBeGreaterThan(190);
-    expect(m.canopyDiameterCm!).toBeLessThan(210);
-    expect(m.sizeCategory).toBe("large");
+    // A plant that outgrows its first window is by construction many times the map's reading, so the number is doubted: here below the floor, withheld with the reason.
+    expect(m.status).toBe("unknown");
+    expect(m.reason).toMatch(/10\.\dx the size the map read/);
+    expect(m.quality!.sizeVsExpected).toBeCloseTo(10, 0);
+    expect(m.confidence!).toBeLessThan(0.3);
+    expect(m.canopyDiameterCm).toBeNull();
     // A look in this photo with a crop circle on the plant: it is the crop.
     const look: PhotoLook = { filename: shot.filename, window: { x: at.x - 100, y: at.y - 100, width: 200, height: 200 }, gsdM, lines: [], circles: [{ x: 100, y: 100, r: 30, cls: "on pattern" }], focus: null, blocks: 1, counts: { onPattern: 1, between: 0, offRow: 0, doubles: 0 } };
     const cropped = measureSpotInPhoto({ set, shot, groundAltM: groundAlt, nativeWidth, nativeHeight, candidate: { centroid: { lat: g.lat, lng: g.lng }, blob: null }, look, thresholds: T, cut: discCutter(at, 0.3, gsdM, nativeWidth, nativeHeight).cut });

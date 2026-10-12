@@ -84,7 +84,7 @@ function measureAt(img: Raw, centre: { x: number; y: number }, gsdM: number, exp
     const win = squareWindow(centre, sideM / gsdM, img.width, img.height);
     const px = cutWindow(img, win);
     const out = segmentWeed({
-      px, centre: { x: centre.x - win.x, y: centre.y - win.y }, gsdM, thresholds: DEFAULT_SIZE_THRESHOLDS, context,
+      px, centre: { x: centre.x - win.x, y: centre.y - win.y }, gsdM, thresholds: DEFAULT_SIZE_THRESHOLDS, context, expectedDiameterM: expectedM,
       cropCircles: cropCircles ? cropCircles.map(c => ({ x: c.x - win.x, y: c.y - win.y, r: c.r })) : null,
       photoEdge: { left: win.x === 0, top: win.y === 0, right: win.x + win.width >= img.width, bottom: win.y + win.height >= img.height },
       viewAngleDeg: 0,

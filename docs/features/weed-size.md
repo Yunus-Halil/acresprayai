@@ -144,6 +144,9 @@ spot id, leaving a measured spot alone and retrying an unavailable one; the word
 - Perspective: the pixel size is the ground size at the plant's centre; a plant 30 degrees
   off nadir is foreshortened across the radial direction and the confidence falls, but the
   number is not corrected.
+- A canopy more than three times the diameter the map read is most likely the mask grown into
+  something the pattern never placed (a vine, a tree skirt); the confidence is halved and the
+  caveat says the ratio. The vineyard survey's 70 cm reading on a 12 cm map blob was this case.
 - Only spots with a best photo whose original was kept get a number; imported orthomosaics
   and scans without originals are unavailable, and say so.
 - One measurement per spot, from its best photo; a second photo is not consulted.

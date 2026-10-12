@@ -68,6 +68,8 @@ export type SegmentationQuality = {
   touchesCrop: boolean;
   /** Whether the crop's positions were known when this was measured. */
   cropContext: "known" | "unknown";
+  /** The measured diameter over what the map (or the look) expected; null when nothing was expected. Far over 1 means the mask grew into something the map did not see as this plant. */
+  sizeVsExpected: number | null;
   touchesWindowEdge: boolean;
   touchesPhotoEdge: boolean;
 };
