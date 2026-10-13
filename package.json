@@ -19,7 +19,9 @@
     "bench:frames": "vite-node scripts/bench/sourceFrameBench.ts --",
     "bench:pattern": "vite-node scripts/bench/patternBench.ts --",
     "bench:size": "vite-node scripts/bench/sizeBench.ts --",
-    "validate:sizes": "vite-node scripts/bench/validateSizes.ts --"
+    "validate:sizes": "vite-node scripts/bench/validateSizes.ts --",
+    "eval:regions": "vite-node scripts/bench/evalRegions.ts --",
+    "eval:detections": "vite-node scripts/bench/evalDetections.ts --"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",

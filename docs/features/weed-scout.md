@@ -158,6 +158,16 @@ on the sample imagery and NOT yet for accuracy against measured plants.
 
 The vegetation off the pattern is grouped at the scale the imagery supports (`src/lib/weedScout/structure/`): single plants measurable on their own (six pixels across and over, so 6 cm in a 1 cm/px photo and 24 cm on a 4 cm/px map), clusters of touching canopies (canopy summed, footprint hulled, no plant count claimed), and coverage zones for everything smaller, with every square centimetre in exactly one account. Read from the map in the pipeline and from each photo in the photo pass, saved with the run, drawn by `VegetationLayer` at the zoom's own scale, and said in the field read. See `docs/features/vegetation-structure.md`.
 
+## Three views of the map, and the open-row benchmark (2026-10-13)
+
+The scout map has a view switch: Clean (vegetation highlights, plants, clusters and zones,
+numbers on hover only; the default), Measurement (the measured canopies as outlines with
+their numbers on hover, the selected spot's label kept), Diagnostic (everything, plus the
+spots the measurement refused and the vegetation no row pattern could place, reasons on
+hover). The open-row benchmark (`npm run eval:regions`, `scripts/annotate/annotate.html`,
+`npm run eval:detections`) and its audit are in `docs/features/open-row-evaluation.md`;
+no labels exist yet, so detection accuracy is unverified.
+
 ## The closer look opens the whole photo (2026-10-13)
 
 `PhotoViewer.tsx`: the original photograph whole, not a cut, in a viewport that zooms about

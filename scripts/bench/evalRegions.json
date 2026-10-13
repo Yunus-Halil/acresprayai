@@ -1,0 +1,9 @@
+[
+  { "id": "vine-centre", "photo": "vineyardimages/DJI_0002.JPG", "x": 2000, "y": 1200, "width": 1200, "height": 900, "conditions": ["isolated weeds", "large weed", "weeds touching the crop row", "bright soil"], "notes": "Inter-row between two continuous vine rows; one large clump and scattered small weeds; weeds hugging the rows." },
+  { "id": "vine-right", "photo": "vineyardimages/DJI_0002.JPG", "x": 3800, "y": 1800, "width": 1200, "height": 900, "conditions": ["small weeds", "weeds near a row", "sparse", "shadow at the edge"], "notes": "A clean inter-row with two small weeds; a weedy strip along the right row; shadow from a tree at the far right." },
+  { "id": "vine-bottom-left", "photo": "vineyardimages/DJI_0002.JPG", "x": 300, "y": 2400, "width": 1200, "height": 900, "conditions": ["many small weeds", "touching weeds", "weeds near a row", "dense"], "notes": "Dense scatter of small weeds between rows, several touching." },
+  { "id": "vine-top-right", "photo": "vineyardimages/DJI_0002.JPG", "x": 4200, "y": 300, "width": 1200, "height": 900, "conditions": ["sparse", "bright soil", "headland"], "notes": "Headland and the first rows: few weeds, bright soil." },
+  { "id": "orchard-centre", "photo": "DJI_0303.JPG", "x": 2200, "y": 1400, "width": 1200, "height": 900, "conditions": ["isolated weeds", "small weeds", "shadows", "weeds under the crop"], "notes": "Young trees with long shadows; small weeds in the inter-row and under the canopies." },
+  { "id": "orchard-track", "photo": "DJI_0312.JPG", "x": 0, "y": 1100, "width": 1400, "height": 900, "conditions": ["touching weeds", "large weeds", "wheel track", "dark soil"], "notes": "Weeds along a wheel track, several touching; darker soil." },
+  { "id": "orchard-sparse", "photo": "DJI_0312.JPG", "x": 3400, "y": 100, "width": 1400, "height": 900, "conditions": ["sparse", "small weeds", "shadows"], "notes": "Few small weeds between trees in shadow." }
+]
