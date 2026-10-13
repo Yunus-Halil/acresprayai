@@ -1,0 +1,56 @@
+{
+  "version": "soil_only_v1",
+  "purpose": "Soil-background weed benchmark subset of PhenoBench v1.1.0: thresholds for exclusion, category assignment and size bands. Set before looking at category counts; sensitivity is reported, the values are not tuned to a result.",
+  "units": "pixels between pixel centres, at the native 1024 x 1024 resolution; no physical size is implied",
+  "size_bands_px": {
+    "tiny": [0, 100],
+    "small": [100, 1000],
+    "medium": [1000, 10000],
+    "large": [10000, null],
+    "note": "half-open [lo, hi) on area_px; 100 px is a 10 x 10 square, 1000 is about 32 x 32, 10000 is 100 x 100"
+  },
+  "exclude": {
+    "partial": "semantic majority is class 4 (under 50% visible per the dataset README)",
+    "touches_border": "instance box touches an image edge: the canopy is cut, its span is unknown",
+    "min_area_px": 100,
+    "min_area_note": "the tiny band is excluded from A, B and C and reported on its own; a 10 x 10 px blob cannot support a boundary-quality score"
+  },
+  "category_D_dense_or_ambiguous": {
+    "touching_any_plant": true,
+    "dist_to_other_plant_lt_px": 8,
+    "area_ge_px": 10000,
+    "fragmented": "n_components >= 2 and the pixels outside the largest component are at least 5% of the area",
+    "ring_background_lt": 0.5,
+    "note": "any one rule puts the instance in D; D is kept and reported, never discarded"
+  },
+  "category_A_isolated": {
+    "dist_to_other_plant_ge_px": 32,
+    "dist_to_crop_ge_px": 64,
+    "ring_background_ge": 0.9
+  },
+  "category_B_multiple_distinguishable": {
+    "dist_to_other_plant_ge_px": 8,
+    "dist_to_crop_ge_px": 64,
+    "ring_background_ge": 0.5,
+    "note": "fails A only because another weed is within 32 px or the ring is 50 to 90% background; the near plant is a weed by construction since crops are at least 64 px away"
+  },
+  "category_C_crop_adjacent": {
+    "dist_to_other_plant_ge_px": 8,
+    "dist_to_crop_lt_px": 64,
+    "ring_background_ge": 0.5
+  },
+  "image_level": {
+    "A_image": "at least one A instance",
+    "B_image": "at least two instances in A or B",
+    "C_image": "at least one C instance",
+    "D_image": "at least one D instance"
+  },
+  "ring_px": 32,
+  "context_pad_px": 128,
+  "splits": {
+    "holdout": "official val split, every plot; used once for the final comparison",
+    "dev_tune": "official train split, plots assigned by alternating the sorted plot ids within each date, starting with tune",
+    "dev_check": "the remaining train plots; for checking an iteration before touching the holdout",
+    "smoke": "configs/smoke10.json (train); may overlap dev plots, used only to see that code runs"
+  }
+}

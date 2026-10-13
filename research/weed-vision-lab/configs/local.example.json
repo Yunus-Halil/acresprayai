@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy to configs/local.json (gitignored). Absolute paths; forward slashes work on Windows too. The reader also accepts the directory that CONTAINS a nested PhenoBench folder.",
+  "phenobench_root": "D:/datasets/PhenoBench",
+  "output_dir": "D:/swardus-research/weed-vision-lab-outputs"
+}

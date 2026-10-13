@@ -1,0 +1,20 @@
+# Research outputs: rendered panels, contact sheets, masks, caches. Never committed.
+# Small machine-readable summaries are copied into reports/ by hand.
+outputs/
+
+# The dataset root and output dir for this machine. Each machine writes its own.
+configs/local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Rendered pictures are derived from CC BY-NC-SA dataset content; keep them out of the history.
+reports/**/*.png
+reports/**/*.jpg

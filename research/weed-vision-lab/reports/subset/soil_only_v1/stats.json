@@ -1,0 +1,558 @@
+{
+ "n_images": 2179,
+ "n_weed_instances": 12067,
+ "n_images_no_weeds": 81,
+ "by_split": {
+  "train": {
+   "images": 1407,
+   "weeds": 8141
+  },
+  "val": {
+   "images": 772,
+   "weeds": 3926
+  }
+ },
+ "by_date": {
+  "2020-05-15": {
+   "images": 1012,
+   "weeds": 4111
+  },
+  "2020-05-26": {
+   "images": 566,
+   "weeds": 3507
+  },
+  "2020-06-05": {
+   "images": 601,
+   "weeds": 4449
+  }
+ },
+ "weeds_per_image": {
+  "p05": 1,
+  "p25": 3,
+  "p50": 5,
+  "p75": 8,
+  "p95": 13,
+  "min": 0,
+  "max": 29,
+  "mean": 5.54
+ },
+ "crops_per_image": {
+  "p05": 4,
+  "p25": 7,
+  "p50": 8,
+  "p75": 10,
+  "p95": 13,
+  "min": 1,
+  "max": 17,
+  "mean": 8.42
+ },
+ "area_px": {
+  "p05": 46,
+  "p25": 145,
+  "p50": 358,
+  "p75": 876,
+  "p95": 3747,
+  "min": 1,
+  "max": 144400,
+  "mean": 962.16
+ },
+ "max_span_px": {
+  "p05": 11.402,
+  "p25": 22.847,
+  "p50": 39.459,
+  "p75": 64.07,
+  "p95": 130.863,
+  "min": 0.0,
+  "max": 758.673,
+  "mean": 50.47
+ },
+ "obb_length_px": {
+  "p05": 10.989,
+  "p25": 21.466,
+  "p50": 36.739,
+  "p75": 58.977,
+  "p95": 120.092,
+  "min": 0.0,
+  "max": 692.0,
+  "mean": 46.92
+ },
+ "obb_width_px": {
+  "p05": 4.642,
+  "p25": 11.191,
+  "p50": 22.0,
+  "p75": 39.503,
+  "p95": 86.174,
+  "min": 0.0,
+  "max": 421.566,
+  "mean": 30.59
+ },
+ "dist_to_crop_px": {
+  "p05": 1.0,
+  "p25": 15.556,
+  "p50": 74.632,
+  "p75": 158.256,
+  "p95": 316.512,
+  "min": 1.0,
+  "max": 929.796,
+  "mean": 104.59
+ },
+ "dist_to_other_plant_px": {
+  "p05": 1.0,
+  "p25": 7.0,
+  "p50": 48.01,
+  "p75": 108.853,
+  "p95": 128.0,
+  "min": 1.0,
+  "max": 204.044,
+  "mean": 57.96
+ },
+ "ring_background": {
+  "p05": 0.544,
+  "p25": 0.918,
+  "p50": 1.0,
+  "p75": 1.0,
+  "p95": 1.0,
+  "min": 0.0,
+  "max": 1.0,
+  "mean": 0.92
+ },
+ "border_dist_px": {
+  "p05": 0,
+  "p25": 29,
+  "p50": 115,
+  "p75": 225,
+  "p95": 370,
+  "min": 0,
+  "max": 495,
+  "mean": 139.16
+ },
+ "size_bands": {
+  "tiny": {
+   "n": 2007,
+   "fraction": 0.1663
+  },
+  "small": {
+   "n": 7362,
+   "fraction": 0.6101
+  },
+  "medium": {
+   "n": 2582,
+   "fraction": 0.214
+  },
+  "large": {
+   "n": 116,
+   "fraction": 0.0096
+  }
+ },
+ "size_bands_by_date": {
+  "2020-05-15": {
+   "tiny": 1131,
+   "small": 2593,
+   "medium": 383,
+   "large": 4
+  },
+  "2020-05-26": {
+   "tiny": 580,
+   "small": 2468,
+   "medium": 453,
+   "large": 6
+  },
+  "2020-06-05": {
+   "tiny": 296,
+   "small": 2301,
+   "medium": 1746,
+   "large": 106
+  }
+ },
+ "size_bands_by_plot": {
+  "P0030686": {
+   "tiny": 39,
+   "small": 180,
+   "medium": 51,
+   "large": 0
+  },
+  "P0030688": {
+   "tiny": 183,
+   "small": 324,
+   "medium": 98,
+   "large": 0
+  },
+  "P0030690": {
+   "tiny": 167,
+   "small": 261,
+   "medium": 48,
+   "large": 0
+  },
+  "P0030692": {
+   "tiny": 155,
+   "small": 186,
+   "medium": 16,
+   "large": 0
+  },
+  "P0030695": {
+   "tiny": 89,
+   "small": 130,
+   "medium": 17,
+   "large": 0
+  },
+  "P0030792": {
+   "tiny": 13,
+   "small": 110,
+   "medium": 4,
+   "large": 0
+  },
+  "P0030852": {
+   "tiny": 101,
+   "small": 311,
+   "medium": 73,
+   "large": 4
+  },
+  "P0030853": {
+   "tiny": 67,
+   "small": 224,
+   "medium": 10,
+   "large": 0
+  },
+  "P0030855": {
+   "tiny": 68,
+   "small": 95,
+   "medium": 8,
+   "large": 0
+  },
+  "P0030859": {
+   "tiny": 71,
+   "small": 151,
+   "medium": 17,
+   "large": 0
+  },
+  "P0030943": {
+   "tiny": 38,
+   "small": 76,
+   "medium": 2,
+   "large": 0
+  },
+  "P0030947": {
+   "tiny": 26,
+   "small": 45,
+   "medium": 4,
+   "large": 0
+  },
+  "P0030949": {
+   "tiny": 63,
+   "small": 195,
+   "medium": 11,
+   "large": 0
+  },
+  "P0030950": {
+   "tiny": 21,
+   "small": 94,
+   "medium": 4,
+   "large": 0
+  },
+  "P0030953": {
+   "tiny": 30,
+   "small": 211,
+   "medium": 20,
+   "large": 0
+  },
+  "P0034016": {
+   "tiny": 57,
+   "small": 334,
+   "medium": 75,
+   "large": 0
+  },
+  "P0034018": {
+   "tiny": 82,
+   "small": 390,
+   "medium": 117,
+   "large": 4
+  },
+  "P0034020": {
+   "tiny": 102,
+   "small": 291,
+   "medium": 43,
+   "large": 0
+  },
+  "P0034117": {
+   "tiny": 48,
+   "small": 202,
+   "medium": 30,
+   "large": 0
+  },
+  "P0034119": {
+   "tiny": 26,
+   "small": 161,
+   "medium": 41,
+   "large": 0
+  },
+  "P0034121": {
+   "tiny": 31,
+   "small": 195,
+   "medium": 51,
+   "large": 0
+  },
+  "P0034279": {
+   "tiny": 101,
+   "small": 262,
+   "medium": 28,
+   "large": 0
+  },
+  "P0034280": {
+   "tiny": 79,
+   "small": 347,
+   "medium": 54,
+   "large": 2
+  },
+  "P0034282": {
+   "tiny": 54,
+   "small": 286,
+   "medium": 14,
+   "large": 0
+  },
+  "P0037818": {
+   "tiny": 20,
+   "small": 152,
+   "medium": 137,
+   "large": 7
+  },
+  "P0037820": {
+   "tiny": 69,
+   "small": 341,
+   "medium": 208,
+   "large": 17
+  },
+  "P0037822": {
+   "tiny": 11,
+   "small": 246,
+   "medium": 206,
+   "large": 16
+  },
+  "P0037987": {
+   "tiny": 34,
+   "small": 201,
+   "medium": 250,
+   "large": 6
+  },
+  "P0037989": {
+   "tiny": 44,
+   "small": 314,
+   "medium": 154,
+   "large": 16
+  },
+  "P0037991": {
+   "tiny": 19,
+   "small": 249,
+   "medium": 257,
+   "large": 25
+  },
+  "P0038051": {
+   "tiny": 43,
+   "small": 272,
+   "medium": 231,
+   "large": 5
+  },
+  "P0038053": {
+   "tiny": 39,
+   "small": 383,
+   "medium": 157,
+   "large": 14
+  },
+  "P0038055": {
+   "tiny": 17,
+   "small": 143,
+   "medium": 146,
+   "large": 0
+  }
+ },
+ "exclusions": {
+  "partial": 954,
+  "touches_border": 913,
+  "tiny": 1510
+ },
+ "categories": {
+  "A": 3428,
+  "B": 293,
+  "C": 1990,
+  "D": 2979,
+  "unassigned": 0
+ },
+ "categories_by_split": {
+  "dev_tune": {
+   "A": 1107,
+   "B": 86,
+   "C": 632,
+   "D": 1032,
+   "unassigned": 0
+  },
+  "dev_check": {
+   "A": 1137,
+   "B": 81,
+   "C": 698,
+   "D": 982,
+   "unassigned": 0
+  },
+  "holdout": {
+   "A": 1184,
+   "B": 126,
+   "C": 660,
+   "D": 965,
+   "unassigned": 0
+  }
+ },
+ "categories_by_date": {
+  "2020-05-15": {
+   "A": 1517,
+   "B": 124,
+   "C": 465,
+   "D": 555
+  },
+  "2020-05-26": {
+   "A": 1122,
+   "B": 60,
+   "C": 637,
+   "D": 792
+  },
+  "2020-06-05": {
+   "A": 789,
+   "B": 109,
+   "C": 888,
+   "D": 1632
+  }
+ },
+ "categories_by_band": {
+  "tiny": {
+   "A": 0,
+   "B": 0,
+   "C": 0,
+   "D": 0
+  },
+  "small": {
+   "A": 2822,
+   "B": 215,
+   "C": 1508,
+   "D": 1948
+  },
+  "medium": {
+   "A": 606,
+   "B": 78,
+   "C": 482,
+   "D": 949
+  },
+  "large": {
+   "A": 0,
+   "B": 0,
+   "C": 0,
+   "D": 82
+  }
+ },
+ "D_reasons": {
+  "fragmented": 941,
+  "touching": 1969,
+  "low_background": 354,
+  "near_touching": 464,
+  "large_patch": 82
+ },
+ "touching": {
+  "weed_touching_weed_pairs": 279,
+  "weeds_touching_crop": 2100,
+  "instances_touching_any": 2493
+ },
+ "fragmented_instances": 1448,
+ "images_by_category": {
+  "A": 1563,
+  "B": 990,
+  "C": 1123,
+  "D": 1196
+ },
+ "images_by_category_and_split": {
+  "dev_tune": {
+   "A": 501,
+   "B": 330,
+   "C": 372,
+   "D": 424
+  },
+  "dev_check": {
+   "A": 505,
+   "B": 314,
+   "C": 367,
+   "D": 373
+  },
+  "holdout": {
+   "A": 557,
+   "B": 346,
+   "C": 384,
+   "D": 399
+  }
+ },
+ "sensitivity": {
+  "A_count_vs_dist_other_plant": {
+   "16": 3631,
+   "24": 3531,
+   "32": 3428,
+   "48": 3221,
+   "64": 2955,
+   "96": 1984
+  },
+  "A_count_vs_ring_background": {
+   "0.5": 3428,
+   "0.7": 3428,
+   "0.8": 3428,
+   "0.9": 3428,
+   "0.95": 3428,
+   "0.99": 3428
+  },
+  "primary_count_vs_min_area": {
+   "25": 4735,
+   "50": 4513,
+   "100": 3721,
+   "200": 2840,
+   "400": 1728
+  }
+ },
+ "repeated_observations": {
+  "unique_plants_all": 3654,
+  "unique_plants_by_split": {
+   "train": 2485,
+   "val": 1169
+  },
+  "frames_per_plant": {
+   "1": 323,
+   "2": 1009,
+   "3": 190,
+   "4": 1834,
+   "5": 17,
+   "6": 260,
+   "7": 1,
+   "8": 12,
+   "9": 8
+  },
+  "mean_frames_per_plant": 3.3,
+  "unique_plants_by_category_and_split": {
+   "dev_tune": {
+    "A": 396,
+    "B": 32,
+    "C": 215,
+    "D": 356
+   },
+   "dev_check": {
+    "A": 401,
+    "B": 32,
+    "C": 236,
+    "D": 352
+   },
+   "holdout": {
+    "A": 420,
+    "B": 43,
+    "C": 223,
+    "D": 333
+   }
+  },
+  "plants_with_more_than_one_category": 19
+ },
+ "tiny_would_be": {
+  "A": 986,
+  "C": 292,
+  "D": 176,
+  "B": 56
+ }
+}

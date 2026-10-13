@@ -1,0 +1,107 @@
+{
+ "purpose": "ten-image PhenoBench smoke test (Milestone 3)",
+ "split": "train",
+ "rule": "Choose the ten smoke-test images from the train profile by a fixed, documented rule.\n\nReads <out>/profile/train.csv (from profile_split.py) and writes\nconfigs/smoke10.json with the chosen names, the category each one fills and the\nnumbers that made it the choice. The rule is deterministic: ties break on the\nfilename, so the same profile always gives the same ten.\n\nOnly images with no validation errors and no mixed-family instances are eligible.\n\nCategories, filled in this order, skipping names already chosen:\n  1. isolated-single  : 1..2 full weeds, at least one isolated, fewest plants; two images, different dates if possible\n  2. many-weeds       : the most full weeds; two images, different dates if possible\n  3. crop-weed-mix    : most weeds whose grown box meets a crop box, with at least two full crops; two images\n  4. large-weed       : the largest single weed by pixel area; one image\n  5. small-weeds      : the smallest median weed area among images with at least three full weeds; one image\n  6. border-weed      : a weed cut by the image border, fewest plants; one image\n  7. date-cover       : one image per acquisition date not yet represented, with the median weed count for that date\nIf fewer than ten are chosen, the list is padded with evenly spaced eligible images by name order.",
+ "profile_source": "D:\\swardus-research\\weed-vision-lab-outputs\\profile\\train.csv",
+ "n_profiled": 1407,
+ "images": [
+  {
+   "name": "06-05_00061_P0037989.png",
+   "category": "isolated-single",
+   "reason": {
+    "n_weed_full": 1.0,
+    "n_weed_isolated": 1.0,
+    "n_plants": 3.0
+   },
+   "date": "2020-06-05"
+  },
+  {
+   "name": "05-15_00039_P0030852.png",
+   "category": "isolated-single",
+   "reason": {
+    "n_weed_full": 1.0,
+    "n_weed_isolated": 1.0,
+    "n_plants": 4.0
+   },
+   "date": "2020-05-15"
+  },
+  {
+   "name": "05-15_00072_P0030852.png",
+   "category": "many-weeds",
+   "reason": {
+    "n_weed_full": 28.0,
+    "n_weed_partial": 1.0,
+    "n_crop": 6.0
+   },
+   "date": "2020-05-15"
+  },
+  {
+   "name": "06-05_00111_P0037820.png",
+   "category": "many-weeds",
+   "reason": {
+    "n_weed_full": 21.0,
+    "n_weed_partial": 0.0,
+    "n_crop": 7.0
+   },
+   "date": "2020-06-05"
+  },
+  {
+   "name": "06-05_00219_P0038053.png",
+   "category": "crop-weed-mix",
+   "reason": {
+    "n_weed_near_crop": 21.0,
+    "n_weed": 21.0,
+    "n_crop_full": 8.0
+   },
+   "date": "2020-06-05"
+  },
+  {
+   "name": "05-15_00198_P0030949.png",
+   "category": "crop-weed-mix",
+   "reason": {
+    "n_weed_near_crop": 10.0,
+    "n_weed": 13.0,
+    "n_crop_full": 8.0
+   },
+   "date": "2020-05-15"
+  },
+  {
+   "name": "06-05_00090_P0037989.png",
+   "category": "large-weed",
+   "reason": {
+    "weed_area_max": 144400.0,
+    "n_weed": 14.0
+   },
+   "date": "2020-06-05"
+  },
+  {
+   "name": "05-15_00179_P0030688.png",
+   "category": "small-weeds",
+   "reason": {
+    "weed_area_median": 43.0,
+    "weed_area_min": 17.0,
+    "n_weed_full": 9.0
+   },
+   "date": "2020-05-15"
+  },
+  {
+   "name": "05-15_00227_P0030688.png",
+   "category": "border-weed",
+   "reason": {
+    "n_weed_border": 1.0,
+    "n_weed": 1.0,
+    "n_plants": 4.0
+   },
+   "date": "2020-05-15"
+  },
+  {
+   "name": "05-26_00058_P0034280.png",
+   "category": "date-cover",
+   "reason": {
+    "n_weed": 5.0,
+    "date_median_n_weed": 5.5
+   },
+   "date": "2020-05-26"
+  }
+ ]
+}

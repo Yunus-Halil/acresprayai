@@ -1,0 +1,398 @@
+{
+ "candidates": [
+  {
+   "image": "05-15_00154_P0030688.png",
+   "instance_id": 953,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A small, evenly spread by date/plot"
+  },
+  {
+   "image": "05-15_00083_P0030852.png",
+   "instance_id": 982,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A small, evenly spread by date/plot"
+  },
+  {
+   "image": "05-26_00199_P0034018.png",
+   "instance_id": 1286,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A small, evenly spread by date/plot"
+  },
+  {
+   "image": "05-26_00264_P0034279.png",
+   "instance_id": 1319,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A small, evenly spread by date/plot"
+  },
+  {
+   "image": "06-05_00223_P0038055.png",
+   "instance_id": 1173,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A small, evenly spread by date/plot"
+  },
+  {
+   "image": "05-15_00151_P0030688.png",
+   "instance_id": 1096,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A medium, evenly spread by date/plot"
+  },
+  {
+   "image": "05-15_00134_P0030852.png",
+   "instance_id": 1306,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A medium, evenly spread by date/plot"
+  },
+  {
+   "image": "05-26_00219_P0034119.png",
+   "instance_id": 1220,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A medium, evenly spread by date/plot"
+  },
+  {
+   "image": "06-05_00040_P0037987.png",
+   "instance_id": 1136,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A medium, evenly spread by date/plot"
+  },
+  {
+   "image": "06-05_00200_P0038055.png",
+   "instance_id": 1227,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A medium, evenly spread by date/plot"
+  },
+  {
+   "image": "05-15_00028_P0030852.png",
+   "instance_id": 1241,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A hardest: lowest ring background"
+  },
+  {
+   "image": "05-15_00173_P0030690.png",
+   "instance_id": 1241,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A hardest: smallest area"
+  },
+  {
+   "image": "05-26_00060_P0034280.png",
+   "instance_id": 1155,
+   "category": "A",
+   "exclusion": null,
+   "why_shown": "A hardest: lowest solidity"
+  },
+  {
+   "image": "05-15_00199_P0030688.png",
+   "instance_id": 962,
+   "category": "B",
+   "exclusion": null,
+   "why_shown": "B small, evenly spread by date/plot"
+  },
+  {
+   "image": "05-15_00135_P0030949.png",
+   "instance_id": 1201,
+   "category": "B",
+   "exclusion": null,
+   "why_shown": "B small, evenly spread by date/plot"
+  },
+  {
+   "image": "05-26_00179_P0034279.png",
+   "instance_id": 1335,
+   "category": "B",
+   "exclusion": null,
+   "why_shown": "B small, evenly spread by date/plot"
+  },
+  {
+   "image": "06-05_00175_P0038055.png",
+   "instance_id": 1318,
+   "category": "B",
+   "exclusion": null,
+   "why_shown": "B small, evenly spread by date/plot"
+  },
+  {
+   "image": "05-15_00219_P0030688.png",
+   "instance_id": 1037,
+   "category": "B",
+   "exclusion": null,
+   "why_shown": "B medium, evenly spread by date/plot"
+  },
+  {
+   "image": "05-26_00269_P0034018.png",
+   "instance_id": 1238,
+   "category": "B",
+   "exclusion": null,
+   "why_shown": "B medium, evenly spread by date/plot"
+  },
+  {
+   "image": "06-05_00112_P0037820.png",
+   "instance_id": 1212,
+   "category": "B",
+   "exclusion": null,
+   "why_shown": "B medium, evenly spread by date/plot"
+  },
+  {
+   "image": "06-05_00112_P0038055.png",
+   "instance_id": 1264,
+   "category": "B",
+   "exclusion": null,
+   "why_shown": "B medium, evenly spread by date/plot"
+  },
+  {
+   "image": "05-15_00050_P0030852.png",
+   "instance_id": 1325,
+   "category": "B",
+   "exclusion": null,
+   "why_shown": "B hardest: lowest ring background"
+  },
+  {
+   "image": "05-15_00093_P0030950.png",
+   "instance_id": 1173,
+   "category": "B",
+   "exclusion": null,
+   "why_shown": "B hardest: smallest area"
+  },
+  {
+   "image": "05-15_00262_P0030690.png",
+   "instance_id": 1176,
+   "category": "B",
+   "exclusion": null,
+   "why_shown": "B hardest: lowest solidity"
+  },
+  {
+   "image": "05-26_00215_P0034119.png",
+   "instance_id": 1216,
+   "category": "C",
+   "exclusion": null,
+   "why_shown": "C nearest to a crop"
+  },
+  {
+   "image": "05-26_00216_P0034119.png",
+   "instance_id": 1216,
+   "category": "C",
+   "exclusion": null,
+   "why_shown": "C nearest to a crop"
+  },
+  {
+   "image": "05-26_00236_P0034119.png",
+   "instance_id": 1216,
+   "category": "C",
+   "exclusion": null,
+   "why_shown": "C nearest to a crop"
+  },
+  {
+   "image": "05-15_00160_P0030688.png",
+   "instance_id": 862,
+   "category": "C",
+   "exclusion": null,
+   "why_shown": "C evenly spread"
+  },
+  {
+   "image": "05-26_00075_P0034280.png",
+   "instance_id": 1363,
+   "category": "C",
+   "exclusion": null,
+   "why_shown": "C evenly spread"
+  },
+  {
+   "image": "06-05_00221_P0038055.png",
+   "instance_id": 1230,
+   "category": "C",
+   "exclusion": null,
+   "why_shown": "C evenly spread"
+  },
+  {
+   "image": "06-05_00182_P0038053.png",
+   "instance_id": 1164,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D largest patch"
+  },
+  {
+   "image": "06-05_00203_P0038053.png",
+   "instance_id": 1164,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D largest patch"
+  },
+  {
+   "image": "05-15_00159_P0030688.png",
+   "instance_id": 855,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D touching another plant"
+  },
+  {
+   "image": "06-05_00224_P0038055.png",
+   "instance_id": 1166,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D touching another plant"
+  },
+  {
+   "image": "05-15_00154_P0030688.png",
+   "instance_id": 968,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D fragmented instance"
+  },
+  {
+   "image": "06-05_00222_P0038055.png",
+   "instance_id": 1346,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D fragmented instance"
+  }
+ ],
+ "rejected": [
+  {
+   "image": "05-15_00157_P0030688.png",
+   "instance_id": 870,
+   "category": null,
+   "exclusion": "tiny",
+   "why_shown": "rejected: tiny (< 100 px)"
+  },
+  {
+   "image": "05-15_00184_P0030692.png",
+   "instance_id": 404,
+   "category": null,
+   "exclusion": "tiny",
+   "why_shown": "rejected: tiny (< 100 px)"
+  },
+  {
+   "image": "05-26_00176_P0034020.png",
+   "instance_id": 1337,
+   "category": null,
+   "exclusion": "tiny",
+   "why_shown": "rejected: tiny (< 100 px)"
+  },
+  {
+   "image": "06-05_00223_P0038055.png",
+   "instance_id": 1171,
+   "category": null,
+   "exclusion": "tiny",
+   "why_shown": "rejected: tiny (< 100 px)"
+  },
+  {
+   "image": "05-15_00172_P0030688.png",
+   "instance_id": 1089,
+   "category": null,
+   "exclusion": "partial",
+   "why_shown": "rejected: partial (class 4)"
+  },
+  {
+   "image": "05-26_00219_P0034018.png",
+   "instance_id": 1419,
+   "category": null,
+   "exclusion": "partial",
+   "why_shown": "rejected: partial (class 4)"
+  },
+  {
+   "image": "06-05_00153_P0037820.png",
+   "instance_id": 1416,
+   "category": null,
+   "exclusion": "partial",
+   "why_shown": "rejected: partial (class 4)"
+  },
+  {
+   "image": "06-05_00218_P0038055.png",
+   "instance_id": 1307,
+   "category": null,
+   "exclusion": "partial",
+   "why_shown": "rejected: partial (class 4)"
+  },
+  {
+   "image": "05-15_00151_P0030688.png",
+   "instance_id": 1099,
+   "category": null,
+   "exclusion": "touches_border",
+   "why_shown": "rejected: touches image border"
+  },
+  {
+   "image": "05-26_00227_P0034018.png",
+   "instance_id": 1429,
+   "category": null,
+   "exclusion": "touches_border",
+   "why_shown": "rejected: touches image border"
+  },
+  {
+   "image": "06-05_00151_P0037820.png",
+   "instance_id": 1416,
+   "category": null,
+   "exclusion": "touches_border",
+   "why_shown": "rejected: touches image border"
+  },
+  {
+   "image": "06-05_00223_P0038055.png",
+   "instance_id": 1164,
+   "category": null,
+   "exclusion": "touches_border",
+   "why_shown": "rejected: touches image border"
+  },
+  {
+   "image": "05-15_00041_P0030852.png",
+   "instance_id": 987,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D: ring under 50% background"
+  },
+  {
+   "image": "06-05_00135_P0037818.png",
+   "instance_id": 1372,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D: ring under 50% background"
+  },
+  {
+   "image": "06-05_00153_P0037989.png",
+   "instance_id": 1480,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D: ring under 50% background"
+  },
+  {
+   "image": "06-05_00222_P0038055.png",
+   "instance_id": 1346,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D: ring under 50% background"
+  },
+  {
+   "image": "05-15_00161_P0030688.png",
+   "instance_id": 1183,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D: touching a crop"
+  },
+  {
+   "image": "06-05_00090_P0037818.png",
+   "instance_id": 1240,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D: touching a crop"
+  },
+  {
+   "image": "06-05_00104_P0037989.png",
+   "instance_id": 1168,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D: touching a crop"
+  },
+  {
+   "image": "06-05_00224_P0038055.png",
+   "instance_id": 1166,
+   "category": "D",
+   "exclusion": null,
+   "why_shown": "D: touching a crop"
+  }
+ ]
+}

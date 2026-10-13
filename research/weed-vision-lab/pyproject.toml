@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "weedlab"
+version = "0.1.0"
+description = "Swardus Weed Vision Research Lab: autonomous weed detection, instance segmentation and canopy measurement research on PhenoBench"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary research code; see docs/license-inventory.md for dataset and third-party terms" }
+
+# Phase one needs only array, image and plotting libraries. Pretrained-model
+# work (torch, the devkit eval extra) goes behind an extra, never into the base set.
+dependencies = [
+    "numpy>=1.26",
+    "pillow>=10.0",
+    "scipy>=1.11",
+    "scikit-image>=0.22",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+# The official devkit (MIT). Its `eval` extra pins torchmetrics==0.10.3 and pulls torch;
+# install only after checking compatibility with the lab's Python.
+devkit = ["phenobench==0.1.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/weedlab"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers -m 'not dataset'"
+markers = [
+    "dataset: needs the real PhenoBench dataset present; skipped by default",
+]
