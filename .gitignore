@@ -56,3 +56,9 @@ evaluation/**/*.JPG
 evaluation/**/*.jpg
 evaluation/**/results/*.png
 evaluation/**/baseline/*.png
+
+# The close-range measurement experiment: originals and rendered pictures stay out; results, reviews and the report go in.
+measurementrealworldimages/rawimagery/
+measurementrealworldimages/results/images/*.png
+measurementrealworldimages/results/inspect/
+measurementrealworldimages/results/contact-sheet.png

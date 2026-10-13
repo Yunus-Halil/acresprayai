@@ -1,0 +1,123 @@
+{
+  "version": "rw-measure-v1",
+  "file": "DJI_20261013075457_0098_D.JPG",
+  "widthPx": 8192,
+  "heightPx": 6144,
+  "exif": {
+    "model": "FC9113",
+    "focalMm": 8.67,
+    "focal35Mm": 24,
+    "relativeAltitudeM": 1.9,
+    "gimbalPitchDeg": -84.8
+  },
+  "tape": {
+    "centre": {
+      "x": 3528.7535762126436,
+      "y": 5171.464094872714
+    },
+    "dir": {
+      "x": 0.4459071871262156,
+      "y": 0.8950792034614513
+    },
+    "halfLength": 586.7279406982852,
+    "halfWidth": 182.3610898030866,
+    "pixels": 4845
+  },
+  "calibration": {
+    "status": "failed",
+    "method": "tick-periodicity",
+    "units": "unknown",
+    "pixelsPerCm": null,
+    "relativeUncertainty": null,
+    "inchPxFromLongTicks": null,
+    "inchPxFromFineTicks": null,
+    "longTicks": [],
+    "edge": null,
+    "localInchPx": [],
+    "driftAlongTape": null,
+    "bodyWidthPx": null,
+    "reason": "2 long tick(s) run across the tape but fewer than 4 sit on one lattice"
+  },
+  "pixelsPerCmAtPlant": null,
+  "target": {
+    "status": "selected",
+    "centre": {
+      "x": 4166.429703124594,
+      "y": 2260.955819329368
+    },
+    "alternatives": [
+      {
+        "centre": {
+          "x": 3275.042232277526,
+          "y": 3127.1447963800906
+        },
+        "areaPx": 42432
+      },
+      {
+        "centre": {
+          "x": 5111.269411151641,
+          "y": 3456.5846795205834
+        },
+        "areaPx": 61408
+      },
+      {
+        "centre": {
+          "x": 3453.9174989144594,
+          "y": 3019.8297872340427
+        },
+        "areaPx": 36848
+      },
+      {
+        "centre": {
+          "x": 7929.148798211291,
+          "y": 5660.716825041923
+        },
+        "areaPx": 143120
+      }
+    ],
+    "method": "centre-weighted-core",
+    "reason": "28 leaf cores within 0.7 cm joined as one canopy"
+  },
+  "segmentation": {
+    "status": "uncertain",
+    "coreShare": 0.856,
+    "touchesImageEdge": false,
+    "mergedWithAlternative": false,
+    "maskPixels": 2244752,
+    "pieces": 290,
+    "joinedCores": 28,
+    "nearbyCores": 26,
+    "reason": "28 leaf cores joined: a patch of many plants, not one; the measurement is the patch's extent"
+  },
+  "measurement": {
+    "status": "refused",
+    "reason": "no scale: 2 long tick(s) run across the tape but fewer than 4 sit on one lattice",
+    "maxSpanCm": null,
+    "perpendicularSpanCm": null,
+    "canopyAreaCm2": null,
+    "equivalentDiameterCm": null,
+    "spanEndpoints": null,
+    "perpendicularEndpoints": null,
+    "scaleAssumption": "near nadir (5.2 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+  },
+  "review": {
+    "status": "pending",
+    "targetOverride": null,
+    "rulerPoints": null,
+    "maskErase": null,
+    "groundTruth": {
+      "maxSpanCm": null,
+      "perpendicularSpanCm": null,
+      "measuredInField": false,
+      "notes": null
+    },
+    "notes": null
+  },
+  "comparison": {
+    "absoluteErrorCm": null,
+    "signedErrorCm": null,
+    "percentError": null,
+    "available": false
+  },
+  "outlinePx": null
+}

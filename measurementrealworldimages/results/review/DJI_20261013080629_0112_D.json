@@ -1,0 +1,13 @@
+{
+  "status": "pending",
+  "targetOverride": null,
+  "rulerPoints": null,
+  "maskErase": null,
+  "groundTruth": {
+    "maxSpanCm": null,
+    "perpendicularSpanCm": null,
+    "measuredInField": false,
+    "notes": null
+  },
+  "notes": null
+}

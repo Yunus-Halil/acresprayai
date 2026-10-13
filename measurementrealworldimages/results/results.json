@@ -1,0 +1,2726 @@
+{
+  "at": "2026-10-13T14:44:23.525Z",
+  "version": "rw-measure-v1",
+  "dir": "measurementrealworldimages\\rawimagery",
+  "scale": 4,
+  "results": [
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013075332_0097_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 1,
+        "gimbalPitchDeg": -89
+      },
+      "tape": {
+        "centre": {
+          "x": 5819.4213504825,
+          "y": 762.1068936859193
+        },
+        "dir": {
+          "x": 0.9999055866779142,
+          "y": 0.013741096400808395
+        },
+        "halfLength": 2308.771452993484,
+        "halfWidth": 224.8327259808557,
+        "pixels": 19239
+      },
+      "calibration": {
+        "status": "ok",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 141.90236525760864,
+        "relativeUncertainty": 0.010346311886602426,
+        "inchPxFromLongTicks": 360.4320077543259,
+        "inchPxFromFineTicks": 351.5868314771754,
+        "longTicks": [
+          -1736.214635149077,
+          -1376.1076849001886,
+          -1015.2253042700577,
+          -654.3676045849486,
+          -293.93559683062267,
+          1130.9255296777615,
+          1490.3823691099087
+        ],
+        "edge": "bottom",
+        "localInchPx": [
+          {
+            "t": -1556.1611600246326,
+            "inchPx": 360.1069502488882
+          },
+          {
+            "t": -1195.666494585123,
+            "inchPx": 360.8823806301309
+          },
+          {
+            "t": -834.7964544275032,
+            "inchPx": 360.8576996851091
+          },
+          {
+            "t": -474.15160070778575,
+            "inchPx": 360.4320077543259
+          },
+          {
+            "t": 418.4949664235696,
+            "inchPx": 356.21528162709603
+          },
+          {
+            "t": 1310.6539493938349,
+            "inchPx": 359.45683943214726
+          }
+        ],
+        "driftAlongTape": 0.012948625268086676,
+        "bodyWidthPx": 273,
+        "reason": null
+      },
+      "pixelsPerCmAtPlant": 141.77438986176702,
+      "target": {
+        "status": "selected",
+        "centre": {
+          "x": 3961.0669088352474,
+          "y": 1670.494961331146
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 3458.2374395236325,
+              "y": 1310.145143282471
+            },
+            "areaPx": 42992
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "4 leaf cores within 0.7 cm joined as one canopy"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.79,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 1438800,
+        "pieces": 92,
+        "joinedCores": 4,
+        "nearbyCores": 1,
+        "reason": "1 leaf core(s) within 2.5 cm were not joined; whether they belong to this plant needs a person (set joinGapCm in the review file to join them)"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 14,
+        "perpendicularSpanCm": 13,
+        "canopyAreaCm2": 72,
+        "equivalentDiameterCm": 9.5,
+        "spanEndpoints": [
+          {
+            "x": 5210,
+            "y": 1458
+          },
+          {
+            "x": 3306,
+            "y": 1918
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 4509.3780176062655,
+            "y": 2728.486403309411
+          },
+          {
+            "x": 4073.933628300132,
+            "y": 926.1252788770689
+          }
+        ],
+        "scaleAssumption": "near nadir (1.0 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013075457_0098_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 1.9,
+        "gimbalPitchDeg": -84.8
+      },
+      "tape": {
+        "centre": {
+          "x": 3528.7535762126436,
+          "y": 5171.464094872714
+        },
+        "dir": {
+          "x": 0.4459071871262156,
+          "y": 0.8950792034614513
+        },
+        "halfLength": 586.7279406982852,
+        "halfWidth": 182.3610898030866,
+        "pixels": 4845
+      },
+      "calibration": {
+        "status": "failed",
+        "method": "tick-periodicity",
+        "units": "unknown",
+        "pixelsPerCm": null,
+        "relativeUncertainty": null,
+        "inchPxFromLongTicks": null,
+        "inchPxFromFineTicks": null,
+        "longTicks": [],
+        "edge": null,
+        "localInchPx": [],
+        "driftAlongTape": null,
+        "bodyWidthPx": null,
+        "reason": "2 long tick(s) run across the tape but fewer than 4 sit on one lattice"
+      },
+      "pixelsPerCmAtPlant": null,
+      "target": {
+        "status": "selected",
+        "centre": {
+          "x": 4166.429703124594,
+          "y": 2260.955819329368
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 3275.042232277526,
+              "y": 3127.1447963800906
+            },
+            "areaPx": 42432
+          },
+          {
+            "centre": {
+              "x": 5111.269411151641,
+              "y": 3456.5846795205834
+            },
+            "areaPx": 61408
+          },
+          {
+            "centre": {
+              "x": 3453.9174989144594,
+              "y": 3019.8297872340427
+            },
+            "areaPx": 36848
+          },
+          {
+            "centre": {
+              "x": 7929.148798211291,
+              "y": 5660.716825041923
+            },
+            "areaPx": 143120
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "28 leaf cores within 0.7 cm joined as one canopy"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.856,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 2244752,
+        "pieces": 290,
+        "joinedCores": 28,
+        "nearbyCores": 26,
+        "reason": "28 leaf cores joined: a patch of many plants, not one; the measurement is the patch's extent"
+      },
+      "measurement": {
+        "status": "refused",
+        "reason": "no scale: 2 long tick(s) run across the tape but fewer than 4 sit on one lattice",
+        "maxSpanCm": null,
+        "perpendicularSpanCm": null,
+        "canopyAreaCm2": null,
+        "equivalentDiameterCm": null,
+        "spanEndpoints": null,
+        "perpendicularEndpoints": null,
+        "scaleAssumption": "near nadir (5.2 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013075600_0099_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 0.7,
+        "gimbalPitchDeg": -84.2
+      },
+      "tape": {
+        "centre": {
+          "x": 5151.727951733266,
+          "y": 3002.9288539235554
+        },
+        "dir": {
+          "x": 0.9968304351484358,
+          "y": 0.07955553759343194
+        },
+        "halfLength": 3022.6508323548983,
+        "halfWidth": 389.7837744052214,
+        "pixels": 34516
+      },
+      "calibration": {
+        "status": "uncertain",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 142.80702692718373,
+        "relativeUncertainty": 0.040681916316255985,
+        "inchPxFromLongTicks": 362.7298483950467,
+        "inchPxFromFineTicks": 357.40542334903216,
+        "longTicks": [
+          -2448.419397017288,
+          -2066.2610047449707,
+          -1688.453140400382,
+          -1315.2831925364724,
+          -945.6508323548983,
+          -580.914226794061,
+          -218.18437839901435,
+          143.62389452147363,
+          503.54583710662246,
+          860.8622939829124,
+          1216.1021653613539,
+          1569.1324377032456,
+          1921.777739299932
+        ],
+        "edge": "bottom",
+        "localInchPx": [
+          {
+            "t": -2257.340200881129,
+            "inchPx": 382.1583922723173
+          },
+          {
+            "t": -1877.3570725726763,
+            "inchPx": 377.80786434458855
+          },
+          {
+            "t": -1501.8681664684273,
+            "inchPx": 373.16994786390956
+          },
+          {
+            "t": -1130.4670124456852,
+            "inchPx": 369.6323601815741
+          },
+          {
+            "t": -763.2825295744797,
+            "inchPx": 364.73660556083723
+          },
+          {
+            "t": -399.5493025965375,
+            "inchPx": 362.7298483950467
+          },
+          {
+            "t": -37.28024193877036,
+            "inchPx": 361.808272920488
+          },
+          {
+            "t": 323.58486581404804,
+            "inchPx": 359.9219425851488
+          },
+          {
+            "t": 682.2040655447677,
+            "inchPx": 357.31645687629
+          },
+          {
+            "t": 1038.4822296721331,
+            "inchPx": 355.2398713784414
+          },
+          {
+            "t": 1392.6173015322997,
+            "inchPx": 353.03027234189176
+          },
+          {
+            "t": 1745.4550885015892,
+            "inchPx": 352.6453015966863
+          }
+        ],
+        "driftAlongTape": 0.08136383263251197,
+        "bodyWidthPx": 390,
+        "reason": "13 ticks; spacing noise 0.4%, drift 8.1% along the tape, fine and long estimates differ 1.5% (fine resolution 2.2%)"
+      },
+      "pixelsPerCmAtPlant": 150.4560599497312,
+      "target": {
+        "status": "review",
+        "centre": {
+          "x": 3060.46986631602,
+          "y": 1082.9655928117465
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 3786.30781129157,
+              "y": 1748.1268368136118
+            },
+            "areaPx": 41376
+          },
+          {
+            "centre": {
+              "x": 3590.942261038331,
+              "y": 1325.672974284328
+            },
+            "areaPx": 32976
+          },
+          {
+            "centre": {
+              "x": 1334.9737335834898,
+              "y": 5951.290806754221
+            },
+            "areaPx": 34112
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "2 leaf cores within 0.7 cm joined as one canopy; runner-up core scored 54% of the target's"
+      },
+      "segmentation": {
+        "status": "touching-vegetation",
+        "coreShare": 0.447,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 232704,
+        "pieces": 13,
+        "joinedCores": 2,
+        "nearbyCores": 1,
+        "reason": "only 45% of the mask is smooth leaf: thin material (grass or stems) was taken in at the edges"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 6,
+        "perpendicularSpanCm": 2.7,
+        "canopyAreaCm2": 10,
+        "equivalentDiameterCm": 3.6,
+        "spanEndpoints": [
+          {
+            "x": 3250,
+            "y": 822
+          },
+          {
+            "x": 2754,
+            "y": 1570
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 3154.125772172013,
+            "y": 1296.8748435793027
+          },
+          {
+            "x": 2812.968239149866,
+            "y": 1070.6527361207668
+          }
+        ],
+        "scaleAssumption": "near nadir (5.8 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013075606_0100_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 0.7,
+        "gimbalPitchDeg": -84.2
+      },
+      "tape": {
+        "centre": {
+          "x": 4915.327660473113,
+          "y": 4483.369195220248
+        },
+        "dir": {
+          "x": 0.996445823928233,
+          "y": 0.08423609663312305
+        },
+        "halfLength": 3252.744465357814,
+        "halfWidth": 441.46866200721496,
+        "pixels": 39566
+      },
+      "calibration": {
+        "status": "uncertain",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 147.21311495935052,
+        "relativeUncertainty": 0.04324496466240589,
+        "inchPxFromLongTicks": 373.9213119967503,
+        "inchPxFromFineTicks": 378.2755206286837,
+        "longTicks": [
+          -2658.9051152749853,
+          -2267.3678451578558,
+          -1880.088443774631,
+          -1497.2006084490959,
+          -1119.744465357814,
+          -745.8231533610638,
+          -375.52457217751817,
+          -6.457801115739585,
+          724.445459188571,
+          1086.4418574690817,
+          1804.8355420080616
+        ],
+        "edge": "bottom",
+        "localInchPx": [
+          {
+            "t": -2463.1364802164208,
+            "inchPx": 391.53727011712976
+          },
+          {
+            "t": -2073.728144466243,
+            "inchPx": 387.2794013832246
+          },
+          {
+            "t": -1688.6445261118633,
+            "inchPx": 382.8878353255352
+          },
+          {
+            "t": -1308.472536903455,
+            "inchPx": 377.4561430912818
+          },
+          {
+            "t": -932.7838093594391,
+            "inchPx": 373.9213119967503
+          },
+          {
+            "t": -560.6738627692912,
+            "inchPx": 370.2985811835456
+          },
+          {
+            "t": -190.9911866466291,
+            "inchPx": 369.0667710617786
+          },
+          {
+            "t": 358.9938290364157,
+            "inchPx": 365.4516301521553
+          },
+          {
+            "t": 905.4436583288261,
+            "inchPx": 361.9963982805107
+          },
+          {
+            "t": 1445.6386997385716,
+            "inchPx": 359.19684226948993
+          }
+        ],
+        "driftAlongTape": 0.08648992932481178,
+        "bodyWidthPx": 426,
+        "reason": "11 ticks; spacing noise 0.3%, drift 8.6% along the tape, fine and long estimates differ 1.2% (fine resolution 1.1%); the sixteenths are not resolved, the eighths were read"
+      },
+      "pixelsPerCmAtPlant": 154.14853154217707,
+      "target": {
+        "status": "selected",
+        "centre": {
+          "x": 2457.3808177878273,
+          "y": 2739.1091011871113
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 3151.7067395264116,
+              "y": 2761.9635701275047
+            },
+            "areaPx": 35136
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": null
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.48,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 176976,
+        "pieces": 2,
+        "joinedCores": 1,
+        "nearbyCores": 1,
+        "reason": "1 leaf core(s) within 2.5 cm were not joined; whether they belong to this plant needs a person (set joinGapCm in the review file to join them)"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 4.2,
+        "perpendicularSpanCm": 2.7,
+        "canopyAreaCm2": 7,
+        "equivalentDiameterCm": 3.1,
+        "spanEndpoints": [
+          {
+            "x": 2686,
+            "y": 2478
+          },
+          {
+            "x": 2278,
+            "y": 2986
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 2631.530019221347,
+            "y": 2852.0949760675385
+          },
+          {
+            "x": 2310.777597708514,
+            "y": 2594.4827950099875
+          }
+        ],
+        "scaleAssumption": "near nadir (5.8 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013075736_0101_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 1,
+        "gimbalPitchDeg": -83.1
+      },
+      "tape": {
+        "centre": {
+          "x": 5786.0715662611665,
+          "y": 4395.873903275332
+        },
+        "dir": {
+          "x": 0.9979358639592046,
+          "y": -0.06421846637841738
+        },
+        "halfLength": 2347.8953765478404,
+        "halfWidth": 188.49665832113598,
+        "pixels": 22810
+      },
+      "calibration": {
+        "status": "ok",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 129.65449968787044,
+        "relativeUncertainty": 0.011262402591972268,
+        "inchPxFromLongTicks": 329.3224292071909,
+        "inchPxFromFineTicks": 323.6484230955847,
+        "longTicks": [
+          -1828.3284536719302,
+          -1495.632753962434,
+          -1163.1520173884412,
+          -833.8295881812503,
+          -177.45092884564247,
+          473.10462345215956
+        ],
+        "edge": "top",
+        "localInchPx": [
+          {
+            "t": -1661.980603817182,
+            "inchPx": 332.69569970949635
+          },
+          {
+            "t": -1329.3923856754375,
+            "inchPx": 332.48073657399266
+          },
+          {
+            "t": -998.4908027848458,
+            "inchPx": 329.3224292071909
+          },
+          {
+            "t": -505.6402585134465,
+            "inchPx": 328.1893296678039
+          },
+          {
+            "t": 147.82684730325855,
+            "inchPx": 325.277776148901
+          }
+        ],
+        "driftAlongTape": 0.022524805183944535,
+        "bodyWidthPx": 308,
+        "reason": null
+      },
+      "pixelsPerCmAtPlant": 129.65449968787044,
+      "target": {
+        "status": "review",
+        "centre": {
+          "x": 4731.867223565619,
+          "y": 3454.189492196087
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 4490.750361213678,
+              "y": 3924.0443088778293
+            },
+            "areaPx": 99664
+          },
+          {
+            "centre": {
+              "x": 3657.37314439946,
+              "y": 3978.549932523617
+            },
+            "areaPx": 94848
+          },
+          {
+            "centre": {
+              "x": 4175.820372398685,
+              "y": 3291.1610076670318
+            },
+            "areaPx": 87648
+          },
+          {
+            "centre": {
+              "x": 3855.393967093236,
+              "y": 1626.8957952468008
+            },
+            "areaPx": 140032
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "2 leaf cores within 0.7 cm joined as one canopy; runner-up core scored 55% of the target's"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.558,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 358000,
+        "pieces": 28,
+        "joinedCores": 2,
+        "nearbyCores": 2,
+        "reason": "a second plant scored nearly as well as the target; the choice needs a person"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 7.2,
+        "perpendicularSpanCm": 5.3,
+        "canopyAreaCm2": 21,
+        "equivalentDiameterCm": 5.2,
+        "spanEndpoints": [
+          {
+            "x": 5174,
+            "y": 3074
+          },
+          {
+            "x": 4422,
+            "y": 3630
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 5008.408341717735,
+            "y": 3636.58106649593
+          },
+          {
+            "x": 4601.709064300741,
+            "y": 3086.5129790542396
+          }
+        ],
+        "scaleAssumption": "near nadir (6.9 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013075804_0102_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 0.4,
+        "gimbalPitchDeg": -83.1
+      },
+      "tape": {
+        "centre": {
+          "x": 5622.142674153718,
+          "y": 3718.7158494541995
+        },
+        "dir": {
+          "x": 0.9992105889225587,
+          "y": 0.03972655264471883
+        },
+        "halfLength": 2517.6444974812534,
+        "halfWidth": 191.27158584120204,
+        "pixels": 27675
+      },
+      "calibration": {
+        "status": "ok",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 152.04659057860002,
+        "relativeUncertainty": 0.025623433938648143,
+        "inchPxFromLongTicks": 386.198340069644,
+        "inchPxFromFineTicks": 387.7724820123403,
+        "longTicks": [
+          -2299.1983426943143,
+          -1901.479366830294,
+          -1506.2561535368086,
+          -1114.1159810167376,
+          -723.62757494832,
+          -336.0889659797672,
+          50.10937408987684,
+          434.7216977459557,
+          818.5960604130801,
+          1201.2191356974367,
+          1582.1915658010744,
+          2338.046606913155
+        ],
+        "edge": "top",
+        "localInchPx": [
+          {
+            "t": -2100.3388547623044,
+            "inchPx": 397.7189758640204
+          },
+          {
+            "t": -1703.8677601835514,
+            "inchPx": 395.2232132934855
+          },
+          {
+            "t": -1310.186067276773,
+            "inchPx": 392.140172520071
+          },
+          {
+            "t": -918.8717779825288,
+            "inchPx": 390.4884060684176
+          },
+          {
+            "t": -529.8582704640435,
+            "inchPx": 387.5386089685528
+          },
+          {
+            "t": -142.98979594494494,
+            "inchPx": 386.198340069644
+          },
+          {
+            "t": 242.41553591791626,
+            "inchPx": 384.61232365607884
+          },
+          {
+            "t": 626.6588790795181,
+            "inchPx": 383.8743626671244
+          },
+          {
+            "t": 1009.9075980552584,
+            "inchPx": 382.6230752843567
+          },
+          {
+            "t": 1391.7053507492556,
+            "inchPx": 380.97243010363763
+          },
+          {
+            "t": 1960.119086357115,
+            "inchPx": 377.92752055604024
+          }
+        ],
+        "driftAlongTape": 0.051246867877296286,
+        "bodyWidthPx": 356,
+        "reason": null
+      },
+      "pixelsPerCmAtPlant": 156.58227396221275,
+      "target": {
+        "status": "review",
+        "centre": {
+          "x": 3545.745207389334,
+          "y": 3140.776925758104
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 4593.996237337193,
+              "y": 5428.72995658466
+            },
+            "areaPx": 221120
+          },
+          {
+            "centre": {
+              "x": 3922.7686274509806,
+              "y": 3390.858263305322
+            },
+            "areaPx": 57120
+          },
+          {
+            "centre": {
+              "x": 3920.656255247691,
+              "y": 5144.204198152813
+            },
+            "areaPx": 95280
+          },
+          {
+            "centre": {
+              "x": 4250.851418162893,
+              "y": 5981.248503773094
+            },
+            "areaPx": 122976
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "runner-up core scored 52% of the target's"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.658,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 279008,
+        "pieces": 17,
+        "joinedCores": 1,
+        "nearbyCores": 2,
+        "reason": "a second plant scored nearly as well as the target; the choice needs a person"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 6.1,
+        "perpendicularSpanCm": 3.3,
+        "canopyAreaCm2": 11,
+        "equivalentDiameterCm": 3.8,
+        "spanEndpoints": [
+          {
+            "x": 3834,
+            "y": 2746
+          },
+          {
+            "x": 3194,
+            "y": 3446
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 3744.635838150289,
+            "y": 3306.8670520231212
+          },
+          {
+            "x": 3363.9155180080033,
+            "y": 2958.779902178746
+          }
+        ],
+        "scaleAssumption": "near nadir (6.9 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013075854_0103_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 0.4,
+        "gimbalPitchDeg": -83.1
+      },
+      "tape": {
+        "centre": {
+          "x": 4091.7502401795055,
+          "y": 3647.3982854580822
+        },
+        "dir": {
+          "x": 0.9955001872788437,
+          "y": -0.09475957538838577
+        },
+        "halfLength": 957.1963329939042,
+        "halfWidth": 136.53353470579606,
+        "pixels": 5642
+      },
+      "calibration": {
+        "status": "ok",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 115.99770703342799,
+        "relativeUncertainty": 0.011317745173551892,
+        "inchPxFromLongTicks": 294.6341758649071,
+        "inchPxFromFineTicks": 300.64809858025683,
+        "longTicks": [
+          -491.4669174165612,
+          107.887041894091,
+          402.5212177589981,
+          695.5290083706072
+        ],
+        "edge": "bottom",
+        "localInchPx": [
+          {
+            "t": -191.78993776123514,
+            "inchPx": 299.67697965532614
+          },
+          {
+            "t": 255.20412982654466,
+            "inchPx": 294.6341758649071
+          },
+          {
+            "t": 549.0251130648028,
+            "inchPx": 293.00779061160915
+          }
+        ],
+        "driftAlongTape": 0.022635490347103784,
+        "bodyWidthPx": 277,
+        "reason": null
+      },
+      "pixelsPerCmAtPlant": 117.98306285642761,
+      "target": {
+        "status": "review",
+        "centre": {
+          "x": 3473.4438911407065,
+          "y": 2656.6230457440647
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 4042.780109783662,
+              "y": 2750.2318372618665
+            },
+            "areaPx": 99104
+          },
+          {
+            "centre": {
+              "x": 1738.6407970634505,
+              "y": 5041.8746722600945
+            },
+            "areaPx": 122048
+          },
+          {
+            "centre": {
+              "x": 4235.822861468584,
+              "y": 3298.130204390613
+            },
+            "areaPx": 42272
+          },
+          {
+            "centre": {
+              "x": 3047.9455009934713,
+              "y": 4238.94294635254
+            },
+            "areaPx": 56368
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "runner-up core scored 87% of the target's"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.664,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 208128,
+        "pieces": 26,
+        "joinedCores": 1,
+        "nearbyCores": 1,
+        "reason": "a second plant scored nearly as well as the target; the choice needs a person"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 6.2,
+        "perpendicularSpanCm": 3.8,
+        "canopyAreaCm2": 15,
+        "equivalentDiameterCm": 4.4,
+        "spanEndpoints": [
+          {
+            "x": 3374,
+            "y": 2334
+          },
+          {
+            "x": 3654,
+            "y": 3010
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 3684.974806491139,
+            "y": 2601.1820328143212
+          },
+          {
+            "x": 3273.5079644959806,
+            "y": 2771.612085711724
+          }
+        ],
+        "scaleAssumption": "near nadir (6.9 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013075934_0104_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 0.3,
+        "gimbalPitchDeg": -88.5
+      },
+      "tape": {
+        "centre": {
+          "x": 5011.029140142116,
+          "y": 3039.00829019816
+        },
+        "dir": {
+          "x": 0.9905406243205765,
+          "y": 0.13721979292581124
+        },
+        "halfLength": 2171.213886205609,
+        "halfWidth": 197.62809168267697,
+        "pixels": 21132
+      },
+      "calibration": {
+        "status": "ok",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 170.21386081354868,
+        "relativeUncertainty": 0.024071781200811115,
+        "inchPxFromLongTicks": 432.3432064664137,
+        "inchPxFromFineTicks": 437.6460311209329,
+        "longTicks": [
+          -2102.0562401898756,
+          -1656.4075503370677,
+          -1214.9050708902923,
+          -777.2075570731524,
+          -342.9400730447553,
+          89.40313342165837,
+          517.6540358346424,
+          944.2861103141881,
+          1370.7784470399606,
+          1795.612594753335
+        ],
+        "edge": "bottom",
+        "localInchPx": [
+          {
+            "t": -1879.2318952634716,
+            "inchPx": 445.6486898528077
+          },
+          {
+            "t": -1435.65631061368,
+            "inchPx": 441.5024794467755
+          },
+          {
+            "t": -996.0563139817223,
+            "inchPx": 437.6975138171398
+          },
+          {
+            "t": -560.0738150589539,
+            "inchPx": 434.2674840283971
+          },
+          {
+            "t": -126.76846981154858,
+            "inchPx": 432.3432064664137
+          },
+          {
+            "t": 303.5285846281504,
+            "inchPx": 428.25090241298403
+          },
+          {
+            "t": 730.9700730744153,
+            "inchPx": 426.63207447954574
+          },
+          {
+            "t": 1157.5322786770744,
+            "inchPx": 426.4923367257725
+          },
+          {
+            "t": 1583.1955208966478,
+            "inchPx": 424.8341477133745
+          }
+        ],
+        "driftAlongTape": 0.04814356240162223,
+        "bodyWidthPx": 399,
+        "reason": null
+      },
+      "pixelsPerCmAtPlant": 173.8198737979431,
+      "target": {
+        "status": "selected",
+        "centre": {
+          "x": 3410.9164851125634,
+          "y": 3354.366145111243
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 3898.8719806763283,
+              "y": 2156.0024154589373
+            },
+            "areaPx": 105984
+          },
+          {
+            "centre": {
+              "x": 3516.775960441232,
+              "y": 2212.817040699886
+            },
+            "areaPx": 84128
+          },
+          {
+            "centre": {
+              "x": 3660.618057383522,
+              "y": 1835.060805475125
+            },
+            "areaPx": 60784
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": null
+      },
+      "segmentation": {
+        "status": "isolated",
+        "coreShare": 0.672,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 360768,
+        "pieces": 56,
+        "joinedCores": 1,
+        "nearbyCores": 0,
+        "reason": null
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 6.5,
+        "perpendicularSpanCm": 3.2,
+        "canopyAreaCm2": 12,
+        "equivalentDiameterCm": 3.9,
+        "spanEndpoints": [
+          {
+            "x": 2970,
+            "y": 3010
+          },
+          {
+            "x": 3802,
+            "y": 3774
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 3607.6553263527494,
+            "y": 3150.616189102765
+          },
+          {
+            "x": 3229.8276506364036,
+            "y": 3562.072506113236
+          }
+        ],
+        "scaleAssumption": "near nadir (1.5 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013080039_0106_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 0.5,
+        "gimbalPitchDeg": -88.5
+      },
+      "tape": {
+        "centre": {
+          "x": 5947.893996404694,
+          "y": 4340.233812119371
+        },
+        "dir": {
+          "x": 0.9999992783266988,
+          "y": 0.0012013933917165746
+        },
+        "halfLength": 2195.9839984847295,
+        "halfWidth": 153.013866328267,
+        "pixels": 19541
+      },
+      "calibration": {
+        "status": "uncertain",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 134.50853569946847,
+        "relativeUncertainty": 0.03466309684688308,
+        "inchPxFromLongTicks": 341.6516806766499,
+        "inchPxFromFineTicks": 336.83662460537914,
+        "longTicks": [
+          -1747.7527333258668,
+          -1392.2289060191133,
+          -1039.9071133124703,
+          -690.0544937666443,
+          -343.090376846184,
+          0.2727923988204566,
+          341.92447307547036,
+          683.0730749376112,
+          1021.010303640579,
+          1356.6645852987594,
+          1690.5371765419522,
+          2022.3755932583153
+        ],
+        "edge": "bottom",
+        "localInchPx": [
+          {
+            "t": -1569.99081967249,
+            "inchPx": 355.5238273067533
+          },
+          {
+            "t": -1216.0680096657918,
+            "inchPx": 352.3217927066431
+          },
+          {
+            "t": -864.9808035395572,
+            "inchPx": 349.852619545826
+          },
+          {
+            "t": -516.5724353064143,
+            "inchPx": 346.96411692046036
+          },
+          {
+            "t": -171.40879222368176,
+            "inchPx": 343.3631692450044
+          },
+          {
+            "t": 171.09863273714564,
+            "inchPx": 341.6516806766499
+          },
+          {
+            "t": 512.4987740065408,
+            "inchPx": 341.1486018621408
+          },
+          {
+            "t": 852.0416892890953,
+            "inchPx": 337.9372287029678
+          },
+          {
+            "t": 1188.8374444696692,
+            "inchPx": 335.6542816581805
+          },
+          {
+            "t": 1523.6008809203558,
+            "inchPx": 333.8725912431928
+          },
+          {
+            "t": 1856.4563849001338,
+            "inchPx": 331.8384167163631
+          }
+        ],
+        "driftAlongTape": 0.06932619369376616,
+        "bodyWidthPx": 308,
+        "reason": "12 ticks; spacing noise 0.4%, drift 6.9% along the tape, fine and long estimates differ 1.4% (fine resolution 2.4%)"
+      },
+      "pixelsPerCmAtPlant": 139.97001075069028,
+      "target": {
+        "status": "review",
+        "centre": {
+          "x": 4450.932561259798,
+          "y": 2746.7074359155426
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 3962.416816589338,
+              "y": 3498.2414544077265
+            },
+            "areaPx": 168976
+          },
+          {
+            "centre": {
+              "x": 4026.7981421936406,
+              "y": 3074.0793140407286
+            },
+            "areaPx": 44784
+          },
+          {
+            "centre": {
+              "x": 4343.761688043029,
+              "y": 3164.2465866776997
+            },
+            "areaPx": 38672
+          },
+          {
+            "centre": {
+              "x": 4525.701047986762,
+              "y": 3513.0700496414784
+            },
+            "areaPx": 29008
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "runner-up core scored 97% of the target's"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.785,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 288608,
+        "pieces": 40,
+        "joinedCores": 1,
+        "nearbyCores": 4,
+        "reason": "a second plant scored nearly as well as the target; the choice needs a person"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 6.3,
+        "perpendicularSpanCm": 4.4,
+        "canopyAreaCm2": 15,
+        "equivalentDiameterCm": 4.3,
+        "spanEndpoints": [
+          {
+            "x": 4098,
+            "y": 2478
+          },
+          {
+            "x": 4830,
+            "y": 2966
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 4611.692307692308,
+            "y": 2500.4615384615386
+          },
+          {
+            "x": 4273.2307692307695,
+            "y": 3008.153846153846
+          }
+        ],
+        "scaleAssumption": "near nadir (1.5 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013080116_0107_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 0.6,
+        "gimbalPitchDeg": -88.5
+      },
+      "tape": {
+        "centre": {
+          "x": 5364.791546868582,
+          "y": 3141.6510037189014
+        },
+        "dir": {
+          "x": 0.9966534757441796,
+          "y": -0.08174257940049405
+        },
+        "halfLength": 2801.758842741007,
+        "halfWidth": 261.6076061919595,
+        "pixels": 25212
+      },
+      "calibration": {
+        "status": "ok",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 130.0812913311227,
+        "relativeUncertainty": 0.024351448966683998,
+        "inchPxFromLongTicks": 330.4064799810517,
+        "inchPxFromFineTicks": 316.9140844151608,
+        "longTicks": [
+          -2703.758842741007,
+          -2361.7017265842687,
+          -2021.4088451582165,
+          -1683.740878817732,
+          -1348.2365543424235,
+          -1014.7768209488713,
+          -683.3884718023178,
+          -353.3439379373117,
+          -22.937457956260005,
+          306.7440773770327,
+          635.6757893291624,
+          961.6411524148602,
+          1291.241157258993,
+          1618.0968035759638
+        ],
+        "edge": "top",
+        "localInchPx": [
+          {
+            "t": -2532.7302846626376,
+            "inchPx": 342.0571161567384
+          },
+          {
+            "t": -2191.5552858712426,
+            "inchPx": 340.29288142605196
+          },
+          {
+            "t": -1852.5748619879741,
+            "inchPx": 337.66796634048455
+          },
+          {
+            "t": -1515.9887165800778,
+            "inchPx": 335.5043244753085
+          },
+          {
+            "t": -1181.5066876456474,
+            "inchPx": 333.45973339355214
+          },
+          {
+            "t": -849.0826463755945,
+            "inchPx": 331.38834914655354
+          },
+          {
+            "t": -518.3662048698147,
+            "inchPx": 330.0445338650061
+          },
+          {
+            "t": -188.14069794678608,
+            "inchPx": 330.4064799810517
+          },
+          {
+            "t": 141.9033097103861,
+            "inchPx": 329.6815353332927
+          },
+          {
+            "t": 471.2099333530973,
+            "inchPx": 328.9317119521297
+          },
+          {
+            "t": 798.6584708720115,
+            "inchPx": 325.96536308569785
+          },
+          {
+            "t": 1126.4411548369267,
+            "inchPx": 329.60000484413285
+          },
+          {
+            "t": 1454.668980417478,
+            "inchPx": 326.8556463169707
+          }
+        ],
+        "driftAlongTape": 0.048702897933367996,
+        "bodyWidthPx": 311,
+        "reason": null
+      },
+      "pixelsPerCmAtPlant": 132.94014422853724,
+      "target": {
+        "status": "selected",
+        "centre": {
+          "x": 3328.1993301200882,
+          "y": 2242.831468017319
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 3640.9207296849086,
+              "y": 1941.614593698176
+            },
+            "areaPx": 48240
+          },
+          {
+            "centre": {
+              "x": 3734.031117397454,
+              "y": 1760.977369165488
+            },
+            "areaPx": 45248
+          },
+          {
+            "centre": {
+              "x": 2566.331808731809,
+              "y": 2645.2424116424118
+            },
+            "areaPx": 38480
+          },
+          {
+            "centre": {
+              "x": 7507.029020556227,
+              "y": 1991.0628778718258
+            },
+            "areaPx": 52928
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "2 leaf cores within 0.7 cm joined as one canopy"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.615,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 389792,
+        "pieces": 34,
+        "joinedCores": 2,
+        "nearbyCores": 3,
+        "reason": "3 leaf core(s) within 2.5 cm were not joined; whether they belong to this plant needs a person (set joinGapCm in the review file to join them)"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 9,
+        "perpendicularSpanCm": 4.4,
+        "canopyAreaCm2": 22,
+        "equivalentDiameterCm": 5.3,
+        "spanEndpoints": [
+          {
+            "x": 3090,
+            "y": 1582
+          },
+          {
+            "x": 3498,
+            "y": 2706
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 3511.5930174005484,
+            "y": 2065.016057740726
+          },
+          {
+            "x": 2956.5044256700053,
+            "y": 2266.5072903261903
+          }
+        ],
+        "scaleAssumption": "near nadir (1.5 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013080144_0108_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 1.3,
+        "gimbalPitchDeg": -88.5
+      },
+      "tape": {
+        "centre": {
+          "x": 5074.757287580437,
+          "y": 3756.269467642382
+        },
+        "dir": {
+          "x": 0.9901269075791584,
+          "y": 0.14017384523416843
+        },
+        "halfLength": 3081.9330076193355,
+        "halfWidth": 103.17749413156997,
+        "pixels": 20059
+      },
+      "calibration": {
+        "status": "ok",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 85.86829631243853,
+        "relativeUncertainty": 0.01165174503248237,
+        "inchPxFromLongTicks": 218.10547263359388,
+        "inchPxFromFineTicks": 218.8998162692564,
+        "longTicks": [
+          -373.09965796398274,
+          64.22321131191347,
+          1809.0669923806645,
+          2239.722230285186,
+          2674.986998256304
+        ],
+        "edge": "bottom",
+        "localInchPx": [
+          {
+            "t": -154.43822332603486,
+            "inchPx": 218.6614346379481
+          },
+          {
+            "t": 936.645101846289,
+            "inchPx": 218.10547263359388
+          },
+          {
+            "t": 2024.3946113329248,
+            "inchPx": 215.32761895226076
+          },
+          {
+            "t": 2457.3546142707446,
+            "inchPx": 217.63238398555904
+          }
+        ],
+        "driftAlongTape": 0.015285337160191217,
+        "bodyWidthPx": 206,
+        "reason": "the lattice read is two inches, told by the body width"
+      },
+      "pixelsPerCmAtPlant": 86.08717899131815,
+      "target": {
+        "status": "selected",
+        "centre": {
+          "x": 4643.089063444108,
+          "y": 3088.9544410876133
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 2698.2576791808874,
+              "y": 2808.9121160409554
+            },
+            "areaPx": 75008
+          },
+          {
+            "centre": {
+              "x": 2996.039133052378,
+              "y": 5373.0457555689345
+            },
+            "areaPx": 106304
+          },
+          {
+            "centre": {
+              "x": 4896.120757413362,
+              "y": 5290.418006430868
+            },
+            "areaPx": 89568
+          },
+          {
+            "centre": {
+              "x": 4673.710185185185,
+              "y": 4992.278703703703
+            },
+            "areaPx": 69120
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "25 leaf cores within 0.7 cm joined as one canopy"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.642,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 2355632,
+        "pieces": 109,
+        "joinedCores": 25,
+        "nearbyCores": 10,
+        "reason": "25 leaf cores joined: a patch of many plants, not one; the measurement is the patch's extent"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 31,
+        "perpendicularSpanCm": 20,
+        "canopyAreaCm2": 318,
+        "equivalentDiameterCm": 20,
+        "spanEndpoints": [
+          {
+            "x": 3058,
+            "y": 2494
+          },
+          {
+            "x": 5546,
+            "y": 3378
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 4685.096760571461,
+            "y": 1857.7819679843938
+          },
+          {
+            "x": 4114.207947673418,
+            "y": 3464.5369074530954
+          }
+        ],
+        "scaleAssumption": "near nadir (1.5 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013080150_0109_D.JPG",
+      "widthPx": 8192,
+      "heightPx": 6144,
+      "exif": {
+        "model": "FC9113",
+        "focalMm": 8.67,
+        "focal35Mm": 24,
+        "relativeAltitudeM": 1.3,
+        "gimbalPitchDeg": -88.5
+      },
+      "tape": {
+        "centre": {
+          "x": 5065.547845492933,
+          "y": 3657.1228483842606
+        },
+        "dir": {
+          "x": 0.9900262276950559,
+          "y": 0.14088317314675095
+        },
+        "halfLength": 3088.0415285879058,
+        "halfWidth": 98.96725783398657,
+        "pixels": 19003
+      },
+      "calibration": {
+        "status": "ok",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 87.7122620471616,
+        "relativeUncertainty": 0.010643455212793342,
+        "inchPxFromLongTicks": 222.78914559979046,
+        "inchPxFromFineTicks": 220.0063259592935,
+        "longTicks": [
+          -2791.1189618954954,
+          -2565.8653604334913,
+          -2341.315286978186,
+          -2117.9770140152273,
+          -1895.1878684154367,
+          -1673.1782648973722,
+          -1452.667156021544,
+          -1231.4948967367181
+        ],
+        "edge": "bottom",
+        "localInchPx": [
+          {
+            "t": -2678.4921611644936,
+            "inchPx": 225.25360146200381
+          },
+          {
+            "t": -2453.590323705839,
+            "inchPx": 224.55007345530532
+          },
+          {
+            "t": -2229.6461504967065,
+            "inchPx": 223.33827296295908
+          },
+          {
+            "t": -2006.582441215332,
+            "inchPx": 222.78914559979046
+          },
+          {
+            "t": -1784.1830666564044,
+            "inchPx": 222.00960351806452
+          },
+          {
+            "t": -1562.9227104594581,
+            "inchPx": 220.51110887582809
+          },
+          {
+            "t": -1342.0810263791311,
+            "inchPx": 221.17225928482594
+          }
+        ],
+        "driftAlongTape": 0.021286910425586683,
+        "bodyWidthPx": 201,
+        "reason": null
+      },
+      "pixelsPerCmAtPlant": 87.07569263182124,
+      "target": {
+        "status": "selected",
+        "centre": {
+          "x": 4615.221089821986,
+          "y": 3081.24745209947
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 4177.070241286863,
+              "y": 2629.6836461126004
+            },
+            "areaPx": 89520
+          },
+          {
+            "centre": {
+              "x": 2691.318111283529,
+              "y": 2704.7625803591222
+            },
+            "areaPx": 72176
+          },
+          {
+            "centre": {
+              "x": 3955.0404984423676,
+              "y": 2985.196261682243
+            },
+            "areaPx": 41088
+          },
+          {
+            "centre": {
+              "x": 4251.275161588181,
+              "y": 2320.410895660203
+            },
+            "areaPx": 69312
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "15 leaf cores within 0.7 cm joined as one canopy"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.606,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 990528,
+        "pieces": 66,
+        "joinedCores": 15,
+        "nearbyCores": 9,
+        "reason": "15 leaf cores joined: a patch of many plants, not one; the measurement is the patch's extent"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 20,
+        "perpendicularSpanCm": 16,
+        "canopyAreaCm2": 131,
+        "equivalentDiameterCm": 13,
+        "spanEndpoints": [
+          {
+            "x": 4690,
+            "y": 1798
+          },
+          {
+            "x": 5446,
+            "y": 3394
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 5465.882352941177,
+            "y": 2407.529411764706
+          },
+          {
+            "x": 4220.823529411765,
+            "y": 2997.2941176470586
+          }
+        ],
+        "scaleAssumption": "near nadir (1.5 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013080235_0110_D.JPG",
+      "widthPx": 8064,
+      "heightPx": 6048,
+      "exif": {
+        "model": "FC9184",
+        "focalMm": 19.35,
+        "focal35Mm": 70,
+        "relativeAltitudeM": 0.9,
+        "gimbalPitchDeg": -88.5
+      },
+      "tape": {
+        "centre": {
+          "x": 5177.107346669137,
+          "y": 4379.974751482298
+        },
+        "dir": {
+          "x": 0.9618621752691731,
+          "y": 0.27353456049730634
+        },
+        "halfLength": 3017.4023777565544,
+        "halfWidth": 256.68492473014913,
+        "pixels": 23722
+      },
+      "calibration": {
+        "status": "uncertain",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 115.93311496911193,
+        "relativeUncertainty": 0.030088103219473538,
+        "inchPxFromLongTicks": 294.4701120215443,
+        "inchPxFromFineTicks": 288.3873919107392,
+        "longTicks": [
+          -2888.617572528665,
+          -2590.3234705461,
+          -2291.7010958979204,
+          -1993.7357166202628,
+          -1696.7485388801845,
+          -1401.1321105122352,
+          -1106.6619984906908,
+          -813.7493237498998,
+          -521.4023777565544,
+          59.597622243445585,
+          345.39628148420525,
+          631.8917189454919,
+          916.3562213408263,
+          2717.2781908237694
+        ],
+        "edge": "bottom",
+        "localInchPx": [
+          {
+            "t": -2739.4705215373824,
+            "inchPx": 298.2941019825647
+          },
+          {
+            "t": -2441.0122832220104,
+            "inchPx": 298.6223746481799
+          },
+          {
+            "t": -2142.7184062590914,
+            "inchPx": 297.96537927765735
+          },
+          {
+            "t": -1845.2421277502237,
+            "inchPx": 296.98717774007844
+          },
+          {
+            "t": -1548.9403246962097,
+            "inchPx": 295.6164283679493
+          },
+          {
+            "t": -1253.8970545014631,
+            "inchPx": 294.4701120215443
+          },
+          {
+            "t": -960.2056611202952,
+            "inchPx": 292.9126747407911
+          },
+          {
+            "t": -667.5758507532273,
+            "inchPx": 292.34694599334534
+          },
+          {
+            "t": -230.90237775655442,
+            "inchPx": 290.5
+          },
+          {
+            "t": 202.49695186382542,
+            "inchPx": 285.79865924075966
+          },
+          {
+            "t": 488.64400021484835,
+            "inchPx": 286.49543746128666
+          },
+          {
+            "t": 774.1239701431591,
+            "inchPx": 284.4645023953344
+          },
+          {
+            "t": 1816.817206082298,
+            "inchPx": 300.1536615804905
+          }
+        ],
+        "driftAlongTape": 0.05327929234464454,
+        "bodyWidthPx": 264,
+        "reason": "14 ticks; spacing noise 3.0%, drift 5.3% along the tape, fine and long estimates differ 2.1% (fine resolution 2.8%)"
+      },
+      "pixelsPerCmAtPlant": 115.31995068535082,
+      "target": {
+        "status": "selected",
+        "centre": {
+          "x": 4374.692456479691,
+          "y": 3189.8041146474416
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 4059.9031945788965,
+              "y": 3495.424975798645
+            },
+            "areaPx": 66112
+          },
+          {
+            "centre": {
+              "x": 3288.3021824286516,
+              "y": 2728.2730833799665
+            },
+            "areaPx": 28592
+          },
+          {
+            "centre": {
+              "x": 4043.60393258427,
+              "y": 2651.247191011236
+            },
+            "areaPx": 22784
+          },
+          {
+            "centre": {
+              "x": 3815.271972318339,
+              "y": 2503.504498269896
+            },
+            "areaPx": 23120
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "7 leaf cores within 0.7 cm joined as one canopy"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.538,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 491968,
+        "pieces": 36,
+        "joinedCores": 7,
+        "nearbyCores": 3,
+        "reason": "3 leaf core(s) within 2.5 cm were not joined; whether they belong to this plant needs a person (set joinGapCm in the review file to join them)"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 13,
+        "perpendicularSpanCm": 7.5,
+        "canopyAreaCm2": 37,
+        "equivalentDiameterCm": 6.9,
+        "spanEndpoints": [
+          {
+            "x": 3534,
+            "y": 3150
+          },
+          {
+            "x": 4990,
+            "y": 3246
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 4300.249368762775,
+            "y": 2617.8845737645784
+          },
+          {
+            "x": 4243.188409282193,
+            "y": 3483.309125886738
+          }
+        ],
+        "scaleAssumption": "near nadir (1.5 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013080431_0111_D.JPG",
+      "widthPx": 8064,
+      "heightPx": 6048,
+      "exif": {
+        "model": "FC9184",
+        "focalMm": 19.35,
+        "focal35Mm": 70,
+        "relativeAltitudeM": 2.1,
+        "gimbalPitchDeg": -88.9
+      },
+      "tape": {
+        "centre": {
+          "x": 5629.619155309282,
+          "y": 4700.925902674816
+        },
+        "dir": {
+          "x": 0.9977040551583118,
+          "y": -0.06772457693230954
+        },
+        "halfLength": 2391.133106443571,
+        "halfWidth": 167.5550754461202,
+        "pixels": 19512
+      },
+      "calibration": {
+        "status": "ok",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 150.3127185487704,
+        "relativeUncertainty": 0.005,
+        "inchPxFromLongTicks": 381.7943051138768,
+        "inchPxFromFineTicks": 380.17270408223914,
+        "longTicks": [
+          -2265.847402410667,
+          -1883.4353745818312,
+          -1500.9008644514138,
+          -1118.2312520977316,
+          -735.9682721742079,
+          -353.8915346667609,
+          27.902498293916324,
+          408.3035997323832,
+          790.09790484626,
+          1171.452854624557,
+          1551.7714670672476,
+          1931.536696185788,
+          2310.7876823029446
+        ],
+        "edge": "top",
+        "localInchPx": [
+          {
+            "t": -2074.641388496249,
+            "inchPx": 382.4120278288359
+          },
+          {
+            "t": -1692.1681195166225,
+            "inchPx": 382.5345101304173
+          },
+          {
+            "t": -1309.5660582745727,
+            "inchPx": 382.6696123536823
+          },
+          {
+            "t": -927.0997621359697,
+            "inchPx": 382.26297992352374
+          },
+          {
+            "t": -544.9299034204844,
+            "inchPx": 382.076737507447
+          },
+          {
+            "t": -162.99451818642228,
+            "inchPx": 381.7940329606772
+          },
+          {
+            "t": 218.10304901314976,
+            "inchPx": 380.40110143846687
+          },
+          {
+            "t": 599.2007522893218,
+            "inchPx": 381.7943051138768
+          },
+          {
+            "t": 980.7753797354085,
+            "inchPx": 381.35494977829694
+          },
+          {
+            "t": 1361.6121608459025,
+            "inchPx": 380.31861244269066
+          },
+          {
+            "t": 1741.6540816265178,
+            "inchPx": 379.76522911854045
+          },
+          {
+            "t": 2121.1621892443663,
+            "inchPx": 379.2509861171566
+          }
+        ],
+        "driftAlongTape": 0.008954104843198344,
+        "bodyWidthPx": 313,
+        "reason": null
+      },
+      "pixelsPerCmAtPlant": 150.65732769830012,
+      "target": {
+        "status": "review",
+        "centre": {
+          "x": 4111.865348294634,
+          "y": 3553.312743028552
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 4985.232258774343,
+              "y": 3031.956870942898
+            },
+            "areaPx": 145424
+          },
+          {
+            "centre": {
+              "x": 4849.444881889764,
+              "y": 3397.195538057743
+            },
+            "areaPx": 48768
+          },
+          {
+            "centre": {
+              "x": 383.25563909774434,
+              "y": 5886.867669172932
+            },
+            "areaPx": 85120
+          },
+          {
+            "centre": {
+              "x": 468.697079094191,
+              "y": 5016.229734164752
+            },
+            "areaPx": 48752
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "runner-up core scored 78% of the target's"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.631,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 228064,
+        "pieces": 15,
+        "joinedCores": 1,
+        "nearbyCores": 2,
+        "reason": "a second plant scored nearly as well as the target; the choice needs a person"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 4,
+        "perpendicularSpanCm": 3.8,
+        "canopyAreaCm2": 10,
+        "equivalentDiameterCm": 3.6,
+        "spanEndpoints": [
+          {
+            "x": 4402,
+            "y": 3458
+          },
+          {
+            "x": 3842,
+            "y": 3698
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 4220.068965517241,
+            "y": 3806.8275862068967
+          },
+          {
+            "x": 3993.310344827586,
+            "y": 3277.7241379310344
+          }
+        ],
+        "scaleAssumption": "near nadir (1.1 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    },
+    {
+      "version": "rw-measure-v1",
+      "file": "DJI_20261013080629_0112_D.JPG",
+      "widthPx": 8064,
+      "heightPx": 6048,
+      "exif": {
+        "model": "FC9184",
+        "focalMm": 19.35,
+        "focal35Mm": 70,
+        "relativeAltitudeM": 1.6,
+        "gimbalPitchDeg": -90
+      },
+      "tape": {
+        "centre": {
+          "x": 5506.262586552281,
+          "y": 3987.5082929637683
+        },
+        "dir": {
+          "x": 0.994079604270644,
+          "y": -0.10865422390832238
+        },
+        "halfLength": 2536.6320846731514,
+        "halfWidth": 178.740029699567,
+        "pixels": 17719
+      },
+      "calibration": {
+        "status": "ok",
+        "method": "tick-periodicity",
+        "units": "inch",
+        "pixelsPerCm": 94.19166804471703,
+        "relativeUncertainty": 0.013878072588771636,
+        "inchPxFromLongTicks": 239.24683683358126,
+        "inchPxFromFineTicks": 232.51665094620202,
+        "longTicks": [
+          -2439.744442220583,
+          -2199.058422905641,
+          -1957.9897091960404,
+          -1717.450543122256,
+          -1477.418263201678,
+          -1238.1714263680967,
+          -999.7956230084983,
+          -762.6659118277842,
+          -525.5996246894924,
+          -289.6483801769946,
+          -53.98327600896573,
+          2124.192527830861
+        ],
+        "edge": "bottom",
+        "localInchPx": [
+          {
+            "t": -2319.401432563112,
+            "inchPx": 240.68601931494211
+          },
+          {
+            "t": -2078.5240660508407,
+            "inchPx": 241.06871370960044
+          },
+          {
+            "t": -1837.720126159148,
+            "inchPx": 240.53916607378437
+          },
+          {
+            "t": -1597.434403161967,
+            "inchPx": 240.03227992057805
+          },
+          {
+            "t": -1357.7948447848873,
+            "inchPx": 239.24683683358126
+          },
+          {
+            "t": -1118.9835246882976,
+            "inchPx": 238.37580335959842
+          },
+          {
+            "t": -881.2307674181411,
+            "inchPx": 237.12971118071414
+          },
+          {
+            "t": -644.1327682586384,
+            "inchPx": 237.06628713829173
+          },
+          {
+            "t": -407.62400243324373,
+            "inchPx": 235.95124451249785
+          },
+          {
+            "t": -171.81582809298015,
+            "inchPx": 235.66510416802885
+          },
+          {
+            "t": 1035.1046259109476,
+            "inchPx": 242.01953375998073
+          }
+        ],
+        "driftAlongTape": 0.02656014046435226,
+        "bodyWidthPx": 227,
+        "reason": null
+      },
+      "pixelsPerCmAtPlant": 94.50089760652679,
+      "target": {
+        "status": "selected",
+        "centre": {
+          "x": 3669.1891005941407,
+          "y": 2569.764392542512
+        },
+        "alternatives": [
+          {
+            "centre": {
+              "x": 4307.023463687151,
+              "y": 2858.1251396648045
+            },
+            "areaPx": 85920
+          },
+          {
+            "centre": {
+              "x": 3215.145551873566,
+              "y": 3552.4731073158296
+            },
+            "areaPx": 62768
+          },
+          {
+            "centre": {
+              "x": 2954.291814946619,
+              "y": 3749.527198779868
+            },
+            "areaPx": 31472
+          },
+          {
+            "centre": {
+              "x": 3923.268527430221,
+              "y": 3249.02406159769
+            },
+            "areaPx": 16624
+          }
+        ],
+        "method": "centre-weighted-core",
+        "reason": "3 leaf cores within 0.7 cm joined as one canopy"
+      },
+      "segmentation": {
+        "status": "uncertain",
+        "coreShare": 0.613,
+        "touchesImageEdge": false,
+        "mergedWithAlternative": false,
+        "maskPixels": 569888,
+        "pieces": 59,
+        "joinedCores": 3,
+        "nearbyCores": 2,
+        "reason": "2 leaf core(s) within 2.5 cm were not joined; whether they belong to this plant needs a person (set joinGapCm in the review file to join them)"
+      },
+      "measurement": {
+        "status": "measured",
+        "reason": null,
+        "maxSpanCm": 14,
+        "perpendicularSpanCm": 9.4,
+        "canopyAreaCm2": 64,
+        "equivalentDiameterCm": 9,
+        "spanEndpoints": [
+          {
+            "x": 4294,
+            "y": 2566
+          },
+          {
+            "x": 2990,
+            "y": 2682
+          }
+        ],
+        "perpendicularEndpoints": [
+          {
+            "x": 3679.3566847465854,
+            "y": 3043.940663013341
+          },
+          {
+            "x": 3600.3614178888506,
+            "y": 2155.92490454363
+          }
+        ],
+        "scaleAssumption": "near nadir (0.0 degrees off): the tape's scale is taken as uniform over the plant in both directions; leaves above the tape's plane read slightly large (about their height over the camera height)"
+      },
+      "review": {
+        "status": "pending",
+        "targetOverride": null,
+        "rulerPoints": null,
+        "maskErase": null,
+        "groundTruth": {
+          "maxSpanCm": null,
+          "perpendicularSpanCm": null,
+          "measuredInField": false,
+          "notes": null
+        },
+        "notes": null
+      },
+      "comparison": {
+        "absoluteErrorCm": null,
+        "signedErrorCm": null,
+        "percentError": null,
+        "available": false
+      },
+      "outlinePx": null
+    }
+  ]
+}
