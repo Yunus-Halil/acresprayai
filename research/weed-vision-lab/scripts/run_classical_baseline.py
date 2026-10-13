@@ -35,7 +35,11 @@ from PIL import Image
 
 from weedlab import LAB_VERSION
 from weedlab.config import DatasetNotFound, LAB_DIR, resolve_dataset_root, resolve_output_dir
-from weedlab.detect.classical import DEFAULT_EXG_T, METHODS, detect
+from weedlab.detect.classical import DEFAULT_EXG_T, DEFAULT_HYST, METHODS, detect
+
+ERFNET_METHODS = ("erfnet_weed", "erfnet_veg")
+ALL_METHODS = METHODS + ERFNET_METHODS
+DEFAULT_CKPT = "D:/swardus-research/checkpoints/phenobench-baselines/semantic-seg-erfnet.ckpt"
 from weedlab.eval.matching import IOU_THRESHOLDS, score_image
 from weedlab.phenobench.instances import extract_plant_instances
 from weedlab.phenobench.reader import load_sample, read_rgb
@@ -65,11 +69,28 @@ def load_frozen_table(out_root: Path) -> dict[str, dict[int, dict]]:
 
 _TABLE: dict | None = None
 _ARGS: dict = {}
+_MODEL = None
 
 
 def _init(table, args):
-    global _TABLE, _ARGS
+    global _TABLE, _ARGS, _MODEL
     _TABLE, _ARGS = table, args
+    if args["method"] in ERFNET_METHODS:
+        import torch
+        from weedlab.detect.erfnet import load_model
+
+        torch.set_num_threads(max(1, int(args["torch_threads"])))
+        _MODEL = load_model(Path(args["ckpt"]))
+
+
+def run_detector(rgb):
+    """Inference entry point shared by the workers and the timing run. RGB in, labels out."""
+    if _ARGS["method"] in ERFNET_METHODS:
+        from weedlab.detect.erfnet import detect_erfnet
+
+        res, cls = detect_erfnet(_MODEL, rgb, variant=_ARGS["method"])
+        return res, cls
+    return detect(rgb, method=_ARGS["method"], closing=_ARGS["closing"], exg_t=_ARGS["exg_t"], hyst=tuple(_ARGS["hyst"])), None
 
 
 def work(job: tuple[str, str]) -> dict:
@@ -77,8 +98,10 @@ def work(job: tuple[str, str]) -> dict:
     root = Path(_ARGS["root"])
     # Inference: RGB only.
     rgb = read_rgb(root / split / "images" / name)
-    res = detect(rgb, method=_ARGS["method"], closing=_ARGS["closing"], exg_t=_ARGS["exg_t"])
+    res, cls = run_detector(rgb)
     Image.fromarray(res.labels.astype(np.uint16)).save(Path(_ARGS["pred_dir"]) / name)
+    if cls is not None:
+        Image.fromarray(cls.astype(np.uint8), mode="L").save(Path(_ARGS["pred_dir"]).parent / "pred_semantics" / name)
     # Scoring: references enter here.
     s = load_sample(root, split, name, kinds=("semantics", "plant_instances"))
     plants = extract_plant_instances(s.semantics, s.plant_instances)
@@ -100,7 +123,7 @@ def prf(tp: int, fp: int, fn: int) -> dict:
 def summarise(images: list[dict], refs: list[dict], dets: list[dict], run: str, split: str, args, hw: dict) -> dict:
     n_img = len(images)
     out = {
-        "lab_version": LAB_VERSION, "run": run, "method": args.method, "closing": args.closing, "exg_t": args.exg_t if args.method == "exg_fixed" else None, "split": split,
+        "lab_version": LAB_VERSION, "run": run, "method": args.method, "closing": args.closing, "exg_t": args.exg_t if args.method == "exg_fixed" else None, "hyst": list(args.hyst) if args.method == "exg_hyst" else None, "checkpoint": args.ckpt if args.method in ERFNET_METHODS else None, "in_sample": args.method in ERFNET_METHODS, "split": split,
         "subset_table": SUBSET, "n_images": n_img, "n_reference_weeds": len(refs), "n_detections": len(dets),
         "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "hardware": hw,
         "definitions": "weedlab.eval.matching docstring; detector in weedlab.detect.classical",
@@ -198,13 +221,16 @@ def summarise(images: list[dict], refs: list[dict], dets: list[dict], run: str, 
     return out
 
 
-def timing_run(root: Path, split: str, names: list[str], method: str, closing: bool, exg_t: float, n: int = 40) -> dict:
-    """Single process, sequential: cold first image, then steady state over the next n."""
+def timing_run(root: Path, split: str, names: list[str], table, wargs, n: int = 40) -> dict:
+    """Single process, sequential: cold first image (includes model load for ERFNet), then steady state over the next n."""
     rows = []
+    t_load = time.perf_counter()
+    _init(table, dict(wargs, torch_threads=wargs.get("timing_threads", wargs.get("torch_threads", 1))))
+    load_ms = (time.perf_counter() - t_load) * 1000.0
     for k, name in enumerate(names[: n + 1]):
         rgb = read_rgb(root / split / "images" / name)
         t0 = time.perf_counter()
-        res = detect(rgb, method=method, closing=closing, exg_t=exg_t)
+        res, _ = run_detector(rgb)
         rows.append({"cold": k == 0, "total_ms": (time.perf_counter() - t0) * 1000.0, **{f"{s}_ms": v for s, v in res.timings_ms.items()}})
     steady = [r for r in rows if not r["cold"]]
     stages = [k for k in rows[0] if k.endswith("_ms")]
@@ -213,6 +239,8 @@ def timing_run(root: Path, split: str, names: list[str], method: str, closing: b
         "cold_first_image": {k: round(rows[0][k], 2) for k in stages},
         "steady_state": {k: {"median": round(float(np.median([r[k] for r in steady])), 2), "p95": round(float(np.percentile([r[k] for r in steady], 95)), 2)} for k in stages},
         "note": "single process, sequential, perf_counter; image decode excluded; native 1024 x 1024",
+        "model_load_ms": round(load_ms, 1),
+        "torch_threads": wargs.get("timing_threads"),
     }
 
 
@@ -301,7 +329,10 @@ def main(argv=None) -> int:
     ap.add_argument("--root", default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--split", default="dev_tune", choices=["dev_tune", "dev_check", "holdout", "smoke"])
-    ap.add_argument("--method", default="exg_exr", choices=METHODS)
+    ap.add_argument("--method", default="exg_exr", choices=ALL_METHODS)
+    ap.add_argument("--hyst", type=float, nargs=2, default=list(DEFAULT_HYST), metavar=("HIGH", "LOW"), help="thresholds for exg_hyst; part of the run name")
+    ap.add_argument("--ckpt", default=DEFAULT_CKPT, help="ERFNet checkpoint path (erfnet_* methods)")
+    ap.add_argument("--torch-threads", type=int, default=None, help="threads per worker for ERFNet; default cpu_count // workers")
     ap.add_argument("--closing", action="store_true")
     ap.add_argument("--exg-t", type=float, default=DEFAULT_EXG_T, help="threshold for exg_fixed; part of the run name")
     ap.add_argument("--limit", type=int, default=None)
@@ -328,13 +359,21 @@ def main(argv=None) -> int:
         ds_split = "val" if args.split == "holdout" else "train"
     if args.limit:
         names = names[: args.limit]
-    run = args.method + (f"_t{args.exg_t:.2f}" if args.method == "exg_fixed" else "") + ("_closing" if args.closing else "")
+    run = args.method + (f"_t{args.exg_t:.2f}" if args.method == "exg_fixed" else "") + (f"_h{args.hyst[0]:.2f}_l{args.hyst[1]:.2f}" if args.method == "exg_hyst" else "") + ("_closing" if args.closing else "")
+    if args.method in ERFNET_METHODS:
+        if not Path(args.ckpt).exists():
+            print(f"checkpoint not found: {args.ckpt}", file=sys.stderr)
+            return 2
+        if args.workers == max(1, (os.cpu_count() or 2) - 1):
+            args.workers = 2  # two processes, three threads each on this six-core machine
+    torch_threads = args.torch_threads or max(1, (os.cpu_count() or 2) // args.workers)
     out = out_root / "baseline" / run / args.split
     (out / "pred").mkdir(parents=True, exist_ok=True)
+    (out / "pred_semantics").mkdir(parents=True, exist_ok=True)
     (out / "panels").mkdir(parents=True, exist_ok=True)
-    hw = {"cpu": platform.processor() or platform.machine(), "python": platform.python_version(), "os": platform.platform(), "workers": args.workers}
+    hw = {"cpu": platform.processor() or platform.machine(), "python": platform.python_version(), "os": platform.platform(), "workers": args.workers, "torch_threads_per_worker": torch_threads if args.method in ERFNET_METHODS else None}
 
-    wargs = {"root": str(root), "method": args.method, "closing": args.closing, "exg_t": args.exg_t, "pred_dir": str(out / "pred")}
+    wargs = {"root": str(root), "method": args.method, "closing": args.closing, "exg_t": args.exg_t, "hyst": list(args.hyst), "ckpt": args.ckpt, "torch_threads": torch_threads, "timing_threads": os.cpu_count() or 1, "pred_dir": str(out / "pred")}
     t0 = time.perf_counter()
     images, refs, dets = [], [], []
     with Pool(args.workers, initializer=_init, initargs=(table, wargs)) as pool:
@@ -345,7 +384,7 @@ def main(argv=None) -> int:
             if k % 100 == 0 or k == len(names):
                 print(f"  {k}/{len(names)}  {time.perf_counter() - t0:.0f}s", flush=True)
     wall = time.perf_counter() - t0
-    timing = timing_run(root, ds_split, names, args.method, args.closing, args.exg_t)
+    timing = timing_run(root, ds_split, names, table, wargs)
     summary = summarise(images, refs, dets, run, args.split, args, hw)
     summary["wall_seconds_parallel"] = round(wall, 1)
     summary["timing_single_process"] = timing

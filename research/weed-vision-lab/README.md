@@ -63,7 +63,10 @@ python scripts/profile_instances.py                # Phase 2: every weed instanc
 python scripts/build_soil_subset.py                # Phase 2: size bands, categories A-D, plot-aware splits, manifest, report
 python scripts/render_subset_sheets.py             # Phase 2: candidate and rejected contact sheets
 python scripts/run_classical_baseline.py --split dev_tune --method exg_fixed --exg-t 0.08   # Phase 3: detect, score, panels
-python scripts/compare_baselines.py --split dev_tune                                         # Phase 3: one table over every run
+python scripts/compare_baselines.py --split dev_tune                                         # one table over every run
+python scripts/run_classical_baseline.py --split dev_tune --method erfnet_weed               # Experiment 4A: official ERFNet checkpoint, CPU
+python scripts/run_classical_baseline.py --split dev_tune --method exg_hyst --hyst 0.10 0.03 # Experiment 4B: hysteresis
+python scripts/render_method_comparison.py --split dev_tune --run-a exg_fixed_t0.08 --run-b erfnet_weed   # side-by-side panels
 python -m pytest                                   # synthetic tests, no dataset needed
 python -m pytest -m dataset                        # tests that read the real dataset
 ```
@@ -73,7 +76,10 @@ python -m pytest -m dataset                        # tests that read the real da
 - Milestone 3 (ten-image smoke test): done, `reports/smoke10/`.
 - Milestone 4 (profile and soil-only subset `soil_only_v1`): done, `reports/subset/soil_only_v1/` (report, inspection, manifest, splits, stats).
 - Milestone 5 (classical baseline, Phase 3): done, `reports/baseline/` (per-run summaries, comparisons, `phase3-report.md`). Pretrained-model inventory in `docs/pretrained-models.md`.
-- Next: see the recommendation at the end of `reports/baseline/phase3-report.md`.
+- Milestone 6 (Experiment 4: official ERFNet checkpoint on CPU versus colour, plus hysteresis): done, `reports/baseline/phase4-report.md`. ERFNet numbers on dev splits are in-sample.
+- Next: see the recommendation at the end of `reports/baseline/phase4-report.md`.
+
+ERFNet needs the checkpoint at the path in `scripts/run_classical_baseline.py` (`--ckpt` to override) and the CPU torch wheel: `pip install --index-url https://download.pytorch.org/whl/cpu torch` into the lab venv.
 
 `docs/repository-audit.md` records what was in the repository before the lab.
 

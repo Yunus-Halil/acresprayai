@@ -9,6 +9,10 @@ Three methods, each parameter-free per image so nothing is tuned on a picture:
 - exg_fixed: ExG on chromaticity > t, with t a declared constant (default 0.10). The
             one method with a parameter; the value is chosen on dev_tune and
             confirmed on dev_check, and every run name carries it.
+- exg_hyst : hysteresis on ExG: pixels above `high` seed components, which then
+            grow through every 8-connected pixel above `low`. A pixel above
+            `low` with no seed in its component is left out. Declared pair
+            (0.10, 0.03) for Experiment 4B.
 
 Then, optionally, one 3 x 3 binary closing (off by default), then 8-connected
 components. No opening, no size floor, no hole filling: the Phase 2 profile
@@ -31,8 +35,9 @@ import numpy as np
 from scipy import ndimage
 from skimage.filters import threshold_otsu
 
-METHODS = ("exg_exr", "exg_otsu", "hsv_band", "exg_fixed")
+METHODS = ("exg_exr", "exg_otsu", "hsv_band", "exg_fixed", "exg_hyst")
 DEFAULT_EXG_T = 0.10
+DEFAULT_HYST = (0.10, 0.03)
 EPS = 1e-6
 STRUCT8 = np.ones((3, 3), dtype=bool)
 
@@ -86,7 +91,19 @@ def hsv(rgb: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return h, s, mx
 
 
-def vegetation_mask(rgb: np.ndarray, method: str, exg_t: float = DEFAULT_EXG_T) -> tuple[np.ndarray, np.ndarray, float | None]:
+def hysteresis_mask(idx: np.ndarray, high: float, low: float) -> np.ndarray:
+    """Components of (idx > low) that contain at least one pixel with idx > high; 8-connected."""
+    low_mask = idx > low
+    labels, n = ndimage.label(low_mask, structure=STRUCT8)
+    if n == 0:
+        return low_mask
+    seeded = np.zeros(n + 1, dtype=bool)
+    seeded[np.unique(labels[idx > high])] = True
+    seeded[0] = False
+    return seeded[labels]
+
+
+def vegetation_mask(rgb: np.ndarray, method: str, exg_t: float = DEFAULT_EXG_T, hyst: tuple[float, float] = DEFAULT_HYST) -> tuple[np.ndarray, np.ndarray, float | None]:
     """Return (mask, score_image, threshold_used)."""
     if method == "exg_exr":
         idx = index_exg_exr(rgb)
@@ -94,6 +111,9 @@ def vegetation_mask(rgb: np.ndarray, method: str, exg_t: float = DEFAULT_EXG_T) 
     if method == "exg_fixed":
         idx = index_exg(rgb)
         return idx > exg_t, idx, float(exg_t)
+    if method == "exg_hyst":
+        idx = index_exg(rgb)
+        return hysteresis_mask(idx, hyst[0], hyst[1]), idx, float(hyst[0])
     if method == "exg_otsu":
         idx = index_exg(rgb)
         t = float(threshold_otsu(idx)) if idx.max() > idx.min() else float(idx.max())
@@ -104,12 +124,12 @@ def vegetation_mask(rgb: np.ndarray, method: str, exg_t: float = DEFAULT_EXG_T) 
     raise ValueError(f"unknown method {method!r}")
 
 
-def detect(rgb: np.ndarray, method: str = "exg_exr", closing: bool = False, exg_t: float = DEFAULT_EXG_T) -> DetectionResult:
+def detect(rgb: np.ndarray, method: str = "exg_exr", closing: bool = False, exg_t: float = DEFAULT_EXG_T, hyst: tuple[float, float] = DEFAULT_HYST) -> DetectionResult:
     if rgb.ndim != 3 or rgb.shape[2] != 3:
         raise ValueError("expected an HxWx3 RGB image")
     t: dict[str, float] = {}
     t0 = time.perf_counter()
-    mask, score_img, thr = vegetation_mask(rgb, method, exg_t)
+    mask, score_img, thr = vegetation_mask(rgb, method, exg_t, hyst)
     t["index_and_threshold"] = (time.perf_counter() - t0) * 1000.0
     if closing:
         t1 = time.perf_counter()

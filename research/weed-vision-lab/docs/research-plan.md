@@ -42,9 +42,19 @@ No training and no checkpoint downloads are authorised.
 | Crops are found as vegetation (8 components per image) and adjacent rosettes merge with the weeds between them | Weed-versus-crop is the main gap of any colour rule. The comparison with a weed-labelled pretrained model (ERFNet) is the next step; see `docs/pretrained-models.md`. |
 | Misses are under-coverage (10 to 50% of the weed), concentrated on 05-15 | Hysteresis thresholding is the one classical variant still worth a run. |
 
+## Corrections from Experiment 4 (ERFNet and hysteresis, 2026-10-13)
+
+| Discovery | What changes |
+|---|---|
+| The official ERFNet checkpoint, run on CPU from RGB only, reaches A recall 0.85 and 0.24 crop false positives per image on dev_tune and dev_check; but it was trained on those images | ERFNet semantics is the detector family going forward. All its numbers on train-derived splits are labelled in-sample. The first holdout run is reserved for the finished ERFNet-based method. |
+| 81% of ERFNet's remaining A+B misses are found weeds with IoU 0.3 to 0.5 | The next step is boundary refinement, not a different detector. |
+| Hysteresis improves coverage (A found 0.52 to 0.78) but triples soil false positives | Hysteresis is used only inside an ERFNet-defined neighbourhood, never on its own. |
+| Touching weeds share one weed-class component (20% of D) | Instance separation (watershed on low-solidity components) is the second step. |
+| ERFNet costs 370 ms per image on this CPU against 46 ms for ExG | Phase 10 must measure downsampled inference; 512 px input would be the first test. |
+
 ## Order of work from here
 
-1. Pretrained comparison (Milestone 6): ERFNet semantic checkpoint plus components on dev_tune and dev_check, same scorer. Needs approval for the 25 MB checkpoint and the CPU torch wheel.
-2. Classical hysteresis variant, same protocol, same run.
-3. Measurement on reference masks (Phase 6 A) using `weedlab.phenobench.geometry`; then predicted-mask geometry on whichever detector wins A and B at IoU 0.5.
-4. Holdout stays closed until one method family is fixed.
+1. ERFNet weed components refined by ExG hysteresis confined to the ERFNet neighbourhood; same protocol on dev_tune, then dev_check.
+2. Watershed instance separation inside weed components; scored on B and D merge and split rates.
+3. Measurement on reference masks (Phase 6 A) using `weedlab.phenobench.geometry`; then predicted-mask geometry on the refined ERFNet output.
+4. One holdout run of the fixed method, then the Phase 9 robustness and Phase 10 speed experiments (downsampled inference first).
