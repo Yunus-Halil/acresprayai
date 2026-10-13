@@ -69,7 +69,8 @@ describe("the report", () => {
     expect(c.f1).toBeCloseTo((2 * 0.75 * 0.5) / 1.25, 3);
     // A, D in the middle bucket (18 cm labelled, 20 cm from the prediction); B, C under 10; E over 30; F has neither a label diameter nor a prediction.
     expect(r.bySize.map(b => [b.bucket, b.n])).toEqual([["10 to 30 cm", 2], ["30 cm and over", 1], ["under 10 cm", 2]]);
-    expect(r.byDistanceToRow.map(b => [b.bucket, b.n, b.recall])).toEqual([["30 cm to 1 m", 1, 0], ["over 1 m", 2, 1], ["under 30 cm from a row", 1, 1]]);
+    // A is 20 cm from a row by its label; B, D and E take their prediction's 1 m; C is 2 m by its label; F has neither.
+    expect(r.byDistanceToRow.map(b => [b.bucket, b.n, b.recall])).toEqual([["over 1 m", 4, 0.5], ["under 30 cm from a row", 1, 1]]);
     expect(r.byShadow.map(b => [b.bucket, b.n, b.recall])).toEqual([["in shadow", 1, 1], ["in sun", 1, 1]]);
     expect(r.measurement).toEqual({ n: 1, medianAbsErrorCm: 2, medianRelativeError: 0.111 });
     expect(r.falsePositiveIds).toEqual(["fp2"]);
