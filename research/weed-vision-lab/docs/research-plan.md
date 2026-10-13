@@ -52,9 +52,18 @@ No training and no checkpoint downloads are authorised.
 | Touching weeds share one weed-class component (20% of D) | Instance separation (watershed on low-solidity components) is the second step. |
 | ERFNet costs 370 ms per image on this CPU against 46 ms for ExG | Phase 10 must measure downsampled inference; 512 px input would be the first test. |
 
+## Corrections from Experiment 5 (post-processing, 2026-10-13)
+
+| Discovery | What changes |
+|---|---|
+| ERFNet's weed masks are a one-to-two-pixel halo LARGER than the reference (pixel recall 0.95, precision 0.72; 70% of false pixels within 2 px of the outline). The Phase 4 reading "under-delineation" had the direction wrong. | Every additive refinement (ExG hysteresis, confidence growth, edge-aware, hybrid) was measured negative and is closed. The selected pipeline is ERFNet argmax, one-pixel erosion, components (`S3_erode_1`). |
+| The network's probabilities are saturated except within 2 px of edges; no threshold recovers lost weed pixels without adding more halo | Confidence-aware growth is closed; a confidence floor (0.7) is the runner-up tightener. |
+| Watershed on every component cuts 3 to 10% of single isolated plants; only the strictest adaptive rule balances D merges against C false splits, and it still cuts grass-like single weeds | Separation stays optional (`C2`), used only for a D-focused benchmark; the default pipeline has none. |
+| The ERFNet probability cache (164 MB, 7 ppm argmax change) makes a post-processing experiment cost 25 s instead of 270 s | All further post-processing work runs on the cache. |
+
 ## Order of work from here
 
-1. ERFNet weed components refined by ExG hysteresis confined to the ERFNet neighbourhood; same protocol on dev_tune, then dev_check.
-2. Watershed instance separation inside weed components; scored on B and D merge and split rates.
-3. Measurement on reference masks (Phase 6 A) using `weedlab.phenobench.geometry`; then predicted-mask geometry on the refined ERFNet output.
-4. One holdout run of the fixed method, then the Phase 9 robustness and Phase 10 speed experiments (downsampled inference first).
+1. Resolution ladder on the frozen `S3_erode_1` pipeline (Phase 9 and the DJI readiness question): 1/2, 1/3, 1/4, 1/8 scale, references downsampled the same way.
+2. Width-aware erosion for thin and grass-like weeds, scored on low-solidity A references.
+3. Measurement on reference masks (Phase 6 A) using `weedlab.phenobench.geometry`; then predicted-mask geometry on the `S3_erode_1` output.
+4. One holdout run of the fixed pipeline. The holdout is still untouched.

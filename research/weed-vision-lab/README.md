@@ -77,7 +77,10 @@ python -m pytest -m dataset                        # tests that read the real da
 - Milestone 4 (profile and soil-only subset `soil_only_v1`): done, `reports/subset/soil_only_v1/` (report, inspection, manifest, splits, stats).
 - Milestone 5 (classical baseline, Phase 3): done, `reports/baseline/` (per-run summaries, comparisons, `phase3-report.md`). Pretrained-model inventory in `docs/pretrained-models.md`.
 - Milestone 6 (Experiment 4: official ERFNet checkpoint on CPU versus colour, plus hysteresis): done, `reports/baseline/phase4-report.md`. ERFNet numbers on dev splits are in-sample.
-- Next: see the recommendation at the end of `reports/baseline/phase4-report.md`.
+- Experiment 5 (post-processing on cached ERFNet probabilities: boundary refinement, instance separation, ablation): done, `reports/postprocess/experiment5-report.md`. Selected pipeline `S3_erode_1` (ERFNet argmax, one-pixel erosion, components). In-sample.
+- Next: see the recommendation at the end of `reports/postprocess/experiment5-report.md`.
+
+Experiment 5 scripts: `scripts/cache_erfnet.py` (build the probability cache once), `scripts/run_postprocess.py --split dev_sub|dev_tune|dev_check --configs <names|prefix|all>`, `scripts/compare_postprocess.py --split ...`, `scripts/render_postprocess_sheets.py --split ... --config <name>`. Configs are named in `weedlab.postprocess.pipeline.CONFIGS`.
 
 ERFNet needs the checkpoint at the path in `scripts/run_classical_baseline.py` (`--ckpt` to override) and the CPU torch wheel: `pip install --index-url https://download.pytorch.org/whl/cpu torch` into the lab venv.
 

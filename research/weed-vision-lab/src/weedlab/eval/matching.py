@@ -33,6 +33,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from weedlab.eval.quality import mask_quality
 from weedlab.phenobench.instances import PlantInstance
 from weedlab.phenobench.reader import CROP_CLASSES, PLANT_CLASSES, WEED_CLASSES
 
@@ -114,6 +115,7 @@ def score_image(
         matched_ref[tau], matched_det[tau] = mr, md
 
     # Per-reference records (weeds only; crops are context).
+    crop_px_map = np.isin(semantics, CROP_CLASSES)
     refs_out = []
     for rj in weed_cols:
         p = plants[rj]
@@ -136,6 +138,7 @@ def score_image(
             "category": info.get("category") or "",
             "exclusion": info.get("exclusion") or "",
             "size_band": info.get("size_band", ""),
+            "d_reasons": info.get("d_reasons", ""),
             "area_px": p.area_px,
             "partial": p.partial,
             "best_det": best_d + 1 if n_pred else 0,
@@ -152,6 +155,14 @@ def score_image(
             rec[f"matched@{tau}"] = m is not None
             rec[f"iou@{tau}"] = round(m[1], 4) if m else 0.0
             rec[f"matched_det_area@{tau}"] = int(pred_area[m[0] + 1]) if m else 0
+        # Pixel quality of the best-covering detection against this reference (the
+        # "assigned" detection, the same one that decides found / merged / split).
+        if n_pred and best_cov > 0:
+            q = mask_quality(pred_labels == best_d + 1, plant_instances == p.instance_id, crop_px_map)
+        else:
+            q = mask_quality(np.zeros((1, 1), bool), np.ones((1, 1), bool))
+            q["fn_px"] = p.area_px
+        rec.update({f"q_{k}": v for k, v in q.items()})
         refs_out.append(rec)
 
     # Per-detection records.

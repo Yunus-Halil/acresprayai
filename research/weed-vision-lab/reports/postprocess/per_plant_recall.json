@@ -1,0 +1,210 @@
+{
+ "dev_tune": {
+  "A1_argmax": {
+   "A": {
+    "observations": 1107,
+    "plants": 396,
+    "obs_recall": 0.8392,
+    "plant_recall_majority_of_frames": 0.8308,
+    "plant_recall_any_frame": 0.8535,
+    "plant_recall_every_frame": 0.8308
+   },
+   "B": {
+    "observations": 86,
+    "plants": 32,
+    "obs_recall": 0.8256,
+    "plant_recall_majority_of_frames": 0.8125,
+    "plant_recall_any_frame": 0.8125,
+    "plant_recall_every_frame": 0.8125
+   },
+   "C": {
+    "observations": 632,
+    "plants": 215,
+    "obs_recall": 0.8797,
+    "plant_recall_majority_of_frames": 0.8791,
+    "plant_recall_any_frame": 0.893,
+    "plant_recall_every_frame": 0.8651
+   },
+   "D": {
+    "observations": 1032,
+    "plants": 356,
+    "obs_recall": 0.7645,
+    "plant_recall_majority_of_frames": 0.7556,
+    "plant_recall_any_frame": 0.7753,
+    "plant_recall_every_frame": 0.736
+   }
+  },
+  "S3_erode_1": {
+   "A": {
+    "observations": 1107,
+    "plants": 396,
+    "obs_recall": 0.8988,
+    "plant_recall_majority_of_frames": 0.8965,
+    "plant_recall_any_frame": 0.9116,
+    "plant_recall_every_frame": 0.8965
+   },
+   "B": {
+    "observations": 86,
+    "plants": 32,
+    "obs_recall": 0.8256,
+    "plant_recall_majority_of_frames": 0.8125,
+    "plant_recall_any_frame": 0.8438,
+    "plant_recall_every_frame": 0.7812
+   },
+   "C": {
+    "observations": 632,
+    "plants": 215,
+    "obs_recall": 0.9304,
+    "plant_recall_majority_of_frames": 0.9209,
+    "plant_recall_any_frame": 0.9488,
+    "plant_recall_every_frame": 0.9209
+   },
+   "D": {
+    "observations": 1032,
+    "plants": 356,
+    "obs_recall": 0.7926,
+    "plant_recall_majority_of_frames": 0.7837,
+    "plant_recall_any_frame": 0.8174,
+    "plant_recall_every_frame": 0.7697
+   }
+  },
+  "C2_erode1_adaptive_h4_p5_s0.50": {
+   "A": {
+    "observations": 1107,
+    "plants": 396,
+    "obs_recall": 0.8979,
+    "plant_recall_majority_of_frames": 0.8939,
+    "plant_recall_any_frame": 0.9091,
+    "plant_recall_every_frame": 0.8939
+   },
+   "B": {
+    "observations": 86,
+    "plants": 32,
+    "obs_recall": 0.8256,
+    "plant_recall_majority_of_frames": 0.8125,
+    "plant_recall_any_frame": 0.8438,
+    "plant_recall_every_frame": 0.7812
+   },
+   "C": {
+    "observations": 632,
+    "plants": 215,
+    "obs_recall": 0.9272,
+    "plant_recall_majority_of_frames": 0.9163,
+    "plant_recall_any_frame": 0.9488,
+    "plant_recall_every_frame": 0.9163
+   },
+   "D": {
+    "observations": 1032,
+    "plants": 356,
+    "obs_recall": 0.7936,
+    "plant_recall_majority_of_frames": 0.7809,
+    "plant_recall_any_frame": 0.8174,
+    "plant_recall_every_frame": 0.7669
+   }
+  }
+ },
+ "dev_check": {
+  "A1_argmax": {
+   "A": {
+    "observations": 1137,
+    "plants": 401,
+    "obs_recall": 0.8478,
+    "plant_recall_majority_of_frames": 0.8429,
+    "plant_recall_any_frame": 0.8678,
+    "plant_recall_every_frame": 0.8354
+   },
+   "B": {
+    "observations": 81,
+    "plants": 32,
+    "obs_recall": 0.8765,
+    "plant_recall_majority_of_frames": 0.8438,
+    "plant_recall_any_frame": 0.9062,
+    "plant_recall_every_frame": 0.8438
+   },
+   "C": {
+    "observations": 698,
+    "plants": 236,
+    "obs_recall": 0.8897,
+    "plant_recall_majority_of_frames": 0.8814,
+    "plant_recall_any_frame": 0.8941,
+    "plant_recall_every_frame": 0.8686
+   },
+   "D": {
+    "observations": 982,
+    "plants": 352,
+    "obs_recall": 0.6864,
+    "plant_recall_majority_of_frames": 0.6676,
+    "plant_recall_any_frame": 0.7102,
+    "plant_recall_every_frame": 0.6562
+   }
+  },
+  "S3_erode_1": {
+   "A": {
+    "observations": 1137,
+    "plants": 401,
+    "obs_recall": 0.8874,
+    "plant_recall_majority_of_frames": 0.8828,
+    "plant_recall_any_frame": 0.9102,
+    "plant_recall_every_frame": 0.8703
+   },
+   "B": {
+    "observations": 81,
+    "plants": 32,
+    "obs_recall": 0.8395,
+    "plant_recall_majority_of_frames": 0.8438,
+    "plant_recall_any_frame": 0.875,
+    "plant_recall_every_frame": 0.8438
+   },
+   "C": {
+    "observations": 698,
+    "plants": 236,
+    "obs_recall": 0.914,
+    "plant_recall_majority_of_frames": 0.8983,
+    "plant_recall_any_frame": 0.9195,
+    "plant_recall_every_frame": 0.8856
+   },
+   "D": {
+    "observations": 982,
+    "plants": 352,
+    "obs_recall": 0.7006,
+    "plant_recall_majority_of_frames": 0.6932,
+    "plant_recall_any_frame": 0.7301,
+    "plant_recall_every_frame": 0.6676
+   }
+  },
+  "C2_erode1_adaptive_h4_p5_s0.50": {
+   "A": {
+    "observations": 1137,
+    "plants": 401,
+    "obs_recall": 0.8857,
+    "plant_recall_majority_of_frames": 0.8803,
+    "plant_recall_any_frame": 0.9077,
+    "plant_recall_every_frame": 0.8678
+   },
+   "B": {
+    "observations": 81,
+    "plants": 32,
+    "obs_recall": 0.8395,
+    "plant_recall_majority_of_frames": 0.8438,
+    "plant_recall_any_frame": 0.875,
+    "plant_recall_every_frame": 0.8438
+   },
+   "C": {
+    "observations": 698,
+    "plants": 236,
+    "obs_recall": 0.9054,
+    "plant_recall_majority_of_frames": 0.8898,
+    "plant_recall_any_frame": 0.911,
+    "plant_recall_every_frame": 0.8771
+   },
+   "D": {
+    "observations": 982,
+    "plants": 352,
+    "obs_recall": 0.7159,
+    "plant_recall_majority_of_frames": 0.7045,
+    "plant_recall_any_frame": 0.7415,
+    "plant_recall_every_frame": 0.679
+   }
+  }
+ }
+}

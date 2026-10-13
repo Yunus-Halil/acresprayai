@@ -1,0 +1,52 @@
+{
+ "threads_6": {
+  "model_load_ms": 77.4,
+  "cold_first_image_ms": {
+   "pre": 6.5,
+   "erfnet": 318.0,
+   "A1_argmax": 64.9,
+   "S3_erode_1": 69.7,
+   "C2_erode1_adaptive_h4_p5_s0.50": 83.4
+  },
+  "steady_median_ms": {
+   "pre": 4.9,
+   "erfnet": 263.8,
+   "A1_argmax": 64.9,
+   "S3_erode_1": 68.9,
+   "C2_erode1_adaptive_h4_p5_s0.50": 79.0
+  },
+  "steady_p95_ms": {
+   "pre": 6.2,
+   "erfnet": 279.0,
+   "A1_argmax": 70.7,
+   "S3_erode_1": 78.6,
+   "C2_erode1_adaptive_h4_p5_s0.50": 85.7
+  }
+ },
+ "threads_1": {
+  "model_load_ms": 33.3,
+  "cold_first_image_ms": {
+   "pre": 13.0,
+   "erfnet": 657.3,
+   "A1_argmax": 53.0,
+   "S3_erode_1": 57.4,
+   "C2_erode1_adaptive_h4_p5_s0.50": 65.8
+  },
+  "steady_median_ms": {
+   "pre": 11.8,
+   "erfnet": 635.4,
+   "A1_argmax": 50.4,
+   "S3_erode_1": 53.3,
+   "C2_erode1_adaptive_h4_p5_s0.50": 63.0
+  },
+  "steady_p95_ms": {
+   "pre": 15.0,
+   "erfnet": 648.8,
+   "A1_argmax": 53.8,
+   "S3_erode_1": 57.8,
+   "C2_erode1_adaptive_h4_p5_s0.50": 70.5
+  }
+ },
+ "peak_working_set_mb_single_process": 431.7,
+ "note": "single process, sequential, 30 dev_check images at native 1024x1024, Ryzen 5 9600X, torch 2.14.1+cpu; image decode excluded; the pipeline columns are post-processing only and are additive to erfnet"
+}

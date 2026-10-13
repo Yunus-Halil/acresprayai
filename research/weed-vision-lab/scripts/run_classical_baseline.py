@@ -41,14 +41,11 @@ ERFNET_METHODS = ("erfnet_weed", "erfnet_veg")
 ALL_METHODS = METHODS + ERFNET_METHODS
 DEFAULT_CKPT = "D:/swardus-research/checkpoints/phenobench-baselines/semantic-seg-erfnet.ckpt"
 from weedlab.eval.matching import IOU_THRESHOLDS, score_image
+from weedlab.eval.report import BANDS, CATEGORIES, EXCLUSIONS, SUBSET, prf, summarise, write_md
 from weedlab.phenobench.instances import extract_plant_instances
 from weedlab.phenobench.reader import load_sample, read_rgb
 from weedlab.viz.compare import render_comparison
 
-SUBSET = "soil_only_v1"
-CATEGORIES = ("A", "B", "C", "D")
-EXCLUSIONS = ("partial", "touches_border", "tiny")
-BANDS = ("tiny", "small", "medium", "large")
 
 
 def load_frozen_table(out_root: Path) -> dict[str, dict[int, dict]]:
@@ -113,114 +110,6 @@ def work(job: tuple[str, str]) -> dict:
     return {"image": img, "references": sc.references, "detections": sc.detections}
 
 
-def prf(tp: int, fp: int, fn: int) -> dict:
-    p = tp / (tp + fp) if tp + fp else 0.0
-    r = tp / (tp + fn) if tp + fn else 0.0
-    f = 2 * p * r / (p + r) if p + r else 0.0
-    return {"tp": tp, "fp": fp, "fn": fn, "precision": round(p, 4), "recall": round(r, 4), "f1": round(f, 4)}
-
-
-def summarise(images: list[dict], refs: list[dict], dets: list[dict], run: str, split: str, args, hw: dict) -> dict:
-    n_img = len(images)
-    out = {
-        "lab_version": LAB_VERSION, "run": run, "method": args.method, "closing": args.closing, "exg_t": args.exg_t if args.method == "exg_fixed" else None, "hyst": list(args.hyst) if args.method == "exg_hyst" else None, "checkpoint": args.ckpt if args.method in ERFNET_METHODS else None, "in_sample": args.method in ERFNET_METHODS, "split": split,
-        "subset_table": SUBSET, "n_images": n_img, "n_reference_weeds": len(refs), "n_detections": len(dets),
-        "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "hardware": hw,
-        "definitions": "weedlab.eval.matching docstring; detector in weedlab.detect.classical",
-    }
-    # Detection metrics per IoU threshold: raw (all unmatched detections are FP) and crop-aware
-    # (unmatched detections whose majority pixels lie on reference crops are set aside, scoring only).
-    per_tau = {}
-    for tau in IOU_THRESHOLDS:
-        tp = sum(1 for d in dets if d[f"matched@{tau}"])
-        fp_kinds = Counter(d[f"fp_kind@{tau}"] for d in dets if not d[f"matched@{tau}"])
-        fn = sum(1 for r in refs if not r[f"matched@{tau}"])
-        fp = sum(fp_kinds.values())
-        per_tau[str(tau)] = {
-            "raw": prf(tp, fp, fn),
-            "crop_aware": prf(tp, fp - fp_kinds["crop"], fn),
-            "fp_by_pixel_kind": dict(fp_kinds),
-            "fp_per_image": round(fp / max(1, n_img), 2),
-            "fn_per_image": round(fn / max(1, n_img), 2),
-            "fp_background_per_image": round(fp_kinds["background"] / max(1, n_img), 2),
-            "fp_crop_per_image": round(fp_kinds["crop"] / max(1, n_img), 2),
-            "recall_by_category": {},
-            "recall_by_exclusion": {},
-            "recall_by_band": {},
-            "recall_primary_AB": None,
-        }
-        for cat in CATEGORIES:
-            rs = [r for r in refs if r["category"] == cat]
-            per_tau[str(tau)]["recall_by_category"][cat] = {"n": len(rs), "recall": round(sum(r[f"matched@{tau}"] for r in rs) / len(rs), 4) if rs else None}
-        for ex in EXCLUSIONS:
-            rs = [r for r in refs if r["exclusion"] == ex]
-            per_tau[str(tau)]["recall_by_exclusion"][ex] = {"n": len(rs), "recall": round(sum(r[f"matched@{tau}"] for r in rs) / len(rs), 4) if rs else None}
-        for b in BANDS:
-            rs = [r for r in refs if r["size_band"] == b]
-            per_tau[str(tau)]["recall_by_band"][b] = {"n": len(rs), "recall": round(sum(r[f"matched@{tau}"] for r in rs) / len(rs), 4) if rs else None}
-        ab = [r for r in refs if r["category"] in ("A", "B")]
-        per_tau[str(tau)]["recall_primary_AB"] = round(sum(r[f"matched@{tau}"] for r in ab) / len(ab), 4) if ab else None
-    out["by_iou_threshold"] = per_tau
-
-    # Scoring-time detection-size floors. The detector emits every component down to
-    # one pixel (no inference-time filtering). This table says what happens when
-    # detections under f px are set aside AT SCORING: precision over the kept
-    # detections, recall counting only references matched by a kept detection.
-    floors = {}
-    for f in (1, 4, 10, 25, 50, 100):
-        row = {}
-        for tau in IOU_THRESHOLDS:
-            kept = [d for d in dets if d["area_px"] >= f]
-            tp = sum(1 for d in kept if d[f"matched@{tau}"])
-            fp_kinds = Counter(d[f"fp_kind@{tau}"] for d in kept if not d[f"matched@{tau}"])
-            fp = sum(fp_kinds.values())
-            rec_all = sum(1 for r in refs if r[f"matched@{tau}"] and r[f"matched_det_area@{tau}"] >= f)
-            ab = [r for r in refs if r["category"] in ("A", "B")]
-            rec_ab = sum(1 for r in ab if r[f"matched@{tau}"] and r[f"matched_det_area@{tau}"] >= f)
-            row[str(tau)] = {
-                "n_kept": len(kept),
-                "raw": prf(tp, fp, len(refs) - rec_all),
-                "crop_aware": prf(tp, fp - fp_kinds["crop"], len(refs) - rec_all),
-                "recall_primary_AB": round(rec_ab / len(ab), 4) if ab else None,
-                "fp_background_per_image": round(fp_kinds["background"] / max(1, n_img), 2),
-                "fp_crop_per_image": round(fp_kinds["crop"] / max(1, n_img), 2),
-            }
-        floors[str(f)] = row
-    out["by_detection_size_floor_scoring_only"] = floors
-
-    # Found (coverage >= 0.5), merge and split, by category and band.
-    def found_stats(rs):
-        n = len(rs)
-        return {
-            "n": n,
-            "found": round(sum(r["found"] for r in rs) / n, 4) if n else None,
-            "merged_with_weed": round(sum(1 for r in rs if r["merged_with_weed"] > 0) / n, 4) if n else None,
-            "merged_with_crop": round(sum(1 for r in rs if r["merged_with_crop"] > 0) / n, 4) if n else None,
-            "split": round(sum(1 for r in rs if r["split"]) / n, 4) if n else None,
-            "median_best_iou": round(float(np.median([r["best_iou"] for r in rs])), 4) if n else None,
-            "p10_best_iou": round(float(np.percentile([r["best_iou"] for r in rs], 10)), 4) if n else None,
-        }
-
-    out["found_merge_split"] = {
-        "all": found_stats(refs),
-        "by_category": {c: found_stats([r for r in refs if r["category"] == c]) for c in CATEGORIES},
-        "by_exclusion": {e: found_stats([r for r in refs if r["exclusion"] == e]) for e in EXCLUSIONS},
-        "by_band": {b: found_stats([r for r in refs if r["size_band"] == b]) for b in BANDS},
-        "by_category_and_band": {c: {b: found_stats([r for r in refs if r["category"] == c and r["size_band"] == b]) for b in BANDS} for c in CATEGORIES},
-    }
-    # Weed count error per image.
-    errs = [im["n_det"] - im["n_ref_weed"] for im in images]
-    out["count_error"] = {"mean_signed": round(float(np.mean(errs)), 2), "median_abs": float(np.median(np.abs(errs))), "p90_abs": float(np.percentile(np.abs(errs), 90))}
-    # Vegetation pixel diagnostics.
-    out["vegetation_pixels"] = {k: {"median": round(float(np.median([im[k] for im in images])), 4), "p10": round(float(np.percentile([im[k] for im in images], 10)), 4)} for k in ("veg_iou_plants", "veg_iou_weeds", "veg_recall_plant_px", "veg_precision_px")}
-    # Runtime from the workers (per image, wall time inside the worker; the first image per worker is cold).
-    stages = [k for k in images[0] if k.startswith("ms_")]
-    out["runtime_ms_per_image_in_workers"] = {k: {"median": round(float(np.median([im[k] for im in images])), 2), "p95": round(float(np.percentile([im[k] for im in images], 95)), 2), "max": round(float(np.max([im[k] for im in images])), 2)} for k in stages}
-    out["detections_per_image"] = {"median": float(np.median([im["n_det"] for im in images])), "p95": float(np.percentile([im["n_det"] for im in images], 95)), "max": int(max(im["n_det"] for im in images))}
-    out["reference_weeds_per_image"] = {"median": float(np.median([im["n_ref_weed"] for im in images]))}
-    return out
-
-
 def timing_run(root: Path, split: str, names: list[str], table, wargs, n: int = 40) -> dict:
     """Single process, sequential: cold first image (includes model load for ERFNet), then steady state over the next n."""
     rows = []
@@ -242,86 +131,6 @@ def timing_run(root: Path, split: str, names: list[str], table, wargs, n: int = 
         "model_load_ms": round(load_ms, 1),
         "torch_threads": wargs.get("timing_threads"),
     }
-
-
-def write_md(summary: dict, path: Path, timing: dict, worst: dict) -> None:
-    L = [f"# Classical baseline `{summary['run']}` on `{summary['split']}`", ""]
-    L.append(f"{summary['n_images']} images, {summary['n_reference_weeds']} reference weed observations, {summary['n_detections']} detections. "
-             f"Generated {summary['generated_utc']}, lab {summary['lab_version']}. Hardware: {summary['hardware']['cpu']}, {summary['hardware']['python']}.")
-    L.append("")
-    L.append("Inference used the RGB image only. Categories and bands come from the frozen `soil_only_v1` table and are used for scoring only.")
-    L.append("")
-    L.append("## Detection, one-to-one IoU matching, weeds only")
-    L.append("")
-    L.append("| IoU | precision raw | recall | F1 raw | precision crop-aware | F1 crop-aware | FP/img | FN/img | FP bg/img | FP crop/img |")
-    L.append("|---|---|---|---|---|---|---|---|---|---|")
-    for tau, v in summary["by_iou_threshold"].items():
-        L.append(f"| {tau} | {v['raw']['precision']:.3f} | {v['raw']['recall']:.3f} | {v['raw']['f1']:.3f} | {v['crop_aware']['precision']:.3f} | {v['crop_aware']['f1']:.3f} | {v['fp_per_image']} | {v['fn_per_image']} | {v['fp_background_per_image']} | {v['fp_crop_per_image']} |")
-    L.append("")
-    L.append("Crop-aware sets aside unmatched detections whose majority pixels lie on a reference crop; it is a scoring view, not something the detector can do.")
-    L.append("")
-    L.append("## Scoring-time detection-size floor (IoU 0.5)")
-    L.append("")
-    L.append("The detector keeps every component down to one pixel. Here detections under f px are set aside at scoring only; recall counts a reference as hit only when its matched detection survives the floor.")
-    L.append("")
-    L.append("| floor px | detections kept | precision raw | recall | F1 raw | precision crop-aware | F1 crop-aware | A+B recall | FP bg/img | FP crop/img |")
-    L.append("|---|---|---|---|---|---|---|---|---|---|")
-    for f, row in summary["by_detection_size_floor_scoring_only"].items():
-        v = row["0.5"]
-        L.append(f"| {f} | {v['n_kept']} | {v['raw']['precision']:.3f} | {v['raw']['recall']:.3f} | {v['raw']['f1']:.3f} | {v['crop_aware']['precision']:.3f} | {v['crop_aware']['f1']:.3f} | {v['recall_primary_AB']} | {v['fp_background_per_image']} | {v['fp_crop_per_image']} |")
-    L.append("")
-    L.append("## Recall by category and by size band")
-    L.append("")
-    L.append("| IoU | A | B | C | D | partial | border | tiny | tiny band | small | medium | large |")
-    L.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
-    for tau, v in summary["by_iou_threshold"].items():
-        rc, re, rb = v["recall_by_category"], v["recall_by_exclusion"], v["recall_by_band"]
-        f = lambda d: "n/a" if d["recall"] is None else f"{d['recall']:.3f} ({d['n']})"
-        L.append(f"| {tau} | {f(rc['A'])} | {f(rc['B'])} | {f(rc['C'])} | {f(rc['D'])} | {f(re['partial'])} | {f(re['touches_border'])} | {f(re['tiny'])} | {f(rb['tiny'])} | {f(rb['small'])} | {f(rb['medium'])} | {f(rb['large'])} |")
-    L.append("")
-    L.append("## Found, merged, split (coverage-based, independent of IoU)")
-    L.append("")
-    L.append("Found: one detection covers at least half the reference. Merged: that detection also covers at least half of another weed / crop. Split: two or more detections each cover at least a fifth.")
-    L.append("")
-    L.append("| group | n | found | merged w/ weed | merged w/ crop | split | median best IoU | p10 best IoU |")
-    L.append("|---|---|---|---|---|---|---|---|")
-    fm = summary["found_merge_split"]
-    rows = [("all", fm["all"])] + [(c, fm["by_category"][c]) for c in CATEGORIES] + [(e, fm["by_exclusion"][e]) for e in EXCLUSIONS] + [(f"band {b}", fm["by_band"][b]) for b in BANDS]
-    for name, s in rows:
-        if s["n"]:
-            L.append(f"| {name} | {s['n']} | {s['found']:.3f} | {s['merged_with_weed']:.3f} | {s['merged_with_crop']:.3f} | {s['split']:.3f} | {s['median_best_iou']:.3f} | {s['p10_best_iou']:.3f} |")
-    L.append("")
-    L.append("| category x band | " + " | ".join(BANDS) + " |")
-    L.append("|---|" + "---|" * len(BANDS))
-    for c in CATEGORIES:
-        cells = []
-        for b in BANDS:
-            s = fm["by_category_and_band"][c][b]
-            cells.append("-" if not s["n"] else f"found {s['found']:.2f}, IoU {s['median_best_iou']:.2f} (n {s['n']})")
-        L.append(f"| {c} | " + " | ".join(cells) + " |")
-    L.append("")
-    ce = summary["count_error"]
-    L.append(f"Weed count error per image (detections minus reference weeds): mean {ce['mean_signed']}, median abs {ce['median_abs']}, p90 abs {ce['p90_abs']}. "
-             f"Detections per image median {summary['detections_per_image']['median']}, p95 {summary['detections_per_image']['p95']}, max {summary['detections_per_image']['max']}; reference weeds per image median {summary['reference_weeds_per_image']['median']}.")
-    L.append("")
-    vp = summary["vegetation_pixels"]
-    L.append(f"Vegetation pixels (diagnostic): IoU vs all plant pixels median {vp['veg_iou_plants']['median']:.3f} (p10 {vp['veg_iou_plants']['p10']:.3f}); pixel recall of plants {vp['veg_recall_plant_px']['median']:.3f}; pixel precision {vp['veg_precision_px']['median']:.3f}.")
-    L.append("")
-    L.append("## Runtime")
-    L.append("")
-    L.append(f"Single process, sequential, {timing['note']}. Cold first image: " + ", ".join(f"{k} {v}" for k, v in timing["cold_first_image"].items()) + ".")
-    L.append("")
-    L.append("| stage | steady median ms | steady p95 ms |")
-    L.append("|---|---|---|")
-    for k, v in timing["steady_state"].items():
-        L.append(f"| {k} | {v['median']} | {v['p95']} |")
-    L.append("")
-    L.append("## Worst images")
-    L.append("")
-    for key, items in worst.items():
-        L.append(f"- {key}: " + ", ".join(f"{n} ({v})" for n, v in items))
-    L.append("")
-    path.write_text("\n".join(L), encoding="utf-8")
 
 
 def main(argv=None) -> int:

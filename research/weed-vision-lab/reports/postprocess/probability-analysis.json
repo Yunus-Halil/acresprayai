@@ -1,0 +1,144 @@
+{
+ "n_images": 144,
+ "note": "dev_tune cached subset, reference-driven diagnosis of the network's softmax; in-sample",
+ "weed_pixels": {
+  "total": 789948,
+  "argmax_weed": 0.9604,
+  "argmax_crop": 0.0108,
+  "argmax_background": 0.0289
+ },
+ "small_weeds_100_1000px": {
+  "n": 549,
+  "pixel_fraction_not_argmax_weed": 0.0821
+ },
+ "pw_on_weed": {
+  "p5": 0.5765,
+  "p10": 0.7882,
+  "p25": 0.949,
+  "p50": 0.9922,
+  "p75": 1.0,
+  "p90": 1.0,
+  "p95": 1.0
+ },
+ "pc_on_weed": {
+  "p5": 0.0,
+  "p10": 0.0,
+  "p25": 0.0,
+  "p50": 0.0,
+  "p75": 0.0,
+  "p90": 0.0039,
+  "p95": 0.0275
+ },
+ "pw_on_bg": {
+  "p5": 0.0,
+  "p10": 0.0,
+  "p25": 0.0,
+  "p50": 0.0,
+  "p75": 0.0,
+  "p90": 0.0,
+  "p95": 0.0
+ },
+ "pw_on_crop": {
+  "p5": 0.0,
+  "p10": 0.0,
+  "p25": 0.0,
+  "p50": 0.0,
+  "p75": 0.0,
+  "p90": 0.0,
+  "p95": 0.0
+ },
+ "pw_weed_boundary_in": {
+  "p5": 0.2314,
+  "p10": 0.4431,
+  "p25": 0.7569,
+  "p50": 0.9176,
+  "p75": 0.9725,
+  "p90": 0.9882,
+  "p95": 0.9922
+ },
+ "pw_weed_boundary_out": {
+  "p5": 0.0314,
+  "p10": 0.0745,
+  "p25": 0.2275,
+  "p50": 0.5451,
+  "p75": 0.8196,
+  "p90": 0.9333,
+  "p95": 0.9647
+ },
+ "pmax_all": {
+  "p5": 1.0,
+  "p10": 1.0,
+  "p25": 1.0,
+  "p50": 1.0,
+  "p75": 1.0,
+  "p90": 1.0,
+  "p95": 1.0
+ },
+ "pmax_near_weed_edge": {
+  "p5": 0.5333,
+  "p10": 0.5725,
+  "p25": 0.6863,
+  "p50": 0.8431,
+  "p75": 0.9412,
+  "p90": 0.9804,
+  "p95": 0.9882
+ },
+ "recoverable_by_pw_threshold_anywhere": {
+  "0.05": {
+   "ref_weed_px_gained": 20255,
+   "non_weed_px_admitted": 464940,
+   "precision_of_gain": 0.0417,
+   "gain_as_fraction_of_lost_weed_px": 0.6473
+  },
+  "0.1": {
+   "ref_weed_px_gained": 18376,
+   "non_weed_px_admitted": 313306,
+   "precision_of_gain": 0.0554,
+   "gain_as_fraction_of_lost_weed_px": 0.5873
+  },
+  "0.2": {
+   "ref_weed_px_gained": 14784,
+   "non_weed_px_admitted": 177752,
+   "precision_of_gain": 0.0768,
+   "gain_as_fraction_of_lost_weed_px": 0.4725
+  },
+  "0.3": {
+   "ref_weed_px_gained": 10811,
+   "non_weed_px_admitted": 103659,
+   "precision_of_gain": 0.0944,
+   "gain_as_fraction_of_lost_weed_px": 0.3455
+  },
+  "0.5": {
+   "ref_weed_px_gained": 0,
+   "non_weed_px_admitted": 0,
+   "precision_of_gain": 0.0,
+   "gain_as_fraction_of_lost_weed_px": 0.0
+  }
+ },
+ "recoverable_by_pw_threshold_within_8px_of_argmax_weed": {
+  "0.05": {
+   "ref_weed_px_gained": 19171,
+   "non_weed_px_admitted": 407423,
+   "precision_of_gain": 0.0449,
+   "gain_as_fraction_of_lost_weed_px": 0.6127
+  },
+  "0.1": {
+   "ref_weed_px_gained": 17730,
+   "non_weed_px_admitted": 288630,
+   "precision_of_gain": 0.0579,
+   "gain_as_fraction_of_lost_weed_px": 0.5666
+  },
+  "0.2": {
+   "ref_weed_px_gained": 14546,
+   "non_weed_px_admitted": 170878,
+   "precision_of_gain": 0.0784,
+   "gain_as_fraction_of_lost_weed_px": 0.4649
+  },
+  "0.3": {
+   "ref_weed_px_gained": 10713,
+   "non_weed_px_admitted": 101788,
+   "precision_of_gain": 0.0952,
+   "gain_as_fraction_of_lost_weed_px": 0.3424
+  }
+ }
+}
