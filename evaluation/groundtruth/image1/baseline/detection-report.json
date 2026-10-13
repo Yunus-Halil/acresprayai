@@ -1,0 +1,1954 @@
+{
+  "at": "2026-10-13T11:47:48.640Z",
+  "predictionsPath": "evaluation/groundtruth/image1/baseline/predictions.json",
+  "labelsDir": "evaluation/groundtruth/image1",
+  "tolerancePx": 25,
+  "labelled": [
+    "image1-A",
+    "image1-B"
+  ],
+  "overall": {
+    "exhaustive": false,
+    "labels": {
+      "weed": 96,
+      "crop": 10,
+      "uncertain": 0
+    },
+    "predictions": {
+      "total": 77,
+      "candidates": 68
+    },
+    "segmentation": {
+      "weedsSegmented": {
+        "n": 96,
+        "hits": 42,
+        "rate": 0.438
+      },
+      "weedsMissedBySegmentation": [
+        "DJI_0301.JPG:L304",
+        "DJI_0301.JPG:L305",
+        "DJI_0301.JPG:L307",
+        "DJI_0301.JPG:L315",
+        "DJI_0301.JPG:L316",
+        "DJI_0301.JPG:L326",
+        "DJI_0301.JPG:L327",
+        "DJI_0301.JPG:L328",
+        "DJI_0301.JPG:L400",
+        "DJI_0301.JPG:L403",
+        "DJI_0301.JPG:L404",
+        "DJI_0301.JPG:L405",
+        "DJI_0301.JPG:L406",
+        "DJI_0301.JPG:L407",
+        "DJI_0301.JPG:L408",
+        "DJI_0301.JPG:L411",
+        "DJI_0301.JPG:L413",
+        "DJI_0301.JPG:L415",
+        "DJI_0301.JPG:L417",
+        "DJI_0301.JPG:L418",
+        "DJI_0301.JPG:L423",
+        "DJI_0301.JPG:L424",
+        "DJI_0301.JPG:L429",
+        "DJI_0301.JPG:L433",
+        "DJI_0301.JPG:L434",
+        "DJI_0301.JPG:L435",
+        "DJI_0301.JPG:L436",
+        "DJI_0301.JPG:L437",
+        "DJI_0301.JPG:L439",
+        "DJI_0301.JPG:L440",
+        "DJI_0301.JPG:L441",
+        "DJI_0301.JPG:L442",
+        "DJI_0301.JPG:L443",
+        "DJI_0301.JPG:L146",
+        "DJI_0301.JPG:L147",
+        "DJI_0301.JPG:L148",
+        "DJI_0301.JPG:L149",
+        "DJI_0301.JPG:L153",
+        "DJI_0301.JPG:L154",
+        "DJI_0301.JPG:L155",
+        "DJI_0301.JPG:L157",
+        "DJI_0301.JPG:L158",
+        "DJI_0301.JPG:L163",
+        "DJI_0301.JPG:L164",
+        "DJI_0301.JPG:L165",
+        "DJI_0301.JPG:L174",
+        "DJI_0301.JPG:L175",
+        "DJI_0301.JPG:L178",
+        "DJI_0301.JPG:L179",
+        "DJI_0301.JPG:L180",
+        "DJI_0301.JPG:L182",
+        "DJI_0301.JPG:L186",
+        "DJI_0301.JPG:L187",
+        "DJI_0301.JPG:L258"
+      ]
+    },
+    "classification": {
+      "truePositives": 42,
+      "falseNegatives": 54,
+      "falsePositives": 0,
+      "precision": null,
+      "recall": 0.438,
+      "f1": null,
+      "weedsLostTo": {},
+      "candidatesWithoutLabel": 26,
+      "cropCalledWeed": 0,
+      "candidatesOnUncertain": 0
+    },
+    "bySize": [
+      {
+        "bucket": "10 to 30 cm",
+        "n": 18,
+        "recall": 1
+      },
+      {
+        "bucket": "30 cm and over",
+        "n": 4,
+        "recall": 1
+      },
+      {
+        "bucket": "under 10 cm",
+        "n": 20,
+        "recall": 1
+      }
+    ],
+    "byDistanceToRow": [
+      {
+        "bucket": "over 1 m",
+        "n": 41,
+        "recall": 1
+      },
+      {
+        "bucket": "under 30 cm from a row",
+        "n": 1,
+        "recall": 1
+      }
+    ],
+    "byShadow": [
+      {
+        "bucket": "in sun",
+        "n": 96,
+        "recall": 0.438
+      }
+    ],
+    "measurement": {
+      "n": 0,
+      "medianAbsErrorCm": null,
+      "medianRelativeError": null
+    },
+    "falsePositiveIds": [],
+    "falseNegativeIds": [
+      "DJI_0301.JPG:L304",
+      "DJI_0301.JPG:L305",
+      "DJI_0301.JPG:L307",
+      "DJI_0301.JPG:L315",
+      "DJI_0301.JPG:L316",
+      "DJI_0301.JPG:L326",
+      "DJI_0301.JPG:L327",
+      "DJI_0301.JPG:L328",
+      "DJI_0301.JPG:L400",
+      "DJI_0301.JPG:L403",
+      "DJI_0301.JPG:L404",
+      "DJI_0301.JPG:L405",
+      "DJI_0301.JPG:L406",
+      "DJI_0301.JPG:L407",
+      "DJI_0301.JPG:L408",
+      "DJI_0301.JPG:L411",
+      "DJI_0301.JPG:L413",
+      "DJI_0301.JPG:L415",
+      "DJI_0301.JPG:L417",
+      "DJI_0301.JPG:L418",
+      "DJI_0301.JPG:L423",
+      "DJI_0301.JPG:L424",
+      "DJI_0301.JPG:L429",
+      "DJI_0301.JPG:L433",
+      "DJI_0301.JPG:L434",
+      "DJI_0301.JPG:L435",
+      "DJI_0301.JPG:L436",
+      "DJI_0301.JPG:L437",
+      "DJI_0301.JPG:L439",
+      "DJI_0301.JPG:L440",
+      "DJI_0301.JPG:L441",
+      "DJI_0301.JPG:L442",
+      "DJI_0301.JPG:L443",
+      "DJI_0301.JPG:L146",
+      "DJI_0301.JPG:L147",
+      "DJI_0301.JPG:L148",
+      "DJI_0301.JPG:L149",
+      "DJI_0301.JPG:L153",
+      "DJI_0301.JPG:L154",
+      "DJI_0301.JPG:L155",
+      "DJI_0301.JPG:L157",
+      "DJI_0301.JPG:L158",
+      "DJI_0301.JPG:L163",
+      "DJI_0301.JPG:L164",
+      "DJI_0301.JPG:L165",
+      "DJI_0301.JPG:L174",
+      "DJI_0301.JPG:L175",
+      "DJI_0301.JPG:L178",
+      "DJI_0301.JPG:L179",
+      "DJI_0301.JPG:L180",
+      "DJI_0301.JPG:L182",
+      "DJI_0301.JPG:L186",
+      "DJI_0301.JPG:L187",
+      "DJI_0301.JPG:L258"
+    ],
+    "verdict": "96 weed labels, not exhaustive: recall over the labelled weeds is supported; precision is not, since an unmatched candidate may be a weed nobody labelled."
+  },
+  "perRegion": [
+    {
+      "id": "image1-A",
+      "conditions": [
+        "inter-row weeds",
+        "small weeds",
+        "trees",
+        "shadows",
+        "fragment misses",
+        "threshold misses"
+      ],
+      "labelled": true,
+      "annotator": null,
+      "lines": [
+        "61 weed labels, not exhaustive: recall over the labelled weeds is supported; precision is not, since an unmatched candidate may be a weed nobody labelled.",
+        "Labels: 61 weed, 6 crop, 0 uncertain. Predictions: 42 components, 37 weed candidates.",
+        "Segmentation: 28 of 61 weeds found by some component (46%).",
+        "Classification: recall 46% (28 of 61 labelled weeds found by a candidate), 33 missed; precision unsupported (labels not exhaustive): 9 candidates matched no label; crop called weed 0; candidates on uncertain plants 0.",
+        "  10 to 30 cm: 11, recall 100%",
+        "  30 cm and over: 1, recall 100%",
+        "  under 10 cm: 16, recall 100%",
+        "  over 1 m: 27, recall 100%",
+        "  under 30 cm from a row: 1, recall 100%",
+        "  in sun: 61, recall 46%"
+      ]
+    },
+    {
+      "id": "image1-B",
+      "conditions": [
+        "inter-row weeds",
+        "small weeds",
+        "trees",
+        "shadows",
+        "fragment misses"
+      ],
+      "labelled": true,
+      "annotator": null,
+      "lines": [
+        "35 weed labels, not exhaustive: recall over the labelled weeds is supported; precision is not, since an unmatched candidate may be a weed nobody labelled.",
+        "Labels: 35 weed, 4 crop, 0 uncertain. Predictions: 35 components, 31 weed candidates.",
+        "Segmentation: 14 of 35 weeds found by some component (40%).",
+        "Classification: recall 40% (14 of 35 labelled weeds found by a candidate), 21 missed; precision unsupported (labels not exhaustive): 17 candidates matched no label; crop called weed 0; candidates on uncertain plants 0.",
+        "  10 to 30 cm: 7, recall 100%",
+        "  30 cm and over: 3, recall 100%",
+        "  under 10 cm: 4, recall 100%",
+        "  over 1 m: 14, recall 100%",
+        "  in sun: 35, recall 40%"
+      ]
+    }
+  ],
+  "matches": [
+    {
+      "region": "image1-A",
+      "matches": [
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L25",
+            "cls": "crop",
+            "x": 3752.6,
+            "y": 2635.2,
+            "regionX": 3752.6,
+            "regionY": 2635.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:21:01.767Z"
+          },
+          "prediction": "image1-A:b482",
+          "disposition": "crop",
+          "distancePx": 16.101242188104823
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L48",
+            "cls": "crop",
+            "x": 3724.6,
+            "y": 3146.7,
+            "regionX": 3724.6,
+            "regionY": 3146.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:21:21.624Z"
+          },
+          "prediction": "image1-A:b568",
+          "disposition": "crop",
+          "distancePx": 22.148814866715025
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L49",
+            "cls": "crop",
+            "x": 4056.7,
+            "y": 3233.7,
+            "regionX": 4056.7,
+            "regionY": 3233.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:21:26.631Z"
+          },
+          "prediction": "image1-A:b606",
+          "disposition": "crop",
+          "distancePx": 27.456328960733366
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L50",
+            "cls": "crop",
+            "x": 4337.4,
+            "y": 3281.1,
+            "regionX": 4337.4,
+            "regionY": 3281.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:21:27.147Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L65",
+            "cls": "crop",
+            "x": 4323.9,
+            "y": 2782.9,
+            "regionX": 4323.9,
+            "regionY": 2782.9,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:21:36.552Z"
+          },
+          "prediction": "image1-A:b502",
+          "disposition": "crop",
+          "distancePx": 12.649505919205444
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L67",
+            "cls": "crop",
+            "x": 4562.8,
+            "y": 2851.4,
+            "regionX": 4562.8,
+            "regionY": 2851.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:21:38.685Z"
+          },
+          "prediction": "image1-A:b501",
+          "disposition": "crop",
+          "distancePx": 29.71279185805276
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L294",
+            "cls": "weed",
+            "x": 3641.4,
+            "y": 2477.9,
+            "regionX": 3641.4,
+            "regionY": 2477.9,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:24.066Z"
+          },
+          "prediction": "image1-A:b469",
+          "disposition": "candidate: measured",
+          "distancePx": 15.284632805533748
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L302",
+            "cls": "weed",
+            "x": 4315.9,
+            "y": 2439,
+            "regionX": 4315.9,
+            "regionY": 2439,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:28.102Z"
+          },
+          "prediction": "image1-A:b452",
+          "disposition": "candidate: measured",
+          "distancePx": 11.63872845288529
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L303",
+            "cls": "weed",
+            "x": 4105.2,
+            "y": 2578.8,
+            "regionX": 4105.2,
+            "regionY": 2578.8,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:32.251Z"
+          },
+          "prediction": "image1-A:b490",
+          "disposition": "candidate: measured",
+          "distancePx": 1.6278820596100825
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L304",
+            "cls": "weed",
+            "x": 4090.3,
+            "y": 2417.3,
+            "regionX": 4090.3,
+            "regionY": 2417.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:32.840Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L305",
+            "cls": "weed",
+            "x": 4114.4,
+            "y": 2528.4,
+            "regionX": 4114.4,
+            "regionY": 2528.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:33.327Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L306",
+            "cls": "weed",
+            "x": 3978.1,
+            "y": 2523.8,
+            "regionX": 3978.1,
+            "regionY": 2523.8,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:33.823Z"
+          },
+          "prediction": "image1-A:b481",
+          "disposition": "candidate: measured",
+          "distancePx": 4.972926703662327
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L307",
+            "cls": "weed",
+            "x": 3918.5,
+            "y": 2549,
+            "regionX": 3918.5,
+            "regionY": 2549,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:34.129Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L308",
+            "cls": "weed",
+            "x": 3900.2,
+            "y": 2504.3,
+            "regionX": 3900.2,
+            "regionY": 2504.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:34.392Z"
+          },
+          "prediction": "image1-A:b479",
+          "disposition": "candidate: measured",
+          "distancePx": 5.531726674375338
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L309",
+            "cls": "weed",
+            "x": 4500.3,
+            "y": 2440.2,
+            "regionX": 4500.3,
+            "regionY": 2440.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:35.429Z"
+          },
+          "prediction": "image1-A:b450",
+          "disposition": "candidate: measured",
+          "distancePx": 2.9120439557119946
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L310",
+            "cls": "weed",
+            "x": 4451,
+            "y": 2478,
+            "regionX": 4451,
+            "regionY": 2478,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:35.975Z"
+          },
+          "prediction": "image1-A:b471",
+          "disposition": "candidate: measured",
+          "distancePx": 4.414748010929
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L311",
+            "cls": "weed",
+            "x": 4407.5,
+            "y": 2445.9,
+            "regionX": 4407.5,
+            "regionY": 2445.9,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:36.232Z"
+          },
+          "prediction": "image1-A:b456",
+          "disposition": "candidate: measured",
+          "distancePx": 6.699999999999818
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L312",
+            "cls": "weed",
+            "x": 4553,
+            "y": 2495.2,
+            "regionX": 4553,
+            "regionY": 2495.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:36.747Z"
+          },
+          "prediction": "image1-A:b476",
+          "disposition": "candidate: measured",
+          "distancePx": 8.102468759581601
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L313",
+            "cls": "weed",
+            "x": 4695,
+            "y": 2479.1,
+            "regionX": 4695,
+            "regionY": 2479.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:37.300Z"
+          },
+          "prediction": "image1-A:b470",
+          "disposition": "candidate: refused",
+          "distancePx": 7.592759709090844
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L314",
+            "cls": "weed",
+            "x": 4786.6,
+            "y": 2523.8,
+            "regionX": 4786.6,
+            "regionY": 2523.8,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:37.829Z"
+          },
+          "prediction": "image1-A:b480",
+          "disposition": "candidate: refused",
+          "distancePx": 3.9962482405372595
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L315",
+            "cls": "weed",
+            "x": 4760.2,
+            "y": 2551.3,
+            "regionX": 4760.2,
+            "regionY": 2551.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:38.092Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L316",
+            "cls": "weed",
+            "x": 4690.4,
+            "y": 2423,
+            "regionX": 4690.4,
+            "regionY": 2423,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:38.606Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L317",
+            "cls": "weed",
+            "x": 4652.6,
+            "y": 2488.3,
+            "regionX": 4652.6,
+            "regionY": 2488.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:39.095Z"
+          },
+          "prediction": "image1-A:b473",
+          "disposition": "candidate: refused",
+          "distancePx": 7.6896033707857026
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L323",
+            "cls": "weed",
+            "x": 4704.1,
+            "y": 2662.3,
+            "regionX": 4704.1,
+            "regionY": 2662.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:43.059Z"
+          },
+          "prediction": "image1-A:b505",
+          "disposition": "candidate: measured",
+          "distancePx": 7.433034373659779
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L324",
+            "cls": "weed",
+            "x": 4696.1,
+            "y": 2693.3,
+            "regionX": 4696.1,
+            "regionY": 2693.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:43.368Z"
+          },
+          "prediction": "image1-A:b512",
+          "disposition": "candidate: measured",
+          "distancePx": 1.4142135623736094
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L325",
+            "cls": "weed",
+            "x": 4651.4,
+            "y": 2644,
+            "regionX": 4651.4,
+            "regionY": 2644,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:43.631Z"
+          },
+          "prediction": "image1-A:b504",
+          "disposition": "candidate: measured",
+          "distancePx": 8.827797007181589
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L326",
+            "cls": "weed",
+            "x": 4629.7,
+            "y": 2671.5,
+            "regionX": 4629.7,
+            "regionY": 2671.5,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:44.376Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L327",
+            "cls": "weed",
+            "x": 4604.5,
+            "y": 2653.2,
+            "regionX": 4604.5,
+            "regionY": 2653.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:44.656Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L328",
+            "cls": "weed",
+            "x": 4547.2,
+            "y": 2610.8,
+            "regionX": 4547.2,
+            "regionY": 2610.8,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:24:45.038Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L400",
+            "cls": "weed",
+            "x": 3646.3,
+            "y": 2771.5,
+            "regionX": 3646.3,
+            "regionY": 2771.5,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:34.556Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L401",
+            "cls": "weed",
+            "x": 4003.7,
+            "y": 2885.3,
+            "regionX": 4003.7,
+            "regionY": 2885.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:35.630Z"
+          },
+          "prediction": "image1-A:b536",
+          "disposition": "candidate: measured",
+          "distancePx": 7.316419889535911
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L402",
+            "cls": "weed",
+            "x": 3863.7,
+            "y": 2836.1,
+            "regionX": 3863.7,
+            "regionY": 2836.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:36.292Z"
+          },
+          "prediction": "image1-A:b532",
+          "disposition": "candidate: refused",
+          "distancePx": 12.690941651430046
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L403",
+            "cls": "weed",
+            "x": 3919.8,
+            "y": 2788,
+            "regionX": 3919.8,
+            "regionY": 2788,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:37.210Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L404",
+            "cls": "weed",
+            "x": 3859.9,
+            "y": 2759.7,
+            "regionX": 3859.9,
+            "regionY": 2759.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:37.619Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L405",
+            "cls": "weed",
+            "x": 3837,
+            "y": 2785.4,
+            "regionX": 3837,
+            "regionY": 2785.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:37.867Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L406",
+            "cls": "weed",
+            "x": 3955.6,
+            "y": 2893.8,
+            "regionX": 3955.6,
+            "regionY": 2893.8,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:38.532Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L407",
+            "cls": "weed",
+            "x": 3805.5,
+            "y": 2873.5,
+            "regionX": 3805.5,
+            "regionY": 2873.5,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:39.004Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L408",
+            "cls": "weed",
+            "x": 3797.4,
+            "y": 2842.5,
+            "regionX": 3797.4,
+            "regionY": 2842.5,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:40.024Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L409",
+            "cls": "weed",
+            "x": 4040,
+            "y": 3022,
+            "regionX": 4040,
+            "regionY": 3022,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:40.973Z"
+          },
+          "prediction": "image1-A:b550",
+          "disposition": "candidate: measured",
+          "distancePx": 1.9235384061672525
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L410",
+            "cls": "weed",
+            "x": 3978,
+            "y": 3040.2,
+            "regionX": 3978,
+            "regionY": 3040.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:41.469Z"
+          },
+          "prediction": "image1-A:b558",
+          "disposition": "candidate: measured",
+          "distancePx": 3.612478373637953
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L411",
+            "cls": "weed",
+            "x": 3955,
+            "y": 3059.9,
+            "regionX": 3955,
+            "regionY": 3059.9,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:41.765Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L412",
+            "cls": "weed",
+            "x": 3917.6,
+            "y": 3064.8,
+            "regionX": 3917.6,
+            "regionY": 3064.8,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:42.069Z"
+          },
+          "prediction": "image1-A:b565",
+          "disposition": "candidate: measured",
+          "distancePx": 2.302172886643991
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L413",
+            "cls": "weed",
+            "x": 3989.2,
+            "y": 3078.1,
+            "regionX": 3989.2,
+            "regionY": 3078.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:42.440Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L414",
+            "cls": "weed",
+            "x": 3896.3,
+            "y": 3017.7,
+            "regionX": 3896.3,
+            "regionY": 3017.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:42.950Z"
+          },
+          "prediction": "image1-A:b549",
+          "disposition": "candidate: measured",
+          "distancePx": 3.8013155617498335
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L415",
+            "cls": "weed",
+            "x": 3823.1,
+            "y": 3001.2,
+            "regionX": 3823.1,
+            "regionY": 3001.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:43.364Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L416",
+            "cls": "weed",
+            "x": 3832.7,
+            "y": 2984.1,
+            "regionX": 3832.7,
+            "regionY": 2984.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:43.639Z"
+          },
+          "prediction": "image1-A:b545",
+          "disposition": "candidate: measured",
+          "distancePx": 2.7730849247725278
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L417",
+            "cls": "weed",
+            "x": 3787.3,
+            "y": 2985.7,
+            "regionX": 3787.3,
+            "regionY": 2985.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:46.567Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L418",
+            "cls": "weed",
+            "x": 3757.9,
+            "y": 2969.1,
+            "regionX": 3757.9,
+            "regionY": 2969.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:46.870Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L423",
+            "cls": "weed",
+            "x": 3616.3,
+            "y": 2995.3,
+            "regionX": 3616.3,
+            "regionY": 2995.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:50.128Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L424",
+            "cls": "weed",
+            "x": 3708.8,
+            "y": 3036.4,
+            "regionX": 3708.8,
+            "regionY": 3036.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:50.564Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L425",
+            "cls": "weed",
+            "x": 4131.5,
+            "y": 3074.7,
+            "regionX": 4131.5,
+            "regionY": 3074.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:52.176Z"
+          },
+          "prediction": "image1-A:b564",
+          "disposition": "candidate: measured",
+          "distancePx": 2.199999999999818
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L426",
+            "cls": "weed",
+            "x": 4638.8,
+            "y": 3169.4,
+            "regionX": 4638.8,
+            "regionY": 3169.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:53.353Z"
+          },
+          "prediction": "image1-A:b588",
+          "disposition": "candidate: refused",
+          "distancePx": 5.403702434442604
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L427",
+            "cls": "weed",
+            "x": 4586.8,
+            "y": 3154.2,
+            "regionX": 4586.8,
+            "regionY": 3154.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:53.630Z"
+          },
+          "prediction": "image1-A:b586",
+          "disposition": "candidate: measured",
+          "distancePx": 4.7169905660281275
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L428",
+            "cls": "weed",
+            "x": 4612.3,
+            "y": 3218.6,
+            "regionX": 4612.3,
+            "regionY": 3218.6,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:53.993Z"
+          },
+          "prediction": "image1-A:b596",
+          "disposition": "candidate: measured",
+          "distancePx": 8.15414005275825
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L429",
+            "cls": "weed",
+            "x": 4689.9,
+            "y": 3035,
+            "regionX": 4689.9,
+            "regionY": 3035,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:54.520Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L432",
+            "cls": "weed",
+            "x": 4178.8,
+            "y": 2921.4,
+            "regionX": 4178.8,
+            "regionY": 2921.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:57.766Z"
+          },
+          "prediction": "image1-A:b541",
+          "disposition": "candidate: refused",
+          "distancePx": 6.351377803280318
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L433",
+            "cls": "weed",
+            "x": 4157.1,
+            "y": 2851.4,
+            "regionX": 4157.1,
+            "regionY": 2851.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:25:58.069Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L434",
+            "cls": "weed",
+            "x": 4004.8,
+            "y": 2760,
+            "regionX": 4004.8,
+            "regionY": 2760,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:26:02.912Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L435",
+            "cls": "weed",
+            "x": 4121.1,
+            "y": 2707.1,
+            "regionX": 4121.1,
+            "regionY": 2707.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:26:03.388Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L436",
+            "cls": "weed",
+            "x": 4126.4,
+            "y": 2778.2,
+            "regionX": 4126.4,
+            "regionY": 2778.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:26:04.424Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L437",
+            "cls": "weed",
+            "x": 3963,
+            "y": 2682.4,
+            "regionX": 3963,
+            "regionY": 2682.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:26:05.099Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L438",
+            "cls": "weed",
+            "x": 4007.7,
+            "y": 2722.4,
+            "regionX": 4007.7,
+            "regionY": 2722.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:26:05.709Z"
+          },
+          "prediction": "image1-A:b534",
+          "disposition": "candidate: measured",
+          "distancePx": 5.099019513592642
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L439",
+            "cls": "weed",
+            "x": 3924.8,
+            "y": 2708.3,
+            "regionX": 3924.8,
+            "regionY": 2708.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:26:06.067Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L440",
+            "cls": "weed",
+            "x": 3981.2,
+            "y": 2677.7,
+            "regionX": 3981.2,
+            "regionY": 2677.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:26:06.500Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L441",
+            "cls": "weed",
+            "x": 4090.6,
+            "y": 2704.2,
+            "regionX": 4090.6,
+            "regionY": 2704.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:26:07.032Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L442",
+            "cls": "weed",
+            "x": 4154.6,
+            "y": 2647.7,
+            "regionX": 4154.6,
+            "regionY": 2647.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:26:08.120Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L443",
+            "cls": "weed",
+            "x": 4154.6,
+            "y": 2695.3,
+            "regionX": 4154.6,
+            "regionY": 2695.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:26:08.747Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        }
+      ]
+    },
+    {
+      "region": "image1-B",
+      "matches": [
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L42",
+            "cls": "crop",
+            "x": 523.4,
+            "y": 986.6,
+            "regionX": 523.4,
+            "regionY": 986.6,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:21:13.802Z"
+          },
+          "prediction": "image1-B:b171",
+          "disposition": "crop",
+          "distancePx": 12.677933585565132
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L80",
+            "cls": "crop",
+            "x": 1202.9,
+            "y": 586.5,
+            "regionX": 1202.9,
+            "regionY": 586.5,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:21:51.950Z"
+          },
+          "prediction": "image1-B:b94",
+          "disposition": "crop",
+          "distancePx": 39.728075714789036
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L81",
+            "cls": "crop",
+            "x": 263.2,
+            "y": 381.3,
+            "regionX": 263.2,
+            "regionY": 381.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:21:52.674Z"
+          },
+          "prediction": "image1-B:b37",
+          "disposition": "crop",
+          "distancePx": 49.73017192811623
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L82",
+            "cls": "crop",
+            "x": 592.6,
+            "y": 427.2,
+            "regionX": 592.6,
+            "regionY": 427.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:21:53.299Z"
+          },
+          "prediction": "image1-B:b49",
+          "disposition": "crop",
+          "distancePx": 44.141816908686486
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L139",
+            "cls": "weed",
+            "x": 1097.4,
+            "y": 257.3,
+            "regionX": 1097.4,
+            "regionY": 257.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:34.555Z"
+          },
+          "prediction": "image1-B:b45",
+          "disposition": "candidate: measured",
+          "distancePx": 1.555634918610517
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L140",
+            "cls": "weed",
+            "x": 1145.9,
+            "y": 269.7,
+            "regionX": 1145.9,
+            "regionY": 269.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:34.859Z"
+          },
+          "prediction": "image1-B:b46",
+          "disposition": "candidate: measured",
+          "distancePx": 4.410215414239978
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L141",
+            "cls": "weed",
+            "x": 1184.7,
+            "y": 268.4,
+            "regionX": 1184.7,
+            "regionY": 268.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:35.162Z"
+          },
+          "prediction": "image1-B:b48",
+          "disposition": "candidate: measured",
+          "distancePx": 4.104875150354761
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L145",
+            "cls": "weed",
+            "x": 922.8,
+            "y": 348.7,
+            "regionX": 922.8,
+            "regionY": 348.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:37.164Z"
+          },
+          "prediction": "image1-B:b77",
+          "disposition": "candidate: measured",
+          "distancePx": 8.640023148117113
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L146",
+            "cls": "weed",
+            "x": 821.7,
+            "y": 357,
+            "regionX": 821.7,
+            "regionY": 357,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:37.509Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L147",
+            "cls": "weed",
+            "x": 687.3,
+            "y": 289.1,
+            "regionX": 687.3,
+            "regionY": 289.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:38.064Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L148",
+            "cls": "weed",
+            "x": 529.3,
+            "y": 321,
+            "regionX": 529.3,
+            "regionY": 321,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:39.097Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L149",
+            "cls": "weed",
+            "x": 575,
+            "y": 286.4,
+            "regionX": 575,
+            "regionY": 286.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:39.424Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L150",
+            "cls": "weed",
+            "x": 552.8,
+            "y": 161.7,
+            "regionX": 552.8,
+            "regionY": 161.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:39.822Z"
+          },
+          "prediction": "image1-B:b32",
+          "disposition": "candidate: measured",
+          "distancePx": 11.086027241532461
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L152",
+            "cls": "weed",
+            "x": 523.7,
+            "y": 289.1,
+            "regionX": 523.7,
+            "regionY": 289.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:40.948Z"
+          },
+          "prediction": "image1-B:b51",
+          "disposition": "candidate: measured",
+          "distancePx": 21.23252222417302
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L153",
+            "cls": "weed",
+            "x": 605.5,
+            "y": 311.3,
+            "regionX": 605.5,
+            "regionY": 311.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:41.555Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L154",
+            "cls": "weed",
+            "x": 580.6,
+            "y": 346,
+            "regionX": 580.6,
+            "regionY": 346,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:41.940Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L155",
+            "cls": "weed",
+            "x": 454.5,
+            "y": 309.9,
+            "regionX": 454.5,
+            "regionY": 309.9,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:42.952Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L156",
+            "cls": "weed",
+            "x": 904.8,
+            "y": 222.6,
+            "regionX": 904.8,
+            "regionY": 222.6,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:43.690Z"
+          },
+          "prediction": "image1-B:b42",
+          "disposition": "candidate: refused",
+          "distancePx": 2.109502310972807
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L157",
+            "cls": "weed",
+            "x": 774.5,
+            "y": 157.5,
+            "regionX": 774.5,
+            "regionY": 157.5,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:44.341Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L158",
+            "cls": "weed",
+            "x": 739.9,
+            "y": 158.9,
+            "regionX": 739.9,
+            "regionY": 158.9,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:44.634Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L163",
+            "cls": "weed",
+            "x": 162.1,
+            "y": 250.3,
+            "regionX": 162.1,
+            "regionY": 250.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:47.015Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L164",
+            "cls": "weed",
+            "x": 224.4,
+            "y": 251.7,
+            "regionX": 224.4,
+            "regionY": 251.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:47.558Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L165",
+            "cls": "weed",
+            "x": 228.6,
+            "y": 224,
+            "regionX": 228.6,
+            "regionY": 224,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:47.795Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L172",
+            "cls": "weed",
+            "x": 378.2,
+            "y": 164.4,
+            "regionX": 378.2,
+            "regionY": 164.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:51.329Z"
+          },
+          "prediction": "image1-B:b33",
+          "disposition": "candidate: refused",
+          "distancePx": 3.716180835212415
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L173",
+            "cls": "weed",
+            "x": 558.4,
+            "y": 675.7,
+            "regionX": 558.4,
+            "regionY": 675.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:52.912Z"
+          },
+          "prediction": "image1-B:b125",
+          "disposition": "candidate: measured",
+          "distancePx": 6.896375859826689
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L174",
+            "cls": "weed",
+            "x": 429.5,
+            "y": 774.1,
+            "regionX": 429.5,
+            "regionY": 774.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:53.384Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L175",
+            "cls": "weed",
+            "x": 464.2,
+            "y": 649.4,
+            "regionX": 464.2,
+            "regionY": 649.4,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:53.807Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L176",
+            "cls": "weed",
+            "x": 406,
+            "y": 638.3,
+            "regionX": 406,
+            "regionY": 638.3,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:54.087Z"
+          },
+          "prediction": "image1-B:b119",
+          "disposition": "candidate: measured",
+          "distancePx": 3.114482300479435
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L177",
+            "cls": "weed",
+            "x": 383.8,
+            "y": 625.9,
+            "regionX": 383.8,
+            "regionY": 625.9,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:54.326Z"
+          },
+          "prediction": "image1-B:b117",
+          "disposition": "candidate: measured",
+          "distancePx": 16.65893153836706
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L178",
+            "cls": "weed",
+            "x": 304.8,
+            "y": 627.2,
+            "regionX": 304.8,
+            "regionY": 627.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:54.612Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L179",
+            "cls": "weed",
+            "x": 227.2,
+            "y": 605.1,
+            "regionX": 227.2,
+            "regionY": 605.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:54.917Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L180",
+            "cls": "weed",
+            "x": 259.1,
+            "y": 573.2,
+            "regionX": 259.1,
+            "regionY": 573.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:55.151Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L181",
+            "cls": "weed",
+            "x": 196.7,
+            "y": 591.2,
+            "regionX": 196.7,
+            "regionY": 591.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:55.376Z"
+          },
+          "prediction": "image1-B:b113",
+          "disposition": "candidate: measured",
+          "distancePx": 14.080127840328723
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L182",
+            "cls": "weed",
+            "x": 343.6,
+            "y": 502.5,
+            "regionX": 343.6,
+            "regionY": 502.5,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:55.794Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L184",
+            "cls": "weed",
+            "x": 1118.2,
+            "y": 779.7,
+            "regionX": 1118.2,
+            "regionY": 779.7,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:57.029Z"
+          },
+          "prediction": "image1-B:b146",
+          "disposition": "candidate: measured",
+          "distancePx": 5.1623637996561715
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L185",
+            "cls": "weed",
+            "x": 1097.4,
+            "y": 961.2,
+            "regionX": 1097.4,
+            "regionY": 961.2,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:57.498Z"
+          },
+          "prediction": "image1-B:b176",
+          "disposition": "candidate: measured",
+          "distancePx": 2.280350850198246
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L186",
+            "cls": "weed",
+            "x": 1177.8,
+            "y": 988.9,
+            "regionX": 1177.8,
+            "regionY": 988.9,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:57.820Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L187",
+            "cls": "weed",
+            "x": 1245.7,
+            "y": 817.1,
+            "regionX": 1245.7,
+            "regionY": 817.1,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:22:58.262Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        },
+        {
+          "label": {
+            "id": "DJI_0301.JPG:L258",
+            "cls": "weed",
+            "x": 433.7,
+            "y": 1036,
+            "regionX": 433.7,
+            "regionY": 1036,
+            "diameterCm": null,
+            "shadow": false,
+            "labelledAt": "2026-10-13T11:23:47.542Z"
+          },
+          "prediction": null,
+          "disposition": null,
+          "distancePx": null
+        }
+      ]
+    }
+  ]
+}

@@ -55,3 +55,4 @@ herovideo/
 evaluation/**/*.JPG
 evaluation/**/*.jpg
 evaluation/**/results/*.png
+evaluation/**/baseline/*.png

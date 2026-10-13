@@ -31,6 +31,10 @@ const byRegion = new Map<string, LabelFile>();
 for (const f of labelFiles) {
   const j = JSON.parse(readFileSync(join(labelsDir, f), "utf-8")) as LabelFile;
   if (j.format !== "swardus-region-labels-v1") { console.error(`${f}: not a label file`); continue; }
+  // Exact duplicate points are scored once and reported; the file itself is never changed.
+  const seenPt = new Set<string>(); const dups: string[] = [];
+  j.labels = j.labels.filter(l => { const k = `${Math.round(l.x)}:${Math.round(l.y)}`; if (seenPt.has(k)) { dups.push(l.id); return false; } seenPt.add(k); return true; });
+  if (dups.length) console.log(`${f}: ${dups.length} exact duplicate label(s) scored once: ${dups.join(", ")}`);
   if (j.region?.id) { byRegion.set(j.region.id, j); continue; }
   // A whole-image file (labelled with no predictions loaded): its labels are the photo's native pixels; each region of that photo takes the ones inside its box.
   if (!j.image) { console.error(`${f}: neither a region nor an image is named`); continue; }

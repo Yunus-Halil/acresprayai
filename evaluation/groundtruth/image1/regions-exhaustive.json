@@ -1,0 +1,4 @@
+[
+  { "id": "image1-A", "photo": "DJI_0301.JPG", "x": 3600, "y": 2400, "width": 1200, "height": 900, "conditions": ["inter-row weeds", "small weeds", "trees", "shadows", "fragment misses", "threshold misses"], "notes": "Chosen 2026-10-13 from the first pass: 61 weed and 6 crop labels, 7 labels on fragments under the floor, 10 under the threshold. To be labelled EXHAUSTIVELY." },
+  { "id": "image1-B", "photo": "DJI_0301.JPG", "x": 150, "y": 150, "width": 1200, "height": 900, "conditions": ["inter-row weeds", "small weeds", "trees", "shadows", "fragment misses"], "notes": "Chosen 2026-10-13: 35 weed and 4 crop labels, 11 labels on fragments under the floor; 150 px in from the photo's edge so no component is edge-cut. To be labelled EXHAUSTIVELY." }
+]

@@ -89,6 +89,7 @@ const hex = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16
     const f = Math.max(1, Math.ceil(Math.max(raw.width, raw.height) / 4096));
     const app = downsample(raw, f);
     console.log(`${photo}: ${(gsdM * 100).toFixed(2)} cm/px, reading the pattern...`);
+    const t0 = Date.now();
     const pattern = await analysePhoto({ width: app.width, height: app.height, rgba: new Uint8ClampedArray(app.data.buffer) }, { gsdM: gsdM * f, rowSpacingM: "auto", windowM: 4 }, { yieldBetweenWindows: false });
     const crops = pattern.blobs.filter(b => b.cls === "on pattern" || b.cls === "double").map(b => ({ x: b.x * f, y: b.y * f, r: (b.equivDiameterM / pattern.gsdM / 2) * f }));
     // Every candidate in any region, measured at native as the app would.
@@ -98,6 +99,8 @@ const hex = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16
       if ((b.cls !== "off-row" && b.cls !== "between plants") || b.touchesBorder || !inAny(b.x * f, b.y * f)) continue;
       measured.set(b.id, measureAt(raw, { x: b.x * f, y: b.y * f }, gsdM, b.equivDiameterM, crops));
     }
+    const tMeasure = Date.now();
+    console.log(`  runtime: pass ${tMeasure - t0} ms`);
     const trace = traceVegetation(pattern, { displayFloorM: 0.15, measured: new Map([...measured].map(([id, m]) => [id, { status: m.status, reason: m.reason }])) });
     for (const r of list) {
       const preds: RegionPrediction[] = [];
@@ -128,7 +131,7 @@ const hex = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16
       const fragments = pattern.fragments ? pattern.fragments.cells.filter(([col, row]) => { const cx = (col + 0.5) * (pattern.fragments!.cellM / pattern.gsdM) * f, cy = (row + 0.5) * (pattern.fragments!.cellM / pattern.gsdM) * f; return cx >= r.x && cx < r.x + r.width && cy >= r.y && cy < r.y + r.height; }).reduce((n, c) => n + c[2], 0) : null;
       const counts: Record<string, number> = {};
       for (const p of preds) counts[p.disposition] = (counts[p.disposition] ?? 0) + 1;
-      writeFileSync(join(outDir, `${r.id}.predictions.json`), JSON.stringify({ region: r, photo: basename(photo), gsdCmPx: gsdM * 100, passGsdCmPx: pattern.gsdM * 100, counts, fragments, predictions: preds }, null, 2));
+      writeFileSync(join(outDir, `${r.id}.predictions.json`), JSON.stringify({ region: r, photo: basename(photo), gsdCmPx: gsdM * 100, passGsdCmPx: pattern.gsdM * 100, runtimeMs: { pass: tMeasure - t0, total: Date.now() - t0 }, counts, fragments, predictions: preds }, null, 2));
       console.log(`  ${r.id} [${r.conditions.join(", ")}]: ${preds.length} components (${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join("; ")}); ${fragments ?? "?"} fragments`);
       all.push({ region: r, gsdCmPx: gsdM * 100, predictions: preds });
     }

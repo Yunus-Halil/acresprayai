@@ -23,6 +23,7 @@
 <header>
   <label>Region image <input type="file" id="file" accept="image/png,image/jpeg"></label>
   <label>Predictions (optional) <input type="file" id="pred" accept="application/json"></label>
+  <label title="Your own earlier labels for this photo (a *.labels.json): the ones inside this region are loaded as a starting point. Never predictions.">Earlier labels (optional) <input type="file" id="prior" accept="application/json"></label>
   <label>Annotator <input id="who" size="8" placeholder="initials"></label>
   <span>Class:</span>
   <button id="cw" class="on" data-cls="weed">weed (1)</button>
@@ -91,6 +92,23 @@ document.getElementById("pred").addEventListener("change", async e => {
   meta = { region: j.region, photo: j.photo, gsdCmPx: j.gsdCmPx }; preds = j.predictions ?? []; draw();
 });
 for (const b of document.querySelectorAll("button[data-cls]")) b.addEventListener("click", () => { cls = b.dataset.cls; for (const o of document.querySelectorAll("button[data-cls]")) o.classList.toggle("on", o === b); });
+// Earlier HUMAN labels for the same photo, restricted to this region and translated to its pixels. Exact duplicates are loaded once and reported.
+document.getElementById("prior").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const j = JSON.parse(await f.text());
+  if (j.format !== "swardus-region-labels-v1") { status("not a label file"); return; }
+  if (!meta) { status("load the region's predictions file first, so the region's box is known"); return; }
+  const seen = new Set(); let dup = 0, loaded = 0;
+  for (const l of j.labels ?? []) {
+    const k = Math.round(l.x) + ":" + Math.round(l.y);
+    if (seen.has(k)) { dup++; continue; } seen.add(k);
+    if (l.x < meta.region.x || l.x >= meta.region.x + meta.region.width || l.y < meta.region.y || l.y >= meta.region.y + meta.region.height) continue;
+    labels.push({ rx: +(l.x - meta.region.x).toFixed(1), ry: +(l.y - meta.region.y).toFixed(1), cls: l.cls, shadow: !!l.shadow, diameterCm: l.diameterCm ?? null, at: l.labelledAt ?? new Date().toISOString(), prior: l.id ?? null });
+    loaded++;
+  }
+  draw();
+  status(`${loaded} earlier label(s) loaded into this region${dup ? `; ${dup} exact duplicate(s) in the file loaded once` : ""}. Check each, add every weed still unlabelled, then tick "every weed labelled".`);
+});
 document.getElementById("showPred").addEventListener("change", draw);
 document.getElementById("undo").addEventListener("click", () => { labels.pop(); draw(); });
 wrap.addEventListener("wheel", e => {
@@ -130,7 +148,7 @@ document.getElementById("export").addEventListener("click", () => {
       id: `${meta?.region?.id ?? imageName}:L${i + 1}`, cls: l.cls,
       // The photo's native pixel when the region is known, else the region's own pixel.
       x: meta ? +(meta.region.x + l.rx).toFixed(1) : l.rx, y: meta ? +(meta.region.y + l.ry).toFixed(1) : l.ry,
-      regionX: l.rx, regionY: l.ry, diameterCm: l.diameterCm, shadow: l.shadow, labelledAt: l.at,
+      regionX: l.rx, regionY: l.ry, diameterCm: l.diameterCm, shadow: l.shadow, labelledAt: l.at, priorId: l.prior ?? null,
     })),
   };
   const a = document.createElement("a");
