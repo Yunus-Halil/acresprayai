@@ -11,7 +11,7 @@ export function itemsFromPhoto(pattern: PhotoPattern): VegItem[] {
   const out: VegItem[] = [];
   for (const b of pattern.blobs) {
     const cls: VegItem["cls"] = b.cls === "on pattern" || b.cls === "double" ? "crop" : b.cls === "unplaced" ? "unplaced" : "off-pattern";
-    out.push({ id: `b${b.id}`, x: b.x * g, y: b.y * g, areaM2: b.areaM2, equivDiameterM: b.equivDiameterM, cls, kind: b.cls === "off-row" ? "off-row" : b.cls === "between plants" ? "between plants" : null, touchesBorder: b.touchesBorder });
+    out.push({ id: `b${b.id}`, x: b.x * g, y: b.y * g, areaM2: b.areaM2, equivDiameterM: b.equivDiameterM, cls, kind: b.cls === "off-row" ? "off-row" : b.cls === "between plants" ? "between plants" : null, touchesBorder: b.touchesBorder, widthM: b.widthM, heightM: b.heightM });
   }
   const fr = pattern.fragments;
   if (fr) {

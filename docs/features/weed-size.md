@@ -157,6 +157,9 @@ spot id, leaving a measured spot alone and retrying an unavailable one; the word
 - The canopy's outline is carried to the ground through the pose (`measurement.outline`,
   at most 48 points) and drawn on the map from zoom 20 as the only closed shape that means
   "vegetation to here".
+- Continuous vegetation (2026-10-13): a canopy at least 1 m long and 3x its equivalent
+  diameter is a strip, not one plant; the status is unknown, `strip` carries its length,
+  width and area, and the popup says "Continuous vegetation, not one plant".
 - Only spots with a best photo whose original was kept get a number; imported orthomosaics
   and scans without originals are unavailable, and say so.
 - One measurement per spot, from its best photo; a second photo is not consulted.

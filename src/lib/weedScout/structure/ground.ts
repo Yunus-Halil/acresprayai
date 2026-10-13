@@ -67,7 +67,7 @@ export function groundStructure(s: Structure, source: GroundStructure["source"],
 export function emptyGroundStructure(source: GroundStructure["source"], params: StructureParams, gsdM: number): GroundStructure {
   return {
     version: "veg-structure-v1", params, source, gsdM, minMeasurableM: params.minPixelsAcross * gsdM, frames: [], individuals: [], clusters: [], zones: [],
-    accounting: { totalM2: 0, cropM2: 0, individualsM2: 0, clustersM2: 0, microM2: 0, borderM2: 0, counts: { items: 0, crop: 0, individuals: 0, clusters: 0, clusterMembers: 0, micro: 0, border: 0, zones: 0 } },
+    accounting: { totalM2: 0, cropM2: 0, individualsM2: 0, clustersM2: 0, microM2: 0, borderM2: 0, outsideM2: 0, counts: { items: 0, crop: 0, individuals: 0, clusters: 0, clusterMembers: 0, micro: 0, border: 0, outside: 0, zones: 0, strips: 0 } },
     notes: [],
   };
 }
@@ -104,14 +104,14 @@ export function mergeGroundStructures(parts: GroundStructure[], dupM = 0.4): Gro
     }
     for (const k of p.clusters) {
       if (out.clusters.some(q => near(q.centroid, k.centroid)) || out.individuals.some(q => near(q.centroid, k.centroid))) { duplicates++; continue; }
-      out.clusters.push(k); acc.clustersM2 += k.canopyAreaM2; acc.counts.clusters++; acc.counts.clusterMembers += k.components; acc.totalM2 += k.canopyAreaM2;
+      out.clusters.push(k); acc.clustersM2 += k.canopyAreaM2; acc.counts.clusters++; acc.counts.clusterMembers += k.components; if (k.continuous) acc.counts.strips++; acc.totalM2 += k.canopyAreaM2;
     }
     for (const z of p.zones) {
       if (out.zones.some(q => inRing(z.centroid, q.ring))) { duplicates++; continue; }
       out.zones.push(z); acc.microM2 += z.microAreaM2; acc.counts.micro += z.count; acc.counts.zones++; acc.totalM2 += z.microAreaM2;
     }
-    acc.cropM2 += p.accounting.cropM2; acc.borderM2 += p.accounting.borderM2; acc.counts.crop += p.accounting.counts.crop; acc.counts.border += p.accounting.counts.border; acc.counts.items += p.accounting.counts.items;
-    acc.totalM2 += p.accounting.cropM2 + p.accounting.borderM2;
+    acc.cropM2 += p.accounting.cropM2; acc.borderM2 += p.accounting.borderM2; acc.outsideM2 += p.accounting.outsideM2; acc.counts.crop += p.accounting.counts.crop; acc.counts.border += p.accounting.counts.border; acc.counts.outside += p.accounting.counts.outside; acc.counts.items += p.accounting.counts.items;
+    acc.totalM2 += p.accounting.cropM2 + p.accounting.borderM2 + p.accounting.outsideM2;
   }
   out.notes.push(`${parts.length} photo(s) read: ${out.individuals.length} individual plants, ${out.clusters.length} clusters, ${out.zones.length} coverage zones${duplicates ? `; ${duplicates} seen in a second photo were kept once` : ""}.`);
   return out;

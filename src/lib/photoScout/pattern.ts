@@ -180,6 +180,9 @@ export type PhotoBlob = {
   areaPx: number;
   areaM2: number;
   equivDiameterM: number;
+  /** The component's box, metres: its extent, which is not its canopy. Absent on reads made before it was kept. */
+  widthM?: number;
+  heightM?: number;
   touchesBorder: boolean;
   window: number | null;
   rowIndex: number | null;
@@ -1489,7 +1492,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     const areaM2 = b.n * gsdM * gsdM;
     const w = windowAt(Math.round(x), Math.round(y));
     const blob: PhotoBlob = {
-      id, x, y, areaPx: b.n, areaM2, equivDiameterM: 2 * Math.sqrt(areaM2 / Math.PI), touchesBorder,
+      id, x, y, areaPx: b.n, areaM2, equivDiameterM: 2 * Math.sqrt(areaM2 / Math.PI), widthM: (b.maxX - b.minX + 1) * gsdM, heightM: (b.maxY - b.minY + 1) * gsdM, touchesBorder,
       window: w?.index ?? null, rowIndex: null, acrossM: null, alongM: null, cls: "unplaced",
     };
     if (w && w.usable && !touchesBorder && !canopyClosed) {

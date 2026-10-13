@@ -104,6 +104,8 @@ export type WeedMeasurement = {
   quality: SegmentationQuality | null;
   /** The whole touching clump, when the plant was cut out of one: what a reader would see as one shape. */
   clump: { diameterCm: number; areaCm2: number; parts: number } | null;
+  /** Continuous vegetation at the spot (a strip too long and thin to be one plant): its length, width and area. The status is unknown and no diameter is given. */
+  strip: { lengthCm: number; widthCm: number; areaCm2: number } | null;
   /** The canopy's outline in the photo's native pixels, thinned; for drawing. */
   outlinePx: { x: number; y: number }[] | null;
   /** The same outline on the ground through the pose, when the measurement was made in a posed photo; for the map. */
@@ -133,7 +135,7 @@ export function unavailableMeasurement(reason: string, thresholds: SizeThreshold
   return {
     version: MEASUREMENT_VERSION, status: "unavailable", reason, method: null, confidence: null,
     canopyDiameterCm: null, canopyAreaCm2: null, maxExtentCm: null, boxWidthCm: null, boxHeightCm: null,
-    sizeCategory: null, thresholds, gsdCmPx: null, sourceFrame, source: null, quality: null, clump: null,
+    sizeCategory: null, thresholds, gsdCmPx: null, sourceFrame, source: null, quality: null, clump: null, strip: null,
     outlinePx: null, outline: null, centrePx: null, measuredAt: new Date().toISOString(),
   };
 }

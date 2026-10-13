@@ -40,6 +40,11 @@ export type VegItem = {
   /** Off the row, or on the row between crop plants, when the pattern placed it. */
   kind?: "off-row" | "between plants" | null;
   touchesBorder?: boolean;
+  /** The item's box, metres, when known: a strip is told from a plant by it. */
+  widthM?: number;
+  heightM?: number;
+  /** Outside the field's boundary: counted, never grouped. */
+  outside?: boolean;
   /** Fragments only: how many fragments this item stands for (one cell's worth). */
   count?: number;
 };
@@ -101,6 +106,11 @@ export type Cluster = {
   plantCount: null;
   kinds: { offRow: number; between: number };
   rowsKnown: boolean;
+  /** One component too long and thin to be one plant: continuous vegetation, given by length and width, never a diameter. */
+  continuous: boolean;
+  /** The longest axis and the extent across it, metres. */
+  lengthM: number;
+  widthM: number;
 };
 
 export type Zone = {
@@ -135,7 +145,9 @@ export type Accounting = {
   microM2: number;
   /** Objects cut by the imagery's edge: not measured, not grouped. */
   borderM2: number;
-  counts: { items: number; crop: number; individuals: number; clusters: number; clusterMembers: number; micro: number; border: number; zones: number };
+  /** Objects outside the field's boundary: counted here, nowhere else. */
+  outsideM2: number;
+  counts: { items: number; crop: number; individuals: number; clusters: number; clusterMembers: number; micro: number; border: number; outside: number; zones: number; strips: number };
 };
 
 export type Structure = {

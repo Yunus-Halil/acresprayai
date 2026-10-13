@@ -24,6 +24,7 @@ export function measurementCaveats(m: WeedMeasurement): string[] {
 export function measurementLine(m: WeedMeasurement | null | undefined, units: UnitSystem): string {
   if (!m) return "Size not measured yet.";
   if (m.status === "unavailable") return `Size not measured: ${m.reason ?? "no photo"}.`;
+  if (m.status === "unknown" && m.strip) return `Continuous vegetation, not one plant: ${fmtLengthCm(m.strip.lengthCm, units).text} long, ${fmtLengthCm(m.strip.widthCm, units).text} across, ${fmtAreaCm2(m.strip.areaCm2, units).text} of canopy.`;
   if (m.status === "unknown") return `Size not measured in the photo: ${m.reason ?? "unknown"}.`;
   const d = fmtLengthCm(m.canopyDiameterCm!, units).text, a = fmtAreaCm2(m.canopyAreaCm2!, units).text;
   const cat = m.sizeCategory ? `, ${SIZE_CATEGORY_LABEL[m.sizeCategory]}` : "";
@@ -47,6 +48,7 @@ export function measurementRows(m: WeedMeasurement, units: UnitSystem): [string,
     rows.push(["Why", m.reason ?? ""]);
   }
   if (m.clump) rows.push(["Whole clump", `${cm(m.clump.diameterCm)} across, ${m.clump.parts} plants`]);
+  if (m.strip) rows.push(["Continuous vegetation", `${cm(m.strip.lengthCm)} long, ${cm(m.strip.widthCm)} across, ${fmtAreaCm2(m.strip.areaCm2, units).text}`]);
   if (m.confidence != null) rows.push(["Confidence", m.confidence.toFixed(2)]);
   if (m.gsdCmPx != null) rows.push(["Pixel size", `${fmtLengthCm(m.gsdCmPx, units).text}/px`]);
   if (m.sourceFrame) rows.push(["Photo", m.sourceFrame + (m.source?.viewAngleDeg != null ? `, ${m.source.viewAngleDeg.toFixed(0)}° from straight down` : "")]);

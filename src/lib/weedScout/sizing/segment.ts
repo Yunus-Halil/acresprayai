@@ -40,6 +40,7 @@ import { MIN_BLOB_PX, type PhotoPixels, type RawBlob, type SplitOptions, measure
 import { minAreaPx } from "../blobs";
 import { OTSU_MIN_SPREAD, accumulateHistogram, emptyHistogram, indexRaster, otsuFromHistogram } from "../vegetation";
 import { MEASUREMENT_VERSION, type SegmentationQuality, type SizeThresholds, type WeedMeasurement, sizeCategoryOf } from "./types";
+import { isStrip, widthAcross } from "../structure/group";
 
 /** A pixel whose channel mean is under this (0..255) is shadow too deep to classify and is left out of the mask. */
 export const DEFAULT_MIN_BRIGHTNESS = 20;
@@ -205,7 +206,7 @@ function unknown(reason: string, input: SegmentInput, quality: SegmentationQuali
     measurement: {
       version: MEASUREMENT_VERSION, status: "unknown", reason, method: "native-photo-mask-v1", confidence: null,
       canopyDiameterCm: null, canopyAreaCm2: null, maxExtentCm: null, boxWidthCm: null, boxHeightCm: null,
-      sizeCategory: null, thresholds: input.thresholds, gsdCmPx: input.gsdM * 100, quality, clump: null,
+      sizeCategory: null, thresholds: input.thresholds, gsdCmPx: input.gsdM * 100, quality, clump: null, strip: null,
       outlinePx: null, outline: null, centrePx: null, measuredAt: new Date().toISOString(),
     },
     wider,
@@ -355,6 +356,17 @@ export function segmentWeed(input: SegmentInput): SegmentOutput {
     return out;
   }
 
+  // A strip: too long and thin to be one plant. Continuous vegetation, by length, width and area; no diameter.
+  const lengthM = feretPx * gsdM;
+  if (isStrip(equivDiameterM, lengthM)) {
+    const widthM = widthAcross(hull, maxFeret(hull)) * gsdM;
+    const out = unknown(`continuous vegetation ${(lengthM * 100).toFixed(0)} cm long and ${(widthM * 100).toFixed(0)} cm across, ${(lengthM / equivDiameterM).toFixed(1)}x its equivalent diameter: a strip, not one plant`, input, quality);
+    out.measurement.strip = { lengthCm: +(lengthM * 100).toFixed(1), widthCm: +(widthM * 100).toFixed(1), areaCm2: +(areaM2 * 1e4).toFixed(0) };
+    out.measurement.outlinePx = thinRing(ring);
+    out.measurement.centrePx = centrePx;
+    return out;
+  }
+
   // 8. The confidence, and the verdict on the number.
   const confidence = confidenceOf(quality, input.viewAngleDeg, minPixelsAcross);
   const cm = (m: number) => +(m * 100).toFixed(1);
@@ -373,7 +385,7 @@ export function segmentWeed(input: SegmentInput): SegmentOutput {
       canopyDiameterCm: diameterCm, canopyAreaCm2: +(areaM2 * 1e4).toFixed(0), maxExtentCm: cm(feretPx * gsdM),
       boxWidthCm: cm((part.maxX - part.minX + 1) * gsdM), boxHeightCm: cm((part.maxY - part.minY + 1) * gsdM),
       sizeCategory: sizeCategoryOf(diameterCm, thresholds), thresholds, gsdCmPx: gsdM * 100,
-      quality, clump, outlinePx: thinRing(ring), outline: null, centrePx, measuredAt: new Date().toISOString(),
+      quality, clump, strip: null, outlinePx: thinRing(ring), outline: null, centrePx, measuredAt: new Date().toISOString(),
     },
     wider: false,
   };

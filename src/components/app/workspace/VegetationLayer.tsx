@@ -69,7 +69,7 @@ export function vegetationAtZoom(v: Vegetation, zoom: number): { individuals: Gr
 export const zoneOpacity = (coverage: number, zoom: number): number => Math.min(0.55, Math.max(0.08, coverage / 0.05 * 0.55)) * (zoom >= VEG_MEDIUM_ZOOM ? 0.5 : 1);
 
 /** Small ground in square centimetres, larger ground in the field's unit: a cluster's canopy is not a hectare. */
-export const smallArea = (m2: number, units: UnitSystem): string => (m2 < 1 ? fmtAreaCm2(m2 * 1e4, units).text : fmtArea(m2, units).text);
+export const smallArea = (m2: number, units: UnitSystem): string => (m2 < 1 ? fmtAreaCm2(m2 * 1e4, units).text : m2 < 100 ? `${m2.toFixed(2)} m²` : fmtArea(m2, units).text);
 
 export function individualLine(i: GroundIndividual, units: UnitSystem, source: "photos" | "map", gsdM: number): string {
   const what = i.rowsKnown ? (i.kind === "between plants" ? "Plant on the row, between crop plants" : "Plant off the row") : "Vegetation (rows unknown)";
@@ -77,7 +77,8 @@ export function individualLine(i: GroundIndividual, units: UnitSystem, source: "
 }
 
 export function clusterLine(c: GroundCluster, units: UnitSystem): string {
-  return `Cluster of ${c.components} touching objects${c.rowsKnown ? "" : " (rows unknown)"}: canopy ${smallArea(c.canopyAreaM2, units)}, footprint ${smallArea(c.footprintAreaM2, units)}, ${fmtLengthCm(c.boxWidthM * 100, units).text} by ${fmtLengthCm(c.boxHeightM * 100, units).text}. Plant count not claimed.`;
+  if (c.continuous) return `Continuous vegetation, not one plant${c.rowsKnown ? "" : " (rows unknown)"}: ${fmtLengthCm(c.lengthM * 100, units).text} long, ${fmtLengthCm(c.widthM * 100, units).text} across, canopy ${smallArea(c.canopyAreaM2, units)}, footprint ${smallArea(c.footprintAreaM2, units)}. Plant count not claimed.`;
+  return `Cluster of ${c.components} touching objects${c.rowsKnown ? "" : " (rows unknown)"}: canopy ${smallArea(c.canopyAreaM2, units)}, footprint ${smallArea(c.footprintAreaM2, units)}, ${fmtLengthCm(c.lengthM * 100, units).text} by ${fmtLengthCm(c.widthM * 100, units).text}. Plant count not claimed.`;
 }
 
 export function zoneLine(z: GroundZone, units: UnitSystem, minMeasurableM: number, cellM: number): string {

@@ -5,7 +5,7 @@
 // at 4 cm per pixel nothing under 24 cm is measured on its own and the
 // small weeds are coverage, which is what a map at that size can honestly
 // say; the photos, read at 1 cm, give the individuals.
-import type { LatLng2 } from "../../geo";
+import { type LatLng2, pointInAnyRing } from "../../geo";
 import { type FieldPattern, nearestPlantFinder } from "../fieldPattern";
 import { localFrame } from "../rows";
 import type { Blob, RowModel } from "../types";
@@ -49,7 +49,7 @@ export function structureOfMap(input: MapStructureInput): GroundStructure {
     } else {
       cls = "unplaced";
     }
-    return { id: b.id, x, y, areaM2: b.areaM2, equivDiameterM: b.equivDiameterM, cls, kind, touchesBorder: b.touchesBorder };
+    return { id: b.id, x, y, areaM2: b.areaM2, equivDiameterM: b.equivDiameterM, cls, kind, touchesBorder: b.touchesBorder, widthM: b.widthM, heightM: b.heightM, outside: ring.length >= 3 && !pointInAnyRing(b.centroid, boundary) };
   });
   const pts = boundary.flat().map(p => frame.toXY(p));
   const bounds = pts.length

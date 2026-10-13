@@ -262,8 +262,25 @@ export function lookLegend(look: PhotoLook): string {
 
 export type LookCut = { url: string; width: number; height: number; factor: number };
 
+/** Where an outlined component in the cut went, by the same rules the structure and the sizer apply, from what the cut alone can tell. */
+export type CutDisposition = "crop" | "candidate" | "strip: continuous vegetation" | "uncertain: no trusted rows" | "filtered: cut by the edge" | "filtered: under the measurable size" | "hidden: under the display floor";
+export const CUT_DISPOSITION_COLOUR: Record<CutDisposition, string> = {
+  "crop": "#4CAF50", "candidate": "#ef5350", "strip: continuous vegetation": "#ff7043", "uncertain: no trusted rows": "#9e9e9e",
+  "filtered: cut by the edge": "#42a5f5", "filtered: under the measurable size": "#ab47bc", "hidden: under the display floor": "#ffeb3b",
+};
+export function cutDisposition(o: CutOutline, gsdM: number, minPixelsAcross: number, displayFloorM: number, stripMinLengthM: number, stripElongation: number): CutDisposition {
+  if (o.cls === "on pattern" || o.cls === "double") return "crop";
+  if (o.atEdge) return "filtered: cut by the edge";
+  if (o.cls === null || o.cls === "unplaced") return "uncertain: no trusted rows";
+  const dM = 2 * Math.sqrt((o.areaPx * gsdM * gsdM) / Math.PI), lengthM = o.lengthPx * gsdM;
+  if (lengthM >= stripMinLengthM && lengthM >= stripElongation * dM) return "strip: continuous vegetation";
+  if (dM < minPixelsAcross * gsdM) return "filtered: under the measurable size";
+  if (dM < displayFloorM) return "hidden: under the display floor";
+  return "candidate";
+}
+
 /** One vegetation component's outline in a cut's pixels, with the class of the pattern circle it belongs to. */
-export type CutOutline = { ring: { x: number; y: number }[]; cls: BlobClass | null; areaPx: number };
+export type CutOutline = { ring: { x: number; y: number }[]; cls: BlobClass | null; areaPx: number; /** Touches the cut's edge, so its size and centre are unknown here. */ atEdge: boolean; /** Its longest axis, pixels. */ lengthPx: number };
 
 /** Components in a cut with fewer pixels than this are not outlined: at the cut's scale they are specks. */
 export const CUT_OUTLINE_MIN_PX = MIN_BLOB_PX;
@@ -294,7 +311,7 @@ export function outlinesInCut(px: PhotoPixels, gsdM: number, circles: OverlayCir
     const cx = b.sx / b.n, cy = b.sy / b.n;
     let cls: BlobClass | null = null, best = Infinity;
     for (const c of circles) { const d = Math.hypot(c.x - cx, c.y - cy); if (d <= Math.max(c.r, 3) && d < best) { best = d; cls = c.cls; } }
-    out.push({ ring, cls, areaPx: b.n });
+    out.push({ ring, cls, areaPx: b.n, atEdge: b.minX === 0 || b.minY === 0 || b.maxX === px.width - 1 || b.maxY === px.height - 1, lengthPx: Math.hypot(b.maxX - b.minX + 1, b.maxY - b.minY + 1) });
   }
   return out;
 }

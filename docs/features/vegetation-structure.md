@@ -126,6 +126,44 @@ area is the merged area, and the structure counts the row's crop canopy as crop 
 splitting it. That is left as it is. A boundary invented there would be a drawing, not a
 measurement.
 
+## The audit of 2026-10-13: strips, the field edge, and the linkage
+
+The vineyard screenshots showed a long strip of vegetation along the field boundary with
+one red outline on it and the rest unmarked, and vine rows unmarked. Traced stage by stage:
+
+- **The field edge is not a miss.** The pass trusted rows in 114 of the vineyard photo's 150
+  windows; the corner where the strip runs has none, so its 198 components are "unplaced":
+  vegetation of unknown standing, neither crop nor candidate, which the sizer and the
+  structure never touched. Now a disposition of its own, drawn grey.
+- **The red outline was one segment of the strip** given an individual diameter. The sizer now
+  refuses a canopy at least 1 m long and 3x its equivalent diameter as continuous
+  vegetation, reporting length, width and area (`measurement.strip`); the structure makes
+  such a component a cluster of one with `continuous: true`, `lengthM` and `widthM`
+  (rotating-caliper minimum width). The vine rows run 10 to 19 m at 3 to 4.5x; a two-plant
+  cluster sits at 1.1 to 1.7x, so the rule separates them with room.
+- **The 15 cm linkage does not chain.** At 15 cm the largest cluster on the vineyard photo has
+  3 members and 4.3 m; at 40 cm still 4. The long objects are single components, so no
+  shape-aware linkage was added; the shape rule applies to one component.
+- **Crop is excluded** from every weed count and size; the demo's index states the crop canopy
+  area beside the weeds'.
+
+**The trace** (`structure/trace.ts`): every component of the pass goes to exactly one of
+crop; candidate measured, refused (with the sizer's reason) or not measured; strip;
+uncertain (no trusted rows); filtered (cut by the edge; under the measurable size at this
+scale); hidden (under the display floor). A native measurement outranks the pass's coarser
+size floor. Fragments under the component floor are coverage and not components. "Missed by
+segmentation" is a pixel question: the demo tints the mask green and the pixels within 30%
+of the class separation under its threshold cyan, and reports both shares, claiming nothing
+for the cyan. On the samples: orchard 13.9% called vegetation and 9.5% just under; vineyard
+19.7% and 14.9%, most of it the shaded side of the vine rows.
+
+In the app the closer look has a diagnostic view ("Where everything went") that colours every
+outlined component in the cut by its fate and keys the counts; the map's objects outside the
+field boundary are counted in `accounting.outsideM2` and left out.
+
+Fixtures (`vegetationTrace.test.ts`): an isolated weed, two touching, a long strip, the photo's
+edge, a weed merged with the crop row, small fragments, vegetation across the boundary.
+
 ## Limitations, stated
 
 - A cluster is a linkage of mask components. Two canopies that overlap into one component

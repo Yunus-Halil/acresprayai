@@ -22,7 +22,9 @@ import { type GroundedDetection, debugLine, groundDetections } from "@/lib/sourc
 import { lookupOriginal } from "@/lib/sourceFrames/manifest";
 import { type ScanSources, downloadFrame } from "@/lib/sourceFrames/scan";
 import type { SpotSources } from "@/lib/sourceFrames/spot";
-import { BLOB_COLOUR, type CutOutline, type LookCut, type PhotoLook, ROW_COLOUR, cutLookWindow, lookFromPattern, outlinesInCut, patternLookSideM, significantLook } from "@/lib/sourceFrames/patternLook";
+import { BLOB_COLOUR, CUT_DISPOSITION_COLOUR, type CutDisposition, type CutOutline, type LookCut, type PhotoLook, ROW_COLOUR, cutDisposition, cutLookWindow, lookFromPattern, outlinesInCut, patternLookSideM, significantLook } from "@/lib/sourceFrames/patternLook";
+import { STRIP_ELONGATION, STRIP_MIN_LENGTH_M } from "@/lib/weedScout/structure/group";
+import { DEFAULT_STRUCTURE_PARAMS } from "@/lib/weedScout/structure/types";
 import { analysePhotoOffThread } from "@/lib/photoScout/runPattern";
 import { decodePhoto } from "@/lib/photoScout/decode";
 import type { PhotoPattern } from "@/lib/photoScout/pattern";
@@ -97,7 +99,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   /** The spot's size measurement, drawn as the canopy's outline when it was measured in the photo on screen. */
   spotMeasurement?: WeedMeasurement | null;
   /** The run's parameters, so a photo read here is read the way the pass reads it. Defaults when absent. */
-  passParams?: Pick<ScoutParams, "rowSpacingAuto" | "rowSpacingM" | "minBlobCm2"> | null;
+  passParams?: (Pick<ScoutParams, "rowSpacingAuto" | "rowSpacingM" | "minBlobCm2"> & { structure?: ScoutParams["structure"] }) | null;
   /** The scan's saved photo reads, when signed in. */
   readStore?: PhotoReadStore | null;
   /** Weeds under this many metres across are not drawn in the photo. */
@@ -112,6 +114,8 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   const [copied, setCopied] = useState(false);
   // The pattern view: a wider cut around the spot, read by the pass, drawn as lines and circles.
   const [patternOn, setPatternOn] = useState(true);
+  // The diagnostic view: every outline coloured by where it went (crop, candidate, strip, uncertain, filtered, hidden) with the counts.
+  const [diagnostic, setDiagnostic] = useState(false);
   const [patternLook, setPatternLook] = useState<{ cut: LookCut; look: PhotoLook; fromRun: boolean; outlines: CutOutline[] | null } | null>(null);
   const [patternState, setPatternState] = useState<"idle" | "reading" | "failed">("idle");
   const [patternProgress, setPatternProgress] = useState<number | null>(null);
@@ -222,6 +226,16 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
     return { cx: win.x + win.width / 2, cy: win.y + win.height / 2, fitWidthPx: Math.max(win.width, win.height) };
   }, [patternOn, patternLook, look]);
 
+  // Where each outlined component went, by the rules the structure and the sizer apply; the diagnostic view colours by it and keys the counts.
+  const dispositions = useMemo(() => {
+    if (!patternLook?.outlines) return null;
+    const g = patternLook.look.gsdM * patternLook.cut.factor;
+    const list = patternLook.outlines.map(o => cutDisposition(o, g, passParams?.structure?.minPixelsAcross ?? DEFAULT_STRUCTURE_PARAMS.minPixelsAcross, minWeedM, STRIP_MIN_LENGTH_M, STRIP_ELONGATION));
+    const counts = new Map<CutDisposition, number>();
+    for (const d of list) counts.set(d, (counts.get(d) ?? 0) + 1);
+    return { list, counts };
+  }, [patternLook, passParams, minWeedM]);
+
   // Everything drawn over the photo, in its native pixels: the area the map
   // flagged (dashed), the rows, the plants as their own outlines (circles of
   // the equivalent diameter only where the cut could not be outlined), the
@@ -242,8 +256,11 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
         patternLook.outlines.forEach((o, i) => {
           const cls = o.cls ?? "unplaced";
           const dM = 2 * Math.sqrt((o.areaPx * g * g) / Math.PI);
-          if ((cls === "off-row" || cls === "between plants") && dM < minWeedM) return;
-          nodes.push(<polygon key={`o${i}`} points={o.ring.map(q => `${ox + q.x * f},${oy + q.y * f}`).join(" ")} fill="none" stroke={BLOB_COLOUR[cls]} strokeWidth={1.2} {...thin} />);
+          const d = dispositions?.list[i];
+          // The diagnostic view draws everything, in the colour of its fate; the pattern view keeps the display floor.
+          if (!diagnostic && (cls === "off-row" || cls === "between plants") && dM < minWeedM) return;
+          const colour = diagnostic && d ? CUT_DISPOSITION_COLOUR[d] : BLOB_COLOUR[cls];
+          nodes.push(<polygon key={`o${i}`} points={o.ring.map(q => `${ox + q.x * f},${oy + q.y * f}`).join(" ")} fill="none" stroke={colour} strokeWidth={diagnostic && d === "strip: continuous vegetation" ? 2 : 1.2} strokeDasharray={diagnostic && d === "strip: continuous vegetation" ? "6 3" : undefined} {...thin} />);
         });
       } else {
         pl.circles.forEach((c, i) => nodes.push(<circle key={`c${i}`} cx={c.x + ox} cy={c.y + oy} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={1.2} {...thin} />));
@@ -263,7 +280,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
       });
     }
     return nodes;
-  }, [look, view, patternOn, patternLook, minWeedM, spotMeasurement, detection]);
+  }, [look, view, patternOn, patternLook, minWeedM, spotMeasurement, detection, diagnostic, dispositions]);
   const orthoGsd = target?.spot.orthoGsdM ?? null;
 
   return (
@@ -301,12 +318,29 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
           <button type="button" onClick={() => setPatternOn(p => !p)} className={`rounded-sm border px-2 py-1 ${patternOn ? "border-[#ffeb3b] text-[#ffeb3b]" : "border-[#333] text-neutral-300 hover:bg-[#1f1f1f]"}`} data-testid="closer-look-pattern">
             {patternOn ? "Pattern view" : "Show the pattern"}
           </button>
+          {patternOn && patternLook?.outlines && (
+            <button type="button" onClick={() => setDiagnostic(d => !d)} className={`rounded-sm border px-2 py-1 ${diagnostic ? "border-[#ab47bc] text-[#ab47bc]" : "border-[#333] text-neutral-300 hover:bg-[#1f1f1f]"}`}
+              title="Colour every outlined piece of vegetation by where it went: crop, candidate, a continuous strip, uncertain where no rows were trusted, filtered at the edge or under the measurable size, hidden under the display floor." data-testid="closer-look-diagnostic">
+              {diagnostic ? "Diagnostic view" : "Where everything went"}
+            </button>
+          )}
         </div>
         {patternOn && look && (
           <p className="text-[11px] text-neutral-400" data-testid="closer-look-pattern-line">
             {patternState === "reading" && <><Loader2 className="inline h-3 w-3 animate-spin mr-1" /> {patternProgress == null ? "Opening the pattern around this spot." : `Reading the rows and plants in this whole photo (${Math.round(patternProgress * 100)}%).`}</>}
             {patternState === "failed" && `The pattern could not be read in this photo${patternError ? ` (${patternError})` : ""}.`}
-            {patternLook && <PatternKey look={significantLook(patternLook.look, minWeedM)} detail={`${gsd(patternLook.look.gsdM)}${patternLook.outlines ? "; the shapes are the vegetation's own outlines" : "; circles: the cut had no soil-to-plant contrast to outline on"}`} measured={spotMeasurement?.status === "measured" && spotMeasurement.sourceFrame === view?.filename ? spotMeasurement : null} units={units} outlines={!!patternLook.outlines} />}
+            {patternLook && diagnostic && dispositions && (
+              <span className="flex flex-wrap items-center gap-x-4 gap-y-1" data-testid="closer-look-diagnostic-key">
+                {(Object.keys(CUT_DISPOSITION_COLOUR) as CutDisposition[]).map(d => (
+                  <span key={d} className="inline-flex items-center gap-1.5">
+                    <span className="inline-block h-3 w-3 border-2" style={{ borderColor: CUT_DISPOSITION_COLOUR[d], borderRadius: "40% 60% 55% 45%", borderStyle: d.startsWith("strip") ? "dashed" : "solid" }} aria-hidden="true" />
+                    {d}<span className="text-neutral-500">{dispositions.counts.get(d) ?? 0}</span>
+                  </span>
+                ))}
+                <span className="text-neutral-500">Every outlined piece of vegetation in this cut, by where it went. Fragments under the component floor are coverage and are not outlined.</span>
+              </span>
+            )}
+            {patternLook && !diagnostic && <PatternKey look={significantLook(patternLook.look, minWeedM)} detail={`${gsd(patternLook.look.gsdM)}${patternLook.outlines ? "; the shapes are the vegetation's own outlines" : "; circles: the cut had no soil-to-plant contrast to outline on"}`} measured={spotMeasurement?.status === "measured" && spotMeasurement.sourceFrame === view?.filename ? spotMeasurement : null} units={units} outlines={!!patternLook.outlines} />}
           </p>
         )}
         {detection?.state === "done" && (
