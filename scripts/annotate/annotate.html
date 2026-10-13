@@ -31,6 +31,7 @@
   <label><input type="checkbox" id="shadow"> in shadow</label>
   <label>diameter cm <input id="diam" size="4" placeholder="optional"></label>
   <label><input type="checkbox" id="showPred"> show predictions</label>
+  <label title="Tick only when every weed in the image is labelled: precision is computed only then."><input type="checkbox" id="exhaustive"> every weed labelled</label>
   <button id="undo">undo (z)</button>
   <button id="export">export JSON</button>
 </header>
@@ -124,6 +125,7 @@ document.getElementById("export").addEventListener("click", () => {
     format: "swardus-region-labels-v1",
     image: imageName, photo: meta?.photo ?? null, region: meta?.region ?? null, gsdCmPx: meta?.gsdCmPx ?? null,
     annotator: who, exportedAt: new Date().toISOString(),
+    exhaustive: document.getElementById("exhaustive").checked,
     labels: labels.map((l, i) => ({
       id: `${meta?.region?.id ?? imageName}:L${i + 1}`, cls: l.cls,
       // The photo's native pixel when the region is known, else the region's own pixel.

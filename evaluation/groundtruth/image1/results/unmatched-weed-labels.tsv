@@ -1,0 +1,192 @@
+label	kind	maskPx	index	nearest
+DJI_0301.JPG:L109	mask on at the label (a fragment under the component floor)	maskPx=81	index=0.65/0.20	nearest=84px candidate: measured
+DJI_0301.JPG:L111	a component within 60 px but past the match reach (candidate)	maskPx=28	index=0.36/0.20	nearest=28px candidate: measured
+DJI_0301.JPG:L121	a component within 60 px but past the match reach (candidate)	maskPx=29	index=0.41/0.20	nearest=50px candidate: measured
+DJI_0301.JPG:L122	a component within 60 px but past the match reach (candidate)	maskPx=5	index=0.39/0.20	nearest=55px candidate: measured
+DJI_0301.JPG:L123	mask on at the label (a fragment under the component floor)	maskPx=18	index=0.43/0.20	nearest=89px candidate: measured
+DJI_0301.JPG:L127	mask on at the label (a fragment under the component floor)	maskPx=62	index=0.69/0.20	nearest=85px candidate: refused
+DJI_0301.JPG:L128	mask on at the label (a fragment under the component floor)	maskPx=29	index=0.30/0.20	nearest=124px candidate: measured
+DJI_0301.JPG:L134	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.17/0.20	nearest=40px candidate: measured
+DJI_0301.JPG:L136	mask on at the label (a fragment under the component floor)	maskPx=59	index=0.49/0.20	nearest=106px crop
+DJI_0301.JPG:L137	mask on at the label (a fragment under the component floor)	maskPx=4	index=0.25/0.20	nearest=136px candidate: measured
+DJI_0301.JPG:L138	mask on at the label (a fragment under the component floor)	maskPx=42	index=0.47/0.20	nearest=99px crop
+DJI_0301.JPG:L142	mask on at the label (a fragment under the component floor)	maskPx=36	index=0.30/0.20	nearest=68px candidate: measured
+DJI_0301.JPG:L143	a component within 60 px but past the match reach (candidate)	maskPx=10	index=0.25/0.20	nearest=44px candidate: measured
+DJI_0301.JPG:L144	mask on at the label (a fragment under the component floor)	maskPx=17	index=0.23/0.20	nearest=80px candidate: measured
+DJI_0301.JPG:L146	a component within 60 px but past the match reach (candidate)	maskPx=75	index=0.49/0.20	nearest=34px candidate: measured
+DJI_0301.JPG:L147	mask on at the label (a fragment under the component floor)	maskPx=76	index=0.77/0.20	nearest=86px candidate: refused
+DJI_0301.JPG:L148	a component within 60 px but past the match reach (candidate)	maskPx=32	index=0.60/0.20	nearest=49px candidate: measured
+DJI_0301.JPG:L149	a component within 60 px but past the match reach (candidate)	maskPx=48	index=0.47/0.20	nearest=33px candidate: measured
+DJI_0301.JPG:L153	mask on at the label (a fragment under the component floor)	maskPx=62	index=0.41/0.20	nearest=72px candidate: measured
+DJI_0301.JPG:L154	mask on at the label (a fragment under the component floor)	maskPx=72	index=0.74/0.20	nearest=80px crop
+DJI_0301.JPG:L155	mask on at the label (a fragment under the component floor)	maskPx=65	index=0.62/0.20	nearest=60px candidate: measured
+DJI_0301.JPG:L157	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.13/0.20	nearest=129px candidate: refused
+DJI_0301.JPG:L158	mask on at the label (a fragment under the component floor)	maskPx=6	index=0.23/0.20	nearest=113px candidate: refused
+DJI_0301.JPG:L160	a component within 60 px but past the match reach (candidate)	maskPx=61	index=1.12/0.20	nearest=38px candidate: refused
+DJI_0301.JPG:L161	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.15/0.20	nearest=49px candidate: refused
+DJI_0301.JPG:L162	mask on at the label (a fragment under the component floor)	maskPx=32	index=0.38/0.20	nearest=78px candidate: refused
+DJI_0301.JPG:L163	mask on at the label (a fragment under the component floor)	maskPx=79	index=0.82/0.20	nearest=94px candidate: refused
+DJI_0301.JPG:L164	mask on at the label (a fragment under the component floor)	maskPx=80	index=1.01/0.20	nearest=108px crop
+DJI_0301.JPG:L165	mask on at the label (a fragment under the component floor)	maskPx=51	index=0.58/0.20	nearest=135px crop
+DJI_0301.JPG:L167	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.13/0.20	nearest=58px candidate: refused
+DJI_0301.JPG:L168	mask on at the label (a fragment under the component floor)	maskPx=4	index=0.38/0.20	nearest=64px candidate: refused
+DJI_0301.JPG:L169	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.11/0.20	nearest=70px candidate: refused
+DJI_0301.JPG:L170	mask on at the label (a fragment under the component floor)	maskPx=5	index=0.21/0.20	nearest=110px candidate: refused
+DJI_0301.JPG:L171	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.15/0.20	nearest=116px candidate: refused
+DJI_0301.JPG:L174	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.14/0.20	nearest=140px candidate: measured
+DJI_0301.JPG:L175	a component within 60 px but past the match reach (candidate)	maskPx=4	index=0.28/0.20	nearest=41px candidate: refused
+DJI_0301.JPG:L178	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.17/0.20	nearest=62px candidate: measured
+DJI_0301.JPG:L179	a component within 60 px but past the match reach (candidate)	maskPx=15	index=0.34/0.20	nearest=20px candidate: measured
+DJI_0301.JPG:L180	a component within 60 px but past the match reach (candidate)	maskPx=1	index=0.25/0.20	nearest=54px candidate: measured
+DJI_0301.JPG:L182	mask on at the label (a fragment under the component floor)	maskPx=7	index=0.27/0.20	nearest=127px candidate: measured
+DJI_0301.JPG:L183	a component within 60 px but past the match reach (candidate)	maskPx=1	index=0.21/0.20	nearest=59px candidate: refused
+DJI_0301.JPG:L186	a component within 60 px but past the match reach (candidate)	maskPx=31	index=0.39/0.20	nearest=40px candidate: measured
+DJI_0301.JPG:L187	mask on at the label (a fragment under the component floor)	maskPx=9	index=0.19/0.20	nearest=137px candidate: measured
+DJI_0301.JPG:L189	a component within 60 px but past the match reach (candidate)	maskPx=3	index=0.16/0.20	nearest=32px candidate: refused
+DJI_0301.JPG:L193	a component within 60 px but past the match reach (candidate)	maskPx=12	index=0.22/0.20	nearest=38px candidate: refused
+DJI_0301.JPG:L194	a component within 60 px but past the match reach (candidate)	maskPx=12	index=0.21/0.20	nearest=37px candidate: measured
+DJI_0301.JPG:L195	a component within 60 px but past the match reach (candidate)	maskPx=26	index=0.27/0.20	nearest=28px candidate: measured
+DJI_0301.JPG:L197	mask on at the label (a fragment under the component floor)	maskPx=25	index=0.35/0.20	nearest=105px candidate: measured
+DJI_0301.JPG:L198	mask on at the label (a fragment under the component floor)	maskPx=44	index=0.30/0.20	nearest=91px crop
+DJI_0301.JPG:L199	mask on at the label (a fragment under the component floor)	maskPx=79	index=0.54/0.20	nearest=69px candidate: refused
+DJI_0301.JPG:L200	a component within 60 px but past the match reach (crop)	maskPx=60	index=0.39/0.20	nearest=23px crop
+DJI_0301.JPG:L201	a component within 60 px but past the match reach (crop)	maskPx=63	index=0.24/0.20	nearest=43px crop
+DJI_0301.JPG:L203	a component within 60 px but past the match reach (crop)	maskPx=25	index=0.15/0.20	nearest=60px crop
+DJI_0301.JPG:L204	mask on at the label (a fragment under the component floor)	maskPx=8	index=0.38/0.20	nearest=73px candidate: measured
+DJI_0301.JPG:L205	mask on at the label (a fragment under the component floor)	maskPx=44	index=0.27/0.20	nearest=63px candidate: refused
+DJI_0301.JPG:L206	mask on at the label (a fragment under the component floor)	maskPx=13	index=0.14/0.20	nearest=83px candidate: refused
+DJI_0301.JPG:L212	a component within 60 px but past the match reach (candidate)	maskPx=1	index=0.15/0.20	nearest=57px candidate: measured
+DJI_0301.JPG:L215	a component within 60 px but past the match reach (candidate)	maskPx=17	index=0.36/0.20	nearest=36px candidate: measured
+DJI_0301.JPG:L218	a component within 60 px but past the match reach (candidate)	maskPx=10	index=0.27/0.20	nearest=47px candidate: refused
+DJI_0301.JPG:L220	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.18/0.20	nearest=82px candidate: measured
+DJI_0301.JPG:L221	a component within 60 px but past the match reach (candidate)	maskPx=28	index=0.35/0.20	nearest=53px candidate: measured
+DJI_0301.JPG:L223	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.17/0.20	nearest=76px candidate: measured
+DJI_0301.JPG:L226	mask on at the label (a fragment under the component floor)	maskPx=21	index=0.17/0.20	nearest=81px candidate: measured
+DJI_0301.JPG:L229	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.16/0.20	nearest=75px candidate: measured
+DJI_0301.JPG:L230	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.17/0.20	nearest=122px candidate: measured
+DJI_0301.JPG:L231	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.12/0.20	nearest=91px candidate: refused
+DJI_0301.JPG:L237	mask on at the label (a fragment under the component floor)	maskPx=5	index=0.28/0.20	nearest=142px candidate: measured
+DJI_0301.JPG:L238	not green by the index at the label	maskPx=0	index=0.04/0.20	nearest=152px candidate: refused
+DJI_0301.JPG:L239	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.16/0.20	nearest=179px candidate: refused
+DJI_0301.JPG:L251	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.12/0.20	nearest=31px candidate: measured
+DJI_0301.JPG:L257	mask on at the label (a fragment under the component floor)	maskPx=42	index=0.37/0.20	nearest=86px crop
+DJI_0301.JPG:L258	mask on at the label (a fragment under the component floor)	maskPx=36	index=0.41/0.20	nearest=109px crop
+DJI_0301.JPG:L260	a component within 60 px but past the match reach (candidate)	maskPx=6	index=0.33/0.20	nearest=36px candidate: measured
+DJI_0301.JPG:L262	mask on at the label (a fragment under the component floor)	maskPx=3	index=0.45/0.20	nearest=69px candidate: measured
+DJI_0301.JPG:L266	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.16/0.20	nearest=93px candidate: measured
+DJI_0301.JPG:L267	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.15/0.20	nearest=114px candidate: measured
+DJI_0301.JPG:L283	mask on at the label (a fragment under the component floor)	maskPx=26	index=0.52/0.20	nearest=77px filtered: cut by the edge
+DJI_0301.JPG:L286	mask on at the label (a fragment under the component floor)	maskPx=71	index=0.98/0.20	nearest=96px candidate: refused
+DJI_0301.JPG:L291	green-ish: index within 30% of the threshold but under it	maskPx=1	index=0.28/0.20	nearest=67px candidate: measured
+DJI_0301.JPG:L293	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.15/0.20	nearest=30px candidate: measured
+DJI_0301.JPG:L304	mask on at the label (a fragment under the component floor)	maskPx=6	index=0.25/0.20	nearest=157px candidate: measured
+DJI_0301.JPG:L305	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.17/0.20	nearest=52px candidate: measured
+DJI_0301.JPG:L307	a component within 60 px but past the match reach (candidate)	maskPx=1	index=0.25/0.20	nearest=44px candidate: measured
+DJI_0301.JPG:L315	a component within 60 px but past the match reach (candidate)	maskPx=1	index=0.22/0.20	nearest=39px candidate: refused
+DJI_0301.JPG:L316	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.16/0.20	nearest=50px candidate: refused
+DJI_0301.JPG:L322	mask on at the label (a fragment under the component floor)	maskPx=5	index=0.20/0.20	nearest=112px candidate: measured
+DJI_0301.JPG:L326	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.20/0.20	nearest=29px candidate: measured
+DJI_0301.JPG:L327	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.19/0.20	nearest=48px candidate: measured
+DJI_0301.JPG:L328	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.13/0.20	nearest=112px candidate: measured
+DJI_0301.JPG:L330	a component within 60 px but past the match reach (candidate)	maskPx=72	index=0.95/0.20	nearest=42px candidate: measured
+DJI_0301.JPG:L331	a component within 60 px but past the match reach (candidate)	maskPx=44	index=0.43/0.20	nearest=39px candidate: measured
+DJI_0301.JPG:L332	a component within 60 px but past the match reach (candidate)	maskPx=47	index=0.42/0.20	nearest=17px candidate: measured
+DJI_0301.JPG:L333	a component within 60 px but past the match reach (candidate)	maskPx=47	index=0.62/0.20	nearest=29px candidate: measured
+DJI_0301.JPG:L334	a component within 60 px but past the match reach (candidate)	maskPx=63	index=0.65/0.20	nearest=29px candidate: measured
+DJI_0301.JPG:L335	a component within 60 px but past the match reach (candidate)	maskPx=32	index=0.37/0.20	nearest=28px candidate: measured
+DJI_0301.JPG:L336	a component within 60 px but past the match reach (candidate)	maskPx=80	index=0.93/0.20	nearest=19px candidate: measured
+DJI_0301.JPG:L337	a component within 60 px but past the match reach (candidate)	maskPx=39	index=0.44/0.20	nearest=45px candidate: measured
+DJI_0301.JPG:L342	a component within 60 px but past the match reach (candidate)	maskPx=31	index=0.34/0.20	nearest=12px candidate: refused
+DJI_0301.JPG:L347	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.17/0.20	nearest=45px candidate: refused
+DJI_0301.JPG:L348	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.18/0.20	nearest=39px candidate: refused
+DJI_0301.JPG:L349	green-ish: index within 30% of the threshold but under it	maskPx=2	index=0.20/0.20	nearest=68px candidate: refused
+DJI_0301.JPG:L350	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.18/0.20	nearest=93px candidate: refused
+DJI_0301.JPG:L351	mask on at the label (a fragment under the component floor)	maskPx=3	index=0.19/0.20	nearest=74px candidate: refused
+DJI_0301.JPG:L354	a component within 60 px but past the match reach (candidate)	maskPx=6	index=0.17/0.20	nearest=20px candidate: refused
+DJI_0301.JPG:L355	a component within 60 px but past the match reach (candidate)	maskPx=13	index=0.30/0.20	nearest=42px candidate: refused
+DJI_0301.JPG:L356	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.10/0.20	nearest=93px crop
+DJI_0301.JPG:L357	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.19/0.20	nearest=86px candidate: refused
+DJI_0301.JPG:L359	a component within 60 px but past the match reach (candidate)	maskPx=8	index=0.35/0.20	nearest=33px candidate: measured
+DJI_0301.JPG:L360	a component within 60 px but past the match reach (candidate)	maskPx=4	index=0.32/0.20	nearest=21px candidate: measured
+DJI_0301.JPG:L364	mask on at the label (a fragment under the component floor)	maskPx=78	index=1.05/0.20	nearest=137px crop
+DJI_0301.JPG:L369	a component within 60 px but past the match reach (candidate)	maskPx=48	index=0.52/0.20	nearest=53px candidate: measured
+DJI_0301.JPG:L374	a component within 60 px but past the match reach (candidate)	maskPx=25	index=0.51/0.20	nearest=22px candidate: measured
+DJI_0301.JPG:L375	a component within 60 px but past the match reach (candidate)	maskPx=10	index=0.20/0.20	nearest=30px candidate: measured
+DJI_0301.JPG:L377	a component within 60 px but past the match reach (candidate)	maskPx=1	index=0.16/0.20	nearest=32px candidate: measured
+DJI_0301.JPG:L380	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.09/0.20	nearest=39px candidate: measured
+DJI_0301.JPG:L381	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.12/0.20	nearest=52px candidate: measured
+DJI_0301.JPG:L383	mask on at the label (a fragment under the component floor)	maskPx=6	index=0.24/0.20	nearest=67px candidate: measured
+DJI_0301.JPG:L384	a component within 60 px but past the match reach (candidate)	maskPx=4	index=0.36/0.20	nearest=29px candidate: measured
+DJI_0301.JPG:L388	a component within 60 px but past the match reach (candidate)	maskPx=2	index=0.19/0.20	nearest=52px candidate: measured
+DJI_0301.JPG:L389	mask on at the label (a fragment under the component floor)	maskPx=3	index=0.22/0.20	nearest=156px candidate: refused
+DJI_0301.JPG:L390	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.14/0.20	nearest=75px candidate: measured
+DJI_0301.JPG:L391	a component within 60 px but past the match reach (candidate)	maskPx=62	index=0.28/0.20	nearest=38px candidate: measured
+DJI_0301.JPG:L393	mask on at the label (a fragment under the component floor)	maskPx=19	index=0.24/0.20	nearest=103px candidate: refused
+DJI_0301.JPG:L394	a component within 60 px but past the match reach (candidate)	maskPx=40	index=0.19/0.20	nearest=57px candidate: refused
+DJI_0301.JPG:L396	mask on at the label (a fragment under the component floor)	maskPx=7	index=0.28/0.20	nearest=79px candidate: measured
+DJI_0301.JPG:L397	a component within 60 px but past the match reach (candidate)	maskPx=5	index=0.37/0.20	nearest=43px candidate: measured
+DJI_0301.JPG:L399	mask on at the label (a fragment under the component floor)	maskPx=3	index=0.31/0.20	nearest=118px candidate: measured
+DJI_0301.JPG:L400	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.18/0.20	nearest=157px crop
+DJI_0301.JPG:L403	green-ish: index within 30% of the threshold but under it	maskPx=2	index=0.32/0.20	nearest=71px candidate: refused
+DJI_0301.JPG:L404	a component within 60 px but past the match reach (candidate)	maskPx=7	index=0.27/0.20	nearest=52px candidate: refused
+DJI_0301.JPG:L405	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.18/0.20	nearest=68px candidate: refused
+DJI_0301.JPG:L406	a component within 60 px but past the match reach (candidate)	maskPx=5	index=0.23/0.20	nearest=42px candidate: measured
+DJI_0301.JPG:L407	mask on at the label (a fragment under the component floor)	maskPx=3	index=0.25/0.20	nearest=76px candidate: refused
+DJI_0301.JPG:L408	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.14/0.20	nearest=77px candidate: refused
+DJI_0301.JPG:L411	a component within 60 px but past the match reach (candidate)	maskPx=10	index=0.24/0.20	nearest=31px candidate: measured
+DJI_0301.JPG:L413	a component within 60 px but past the match reach (candidate)	maskPx=3	index=0.23/0.20	nearest=36px candidate: measured
+DJI_0301.JPG:L415	a component within 60 px but past the match reach (candidate)	maskPx=13	index=0.27/0.20	nearest=17px candidate: measured
+DJI_0301.JPG:L417	a component within 60 px but past the match reach (candidate)	maskPx=1	index=0.23/0.20	nearest=43px candidate: measured
+DJI_0301.JPG:L418	mask on at the label (a fragment under the component floor)	maskPx=4	index=0.35/0.20	nearest=74px candidate: measured
+DJI_0301.JPG:L420	a component within 60 px but past the match reach (candidate)	maskPx=7	index=0.31/0.20	nearest=41px candidate: measured
+DJI_0301.JPG:L423	a component within 60 px but past the match reach (candidate)	maskPx=1	index=0.26/0.20	nearest=60px candidate: measured
+DJI_0301.JPG:L424	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.15/0.20	nearest=132px candidate: measured
+DJI_0301.JPG:L429	mask on at the label (a fragment under the component floor)	maskPx=5	index=0.22/0.20	nearest=139px candidate: refused
+DJI_0301.JPG:L433	green-ish: index within 30% of the threshold but under it	maskPx=2	index=0.19/0.20	nearest=67px candidate: refused
+DJI_0301.JPG:L434	a component within 60 px but past the match reach (candidate)	maskPx=79	index=1.02/0.20	nearest=34px candidate: measured
+DJI_0301.JPG:L435	mask on at the label (a fragment under the component floor)	maskPx=21	index=0.27/0.20	nearest=112px candidate: measured
+DJI_0301.JPG:L436	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.18/0.20	nearest=126px candidate: measured
+DJI_0301.JPG:L437	mask on at the label (a fragment under the component floor)	maskPx=62	index=0.45/0.20	nearest=65px candidate: measured
+DJI_0301.JPG:L439	a component within 60 px but past the match reach (candidate)	maskPx=3	index=0.28/0.20	nearest=49px candidate: refused
+DJI_0301.JPG:L440	a component within 60 px but past the match reach (candidate)	maskPx=27	index=0.50/0.20	nearest=57px candidate: measured
+DJI_0301.JPG:L441	mask on at the label (a fragment under the component floor)	maskPx=10	index=0.27/0.20	nearest=82px candidate: measured
+DJI_0301.JPG:L442	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.19/0.20	nearest=83px candidate: measured
+DJI_0301.JPG:L443	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.19/0.20	nearest=111px candidate: refused
+DJI_0301.JPG:L444	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.14/0.20	nearest=203px crop
+DJI_0301.JPG:L445	mask on at the label (a fragment under the component floor)	maskPx=5	index=0.16/0.20	nearest=152px candidate: measured
+DJI_0301.JPG:L449	mask on at the label (a fragment under the component floor)	maskPx=35	index=0.38/0.20	nearest=123px crop
+DJI_0301.JPG:L461	green-ish: index within 30% of the threshold but under it	maskPx=1	index=0.20/0.20	nearest=78px candidate: measured
+DJI_0301.JPG:L462	green-ish: index within 30% of the threshold but under it	maskPx=2	index=0.23/0.20	nearest=136px crop
+DJI_0301.JPG:L463	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.14/0.20	nearest=97px crop
+DJI_0301.JPG:L468	a component within 60 px but past the match reach (candidate)	maskPx=2	index=0.22/0.20	nearest=53px candidate: measured
+DJI_0301.JPG:L473	a component within 60 px but past the match reach (candidate)	maskPx=22	index=0.37/0.20	nearest=0px candidate: measured
+DJI_0301.JPG:L475	a component within 60 px but past the match reach (candidate)	maskPx=23	index=0.27/0.20	nearest=47px candidate: measured
+DJI_0301.JPG:L476	a component within 60 px but past the match reach (candidate)	maskPx=1	index=0.15/0.20	nearest=53px candidate: measured
+DJI_0301.JPG:L478	mask on at the label (a fragment under the component floor)	maskPx=9	index=0.21/0.20	nearest=62px candidate: measured
+DJI_0301.JPG:L479	a component within 60 px but past the match reach (candidate)	maskPx=56	index=0.30/0.20	nearest=30px candidate: measured
+DJI_0301.JPG:L480	mask on at the label (a fragment under the component floor)	maskPx=30	index=0.32/0.20	nearest=101px candidate: measured
+DJI_0301.JPG:L481	a component within 60 px but past the match reach (candidate)	maskPx=53	index=0.34/0.20	nearest=36px candidate: measured
+DJI_0301.JPG:L482	a component within 60 px but past the match reach (candidate)	maskPx=25	index=0.32/0.20	nearest=33px candidate: measured
+DJI_0301.JPG:L483	mask on at the label (a fragment under the component floor)	maskPx=26	index=0.34/0.20	nearest=140px crop
+DJI_0301.JPG:L487	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.16/0.20	nearest=100px candidate: measured
+DJI_0301.JPG:L488	green-ish: index within 30% of the threshold but under it	maskPx=1	index=0.16/0.20	nearest=68px candidate: measured
+DJI_0301.JPG:L489	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.13/0.20	nearest=38px candidate: measured
+DJI_0301.JPG:L490	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.15/0.20	nearest=91px candidate: measured
+DJI_0301.JPG:L491	green-ish: index within 30% of the threshold but under it	maskPx=2	index=0.21/0.20	nearest=134px crop
+DJI_0301.JPG:L492	mask on at the label (a fragment under the component floor)	maskPx=27	index=0.17/0.20	nearest=97px candidate: refused
+DJI_0301.JPG:L493	mask on at the label (a fragment under the component floor)	maskPx=4	index=0.12/0.20	nearest=113px crop
+DJI_0301.JPG:L494	mask on at the label (a fragment under the component floor)	maskPx=19	index=0.19/0.20	nearest=87px candidate: refused
+DJI_0301.JPG:L495	a component within 60 px but past the match reach (candidate)	maskPx=1	index=0.12/0.20	nearest=58px candidate: refused
+DJI_0301.JPG:L496	mask on at the label (a fragment under the component floor)	maskPx=32	index=0.32/0.20	nearest=79px candidate: refused
+DJI_0301.JPG:L497	green-ish: index within 30% of the threshold but under it	maskPx=2	index=0.13/0.20	nearest=116px candidate: refused
+DJI_0301.JPG:L498	green-ish: index within 30% of the threshold but under it	maskPx=1	index=0.12/0.20	nearest=114px candidate: refused
+DJI_0301.JPG:L499	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.15/0.20	nearest=122px candidate: measured
+DJI_0301.JPG:L500	mask on at the label (a fragment under the component floor)	maskPx=4	index=0.16/0.20	nearest=121px filtered: cut by the edge
+DJI_0301.JPG:L501	a component within 60 px but past the match reach (candidate)	maskPx=0	index=0.10/0.20	nearest=12px candidate: measured
+DJI_0301.JPG:L502	a component within 60 px but past the match reach (candidate)	maskPx=16	index=0.23/0.20	nearest=39px candidate: measured
+DJI_0301.JPG:L504	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.14/0.20	nearest=115px candidate: measured
+DJI_0301.JPG:L508	mask on at the label (a fragment under the component floor)	maskPx=6	index=0.24/0.20	nearest=73px candidate: refused
+DJI_0301.JPG:L509	mask on at the label (a fragment under the component floor)	maskPx=16	index=0.53/0.20	nearest=70px candidate: measured
+DJI_0301.JPG:L512	mask on at the label (a fragment under the component floor)	maskPx=72	index=0.62/0.20	nearest=96px candidate: measured
+DJI_0301.JPG:L513	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.19/0.20	nearest=62px candidate: measured
+DJI_0301.JPG:L514	green-ish: index within 30% of the threshold but under it	maskPx=0	index=0.13/0.20	nearest=122px candidate: measured

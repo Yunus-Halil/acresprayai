@@ -80,10 +80,28 @@ describe("the report", () => {
     expect(lines.some(l => /precision 75%, recall 50%, F1 60%; 3 hits, 3 missed, 1 false candidates; crop called weed 1/.test(l))).toBe(true);
     expect(lines.some(l => /lost to: 1 uncertain: no trusted rows; 1 strip/.test(l))).toBe(true);
   });
+  it("without exhaustive labels gives recall but no precision, and names the unmatched candidates rather than calling them false", () => {
+    const r = detectionReport(matchLabels(labels, preds, 0.01), preds, { exhaustive: false });
+    expect(r.exhaustive).toBe(false);
+    expect(r.classification.precision).toBeNull();
+    expect(r.classification.f1).toBeNull();
+    expect(r.classification.recall).toBeCloseTo(0.5, 3);
+    expect(r.classification.candidatesWithoutLabel).toBe(0);
+    expect(r.classification.falsePositives).toBe(1);
+    expect(r.falsePositiveIds).toEqual(["fp2"]);
+    // Six labels: the under-twenty verdict comes first; the exhaustive wording is tested below with twenty.
+    expect(r.verdict).toMatch(/under 20/);
+    expect(detectionLines(r).some(l => /precision unsupported \(labels not exhaustive\)/.test(l))).toBe(true);
+    const extra = detectionReport(matchLabels(labels, [...preds, P("lonely", 2000, 2000, 0.2, "candidate: measured")], 0.01), [...preds, P("lonely", 2000, 2000, 0.2, "candidate: measured")], { exhaustive: false });
+    expect(extra.classification.candidatesWithoutLabel).toBe(1);
+    expect(extra.classification.falsePositives).toBe(1);
+  });
+
   it("says accuracy cannot be calculated with no labels, and that it is measured with twenty", () => {
     expect(detectionReport([], preds).verdict).toBe("No labels: detection accuracy cannot be calculated.");
     const many = Array.from({ length: 20 }, (_, i) => L(`m${i}`, 1000 + i * 100, 500, "weed"));
     const manyPreds = many.map((l, i) => P(`p${i}`, l.x, l.y, 0.2, "candidate: measured"));
-    expect(detectionReport(matchLabels(many, manyPreds, 0.01), manyPreds).verdict).toMatch(/^20 weed labels: the rates are the measured performance/);
+    expect(detectionReport(matchLabels(many, manyPreds, 0.01), manyPreds).verdict).toMatch(/^20 weed labels over an exhaustively labelled region: the rates are the measured performance/);
+    expect(detectionReport(matchLabels(many, manyPreds, 0.01), manyPreds, { exhaustive: false }).verdict).toMatch(/^20 weed labels, not exhaustive: recall over the labelled weeds is supported; precision is not/);
   });
 });

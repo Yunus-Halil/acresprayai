@@ -77,6 +77,8 @@ export type Rate = { n: number; hits: number; rate: number | null };
 const rate = (hits: number, n: number): Rate => ({ n, hits, rate: n ? +(hits / n).toFixed(3) : null });
 
 export type DetectionReport = {
+  /** Whether the labels cover every weed in the region. Precision is only computed when they do. */
+  exhaustive: boolean;
   labels: { weed: number; crop: number; uncertain: number };
   predictions: { total: number; candidates: number };
   /** Weed labels matched by any component at all: what segmentation found, whatever it was called. */
@@ -87,6 +89,8 @@ export type DetectionReport = {
     precision: number | null; recall: number | null; f1: number | null;
     /** Weed labels found by a component that was not a candidate, by its disposition: detected, then lost to classification or a filter. */
     weedsLostTo: Record<string, number>;
+    /** Weed candidates that matched no label of any class: false positives when the labels are exhaustive, otherwise plants the person did not label. */
+    candidatesWithoutLabel: number;
     /** Crop labels matched by a weed candidate. */
     cropCalledWeed: number;
     /** Weed candidates that matched an uncertain label: neither right nor wrong. */
@@ -103,7 +107,8 @@ export type DetectionReport = {
 
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : null; };
 
-export function detectionReport(matches: Matched[], predictions: RegionPrediction[]): DetectionReport {
+export function detectionReport(matches: Matched[], predictions: RegionPrediction[], opts: { exhaustive?: boolean } = {}): DetectionReport {
+  const exhaustive = opts.exhaustive ?? true;
   const weeds = matches.filter(m => m.label.cls === "weed");
   const crops = matches.filter(m => m.label.cls === "crop");
   const uncertain = matches.filter(m => m.label.cls === "uncertain");
@@ -115,10 +120,14 @@ export function detectionReport(matches: Matched[], predictions: RegionPredictio
   // A candidate that matched no weed label and no uncertain label is a false positive; one on a crop label is the confusion.
   const onUncertainIds = new Set(uncertain.map(m => m.prediction?.id).filter(Boolean) as string[]);
   const onCropIds = new Set(crops.map(m => m.prediction?.id).filter(Boolean) as string[]);
+  const unlabelled = candidates.filter(p => !matchedIds.has(p.id));
   const fp = candidates.filter(p => !matchedIds.has(p.id) || onCropIds.has(p.id));
-  const precision = candidates.length - onUncertainIds.size ? tp.length / (tp.length + fp.length) : null;
+  // Without exhaustive labels an unmatched candidate may be a weed nobody labelled: no precision, and no false-positive count beyond the crop confusion.
+  const precision = exhaustive && candidates.length - onUncertainIds.size ? tp.length / (tp.length + fp.length) : null;
   const recall = weeds.length ? tp.length / weeds.length : null;
   const f1 = precision != null && recall != null && precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : null;
+  const cropCandidateIds = new Set(crops.filter(m => isCandidate(m.prediction)).map(m => m.prediction!.id));
+  const falsePositives = exhaustive ? fp.length : cropCandidateIds.size;
   const lostTo: Record<string, number> = {};
   for (const m of fn) if (m.prediction) lostTo[m.prediction.disposition] = (lostTo[m.prediction.disposition] ?? 0) + 1;
   const bucket = (ms: Matched[], key: (m: Matched) => string | null) => {
@@ -134,21 +143,24 @@ export function detectionReport(matches: Matched[], predictions: RegionPredictio
     ? "No labels: detection accuracy cannot be calculated."
     : weeds.length < 20
       ? `${weeds.length} weed label(s): under 20, so the rates describe these plants only and establish nothing.`
-      : `${weeds.length} weed labels: the rates are the measured performance on this set.`;
+      : exhaustive
+        ? `${weeds.length} weed labels over an exhaustively labelled region: the rates are the measured performance on this set.`
+        : `${weeds.length} weed labels, not exhaustive: recall over the labelled weeds is supported; precision is not, since an unmatched candidate may be a weed nobody labelled.`;
   return {
+    exhaustive,
     labels: { weed: weeds.length, crop: crops.length, uncertain: uncertain.length },
     predictions: { total: predictions.length, candidates: candidates.length },
     segmentation: { weedsSegmented: rate(weeds.filter(m => m.prediction).length, weeds.length), weedsMissedBySegmentation: weeds.filter(m => !m.prediction).map(m => m.label.id) },
     classification: {
-      truePositives: tp.length, falseNegatives: fn.length, falsePositives: fp.length,
+      truePositives: tp.length, falseNegatives: fn.length, falsePositives,
       precision: precision == null ? null : +precision.toFixed(3), recall: recall == null ? null : +recall.toFixed(3), f1: f1 == null ? null : +f1.toFixed(3),
-      weedsLostTo: lostTo, cropCalledWeed: crops.filter(m => isCandidate(m.prediction)).length, candidatesOnUncertain: uncertain.filter(m => isCandidate(m.prediction)).length,
+      weedsLostTo: lostTo, candidatesWithoutLabel: unlabelled.length, cropCalledWeed: crops.filter(m => isCandidate(m.prediction)).length, candidatesOnUncertain: uncertain.filter(m => isCandidate(m.prediction)).length,
     },
     bySize: bucket(weeds, m => { const s = sizeOf(m); return s == null ? null : s < 10 ? "under 10 cm" : s < 30 ? "10 to 30 cm" : "30 cm and over"; }),
     byDistanceToRow: bucket(weeds, m => { const d = m.label.distanceToRowM ?? m.prediction?.distanceToRowM ?? null; return d == null ? null : Math.abs(d) < 0.3 ? "under 30 cm from a row" : Math.abs(d) < 1 ? "30 cm to 1 m" : "over 1 m"; }),
     byShadow: bucket(weeds, m => (m.label.shadow == null ? null : m.label.shadow ? "in shadow" : "in sun")),
     measurement: { n: measured.length, medianAbsErrorCm: errs.length ? +median(errs)!.toFixed(1) : null, medianRelativeError: rel.length ? +median(rel)!.toFixed(3) : null },
-    falsePositiveIds: fp.map(p => p.id),
+    falsePositiveIds: (exhaustive ? fp : candidates.filter(p => cropCandidateIds.has(p.id))).map(p => p.id),
     falseNegativeIds: fn.map(m => m.label.id),
     verdict,
   };
@@ -161,7 +173,9 @@ export function detectionLines(r: DetectionReport): string[] {
   out.push(`Labels: ${r.labels.weed} weed, ${r.labels.crop} crop, ${r.labels.uncertain} uncertain. Predictions: ${r.predictions.total} components, ${r.predictions.candidates} weed candidates.`);
   if (r.labels.weed) {
     out.push(`Segmentation: ${r.segmentation.weedsSegmented.hits} of ${r.segmentation.weedsSegmented.n} weeds found by some component (${pct(r.segmentation.weedsSegmented.rate)}).`);
-    out.push(`Classification: precision ${pct(c.precision)}, recall ${pct(c.recall)}, F1 ${pct(c.f1)}; ${c.truePositives} hits, ${c.falseNegatives} missed, ${c.falsePositives} false candidates; crop called weed ${c.cropCalledWeed}; candidates on uncertain plants ${c.candidatesOnUncertain}.`);
+    out.push(r.exhaustive
+      ? `Classification: precision ${pct(c.precision)}, recall ${pct(c.recall)}, F1 ${pct(c.f1)}; ${c.truePositives} hits, ${c.falseNegatives} missed, ${c.falsePositives} false candidates; crop called weed ${c.cropCalledWeed}; candidates on uncertain plants ${c.candidatesOnUncertain}.`
+      : `Classification: recall ${pct(c.recall)} (${c.truePositives} of ${r.labels.weed} labelled weeds found by a candidate), ${c.falseNegatives} missed; precision unsupported (labels not exhaustive): ${c.candidatesWithoutLabel} candidates matched no label; crop called weed ${c.cropCalledWeed}; candidates on uncertain plants ${c.candidatesOnUncertain}.`);
     if (Object.keys(c.weedsLostTo).length) out.push(`Weeds detected but lost to: ${Object.entries(c.weedsLostTo).map(([k, v]) => `${v} ${k}`).join("; ")}.`);
     for (const b of r.bySize) out.push(`  ${b.bucket}: ${b.n}, recall ${pct(b.recall)}`);
     for (const b of r.byDistanceToRow) out.push(`  ${b.bucket}: ${b.n}, recall ${pct(b.recall)}`);

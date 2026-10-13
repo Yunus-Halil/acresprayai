@@ -34,6 +34,8 @@ const args = parseArgs(process.argv.slice(2));
 const manifestPath = String(args.manifest ?? "scripts/bench/evalRegions.json");
 const dir = String(args.dir ?? "samplerowtestingimagery");
 const outDir = String(args.out ?? join("data", "bench", "eval"));
+// --no-png skips the region PNGs: a whole-frame region is 50 MB of PNG nobody labels at that size.
+const writePng = args["no-png"] !== true;
 
 type Raw = { width: number; height: number; data: Uint8Array };
 const cut = (img: Raw, w: { x: number; y: number; width: number; height: number }): PhotoPixels => {
@@ -102,7 +104,7 @@ const hex = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16
       const png = new PNG({ width: r.width, height: r.height });
       const px = cut(raw, r);
       png.data = Buffer.from(px.rgba.buffer, px.rgba.byteOffset, px.rgba.byteLength);
-      writeFileSync(join(outDir, `${r.id}.png`), PNG.sync.write(png));
+      if (writePng) writeFileSync(join(outDir, `${r.id}.png`), PNG.sync.write(png));
       const diag = new PNG({ width: r.width, height: r.height });
       diag.data = Buffer.from(png.data);
       for (const c of trace.components) {
@@ -112,7 +114,8 @@ const hex = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16
         preds.push({
           id: `${r.id}:b${c.blob.id}`, x: +bx.toFixed(1), y: +by.toFixed(1), equivDiameterM: c.blob.equivDiameterM, disposition: c.disposition, reason: c.reason,
           measuredCm: m?.status === "measured" ? m.canopyDiameterCm : null, distanceToRowM: c.blob.acrossM,
-        });
+          ...(m?.outlinePx ? { outlinePx: m.outlinePx.map(q => ({ x: +q.x.toFixed(0), y: +q.y.toFixed(0) })) } : {}),
+        } as RegionPrediction);
         const col = hex(DISPOSITION_COLOUR[c.disposition]);
         if (m?.outlinePx) { const o = m.outlinePx; for (let i = 0; i < o.length; i++) { const a = o[i], b2 = o[(i + 1) % o.length]; line(diag, a.x - r.x, a.y - r.y, b2.x - r.x, b2.y - r.y, col); } }
         else {
@@ -121,7 +124,7 @@ const hex = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16
           line(diag, x0, y0, x0 + w, y0, col); line(diag, x0 + w, y0, x0 + w, y0 + h, col); line(diag, x0 + w, y0 + h, x0, y0 + h, col); line(diag, x0, y0 + h, x0, y0, col);
         }
       }
-      writeFileSync(join(outDir, `${r.id}.diag.png`), PNG.sync.write(diag));
+      if (writePng) writeFileSync(join(outDir, `${r.id}.diag.png`), PNG.sync.write(diag));
       const fragments = pattern.fragments ? pattern.fragments.cells.filter(([col, row]) => { const cx = (col + 0.5) * (pattern.fragments!.cellM / pattern.gsdM) * f, cy = (row + 0.5) * (pattern.fragments!.cellM / pattern.gsdM) * f; return cx >= r.x && cx < r.x + r.width && cy >= r.y && cy < r.y + r.height; }).reduce((n, c) => n + c[2], 0) : null;
       const counts: Record<string, number> = {};
       for (const p of preds) counts[p.disposition] = (counts[p.disposition] ?? 0) + 1;

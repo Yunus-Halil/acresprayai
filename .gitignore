@@ -50,3 +50,8 @@ samplerowtestingimagery/
 
 # The hero video master (50 MB 4K .mov). public/video/hero.* are the served derivatives.
 herovideo/
+
+# Annotation benchmarks: the photos and the rendered evidence stay out of the history; the labels, the manifests, the metrics and the report go in.
+evaluation/**/*.JPG
+evaluation/**/*.jpg
+evaluation/**/results/*.png

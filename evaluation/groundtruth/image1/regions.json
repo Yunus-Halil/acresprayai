@@ -1,0 +1,3 @@
+[
+  { "id": "image1-full", "photo": "DJI_0301.JPG", "x": 0, "y": 0, "width": 5472, "height": 3648, "conditions": ["whole frame", "orchard", "young trees", "long shadows", "inter-row and under-crop weeds"], "notes": "The first human-annotated frame: 518 point labels (104 crop, 414 weed) over the whole image, no diameters, no polygons, no rows." }
+]

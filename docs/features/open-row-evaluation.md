@@ -87,6 +87,18 @@ to each disposition, crop labels a candidate landed on, candidates on uncertain 
 recall by size, by distance to the row and by shade, and the diameter error where labels
 carry one. Under twenty weed labels the verdict says the rates establish nothing.
 
+## The first annotated frame (2026-10-13)
+
+`evaluation/groundtruth/image1/`: DJI_0301.JPG labelled by a person, 414 weed and 104 crop
+points over the whole frame, no diameters, masks or rows, not declared exhaustive. Recall
+of the labelled weeds 53% (221 of 414 found by a candidate; 223 by any component);
+precision unsupported. The misses: 63 under the pass's component floor at the decode
+scale, 43 under the vegetation threshold, 81 with a component 25 to 60 px away. Crop called
+weed 5 of 104, weed called crop 1 of 414. Report and reproduction commands in
+`evaluation/groundtruth/image1/results/report.md`. The scorer now takes an `exhaustive`
+flag (set by the labelling tool) and computes precision only when it is set; whole-image
+label files are split over the regions of their photo.
+
 ## The numbers
 
 **None.** No independently verified labels exist for any region. The seven regions are

@@ -1,0 +1,22 @@
+{
+  "blocks": [
+    {
+      "id": 0,
+      "angleDeg": 169.10284301481119,
+      "pitchM": 5.128736466176071,
+      "windows": 117,
+      "plants": 86,
+      "seedSpacingM": 3.2134730335905934
+    }
+  ],
+  "usableWindows": 117,
+  "windows": 117,
+  "placedCrop": 92,
+  "cropLabels": 104,
+  "cropLabelToNearestPlacedPx": {
+    "median": 28.427978078472666,
+    "p90": 305.8544728047391,
+    "max": 533.4587648021518,
+    "over60px": 26
+  }
+}
