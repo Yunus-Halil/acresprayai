@@ -158,6 +158,15 @@ on the sample imagery and NOT yet for accuracy against measured plants.
 
 The vegetation off the pattern is grouped at the scale the imagery supports (`src/lib/weedScout/structure/`): single plants measurable on their own (six pixels across and over, so 6 cm in a 1 cm/px photo and 24 cm on a 4 cm/px map), clusters of touching canopies (canopy summed, footprint hulled, no plant count claimed), and coverage zones for everything smaller, with every square centimetre in exactly one account. Read from the map in the pipeline and from each photo in the photo pass, saved with the run, drawn by `VegetationLayer` at the zoom's own scale, and said in the field read. See `docs/features/vegetation-structure.md`.
 
+## The closer look opens the whole photo (2026-10-13)
+
+`PhotoViewer.tsx`: the original photograph whole, not a cut, in a viewport that zooms about
+the cursor on the wheel (what is under the cursor stays under it), pans by dragging, and
+opens on the spot at a scale that shows the pattern's window around it; buttons for in, out,
+back to the spot, the whole photo and 1:1. Every overlay (the flagged area dashed, the rows,
+the plants' outlines, the measured canopy, the detector's boxes) is drawn in the photo's own
+pixels with non-scaling strokes, so it rides the zoom. The "full resolution" toggle is gone.
+
 ## The closer look draws outlines (2026-10-12)
 
 The pattern view outlines the vegetation itself (`outlinesInCut`: the scout's index and

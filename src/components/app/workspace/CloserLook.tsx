@@ -1,8 +1,9 @@
-// Step two of the two-step look. The map found an area; this shows that area
-// in the original photographs the map was built from, at the camera's full
-// resolution, with the area's outline drawn where the map put it, and, in
-// the pattern view, what the pass sees there: the rows as lines and every
-// plant as a circle coloured by what it is. The scan's photo pass read that
+// Step two of the two-step look. The map found an area; this opens the whole
+// original photograph that holds it, at the camera's full resolution, in a
+// viewer that zooms under the cursor and pans by dragging, opened on the
+// spot with the area's outline drawn where the map put it, and, in the
+// pattern view, what the pass sees there: the rows as lines and every plant
+// as its own outline coloured by what it is. The scan's photo pass read that
 // photo whole during the run and left the spot its look (patternLook.ts), so
 // the pattern view opens on it at once; a spot without one has its photo read
 // here, whole, once, and the read is kept for the next spot in the same photo.
@@ -10,7 +11,7 @@
 // asks the baseline detector about the crop, through the server, and draws
 // the boxes: an experiment's yardstick, never a verdict and never a
 // treatment input.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { type UnitSystem, fmtLengthCm } from "@/lib/units";
@@ -28,6 +29,7 @@ import type { PhotoPattern } from "@/lib/photoScout/pattern";
 import { type PhotoReadStore, photoPassParams } from "@/lib/weedScout/photoPass";
 import type { WeedMeasurement } from "@/lib/weedScout/sizing/types";
 import type { ScoutParams } from "@/lib/weedScout/types";
+import { PhotoViewer } from "./PhotoViewer";
 
 /** The measured canopy's outline, drawn in this colour: it is neither a row nor a class. */
 export const MEASURED_COLOUR = "#ffffff";
@@ -104,7 +106,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   const [viewIndex, setViewIndex] = useState(0);
   const [look, setLook] = useState<Look | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [full, setFull] = useState(false);
+  const [fullUrl, setFullUrl] = useState<string | null>(null);
   // The detector's word on the crop on screen: asked for, never automatic.
   const [detection, setDetection] = useState<{ state: "asking" } | { state: "done"; result: ModelResult; grounded: GroundedDetection[] | null } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -119,7 +121,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   const view = views[viewIndex] ?? null;
   const scale = target?.spot.nativeScale ?? null;
 
-  useEffect(() => { setViewIndex(0); setFull(false); }, [target]);
+  useEffect(() => { setViewIndex(0); }, [target]);
   useEffect(() => { setDetection(null); setCopied(false); }, [look]);
 
   const askDetector = async () => {
@@ -151,17 +153,21 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
     const entry = found.entry;
     let cancelled = false;
     let made: string | null = null;
-    setLook(null); setError(null); setPatternLook(null); setPatternState("idle"); frameRef.current = null;
+    setLook(null); setError(null); setPatternLook(null); setPatternState("idle"); frameRef.current = null; setFullUrl(null);
+    let whole: string | null = null;
     (async () => {
       const blob = await downloadFrame(entry);
       if (!blob) throw new Error("the original photo could not be read from storage");
       frameRef.current = blob;
+      // The whole photo for the viewer: the browser decodes the JPEG itself, nothing is cut.
+      whole = URL.createObjectURL(blob);
+      if (!cancelled) setFullUrl(whole);
       const l = await renderCloserLook(blob, view.outlinePx, view.box, scale, view.gsdM, sources?.set?.cameras[view.shot.cameraKey]?.width);
       if (!l) throw new Error("the original photo could not be decoded");
       made = l.url;
       if (cancelled) URL.revokeObjectURL(l.url); else setLook(l);
     })().catch(e => { if (!cancelled) setError((e as Error).message); });
-    return () => { cancelled = true; if (made) URL.revokeObjectURL(made); };
+    return () => { cancelled = true; if (made) URL.revokeObjectURL(made); if (whole) URL.revokeObjectURL(whole); };
   }, [view, scale, sources]);
 
   // The pattern around the spot, once the photo is on screen. The look the
@@ -208,6 +214,56 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   useEffect(() => () => { if (patternLook) URL.revokeObjectURL(patternLook.cut.url); }, [patternLook]);
 
   const gsd = (m: number | null | undefined) => (m ? `${fmtLengthCm(m * 100, units).text}/px` : "unknown");
+
+  // Where the viewer opens: on the spot, showing the pattern's window around it when there is one, else the map's area with its margin.
+  const viewerInitial = useMemo(() => {
+    const win = patternOn && patternLook ? patternLook.look.window : look?.window ?? null;
+    if (!win) return { cx: 0, cy: 0, fitWidthPx: null };
+    return { cx: win.x + win.width / 2, cy: win.y + win.height / 2, fitWidthPx: Math.max(win.width, win.height) };
+  }, [patternOn, patternLook, look]);
+
+  // Everything drawn over the photo, in its native pixels: the area the map
+  // flagged (dashed), the rows, the plants as their own outlines (circles of
+  // the equivalent diameter only where the cut could not be outlined), the
+  // measured canopy, and the detector's boxes.
+  const overlayNodes = useMemo(() => {
+    if (!look) return null;
+    const nodes: JSX.Element[] = [];
+    const thin = { vectorEffect: "non-scaling-stroke" as const };
+    if (view && view.outlinePx.length >= 3) {
+      nodes.push(<polygon key="area" points={view.outlinePx.map(p => `${p.u * look.scale},${p.v * look.scale}`).join(" ")} fill="none" stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="8 4" {...thin} data-testid="closer-look-area" />);
+    }
+    if (patternOn && patternLook) {
+      const pl = significantLook(patternLook.look, minWeedM);
+      const ox = pl.window.x, oy = pl.window.y, f = patternLook.cut.factor;
+      pl.lines.forEach((l, i) => nodes.push(<line key={`l${i}`} x1={l.x1 + ox} y1={l.y1 + oy} x2={l.x2 + ox} y2={l.y2 + oy} stroke={ROW_COLOUR} strokeWidth={1.2} {...thin} />));
+      if (patternLook.outlines) {
+        const g = pl.gsdM * f;
+        patternLook.outlines.forEach((o, i) => {
+          const cls = o.cls ?? "unplaced";
+          const dM = 2 * Math.sqrt((o.areaPx * g * g) / Math.PI);
+          if ((cls === "off-row" || cls === "between plants") && dM < minWeedM) return;
+          nodes.push(<polygon key={`o${i}`} points={o.ring.map(q => `${ox + q.x * f},${oy + q.y * f}`).join(" ")} fill="none" stroke={BLOB_COLOUR[cls]} strokeWidth={1.2} {...thin} />);
+        });
+      } else {
+        pl.circles.forEach((c, i) => nodes.push(<circle key={`c${i}`} cx={c.x + ox} cy={c.y + oy} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={1.2} {...thin} />));
+      }
+      if (spotMeasurement?.status === "measured" && spotMeasurement.sourceFrame === view?.filename && spotMeasurement.outlinePx?.length) {
+        nodes.push(<polygon key="measured" points={spotMeasurement.outlinePx.map(q => `${q.x},${q.y}`).join(" ")} fill="none" stroke={MEASURED_COLOUR} strokeWidth={2} {...thin} data-testid="closer-look-measured" />);
+      }
+    }
+    if (detection?.state === "done") {
+      // The detector saw the map's crop: its boxes are in that crop's pixels, which start at its window's corner.
+      detection.result.detections.forEach((d, i) => {
+        const x = look.window.x + d.x - d.width / 2, y = look.window.y + d.y - d.height / 2;
+        nodes.push(<g key={`d${i}`} data-testid="closer-look-box">
+          <rect x={x} y={y} width={d.width} height={d.height} fill="none" stroke="#ff4d6d" strokeWidth={2} {...thin} />
+          <text x={x + 2} y={Math.max(12, y - 4)} fill="#ff4d6d" fontSize={Math.max(12, look.originalWidth / 200)} fontFamily="ui-monospace, monospace" stroke="#000" strokeWidth={3} paintOrder="stroke">{d.klass} {d.confidence.toFixed(2)}</text>
+        </g>);
+      });
+    }
+    return nodes;
+  }, [look, view, patternOn, patternLook, minWeedM, spotMeasurement, detection]);
   const orthoGsd = target?.spot.orthoGsdM ?? null;
 
   return (
@@ -221,7 +277,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
                 Original photo <span className="font-mono">{view.filename}</span>, {target?.spot.nearestOnly ? "the nearest photo (the area is not confirmed in it)" : `holding ${Math.round(view.coverage * 100)}% of the area`},
                 {" "}{view.viewAngleDeg.toFixed(0)}° from straight down. {look ? `${gsd(look.gsdM)} here` : ""}
                 {orthoGsd && look ? `, against ${gsd(orthoGsd)} on the map (${(orthoGsd / look.gsdM).toFixed(1)}x the detail).` : "."}
-                {" "}The dashed line is the area the map flagged.
+                {" "}The whole photo is on screen: scroll to zoom, drag to move; the dashed line is the area the map flagged.
               </>
             ) : noPhotoReason(target?.spot ?? null)}
           </DialogDescription>
@@ -241,9 +297,6 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
             className="ml-auto rounded-sm border border-[#333] px-2 py-1 text-neutral-300 hover:bg-[#1f1f1f] disabled:opacity-40 inline-flex items-center gap-1.5"
             title="Sends this crop to the experimental baseline detector through the server. Its boxes are a yardstick, not a verdict." data-testid="closer-look-detect">
             {detection?.state === "asking" && <Loader2 className="h-3 w-3 animate-spin" />} Ask the baseline detector
-          </button>
-          <button type="button" onClick={() => setFull(f => !f)} className="rounded-sm border border-[#333] px-2 py-1 text-neutral-300 hover:bg-[#1f1f1f]" data-testid="closer-look-zoom">
-            {full ? "Fit to window" : "Full resolution"}
           </button>
           <button type="button" onClick={() => setPatternOn(p => !p)} className={`rounded-sm border px-2 py-1 ${patternOn ? "border-[#ffeb3b] text-[#ffeb3b]" : "border-[#333] text-neutral-300 hover:bg-[#1f1f1f]"}`} data-testid="closer-look-pattern">
             {patternOn ? "Pattern view" : "Show the pattern"}
@@ -291,67 +344,12 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
             )}
           </div>
         )}
-        <div className="rounded-sm border border-[#222] bg-black overflow-auto" style={{ maxHeight: "70vh" }}>
+        <div className="rounded-sm border border-[#222] bg-black">
           {error && <p className="p-4 text-[12px] text-red-400">Could not show the photo: {error}</p>}
-          {!error && !look && <p className="p-4 text-[12px] text-neutral-400 inline-flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the original photo.</p>}
-          {look && patternOn && patternLook && (() => {
-            const { cut } = patternLook;
-            const pl = significantLook(patternLook.look, minWeedM);
-            const sw = Math.max(1, cut.width / 900);
-            const f = 1 / cut.factor;
-            // The look is in the original's pixels from the window's corner; the cut is pooled by the factor.
-            const overlay = {
-              lines: pl.lines.map(l => ({ ...l, x1: l.x1 * f, y1: l.y1 * f, x2: l.x2 * f, y2: l.y2 * f })),
-              circles: pl.circles.map(c => ({ ...c, x: c.x * f, y: c.y * f, r: c.r * f })),
-              focus: pl.focus ? { ...pl.focus, x: pl.focus.x * f, y: pl.focus.y * f, r: pl.focus.r * f } : null,
-            };
-            // The measured canopy, when it was measured in this photo: its outline is in the original's pixels, the cut starts at the window's corner.
-            const measured = spotMeasurement?.status === "measured" && spotMeasurement.sourceFrame === view?.filename && spotMeasurement.outlinePx?.length
-              ? spotMeasurement.outlinePx.map(p => `${(p.x - pl.window.x) * f},${(p.y - pl.window.y) * f}`).join(" ")
-              : null;
-            return (
-              <div className="relative" style={full ? { width: cut.width } : { width: "100%" }}>
-                <img src={cut.url} alt={`The rows and plants around the flagged area in ${view?.filename}`} data-testid="closer-look-pattern-image"
-                  style={full ? { width: cut.width, maxWidth: "none", display: "block" } : { width: "100%", height: "auto", display: "block" }} />
-                <svg viewBox={`0 0 ${cut.width} ${cut.height}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none" data-testid="closer-look-pattern-overlay">
-                  {/* The rows as thin yellow lines. The plants as the vegetation's own
-                      outlines in their class colour, so no shape implies vegetation that
-                      is not there; a circle of the equivalent diameter stands in only
-                      when the cut could not be outlined. A plant the pattern did not place
-                      is outlined grey. The weeds the floor leaves out are not drawn. */}
-                  {overlay.lines.map((l, i) => <line key={`l${i}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={ROW_COLOUR} strokeWidth={sw} />)}
-                  {patternLook.outlines
-                    ? patternLook.outlines.map((o, i) => {
-                        const cls = o.cls ?? "unplaced";
-                        // The floor the circles keep: a weed under it is not drawn here either.
-                        const g = pl.gsdM * patternLook.cut.factor;
-                        const dM = 2 * Math.sqrt((o.areaPx * g * g) / Math.PI);
-                        if ((cls === "off-row" || cls === "between plants") && dM < minWeedM) return null;
-                        return <polygon key={`o${i}`} points={o.ring.map(p => `${p.x},${p.y}`).join(" ")} fill="none" stroke={BLOB_COLOUR[cls]} strokeWidth={sw} />;
-                      })
-                    : overlay.circles.map((c, i) => <circle key={`c${i}`} cx={c.x} cy={c.y} r={c.r} fill="none" stroke={BLOB_COLOUR[c.cls]} strokeWidth={sw} />)}
-                  {measured && <polygon points={measured} fill="none" stroke={MEASURED_COLOUR} strokeWidth={sw * 1.5} data-testid="closer-look-measured" />}
-                </svg>
-              </div>
-            );
-          })()}
-          {look && !(patternOn && patternLook) && (
-            <div className="relative" style={full ? { width: look.width } : { width: "100%" }}>
-              <img src={look.url} alt={`The flagged area in ${view?.filename}`} data-testid="closer-look-image"
-                style={full ? { width: look.width, maxWidth: "none", display: "block" } : { width: "100%", height: "auto", display: "block" }} />
-              {boxes.length > 0 && (
-                <svg viewBox={`0 0 ${look.width} ${look.height}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none" data-testid="closer-look-boxes">
-                  {boxes.map((d, i) => (
-                    <g key={i}>
-                      <rect x={d.x - d.width / 2} y={d.y - d.height / 2} width={d.width} height={d.height} fill="none" stroke="#ff4d6d" strokeWidth={Math.max(2, look.width / 300)} />
-                      <text x={d.x - d.width / 2 + 2} y={Math.max(12, d.y - d.height / 2 - 4)} fill="#ff4d6d" fontSize={Math.max(12, look.width / 40)} fontFamily="ui-monospace, monospace" stroke="#000" strokeWidth={3} paintOrder="stroke">
-                        {d.klass} {d.confidence.toFixed(2)}
-                      </text>
-                    </g>
-                  ))}
-                </svg>
-              )}
-            </div>
+          {!error && !(look && fullUrl) && <p className="p-4 text-[12px] text-neutral-400 inline-flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the original photo.</p>}
+          {look && fullUrl && (
+            <PhotoViewer src={fullUrl} width={look.originalWidth} height={look.originalHeight} alt={`The original photo ${view?.filename ?? ""}, opened on the flagged area`}
+              initial={viewerInitial} overlay={overlayNodes} />
           )}
         </div>
       </DialogContent>
