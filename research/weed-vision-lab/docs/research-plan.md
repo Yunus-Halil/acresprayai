@@ -33,8 +33,18 @@ No training and no checkpoint downloads are authorised.
 - Splits: `dev_tune` (train, 11 plots, 717 images), `dev_check` (train, 10 plots, 690 images), `holdout` (val, 12 plots, 772 images). Smoke: `configs/smoke10.json`.
 - The holdout is used once per method family for the final comparison. Development iterates on dev_tune and is checked on dev_check.
 
+## Corrections from Phase 3 (classical baseline, 2026-10-13)
+
+| Discovery | What changes |
+|---|---|
+| ExG minus ExR is negative for most small weeds here (yellow-green May seedlings) | The parameter-free rule is kept in the tables as the reference point and is not developed further. The baseline is ExG above 0.08 on chromaticity. |
+| One-pixel soil specks dominate raw detections (about 1,400 per image at t 0.08) | Every report carries the scoring-time floor table (1 to 100 px). No inference-time floor is introduced; the question of a floor is left to the measurement phase, which needs a minimum area anyway. |
+| Crops are found as vegetation (8 components per image) and adjacent rosettes merge with the weeds between them | Weed-versus-crop is the main gap of any colour rule. The comparison with a weed-labelled pretrained model (ERFNet) is the next step; see `docs/pretrained-models.md`. |
+| Misses are under-coverage (10 to 50% of the weed), concentrated on 05-15 | Hysteresis thresholding is the one classical variant still worth a run. |
+
 ## Order of work from here
 
-1. Classical baseline (Milestone 5): vegetation mask, components, per-band detection scores on dev_tune; A and B segmentation IoU with oracle-location and autonomous modes kept apart.
-2. Measurement on reference masks (Phase 6 A) runs in the same milestone since the geometry code already exists (`weedlab.phenobench.geometry`).
-3. Pretrained model inventory (Phase 7) is paperwork until downloads are authorised.
+1. Pretrained comparison (Milestone 6): ERFNet semantic checkpoint plus components on dev_tune and dev_check, same scorer. Needs approval for the 25 MB checkpoint and the CPU torch wheel.
+2. Classical hysteresis variant, same protocol, same run.
+3. Measurement on reference masks (Phase 6 A) using `weedlab.phenobench.geometry`; then predicted-mask geometry on whichever detector wins A and B at IoU 0.5.
+4. Holdout stays closed until one method family is fixed.

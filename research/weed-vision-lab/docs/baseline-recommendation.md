@@ -3,6 +3,15 @@
 Written after the Phase 2 profile and inspection, before any detector was run.
 Nothing below is a result.
 
+**Outcome (added 2026-10-13 after Phase 3):** the ExG minus ExR zero rule
+recommended here found about one weed in nine on dev_tune. Measured on the
+data, that index is negative for most small weeds because the May seedlings are
+yellow-green. Plain ExG above a declared constant (0.08, chosen on dev_tune from
+{0.05, 0.08, 0.10, 0.15}, confirmed on dev_check) replaced it. The rest of the
+recommendation (no opening, no size floor at inference, raw and crop-aware
+scoring, separation deferred) held. Results and failures are in
+`reports/baseline/phase3-report.md`. The text below is kept as written.
+
 ## What the data says the detector must cope with
 
 | Observed | Source |
