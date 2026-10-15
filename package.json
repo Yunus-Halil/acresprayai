@@ -16,6 +16,7 @@
     "build:share-card": "node scripts/build-share-card.cjs",
     "build:favicons": "node scripts/build-favicons.cjs",
     "test:live": "node tests/integration/weed-v1-live-validation.mjs",
+    "weed-vision:service": "powershell -NoProfile -ExecutionPolicy Bypass -File research/weed-vision-lab/scripts/serve_service.ps1",
     "bench:frames": "vite-node scripts/bench/sourceFrameBench.ts --",
     "bench:pattern": "vite-node scripts/bench/patternBench.ts --",
     "bench:size": "vite-node scripts/bench/sizeBench.ts --",
