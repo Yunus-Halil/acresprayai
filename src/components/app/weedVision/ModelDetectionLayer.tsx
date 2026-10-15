@@ -1,11 +1,18 @@
 // The model's plants on the map: every weed (and, when asked, every crop
 // plant) an algorithm found in the scan's photographs, carried to the ground
-// through the camera pose and drawn where the map says that ground is. Yellow
-// is a weed, cyan a crop plant, white the selected one. A click opens the
-// plant's own card: what the model said, how sure it was, how big it is, and
-// a button that marks it on the field as an ordinary annotation. It changes
-// no verdict and no treatment by itself.
-import { CircleMarker, Polygon, Popup, Tooltip } from "react-leaflet";
+// through the camera pose and drawn where the map says that ground is.
+//
+// A scan can hold ten thousand plants. Drawing each as its own map object is
+// what made the map lag, so the layer works at two scales: zoomed out, every
+// plant is a dot on one canvas (a click on a dot zooms the map in on it);
+// from POLYGON_ZOOM in, only the plants inside the view are drawn as their
+// outlines, with a card each. Yellow is a weed, cyan a crop plant, white the
+// selected one. A card shows what the model said, how sure it was, how big it
+// is, and a button that marks it on the field as an ordinary annotation. It
+// changes no verdict and no treatment by itself.
+import { useEffect, useMemo, useState } from "react";
+import L from "leaflet";
+import { CircleMarker, Polygon, Popup, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtAreaCm2, fmtLengthCm } from "@/lib/units";
 import type { GroundPlant } from "@/lib/weedVision/frames";
@@ -13,16 +20,85 @@ import { patchFrameRun, useFrameRun } from "@/lib/weedVision/frameRunStore";
 
 export const PLANT_COLOUR = { weed: "#ffe600", crop: "#40e0ff" } as const;
 export const SELECTED_PLANT_COLOUR = "#ffffff";
+/** From this zoom in, plants in view are drawn as outlines; below it, as dots on one canvas. */
+export const POLYGON_ZOOM = 18;
+/** At most this many outlines at once, the surest first, so a dense view stays usable. */
+export const MAX_POLYGONS = 1500;
+
+/** Every plant as a dot on one canvas in the overlay pane; a click within DOT_HIT px of a dot zooms in on it. */
+function PlantDots({ plants, onPick }: { plants: GroundPlant[]; onPick: (p: GroundPlant) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const canvas = L.DomUtil.create("canvas", "leaflet-zoom-animated") as HTMLCanvasElement;
+    canvas.style.pointerEvents = "none";
+    canvas.setAttribute("data-testid", "plant-dots");
+    map.getPanes().overlayPane.appendChild(canvas);
+    const draw = () => {
+      const size = map.getSize();
+      canvas.width = size.x; canvas.height = size.y;
+      L.DomUtil.setPosition(canvas, map.containerPointToLayerPoint([0, 0]));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, size.x, size.y);
+      const r = map.getZoom() >= 16 ? 3 : 2;
+      for (const p of plants) {
+        if (!p.centre) continue;
+        const q = map.latLngToContainerPoint([p.centre.lat, p.centre.lng]);
+        if (q.x < -r || q.y < -r || q.x > size.x + r || q.y > size.y + r) continue;
+        ctx.fillStyle = PLANT_COLOUR[p.klass];
+        ctx.globalAlpha = p.klass === "weed" ? 0.9 : 0.6;
+        ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    };
+    const DOT_HIT = 10;
+    const click = (e: L.LeafletMouseEvent) => {
+      let best: GroundPlant | null = null, d2 = DOT_HIT * DOT_HIT;
+      for (const p of plants) {
+        if (!p.centre) continue;
+        const q = map.latLngToContainerPoint([p.centre.lat, p.centre.lng]);
+        const dd = (q.x - e.containerPoint.x) ** 2 + (q.y - e.containerPoint.y) ** 2;
+        if (dd < d2) { d2 = dd; best = p; }
+      }
+      if (best) onPick(best);
+    };
+    draw();
+    map.on("moveend zoomend viewreset resize", draw);
+    map.on("click", click);
+    return () => {
+      map.off("moveend zoomend viewreset resize", draw);
+      map.off("click", click);
+      canvas.remove();
+    };
+  }, [map, plants, onPick]);
+  return null;
+}
 
 export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { taskId: string; /** Mark a weed on the field; resolves to the annotation id, or null. */ onMark?: (plant: GroundPlant) => Promise<string | null>; showLabels?: boolean }) {
   const units = useUnitSystem();
   const run = useFrameRun(taskId);
-  if (!run.plants.length) return null;
-  const shown = run.plants.filter(p => (p.klass === "weed" ? run.showWeeds : run.showCrops));
+  const [view, setView] = useState<{ zoom: number; bounds: L.LatLngBounds } | null>(null);
+  const map = useMapEvents({
+    zoomend: () => setView({ zoom: map.getZoom(), bounds: map.getBounds() }),
+    moveend: () => setView({ zoom: map.getZoom(), bounds: map.getBounds() }),
+  });
+  const zoom = view?.zoom ?? map.getZoom();
+  const bounds = view?.bounds ?? map.getBounds();
+  const shown = useMemo(() => run.plants.filter(p => (p.klass === "weed" ? run.showWeeds : run.showCrops)), [run.plants, run.showWeeds, run.showCrops]);
+  const inView = useMemo(() => {
+    if (zoom < POLYGON_ZOOM) return [];
+    const padded = bounds.pad(0.15);
+    const list = shown.filter(p => p.centre && padded.contains([p.centre.lat, p.centre.lng]));
+    if (list.length <= MAX_POLYGONS) return list;
+    return [...list].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, MAX_POLYGONS);
+  }, [shown, zoom, bounds]);
   if (!shown.length) return null;
+  if (zoom < POLYGON_ZOOM) {
+    return <PlantDots plants={shown} onPick={p => { if (p.centre) { patchFrameRun(taskId, { selectedId: p.id }); map.setView([p.centre.lat, p.centre.lng], POLYGON_ZOOM + 1); } }} />;
+  }
   return (
     <>
-      {shown.map(p => {
+      {inView.map(p => {
         const active = p.id === run.selectedId;
         const colour = PLANT_COLOUR[p.klass];
         const markedId = run.marked[p.id];

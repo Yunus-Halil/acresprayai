@@ -157,7 +157,8 @@ export function ModelDetectionsPanel({ taskId, userId, sources, fetchImpl }: { t
                 <span style={{ color: PLANT_COLOUR.weed }} className="font-semibold">{counts.weed.toLocaleString()} weeds</span>
                 {" · "}<span style={{ color: PLANT_COLOUR.crop }}>{counts.crop.toLocaleString()} crop plants</span>
                 {" · "}{Object.keys(run.frames).length} photo{Object.keys(run.frames).length === 1 ? "" : "s"}
-                {run.raw > run.plants.length ? ` · ${(run.raw - run.plants.length).toLocaleString()} repeat sightings merged` : ""}
+                {run.raw > run.plants.length + run.outside ? ` · ${(run.raw - run.plants.length - run.outside).toLocaleString()} repeat sightings merged` : ""}
+                {run.outside > 0 ? ` · ${run.outside.toLocaleString()} outside the field, not shown` : ""}
               </div>
               {run.restoredAt && <p className="text-[10px] text-neutral-600">From the run saved {new Date(run.restoredAt).toLocaleString()}.</p>}
               <label className="flex items-center gap-2 cursor-pointer text-[11px] text-neutral-400">

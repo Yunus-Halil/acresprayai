@@ -8,9 +8,10 @@
 // after every photo, so the map fills in as the run goes. Photos already
 // scored under the same key are taken from the cache, not the service.
 import { useSyncExternalStore } from "react";
+import { type LatLng2, pointInRing } from "../geo";
 import { lookupOriginal } from "../sourceFrames/manifest";
 import { type ScanSources, downloadFrame } from "../sourceFrames/scan";
-import type { Shot } from "../sourceFrames/odm";
+import type { Shot, SourceFrameSet } from "../sourceFrames/odm";
 import type { FrameManifestEntry } from "../sourceFrames/manifest";
 import { type DetectOptions, type Outcome, type Progress, type WeedVisionResult, detectWeeds } from "./client";
 import { type FrameDetection, type FrameRunParams, type GroundPlant, countByClass, frameRunKey, groundFrameResult, mergeAcrossFrames } from "./frames";
@@ -26,10 +27,14 @@ export type FrameRunSession = {
   paramsKey: string | null;
   algorithmLabel: string | null;
   modelSha: string | null;
-  /** Plants on the ground after the photographs are merged. */
+  /** Plants on the ground after the photographs are merged, inside the field when a boundary is known. */
   plants: GroundPlant[];
   /** Detections before merging, for the summary. */
   raw: number;
+  /** Merged plants dropped for landing outside the field boundary. */
+  outside: number;
+  /** The reconstruction the plants were placed with, so a later boundary or photo can re-merge them. */
+  scanSet: { set: SourceFrameSet; altM: number } | null;
   frames: Record<string, FrameSummary>;
   error: string | null;
   note: string | null;
@@ -44,7 +49,7 @@ export type FrameRunSession = {
 
 export const EMPTY_FRAME_RUN: FrameRunSession = {
   running: false, progress: null, params: null, paramsKey: null, algorithmLabel: null, modelSha: null,
-  plants: [], raw: 0, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, selectedId: null, restoredAt: null, marked: {},
+  plants: [], raw: 0, outside: 0, scanSet: null, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, selectedId: null, restoredAt: null, marked: {},
 };
 
 const sessions = new Map<string, FrameRunSession>();
@@ -57,6 +62,34 @@ function rawOf(taskId: string): Map<string, FrameDetection[]> {
   let m = rawByTask.get(taskId);
   if (!m) { m = new Map(); rawByTask.set(taskId, m); }
   return m;
+}
+/** The field boundary per scan: plants whose centre lands outside it are not shown (a frame's edge projected onto the ground plane lands far outside the field). */
+const boundaries = new Map<string, LatLng2[][]>();
+export function setFrameRunBoundary(taskId: string, rings: LatLng2[][] | null): void {
+  const cur = boundaries.get(taskId);
+  if (!rings || !rings.length) { if (cur) { boundaries.delete(taskId); republish(taskId); } return; }
+  if (cur === rings) return;
+  boundaries.set(taskId, rings);
+  republish(taskId);
+}
+/** Plants inside the boundary (or all, when none is known); the rest counted. Plants with no centre are kept: nothing can be said about them. */
+function withinField(taskId: string, plants: GroundPlant[]): { kept: GroundPlant[]; outside: number } {
+  const rings = boundaries.get(taskId);
+  if (!rings) return { kept: plants, outside: 0 };
+  const kept: GroundPlant[] = [];
+  let outside = 0;
+  for (const p of plants) {
+    if (!p.centre || rings.some(r => pointInRing(p.centre!, r))) kept.push(p); else outside += 1;
+  }
+  return { kept, outside };
+}
+/** Merge a scan's raw detections and publish them, filtered to the field. */
+function republish(taskId: string): void {
+  const s = getFrameRun(taskId);
+  if (!s.scanSet) return;
+  const all = [...rawOf(taskId).values()].flat();
+  const { kept, outside } = withinField(taskId, mergeAcrossFrames(s.scanSet.set, s.scanSet.altM, all));
+  patchFrameRun(taskId, { plants: kept, raw: all.length, outside });
 }
 
 export const getFrameRun = (taskId: string): FrameRunSession => sessions.get(taskId) ?? EMPTY_FRAME_RUN;
@@ -144,14 +177,26 @@ export function startFrameRun(taskId: string, input: StartFrameRunInput): void {
     return;
   }
   const set = sources.set, altM = sources.groundAltM;
+  patchFrameRun(taskId, { scanSet: { set, altM } });
   const byFrame = rawOf(taskId);
   byFrame.clear();
   const summaries: Record<string, FrameSummary> = {};
-  const publish = () => {
+  // Merging and drawing thousands of plants after every photo is what makes the map lag: publish at most
+  // every PUBLISH_MS while the run goes, and once more at the end.
+  const PUBLISH_MS = 2000;
+  let lastPublish = 0;
+  let trailing: ReturnType<typeof setTimeout> | null = null;
+  const publishNow = () => {
     if (!mine()) return;
+    lastPublish = Date.now();
     const all = [...byFrame.values()].flat();
-    const plants = mergeAcrossFrames(set, altM, all);
-    patchFrameRun(taskId, { plants, raw: all.length, frames: { ...summaries } });
+    const { kept, outside } = withinField(taskId, mergeAcrossFrames(set, altM, all));
+    patchFrameRun(taskId, { plants: kept, raw: all.length, outside, frames: { ...summaries } });
+  };
+  const publish = (final = false) => {
+    if (trailing) { clearTimeout(trailing); trailing = null; }
+    if (final || Date.now() - lastPublish >= PUBLISH_MS) { publishNow(); return; }
+    trailing = setTimeout(publishNow, PUBLISH_MS - (Date.now() - lastPublish));
   };
   (async () => {
     const cached = input.force ? new Map<string, SavedFrameRun>() : await deps.cache.load(taskId, paramsKey);
@@ -185,6 +230,7 @@ export function startFrameRun(taskId: string, input: StartFrameRunInput): void {
         summaries[name] = { filename: name, weeds: 0, crops: 0, status: "error", error: res.error, ms: null };
         publish();
         if (/not reachable/.test(res.error) || res.status === 503) {
+          publish(true);
           patchFrameRun(taskId, { running: false, error: res.error, note: summarise(getFrameRun(taskId).plants, getFrameRun(taskId).raw, summaries) });
           return;
         }
@@ -198,6 +244,7 @@ export function startFrameRun(taskId: string, input: StartFrameRunInput): void {
       void deps.cache.save({ userId: input.userId, scanId: taskId, paramsKey, params, run: { filename: name, algorithm: res.value.algorithm.name, modelSha256: input.modelSha, nativeWidth: res.value.image.width, nativeHeight: res.value.image.height, timingsMs: res.value.timings_ms ?? {}, detections: dets, createdAt: null } });
     }
     if (!mine()) return;
+    publish(true);
     const s = getFrameRun(taskId);
     patchFrameRun(taskId, { running: false, progress: { ...(s.progress as FrameRunProgress), framesDone: frames.length, current: null, fromCache }, note: summarise(s.plants, s.raw, summaries) });
   })().catch(e => {
@@ -233,8 +280,8 @@ export async function restoreFrameRun(taskId: string, input: { sources: ScanSour
     frames[r.filename] = { filename: r.filename, weeds: c.weed, crops: c.crop, status: "cached", ms: r.timingsMs?.total ?? null };
     if (r.createdAt && (!latest || r.createdAt > latest)) latest = r.createdAt;
   }
-  const plants = mergeAcrossFrames(input.sources.set, input.sources.groundAltM, all);
-  patchFrameRun(taskId, { running: false, params: input.params, paramsKey, modelSha: input.modelSha, algorithmLabel: input.algorithmLabel, plants, raw: all.length, frames, error: null, restoredAt: latest ?? new Date().toISOString(), note: summarise(plants, all.length, frames), progress: null });
+  const { kept, outside } = withinField(taskId, mergeAcrossFrames(input.sources.set, input.sources.groundAltM, all));
+  patchFrameRun(taskId, { running: false, params: input.params, paramsKey, modelSha: input.modelSha, algorithmLabel: input.algorithmLabel, plants: kept, raw: all.length, outside, scanSet: { set: input.sources.set, altM: input.sources.groundAltM }, frames, error: null, restoredAt: latest ?? new Date().toISOString(), note: summarise(kept, all.length, frames), progress: null });
   return true;
 }
 
@@ -275,13 +322,13 @@ export async function addFrameDetections(taskId: string, input: AddFrameInput): 
   const raw = rawOf(taskId);
   raw.set(shot.filename, dets);
   const all = [...raw.values()].flat();
-  const plants = mergeAcrossFrames(set, altM, all);
+  const { kept: plants, outside } = withinField(taskId, mergeAcrossFrames(set, altM, all));
   const c = countByClass(dets);
   const cur = getFrameRun(taskId);
   const paramsKey = frameRunKey(input.params, input.modelSha);
   const frames = { ...cur.frames, [shot.filename]: { filename: shot.filename, weeds: c.weed, crops: c.crop, status: "done" as const, ms: result.timings_ms?.total ?? null } };
   patchFrameRun(taskId, {
-    plants, raw: all.length, frames, error: null, restoredAt: null,
+    plants, raw: all.length, outside, scanSet: { set, altM }, frames, error: null, restoredAt: null,
     params: cur.params ?? input.params, paramsKey: cur.paramsKey ?? paramsKey, modelSha: cur.modelSha ?? input.modelSha, algorithmLabel: input.algorithmLabel,
     note: summarise(plants, all.length, frames),
   });

@@ -62,7 +62,7 @@ import { addDetections, clearDetections, setDetectionsVisible, useDetectionLayer
 import { ModelDetectionLayer, PLANT_COLOUR } from "../weedVision/ModelDetectionLayer";
 import { ModelDetectionsPanel } from "../weedVision/ModelDetectionsPanel";
 import { type GroundPlant, countByClass } from "@/lib/weedVision/frames";
-import { patchFrameRun, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { patchFrameRun, setFrameRunBoundary, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { m2ToHectares, polygonAreaM2 } from "@/lib/geo";
 import { BenchmarkPanel } from "./BenchmarkPanel";
 import { renderCloserLook } from "@/lib/sourceFrames/crop";
@@ -386,6 +386,8 @@ export function WeedScoutTab({
   const layerRef = (id: string) => (el: L.Layer | null) => { if (el) layers.current.set(id, el); else layers.current.delete(id); };
 
   const rings = useMemo(() => (boundary ?? []) as unknown as LatLng2[][], [boundary]);
+  // Model plants outside the field boundary are frame edges projected onto the ground plane: not shown.
+  useEffect(() => { setFrameRunBoundary(taskId, rings.length ? rings : null); }, [taskId, rings]);
   const capturedAt = scanCreatedAt ?? new Date().toISOString();
   const crop = settings.crop_type ?? "";
   const stage = growthStage(crop, settings.planting_date);

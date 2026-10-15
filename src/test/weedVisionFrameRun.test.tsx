@@ -14,7 +14,7 @@ import type { ScanSources } from "@/lib/sourceFrames/scan";
 import type { WeedVisionResult } from "@/lib/weedVision/client";
 import { frameRunKey } from "@/lib/weedVision/frames";
 import type { SavedFrameRun } from "@/lib/weedVision/frameRunCache";
-import { type FrameRunDeps, addFrameDetections, getFrameRun, resetFrameRunStore, restoreFrameRun, scorableFrames, startFrameRun, stopFrameRun } from "@/lib/weedVision/frameRunStore";
+import { type FrameRunDeps, addFrameDetections, getFrameRun, resetFrameRunStore, restoreFrameRun, scorableFrames, setFrameRunBoundary, startFrameRun, stopFrameRun } from "@/lib/weedVision/frameRunStore";
 
 const DIR = join(process.cwd(), "src", "test", "fixtures", "odm-dd0f6314");
 const read = (f: string) => JSON.parse(readFileSync(join(DIR, f), "utf-8"));
@@ -218,5 +218,24 @@ describe("addFrameDetections (the closer look's single photo)", () => {
     // A scan that cannot place photos says so with null and leaves the map alone.
     expect(await addFrameDetections("scan-t", { userId: null, sources: { ...sources, groundAltM: null }, shot: a, result: resultAt(a, CENTRE), params: PARAMS, modelSha: null, algorithmLabel: "x", deps })).toBeNull();
     expect(getFrameRun("scan-t").plants).toHaveLength(0);
+  });
+
+  it("hides plants that land outside the field boundary and counts them, before or after the boundary is known", async () => {
+    const sources = sourcesWithFrames(1);
+    const deps = fakeDeps(sources);
+    const [a] = scorableFrames(sources).map(f => f.shot);
+    const d = 0.00002; // about 2 m
+    const around = (c: { lat: number; lng: number }) => [{ lat: c.lat - d, lng: c.lng - d }, { lat: c.lat - d, lng: c.lng + d }, { lat: c.lat + d, lng: c.lng + d }, { lat: c.lat + d, lng: c.lng - d }];
+    const far = { lat: CENTRE.lat + 0.0005, lng: CENTRE.lng };
+    await addFrameDetections("scan-b", { userId: null, sources, shot: a, result: resultAt(a, CENTRE), params: PARAMS, modelSha: null, algorithmLabel: "m", deps });
+    expect(getFrameRun("scan-b").plants).toHaveLength(1);
+    setFrameRunBoundary("scan-b", [around(far)]); // a boundary that does not contain the plant
+    expect(getFrameRun("scan-b").plants).toHaveLength(0);
+    expect(getFrameRun("scan-b").outside).toBe(1);
+    setFrameRunBoundary("scan-b", [around(CENTRE)]);
+    expect(getFrameRun("scan-b").plants).toHaveLength(1);
+    expect(getFrameRun("scan-b").outside).toBe(0);
+    setFrameRunBoundary("scan-b", null);
+    expect(getFrameRun("scan-b").plants).toHaveLength(1);
   });
 });
