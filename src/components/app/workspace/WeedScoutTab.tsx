@@ -61,8 +61,12 @@ import { DetectionOverlay } from "./DetectionOverlay";
 import { addDetections, clearDetections, setDetectionsVisible, useDetectionLayer } from "@/lib/sourceFrames/detectionStore";
 import { ModelDetectionLayer, PLANT_COLOUR } from "../weedVision/ModelDetectionLayer";
 import { ModelDetectionsPanel } from "../weedVision/ModelDetectionsPanel";
+import { HeatmapLayer, HotspotFocus, HotspotLayer, REVIEW_COLOUR } from "../weedVision/HotspotLayer";
+import { HotspotPanel } from "../weedVision/HotspotPanel";
 import { type GroundPlant, countByClass, countByRow } from "@/lib/weedVision/frames";
+import type { Hotspot } from "@/lib/weedVision/hotspots";
 import { patchFrameRun, setFrameRunBoundary, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { ringCandidate } from "@/lib/sourceFrames/spot";
 import { m2ToHectares, polygonAreaM2 } from "@/lib/geo";
 import { BenchmarkPanel } from "./BenchmarkPanel";
 import { renderCloserLook } from "@/lib/sourceFrames/crop";
@@ -386,8 +390,24 @@ export function WeedScoutTab({
   const layerRef = (id: string) => (el: L.Layer | null) => { if (el) layers.current.set(id, el); else layers.current.delete(id); };
 
   const rings = useMemo(() => (boundary ?? []) as unknown as LatLng2[][], [boundary]);
-  // Model plants outside the field boundary are frame edges projected onto the ground plane: not shown.
-  useEffect(() => { setFrameRunBoundary(taskId, rings.length ? rings : null); }, [taskId, rings]);
+  // Model plants outside the field boundary are frame edges projected onto the ground plane: not shown. Without a
+  // boundary, the orthomosaic's own extent clips them.
+  useEffect(() => {
+    if (rings.length) { setFrameRunBoundary(taskId, rings); return; }
+    const b = bounds ? (bounds instanceof L.LatLngBounds ? bounds : L.latLngBounds(bounds as L.LatLngExpression[])) : null;
+    setFrameRunBoundary(taskId, b ? [[{ lat: b.getSouth(), lng: b.getWest() }, { lat: b.getSouth(), lng: b.getEast() }, { lat: b.getNorth(), lng: b.getEast() }, { lat: b.getNorth(), lng: b.getWest() }]] : null);
+  }, [taskId, rings, bounds]);
+  /** An area's photographs: the same closer look a spot gets, on the area's outline. */
+  const openAreaPhotos = useCallback((h: Hotspot) => {
+    setCloserLook({ id: h.id, title: `Area ${h.rank}: ${h.plants} plant${h.plants === 1 ? "" : "s"} to review`, spot: spotSources(sources, ringCandidate(h.id, h.ring)) });
+  }, [sources]);
+  /** A confirmed area onto the field, as an ordinary annotation. */
+  const markArea = useCallback(async (h: Hotspot): Promise<string | null> => {
+    const notes = `Model review area ${h.rank}: ${h.plants} plants, ${h.observations} sightings in ${h.frames.length} photos. ${h.reasons.join(" ")} Confirmed by the operator in Weed Scout.`;
+    const id = await applyAnnotation({ name: `Weed pressure area ${h.rank} (model)`, issue_type: "Weed pressure", color: REVIEW_COLOUR.confirmed, notes, ring: h.ring, areaHa: m2ToHectares(polygonAreaM2(h.ring)), weed_label: null, weed_label_status: null, weed_catalog_id: null, weed_label_source: null });
+    if (id) patchFrameRun(taskId, s => ({ markedAreas: { ...s.markedAreas, [h.id]: id } }));
+    return id;
+  }, [applyAnnotation, taskId]);
   const capturedAt = scanCreatedAt ?? new Date().toISOString();
   const crop = settings.crop_type ?? "";
   const stage = growthStage(crop, settings.planting_date);
@@ -846,6 +866,9 @@ export function WeedScoutTab({
             );
           })()}
           <DetectionOverlay taskId={taskId} />
+          <HeatmapLayer taskId={taskId} />
+          <HotspotLayer taskId={taskId} />
+          <HotspotFocus taskId={taskId} fieldBounds={bounds} />
           <ModelDetectionLayer taskId={taskId} onMark={markPlant} showLabels={showLabels && labelsReadable} />
           {/* Every spot carries its own decision and its own review panel.
               The outline is the verdict, the fill is what it reads as, and the
@@ -988,7 +1011,12 @@ export function WeedScoutTab({
               <button type="button" onClick={() => clearDetections(taskId)} className="ml-auto text-neutral-600 hover:text-neutral-300">clear</button>
             </label>
           )}
-          {frameRun.plants.length > 0 && (() => {
+          {frameRun.plants.length > 0 && frameRun.viewMode === "priority" && frameRun.hotspots && (
+            <div className="flex items-center gap-2 text-neutral-400" data-testid="priority-legend">
+              <span className="inline-block w-3 h-3 rounded-sm border-2" style={{ borderColor: REVIEW_COLOUR.unreviewed }} /> {frameRun.hotspots.summary.areas} review area{frameRun.hotspots.summary.areas === 1 ? "" : "s"}, numbered by priority
+            </div>
+          )}
+          {frameRun.plants.length > 0 && frameRun.viewMode === "detections" && (() => {
             const c = countByClass(frameRun.plants);
             const r = countByRow(frameRun.plants);
             return (
@@ -1062,6 +1090,7 @@ export function WeedScoutTab({
           {session.cache && !running && <p className="text-[10px] text-neutral-600">{session.cache}</p>}
         </div>
         <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} />
+        <HotspotPanel taskId={taskId} userId={user?.id ?? null} onOpenPhotos={openAreaPhotos} onMarkArea={markArea} />
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
           <details className="text-[11px]">
             <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">

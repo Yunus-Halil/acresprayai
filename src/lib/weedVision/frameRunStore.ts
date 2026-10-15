@@ -16,7 +16,11 @@ import type { FrameManifestEntry } from "../sourceFrames/manifest";
 import { type DetectOptions, type Outcome, type Progress, type WeedVisionResult, detectWeeds } from "./client";
 import { type FrameDetection, type FrameRunParams, type GroundPlant, countByClass, countByRow, frameRunKey, groundFrameResult, mergeAcrossFrames } from "./frames";
 import { type SavedFrameRun, deleteFrameRuns, loadFrameRuns, saveFrameRun } from "./frameRunCache";
+import { type HotspotParams, type HotspotResult, type HotspotReview, DEFAULT_HOTSPOT_PARAMS, buildHotspots } from "./hotspots";
+import { type HotspotReviewRow, deleteHotspotReview, loadHotspotReviews, saveHotspotReview } from "./hotspotReviewCache";
 import type { RowContext } from "./rowFilter";
+
+export type ViewMode = "priority" | "heatmap" | "detections";
 
 export type FrameRunProgress = { framesDone: number; framesTotal: number; current: string | null; tilesDone: number; tilesTotal: number | null; fromCache: number };
 export type FrameSummary = { filename: string; weeds: number; crops: number; status: "done" | "cached" | "error"; error?: string; ms: number | null };
@@ -48,11 +52,24 @@ export type FrameRunSession = {
   restoredAt: string | null;
   /** Plant id to the annotation id it was marked on the field as, this session. */
   marked: Record<string, string>;
+  /** The plants grouped into review areas (hotspots.ts); recomputed only when the plants change. */
+  hotspots: HotspotResult | null;
+  hotspotParams: HotspotParams;
+  /** Priority (areas), heatmap (cells) or detections (every plant). */
+  viewMode: ViewMode;
+  selectedHotspotId: string | null;
+  /** The operator's reviews by area id, from the table and this session. */
+  reviews: Record<string, HotspotReviewRow>;
+  /** Area ids the map should fly to; the nonce changes on every request. */
+  focus: { south: number; west: number; north: number; east: number; nonce: number } | null;
+  /** Area id to the annotation id it was marked on the field as, this session. */
+  markedAreas: Record<string, string>;
 };
 
 export const EMPTY_FRAME_RUN: FrameRunSession = {
   running: false, progress: null, params: null, paramsKey: null, algorithmLabel: null, modelSha: null,
   plants: [], raw: 0, outside: 0, scanSet: null, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, showOnRow: false, selectedId: null, restoredAt: null, marked: {},
+  hotspots: null, hotspotParams: DEFAULT_HOTSPOT_PARAMS, viewMode: "priority", selectedHotspotId: null, reviews: {}, focus: null, markedAreas: {},
 };
 
 const sessions = new Map<string, FrameRunSession>();
@@ -100,8 +117,51 @@ export const getFrameRun = (taskId: string): FrameRunSession => sessions.get(tas
 export function patchFrameRun(taskId: string, patch: Partial<FrameRunSession> | ((s: FrameRunSession) => Partial<FrameRunSession>)): void {
   const cur = getFrameRun(taskId);
   const p = typeof patch === "function" ? patch(cur) : patch;
-  sessions.set(taskId, { ...cur, ...p });
+  const next = { ...cur, ...p };
+  // The areas follow the plants and the grouping settings, nothing else: a display toggle recomputes nothing.
+  if (("plants" in p && p.plants !== cur.plants) || ("hotspotParams" in p && p.hotspotParams !== cur.hotspotParams) || ("scanSet" in p && p.scanSet !== cur.scanSet)) {
+    next.hotspots = next.scanSet && next.plants.length ? buildHotspots(next.scanSet.set.reference, next.scanSet.altM, next.plants, next.hotspotParams) : null;
+    if (next.selectedHotspotId && !next.hotspots?.hotspots.some(h => h.id === next.selectedHotspotId)) next.selectedHotspotId = null;
+  }
+  sessions.set(taskId, next);
   emit();
+}
+
+export function setViewMode(taskId: string, viewMode: ViewMode): void { patchFrameRun(taskId, { viewMode }); }
+
+/** Select an area and ask the map to fly to it (null clears the selection and flies back to the field). */
+export function selectHotspot(taskId: string, id: string | null): void {
+  const s = getFrameRun(taskId);
+  const h = id ? s.hotspots?.hotspots.find(x => x.id === id) ?? null : null;
+  patchFrameRun(taskId, { selectedHotspotId: h ? h.id : null, selectedId: null, focus: h ? { ...h.bbox, nonce: (s.focus?.nonce ?? 0) + 1 } : s.focus });
+}
+
+export function setHotspotParams(taskId: string, hotspotParams: HotspotParams): void { patchFrameRun(taskId, { hotspotParams }); }
+
+/** The saved reviews of a scan, into the session (called once by the panel). */
+export async function restoreHotspotReviews(taskId: string, load: typeof loadHotspotReviews = loadHotspotReviews): Promise<void> {
+  const reviews = await load(taskId);
+  patchFrameRun(taskId, s => ({ reviews: { ...reviews, ...s.reviews } }));
+}
+
+/** The operator's word on an area: kept for the session at once, saved when signed in; null clears it. */
+export async function reviewHotspot(taskId: string, input: { userId: string | null; hotspotId: string; verdict: HotspotReview | null; notes?: string; save?: typeof saveHotspotReview; remove?: typeof deleteHotspotReview }): Promise<{ ok: boolean; error?: string }> {
+  const s = getFrameRun(taskId);
+  if (input.verdict === null) {
+    const { [input.hotspotId]: _gone, ...rest } = s.reviews;
+    patchFrameRun(taskId, { reviews: rest });
+    return input.userId ? (input.remove ?? deleteHotspotReview)(taskId, input.hotspotId) : { ok: true };
+  }
+  const row: HotspotReviewRow = { hotspotId: input.hotspotId, verdict: input.verdict, notes: input.notes ?? s.reviews[input.hotspotId]?.notes ?? "", updatedAt: new Date().toISOString(), paramsKey: s.paramsKey };
+  patchFrameRun(taskId, { reviews: { ...s.reviews, [input.hotspotId]: row } });
+  if (!input.userId) return { ok: true };
+  return (input.save ?? saveHotspotReview)({ userId: input.userId, scanId: taskId, hotspotId: input.hotspotId, verdict: input.verdict, notes: row.notes, paramsKey: s.paramsKey });
+}
+
+/** Reviews whose area no longer exists in the current grouping: kept, never deleted by a rescan, listed for the operator. */
+export function orphanedReviews(s: FrameRunSession): HotspotReviewRow[] {
+  const ids = new Set(s.hotspots?.hotspots.map(h => h.id) ?? []);
+  return Object.values(s.reviews).filter(r => !ids.has(r.hotspotId));
 }
 
 function subscribe(cb: () => void): () => void {
@@ -300,7 +360,7 @@ export async function clearFrameRun(taskId: string, deps?: Partial<FrameRunDeps>
   const remove = deps?.cache?.remove ?? deleteFrameRuns;
   if (s.paramsKey) await remove(taskId, s.paramsKey);
   rawByTask.delete(taskId);
-  sessions.set(taskId, { ...EMPTY_FRAME_RUN, showWeeds: s.showWeeds, showCrops: s.showCrops, showOnRow: s.showOnRow });
+  sessions.set(taskId, { ...EMPTY_FRAME_RUN, showWeeds: s.showWeeds, showCrops: s.showCrops, showOnRow: s.showOnRow, viewMode: s.viewMode, reviews: s.reviews, hotspotParams: s.hotspotParams });
   emit();
 }
 

@@ -29,6 +29,7 @@ import { ringCandidate, spotSources } from "@/lib/sourceFrames/spot";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
 import { DetectionOverlay } from "./DetectionOverlay";
 import { ModelDetectionLayer } from "../weedVision/ModelDetectionLayer";
+import { HotspotLayer } from "../weedVision/HotspotLayer";
 import { countByClass } from "@/lib/weedVision/frames";
 import { patchFrameRun, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { addDetections, setDetectionsVisible, useDetectionLayer } from "@/lib/sourceFrames/detectionStore";
@@ -506,6 +507,7 @@ export function FieldViewTab(props: {
           removeVertexOnTap={removePointMode}
         />
         <DetectionOverlay taskId={taskId} />
+        <HotspotLayer taskId={taskId} />
         <ModelDetectionLayer taskId={taskId} />
         {layers.userAnnotations && userPolys.length > 0 && (
           <UserPolyLayer polys={userPolys} onDelete={deleteUserPolygon} onLook={props.odmUuid ? lookAt : undefined} />

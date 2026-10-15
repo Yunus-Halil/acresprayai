@@ -85,7 +85,17 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
   });
   const zoom = view?.zoom ?? map.getZoom();
   const bounds = view?.bounds ?? map.getBounds();
-  const shown = useMemo(() => visiblePlants(run), [run]);
+  // Detections mode: every plant. Priority mode: only the selected area's plants, close in (level 3 behind level 2). Heatmap: none.
+  const shown = useMemo(() => {
+    if (run.viewMode === "detections") return visiblePlants(run);
+    if (run.viewMode === "priority" && run.selectedHotspotId && run.hotspots) {
+      const h = run.hotspots.hotspots.find(x => x.id === run.selectedHotspotId);
+      if (!h) return [];
+      const ids = new Set(h.plantIds);
+      return run.plants.filter(p => ids.has(p.id) && (p.klass === "weed" || run.showCrops));
+    }
+    return [];
+  }, [run]);
   const inView = useMemo(() => {
     if (zoom < POLYGON_ZOOM) return [];
     const padded = bounds.pad(0.15);
@@ -95,6 +105,7 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
   }, [shown, zoom, bounds]);
   if (!shown.length) return null;
   if (zoom < POLYGON_ZOOM) {
+    if (run.viewMode !== "detections") return null; // an area's plants are for close zoom only; the area outline says where
     return <PlantDots plants={shown} onPick={p => { if (p.centre) { patchFrameRun(taskId, { selectedId: p.id }); map.setView([p.centre.lat, p.centre.lng], POLYGON_ZOOM + 1); } }} />;
   }
   return (

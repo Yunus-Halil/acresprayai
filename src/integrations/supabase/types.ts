@@ -941,6 +941,47 @@ export type Database = {
           },
         ]
       }
+      scan_hotspot_reviews: {
+        Row: {
+          hotspot_id: string
+          id: string
+          notes: string
+          params_key: string | null
+          scan_id: string
+          updated_at: string
+          user_id: string
+          verdict: string
+        }
+        Insert: {
+          hotspot_id: string
+          id?: string
+          notes?: string
+          params_key?: string | null
+          scan_id: string
+          updated_at?: string
+          user_id: string
+          verdict: string
+        }
+        Update: {
+          hotspot_id?: string
+          id?: string
+          notes?: string
+          params_key?: string | null
+          scan_id?: string
+          updated_at?: string
+          user_id?: string
+          verdict?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_hotspot_reviews_scan_id_fkey"
+            columns: ["scan_id"]
+            isOneToOne: false
+            referencedRelation: "odm_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scan_photo_reads: {
         Row: {
           created_at: string
