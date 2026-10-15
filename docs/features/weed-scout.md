@@ -369,3 +369,9 @@ plants" toggles); a plant's card shows class, confidence, size and photos; "Mark
 `user_annotations` row (issue "Weed pressure"). The model marks nothing by itself. Code: `src/lib/weedVision/`
 (frames, frameRunStore, frameRunCache, client), `src/components/app/weedVision/ModelDetectionsPanel.tsx` and
 `ModelDetectionLayer.tsx`; tests `src/test/weedVisionFrames.test.ts`, `src/test/weedVisionFrameRun.test.tsx`.
+
+Per photo (the simplest test): open any spot's **Closer look**, choose the model in the picker next to "Ask the baseline
+detector" (the confidence cut appears for RF-DETR), press **Run model on this photo**. The whole original goes to the
+service; weeds are outlined yellow with their confidence, crop plants cyan dashed, on the photo itself. The same plants
+are placed on the map and saved like a batch run's photo (`addFrameDetections` in `frameRunStore.ts`), so the batch run
+later skips that photo under the same settings.

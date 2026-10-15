@@ -14,7 +14,7 @@ import type { ScanSources } from "@/lib/sourceFrames/scan";
 import type { WeedVisionResult } from "@/lib/weedVision/client";
 import { frameRunKey } from "@/lib/weedVision/frames";
 import type { SavedFrameRun } from "@/lib/weedVision/frameRunCache";
-import { type FrameRunDeps, getFrameRun, resetFrameRunStore, restoreFrameRun, scorableFrames, startFrameRun, stopFrameRun } from "@/lib/weedVision/frameRunStore";
+import { type FrameRunDeps, addFrameDetections, getFrameRun, resetFrameRunStore, restoreFrameRun, scorableFrames, startFrameRun, stopFrameRun } from "@/lib/weedVision/frameRunStore";
 
 const DIR = join(process.cwd(), "src", "test", "fixtures", "odm-dd0f6314");
 const read = (f: string) => JSON.parse(readFileSync(join(DIR, f), "utf-8"));
@@ -195,5 +195,28 @@ describe("ModelDetectionsPanel", () => {
     expect(crops.checked).toBe(false);
     fireEvent.click(crops);
     expect(getFrameRun("scan-r").showCrops).toBe(true);
+  });
+});
+
+describe("addFrameDetections (the closer look's single photo)", () => {
+  it("places one photo's instances on the map, merges with the scan's other photos, and saves the photo", async () => {
+    const sources = sourcesWithFrames(2);
+    const deps = fakeDeps(sources);
+    const [a, b] = scorableFrames(sources).map(f => f.shot);
+    const first = await addFrameDetections("scan-s", { userId: "u", sources, shot: a, result: resultAt(a, CENTRE, 0.6), params: PARAMS, modelSha: "abc", algorithmLabel: "RF-DETR", deps });
+    expect(first).toHaveLength(1);
+    expect(getFrameRun("scan-s").plants).toHaveLength(1);
+    expect(getFrameRun("scan-s").frames[a.filename]).toMatchObject({ status: "done", weeds: 1 });
+    await addFrameDetections("scan-s", { userId: "u", sources, shot: b, result: resultAt(b, CENTRE, 0.9), params: PARAMS, modelSha: "abc", algorithmLabel: "RF-DETR", deps });
+    const s = getFrameRun("scan-s");
+    expect(s.raw).toBe(2);
+    expect(s.plants).toHaveLength(1); // the same plant from the second photo merged into the first
+    expect(s.plants[0].seenIn).toHaveLength(2);
+    expect(s.paramsKey).toBe(frameRunKey(PARAMS, "abc"));
+    await flush();
+    expect(deps.saved.size).toBe(2);
+    // A scan that cannot place photos says so with null and leaves the map alone.
+    expect(await addFrameDetections("scan-t", { userId: null, sources: { ...sources, groundAltM: null }, shot: a, result: resultAt(a, CENTRE), params: PARAMS, modelSha: null, algorithmLabel: "x", deps })).toBeNull();
+    expect(getFrameRun("scan-t").plants).toHaveLength(0);
   });
 });

@@ -1030,7 +1030,7 @@ export function FieldViewTab(props: {
         </div>
       )}
 
-      <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} onDetections={list => addDetections(taskId, list)} />
+      <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} onDetections={list => addDetections(taskId, list)} modelRun={{ taskId, userId: user?.id ?? null }} />
 
       {/* User polygon metadata form */}
       {draftUserPoly && (

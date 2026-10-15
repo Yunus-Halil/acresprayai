@@ -31,7 +31,28 @@ import type { PhotoPattern } from "@/lib/photoScout/pattern";
 import { type PhotoReadStore, photoPassParams } from "@/lib/weedScout/photoPass";
 import type { WeedMeasurement } from "@/lib/weedScout/sizing/types";
 import type { ScoutParams } from "@/lib/weedScout/types";
+import { storageKey } from "@/lib/storage";
+import { type AlgorithmInfo, type Health, type WeedVisionResult, algorithmReady, detectWeeds, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
+import { type FrameDetection, countByClass } from "@/lib/weedVision/frames";
+import { addFrameDetections } from "@/lib/weedVision/frameRunStore";
+import { PLANT_COLOUR } from "../weedVision/ModelDetectionLayer";
+import { DEFAULT_FRAME_PARAMS, modelShaFor } from "../weedVision/ModelDetectionsPanel";
 import { PhotoViewer } from "./PhotoViewer";
+
+/** The model chosen in the closer look, kept like the other display settings. */
+const CLOSER_LOOK_MODEL_KEY = storageKey("weedVision", "closerLookModel");
+function loadModelChoice(): { algorithm: string; threshold: number } {
+  try {
+    const raw = localStorage.getItem(CLOSER_LOOK_MODEL_KEY);
+    if (raw) { const p = JSON.parse(raw); if (typeof p.algorithm === "string") return { algorithm: p.algorithm, threshold: typeof p.threshold === "number" ? p.threshold : DEFAULT_FRAME_PARAMS.threshold }; }
+  } catch { /* defaults */ }
+  return { algorithm: DEFAULT_FRAME_PARAMS.algorithm, threshold: DEFAULT_FRAME_PARAMS.threshold };
+}
+
+type ModelRunState =
+  | { state: "running"; tilesDone: number; tilesTotal: number | null }
+  | { state: "done"; result: WeedVisionResult; grounded: FrameDetection[] | null; ms: number }
+  | { state: "error"; error: string };
 
 /** The measured canopy's outline, drawn in this colour: it is neither a row nor a class. */
 export const MEASURED_COLOUR = "#ffffff";
@@ -83,13 +104,17 @@ export function resetWholePhotoReads(): void { wholePhotoReads.clear(); }
 /** `id` names the finding on the map; the detector's boxes are filed under it. */
 export type CloserLookTarget = { id?: string; title: string; spot: SpotSources };
 
-export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null, spotLook = null, spotMeasurement = null, passParams = null, readStore = null, minWeedM = 0 }: {
+export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null, spotLook = null, spotMeasurement = null, passParams = null, readStore = null, minWeedM = 0, modelRun = null, fetchImpl }: {
   target: CloserLookTarget | null;
   sources: ScanSources | null;
   units: UnitSystem;
   onClose: () => void;
   /** The detector's boxes carried to the ground, for the map's experimental overlay. */
   onDetections?: (list: GroundedDetection[]) => void;
+  /** The scan this photo belongs to, so a model run on the photo also lands on the map and is saved; null keeps it on the photo. */
+  modelRun?: { taskId: string; userId: string | null } | null;
+  /** The fetch the model service is reached with (tests). */
+  fetchImpl?: typeof fetch;
   /** The field's row spacing from the scan's pattern, so the photo is read at it rather than searched. */
   rowSpacingM?: number | null;
   /** The spot's own size on the map, metres across, for the ring when the photo pass places nothing at it. */
@@ -124,9 +149,50 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   const views = target?.spot.lookable ?? [];
   const view = views[viewIndex] ?? null;
   const scale = target?.spot.nativeScale ?? null;
+  // The local model service: which models it offers and whether each is loaded. Asked once per opening of the dialog.
+  const [svc, setSvc] = useState<{ health: Health | null; algorithms: Record<string, AlgorithmInfo>; error: string | null } | null>(null);
+  const [modelChoice, setModelChoice] = useState(loadModelChoice);
+  const [modelRunState, setModelRunState] = useState<ModelRunState | null>(null);
+  const [showModel, setShowModel] = useState(true);
 
   useEffect(() => { setViewIndex(0); }, [target]);
-  useEffect(() => { setDetection(null); setCopied(false); }, [look]);
+  useEffect(() => { setDetection(null); setCopied(false); setModelRunState(null); }, [look]);
+  useEffect(() => { try { localStorage.setItem(CLOSER_LOOK_MODEL_KEY, JSON.stringify(modelChoice)); } catch { /* private mode */ } }, [modelChoice]);
+  useEffect(() => {
+    if (!target) return;
+    let on = true;
+    const f = fetchImpl ?? fetch;
+    (async () => {
+      const h = await fetchHealth(f);
+      if (!h.ok) { if (on) setSvc({ health: null, algorithms: {}, error: h.error }); return; }
+      const a = await fetchAlgorithms(f);
+      if (on) setSvc({ health: h.value, algorithms: a.ok ? a.value.algorithms : {}, error: a.ok ? null : a.error });
+    })();
+    return () => { on = false; };
+  }, [target, fetchImpl]);
+  const modelInfo = svc?.algorithms[modelChoice.algorithm];
+  const modelReady = algorithmReady(modelInfo, svc?.health ?? null);
+  const modelChoices = useMemo(() => Object.entries(svc?.algorithms ?? {}).filter(([k]) => k !== "selected").sort(([, a], [, b]) => (a.family === "rfdetr" ? -1 : b.family === "rfdetr" ? 1 : 0)), [svc]);
+
+  /** The chosen model over this whole original photo: outlines on the photo, and on the map when the scan can place them. */
+  const runModel = async () => {
+    const blob = frameRef.current;
+    if (!blob || !view || !modelInfo || modelRunState?.state === "running") return;
+    setModelRunState({ state: "running", tilesDone: 0, tilesTotal: null });
+    const t0 = Date.now();
+    const res = await detectWeeds(blob, view.filename, { algorithm: modelChoice.algorithm, scale: 1, tile: DEFAULT_FRAME_PARAMS.tile, overlap: DEFAULT_FRAME_PARAMS.overlap, threshold: modelChoice.threshold, includeCrop: true },
+      { fetchImpl, onProgress: p => setModelRunState(s => (s?.state === "running" ? { state: "running", tilesDone: p.tilesDone, tilesTotal: p.tilesTotal } : s)) });
+    if (!res.ok) { setModelRunState({ state: "error", error: res.error }); return; }
+    let grounded: FrameDetection[] | null = null;
+    if (modelRun && sources) {
+      grounded = await addFrameDetections(modelRun.taskId, {
+        userId: modelRun.userId, sources, shot: view.shot, result: res.value,
+        params: { ...DEFAULT_FRAME_PARAMS, algorithm: modelChoice.algorithm, threshold: modelChoice.threshold },
+        modelSha: modelShaFor(modelInfo, svc?.health ?? null), algorithmLabel: modelInfo.label,
+      });
+    }
+    setModelRunState({ state: "done", result: res.value, grounded, ms: Date.now() - t0 });
+  };
 
   const askDetector = async () => {
     if (!look || !view || detection?.state === "asking") return;
@@ -279,8 +345,19 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
         </g>);
       });
     }
+    if (showModel && modelRunState?.state === "done") {
+      // The model saw the whole original: its outlines are already in this photo's pixels.
+      const r = modelRunState.result;
+      const font = Math.max(12, look.originalWidth / 220);
+      (r.crop_instances ?? []).forEach((c, i) => c.polygons_px.forEach((poly, j) =>
+        nodes.push(<polygon key={`mc${i}-${j}`} points={poly.map(p => `${p[0]},${p[1]}`).join(" ")} fill={PLANT_COLOUR.crop} fillOpacity={0.08} stroke={PLANT_COLOUR.crop} strokeWidth={1.2} strokeDasharray="6 4" {...thin} data-testid="closer-look-model-crop" />)));
+      r.instances.forEach((w, i) => {
+        w.polygons_px.forEach((poly, j) => nodes.push(<polygon key={`mw${i}-${j}`} points={poly.map(p => `${p[0]},${p[1]}`).join(" ")} fill={PLANT_COLOUR.weed} fillOpacity={0.18} stroke={PLANT_COLOUR.weed} strokeWidth={2} {...thin} data-testid="closer-look-model-weed" />));
+        if (w.score != null) nodes.push(<text key={`mt${i}`} x={w.bbox_px[0]} y={Math.max(font, w.bbox_px[1] - 4)} fill={PLANT_COLOUR.weed} fontSize={font} fontFamily="ui-monospace, monospace" stroke="#000" strokeWidth={3} paintOrder="stroke">{w.score.toFixed(2)}</text>);
+      });
+    }
     return nodes;
-  }, [look, view, patternOn, patternLook, minWeedM, spotMeasurement, detection, diagnostic, dispositions]);
+  }, [look, view, patternOn, patternLook, minWeedM, spotMeasurement, detection, diagnostic, dispositions, modelRunState, showModel]);
   const orthoGsd = target?.spot.orthoGsdM ?? null;
 
   return (
@@ -310,8 +387,28 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
             {target ? `${target.spot.chosen.length} photo${target.spot.chosen.length === 1 ? "" : "s"} chosen to cover this shape, of ${target.spot.views.length} that saw it` : ""}
             {target && target.spot.chosen.length > views.length ? `; ${target.spot.chosen.length - views.length} not kept as originals.` : "."}
           </span>
+          <span className="ml-auto inline-flex items-center gap-1.5" data-testid="closer-look-model">
+            <select value={modelChoice.algorithm} disabled={modelRunState?.state === "running" || !modelChoices.length} data-testid="closer-look-model-select"
+              onChange={e => { const a = svc?.algorithms[e.target.value]; setModelChoice(c => ({ algorithm: e.target.value, threshold: a?.default_threshold ?? c.threshold })); }}
+              className="bg-[#0f0f0f] border border-[#333] rounded-sm px-1.5 py-1 text-neutral-200 max-w-[260px]" title={svc?.error ? `The local model service is not running: ${svc.error}` : modelInfo?.description ?? "Choose a model"}>
+              {!modelChoices.length && <option value={modelChoice.algorithm}>{svc?.error ? "model service not running" : "loading models…"}</option>}
+              {modelChoices.map(([k, a]) => <option key={k} value={k} disabled={!algorithmReady(a, svc?.health ?? null)}>{a.label}{algorithmReady(a, svc?.health ?? null) ? "" : " (not loaded)"}</option>)}
+            </select>
+            {modelInfo?.family === "rfdetr" && (
+              <label className="inline-flex items-center gap-1 text-neutral-400" title="Confidence cut: lower finds more small weeds, higher trusts fewer, surer ones.">
+                ≥<input type="number" min={0.1} max={0.9} step={0.05} value={modelChoice.threshold} disabled={modelRunState?.state === "running"} data-testid="closer-look-model-threshold"
+                  onChange={e => setModelChoice(c => ({ ...c, threshold: Math.min(0.9, Math.max(0.1, Number(e.target.value) || c.threshold)) }))}
+                  className="w-14 bg-[#0f0f0f] border border-[#333] rounded-sm px-1 py-0.5 text-neutral-200" />
+              </label>
+            )}
+            <button type="button" onClick={runModel} disabled={!look || !modelReady || modelRunState?.state === "running"}
+              className="rounded-sm border border-[#ffe600] px-2 py-1 text-[#ffe600] hover:bg-[#ffe600]/10 disabled:opacity-40 inline-flex items-center gap-1.5"
+              title={!modelReady ? "The model is not loaded on the local service" : "Sends this whole original photo to the chosen model on the local service. Outlines are drawn on the photo and placed on the map; nothing is marked by itself."} data-testid="closer-look-run-model">
+              {modelRunState?.state === "running" ? <><Loader2 className="h-3 w-3 animate-spin" /> {modelRunState.tilesTotal ? `tile ${modelRunState.tilesDone}/${modelRunState.tilesTotal}` : "sending"}</> : "Run model on this photo"}
+            </button>
+          </span>
           <button type="button" onClick={askDetector} disabled={!look || detection?.state === "asking"}
-            className="ml-auto rounded-sm border border-[#333] px-2 py-1 text-neutral-300 hover:bg-[#1f1f1f] disabled:opacity-40 inline-flex items-center gap-1.5"
+            className="rounded-sm border border-[#333] px-2 py-1 text-neutral-300 hover:bg-[#1f1f1f] disabled:opacity-40 inline-flex items-center gap-1.5"
             title="Sends this crop to the experimental baseline detector through the server. Its boxes are a yardstick, not a verdict." data-testid="closer-look-detect">
             {detection?.state === "asking" && <Loader2 className="h-3 w-3 animate-spin" />} Ask the baseline detector
           </button>
@@ -343,6 +440,24 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
             {patternLook && !diagnostic && <PatternKey look={significantLook(patternLook.look, minWeedM)} detail={`${gsd(patternLook.look.gsdM)}${patternLook.outlines ? "; the shapes are the vegetation's own outlines" : "; circles: the cut had no soil-to-plant contrast to outline on"}`} measured={spotMeasurement?.status === "measured" && spotMeasurement.sourceFrame === view?.filename ? spotMeasurement : null} units={units} outlines={!!patternLook.outlines} />}
           </p>
         )}
+        {modelRunState?.state === "error" && (
+          <p className="text-[11px] text-amber-400" data-testid="closer-look-model-error">The model could not run: {modelRunState.error}</p>
+        )}
+        {modelRunState?.state === "done" && (() => {
+          const r = modelRunState.result;
+          const nCrop = r.crop_instances?.length ?? 0;
+          const g = modelRunState.grounded;
+          const gc = g ? countByClass(g) : null;
+          return (
+            <p className="text-[11px] text-neutral-300 flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="closer-look-model-line">
+              <span><span style={{ color: PLANT_COLOUR.weed }} className="font-semibold">{r.count} weed{r.count === 1 ? "" : "s"}</span>{r.classes?.includes("crop") ? <> and <span style={{ color: PLANT_COLOUR.crop }}>{nCrop} crop plant{nCrop === 1 ? "" : "s"}</span></> : ""} in this photo</span>
+              <span className="text-neutral-500">{r.algorithm.label} · {(modelRunState.ms / 1000).toFixed(1)} s{r.processing.device ? ` on ${r.processing.device.replace(/ \(.*\)$/, "")}` : ""}{r.processing.threshold != null ? ` · confidence ≥ ${r.processing.threshold}` : ""}</span>
+              {gc ? <span className="text-neutral-500">{gc.weed + gc.crop} placed on the map{modelRun?.userId ? " and saved" : ""}; click a plant there for its card.</span> : modelRun ? <span className="text-amber-400">Not placed on the map: this scan has no camera poses or ground height.</span> : null}
+              <label className="inline-flex items-center gap-1 cursor-pointer text-neutral-400"><input type="checkbox" checked={showModel} onChange={e => setShowModel(e.target.checked)} className="accent-[#ffe600]" /> outlines on the photo</label>
+              {r.warnings.length > 0 && <span className="text-neutral-600" title={r.warnings.join("\n")}>{r.warnings.length} note{r.warnings.length === 1 ? "" : "s"}</span>}
+            </p>
+          );
+        })()}
         {detection?.state === "done" && (
           <div className="text-[11px] text-neutral-400 space-y-1">
             <p data-testid="closer-look-detection">

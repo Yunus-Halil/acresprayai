@@ -51,6 +51,13 @@ const sessions = new Map<string, FrameRunSession>();
 const controllers = new Map<string, AbortController>();
 const listeners = new Set<() => void>();
 const emit = () => { for (const l of listeners) l(); };
+/** Every photo's detections before merging, per scan: the batch run and the closer look both feed it. */
+const rawByTask = new Map<string, Map<string, FrameDetection[]>>();
+function rawOf(taskId: string): Map<string, FrameDetection[]> {
+  let m = rawByTask.get(taskId);
+  if (!m) { m = new Map(); rawByTask.set(taskId, m); }
+  return m;
+}
 
 export const getFrameRun = (taskId: string): FrameRunSession => sessions.get(taskId) ?? EMPTY_FRAME_RUN;
 
@@ -137,7 +144,8 @@ export function startFrameRun(taskId: string, input: StartFrameRunInput): void {
     return;
   }
   const set = sources.set, altM = sources.groundAltM;
-  const byFrame = new Map<string, FrameDetection[]>();
+  const byFrame = rawOf(taskId);
+  byFrame.clear();
   const summaries: Record<string, FrameSummary> = {};
   const publish = () => {
     if (!mine()) return;
@@ -216,8 +224,11 @@ export async function restoreFrameRun(taskId: string, input: { sources: ScanSour
   const all: FrameDetection[] = [];
   const frames: Record<string, FrameSummary> = {};
   let latest: string | null = null;
+  const raw = rawOf(taskId);
+  raw.clear();
   for (const r of rows.values()) {
     all.push(...r.detections);
+    raw.set(r.filename, r.detections);
     const c = countByClass(r.detections);
     frames[r.filename] = { filename: r.filename, weeds: c.weed, crops: c.crop, status: "cached", ms: r.timingsMs?.total ?? null };
     if (r.createdAt && (!latest || r.createdAt > latest)) latest = r.createdAt;
@@ -233,8 +244,52 @@ export async function clearFrameRun(taskId: string, deps?: Partial<FrameRunDeps>
   if (s.running) stopFrameRun(taskId);
   const remove = deps?.cache?.remove ?? deleteFrameRuns;
   if (s.paramsKey) await remove(taskId, s.paramsKey);
+  rawByTask.delete(taskId);
   sessions.set(taskId, { ...EMPTY_FRAME_RUN, showWeeds: s.showWeeds, showCrops: s.showCrops });
   emit();
+}
+
+export type AddFrameInput = {
+  userId: string | null;
+  sources: ScanSources;
+  shot: Shot;
+  /** The service's answer for this one photograph. */
+  result: WeedVisionResult;
+  params: FrameRunParams;
+  modelSha: string | null;
+  algorithmLabel: string;
+  deps?: Partial<FrameRunDeps>;
+};
+
+/**
+ * One photograph scored on its own (the closer look): its instances carried
+ * to the ground, merged with whatever the scan already has, drawn on the map
+ * and saved like a batch run's photo. Returns the grounded detections, or null
+ * when the scan cannot place a photo on the ground.
+ */
+export async function addFrameDetections(taskId: string, input: AddFrameInput): Promise<FrameDetection[] | null> {
+  const { sources, shot, result } = input;
+  if (!sources.set || sources.groundAltM == null) return null;
+  const set = sources.set, altM = sources.groundAltM;
+  const dets = groundFrameResult({ set, shot, groundAltM: altM, result });
+  const raw = rawOf(taskId);
+  raw.set(shot.filename, dets);
+  const all = [...raw.values()].flat();
+  const plants = mergeAcrossFrames(set, altM, all);
+  const c = countByClass(dets);
+  const cur = getFrameRun(taskId);
+  const paramsKey = frameRunKey(input.params, input.modelSha);
+  const frames = { ...cur.frames, [shot.filename]: { filename: shot.filename, weeds: c.weed, crops: c.crop, status: "done" as const, ms: result.timings_ms?.total ?? null } };
+  patchFrameRun(taskId, {
+    plants, raw: all.length, frames, error: null, restoredAt: null,
+    params: cur.params ?? input.params, paramsKey: cur.paramsKey ?? paramsKey, modelSha: cur.modelSha ?? input.modelSha, algorithmLabel: input.algorithmLabel,
+    note: summarise(plants, all.length, frames),
+  });
+  if (input.userId) {
+    const save = input.deps?.cache?.save ?? saveFrameRun;
+    void save({ userId: input.userId, scanId: taskId, paramsKey, params: input.params, run: { filename: shot.filename, algorithm: result.algorithm.name, modelSha256: input.modelSha, nativeWidth: result.image.width, nativeHeight: result.image.height, timingsMs: result.timings_ms ?? {}, detections: dets, createdAt: null } });
+  }
+  return dets;
 }
 
 /** For tests. */
@@ -242,5 +297,6 @@ export function resetFrameRunStore(): void {
   for (const c of controllers.values()) c.abort();
   controllers.clear();
   sessions.clear();
+  rawByTask.clear();
   emit();
 }

@@ -928,6 +928,7 @@ export function WeedScoutTab({
           <BasemapToggle value={basemap} onChange={(id) => { setBasemap(id); saveBasemap(id); }} className="absolute bottom-4 right-4 z-[1000]" />
         </MapContainer>
         <CloserLookDialog target={closerLook} sources={sources} units={units} onClose={() => setCloserLook(null)} onDetections={list => addDetections(taskId, list)}
+          modelRun={{ taskId, userId: user?.id ?? null }}
           rowSpacingM={result?.pattern?.summary.rowSpacingM ?? null}
           spotDiameterM={closerLook ? (candidates.find(c => c.id === closerLook.id)?.blob?.equivDiameterM ?? null) : null}
           spotLook={closerLook ? (candidates.find(c => c.id === closerLook.id)?.look ?? null) : null}
