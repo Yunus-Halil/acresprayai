@@ -61,7 +61,7 @@ import { DetectionOverlay } from "./DetectionOverlay";
 import { addDetections, clearDetections, setDetectionsVisible, useDetectionLayer } from "@/lib/sourceFrames/detectionStore";
 import { ModelDetectionLayer, PLANT_COLOUR } from "../weedVision/ModelDetectionLayer";
 import { ModelDetectionsPanel } from "../weedVision/ModelDetectionsPanel";
-import { type GroundPlant, countByClass } from "@/lib/weedVision/frames";
+import { type GroundPlant, countByClass, countByRow } from "@/lib/weedVision/frames";
 import { patchFrameRun, setFrameRunBoundary, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { m2ToHectares, polygonAreaM2 } from "@/lib/geo";
 import { BenchmarkPanel } from "./BenchmarkPanel";
@@ -990,12 +990,19 @@ export function WeedScoutTab({
           )}
           {frameRun.plants.length > 0 && (() => {
             const c = countByClass(frameRun.plants);
+            const r = countByRow(frameRun.plants);
             return (
               <>
                 <label className="flex items-center gap-2 cursor-pointer" data-testid="model-weeds-toggle">
                   <input type="checkbox" checked={frameRun.showWeeds} onChange={e => patchFrameRun(taskId, { showWeeds: e.target.checked })} className="accent-[#ffe600]" />
-                  <span className="inline-block w-3 h-3 rounded-sm" style={{ background: PLANT_COLOUR.weed }} /> Model weeds ({c.weed.toLocaleString()})
+                  <span className="inline-block w-3 h-3 rounded-sm" style={{ background: PLANT_COLOUR.weed }} /> Model weeds off the rows ({(r.offRow + r.noRows).toLocaleString()})
                 </label>
+                {r.onRow > 0 && (
+                  <label className="flex items-center gap-2 cursor-pointer" data-testid="model-onrow-toggle">
+                    <input type="checkbox" checked={frameRun.showOnRow} onChange={e => patchFrameRun(taskId, { showOnRow: e.target.checked })} className="accent-[#ffe600]" />
+                    <span className="inline-block w-3 h-3 rounded-sm border border-dashed" style={{ borderColor: PLANT_COLOUR.weed }} /> On crop plants or row lines ({r.onRow.toLocaleString()}), set aside
+                  </label>
+                )}
                 <label className="flex items-center gap-2 cursor-pointer" data-testid="model-crops-toggle">
                   <input type="checkbox" checked={frameRun.showCrops} onChange={e => patchFrameRun(taskId, { showCrops: e.target.checked })} className="accent-[#40e0ff]" />
                   <span className="inline-block w-3 h-3 rounded-sm border border-dashed" style={{ borderColor: PLANT_COLOUR.crop }} /> Model crop plants ({c.crop.toLocaleString()})
@@ -1054,7 +1061,7 @@ export function WeedScoutTab({
           )}
           {session.cache && !running && <p className="text-[10px] text-neutral-600">{session.cache}</p>}
         </div>
-        <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} />
+        <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} />
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
           <details className="text-[11px]">
             <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">

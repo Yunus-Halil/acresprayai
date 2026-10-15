@@ -33,8 +33,9 @@ import type { WeedMeasurement } from "@/lib/weedScout/sizing/types";
 import type { ScoutParams } from "@/lib/weedScout/types";
 import { storageKey } from "@/lib/storage";
 import { type AlgorithmInfo, type Health, type WeedVisionResult, algorithmReady, detectWeeds, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
-import { type FrameDetection, countByClass } from "@/lib/weedVision/frames";
+import { type FrameDetection, countByClass, countByRow } from "@/lib/weedVision/frames";
 import { addFrameDetections } from "@/lib/weedVision/frameRunStore";
+import { type RowContext, isOnRow, rowContextFromPattern } from "@/lib/weedVision/rowFilter";
 import { PLANT_COLOUR } from "../weedVision/ModelDetectionLayer";
 import { DEFAULT_FRAME_PARAMS, modelShaFor } from "../weedVision/ModelDetectionsPanel";
 import { PhotoViewer } from "./PhotoViewer";
@@ -51,7 +52,7 @@ function loadModelChoice(): { algorithm: string; threshold: number } {
 
 type ModelRunState =
   | { state: "running"; tilesDone: number; tilesTotal: number | null }
-  | { state: "done"; result: WeedVisionResult; grounded: FrameDetection[] | null; ms: number }
+  | { state: "done"; result: WeedVisionResult; grounded: FrameDetection[] | null; ms: number; rowContext: RowContext | null }
   | { state: "error"; error: string };
 
 /** The measured canopy's outline, drawn in this colour: it is neither a row nor a class. */
@@ -154,6 +155,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   const [modelChoice, setModelChoice] = useState(loadModelChoice);
   const [modelRunState, setModelRunState] = useState<ModelRunState | null>(null);
   const [showModel, setShowModel] = useState(true);
+  const [showModelOnRow, setShowModelOnRow] = useState(false);
 
   useEffect(() => { setViewIndex(0); }, [target]);
   useEffect(() => { setDetection(null); setCopied(false); setModelRunState(null); }, [look]);
@@ -183,15 +185,22 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
     const res = await detectWeeds(blob, view.filename, { algorithm: modelChoice.algorithm, scale: 1, tile: DEFAULT_FRAME_PARAMS.tile, overlap: DEFAULT_FRAME_PARAMS.overlap, threshold: modelChoice.threshold, includeCrop: true },
       { fetchImpl, onProgress: p => setModelRunState(s => (s?.state === "running" ? { state: "running", tilesDone: p.tilesDone, tilesTotal: p.tilesTotal } : s)) });
     if (!res.ok) { setModelRunState({ state: "error", error: res.error }); return; }
+    // The photo's rows and crop plants, when this session or the scan has read them: weeds on them are set aside.
+    let rowContext: RowContext | null = null;
+    try {
+      const whole = wholePhotoReads.get(view.filename) ? await wholePhotoReads.get(view.filename)! : null;
+      const saved = whole ?? (readStore?.get(view.filename) ? { pattern: readStore.get(view.filename)!.pattern, nativeScale: readStore.get(view.filename)!.nativeWidth / readStore.get(view.filename)!.decodedWidth } : null);
+      rowContext = saved ? rowContextFromPattern(saved.pattern, saved.nativeScale) : null;
+    } catch { rowContext = null; }
     let grounded: FrameDetection[] | null = null;
     if (modelRun && sources) {
       grounded = await addFrameDetections(modelRun.taskId, {
         userId: modelRun.userId, sources, shot: view.shot, result: res.value,
         params: { ...DEFAULT_FRAME_PARAMS, algorithm: modelChoice.algorithm, threshold: modelChoice.threshold },
-        modelSha: modelShaFor(modelInfo, svc?.health ?? null), algorithmLabel: modelInfo.label,
+        modelSha: modelShaFor(modelInfo, svc?.health ?? null), algorithmLabel: modelInfo.label, rowContext,
       });
     }
-    setModelRunState({ state: "done", result: res.value, grounded, ms: Date.now() - t0 });
+    setModelRunState({ state: "done", result: res.value, grounded, ms: Date.now() - t0, rowContext });
   };
 
   const askDetector = async () => {
@@ -351,13 +360,20 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
       const font = Math.max(12, look.originalWidth / 220);
       (r.crop_instances ?? []).forEach((c, i) => c.polygons_px.forEach((poly, j) =>
         nodes.push(<polygon key={`mc${i}-${j}`} points={poly.map(p => `${p[0]},${p[1]}`).join(" ")} fill={PLANT_COLOUR.crop} fillOpacity={0.08} stroke={PLANT_COLOUR.crop} strokeWidth={1.2} strokeDasharray="6 4" {...thin} data-testid="closer-look-model-crop" />)));
+      // Weeds the photo's pattern puts on a crop plant or a row line are set aside: drawn faint and dashed, only when asked.
+      const onRowOf = (w: typeof r.instances[number]) => {
+        const g = modelRunState.grounded?.find(d => d.klass === "weed" && d.instanceId === w.id);
+        return g ? isOnRow(g.rowStatus) : false;
+      };
       r.instances.forEach((w, i) => {
-        w.polygons_px.forEach((poly, j) => nodes.push(<polygon key={`mw${i}-${j}`} points={poly.map(p => `${p[0]},${p[1]}`).join(" ")} fill={PLANT_COLOUR.weed} fillOpacity={0.18} stroke={PLANT_COLOUR.weed} strokeWidth={2} {...thin} data-testid="closer-look-model-weed" />));
-        if (w.score != null) nodes.push(<text key={`mt${i}`} x={w.bbox_px[0]} y={Math.max(font, w.bbox_px[1] - 4)} fill={PLANT_COLOUR.weed} fontSize={font} fontFamily="ui-monospace, monospace" stroke="#000" strokeWidth={3} paintOrder="stroke">{w.score.toFixed(2)}</text>);
+        const onRow = onRowOf(w);
+        if (onRow && !showModelOnRow) return;
+        w.polygons_px.forEach((poly, j) => nodes.push(<polygon key={`mw${i}-${j}`} points={poly.map(p => `${p[0]},${p[1]}`).join(" ")} fill={PLANT_COLOUR.weed} fillOpacity={onRow ? 0.05 : 0.18} stroke={PLANT_COLOUR.weed} strokeWidth={onRow ? 1.2 : 2} strokeDasharray={onRow ? "6 4" : undefined} {...thin} data-testid={onRow ? "closer-look-model-weed-onrow" : "closer-look-model-weed"} />));
+        if (w.score != null && !onRow) nodes.push(<text key={`mt${i}`} x={w.bbox_px[0]} y={Math.max(font, w.bbox_px[1] - 4)} fill={PLANT_COLOUR.weed} fontSize={font} fontFamily="ui-monospace, monospace" stroke="#000" strokeWidth={3} paintOrder="stroke">{w.score.toFixed(2)}</text>);
       });
     }
     return nodes;
-  }, [look, view, patternOn, patternLook, minWeedM, spotMeasurement, detection, diagnostic, dispositions, modelRunState, showModel]);
+  }, [look, view, patternOn, patternLook, minWeedM, spotMeasurement, detection, diagnostic, dispositions, modelRunState, showModel, showModelOnRow]);
   const orthoGsd = target?.spot.orthoGsdM ?? null;
 
   return (
@@ -448,9 +464,15 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
           const nCrop = r.crop_instances?.length ?? 0;
           const g = modelRunState.grounded;
           const gc = g ? countByClass(g) : null;
+          const rows = g ? countByRow(g) : null;
+          const offRow = rows ? rows.offRow + rows.noRows : r.count;
           return (
             <p className="text-[11px] text-neutral-300 flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="closer-look-model-line">
-              <span><span style={{ color: PLANT_COLOUR.weed }} className="font-semibold">{r.count} weed{r.count === 1 ? "" : "s"}</span>{r.classes?.includes("crop") ? <> and <span style={{ color: PLANT_COLOUR.crop }}>{nCrop} crop plant{nCrop === 1 ? "" : "s"}</span></> : ""} in this photo</span>
+              <span><span style={{ color: PLANT_COLOUR.weed }} className="font-semibold">{offRow} weed{offRow === 1 ? "" : "s"}{rows && rows.onRow > 0 ? " off the rows" : ""}</span>{r.classes?.includes("crop") ? <> and <span style={{ color: PLANT_COLOUR.crop }}>{nCrop} crop plant{nCrop === 1 ? "" : "s"}</span></> : ""} in this photo</span>
+              {rows && rows.onRow > 0 && (
+                <label className="inline-flex items-center gap-1 cursor-pointer text-neutral-400" title="The photo's pattern placed these on a crop plant or a row line: most likely the crop. Dashed and faint when shown."><input type="checkbox" checked={showModelOnRow} onChange={e => setShowModelOnRow(e.target.checked)} className="accent-[#ffe600]" data-testid="closer-look-show-onrow" /> {rows.onRow} on the crop rows, set aside</label>
+              )}
+              {modelRunState.rowContext == null && rows && rows.noRows > 0 && <span className="text-neutral-500">no row read for this photo yet (open the pattern view, or scan the field)</span>}
               <span className="text-neutral-500">{r.algorithm.label} · {(modelRunState.ms / 1000).toFixed(1)} s{r.processing.device ? ` on ${r.processing.device.replace(/ \(.*\)$/, "")}` : ""}{r.processing.threshold != null ? ` · confidence ≥ ${r.processing.threshold}` : ""}</span>
               {gc ? <span className="text-neutral-500">{gc.weed + gc.crop} placed on the map{modelRun?.userId ? " and saved" : ""}; click a plant there for its card.</span> : modelRun ? <span className="text-amber-400">Not placed on the map: this scan has no camera poses or ground height.</span> : null}
               <label className="inline-flex items-center gap-1 cursor-pointer text-neutral-400"><input type="checkbox" checked={showModel} onChange={e => setShowModel(e.target.checked)} className="accent-[#ffe600]" /> outlines on the photo</label>

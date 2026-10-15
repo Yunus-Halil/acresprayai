@@ -7,9 +7,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Cpu, Loader2, Play, Square } from "lucide-react";
 import { storageKey } from "@/lib/storage";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
+import type { PhotoReadStore } from "@/lib/weedScout/photoPass";
 import { type AlgorithmInfo, type Health, algorithmReady, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
-import { type FrameRunParams, countByClass } from "@/lib/weedVision/frames";
+import { type FrameRunParams, countByClass, countByRow } from "@/lib/weedVision/frames";
 import { clearFrameRun, patchFrameRun, restoreFrameRun, scorableFrames, startFrameRun, stopFrameRun, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { rowContextFromPattern } from "@/lib/weedVision/rowFilter";
 import { PLANT_COLOUR } from "./ModelDetectionLayer";
 
 const PARAMS_KEY = storageKey("weedVision", "frameParams");
@@ -40,7 +42,7 @@ export function modelShaFor(info: AlgorithmInfo | undefined, health: Health | nu
   return st?.checkpoint_sha256 ?? null;
 }
 
-export function ModelDetectionsPanel({ taskId, userId, sources, fetchImpl }: { taskId: string; userId: string | null; sources: ScanSources | null; fetchImpl?: typeof fetch }) {
+export function ModelDetectionsPanel({ taskId, userId, sources, readStore = null, fetchImpl }: { taskId: string; userId: string | null; sources: ScanSources | null; /** The scan's saved photo reads: the rows and crop plants of each photo the pass read, which set the model's weeds on them aside. */ readStore?: PhotoReadStore | null; fetchImpl?: typeof fetch }) {
   const run = useFrameRun(taskId);
   const [health, setHealth] = useState<Health | null>(null);
   const [serviceError, setServiceError] = useState<string | null>(null);
@@ -80,8 +82,13 @@ export function ModelDetectionsPanel({ taskId, userId, sources, fetchImpl }: { t
   const canRun = !!userId && !!sources && frames.length > 0 && ready && !run.running;
   const start = (force: boolean) => {
     if (!userId || !sources || !info) return;
-    startFrameRun(taskId, { userId, sources, params, algorithmLabel: info.label, modelSha, force });
+    const rowContextFor = (filename: string) => {
+      const saved = readStore?.get(filename);
+      return saved ? rowContextFromPattern(saved.pattern, saved.nativeWidth / saved.decodedWidth) : null;
+    };
+    startFrameRun(taskId, { userId, sources, params, algorithmLabel: info.label, modelSha, force, rowContextFor });
   };
+  const rows = countByRow(run.plants);
   const pct = run.progress && run.progress.framesTotal ? Math.round((100 * (run.progress.framesDone + (run.progress.tilesTotal ? run.progress.tilesDone / run.progress.tilesTotal : 0))) / run.progress.framesTotal) : 0;
   const sel = "w-full bg-[#0f0f0f] border border-[#222] rounded-sm px-2 py-1 text-[11px] text-neutral-200";
   const btn = "inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed";
@@ -154,7 +161,9 @@ export function ModelDetectionsPanel({ taskId, userId, sources, fetchImpl }: { t
           {run.plants.length > 0 && (
             <div className="space-y-1" data-testid="frame-summary">
               <div className="text-[11px] text-neutral-300">
-                <span style={{ color: PLANT_COLOUR.weed }} className="font-semibold">{counts.weed.toLocaleString()} weeds</span>
+                <span style={{ color: PLANT_COLOUR.weed }} className="font-semibold">{rows.offRow.toLocaleString()} weeds off the rows</span>
+                {rows.onRow > 0 ? <span className="text-neutral-500"> · {rows.onRow.toLocaleString()} on crop plants or row lines, set aside</span> : ""}
+                {rows.noRows > 0 ? <span className="text-neutral-500"> · {rows.noRows.toLocaleString()} in photos without a row read</span> : ""}
                 {" · "}<span style={{ color: PLANT_COLOUR.crop }}>{counts.crop.toLocaleString()} crop plants</span>
                 {" · "}{Object.keys(run.frames).length} photo{Object.keys(run.frames).length === 1 ? "" : "s"}
                 {run.raw > run.plants.length + run.outside ? ` · ${(run.raw - run.plants.length - run.outside).toLocaleString()} repeat sightings merged` : ""}
@@ -167,6 +176,14 @@ export function ModelDetectionsPanel({ taskId, userId, sources, fetchImpl }: { t
               <label className="flex items-center gap-2 cursor-pointer text-[11px] text-neutral-400">
                 <input type="checkbox" checked={run.showCrops} onChange={e => patchFrameRun(taskId, { showCrops: e.target.checked })} className="accent-[#40e0ff]" /> Crop plants on the map
               </label>
+              {rows.onRow > 0 && (
+                <label className="flex items-center gap-2 cursor-pointer text-[11px] text-neutral-400" title="The photo pass placed these on a crop plant or a row line: in an orchard that is the tree. Shown dashed and faint when on.">
+                  <input type="checkbox" checked={run.showOnRow} onChange={e => patchFrameRun(taskId, { showOnRow: e.target.checked })} className="accent-[#ffe600]" data-testid="show-on-row" /> Also show the {rows.onRow.toLocaleString()} weeds on the crop rows
+                </label>
+              )}
+              {rows.noRows > 0 && rows.noRows === rows.offRow + rows.onRow + rows.noRows && (
+                <p className="text-[10px] text-neutral-600">No photo had a row read, so nothing was set aside. Run "Scan this field" first: the photo pass reads the rows and crop plants, and a rerun here uses them.</p>
+              )}
               {run.algorithmLabel && <p className="text-[10px] text-neutral-600">{run.algorithmLabel}{modelSha ? ` · checkpoint ${modelSha.slice(0, 8)}` : ""}. Click a plant on the map for its card.</p>}
             </div>
           )}

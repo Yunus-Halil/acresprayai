@@ -14,8 +14,9 @@ import { type ScanSources, downloadFrame } from "../sourceFrames/scan";
 import type { Shot, SourceFrameSet } from "../sourceFrames/odm";
 import type { FrameManifestEntry } from "../sourceFrames/manifest";
 import { type DetectOptions, type Outcome, type Progress, type WeedVisionResult, detectWeeds } from "./client";
-import { type FrameDetection, type FrameRunParams, type GroundPlant, countByClass, frameRunKey, groundFrameResult, mergeAcrossFrames } from "./frames";
+import { type FrameDetection, type FrameRunParams, type GroundPlant, countByClass, countByRow, frameRunKey, groundFrameResult, mergeAcrossFrames } from "./frames";
 import { type SavedFrameRun, deleteFrameRuns, loadFrameRuns, saveFrameRun } from "./frameRunCache";
+import type { RowContext } from "./rowFilter";
 
 export type FrameRunProgress = { framesDone: number; framesTotal: number; current: string | null; tilesDone: number; tilesTotal: number | null; fromCache: number };
 export type FrameSummary = { filename: string; weeds: number; crops: number; status: "done" | "cached" | "error"; error?: string; ms: number | null };
@@ -40,6 +41,8 @@ export type FrameRunSession = {
   note: string | null;
   showWeeds: boolean;
   showCrops: boolean;
+  /** Weeds the pattern puts on a crop plant or a row line are set aside; this shows them anyway. */
+  showOnRow: boolean;
   selectedId: string | null;
   /** When the plants came from the cache rather than a run in this session. */
   restoredAt: string | null;
@@ -49,7 +52,7 @@ export type FrameRunSession = {
 
 export const EMPTY_FRAME_RUN: FrameRunSession = {
   running: false, progress: null, params: null, paramsKey: null, algorithmLabel: null, modelSha: null,
-  plants: [], raw: 0, outside: 0, scanSet: null, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, selectedId: null, restoredAt: null, marked: {},
+  plants: [], raw: 0, outside: 0, scanSet: null, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, showOnRow: false, selectedId: null, restoredAt: null, marked: {},
 };
 
 const sessions = new Map<string, FrameRunSession>();
@@ -139,15 +142,18 @@ export type StartFrameRunInput = {
   modelSha: string | null;
   /** Score every photo again, ignoring the cache. */
   force?: boolean;
+  /** The photograph's planting pattern, when the scan has read it (the photo-read cache); null or undefined marks its weeds "no-rows". */
+  rowContextFor?: (filename: string) => RowContext | null | Promise<RowContext | null>;
   deps?: Partial<FrameRunDeps>;
 };
 
 function summarise(plants: GroundPlant[], raw: number, frames: Record<string, FrameSummary>): string {
   const c = countByClass(plants);
+  const r = countByRow(plants);
   const n = Object.keys(frames).length;
   const errs = Object.values(frames).filter(f => f.status === "error").length;
   const merged = raw - plants.length;
-  return `${c.weed.toLocaleString()} weed${c.weed === 1 ? "" : "s"} and ${c.crop.toLocaleString()} crop plant${c.crop === 1 ? "" : "s"} from ${n} photo${n === 1 ? "" : "s"}${merged > 0 ? `; ${merged.toLocaleString()} repeat sightings merged` : ""}${errs ? `; ${errs} photo${errs === 1 ? "" : "s"} failed` : ""}.`;
+  return `${r.offRow.toLocaleString()} weed${r.offRow === 1 ? "" : "s"} off the rows${r.onRow ? `, ${r.onRow.toLocaleString()} on crop plants or row lines set aside` : ""}${r.noRows ? `, ${r.noRows.toLocaleString()} in photos without a row read` : ""}, and ${c.crop.toLocaleString()} crop plant${c.crop === 1 ? "" : "s"} from ${n} photo${n === 1 ? "" : "s"}${merged > 0 ? `; ${merged.toLocaleString()} repeat sightings merged` : ""}${errs ? `; ${errs} photo${errs === 1 ? "" : "s"} failed` : ""}.`;
 }
 
 /**
@@ -236,7 +242,9 @@ export function startFrameRun(taskId: string, input: StartFrameRunInput): void {
         }
         continue;
       }
-      const dets = groundFrameResult({ set, shot, groundAltM: altM, result: res.value });
+      let rowContext: RowContext | null = null;
+      try { rowContext = (await input.rowContextFor?.(name)) ?? null; } catch { rowContext = null; }
+      const dets = groundFrameResult({ set, shot, groundAltM: altM, result: res.value, rowContext });
       byFrame.set(name, dets);
       const c = countByClass(dets);
       summaries[name] = { filename: name, weeds: c.weed, crops: c.crop, status: "done", ms: res.value.timings_ms?.total ?? null };
@@ -292,8 +300,17 @@ export async function clearFrameRun(taskId: string, deps?: Partial<FrameRunDeps>
   const remove = deps?.cache?.remove ?? deleteFrameRuns;
   if (s.paramsKey) await remove(taskId, s.paramsKey);
   rawByTask.delete(taskId);
-  sessions.set(taskId, { ...EMPTY_FRAME_RUN, showWeeds: s.showWeeds, showCrops: s.showCrops });
+  sessions.set(taskId, { ...EMPTY_FRAME_RUN, showWeeds: s.showWeeds, showCrops: s.showCrops, showOnRow: s.showOnRow });
   emit();
+}
+
+/** The plants a map should draw: crops when asked, weeds off the rows, and the set-aside ones only when asked. */
+export function visiblePlants(s: FrameRunSession): GroundPlant[] {
+  return s.plants.filter(p => {
+    if (p.klass === "crop") return s.showCrops;
+    if (!s.showWeeds) return false;
+    return s.showOnRow || !(p.rowStatus === "on-crop" || p.rowStatus === "on-row");
+  });
 }
 
 export type AddFrameInput = {
@@ -305,6 +322,8 @@ export type AddFrameInput = {
   params: FrameRunParams;
   modelSha: string | null;
   algorithmLabel: string;
+  /** The photograph's planting pattern, when read. */
+  rowContext?: RowContext | null;
   deps?: Partial<FrameRunDeps>;
 };
 
@@ -318,7 +337,7 @@ export async function addFrameDetections(taskId: string, input: AddFrameInput): 
   const { sources, shot, result } = input;
   if (!sources.set || sources.groundAltM == null) return null;
   const set = sources.set, altM = sources.groundAltM;
-  const dets = groundFrameResult({ set, shot, groundAltM: altM, result });
+  const dets = groundFrameResult({ set, shot, groundAltM: altM, result, rowContext: input.rowContext ?? null });
   const raw = rawOf(taskId);
   raw.set(shot.filename, dets);
   const all = [...raw.values()].flat();

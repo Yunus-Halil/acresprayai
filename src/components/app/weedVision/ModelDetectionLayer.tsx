@@ -16,7 +16,8 @@ import { CircleMarker, Polygon, Popup, Tooltip, useMap, useMapEvents } from "rea
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtAreaCm2, fmtLengthCm } from "@/lib/units";
 import type { GroundPlant } from "@/lib/weedVision/frames";
-import { patchFrameRun, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { patchFrameRun, useFrameRun, visiblePlants } from "@/lib/weedVision/frameRunStore";
+import { isOnRow } from "@/lib/weedVision/rowFilter";
 
 export const PLANT_COLOUR = { weed: "#ffe600", crop: "#40e0ff" } as const;
 export const SELECTED_PLANT_COLOUR = "#ffffff";
@@ -84,7 +85,7 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
   });
   const zoom = view?.zoom ?? map.getZoom();
   const bounds = view?.bounds ?? map.getBounds();
-  const shown = useMemo(() => run.plants.filter(p => (p.klass === "weed" ? run.showWeeds : run.showCrops)), [run.plants, run.showWeeds, run.showCrops]);
+  const shown = useMemo(() => visiblePlants(run), [run]);
   const inView = useMemo(() => {
     if (zoom < POLYGON_ZOOM) return [];
     const padded = bounds.pad(0.15);
@@ -118,6 +119,11 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
                 Seen in <span className="font-mono text-neutral-200">{p.frame}</span>{p.seenIn.length > 1 ? ` and ${p.seenIn.length - 1} other photo${p.seenIn.length > 2 ? "s" : ""}` : ""}
                 {p.viewAngleDeg != null ? ` · ${p.viewAngleDeg.toFixed(0)}° off nadir` : ""}{p.fusedFromTiles > 1 ? ` · stitched from ${p.fusedFromTiles} tiles` : ""}
               </div>
+              {p.klass === "weed" && p.rowStatus && (
+                <div className={isOnRow(p.rowStatus) ? "text-amber-400" : "text-neutral-400"}>
+                  {p.rowStatus === "on-crop" ? "On a plant the pattern placed on a row: most likely the crop." : p.rowStatus === "on-row" ? "On a row line: most likely the crop." : p.rowStatus === "off-row" ? "Off the rows." : "This photo has no row read."}
+                </div>
+              )}
               {p.flags.length > 0 && <div className="text-amber-400">{p.flags.join("; ")}</div>}
               {p.centre && <div className="text-neutral-600">Ground {p.centre.lat.toFixed(6)}, {p.centre.lng.toFixed(6)} · flat ground assumed</div>}
               {p.klass === "weed" && onMark && (
@@ -136,7 +142,7 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
         if (p.ring) {
           return (
             <Polygon key={p.id} positions={p.ring.map(q => [q.lat, q.lng] as [number, number])} eventHandlers={{ click: select }}
-              pathOptions={{ color: active ? SELECTED_PLANT_COLOUR : colour, weight: active ? 3 : markedId ? 2.5 : 1.5, fillColor: colour, fillOpacity: markedId ? 0.45 : p.klass === "weed" ? 0.3 : 0.15, dashArray: p.klass === "crop" ? "3 3" : undefined }}>
+              pathOptions={{ color: active ? SELECTED_PLANT_COLOUR : colour, weight: active ? 3 : markedId ? 2.5 : 1.5, fillColor: colour, fillOpacity: markedId ? 0.45 : isOnRow(p.rowStatus) ? 0.08 : p.klass === "weed" ? 0.3 : 0.15, dashArray: p.klass === "crop" || isOnRow(p.rowStatus) ? "3 3" : undefined }}>
               {tooltip}{popup}
             </Polygon>
           );

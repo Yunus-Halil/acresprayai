@@ -12,6 +12,7 @@
 import type { LatLng2 } from "../geo";
 import { type LatLngAlt, type Shot, type SourceFrameSet, pixelToGround, projectToFrame, toEnu } from "../sourceFrames/odm";
 import type { InstanceClass, WeedInstance, WeedVisionResult } from "./client";
+import { type RowContext, type RowStatus, rowStatusOf } from "./rowFilter";
 
 export type FrameDetection = {
   /** `${frame}#${class}${instance id}`: stable for a photo and a run key. */
@@ -43,6 +44,8 @@ export type FrameDetection = {
   tiny: boolean;
   touchesBorder: boolean;
   fusedFromTiles: number;
+  /** Against the photo's planting pattern (rowFilter.ts); absent on rows saved before it existed. */
+  rowStatus?: RowStatus;
 };
 
 /** One plant on the ground after the photographs are merged: the best view, with the others listed. */
@@ -72,6 +75,8 @@ export type GroundInput = {
   groundAltM: number;
   /** The service's answer for this photograph. */
   result: WeedVisionResult;
+  /** The photograph's planting pattern in its own pixels, when it was read; null marks every weed "no-rows". */
+  rowContext?: RowContext | null;
 };
 
 function groundOne(input: GroundInput, inst: WeedInstance, klass: InstanceClass, nativeScale: number): FrameDetection {
@@ -98,6 +103,7 @@ function groundOne(input: GroundInput, inst: WeedInstance, klass: InstanceClass,
     status: centreG ? "ok" : "off_ground",
     flags: inst.flags ?? [], tiny: !!inst.tiny, touchesBorder: !!inst.touches_border,
     fusedFromTiles: inst.fused_from_tiles ?? 1,
+    rowStatus: klass === "weed" ? rowStatusOf(input.rowContext ?? null, inst.centroid_px[0], inst.centroid_px[1]) : undefined,
   };
 }
 
@@ -194,5 +200,17 @@ export function frameRunKey(p: FrameRunParams, modelSha: string | null): string 
 export function countByClass(dets: { klass: InstanceClass }[]): Record<InstanceClass, number> {
   const out = { crop: 0, weed: 0 };
   for (const d of dets) out[d.klass] += 1;
+  return out;
+}
+
+/** Weeds by their standing against the rows: off the rows (shown), on crop plants or row lines (set aside), unread photos. */
+export function countByRow(dets: { klass: InstanceClass; rowStatus?: RowStatus }[]): { offRow: number; onRow: number; noRows: number } {
+  const out = { offRow: 0, onRow: 0, noRows: 0 };
+  for (const d of dets) {
+    if (d.klass !== "weed") continue;
+    if (d.rowStatus === "on-crop" || d.rowStatus === "on-row") out.onRow += 1;
+    else if (d.rowStatus === "off-row") out.offRow += 1;
+    else out.noRows += 1;
+  }
   return out;
 }

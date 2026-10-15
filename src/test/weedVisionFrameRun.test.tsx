@@ -96,7 +96,7 @@ describe("frameRunStore", () => {
     expect(s.plants[0].seenIn).toHaveLength(3);
     expect(s.progress).toMatchObject({ framesDone: 3, framesTotal: 3, current: null });
     expect(Object.values(s.frames).every(f => f.status === "done" && f.weeds === 1)).toBe(true);
-    expect(s.note).toMatch(/^1 weed and 0 crop plants from 3 photos; 2 repeat sightings merged\.$/);
+    expect(s.note).toMatch(/^0 weeds off the rows, 1 in photos without a row read, and 0 crop plants from 3 photos; 2 repeat sightings merged\.$/);
     expect(s.paramsKey).toBe(frameRunKey(PARAMS, "abc"));
     await flush();
     expect(deps.saved.size).toBe(3);
@@ -190,7 +190,7 @@ describe("ModelDetectionsPanel", () => {
     await screen.findByTestId("model-select");
     await act(async () => { startFrameRun("scan-r", { userId: "u", sources, params: PARAMS, algorithmLabel: "RF-DETR", modelSha: "abc", deps }); });
     await waitFor(() => expect(getFrameRun("scan-r").running).toBe(false));
-    expect(await screen.findByTestId("frame-summary")).toHaveTextContent(/1 weeds · 0 crop plants · 2 photos · 1 repeat sightings merged/);
+    expect(await screen.findByTestId("frame-summary")).toHaveTextContent(/0 weeds off the rows · 1 in photos without a row read · 0 crop plants · 2 photos · 1 repeat sightings merged/);
     const crops = screen.getByLabelText(/Crop plants on the map/) as HTMLInputElement;
     expect(crops.checked).toBe(false);
     fireEvent.click(crops);
