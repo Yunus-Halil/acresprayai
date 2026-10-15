@@ -879,6 +879,68 @@ export type Database = {
           },
         ]
       }
+      scan_frame_detections: {
+        Row: {
+          algorithm: string
+          count_crop: number
+          count_weed: number
+          created_at: string
+          detections: Json
+          filename: string
+          id: string
+          model_sha256: string | null
+          native_height: number
+          native_width: number
+          params: Json | null
+          params_key: string
+          scan_id: string
+          timings_ms: Json | null
+          user_id: string
+        }
+        Insert: {
+          algorithm: string
+          count_crop?: number
+          count_weed?: number
+          created_at?: string
+          detections: Json
+          filename: string
+          id?: string
+          model_sha256?: string | null
+          native_height: number
+          native_width: number
+          params?: Json | null
+          params_key: string
+          scan_id: string
+          timings_ms?: Json | null
+          user_id: string
+        }
+        Update: {
+          algorithm?: string
+          count_crop?: number
+          count_weed?: number
+          created_at?: string
+          detections?: Json
+          filename?: string
+          id?: string
+          model_sha256?: string | null
+          native_height?: number
+          native_width?: number
+          params?: Json | null
+          params_key?: string
+          scan_id?: string
+          timings_ms?: Json | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_frame_detections_scan_id_fkey"
+            columns: ["scan_id"]
+            isOneToOne: false
+            referencedRelation: "odm_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scan_photo_reads: {
         Row: {
           created_at: string

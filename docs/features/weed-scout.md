@@ -354,3 +354,18 @@ false-positives-per-acre count from a real field are meant to set. The sweep and
 are browser-only and have run under no signed-in session, and neither has Apply — a real
 candidate reaching Field View and the Flight Planner as a routable, correctly-priced
 polygon has not been clicked through end to end.
+
+## Model detections over the scan's photographs (2026-10-15)
+
+A "Model detections" panel in the Weed Scout sidebar runs a selectable model from the local weed-vision service
+(`research/weed-vision-lab`, started from the ROCm environment: `D:\swardus-research\rfdetr-exp7\venv-rocm\Scripts\python.exe
+scripts\serve_research_api.py`; dev build with `VITE_WEED_VISION_PREVIEW=true` so Vite proxies `/weed-vision-api`) over every
+kept original of the scan. Models: RF-DETR Seg-Large (Experiment 7; one mask per plant, crop / weed, a confidence per
+instance, adjustable cut) and the ERFNet pipelines (weeds only). Each photo's instances are carried to the ground through the
+camera pose (the detector-box path, `lib/weedVision/frames.ts`), saved per photo in `scan_frame_detections` under a key of
+settings + checkpoint hash (so a rerun or a reload takes the rows, not the photos), and the same plant seen from several
+photos is merged to one (best view kept). Plants draw on the Weed Scout map and on Field View ("Model weeds", "Model crop
+plants" toggles); a plant's card shows class, confidence, size and photos; "Mark on the field" writes an ordinary
+`user_annotations` row (issue "Weed pressure"). The model marks nothing by itself. Code: `src/lib/weedVision/`
+(frames, frameRunStore, frameRunCache, client), `src/components/app/weedVision/ModelDetectionsPanel.tsx` and
+`ModelDetectionLayer.tsx`; tests `src/test/weedVisionFrames.test.ts`, `src/test/weedVisionFrameRun.test.tsx`.

@@ -59,6 +59,11 @@ import { type SpotPhoto, SpotPopup } from "./SpotPopup";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
 import { DetectionOverlay } from "./DetectionOverlay";
 import { addDetections, clearDetections, setDetectionsVisible, useDetectionLayer } from "@/lib/sourceFrames/detectionStore";
+import { ModelDetectionLayer, PLANT_COLOUR } from "../weedVision/ModelDetectionLayer";
+import { ModelDetectionsPanel } from "../weedVision/ModelDetectionsPanel";
+import { type GroundPlant, countByClass } from "@/lib/weedVision/frames";
+import { patchFrameRun, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { m2ToHectares, polygonAreaM2 } from "@/lib/geo";
 import { BenchmarkPanel } from "./BenchmarkPanel";
 import { renderCloserLook } from "@/lib/sourceFrames/crop";
 import { lookupOriginal } from "@/lib/sourceFrames/manifest";
@@ -350,6 +355,14 @@ export function WeedScoutTab({
   const [sources, setSources] = useState<ScanSources | null>(null);
   // The baseline detector's boxes, carried to the ground from a closer look. Experimental; drawn, never used.
   const detectionLayer = useDetectionLayer(taskId);
+  // A model's plants from the scan's photographs (lib/weedVision): drawn, and marked on the field only by the operator's click.
+  const frameRun = useFrameRun(taskId);
+  const markPlant = useCallback(async (p: GroundPlant): Promise<string | null> => {
+    if (!p.ring || p.ring.length < 3) return null;
+    const diameter = p.diameterM != null ? `${(p.diameterM * 100).toFixed(0)} cm across` : "size unknown";
+    const notes = `${frameRun.algorithmLabel ?? "Model"} found a weed in ${p.frame}${p.seenIn.length > 1 ? ` and ${p.seenIn.length - 1} other photo${p.seenIn.length > 2 ? "s" : ""}` : ""}; confidence ${p.score != null ? p.score.toFixed(2) : "n/a"}; ${diameter}. Marked by the operator from Weed Scout.`;
+    return applyAnnotation({ name: `Weed (model) ${p.frame.replace(/\.[^.]+$/, "")}#${p.instanceId}`, issue_type: "Weed pressure", color: PLANT_COLOUR.weed, notes, ring: p.ring, areaHa: m2ToHectares(polygonAreaM2(p.ring)), weed_label: null, weed_label_status: null, weed_catalog_id: null, weed_label_source: null });
+  }, [applyAnnotation, frameRun.algorithmLabel]);
   // Step two: the finding whose original photos are open in the closer-look viewer.
   const [closerLook, setCloserLook] = useState<CloserLookTarget | null>(null);
   // The photo a clicked spot shows in its popup: the chosen original, cut to
@@ -831,6 +844,7 @@ export function WeedScoutTab({
             );
           })()}
           <DetectionOverlay taskId={taskId} />
+          <ModelDetectionLayer taskId={taskId} onMark={markPlant} showLabels={showLabels && labelsReadable} />
           {/* Every spot carries its own decision and its own review panel.
               The outline is the verdict, the fill is what it reads as, and the
               popup is where the operator disagrees with either. */}
@@ -971,6 +985,21 @@ export function WeedScoutTab({
               <button type="button" onClick={() => clearDetections(taskId)} className="ml-auto text-neutral-600 hover:text-neutral-300">clear</button>
             </label>
           )}
+          {frameRun.plants.length > 0 && (() => {
+            const c = countByClass(frameRun.plants);
+            return (
+              <>
+                <label className="flex items-center gap-2 cursor-pointer" data-testid="model-weeds-toggle">
+                  <input type="checkbox" checked={frameRun.showWeeds} onChange={e => patchFrameRun(taskId, { showWeeds: e.target.checked })} className="accent-[#ffe600]" />
+                  <span className="inline-block w-3 h-3 rounded-sm" style={{ background: PLANT_COLOUR.weed }} /> Model weeds ({c.weed.toLocaleString()})
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer" data-testid="model-crops-toggle">
+                  <input type="checkbox" checked={frameRun.showCrops} onChange={e => patchFrameRun(taskId, { showCrops: e.target.checked })} className="accent-[#40e0ff]" />
+                  <span className="inline-block w-3 h-3 rounded-sm border border-dashed" style={{ borderColor: PLANT_COLOUR.crop }} /> Model crop plants ({c.crop.toLocaleString()})
+                </label>
+              </>
+            );
+          })()}
         </div>
       </div>
 
@@ -1021,6 +1050,9 @@ export function WeedScoutTab({
             </p>
           )}
           {session.cache && !running && <p className="text-[10px] text-neutral-600">{session.cache}</p>}
+        </div>
+        <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} />
+        <div className="p-4 border-b border-[#1f1f1f] space-y-2">
           <details className="text-[11px]">
             <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">
               Settings: {params.rowMode === "none" ? "not a row crop" : params.rowMode === "rows" ? `rows at ${rowSpacingShown} ${rowSpacingUnit}` : "detect rows"},

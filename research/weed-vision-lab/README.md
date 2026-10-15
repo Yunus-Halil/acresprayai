@@ -67,6 +67,8 @@ python scripts/compare_baselines.py --split dev_tune                            
 python scripts/run_classical_baseline.py --split dev_tune --method erfnet_weed               # Experiment 4A: official ERFNet checkpoint, CPU
 python scripts/run_classical_baseline.py --split dev_tune --method exg_hyst --hyst 0.10 0.03 # Experiment 4B: hysteresis
 python scripts/render_method_comparison.py --split dev_tune --run-a exg_fixed_t0.08 --run-b erfnet_weed   # side-by-side panels
+python scripts/resolution_ladder.py --splits dev_tune dev_check                             # Experiment 6: frozen pipeline at 1, 1/2, 1/3, 1/4, 1/8 scale
+python scripts/serve_research_api.py                                                       # Experiment 6: local inference service on 127.0.0.1:8765
 python -m pytest                                   # synthetic tests, no dataset needed
 python -m pytest -m dataset                        # tests that read the real dataset
 ```
@@ -78,7 +80,8 @@ python -m pytest -m dataset                        # tests that read the real da
 - Milestone 5 (classical baseline, Phase 3): done, `reports/baseline/` (per-run summaries, comparisons, `phase3-report.md`). Pretrained-model inventory in `docs/pretrained-models.md`.
 - Milestone 6 (Experiment 4: official ERFNet checkpoint on CPU versus colour, plus hysteresis): done, `reports/baseline/phase4-report.md`. ERFNet numbers on dev splits are in-sample.
 - Experiment 5 (post-processing on cached ERFNet probabilities: boundary refinement, instance separation, ablation): done, `reports/postprocess/experiment5-report.md`. Selected pipeline `S3_erode_1` (ERFNet argmax, one-pixel erosion, components). In-sample.
-- Next: see the recommendation at the end of `reports/postprocess/experiment5-report.md`.
+- Experiment 6 (branch `experiment/weed-vision-preview`): the resolution ladder (`reports/ladder/`), the local inference service (`src/weedlab/service/`, `scripts/serve_research_api.py`) and the temporary Swardus research preview page; see `docs/research-preview.md` for launch, schema, flag and removal. Licensing provenance audit in `docs/licensing-audit.md`.
+- Next: see `reports/ladder/experiment6-report.md`.
 
 Experiment 5 scripts: `scripts/cache_erfnet.py` (build the probability cache once), `scripts/run_postprocess.py --split dev_sub|dev_tune|dev_check --configs <names|prefix|all>`, `scripts/compare_postprocess.py --split ...`, `scripts/render_postprocess_sheets.py --split ... --config <name>`. Configs are named in `weedlab.postprocess.pipeline.CONFIGS`.
 

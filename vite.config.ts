@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
@@ -14,7 +14,15 @@ const buildSha = (): string => {
 };
 
 // https://vitejs.dev/config/
-export default defineConfig(() => ({
+// WEED-VISION-PREVIEW (temporary research integration; remove with the branch):
+// in `vite` dev with VITE_WEED_VISION_PREVIEW=true, forward /weed-vision-api to
+// the local Python research service on loopback. Never in a build.
+const weedVisionProxy = (mode: string) =>
+  mode === "development" && loadEnv(mode, process.cwd(), "VITE_").VITE_WEED_VISION_PREVIEW === "true"
+    ? { "/weed-vision-api": { target: "http://127.0.0.1:8765", changeOrigin: false, rewrite: (p: string) => p.replace(/^\/weed-vision-api/, "/weed-vision") } }
+    : undefined;
+
+export default defineConfig(({ mode }) => ({
   define: {
     __BUILD_SHA__: JSON.stringify(buildSha()),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
@@ -25,6 +33,7 @@ export default defineConfig(() => ({
     hmr: {
       overlay: false,
     },
+    proxy: weedVisionProxy(mode), // WEED-VISION-PREVIEW
   },
   plugins: [
     react(),

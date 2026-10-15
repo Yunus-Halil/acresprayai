@@ -18,3 +18,6 @@ venv/
 # Rendered pictures are derived from CC BY-NC-SA dataset content; keep them out of the history.
 reports/**/*.png
 reports/**/*.jpg
+
+# Test imagery dropped in by hand (dataset-derived pictures). Never committed.
+testimagery/

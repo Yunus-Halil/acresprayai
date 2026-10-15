@@ -28,6 +28,9 @@ import { type ScanSources, loadScanSources } from "@/lib/sourceFrames/scan";
 import { ringCandidate, spotSources } from "@/lib/sourceFrames/spot";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
 import { DetectionOverlay } from "./DetectionOverlay";
+import { ModelDetectionLayer } from "../weedVision/ModelDetectionLayer";
+import { countByClass } from "@/lib/weedVision/frames";
+import { patchFrameRun, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { addDetections, setDetectionsVisible, useDetectionLayer } from "@/lib/sourceFrames/detectionStore";
 import {
   type DroneSpec, DRONE_SPECS, resolveDroneSpec,
@@ -188,6 +191,8 @@ export function FieldViewTab(props: {
   const [sources, setSources] = useState<ScanSources | null>(null);
   const [closerLook, setCloserLook] = useState<CloserLookTarget | null>(null);
   const detectionLayer = useDetectionLayer(taskId);
+  // A model's plants from the scan's photographs (Weed Scout's model panel), drawn here too.
+  const frameRun = useFrameRun(taskId);
   useEffect(() => {
     const odmUuid = props.odmUuid ?? null;
     if (!user || !odmUuid) { setSources(null); return; }
@@ -501,6 +506,7 @@ export function FieldViewTab(props: {
           removeVertexOnTap={removePointMode}
         />
         <DetectionOverlay taskId={taskId} />
+        <ModelDetectionLayer taskId={taskId} />
         {layers.userAnnotations && userPolys.length > 0 && (
           <UserPolyLayer polys={userPolys} onDelete={deleteUserPolygon} onLook={props.odmUuid ? lookAt : undefined} />
         )}
@@ -811,6 +817,16 @@ export function FieldViewTab(props: {
             <LayerRow label={`Detector boxes (${detectionLayer.detections.length}), experimental`} icon={Hexagon}
               checked={detectionLayer.visible}
               onToggle={() => setDetectionsVisible(taskId, !detectionLayer.visible)} />
+          )}
+          {frameRun.plants.length > 0 && (
+            <>
+              <LayerRow label={`Model weeds (${countByClass(frameRun.plants).weed.toLocaleString()})`} icon={Hexagon}
+                checked={frameRun.showWeeds}
+                onToggle={() => patchFrameRun(taskId, { showWeeds: !frameRun.showWeeds })} />
+              <LayerRow label={`Model crop plants (${countByClass(frameRun.plants).crop.toLocaleString()})`} icon={Hexagon}
+                checked={frameRun.showCrops}
+                onToggle={() => patchFrameRun(taskId, { showCrops: !frameRun.showCrops })} />
+            </>
           )}
           <LayerRow
             label={`Treatment grid zones${gridZoneLoad ? ` (${gridZoneLoad.zones.length})` : ""}`}

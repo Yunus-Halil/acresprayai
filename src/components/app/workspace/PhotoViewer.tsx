@@ -36,7 +36,7 @@ export function zoomAbout(v: ViewerState, k: number, px: number, py: number, min
   return { s, tx: px - (px - v.tx) * ratio, ty: py - (py - v.ty) * ratio };
 }
 
-export function PhotoViewer({ src, width, height, initial, overlay, alt, heightCss = "70vh", onScale }: {
+export function PhotoViewer({ src, width, height, initial, overlay, alt, heightCss = "70vh", onScale, onPhotoClick }: {
   src: string;
   width: number;
   height: number;
@@ -46,6 +46,8 @@ export function PhotoViewer({ src, width, height, initial, overlay, alt, heightC
   alt: string;
   heightCss?: string;
   onScale?: (s: number) => void;
+  /** WEED-VISION-PREVIEW (additive, optional): a click that did not drag, in native photo pixels. */
+  onPhotoClick?: (x: number, y: number) => void;
 }) {
   const box = useRef<HTMLDivElement | null>(null);
   const [v, setV] = useState<ViewerState>({ tx: 0, ty: 0, s: 1 });
@@ -90,7 +92,15 @@ export function PhotoViewer({ src, width, height, initial, overlay, alt, heightC
     setV(cur => ({ ...cur, tx: d.tx + (e.clientX - d.x), ty: d.ty + (e.clientY - d.y) }));
   };
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (drag.current?.id === e.pointerId) { drag.current = null; e.currentTarget.releasePointerCapture(e.pointerId); }
+    const d = drag.current;
+    if (d?.id === e.pointerId) {
+      drag.current = null; e.currentTarget.releasePointerCapture(e.pointerId);
+      // WEED-VISION-PREVIEW: a click (under 4 px of movement) reports the photo pixel under the cursor.
+      if (onPhotoClick && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) {
+        const r = e.currentTarget.getBoundingClientRect();
+        onPhotoClick((e.clientX - r.left - v.tx) / v.s, (e.clientY - r.top - v.ty) / v.s);
+      }
+    }
   };
   const zoomCentre = (k: number) => {
     const el = box.current;
