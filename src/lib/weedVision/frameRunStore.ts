@@ -18,11 +18,11 @@ import { type FrameDetection, type FrameRunParams, type GroundPlant, countByClas
 import { type SavedFrameRun, deleteFrameRuns, loadFrameRuns, saveFrameRun } from "./frameRunCache";
 import { type HotspotParams, type HotspotResult, type HotspotReview, DEFAULT_HOTSPOT_PARAMS, buildHotspots } from "./hotspots";
 import { type HotspotReviewRow, deleteHotspotReview, loadHotspotReviews, saveHotspotReview } from "./hotspotReviewCache";
-import type { RowContext } from "./rowFilter";
+import { type RowContext, rowStatusOf } from "./rowFilter";
 
 export type ViewMode = "priority" | "heatmap" | "detections";
 
-export type FrameRunProgress = { framesDone: number; framesTotal: number; current: string | null; tilesDone: number; tilesTotal: number | null; fromCache: number };
+export type FrameRunProgress = { framesDone: number; framesTotal: number; current: string | null; tilesDone: number; tilesTotal: number | null; fromCache: number; /** What the current photo is in: reading its rows, or in the model. */ phase?: "rows" | "model" | null; rowsFraction?: number | null };
 export type FrameSummary = { filename: string; weeds: number; crops: number; status: "done" | "cached" | "error"; error?: string; ms: number | null };
 
 export type FrameRunSession = {
@@ -202,8 +202,8 @@ export type StartFrameRunInput = {
   modelSha: string | null;
   /** Score every photo again, ignoring the cache. */
   force?: boolean;
-  /** The photograph's planting pattern, when the scan has read it (the photo-read cache); null or undefined marks its weeds "no-rows". */
-  rowContextFor?: (filename: string) => RowContext | null | Promise<RowContext | null>;
+  /** The photograph's planting pattern: from the scan's saved reads, or read from the photo here (photoRows.ts); null marks its weeds "no-rows". */
+  rowContextFor?: (filename: string, blob: Blob, shot: Shot, onProgress: (fraction: number) => void, signal: AbortSignal) => RowContext | null | Promise<RowContext | null>;
   deps?: Partial<FrameRunDeps>;
 };
 
@@ -287,6 +287,16 @@ export function startFrameRun(taskId: string, input: StartFrameRunInput): void {
         publish();
         continue;
       }
+      // The photo's rows first (saved read or a read made now), then the model.
+      let rowContext: RowContext | null = null;
+      if (input.rowContextFor) {
+        patchFrameRun(taskId, s => ({ progress: s.progress ? { ...s.progress, phase: "rows", rowsFraction: 0 } : s.progress }));
+        try {
+          rowContext = (await input.rowContextFor(name, blob, shot, f => { if (mine()) patchFrameRun(taskId, s => ({ progress: s.progress ? { ...s.progress, rowsFraction: f } : s.progress })); }, ctrl.signal)) ?? null;
+        } catch { rowContext = null; }
+        if (ctrl.signal.aborted || !mine()) return;
+      }
+      patchFrameRun(taskId, s => ({ progress: s.progress ? { ...s.progress, phase: "model", rowsFraction: null } : s.progress }));
       const res = await deps.detect(blob, entry.filename, { algorithm: params.algorithm, scale: params.scale, tile: params.tile, overlap: params.overlap, threshold: params.threshold, includeCrop: true }, {
         signal: ctrl.signal,
         onProgress: p => { if (mine()) patchFrameRun(taskId, s => ({ progress: s.progress ? { ...s.progress, tilesDone: p.tilesDone, tilesTotal: p.tilesTotal } : s.progress })); },
@@ -302,8 +312,6 @@ export function startFrameRun(taskId: string, input: StartFrameRunInput): void {
         }
         continue;
       }
-      let rowContext: RowContext | null = null;
-      try { rowContext = (await input.rowContextFor?.(name)) ?? null; } catch { rowContext = null; }
       const dets = groundFrameResult({ set, shot, groundAltM: altM, result: res.value, rowContext });
       byFrame.set(name, dets);
       const c = countByClass(dets);
@@ -362,6 +370,51 @@ export async function clearFrameRun(taskId: string, deps?: Partial<FrameRunDeps>
   rawByTask.delete(taskId);
   sessions.set(taskId, { ...EMPTY_FRAME_RUN, showWeeds: s.showWeeds, showCrops: s.showCrops, showOnRow: s.showOnRow, viewMode: s.viewMode, reviews: s.reviews, hotspotParams: s.hotspotParams });
   emit();
+}
+
+/**
+ * Read the rows for photos already scored and re-tag their weeds, without
+ * running the model again: the saved rows carry each plant's centre in the
+ * photo's own pixels, so a row read made now can say where it stood. Photos
+ * whose weeds already have a row status are skipped unless `force`.
+ */
+export function retagRows(taskId: string, input: { userId: string | null; sources: ScanSources; rowContextFor: NonNullable<StartFrameRunInput["rowContextFor"]>; force?: boolean; deps?: Partial<FrameRunDeps> }): void {
+  const s = getFrameRun(taskId);
+  if (s.running || !input.sources.set || input.sources.groundAltM == null) return;
+  const deps: FrameRunDeps = { ...DEFAULT_DEPS, ...input.deps, cache: { ...DEFAULT_DEPS.cache, ...(input.deps?.cache ?? {}) } };
+  const ctrl = new AbortController();
+  controllers.set(taskId, ctrl);
+  const mine = () => controllers.get(taskId) === ctrl;
+  const raw = rawOf(taskId);
+  const byName = new Map(input.sources.set.shots.map(sh => [sh.filename, sh]));
+  const todo = [...raw.entries()].filter(([name, dets]) => byName.has(name) && (input.force || dets.some(d => d.klass === "weed" && (!d.rowStatus || d.rowStatus === "no-rows"))));
+  patchFrameRun(taskId, { running: true, error: null, progress: { framesDone: 0, framesTotal: todo.length, current: null, tilesDone: 0, tilesTotal: null, fromCache: 0, phase: "rows", rowsFraction: 0 } });
+  (async () => {
+    for (let i = 0; i < todo.length; i++) {
+      if (ctrl.signal.aborted || !mine()) return;
+      const [name, dets] = todo[i];
+      const shot = byName.get(name)!;
+      patchFrameRun(taskId, sx => ({ progress: { ...(sx.progress as FrameRunProgress), framesDone: i, current: name, phase: "rows", rowsFraction: 0 } }));
+      const look = lookupOriginal(input.sources.frames, name);
+      if (!look.ok) continue;
+      const blob = await deps.download(look.entry);
+      if (!blob) continue;
+      let ctx: RowContext | null = null;
+      try { ctx = (await input.rowContextFor(name, blob, shot, f => { if (mine()) patchFrameRun(taskId, sx => ({ progress: sx.progress ? { ...sx.progress, rowsFraction: f } : sx.progress })); }, ctrl.signal)) ?? null; } catch { ctx = null; }
+      if (ctrl.signal.aborted || !mine()) return;
+      const retagged = dets.map(d => (d.klass === "weed" ? { ...d, rowStatus: rowStatusOf(ctx, d.nativeCentroid[0], d.nativeCentroid[1]) } : d));
+      raw.set(name, retagged);
+      const sx = getFrameRun(taskId);
+      if (input.userId && sx.paramsKey && sx.params) {
+        const saved = sx.frames[name];
+        void deps.cache.save({ userId: input.userId, scanId: taskId, paramsKey: sx.paramsKey, params: sx.params, run: { filename: name, algorithm: sx.params.algorithm, modelSha256: sx.modelSha, nativeWidth: 0, nativeHeight: 0, timingsMs: saved?.ms != null ? { total: saved.ms } : {}, detections: retagged, createdAt: null } });
+      }
+      republish(taskId);
+    }
+    if (!mine()) return;
+    const done = getFrameRun(taskId);
+    patchFrameRun(taskId, { running: false, progress: { ...(done.progress as FrameRunProgress), framesDone: todo.length, current: null, phase: null, rowsFraction: null }, note: summarise(done.plants, done.raw, done.frames) });
+  })().catch(e => { if (mine()) patchFrameRun(taskId, { running: false, error: (e as Error)?.message ?? String(e) }); });
 }
 
 /** The plants a map should draw: crops when asked, weeds off the rows, and the set-aside ones only when asked. */

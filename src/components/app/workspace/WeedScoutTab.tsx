@@ -1089,7 +1089,7 @@ export function WeedScoutTab({
           )}
           {session.cache && !running && <p className="text-[10px] text-neutral-600">{session.cache}</p>}
         </div>
-        <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} />
+        <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} />
         <HotspotPanel taskId={taskId} userId={user?.id ?? null} onOpenPhotos={openAreaPhotos} onMarkArea={markArea} />
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
           <details className="text-[11px]">

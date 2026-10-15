@@ -14,7 +14,7 @@ import type { ScanSources } from "@/lib/sourceFrames/scan";
 import type { WeedVisionResult } from "@/lib/weedVision/client";
 import { frameRunKey } from "@/lib/weedVision/frames";
 import type { SavedFrameRun } from "@/lib/weedVision/frameRunCache";
-import { type FrameRunDeps, addFrameDetections, getFrameRun, resetFrameRunStore, restoreFrameRun, scorableFrames, setFrameRunBoundary, startFrameRun, stopFrameRun } from "@/lib/weedVision/frameRunStore";
+import { type FrameRunDeps, addFrameDetections, getFrameRun, resetFrameRunStore, restoreFrameRun, retagRows, scorableFrames, setFrameRunBoundary, startFrameRun, stopFrameRun } from "@/lib/weedVision/frameRunStore";
 
 const DIR = join(process.cwd(), "src", "test", "fixtures", "odm-dd0f6314");
 const read = (f: string) => JSON.parse(readFileSync(join(DIR, f), "utf-8"));
@@ -218,6 +218,32 @@ describe("addFrameDetections (the closer look's single photo)", () => {
     // A scan that cannot place photos says so with null and leaves the map alone.
     expect(await addFrameDetections("scan-t", { userId: null, sources: { ...sources, groundAltM: null }, shot: a, result: resultAt(a, CENTRE), params: PARAMS, modelSha: null, algorithmLabel: "x", deps })).toBeNull();
     expect(getFrameRun("scan-t").plants).toHaveLength(0);
+  });
+
+  it("reads the rows for photos scored without them and re-tags their weeds, without running the model again", async () => {
+    const sources = sourcesWithFrames(2);
+    const deps = fakeDeps(sources);
+    startFrameRun("scan-rows", { userId: "u", sources, params: PARAMS, algorithmLabel: "m", modelSha: "abc", deps });
+    await waitFor(() => expect(getFrameRun("scan-rows").running).toBe(false));
+    expect(getFrameRun("scan-rows").plants.every(p => p.rowStatus === "no-rows")).toBe(true);
+    const calls: string[] = [];
+    // A context whose only crop circle sits exactly on every plant's native centre: everything becomes on-crop.
+    const rowContextFor = async (filename: string, _blob: Blob, _shot: unknown, onProgress: (f: number) => void) => {
+      calls.push(filename); onProgress(1);
+      const [d] = [...getFrameRun("scan-rows").plants];
+      return { lines: [], crops: [{ x: d.nativeCentroid[0], y: d.nativeCentroid[1], r: 5 }], bandPx: 10, gsdM: 0.01 };
+    };
+    retagRows("scan-rows", { userId: "u", sources, rowContextFor, deps });
+    expect(getFrameRun("scan-rows").running).toBe(true);
+    expect(getFrameRun("scan-rows").progress?.phase).toBe("rows");
+    await waitFor(() => expect(getFrameRun("scan-rows").running).toBe(false));
+    expect(calls).toHaveLength(2);
+    expect(deps.detectMock).toHaveBeenCalledTimes(2); // not called again
+    const s = getFrameRun("scan-rows");
+    expect(s.plants.length).toBeGreaterThan(0);
+    expect(s.plants.every(p => p.rowStatus === "on-crop")).toBe(true);
+    expect(s.hotspots?.hotspots ?? []).toHaveLength(0); // on-crop weeds seed no area
+    expect(s.note).toMatch(/set aside/);
   });
 
   it("hides plants that land outside the field boundary and counts them, before or after the boundary is known", async () => {
