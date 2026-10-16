@@ -59,6 +59,7 @@ import { type MeasuredOutline, type RefusedSpot, VEG_DETAIL_ZOOM, VIEW_MODES, ty
 import { type SpotPhoto, SpotPopup } from "./SpotPopup";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
 import { DetectionOverlay } from "./DetectionOverlay";
+import { OrthoTileLayer } from "./OrthoTileLayer";
 import { addDetections, clearDetections, setDetectionsVisible, useDetectionLayer } from "@/lib/sourceFrames/detectionStore";
 import { ModelDetectionLayer, PLANT_COLOUR } from "../weedVision/ModelDetectionLayer";
 import { ModelDetectionsPanel } from "../weedVision/ModelDetectionsPanel";
@@ -818,7 +819,7 @@ export function WeedScoutTab({
           zoomControl={false} attributionControl={false} style={{ height: "100%", width: "100%", background: "#0a0a0a" }}>
           <BasemapLayer id={basemap} />
           {tileUrl && bounds && (
-            <TileLayer key={tileUrl} url={tileUrl} maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)} maxZoom={MAP_MAX_ZOOM} tileSize={256} keepBuffer={4} bounds={bounds} noWrap zIndex={10} />
+            <OrthoTileLayer key={tileUrl} url={tileUrl} maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)} maxZoom={MAP_MAX_ZOOM} tileSize={256} keepBuffer={4} bounds={bounds} noWrap zIndex={10} />
           )}
           <FitBounds bounds={bounds} />
           {cursorCoordRef && cursorZoomRef && <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />}

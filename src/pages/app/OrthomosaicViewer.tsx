@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { bakedMaxZoom, nativeZoomFor } from "@/lib/bakedZoom";
 import { useParams } from "react-router-dom";
 import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -447,7 +448,9 @@ export default function OrthomosaicViewer() {
           setErr("Could not load orthomosaic bounds.");
           return;
         }
-        if (typeof tj?.maxzoom === "number") setMaxNative(Math.min(22, tj.maxzoom));
+        // Provisional until the bake reports its depth: the file's own maxzoom, capped at the legacy bake depth.
+        const fileMaxZoom = typeof tj?.maxzoom === "number" ? tj.maxzoom : null;
+        setMaxNative(nativeZoomFor(null, fileMaxZoom));
 
         // Drive the tile baker until it reports done, then point Leaflet at the
         // static pre-baked tiles served through the `tile` edge function.
@@ -494,6 +497,10 @@ export default function OrthomosaicViewer() {
         }
         if (cancelled) return;
         setBaking(null);
+        // The deepest zoom that has tiles in storage: past it the map enlarges real tiles instead of drawing blanks.
+        const baked = await bakedMaxZoom(taskId);
+        if (cancelled) return;
+        setMaxNative(nativeZoomFor(baked, fileMaxZoom));
         setTileTemplate(`${TILE_BASE}/${t.odm_uuid}/{z}/{x}/{y}.png`);
       } catch (e) {
         console.error("[OrthoViewer] info failed", e);

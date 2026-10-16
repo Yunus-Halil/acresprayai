@@ -29,6 +29,7 @@ import { ringCandidate, spotSources } from "@/lib/sourceFrames/spot";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
 import { DetectionOverlay } from "./DetectionOverlay";
 import { ModelDetectionLayer } from "../weedVision/ModelDetectionLayer";
+import { OrthoTileLayer } from "./OrthoTileLayer";
 import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { HotspotLayer } from "../weedVision/HotspotLayer";
 import { countByClass } from "@/lib/weedVision/frames";
@@ -431,7 +432,7 @@ export function FieldViewTab(props: {
             route scan's own layers would otherwise show through side B's
             ground as if the newer flight had covered it. */}
         {!compareActive && layers.orthomosaic && tileUrl && (
-          <TileLayer
+          <OrthoTileLayer
             key={tileUrl}
             url={tileUrl}
             opacity={1.0}

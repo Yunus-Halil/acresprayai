@@ -18,6 +18,7 @@
 // so the approximation is safe by construction. Do not reuse this module for
 // anything continent-sized.
 import type { RasterSource } from "./cellFeatures";
+import { fetchTileCached } from "./tileCache";
 import { MIN_PIXELS_PER_CELL } from "./cellFeatures";
 import { metresPerPixel } from "./gridRender";
 
@@ -141,18 +142,15 @@ export async function stitchTiles(
     Array.from({ length: cols * rows }, (_, i) => {
       const x = range.minX + (i % cols);
       const y = range.minY + Math.floor(i / cols);
-      return new Promise<void>(resolve => {
-        const img = new Image();
-        // Without this the canvas is tainted and getImageData throws — the
-        // whole pass would die on a security error instead of sampling.
-        img.crossOrigin = "anonymous";
-        img.onload = () => {
-          ctx.drawImage(img, (x - range.minX) * TILE_SIZE, (y - range.minY) * TILE_SIZE);
-          resolve();
-        };
-        img.onerror = () => { missingTiles++; resolve(); };
-        img.src = tileTemplate(z, x, y);
-      });
+      // Through the shared tile cache (lib/tileCache.ts): a tile the map already showed is read from disk,
+      // and one read here shows instantly on the map. A blob decoded locally never taints the canvas.
+      return fetchTileCached(tileTemplate(z, x, y))
+        .then(blob => createImageBitmap(blob))
+        .then(bitmap => {
+          ctx.drawImage(bitmap, (x - range.minX) * TILE_SIZE, (y - range.minY) * TILE_SIZE);
+          bitmap.close?.();
+        })
+        .catch(() => { missingTiles++; });
     }),
   );
 

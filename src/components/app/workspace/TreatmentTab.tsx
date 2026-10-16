@@ -13,6 +13,7 @@
 // that distinction is only meaningful if there is a rate here an operator
 // recognises as their own.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { OrthoTileLayer } from "./OrthoTileLayer";
 import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { MapContainer, TileLayer } from "react-leaflet";
 import L from "leaflet";
@@ -707,7 +708,7 @@ export function TreatmentTab({
         >
           <BasemapLayer id={basemap} />
           {tileUrl && bounds && (
-            <TileLayer
+            <OrthoTileLayer
               key={tileUrl} url={tileUrl}
               maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)} maxZoom={MAP_MAX_ZOOM}
               tileSize={256} keepBuffer={4}

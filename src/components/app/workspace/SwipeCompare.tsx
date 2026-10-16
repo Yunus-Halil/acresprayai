@@ -16,6 +16,8 @@
 // is dimmed: change numbers exist only where both flights actually looked,
 // and the dimming shows the person exactly where that is.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { bakedMaxZoom, nativeZoomFor } from "@/lib/bakedZoom";
+import { OrthoTileLayer } from "./OrthoTileLayer";
 import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { areaValueAc, fmtAreaAc } from "@/lib/units";
@@ -83,7 +85,7 @@ export function useScanRenderMeta(taskId: string | null, token: string | null): 
         const m: ScanRenderMeta = r.ok
           ? {
               bounds: boundsFromTileJson(j?.tilejson?.bounds),
-              maxZoom: typeof j?.tilejson?.maxzoom === "number" ? j.tilejson.maxzoom : 20,
+              maxZoom: nativeZoomFor(await bakedMaxZoom(taskId), typeof j?.tilejson?.maxzoom === "number" ? j.tilejson.maxzoom : null),
               error: null,
             }
           : { bounds: null, maxZoom: 20, error: j?.error ?? "Scan extent unavailable" };
@@ -266,7 +268,7 @@ export function ComparePanes({
   return (
     <>
       {aUrl && (
-        <TileLayer
+        <OrthoTileLayer
           key={`cmp-a-${aUrl}`}
           url={aUrl}
           pane={PANES.aTiles.name}
@@ -279,7 +281,7 @@ export function ComparePanes({
         />
       )}
       {bUrl && (
-        <TileLayer
+        <OrthoTileLayer
           key={`cmp-b-${bUrl}`}
           url={bUrl}
           pane={PANES.bTiles.name}
