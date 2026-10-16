@@ -68,7 +68,7 @@ import { HeatmapLayer, HotspotFocus, HotspotLayer, REVIEW_COLOUR } from "../weed
 import { HotspotPanel } from "../weedVision/HotspotPanel";
 import { type GroundPlant, countByClass, countByRow } from "@/lib/weedVision/frames";
 import type { Hotspot } from "@/lib/weedVision/hotspots";
-import { patchFrameRun, setFrameRunAligner, setFrameRunBoundary, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { patchFrameRun, setFrameRunAligner, setFrameRunBoundary, setFrameRunMap, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { alignPhotoToMap } from "@/lib/weedVision/alignToMap";
 import { ringCandidate } from "@/lib/sourceFrames/spot";
 import { m2ToHectares, polygonAreaM2 } from "@/lib/geo";
@@ -414,6 +414,15 @@ export function WeedScoutTab({
     setFrameRunAligner(taskId, (blob, shot) => alignPhotoToMap({ set, shot, altM, blob, tileUrl: tile, maxZoom }));
     return () => setFrameRunAligner(taskId, null);
   }, [taskId, sources, tileUrl, maxNative]);
+  // The map itself, for a model run read straight off it (mapRun.ts): outlines placed by the map's own pixels.
+  useEffect(() => {
+    if (!tileUrl || !bounds) { setFrameRunMap(taskId, null); return; }
+    const b = bounds instanceof L.LatLngBounds ? bounds : L.latLngBounds(bounds as L.LatLngExpression[]);
+    const c = b.getCenter();
+    const tile = (z: number, x: number, y: number) => tileUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
+    setFrameRunMap(taskId, { tile, maxNative: Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative), lat: c.lat, lng: c.lng });
+    return () => setFrameRunMap(taskId, null);
+  }, [taskId, tileUrl, maxNative, bounds]);
   /** An area's photographs: the same closer look a spot gets, on the area's outline. */
   const openAreaPhotos = useCallback((h: Hotspot) => {
     setCloserLook({ id: h.id, title: `Area ${h.rank}: ${h.plants} plant${h.plants === 1 ? "" : "s"} to review`, spot: spotSources(sources, ringCandidate(h.id, h.ring)) });

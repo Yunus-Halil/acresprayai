@@ -20,6 +20,9 @@ import { type HotspotParams, type HotspotResult, type HotspotReview, DEFAULT_HOT
 import { type HotspotReviewRow, deleteHotspotReview, loadHotspotReviews, saveHotspotReview } from "./hotspotReviewCache";
 import { type RowContext, rowStatusOf } from "./rowFilter";
 import { type FrameAlignment, applyAlignment, isAligned } from "./register";
+import { type MapChunk, type RenderedChunk, MIN_COVERAGE, chooseMapZoom, groundMapResult, isMapFrame, mapRunKey, planMapChunks, readChunkRows, renderMapChunk, upscaleFor as upscaleForMap } from "./mapRun";
+import { type photoPassParams } from "../weedScout/photoPass";
+import type { PhotoPixels } from "../photoScout/pattern";
 
 export type ViewMode = "priority" | "heatmap" | "detections";
 
@@ -74,13 +77,15 @@ export type FrameRunSession = {
   markedAreas: Record<string, string>;
   /** Whether a map aligner is registered (the orthomosaic's tiles are reachable). */
   alignAvailable: boolean;
+  /** The zoom the field map can be read at by the model (mapRun.ts), or null when it is not registered or too coarse. */
+  mapAvailable: { z: number; mpp: number } | null;
 };
 
 export const EMPTY_FRAME_RUN: FrameRunSession = {
   running: false, progress: null, params: null, paramsKey: null, algorithmLabel: null, modelSha: null,
   plants: [], raw: 0, outside: 0, scanSet: null, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, showOnRow: false, selectedId: null, restoredAt: null, marked: {},
   hotspots: null, hotspotParams: DEFAULT_HOTSPOT_PARAMS, viewMode: "priority", selectedHotspotId: null, reviews: {}, focus: null, markedAreas: {},
-  alignAvailable: false,
+  alignAvailable: false, mapAvailable: null,
 };
 
 const sessions = new Map<string, FrameRunSession>();
@@ -116,6 +121,27 @@ async function alignFrame(taskId: string, set: SourceFrameSet, altM: number, blo
   const base = stale ? dets.map(d => (d.alignment && !isAligned(d) ? regroundDetection(set, shot, altM, d, nativeScale) : d)) : dets;
   return { dets: applyAlignment(set, altM, a, base), aligned: { shiftM: a.shiftM, patches: a.usedPatches, rmsM: a.rmsM } };
 }
+/** The field map per scan, for a run on the map itself: its tiles and its deepest baked zoom. */
+export type FrameRunMap = { tile: (z: number, x: number, y: number) => string; maxNative: number; lat: number; lng: number };
+const maps = new Map<string, FrameRunMap>();
+export function setFrameRunMap(taskId: string, map: FrameRunMap | null): void {
+  if (map) maps.set(taskId, map); else maps.delete(taskId);
+  const avail = map ? chooseMapZoom(map.maxNative, map.lat) : null;
+  const cur = getFrameRun(taskId).mapAvailable;
+  if (cur?.z !== avail?.z || cur?.mpp !== avail?.mpp) patchFrameRun(taskId, { mapAvailable: avail });
+}
+/** A reconstruction stand-in for a scan read from its map alone: the areas need only a local origin. */
+function mapScanSet(map: FrameRunMap, set: SourceFrameSet | null | undefined, altM: number | null | undefined): { set: SourceFrameSet; altM: number } {
+  if (set && altM != null) return { set, altM };
+  return { set: { cameras: {}, shots: [], images: {}, reference: { lat: map.lat, lng: map.lng, altM: 0 } }, altM: 0 };
+}
+/** Plants from photographs are merged across overlapping photos; plants read off the map are already one each. */
+function mergeAll(set: SourceFrameSet, altM: number, all: FrameDetection[]): GroundPlant[] {
+  const fromMap = all.filter(d => isMapFrame(d.frame));
+  if (!fromMap.length) return mergeAcrossFrames(set, altM, all);
+  const photos = all.filter(d => !isMapFrame(d.frame));
+  return [...(photos.length ? mergeAcrossFrames(set, altM, photos) : []), ...fromMap.map(d => ({ ...d, seenIn: [d.frame], duplicates: 0 }))];
+}
 /** The field boundary per scan: plants whose centre lands outside it are not shown (a frame's edge projected onto the ground plane lands far outside the field). */
 const boundaries = new Map<string, LatLng2[][]>();
 export function setFrameRunBoundary(taskId: string, rings: LatLng2[][] | null): void {
@@ -141,7 +167,7 @@ function republish(taskId: string): void {
   const s = getFrameRun(taskId);
   if (!s.scanSet) return;
   const all = [...rawOf(taskId).values()].flat();
-  const { kept, outside } = withinField(taskId, mergeAcrossFrames(s.scanSet.set, s.scanSet.altM, all));
+  const { kept, outside } = withinField(taskId, mergeAll(s.scanSet.set, s.scanSet.altM, all));
   patchFrameRun(taskId, { plants: kept, raw: all.length, outside });
 }
 
@@ -211,9 +237,16 @@ export type FrameRunDeps = {
   detect: (file: Blob, filename: string, opts: DetectOptions, hooks: { onProgress?: (p: Progress) => void; signal?: AbortSignal }) => Promise<Outcome<WeedVisionResult>>;
   download: (entry: FrameManifestEntry) => Promise<Blob | null>;
   cache: { load: typeof loadFrameRuns; save: typeof saveFrameRun; remove: typeof deleteFrameRuns };
+  /** A chunk of the field map, read from its tiles and enlarged (mapRun.ts). */
+  mapChunk: (chunk: MapChunk, tile: FrameRunMap["tile"], upscale: number, signal: AbortSignal) => Promise<RenderedChunk | null>;
+  /** A chunk's crop rows, in its canvas pixels. */
+  mapRows: (pixels: PhotoPixels, gsdM: number, passParams: ReturnType<typeof photoPassParams>, signal: AbortSignal) => Promise<RowContext | null>;
 };
 
-const DEFAULT_DEPS: FrameRunDeps = { detect: (f, n, o, h) => detectWeeds(f, n, o, h), download: downloadFrame, cache: { load: loadFrameRuns, save: saveFrameRun, remove: deleteFrameRuns } };
+const DEFAULT_DEPS: FrameRunDeps = {
+  detect: (f, n, o, h) => detectWeeds(f, n, o, h), download: downloadFrame, cache: { load: loadFrameRuns, save: saveFrameRun, remove: deleteFrameRuns },
+  mapChunk: renderMapChunk, mapRows: readChunkRows,
+};
 
 /** The photographs that can be scored: shots with a kept original, in ODM's order. */
 export function scorableFrames(sources: ScanSources | null): Array<{ shot: Shot; entry: FrameManifestEntry }> {
@@ -289,7 +322,7 @@ export function startFrameRun(taskId: string, input: StartFrameRunInput): void {
     if (!mine()) return;
     lastPublish = Date.now();
     const all = [...byFrame.values()].flat();
-    const { kept, outside } = withinField(taskId, mergeAcrossFrames(set, altM, all));
+    const { kept, outside } = withinField(taskId, mergeAll(set, altM, all));
     patchFrameRun(taskId, { plants: kept, raw: all.length, outside, frames: { ...summaries } });
   };
   const publish = (final = false) => {
@@ -366,6 +399,138 @@ export function startFrameRun(taskId: string, input: StartFrameRunInput): void {
   });
 }
 
+export type StartMapRunInput = {
+  userId: string;
+  params: FrameRunParams;
+  algorithmLabel: string;
+  modelSha: string | null;
+  /** The photographs' ground sampling, metres, when known: chunks are enlarged to match it. */
+  photoGsdM: number | null;
+  /** How the rows are read (the scout's settings through photoPassParams). */
+  passParams: ReturnType<typeof photoPassParams>;
+  /** The scan's reconstruction when it has one; a map-only scan works without. */
+  sources?: ScanSources | null;
+  force?: boolean;
+  deps?: Partial<FrameRunDeps>;
+};
+
+/**
+ * Run the model on the field map itself (mapRun.ts): chunk by chunk over the
+ * field, rows read from each chunk, every outline placed by the map's own
+ * pixels. Needs the map registered (setFrameRunMap) and a boundary or the
+ * map's bounds (setFrameRunBoundary). Saved per chunk like a photo.
+ */
+export function startMapRun(taskId: string, input: StartMapRunInput): void {
+  if (getFrameRun(taskId).running) return;
+  const map = maps.get(taskId);
+  const avail = map ? chooseMapZoom(map.maxNative, map.lat) : null;
+  const rings = boundaries.get(taskId);
+  if (!map || !avail) { patchFrameRun(taskId, { error: "the field map is not sharp enough to read weeds from (it needs about 3 cm per pixel); use the photographs instead" }); return; }
+  if (!rings?.length) { patchFrameRun(taskId, { error: "the field has no boundary or map bounds to read within" }); return; }
+  const deps: FrameRunDeps = { ...DEFAULT_DEPS, ...input.deps, cache: { ...DEFAULT_DEPS.cache, ...(input.deps?.cache ?? {}) } };
+  const ctrl = new AbortController();
+  controllers.set(taskId, ctrl);
+  const mine = () => controllers.get(taskId) === ctrl;
+  const { params } = input;
+  const { z, mpp } = avail;
+  const upscale = upscaleForRun(mpp, input.photoGsdM);
+  const paramsKey = mapRunKey(params, input.modelSha, z, upscale);
+  const chunks = planMapChunks(rings, z);
+  const scanSet = mapScanSet(map, input.sources?.set, input.sources?.groundAltM);
+  patchFrameRun(taskId, {
+    running: true, params, paramsKey, algorithmLabel: input.algorithmLabel, modelSha: input.modelSha, error: null, note: null, restoredAt: null, selectedId: null, scanSet,
+    progress: { framesDone: 0, framesTotal: chunks.length, current: null, tilesDone: 0, tilesTotal: null, fromCache: 0 },
+  });
+  const byChunk = rawOf(taskId);
+  byChunk.clear();
+  const summaries: Record<string, FrameSummary> = {};
+  const PUBLISH_MS = 2000;
+  let lastPublish = 0;
+  let trailing: ReturnType<typeof setTimeout> | null = null;
+  const publishNow = () => {
+    if (!mine()) return;
+    lastPublish = Date.now();
+    const all = [...byChunk.values()].flat();
+    const { kept, outside } = withinField(taskId, mergeAll(scanSet.set, scanSet.altM, all));
+    patchFrameRun(taskId, { plants: kept, raw: all.length, outside, frames: { ...summaries } });
+  };
+  const publish = (final = false) => {
+    if (trailing) { clearTimeout(trailing); trailing = null; }
+    if (final || Date.now() - lastPublish >= PUBLISH_MS) { publishNow(); return; }
+    trailing = setTimeout(publishNow, PUBLISH_MS - (Date.now() - lastPublish));
+  };
+  const step = (patch: Partial<FrameRunProgress>) => { if (mine()) patchFrameRun(taskId, s => ({ progress: s.progress ? { ...s.progress, ...patch } : s.progress })); };
+  (async () => {
+    const cached = input.force ? new Map<string, SavedFrameRun>() : await deps.cache.load(taskId, paramsKey);
+    let fromCache = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      if (ctrl.signal.aborted || !mine()) return;
+      const chunk = chunks[i];
+      const name = chunk.name;
+      step({ framesDone: i, current: name, tilesDone: 0, tilesTotal: null, fromCache, phase: "rows", rowsFraction: null });
+      const hit = cached.get(name);
+      if (hit) {
+        byChunk.set(name, hit.detections);
+        const c = countByClass(hit.detections);
+        summaries[name] = { filename: name, weeds: c.weed, crops: c.crop, status: "cached", ms: hit.timingsMs?.total ?? null };
+        fromCache += 1;
+        publish();
+        continue;
+      }
+      // The latest tile address each time: the session token in it is renewed while a long run goes.
+      const current = maps.get(taskId) ?? map;
+      const rendered = await deps.mapChunk(chunk, current.tile, upscale, ctrl.signal);
+      if (ctrl.signal.aborted || !mine()) return;
+      if (!rendered || rendered.coverage < MIN_COVERAGE_RUN) {
+        summaries[name] = { filename: name, weeds: 0, crops: 0, status: rendered ? "done" : "error", ...(rendered ? {} : { error: "the map could not be drawn here" }), ms: null };
+        publish();
+        continue;
+      }
+      const rows = await deps.mapRows(rendered.pixels, mpp, input.passParams, ctrl.signal);
+      if (ctrl.signal.aborted || !mine()) return;
+      step({ phase: "model" });
+      const res = await deps.detect(rendered.image, `${name.replace(/\//g, "_")}.jpg`, { algorithm: params.algorithm, scale: params.scale, tile: params.tile, overlap: params.overlap, threshold: params.threshold, includeCrop: true }, {
+        signal: ctrl.signal,
+        onProgress: p => step({ tilesDone: p.tilesDone, tilesTotal: p.tilesTotal }),
+      });
+      if (!res.ok) {
+        if (res.error === "cancelled") return;
+        summaries[name] = { filename: name, weeds: 0, crops: 0, status: "error", error: res.error, ms: null };
+        publish();
+        if (/not reachable/.test(res.error) || res.status === 503) {
+          publish(true);
+          patchFrameRun(taskId, { running: false, error: res.error, note: summariseMap(getFrameRun(taskId).plants, summaries) });
+          return;
+        }
+        continue;
+      }
+      const dets = groundMapResult({ chunk, result: res.value, upscale, rows, lat: map.lat });
+      byChunk.set(name, dets);
+      const c = countByClass(dets);
+      summaries[name] = { filename: name, weeds: c.weed, crops: c.crop, status: "done", ms: res.value.timings_ms?.total ?? null };
+      publish();
+      void deps.cache.save({ userId: input.userId, scanId: taskId, paramsKey, params, run: { filename: name, algorithm: res.value.algorithm.name, modelSha256: input.modelSha, nativeWidth: res.value.image.width, nativeHeight: res.value.image.height, timingsMs: res.value.timings_ms ?? {}, detections: dets, createdAt: null } });
+    }
+    if (!mine()) return;
+    publish(true);
+    const s = getFrameRun(taskId);
+    patchFrameRun(taskId, { running: false, progress: { ...(s.progress as FrameRunProgress), framesDone: chunks.length, current: null, fromCache, phase: null }, note: summariseMap(s.plants, summaries) });
+  })().catch(e => {
+    if (mine()) patchFrameRun(taskId, { running: false, error: (e as Error)?.message ?? String(e) });
+  });
+}
+
+const MIN_COVERAGE_RUN = MIN_COVERAGE;
+function upscaleForRun(mpp: number, photoGsdM: number | null): number {
+  return upscaleForMap(mpp, photoGsdM);
+}
+function summariseMap(plants: GroundPlant[], chunks: Record<string, FrameSummary>): string {
+  const r = countByRow(plants);
+  const n = Object.keys(chunks).length;
+  const errs = Object.values(chunks).filter(f => f.status === "error").length;
+  return `${r.offRow.toLocaleString()} weed${r.offRow === 1 ? "" : "s"} between the rows${r.onRow ? `, ${r.onRow.toLocaleString()} on the rows set aside` : ""}${r.noRows ? `, ${r.noRows.toLocaleString()} where no rows were read` : ""}, read off the field map in ${n} part${n === 1 ? "" : "s"}${errs ? `; ${errs} part${errs === 1 ? "" : "s"} failed` : ""}.`;
+}
+
 export function stopFrameRun(taskId: string): void {
   const ctrl = controllers.get(taskId);
   if (!ctrl) return;
@@ -376,12 +541,15 @@ export function stopFrameRun(taskId: string): void {
 }
 
 /** Show a scan's saved run again without scoring anything. */
-export async function restoreFrameRun(taskId: string, input: { sources: ScanSources; params: FrameRunParams; modelSha: string | null; algorithmLabel: string; deps?: Partial<FrameRunDeps> }): Promise<boolean> {
+export async function restoreFrameRun(taskId: string, input: { sources: ScanSources | null; params: FrameRunParams; modelSha: string | null; algorithmLabel: string; /** A saved key to restore as it is (a map run's); else the photo run's key from the params. */ paramsKey?: string; deps?: Partial<FrameRunDeps> }): Promise<boolean> {
   if (getFrameRun(taskId).running) return false;
   const load = input.deps?.cache?.load ?? loadFrameRuns;
-  const paramsKey = frameRunKey(input.params, input.modelSha);
+  const paramsKey = input.paramsKey ?? frameRunKey(input.params, input.modelSha);
   const rows = await load(taskId, paramsKey);
-  if (!rows.size || !input.sources.set || input.sources.groundAltM == null) return false;
+  const map = maps.get(taskId);
+  const fromMap = [...rows.keys()].some(isMapFrame);
+  const scanSet = fromMap && map ? mapScanSet(map, input.sources?.set, input.sources?.groundAltM) : input.sources?.set && input.sources.groundAltM != null ? { set: input.sources.set, altM: input.sources.groundAltM } : null;
+  if (!rows.size || !scanSet) return false;
   const all: FrameDetection[] = [];
   const frames: Record<string, FrameSummary> = {};
   let latest: string | null = null;
@@ -394,8 +562,8 @@ export async function restoreFrameRun(taskId: string, input: { sources: ScanSour
     frames[r.filename] = { filename: r.filename, weeds: c.weed, crops: c.crop, status: "cached", ms: r.timingsMs?.total ?? null };
     if (r.createdAt && (!latest || r.createdAt > latest)) latest = r.createdAt;
   }
-  const { kept, outside } = withinField(taskId, mergeAcrossFrames(input.sources.set, input.sources.groundAltM, all));
-  patchFrameRun(taskId, { running: false, params: input.params, paramsKey, modelSha: input.modelSha, algorithmLabel: input.algorithmLabel, plants: kept, raw: all.length, outside, scanSet: { set: input.sources.set, altM: input.sources.groundAltM }, frames, error: null, restoredAt: latest ?? new Date().toISOString(), note: summarise(kept, all.length, frames), progress: null });
+  const { kept, outside } = withinField(taskId, mergeAll(scanSet.set, scanSet.altM, all));
+  patchFrameRun(taskId, { running: false, params: input.params, paramsKey, modelSha: input.modelSha, algorithmLabel: input.algorithmLabel, plants: kept, raw: all.length, outside, scanSet, frames, error: null, restoredAt: latest ?? new Date().toISOString(), note: summarise(kept, all.length, frames), progress: null });
   return true;
 }
 

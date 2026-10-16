@@ -18,6 +18,7 @@ import { fmtAreaCm2, fmtLengthCm } from "@/lib/units";
 import type { GroundPlant } from "@/lib/weedVision/frames";
 import { patchFrameRun, useFrameRun, visiblePlants } from "@/lib/weedVision/frameRunStore";
 import { isOnRow } from "@/lib/weedVision/rowFilter";
+import { isMapFrame } from "@/lib/weedVision/mapRun";
 
 export const PLANT_COLOUR = { weed: "#ffe600", crop: "#40e0ff" } as const;
 export const SELECTED_PLANT_COLOUR = "#ffffff";
@@ -126,17 +127,19 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
               <div className="text-neutral-400">
                 {p.diameterM != null ? <>About {fmtLengthCm(p.diameterM * 100, units).text} across{p.areaM2 != null ? `, ${fmtAreaCm2(p.areaM2 * 1e4, units).text} of canopy` : ""}</> : <>Size unknown: the plant could not be placed on the ground plane</>}
               </div>
-              <div className="text-neutral-400">
+              {isMapFrame(p.frame) ? (
+                <div className="text-neutral-400">Found on the field map itself{p.fusedFromTiles > 1 ? ` · stitched from ${p.fusedFromTiles} tiles` : ""}</div>
+              ) : <div className="text-neutral-400">
                 Seen in <span className="font-mono text-neutral-200">{p.frame}</span>{p.seenIn.length > 1 ? ` and ${p.seenIn.length - 1} other photo${p.seenIn.length > 2 ? "s" : ""}` : ""}
                 {p.viewAngleDeg != null ? ` · ${p.viewAngleDeg.toFixed(0)}° off nadir` : ""}{p.fusedFromTiles > 1 ? ` · stitched from ${p.fusedFromTiles} tiles` : ""}
-              </div>
+              </div>}
               {p.klass === "weed" && p.rowStatus && (
                 <div className={isOnRow(p.rowStatus) ? "text-amber-400" : "text-neutral-400"}>
                   {p.rowStatus === "on-crop" ? "On a plant the pattern placed on a row: most likely the crop." : p.rowStatus === "on-row" ? "On a row line: most likely the crop." : p.rowStatus === "off-row" ? "Off the rows." : "This photo has no row read."}
                 </div>
               )}
               {p.flags.length > 0 && <div className="text-amber-400">{p.flags.join("; ")}</div>}
-              {p.centre && <div className="text-neutral-600">Ground {p.centre.lat.toFixed(6)}, {p.centre.lng.toFixed(6)} · flat ground assumed</div>}
+              {p.centre && <div className="text-neutral-600">Ground {p.centre.lat.toFixed(6)}, {p.centre.lng.toFixed(6)} · {isMapFrame(p.frame) ? "placed by the map's own pixels" : "flat ground assumed"}</div>}
               {p.klass === "weed" && onMark && (
                 markedId
                   ? <div className="text-[#4CAF50]">Marked on the field.</div>

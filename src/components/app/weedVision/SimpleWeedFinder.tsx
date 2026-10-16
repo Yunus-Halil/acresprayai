@@ -1,8 +1,12 @@
 // Weed Scout, simply: one button that finds the weeds between the crop rows
 // and puts them on the map. Everything behind it runs with fixed, sensible
-// settings: RF-DETR at confidence 0.5 on every kept photo, each photo's crop
-// rows read and the weeds on them left out, every outline aligned to the
-// orthomosaic, everything saved. The full set of options is one link away.
+// settings: RF-DETR at confidence 0.5, crop rows read and the weeds on them
+// left out, everything saved. The full set of options is one link away.
+//
+// Where the field map is sharp enough (about 3 cm a pixel), the model reads
+// the map itself (mapRun.ts), so every outline is placed by the map's own
+// pixels and sits exactly on its weed. A coarser map falls back to the kept
+// photographs, placed through the camera and aligned to the map.
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, Search, Square } from "lucide-react";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
@@ -11,7 +15,9 @@ import type { ScoutParams } from "@/lib/weedScout/types";
 import { type AlgorithmInfo, type Health, algorithmReady, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
 import { type FrameRunParams, countByRow, frameRunKey } from "@/lib/weedVision/frames";
 import { listFrameRunKeys } from "@/lib/weedVision/frameRunCache";
-import { alignRun, patchFrameRun, restoreFrameRun, scorableFrames, startFrameRun, stopFrameRun, unalignedFrames, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { alignRun, patchFrameRun, restoreFrameRun, scorableFrames, startFrameRun, startMapRun, stopFrameRun, unalignedFrames, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { isMapRunKey } from "@/lib/weedVision/mapRun";
+import { photoPassParams } from "@/lib/weedScout/photoPass";
 import { makeRowContextFor } from "@/lib/weedVision/photoRows";
 import { PLANT_COLOUR } from "./ModelDetectionLayer";
 import { modelShaFor } from "./ModelDetectionsPanel";
@@ -21,6 +27,8 @@ const PREFERRED_ALGORITHM = "rfdetr_seg_large";
 /** Scans whose saved run was sent for alignment in this visit: an unmatched photo is not retried on every render. */
 const alignTried = new Set<string>();
 const PHASE_LABEL = { rows: "Reading the crop rows, photo", model: "Looking for weeds, photo", align: "Lining up with the map, photo" } as const;
+const MAP_PHASE_LABEL = { rows: "Reading the crop rows, map part", model: "Looking for weeds, map part", align: "Map part" } as const;
+const DEFAULT_PASS = { rowSpacingAuto: true, rowSpacingM: 0.762, minBlobCm2: 1 };
 
 export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParams, onShowOptions, fetchImpl }: {
   taskId: string;
@@ -58,40 +66,54 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
   const ready = algorithmReady(info, health);
   const modelSha = modelShaFor(info, health);
 
-  // The last saved run comes back by itself, whatever its settings.
+  /** Read the map itself when it is sharp enough; else the photographs. */
+  const onMap = !!run.mapAvailable;
+
+  // The last saved run comes back by itself: a run on the map when the map can be read, else a run on the photos.
   useEffect(() => {
-    if (!sources || !info || run.running || run.plants.length) return;
+    if (!info || run.running || run.plants.length) return;
+    if (!onMap && !sources) return;
     let on = true;
     (async () => {
       // Newest first; only a run of this model at its current weights restores.
       const keys = await listFrameRunKeys(taskId);
-      const latest = keys.find(k => k.params && k.params.algorithm === algorithm && frameRunKey(k.params, modelSha) === k.paramsKey);
+      const mine = keys.filter(k => k.params && k.params.algorithm === algorithm && k.paramsKey.endsWith(frameRunKey(k.params, modelSha)));
+      const latest = onMap ? mine.find(k => isMapRunKey(k.paramsKey)) ?? mine.find(k => !isMapRunKey(k.paramsKey)) : mine.find(k => !isMapRunKey(k.paramsKey));
       if (!on || !latest?.params) return;
-      const restored = await restoreFrameRun(taskId, { sources, params: latest.params, modelSha, algorithmLabel: info.label });
-      // A run saved before outlines were aligned to the map gets aligned now, once.
-      if (on && restored && unalignedFrames(taskId).length && !alignTried.has(taskId)) { alignTried.add(taskId); alignRun(taskId, { userId, sources }); }
+      const restored = await restoreFrameRun(taskId, { sources, params: latest.params, paramsKey: latest.paramsKey, modelSha, algorithmLabel: info.label });
+      // A photo run saved before outlines were aligned to the map gets aligned now, once.
+      if (on && restored && sources && !isMapRunKey(latest.paramsKey) && unalignedFrames(taskId).length && !alignTried.has(taskId)) { alignTried.add(taskId); alignRun(taskId, { userId, sources }); }
     })();
     return () => { on = false; };
-  }, [taskId, sources, info, modelSha]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [taskId, sources, info, modelSha, onMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rowContextFor = useMemo(() => makeRowContextFor(sources, readStore, passParams), [sources, readStore, passParams]);
   const find = () => {
-    if (!userId || !sources || !info) return;
-    startFrameRun(taskId, { userId, sources, params: { algorithm, ...SIMPLE_PARAMS }, algorithmLabel: info.label, modelSha, rowContextFor });
+    if (!userId || !info) return;
+    const params = { algorithm, ...SIMPLE_PARAMS };
+    if (onMap) {
+      const gsdCm = sources?.stats?.odm_processing_statistics?.average_gsd;
+      startMapRun(taskId, { userId, params, algorithmLabel: info.label, modelSha, photoGsdM: typeof gsdCm === "number" ? gsdCm / 100 : null, passParams: photoPassParams(passParams ?? DEFAULT_PASS), sources });
+      return;
+    }
+    if (!sources) return;
+    startFrameRun(taskId, { userId, sources, params, algorithmLabel: info.label, modelSha, rowContextFor });
   };
 
   const rows = countByRow(run.plants);
+  const fromMap = isMapRunKey(run.paramsKey);
   const photosIn = Object.keys(run.frames).length;
-  const lined = run.running ? null : photosIn - unalignedFrames(taskId).length;
+  const lined = run.running || fromMap ? null : photosIn - unalignedFrames(taskId).length;
   const between = rows.offRow + rows.noRows;
   const p = run.progress;
   const pct = p && p.framesTotal ? Math.round((100 * p.framesDone) / p.framesTotal) : 0;
   const problem = serviceDown
     ? "The weed model isn't running on this computer. In a terminal, run  npm run weed-vision:service  then press Find weeds again."
-    : !sources ? "Loading this scan's photos…"
-      : !frames.length ? "This scan has no original photos kept, so there is nothing to look at closely. Upload the field again from the field page with the original photos."
-        : health && !ready ? "The weed model is still loading. Try again in a moment."
-          : null;
+    : health && !ready ? "The weed model is still loading. Try again in a moment."
+      : onMap ? null
+        : !sources ? "Loading this scan…"
+          : !frames.length ? "This field map is too coarse to read weeds from, and no original photos were kept. Upload the field again from the field page with the original photos."
+            : null;
 
   return (
     <div className="p-4 space-y-4" data-testid="simple-weed-finder">
@@ -108,7 +130,7 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
       ) : (
         <div className="space-y-1.5" data-testid="finding">
           <div className="flex items-center justify-between text-[12px] text-neutral-300">
-            <span className="inline-flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {PHASE_LABEL[p?.phase ?? "model"]} {Math.min((p?.framesDone ?? 0) + 1, p?.framesTotal ?? 1)} of {p?.framesTotal ?? "…"}</span>
+            <span className="inline-flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {(onMap ? MAP_PHASE_LABEL : PHASE_LABEL)[p?.phase ?? "model"]} {Math.min((p?.framesDone ?? 0) + 1, p?.framesTotal ?? 1)} of {p?.framesTotal ?? "…"}</span>
             <button type="button" onClick={() => stopFrameRun(taskId)} className="inline-flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-300"><Square className="h-3 w-3" /> Stop</button>
           </div>
           <div className="h-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-[#ffe600] transition-[width] duration-500" style={{ width: `${Math.max(2, pct)}%` }} /></div>
@@ -126,6 +148,7 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
           <div className="text-[22px] font-semibold leading-none" style={{ color: PLANT_COLOUR.weed }}>{between.toLocaleString()}</div>
           <div className="text-[12px] text-neutral-300">weed{between === 1 ? "" : "s"} between the rows</div>
           {rows.onRow > 0 && <div className="text-[11px] text-neutral-500">{rows.onRow.toLocaleString()} on the crop rows left out</div>}
+          {fromMap && <div className="text-[11px] text-neutral-500" data-testid="simple-from-map">Read off the field map itself, so each outline sits where the map shows its weed.</div>}
           {lined != null && photosIn > 0 && (
             <div className={`text-[11px] ${lined < photosIn ? "text-amber-400" : "text-neutral-500"}`} data-testid="simple-aligned">
               {lined === photosIn ? `Lined up with the map in all ${photosIn} photos` : `Lined up with the map in ${lined} of ${photosIn} photos; the rest are placed by the camera position alone and can sit up to a metre off`}

@@ -15,7 +15,7 @@ import type { ScanSources } from "@/lib/sourceFrames/scan";
 import type { WeedVisionResult } from "@/lib/weedVision/client";
 import { frameRunKey } from "@/lib/weedVision/frames";
 import type { SavedFrameRun } from "@/lib/weedVision/frameRunCache";
-import { type FrameRunDeps, addFrameDetections, alignRun, alignmentSummary, getFrameRun, resetFrameRunStore, restoreFrameRun, retagRows, scorableFrames, setFrameRunAligner, setFrameRunBoundary, startFrameRun, stopFrameRun, unalignedFrames } from "@/lib/weedVision/frameRunStore";
+import { type FrameRunDeps, addFrameDetections, alignRun, alignmentSummary, getFrameRun, resetFrameRunStore, restoreFrameRun, retagRows, scorableFrames, setFrameRunAligner, setFrameRunBoundary, setFrameRunMap, startFrameRun, stopFrameRun, unalignedFrames } from "@/lib/weedVision/frameRunStore";
 
 const DIR = join(process.cwd(), "src", "test", "fixtures", "odm-dd0f6314");
 const read = (f: string) => JSON.parse(readFileSync(join(DIR, f), "utf-8"));
@@ -49,7 +49,7 @@ function resultAt(shot: { filename: string; cameraKey: string }, point: { lat: n
   };
 }
 
-function fakeDeps(sources: ScanSources, store = new Map<string, SavedFrameRun>()): FrameRunDeps & { saved: Map<string, SavedFrameRun>; detectMock: ReturnType<typeof vi.fn> } {
+function fakeDeps(sources: ScanSources, store = new Map<string, SavedFrameRun>()): Omit<FrameRunDeps, "mapChunk" | "mapRows"> & { saved: Map<string, SavedFrameRun>; detectMock: ReturnType<typeof vi.fn> } {
   const byName = new Map(sources.set!.shots.map(s => [s.filename, s]));
   const detect = vi.fn(async (_blob: Blob, filename: string, _opts, hooks: { onProgress?: (p: { phase: "running"; tilesDone: number; tilesTotal: number; elapsedMs: number }) => void }) => {
     hooks.onProgress?.({ phase: "running", tilesDone: 10, tilesTotal: 35, elapsedMs: 5 });
@@ -334,6 +334,14 @@ describe("SimpleWeedFinder", () => {
     const s = getFrameRun("scan-s1");
     expect(s.viewMode).toBe("detections");
     expect([s.showWeeds, s.showCrops, s.showOnRow]).toEqual([true, false, false]);
+  });
+
+  it("reads the field map when it is sharp enough, with no kept photos needed", async () => {
+    setFrameRunMap("scan-s4", { tile: () => "", maxNative: 23, lat: 37.6, lng: -78.4 });
+    render(<SimpleWeedFinder taskId="scan-s4" userId="u" sources={{ ...sourcesWithFrames(1), frames: null }} readStore={null} passParams={null} onShowOptions={() => {}} fetchImpl={ok() as unknown as typeof fetch} />);
+    const btn = (await screen.findByTestId("find-weeds")) as HTMLButtonElement;
+    await waitFor(() => expect(btn.disabled).toBe(false));
+    expect(screen.queryByTestId("simple-problem")).toBeNull();
   });
 
   it("says plainly when the model isn't running, and keeps the options one click away", async () => {
