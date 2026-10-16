@@ -197,7 +197,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
       grounded = await addFrameDetections(modelRun.taskId, {
         userId: modelRun.userId, sources, shot: view.shot, result: res.value,
         params: { ...DEFAULT_FRAME_PARAMS, algorithm: modelChoice.algorithm, threshold: modelChoice.threshold },
-        modelSha: modelShaFor(modelInfo, svc?.health ?? null), algorithmLabel: modelInfo.label, rowContext,
+        modelSha: modelShaFor(modelInfo, svc?.health ?? null), algorithmLabel: modelInfo.label, rowContext, blob,
       });
     }
     setModelRunState({ state: "done", result: res.value, grounded, ms: Date.now() - t0, rowContext });

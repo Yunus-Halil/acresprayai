@@ -12,7 +12,7 @@ import { type PhotoReadStore, photoPassParams } from "@/lib/weedScout/photoPass"
 import type { ScoutParams } from "@/lib/weedScout/types";
 import { type AlgorithmInfo, type Health, algorithmReady, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
 import { type FrameRunParams, countByClass, countByRow } from "@/lib/weedVision/frames";
-import { clearFrameRun, patchFrameRun, restoreFrameRun, retagRows, scorableFrames, startFrameRun, stopFrameRun, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { alignRun, alignmentSummary, clearFrameRun, patchFrameRun, restoreFrameRun, retagRows, scorableFrames, startFrameRun, stopFrameRun, unalignedFrames, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { rowContextForPhoto } from "@/lib/weedVision/photoRows";
 import { PLANT_COLOUR } from "./ModelDetectionLayer";
 
@@ -162,7 +162,7 @@ export function ModelDetectionsPanel({ taskId, userId, sources, readStore = null
             {run.running && run.progress && (
               <div className="text-[11px] text-neutral-400 inline-flex items-center gap-1.5 min-w-0" data-testid="frame-progress">
                 <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-                <span className="truncate">Photo {Math.min(run.progress.framesDone + 1, run.progress.framesTotal)} of {run.progress.framesTotal}{run.progress.phase === "rows" ? ` · reading its rows${run.progress.rowsFraction ? ` ${Math.round(run.progress.rowsFraction * 100)}%` : ""}` : run.progress.tilesTotal ? ` · model tile ${run.progress.tilesDone}/${run.progress.tilesTotal}` : ""} ({pct}%)</span>
+                <span className="truncate">Photo {Math.min(run.progress.framesDone + 1, run.progress.framesTotal)} of {run.progress.framesTotal}{run.progress.phase === "rows" ? ` · reading its rows${run.progress.rowsFraction ? ` ${Math.round(run.progress.rowsFraction * 100)}%` : ""}` : run.progress.phase === "align" ? " · aligning to the map" : run.progress.tilesTotal ? ` · model tile ${run.progress.tilesDone}/${run.progress.tilesTotal}` : ""} ({pct}%)</span>
               </div>
             )}
             {!run.running && run.plants.length > 0 && (
@@ -185,6 +185,26 @@ export function ModelDetectionsPanel({ taskId, userId, sources, readStore = null
                 {run.outside > 0 ? ` · ${run.outside.toLocaleString()} outside the field, not shown` : ""}
               </div>
               {run.restoredAt && <p className="text-[10px] text-neutral-600">From the run saved {new Date(run.restoredAt).toLocaleString()}.</p>}
+              {(() => {
+                const al = alignmentSummary(run.frames);
+                const pending = run.running ? [] : unalignedFrames(taskId);
+                return (
+                  <div className="flex items-center gap-2 flex-wrap" data-testid="alignment">
+                    {al.aligned > 0 && (
+                      <span className="text-[10px] text-neutral-500" title="Each photo's outlines were moved onto the orthomosaic by the offset measured between the photo and the map at five spots across it.">
+                        Aligned to the map: {al.aligned} photo{al.aligned === 1 ? "" : "s"}, median correction {al.medianShiftM != null ? `${(al.medianShiftM * 100).toFixed(0)} cm` : "–"}{al.unmatched ? `; ${al.unmatched} could not be matched (left as placed)` : ""}.
+                      </span>
+                    )}
+                    {pending.length > 0 && run.alignAvailable && sources && (
+                      <button type="button" data-testid="align-to-map" onClick={() => alignRun(taskId, { userId, sources })}
+                        className="inline-flex items-center gap-1.5 rounded-sm border border-[#40e0ff] text-[#40e0ff] px-2 py-0.5 text-[11px] hover:bg-[#40e0ff]/10"
+                        title="Measures each photo's offset against the orthomosaic and moves its outlines onto the map. The model is not run again; the result is saved.">
+                        Align to the map ({pending.length} photo{pending.length === 1 ? "" : "s"})
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
               <label className="flex items-center gap-2 cursor-pointer text-[11px] text-neutral-400">
                 <input type="checkbox" checked={run.showWeeds} onChange={e => patchFrameRun(taskId, { showWeeds: e.target.checked })} className="accent-[#ffe600]" /> Weeds on the map
               </label>

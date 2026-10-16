@@ -19,11 +19,19 @@ import { type SavedFrameRun, deleteFrameRuns, loadFrameRuns, saveFrameRun } from
 import { type HotspotParams, type HotspotResult, type HotspotReview, DEFAULT_HOTSPOT_PARAMS, buildHotspots } from "./hotspots";
 import { type HotspotReviewRow, deleteHotspotReview, loadHotspotReviews, saveHotspotReview } from "./hotspotReviewCache";
 import { type RowContext, rowStatusOf } from "./rowFilter";
+import { type FrameAlignment, applyAlignment } from "./register";
 
 export type ViewMode = "priority" | "heatmap" | "detections";
 
-export type FrameRunProgress = { framesDone: number; framesTotal: number; current: string | null; tilesDone: number; tilesTotal: number | null; fromCache: number; /** What the current photo is in: reading its rows, or in the model. */ phase?: "rows" | "model" | null; rowsFraction?: number | null };
-export type FrameSummary = { filename: string; weeds: number; crops: number; status: "done" | "cached" | "error"; error?: string; ms: number | null };
+/** Measures one photo's alignment to the orthomosaic (alignToMap.ts); registered by the tab that has the map. */
+export type FrameAligner = (blob: Blob, shot: Shot) => Promise<FrameAlignment | null>;
+
+export type FrameRunProgress = { framesDone: number; framesTotal: number; current: string | null; tilesDone: number; tilesTotal: number | null; fromCache: number; /** What the current photo is in: reading its rows, in the model, or being aligned to the map. */ phase?: "rows" | "model" | "align" | null; rowsFraction?: number | null };
+export type FrameSummary = {
+  filename: string; weeds: number; crops: number; status: "done" | "cached" | "error"; error?: string; ms: number | null;
+  /** The photo's alignment to the map: the shift applied, "unmatched" when it could not be measured, absent when not attempted. */
+  aligned?: { shiftM: number; patches: number; rmsM: number } | "unmatched";
+};
 
 export type FrameRunSession = {
   running: boolean;
@@ -64,12 +72,15 @@ export type FrameRunSession = {
   focus: { south: number; west: number; north: number; east: number; nonce: number } | null;
   /** Area id to the annotation id it was marked on the field as, this session. */
   markedAreas: Record<string, string>;
+  /** Whether a map aligner is registered (the orthomosaic's tiles are reachable). */
+  alignAvailable: boolean;
 };
 
 export const EMPTY_FRAME_RUN: FrameRunSession = {
   running: false, progress: null, params: null, paramsKey: null, algorithmLabel: null, modelSha: null,
   plants: [], raw: 0, outside: 0, scanSet: null, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, showOnRow: false, selectedId: null, restoredAt: null, marked: {},
   hotspots: null, hotspotParams: DEFAULT_HOTSPOT_PARAMS, viewMode: "priority", selectedHotspotId: null, reviews: {}, focus: null, markedAreas: {},
+  alignAvailable: false,
 };
 
 const sessions = new Map<string, FrameRunSession>();
@@ -82,6 +93,21 @@ function rawOf(taskId: string): Map<string, FrameDetection[]> {
   let m = rawByTask.get(taskId);
   if (!m) { m = new Map(); rawByTask.set(taskId, m); }
   return m;
+}
+/** The map aligner per scan (setFrameRunAligner). */
+const aligners = new Map<string, FrameAligner>();
+export function setFrameRunAligner(taskId: string, aligner: FrameAligner | null): void {
+  if (aligner) aligners.set(taskId, aligner); else aligners.delete(taskId);
+  if (getFrameRun(taskId).alignAvailable !== !!aligner) patchFrameRun(taskId, { alignAvailable: !!aligner });
+}
+/** Align one photo's detections to the map when an aligner is registered; the detections and what to record. */
+async function alignFrame(taskId: string, set: SourceFrameSet, altM: number, blob: Blob, shot: Shot, dets: FrameDetection[]): Promise<{ dets: FrameDetection[]; aligned: FrameSummary["aligned"] | undefined }> {
+  const aligner = aligners.get(taskId);
+  if (!aligner || !dets.length || dets.every(d => d.alignment)) return { dets, aligned: undefined };
+  let a: FrameAlignment | null = null;
+  try { a = await aligner(blob, shot); } catch { a = null; }
+  if (!a) return { dets, aligned: "unmatched" };
+  return { dets: applyAlignment(set, altM, a, dets), aligned: { shiftM: a.shiftM, patches: a.usedPatches, rmsM: a.rmsM } };
 }
 /** The field boundary per scan: plants whose centre lands outside it are not shown (a frame's edge projected onto the ground plane lands far outside the field). */
 const boundaries = new Map<string, LatLng2[][]>();
@@ -312,10 +338,15 @@ export function startFrameRun(taskId: string, input: StartFrameRunInput): void {
         }
         continue;
       }
-      const dets = groundFrameResult({ set, shot, groundAltM: altM, result: res.value, rowContext });
+      let dets = groundFrameResult({ set, shot, groundAltM: altM, result: res.value, rowContext });
+      // Onto the map: the photo's residual offset against the orthomosaic, measured and removed.
+      if (aligners.has(taskId)) patchFrameRun(taskId, s => ({ progress: s.progress ? { ...s.progress, phase: "align" } : s.progress }));
+      const al = await alignFrame(taskId, set, altM, blob, shot, dets);
+      if (ctrl.signal.aborted || !mine()) return;
+      dets = al.dets;
       byFrame.set(name, dets);
       const c = countByClass(dets);
-      summaries[name] = { filename: name, weeds: c.weed, crops: c.crop, status: "done", ms: res.value.timings_ms?.total ?? null };
+      summaries[name] = { filename: name, weeds: c.weed, crops: c.crop, status: "done", ms: res.value.timings_ms?.total ?? null, ...(al.aligned ? { aligned: al.aligned } : {}) };
       publish();
       void deps.cache.save({ userId: input.userId, scanId: taskId, paramsKey, params, run: { filename: name, algorithm: res.value.algorithm.name, modelSha256: input.modelSha, nativeWidth: res.value.image.width, nativeHeight: res.value.image.height, timingsMs: res.value.timings_ms ?? {}, detections: dets, createdAt: null } });
     }
@@ -417,6 +448,67 @@ export function retagRows(taskId: string, input: { userId: string | null; source
   })().catch(e => { if (mine()) patchFrameRun(taskId, { running: false, error: (e as Error)?.message ?? String(e) }); });
 }
 
+/** Photos whose outlines have not been aligned to the map yet. */
+export function unalignedFrames(taskId: string): string[] {
+  return [...rawOf(taskId).entries()].filter(([, dets]) => dets.length > 0 && dets.some(d => !d.alignment)).map(([name]) => name);
+}
+
+/**
+ * Align the outlines already on the map, photo by photo, without running the
+ * model again: each photo is downloaded, its offset against the orthomosaic
+ * measured, and its outlines moved and saved. Photos already aligned are skipped.
+ */
+export function alignRun(taskId: string, input: { userId: string | null; sources: ScanSources; deps?: Partial<FrameRunDeps> }): void {
+  const s = getFrameRun(taskId);
+  if (s.running || !aligners.has(taskId) || !input.sources.set || input.sources.groundAltM == null) return;
+  const deps: FrameRunDeps = { ...DEFAULT_DEPS, ...input.deps, cache: { ...DEFAULT_DEPS.cache, ...(input.deps?.cache ?? {}) } };
+  const set = input.sources.set, altM = input.sources.groundAltM;
+  const ctrl = new AbortController();
+  controllers.set(taskId, ctrl);
+  const mine = () => controllers.get(taskId) === ctrl;
+  const raw = rawOf(taskId);
+  const byName = new Map(set.shots.map(sh => [sh.filename, sh]));
+  const todo = unalignedFrames(taskId).filter(n => byName.has(n));
+  patchFrameRun(taskId, { running: true, error: null, progress: { framesDone: 0, framesTotal: todo.length, current: null, tilesDone: 0, tilesTotal: null, fromCache: 0, phase: "align" } });
+  (async () => {
+    for (let i = 0; i < todo.length; i++) {
+      if (ctrl.signal.aborted || !mine()) return;
+      const name = todo[i];
+      const shot = byName.get(name)!;
+      patchFrameRun(taskId, sx => ({ progress: { ...(sx.progress as FrameRunProgress), framesDone: i, current: name, phase: "align" } }));
+      const look = lookupOriginal(input.sources.frames, name);
+      if (!look.ok) continue;
+      const blob = await deps.download(look.entry);
+      if (!blob) continue;
+      const al = await alignFrame(taskId, set, altM, blob, shot, raw.get(name) ?? []);
+      if (ctrl.signal.aborted || !mine()) return;
+      raw.set(name, al.dets);
+      const sx = getFrameRun(taskId);
+      if (al.aligned) patchFrameRun(taskId, { frames: { ...sx.frames, [name]: { ...(sx.frames[name] ?? { filename: name, weeds: 0, crops: 0, status: "done", ms: null }), aligned: al.aligned } } });
+      if (input.userId && sx.paramsKey && sx.params && al.aligned && al.aligned !== "unmatched") {
+        const saved = sx.frames[name];
+        void deps.cache.save({ userId: input.userId, scanId: taskId, paramsKey: sx.paramsKey, params: sx.params, run: { filename: name, algorithm: sx.params.algorithm, modelSha256: sx.modelSha, nativeWidth: 0, nativeHeight: 0, timingsMs: saved?.ms != null ? { total: saved.ms } : {}, detections: al.dets, createdAt: null } });
+      }
+      republish(taskId);
+    }
+    if (!mine()) return;
+    const done = getFrameRun(taskId);
+    patchFrameRun(taskId, { running: false, progress: { ...(done.progress as FrameRunProgress), framesDone: todo.length, current: null, phase: null }, note: summarise(done.plants, done.raw, done.frames) });
+  })().catch(e => { if (mine()) patchFrameRun(taskId, { running: false, error: (e as Error)?.message ?? String(e) }); });
+}
+
+/** The alignment over a run's photos, for the summary line. */
+export function alignmentSummary(frames: Record<string, FrameSummary>): { aligned: number; unmatched: number; medianShiftM: number | null } {
+  const shifts: number[] = [];
+  let unmatched = 0;
+  for (const f of Object.values(frames)) {
+    if (f.aligned === "unmatched") unmatched++;
+    else if (f.aligned) shifts.push(f.aligned.shiftM);
+  }
+  shifts.sort((a, b) => a - b);
+  return { aligned: shifts.length, unmatched, medianShiftM: shifts.length ? shifts[Math.floor(shifts.length / 2)] : null };
+}
+
 /** The plants a map should draw: crops when asked, weeds off the rows, and the set-aside ones only when asked. */
 export function visiblePlants(s: FrameRunSession): GroundPlant[] {
   return s.plants.filter(p => {
@@ -437,6 +529,8 @@ export type AddFrameInput = {
   algorithmLabel: string;
   /** The photograph's planting pattern, when read. */
   rowContext?: RowContext | null;
+  /** The original photo, so its outlines can be aligned to the map. */
+  blob?: Blob | null;
   deps?: Partial<FrameRunDeps>;
 };
 
@@ -450,7 +544,12 @@ export async function addFrameDetections(taskId: string, input: AddFrameInput): 
   const { sources, shot, result } = input;
   if (!sources.set || sources.groundAltM == null) return null;
   const set = sources.set, altM = sources.groundAltM;
-  const dets = groundFrameResult({ set, shot, groundAltM: altM, result, rowContext: input.rowContext ?? null });
+  let dets = groundFrameResult({ set, shot, groundAltM: altM, result, rowContext: input.rowContext ?? null });
+  let aligned: FrameSummary["aligned"] | undefined;
+  if (input.blob) {
+    const al = await alignFrame(taskId, set, altM, input.blob, shot, dets);
+    dets = al.dets; aligned = al.aligned;
+  }
   const raw = rawOf(taskId);
   raw.set(shot.filename, dets);
   const all = [...raw.values()].flat();
@@ -458,7 +557,7 @@ export async function addFrameDetections(taskId: string, input: AddFrameInput): 
   const c = countByClass(dets);
   const cur = getFrameRun(taskId);
   const paramsKey = frameRunKey(input.params, input.modelSha);
-  const frames = { ...cur.frames, [shot.filename]: { filename: shot.filename, weeds: c.weed, crops: c.crop, status: "done" as const, ms: result.timings_ms?.total ?? null } };
+  const frames = { ...cur.frames, [shot.filename]: { filename: shot.filename, weeds: c.weed, crops: c.crop, status: "done" as const, ms: result.timings_ms?.total ?? null, ...(aligned ? { aligned } : {}) } };
   patchFrameRun(taskId, {
     plants, raw: all.length, outside, scanSet: { set, altM }, frames, error: null, restoredAt: null,
     params: cur.params ?? input.params, paramsKey: cur.paramsKey ?? paramsKey, modelSha: cur.modelSha ?? input.modelSha, algorithmLabel: input.algorithmLabel,
@@ -477,5 +576,6 @@ export function resetFrameRunStore(): void {
   controllers.clear();
   sessions.clear();
   rawByTask.clear();
+  aligners.clear();
   emit();
 }

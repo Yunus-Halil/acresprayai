@@ -46,6 +46,8 @@ export type FrameDetection = {
   fusedFromTiles: number;
   /** Against the photo's planting pattern (rowFilter.ts); absent on rows saved before it existed. */
   rowStatus?: RowStatus;
+  /** Set once the outline was moved onto the orthomosaic (register.ts); absent = placed by the camera pose alone. */
+  alignment?: { shiftM: number; k: number; patches: number; rmsM: number };
 };
 
 /** One plant on the ground after the photographs are merged: the best view, with the others listed. */

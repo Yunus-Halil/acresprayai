@@ -67,7 +67,8 @@ import { HeatmapLayer, HotspotFocus, HotspotLayer, REVIEW_COLOUR } from "../weed
 import { HotspotPanel } from "../weedVision/HotspotPanel";
 import { type GroundPlant, countByClass, countByRow } from "@/lib/weedVision/frames";
 import type { Hotspot } from "@/lib/weedVision/hotspots";
-import { patchFrameRun, setFrameRunBoundary, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { patchFrameRun, setFrameRunAligner, setFrameRunBoundary, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { alignPhotoToMap } from "@/lib/weedVision/alignToMap";
 import { ringCandidate } from "@/lib/sourceFrames/spot";
 import { m2ToHectares, polygonAreaM2 } from "@/lib/geo";
 import { BenchmarkPanel } from "./BenchmarkPanel";
@@ -399,6 +400,15 @@ export function WeedScoutTab({
     const b = bounds ? (bounds instanceof L.LatLngBounds ? bounds : L.latLngBounds(bounds as L.LatLngExpression[])) : null;
     setFrameRunBoundary(taskId, b ? [[{ lat: b.getSouth(), lng: b.getWest() }, { lat: b.getSouth(), lng: b.getEast() }, { lat: b.getNorth(), lng: b.getEast() }, { lat: b.getNorth(), lng: b.getWest() }]] : null);
   }, [taskId, rings, bounds]);
+  // The map is the reference: each photo's outlines are aligned to the orthomosaic's own tiles (register.ts).
+  useEffect(() => {
+    const set = sources?.set, altM = sources?.groundAltM;
+    if (!set || altM == null || !tileUrl) { setFrameRunAligner(taskId, null); return; }
+    const maxZoom = Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative);
+    const tile = (z: number, x: number, y: number) => tileUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
+    setFrameRunAligner(taskId, (blob, shot) => alignPhotoToMap({ set, shot, altM, blob, tileUrl: tile, maxZoom }));
+    return () => setFrameRunAligner(taskId, null);
+  }, [taskId, sources, tileUrl, maxNative]);
   /** An area's photographs: the same closer look a spot gets, on the area's outline. */
   const openAreaPhotos = useCallback((h: Hotspot) => {
     setCloserLook({ id: h.id, title: `Area ${h.rank}: ${h.plants} plant${h.plants === 1 ? "" : "s"} to review`, spot: spotSources(sources, ringCandidate(h.id, h.ring)) });

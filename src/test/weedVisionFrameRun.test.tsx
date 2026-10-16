@@ -14,7 +14,7 @@ import type { ScanSources } from "@/lib/sourceFrames/scan";
 import type { WeedVisionResult } from "@/lib/weedVision/client";
 import { frameRunKey } from "@/lib/weedVision/frames";
 import type { SavedFrameRun } from "@/lib/weedVision/frameRunCache";
-import { type FrameRunDeps, addFrameDetections, getFrameRun, resetFrameRunStore, restoreFrameRun, retagRows, scorableFrames, setFrameRunBoundary, startFrameRun, stopFrameRun } from "@/lib/weedVision/frameRunStore";
+import { type FrameRunDeps, addFrameDetections, alignRun, alignmentSummary, getFrameRun, resetFrameRunStore, restoreFrameRun, retagRows, scorableFrames, setFrameRunAligner, setFrameRunBoundary, startFrameRun, stopFrameRun, unalignedFrames } from "@/lib/weedVision/frameRunStore";
 
 const DIR = join(process.cwd(), "src", "test", "fixtures", "odm-dd0f6314");
 const read = (f: string) => JSON.parse(readFileSync(join(DIR, f), "utf-8"));
@@ -244,6 +244,33 @@ describe("addFrameDetections (the closer look's single photo)", () => {
     expect(s.plants.every(p => p.rowStatus === "on-crop")).toBe(true);
     expect(s.hotspots?.hotspots ?? []).toHaveLength(0); // on-crop weeds seed no area
     expect(s.note).toMatch(/set aside/);
+  });
+
+  it("aligns a run already on the map photo by photo, once, without running the model again", async () => {
+    const sources = sourcesWithFrames(2);
+    const deps = fakeDeps(sources);
+    startFrameRun("scan-al", { userId: "u", sources, params: PARAMS, algorithmLabel: "m", modelSha: "abc", deps });
+    await waitFor(() => expect(getFrameRun("scan-al").running).toBe(false));
+    const before = getFrameRun("scan-al").plants[0].centre!;
+    expect(unalignedFrames("scan-al")).toHaveLength(2);
+    // An aligner that measures 0.5 m east for every photo.
+    const aligner = vi.fn(async () => ({ t: [0.5, 0] as [number, number], k: 0, nadir: [0, 0] as [number, number], shiftM: 0.5, patches: [], usedPatches: 5, rmsM: 0.01, stepM: 0.05 }));
+    setFrameRunAligner("scan-al", aligner);
+    expect(getFrameRun("scan-al").alignAvailable).toBe(true);
+    alignRun("scan-al", { userId: "u", sources, deps });
+    await waitFor(() => expect(getFrameRun("scan-al").running).toBe(false));
+    expect(aligner).toHaveBeenCalledTimes(2);
+    expect(deps.detectMock).toHaveBeenCalledTimes(2); // only the original run
+    const s = getFrameRun("scan-al");
+    const after = s.plants[0].centre!;
+    const eastM = (after.lng - before.lng) * 111_320 * Math.cos((before.lat * Math.PI) / 180);
+    expect(eastM).toBeCloseTo(0.5, 2);
+    expect(s.plants[0].alignment?.shiftM).toBe(0.5);
+    expect(alignmentSummary(s.frames)).toEqual({ aligned: 2, unmatched: 0, medianShiftM: 0.5 });
+    expect(unalignedFrames("scan-al")).toHaveLength(0);
+    alignRun("scan-al", { userId: "u", sources, deps }); // nothing left to do
+    await waitFor(() => expect(getFrameRun("scan-al").running).toBe(false));
+    expect(aligner).toHaveBeenCalledTimes(2);
   });
 
   it("hides plants that land outside the field boundary and counts them, before or after the boundary is known", async () => {
