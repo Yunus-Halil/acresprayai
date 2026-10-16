@@ -29,6 +29,7 @@ import { ringCandidate, spotSources } from "@/lib/sourceFrames/spot";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
 import { DetectionOverlay } from "./DetectionOverlay";
 import { ModelDetectionLayer } from "../weedVision/ModelDetectionLayer";
+import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { HotspotLayer } from "../weedVision/HotspotLayer";
 import { countByClass } from "@/lib/weedVision/frames";
 import { patchFrameRun, useFrameRun } from "@/lib/weedVision/frameRunStore";
@@ -419,7 +420,7 @@ export function FieldViewTab(props: {
         bounds={bounds}
         boundsOptions={{ padding: [40, 40] }}
         minZoom={1}
-        maxZoom={22}
+        maxZoom={MAP_MAX_ZOOM}
         preferCanvas
         zoomControl={false}
         attributionControl={false}
@@ -434,8 +435,8 @@ export function FieldViewTab(props: {
             key={tileUrl}
             url={tileUrl}
             opacity={1.0}
-            maxNativeZoom={Math.min(20, maxNative)}
-            maxZoom={22}
+            maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)}
+            maxZoom={MAP_MAX_ZOOM}
             tileSize={256}
             keepBuffer={8}
             updateWhenIdle={false}
@@ -450,8 +451,8 @@ export function FieldViewTab(props: {
             key={`ndvi-${ndviUrl}`}
             url={ndviUrl}
             opacity={0.75}
-            maxNativeZoom={Math.min(20, maxNative)}
-            maxZoom={22}
+            maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)}
+            maxZoom={MAP_MAX_ZOOM}
             tileSize={256}
             keepBuffer={8}
             updateWhenIdle={false}

@@ -1,6 +1,7 @@
 // Extracted from OrthomosaicViewer.tsx. Mechanical move only - no
 // behaviour changes. See docs/features/workspace.md.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MAP_MAX_ZOOM } from "@/lib/orthoZoom";
 import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -224,7 +225,7 @@ export function BasemapLayer({ id }: { id: BasemapId }) {
       attribution={b.attribution}
       minZoom={1}
       maxNativeZoom={maxNativeZoom}
-      maxZoom={22}
+      maxZoom={MAP_MAX_ZOOM}
       zIndex={1}
     />
   );

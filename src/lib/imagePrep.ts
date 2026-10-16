@@ -52,14 +52,20 @@ export async function hasGPS(file: File): Promise<boolean> {
 }
 
 /**
- * Downscale a drone JPEG while preserving the original EXIF (including GPS).
- * Skips images already under 1.5 MB or with no oversized edge.
+ * The photo ODM gets. By default the original, untouched: every pixel the camera wrote reaches
+ * photogrammetry, so the orthomosaic can be as fine as the flight allows (ODM_UPLOAD_MAX_EDGE_PX).
+ * Given a finite `maxEdge`, downscales a drone JPEG to that long edge while preserving the original
+ * EXIF (including GPS), skipping images already under 1.5 MB or with no oversized edge; the 2,400 px
+ * fast upload of earlier scans used this path.
  */
+export const ODM_UPLOAD_MAX_EDGE_PX = Number.POSITIVE_INFINITY;
+
 export async function prepareForODM(
   file: File,
-  maxEdge = 2400,
+  maxEdge: number = ODM_UPLOAD_MAX_EDGE_PX,
   quality = 0.82,
 ): Promise<File> {
+  if (!Number.isFinite(maxEdge)) return file;
   if (file.size < 1_500_000) return file;
 
   // Decode

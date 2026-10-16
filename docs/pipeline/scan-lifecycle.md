@@ -41,14 +41,14 @@ ungeoreferenced result that lands at latitude 0, longitude 0 in the Atlantic.
 - No GPS in the sample → blocking confirmation dialog
 - Partial GPS → non-blocking warning
 
-## 3 · Downscale, preserving EXIF
+## 3 · Full resolution to ODM
 
-Any image over 1.5 MB is redrawn to a maximum edge of **2400 px** at JPEG quality 0.82.
+Since 2026-10-15 the original file is sent as the camera wrote it (prepareForODM with ODM_UPLOAD_MAX_EDGE_PX = infinity):
+no re-encode, so EXIF and GPS are untouched. The earlier 2,400 px / quality 0.82 downscale remains in the function for a
+finite maxEdge but is not used. The commit sends ODM_PROCESSING_OPTIONS (src/lib/odmOptions.ts): orthophoto-resolution
+1 cm/px (ODM clamps to the flight's real sampling), pc-quality high, dsm, skip-3dmodel, auto-boundary.
 
-Canvas re-encoding strips EXIF, so the original EXIF block is extracted first with `piexifjs`
-and re-injected into the resized file. Without that step GPS is lost and step 2 was pointless.
-
-See [operations/limits.md](../operations/limits.md) for the resolution trade-off this represents.
+See [operations/limits.md](../operations/limits.md) for what this costs.
 
 ## 4 · Init, upload, commit
 

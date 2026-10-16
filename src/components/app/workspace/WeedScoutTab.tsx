@@ -16,6 +16,7 @@
 // from their own past verdicts (lib/weedCatalog/suggest.ts). Nothing here
 // calls anything outside the tile server and the operator's own archive.
 import { NOT_WEED_BELOW, WEED_AT_OR_ABOVE } from "@/lib/weedScout/classify";
+import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleMarker, MapContainer, Polygon, Polyline, Popup, Rectangle, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
 import { useDeveloperMode } from "@/hooks/useDeveloperMode";
@@ -813,11 +814,11 @@ export function WeedScoutTab({
             </div>
           );
         })()}
-        <MapContainer bounds={bounds ?? undefined} boundsOptions={{ padding: [40, 40] }} minZoom={1} maxZoom={22} preferCanvas
+        <MapContainer bounds={bounds ?? undefined} boundsOptions={{ padding: [40, 40] }} minZoom={1} maxZoom={MAP_MAX_ZOOM} preferCanvas
           zoomControl={false} attributionControl={false} style={{ height: "100%", width: "100%", background: "#0a0a0a" }}>
           <BasemapLayer id={basemap} />
           {tileUrl && bounds && (
-            <TileLayer key={tileUrl} url={tileUrl} maxNativeZoom={Math.min(20, maxNative)} maxZoom={22} tileSize={256} keepBuffer={4} bounds={bounds} noWrap zIndex={10} />
+            <TileLayer key={tileUrl} url={tileUrl} maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)} maxZoom={MAP_MAX_ZOOM} tileSize={256} keepBuffer={4} bounds={bounds} noWrap zIndex={10} />
           )}
           <FitBounds bounds={bounds} />
           {cursorCoordRef && cursorZoomRef && <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />}

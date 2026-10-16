@@ -23,12 +23,15 @@ Everything here is true of the current build. Do not assume otherwise from the U
 
 ## Constraints to design around
 
-### Images are downscaled to 2400 px
+### Images are uploaded at full resolution (since 2026-10-15)
 
-On a 20 MP sensor this discards roughly 70% of linear resolution before photogrammetry, roughly
-tripling ground sample distance. It is a deliberate upload-speed trade — and a genuine benefit on
-a slow connection — but it is currently invisible and not adjustable. It should become a quality
-setting the farmer chooses.
+Until 2026-10-15 every image over 1.5 MB was redrawn to a 2,400 px long edge before photogrammetry, which on a 20 MP sensor
+discarded roughly 70% of linear resolution and tripled the ground sample distance. Uploads now send the camera's own file
+(src/lib/imagePrep.ts ODM_UPLOAD_MAX_EDGE_PX), the commit asks ODM for a 1 cm orthophoto with a high-quality point
+cloud and a DSM (src/lib/odmOptions.ts), and tiles are baked to zoom 23 (ake-tiles MAX_Z_CAP, about 1.5 cm per pixel)
+instead of 20 (about 12 cm). The costs: uploads about five times larger and slower on a rural connection, longer processing
+on the node, and up to about sixty times more top-level tiles to bake and store per field. Scans processed before this
+keep their 2,400 px orthophoto; a rebake of their tiles cannot add detail the orthophoto does not have.
 
 ### NDVI needs 4+ bands
 

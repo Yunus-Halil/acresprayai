@@ -14,7 +14,9 @@ const json = (b: unknown, s = 200) =>
 
 const SIGNED_TTL = 60 * 60 * 6;
 const MIN_Z = 10;
-const MAX_Z_CAP = 20;
+// Zoom 23 is about 1.5 cm per pixel at mid latitudes. Below the cap TiTiler's maxzoom for the file
+// decides, so a 6 cm orthophoto still stops at zoom 21 and nothing is baked that cannot be shown.
+const MAX_Z_CAP = 23;
 const BATCH_PER_INVOCATION = 220; // tiles per HTTP call (keeps us well under 150s)
 const CONCURRENCY = 12;
 const TITILER = "https://titiler.xyz";

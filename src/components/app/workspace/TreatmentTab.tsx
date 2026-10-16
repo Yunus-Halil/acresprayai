@@ -13,6 +13,7 @@
 // that distinction is only meaningful if there is a rate here an operator
 // recognises as their own.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { MapContainer, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -482,7 +483,7 @@ export function TreatmentTab({
       template,
       { north: bb.maxLat, south: bb.minLat, east: bb.maxLng, west: bb.minLng },
       grid.cellSizeM,
-      Math.min(20, maxNative),
+      Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative),
     );
     if (!resolutionSufficient(cellPx)) {
       const msg =
@@ -700,7 +701,7 @@ export function TreatmentTab({
         <MapContainer
           bounds={bounds ?? undefined}
           boundsOptions={{ padding: [40, 40] }}
-          minZoom={1} maxZoom={22} preferCanvas
+          minZoom={1} maxZoom={MAP_MAX_ZOOM} preferCanvas
           zoomControl={false} attributionControl={false}
           style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
         >
@@ -708,7 +709,7 @@ export function TreatmentTab({
           {tileUrl && bounds && (
             <TileLayer
               key={tileUrl} url={tileUrl}
-              maxNativeZoom={Math.min(20, maxNative)} maxZoom={22}
+              maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)} maxZoom={MAP_MAX_ZOOM}
               tileSize={256} keepBuffer={4}
               bounds={bounds} noWrap zIndex={10}
             />

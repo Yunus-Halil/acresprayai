@@ -20,6 +20,7 @@
 // original lands first; an image counts as uploaded only when both copies have.
 import { supabase } from "@/integrations/supabase/client";
 import { prepareForODM } from "@/lib/imagePrep";
+import { ODM_PROCESSING_OPTIONS } from "@/lib/odmOptions";
 import { type FrameManifestEntry, frameStorageName, framesManifestPath, framesPrefix } from "@/lib/sourceFrames/manifest";
 import { storageKey } from "@/lib/storage";
 
@@ -445,7 +446,7 @@ export async function uploadScan(opts: {
   const cRes = await fetch(`${FN_BASE}/odm-submit`, {
     method: "POST",
     headers: { Authorization: await authHeader(), "Content-Type": "application/json", "x-action": "commit" },
-    body: JSON.stringify({ odm_uuid: odmUuid }),
+    body: JSON.stringify({ odm_uuid: odmUuid, options: ODM_PROCESSING_OPTIONS }),
   });
   const cJson = await cRes.json().catch(() => ({}));
   if (!cRes.ok) {

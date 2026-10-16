@@ -28,6 +28,7 @@
 // happening rather than spinning. Nothing here calls anything outside the
 // tile server and the operator's own archive.
 import { pointInAnyRing } from "../geo";
+import { ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { stitchTiles } from "../orthoRaster";
 import {
   MIN_BASELINE_TILES, canopyClosed, fieldBaseline, flagTiles, growRegions, sampleTiles, scoreTiles,
@@ -99,7 +100,7 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
     north: lattice.minLat + lattice.rows * lattice.dLat, south: lattice.minLat,
     east: lattice.minLng + lattice.cols * lattice.dLng, west: lattice.minLng,
   };
-  const { raster, missingTiles } = await stitchTiles(template, bbox, tileM, Math.min(20, maxNative));
+  const { raster, missingTiles } = await stitchTiles(template, bbox, tileM, Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative));
   check();
   const gsdM = rasterGsdM(raster);
   if (missingTiles) notes.push(`${missingTiles} imagery tile(s) failed to load in the base pass; ground under them is unmeasured.`);

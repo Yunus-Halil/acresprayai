@@ -1,6 +1,7 @@
 // Extracted from OrthomosaicViewer.tsx. Mechanical move only - no
 // behaviour changes. See docs/features/workspace.md.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -971,7 +972,7 @@ export function PlannerTab({
         <MapContainer
           bounds={bounds ?? undefined}
           boundsOptions={{ padding: [40, 40] }}
-          minZoom={1} maxZoom={22} preferCanvas
+          minZoom={1} maxZoom={MAP_MAX_ZOOM} preferCanvas
           zoomControl={false} attributionControl={false}
           style={{ height: "100%", width: "100%", background: "#0a0a0a" }}
         >
@@ -979,7 +980,7 @@ export function PlannerTab({
           {tileUrl && bounds && (
             <TileLayer
               key={tileUrl} url={tileUrl}
-              maxNativeZoom={Math.min(20, maxNative)} maxZoom={22}
+              maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)} maxZoom={MAP_MAX_ZOOM}
               tileSize={256} keepBuffer={4}
               bounds={bounds} noWrap zIndex={10}
             />

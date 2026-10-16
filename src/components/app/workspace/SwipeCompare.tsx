@@ -16,6 +16,7 @@
 // is dimmed: change numbers exist only where both flights actually looked,
 // and the dimming shows the person exactly where that is.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { areaValueAc, fmtAreaAc } from "@/lib/units";
 import { Polygon, Rectangle, TileLayer, useMap } from "react-leaflet";
@@ -269,8 +270,8 @@ export function ComparePanes({
           key={`cmp-a-${aUrl}`}
           url={aUrl}
           pane={PANES.aTiles.name}
-          maxNativeZoom={Math.min(20, aMeta?.maxZoom ?? 20)}
-          maxZoom={22}
+          maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, aMeta?.maxZoom ?? 20)}
+          maxZoom={MAP_MAX_ZOOM}
           tileSize={256}
           keepBuffer={4}
           updateWhenZooming={false}
@@ -282,8 +283,8 @@ export function ComparePanes({
           key={`cmp-b-${bUrl}`}
           url={bUrl}
           pane={PANES.bTiles.name}
-          maxNativeZoom={Math.min(20, bMeta?.maxZoom ?? 20)}
-          maxZoom={22}
+          maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, bMeta?.maxZoom ?? 20)}
+          maxZoom={MAP_MAX_ZOOM}
           tileSize={256}
           keepBuffer={4}
           updateWhenZooming={false}
