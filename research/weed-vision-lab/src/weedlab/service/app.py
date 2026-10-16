@@ -433,12 +433,22 @@ def main(argv=None) -> int:
     ap.add_argument("--ckpt", default=DEFAULT_CKPT, help="ERFNet checkpoint")
     ap.add_argument("--rfdetr-ckpt", default=DEFAULT_RFDETR_CKPT, help="RF-DETR Seg-Large checkpoint (Experiment 7); '' disables the algorithm")
     ap.add_argument("--rfdetr-device", default=None, help="cuda or cpu; default: cuda when available")
-    ap.add_argument("--threads", type=int, default=None)
+    ap.add_argument("--threads", type=int, default=None, help="CPU threads for torch; default: a third of the machine's, so the desktop stays usable while a scan runs")
     ap.add_argument("--no-preload", action="store_true")
+    ap.add_argument("--normal-priority", action="store_true", help="keep normal process priority (default: below normal on Windows)")
     args = ap.parse_args(argv)
     if args.host not in ("127.0.0.1", "localhost", "::1"):
         print("refusing to bind a non-loopback address: this service is research-only and must not be exposed", flush=True)
         return 2
+    # A model service beside a person's work: a third of the cores for CPU-side work (ERFNet, the assignment and mask
+    # steps of RF-DETR) and below-normal priority, so the browser and the desktop keep their share of the machine.
+    if args.threads is None:
+        args.threads = max(2, (os.cpu_count() or 4) // 3)
+    if os.name == "nt" and not args.normal_priority:
+        import ctypes
+
+        BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+        ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS)
     app = create_app(args.ckpt, args.threads, preload=not args.no_preload, rfdetr_ckpt=args.rfdetr_ckpt or None, rfdetr_device=args.rfdetr_device)
     st = {k: (h.status() if h is not None else None) for k, h in app.holders.items()}  # type: ignore[attr-defined]
     print(json.dumps({"service": SERVICE_VERSION, "listening": f"http://{args.host}:{args.port}/weed-vision/health", "models": st}, indent=1), flush=True)
