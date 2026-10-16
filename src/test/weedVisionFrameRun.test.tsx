@@ -255,7 +255,7 @@ describe("addFrameDetections (the closer look's single photo)", () => {
     const before = getFrameRun("scan-al").plants[0].centre!;
     expect(unalignedFrames("scan-al")).toHaveLength(2);
     // An aligner that measures 0.5 m east for every photo.
-    const aligner = vi.fn(async () => ({ t: [0.5, 0] as [number, number], k: 0, nadir: [0, 0] as [number, number], shiftM: 0.5, patches: [], usedPatches: 5, rmsM: 0.01, stepM: 0.05 }));
+    const aligner = vi.fn(async () => ({ t: [0.5, 0] as [number, number], A: [[0, 0], [0, 0]] as [[number, number], [number, number]], q: [0, 0] as [number, number], k: 0, nadir: [0, 0] as [number, number], shiftM: 0.5, patches: [], usedPatches: 5, rmsM: 0.01, stepM: 0.05 }));
     setFrameRunAligner("scan-al", aligner);
     expect(getFrameRun("scan-al").alignAvailable).toBe(true);
     alignRun("scan-al", { userId: "u", sources, deps });
@@ -272,6 +272,32 @@ describe("addFrameDetections (the closer look's single photo)", () => {
     alignRun("scan-al", { userId: "u", sources, deps }); // nothing left to do
     await waitFor(() => expect(getFrameRun("scan-al").running).toBe(false));
     expect(aligner).toHaveBeenCalledTimes(2);
+  });
+
+  it("aligns outlines placed by the older shift-and-scale model again, from their own pixels, not on top of the old shift", async () => {
+    const sources = sourcesWithFrames(2);
+    const deps = fakeDeps(sources);
+    startFrameRun("scan-v1", { userId: "u", sources, params: PARAMS, algorithmLabel: "m", modelSha: "abc", deps });
+    await waitFor(() => expect(getFrameRun("scan-v1").running).toBe(false));
+    const posed = getFrameRun("scan-v1").plants[0].centre!;
+    // What an older run saved: every outline moved 0.3 m north and marked aligned, with no model version.
+    const north = 0.3 / 111_320;
+    for (const [k, run] of deps.saved) {
+      deps.saved.set(k, { ...run, detections: run.detections.map(d => ({ ...d, centre: d.centre && { lat: d.centre.lat + north, lng: d.centre.lng }, ring: d.ring && d.ring.map(q => ({ lat: q.lat + north, lng: q.lng })), alignment: { shiftM: 0.3, k: 0, patches: 5, rmsM: 0.01 } })) });
+    }
+    resetFrameRunStore();
+    expect(await restoreFrameRun("scan-v1", { sources, params: PARAMS, modelSha: "abc", algorithmLabel: "m", deps })).toBe(true);
+    expect(unalignedFrames("scan-v1")).toHaveLength(2); // older model: counts as not aligned
+    const aligner = vi.fn(async () => ({ t: [0.5, 0] as [number, number], A: [[0, 0], [0, 0]] as [[number, number], [number, number]], q: [0, 0] as [number, number], k: 0, nadir: [0, 0] as [number, number], shiftM: 0.5, patches: [], usedPatches: 9, rmsM: 0.01, stepM: 0.05, nativeLongEdge: NATIVE_W }));
+    setFrameRunAligner("scan-v1", aligner);
+    alignRun("scan-v1", { userId: "u", sources, deps });
+    await waitFor(() => expect(getFrameRun("scan-v1").running).toBe(false));
+    const after = getFrameRun("scan-v1").plants[0].centre!;
+    const eastM = (after.lng - posed.lng) * 111_320 * Math.cos((posed.lat * Math.PI) / 180);
+    const northM = (after.lat - posed.lat) * 111_320;
+    expect(eastM).toBeCloseTo(0.5, 2);
+    expect(Math.abs(northM)).toBeLessThan(0.005); // the old 0.3 m is gone, not added to
+    expect(unalignedFrames("scan-v1")).toHaveLength(0);
   });
 
   it("hides plants that land outside the field boundary and counts them, before or after the boundary is known", async () => {

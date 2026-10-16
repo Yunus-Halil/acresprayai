@@ -47,7 +47,7 @@ export type FrameDetection = {
   /** Against the photo's planting pattern (rowFilter.ts); absent on rows saved before it existed. */
   rowStatus?: RowStatus;
   /** Set once the outline was moved onto the orthomosaic (register.ts); absent = placed by the camera pose alone. */
-  alignment?: { shiftM: number; k: number; patches: number; rmsM: number };
+  alignment?: { v?: number; shiftM: number; k: number; patches: number; rmsM: number };
 };
 
 /** One plant on the ground after the photographs are merged: the best view, with the others listed. */
@@ -106,6 +106,33 @@ function groundOne(input: GroundInput, inst: WeedInstance, klass: InstanceClass,
     flags: inst.flags ?? [], tiny: !!inst.tiny, touchesBorder: !!inst.touches_border,
     fusedFromTiles: inst.fused_from_tiles ?? 1,
     rowStatus: klass === "weed" ? rowStatusOf(input.rowContext ?? null, inst.centroid_px[0], inst.centroid_px[1]) : undefined,
+  };
+}
+
+/**
+ * A detection carried to the ground again from its own pixels, as the camera
+ * pose and the ground plane place it, with any alignment taken off: what an
+ * outline aligned under an older model is aligned again from. `nativeScale`
+ * is the original photo's pixels per posed-frame pixel.
+ */
+export function regroundDetection(set: SourceFrameSet, shot: Shot, groundAltM: number, d: FrameDetection, nativeScale: number): FrameDetection {
+  const toGround = (x: number, y: number) => pixelToGround(set, shot, x / nativeScale, y / nativeScale, groundAltM);
+  const ringPts = d.nativePolygon.map(([x, y]) => toGround(x, y));
+  const ring = d.nativePolygon.length >= 3 && ringPts.every((p): p is LatLngAlt => !!p) ? ringPts.map(strip) : null;
+  const centreG = toGround(d.nativeCentroid[0], d.nativeCentroid[1]);
+  let gsdM: number | null = null, viewAngleDeg: number | null = null;
+  if (centreG) {
+    const pr = projectToFrame(set, shot, centreG);
+    if (pr) { gsdM = pr.gsdM / nativeScale; viewAngleDeg = pr.viewAngleDeg; }
+  }
+  const { alignment: _old, ...rest } = d;
+  void _old;
+  return {
+    ...rest,
+    ring, centre: centreG ? strip(centreG) : null,
+    gsdM, areaM2: gsdM != null ? d.areaPx * gsdM * gsdM : null, diameterM: gsdM != null ? d.equivalentDiameterPx * gsdM : null,
+    viewAngleDeg,
+    status: centreG ? "ok" : "off_ground",
   };
 }
 

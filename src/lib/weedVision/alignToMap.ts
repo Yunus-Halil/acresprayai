@@ -24,11 +24,12 @@ const mercatorPx = (lat: number, lng: number, z: number): [number, number] => {
 };
 const metresPerPixel = (lat: number, z: number) => (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** z;
 
-async function decode(blob: Blob, maxEdge?: number): Promise<{ width: number; height: number; data: Uint8ClampedArray } | null> {
+async function decode(blob: Blob, maxEdge?: number): Promise<{ width: number; height: number; data: Uint8ClampedArray; nativeLongEdge: number } | null> {
   if (typeof createImageBitmap === "undefined") return null;
   const probe = await createImageBitmap(blob, { imageOrientation: "from-image" }).catch(() => null);
   if (!probe) return null;
   let bmp = probe;
+  const nativeLongEdge = Math.max(probe.width, probe.height);
   if (maxEdge && Math.max(probe.width, probe.height) > maxEdge) {
     const s = maxEdge / Math.max(probe.width, probe.height);
     const resized = await createImageBitmap(probe, { resizeWidth: Math.round(probe.width * s), resizeHeight: Math.round(probe.height * s), resizeQuality: "medium" }).catch(() => null);
@@ -40,7 +41,7 @@ async function decode(blob: Blob, maxEdge?: number): Promise<{ width: number; he
   const ctx = (canvas as HTMLCanvasElement).getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | null;
   if (!ctx) { bmp.close?.(); return null; }
   ctx.drawImage(bmp, 0, 0);
-  const out = { width: bmp.width, height: bmp.height, data: ctx.getImageData(0, 0, bmp.width, bmp.height).data };
+  const out = { width: bmp.width, height: bmp.height, data: ctx.getImageData(0, 0, bmp.width, bmp.height).data, nativeLongEdge };
   bmp.close?.();
   return out;
 }
@@ -122,15 +123,17 @@ export async function alignPhotoToMap(input: AlignToMapInput): Promise<FrameAlig
     const img = loaded.get(`${tx}:${ty}`);
     if (!img) return null;
     // Within a tile only; samples on the last pixel row or column of a tile are skipped (a handful per patch).
-    return bilinear(img, X - tx * TILE, Y - ty * TILE);
+    // Pixel i covers [i, i + 1): a position x is at index x - 0.5.
+    return bilinear(img, X - tx * TILE - 0.5, Y - ty * TILE - 0.5);
   };
   const photo = await decode(input.blob, ALIGN_PHOTO_EDGE);
   if (!photo) return null;
   const sx = photo.width / cam.width, sy = photo.height / cam.height;
-  const photoAt: PhotoSampler = (u, v) => bilinear(photo, u * sx, v * sy);
+  const photoAt: PhotoSampler = (u, v) => bilinear(photo, u * sx - 0.5, v * sy - 0.5);
   // Let the page breathe before the arithmetic.
   await new Promise(r => setTimeout(r, 0));
-  return alignPhoto({ set, shot, altM, photoAt, mapAt, stepM });
+  const a = alignPhoto({ set, shot, altM, photoAt, mapAt, stepM });
+  return a ? { ...a, nativeLongEdge: photo.nativeLongEdge } : null;
 }
 
 /** For tests and after a rebake: forget the decoded tiles. */

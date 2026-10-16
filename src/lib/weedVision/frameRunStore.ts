@@ -14,12 +14,12 @@ import { type ScanSources, downloadFrame } from "../sourceFrames/scan";
 import type { Shot, SourceFrameSet } from "../sourceFrames/odm";
 import type { FrameManifestEntry } from "../sourceFrames/manifest";
 import { type DetectOptions, type Outcome, type Progress, type WeedVisionResult, detectWeeds } from "./client";
-import { type FrameDetection, type FrameRunParams, type GroundPlant, countByClass, countByRow, frameRunKey, groundFrameResult, mergeAcrossFrames } from "./frames";
+import { type FrameDetection, type FrameRunParams, type GroundPlant, countByClass, countByRow, frameRunKey, groundFrameResult, mergeAcrossFrames, regroundDetection } from "./frames";
 import { type SavedFrameRun, deleteFrameRuns, loadFrameRuns, saveFrameRun } from "./frameRunCache";
 import { type HotspotParams, type HotspotResult, type HotspotReview, DEFAULT_HOTSPOT_PARAMS, buildHotspots } from "./hotspots";
 import { type HotspotReviewRow, deleteHotspotReview, loadHotspotReviews, saveHotspotReview } from "./hotspotReviewCache";
 import { type RowContext, rowStatusOf } from "./rowFilter";
-import { type FrameAlignment, applyAlignment } from "./register";
+import { type FrameAlignment, applyAlignment, isAligned } from "./register";
 
 export type ViewMode = "priority" | "heatmap" | "detections";
 
@@ -103,11 +103,18 @@ export function setFrameRunAligner(taskId: string, aligner: FrameAligner | null)
 /** Align one photo's detections to the map when an aligner is registered; the detections and what to record. */
 async function alignFrame(taskId: string, set: SourceFrameSet, altM: number, blob: Blob, shot: Shot, dets: FrameDetection[]): Promise<{ dets: FrameDetection[]; aligned: FrameSummary["aligned"] | undefined }> {
   const aligner = aligners.get(taskId);
-  if (!aligner || !dets.length || dets.every(d => d.alignment)) return { dets, aligned: undefined };
+  if (!aligner || !dets.length || dets.every(isAligned)) return { dets, aligned: undefined };
   let a: FrameAlignment | null = null;
   try { a = await aligner(blob, shot); } catch { a = null; }
+  // Unmatched: outlines aligned under an older model keep that placement, the rest stay where the pose put them.
   if (!a) return { dets, aligned: "unmatched" };
-  return { dets: applyAlignment(set, altM, a, dets), aligned: { shiftM: a.shiftM, patches: a.usedPatches, rmsM: a.rmsM } };
+  // Outlines aligned under an older model go back to where the pose puts them first, from their own pixels.
+  const cam = set.cameras[shot.cameraKey];
+  const stale = dets.some(d => d.alignment && !isAligned(d));
+  if (stale && !(a.nativeLongEdge && cam)) return { dets, aligned: "unmatched" };
+  const nativeScale = stale ? a.nativeLongEdge! / Math.max(cam.width, cam.height) : 1;
+  const base = stale ? dets.map(d => (d.alignment && !isAligned(d) ? regroundDetection(set, shot, altM, d, nativeScale) : d)) : dets;
+  return { dets: applyAlignment(set, altM, a, base), aligned: { shiftM: a.shiftM, patches: a.usedPatches, rmsM: a.rmsM } };
 }
 /** The field boundary per scan: plants whose centre lands outside it are not shown (a frame's edge projected onto the ground plane lands far outside the field). */
 const boundaries = new Map<string, LatLng2[][]>();
@@ -450,7 +457,7 @@ export function retagRows(taskId: string, input: { userId: string | null; source
 
 /** Photos whose outlines have not been aligned to the map yet. */
 export function unalignedFrames(taskId: string): string[] {
-  return [...rawOf(taskId).entries()].filter(([, dets]) => dets.length > 0 && dets.some(d => !d.alignment)).map(([name]) => name);
+  return [...rawOf(taskId).entries()].filter(([, dets]) => dets.length > 0 && dets.some(d => !isAligned(d))).map(([name]) => name);
 }
 
 /**

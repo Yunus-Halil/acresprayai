@@ -18,6 +18,8 @@ import { modelShaFor } from "./ModelDetectionsPanel";
 
 const SIMPLE_PARAMS: Omit<FrameRunParams, "algorithm"> = { threshold: 0.5, tile: 1024, overlap: 256, scale: 1 };
 const PREFERRED_ALGORITHM = "rfdetr_seg_large";
+/** Scans whose saved run was sent for alignment in this visit: an unmatched photo is not retried on every render. */
+const alignTried = new Set<string>();
 const PHASE_LABEL = { rows: "Reading the crop rows, photo", model: "Looking for weeds, photo", align: "Lining up with the map, photo" } as const;
 
 export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParams, onShowOptions, fetchImpl }: {
@@ -67,7 +69,7 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
       if (!on || !latest?.params) return;
       const restored = await restoreFrameRun(taskId, { sources, params: latest.params, modelSha, algorithmLabel: info.label });
       // A run saved before outlines were aligned to the map gets aligned now, once.
-      if (on && restored && unalignedFrames(taskId).length) alignRun(taskId, { userId, sources });
+      if (on && restored && unalignedFrames(taskId).length && !alignTried.has(taskId)) { alignTried.add(taskId); alignRun(taskId, { userId, sources }); }
     })();
     return () => { on = false; };
   }, [taskId, sources, info, modelSha]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -79,6 +81,8 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
   };
 
   const rows = countByRow(run.plants);
+  const photosIn = Object.keys(run.frames).length;
+  const lined = run.running ? null : photosIn - unalignedFrames(taskId).length;
   const between = rows.offRow + rows.noRows;
   const p = run.progress;
   const pct = p && p.framesTotal ? Math.round((100 * p.framesDone) / p.framesTotal) : 0;
@@ -122,6 +126,11 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
           <div className="text-[22px] font-semibold leading-none" style={{ color: PLANT_COLOUR.weed }}>{between.toLocaleString()}</div>
           <div className="text-[12px] text-neutral-300">weed{between === 1 ? "" : "s"} between the rows</div>
           {rows.onRow > 0 && <div className="text-[11px] text-neutral-500">{rows.onRow.toLocaleString()} on the crop rows left out</div>}
+          {lined != null && photosIn > 0 && (
+            <div className={`text-[11px] ${lined < photosIn ? "text-amber-400" : "text-neutral-500"}`} data-testid="simple-aligned">
+              {lined === photosIn ? `Lined up with the map in all ${photosIn} photos` : `Lined up with the map in ${lined} of ${photosIn} photos; the rest are placed by the camera position alone and can sit up to a metre off`}
+            </div>
+          )}
           <div className="text-[11px] text-neutral-500 pt-1">Zoom in on the map to see each weed's outline; click one for its details.</div>
         </div>
       )}

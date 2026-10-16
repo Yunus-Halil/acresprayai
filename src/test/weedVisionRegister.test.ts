@@ -82,6 +82,41 @@ describe("alignPhoto", () => {
     }
   });
 
+  it("recovers a heading error and a sloping field: outlines land within 4 cm across the photo, from over half a metre", () => {
+    // The truth: the photo turned 0.5 degrees about nadir, and the ground under it a plane sloping 4 % up toward
+    // the north-east, through the assumed height at nadir. A point the pose places on the flat plane at p really
+    // sits where the ray meets the sloping ground: pulled toward nadir by h(p) / H, H the camera's height.
+    const nadir = enu(shot.centre.lat, shot.centre.lng);
+    const H = shot.centre.altM - ALT;
+    const th = (0.5 * Math.PI) / 180, gE = 0.04 * Math.SQRT1_2, gN = 0.04 * Math.SQRT1_2;
+    const truthOf = (e: number, n: number): [number, number] => {
+      let re = e - nadir[0], rn = n - nadir[1];
+      [re, rn] = [re * Math.cos(th) - rn * Math.sin(th), re * Math.sin(th) + rn * Math.cos(th)];
+      // Solve r' = r (1 - h(r') / H) for the ground point, h(r') = g . r'.
+      let te = re, tn = rn;
+      for (let i = 0; i < 20; i++) { const f = 1 - (gE * te + gN * tn) / H; te = re * f; tn = rn * f; }
+      return [nadir[0] + te, nadir[1] + tn];
+    };
+    const photoAt = (u: number, v: number): Rgb => { const g = pixelToGround(set, shot, u, v, ALT); if (!g) return null; const [e, n] = enu(g.lat, g.lng); const [te, tn] = truthOf(e, n); return colour(field(te, tn)); };
+    const a = alignPhoto({ set, shot, altM: ALT, photoAt, mapAt, stepM: 0.05 })!;
+    expect(a).not.toBeNull();
+    expect(a.usedPatches).toBeGreaterThanOrEqual(6);
+    let worstBefore = 0, worstAfter = 0;
+    for (const [fu, fv] of [[0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8], [0.5, 0.5], [0.35, 0.65]]) {
+      const est = pixelToGround(set, shot, fu * cam.width, fv * cam.height, ALT)!;
+      const [ee, en] = enu(est.lat, est.lng);
+      const [te, tn] = truthOf(ee, en);
+      const moved = alignPoint(set, ALT, a, est);
+      const [me, mn] = enu(moved.lat, moved.lng);
+      worstBefore = Math.max(worstBefore, Math.hypot(ee - te, en - tn));
+      worstAfter = Math.max(worstAfter, Math.hypot(me - te, mn - tn));
+    }
+    // What is left is the slope's second-order push, about r (h / H)^2: a few centimetres at this oblique photo's far corner.
+    expect(worstAfter).toBeLessThan(0.04);
+    expect(worstBefore).toBeGreaterThan(0.5); // the error was real
+    console.log(`heading + slope: worst ${worstBefore.toFixed(3)} m before, ${worstAfter.toFixed(3)} m after`);
+  });
+
   it("says nothing when the photo has no texture to match", () => {
     const a = alignPhoto({ set, shot, altM: ALT, photoAt: () => [120, 100, 80], mapAt, stepM: 0.05 });
     expect(a).toBeNull();
@@ -89,12 +124,26 @@ describe("alignPhoto", () => {
 });
 
 describe("fitAlignment and applyAlignment", () => {
+  it("drops a spot that locked onto the neighbouring row and fits the rest exactly", () => {
+    const nadir: [number, number] = [0, 0];
+    const t: [number, number] = [0.2, -0.1], A = [[0.004, -0.01], [0.01, 0.004]];
+    const spots = [[0, 0], [-10, -7], [0, -7], [10, -7], [-10, 0], [10, 0], [-10, 7], [0, 7], [10, 7]].map(([e, n]) => ({ centre: [e, n] as [number, number], shift: [t[0] + A[0][0] * e + A[0][1] * n, t[1] + A[1][0] * e + A[1][1] * n] as [number, number], peak: 0.3 }));
+    spots[3].shift = [spots[3].shift[0] + 0.76, spots[3].shift[1]]; // one row over
+    const f = fitAlignment(spots, nadir)!;
+    expect(f.used).toHaveLength(8);
+    expect(f.used).not.toContain(spots[3]);
+    expect(f.t[0]).toBeCloseTo(0.2, 4);
+    expect(f.A[1][0]).toBeCloseTo(0.01, 4);
+    expect(f.rmsM).toBeLessThan(1e-6);
+  });
+
+
   it("fits translation alone below three spots, and moves a detection once", () => {
     const f = fitAlignment([{ centre: [10, 10], shift: [0.3, 0.1], peak: 0.5 }], [0, 0])!;
     expect(f.t).toEqual([0.3, 0.1]);
     expect(f.k).toBe(0);
     const det = { id: "a", klass: "weed", ring: [{ ...CENTRE }, { lat: CENTRE.lat + 1e-5, lng: CENTRE.lng }, { lat: CENTRE.lat, lng: CENTRE.lng + 1e-5 }], centre: { ...CENTRE }, gsdM: 0.01, areaM2: 0.04, diameterM: 0.2 } as unknown as FrameDetection;
-    const a = { t: [0.3, 0.1] as [number, number], k: 0, nadir: [0, 0] as [number, number], shiftM: 0.32, patches: [], usedPatches: 1, rmsM: 0, stepM: 0.05 };
+    const a = { t: [0.3, 0.1] as [number, number], A: [[0, 0], [0, 0]] as [[number, number], [number, number]], q: [0, 0] as [number, number], k: 0, nadir: [0, 0] as [number, number], shiftM: 0.32, patches: [], usedPatches: 1, rmsM: 0, stepM: 0.05 };
     const [moved] = applyAlignment(set, ALT, a, [det]);
     const [e0, n0] = enu(CENTRE.lat, CENTRE.lng), [e1, n1] = enu(moved.centre!.lat, moved.centre!.lng);
     expect(e1 - e0).toBeCloseTo(0.3, 3);
