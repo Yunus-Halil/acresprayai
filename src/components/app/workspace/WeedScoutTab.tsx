@@ -63,6 +63,7 @@ import { OrthoTileLayer } from "./OrthoTileLayer";
 import { addDetections, clearDetections, setDetectionsVisible, useDetectionLayer } from "@/lib/sourceFrames/detectionStore";
 import { ModelDetectionLayer, PLANT_COLOUR } from "../weedVision/ModelDetectionLayer";
 import { ModelDetectionsPanel } from "../weedVision/ModelDetectionsPanel";
+import { SimpleWeedFinder } from "../weedVision/SimpleWeedFinder";
 import { HeatmapLayer, HotspotFocus, HotspotLayer, REVIEW_COLOUR } from "../weedVision/HotspotLayer";
 import { HotspotPanel } from "../weedVision/HotspotPanel";
 import { type GroundPlant, countByClass, countByRow } from "@/lib/weedVision/frames";
@@ -89,6 +90,7 @@ import type { BoundaryRing } from "./types";
 const PARAMS_KEY = storageKey("weedScout", "params");
 /** The map's view mode, kept like the other display settings. */
 const VIEW_MODE_KEY = storageKey("weedScout", "viewMode");
+const SIMPLE_KEY = storageKey("weedScout", "simple");
 function loadViewMode(): ViewMode {
   try { return readViewMode(localStorage.getItem(VIEW_MODE_KEY)); } catch { return "clean"; }
 }
@@ -364,6 +366,9 @@ export function WeedScoutTab({
   const detectionLayer = useDetectionLayer(taskId);
   // A model's plants from the scan's photographs (lib/weedVision): drawn, and marked on the field only by the operator's click.
   const frameRun = useFrameRun(taskId);
+  /** Simple mode, the default: one button that finds the weeds between the rows, and the map shows only those. */
+  const [simple, setSimpleState] = useState<boolean>(() => { try { return localStorage.getItem(SIMPLE_KEY) !== "0"; } catch { return true; } });
+  const setSimple = useCallback((on: boolean) => { setSimpleState(on); try { localStorage.setItem(SIMPLE_KEY, on ? "1" : "0"); } catch { /* private mode */ } }, []);
   const markPlant = useCallback(async (p: GroundPlant): Promise<string | null> => {
     if (!p.ring || p.ring.length < 3) return null;
     const diameter = p.diameterM != null ? `${(p.diameterM * 100).toFixed(0)} cm across` : "size unknown";
@@ -833,7 +838,7 @@ export function WeedScoutTab({
           )}
           <FitBounds bounds={bounds} />
           {cursorCoordRef && cursorZoomRef && <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} />}
-          {showPhotos && sources?.set && (() => {
+          {!simple && showPhotos && sources?.set && (() => {
             const spot = sourcesFor(selected);
             const chosen = new Set(spot?.chosen.map(v => v.filename) ?? []);
             const from = selected ? [selected.centroid.lat, selected.centroid.lng] as [number, number] : null;
@@ -854,13 +859,13 @@ export function WeedScoutTab({
           {rings.map((r, i) => (
             <Polygon key={i} positions={r.map(p => [p.lat, p.lng] as [number, number])} pathOptions={{ color: "#4CAF50", weight: 1.5, fill: false, dashArray: "4 4" }} />
           ))}
-          <PatternLayer pattern={result?.pattern ?? null} visible={showPattern} />
-          <VegetationLayer vegetation={result?.vegetation ?? null} visible={showVegetation} units={units} outlines={measuredOutlines} mode={viewMode} refused={refusedSpots} />
+          <PatternLayer pattern={result?.pattern ?? null} visible={!simple && showPattern} />
+          <VegetationLayer vegetation={result?.vegetation ?? null} visible={!simple && showVegetation} units={units} outlines={measuredOutlines} mode={viewMode} refused={refusedSpots} />
           <ZoomWatcher onZoom={setMapZoom} />
           {/* The pass at work (developer tools): every planned window as a box, the
               one being read in white, those with rows in yellow, those without in
               grey, and the rows and plants found so far drawn as they land. */}
-          {dev.developerTools && watchPass && live && (() => {
+          {!simple && dev.developerTools && watchPass && live && (() => {
             const read = new Map(live.pattern.windows.map(w => [w.win.id, w.blocks.length]));
             return (
               <>
@@ -877,15 +882,19 @@ export function WeedScoutTab({
               </>
             );
           })()}
-          <DetectionOverlay taskId={taskId} />
-          <HeatmapLayer taskId={taskId} />
-          <HotspotLayer taskId={taskId} />
-          <HotspotFocus taskId={taskId} fieldBounds={bounds} />
+          {!simple && (
+            <>
+              <DetectionOverlay taskId={taskId} />
+              <HeatmapLayer taskId={taskId} />
+              <HotspotLayer taskId={taskId} />
+              <HotspotFocus taskId={taskId} fieldBounds={bounds} />
+            </>
+          )}
           <ModelDetectionLayer taskId={taskId} onMark={markPlant} showLabels={showLabels && labelsReadable} />
           {/* Every spot carries its own decision and its own review panel.
               The outline is the verdict, the fill is what it reads as, and the
               popup is where the operator disagrees with either. */}
-          {candidates.map((c, i) => {
+          {!simple && candidates.map((c, i) => {
             const v = verdictOf(c);
             const gone = isDismissal(v);
             const active = c.id === selectedId;
@@ -972,7 +981,12 @@ export function WeedScoutTab({
           spotMeasurement={closerLook ? (candidates.find(c => c.id === closerLook.id)?.measurement ?? null) : null}
           passParams={params} readStore={readStore} minWeedM={params.photoMinWeedM} />
 
-        <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1">
+        {simple && frameRun.plants.length > 0 && (
+          <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[11px] px-2.5 py-2 rounded-sm border border-[#222] flex items-center gap-2 text-neutral-300" data-testid="simple-legend">
+            <span className="inline-block w-3 h-3 rounded-sm" style={{ background: PLANT_COLOUR.weed }} /> Weeds between the rows
+          </div>
+        )}
+        {!simple && <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1">
           <div className="flex items-center gap-2 text-neutral-300"><FlaskConical className="h-3 w-3 text-[#4CAF50]" /> Click a spot to change it</div>
           {/* The outline is the decision. Everything is already decided. */}
           <div className="flex items-center gap-2 text-neutral-400"><span className="inline-block w-3 h-3 rounded-full border-2" style={{ borderColor: VERDICT_COLOUR.weed }} /> Kept as a weed</div>
@@ -1050,12 +1064,16 @@ export function WeedScoutTab({
               </>
             );
           })()}
-        </div>
+        </div>}
       </div>
 
       <aside className="w-[400px] shrink-0 border-l border-[#1f1f1f] flex flex-col min-h-0" style={{ background: "#121212" }}>
+        {simple ? (
+          <SimpleWeedFinder taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} onShowOptions={() => setSimple(false)} />
+        ) : (<>
         {/* Header and run */}
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
+          <button type="button" onClick={() => setSimple(true)} className="text-[11px] underline text-neutral-500 hover:text-neutral-300" data-testid="back-to-simple">Back to the simple view</button>
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold inline-flex items-center gap-2"><FlaskConical className="h-4 w-4 text-[#4CAF50]" /> Weed Scout</h2>
             <div className="flex items-center gap-2">
@@ -1294,6 +1312,7 @@ export function WeedScoutTab({
             </>
           )}
         </div>
+        </>)}
       </aside>
     </div>
   );

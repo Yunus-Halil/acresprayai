@@ -4,8 +4,24 @@
 // the closer look take the saved read. Browser only (decodePhoto).
 import { decodePhoto } from "../photoScout/decode";
 import { analysePhotoOffThread } from "../photoScout/runPattern";
-import type { PhotoReadStore, photoPassParams } from "../weedScout/photoPass";
+import { type Shot, pixelToGround, projectToFrame } from "../sourceFrames/odm";
+import type { ScanSources } from "../sourceFrames/scan";
+import { type PhotoReadStore, photoPassParams } from "../weedScout/photoPass";
+import type { ScoutParams } from "../weedScout/types";
 import { type RowContext, rowContextFromPattern } from "./rowFilter";
+
+/** The row reader a model run uses: the saved read of a photo, else read now with the scout's settings and the frame's ground sampling. */
+export function makeRowContextFor(sources: ScanSources | null, store: PhotoReadStore | null, passParams: Pick<ScoutParams, "rowSpacingAuto" | "rowSpacingM" | "minBlobCm2"> | null) {
+  return (filename: string, blob: Blob, shot: Shot, onProgress: (f: number) => void, signal: AbortSignal): Promise<RowContext | null> | null => {
+    const set = sources?.set;
+    if (!set || sources.groundAltM == null) return null;
+    const cam = set.cameras[shot.cameraKey];
+    const centre = pixelToGround(set, shot, cam.width / 2, cam.height / 2, sources.groundAltM);
+    const pr = centre ? projectToFrame(set, shot, centre) : null;
+    if (!pr) return null;
+    return rowContextForPhoto({ blob, filename, frameGsdM: pr.gsdM, frameWidth: cam.width, passParams: photoPassParams(passParams ?? { rowSpacingAuto: true, rowSpacingM: 0.762, minBlobCm2: 1 }), store, onProgress, signal });
+  };
+}
 
 export type PhotoRowsInput = {
   blob: Blob;

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: () => { throw new Error("not in this test"); } } }));
 
 import { ModelDetectionsPanel } from "@/components/app/weedVision/ModelDetectionsPanel";
+import { SimpleWeedFinder } from "@/components/app/weedVision/SimpleWeedFinder";
 import type { FrameIndex } from "@/lib/sourceFrames/manifest";
 import { groundAltitudeFromOdm, parseOdmOutputs, projectToFrame } from "@/lib/sourceFrames/odm";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
@@ -290,5 +291,43 @@ describe("addFrameDetections (the closer look's single photo)", () => {
     expect(getFrameRun("scan-b").outside).toBe(0);
     setFrameRunBoundary("scan-b", null);
     expect(getFrameRun("scan-b").plants).toHaveLength(1);
+  });
+});
+
+describe("SimpleWeedFinder", () => {
+  const ok = () => vi.fn(async (url: string) => url.endsWith("/health") ? jsonResponse(HEALTH) : jsonResponse({ selected: "erfnet_erode1", algorithms: ALGS }));
+
+  it("is one button, and sets the map to the weeds between the rows only", async () => {
+    const sources = sourcesWithFrames(2);
+    render(<SimpleWeedFinder taskId="scan-s1" userId="u" sources={sources} readStore={null} passParams={null} onShowOptions={() => {}} fetchImpl={ok() as unknown as typeof fetch} />);
+    const btn = (await screen.findByTestId("find-weeds")) as HTMLButtonElement;
+    await waitFor(() => expect(btn.disabled).toBe(false));
+    expect(btn).toHaveTextContent("Find weeds");
+    expect(screen.queryByTestId("model-select")).toBeNull();
+    expect(screen.queryByTestId("threshold")).toBeNull();
+    const s = getFrameRun("scan-s1");
+    expect(s.viewMode).toBe("detections");
+    expect([s.showWeeds, s.showCrops, s.showOnRow]).toEqual([true, false, false]);
+  });
+
+  it("says plainly when the model isn't running, and keeps the options one click away", async () => {
+    const down = vi.fn(async () => { throw new Error("ECONNREFUSED"); });
+    const onShow = vi.fn();
+    render(<SimpleWeedFinder taskId="scan-s2" userId="u" sources={sourcesWithFrames(1)} readStore={null} passParams={null} onShowOptions={onShow} fetchImpl={down as unknown as typeof fetch} />);
+    expect(await screen.findByTestId("simple-problem")).toHaveTextContent(/npm run weed-vision:service/);
+    expect((screen.getByTestId("find-weeds") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId("show-all-options"));
+    expect(onShow).toHaveBeenCalled();
+  });
+
+  it("shows the count of weeds between the rows once a run is in", async () => {
+    const sources = sourcesWithFrames(2);
+    const deps = fakeDeps(sources);
+    render(<SimpleWeedFinder taskId="scan-s3" userId="u" sources={sources} readStore={null} passParams={null} onShowOptions={() => {}} fetchImpl={ok() as unknown as typeof fetch} />);
+    await screen.findByTestId("find-weeds");
+    await act(async () => { startFrameRun("scan-s3", { userId: "u", sources, params: PARAMS, algorithmLabel: "RF-DETR", modelSha: "abc", deps }); });
+    await waitFor(() => expect(getFrameRun("scan-s3").running).toBe(false));
+    expect(await screen.findByTestId("simple-result")).toHaveTextContent(/1\s*weed between the rows/);
+    expect(screen.getByTestId("find-weeds")).toHaveTextContent("Find weeds again");
   });
 });

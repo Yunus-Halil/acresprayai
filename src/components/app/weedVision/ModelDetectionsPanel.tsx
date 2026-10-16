@@ -6,14 +6,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Cpu, Loader2, Play, Square } from "lucide-react";
 import { storageKey } from "@/lib/storage";
-import { type Shot, pixelToGround, projectToFrame } from "@/lib/sourceFrames/odm";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
-import { type PhotoReadStore, photoPassParams } from "@/lib/weedScout/photoPass";
+import type { PhotoReadStore } from "@/lib/weedScout/photoPass";
 import type { ScoutParams } from "@/lib/weedScout/types";
 import { type AlgorithmInfo, type Health, algorithmReady, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
 import { type FrameRunParams, countByClass, countByRow } from "@/lib/weedVision/frames";
 import { alignRun, alignmentSummary, clearFrameRun, patchFrameRun, restoreFrameRun, retagRows, scorableFrames, startFrameRun, stopFrameRun, unalignedFrames, useFrameRun } from "@/lib/weedVision/frameRunStore";
-import { rowContextForPhoto } from "@/lib/weedVision/photoRows";
+import { makeRowContextFor } from "@/lib/weedVision/photoRows";
 import { PLANT_COLOUR } from "./ModelDetectionLayer";
 
 const PARAMS_KEY = storageKey("weedVision", "frameParams");
@@ -90,15 +89,7 @@ export function ModelDetectionsPanel({ taskId, userId, sources, readStore = null
   const counts = countByClass(run.plants);
   const canRun = !!userId && !!sources && frames.length > 0 && ready && !run.running;
   /** A photo's rows: the saved read, else read from the photo now with the scout's settings and the frame's ground sampling. */
-  const rowContextFor = useCallback((filename: string, blob: Blob, shot: Shot, onProgress: (f: number) => void, signal: AbortSignal) => {
-    const set = sources?.set;
-    if (!set || sources.groundAltM == null) return null;
-    const cam = set.cameras[shot.cameraKey];
-    const centre = pixelToGround(set, shot, cam.width / 2, cam.height / 2, sources.groundAltM);
-    const pr = centre ? projectToFrame(set, shot, centre) : null;
-    if (!pr) return null;
-    return rowContextForPhoto({ blob, filename, frameGsdM: pr.gsdM, frameWidth: cam.width, passParams: photoPassParams(passParams ?? { rowSpacingAuto: true, rowSpacingM: 0.762, minBlobCm2: 1 }), store: readStore, onProgress, signal });
-  }, [sources, readStore, passParams]);
+  const rowContextFor = useMemo(() => makeRowContextFor(sources, readStore, passParams), [sources, readStore, passParams]);
   const start = (force: boolean) => {
     if (!userId || !sources || !info) return;
     startFrameRun(taskId, { userId, sources, params, algorithmLabel: info.label, modelSha, force, rowContextFor });
