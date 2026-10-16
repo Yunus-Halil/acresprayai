@@ -68,7 +68,7 @@ import { HeatmapLayer, HotspotFocus, HotspotLayer, REVIEW_COLOUR } from "../weed
 import { HotspotPanel } from "../weedVision/HotspotPanel";
 import { type GroundPlant, countByClass, countByRow } from "@/lib/weedVision/frames";
 import type { Hotspot } from "@/lib/weedVision/hotspots";
-import { patchFrameRun, setFrameRunAligner, setFrameRunBoundary, setFrameRunMap, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { ensureFieldRows, patchFrameRun, setFrameRunAligner, setFrameRunBoundary, setFrameRunMap, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { alignPhotoToMap } from "@/lib/weedVision/alignToMap";
 import { ringCandidate } from "@/lib/sourceFrames/spot";
 import { m2ToHectares, polygonAreaM2 } from "@/lib/geo";
@@ -423,6 +423,8 @@ export function WeedScoutTab({
     setFrameRunMap(taskId, { tile, maxNative: Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative), lat: c.lat, lng: c.lng });
     return () => setFrameRunMap(taskId, null);
   }, [taskId, tileUrl, maxNative, bounds]);
+  // The field's tree rows, read once from the map within the boundary (treeRows.ts): only weeds between them count.
+  useEffect(() => { void ensureFieldRows(taskId); }, [taskId, tileUrl, maxNative, bounds, rings]);
   /** An area's photographs: the same closer look a spot gets, on the area's outline. */
   const openAreaPhotos = useCallback((h: Hotspot) => {
     setCloserLook({ id: h.id, title: `Area ${h.rank}: ${h.plants} plant${h.plants === 1 ? "" : "s"} to review`, spot: spotSources(sources, ringCandidate(h.id, h.ring)) });

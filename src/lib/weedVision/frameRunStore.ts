@@ -23,6 +23,7 @@ import { type FrameAlignment, applyAlignment, isAligned } from "./register";
 import { type MapChunk, type RenderedChunk, MIN_COVERAGE, chooseMapZoom, groundMapResult, isMapFrame, mapRunKey, planMapChunks, readChunkRows, renderMapChunk, upscaleFor as upscaleForMap } from "./mapRun";
 import { type photoPassParams } from "../weedScout/photoPass";
 import type { PhotoPixels } from "../photoScout/pattern";
+import { type TreeRows, readFieldTreeRows, treeRowStatusAt } from "./treeRows";
 
 export type ViewMode = "priority" | "heatmap" | "detections";
 
@@ -79,13 +80,17 @@ export type FrameRunSession = {
   alignAvailable: boolean;
   /** The zoom the field map can be read at by the model (mapRun.ts), or null when it is not registered or too coarse. */
   mapAvailable: { z: number; mpp: number } | null;
+  /** The field's tree rows (treeRows.ts) when found: every weed is judged against them, and only those between count. */
+  fieldRows: { rows: number; spacingM: number; bandM: number; directionDeg: number } | null;
+  /** Whether the tree rows are being read, or were read and none found. */
+  fieldRowsState: "idle" | "reading" | "found" | "none";
 };
 
 export const EMPTY_FRAME_RUN: FrameRunSession = {
   running: false, progress: null, params: null, paramsKey: null, algorithmLabel: null, modelSha: null,
   plants: [], raw: 0, outside: 0, scanSet: null, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, showOnRow: false, selectedId: null, restoredAt: null, marked: {},
   hotspots: null, hotspotParams: DEFAULT_HOTSPOT_PARAMS, viewMode: "priority", selectedHotspotId: null, reviews: {}, focus: null, markedAreas: {},
-  alignAvailable: false, mapAvailable: null,
+  alignAvailable: false, mapAvailable: null, fieldRows: null, fieldRowsState: "idle",
 };
 
 const sessions = new Map<string, FrameRunSession>();
@@ -151,9 +156,45 @@ export function setFrameRunBoundary(taskId: string, rings: LatLng2[][] | null): 
   boundaries.set(taskId, rings);
   republish(taskId);
 }
+/** The field's tree rows per scan, and the read in flight. */
+const fieldRowsByTask = new Map<string, TreeRows>();
+const fieldRowsTried = new Map<string, string>();
+type FieldRowsReader = typeof readFieldTreeRows;
+/** The field's tree rows into the session; every plant on screen is judged against them at once. */
+export function setFieldRows(taskId: string, rows: TreeRows | null): void {
+  if (rows) fieldRowsByTask.set(taskId, rows); else fieldRowsByTask.delete(taskId);
+  patchFrameRun(taskId, {
+    fieldRows: rows ? { rows: rows.lines.length, spacingM: rows.spacingM, bandM: rows.bandPx * rows.mpp, directionDeg: rows.directionDeg } : null,
+    fieldRowsState: rows ? "found" : "none",
+  });
+  republish(taskId);
+}
+/**
+ * Read the field's tree rows from the registered map within the boundary,
+ * once per map and boundary. Nothing happens until both are registered.
+ */
+export async function ensureFieldRows(taskId: string, reader: FieldRowsReader = readFieldTreeRows): Promise<void> {
+  const map = maps.get(taskId), rings = boundaries.get(taskId);
+  if (!map || !rings?.length) return;
+  const key = `${map.maxNative}|${rings.length}|${rings[0].length}|${rings[0][0]?.lat}|${rings[0][0]?.lng}`;
+  if (fieldRowsTried.get(taskId) === key) return;
+  fieldRowsTried.set(taskId, key);
+  patchFrameRun(taskId, { fieldRowsState: "reading" });
+  let rows: TreeRows | null = null;
+  try { rows = await reader({ rings, tile: map.tile, maxNative: map.maxNative, lat: map.lat }); } catch { rows = null; }
+  if (fieldRowsTried.get(taskId) !== key) return;
+  setFieldRows(taskId, rows);
+}
+/** Weeds judged against the field's tree rows when they were found; else as their photo or chunk read them. */
+function tagByFieldRows(taskId: string, plants: GroundPlant[]): GroundPlant[] {
+  const rows = fieldRowsByTask.get(taskId);
+  if (!rows) return plants;
+  return plants.map(p => (p.klass === "weed" && p.centre ? { ...p, rowStatus: treeRowStatusAt(rows, p.centre) } : p));
+}
 /** Plants inside the boundary (or all, when none is known); the rest counted. Plants with no centre are kept: nothing can be said about them. */
-function withinField(taskId: string, plants: GroundPlant[]): { kept: GroundPlant[]; outside: number } {
+function withinField(taskId: string, all: GroundPlant[]): { kept: GroundPlant[]; outside: number } {
   const rings = boundaries.get(taskId);
+  const plants = tagByFieldRows(taskId, all);
   if (!rings) return { kept: plants, outside: 0 };
   const kept: GroundPlant[] = [];
   let outside = 0;
@@ -486,7 +527,8 @@ export function startMapRun(taskId: string, input: StartMapRunInput): void {
         publish();
         continue;
       }
-      const rows = await deps.mapRows(rendered.pixels, mpp, input.passParams, ctrl.signal);
+      // The field's tree rows judge every weed when found; else the chunk's own rows are read.
+      const rows = fieldRowsByTask.has(taskId) ? null : await deps.mapRows(rendered.pixels, mpp, input.passParams, ctrl.signal);
       if (ctrl.signal.aborted || !mine()) return;
       step({ phase: "model" });
       const res = await deps.detect(rendered.image, `${name.replace(/\//g, "_")}.jpg`, { algorithm: params.algorithm, scale: params.scale, tile: params.tile, overlap: params.overlap, threshold: params.threshold, includeCrop: true }, {
@@ -752,5 +794,9 @@ export function resetFrameRunStore(): void {
   sessions.clear();
   rawByTask.clear();
   aligners.clear();
+  maps.clear();
+  boundaries.clear();
+  fieldRowsByTask.clear();
+  fieldRowsTried.clear();
   emit();
 }

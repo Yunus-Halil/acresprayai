@@ -18,6 +18,8 @@ import { listFrameRunKeys } from "@/lib/weedVision/frameRunCache";
 import { alignRun, patchFrameRun, restoreFrameRun, scorableFrames, startFrameRun, startMapRun, stopFrameRun, unalignedFrames, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { isMapRunKey } from "@/lib/weedVision/mapRun";
 import { photoPassParams } from "@/lib/weedScout/photoPass";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
+import { fmtDistance } from "@/lib/units";
 import { makeRowContextFor } from "@/lib/weedVision/photoRows";
 import { PLANT_COLOUR } from "./ModelDetectionLayer";
 import { modelShaFor } from "./ModelDetectionsPanel";
@@ -40,6 +42,7 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
   fetchImpl?: typeof fetch;
 }) {
   const run = useFrameRun(taskId);
+  const units = useUnitSystem();
   const [health, setHealth] = useState<Health | null>(null);
   const [algorithms, setAlgorithms] = useState<Record<string, AlgorithmInfo>>({});
   const [serviceDown, setServiceDown] = useState(false);
@@ -138,6 +141,13 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
         </div>
       )}
 
+      {run.fieldRowsState === "reading" && <p className="text-[11px] text-neutral-500 inline-flex items-center gap-1.5" data-testid="simple-rows-reading"><Loader2 className="h-3 w-3 animate-spin" /> Finding the tree rows on the map…</p>}
+      {run.fieldRows && (
+        <p className="text-[11px] text-neutral-400" data-testid="simple-rows">
+          Looking only between the {run.fieldRows.rows} tree rows, about {fmtDistance(run.fieldRows.spacingM, units).text} apart. Anything within {fmtDistance(run.fieldRows.bandM, units).text} of a row line is left out as the trees.
+        </p>
+      )}
+
       {problem && !run.running && (
         <p className="text-[11px] text-amber-400 flex items-start gap-1.5" data-testid="simple-problem"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {problem}</p>
       )}
@@ -147,7 +157,7 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
         <div className="rounded-sm border border-[#2a2a2a] p-3 space-y-1" data-testid="simple-result">
           <div className="text-[22px] font-semibold leading-none" style={{ color: PLANT_COLOUR.weed }}>{between.toLocaleString()}</div>
           <div className="text-[12px] text-neutral-300">weed{between === 1 ? "" : "s"} between the rows</div>
-          {rows.onRow > 0 && <div className="text-[11px] text-neutral-500">{rows.onRow.toLocaleString()} on the crop rows left out</div>}
+          {rows.onRow > 0 && <div className="text-[11px] text-neutral-500">{rows.onRow.toLocaleString()} on the {run.fieldRows ? "tree" : "crop"} rows left out</div>}
           {fromMap && <div className="text-[11px] text-neutral-500" data-testid="simple-from-map">Read off the field map itself, so each outline sits where the map shows its weed.</div>}
           {lined != null && photosIn > 0 && (
             <div className={`text-[11px] ${lined < photosIn ? "text-amber-400" : "text-neutral-500"}`} data-testid="simple-aligned">
