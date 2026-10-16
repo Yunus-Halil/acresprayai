@@ -423,7 +423,7 @@ export function WeedScoutTab({
     setFrameRunMap(taskId, { tile, maxNative: Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative), lat: c.lat, lng: c.lng });
     return () => setFrameRunMap(taskId, null);
   }, [taskId, tileUrl, maxNative, bounds]);
-  // The field's tree rows, read once from the map within the boundary (treeRows.ts): only weeds between them count.
+  // The field's crop rows, read once from the whole map (fieldRows.ts): evenly spaced lines of evenly spaced plants. Only weeds between them count.
   useEffect(() => { void ensureFieldRows(taskId); }, [taskId, tileUrl, maxNative, bounds, rings]);
   /** An area's photographs: the same closer look a spot gets, on the area's outline. */
   const openAreaPhotos = useCallback((h: Hotspot) => {

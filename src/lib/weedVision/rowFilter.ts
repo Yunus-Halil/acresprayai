@@ -18,7 +18,8 @@ export type RowStatus =
 /** The pattern of one photograph in that photograph's ORIGINAL pixels. */
 export type RowContext = {
   /** Row lines, native px. */
-  lines: { x1: number; y1: number; x2: number; y2: number }[];
+  /** Row lines, native px; a line may carry its own band half-width (a second planting in the field). */
+  lines: { x1: number; y1: number; x2: number; y2: number; band?: number }[];
   /** Plants the pattern placed on rows (on pattern, double, between plants), native px. */
   crops: { x: number; y: number; r: number }[];
   /** Half-width of the row band, native px: the crop canopy's typical radius, never under ROW_BAND_MIN_M. */
@@ -28,6 +29,8 @@ export type RowContext = {
 };
 
 export const ROW_BAND_MIN_M = 0.15;
+/** The band's half-width is at least this share of the row spacing: under a 0.76 m row crop it never binds (11 cm). */
+export const ROW_BAND_PITCH_SHARE = 0.15;
 const ROW_CLASSES = new Set(["on pattern", "double", "between plants"]);
 
 /** The context from a whole-photo pattern read on `nativeScale` times smaller pixels; null when no rows were read. */
@@ -41,7 +44,12 @@ export function rowContextFromPattern(pattern: PhotoPattern, nativeScale: number
   const gsdM = pattern.gsdM / s;
   const radii = crops.map(c => c.r).sort((a, b) => a - b);
   const medianR = radii.length ? radii[Math.floor(radii.length / 2)] : 0;
-  const bandPx = Math.max(ROW_BAND_MIN_M / gsdM, medianR);
+  // Everything on a row line is the crop: the band is at least the typical crop plant's radius, and on wide
+  // rows (an orchard's trees, a vineyard) at least ROW_BAND_PITCH_SHARE of the row spacing, which a plant's
+  // own outline can understate when its canopy is open.
+  const pitchM = pattern.summary?.medianPitchM;
+  const widePx = pitchM && pitchM > 0 ? (ROW_BAND_PITCH_SHARE * pitchM) / gsdM : 0;
+  const bandPx = Math.max(ROW_BAND_MIN_M / gsdM, medianR, widePx);
   return { lines, crops, bandPx, gsdM };
 }
 
@@ -59,7 +67,7 @@ export function rowStatusOf(ctx: RowContext | null, cx: number, cy: number): Row
     if (Math.hypot(cx - c.x, cy - c.y) <= c.r) return "on-crop";
   }
   for (const l of ctx.lines) {
-    if (distToSegment(cx, cy, l) <= ctx.bandPx) return "on-row";
+    if (distToSegment(cx, cy, l) <= (l.band ?? ctx.bandPx)) return "on-row";
   }
   return "off-row";
 }

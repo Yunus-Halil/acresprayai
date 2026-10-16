@@ -23,7 +23,7 @@ import { type FrameAlignment, applyAlignment, isAligned } from "./register";
 import { type MapChunk, type RenderedChunk, MIN_COVERAGE, chooseMapZoom, groundMapResult, isMapFrame, mapRunKey, planMapChunks, readChunkRows, renderMapChunk, upscaleFor as upscaleForMap } from "./mapRun";
 import { type photoPassParams } from "../weedScout/photoPass";
 import type { PhotoPixels } from "../photoScout/pattern";
-import { type TreeRows, readFieldTreeRows, treeRowStatusAt } from "./treeRows";
+import { type FieldRows, fieldRowStatusAt, readFieldRows } from "./fieldRows";
 
 export type ViewMode = "priority" | "heatmap" | "detections";
 
@@ -80,17 +80,19 @@ export type FrameRunSession = {
   alignAvailable: boolean;
   /** The zoom the field map can be read at by the model (mapRun.ts), or null when it is not registered or too coarse. */
   mapAvailable: { z: number; mpp: number } | null;
-  /** The field's tree rows (treeRows.ts) when found: every weed is judged against them, and only those between count. */
-  fieldRows: { rows: number; spacingM: number; bandM: number; directionDeg: number } | null;
-  /** Whether the tree rows are being read, or were read and none found. */
+  /** The field's crop rows (fieldRows.ts) when found: every weed is judged against them, and only those between count. */
+  fieldRows: { rows: number; spacingM: number; seedSpacingM: number; bandM: number } | null;
+  /** Whether the rows are being read, or were read and none found. */
   fieldRowsState: "idle" | "reading" | "found" | "none";
+  /** How far the read has got, 0 to 1, while reading. */
+  fieldRowsProgress: number | null;
 };
 
 export const EMPTY_FRAME_RUN: FrameRunSession = {
   running: false, progress: null, params: null, paramsKey: null, algorithmLabel: null, modelSha: null,
   plants: [], raw: 0, outside: 0, scanSet: null, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, showOnRow: false, selectedId: null, restoredAt: null, marked: {},
   hotspots: null, hotspotParams: DEFAULT_HOTSPOT_PARAMS, viewMode: "priority", selectedHotspotId: null, reviews: {}, focus: null, markedAreas: {},
-  alignAvailable: false, mapAvailable: null, fieldRows: null, fieldRowsState: "idle",
+  alignAvailable: false, mapAvailable: null, fieldRows: null, fieldRowsState: "idle", fieldRowsProgress: null,
 };
 
 const sessions = new Map<string, FrameRunSession>();
@@ -156,40 +158,47 @@ export function setFrameRunBoundary(taskId: string, rings: LatLng2[][] | null): 
   boundaries.set(taskId, rings);
   republish(taskId);
 }
-/** The field's tree rows per scan, and the read in flight. */
-const fieldRowsByTask = new Map<string, TreeRows>();
+/** The field's rows per scan, and the read in flight. */
+const fieldRowsByTask = new Map<string, FieldRows>();
 const fieldRowsTried = new Map<string, string>();
-type FieldRowsReader = typeof readFieldTreeRows;
-/** The field's tree rows into the session; every plant on screen is judged against them at once. */
-export function setFieldRows(taskId: string, rows: TreeRows | null): void {
+type FieldRowsReader = typeof readFieldRows;
+/** The field's rows into the session; every plant on screen is judged against them at once. */
+export function setFieldRows(taskId: string, rows: FieldRows | null): void {
   if (rows) fieldRowsByTask.set(taskId, rows); else fieldRowsByTask.delete(taskId);
   patchFrameRun(taskId, {
-    fieldRows: rows ? { rows: rows.lines.length, spacingM: rows.spacingM, bandM: rows.bandPx * rows.mpp, directionDeg: rows.directionDeg } : null,
+    fieldRows: rows ? { rows: rows.rows, spacingM: rows.spacingM, seedSpacingM: rows.seedSpacingM, bandM: rows.ctx.bandPx * rows.mpp } : null,
     fieldRowsState: rows ? "found" : "none",
+    fieldRowsProgress: null,
   });
   republish(taskId);
 }
 /**
- * Read the field's tree rows from the registered map within the boundary,
- * once per map and boundary. Nothing happens until both are registered.
+ * Read the field's rows from the registered map within the boundary
+ * (fieldRows.ts), once per map and boundary. Nothing happens until the map
+ * and the boundary are both registered.
  */
-export async function ensureFieldRows(taskId: string, reader: FieldRowsReader = readFieldTreeRows): Promise<void> {
+export async function ensureFieldRows(taskId: string, opts: { reader?: FieldRowsReader } = {}): Promise<void> {
   const map = maps.get(taskId), rings = boundaries.get(taskId);
   if (!map || !rings?.length) return;
   const key = `${map.maxNative}|${rings.length}|${rings[0].length}|${rings[0][0]?.lat}|${rings[0][0]?.lng}`;
   if (fieldRowsTried.get(taskId) === key) return;
   fieldRowsTried.set(taskId, key);
-  patchFrameRun(taskId, { fieldRowsState: "reading" });
-  let rows: TreeRows | null = null;
-  try { rows = await reader({ rings, tile: map.tile, maxNative: map.maxNative, lat: map.lat }); } catch { rows = null; }
+  patchFrameRun(taskId, { fieldRowsState: "reading", fieldRowsProgress: 0 });
+  let rows: FieldRows | null = null;
+  try {
+    rows = await (opts.reader ?? readFieldRows)({
+      rings, tile: map.tile, maxNative: map.maxNative, lat: map.lat,
+      onProgress: f => { if (fieldRowsTried.get(taskId) === key) patchFrameRun(taskId, { fieldRowsProgress: f }); },
+    });
+  } catch { rows = null; }
   if (fieldRowsTried.get(taskId) !== key) return;
   setFieldRows(taskId, rows);
 }
-/** Weeds judged against the field's tree rows when they were found; else as their photo or chunk read them. */
+/** Weeds judged against the field's rows when they were found; else as their photo or chunk read them. */
 function tagByFieldRows(taskId: string, plants: GroundPlant[]): GroundPlant[] {
   const rows = fieldRowsByTask.get(taskId);
   if (!rows) return plants;
-  return plants.map(p => (p.klass === "weed" && p.centre ? { ...p, rowStatus: treeRowStatusAt(rows, p.centre) } : p));
+  return plants.map(p => (p.klass === "weed" && p.centre ? { ...p, rowStatus: fieldRowStatusAt(rows, p.centre) } : p));
 }
 /** Plants inside the boundary (or all, when none is known); the rest counted. Plants with no centre are kept: nothing can be said about them. */
 function withinField(taskId: string, all: GroundPlant[]): { kept: GroundPlant[]; outside: number } {
