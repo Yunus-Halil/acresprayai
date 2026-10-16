@@ -10,7 +10,7 @@
 // selected one. A card shows what the model said, how sure it was, how big it
 // is, and a button that marks it on the field as an ordinary annotation. It
 // changes no verdict and no treatment by itself.
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { CircleMarker, Polygon, Popup, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
@@ -19,6 +19,8 @@ import type { GroundPlant } from "@/lib/weedVision/frames";
 import { patchFrameRun, useFrameRun, visiblePlants } from "@/lib/weedVision/frameRunStore";
 import { isOnRow } from "@/lib/weedVision/rowFilter";
 import { isMapFrame } from "@/lib/weedVision/mapRun";
+import type { Snap } from "@/lib/weedVision/snap";
+import { requestSnaps, snapKey, snapOf, snapped, useSnapVersion } from "@/lib/weedVision/snapStore";
 
 export const PLANT_COLOUR = { weed: "#ffe600", crop: "#40e0ff" } as const;
 export const SELECTED_PLANT_COLOUR = "#ffffff";
@@ -86,8 +88,27 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
   });
   const zoom = view?.zoom ?? map.getZoom();
   const bounds = view?.bounds ?? map.getBounds();
+  // Every outline is snapped onto its weed on the map in the background (snapStore.ts); a plant keeps its
+  // object until its snap changes, so the outlines that did not move are not redrawn.
+  const snapVersion = useSnapVersion(taskId);
+  const placedCache = useRef(new Map<string, { src: GroundPlant; snap: Snap | null | undefined; out: GroundPlant }>());
+  const snapOfPlaced = useRef(new WeakMap<GroundPlant, Snap>());
+  const place = useCallback((p: GroundPlant): GroundPlant => {
+    const k = snapKey(p), sn = snapOf(taskId, p), c = placedCache.current.get(k);
+    if (c && c.src === p && c.snap === sn) return c.out;
+    const out = sn ? snapped(taskId, p) : p;
+    if (sn) snapOfPlaced.current.set(out, sn);
+    placedCache.current.set(k, { src: p, snap: sn, out });
+    return out;
+  }, [taskId]);
+  const positionsOf = useRef(new WeakMap<GroundPlant, [number, number][]>());
+  const positions = (p: GroundPlant): [number, number][] => {
+    let v = positionsOf.current.get(p);
+    if (!v) { v = (p.ring ?? []).map(q => [q.lat, q.lng] as [number, number]); positionsOf.current.set(p, v); }
+    return v;
+  };
   // Detections mode: every plant. Priority mode: only the selected area's plants, close in (level 3 behind level 2). Heatmap: none.
-  const shown = useMemo(() => {
+  const shownRaw = useMemo(() => {
     if (run.viewMode === "detections") return visiblePlants(run);
     if (run.viewMode === "priority" && run.selectedHotspotId && run.hotspots) {
       const h = run.hotspots.hotspots.find(x => x.id === run.selectedHotspotId);
@@ -97,6 +118,14 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
     }
     return [];
   }, [run]);
+  // Snap the outlines in view first, then every other one shown.
+  useEffect(() => { if (shownRaw.length) requestSnaps(taskId, shownRaw); }, [taskId, shownRaw]);
+  useEffect(() => {
+    if (zoom < POLYGON_ZOOM || !shownRaw.length) return;
+    const padded = bounds.pad(0.15);
+    requestSnaps(taskId, shownRaw.filter(p => p.centre && padded.contains([p.centre.lat, p.centre.lng])), true);
+  }, [taskId, shownRaw, zoom, bounds]);
+  const shown = useMemo(() => shownRaw.map(place), [shownRaw, place, snapVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   const inView = useMemo(() => {
     if (zoom < POLYGON_ZOOM) return [];
     const padded = bounds.pad(0.15);
@@ -139,6 +168,7 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
                 </div>
               )}
               {p.flags.length > 0 && <div className="text-amber-400">{p.flags.join("; ")}</div>}
+              {snapOfPlaced.current.get(p) && <div className="text-neutral-500">Snapped {fmtLengthCm(snapOfPlaced.current.get(p)!.shiftM * 100, units).text} onto its weed on the map</div>}
               {p.centre && <div className="text-neutral-600">Ground {p.centre.lat.toFixed(6)}, {p.centre.lng.toFixed(6)} · {isMapFrame(p.frame) ? "placed by the map's own pixels" : "flat ground assumed"}</div>}
               {p.klass === "weed" && onMark && (
                 markedId
@@ -155,7 +185,7 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
         const select = () => patchFrameRun(taskId, { selectedId: p.id });
         if (p.ring) {
           return (
-            <Polygon key={p.id} positions={p.ring.map(q => [q.lat, q.lng] as [number, number])} eventHandlers={{ click: select }}
+            <Polygon key={p.id} positions={positions(p)} eventHandlers={{ click: select }}
               pathOptions={{ color: active ? SELECTED_PLANT_COLOUR : colour, weight: active ? 3 : markedId ? 2.5 : 1.5, fillColor: colour, fillOpacity: markedId ? 0.45 : isOnRow(p.rowStatus) ? 0.08 : p.klass === "weed" ? 0.3 : 0.15, dashArray: p.klass === "crop" || isOnRow(p.rowStatus) ? "3 3" : undefined }}>
               {tooltip}{popup}
             </Polygon>

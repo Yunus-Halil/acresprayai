@@ -131,6 +131,8 @@ async function alignFrame(taskId: string, set: SourceFrameSet, altM: number, blo
 /** The field map per scan, for a run on the map itself: its tiles and its deepest baked zoom. */
 export type FrameRunMap = { tile: (z: number, x: number, y: number) => string; maxNative: number; lat: number; lng: number };
 const maps = new Map<string, FrameRunMap>();
+/** The field map registered for a scan, if any. */
+export const frameRunMapOf = (taskId: string): FrameRunMap | undefined => maps.get(taskId);
 export function setFrameRunMap(taskId: string, map: FrameRunMap | null): void {
   if (map) maps.set(taskId, map); else maps.delete(taskId);
   const avail = map ? chooseMapZoom(map.maxNative, map.lat) : null;
