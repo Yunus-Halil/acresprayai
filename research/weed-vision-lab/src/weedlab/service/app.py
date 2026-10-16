@@ -444,11 +444,18 @@ def main(argv=None) -> int:
     # steps of RF-DETR) and below-normal priority, so the browser and the desktop keep their share of the machine.
     if args.threads is None:
         args.threads = max(2, (os.cpu_count() or 4) // 3)
+    priority_note = "normal"
     if os.name == "nt" and not args.normal_priority:
         import ctypes
 
+        k = ctypes.windll.kernel32
+        k.GetCurrentProcess.restype = ctypes.c_void_p
+        k.SetPriorityClass.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        k.SetPriorityClass.restype = ctypes.c_int
         BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
-        ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS)
+        ok = k.SetPriorityClass(k.GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS)
+        priority_note = "below normal" if ok else f"normal (SetPriorityClass failed, error {ctypes.get_last_error()})"
+    print(json.dumps({"cpu_threads": args.threads, "process_priority": priority_note, "pid": os.getpid()}), flush=True)
     app = create_app(args.ckpt, args.threads, preload=not args.no_preload, rfdetr_ckpt=args.rfdetr_ckpt or None, rfdetr_device=args.rfdetr_device)
     st = {k: (h.status() if h is not None else None) for k, h in app.holders.items()}  # type: ignore[attr-defined]
     print(json.dumps({"service": SERVICE_VERSION, "listening": f"http://{args.host}:{args.port}/weed-vision/health", "models": st}, indent=1), flush=True)
