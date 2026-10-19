@@ -13,7 +13,7 @@ import { vegetationMask, fieldRowsFromPixels } from "../../src/lib/weedVision/fi
 import { rowStatusOf, isOnRow } from "../../src/lib/weedVision/rowFilter";
 import { proposeFromRows, unexplainedGreen } from "../../src/lib/weedVision/layout/readLayout";
 import { mercatorPx } from "../../src/lib/weedVision/mapRun";
-import { LAYOUT_PARAMS, type FittedLayout, fitLayout, latticeFromClicks, layoutsToFieldRows, mergeLayouts, rasterFromMask } from "../../src/lib/weedVision/layout/plantingLayout";
+import { LAYOUT_PARAMS, type FittedLayout, fitLayoutAll, latticeFromClicks, layoutsToFieldRows, mergeLayouts, rasterFromMask } from "../../src/lib/weedVision/layout/plantingLayout";
 
 const argv = process.argv.slice(2);
 const arg = (k: string, d?: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
@@ -59,7 +59,7 @@ else {
 for (const kv of (arg("set") ?? "").split(",").filter(Boolean)) { const [kk, vv] = kv.split("="); (LAYOUT_PARAMS as Record<string, number>)[kk] = Number(vv); }
 const L0 = latticeFromClicks(toR(...blocks[0][0]), toR(...blocks[0][1]), toR(...blocks[0][2]))!;
 const t1 = performance.now();
-const fits: FittedLayout[] = blocks.map(b => fitLayout(latticeFromClicks(toR(...b[0]), toR(...b[1]), toR(...b[2]))!, r));
+const fits: FittedLayout[] = blocks.flatMap(b => fitLayoutAll(latticeFromClicks(toR(...b[0]), toR(...b[1]), toR(...b[2]))!, r));
 const merged = mergeLayouts(fits);
 const fit = { ...merged[0], plants: merged.flatMap(f => f.plants), gaps: merged.flatMap(f => f.gaps), rows: merged.reduce((a, f) => a + f.rows, 0), foundShare: merged.reduce((a, f) => a + f.plants.length, 0) / Math.max(1, merged.reduce((a, f) => a + f.plants.length + f.gaps.length, 0)) };
 const fitMs = performance.now() - t1;

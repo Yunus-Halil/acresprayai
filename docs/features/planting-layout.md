@@ -18,32 +18,51 @@ as weeds.
 1. The operator marks three trees once per planting (two neighbours in a row, one in the next row), or accepts the
    rows the reader proposes ("They are right").
 2. The planting is a lattice. It is refined against the map near the clicks (hundreds of trees vote; a merged clump
-   or a missing tree cannot move it), then grown outward from the clicked trees: a position is accepted only next to
-   an accepted tree, close to the layout (re-fitted by least squares as it grows), with soil between neighbours when
-   the trees stand apart (a weed strip is green all along), and a step into a new row needs a second tree on it.
-   Stretches of row that do not run straight and evenly are dropped. Where two plantings claim the same trees, the
-   shorter stretch gives way. Missing trees become gaps.
-3. Tree-sized green on no row is reported (orange rings): a row or block not marked yet.
-4. The result is the app's own row structure, so Find weeds, Stage 1 and the two-stage prototype use it unchanged.
+   or a missing tree cannot move it). **The spacing is the strongest clue, and the true spacing is the finest one at
+   which plants keep appearing**: between two plants that are there, is there another (the clicks skipped a tree)?
+   Between two rows that are there, is there another (the clicks skipped a row, or the rows between hold younger,
+   smaller trees)? Judged on presence at crown scale with the ground beside the added positions checked to be bare,
+   never on average greenness (a lattice that skips every fainter row is greener on average, which is how every
+   second row of the real orchard was missed on 2026-10-19). Rows found between the rows are followed as plantings
+   of their own, so an interplanted row out of step with its neighbours is still found.
+3. The planting is grown outward from the clicked trees: a position is accepted only next to an accepted tree, close
+   to the layout (re-fitted by least squares as it grows), with soil between neighbours when the trees stand apart (a
+   weed strip is green all along), and a step into a new row needs a second tree on it. Presence is judged in a
+   crown-sized box (0.3 m), not a spacing-sized one, so a young 0.5 m crown counts. A planting does not stop in the
+   middle of a field: an empty row is stepped over and every expected position near an accepted tree is looked at
+   again (the sweep). A stretch of row reached only that way must have six plants sitting tightly on the layout's own
+   line, or it is dropped (across a track, another block's trees can line up by chance). Stretches that do not run
+   straight and evenly are dropped. Where two plantings claim the same trees, the shorter stretch gives way. Missing
+   trees become gaps.
+4. Tree-sized green on no row is reported (orange rings): a row or block not marked yet.
+5. The result is the app's own row structure, so Find weeds, Stage 1 and the two-stage prototype use it unchanged.
    With a layout, every picture sent to RF-DETR has the rows painted over with the field's bare-ground colour (each
    crown 0.3 m wider than measured), so the model looks only between the rows. Results are cached apart
    (`|between-rows`).
-5. Saved per field (table `field_planting_layouts`, and this browser as a fallback) as the refined lattice's own three
+6. Saved per field (table `field_planting_layouts`, and this browser as a fallback) as the refined lattice's own three
    points, so the next scan of the field needs no clicks.
 
 ## Measured on the five orchard frames (stand-in maps; not the orthomosaic)
 
-| Frame | How marked | Rows | Trees found | Gaps | Uncovered tree-sized patches |
+| Frame | How marked | Rows | Trees found (first build / with the spacing rule) | Gaps | Uncovered tree-sized patches |
 |---|---|---|---|---|---|
-| DJI_0301 | 3 labelled trees | 8 (reader: 6) | 85 | 22 | 2 |
-| DJI_0303 | reader's proposal | 6 | 90 | 13 | 3 |
-| DJI_0312 | 3 + 3 clicks, two plantings | 6 (reader: none) | 63 | 10 | 11 |
-| DJI_0320 | reader's proposal | 5 | 40 | 6 | 15 (the strip crop and hedge to the west) |
-| DJI_0327 | 3 clicks | 5 (reader: none) | 40 | 8 | 7 (a young block to the west) |
+| DJI_0301 | 3 labelled trees | 8 (reader: 6) | 85 / 92 | 20 | 1 |
+| DJI_0303 | reader's proposal | 7 | 90 / 94 | 19 | 3 |
+| DJI_0312 | 3 + 3 clicks, two plantings | 7 (reader: none) | 63 / 79 | 16 | 6 |
+| DJI_0320 | reader's proposal | 6 | 40 / 56 | 8 | 12 (the strip crop and hedge to the west) |
+| DJI_0327 | 3 clicks | 7 (reader: none) | 40 / 60 | 5 | 4 (a young block to the west) |
 
-Against the hand labels on DJI_0301 (104 trees, 414 weeds, not exhaustive): 95 of 104 labelled trees fall on the rows
-(reader: 72), 81 are matched to a fitted tree within 0.6 m. 67 of 414 labelled weeds fall inside the crop band and are
-treated as crop (reader: 33); that is the cost of measuring crowns generously.
+The spacing rule (section "How", 2 and 3) was added after the real map showed every second row skipped: rows of
+younger, smaller trees between the clicked rows. On the five frames no spacing changed (no row or plant was invented
+between bare alleys or plants that stand apart) and every frame gained trees, mostly at row ends and in rows that had
+stopped early. Two rows that stepped across a track into another block were caught by the bridged-stretch rule.
+Synthetic tests cover the two failures seen: clicks that skip the young row between (every row and 85% of the young
+trees found, the field's 2.6 m spacing reported) and clicks that skip a tree along the row.
+
+Against the hand labels on DJI_0301 (104 trees, 414 weeds, not exhaustive): 100 of 104 labelled trees fall on the rows
+(reader: 72), 80 are matched to a fitted tree within 0.6 m. 82 of 414 labelled weeds fall inside the crop band and are
+treated as crop (reader: 33); most of those are under or against a crown, where the model does not see them either.
+That is the cost of measuring crowns generously, and it is not measured against anything but these labels.
 
 With the layout, against the old reader, RF-DETR on every window of the five frames (Stage 1 routing in brackets):
 

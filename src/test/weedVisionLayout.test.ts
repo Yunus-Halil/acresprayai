@@ -7,7 +7,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: () => { thr
 
 import type { LatLng2 } from "@/lib/geo";
 import { rowStatusOf } from "@/lib/weedVision/rowFilter";
-import { type LayoutRaster, fillPolygon, fitLayout, latticeFromClicks, layoutsToFieldRows } from "@/lib/weedVision/layout/plantingLayout";
+import { type LayoutRaster, fillPolygon, fitLayout, fitLayoutAll, latticeFromClicks, layoutsToFieldRows } from "@/lib/weedVision/layout/plantingLayout";
 import { betweenRowsPainter, paintRowBand, rowBandMask } from "@/lib/weedVision/layout/rowBand";
 import { fitPlantingLayout, proposeFromRows } from "@/lib/weedVision/layout/readLayout";
 import { addClick, getLayoutUi, resetLayoutUi, saveLayout, startMarking } from "@/lib/weedVision/layout/layoutUi";
@@ -95,6 +95,65 @@ describe("the planting from three clicks", () => {
     const [p0] = out.blocks[0].points;
     const [X, Y] = mercatorPx(p0.lat, p0.lng, Z);
     expect(Math.hypot(((X - LEFT) / SCALE) * MPP - a.x, ((Y - TOP) / SCALE) * MPP - a.y)).toBeLessThan(3.3);
+  });
+});
+
+describe("the spacing is the clue", () => {
+  /** Big trees on every second row, young 0.5 m trees on the rows between (out of step by half a plant spacing), 60 x 40 m. */
+  function alternating(missingSmall = new Set<string>()) {
+    const trees: (Tree & { kind: "big" | "small"; key: string })[] = [];
+    const ang = 6 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    for (let j = 0; j < 14; j++) for (let i = 0; i < 20; i++) {
+      const big = j % 2 === 0;
+      const x = 2 + (i + (big ? 0 : 0.5)) * 3.2 * ux + j * 2.6 * nx, y = 3 + (i + (big ? 0 : 0.5)) * 3.2 * uy + j * 2.6 * ny;
+      if (x < 1 || x > 59 || y < 1 || y > 39) continue;
+      const key = `${i},${j}`;
+      if (!big && missingSmall.has(key)) continue;
+      trees.push({ x, y, r: big ? 0.9 : 0.3, kind: big ? "big" : "small", key });
+    }
+    const green = new Uint8Array(W * H);
+    const set = (x: number, y: number) => { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) green[yi * W + xi] = 255; };
+    for (const t of trees) for (let dy = -t.r; dy <= t.r; dy += MPP / 2) for (let dx = -t.r; dx <= t.r; dx += MPP / 2) if (dx * dx + dy * dy <= t.r * t.r) set(t.x + dx, t.y + dy);
+    // A few weed clumps between the rows.
+    for (const p of [{ x: 20, y: 9.2 }, { x: 40, y: 24.8 }]) for (let dy = -0.4; dy <= 0.4; dy += MPP / 2) for (let dx = -0.4; dx <= 0.4; dx += MPP / 2) set(p.x + dx, p.y + dy);
+    const inField = new Uint8Array(W * H);
+    fillPolygon(inField, W, H, [[0, 0], [W, 0], [W, H], [0, H]]);
+    const r: LayoutRaster = { z: Z, left: LEFT, top: TOP, scale: SCALE, mpp: MPP, w: W, h: H, green, inField };
+    return { r, trees };
+  }
+  const near = (t: { x: number; y: number }, pts: { x: number; y: number }[], m = 0.4) => pts.some(p => Math.hypot(p.x * MPP - t.x, p.y * MPP - t.y) <= m);
+
+  it("clicks on two big rows (skipping the young row between) still find every row, the young trees included", () => {
+    const { r, trees } = alternating(new Set(["7,3", "12,5"]));
+    const t = (k: string) => trees.find(x => x.key === k)!;
+    const a = t("6,4"), b = t("7,4"), c = t("6,6"); // big row, neighbour, next BIG row: 5.2 m across, the young row at 2.6 m skipped
+    const fits = fitLayoutAll(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    expect(fits.length).toBeGreaterThanOrEqual(2); // the clicked rows and the rows between them
+    const plants = fits.flatMap(f => f.plants);
+    const big = trees.filter(x => x.kind === "big"), small = trees.filter(x => x.kind === "small");
+    expect(big.filter(x => near(x, plants)).length / big.length).toBeGreaterThan(0.9);
+    expect(small.filter(x => near(x, plants)).length / small.length).toBeGreaterThan(0.85);
+    const rows = layoutsToFieldRows(fits, r)!;
+    expect(rows.rows).toBeGreaterThanOrEqual(13);
+    expect(rows.spacingM).toBeCloseTo(2.6, 0); // the field's spacing, not the clicks'
+  });
+
+  it("clicks on a tree and the one after next (skipping a tree) still find every tree", () => {
+    const { r, trees } = orchard();
+    const a = treeA(trees, "6,1"), b = treeA(trees, "8,1"), c = treeA(trees, "6,2"); // 6.4 m along instead of 3.2
+    const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    expect(fit.lattice.along * MPP).toBeCloseTo(3.2, 1);
+    const A = trees.filter(t => t.block === "A");
+    expect(A.filter(t => near(t, fit.plants)).length / A.length).toBeGreaterThan(0.9);
+  });
+
+  it("does not invent rows between rows when the alleys are bare, nor plants between plants that stand apart", () => {
+    const { r, trees } = orchard();
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const fits = fitLayoutAll(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    expect(fits).toHaveLength(1);
+    expect(fits[0].lattice.along * MPP).toBeCloseTo(3.2, 1);
+    expect(Math.abs(fits[0].lattice.across) * MPP).toBeCloseTo(5, 1);
   });
 });
 

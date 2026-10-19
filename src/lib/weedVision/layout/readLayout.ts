@@ -11,7 +11,7 @@ import type { PhotoPixels } from "../../photoScout/pattern";
 import { type FieldRows, fieldReadPlan, vegetationMask } from "../fieldRows";
 import { latLngOfPx, mercatorPx } from "../mapRun";
 import { drawMapRect } from "../twoStage/stage1";
-import { type FittedLayout, type LayoutRaster, boxMean, fillPolygon, fitLayout, latticeFromClicks, latticePoint, layoutsToFieldRows, mergeLayouts } from "./plantingLayout";
+import { type FittedLayout, type LayoutRaster, boxMean, fillPolygon, fitLayoutAll, latticeFromClicks, latticePoint, layoutsToFieldRows, mergeLayouts } from "./plantingLayout";
 
 export type LayoutBlock = { points: [LatLng2, LatLng2, LatLng2] };
 export type PlantingLayout = { version: 1; blocks: LayoutBlock[]; confirmedAt: string | null };
@@ -113,8 +113,9 @@ export function fitPlantingLayout(r: LayoutRaster, layout: PlantingLayout): { ro
   for (const b of layout.blocks) {
     const L0 = latticeFromClicks(toRaster(r, b.points[0]), toRaster(r, b.points[1]), toRaster(r, b.points[2]));
     if (!L0) continue;
-    const f = fitLayout(L0, r);
-    fits.push(f);
+    const all = fitLayoutAll(L0, r);
+    const f = all[0];
+    fits.push(...all);
     // Saved as the refined lattice's own points near the original first click.
     const ij = (() => {
       const { lattice: L } = f;
