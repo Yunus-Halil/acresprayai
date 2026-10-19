@@ -57,6 +57,12 @@ export type FieldRows = {
   seedSpacingM: number;
   directionDeg: number;
   blocks: number;
+  /** "layout" when the rows come from the field's confirmed planting layout (layout/), else read here. */
+  source?: "reader" | "layout";
+  /** Layout rows: expected plant positions with no plant (frame pixels). */
+  gaps?: { x: number; y: number }[];
+  /** Layout rows: tree-sized green on no row (frame pixels), a row or block the layout does not cover yet. */
+  unexplained?: { x: number; y: number; r: number }[];
 };
 
 /** The pixel the field is read at: fine enough for a young tree, coarse enough to read a large field in tiles. */

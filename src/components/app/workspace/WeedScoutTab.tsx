@@ -66,11 +66,14 @@ import { ModelDetectionsPanel } from "../weedVision/ModelDetectionsPanel";
 import { SimpleWeedFinder } from "../weedVision/SimpleWeedFinder";
 import { HeatmapLayer, HotspotFocus, HotspotLayer, REVIEW_COLOUR } from "../weedVision/HotspotLayer";
 import { HotspotPanel } from "../weedVision/HotspotPanel";
+import { LayoutLayer } from "../weedVision/LayoutLayer";
+import { CropRowsPanel } from "../weedVision/CropRowsPanel";
+import { loadFieldLayout } from "@/lib/weedVision/layout/fieldLayoutStore";
 import { TwoStageLayer } from "../weedVision/TwoStageLayer";
 import { TwoStagePanel } from "../weedVision/TwoStagePanel";
 import { type GroundPlant, countByClass, countByRow } from "@/lib/weedVision/frames";
 import type { Hotspot } from "@/lib/weedVision/hotspots";
-import { ensureFieldRows, patchFrameRun, setFrameRunAligner, setFrameRunBoundary, setFrameRunMap, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { ensureFieldRows, patchFrameRun, setFrameRunAligner, setFrameRunBoundary, setFrameRunLayout, setFrameRunMap, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { alignPhotoToMap } from "@/lib/weedVision/alignToMap";
 import { ringCandidate } from "@/lib/sourceFrames/spot";
 import { m2ToHectares, polygonAreaM2 } from "@/lib/geo";
@@ -440,6 +443,13 @@ export function WeedScoutTab({
   }, [taskId, tileUrl, maxNative, bounds]);
   // The field's crop rows, read once from the whole map (fieldRows.ts): evenly spaced lines of evenly spaced plants. Only weeds between them count.
   useEffect(() => { void ensureFieldRows(taskId); }, [taskId, tileUrl, maxNative, bounds, rings]);
+  // The field's planting layout, when one was saved: the rows come from it on every scan of the field.
+  useEffect(() => {
+    if (!fieldId) return;
+    let on = true;
+    void loadFieldLayout(fieldId).then(l => { if (on && l) setFrameRunLayout(taskId, l); });
+    return () => { on = false; };
+  }, [fieldId, taskId]);
   /** An area's photographs: the same closer look a spot gets, on the area's outline. */
   const openAreaPhotos = useCallback((h: Hotspot) => {
     setCloserLook({ id: h.id, title: `Area ${h.rank}: ${h.plants} plant${h.plants === 1 ? "" : "s"} to review`, spot: spotSources(sources, ringCandidate(h.id, h.ring)) });
@@ -918,6 +928,7 @@ export function WeedScoutTab({
             </>
           )}
           <ModelDetectionLayer taskId={taskId} onMark={markPlant} showLabels={showLabels && labelsReadable} />
+          <LayoutLayer taskId={taskId} />
           {/* Every spot carries its own decision and its own review panel.
               The outline is the verdict, the fill is what it reads as, and the
               popup is where the operator disagrees with either. */}
@@ -1104,7 +1115,7 @@ export function WeedScoutTab({
 
       <aside className="w-[400px] shrink-0 border-l border-[#1f1f1f] flex flex-col min-h-0" style={{ background: "#121212" }}>
         {simple ? (
-          <SimpleWeedFinder taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} onShowOptions={() => setSimple(false)} />
+          <SimpleWeedFinder taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} onShowOptions={() => setSimple(false)} fieldId={fieldId} />
         ) : (<>
         {/* Header and run */}
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
@@ -1154,6 +1165,7 @@ export function WeedScoutTab({
           )}
           {session.cache && !running && <p className="text-[10px] text-neutral-600">{session.cache}</p>}
         </div>
+        {frameRun.mapAvailable && <div className="p-4 border-b border-[#1f1f1f]"><CropRowsPanel taskId={taskId} fieldId={fieldId} userId={user?.id ?? null} /></div>}
         <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} />
         <HotspotPanel taskId={taskId} userId={user?.id ?? null} onOpenPhotos={openAreaPhotos} onMarkArea={markArea} />
         <TwoStagePanel taskId={taskId} userId={user?.id ?? null} sources={sources} />

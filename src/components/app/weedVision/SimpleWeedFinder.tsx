@@ -18,11 +18,10 @@ import { listFrameRunKeys } from "@/lib/weedVision/frameRunCache";
 import { alignRun, patchFrameRun, restoreFrameRun, scorableFrames, startFrameRun, startMapRun, stopFrameRun, unalignedFrames, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { isMapRunKey } from "@/lib/weedVision/mapRun";
 import { photoPassParams } from "@/lib/weedScout/photoPass";
-import { useUnitSystem } from "@/hooks/useUnitSystem";
-import { fmtDistance } from "@/lib/units";
 import { makeRowContextFor } from "@/lib/weedVision/photoRows";
 import { PLANT_COLOUR } from "./ModelDetectionLayer";
 import { modelShaFor } from "./ModelDetectionsPanel";
+import { CropRowsPanel } from "./CropRowsPanel";
 
 const SIMPLE_PARAMS: Omit<FrameRunParams, "algorithm"> = { threshold: 0.5, tile: 1024, overlap: 256, scale: 1 };
 const PREFERRED_ALGORITHM = "rfdetr_seg_large";
@@ -32,8 +31,10 @@ const PHASE_LABEL = { rows: "Reading the crop rows, photo", model: "Looking for 
 const MAP_PHASE_LABEL = { rows: "Reading the crop rows, map part", model: "Looking for weeds, map part", align: "Map part" } as const;
 const DEFAULT_PASS = { rowSpacingAuto: true, rowSpacingM: 0.762, minBlobCm2: 1 };
 
-export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParams, onShowOptions, fetchImpl }: {
+export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParams, onShowOptions, fetchImpl, fieldId = null }: {
   taskId: string;
+  /** The field the scan belongs to: its planting layout is kept per field. */
+  fieldId?: string | null;
   userId: string | null;
   sources: ScanSources | null;
   readStore: PhotoReadStore | null;
@@ -42,7 +43,6 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
   fetchImpl?: typeof fetch;
 }) {
   const run = useFrameRun(taskId);
-  const units = useUnitSystem();
   const [health, setHealth] = useState<Health | null>(null);
   const [algorithms, setAlgorithms] = useState<Record<string, AlgorithmInfo>>({});
   const [serviceDown, setServiceDown] = useState(false);
@@ -141,13 +141,7 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
         </div>
       )}
 
-      {run.fieldRowsState === "reading" && <p className="text-[11px] text-neutral-500 inline-flex items-center gap-1.5" data-testid="simple-rows-reading"><Loader2 className="h-3 w-3 animate-spin" /> Finding the crop rows on the map{run.fieldRowsProgress ? ` (${Math.round(run.fieldRowsProgress * 100)}%)` : ""}…</p>}
-      {run.fieldRows && (
-        <p className="text-[11px] text-neutral-400" data-testid="simple-rows">
-          Looking only between the {run.fieldRows.rows} crop rows: rows about {fmtDistance(run.fieldRows.spacingM, units).text} apart, plants about {fmtDistance(run.fieldRows.seedSpacingM, units).text} apart along them. Anything within {fmtDistance(run.fieldRows.bandM, units).text} of a row line is taken for the crop and left out.
-        </p>
-      )}
-      {run.fieldRowsState === "none" && <p className="text-[11px] text-amber-400" data-testid="simple-rows-none">No evenly spaced crop rows were found on the map, so weeds are judged against the rows read in each part of it.</p>}
+      {onMap && <CropRowsPanel taskId={taskId} fieldId={fieldId} userId={userId} />}
 
       {problem && !run.running && (
         <p className="text-[11px] text-amber-400 flex items-start gap-1.5" data-testid="simple-problem"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {problem}</p>

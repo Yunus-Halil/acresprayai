@@ -24,6 +24,9 @@ import { type MapChunk, type RenderedChunk, MIN_COVERAGE, chooseMapZoom, groundM
 import { type photoPassParams } from "../weedScout/photoPass";
 import type { PhotoPixels } from "../photoScout/pattern";
 import { type FieldRows, fieldRowStatusAt, readFieldRows } from "./fieldRows";
+import { type LayoutBlock, type PlantingLayout, fitPlantingLayout, readLayoutRaster } from "./layout/readLayout";
+import type { LayoutRaster } from "./layout/plantingLayout";
+import { type ChunkPainter, betweenRowsPainter } from "./layout/rowBand";
 
 export type ViewMode = "priority" | "heatmap" | "detections";
 
@@ -86,13 +89,17 @@ export type FrameRunSession = {
   fieldRowsState: "idle" | "reading" | "found" | "none";
   /** How far the read has got, 0 to 1, while reading. */
   fieldRowsProgress: number | null;
+  /** Where the rows came from: the field's planting layout, or the automatic reader. */
+  fieldRowsSource: "layout" | "reader" | null;
+  /** Layout rows: plants found, positions with no plant, and tree-sized green on no row. */
+  layoutStats: { plants: number; gaps: number; unexplained: number; foundShare: number } | null;
 };
 
 export const EMPTY_FRAME_RUN: FrameRunSession = {
   running: false, progress: null, params: null, paramsKey: null, algorithmLabel: null, modelSha: null,
   plants: [], raw: 0, outside: 0, scanSet: null, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, showOnRow: false, selectedId: null, restoredAt: null, marked: {},
   hotspots: null, hotspotParams: DEFAULT_HOTSPOT_PARAMS, viewMode: "priority", selectedHotspotId: null, reviews: {}, focus: null, markedAreas: {},
-  alignAvailable: false, mapAvailable: null, fieldRows: null, fieldRowsState: "idle", fieldRowsProgress: null,
+  alignAvailable: false, mapAvailable: null, fieldRows: null, fieldRowsState: "idle", fieldRowsProgress: null, fieldRowsSource: null, layoutStats: null,
 };
 
 const sessions = new Map<string, FrameRunSession>();
@@ -175,6 +182,8 @@ export function setFieldRows(taskId: string, rows: FieldRows | null): void {
     fieldRows: rows ? { rows: rows.rows, spacingM: rows.spacingM, seedSpacingM: rows.seedSpacingM, bandM: rows.ctx.bandPx * rows.mpp } : null,
     fieldRowsState: rows ? "found" : "none",
     fieldRowsProgress: null,
+    fieldRowsSource: rows ? rows.source ?? "reader" : null,
+    layoutStats: rows?.source === "layout" ? { plants: rows.ctx.crops.length, gaps: rows.gaps?.length ?? 0, unexplained: rows.unexplained?.length ?? 0, foundShare: rows.ctx.crops.length / Math.max(1, rows.ctx.crops.length + (rows.gaps?.length ?? 0)) } : null,
   });
   republish(taskId);
 }
@@ -183,22 +192,58 @@ export function setFieldRows(taskId: string, rows: FieldRows | null): void {
  * (fieldRows.ts), once per map and boundary. Nothing happens until the map
  * and the boundary are both registered.
  */
-export async function ensureFieldRows(taskId: string, opts: { reader?: FieldRowsReader } = {}): Promise<void> {
+/** The map readers behind ensureFieldRows; tests replace them (the browser's canvas is not there). */
+let rowReaders: { reader: FieldRowsReader; rasterReader: typeof readLayoutRaster } = { reader: readFieldRows, rasterReader: readLayoutRaster };
+export function setFieldRowsReaders(r: Partial<typeof rowReaders> | null): void { rowReaders = { reader: readFieldRows, rasterReader: readLayoutRaster, ...(r ?? {}) }; }
+export async function ensureFieldRows(taskId: string, opts: { reader?: FieldRowsReader; rasterReader?: typeof readLayoutRaster } = {}): Promise<void> {
   const map = maps.get(taskId), rings = boundaries.get(taskId);
   if (!map || !rings?.length) return;
-  const key = `${map.maxNative}|${rings.length}|${rings[0].length}|${rings[0][0]?.lat}|${rings[0][0]?.lng}`;
+  const mapKey = `${map.maxNative}|${rings.length}|${rings[0].length}|${rings[0][0]?.lat}|${rings[0][0]?.lng}`;
+  const layout = layoutsByTask.get(taskId) ?? null;
+  const key = `${mapKey}|${layout ? JSON.stringify(layout.blocks) : "auto"}`;
   if (fieldRowsTried.get(taskId) === key) return;
   fieldRowsTried.set(taskId, key);
   patchFrameRun(taskId, { fieldRowsState: "reading", fieldRowsProgress: 0 });
+  const progress = (f: number) => { if (fieldRowsTried.get(taskId) === key) patchFrameRun(taskId, { fieldRowsProgress: f }); };
   let rows: FieldRows | null = null;
-  try {
-    rows = await (opts.reader ?? readFieldRows)({
-      rings, tile: map.tile, maxNative: map.maxNative, lat: map.lat,
-      onProgress: f => { if (fieldRowsTried.get(taskId) === key) patchFrameRun(taskId, { fieldRowsProgress: f }); },
-    });
-  } catch { rows = null; }
+  // The field's planting layout when there is one: fitted on the field read into a coarse raster (kept for the next fit).
+  if (layout && layout.blocks.length) {
+    try {
+      let cached = rastersByTask.get(taskId);
+      if (!cached || cached.key !== mapKey) {
+        const raster = await (opts.rasterReader ?? rowReaders.rasterReader)({ rings, tile: map.tile, maxNative: map.maxNative, lat: map.lat, onProgress: progress });
+        cached = raster ? { key: mapKey, raster } : undefined;
+        if (cached) rastersByTask.set(taskId, cached);
+      }
+      if (cached) {
+        const fit = fitPlantingLayout(cached.raster, layout);
+        refinedByTask.set(taskId, fit.blocks);
+        rows = fit.rows;
+      }
+    } catch { rows = null; }
+  }
+  if (!rows) {
+    try { rows = await (opts.reader ?? rowReaders.reader)({ rings, tile: map.tile, maxNative: map.maxNative, lat: map.lat, onProgress: progress }); } catch { rows = null; }
+    if (rows) rows = { ...rows, source: "reader" };
+  }
   if (fieldRowsTried.get(taskId) !== key) return;
   setFieldRows(taskId, rows);
+}
+
+/** The field's planting layout per scan (layout/), the field read into a raster for it, and the plantings as last refined. */
+const layoutsByTask = new Map<string, PlantingLayout>();
+const rastersByTask = new Map<string, { key: string; raster: LayoutRaster }>();
+const refinedByTask = new Map<string, LayoutBlock[]>();
+export const frameRunLayoutOf = (taskId: string): PlantingLayout | null => layoutsByTask.get(taskId) ?? null;
+/** The plantings as refined by the last fit (what a save keeps), or null before any fit. */
+export const refinedLayoutBlocks = (taskId: string): LayoutBlock[] | null => refinedByTask.get(taskId) ?? null;
+/** The field rows themselves (frame pixels), for drawing them. */
+export const frameRunFieldRows = (taskId: string): FieldRows | null => fieldRowsByTask.get(taskId) ?? null;
+/** Use this planting layout for the scan's rows (null: back to reading them automatically), and read them again. */
+export function setFrameRunLayout(taskId: string, layout: PlantingLayout | null): void {
+  if (layout && layout.blocks.length) layoutsByTask.set(taskId, layout); else layoutsByTask.delete(taskId);
+  refinedByTask.delete(taskId);
+  void ensureFieldRows(taskId);
 }
 /** Weeds judged against the field's rows when they were found; else as their photo or chunk read them. */
 function tagByFieldRows(taskId: string, plants: GroundPlant[]): GroundPlant[] {
@@ -294,7 +339,7 @@ export type FrameRunDeps = {
   download: (entry: FrameManifestEntry) => Promise<Blob | null>;
   cache: { load: typeof loadFrameRuns; save: typeof saveFrameRun; remove: typeof deleteFrameRuns };
   /** A chunk of the field map, read from its tiles and enlarged (mapRun.ts). */
-  mapChunk: (chunk: MapChunk, tile: FrameRunMap["tile"], upscale: number, signal: AbortSignal) => Promise<RenderedChunk | null>;
+  mapChunk: (chunk: MapChunk, tile: FrameRunMap["tile"], upscale: number, signal: AbortSignal, paint?: ChunkPainter) => Promise<RenderedChunk | null>;
   /** A chunk's crop rows, in its canvas pixels. */
   mapRows: (pixels: PhotoPixels, gsdM: number, passParams: ReturnType<typeof photoPassParams>, signal: AbortSignal) => Promise<RowContext | null>;
 };
@@ -493,7 +538,10 @@ export function startMapRun(taskId: string, input: StartMapRunInput): void {
   // tiles shrunk by the same factor (mapTiling), which reaches the model identically.
   const upscale = upscaleForRun(mpp, input.photoGsdM);
   const sent = { ...params, ...mapTiling(params, upscale) };
-  const paramsKey = mapRunKey(sent, input.modelSha, z, 1);
+  // With the field's planting layout, the model is shown only what grows between the rows: the rows are painted over.
+  const layoutRows = fieldRowsByTask.get(taskId);
+  const paint = layoutRows?.source === "layout" ? betweenRowsPainter(layoutRows) : undefined;
+  const paramsKey = `${mapRunKey(sent, input.modelSha, z, 1)}${paint ? "|between-rows" : ""}`;
   const chunks = planMapChunks(rings, z);
   const scanSet = mapScanSet(map, input.sources?.set, input.sources?.groundAltM);
   patchFrameRun(taskId, {
@@ -538,7 +586,7 @@ export function startMapRun(taskId: string, input: StartMapRunInput): void {
       }
       // The latest tile address each time: the session token in it is renewed while a long run goes.
       const current = maps.get(taskId) ?? map;
-      const rendered = await deps.mapChunk(chunk, current.tile, 1, ctrl.signal);
+      const rendered = await deps.mapChunk(chunk, current.tile, 1, ctrl.signal, paint);
       if (ctrl.signal.aborted || !mine()) return;
       if (!rendered || rendered.coverage < MIN_COVERAGE_RUN) {
         summaries[name] = { filename: name, weeds: 0, crops: 0, status: rendered ? "done" : "error", ...(rendered ? {} : { error: "the map could not be drawn here" }), ms: null };
@@ -816,5 +864,8 @@ export function resetFrameRunStore(): void {
   boundaries.clear();
   fieldRowsByTask.clear();
   fieldRowsTried.clear();
+  layoutsByTask.clear();
+  rastersByTask.clear();
+  refinedByTask.clear();
   emit();
 }

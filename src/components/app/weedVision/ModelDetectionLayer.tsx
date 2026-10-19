@@ -21,6 +21,7 @@ import { isOnRow } from "@/lib/weedVision/rowFilter";
 import { isMapFrame } from "@/lib/weedVision/mapRun";
 import type { Snap } from "@/lib/weedVision/snap";
 import { requestSnaps, snapKey, snapOf, snapped, useSnapVersion } from "@/lib/weedVision/snapStore";
+import { getLayoutUi } from "@/lib/weedVision/layout/layoutUi";
 
 export const PLANT_COLOUR = { weed: "#ffe600", crop: "#40e0ff" } as const;
 export const SELECTED_PLANT_COLOUR = "#ffffff";
@@ -30,7 +31,7 @@ export const POLYGON_ZOOM = 18;
 export const MAX_POLYGONS = 1500;
 
 /** Every plant as a dot on one canvas in the overlay pane; a click within DOT_HIT px of a dot zooms in on it. */
-function PlantDots({ plants, onPick }: { plants: GroundPlant[]; onPick: (p: GroundPlant) => void }) {
+function PlantDots({ plants, onPick, marking = () => false }: { plants: GroundPlant[]; onPick: (p: GroundPlant) => void; marking?: () => boolean }) {
   const map = useMap();
   useEffect(() => {
     const canvas = L.DomUtil.create("canvas", "leaflet-zoom-animated") as HTMLCanvasElement;
@@ -57,6 +58,7 @@ function PlantDots({ plants, onPick }: { plants: GroundPlant[]; onPick: (p: Grou
     };
     const DOT_HIT = 10;
     const click = (e: L.LeafletMouseEvent) => {
+      if (marking()) return; // a click while marking crop plants is a plant, not a dot
       let best: GroundPlant | null = null, d2 = DOT_HIT * DOT_HIT;
       for (const p of plants) {
         if (!p.centre) continue;
@@ -142,7 +144,7 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
   if (!shown.length) return null;
   if (zoom < POLYGON_ZOOM) {
     if (run.viewMode !== "detections") return null; // an area's plants are for close zoom only; the area outline says where
-    return <PlantDots plants={shown} onPick={pickDot} />;
+    return <PlantDots plants={shown} onPick={pickDot} marking={() => getLayoutUi(taskId).clicking} />;
   }
   return (
     <>

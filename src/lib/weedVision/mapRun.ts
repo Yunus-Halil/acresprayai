@@ -24,6 +24,7 @@ import type { WeedInstance, WeedVisionResult } from "./client";
 import { type FrameDetection, type FrameRunParams, MAX_RING_POINTS, frameRunKey, thinPolygon } from "./frames";
 import { ALIGNMENT_VERSION } from "./register";
 import { type RowContext, rowContextFromPattern, rowStatusOf } from "./rowFilter";
+import type { ChunkPainter } from "./layout/rowBand";
 
 export const TILE_PX = 256;
 /** A chunk's owned square, map pixels: 1536 at zoom 23 is about 22 m. */
@@ -180,7 +181,7 @@ const toBlob = (c: HTMLCanvasElement | OffscreenCanvas, type: string, quality: n
   "convertToBlob" in c ? c.convertToBlob({ type, quality }) : new Promise(res => (c as HTMLCanvasElement).toBlob(b => res(b), type, quality));
 
 /** A chunk read from the map's tiles (through the tile cache) and enlarged for the model; null when the browser cannot draw. */
-export async function renderMapChunk(chunk: MapChunk, tile: (z: number, x: number, y: number) => string, upscale: number, signal?: AbortSignal): Promise<RenderedChunk | null> {
+export async function renderMapChunk(chunk: MapChunk, tile: (z: number, x: number, y: number) => string, upscale: number, signal?: AbortSignal, paint?: ChunkPainter): Promise<RenderedChunk | null> {
   const cv = chunkCanvas(chunk);
   const c = canvas2d(cv.width, cv.height);
   if (!c) return null;
@@ -195,7 +196,10 @@ export async function renderMapChunk(chunk: MapChunk, tile: (z: number, x: numbe
   }
   await Promise.all(jobs);
   if (signal?.aborted) return null;
-  const data = c.ctx.getImageData(0, 0, cv.width, cv.height).data;
+  const img = c.ctx.getImageData(0, 0, cv.width, cv.height);
+  const data = img.data;
+  // The crop rows painted over before the model sees the chunk, when the field's layout is known.
+  if (paint) { paint(data, cv.width, cv.height, cv.left, cv.top, chunk.z); c.ctx.putImageData(img, 0, 0); }
   let covered = 0;
   for (let i = 3; i < data.length; i += 4) if (data[i] > 0) covered++;
   const coverage = covered / (cv.width * cv.height);

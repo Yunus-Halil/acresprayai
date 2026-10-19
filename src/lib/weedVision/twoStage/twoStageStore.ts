@@ -20,6 +20,7 @@ import { ensureFieldRows, fieldRowsOf, frameRunBoundaryOf, frameRunMapOf } from 
 import type { FrameDetection, FrameRunParams, GroundPlant } from "../frames";
 import { type MapChunk, type RenderedChunk, MIN_COVERAGE, chooseMapZoom, groundMapResult, mapRunKey, mapTiling, renderMapChunk, upscaleFor } from "../mapRun";
 import { type MapWindow, type Routing, DEFAULT_ROUTER, planWindows, routeWindows, seeded } from "./router";
+import { type ChunkPainter, betweenRowsPainter } from "../layout/rowBand";
 import type { CellLabel } from "./score";
 import { mergeSeamDuplicates } from "./seams";
 import { type Stage1Result, gridKeyOf, readStage1 } from "./stage1";
@@ -150,7 +151,7 @@ export type TwoStageDeps = {
   readStage1: typeof readStage1;
   ensureRows: (taskId: string) => Promise<void>;
   rowsOf: (taskId: string) => FieldRows | undefined;
-  mapChunk: (chunk: MapChunk, tile: (z: number, x: number, y: number) => string, upscale: number, signal: AbortSignal) => Promise<RenderedChunk | null>;
+  mapChunk: (chunk: MapChunk, tile: (z: number, x: number, y: number) => string, upscale: number, signal: AbortSignal, paint?: ChunkPainter) => Promise<RenderedChunk | null>;
   detect: (file: Blob, filename: string, opts: DetectOptions, hooks: { signal?: AbortSignal; onProgress?: (p: Progress) => void }) => Promise<Outcome<WeedVisionResult>>;
   cache: { load: typeof loadFrameRuns; save: typeof saveFrameRun };
 };
@@ -189,7 +190,7 @@ export async function runStage1(taskId: string, input: RunStage1Input): Promise<
   const windows = planWindows(rings, avail.z, tilePx);
   const routing = routeWindows(windows, stage1);
   const size = windows[0]?.size ?? tilePx;
-  const paramsKey = `${TWO_STAGE_KEY_PREFIX}${mapRunKey({ ...input.params, tile: tilePx, overlap: 0 }, input.modelSha, avail.z, 1)}|w${size}`;
+  const paramsKey = `${TWO_STAGE_KEY_PREFIX}${mapRunKey({ ...input.params, tile: tilePx, overlap: 0 }, input.modelSha, avail.z, 1)}|w${size}${rows?.source === "layout" ? "|between-rows" : ""}`;
   const cached = await deps.cache.load(taskId, paramsKey);
   const runs: TwoStageSession["runs"] = {};
   for (const w of windows) { const hit = cached.get(w.name); if (hit) runs[w.name] = { plants: tagRows(hit.detections, rows ?? undefined), ms: hit.timingsMs?.total ?? null }; }
@@ -210,13 +211,14 @@ export function runStage2(taskId: string, input: { userId: string | null; mode: 
   const todo = order.filter(n => !s.runs[n]);
   const { params, paramsKey, tilePx, modelSha } = s;
   const rows = deps.rowsOf(taskId);
+  const paint = rows?.source === "layout" ? betweenRowsPainter(rows) : undefined;
   patchTwoStage(taskId, { running: true, error: null, stage2: { mode: input.mode, done: order.length - todo.length, total: order.length, fromCache: order.length - todo.length } });
   (async () => {
     for (const name of todo) {
       if (ctrl.signal.aborted || !mine()) return;
       const w = byName.get(name)!;
       const current = frameRunMapOf(taskId) ?? map;
-      const rendered = await deps.mapChunk(w, current.tile, 1, ctrl.signal);
+      const rendered = await deps.mapChunk(w, current.tile, 1, ctrl.signal, paint);
       if (ctrl.signal.aborted || !mine()) return;
       let plants: GroundPlant[] = [], ms: number | null = 0;
       if (rendered && rendered.coverage >= MIN_COVERAGE) {

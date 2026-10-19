@@ -32,6 +32,11 @@ const DIR = arg("dir")!;
 const FRAMES = (arg("frames") ?? "").split(",").filter(Boolean);
 const SERVICE = arg("service", "http://127.0.0.1:8765")!;
 const FRESH = argv.includes("--fresh");
+/** "reader": the automatic row reader (as before); "layout": the frame's fitted planting layout (layout-rows.json from layoutTrial.ts). */
+const ROWS = arg("rows", "reader")!;
+/** With layout rows the app paints the rows over before the model sees a window; --no-paint keeps the picture as it is, to compare. */
+const NO_PAINT = argv.includes("--no-paint");
+const TAG = arg("tag", ROWS === "layout" ? (NO_PAINT ? "layout-nopaint" : "layout") : "")!;
 const PARAMS = { algorithm: "rfdetr_seg_large", threshold: 0.5, tile: 1024, overlap: 256, scale: 1 };
 
 type Raster = { z: number; X0: number; Y0: number; w: number; h: number; rgba: Uint8Array };
@@ -72,11 +77,12 @@ async function trialFrame(frame: string, modelSha: string | null) {
   let t0 = performance.now();
   const plan = fieldReadPlan([ring], 23, meta.lat)!;
   const fit = fieldRowsFromPixels((await draw(null, plan.z, plan.left, plan.top, plan.width, plan.height))!, plan.mpp);
-  const rows: FieldRows | null = fit ? { ...fit, z: plan.z, left: plan.left, top: plan.top, mpp: plan.mpp } : null;
+  let rows: FieldRows | null = fit ? { ...fit, z: plan.z, left: plan.left, top: plan.top, mpp: plan.mpp, source: "reader" } : null;
+  if (ROWS === "layout") rows = JSON.parse(readFileSync(join(d, "layout-rows.json"), "utf8"));
   const rowsMs = ms(t0);
 
   // The window cache, kept on disk between runs of this script (the app keeps it in scan_frame_detections).
-  const cacheFile = join(d, "window-cache.json");
+  const cacheFile = join(d, TAG ? `window-cache-${TAG}.json` : "window-cache.json");
   const store = new Map<string, SavedFrameRun>(!FRESH && existsSync(cacheFile) ? JSON.parse(readFileSync(cacheFile, "utf8")) : []);
   const calls: Call[] = [];
   const detect = async (file: Blob, filename: string, opts: DetectOptions): Promise<{ ok: true; value: WeedVisionResult } | { ok: false; error: string }> => {
@@ -91,9 +97,10 @@ async function trialFrame(frame: string, modelSha: string | null) {
     calls.push({ name: filename, wallMs: ms(a), serviceMs: j.timings_ms?.total ?? null, peakGpuMb: j.memory?.peak_gpu_mb ?? null, peakWsMb: j.memory?.peak_working_set_mb ?? null, upBytes: file.size, downBytes: text.length, weeds: j.instances.length, crops: j.crop_instances?.length ?? 0 });
     return { ok: true, value: j };
   };
-  const mapChunk = async (chunk: MapChunk) => {
+  const mapChunk = async (chunk: MapChunk, _t: unknown, _u: number, _s: unknown, paint?: (rgba: Uint8ClampedArray, w: number, h: number, ox: number, oy: number, z: number) => void) => {
     const cv = chunkCanvas(chunk);
     const px = slice(r23, cv.left, cv.top, cv.width, cv.height);
+    if (paint && !NO_PAINT) paint(px.rgba, cv.width, cv.height, cv.left, cv.top, chunk.z);
     let covered = 0;
     for (let i = 3; i < px.rgba.length; i += 4) if (px.rgba[i] > 0) covered++;
     const jpeg = encodeJpeg({ width: px.width, height: px.height, data: new Uint8Array(px.rgba.buffer) }, 95);
@@ -293,8 +300,8 @@ async function trialFrame(frame: string, modelSha: string | null) {
     labels,
     nodeRssMb: Math.round(process.memoryUsage().rss / 1048576),
   };
-  writeFileSync(join(d, "trial.json"), JSON.stringify(out, null, 1));
-  writeOverlay(join(d, "overlay.png"), r23, st, s, rows, weeds, meta);
+  writeFileSync(join(d, TAG ? `trial-${TAG}.json` : "trial.json"), JSON.stringify(out, null, 1));
+  writeOverlay(join(d, TAG ? `overlay-${TAG}.png` : "overlay.png"), r23, st, s, rows, weeds, meta);
   return out;
 }
 
@@ -360,6 +367,6 @@ async function main() {
     console.log(JSON.stringify({ frame: f, totalWallMs: ms(t0), rows: r.rows, stage1: { ms: r.stage1.ms, candidates: r.stage1.candidates, uncertainShare: r.stage1.uncertainShare }, windows: r.windows, stage2: r.stage2 }));
     all.push(r);
   }
-  writeFileSync(join(DIR, "trial-summary.json"), JSON.stringify(all, null, 1));
+  writeFileSync(join(DIR, TAG ? `trial-summary-${TAG}.json` : "trial-summary.json"), JSON.stringify(all, null, 1));
 }
 main().catch(e => { console.error(e); process.exit(1); });
