@@ -314,3 +314,44 @@ and nothing about accuracy.
 5. Make the map layer depend on the plants, not the whole session, so progress ticks stop redrawing every dot (to confirm
    with a browser profile).
 6. On CPU, run RF-DETR with 4 threads, not 12 (6.0 s against 8.6 s per tile). Batching is not worth it (4%).
+
+---
+
+## 7. Built on 2026-10-19 (after approval)
+
+### 7.1 Quick wins, measured before and after (same inputs, same machine)
+
+| Service time | Before | After |
+|---|---|---|
+| Photo DJI_0301 (photo runs now ask for lite geometry) | 8.76 s | 6.52 s (-26%) |
+| Box-local mask step inside it | 1.62 s | 0.05 s |
+| Map chunk as the app sends it (was enlarged 2x, now 1x with shrunk tiles, lite) | 4.89 s, 4.5 MB upload | 3.55 s (-27%), 1.8 MB |
+
+Detections are identical on the photo (481 weeds, 96 crop plants). On the map chunk the count went from 177 to 169
+because the tile seams fall in different places; whether either is closer to the truth is not known.
+The remaining post-processing cost is the contours (1.5 s per photo); outlines are still drawn for every weed.
+
+What changed: `rfdetr.py` (extents from row and column projections), `instances.py` (`geometry=lite`), `mapRun.ts`
+(`mapTiling`: same model sampling, no enlargement), `frameRunCache.ts` (`compactDetection`: map plants stored without the
+chunk-pixel outline, coordinates rounded to about 1 cm), `ModelDetectionLayer.tsx` (keyed on the plants, stable click
+handler), RF-DETR on CPU with the service's thread count. Old saved runs stay readable; a map run at today's settings
+gets a new cache key and runs once more.
+
+### 7.2 The prototype
+
+Built inside the app rather than as a script: the map tiles, the row reader and the model service only meet in the
+browser. Weed Scout > Show all options > "Two-stage weed pressure (prototype)". Code in `src/lib/weedVision/twoStage/`
+(stage1, router, score, twoStageStore), `TwoStagePanel.tsx`, `TwoStageLayer.tsx`; tests in
+`src/test/weedVisionTwoStage.test.ts` (a synthetic orchard).
+
+One design correction found while testing: a cell that is mostly crop row is described as such but no longer sends its
+window to the model. Weeds inside the row band are set aside as the crop whoever finds them, and in the synthetic orchard
+that reason alone routed every window.
+
+### 7.3 Still owed
+
+- One real run on the orchard map: Stage 1, the routed inspection, then the reference, to see the real inspected share
+  and the agreement figures.
+- Blind cell labels: at least 30 on the orchard (200 per field is the plan), then the hold-out fields of section 5.1.
+  Labels live in the browser until exported.
+- Browser timings for Stage 1 and the layers on a real field; the synthetic field (40 m) read in about 0.25 s in tests.
