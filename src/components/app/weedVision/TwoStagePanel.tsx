@@ -13,7 +13,7 @@ import type { ScanSources } from "@/lib/sourceFrames/scan";
 import { type AlgorithmInfo, type Health, algorithmReady, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
 import { type Rate, COVER_CLASSES, scoreTwoStage } from "@/lib/weedVision/twoStage/score";
 import { type LabelFile, type TwoStageLayers, exportLabels, importLabels, labelCell, nextRandomCell, patchTwoStage, runStage1, runStage2, stopTwoStage, twoStagePlants, useTwoStage } from "@/lib/weedVision/twoStage/twoStageStore";
-import { LABEL_COLOURS } from "./TwoStageLayer";
+import { LABEL_COLOURS, TWO_STAGE_COLOURS } from "./TwoStageLayer";
 import { modelShaFor } from "./ModelDetectionsPanel";
 
 const PARAMS = { algorithm: "rfdetr_seg_large", threshold: 0.5, tile: 1024, overlap: 256, scale: 1 };
@@ -202,6 +202,16 @@ export function TwoStagePanel({ taskId, userId, sources, fetchImpl }: { taskId: 
               </div>
               {importNote && <p className="text-neutral-500">{importNote}</p>}
               <p className="text-neutral-600">Labels are kept in this browser only. Export them to keep them.</p>
+            </div>
+          )}
+          {!s.labelMode && (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-neutral-400" data-testid="two-stage-legend">
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "linear-gradient(90deg,#ffe600,#ff1e00)" }} /> pressure, low to high</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-3 rounded-sm border-2" style={{ borderColor: TWO_STAGE_COLOURS.candidate, boxShadow: "0 0 0 1px #000" }} /> candidate area</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-3 rounded-sm border-2" style={{ borderColor: TWO_STAGE_COLOURS.highPriority, boxShadow: "0 0 0 1px #000" }} /> high priority</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-3 rounded-sm" style={{ background: "repeating-linear-gradient(135deg,rgba(255,255,255,0.7) 0 1px,transparent 1px 4px)" }} /> uncertain</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-3 rounded-sm border border-white" /> RF-DETR window</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2.5 w-3 rounded-sm border border-dashed" style={{ borderColor: "#22d3ee" }} /> random audit</span>
             </div>
           )}
           {!s.labelMode && (
