@@ -66,6 +66,8 @@ import { ModelDetectionsPanel } from "../weedVision/ModelDetectionsPanel";
 import { SimpleWeedFinder } from "../weedVision/SimpleWeedFinder";
 import { HeatmapLayer, HotspotFocus, HotspotLayer, REVIEW_COLOUR } from "../weedVision/HotspotLayer";
 import { HotspotPanel } from "../weedVision/HotspotPanel";
+import { TwoStageLayer } from "../weedVision/TwoStageLayer";
+import { TwoStagePanel } from "../weedVision/TwoStagePanel";
 import { type GroundPlant, countByClass, countByRow } from "@/lib/weedVision/frames";
 import type { Hotspot } from "@/lib/weedVision/hotspots";
 import { ensureFieldRows, patchFrameRun, setFrameRunAligner, setFrameRunBoundary, setFrameRunMap, useFrameRun } from "@/lib/weedVision/frameRunStore";
@@ -899,6 +901,7 @@ export function WeedScoutTab({
               <HeatmapLayer taskId={taskId} />
               <HotspotLayer taskId={taskId} />
               <HotspotFocus taskId={taskId} fieldBounds={bounds} />
+              <TwoStageLayer taskId={taskId} />
             </>
           )}
           <ModelDetectionLayer taskId={taskId} onMark={markPlant} showLabels={showLabels && labelsReadable} />
@@ -1132,6 +1135,7 @@ export function WeedScoutTab({
         </div>
         <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} />
         <HotspotPanel taskId={taskId} userId={user?.id ?? null} onOpenPhotos={openAreaPhotos} onMarkArea={markArea} />
+        <TwoStagePanel taskId={taskId} userId={user?.id ?? null} sources={sources} />
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
           <details className="text-[11px]">
             <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">

@@ -160,8 +160,12 @@ export function setFrameRunBoundary(taskId: string, rings: LatLng2[][] | null): 
   boundaries.set(taskId, rings);
   republish(taskId);
 }
+/** The boundary registered for a scan (the field's rings, or the map's bounds). */
+export const frameRunBoundaryOf = (taskId: string): LatLng2[][] | undefined => boundaries.get(taskId);
 /** The field's rows per scan, and the read in flight. */
 const fieldRowsByTask = new Map<string, FieldRows>();
+/** The field's rows when they were read. */
+export const fieldRowsOf = (taskId: string): FieldRows | undefined => fieldRowsByTask.get(taskId);
 const fieldRowsTried = new Map<string, string>();
 type FieldRowsReader = typeof readFieldRows;
 /** The field's rows into the session; every plant on screen is judged against them at once. */
