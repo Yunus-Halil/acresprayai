@@ -14,6 +14,7 @@ import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
 import { DEFAULT_ROUTER, planWindows, routeWindows, seeded } from "@/lib/weedVision/twoStage/router";
 import { type CellLabel, patchesOf, scoreTwoStage, wilson } from "@/lib/weedVision/twoStage/score";
 import { cellAt, cellKey, fillConvex, readStage1, rowBandMask } from "@/lib/weedVision/twoStage/stage1";
+import { mergeSeamDuplicates } from "@/lib/weedVision/twoStage/seams";
 import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { TwoStagePanel } from "@/components/app/weedVision/TwoStagePanel";
@@ -87,6 +88,19 @@ describe("stage 1: pressure between the rows", () => {
     expect(s!.cells.find(c => c.key === keyAt(PLAN, s, 2, 2.5))!.uncertain).toContain("mostly crop row");
   });
 
+  it("cells the read rows do not reach are 'no rows', even when rows were read elsewhere in the field", async () => {
+    // Rows read only in the northern half (the first four rows): the south is unexplained, not confident.
+    const north: FieldRows = { ...ROWS, ctx: { ...ROWS.ctx, lines: ROWS.ctx.lines.slice(0, 4), crops: ROWS.ctx.crops.filter(c => c.y * M < 20) } };
+    const s = await readStage1({ rings: [RING], tile: () => "", maxNative: 23, lat: LAT, rows: north, draw });
+    const cell = (mx: number, my: number) => s!.cells.find(c => c.key === keyAt(PLAN, s, mx, my))!;
+    expect(cell(12, 5).uncertain).not.toContain("no rows");
+    expect(cell(12, 21).uncertain).not.toContain("no rows"); // within one spacing of the last row read
+    expect(cell(12, 35).uncertain).toContain("no rows");
+    const r = routeWindows(planWindows([RING], 23, 680), s!);
+    const southKey = keyAt(PLAN, s, 12, 35);
+    expect([...r.cellsOf.entries()].filter(([, cs]) => cs.includes(southKey)).every(([wn]) => r.reasons[wn] !== "skipped")).toBe(true);
+  });
+
   it("without rows every cell is uncertain and the trees become candidates", async () => {
     const s = await readStage1({ rings: [RING], tile: () => "", maxNative: 23, lat: LAT, rows: null, draw });
     expect(s!.rowsUsed).toBe(false);
@@ -113,6 +127,22 @@ describe("stage 2 routing", () => {
     // Rows are in nearly every window of an orchard; they must not send every window to the model.
     expect(r.order.length).toBeLessThan(0.6 * windows.length);
     expect(seeded(1)()).toBe(seeded(1)());
+  });
+});
+
+describe("seam duplicates", () => {
+  const plant = (id: string, frame: string, mx: number, my: number, areaM2: number, score = 0.8): GroundPlant => ({ id, frame, instanceId: 1, klass: "weed", score, scoreKind: "d", nativePolygon: [], nativeCentroid: [0, 0], nativeBbox: [0, 0, 0, 0], areaPx: 1, equivalentDiameterPx: 1, ring: null, centre: at(mx, my), gsdM: 0.015, areaM2, diameterM: 2 * Math.sqrt(areaM2 / Math.PI), viewAngleDeg: 0, status: "ok", flags: [], tiny: false, touchesBorder: false, fusedFromTiles: 1, rowStatus: "off-row", seenIn: [frame], duplicates: 0 });
+  it("keeps one of a plant two windows both kept across their seam, and nothing else", () => {
+    const out = mergeSeamDuplicates([
+      plant("a", "map/w/1_1", 10, 10, 0.86, 0.9), plant("b", "map/w/2_1", 10.03, 10, 0.862, 0.7), // the same plant, 3 cm apart
+      plant("c", "map/w/1_1", 20, 10, 0.06), plant("d", "map/w/1_1", 20.04, 10, 0.06), // two plants in one window
+      plant("e", "map/w/1_1", 30, 10, 2.35), plant("f", "map/w/2_1", 30.4, 10, 0.07), // a big plant and a cut piece: left alone
+      plant("g", "map/w/1_1", 40, 10, 0.1), plant("h", "map/w/2_1", 41, 10, 0.1), // a metre apart: two plants
+    ]);
+    expect(out.map(p => p.id).sort()).toEqual(["a", "c", "d", "e", "f", "g", "h"]);
+    const a = out.find(p => p.id === "a")!;
+    expect(a.duplicates).toBe(1);
+    expect(a.seenIn).toEqual(["map/w/1_1", "map/w/2_1"]);
   });
 });
 

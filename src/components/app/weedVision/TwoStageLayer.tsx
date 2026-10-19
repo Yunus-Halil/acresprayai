@@ -53,9 +53,15 @@ export function TwoStageLayer({ taskId }: { taskId: string }) {
         if (a) { const ps = a.ring.map(pt); path(ps); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3; ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]); }
         return;
       }
+      // Cells outside the view are skipped before projecting their corners: on a 50 ha field zoomed in, projecting
+      // every cell took 40 ms a redraw (scripts/bench/layerRenderBench.mjs).
+      const vb = map.getBounds().pad(0.05);
+      const s0 = vb.getSouth(), n0 = vb.getNorth(), w0 = vb.getWest(), e0 = vb.getEast();
+      const inView = (ring: { lat: number; lng: number }[]) => ring.some(q => q.lat >= s0 && q.lat <= n0 && q.lng >= w0 && q.lng <= e0);
       if (layers.pressure) {
         for (const c of stage1.cells) {
           if (c.pressure <= 0 && !c.uncertain.length) continue;
+          if (!inView(c.ring)) continue;
           const ps = c.ring.map(pt);
           if (off(ps)) continue;
           path(ps);

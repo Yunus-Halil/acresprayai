@@ -21,6 +21,7 @@ import type { FrameDetection, FrameRunParams, GroundPlant } from "../frames";
 import { type MapChunk, type RenderedChunk, MIN_COVERAGE, chooseMapZoom, groundMapResult, mapRunKey, mapTiling, renderMapChunk, upscaleFor } from "../mapRun";
 import { type MapWindow, type Routing, DEFAULT_ROUTER, planWindows, routeWindows, seeded } from "./router";
 import type { CellLabel } from "./score";
+import { mergeSeamDuplicates } from "./seams";
 import { type Stage1Result, gridKeyOf, readStage1 } from "./stage1";
 
 export const TWO_STAGE_KEY_PREFIX = "two-stage|";
@@ -76,8 +77,13 @@ export function resetTwoStageStore(): void {
   for (const l of listeners) l();
 }
 
-/** Every plant from the windows that ran. */
-export const twoStagePlants = (s: Pick<TwoStageSession, "runs">): GroundPlant[] => Object.values(s.runs).flatMap(r => r.plants);
+/** Every plant from the windows that ran, a plant seen by two windows across their seam counted once. */
+const plantsMemo = new WeakMap<object, GroundPlant[]>();
+export const twoStagePlants = (s: Pick<TwoStageSession, "runs">): GroundPlant[] => {
+  let v = plantsMemo.get(s.runs);
+  if (!v) { v = mergeSeamDuplicates(Object.values(s.runs).flatMap(r => r.plants)); plantsMemo.set(s.runs, v); }
+  return v;
+};
 
 // ------------------------------------------------------------- labels (this browser)
 

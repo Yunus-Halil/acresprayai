@@ -37,6 +37,8 @@ export type Stage1Params = {
   maxDarkShare: number;
   /** A pixel darker than this (0.299 R + 0.587 G + 0.114 B) is deep shadow. */
   darkLuma: number;
+  /** A cell farther than this many row spacings from every row line read is "no rows": the rows say nothing there. */
+  rowReachSpacings: number;
 };
 
 export const DEFAULT_STAGE1: Stage1Params = {
@@ -49,6 +51,7 @@ export const DEFAULT_STAGE1: Stage1Params = {
   maxBandShare: 0.6,
   maxDarkShare: 0.25,
   darkLuma: 50,
+  rowReachSpacings: 1,
 };
 
 export type UncertainReason = "no rows" | "partly imaged" | "mostly crop row" | "shadow";
@@ -114,11 +117,32 @@ export function cellAt(g: GridFrame, X: number, Y: number): { i: number; j: numb
 // ------------------------------------------------------------- accumulation
 
 /** Raw per-cell pixel counts, row-major over the grid. */
-export type CellCounts = { imaged: Int32Array; green: Int32Array; greenInBand: Int32Array; band: Int32Array; dark: Int32Array };
+export type CellCounts = { imaged: Int32Array; green: Int32Array; greenInBand: Int32Array; band: Int32Array; dark: Int32Array; /** 1 where the read rows reach the cell (rowReach); absent = everywhere. */ reached?: Uint8Array };
 export const emptyCounts = (g: GridFrame): CellCounts => {
   const n = g.nx * g.ny;
   return { imaged: new Int32Array(n), green: new Int32Array(n), greenInBand: new Int32Array(n), band: new Int32Array(n), dark: new Int32Array(n) };
 };
+
+/**
+ * The cells the read rows say something about: centre within `spacings` row spacings of a row line. Rows read in one
+ * block of a field say nothing about the rest of it; there the off-row green is every green, trees and hedges
+ * included (an orchard frame with rows read in one block flagged its hedgerow block as confident pressure).
+ */
+export function rowReach(g: GridFrame, rows: FieldRows, spacings: number): Uint8Array {
+  const out = new Uint8Array(g.nx * g.ny);
+  const f = 2 ** (rows.z - g.z);
+  const reach = (spacings * rows.spacingM) / rows.mpp;
+  const lines = rows.ctx.lines;
+  for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) {
+    const x = (g.left + (i + 0.5) * g.cellPx) * f - rows.left, y = (g.top + (j + 0.5) * g.cellPx) * f - rows.top;
+    for (const l of lines) {
+      const dx = l.x2 - l.x1, dy = l.y2 - l.y1, len2 = dx * dx + dy * dy;
+      const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - l.x1) * dx + (y - l.y1) * dy) / len2)) : 0;
+      if (Math.hypot(x - (l.x1 + t * dx), y - (l.y1 + t * dy)) <= reach) { out[j * g.nx + i] = 1; break; }
+    }
+  }
+  return out;
+}
 
 /** Fill a convex polygon (pixel coordinates, pixel centres at +0.5) into a mask. */
 export function fillConvex(mask: Uint8Array, w: number, h: number, pts: [number, number][]): void {
@@ -219,6 +243,7 @@ export function finishStage1(g: GridFrame, counts: CellCounts, rings: LatLng2[][
     const centre = ll((X0 + X1) / 2, (Y0 + Y1) / 2);
     if (rings.length && !rings.some(r => pointInRing(centre, r))) continue;
     const offRowGreen = counts.green[c] - (rowsUsed ? counts.greenInBand[c] : 0);
+    const rowsHere = rowsUsed && (!counts.reached || counts.reached[c] === 1);
     const cell: Stage1Cell = {
       i, j, key: cellKey(i, j), centre, ring: [ll(X0, Y0), ll(X1, Y0), ll(X1, Y1), ll(X0, Y1)],
       imagedShare: imaged / (g.cellPx * g.cellPx),
@@ -229,7 +254,7 @@ export function finishStage1(g: GridFrame, counts: CellCounts, rings: LatLng2[][
       offRowGreenM2: offRowGreen * g.mpp * g.mpp,
       uncertain: [],
     };
-    if (!rowsUsed) cell.uncertain.push("no rows");
+    if (!rowsHere) cell.uncertain.push("no rows");
     if (cell.imagedShare < params.minImagedShare) cell.uncertain.push("partly imaged");
     if (rowsUsed && cell.bandShare > params.maxBandShare) cell.uncertain.push("mostly crop row");
     if (cell.darkShare > params.maxDarkShare) cell.uncertain.push("shadow");
@@ -318,6 +343,7 @@ export async function readStage1(input: {
   if (!plan) return null;
   const g = gridFor(plan, params.cellM);
   const counts = emptyCounts(g);
+  if (input.rows) counts.reached = rowReach(g, input.rows, params.rowReachSpacings);
   const draw = input.draw ?? drawMapRect;
   for (let k = 0; k < plan.tiles.length; k++) {
     if (input.signal?.aborted) return null;
