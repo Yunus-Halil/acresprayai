@@ -93,6 +93,13 @@ const PARAMS_KEY = storageKey("weedScout", "params");
 /** The map's view mode, kept like the other display settings. */
 const VIEW_MODE_KEY = storageKey("weedScout", "viewMode");
 const SIMPLE_KEY = storageKey("weedScout", "simple");
+/** Which of the scan's dot layers the map draws in the full view; all off unless the operator turns one on (2026-10-19). */
+const LAYERS_KEY = storageKey("weedScout", "mapLayers");
+type DotLayers = { spots: boolean; photos: boolean; pattern: boolean; vegetation: boolean };
+const NO_DOTS: DotLayers = { spots: false, photos: false, pattern: false, vegetation: false };
+function loadDotLayers(): DotLayers {
+  try { const raw = localStorage.getItem(LAYERS_KEY); return raw ? { ...NO_DOTS, ...JSON.parse(raw) } : NO_DOTS; } catch { return NO_DOTS; }
+}
 function loadViewMode(): ViewMode {
   try { return readViewMode(localStorage.getItem(VIEW_MODE_KEY)); } catch { return "clean"; }
 }
@@ -335,13 +342,19 @@ export function WeedScoutTab({
   // The map says what the scout thinks without being asked. Thirty labels on a
   // small field can crowd each other, so it is a toggle, defaulting to on.
   const [showLabels, setShowLabels] = useState(true);
-  // Where each photo was taken, as dots; the ones chosen for the selected
-  // shape light up, so step three can be seen rather than trusted.
-  const [showPhotos, setShowPhotos] = useState(true);
-  /** The planting pattern on the map: on by default here, where it is the explanation of every spot. */
-  const [showPattern, setShowPattern] = useState(true);
-  /** The vegetation off the pattern as plants, clusters and coverage zones, drawn at the zoom's own scale. */
-  const [showVegetation, setShowVegetation] = useState(true);
+  // The scan's dot layers (its spots, where each photo was taken, the planting pattern's plants, and the vegetation
+  // structure's plants, clusters and coverage zones) crowded the field into a carpet of rings and a purple wash, so
+  // they are off unless turned on, and the choice is remembered (Yunus, 2026-10-19: "get rid of the dots").
+  const [dotLayers, setDotLayers] = useState<DotLayers>(loadDotLayers);
+  const setDotLayer = useCallback((k: keyof DotLayers, on: boolean) => setDotLayers(cur => {
+    const next = { ...cur, [k]: on };
+    try { localStorage.setItem(LAYERS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+    return next;
+  }), []);
+  const showSpots = dotLayers.spots, showPhotos = dotLayers.photos, showPattern = dotLayers.pattern, showVegetation = dotLayers.vegetation;
+  const setShowPhotos = (on: boolean) => setDotLayer("photos", on);
+  const setShowPattern = (on: boolean) => setDotLayer("pattern", on);
+  const setShowVegetation = (on: boolean) => setDotLayer("vegetation", on);
   /** How the map is read: clean by default; measurement for the outlines and numbers; diagnostic for what was refused or could not be placed. */
   const [viewMode, setViewModeState] = useState<ViewMode>(loadViewMode);
   const setViewMode = useCallback((m: ViewMode) => { setViewModeState(m); try { localStorage.setItem(VIEW_MODE_KEY, m); } catch { /* private mode */ } }, []);
@@ -909,6 +922,8 @@ export function WeedScoutTab({
               The outline is the verdict, the fill is what it reads as, and the
               popup is where the operator disagrees with either. */}
           {!simple && candidates.map((c, i) => {
+            // Hidden unless the spots layer is on; the spot picked in the sidebar is always drawn, so it can be reviewed.
+            if (!showSpots && c.id !== selectedId) return null;
             const v = verdictOf(c);
             const gone = isDismissal(v);
             const active = c.id === selectedId;
@@ -1024,6 +1039,12 @@ export function WeedScoutTab({
             <label className="flex items-center gap-2 cursor-pointer" data-testid="watch-pass-toggle" title="Developer tools. Each planned window as a box while the pattern pass runs: white is being read, yellow found rows, grey found none; the rows and plants are drawn as each window lands.">
               <input type="checkbox" checked={watchPass} onChange={e => setWatchPass(e.target.checked)} className="accent-[#ffffff]" />
               Watch the pass on the map{live ? `: window ${Math.min(live.done + 1, live.plan.windows.length)} of ${live.plan.windows.length}, ${live.pattern.summary.windowsWithRows} with rows` : " (while a scan runs)"}
+            </label>
+          )}
+          {candidates.length > 0 && (
+            <label className="flex items-center gap-2 cursor-pointer" data-testid="spots-toggle">
+              <input type="checkbox" checked={showSpots} onChange={e => setDotLayer("spots", e.target.checked)} className="accent-[#4CAF50]" />
+              Scan spots on the map ({candidates.length.toLocaleString()}){showSpots ? "" : "; the one picked in the list still shows"}
             </label>
           )}
           {result?.pattern && (
