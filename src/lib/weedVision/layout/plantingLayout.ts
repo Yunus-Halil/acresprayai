@@ -77,6 +77,18 @@ export const LAYOUT_PARAMS = {
    * stands only with at least this many plants, sitting on the layout's own line within these shares of the spacings.
    */
   bridgedMinPlants: 6, bridgedAcrossShare: 0.08, bridgedAlongShare: 0.15,
+  /** ...and with crowns between these shares of the planting's typical crown: across a track, the edge row of a strip crop lines up but its plants are a third the size. */
+  bridgedCrownMin: 0.5, bridgedCrownMax: 2,
+  /**
+   * Between two found rows, or two found plants on a row, the green is rows and plants until proven otherwise: the
+   * gap is scanned for row lines (peaks of the green profile across) and plants (peaks along), with thresholds set
+   * from what the found rows and plants read on this field, at these shares, never below the floors.
+   */
+  interiorRowShare: 0.15, interiorRowFloor: 0.05, interiorPlantShare: 0.25, interiorPlantFloor: 0.12,
+  /** A peak counts only when it stands this many times above the lowest point between it and the next peak either side: a young row reads a fifth of an old one, a weedy alley has no valleys. */
+  interiorProminence: 2,
+  /** Row lines closer than this share of the row spacing are one row; plants closer than this share of the plant spacing are one plant. */
+  interiorRowSeparation: 0.35, interiorPlantSeparation: 0.5,
   /** How much of the last plant's offset carries to the next expected position (a drifting row is followed). */
   driftKeep: 0.6,
   /** A row stands with at least this many plants... */
@@ -486,11 +498,122 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     grow();
     if (!added) break;
   }
+  // ---- The interior: rows on both sides and green between them means rows between them. Every gap between two
+  // found rows is scanned across for row lines, every row line along for plants; every stretch between two found
+  // plants on a row is scanned along. Found at the lattice's own pitch, a plant joins the lattice; a row at another
+  // pitch (a younger block planted between) stands on its own.
+  const freeRows: { j: number; plants: { x: number; y: number; g: number }[] }[] = [];
+  {
+    const { ux, uy, nx, ny } = basis(L);
+    const g = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi < 0 || yi < 0 || xi >= r.w || yi >= r.h || !r.inField[yi * r.w + xi] ? -1 : G[yi * r.w + xi]; };
+    const alongOf = (x: number, y: number) => (x - L.ox) * ux + (y - L.oy) * uy, acrossOf = (x: number, y: number) => (x - L.ox) * nx + (y - L.oy) * ny;
+    const at = (t: number, c: number): [number, number] => [L.ox + t * ux + c * nx, L.oy + t * uy + c * ny];
+    const profile = (f: (s: number) => number, s0: number, s1: number): Float32Array => {
+      const n = Math.max(0, Math.floor(s1 - s0));
+      const raw = new Float32Array(n);
+      for (let k = 0; k < n; k++) raw[k] = f(s0 + k);
+      const out = new Float32Array(n);
+      for (let k = 0; k < n; k++) { let a = 0, m = 0; for (let d = -1; d <= 1; d++) { const v = raw[k + d]; if (v !== undefined && v >= 0) { a += v; m++; } } out[k] = m ? a / m : -1; }
+      return out;
+    };
+    const peaks = (pr: Float32Array, threshold: number, separation: number): number[] => {
+      const cand: number[] = [];
+      for (let k = 1; k < pr.length - 1; k++) if (pr[k] >= threshold && pr[k] >= pr[k - 1] && pr[k] > pr[k + 1]) cand.push(k);
+      cand.sort((a, b) => pr[b] - pr[a]);
+      const kept: number[] = [];
+      for (const k of cand) if (kept.every(q => Math.abs(q - k) >= separation)) kept.push(k);
+      kept.sort((a, b) => a - b);
+      // Prominence: the lowest point between a peak and its neighbours (or the ends) is well below it.
+      return kept.filter((k, n) => {
+        const lo = n ? kept[n - 1] : 0, hi = n + 1 < kept.length ? kept[n + 1] : pr.length - 1;
+        let vl = Infinity, vr = Infinity;
+        for (let q = lo; q < k; q++) if (pr[q] >= 0) vl = Math.min(vl, pr[q]);
+        for (let q = k + 1; q <= hi; q++) if (pr[q] >= 0) vr = Math.min(vr, pr[q]);
+        return pr[k] >= P.interiorProminence * Math.max(vl === Infinity ? 0 : vl, vr === Infinity ? 0 : vr);
+      });
+    };
+    type RowInfo = { j: number; across: number; t0: number; t1: number; reading: number; plantG: number[] };
+    const byJ = new Map<number, { i: number; x: number; y: number; g: number }[]>();
+    for (const [k, v] of plant) { const [i, j] = k.split(",").map(Number); (byJ.get(j) ?? byJ.set(j, []).get(j)!).push({ i, ...v }); }
+    const rowsInfo: RowInfo[] = [...byJ.entries()].map(([j, ps]) => {
+      const across = median(ps.map(q => acrossOf(q.x, q.y)));
+      const ts = ps.map(q => alongOf(q.x, q.y)), t0 = Math.min(...ts), t1 = Math.max(...ts);
+      const pr = profile(t => g(...at(t, across)), t0, t1);
+      let a = 0, m = 0; for (const v of pr) if (v >= 0) { a += v; m++; }
+      return { j, across, t0, t1, reading: m ? a / m : 0, plantG: ps.map(q => q.g) };
+    }).sort((a, b) => a.j - b.j);
+    const plantsOnLine = (c: number, t0: number, t1: number, threshold: number) => {
+      const pr = profile(t => g(...at(t, c)), t0, t1);
+      // The plant at a peak is the greenest spot a little either side of the line, so a row that bends is followed.
+      return peaks(pr, threshold, P.interiorPlantSeparation * L.along).map(k => {
+        let best = { x: 0, y: 0, g: -1 };
+        for (let d = -0.1 * Math.abs(L.across); d <= 0.1 * Math.abs(L.across); d += 1) { const [x, y] = at(t0 + k, c + d); const v = g(x, y); if (v > best.g) best = { x, y, g: v }; }
+        return best;
+      });
+    };
+    // (a) Between found rows.
+    for (let n = 0; n + 1 < rowsInfo.length; n++) {
+      const A = rowsInfo[n], B = rowsInfo[n + 1];
+      if (B.j - A.j < 2) continue;
+      const lo = Math.min(A.across, B.across) + P.interiorRowSeparation * Math.abs(L.across), hi = Math.max(A.across, B.across) - P.interiorRowSeparation * Math.abs(L.across);
+      if (hi <= lo) continue;
+      const t0 = Math.min(A.t0, B.t0), t1 = Math.max(A.t1, B.t1);
+      const rowThreshold = Math.max(P.interiorRowFloor, P.interiorRowShare * median([A.reading, B.reading]));
+      const plantThreshold = Math.max(P.interiorPlantFloor, P.interiorPlantShare * median([...A.plantG, ...B.plantG]));
+      const across = profile(c => { let a = 0, m = 0; for (let t = t0; t <= t1; t += 2) { const v = g(...at(t, c)); if (v >= 0) { a += v; m++; } } return m ? a / m : -1; }, lo, hi);
+      let rowsInGap = 0;
+      for (const k of peaks(across, rowThreshold, P.interiorRowSeparation * Math.abs(L.across))) {
+        const c = lo + k;
+        const found = plantsOnLine(c, t0, t1, plantThreshold);
+        if (found.length < P.minPlants) continue;
+        const jEst = c / L.across, jNear = Math.round(jEst);
+        // On the lattice's own row and in step with it, the plants join the lattice; else the row stands on its own.
+        const mapped: [number, typeof found[number]][] = [];
+        if (Math.abs(jEst - jNear) <= 0.3 && !byJ.has(jNear)) {
+          for (const q of found) {
+            const iEst = (alongOf(q.x, q.y) - jNear * L.stagger) / L.along, iNear = Math.round(iEst);
+            if (Math.abs(iEst - iNear) <= 0.3 && !plant.has(key(iNear, jNear))) mapped.push([iNear, q]);
+          }
+        }
+        if (mapped.length >= 0.7 * found.length) { for (const [iNear, q] of mapped) { plant.set(key(iNear, jNear), q); bridged.delete(key(iNear, jNear)); } }
+        else freeRows.push({ j: jEst, plants: found });
+        rowsInGap++;
+      }
+      // The gap explained by rows: what lay beyond it was not reached across an empty row after all.
+      if (rowsInGap) {
+        const aJoined = byJ.get(A.j)!.some(q => !bridged.has(key(q.i, A.j))), bJoined = byJ.get(B.j)!.some(q => !bridged.has(key(q.i, B.j)));
+        for (const [k] of plant) { const [, jj] = k.split(",").map(Number); if ((aJoined && jj >= B.j) || (bJoined && jj <= A.j)) bridged.delete(k); }
+      }
+    }
+    // (b) Between found plants on a row.
+    for (const R of rowsInfo) {
+      const ps = byJ.get(R.j)!.sort((a, b) => a.i - b.i);
+      const plantThreshold = Math.max(P.interiorPlantFloor, P.interiorPlantShare * median(R.plantG));
+      // A plant filled into a stretch reached across an empty row is as unproven as the stretch.
+      const rowBridged = ps.every(q => bridged.has(key(q.i, R.j)));
+      for (let n = 0; n + 1 < ps.length; n++) {
+        const a = ps[n], b = ps[n + 1];
+        if (b.i - a.i < 2) continue;
+        const ta = alongOf(a.x, a.y), tb = alongOf(b.x, b.y), ca = acrossOf(a.x, a.y), cb = acrossOf(b.x, b.y);
+        const pr = profile(t => { const f = (t - ta) / Math.max(1, tb - ta); return g(...at(t, ca + f * (cb - ca))); }, ta + 0.3 * L.along, tb - 0.3 * L.along);
+        for (const k of peaks(pr, plantThreshold, P.interiorPlantSeparation * L.along)) {
+          const t = ta + 0.3 * L.along + k, f = (t - ta) / Math.max(1, tb - ta), c = ca + f * (cb - ca);
+          const iEst = (t - R.j * L.stagger) / L.along, iNear = Math.round(iEst);
+          if (iNear <= a.i || iNear >= b.i || plant.has(key(iNear, R.j))) continue;
+          let best = { x: 0, y: 0, g: -1 };
+          for (let d = -0.1 * Math.abs(L.across); d <= 0.1 * Math.abs(L.across); d += 1) { const [x, y] = at(t, c + d); const v = g(x, y); if (v > best.g) best = { x, y, g: v }; }
+          if (best.g >= plantThreshold) { plant.set(key(iNear, R.j), best); if (rowBridged) bridged.add(key(iNear, R.j)); }
+        }
+      }
+    }
+  }
   // Rows from what grew: runs of plants along each row, with the gaps between them; short runs dropped.
   const byRow = new Map<number, number[]>();
   for (const k of plant.keys()) { const [i, j] = k.split(",").map(Number); (byRow.get(j) ?? byRow.set(j, []).get(j)!).push(i); }
   const plants: LayoutPlant[] = [], gaps: LayoutGap[] = [];
   let rows = 0, expected = 0, found = 0, run = 0;
+  // The planting's typical crown, from the plants joined to the clicked ones.
+  const typicalCrown = median([...plant.entries()].filter(([k]) => !bridged.has(k)).map(([, q]) => crownRadius(r, q.x, q.y, rmax)));
   for (const [j, is] of byRow) {
     is.sort((a, b) => a - b);
     let cur: number[] = [is[0]];
@@ -519,6 +642,10 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     const bridgedOk = (is2: number[]): boolean => {
       if (!is2.every(i => bridged.has(key(i, j)))) return true;
       if (is2.length < P.bridgedMinPlants) return false;
+      if (typicalCrown > 0) {
+        const crown = median(is2.map(i => { const q = plant.get(key(i, j))!; return crownRadius(r, q.x, q.y, rmax); }));
+        if (crown < P.bridgedCrownMin * typicalCrown || crown > P.bridgedCrownMax * typicalCrown) return false;
+      }
       const { ux, uy, nx, ny } = basis(L);
       const offs = is2.map(i => { const q = plant.get(key(i, j))!; const [lx, ly] = latticePoint(L, i, j); return [Math.abs((q.x - lx) * ux + (q.y - ly) * uy), Math.abs((q.x - lx) * nx + (q.y - ly) * ny)]; });
       return median(offs.map(o => o[0])) <= P.bridgedAlongShare * L.along && median(offs.map(o => o[1])) <= P.bridgedAcrossShare * Math.abs(L.across);
@@ -542,6 +669,10 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       cur.push(is[k]);
     }
     flush();
+  }
+  for (const fr of freeRows) {
+    rows++; run++; expected += fr.plants.length; found += fr.plants.length;
+    fr.plants.forEach((q, k) => plants.push({ x: q.x, y: q.y, r: crownRadius(r, q.x, q.y, rmax), row: fr.j, i: k, run }));
   }
   return { plants, gaps, rows, foundShare: expected ? found / expected : 0, lattice: L };
 }

@@ -31,9 +31,15 @@ as weeds.
    crown-sized box (0.3 m), not a spacing-sized one, so a young 0.5 m crown counts. A planting does not stop in the
    middle of a field: an empty row is stepped over and every expected position near an accepted tree is looked at
    again (the sweep). A stretch of row reached only that way must have six plants sitting tightly on the layout's own
-   line, or it is dropped (across a track, another block's trees can line up by chance). Stretches that do not run
-   straight and evenly are dropped. Where two plantings claim the same trees, the shorter stretch gives way. Missing
-   trees become gaps.
+   line with crowns of the planting's size, or it is dropped (across a track, another block's trees or a strip crop's
+   edge row can line up by chance). Stretches that do not run straight and evenly are dropped. Where two plantings
+   claim the same trees, the shorter stretch gives way. Missing trees become gaps.
+   **Rows on both sides and green between them means rows between them.** Every gap between two found rows is scanned
+   across for row lines (peaks of the green profile, each standing twice above the valleys beside it, so a young row
+   that reads a fifth of an old one still counts and a weedy alley with no valleys does not), and every row line along
+   for plants; every stretch between two found plants on a row is scanned along the same way. A row in step with the
+   lattice joins it; a row at another pitch or phase (a younger block planted between) stands on its own. A gap
+   explained this way joins what lay beyond it to the planting.
 4. Tree-sized green on no row is reported (orange rings): a row or block not marked yet.
 5. The result is the app's own row structure, so Find weeds, Stage 1 and the two-stage prototype use it unchanged.
    With a layout, every picture sent to RF-DETR has the rows painted over with the field's bare-ground colour (each
@@ -44,23 +50,26 @@ as weeds.
 
 ## Measured on the five orchard frames (stand-in maps; not the orthomosaic)
 
-| Frame | How marked | Rows | Trees found (first build / with the spacing rule) | Gaps | Uncovered tree-sized patches |
+| Frame | How marked | Rows | Trees found (first build / spacing rule / interior scan) | Gaps | Uncovered tree-sized patches |
 |---|---|---|---|---|---|
-| DJI_0301 | 3 labelled trees | 8 (reader: 6) | 85 / 92 | 20 | 1 |
-| DJI_0303 | reader's proposal | 7 | 90 / 94 | 19 | 3 |
-| DJI_0312 | 3 + 3 clicks, two plantings | 7 (reader: none) | 63 / 79 | 16 | 6 |
-| DJI_0320 | reader's proposal | 6 | 40 / 56 | 8 | 12 (the strip crop and hedge to the west) |
-| DJI_0327 | 3 clicks | 7 (reader: none) | 40 / 60 | 5 | 4 (a young block to the west) |
+| DJI_0301 | 3 labelled trees | 8 (reader: 6) | 85 / 92 / 98 | 14 | 1 |
+| DJI_0303 | reader's proposal | 7 | 90 / 94 / 108 | 5 | 3 |
+| DJI_0312 | 3 + 3 clicks, two plantings | 7 (reader: none) | 63 / 79 / 85 | 10 | 6 |
+| DJI_0320 | reader's proposal | 6 | 40 / 56 / 60 | 4 | 12 (the strip crop and hedge to the west) |
+| DJI_0327 | 3 clicks | 6 (reader: none) | 40 / 60 / 55 | 3 | 7 (a young block to the west) |
 
 The spacing rule (section "How", 2 and 3) was added after the real map showed every second row skipped: rows of
 younger, smaller trees between the clicked rows. On the five frames no spacing changed (no row or plant was invented
 between bare alleys or plants that stand apart) and every frame gained trees, mostly at row ends and in rows that had
 stopped early. Two rows that stepped across a track into another block were caught by the bridged-stretch rule.
-Synthetic tests cover the two failures seen: clicks that skip the young row between (every row and 85% of the young
-trees found, the field's 2.6 m spacing reported) and clicks that skip a tree along the row.
+Synthetic tests cover the failures seen on the real map: clicks that skip the young row between (every row and 85% of
+the young trees found, the field's 2.6 m spacing reported), clicks that skip a tree along the row, and a block of
+young trees at its own pitch and phase between two blocks of old ones (rows on both sides, none drawn in the middle:
+found by the interior scan). DJI_0327 keeps a row of tree-sized plants along the track verge that passed every test;
+whether it is a planting is for the operator.
 
-Against the hand labels on DJI_0301 (104 trees, 414 weeds, not exhaustive): 100 of 104 labelled trees fall on the rows
-(reader: 72), 80 are matched to a fitted tree within 0.6 m. 82 of 414 labelled weeds fall inside the crop band and are
+Against the hand labels on DJI_0301 (104 trees, 414 weeds, not exhaustive): 99 of 104 labelled trees fall on the rows
+(reader: 72), 82 are matched to a fitted tree within 0.6 m. 79 of 414 labelled weeds fall inside the crop band and are
 treated as crop (reader: 33); most of those are under or against a crown, where the model does not see them either.
 That is the cost of measuring crowns generously, and it is not measured against anything but these labels.
 

@@ -148,6 +148,34 @@ describe("the spacing is the clue", () => {
     expect(A.filter(t => near(t, fit.plants)).length / A.length).toBeGreaterThan(0.9);
   });
 
+  it("rows on both sides and green between: the young block between, at its own pitch and phase, is found", () => {
+    // Big trees on rows at 2.5, 7.5, 12.5 m and again at 27.5, 32.5, 37.5 m; between them three rows of 0.3 m trees 3 m
+    // apart (not the 5 m pitch), shifted a metre along; one big row has six small trees where big ones are missing.
+    const trees: (Tree & { kind: "big" | "small" })[] = [];
+    const ang = 3 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    const put = (i: number, c: number, r: number, kind: "big" | "small", shift = 0) => { const x = 2 + (i * 3.2 + shift) * ux + c * nx, y = 2.5 + (i * 3.2 + shift) * uy + c * ny; if (x > 1 && x < 59 && y > 0.5 && y < 39.5) trees.push({ x, y, r, kind }); };
+    for (const c of [0, 5, 10, 25, 30, 35]) for (let i = 0; i < 18; i++) put(i, c, 0.9, "big");
+    for (const c of [14, 17, 20]) for (let i = 0; i < 18; i++) put(i, c, 0.3, "small", 1);
+    // On the row at 25 m, trees 6 to 11 are young ones.
+    trees.splice(0, trees.length, ...trees.filter(t => !(t.kind === "big" && Math.abs(((t.x - 2) * ux + (t.y - 2.5) * uy) / 3.2 - 8.5) < 3 && Math.abs((t.x - 2) * nx + (t.y - 2.5) * ny - 25) < 0.5)));
+    for (let i = 6; i <= 11; i++) put(i, 25, 0.3, "small");
+    const green = new Uint8Array(W * H);
+    const set = (x: number, y: number) => { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) green[yi * W + xi] = 255; };
+    for (const t of trees) for (let dy = -t.r; dy <= t.r; dy += MPP / 2) for (let dx = -t.r; dx <= t.r; dx += MPP / 2) if (dx * dx + dy * dy <= t.r * t.r) set(t.x + dx, t.y + dy);
+    const inField = new Uint8Array(W * H);
+    fillPolygon(inField, W, H, [[0, 0], [W, 0], [W, H], [0, H]]);
+    const r: LayoutRaster = { z: Z, left: LEFT, top: TOP, scale: SCALE, mpp: MPP, w: W, h: H, green, inField };
+    const big = trees.filter(t => t.kind === "big"), small = trees.filter(t => t.kind === "small");
+    const row0 = big.filter(t => Math.abs((t.x - 2) * nx + (t.y - 2.5) * ny) < 0.5).sort((p, q) => p.x - q.x);
+    const row1 = big.filter(t => Math.abs((t.x - 2) * nx + (t.y - 2.5) * ny - 5) < 0.5).sort((p, q) => p.x - q.x);
+    const a = row0[5], b = row0[6], c = row1[5];
+    const fits = fitLayoutAll(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    const plants = fits.flatMap(f => f.plants);
+    expect(big.filter(t => near(t, plants)).length / big.length).toBeGreaterThan(0.9);
+    expect(small.filter(t => near(t, plants)).length / small.length).toBeGreaterThan(0.85);
+    expect(fits.reduce((s, f) => s + f.rows, 0)).toBeGreaterThanOrEqual(9);
+  });
+
   it("does not invent rows between rows when the alleys are bare, nor plants between plants that stand apart", () => {
     const { r, trees } = orchard();
     const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
