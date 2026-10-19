@@ -89,6 +89,19 @@ export function paintRowBand(rgba: Uint8ClampedArray, w: number, h: number, band
   return n;
 }
 
+/**
+ * A short signature of the rows a result was computed with: a result painted around one set of rows must not be
+ * handed back for another (the rows change when the layout is refitted, re-marked, or the fitter improves).
+ */
+export function rowsSignature(rows: FieldRows): string {
+  let h = 2166136261;
+  const mix = (v: number) => { h ^= Math.round(v * 10) & 0xffffffff; h = Math.imul(h, 16777619) >>> 0; };
+  mix(rows.ctx.lines.length); mix(rows.ctx.crops.length); mix(rows.ctx.bandPx);
+  for (const l of rows.ctx.lines) { mix(l.x1); mix(l.y1); mix(l.x2); mix(l.y2); }
+  for (const c of rows.ctx.crops) { mix(c.x); mix(c.y); mix(c.r); }
+  return h.toString(36);
+}
+
 /** A painter for a model's picture: the crop row band painted over, so the model looks only between the rows. */
 export type ChunkPainter = (rgba: Uint8ClampedArray, w: number, h: number, originX: number, originY: number, z: number) => void;
 /**

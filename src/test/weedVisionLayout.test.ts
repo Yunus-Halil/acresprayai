@@ -11,7 +11,8 @@ import { type LayoutRaster, fillPolygon, fitLayout, fitLayoutAll, latticeFromCli
 import { betweenRowsPainter, paintRowBand, rowBandMask } from "@/lib/weedVision/layout/rowBand";
 import { fitPlantingLayout, proposeFromRows } from "@/lib/weedVision/layout/readLayout";
 import { addClick, getLayoutUi, resetLayoutUi, saveLayout, startMarking } from "@/lib/weedVision/layout/layoutUi";
-import { ensureFieldRows, frameRunFieldRows, getFrameRun, refinedLayoutBlocks, resetFrameRunStore, setFieldRowsReaders, setFrameRunBoundary, setFrameRunLayout, setFrameRunMap, startMapRun } from "@/lib/weedVision/frameRunStore";
+import { ensureFieldRows, frameRunFieldRows, getFrameRun, refinedLayoutBlocks, rereadFieldRows, resetFrameRunStore, setFieldRowsReaders, setFrameRunBoundary, setFrameRunLayout, setFrameRunMap, startMapRun } from "@/lib/weedVision/frameRunStore";
+import { rowsSignature } from "@/lib/weedVision/layout/rowBand";
 import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
 
 const MPP = 0.08; // raster metres per pixel
@@ -226,7 +227,16 @@ describe("in the app", () => {
     await vi.waitFor(() => expect(getFrameRun("t").running).toBe(false));
     expect(mapChunk.mock.calls.length).toBeGreaterThan(0);
     expect((mapChunk.mock.calls as unknown as unknown[][]).every(c => typeof c[4] === "function")).toBe(true);
-    expect(getFrameRun("t").paramsKey).toMatch(/\|between-rows$/);
+    // The results are keyed on the rows they were painted around: other rows, other results.
+    const rows = frameRunFieldRows("t")!;
+    expect(getFrameRun("t").paramsKey).toMatch(new RegExp(`\|between-rows\|${rowsSignature(rows)}$`));
+    expect(rowsSignature({ ...rows, ctx: { ...rows.ctx, crops: rows.ctx.crops.slice(1) } })).not.toBe(rowsSignature(rows));
+    // "Read the rows again": the same marks fitted again, the field read once more only if the map changed.
+    const before = getFrameRun("t").layoutStats;
+    rereadFieldRows("t");
+    await vi.waitFor(() => expect(getFrameRun("t").fieldRowsState).toBe("found"));
+    expect(rasterReader).toHaveBeenCalledTimes(1);
+    expect(getFrameRun("t").layoutStats).toEqual(before);
   });
 
   it("proposes a planting from rows the reader found", () => {

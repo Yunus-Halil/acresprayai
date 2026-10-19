@@ -20,7 +20,7 @@ import { ensureFieldRows, fieldRowsOf, frameRunBoundaryOf, frameRunMapOf } from 
 import type { FrameDetection, FrameRunParams, GroundPlant } from "../frames";
 import { type MapChunk, type RenderedChunk, MIN_COVERAGE, chooseMapZoom, groundMapResult, mapRunKey, mapTiling, renderMapChunk, upscaleFor } from "../mapRun";
 import { type MapWindow, type Routing, DEFAULT_ROUTER, planWindows, routeWindows, seeded } from "./router";
-import { type ChunkPainter, betweenRowsPainter } from "../layout/rowBand";
+import { type ChunkPainter, betweenRowsPainter, rowsSignature } from "../layout/rowBand";
 import type { CellLabel } from "./score";
 import { mergeSeamDuplicates } from "./seams";
 import { type Stage1Result, gridKeyOf, readStage1 } from "./stage1";
@@ -190,7 +190,7 @@ export async function runStage1(taskId: string, input: RunStage1Input): Promise<
   const windows = planWindows(rings, avail.z, tilePx);
   const routing = routeWindows(windows, stage1);
   const size = windows[0]?.size ?? tilePx;
-  const paramsKey = `${TWO_STAGE_KEY_PREFIX}${mapRunKey({ ...input.params, tile: tilePx, overlap: 0 }, input.modelSha, avail.z, 1)}|w${size}${rows?.source === "layout" ? "|between-rows" : ""}`;
+  const paramsKey = `${TWO_STAGE_KEY_PREFIX}${mapRunKey({ ...input.params, tile: tilePx, overlap: 0 }, input.modelSha, avail.z, 1)}|w${size}${rows?.source === "layout" ? `|between-rows|${rowsSignature(rows)}` : ""}`;
   const cached = await deps.cache.load(taskId, paramsKey);
   const runs: TwoStageSession["runs"] = {};
   for (const w of windows) { const hit = cached.get(w.name); if (hit) runs[w.name] = { plants: tagRows(hit.detections, rows ?? undefined), ms: hit.timingsMs?.total ?? null }; }

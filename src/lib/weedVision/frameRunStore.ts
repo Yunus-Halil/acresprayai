@@ -26,7 +26,8 @@ import type { PhotoPixels } from "../photoScout/pattern";
 import { type FieldRows, fieldRowStatusAt, readFieldRows } from "./fieldRows";
 import { type LayoutBlock, type PlantingLayout, fitPlantingLayout, readLayoutRaster } from "./layout/readLayout";
 import type { LayoutRaster } from "./layout/plantingLayout";
-import { type ChunkPainter, betweenRowsPainter } from "./layout/rowBand";
+import { type ChunkPainter, betweenRowsPainter, rowsSignature } from "./layout/rowBand";
+import { LAYOUT_VERSION } from "./layout/plantingLayout";
 
 export type ViewMode = "priority" | "heatmap" | "detections";
 
@@ -200,7 +201,7 @@ export async function ensureFieldRows(taskId: string, opts: { reader?: FieldRows
   if (!map || !rings?.length) return;
   const mapKey = `${map.maxNative}|${rings.length}|${rings[0].length}|${rings[0][0]?.lat}|${rings[0][0]?.lng}`;
   const layout = layoutsByTask.get(taskId) ?? null;
-  const key = `${mapKey}|${layout ? JSON.stringify(layout.blocks) : "auto"}`;
+  const key = `${mapKey}|v${LAYOUT_VERSION}|${layout ? JSON.stringify(layout.blocks) : "auto"}`;
   if (fieldRowsTried.get(taskId) === key) return;
   fieldRowsTried.set(taskId, key);
   patchFrameRun(taskId, { fieldRowsState: "reading", fieldRowsProgress: 0 });
@@ -239,6 +240,11 @@ export const frameRunLayoutOf = (taskId: string): PlantingLayout | null => layou
 export const refinedLayoutBlocks = (taskId: string): LayoutBlock[] | null => refinedByTask.get(taskId) ?? null;
 /** The field rows themselves (frame pixels), for drawing them. */
 export const frameRunFieldRows = (taskId: string): FieldRows | null => fieldRowsByTask.get(taskId) ?? null;
+/** Read the rows again from the same map and layout (after a change to the fitter, or on the operator's ask). */
+export function rereadFieldRows(taskId: string): void {
+  fieldRowsTried.delete(taskId);
+  void ensureFieldRows(taskId);
+}
 /** Use this planting layout for the scan's rows (null: back to reading them automatically), and read them again. */
 export function setFrameRunLayout(taskId: string, layout: PlantingLayout | null): void {
   if (layout && layout.blocks.length) layoutsByTask.set(taskId, layout); else layoutsByTask.delete(taskId);
@@ -541,7 +547,7 @@ export function startMapRun(taskId: string, input: StartMapRunInput): void {
   // With the field's planting layout, the model is shown only what grows between the rows: the rows are painted over.
   const layoutRows = fieldRowsByTask.get(taskId);
   const paint = layoutRows?.source === "layout" ? betweenRowsPainter(layoutRows) : undefined;
-  const paramsKey = `${mapRunKey(sent, input.modelSha, z, 1)}${paint ? "|between-rows" : ""}`;
+  const paramsKey = `${mapRunKey(sent, input.modelSha, z, 1)}${paint && layoutRows ? `|between-rows|${rowsSignature(layoutRows)}` : ""}`;
   const chunks = planMapChunks(rings, z);
   const scanSet = mapScanSet(map, input.sources?.set, input.sources?.groundAltM);
   patchFrameRun(taskId, {

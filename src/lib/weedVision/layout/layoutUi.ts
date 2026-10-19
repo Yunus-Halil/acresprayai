@@ -3,7 +3,7 @@
 // the tab like the run stores.
 import { useSyncExternalStore } from "react";
 import type { LatLng2 } from "../../geo";
-import { frameRunFieldRows, frameRunLayoutOf, getFrameRun, refinedLayoutBlocks, setFrameRunLayout } from "../frameRunStore";
+import { frameRunFieldRows, frameRunLayoutOf, getFrameRun, refinedLayoutBlocks, rereadFieldRows, setFrameRunLayout } from "../frameRunStore";
 import { deleteFieldLayout, saveFieldLayout } from "./fieldLayoutStore";
 import { type PlantingLayout, proposeFromRows } from "./readLayout";
 
@@ -28,6 +28,9 @@ export const getLayoutUi = (taskId: string): LayoutUi => state.get(taskId) ?? EM
 function patch(taskId: string, p: Partial<LayoutUi>): void { state.set(taskId, { ...getLayoutUi(taskId), ...p }); for (const l of listeners) l(); }
 export function useLayoutUi(taskId: string): LayoutUi { return useSyncExternalStore(subscribe, () => getLayoutUi(taskId), () => getLayoutUi(taskId)); }
 export function resetLayoutUi(): void { state.clear(); for (const l of listeners) l(); }
+
+/** The rows read again from the same marks: what the operator presses after an update, or when the lines look stale. */
+export function rereadRows(taskId: string): void { patch(taskId, { error: null, show: true }); rereadFieldRows(taskId); }
 
 export function startMarking(taskId: string): void { patch(taskId, { clicking: true, clicks: [], show: true, error: null }); }
 export function cancelMarking(taskId: string): void { patch(taskId, { clicking: false, clicks: [] }); }

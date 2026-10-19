@@ -9,7 +9,7 @@ import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtDistance } from "@/lib/units";
 import { useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { MIN_TRUSTED_FOUND, MIN_TRUSTED_ROWS } from "@/lib/weedVision/layout/readLayout";
-import { acceptReaderRows, cancelMarking, clearLayout, saveLayout, setShowRows, startMarking, undoLastPlanting, useLayoutUi } from "@/lib/weedVision/layout/layoutUi";
+import { acceptReaderRows, cancelMarking, clearLayout, rereadRows, saveLayout, setShowRows, startMarking, undoLastPlanting, useLayoutUi } from "@/lib/weedVision/layout/layoutUi";
 
 const STEP = ["Click a tree.", "Click its neighbour in the same row.", "Click a tree in the next row."] as const;
 
@@ -53,9 +53,10 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
           {ui.unsaved ? <p className="text-amber-400">Not saved yet.</p> : <p className="text-neutral-500">{ui.savedTo === "browser" ? "Saved in this browser." : "Saved for this field."}</p>}
           <div className="flex flex-wrap gap-1.5">
             {ui.unsaved && fieldId && <button type="button" className={`${btn} border-[#4ade80] text-[#4ade80]`} disabled={ui.saving} onClick={() => void saveLayout(taskId, { fieldId, userId })} data-testid="crop-rows-save">{ui.saving ? "Saving…" : "Save for this field"}</button>}
+            <button type="button" className={`${btn} border-[#333] text-neutral-300`} onClick={() => rereadRows(taskId)} data-testid="crop-rows-reread">Read the rows again</button>
             <button type="button" className={`${btn} border-[#333] text-neutral-300`} onClick={() => startMarking(taskId)} data-testid="crop-rows-add">Mark another block</button>
             {ui.unsaved && <button type="button" className={`${btn} border-[#333] text-neutral-300`} onClick={() => undoLastPlanting(taskId)}>Undo last block</button>}
-            <button type="button" className={`${btn} border-[#333] text-neutral-500`} onClick={() => void clearLayout(taskId, fieldId)}>Start over</button>
+            <button type="button" className={`${btn} border-[#333] text-neutral-500`} onClick={() => void clearLayout(taskId, fieldId)} title="Forgets the marked trees for this field">Start over</button>
           </div>
         </div>
       ) : fr ? (
@@ -65,6 +66,7 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
           <div className="flex flex-wrap gap-1.5">
             <button type="button" className={`${btn} border-[#4ade80] text-[#4ade80]`} onClick={() => acceptReaderRows(taskId)} data-testid="crop-rows-accept">They are right</button>
             <button type="button" className={`${btn} border-[#22d3ee] text-[#22d3ee]`} onClick={() => startMarking(taskId)} data-testid="crop-rows-mark">Mark three trees</button>
+            <button type="button" className={`${btn} border-[#333] text-neutral-400`} onClick={() => rereadRows(taskId)}>Read again</button>
           </div>
         </div>
       ) : (

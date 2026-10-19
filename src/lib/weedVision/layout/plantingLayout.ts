@@ -50,6 +50,9 @@ export type FittedLayout = {
   foundShare: number;
 };
 
+/** Bumped when the fitter changes, so rows read under an older fitter are read again. */
+export const LAYOUT_VERSION = 2;
+
 export const LAYOUT_PARAMS = {
   /** Crown-scale smoothing radius, as a share of the plant spacing. */
   crownShare: 0.2,
