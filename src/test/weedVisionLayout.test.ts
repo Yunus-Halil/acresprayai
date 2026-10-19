@@ -229,7 +229,7 @@ describe("in the app", () => {
     expect((mapChunk.mock.calls as unknown as unknown[][]).every(c => typeof c[4] === "function")).toBe(true);
     // The results are keyed on the rows they were painted around: other rows, other results.
     const rows = frameRunFieldRows("t")!;
-    expect(getFrameRun("t").paramsKey).toMatch(new RegExp(`\|between-rows\|${rowsSignature(rows)}$`));
+    expect(getFrameRun("t").paramsKey!.endsWith(`|between-rows|${rowsSignature(rows)}`)).toBe(true);
     expect(rowsSignature({ ...rows, ctx: { ...rows.ctx, crops: rows.ctx.crops.slice(1) } })).not.toBe(rowsSignature(rows));
     // "Read the rows again": the same marks fitted again, the field read once more only if the map changed.
     const before = getFrameRun("t").layoutStats;
