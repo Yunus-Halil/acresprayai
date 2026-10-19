@@ -6,7 +6,8 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: () => { thr
 import type { WeedInstance, WeedVisionResult } from "@/lib/weedVision/client";
 import type { SavedFrameRun } from "@/lib/weedVision/frameRunCache";
 import { getFrameRun, resetFrameRunStore, restoreFrameRun, setFrameRunBoundary, setFrameRunMap, startMapRun, unalignedFrames } from "@/lib/weedVision/frameRunStore";
-import { type MapChunk, MAP_CHUNK_PX, MAP_OVERLAP_PX, chooseMapZoom, chunkCanvas, groundMapResult, isMapRunKey, latLngOfPx, mapRunKey, mercatorPx, metresPerPixel, planMapChunks, upscaleFor } from "@/lib/weedVision/mapRun";
+import { type MapChunk, MAP_CHUNK_PX, MAP_OVERLAP_PX, chooseMapZoom, chunkCanvas, groundMapResult, isMapRunKey, latLngOfPx, mapRunKey, mapTiling, mercatorPx, metresPerPixel, planMapChunks, upscaleFor } from "@/lib/weedVision/mapRun";
+import { compactDetection } from "@/lib/weedVision/frameRunCache";
 import type { RowContext } from "@/lib/weedVision/rowFilter";
 
 const LAT = 37.6, LNG = -78.4; // Virginia
@@ -133,7 +134,12 @@ describe("startMapRun", () => {
     expect(chunks).toBeGreaterThan(1);
     expect(f.detect).toHaveBeenCalledTimes(chunks);
     expect(isMapRunKey(s.paramsKey)).toBe(true);
-    expect(s.paramsKey).toBe(mapRunKey(PARAMS, "abc", 23, 1.5));
+    // Sent at the chunk's own pixels with tiles shrunk by the enlargement it stands for (1.5 at 1 cm photos).
+    const sent = { ...PARAMS, ...mapTiling(PARAMS, 1.5) };
+    expect(sent.tile).toBe(680);
+    expect(s.paramsKey).toBe(mapRunKey(sent, "abc", 23, 1));
+    expect((f.deps.mapChunk.mock.calls as unknown as unknown[][]).every(c => c[2] === 1)).toBe(true);
+    expect((f.detect.mock.calls as unknown as unknown[][]).every(c => (c[2] as { tile: number; geometry: string }).tile === 680 && (c[2] as { geometry: string }).geometry === "lite")).toBe(true);
     expect(s.plants.length).toBeGreaterThan(0);
     expect(s.plants.every(p => p.frame.startsWith("map/") && p.seenIn.length === 1)).toBe(true);
     expect(unalignedFrames("scan-m")).toHaveLength(0); // nothing to align
@@ -145,8 +151,38 @@ describe("startMapRun", () => {
     resetFrameRunStore();
     setFrameRunMap("scan-m", { tile: () => "", maxNative: 23, lat: LAT, lng: LNG });
     setFrameRunBoundary("scan-m", [ring]);
-    expect(await restoreFrameRun("scan-m", { sources: null, params: PARAMS, paramsKey: mapRunKey(PARAMS, "abc", 23, 1.5), modelSha: "abc", algorithmLabel: "RF-DETR", deps: f.deps as never })).toBe(true);
+    expect(await restoreFrameRun("scan-m", { sources: null, params: PARAMS, paramsKey: mapRunKey({ ...PARAMS, ...mapTiling(PARAMS, 1.5) }, "abc", 23, 1), modelSha: "abc", algorithmLabel: "RF-DETR", deps: f.deps as never })).toBe(true);
     expect(getFrameRun("scan-m").plants).toHaveLength(shown);
     expect(getFrameRun("scan-m").hotspots).not.toBeNull();
+  });
+});
+
+describe("profile-driven changes (2026-10-19)", () => {
+  it("shrinks the tile by the enlargement it replaces, so the model's sampling is unchanged", () => {
+    // RF-DETR resizes every tile to 504 px: model pixels per chunk pixel = upscale x 504 / tile, before and after.
+    for (const up of [1, 1.25, 1.5, 1.75, 2]) {
+      const t = mapTiling(PARAMS, up);
+      expect(t.tile % 8).toBe(0);
+      expect(Math.abs(504 / t.tile - (up * 504) / PARAMS.tile) / ((up * 504) / PARAMS.tile)).toBeLessThan(0.01);
+      expect(Math.abs(t.overlap - PARAMS.overlap / up)).toBeLessThanOrEqual(0.5);
+    }
+    expect(mapTiling(PARAMS, 1)).toEqual({ tile: 1024, overlap: 256 }); // unenlarged runs keep their key
+    expect(mapTiling({ tile: 512, overlap: 128 }, 4).tile).toBe(256); // the service's floor
+  });
+
+  it("stores a map plant without its chunk-pixel outline, rounded to about a centimetre, and far smaller", () => {
+    const chunk: MapChunk = { name: "map/z23/1_1", z: Z, x0: 0, y0: 0, size: MAP_CHUNK_PX, overlap: MAP_OVERLAP_PX };
+    const many = Array.from({ length: 40 }, (_, k) => [500 + 30 * Math.cos(k / 6.3), 500 + 30 * Math.sin(k / 6.3)] as [number, number]);
+    const big = { ...inst(1, 500, 500), polygons_px: [many] };
+    const [d] = groundMapResult({ chunk, result: result([big]), upscale: 1, rows: null, lat: LAT });
+    const c = compactDetection(d);
+    expect(c.nativePolygon).toEqual([]);
+    expect(c.ring).toHaveLength(d.ring!.length);
+    c.ring!.forEach((q, i) => { expect(Math.abs(q.lat - d.ring![i].lat) * 111_320).toBeLessThan(0.006); expect(Math.abs(q.lng - d.ring![i].lng) * 111_320).toBeLessThan(0.006); });
+    expect(c.centre!.lat).toBeCloseTo(d.centre!.lat, 6);
+    expect(c.areaM2! / d.areaM2!).toBeCloseTo(1, 4);
+    expect(JSON.stringify(c).length).toBeLessThan(0.6 * JSON.stringify(d).length);
+    const photo = compactDetection({ ...d, frame: "DJI_0001.JPG" });
+    expect(photo.nativePolygon).toHaveLength(d.nativePolygon.length); // re-placing a photo outline needs it
   });
 });

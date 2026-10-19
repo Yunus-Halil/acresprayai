@@ -44,7 +44,7 @@ export function WeedOverlay({ instances, colour = RUN_COLOURS.primary, outlines,
               <polygon key={k} points={pts(poly)} fill={fills ? c : "none"} fillOpacity={fills ? (sel ? 0.45 : 0.28) : 0}
                 stroke={outlines || sel ? c : "none"} strokeWidth={sel ? 2.5 : 1.2} style={{ vectorEffect: "non-scaling-stroke" }} />
             ))}
-            {sel && (
+            {sel && inst.span_endpoints_px && (
               <line x1={inst.span_endpoints_px[0][0]} y1={inst.span_endpoints_px[0][1]} x2={inst.span_endpoints_px[1][0]} y2={inst.span_endpoints_px[1][1]}
                 stroke={SELECTED_COLOUR} strokeWidth={1.5} strokeDasharray="6 4" style={{ vectorEffect: "non-scaling-stroke" }} />
             )}

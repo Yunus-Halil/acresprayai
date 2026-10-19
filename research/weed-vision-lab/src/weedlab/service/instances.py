@@ -55,8 +55,28 @@ def polygons_of(mask: np.ndarray, bbox: tuple[int, int, int, int], tolerance: fl
     return polys
 
 
-def extract_instances(labels: np.ndarray, score_img: np.ndarray | None, scale: float, *, tolerance: float = 0.8, include_rle: bool = False, score_name: str = "mean_weed_probability") -> tuple[list[dict], list[str]]:
-    """Per-instance records in original coordinates. Returns (instances, warnings)."""
+GEOMETRY_MODES = ("full", "lite")
+
+
+def measure_lite(mask: np.ndarray) -> dict:
+    """The measures a map needs and nothing that needs a convex hull: area, centroid, box, equivalent diameter, pieces.
+    Same definitions as measure_mask (pixel centres)."""
+    ys, xs = np.nonzero(mask)
+    if xs.size == 0:
+        raise ValueError("empty mask")
+    area = int(xs.size)
+    _, n = ndimage.label(mask, structure=np.ones((3, 3), dtype=int))
+    return {"area_px": area, "centroid": (float(xs.mean()), float(ys.mean())), "bbox": (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1),
+            "equivalent_diameter_px": float(2.0 * np.sqrt(area / np.pi)), "n_components": int(n)}
+
+
+def extract_instances(labels: np.ndarray, score_img: np.ndarray | None, scale: float, *, tolerance: float = 0.8, include_rle: bool = False, score_name: str = "mean_weed_probability", geometry: str = "full") -> tuple[list[dict], list[str]]:
+    """Per-instance records in original coordinates. Returns (instances, warnings).
+
+    geometry "lite" skips the hull-based measures (max span, perpendicular span, oriented box, solidity), returned as
+    null: the map runs never read them, and they were 8% of a photo's service time (profile 2026-10-19)."""
+    if geometry not in GEOMETRY_MODES:
+        raise ValueError(f"geometry must be one of {GEOMETRY_MODES}")
     n = int(labels.max())
     out: list[dict] = []
     warnings: list[str] = []
@@ -75,6 +95,9 @@ def extract_instances(labels: np.ndarray, score_img: np.ndarray | None, scale: f
         # origin is added back afterwards. Measuring on the full image would make a
         # 50-megapixel photo with thousands of components quadratic in cost.
         ox, oy = int(xs.start), int(ys.start)
+        if geometry == "lite":
+            out.append(_lite_record(k, local, ox, oy, sl, score_img, inv, w, h, tolerance, include_rle, score_name))
+            continue
         g = measure_mask(local)
         bbox = (g.bbox[0] + ox, g.bbox[1] + oy, g.bbox[2] + ox, g.bbox[3] + oy)
         polys = polygons_of(local, g.bbox, tolerance)
@@ -123,3 +146,41 @@ def extract_instances(labels: np.ndarray, score_img: np.ndarray | None, scale: f
     if n_border:
         warnings.append(f"{n_border} instances touch the image border; their spans are lower bounds")
     return out, warnings
+
+
+def _lite_record(k: int, local: np.ndarray, ox: int, oy: int, sl, score_img, inv: float, w: int, h: int, tolerance: float, include_rle: bool, score_name: str) -> dict:
+    g = measure_lite(local)
+    bbox = (g["bbox"][0] + ox, g["bbox"][1] + oy, g["bbox"][2] + ox, g["bbox"][3] + oy)
+    polys = [[[x + ox, y + oy] for x, y in poly] for poly in polygons_of(local, g["bbox"], tolerance)]
+    cxl, cyl = g["centroid"]
+    score = float(score_img[sl][local].mean()) if score_img is not None else None
+    touches = bbox[0] == 0 or bbox[1] == 0 or bbox[2] == w or bbox[3] == h
+    tiny = g["area_px"] < TINY_PX
+    rec = {
+        "id": k,
+        "centroid_px": [round((cxl + ox) * inv, 2), round((cyl + oy) * inv, 2)],
+        "bbox_px": [round(bbox[0] * inv, 1), round(bbox[1] * inv, 1), round(bbox[2] * inv, 1), round(bbox[3] * inv, 1)],
+        "area_px": round(g["area_px"] * inv * inv, 1),
+        "max_span_px": None, "span_endpoints_px": None, "perpendicular_span_px": None, "obb": None,
+        "equivalent_diameter_px": round(g["equivalent_diameter_px"] * inv, 2),
+        "solidity": None,
+        "pieces": g["n_components"],
+        "touches_border": bool(touches),
+        "tiny": bool(tiny),
+        "score": round(score, 4) if score is not None else None,
+        "score_kind": score_name,
+        "polygons_px": [[[round(x * inv, 2), round(y * inv, 2)] for x, y in p] for p in polys],
+        "area_px_at_processing_scale": g["area_px"],
+        "geometry": "lite",
+    }
+    if include_rle:
+        rec["mask_rle_processing_scale"] = {"bbox": list(bbox), "rle": rle_encode(local)}
+    flags = []
+    if touches:
+        flags.append("touches image border: span is a lower bound")
+    if tiny:
+        flags.append(f"under {TINY_PX} px at processing scale: boundary not reliable")
+    if g["n_components"] > 1:
+        flags.append(f"fragmented into {g['n_components']} pieces")
+    rec["flags"] = flags
+    return rec

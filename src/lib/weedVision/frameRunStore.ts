@@ -20,7 +20,7 @@ import { type HotspotParams, type HotspotResult, type HotspotReview, DEFAULT_HOT
 import { type HotspotReviewRow, deleteHotspotReview, loadHotspotReviews, saveHotspotReview } from "./hotspotReviewCache";
 import { type RowContext, rowStatusOf } from "./rowFilter";
 import { type FrameAlignment, applyAlignment, isAligned } from "./register";
-import { type MapChunk, type RenderedChunk, MIN_COVERAGE, chooseMapZoom, groundMapResult, isMapFrame, mapRunKey, planMapChunks, readChunkRows, renderMapChunk, upscaleFor as upscaleForMap } from "./mapRun";
+import { type MapChunk, type RenderedChunk, MIN_COVERAGE, chooseMapZoom, groundMapResult, isMapFrame, mapRunKey, mapTiling, planMapChunks, readChunkRows, renderMapChunk, upscaleFor as upscaleForMap } from "./mapRun";
 import { type photoPassParams } from "../weedScout/photoPass";
 import type { PhotoPixels } from "../photoScout/pattern";
 import { type FieldRows, fieldRowStatusAt, readFieldRows } from "./fieldRows";
@@ -415,7 +415,7 @@ export function startFrameRun(taskId: string, input: StartFrameRunInput): void {
         if (ctrl.signal.aborted || !mine()) return;
       }
       patchFrameRun(taskId, s => ({ progress: s.progress ? { ...s.progress, phase: "model", rowsFraction: null } : s.progress }));
-      const res = await deps.detect(blob, entry.filename, { algorithm: params.algorithm, scale: params.scale, tile: params.tile, overlap: params.overlap, threshold: params.threshold, includeCrop: true }, {
+      const res = await deps.detect(blob, entry.filename, { algorithm: params.algorithm, scale: params.scale, tile: params.tile, overlap: params.overlap, threshold: params.threshold, includeCrop: true, geometry: "lite" }, {
         signal: ctrl.signal,
         onProgress: p => { if (mine()) patchFrameRun(taskId, s => ({ progress: s.progress ? { ...s.progress, tilesDone: p.tilesDone, tilesTotal: p.tilesTotal } : s.progress })); },
       });
@@ -485,8 +485,11 @@ export function startMapRun(taskId: string, input: StartMapRunInput): void {
   const mine = () => controllers.get(taskId) === ctrl;
   const { params } = input;
   const { z, mpp } = avail;
+  // The model's sampling is that of the chunk enlarged by `upscale`; the chunk itself is sent at its own pixels with
+  // tiles shrunk by the same factor (mapTiling), which reaches the model identically.
   const upscale = upscaleForRun(mpp, input.photoGsdM);
-  const paramsKey = mapRunKey(params, input.modelSha, z, upscale);
+  const sent = { ...params, ...mapTiling(params, upscale) };
+  const paramsKey = mapRunKey(sent, input.modelSha, z, 1);
   const chunks = planMapChunks(rings, z);
   const scanSet = mapScanSet(map, input.sources?.set, input.sources?.groundAltM);
   patchFrameRun(taskId, {
@@ -531,7 +534,7 @@ export function startMapRun(taskId: string, input: StartMapRunInput): void {
       }
       // The latest tile address each time: the session token in it is renewed while a long run goes.
       const current = maps.get(taskId) ?? map;
-      const rendered = await deps.mapChunk(chunk, current.tile, upscale, ctrl.signal);
+      const rendered = await deps.mapChunk(chunk, current.tile, 1, ctrl.signal);
       if (ctrl.signal.aborted || !mine()) return;
       if (!rendered || rendered.coverage < MIN_COVERAGE_RUN) {
         summaries[name] = { filename: name, weeds: 0, crops: 0, status: rendered ? "done" : "error", ...(rendered ? {} : { error: "the map could not be drawn here" }), ms: null };
@@ -542,7 +545,7 @@ export function startMapRun(taskId: string, input: StartMapRunInput): void {
       const rows = fieldRowsByTask.has(taskId) ? null : await deps.mapRows(rendered.pixels, mpp, input.passParams, ctrl.signal);
       if (ctrl.signal.aborted || !mine()) return;
       step({ phase: "model" });
-      const res = await deps.detect(rendered.image, `${name.replace(/\//g, "_")}.jpg`, { algorithm: params.algorithm, scale: params.scale, tile: params.tile, overlap: params.overlap, threshold: params.threshold, includeCrop: true }, {
+      const res = await deps.detect(rendered.image, `${name.replace(/\//g, "_")}.jpg`, { algorithm: params.algorithm, scale: params.scale, tile: sent.tile, overlap: sent.overlap, threshold: params.threshold, includeCrop: true, geometry: "lite" }, {
         signal: ctrl.signal,
         onProgress: p => step({ tilesDone: p.tilesDone, tilesTotal: p.tilesTotal }),
       });
@@ -557,7 +560,7 @@ export function startMapRun(taskId: string, input: StartMapRunInput): void {
         }
         continue;
       }
-      const dets = groundMapResult({ chunk, result: res.value, upscale, rows, lat: map.lat });
+      const dets = groundMapResult({ chunk, result: res.value, upscale: 1, rows, lat: map.lat });
       byChunk.set(name, dets);
       const c = countByClass(dets);
       summaries[name] = { filename: name, weeds: c.weed, crops: c.crop, status: "done", ms: res.value.timings_ms?.total ?? null };
@@ -738,7 +741,7 @@ export function alignmentSummary(frames: Record<string, FrameSummary>): { aligne
 }
 
 /** The plants a map should draw: crops when asked, weeds off the rows, and the set-aside ones only when asked. */
-export function visiblePlants(s: FrameRunSession): GroundPlant[] {
+export function visiblePlants(s: Pick<FrameRunSession, "plants" | "showCrops" | "showWeeds" | "showOnRow">): GroundPlant[] {
   return s.plants.filter(p => {
     if (p.klass === "crop") return s.showCrops;
     if (!s.showWeeds) return false;

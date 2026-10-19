@@ -15,7 +15,7 @@ export function resultToCsv(r: WeedVisionResult): string {
   const head = ["# Weed Vision Research Preview, research-only, pixel units only, no physical calibration",
     `# image ${r.image.filename} ${r.image.width}x${r.image.height}; algorithm ${r.algorithm.name}; processing scale ${r.processing.scale}; run ${r.run_id}; service ${r.versions.service}`];
   const rows = r.instances.map(i => [
-    i.id, i.centroid_px[0], i.centroid_px[1], i.area_px, i.max_span_px, i.perpendicular_span_px, i.obb.length_px, i.obb.width_px, i.obb.angle_deg,
+    i.id, i.centroid_px[0], i.centroid_px[1], i.area_px, i.max_span_px ?? "", i.perpendicular_span_px ?? "", i.obb?.length_px ?? "", i.obb?.width_px ?? "", i.obb?.angle_deg ?? "",
     i.equivalent_diameter_px, i.solidity ?? "", i.pieces, i.touches_border, i.tiny, i.score ?? "", i.score_kind, i.flags.join("; "),
   ].map(esc).join(","));
   return [...head, INSTANCE_CSV_COLUMNS.join(","), ...rows].join("\n") + "\n";

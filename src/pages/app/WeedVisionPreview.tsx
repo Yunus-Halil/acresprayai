@@ -249,7 +249,7 @@ export default function WeedVisionPreview() {
                   {[
                     ["id", selected.id], ["centroid (x, y) px", `${fmt(selected.centroid_px[0])}, ${fmt(selected.centroid_px[1])}`], ["canopy area", `${fmt(selected.area_px, 0)} px²`],
                     ["max span", `${fmt(selected.max_span_px)} px`], ["perpendicular span", `${fmt(selected.perpendicular_span_px)} px`],
-                    ["oriented box", `${fmt(selected.obb.length_px)} × ${fmt(selected.obb.width_px)} px at ${fmt(selected.obb.angle_deg, 0)}°`],
+                    ["oriented box", `${fmt(selected.obb?.length_px)} × ${fmt(selected.obb?.width_px)} px at ${fmt(selected.obb?.angle_deg, 0)}°`],
                     ["equivalent diameter", `${fmt(selected.equivalent_diameter_px)} px`], ["solidity", fmt(selected.solidity, 3)], ["pieces", selected.pieces],
                     [selected.score_kind, fmt(selected.score, 3)], ["flags", selected.flags.join("; ") || "none"],
                   ].map(([k, v]) => <tr key={String(k)}><td className="text-muted-foreground pr-3 py-0.5">{k}</td><td className="font-mono">{v as string}</td></tr>)}
@@ -279,7 +279,7 @@ export default function WeedVisionPreview() {
               <table className="w-full"><thead><tr className="text-muted-foreground text-left"><th>id</th><th>x</th><th>y</th><th>area px²</th><th>max span px</th><th>perp. px</th><th>box px</th><th>score</th><th>flags</th></tr></thead><tbody>
                 {result.instances.map(i => (
                   <tr key={i.id} onClick={() => setSelectedId(i.id)} className={`cursor-pointer hover:bg-[#1f1f1f] ${i.id === selectedId ? "bg-[#2a1f2a]" : ""}`}>
-                    <td className="font-mono">{i.id}</td><td>{fmt(i.centroid_px[0], 0)}</td><td>{fmt(i.centroid_px[1], 0)}</td><td>{fmt(i.area_px, 0)}</td><td>{fmt(i.max_span_px)}</td><td>{fmt(i.perpendicular_span_px)}</td><td>{fmt(i.obb.length_px, 0)}×{fmt(i.obb.width_px, 0)}</td><td>{fmt(i.score, 2)}</td><td className="text-amber-300/80">{i.flags.length ? i.flags.length : ""}</td>
+                    <td className="font-mono">{i.id}</td><td>{fmt(i.centroid_px[0], 0)}</td><td>{fmt(i.centroid_px[1], 0)}</td><td>{fmt(i.area_px, 0)}</td><td>{fmt(i.max_span_px)}</td><td>{fmt(i.perpendicular_span_px)}</td><td>{fmt(i.obb?.length_px, 0)}×{fmt(i.obb?.width_px, 0)}</td><td>{fmt(i.score, 2)}</td><td className="text-amber-300/80">{i.flags.length ? i.flags.length : ""}</td>
                   </tr>))}
               </tbody></table>
             </div>

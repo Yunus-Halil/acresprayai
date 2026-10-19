@@ -70,6 +70,20 @@ export function upscaleFor(mpp: number, photoGsdM: number | null): number {
   return Math.min(MAX_UPSCALE, Math.max(1, Math.round((mpp / target) * 4) / 4));
 }
 
+/**
+ * The tiling that gives the model the sampling an enlargement by `upscale` would, on the chunk at its own pixels.
+ * RF-DETR resizes every tile to its fixed input (504 px), so a 1024 px tile of a chunk enlarged 1.5x and a 680 px tile
+ * of the chunk itself reach the model at the same ground sampling. Sending the chunk unenlarged gives the same model
+ * input for a fraction of the upload, the mask pixels and the outline work (profile 2026-10-19: -20% service time,
+ * -60% upload on a 2x chunk). Tile sizes are multiples of 8 within the service's 256 to 2048 px; the overlap keeps
+ * its ground width.
+ */
+export function mapTiling(params: Pick<FrameRunParams, "tile" | "overlap">, upscale: number): { tile: number; overlap: number } {
+  const tile = Math.min(2048, Math.max(256, Math.round(params.tile / upscale / 8) * 8));
+  const overlap = Math.min(tile - 8, Math.max(0, Math.round(params.overlap / upscale)));
+  return { tile, overlap };
+}
+
 /** The cache key of a map run: the zoom and enlargement are part of what was run. */
 export function mapRunKey(params: FrameRunParams, modelSha: string | null, z: number, upscale: number): string {
   return `map|z${z}|u${upscale}|${frameRunKey(params, modelSha)}`;

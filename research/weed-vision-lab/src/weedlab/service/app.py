@@ -147,7 +147,13 @@ def parse_params(form) -> dict:
         raise ValueError("threshold must be between 0.05 and 0.95")
     return {"algorithm": alg, "scale": scale, "tile": tile, "overlap": overlap, "threshold": threshold,
             "include_rle": form.get("include_rle", "0") in ("1", "true"), "include_crop": form.get("include_crop", "1") in ("1", "true"),
-            "polygon_tolerance": float(form.get("polygon_tolerance", "0.8"))}
+            "polygon_tolerance": float(form.get("polygon_tolerance", "0.8")), "geometry": _geometry(form.get("geometry", "full"))}
+
+
+def _geometry(v: str) -> str:
+    if v not in ("full", "lite"):
+        raise ValueError("geometry must be full or lite")
+    return v
 
 
 def holder_for(name: str, holders: dict):
@@ -180,7 +186,7 @@ def run_detection(rgb: np.ndarray, meta: dict, params: dict, holders, progress=N
     a = time.perf_counter()
     crop_instances = None
     if ALGORITHMS[name]["family"] == "rfdetr":
-        rf = run_rfdetr(rgb_p, holder, tile=params["tile"], overlap=params["overlap"], threshold=params["threshold"], scale=params["scale"], tolerance=params["polygon_tolerance"], include_rle=params["include_rle"], progress=progress)
+        rf = run_rfdetr(rgb_p, holder, tile=params["tile"], overlap=params["overlap"], threshold=params["threshold"], scale=params["scale"], tolerance=params["polygon_tolerance"], include_rle=params["include_rle"], progress=progress, geometry=params.get("geometry", "full"))
         labels, score_img, info, instances, crop_instances = rf["labels"], rf["score_img"], rf["info"], rf["instances"], rf["crop_instances"]
         warnings += rf["warnings"]
         t.update(info["timings_ms"])
@@ -192,7 +198,7 @@ def run_detection(rgb: np.ndarray, meta: dict, params: dict, holders, progress=N
         t.update(info["timings_ms"])
         t["algorithm_total"] = round((time.perf_counter() - a) * 1000.0, 1)
         a = time.perf_counter()
-        instances, w2 = extract_instances(labels, score_img, params["scale"], tolerance=params["polygon_tolerance"], include_rle=params["include_rle"], score_name=info.get("score_kind", "score"))
+        instances, w2 = extract_instances(labels, score_img, params["scale"], tolerance=params["polygon_tolerance"], include_rle=params["include_rle"], score_name=info.get("score_kind", "score"), geometry=params.get("geometry", "full"))
         warnings += w2
         t["geometry_and_polygons"] = round((time.perf_counter() - a) * 1000.0, 1)
         crop_regions = None
@@ -227,7 +233,7 @@ def run_detection(rgb: np.ndarray, meta: dict, params: dict, holders, progress=N
         "research_only": True,
         "image": {**meta, "coordinate_system": "original image pixels, x right, y down, pixel centres at integers"},
         "processing": {"scale": params["scale"], "width": rgb_p.shape[1], "height": rgb_p.shape[0], "tiles": info.get("tiles"), "tile_px": info.get("tile_px"), "overlap_px": info.get("overlap_px"), "effective_px_per_original_px": params["scale"],
-                       "threshold": params["threshold"] if family == "rfdetr" else None, "model_resolution": info.get("model_resolution"), "device": info.get("device")},
+                       "threshold": params["threshold"] if family == "rfdetr" else None, "geometry": params.get("geometry", "full"), "model_resolution": info.get("model_resolution"), "device": info.get("device")},
         "algorithm": {"name": name, **{k: v for k, v in ALGORITHMS[name].items() if k != "alias_of"}, "requested": params["algorithm"], "separation": info.get("separation")},
         "model": holder.status() if ALGORITHMS[name]["needs_model"] else None,
         "versions": {"service": SERVICE_VERSION, "lab": LAB_VERSION},
@@ -299,7 +305,7 @@ def create_app(ckpt: str = DEFAULT_CKPT, threads: int | None = None, preload: bo
     app = Flask("weed-vision-preview")
     app.config["MAX_CONTENT_LENGTH"] = MAX_BYTES + 1024 * 1024
     holder = ModelHolder(ckpt, threads or max(1, (os.cpu_count() or 2)))
-    holders = {"erfnet": holder, "rfdetr": RFDetrHolder(rfdetr_ckpt, rfdetr_device) if rfdetr_ckpt else None}
+    holders = {"erfnet": holder, "rfdetr": RFDetrHolder(rfdetr_ckpt, rfdetr_device, threads=holder.threads) if rfdetr_ckpt else None}
     jobs: dict[str, dict] = {}
     jobs_lock = threading.Lock()
     if preload:

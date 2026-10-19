@@ -127,13 +127,13 @@ def gpu_mode(out: Path) -> None:
         info["jpeg_decode_ms"] = ms(t0)
         return arr, info
 
-    def run(label: str, arr: np.ndarray, tile: int, overlap: int, extra: dict) -> dict:
+    def run(label: str, arr: np.ndarray, tile: int, overlap: int, extra: dict, geometry: str = "full") -> dict:
         T.clear()
         N.clear()
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
         meta = {"filename": label, "format": "JPEG", "bytes": 0, "width": arr.shape[1], "height": arr.shape[0], "exif": {}}
-        params = {"algorithm": "rfdetr_seg_large", "scale": 1.0, "tile": tile, "overlap": overlap, "threshold": 0.5, "include_rle": False, "include_crop": True, "polygon_tolerance": 0.8}
+        params = {"algorithm": "rfdetr_seg_large", "scale": 1.0, "tile": tile, "overlap": overlap, "threshold": 0.5, "include_rle": False, "include_crop": True, "polygon_tolerance": 0.8, "geometry": geometry}
         t0 = time.perf_counter()
         result, _ = A.run_detection(arr, meta, params, holders)
         total = ms(t0)
@@ -173,6 +173,11 @@ def gpu_mode(out: Path) -> None:
     report["runs"].append(recC)
     recD, _ = run("D_mapchunk_up1_t1024", arrC, 1024, 256, infoC)
     report["runs"].append(recD)
+    # What the app sends after the 2026-10-19 changes: photos with lite geometry; chunks unenlarged, tiles shrunk, lite
+    recA2, _ = run("A2_photo_t1024_lite", rgb, 1024, 256, {}, geometry="lite")
+    report["runs"].append(recA2)
+    recC2, _ = run("C2_mapchunk_up1_t512_lite", arrC, 512, 128, infoC, geometry="lite")
+    report["runs"].append(recC2)
 
     # Batching and include_source_image probes on 8 photo tiles
     tiles = [Image.fromarray(np.ascontiguousarray(rgb[y:y + 1024, x:x + 1024])) for y in (0, 1024, 2048) for x in (0, 1024, 2048)][:8]

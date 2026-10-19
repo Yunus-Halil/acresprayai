@@ -200,3 +200,38 @@ def test_threshold_param_validated():
     assert parse_params({"algorithm": "erfnet_erode1", "threshold": "0.3"})["threshold"] == 0.3
     with pytest.raises(ValueError):
         parse_params({"algorithm": "rfdetr_seg_large", "threshold": "1.5"})
+
+
+# ---------------- profile-driven changes (2026-10-19) ----------------
+
+def test_mask_extents_match_a_per_mask_nonzero_scan():
+    from weedlab.service.rfdetr import _detections_to_preds
+
+    rng = np.random.default_rng(3)
+    masks = np.zeros((5, 64, 80), bool)
+    for i in range(4):
+        y0, x0 = rng.integers(0, 40), rng.integers(0, 60)
+        masks[i, y0:y0 + rng.integers(1, 20), x0:x0 + rng.integers(1, 15)] = rng.random() > -1
+    masks[3, 5, 70] = True  # a detached pixel widens the box
+    det = _Det(masks, [1, 0, 1, 1, 1], [0.9, 0.8, 0.7, 0.6, 0.5])  # mask 4 is empty
+    preds = _detections_to_preds(det, 100, 200, 1000, 1000)
+    assert len(preds) == 4
+    for p, m in zip(preds, masks[:4]):
+        ys, xs = np.nonzero(m)
+        assert p["bbox"] == [200 + xs.min(), 100 + ys.min(), 200 + xs.max() + 1, 100 + ys.max() + 1]
+        assert np.array_equal(p["mask"], m[ys.min():ys.max() + 1, xs.min():xs.max() + 1])
+
+
+def test_lite_geometry_keeps_what_the_map_reads_and_nulls_the_hull_measures(client):
+    rgb = _scene(300, 400, [(100, 100, 12), (200, 300, 30)])
+    data = {"algorithm": "rfdetr_seg_large", "tile": "256", "overlap": "32"}
+    full = client.post("/weed-vision/detect", data={**data, "image": (_png(rgb), "s.png")}, content_type="multipart/form-data").json
+    lite = client.post("/weed-vision/detect", data={**data, "geometry": "lite", "image": (_png(rgb), "s.png")}, content_type="multipart/form-data").json
+    assert lite["processing"]["geometry"] == "lite" and full["processing"]["geometry"] == "full"
+    for a, b in ((full["instances"][0], lite["instances"][0]), (full["crop_instances"][0], lite["crop_instances"][0])):
+        for k in ("centroid_px", "bbox_px", "area_px", "equivalent_diameter_px", "pieces", "polygons_px", "score", "class", "tiny", "touches_border"):
+            assert a[k] == b[k], k
+        assert b["max_span_px"] is None and b["obb"] is None and b["solidity"] is None and b["geometry"] == "lite"
+        assert a["max_span_px"] > 0 and a["obb"]["length_px"] > 0
+    bad = client.post("/weed-vision/detect", data={**data, "geometry": "fancy", "image": (_png(rgb), "s.png")}, content_type="multipart/form-data")
+    assert bad.status_code == 400

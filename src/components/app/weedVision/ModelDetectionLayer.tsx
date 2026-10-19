@@ -108,16 +108,22 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
     return v;
   };
   // Detections mode: every plant. Priority mode: only the selected area's plants, close in (level 3 behind level 2). Heatmap: none.
+  // Keyed on the fields it reads, not the whole session: a run's progress ticks change the session several times a
+  // second, and re-filtering every plant (and redrawing every dot) on each of them is what made the map lag.
+  const { viewMode, plants, showCrops, showWeeds, showOnRow, selectedHotspotId, hotspots } = run;
   const shownRaw = useMemo(() => {
-    if (run.viewMode === "detections") return visiblePlants(run);
-    if (run.viewMode === "priority" && run.selectedHotspotId && run.hotspots) {
-      const h = run.hotspots.hotspots.find(x => x.id === run.selectedHotspotId);
+    if (viewMode === "detections") return visiblePlants({ plants, showCrops, showWeeds, showOnRow });
+    if (viewMode === "priority" && selectedHotspotId && hotspots) {
+      const h = hotspots.hotspots.find(x => x.id === selectedHotspotId);
       if (!h) return [];
       const ids = new Set(h.plantIds);
-      return run.plants.filter(p => ids.has(p.id) && (p.klass === "weed" || run.showCrops));
+      return plants.filter(p => ids.has(p.id) && (p.klass === "weed" || showCrops));
     }
     return [];
-  }, [run]);
+  }, [viewMode, plants, showCrops, showWeeds, showOnRow, selectedHotspotId, hotspots]);
+  const pickDot = useCallback((p: GroundPlant) => {
+    if (p.centre) { patchFrameRun(taskId, { selectedId: p.id }); map.setView([p.centre.lat, p.centre.lng], POLYGON_ZOOM + 1); }
+  }, [taskId, map]);
   // Snap the outlines in view first, then every other one shown.
   useEffect(() => { if (shownRaw.length) requestSnaps(taskId, shownRaw); }, [taskId, shownRaw]);
   useEffect(() => {
@@ -136,7 +142,7 @@ export function ModelDetectionLayer({ taskId, onMark, showLabels = false }: { ta
   if (!shown.length) return null;
   if (zoom < POLYGON_ZOOM) {
     if (run.viewMode !== "detections") return null; // an area's plants are for close zoom only; the area outline says where
-    return <PlantDots plants={shown} onPick={p => { if (p.centre) { patchFrameRun(taskId, { selectedId: p.id }); map.setView([p.centre.lat, p.centre.lng], POLYGON_ZOOM + 1); } }} />;
+    return <PlantDots plants={shown} onPick={pickDot} />;
   }
   return (
     <>

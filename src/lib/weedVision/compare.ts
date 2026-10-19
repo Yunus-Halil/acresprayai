@@ -26,7 +26,7 @@ export function compareRuns(a: WeedVisionResult, b: WeedVisionResult): Compariso
   const cands: Array<{ i: number; j: number; d: number }> = [];
   a.instances.forEach((ia, i) => b.instances.forEach((ib, j) => {
     const d = Math.hypot(ia.centroid_px[0] - ib.centroid_px[0], ia.centroid_px[1] - ib.centroid_px[1]);
-    const r = Math.max(12, 0.5 * Math.max(ia.max_span_px, ib.max_span_px));
+    const r = Math.max(12, 0.5 * Math.max(ia.max_span_px ?? ia.equivalent_diameter_px, ib.max_span_px ?? ib.equivalent_diameter_px));
     if (d <= r) cands.push({ i, j, d });
   }));
   cands.sort((p, q) => p.d - q.d);
@@ -35,7 +35,7 @@ export function compareRuns(a: WeedVisionResult, b: WeedVisionResult): Compariso
     if (usedA.has(c.i) || usedB.has(c.j)) continue;
     usedA.add(c.i); usedB.add(c.j);
     const ia = a.instances[c.i]; const ib = b.instances[c.j];
-    pairs.push({ a: ia, b: ib, distancePx: c.d, areaDiffPx: ib.area_px - ia.area_px, spanDiffPx: ib.max_span_px - ia.max_span_px });
+    pairs.push({ a: ia, b: ib, distancePx: c.d, areaDiffPx: ib.area_px - ia.area_px, spanDiffPx: (ib.max_span_px ?? 0) - (ia.max_span_px ?? 0) });
   }
   return {
     pairs,

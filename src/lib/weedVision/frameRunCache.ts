@@ -6,7 +6,34 @@
 // like the photo-read cache: a row that cannot be saved is still a result,
 // and a cache that cannot be loaded is an empty cache.
 import { supabase } from "@/integrations/supabase/client";
+import type { LatLng2 } from "../geo";
 import type { FrameDetection, FrameRunParams } from "./frames";
+
+const r7 = (v: number) => Math.round(v * 1e7) / 1e7; // degrees: about 1 cm
+const r1 = (v: number) => Math.round(v * 10) / 10;
+const sig = (v: number | null) => (v == null ? v : Number(v.toPrecision(5)));
+const ll = (p: LatLng2): LatLng2 => ({ lat: r7(p.lat), lng: r7(p.lng) });
+
+/**
+ * A detection as it is stored: coordinates rounded to about a centimetre on the ground and a tenth of a pixel, and,
+ * for chunks read off the map, without the outline in the chunk's pixels (nothing reads it once the outline is placed;
+ * photo outlines keep theirs, which re-placing needs). Each plant was stored as about 4.3 KB, 13 to 42 MB per hectare
+ * (profile 2026-10-19).
+ */
+export function compactDetection(d: FrameDetection): FrameDetection {
+  const fromMap = d.frame.startsWith("map/");
+  return {
+    ...d,
+    score: d.score == null ? d.score : Math.round(d.score * 1e4) / 1e4,
+    nativePolygon: fromMap ? [] : d.nativePolygon.map(([x, y]) => [r1(x), r1(y)] as [number, number]),
+    nativeCentroid: [r1(d.nativeCentroid[0]), r1(d.nativeCentroid[1])],
+    nativeBbox: d.nativeBbox.map(r1) as [number, number, number, number],
+    areaPx: r1(d.areaPx), equivalentDiameterPx: r1(d.equivalentDiameterPx),
+    ring: d.ring && d.ring.map(ll), centre: d.centre && ll(d.centre),
+    gsdM: sig(d.gsdM), areaM2: sig(d.areaM2), diameterM: sig(d.diameterM),
+    viewAngleDeg: d.viewAngleDeg == null ? d.viewAngleDeg : r1(d.viewAngleDeg),
+  };
+}
 
 export type SavedFrameRun = {
   filename: string;
@@ -49,7 +76,7 @@ export async function saveFrameRun(input: { userId: string; scanId: string; para
       algorithm: input.run.algorithm, model_sha256: input.run.modelSha256, params: input.params,
       native_width: input.run.nativeWidth, native_height: input.run.nativeHeight,
       count_weed: input.run.detections.filter(d => d.klass === "weed").length, count_crop: input.run.detections.filter(d => d.klass === "crop").length,
-      timings_ms: input.run.timingsMs, detections: input.run.detections,
+      timings_ms: input.run.timingsMs, detections: input.run.detections.map(compactDetection),
     };
     const up = await supabase.from("scan_frame_detections").upsert(row as never, { onConflict: "scan_id,filename,params_key" });
     return up.error ? { ok: false, error: up.error.message } : { ok: true };

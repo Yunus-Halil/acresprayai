@@ -8,10 +8,11 @@ export type WeedInstance = {
   centroid_px: [number, number];
   bbox_px: [number, number, number, number];
   area_px: number;
-  max_span_px: number;
-  span_endpoints_px: [[number, number], [number, number]];
-  perpendicular_span_px: number;
-  obb: { length_px: number; width_px: number; angle_deg: number };
+  /** The hull-based measures are null when the run asked for "lite" geometry (the map runs, which never read them). */
+  max_span_px: number | null;
+  span_endpoints_px: [[number, number], [number, number]] | null;
+  perpendicular_span_px: number | null;
+  obb: { length_px: number; width_px: number; angle_deg: number } | null;
   equivalent_diameter_px: number;
   solidity: number | null;
   pieces: number;
@@ -97,7 +98,7 @@ export function algorithmReady(info: AlgorithmInfo | undefined, health: Health |
   return !!st?.loaded;
 }
 
-export type DetectOptions = { algorithm: string; scale: number; tile?: number; overlap?: number; includeCrop?: boolean; /** RF-DETR confidence cut, 0.05 to 0.95. */ threshold?: number };
+export type DetectOptions = { algorithm: string; scale: number; tile?: number; overlap?: number; includeCrop?: boolean; /** RF-DETR confidence cut, 0.05 to 0.95. */ threshold?: number; /** "lite" skips the hull-based shape measures the map never reads. */ geometry?: "full" | "lite" };
 export type Progress = { phase: "uploading" | "queued" | "running" | "done"; tilesDone: number; tilesTotal: number | null; elapsedMs: number };
 
 // Both arms carry both keys (one undefined) so the union narrows even without strictNullChecks.
@@ -141,6 +142,7 @@ function form(file: Blob, filename: string, opts: DetectOptions, extra: Record<s
   if (opts.overlap !== undefined) fd.append("overlap", String(opts.overlap));
   if (opts.threshold !== undefined) fd.append("threshold", String(opts.threshold));
   fd.append("include_crop", opts.includeCrop === false ? "0" : "1");
+  if (opts.geometry) fd.append("geometry", opts.geometry);
   for (const [k, v] of Object.entries(extra)) fd.append(k, v);
   return fd;
 }

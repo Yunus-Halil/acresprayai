@@ -36,9 +36,10 @@ SEAM_CONTAINMENT = 0.6
 class RFDetrHolder:
     """Lazy, lock-guarded owner of the RF-DETR model (mirrors ModelHolder for ERFNet)."""
 
-    def __init__(self, ckpt: str, device: str | None = None):
+    def __init__(self, ckpt: str, device: str | None = None, threads: int | None = None):
         self.path = Path(ckpt)
         self.device_requested = device
+        self.threads = threads  # CPU threads when the model runs on the CPU: 4 measured faster than 12 (6.0 s vs 8.6 s per tile)
         self.device = None
         self.model = None
         self.sha256 = None
@@ -68,6 +69,8 @@ class RFDetrHolder:
                 model = RFDETRSegLarge(**kw)
                 self.resolution = int(model.model_config.resolution)
                 self.device = self.device_requested or ("cuda" if torch.cuda.is_available() else "cpu")
+                if self.device == "cpu" and self.threads:
+                    torch.set_num_threads(self.threads)
                 if self.device == "cuda" and torch.cuda.is_available():
                     self.device = f"cuda ({torch.cuda.get_device_name(0)})"
                 self.model = model
@@ -147,12 +150,19 @@ def _detections_to_preds(det, y: int, x: int, W: int, H: int) -> list[dict]:
     out = []
     if det is None or len(det) == 0 or getattr(det, "mask", None) is None:
         return out
+    # Each mask's extent from its row and column projections, all masks in one vectorised pass: the same box as
+    # np.nonzero over every full-tile mask, without building index arrays for every mask pixel (18% of a photo's
+    # service time when it was done per mask; profile 2026-10-19).
+    masks = np.asarray(det.mask, bool)
+    rows_any = masks.any(axis=2)
+    cols_any = masks.any(axis=1)
     for i in range(len(det)):
-        tm = np.asarray(det.mask[i], bool)
-        ys, xs = np.nonzero(tm)
-        if len(xs) == 0:
+        r = np.flatnonzero(rows_any[i])
+        if r.size == 0:
             continue
-        x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+        c = np.flatnonzero(cols_any[i])
+        tm = masks[i]
+        x0, y0, x1, y1 = int(c[0]), int(r[0]), int(c[-1]) + 1, int(r[-1]) + 1
         gx0, gy0 = x + x0, y + y0
         gx1, gy1 = min(x + x1, W), min(y + y1, H)  # clip the reflect padding away
         if gx0 >= gx1 or gy0 >= gy1:
@@ -212,7 +222,7 @@ def rasterize(preds: list[dict], cls: int, shape: tuple[int, int]) -> tuple[np.n
     return labels, score, sel
 
 
-def run_rfdetr(rgb_p: np.ndarray, holder: RFDetrHolder, *, tile: int, overlap: int, threshold: float, scale: float, tolerance: float, include_rle: bool, progress=None) -> dict:
+def run_rfdetr(rgb_p: np.ndarray, holder: RFDetrHolder, *, tile: int, overlap: int, threshold: float, scale: float, tolerance: float, include_rle: bool, progress=None, geometry: str = "full") -> dict:
     """Everything run_detection needs: weed instances (+ labels for evaluation), crop instances and regions, info."""
     import torch
 
@@ -226,8 +236,8 @@ def run_rfdetr(rgb_p: np.ndarray, holder: RFDetrHolder, *, tile: int, overlap: i
     crop_labels, crop_score, crop_sel = rasterize(preds, 0, rgb_p.shape[:2])
     t["rasterize"] = round((time.perf_counter() - a) * 1000.0, 1)
     a = time.perf_counter()
-    weeds, warn_w = extract_instances(weed_labels, weed_score, scale, tolerance=tolerance, include_rle=include_rle, score_name="detector_confidence")
-    crops, warn_c = extract_instances(crop_labels, crop_score, scale, tolerance=tolerance, include_rle=False, score_name="detector_confidence")
+    weeds, warn_w = extract_instances(weed_labels, weed_score, scale, tolerance=tolerance, include_rle=include_rle, score_name="detector_confidence", geometry=geometry)
+    crops, warn_c = extract_instances(crop_labels, crop_score, scale, tolerance=tolerance, include_rle=False, score_name="detector_confidence", geometry=geometry)
     for recs, sel, cname in ((weeds, weed_sel, "weed"), (crops, crop_sel, "crop")):
         for r in recs:
             r["class"] = cname
