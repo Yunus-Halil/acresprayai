@@ -79,7 +79,8 @@ export function LayoutLayer({ taskId }: { taskId: string }) {
           const q = pt(c.x, c.y), r = Math.max(3, c.r * rows.mpp * metre);
           const st = c.state ?? "confirmed";
           ctx.strokeStyle = STATE_COLOUR[st]; ctx.lineWidth = st === "operator" ? 3 : 2;
-          ctx.setLineDash(st === "confirmed" || st === "operator" ? [] : [5, 4]);
+          // Dashed when the canopy's extent is uncertain (merged) or the plant is in question; "?" only when in question.
+          ctx.setLineDash((st === "confirmed" && !c.uncertain) || st === "operator" ? [] : [5, 4]);
           ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.stroke();
           ctx.setLineDash([]);
           if (st === "ambiguous" || st === "probable") { ctx.fillStyle = STATE_COLOUR[st]; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", q.x, q.y); }

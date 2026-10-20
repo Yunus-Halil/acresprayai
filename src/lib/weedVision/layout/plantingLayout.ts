@@ -77,14 +77,24 @@ export const LAYOUT_PARAMS = {
   presentGreen: 0.3,
   /** The presence bar never goes under this, however pale the clicked plants. */
   anchorFloor: 0.08,
-  /** A plant whose canopy is under this share of the planting's typical one is "probable", not confirmed: a young tree, or a weed at a tree's place. */
-  smallCrownShare: 0.65,
+  /**
+   * A plant is questioned ("probable") only when there is just a little green: a canopy under this share of the
+   * planting's typical one, or crown-scale green under tinyGreen. Everything else green at its place is a crop; a
+   * canopy that runs into other green is still a crop, only its extent is uncertain (merged).
+   */
+  tinyCrownShare: 0.5, tinyGreen: 0.15,
+  /** A plant is re-centred on the green mass within this share of the plant spacing of its first estimate, so the ring sits on the crown, not on the lattice point. */
+  recentreShare: 0.35,
   /** A finer spacing is taken when at least this share of its added positions hold a plant... */
   subdivideShare: 0.5,
   /** ...and the ground beside those plants (between the rows, or between plants when they stand apart) is less than this share as green. */
   alleyContrast: 0.6,
-  /** A row with no plant at all is stepped over this many times: the next row at the field's spacing is still looked for. */
-  maxMissingRows: 1,
+  /**
+   * A row with no plant at all is stepped over this many times: the next row at the field's spacing is still looked
+   * for (two: a block of young trees planted out of step with the lattice between two old blocks, or a track with a
+   * verge, is two rows wide; what is found beyond must prove itself as a bridged stretch).
+   */
+  maxMissingRows: 2,
   /**
    * A stretch of row reached only by stepping over an empty row, or by the sweep, is not joined to the clicked planting:
    * across a track it may be another block whose trees happen to line up (two such rows on DJI_0320 and DJI_0327). It
@@ -428,6 +438,33 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
   };
   const note = (i: number, j: number, why: string) => { if (opts.trace && !opts.trace.get(key(i, j))?.startsWith("accepted")) opts.trace.set(key(i, j), why); };
   const noCrop = new Set((opts.noCrop ?? []).map(a => key(a.i, a.j)));
+  /**
+   * A plant re-centred on the green mass around its first estimate (the mean of the green within recentreShare of
+   * the plant spacing, three times): the search box around the expected position clips a crown wider than the box
+   * or off to one side, and the ring then sat on the lattice point rather than on the tree.
+   */
+  const recentre = (x0: number, y0: number): [number, number] => {
+    const R = P.recentreShare * L.along;
+    let x = x0, y = y0;
+    for (let it = 0; it < 3; it++) {
+      let sx = 0, sy = 0, sw = 0;
+      const ya = Math.max(0, Math.floor(y - R)), yb = Math.min(r.h - 1, Math.ceil(y + R)), xa = Math.max(0, Math.floor(x - R)), xb = Math.min(r.w - 1, Math.ceil(x + R));
+      for (let yy = ya; yy <= yb; yy++) for (let xx = xa; xx <= xb; xx++) {
+        if ((xx - x) ** 2 + (yy - y) ** 2 > R * R) continue;
+        const w = r.green[yy * r.w + xx];
+        if (!w) continue;
+        sx += xx * w; sy += yy * w; sw += w;
+      }
+      if (!sw) break;
+      const nx2 = sx / sw, ny2 = sy / sw;
+      const moved = Math.hypot(nx2 - x, ny2 - y);
+      x = nx2; y = ny2;
+      if (moved < 0.5) break;
+    }
+    // Never further from the first estimate than the box it was found in: a neighbouring clump must not pull it away.
+    if (Math.hypot(x - x0, y - y0) > R) return [x0, y0];
+    return [x, y];
+  };
   const look = (i: number, j: number): { x: number; y: number; g: number; seen?: number } | null => {
     if (noCrop.has(key(i, j))) { const [lx, ly] = latticePoint(L, i, j); note(i, j, "operator: no crop here"); return { x: lx, y: ly, g: -1, seen: -2 }; }
     const [lx, ly] = latticePoint(L, i, j);
@@ -456,6 +493,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     let bx = 0, by = 0, bn = 0;
     for (const [x, y, g] of cells) if (g >= 0.9 * bg) { bx += x; by += y; bn++; }
     bx /= bn; by /= bn;
+    [bx, by] = recentre(bx, by);
     // Close to the layout itself, not only to the neighbours: a row may not turn into another planting.
     const offA = (bx - lx) * ux + (by - ly) * uy, offC = (bx - lx) * nx + (by - ly) * ny;
     if (Math.abs(offA) > P.maxOffAlong * L.along || Math.abs(offC) > P.maxOffAcross * Math.abs(L.across)) { note(i, j, `off the layout: ${(offA * r.mpp).toFixed(2)} m along, ${(offC * r.mpp).toFixed(2)} m across (limits ${(P.maxOffAlong * L.along * r.mpp).toFixed(2)}, ${(P.maxOffAcross * Math.abs(L.across) * r.mpp).toFixed(2)})`); return { x: ex, y: ey, g: -1, seen: bg }; }
@@ -589,7 +627,11 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     type RowInfo = { j: number; across: number; t0: number; t1: number; reading: number; plantG: number[] };
     const byJ = new Map<number, { i: number; x: number; y: number; g: number }[]>();
     for (const [k, v] of plant) { const [i, j] = k.split(",").map(Number); (byJ.get(j) ?? byJ.set(j, []).get(j)!).push({ i, ...v }); }
-    const rowsInfo: RowInfo[] = [...byJ.entries()].map(([j, ps]) => {
+    // Only a row that has earned its place bounds a gap: joined to the clicked planting with enough plants, or a
+    // bridged stretch long enough to stand on its own (a short stretch across a track, dropped later, must not
+    // "explain" the gap up to it).
+    const established = ([j, ps]: [number, { i: number }[]]) => { const joined = ps.filter(q => !bridged.has(key(q.i, j))).length; return joined >= P.minPlants || ps.length >= P.bridgedMinPlants; };
+    const rowsInfo: RowInfo[] = [...byJ.entries()].filter(established).map(([j, ps]) => {
       const across = median(ps.map(q => acrossOf(q.x, q.y)));
       const ts = ps.map(q => alongOf(q.x, q.y)), t0 = Math.min(...ts), t1 = Math.max(...ts);
       const pr = profile(t => g(...at(t, across)), t0, t1);
@@ -598,11 +640,20 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     }).sort((a, b) => a.j - b.j);
     const plantsOnLine = (c: number, t0: number, t1: number, threshold: number) => {
       const pr = profile(t => g(...at(t, c)), t0, t1);
+      const ks = peaks(pr, threshold, P.interiorPlantSeparation * L.along);
+      // Where the planting's plants stand apart, a row has soil between its plants: a weed strip along the line
+      // has peaks too, but no valleys between them.
+      if (separate && ks.length >= 2) {
+        const on = ks.map(k => pr[k]), between: number[] = [];
+        for (let n = 1; n < ks.length; n++) { let m = Infinity; for (let q = ks[n - 1]; q <= ks[n]; q++) if (pr[q] >= 0) m = Math.min(m, pr[q]); if (m < Infinity) between.push(m); }
+        if (between.length && median(between) >= P.stripShare * median(on)) return [];
+      }
       // The plant at a peak is the greenest spot a little either side of the line, so a row that bends is followed.
-      return peaks(pr, threshold, P.interiorPlantSeparation * L.along).map(k => {
+      return ks.map(k => {
         let best = { x: 0, y: 0, g: -1 };
         for (let d = -0.1 * Math.abs(L.across); d <= 0.1 * Math.abs(L.across); d += 1) { const [x, y] = at(t0 + k, c + d); const v = g(x, y); if (v > best.g) best = { x, y, g: v }; }
-        return best;
+        const [rx, ry] = recentre(best.x, best.y);
+        return { ...best, x: rx, y: ry };
       });
     };
     // (a) Between found rows.
@@ -656,7 +707,10 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
           if (iNear <= a.i || iNear >= b.i || plant.has(key(iNear, R.j)) || noCrop.has(key(iNear, R.j))) continue;
           let best = { x: 0, y: 0, g: -1 };
           for (let d = -0.1 * Math.abs(L.across); d <= 0.1 * Math.abs(L.across); d += 1) { const [x, y] = at(t, c + d); const v = g(x, y); if (v > best.g) best = { x, y, g: v }; }
-          if (best.g >= plantThreshold) { plant.set(key(iNear, R.j), best); if (rowBridged) bridged.add(key(iNear, R.j)); }
+          if (best.g < plantThreshold) continue;
+          // Soil between it and its neighbours along the row, where the plants stand apart.
+          if (separate && [a, b].some(nb => { const mx = Math.round((nb.x + best.x) / 2), my = Math.round((nb.y + best.y) / 2); return mx >= 0 && my >= 0 && mx < r.w && my < r.h && G[my * r.w + mx] > P.stripShare * Math.min(best.g, nb.g); })) continue;
+          const [rx, ry] = recentre(best.x, best.y); plant.set(key(iNear, R.j), { ...best, x: rx, y: ry }); if (rowBridged) bridged.add(key(iNear, R.j));
         }
       }
     }
@@ -671,12 +725,15 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
   const canopyAt = (k: string, x: number, y: number) => { let c = canopies.get(k); if (!c) { c = canopyOf(r, x, y, rmax); canopies.set(k, c); } return c; };
   const typicalCrown = median([...plant.entries()].filter(([k, q]) => !bridged.has(k) && !canopyAt(k, q.x, q.y).merged).map(([k]) => canopies.get(k)!.radius));
   const anchorKeys = new Set((opts.anchors ?? []).map(a => key(a.i, a.j)));
-  const stateOf = (k: string, q: { x: number; y: number; g: number }, j: number): { state: PlantState; radius: number; merged: boolean } => {
+  const stateOf = (k: string, q: { x: number; y: number; g: number }, _j: number): { state: PlantState; radius: number; merged: boolean } => {
     const c = canopyAt(k, q.x, q.y);
-    if (anchorKeys.has(k)) return { state: "operator", radius: c.merged ? Math.min(c.radius, typicalCrown || c.radius) : c.radius, merged: c.merged };
-    if (c.merged) return { state: "ambiguous", radius: typicalCrown || c.radius, merged: true };
-    const small = typicalCrown > 0 && c.radius < P.smallCrownShare * typicalCrown;
-    return { state: q.g >= P.presentGreen && !small && barOf(j) >= P.presentGreen ? "confirmed" : "probable", radius: c.radius, merged: false };
+    const radius = c.merged ? (typicalCrown || c.radius) : c.radius;
+    if (anchorKeys.has(k)) return { state: "operator", radius, merged: c.merged };
+    const tiny = q.g < P.tinyGreen || (typicalCrown > 0 && c.radius < P.tinyCrownShare * typicalCrown);
+    if (tiny) return { state: "probable", radius: c.radius, merged: c.merged };
+    // Merged and weak: a tangle of green with no crown in it, or a crown among weeds; the operator decides.
+    if (c.merged && q.g < P.presentGreen) return { state: "ambiguous", radius, merged: true };
+    return { state: "confirmed", radius, merged: c.merged };
   };
   const gapEvidence = (k: string): LayoutGap["evidence"] => { const seen = gapAt.get(k)?.seen ?? 0; return seen === -2 ? "operator" : seen >= P.anchorFloor ? "some" : "none"; };
   for (const [j, is] of byRow) {
@@ -740,6 +797,24 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     flush();
   }
   for (const fr of freeRows) {
+    // A row at another pitch still runs straight at the lattice's angle, its plants on their line, stepping evenly.
+    const pts = fr.plants;
+    if (pts.length < P.minPlants) continue;
+    const mx = pts.reduce((a, q) => a + q.x, 0) / pts.length, my = pts.reduce((a, q) => a + q.y, 0) / pts.length;
+    let sxx = 0, syy = 0, sxy = 0;
+    for (const q of pts) { sxx += (q.x - mx) ** 2; syy += (q.y - my) ** 2; sxy += (q.x - mx) * (q.y - my); }
+    const th = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    let turn = Math.abs(th - L.angle) % Math.PI;
+    if (turn > Math.PI / 2) turn = Math.PI - turn;
+    if (turn > (P.runAngleDeg * Math.PI) / 180) continue;
+    const vx = -Math.sin(th), vy = Math.cos(th);
+    const rms = Math.sqrt(pts.reduce((a, q) => a + ((q.x - mx) * vx + (q.y - my) * vy) ** 2, 0) / pts.length);
+    if (rms > P.runLateralShare * Math.abs(L.across)) continue;
+    const ux2 = Math.cos(th), uy2 = Math.sin(th);
+    const ts = pts.map(q => q.x * ux2 + q.y * uy2).sort((a, b) => a - b);
+    let ok = 0;
+    for (let n = 1; n < ts.length; n++) { const d = ts[n] - ts[n - 1], k = Math.max(1, Math.round(d / L.along)); if (Math.abs(d - k * L.along) <= P.runStepShare * L.along) ok++; }
+    if (ok / (ts.length - 1) < P.runRegularShare) continue;
     rows++; run++; expected += fr.plants.length; found += fr.plants.length;
     fr.plants.forEach((q, k) => { const c = canopyOf(r, q.x, q.y, rmax); plants.push({ x: q.x, y: q.y, r: c.merged ? (typicalCrown || c.radius) : c.radius, row: fr.j, i: k, run, state: c.merged ? "ambiguous" : "probable", g: q.g, merged: c.merged }); });
   }

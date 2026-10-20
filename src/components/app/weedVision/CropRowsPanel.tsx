@@ -12,9 +12,9 @@ import { MIN_TRUSTED_FOUND, MIN_TRUSTED_ROWS } from "@/lib/weedVision/layout/rea
 import { acceptReaderRows, cancelMarking, clearLayout, pickPosition, rereadRows, saveLayout, setShowRows, setVerdict, startMarking, undoLastPlanting, useLayoutUi } from "@/lib/weedVision/layout/layoutUi";
 
 const STATE_TEXT: Record<string, string> = {
-  confirmed: "A crop here: green crown of the planting's size, its edge found.",
-  probable: "Probably a crop, but small: a young tree, or a weed at a tree's place.",
-  ambiguous: "Green here merges with other green: a crown among weeds, or weeds alone. The ring is the planting's typical size, not measured.",
+  confirmed: "A crop here. A dashed ring means its canopy runs into other green, so the ring is the planting's typical size, not measured.",
+  probable: "Only a little green here: a young tree, or a weed at a tree's place.",
+  ambiguous: "Weak green that runs into other green: a crown among weeds, or weeds alone.",
   operator: "You said: a crop here.",
   none: "An expected position with no visible plant.",
   some: "An expected position with a little green under the bar: a young tree, or a weed.",
@@ -98,7 +98,7 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
         </div>
       )}
       {fromLayout && !ui.picked && !ui.clicking && (
-        <p className="text-neutral-600">Rings: solid green a crop, dashed green probably a crop, amber "?" green that could be a crop or a weed, red cross nothing there. Click a ring or a cross to say what is there.</p>
+        <p className="text-neutral-600">Rings: green a crop (dashed where its canopy runs into other green), "?" only a little green there, red cross nothing there. Click a ring or a cross to say what is there.</p>
       )}
       {run.fieldRowsNote && <p className="text-amber-400" data-testid="crop-rows-note">{run.fieldRowsNote}</p>}
       {ui.error && <p className="text-red-400">{ui.error}</p>}

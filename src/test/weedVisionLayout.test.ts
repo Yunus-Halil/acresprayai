@@ -220,7 +220,7 @@ describe("what the evidence says at each position", () => {
     const disc = (x: number, y: number, rad: number) => { for (let dy = -rad; dy <= rad; dy += MPP / 2) for (let dx = -rad; dx <= rad; dx += MPP / 2) if (dx * dx + dy * dy <= rad * rad) set(x + dx, y + dy); };
     // A young tree where A5,1 is missing; a weed clump of 0.25 m where A9,2 is missing; A12,1's crown swollen to 1.7 m (merged with weeds).
     const at = (i: number, j: number) => [2 + i * 3.2 * ux + j * 5 * nx, 2.5 + i * 3.2 * uy + j * 5 * ny] as const;
-    disc(...at(5, 1), 0.35); disc(...at(9, 2), 0.25); disc(...at(12, 1), 1.7);
+    disc(...at(5, 1), 0.3); disc(...at(9, 2), 0.25); disc(...at(12, 1), 1.7);
     const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
     const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
     const find = (i: number, j: number) => { const [x, y] = at(i, j); return fit.plants.find(p => Math.hypot(p.x * MPP - x, p.y * MPP - y) <= 0.5) ?? null; };
@@ -230,15 +230,35 @@ describe("what the evidence says at each position", () => {
     // refused at its slot as a strip, which leaves an expected position with strong green for the operator. Never a
     // confirmed crop, and never a canopy as wide as the merged green.
     const [mx, my] = at(12, 1);
+    // Strong green that runs into other green is a crop with an uncertain canopy, not a question: the ring is capped.
     const atSlot = fit.plants.find(p => Math.hypot(p.x * MPP - mx, p.y * MPP - my) <= 0.9);
-    expect(atSlot?.state ?? "none").not.toBe("confirmed");
-    if (atSlot) { expect(atSlot.merged).toBe(true); expect(atSlot.r * MPP).toBeLessThan(1.2); }
-    expect(fit.plants.some(p => p.state === "ambiguous" && p.merged)).toBe(true); // a canopy that runs into the merged green
+    const slotGap = fit.gaps.find(g => Math.hypot(g.x * MPP - mx, g.y * MPP - my) <= 0.9);
+    if (atSlot) { expect(atSlot.state).toBe("confirmed"); expect(atSlot.merged).toBe(true); expect(atSlot.r * MPP).toBeLessThan(1.2); }
+    else { expect(slotGap?.evidence).toBe("some"); } // refused as a strip: an expected position with green, for the operator
+    expect(fit.plants.every(p => p.r * MPP < 1.2)).toBe(true); // no canopy as wide as the merged green
+    // Full trees are not questioned: at most the young tree and the weed at a tree's place.
+    expect(fit.plants.filter(p => p.state !== "confirmed").length).toBeLessThanOrEqual(2);
     const gap = fit.gaps.find(g => { const [x, y] = at(9, 2); return Math.hypot(g.x * MPP - x, g.y * MPP - y) <= 0.6; });
     expect(gap?.evidence === "some" || find(9, 2)?.state === "probable").toBe(true); // a weed at a tree's place: never a confirmed crop
     const [bx, by] = at(14, 2);
     const bare = fit.gaps.find(g => Math.hypot(g.x * MPP - bx, g.y * MPP - by) <= 0.6);
     expect(bare?.evidence).toBe("none");
+  });
+
+  it("a crown standing half a metre off its slot gets its ring on the crown, not on the slot", () => {
+    const { r, trees } = orchard(new Set(["A8,1"]));
+    const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    const at = (i: number, j: number) => [2 + i * 3.2 * ux + j * 5 * nx, 2.5 + i * 3.2 * uy + j * 5 * ny] as const;
+    const [sx, sy] = at(8, 1);
+    const cx = sx + 0.5 * ux + 0.4 * nx, cy = sy + 0.5 * uy + 0.4 * ny; // 0.5 m along, 0.4 m across off the slot
+    const set = (x: number, y: number) => { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 255; };
+    for (let dy = -0.8; dy <= 0.8; dy += MPP / 2) for (let dx = -0.8; dx <= 0.8; dx += MPP / 2) if (dx * dx + dy * dy <= 0.64) set(cx + dx, cy + dy);
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    const p = fit.plants.find(q => Math.hypot(q.x * MPP - cx, q.y * MPP - cy) <= 0.6)!;
+    expect(p).toBeDefined();
+    expect(Math.hypot(p.x * MPP - cx, p.y * MPP - cy)).toBeLessThan(0.15);
+    expect(p.state).toBe("confirmed");
   });
 
   it("the operator's word: no crop makes a gap of a green position; a crop makes a plant of a pale one", () => {
