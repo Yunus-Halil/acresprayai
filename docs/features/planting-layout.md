@@ -135,3 +135,23 @@ holds at least 3 labels; labels are not exhaustive, so a flagged cell with no la
 Rank correlation of the signals with label density: green share 0.28, blobs per cell 0.37, random 0. A modest,
 honest lift: the labels are single small weeds, and a hotspot is a concentration. The next measurement that matters is
 the operator's blind cell labels on the real map (the two-stage prototype's labelling mode).
+
+## What the evidence says at each position (2026-10-19, later)
+
+A position proves nothing about what stands there. Each fitted plant carries a state, each expected position without
+a plant says what was seen, and the canopy is a measurement apart from the position:
+
+| On the map | State | Rule |
+|---|---|---|
+| solid green ring | confirmed | crown green at the planting's bar, canopy at least 65% of the planting's typical one, its edge found |
+| dashed green ring with ? | probable | green there but small: a young tree, or a weed at a tree's place |
+| dashed amber ring with ? | ambiguous | the green never ended before the canopy cap (0.45 of the smaller spacing): merged with weeds or a neighbour; drawn at the planting's typical size |
+| thick pale ring | operator | the operator said "a crop" |
+| amber dashed ring with ? | expected position, some green under the bar | a young tree or a weed: the operator decides |
+| red cross | expected position, nothing seen | no visible crop evidence; never reported as a dead tree by itself |
+| grey cross | operator: no crop | kept in the field's layout |
+
+Click a ring or a cross in the Crop rows panel's map to say "A crop" or "No crop"; the word is kept with the field's
+layout and applied at once: a no-crop position is never a plant (the interior scans respect it too), a crop position
+is a plant whatever the green. A weed at a tree's place therefore stays a weed unless the operator says otherwise;
+the crown painted over for the model is the measured canopy, capped, never the merged extent.
