@@ -53,6 +53,12 @@ The band is now 0.5 m. The weeds under a crown's edge stay inside the crown disc
 Tree-sized detections off the rows rose from 10 to 17 with the narrower band: those are large green things between
 trees that the wide band had hidden; whether they are weeds is not known.
 
+Known false row: on DJI_0320 the hedgerow along the road, beside the orchard's first row, is traced as a row (its
+shrubs stand at about the planting's pitch and are joined to the orchard rows directly, so the rules for stretches
+reached across an empty row do not apply). The stand-in frame has no field boundary; on the real map the boundary
+drawn inside the hedge excludes it. A hedge rule (an outermost row whose plants are a different size and shape from
+the planting's) is the next candidate if the real map shows the same.
+
 ## 4. Evidence states the layout now carries
 
 - observed plant: a fitted plant (crown green at or over the bar, or a marked tree)
