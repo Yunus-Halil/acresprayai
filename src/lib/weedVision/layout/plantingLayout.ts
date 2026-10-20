@@ -43,7 +43,14 @@ export type Lattice = { ox: number; oy: number; angle: number; along: number; ac
  *   operator   the operator said "crop"
  */
 export type PlantState = "confirmed" | "probable" | "ambiguous" | "operator";
-export type LayoutPlant = { x: number; y: number; /** Canopy radius, raster px, capped at the planting's reach; for an ambiguous plant the planting's typical radius. */ r: number; row: number; i: number; /** The stretch of its row it belongs to. */ run: number; state: PlantState; /** Crown-scale green at the plant. */ g: number; /** The measured canopy did not end before the cap. */ merged: boolean };
+export type LayoutPlant = {
+  x: number; y: number;
+  /** Canopy radius, raster px: where the crown's edge was seen along most rays out of its centre, never past the planting's reach (canopyOf). The ring drawn. */
+  r: number;
+  /** The radius painted over for the model, raster px: the canopy, or the planting's typical one when the canopy merged with other green (so weeds in the tangle stay in view). Never more than r. */
+  paint: number;
+  row: number; i: number; /** The stretch of its row it belongs to. */ run: number; state: PlantState; /** Crown-scale green at the plant. */ g: number; /** Most rays out of the centre found no edge before the reach: the crown runs into weeds or a neighbour. */ merged: boolean;
+};
 /** An expected position with no plant placed: no visible evidence, some green under the bar, or the operator's "no crop". */
 export type LayoutGap = { x: number; y: number; row: number; i: number; evidence: "none" | "some" | "operator"; g: number };
 
@@ -61,7 +68,7 @@ export type FittedLayout = {
 };
 
 /** Bumped when the fitter changes, so rows read under an older fitter are read again. */
-export const LAYOUT_VERSION = 2;
+export const LAYOUT_VERSION = 3;
 
 export const LAYOUT_PARAMS = {
   /** Crown-scale smoothing radius, as a share of the plant spacing. */
@@ -130,6 +137,17 @@ export const LAYOUT_PARAMS = {
    * either way; cost: 67 of 414 labelled weeds now inside the crop band, against 46 at 0.4).
    */
   crownEdgeGreen: 0.12,
+  /**
+   * The canopy is the green joined to the plant (raster green at least crownFillGreen) inside its cell: the ellipse of
+   * the planting's half-spacings (half a spacing to the neighbour along the row, half a row spacing across, never more
+   * than canopyReachShare of the smaller spacing). The plant is re-centred on that mass, at most crownMoveM from where
+   * the search put it, and its ring encloses canopyPercentile of it. Before this (2026-10-19), the canopy was the
+   * ring mean out of a centre that could stand on the crown's margin, and the ring sat beside the crown at the
+   * planting's typical size.
+   */
+  crownFillGreen: 0.25, canopyPercentile: 0.95, canopyReachShare: 0.45, crownMoveM: 1.0,
+  /** The canopy is "merged" when its green reaches the cell's edge in at least this share of canopyBins directions: a crown among weeds or against a neighbour; drawn dashed, painted over for the model at the planting's typical size. */
+  canopyBins: 24, canopyMergedShare: 0.5,
   /** Second pass: a plant more than this share of the row spacing off its row's smoothed line jumped to a neighbour (a weed beside the tree)... */
   offLineShare: 0.08,
   /** ...and is looked for again in a strip this wide (share of the row spacing) and this long (share of the plant spacing) on the line. */
@@ -287,38 +305,50 @@ export function refineLattice(L0: Lattice, G: Float32Array, r: LayoutRaster): { 
 
 // ---------------------------------------------------------------- the plants
 
-/** A plant's crown radius: out from its centre until a ring of pixels is less green than crownEdgeGreen. */
-/** The canopy's radius out to where the ring of pixels stops being green, and whether it never stopped before the cap (merged). */
-export function canopyOf(r: LayoutRaster, x: number, y: number, rmax: number): { radius: number; merged: boolean } {
-  let last = 1;
-  for (let rad = 1; rad <= rmax; rad++) {
-    let g = 0, n = 0;
-    const steps = Math.max(8, Math.round(2 * Math.PI * rad));
-    for (let k = 0; k < steps; k++) {
-      const a = (2 * Math.PI * k) / steps, xi = Math.round(x + rad * Math.cos(a)), yi = Math.round(y + rad * Math.sin(a));
-      if (xi < 0 || yi < 0 || xi >= r.w || yi >= r.h) continue;
-      g += r.green[yi * r.w + xi] / 255; n++;
-    }
-    if (!n || g / n < LAYOUT_PARAMS.crownEdgeGreen) return { radius: Math.max(1, rad - 0.5), merged: false };
-    last = rad;
-  }
-  return { radius: last, merged: true };
+/** The planting's reach around a plant: how far a canopy may be measured along the row (half the plant spacing) and across (half the row spacing), raster px, capped. */
+export type CanopyReach = { along: number; across: number; angle: number };
+export function canopyReach(L: Lattice): CanopyReach {
+  const cap = LAYOUT_PARAMS.canopyReachShare * Math.min(L.along, Math.abs(L.across));
+  return { along: Math.max(2, Math.min(cap, 0.5 * L.along)), across: Math.max(2, Math.min(cap, 0.5 * Math.abs(L.across))), angle: L.angle };
 }
 
-function crownRadius(r: LayoutRaster, x: number, y: number, rmax: number): number {
-  let last = 1;
-  for (let rad = 1; rad <= rmax; rad++) {
-    let g = 0, n = 0;
-    const steps = Math.max(8, Math.round(2 * Math.PI * rad));
-    for (let k = 0; k < steps; k++) {
-      const a = (2 * Math.PI * k) / steps, xi = Math.round(x + rad * Math.cos(a)), yi = Math.round(y + rad * Math.sin(a));
-      if (xi < 0 || yi < 0 || xi >= r.w || yi >= r.h) continue;
-      g += r.green[yi * r.w + xi] / 255; n++;
-    }
-    if (!n || g / n < LAYOUT_PARAMS.crownEdgeGreen) return Math.max(1, rad - 0.5);
-    last = rad;
+/**
+ * The canopy around a plant: the green joined to it (raster green at least crownFillGreen, flood-filled from the plant,
+ * or from the greenest pixel within presenceRadiusM when the plant stands on a pale one) inside its cell, the ellipse
+ * of the planting's half-spacings around the expected position, so a neighbour's crown is cut off at the mid-plane.
+ * The plant is re-centred on that mass (at most crownMoveM from where it stood: a crown stands beside its slot, and
+ * the search box found only its margin), and the radius encloses canopyPercentile of it. Merged when the mass reaches
+ * the cell's edge in at least canopyMergedShare of canopyBins directions: a crown among weeds or against a neighbour.
+ */
+export function canopyOf(r: LayoutRaster, x0: number, y0: number, reach: CanopyReach): { x: number; y: number; radius: number; merged: boolean } {
+  const P = LAYOUT_PARAMS, fill = P.crownFillGreen * 255;
+  const ca = Math.cos(reach.angle), sa = Math.sin(reach.angle);
+  const capAt = (dx: number, dy: number) => { const al = dx * ca + dy * sa, ac = -dx * sa + dy * ca, d = Math.hypot(dx, dy); if (!d) return Math.min(reach.along, reach.across); const u = al / d, v = ac / d; return 1 / Math.sqrt((u * u) / (reach.along * reach.along) + (v * v) / (reach.across * reach.across)); };
+  const g = (x: number, y: number) => (x < 0 || y < 0 || x >= r.w || y >= r.h ? -1 : r.green[y * r.w + x]);
+  let sx = Math.round(x0), sy = Math.round(y0);
+  if (g(sx, sy) < fill) {
+    const R = Math.ceil(P.presenceRadiusM / r.mpp);
+    let best = -1;
+    for (let yy = sy - R; yy <= sy + R; yy++) for (let xx = sx - R; xx <= sx + R; xx++) { if (Math.hypot(xx - x0, yy - y0) > R) continue; const v = g(xx, yy); if (v > best) { best = v; sx = xx; sy = yy; } }
+    if (best < fill) return { x: x0, y: y0, radius: 1, merged: false };
   }
-  return last;
+  const seen = new Set<number>([sy * r.w + sx]), stack = [sy * r.w + sx], xs: number[] = [], ys: number[] = [];
+  const hit = new Uint8Array(P.canopyBins);
+  while (stack.length) {
+    const idx = stack.pop()!, x = idx % r.w, y = (idx - x) / r.w, dx = x - x0, dy = y - y0;
+    const cap = capAt(dx, dy), d = Math.hypot(dx, dy);
+    if (d > cap || r.green[idx] < fill) continue;
+    xs.push(x); ys.push(y);
+    if (d >= cap - 1.5) hit[((Math.floor((Math.atan2(dy, dx) / (2 * Math.PI)) * P.canopyBins) % P.canopyBins) + P.canopyBins) % P.canopyBins] = 1;
+    for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + ox, yy = y + oy; if (xx < 0 || yy < 0 || xx >= r.w || yy >= r.h) continue; const j = yy * r.w + xx; if (!seen.has(j)) { seen.add(j); stack.push(j); } }
+  }
+  let cx = xs.reduce((a, v) => a + v, 0) / xs.length, cy = ys.reduce((a, v) => a + v, 0) / ys.length;
+  const maxPx = P.crownMoveM / r.mpp, moved = Math.hypot(cx - x0, cy - y0);
+  if (moved > maxPx) { cx = x0 + ((cx - x0) * maxPx) / moved; cy = y0 + ((cy - y0) * maxPx) / moved; }
+  const dists = xs.map((x, i) => Math.hypot(x - cx, ys[i] - cy)).sort((p, q) => p - q);
+  const radius = Math.max(1, dists[Math.min(dists.length - 1, Math.floor(P.canopyPercentile * (dists.length - 1)))] + 0.5);
+  let hits = 0; for (const h of hit) hits += h;
+  return { x: cx, y: cy, radius, merged: hits / P.canopyBins >= P.canopyMergedShare };
 }
 
 const median = (v: number[]) => { const t = [...v].sort((a, b) => a - b); return t.length ? t[t.length >> 1] : 0; };
@@ -430,7 +460,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
   let L = L0;
   const { ux, uy, nx, ny } = basis(L0);
   const sa = P.reSearchAlong * 1.6 * L.along, sc = P.reSearchAcross * 2.5 * Math.abs(L.across);
-  const rmax = Math.max(2, Math.round(0.45 * Math.min(L.along, Math.abs(L.across))));
+  const reach = canopyReach(L);
   const key = (i: number, j: number) => `${i},${j}`;
   const plant = new Map<string, { x: number; y: number; g: number }>();
   const missing = new Map<string, number>(); // positions looked at and found empty, with how many empties in a row lead to them
@@ -737,20 +767,22 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
   const plants: LayoutPlant[] = [], gaps: LayoutGap[] = [];
   let rows = 0, expected = 0, found = 0, run = 0;
   // The planting's typical crown, from the plants joined to the clicked ones whose canopy edge was found.
-  const canopies = new Map<string, { radius: number; merged: boolean }>();
-  const canopyAt = (k: string, x: number, y: number) => { let c = canopies.get(k); if (!c) { c = canopyOf(r, x, y, rmax); canopies.set(k, c); } return c; };
+  const canopies = new Map<string, { x: number; y: number; radius: number; merged: boolean }>();
+  const canopyAt = (k: string, x: number, y: number) => { let c = canopies.get(k); if (!c) { c = canopyOf(r, x, y, reach); canopies.set(k, c); } return c; };
   const typicalCrown = median([...plant.entries()].filter(([k, q]) => !bridged.has(k) && !canopyAt(k, q.x, q.y).merged).map(([k]) => canopies.get(k)!.radius));
   const anchorKeys = new Set((opts.anchors ?? []).map(a => key(a.i, a.j)));
-  const stateOf = (k: string, q: { x: number; y: number; g: number }, _j: number): { state: PlantState; radius: number; merged: boolean } => {
+  // The ring is the measured canopy; what is painted over for the model is the typical crown when the canopy merged with other green (weeds in the tangle stay in view).
+  const paintOf = (c: { radius: number; merged: boolean }) => (c.merged && typicalCrown > 0 ? Math.min(typicalCrown, c.radius) : c.radius);
+  const stateOf = (k: string, q: { x: number; y: number; g: number }, _j: number): { state: PlantState; x: number; y: number; radius: number; paint: number; merged: boolean } => {
     const c = canopyAt(k, q.x, q.y);
-    const radius = c.merged ? (typicalCrown || c.radius) : c.radius;
+    const radius = c.radius, paint = paintOf(c), at = { x: c.x, y: c.y, merged: c.merged };
     // The operator's plant is drawn at least half the planting's typical size: a ring on a pixel of green covers nothing.
-    if (anchorKeys.has(k)) return { state: "operator", radius: Math.max(radius, 0.5 * typicalCrown), merged: c.merged };
+    if (anchorKeys.has(k)) return { state: "operator", ...at, radius: Math.max(radius, 0.5 * typicalCrown), paint: Math.max(paint, 0.5 * typicalCrown) };
     const tiny = q.g < P.tinyGreen || (typicalCrown > 0 && c.radius < P.tinyCrownShare * typicalCrown);
-    if (tiny) return { state: "probable", radius: c.radius, merged: c.merged };
+    if (tiny) return { state: "probable", ...at, radius, paint };
     // Merged and weak: a tangle of green with no crown in it, or a crown among weeds; the operator decides.
-    if (c.merged && q.g < P.presentGreen) return { state: "ambiguous", radius, merged: true };
-    return { state: "confirmed", radius, merged: c.merged };
+    if (c.merged && q.g < P.presentGreen) return { state: "ambiguous", ...at, radius, paint, merged: true };
+    return { state: "confirmed", ...at, radius, paint };
   };
   const gapEvidence = (k: string): LayoutGap["evidence"] => { const seen = gapAt.get(k)?.seen ?? 0; return seen === -2 ? "operator" : seen >= P.anchorFloor ? "some" : "none"; };
   for (const [j, is] of byRow) {
@@ -784,7 +816,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       if (!is2.every(i => bridged.has(key(i, j)))) return true;
       if (is2.length < P.bridgedMinPlants) return false;
       if (typicalCrown > 0) {
-        const crown = median(is2.map(i => { const q = plant.get(key(i, j))!; return crownRadius(r, q.x, q.y, rmax); }));
+        const crown = median(is2.map(i => { const q = plant.get(key(i, j))!; return canopyAt(key(i, j), q.x, q.y).radius; }));
         if (crown < P.bridgedCrownMin * typicalCrown || crown > P.bridgedCrownMax * typicalCrown) return false;
       }
       const { ux, uy, nx, ny } = basis(L);
@@ -803,7 +835,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
           rows++; run++; expected += span; found += n;
           for (let i = cur[0]; i <= cur[n - 1]; i++) {
             const q = plant.get(key(i, j));
-            if (q) { const st = stateOf(key(i, j), q, j); plants.push({ x: q.x, y: q.y, r: st.radius, row: j, i, run, state: st.state, g: q.g, merged: st.merged }); opts.trace?.set(key(i, j), `accepted (crown green ${q.g.toFixed(2)}, ${st.state})`); }
+            if (q) { const st = stateOf(key(i, j), q, j); plants.push({ x: st.x, y: st.y, r: st.radius, paint: st.paint, row: j, i, run, state: st.state, g: q.g, merged: st.merged }); opts.trace?.set(key(i, j), `accepted (crown green ${q.g.toFixed(2)}, ${st.state})`); }
             else { const g = gapAt.get(key(i, j)); const [lx, ly] = latticePoint(L, i, j); gaps.push({ x: g?.x ?? lx, y: g?.y ?? ly, row: j, i, evidence: gapEvidence(key(i, j)), g: Math.max(0, g?.seen ?? 0) }); }
           }
         }
@@ -835,7 +867,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     for (let n = 1; n < ts.length; n++) { const d = ts[n] - ts[n - 1], k = Math.max(1, Math.round(d / L.along)); if (Math.abs(d - k * L.along) <= P.runStepShare * L.along) ok++; }
     if (ok / (ts.length - 1) < P.runRegularShare) continue;
     rows++; run++; expected += fr.plants.length; found += fr.plants.length;
-    fr.plants.forEach((q, k) => { const c = canopyOf(r, q.x, q.y, rmax); plants.push({ x: q.x, y: q.y, r: c.merged ? (typicalCrown || c.radius) : c.radius, row: fr.j, i: k, run, state: c.merged ? "ambiguous" : "probable", g: q.g, merged: c.merged }); });
+    fr.plants.forEach((q, k) => { const c = canopyOf(r, q.x, q.y, reach); plants.push({ x: c.x, y: c.y, r: c.radius, paint: paintOf(c), row: fr.j, i: k, run, state: c.merged ? "ambiguous" : "probable", g: q.g, merged: c.merged }); });
   }
   return { plants, gaps, rows, foundShare: expected ? found / expected : 0, lattice: L };
 }
@@ -1007,7 +1039,7 @@ export function layoutToFieldRows(f: FittedLayout, r: LayoutRaster): (FieldRows 
   const mppFrame = r.mpp / k;
   return {
     z: r.z, left: r.left, top: r.top, mpp: mppFrame,
-    ctx: { lines, crops: f.plants.map(p => ({ x: p.x * k, y: p.y * k, r: p.r * k, state: p.state, uncertain: p.merged })), bandPx: band, gsdM: mppFrame },
+    ctx: { lines, crops: f.plants.map(p => ({ x: p.x * k, y: p.y * k, r: p.r * k, paint: p.paint * k, state: p.state, uncertain: p.merged })), bandPx: band, gsdM: mppFrame },
     rows: f.rows, spacingM: spacing * mppFrame, seedSpacingM: step * mppFrame,
     directionDeg: ((((f.lattice.angle * 180) / Math.PI) % 180) + 180) % 180, blocks: 1,
     source: "layout", gaps: f.gaps.map(g => ({ x: g.x * k, y: g.y * k, evidence: g.evidence })),

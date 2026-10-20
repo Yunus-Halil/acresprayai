@@ -57,7 +57,7 @@ export function rowBandMask(rows: FieldRows, z: number, originX: number, originY
     fillDisc(mask, w, h, x2, y2, b);
   }
   for (const c of rows.ctx.crops) {
-    const cx = tx(c.x), cy = ty(c.y), r = (c.r + crownMarginPx) * f;
+    const cx = tx(c.x), cy = ty(c.y), r = ((c.paint ?? c.r) + crownMarginPx) * f;
     if (cx + r < 0 || cx - r > w || cy + r < 0 || cy - r > h) continue;
     fillDisc(mask, w, h, cx, cy, r);
   }
@@ -98,7 +98,7 @@ export function rowsSignature(rows: FieldRows): string {
   const mix = (v: number) => { h ^= Math.round(v * 10) & 0xffffffff; h = Math.imul(h, 16777619) >>> 0; };
   mix(rows.ctx.lines.length); mix(rows.ctx.crops.length); mix(rows.ctx.bandPx);
   for (const l of rows.ctx.lines) { mix(l.x1); mix(l.y1); mix(l.x2); mix(l.y2); }
-  for (const c of rows.ctx.crops) { mix(c.x); mix(c.y); mix(c.r); }
+  for (const c of rows.ctx.crops) { mix(c.x); mix(c.y); mix(c.r); mix(c.paint ?? c.r); }
   return h.toString(36);
 }
 

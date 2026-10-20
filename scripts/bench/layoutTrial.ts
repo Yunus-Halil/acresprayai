@@ -86,11 +86,44 @@ if (crops.length && rows) {
   score.weedsOnRowsLayout = weeds.filter(l => isOnRow(status(rows, l.X, l.Y))).length;
   score.weedsOnRowsReader = weeds.filter(l => isOnRow(status(reader, l.X, l.Y))).length;
 }
+// Does each ring cover its crown? The proxy, with no crown labels: the green joined to the plant's centre (raster
+// green over half, flood fill) within half a spacing of it (an ellipse in the lattice's basis, so a neighbour's
+// crown is cut off), and the share of that green inside the ring. Weeds against a crown count against the ring,
+// so the share is a floor on the true coverage; it is the same proxy before and after any change.
+const cover = (() => {
+  const Lf = fit.lattice, ux = Math.cos(Lf.angle), uy = Math.sin(Lf.angle), a = 0.5 * Lf.along, c = 0.5 * Math.abs(Lf.across);
+  const shares: number[] = [], bare: number[] = [], perPlant: { x: number; y: number; r: number; state: string; merged: boolean; share: number; bare: number }[] = [];
+  for (const p of fit.plants) {
+    const x0 = Math.round(p.x), y0 = Math.round(p.y);
+    if (x0 < 0 || y0 < 0 || x0 >= r.w || y0 >= r.h) continue;
+    // The other side: how much of the ring's area is bare (a ring far wider than its crown).
+    { let nb = 0, nn = 0; const R = Math.ceil(p.r); for (let yy = y0 - R; yy <= y0 + R; yy++) for (let xx = x0 - R; xx <= x0 + R; xx++) { if (xx < 0 || yy < 0 || xx >= r.w || yy >= r.h || Math.hypot(xx - p.x, yy - p.y) > p.r) continue; nn++; if (r.green[yy * r.w + xx] < 128) nb++; } bare.push(nn ? nb / nn : 0); }
+    const seen = new Set<number>([y0 * r.w + x0]), stack = [y0 * r.w + x0];
+    let n = 0, inside = 0;
+    while (stack.length) {
+      const idx = stack.pop()!, x = idx % r.w, y = (idx - x) / r.w, dx = x - p.x, dy = y - p.y, al = dx * ux + dy * uy, ac = -dx * uy + dy * ux;
+      if ((al * al) / (a * a) + (ac * ac) / (c * c) > 1) continue;
+      if (r.green[idx] < 128 && n > 0) continue;
+      n++; if (Math.hypot(dx, dy) <= p.r) inside++;
+      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + ox, yy = y + oy; if (xx < 0 || yy < 0 || xx >= r.w || yy >= r.h) continue; const j = yy * r.w + xx; if (!seen.has(j)) { seen.add(j); stack.push(j); } }
+    }
+    shares.push(n ? inside / n : 1);
+    perPlant.push({ x: p.x, y: p.y, r: p.r, state: p.state, merged: p.merged, share: +(n ? inside / n : 1).toFixed(2), bare: +bare[bare.length - 1].toFixed(2) });
+  }
+  if (arg("out")) writeFileSync(join(d, `cover-${arg("out")}.json`), JSON.stringify(perPlant));
+  const s = [...shares].sort((p, q) => p - q), b = [...bare].sort((p, q) => p - q), radii = fit.plants.map(p => p.r * r.mpp).sort((p, q) => p - q);
+  return {
+    crownInRingMedian: s.length ? +s[s.length >> 1].toFixed(2) : null, ringsUnder80: shares.filter(v => v < 0.8).length, ringsUnder50: shares.filter(v => v < 0.5).length,
+    bareInRingMedian: b.length ? +b[b.length >> 1].toFixed(2) : null, ringsOverHalfBare: bare.filter(v => v > 0.5).length,
+    ringRadiusM: radii.length ? { min: +radii[0].toFixed(2), median: +radii[radii.length >> 1].toFixed(2), max: +radii[radii.length - 1].toFixed(2) } : null,
+    merged: fit.plants.filter(p => p.merged).length, states: Object.fromEntries(["confirmed", "probable", "ambiguous", "operator"].map(st => [st, fit.plants.filter(p => p.state === st).length])),
+  };
+})();
 const out = {
   frame: FRAME, rasterPx: [r.w, r.h], rasterMpp: +r.mpp.toFixed(3), rasterMs: Math.round(rasterMs), fitMs: Math.round(fitMs),
   start: { alongM: +(L0.along * r.mpp).toFixed(2), acrossM: +(Math.abs(L0.across) * r.mpp).toFixed(2), angleDeg: +((L0.angle * 180) / Math.PI).toFixed(1) },
   fitted: { alongM: +(fit.lattice.along * r.mpp).toFixed(2), acrossM: +(Math.abs(fit.lattice.across) * r.mpp).toFixed(2), angleDeg: +((fit.lattice.angle * 180) / Math.PI).toFixed(1), score: +fit.score.toFixed(3) },
-  rows: fit.rows, plants: fit.plants.length, gaps: fit.gaps.length, unexplained: rows?.unexplained.length ?? null, foundShare: +fit.foundShare.toFixed(3), readerRows: reader?.rows ?? null, ...score,
+  rows: fit.rows, plants: fit.plants.length, gaps: fit.gaps.length, unexplained: rows?.unexplained.length ?? null, foundShare: +fit.foundShare.toFixed(3), readerRows: reader?.rows ?? null, cover, ...score,
 };
 console.log(JSON.stringify(out));
 

@@ -261,6 +261,28 @@ describe("what the evidence says at each position", () => {
     expect(p.state).toBe("confirmed");
   });
 
+  it("a crown standing almost a metre off its slot, found only at its margin, gets its ring on the crown and round all of it", () => {
+    const { r, trees } = orchard(new Set(["A8,1"]));
+    const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    const at = (i: number, j: number) => [2 + i * 3.2 * ux + j * 5 * nx, 2.5 + i * 3.2 * uy + j * 5 * ny] as const;
+    const [sx, sy] = at(8, 1);
+    const cx = sx + 0.85 * ux + 0.3 * nx, cy = sy + 0.85 * uy + 0.3 * ny; // 0.85 m along, 0.3 m across: the search box reaches only its near margin
+    const set = (x: number, y: number) => { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 255; };
+    // An oval crown, 1.2 m along the row by 0.8 m across: the ring must reach its long ends.
+    for (let dy = -0.6; dy <= 0.6; dy += MPP / 2) for (let dx = -0.6; dx <= 0.6; dx += MPP / 2) { const al = dx * ux + dy * uy, ac = -dx * uy + dy * ux; if ((al * al) / 0.36 + (ac * ac) / 0.16 <= 1) set(cx + dx, cy + dy); }
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    const p = fit.plants.find(q => Math.hypot(q.x * MPP - cx, q.y * MPP - cy) <= 0.6)!;
+    expect(p).toBeDefined();
+    expect(Math.hypot(p.x * MPP - cx, p.y * MPP - cy)).toBeLessThan(0.15);
+    expect(p.r * MPP).toBeGreaterThanOrEqual(0.5); // round the long ends, not the short ones only
+    expect(p.r * MPP).toBeLessThan(0.8); // and not wider than the crown
+    expect(p.merged).toBe(false);
+    expect(p.paint).toBe(p.r); // nothing merged: what is painted for the model is what is drawn
+    // The crowns of the planting's typical size are enclosed too: no ring under the 0.8 m disc it stands on.
+    for (const t of trees.filter(t => t.block === "A")) { const q = fit.plants.find(q => Math.hypot(q.x * MPP - t.x, q.y * MPP - t.y) <= 0.3); if (q) expect(q.r * MPP).toBeGreaterThanOrEqual(0.7); }
+  });
+
   it("\"a crop\" on an expected position beside a tree that stood too far off its slot finds the tree, at its size", () => {
     const { r, trees } = orchard(new Set(["A8,1"]));
     const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;

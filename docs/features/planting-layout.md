@@ -144,7 +144,7 @@ a plant says what was seen, and the canopy is a measurement apart from the posit
 | On the map | State | Rule |
 |---|---|---|
 | solid green ring | confirmed | green at its place; canopy at least half the planting's typical one and crown green at least 0.15 |
-| dashed green ring, no ? | confirmed, canopy uncertain | the green never ended before the canopy cap (0.45 of the smaller spacing): a crown that runs into weeds or a neighbour; drawn at the planting's typical size, never the merged extent |
+| dashed green ring, no ? | confirmed, canopy uncertain | the crown's green reaches the edge of its cell in half the directions or more: a crown that runs into weeds or a neighbour; drawn round what was measured, painted over for the model at the planting's typical size |
 | dashed green ring with ? | probable | only a little green: a canopy under half the typical one, or crown green under 0.15: a young tree, or a weed at a tree's place |
 | dashed amber ring with ? | ambiguous | weak green that runs into other green: a crown among weeds, or weeds alone |
 | thick pale ring | operator | the operator said "a crop" |
@@ -174,3 +174,37 @@ The re-centring weighs the crown's own mass and moves a plant at most 0.5 m; unb
 row into the verge weeds (93 matched on DJI_0301, but the row lost). The step-regularity tolerance is 0.35 of the
 spacing, since crown-centred plants sit up to half a metre from their slots. DJI_0320's seventh row is the hedgerow
 along the road, the field boundary's job on the real map.
+
+## The ring is the crown (2026-10-19, evening)
+
+Yunus: "some circles just don't cover crops". On the stand-in frames the fault was mostly not the size but the place:
+the search box around an expected position found the near margin of a crown standing up to a metre off its slot,
+the re-centring moved the plant half a metre at most, and the ring (the ring mean of green out of that centre) was
+measured from the margin: a 0.7 m ring on a stem or a bare patch beside a 1.2 m crown. Where weeds ran along the
+row (DJI_0327), the ring mean never fell under the edge bar, the crown was "merged" and drawn at the planting's
+typical size under the real crown: 41 of 56 rings covered less than 80% of their crown's joined green.
+
+Now the canopy is the crown itself: the green joined to the plant (raster green at least 0.25) inside its cell, the
+ellipse of the planting's half-spacings around the expected position, so a neighbour's crown is cut off at the
+mid-plane (the lattice-seeded, cell-bounded segmentation the crown-delineation survey in docs/research recommends).
+The plant moves to that mass (at most 1 m), the ring encloses 95% of it, and "merged" means the mass reaches the
+cell's edge in half the directions or more. What is painted over for the model is unchanged in kind: the measured
+crown, or the planting's typical one when merged, so weeds in a tangle stay in the model's view (`paint` on each
+plant and crop, apart from the drawn `r`).
+
+Measured on the five stand-in frames (the proxy: the share of a plant's joined green within half a spacing that
+lies inside its ring; weeds against a crown count against the ring, so it is a floor):
+
+| | DJI_0301 | 0303 | 0312 | 0320 | 0327 |
+|---|---|---|---|---|---|
+| Rings covering under 80% of the crown, before / after | 19 / 2 of 102 | 16 / 1 of 107 | 22 / 2 of 76 | 16 / 6 of 66 | 41 / 6 of 56 |
+| Ring radius, median, before / after | 0.98 / 1.08 m | 1.07 / 1.07 | 1.07 / 1.19 | 1.07 / 1.15 | 0.98 / 1.34 |
+| Plants, rows | unchanged | unchanged | unchanged | unchanged | unchanged |
+
+DJI_0301 against its labels: trees matched within 0.6 m 89 of 104 before and after, on a row line 101 both, labelled
+weeds inside the crop band 37 before, 36 after. The contact sheets of the worst-covered and the barest rings were
+looked at by eye on DJI_0301 and DJI_0327: rings sit on the crowns and round them; the barest rings are the small
+"probable" ones on tiny plants and rings round open, sparse young crowns with their shadows. The radius on 0327 is
+near the cell's edge for most plants because the crowns there are large and touch the weed strips along the row;
+those are dashed. Not measured: crown outlines (no crown labels exist); the olive orchard set in docs/research
+(CC BY 4.0, 1.78 cm a pixel, boxes) is the next evaluation.
