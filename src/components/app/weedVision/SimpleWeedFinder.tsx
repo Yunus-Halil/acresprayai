@@ -22,6 +22,7 @@ import { makeRowContextFor } from "@/lib/weedVision/photoRows";
 import { PLANT_COLOUR } from "./ModelDetectionLayer";
 import { modelShaFor } from "./ModelDetectionsPanel";
 import { CropRowsPanel } from "./CropRowsPanel";
+import { HotspotFinder } from "./HotspotFinder";
 
 const SIMPLE_PARAMS: Omit<FrameRunParams, "algorithm"> = { threshold: 0.5, tile: 1024, overlap: 256, scale: 1 };
 const PREFERRED_ALGORITHM = "rfdetr_seg_large";
@@ -127,8 +128,8 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
 
       {!run.running ? (
         <button type="button" onClick={find} disabled={!!problem || !userId} data-testid="find-weeds"
-          className="w-full inline-flex items-center justify-center gap-2 rounded-sm bg-[#ffe600] text-black font-semibold text-[13px] py-2.5 hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed">
-          <Search className="h-4 w-4" /> {run.plants.length ? "Find weeds again" : "Find weeds"}
+          className={onMap ? "text-[11px] underline text-neutral-500 hover:text-neutral-300" : "w-full inline-flex items-center justify-center gap-2 rounded-sm bg-[#ffe600] text-black font-semibold text-[13px] py-2.5 hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"}>
+          {onMap ? (run.plants.length ? "Run the model over the whole field again (slow)" : "Run the model over the whole field instead (slow)") : <><Search className="h-4 w-4" /> {run.plants.length ? "Find weeds again" : "Find weeds"}</>}
         </button>
       ) : (
         <div className="space-y-1.5" data-testid="finding">
@@ -142,6 +143,7 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
       )}
 
       {onMap && <CropRowsPanel taskId={taskId} fieldId={fieldId} userId={userId} />}
+      {onMap && <HotspotFinder taskId={taskId} userId={userId} params={{ algorithm, ...SIMPLE_PARAMS }} modelSha={modelSha} photoGsdM={typeof sources?.stats?.odm_processing_statistics?.average_gsd === "number" ? sources.stats.odm_processing_statistics.average_gsd / 100 : null} modelReady={ready} algorithmLabel={info?.label ?? null} />}
 
       {problem && !run.running && (
         <p className="text-[11px] text-amber-400 flex items-start gap-1.5" data-testid="simple-problem"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {problem}</p>

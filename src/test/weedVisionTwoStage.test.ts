@@ -85,7 +85,10 @@ describe("stage 1: pressure between the rows", () => {
     expect(patch.offRowGreenM2).toBeGreaterThan(0.8 * (PATCH.x1 - PATCH.x0) * (PATCH.y1 - PATCH.y0));
     expect(patch.offRowGreenM2).toBeLessThan(1.2 * (PATCH.x1 - PATCH.x0) * (PATCH.y1 - PATCH.y0));
     expect(s!.summary.reasons["no rows"]).toBe(0);
-    expect(s!.cells.find(c => c.key === keyAt(PLAN, s, 2, 2.5))!.uncertain).toContain("mostly crop row");
+    // A cell holding a crown with bare soil beside it is judged on that soil: not uncertain, and no pressure (the crown is out of the count).
+    const treeCell = s!.cells.find(c => c.key === keyAt(PLAN, s, 2, 2.5))!;
+    expect(treeCell.uncertain).not.toContain("mostly crop row");
+    expect(treeCell.pressure).toBeLessThan(0.02);
   });
 
   it("cells the read rows do not reach are 'no rows', even when rows were read elsewhere in the field", async () => {

@@ -69,7 +69,8 @@ import { HotspotPanel } from "../weedVision/HotspotPanel";
 import { LayoutLayer } from "../weedVision/LayoutLayer";
 import { CropRowsPanel } from "../weedVision/CropRowsPanel";
 import { loadFieldLayout } from "@/lib/weedVision/layout/fieldLayoutStore";
-import { TwoStageLayer } from "../weedVision/TwoStageLayer";
+import { TWO_STAGE_COLOURS, TwoStageLayer } from "../weedVision/TwoStageLayer";
+import { useTwoStage } from "@/lib/weedVision/twoStage/twoStageStore";
 import { TwoStagePanel } from "../weedVision/TwoStagePanel";
 import { type GroundPlant, countByClass, countByRow } from "@/lib/weedVision/frames";
 import type { Hotspot } from "@/lib/weedVision/hotspots";
@@ -384,6 +385,7 @@ export function WeedScoutTab({
   const detectionLayer = useDetectionLayer(taskId);
   // A model's plants from the scan's photographs (lib/weedVision): drawn, and marked on the field only by the operator's click.
   const frameRun = useFrameRun(taskId);
+  const twoStage = useTwoStage(taskId);
   /** Simple mode, the default: one button that finds the weeds between the rows, and the map shows only those. */
   const [simple, setSimpleState] = useState<boolean>(() => { try { return localStorage.getItem(SIMPLE_KEY) !== "0"; } catch { return true; } });
   const setSimple = useCallback((on: boolean) => { setSimpleState(on); try { localStorage.setItem(SIMPLE_KEY, on ? "1" : "0"); } catch { /* private mode */ } }, []);
@@ -924,9 +926,9 @@ export function WeedScoutTab({
               <HeatmapLayer taskId={taskId} />
               <HotspotLayer taskId={taskId} />
               <HotspotFocus taskId={taskId} fieldBounds={bounds} />
-              <TwoStageLayer taskId={taskId} />
             </>
           )}
+          <TwoStageLayer taskId={taskId} />
           <ModelDetectionLayer taskId={taskId} onMark={markPlant} showLabels={showLabels && labelsReadable} />
           <LayoutLayer taskId={taskId} />
           {/* Every spot carries its own decision and its own review panel.
@@ -1021,9 +1023,11 @@ export function WeedScoutTab({
           spotMeasurement={closerLook ? (candidates.find(c => c.id === closerLook.id)?.measurement ?? null) : null}
           passParams={params} readStore={readStore} minWeedM={params.photoMinWeedM} />
 
-        {simple && frameRun.plants.length > 0 && (
-          <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[11px] px-2.5 py-2 rounded-sm border border-[#222] flex items-center gap-2 text-neutral-300" data-testid="simple-legend">
-            <span className="inline-block w-3 h-3 rounded-sm" style={{ background: PLANT_COLOUR.weed }} /> Weeds between the rows
+        {simple && (frameRun.plants.length > 0 || twoStage.stage1) && (
+          <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[11px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1 text-neutral-300" data-testid="simple-legend">
+            {twoStage.stage1 && <span className="inline-flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-sm border-2" style={{ borderColor: TWO_STAGE_COLOURS.candidate, background: "rgba(255,145,0,0.25)" }} /> Weed hotspots between the rows</span>}
+            {twoStage.stage1 && <span className="inline-flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: "repeating-linear-gradient(135deg,rgba(255,255,255,0.7) 0 1px,transparent 1px 4px)" }} /> Could not judge (no rows read, shadow)</span>}
+            {frameRun.plants.length > 0 && <span className="inline-flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: PLANT_COLOUR.weed }} /> Weeds the model found</span>}
           </div>
         )}
         {!simple && <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[10px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1">

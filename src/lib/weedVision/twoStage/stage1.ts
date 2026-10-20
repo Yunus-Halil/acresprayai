@@ -18,7 +18,7 @@ import type { PhotoPixels } from "../../photoScout/pattern";
 import { fetchTileCached } from "../../tileCache";
 import { type FieldRows, fieldReadPlan, vegetationMask } from "../fieldRows";
 import { convexHull } from "../hotspots";
-import { rowBandMask } from "../layout/rowBand";
+import { PAINT_CROWN_MARGIN_M, rowBandMask } from "../layout/rowBand";
 
 export { fillConvex, fillDisc, rowBandMask } from "../layout/rowBand";
 import { TILE_PX, latLngOfPx } from "../mapRun";
@@ -27,15 +27,19 @@ export type Stage1Params = {
   version: string;
   /** Cell edge, metres. */
   cellM: number;
-  /** A cell is a hotspot candidate at this share of off-row green or more. */
+  /** A cell is a hotspot candidate at this share of off-row green or more... */
   pressureMin: number;
+  /** ...or at this many off-row green blobs per m² or more (small scattered weeds carry little area but many blobs). */
+  densityMin: number;
+  /** A blob counts from this area, m². */
+  blobMinM2: number;
   /** A candidate area is high priority at this size, m², or this mean pressure. Same as the benchmark's truth definition. */
   highPriorityAreaM2: number;
   highPriorityPressure: number;
   /** Uncertain when less of the cell than this is imaged... */
   minImagedShare: number;
-  /** ...when the crop row band covers more of it than this (too little ground between the rows to judge)... */
-  maxBandShare: number;
+  /** ...when the crop row band leaves less of it than this to judge (share of the imaged cell off the band)... */
+  minOffBandShare: number;
   /** ...or when more of it than this is in deep shadow. */
   maxDarkShare: number;
   /** A pixel darker than this (0.299 R + 0.587 G + 0.114 B) is deep shadow. */
@@ -48,10 +52,12 @@ export const DEFAULT_STAGE1: Stage1Params = {
   version: "stage1-v1",
   cellM: 2,
   pressureMin: 0.05,
+  densityMin: 1,
+  blobMinM2: 0.003,
   highPriorityAreaM2: 25,
   highPriorityPressure: 0.25,
   minImagedShare: 0.8,
-  maxBandShare: 0.6,
+  minOffBandShare: 0.15,
   maxDarkShare: 0.25,
   darkLuma: 50,
   rowReachSpacings: 1,
@@ -73,8 +79,10 @@ export type Stage1Cell = {
   /** Share of the imaged ground under the crop row band. */
   bandShare: number;
   darkShare: number;
-  /** Green share of the imaged ground off the crop rows: the pressure estimate. */
+  /** Green share of the imaged ground off the crop rows (the band and crowns out of the denominator too): the pressure estimate. */
   pressure: number;
+  /** Off-row green blobs per m² of off-band ground: the density estimate. */
+  density: number;
   /** Estimated off-row green, m². */
   offRowGreenM2: number;
   uncertain: UncertainReason[];
@@ -120,10 +128,10 @@ export function cellAt(g: GridFrame, X: number, Y: number): { i: number; j: numb
 // ------------------------------------------------------------- accumulation
 
 /** Raw per-cell pixel counts, row-major over the grid. */
-export type CellCounts = { imaged: Int32Array; green: Int32Array; greenInBand: Int32Array; band: Int32Array; dark: Int32Array; /** 1 where the read rows reach the cell (rowReach); absent = everywhere. */ reached?: Uint8Array };
+export type CellCounts = { imaged: Int32Array; green: Int32Array; greenInBand: Int32Array; band: Int32Array; dark: Int32Array; blobs: Int32Array; /** 1 where the read rows reach the cell (rowReach); absent = everywhere. */ reached?: Uint8Array };
 export const emptyCounts = (g: GridFrame): CellCounts => {
   const n = g.nx * g.ny;
-  return { imaged: new Int32Array(n), green: new Int32Array(n), greenInBand: new Int32Array(n), band: new Int32Array(n), dark: new Int32Array(n) };
+  return { imaged: new Int32Array(n), green: new Int32Array(n), greenInBand: new Int32Array(n), band: new Int32Array(n), dark: new Int32Array(n), blobs: new Int32Array(n) };
 };
 
 /**
@@ -148,9 +156,31 @@ export function rowReach(g: GridFrame, rows: FieldRows, spacings: number): Uint8
 }
 
 /** Add one raster's pixels to the counts. `fx, fy` is the raster's top-left in grid frame pixels (relative to left, top). */
-export function accumulate(counts: CellCounts, g: GridFrame, px: PhotoPixels, fx: number, fy: number, band: Uint8Array | null, darkLuma: number): void {
+export function accumulate(counts: CellCounts, g: GridFrame, px: PhotoPixels, fx: number, fy: number, band: Uint8Array | null, darkLuma: number, blobMinPx = 1): void {
   const { width: w, height: h, rgba } = px;
   const green = vegetationMask(px);
+  // Off-row green blobs, each counted in the cell of its centre (a blob cut by the raster's edge counts in each part).
+  const seen = new Uint8Array(w * h);
+  const stack: number[] = [];
+  for (let s = 0; s < w * h; s++) {
+    if (!green[s] || (band && band[s]) || seen[s] || rgba[s * 4 + 3] === 0) continue;
+    seen[s] = 1; stack.push(s);
+    let n = 0, sx = 0, sy = 0;
+    while (stack.length) {
+      const i = stack.pop()!;
+      const x = i % w, y = (i - x) / w;
+      n++; sx += x; sy += y;
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+        const j = yy * w + xx;
+        if (green[j] && !(band && band[j]) && !seen[j]) { seen[j] = 1; stack.push(j); }
+      }
+    }
+    if (n < blobMinPx) continue;
+    const ci = Math.floor((fx + sx / n) / g.cellPx), cj = Math.floor((fy + sy / n) / g.cellPx);
+    if (ci >= 0 && cj >= 0 && ci < g.nx && cj < g.ny) counts.blobs[cj * g.nx + ci]++;
+  }
   for (let y = 0; y < h; y++) {
     const cj = Math.floor((fy + y) / g.cellPx);
     if (cj < 0 || cj >= g.ny) continue;
@@ -185,6 +215,8 @@ export function finishStage1(g: GridFrame, counts: CellCounts, rings: LatLng2[][
     const centre = ll((X0 + X1) / 2, (Y0 + Y1) / 2);
     if (rings.length && !rings.some(r => pointInRing(centre, r))) continue;
     const offRowGreen = counts.green[c] - (rowsUsed ? counts.greenInBand[c] : 0);
+    const offBand = Math.max(1, imaged - (rowsUsed ? counts.band[c] : 0));
+    const offBandM2 = offBand * g.mpp * g.mpp;
     const rowsHere = rowsUsed && (!counts.reached || counts.reached[c] === 1);
     const cell: Stage1Cell = {
       i, j, key: cellKey(i, j), centre, ring: [ll(X0, Y0), ll(X1, Y0), ll(X1, Y1), ll(X0, Y1)],
@@ -192,22 +224,24 @@ export function finishStage1(g: GridFrame, counts: CellCounts, rings: LatLng2[][
       greenShare: counts.green[c] / imaged,
       bandShare: counts.band[c] / imaged,
       darkShare: counts.dark[c] / imaged,
-      pressure: offRowGreen / imaged,
+      pressure: offRowGreen / offBand,
+      density: counts.blobs[c] / offBandM2,
       offRowGreenM2: offRowGreen * g.mpp * g.mpp,
       uncertain: [],
     };
     if (!rowsHere) cell.uncertain.push("no rows");
     if (cell.imagedShare < params.minImagedShare) cell.uncertain.push("partly imaged");
-    if (rowsUsed && cell.bandShare > params.maxBandShare) cell.uncertain.push("mostly crop row");
+    if (rowsUsed && 1 - cell.bandShare < params.minOffBandShare) cell.uncertain.push("mostly crop row");
     if (cell.darkShare > params.maxDarkShare) cell.uncertain.push("shadow");
     cells.push(cell);
     byKey.set(cell.key, cell);
   }
-  // Candidates: 8-connected cells at or over the pressure floor.
+  // Candidates: 8-connected cells at or over the pressure floor, or the density floor.
+  const hot = (c: Stage1Cell) => c.pressure >= params.pressureMin || c.density >= params.densityMin;
   const seen = new Set<string>();
   const hotspots: Stage1Hotspot[] = [];
   for (const cell of cells) {
-    if (cell.pressure < params.pressureMin || seen.has(cell.key)) continue;
+    if (!hot(cell) || seen.has(cell.key)) continue;
     const group: Stage1Cell[] = [];
     const stack = [cell];
     seen.add(cell.key);
@@ -216,7 +250,7 @@ export function finishStage1(g: GridFrame, counts: CellCounts, rings: LatLng2[][
       group.push(cur);
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
         const n = byKey.get(cellKey(cur.i + dx, cur.j + dy));
-        if (n && !seen.has(n.key) && n.pressure >= params.pressureMin) { seen.add(n.key); stack.push(n); }
+        if (n && !seen.has(n.key) && hot(n)) { seen.add(n.key); stack.push(n); }
       }
     }
     const corners: [number, number][] = group.flatMap(q => [[q.i, q.j], [q.i + 1, q.j], [q.i + 1, q.j + 1], [q.i, q.j + 1]] as [number, number][]);
@@ -293,8 +327,9 @@ export async function readStage1(input: {
     const w = t.x1 - t.x0, h = t.y1 - t.y0;
     const px = await draw(input.tile, g.z, g.left + t.x0, g.top + t.y0, w, h, input.signal);
     if (!px) { if (input.signal?.aborted) return null; continue; }
-    const band = input.rows ? rowBandMask(input.rows, g.z, g.left + t.x0, g.top + t.y0, w, h) : null;
-    accumulate(counts, g, px, t.x0, t.y0, band, params.darkLuma);
+    // The crop taken out as the model's input takes it out: the crowns with their margin, so a crown's rim is not pressure.
+    const band = input.rows ? rowBandMask(input.rows, g.z, g.left + t.x0, g.top + t.y0, w, h, PAINT_CROWN_MARGIN_M / input.rows.mpp) : null;
+    accumulate(counts, g, px, t.x0, t.y0, band, params.darkLuma, Math.max(1, Math.round(params.blobMinM2 / (plan.mpp * plan.mpp))));
     input.onProgress?.((k + 1) / plan.tiles.length);
     await new Promise(res => setTimeout(res, 0));
   }

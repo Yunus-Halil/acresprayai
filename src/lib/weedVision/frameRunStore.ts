@@ -275,6 +275,21 @@ function withinField(taskId: string, all: GroundPlant[]): { kept: GroundPlant[];
   }
   return { kept, outside };
 }
+/**
+ * Detections found elsewhere (the hotspot check, lib/weedVision/twoStage) shown as the scan's plants, under one name,
+ * through the same merge, boundary and row filters as a run of this store. Replaces what that name held.
+ */
+export function setExternalDetections(taskId: string, name: string, dets: FrameDetection[], label: string | null): void {
+  const raw = rawOf(taskId);
+  if (dets.length) raw.set(name, dets); else raw.delete(name);
+  const s = getFrameRun(taskId);
+  if (!s.scanSet) {
+    const map = maps.get(taskId);
+    if (!map) return;
+    patchFrameRun(taskId, { scanSet: mapScanSet(map, null, null), algorithmLabel: label ?? s.algorithmLabel });
+  } else if (label) patchFrameRun(taskId, { algorithmLabel: label });
+  republish(taskId);
+}
 /** Merge a scan's raw detections and publish them, filtered to the field. */
 function republish(taskId: string): void {
   const s = getFrameRun(taskId);
