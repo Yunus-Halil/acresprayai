@@ -208,3 +208,18 @@ looked at by eye on DJI_0301 and DJI_0327: rings sit on the crowns and round the
 near the cell's edge for most plants because the crowns there are large and touch the weed strips along the row;
 those are dashed. Not measured: crown outlines (no crown labels exist); the olive orchard set in docs/research
 (CC BY 4.0, 1.78 cm a pixel, boxes) is the next evaluation.
+
+## Where the fitter fails outright: a grassed orchard (2026-10-19, olive trial)
+
+The same fitter on six frames of a public olive orchard (OliveTreeCrownsDb, CC BY 4.0, Meknes, April, 1.67 cm a
+pixel, 820 labelled tree boxes; docs/research/olive-orchard-fitter-trial.md) found 3 of 820 trees. The rows,
+spacing and direction were right on every frame (within 0.4 m and 7 degrees of the labelled grid from three
+clicks), but every plant landed on the grass between two trees: the vegetation mask lights 64-82% of the sward and
+only 36-56% of the silver-green olive canopy, and the fitter's objective is green under the plant and bare between.
+Even the clicked trees were moved 1.4-1.9 m off their crowns toward the grass. Since then a mark on green holds
+within 0.5 m of the mark (a mark on bare ground is still looked for within 1 m), but that only keeps the operator's
+word; it does not find the other trees. The fitter, as built, assumes the crop is the greenest thing on its lattice.
+That holds on the bare-soil orchard it was built on and fails on a grass sward. A mask that separates canopy from
+sward (texture, shadow, the silver of the leaves) or a tree proposer that does not depend on colour is needed before
+grassed orchards are in scope; nothing of the kind is built, and the olive stand-in maps and scoring scripts under
+D:\swardus-research\olive are ready to rerun on one.

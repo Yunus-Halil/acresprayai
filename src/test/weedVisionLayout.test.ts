@@ -283,6 +283,23 @@ describe("what the evidence says at each position", () => {
     for (const t of trees.filter(t => t.block === "A")) { const q = fit.plants.find(q => Math.hypot(q.x * MPP - t.x, q.y * MPP - t.y) <= 0.3); if (q) expect(q.r * MPP).toBeGreaterThanOrEqual(0.7); }
   });
 
+  it("a tree the operator marked holds its place against a bigger green clump beside it", () => {
+    const { r, trees } = orchard();
+    const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    const t = treeA(trees, "8,1");
+    // A weed clump 1 m across against the crown, towards the alley: greener and bigger than the tree.
+    const set = (x: number, y: number) => { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 255; };
+    const bx = t.x + 1.6 * nx, by = t.y + 1.6 * ny;
+    for (let dy = -1; dy <= 1; dy += MPP / 2) for (let dx = -1; dx <= 1; dx += MPP / 2) if (dx * dx + dy * dy <= 1) set(bx + dx, by + dy);
+    const b = treeA(trees, "9,1"), c = treeA(trees, "8,2");
+    const clicks: [number, number][] = [px(t.x, t.y), px(b.x, b.y), px(c.x, c.y)];
+    const fits = fitLayoutAll(latticeFromClicks(...(clicks as [[number, number], [number, number], [number, number]]))!, r, clicks);
+    const p = fits[0].plants.find(q => q.state === "operator" && Math.hypot(q.x * MPP - t.x, q.y * MPP - t.y) <= 1.2)!;
+    expect(p).toBeDefined();
+    expect(Math.hypot(p.x * MPP - t.x, p.y * MPP - t.y)).toBeLessThanOrEqual(0.5);
+    void ux; void uy;
+  });
+
   it("\"a crop\" on an expected position beside a tree that stood too far off its slot finds the tree, at its size", () => {
     const { r, trees } = orchard(new Set(["A8,1"]));
     const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;

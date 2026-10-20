@@ -563,17 +563,27 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
   // The clicked plants first: in the map as plants, their neighbours queued, whatever the green there. The plant is
   // looked for around the mark (the mark may be an expected position the tree stands beside: a tree refused for
   // standing too far off its slot, then marked "a crop" by the operator, got its canopy measured on bare soil).
+  // The operator's mark holds: a plant marked on green stays within recentreMaxM of the mark, whatever greener thing
+  // stands beside it (on a grassed olive orchard the sward pulled every marked plant 1.4-1.9 m off its crown,
+  // 2026-10-19); only a mark on bare ground (an expected position) is looked for within anchorSearchM, and may then
+  // settle on the crown it found, recentreMaxM further.
+  const anchorHold = new Map<string, { x: number; y: number; hold: number }>();
   for (const a of opts.anchors ?? []) {
     const k = key(a.i, a.j);
-    const R = P.anchorSearchM / r.mpp;
-    let bx = a.x, by = a.y, bg = -1;
-    for (let yy = Math.max(0, Math.floor(a.y - R)); yy <= Math.min(r.h - 1, Math.ceil(a.y + R)); yy++) for (let xx = Math.max(0, Math.floor(a.x - R)); xx <= Math.min(r.w - 1, Math.ceil(a.x + R)); xx++) {
-      if ((xx - a.x) ** 2 + (yy - a.y) ** 2 > R * R) continue;
-      const v = G[yy * r.w + xx];
-      if (v > bg) { bg = v; bx = xx; by = yy; }
+    const ax = Math.min(r.w - 1, Math.max(0, Math.round(a.x))), ay = Math.min(r.h - 1, Math.max(0, Math.round(a.y)));
+    const atMark = G[ay * r.w + ax];
+    let bx = a.x, by = a.y, bg = atMark;
+    if (atMark < P.anchorFloor) {
+      const R = P.anchorSearchM / r.mpp;
+      for (let yy = Math.max(0, Math.floor(a.y - R)); yy <= Math.min(r.h - 1, Math.ceil(a.y + R)); yy++) for (let xx = Math.max(0, Math.floor(a.x - R)); xx <= Math.min(r.w - 1, Math.ceil(a.x + R)); xx++) {
+        if ((xx - a.x) ** 2 + (yy - a.y) ** 2 > R * R) continue;
+        const v = G[yy * r.w + xx];
+        if (v > bg) { bg = v; bx = xx; by = yy; }
+      }
     }
     if (bg >= P.anchorFloor) [bx, by] = recentre(bx, by);
     else { bx = a.x; by = a.y; }
+    anchorHold.set(k, { x: a.x, y: a.y, hold: (atMark >= P.anchorFloor ? P.recentreMaxM : P.anchorSearchM + P.recentreMaxM) / r.mpp });
     plant.set(k, { x: bx, y: by, g: Math.max(bg, barOf(a.j)) });
     seen.add(k);
     for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { const kk = key(a.i + di, a.j + dj); if (!seen.has(kk)) { seen.add(kk); queue.push([a.i + di, a.j + dj, 0, dj ? 1 : 0, 0]); } }
@@ -776,8 +786,12 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
   const stateOf = (k: string, q: { x: number; y: number; g: number }, _j: number): { state: PlantState; x: number; y: number; radius: number; paint: number; merged: boolean } => {
     const c = canopyAt(k, q.x, q.y);
     const radius = c.radius, paint = paintOf(c), at = { x: c.x, y: c.y, merged: c.merged };
-    // The operator's plant is drawn at least half the planting's typical size: a ring on a pixel of green covers nothing.
-    if (anchorKeys.has(k)) return { state: "operator", ...at, radius: Math.max(radius, 0.5 * typicalCrown), paint: Math.max(paint, 0.5 * typicalCrown) };
+    // The operator's plant is drawn at least half the planting's typical size (a ring on a pixel of green covers nothing) and held near the mark.
+    if (anchorKeys.has(k)) {
+      const h = anchorHold.get(k)!, d = Math.hypot(at.x - h.x, at.y - h.y);
+      if (d > h.hold) { at.x = h.x + ((at.x - h.x) * h.hold) / d; at.y = h.y + ((at.y - h.y) * h.hold) / d; }
+      return { state: "operator", ...at, radius: Math.max(radius, 0.5 * typicalCrown), paint: Math.max(paint, 0.5 * typicalCrown) };
+    }
     const tiny = q.g < P.tinyGreen || (typicalCrown > 0 && c.radius < P.tinyCrownShare * typicalCrown);
     if (tiny) return { state: "probable", ...at, radius, paint };
     // Merged and weak: a tangle of green with no crown in it, or a crown among weeds; the operator decides.
