@@ -11,7 +11,7 @@ import type { PhotoPixels } from "../../photoScout/pattern";
 import { type FieldRows, fieldReadPlan, vegetationMask } from "../fieldRows";
 import { latLngOfPx, mercatorPx } from "../mapRun";
 import { drawMapRect } from "../twoStage/stage1";
-import { type FittedLayout, type LayoutRaster, boxMean, fillPolygon, fitLayoutAll, latticeFromClicks, latticePoint, layoutsToFieldRows, mergeLayouts } from "./plantingLayout";
+import { type FittedLayout, type Lattice, type LayoutRaster, boxMean, fillPolygon, fitLayoutAll, latticeFromClicks, latticePoint, layoutsToFieldRows, mergeLayouts } from "./plantingLayout";
 
 export type LayoutBlock = { points: [LatLng2, LatLng2, LatLng2] };
 export type PlantingLayout = { version: 1; blocks: LayoutBlock[]; confirmedAt: string | null };
@@ -107,15 +107,37 @@ export function unexplainedGreen(r: LayoutRaster, rows: FieldRows, fits: FittedL
 }
 
 /** The plantings fitted on the raster; the rows (or null when none grew) and the plantings refined, to be saved. */
-export function fitPlantingLayout(r: LayoutRaster, layout: PlantingLayout): { rows: LayoutRows | null; blocks: LayoutBlock[]; fits: FittedLayout[] } {
+/**
+ * Two sets of clicks describe the same planting when their lattices agree in direction and plant spacing, and their
+ * row pitches are the same or one is half the other (the operator marked an interplanted row, whose next row is at
+ * half the pitch). The planting is then fitted on the finer pitch, so every marked tree lands on its own row.
+ */
+function sameLattice(a: Lattice, b: Lattice): boolean {
+  let turn = Math.abs(a.angle - b.angle) % Math.PI;
+  if (turn > Math.PI / 2) turn = Math.PI - turn;
+  const ratio = Math.abs(a.across) / Math.abs(b.across);
+  const pitchOk = [1, 2, 0.5].some(k => Math.abs(ratio - k) < 0.15 * k);
+  return turn < (5 * Math.PI) / 180 && Math.abs(a.along - b.along) < 0.15 * a.along && pitchOk;
+}
+
+export function fitPlantingLayout(r: LayoutRaster, layout: PlantingLayout): { rows: LayoutRows | null; blocks: LayoutBlock[]; fits: FittedLayout[]; reason: string | null } {
   const fits: FittedLayout[] = [];
   const blocks: LayoutBlock[] = [];
+  // Clicks on the same planting (a row it missed, say) are its anchors, not a planting of their own.
+  const groups: { L0: Lattice; clicks: [number, number][]; blocks: LayoutBlock[] }[] = [];
+  let bad = 0;
   for (const b of layout.blocks) {
-    const L0 = latticeFromClicks(toRaster(r, b.points[0]), toRaster(r, b.points[1]), toRaster(r, b.points[2]));
-    if (!L0) continue;
-    const all = fitLayoutAll(L0, r);
+    const pts = b.points.map(q => toRaster(r, q));
+    const L0 = latticeFromClicks(pts[0], pts[1], pts[2]);
+    if (!L0) { bad++; continue; }
+    const g = groups.find(x => sameLattice(x.L0, L0));
+    if (g) { g.clicks.push(...pts); g.blocks.push(b); if (Math.abs(L0.across) < 0.75 * Math.abs(g.L0.across)) g.L0 = L0; } else groups.push({ L0, clicks: pts, blocks: [b] });
+  }
+  for (const grp of groups) {
+    const all = fitLayoutAll(grp.L0, r, grp.clicks);
     const f = all[0];
     fits.push(...all);
+    for (const b of grp.blocks) {
     // Saved as the refined lattice's own points near the original first click.
     const ij = (() => {
       const { lattice: L } = f;
@@ -128,11 +150,14 @@ export function fitPlantingLayout(r: LayoutRaster, layout: PlantingLayout): { ro
     })();
     const p0 = latticePoint(f.lattice, ij[0], ij[1]), p1 = latticePoint(f.lattice, ij[0] + 1, ij[1]), p2 = latticePoint(f.lattice, ij[0], ij[1] + 1);
     blocks.push({ points: [toLatLng(r, ...p0), toLatLng(r, ...p1), toLatLng(r, ...p2)] });
+    }
   }
   const merged = mergeLayouts(fits);
   const base = layoutsToFieldRows(fits, r);
-  if (!base) return { rows: null, blocks, fits: merged };
-  return { rows: { ...base, unexplained: unexplainedGreen(r, base, merged) }, blocks, fits: merged };
+  const why = !layout.blocks.length ? "no trees marked" : bad === layout.blocks.length ? "the third tree of each marking must be in the next row, not the same one"
+    : !base ? "no row grew from the marked trees: the three trees must be a tree, its neighbour in the same row, and a tree in the next row" : null;
+  if (!base) return { rows: null, blocks, fits: merged, reason: why };
+  return { rows: { ...base, unexplained: unexplainedGreen(r, base, merged) }, blocks, fits: merged, reason: bad ? `${bad} marking${bad === 1 ? " was" : "s were"} skipped: the third tree must be in the next row` : null };
 }
 
 /** A planting proposed from rows the reader found: two neighbouring plants on one row and the nearest plant on another. */

@@ -94,13 +94,15 @@ export type FrameRunSession = {
   fieldRowsSource: "layout" | "reader" | null;
   /** Layout rows: plants found, positions with no plant, and tree-sized green on no row. */
   layoutStats: { plants: number; gaps: number; unexplained: number; foundShare: number } | null;
+  /** What went wrong, or was skipped, when the rows were read from the marked trees; null when nothing. */
+  fieldRowsNote: string | null;
 };
 
 export const EMPTY_FRAME_RUN: FrameRunSession = {
   running: false, progress: null, params: null, paramsKey: null, algorithmLabel: null, modelSha: null,
   plants: [], raw: 0, outside: 0, scanSet: null, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, showOnRow: false, selectedId: null, restoredAt: null, marked: {},
   hotspots: null, hotspotParams: DEFAULT_HOTSPOT_PARAMS, viewMode: "priority", selectedHotspotId: null, reviews: {}, focus: null, markedAreas: {},
-  alignAvailable: false, mapAvailable: null, fieldRows: null, fieldRowsState: "idle", fieldRowsProgress: null, fieldRowsSource: null, layoutStats: null,
+  alignAvailable: false, mapAvailable: null, fieldRows: null, fieldRowsState: "idle", fieldRowsProgress: null, fieldRowsSource: null, layoutStats: null, fieldRowsNote: null,
 };
 
 const sessions = new Map<string, FrameRunSession>();
@@ -207,6 +209,7 @@ export async function ensureFieldRows(taskId: string, opts: { reader?: FieldRows
   patchFrameRun(taskId, { fieldRowsState: "reading", fieldRowsProgress: 0 });
   const progress = (f: number) => { if (fieldRowsTried.get(taskId) === key) patchFrameRun(taskId, { fieldRowsProgress: f }); };
   let rows: FieldRows | null = null;
+  let note: string | null = null;
   // The field's planting layout when there is one: fitted on the field read into a coarse raster (kept for the next fit).
   if (layout && layout.blocks.length) {
     try {
@@ -220,8 +223,10 @@ export async function ensureFieldRows(taskId: string, opts: { reader?: FieldRows
         const fit = fitPlantingLayout(cached.raster, layout);
         refinedByTask.set(taskId, fit.blocks);
         rows = fit.rows;
-      }
-    } catch { rows = null; }
+        note = fit.reason;
+      } else note = "the field map could not be read for the marked trees";
+    } catch (e) { rows = null; note = `the marked trees could not be read: ${(e as Error)?.message ?? String(e)}`; }
+    if (!rows) note = `${note ?? "no rows from the marked trees"}; the rows shown are the automatic read`;
   }
   if (!rows) {
     try { rows = await (opts.reader ?? rowReaders.reader)({ rings, tile: map.tile, maxNative: map.maxNative, lat: map.lat, onProgress: progress }); } catch { rows = null; }
@@ -229,6 +234,7 @@ export async function ensureFieldRows(taskId: string, opts: { reader?: FieldRows
   }
   if (fieldRowsTried.get(taskId) !== key) return;
   setFieldRows(taskId, rows);
+  patchFrameRun(taskId, { fieldRowsNote: note });
 }
 
 /** The field's planting layout per scan (layout/), the field read into a raster for it, and the plantings as last refined. */

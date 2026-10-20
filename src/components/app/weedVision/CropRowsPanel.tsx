@@ -76,6 +76,7 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
           <button type="button" className={`${btn} border-[#22d3ee] text-[#22d3ee]`} onClick={() => startMarking(taskId)} data-testid="crop-rows-mark">Mark three trees</button>
         </div>
       )}
+      {run.fieldRowsNote && <p className="text-amber-400" data-testid="crop-rows-note">{run.fieldRowsNote}</p>}
       {ui.error && <p className="text-red-400">{ui.error}</p>}
     </div>
   );

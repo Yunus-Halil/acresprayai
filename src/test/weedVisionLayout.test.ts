@@ -176,6 +176,31 @@ describe("the spacing is the clue", () => {
     expect(fits.reduce((s, f) => s + f.rows, 0)).toBeGreaterThanOrEqual(9);
   });
 
+  it("three trees marked in a row too pale to pass are taken as plants, and the row is followed from them", () => {
+    // The orchard with one extra row of very small, pale trees (0.15 m) between two big rows, where nothing passes the
+    // presence bar; marking three of them must bring the whole row in.
+    const { r, trees } = orchard();
+    const ll = (t: { x: number; y: number }): LatLng2 => latLngOfPx(r.left + (t.x / MPP) * r.scale, r.top + (t.y / MPP) * r.scale, r.z);
+    const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    const pale: { x: number; y: number }[] = [];
+    for (let i = 0; i < 18; i++) { const x = 2 + i * 3.2 * ux + 7.5 * nx, y = 2.5 + i * 3.2 * uy + 7.5 * ny; if (x > 1 && x < 59) pale.push({ x, y }); }
+    const set = (x: number, y: number) => { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 255; };
+    for (const t of pale) for (let dy = -0.15; dy <= 0.15; dy += MPP / 2) for (let dx = -0.15; dx <= 0.15; dx += MPP / 2) if (dx * dx + dy * dy <= 0.15 * 0.15) set(t.x + dx, t.y + dy);
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const before = fitLayoutAll(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r).flatMap(f => f.plants);
+    expect(pale.filter(t => near(t, before, 0.3)).length).toBeLessThan(pale.length / 2); // too pale for the planting's bar
+    // The operator marks three of the pale trees: one, its neighbour, and a big tree in the next row.
+    const layout = { version: 1 as const, blocks: [
+      { points: [ll(a), ll(b), ll(c)] as [LatLng2, LatLng2, LatLng2] },
+      { points: [ll(pale[6]), ll(pale[7]), ll(treeA(trees, "6,2"))] as [LatLng2, LatLng2, LatLng2] },
+    ], confirmedAt: null };
+    const out = fitPlantingLayout(r, layout);
+    expect(out.reason).toBeNull();
+    const after = out.fits.flatMap(f => f.plants);
+    expect(pale.filter(t => near(t, after, 0.3)).length / pale.length).toBeGreaterThan(0.85);
+    expect(out.fits).toHaveLength(1); // the same planting, not a second one
+  });
+
   it("does not invent rows between rows when the alleys are bare, nor plants between plants that stand apart", () => {
     const { r, trees } = orchard();
     const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");

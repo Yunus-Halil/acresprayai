@@ -59,7 +59,7 @@ else {
 for (const kv of (arg("set") ?? "").split(",").filter(Boolean)) { const [kk, vv] = kv.split("="); (LAYOUT_PARAMS as Record<string, number>)[kk] = Number(vv); }
 const L0 = latticeFromClicks(toR(...blocks[0][0]), toR(...blocks[0][1]), toR(...blocks[0][2]))!;
 const t1 = performance.now();
-const fits: FittedLayout[] = blocks.flatMap(b => fitLayoutAll(latticeFromClicks(toR(...b[0]), toR(...b[1]), toR(...b[2]))!, r));
+const fits: FittedLayout[] = blocks.flatMap(b => fitLayoutAll(latticeFromClicks(toR(...b[0]), toR(...b[1]), toR(...b[2]))!, r, b.map(c => toR(...c))));
 const merged = mergeLayouts(fits);
 const fit = { ...merged[0], plants: merged.flatMap(f => f.plants), gaps: merged.flatMap(f => f.gaps), rows: merged.reduce((a, f) => a + f.rows, 0), foundShare: merged.reduce((a, f) => a + f.plants.length, 0) / Math.max(1, merged.reduce((a, f) => a + f.plants.length + f.gaps.length, 0)) };
 const fitMs = performance.now() - t1;

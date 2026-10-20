@@ -65,6 +65,8 @@ export const LAYOUT_PARAMS = {
    */
   presenceRadiusM: 0.3,
   presentGreen: 0.3,
+  /** The presence bar never goes under this, however pale the clicked plants. */
+  anchorFloor: 0.08,
   /** A finer spacing is taken when at least this share of its added positions hold a plant... */
   subdivideShare: 0.5,
   /** ...and the ground beside those plants (between the rows, or between plants when they stand apart) is less than this share as green. */
@@ -286,11 +288,11 @@ const median = (v: number[]) => { const t = [...v].sort((a, b) => a - b); return
  * rows found between the rows become lattices of their own (same spacing, offset by the found row and phase), so an
  * interplanted row that is not in step with its neighbours is still followed.
  */
-export function subdividedLattices(L: Lattice, GF: Float32Array, r: LayoutRaster, near: { cx: number; cy: number; radius: number }, separate: boolean): { main: Lattice; derived: Lattice[] } {
+export function subdividedLattices(L: Lattice, GF: Float32Array, r: LayoutRaster, near: { cx: number; cy: number; radius: number }, separate: boolean, presentGreen = LAYOUT_PARAMS.presentGreen): { main: Lattice; derived: Lattice[] } {
   const P = LAYOUT_PARAMS;
   const g = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi < 0 || yi < 0 || xi >= r.w || yi >= r.h || !r.inField[yi * r.w + xi] ? -1 : GF[yi * r.w + xi]; };
   const inNear = (x: number, y: number) => Math.hypot(x - near.cx, y - near.cy) <= near.radius;
-  const present = (x: number, y: number) => g(x, y) >= P.presentGreen;
+  const present = (x: number, y: number) => g(x, y) >= presentGreen;
   let main = L;
   // Along: a plant between every two plants that are there.
   {
@@ -307,7 +309,7 @@ export function subdividedLattices(L: Lattice, GF: Float32Array, r: LayoutRaster
       const q = 0.25 * main.along;
       on.push(v); beside.push(Math.max(g(x - q * ux, y - q * uy), g(x + q * ux, y + q * uy)));
     }
-    const share = on.filter(v => v >= P.presentGreen).length / Math.max(1, on.length);
+    const share = on.filter(v => v >= presentGreen).length / Math.max(1, on.length);
     if (on.length >= 6 && share >= P.subdivideShare && median(beside) < P.alleyContrast * median(on)) main = { ...main, along: main.along / 2, stagger: main.stagger % (main.along / 2) };
   }
   // Across: rows between two rows that are there, two or three per spacing; the finest that holds everywhere wins.
@@ -337,7 +339,7 @@ export function subdividedLattices(L: Lattice, GF: Float32Array, r: LayoutRaster
           apart.push(Math.max(g(x + h * ux, y + h * uy), g(x - h * ux, y - h * uy)));
         }
         if (on.length < 6) continue;
-        const share = on.filter(v => v >= P.presentGreen).length / on.length;
+        const share = on.filter(v => v >= presentGreen).length / on.length;
         const mOn = median(on);
         if (share < P.subdivideShare || median(alley) >= P.alleyContrast * mOn || (separate && median(apart) >= P.alleyContrast * mOn)) continue;
         if (!best || share > best.present) best = { lattice: { ...main, ox: main.ox + dx, oy: main.oy + dy }, present: share };
@@ -353,13 +355,13 @@ export function subdividedLattices(L: Lattice, GF: Float32Array, r: LayoutRaster
 const rowPitchOf = (main: Lattice, derived: Lattice[]) => Math.abs(main.across) / (derived.length + 1);
 
 /** Lattice positions near the origin that hold a plant, nearest first: where growth starts. */
-export function seedsFor(L: Lattice, GF: Float32Array, r: LayoutRaster, near: { cx: number; cy: number; radius: number }, n = 3): [number, number][] {
+export function seedsFor(L: Lattice, GF: Float32Array, r: LayoutRaster, near: { cx: number; cy: number; radius: number }, n = 3, presentGreen = LAYOUT_PARAMS.presentGreen): [number, number][] {
   const iR = Math.ceil(near.radius / L.along) + 1, jR = Math.ceil(near.radius / Math.abs(L.across)) + 1;
   const out: { i: number; j: number; d: number }[] = [];
   for (let j = -jR; j <= jR; j++) for (let i = -iR; i <= iR; i++) {
     const [x, y] = latticePoint(L, i, j);
     const xi = Math.round(x), yi = Math.round(y);
-    if (xi < 0 || yi < 0 || xi >= r.w || yi >= r.h || !r.inField[yi * r.w + xi] || GF[yi * r.w + xi] < LAYOUT_PARAMS.presentGreen) continue;
+    if (xi < 0 || yi < 0 || xi >= r.w || yi >= r.h || !r.inField[yi * r.w + xi] || GF[yi * r.w + xi] < presentGreen) continue;
     out.push({ i, j, d: Math.hypot(x - L.ox, y - L.oy) });
   }
   return out.sort((a, b) => a.d - b.d).slice(0, n).map(q => [q.i, q.j]);
@@ -373,8 +375,12 @@ export function seedsFor(L: Lattice, GF: Float32Array, r: LayoutRaster, near: { 
  * green all along). Missing plants are carried along a row up to segmentMaxMissing in a row and become gaps only
  * between plants. Growth stops where the planting stops: at a block edge, a track, another planting at another angle.
  */
-export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds: [number, number][], separate: boolean): { plants: LayoutPlant[]; gaps: LayoutGap[]; rows: number; foundShare: number; lattice: Lattice } {
-  const P = LAYOUT_PARAMS;
+/** The operator's clicked plants: lattice position and place, taken as plants whatever the green there. */
+export type Anchor = { i: number; j: number; x: number; y: number };
+export type GrowOptions = { presentGreen?: number; anchors?: Anchor[] };
+
+export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds: [number, number][], separate: boolean, opts: GrowOptions = {}): { plants: LayoutPlant[]; gaps: LayoutGap[]; rows: number; foundShare: number; lattice: Lattice } {
+  const P = { ...LAYOUT_PARAMS, presentGreen: opts.presentGreen ?? LAYOUT_PARAMS.presentGreen };
   let L = L0;
   const { ux, uy, nx, ny } = basis(L0);
   const sa = P.reSearchAlong * 1.6 * L.along, sc = P.reSearchAcross * 2.5 * Math.abs(L.across);
@@ -440,6 +446,15 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       L = latticeFromPlants([...plant.entries()].map(([k, v]) => { const [a, b] = k.split(",").map(Number); return { i: a, j: b, x: v.x, y: v.y }; }), L);
     }
   };
+  // The clicked plants first: in the map as plants, their neighbours queued, whatever the green there.
+  for (const a of opts.anchors ?? []) {
+    const k = key(a.i, a.j);
+    const xi = Math.round(a.x), yi = Math.round(a.y);
+    const gv = xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? G[yi * r.w + xi] : 0;
+    plant.set(k, { x: a.x, y: a.y, g: Math.max(gv, P.presentGreen) });
+    seen.add(k);
+    for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { const kk = key(a.i + di, a.j + dj); if (!seen.has(kk)) { seen.add(kk); queue.push([a.i + di, a.j + dj, 0, dj ? 1 : 0, 0]); } }
+  }
   const grow = () => {
     while (queue.length) {
       const [i, j, empties, across, b] = queue.shift()!;
@@ -726,13 +741,28 @@ export function plantsStandApart(L: Lattice, G: Float32Array, r: LayoutRaster): 
  * presence judged at crown scale. The first result is the clicked planting (what a save keeps); the rest are rows
  * found between its rows.
  */
-export function fitLayoutAll(L0: Lattice, r: LayoutRaster): FittedLayout[] {
+/** The lattice position nearest a place. */
+export function latticeIndex(L: Lattice, x: number, y: number): [number, number] {
+  const { e1, e2 } = basis(L);
+  const det = e1[0] * e2[1] - e1[1] * e2[0];
+  const dx = x - L.ox, dy = y - L.oy;
+  return [Math.round((dx * e2[1] - dy * e2[0]) / det), Math.round((e1[0] * dy - e1[1] * dx) / det)];
+}
+
+/**
+ * The whole fit. `clicks` are the operator's plants (raster pixels): they are plants whatever the green there, and
+ * the presence bar for this planting is set from how green they are (half the palest click, never under
+ * `anchorFloor`), so a row of pale young trees marked by the operator is followed, not skipped.
+ */
+export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, number][] = []): FittedLayout[] {
   const P = LAYOUT_PARAMS;
   const G = boxMean(r, P.crownShare * L0.along);
   const GF = boxMean(r, P.presenceRadiusM / r.mpp);
+  const gAt = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? GF[yi * r.w + xi] : 0; };
+  const presentGreen = clicks.length ? Math.min(P.presentGreen, Math.max(P.anchorFloor, 0.5 * Math.min(...clicks.map(c => gAt(c[0], c[1]))))) : P.presentGreen;
   const { lattice: refined, score } = refineLattice(L0, G, r);
   const near = { cx: refined.ox, cy: refined.oy, radius: 8 * Math.max(refined.along, Math.abs(refined.across)) };
-  const sub = subdividedLattices(refined, GF, r, near, plantsStandApart(refined, GF, r));
+  const sub = subdividedLattices(refined, GF, r, near, plantsStandApart(refined, GF, r), presentGreen);
   let main = sub.main;
   // A spacing corrected along the row means the lattice was refined at the wrong scale: refined again at the right one,
   // and whether the plants stand apart is judged at the right one too (at twice the spacing, the plant between
@@ -743,9 +773,10 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster): FittedLayout[] {
   const rowPitch = rowPitchOf(main, derived);
   const out: FittedLayout[] = [];
   for (const L of [main, ...derived]) {
-    const seeds = seedsFor(L, GF, r, near);
-    if (!seeds.length) continue;
-    out.push({ score, rowPitch, ...growPlants(L, GF, r, seeds, separate) });
+    const anchors: Anchor[] = L === main ? clicks.map(([x, y]) => { const [i, j] = latticeIndex(L, x, y); return { i, j, x, y }; }) : [];
+    const seeds = seedsFor(L, GF, r, near, 3, presentGreen);
+    if (!seeds.length && !anchors.length) continue;
+    out.push({ score, rowPitch, ...growPlants(L, GF, r, seeds, separate, { presentGreen, anchors }) });
   }
   return out.length ? out : [{ score, rowPitch, lattice: main, plants: [], gaps: [], rows: 0, foundShare: 0 }];
 }
