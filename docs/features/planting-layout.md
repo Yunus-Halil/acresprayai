@@ -159,3 +159,18 @@ lattice point. Click a ring or a cross in the Crop rows panel's map to say "A cr
 layout and applied at once: a no-crop position is never a plant (the interior scans respect it too), a crop position
 is a plant whatever the green. A weed at a tree's place therefore stays a weed unless the operator says otherwise;
 the crown painted over for the model is the measured canopy, capped, never the merged extent.
+
+### After the centring and the quieter states (2026-10-19, last run)
+
+| | Before centring | Now |
+|---|---|---|
+| DJI_0301 labelled trees with a plant within 0.6 m | 85 of 104 | 89 |
+| DJI_0301 labelled trees on a row | 100 | 101 |
+| DJI_0301 labelled weeds taken for crop | 43 | 37 |
+| DJI_0301 plants questioned ("?") | most on marked rows | only plants with little green |
+| Trees found, DJI_0303 / 0312 / 0320 / 0327 | 112 / 91 / 56 / 59 | 111 / 80 / 67 / 56 |
+
+The re-centring weighs the crown's own mass and moves a plant at most 0.5 m; unbounded, it pulled DJI_0327's edge
+row into the verge weeds (93 matched on DJI_0301, but the row lost). The step-regularity tolerance is 0.35 of the
+spacing, since crown-centred plants sit up to half a metre from their slots. DJI_0320's seventh row is the hedgerow
+along the road, the field boundary's job on the real map.
