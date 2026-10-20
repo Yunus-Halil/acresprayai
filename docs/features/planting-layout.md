@@ -40,6 +40,13 @@ as weeds.
    for plants; every stretch between two found plants on a row is scanned along the same way. A row in step with the
    lattice joins it; a row at another pitch or phase (a younger block planted between) stands on its own. A gap
    explained this way joins what lay beyond it to the planting.
+   **The marked trees are the truth.** The three clicked trees are plants whatever the green there, and the rows
+   they stand in get a presence bar set from the palest of them (half its green, never under 0.08), so a row of pale
+   young trees the fitter missed is followed from the marks. The bar is lowered only on the marked rows: lowered for
+   the whole planting, it let weed clumps into rows that then failed the straightness check (DJI_0301: 98 to 89 trees).
+   Markings on the same planting (same direction and plant spacing, row pitch the same or half, as when an
+   interplanted row's next row is at half the pitch) are one planting, fitted on the finer pitch. A fit that gives no
+   rows says why in the panel instead of showing the automatic rows in silence.
 4. Tree-sized green on no row is reported (orange rings): a row or block not marked yet.
 5. The result is the app's own row structure, so Find weeds, Stage 1 and the two-stage prototype use it unchanged.
    With a layout, every picture sent to RF-DETR has the rows painted over with the field's bare-ground colour (each
@@ -52,7 +59,7 @@ as weeds.
 
 | Frame | How marked | Rows | Trees found (first build / spacing rule / interior scan) | Gaps | Uncovered tree-sized patches |
 |---|---|---|---|---|---|
-| DJI_0301 | 3 labelled trees | 8 (reader: 6) | 85 / 92 / 98 | 14 | 1 |
+| DJI_0301 | 3 labelled trees | 8 (reader: 6) | 85 / 92 / 98 (101 with the clicks as anchors) | 12 | 1 |
 | DJI_0303 | reader's proposal | 7 | 90 / 94 / 108 | 5 | 3 |
 | DJI_0312 | 3 + 3 clicks, two plantings | 7 (reader: none) | 63 / 79 / 85 | 10 | 6 |
 | DJI_0320 | reader's proposal | 6 | 40 / 56 / 60 | 4 | 12 (the strip crop and hedge to the west) |
@@ -68,8 +75,8 @@ young trees at its own pitch and phase between two blocks of old ones (rows on b
 found by the interior scan). DJI_0327 keeps a row of tree-sized plants along the track verge that passed every test;
 whether it is a planting is for the operator.
 
-Against the hand labels on DJI_0301 (104 trees, 414 weeds, not exhaustive): 99 of 104 labelled trees fall on the rows
-(reader: 72), 82 are matched to a fitted tree within 0.6 m. 79 of 414 labelled weeds fall inside the crop band and are
+Against the hand labels on DJI_0301 (104 trees, 414 weeds, not exhaustive): 101 of 104 labelled trees fall on the rows
+(reader: 72), 80 are matched to a fitted tree within 0.6 m. 76 of 414 labelled weeds fall inside the crop band and are
 treated as crop (reader: 33); most of those are under or against a crown, where the model does not see them either.
 That is the cost of measuring crowns generously, and it is not measured against anything but these labels.
 

@@ -377,10 +377,12 @@ export function seedsFor(L: Lattice, GF: Float32Array, r: LayoutRaster, near: { 
  */
 /** The operator's clicked plants: lattice position and place, taken as plants whatever the green there. */
 export type Anchor = { i: number; j: number; x: number; y: number };
-export type GrowOptions = { presentGreen?: number; anchors?: Anchor[] };
+/** `rowBar`: a lower presence bar for the rows the operator marked (by lattice row), the planting's own bar elsewhere. */
+export type GrowOptions = { anchors?: Anchor[]; rowBar?: Map<number, number> };
 
 export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds: [number, number][], separate: boolean, opts: GrowOptions = {}): { plants: LayoutPlant[]; gaps: LayoutGap[]; rows: number; foundShare: number; lattice: Lattice } {
-  const P = { ...LAYOUT_PARAMS, presentGreen: opts.presentGreen ?? LAYOUT_PARAMS.presentGreen };
+  const P = LAYOUT_PARAMS;
+  const barOf = (j: number) => opts.rowBar?.get(j) ?? P.presentGreen;
   let L = L0;
   const { ux, uy, nx, ny } = basis(L0);
   const sa = P.reSearchAlong * 1.6 * L.along, sc = P.reSearchAcross * 2.5 * Math.abs(L.across);
@@ -413,7 +415,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       cells.push([x, y, g]);
       if (g > bg) bg = g;
     }
-    if (bg < P.presentGreen) return { x: ex, y: ey, g: -1 };
+    if (bg < barOf(j)) return { x: ex, y: ey, g: -1 };
     let bx = 0, by = 0, bn = 0;
     for (const [x, y, g] of cells) if (g >= 0.9 * bg) { bx += x; by += y; bn++; }
     bx /= bn; by /= bn;
@@ -451,7 +453,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     const k = key(a.i, a.j);
     const xi = Math.round(a.x), yi = Math.round(a.y);
     const gv = xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? G[yi * r.w + xi] : 0;
-    plant.set(k, { x: a.x, y: a.y, g: Math.max(gv, P.presentGreen) });
+    plant.set(k, { x: a.x, y: a.y, g: Math.max(gv, barOf(a.j)) });
     seen.add(k);
     for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { const kk = key(a.i + di, a.j + dj); if (!seen.has(kk)) { seen.add(kk); queue.push([a.i + di, a.j + dj, 0, dj ? 1 : 0, 0]); } }
   }
@@ -751,15 +753,17 @@ export function latticeIndex(L: Lattice, x: number, y: number): [number, number]
 
 /**
  * The whole fit. `clicks` are the operator's plants (raster pixels): they are plants whatever the green there, and
- * the presence bar for this planting is set from how green they are (half the palest click, never under
- * `anchorFloor`), so a row of pale young trees marked by the operator is followed, not skipped.
+ * the rows they stand in get a presence bar set from how green they are (half the palest click in that row, never
+ * under `anchorFloor`), so a row of pale young trees marked by the operator is followed, not skipped. The bar is
+ * lowered only on those rows: lowered for the whole planting it let weed clumps into rows, which then failed the
+ * straightness check and were dropped whole (DJI_0301: 98 trees to 89).
  */
 export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, number][] = []): FittedLayout[] {
   const P = LAYOUT_PARAMS;
   const G = boxMean(r, P.crownShare * L0.along);
   const GF = boxMean(r, P.presenceRadiusM / r.mpp);
   const gAt = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? GF[yi * r.w + xi] : 0; };
-  const presentGreen = clicks.length ? Math.min(P.presentGreen, Math.max(P.anchorFloor, 0.5 * Math.min(...clicks.map(c => gAt(c[0], c[1]))))) : P.presentGreen;
+  const presentGreen = P.presentGreen;
   const { lattice: refined, score } = refineLattice(L0, G, r);
   const near = { cx: refined.ox, cy: refined.oy, radius: 8 * Math.max(refined.along, Math.abs(refined.across)) };
   const sub = subdividedLattices(refined, GF, r, near, plantsStandApart(refined, GF, r), presentGreen);
@@ -774,9 +778,11 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
   const out: FittedLayout[] = [];
   for (const L of [main, ...derived]) {
     const anchors: Anchor[] = L === main ? clicks.map(([x, y]) => { const [i, j] = latticeIndex(L, x, y); return { i, j, x, y }; }) : [];
+    const rowBar = new Map<number, number>();
+    for (const a of anchors) { const bar = Math.min(P.presentGreen, Math.max(P.anchorFloor, 0.5 * gAt(a.x, a.y))); rowBar.set(a.j, Math.min(rowBar.get(a.j) ?? P.presentGreen, bar)); }
     const seeds = seedsFor(L, GF, r, near, 3, presentGreen);
     if (!seeds.length && !anchors.length) continue;
-    out.push({ score, rowPitch, ...growPlants(L, GF, r, seeds, separate, { presentGreen, anchors }) });
+    out.push({ score, rowPitch, ...growPlants(L, GF, r, seeds, separate, { anchors, rowBar }) });
   }
   return out.length ? out : [{ score, rowPitch, lattice: main, plants: [], gaps: [], rows: 0, foundShare: 0 }];
 }
