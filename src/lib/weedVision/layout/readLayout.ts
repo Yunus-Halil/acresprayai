@@ -11,10 +11,12 @@ import type { PhotoPixels } from "../../photoScout/pattern";
 import { type FieldRows, fieldReadPlan, vegetationMask } from "../fieldRows";
 import { latLngOfPx, mercatorPx } from "../mapRun";
 import { drawMapRect } from "../twoStage/stage1";
-import { type FittedLayout, type Lattice, type LayoutRaster, boxMean, fillPolygon, fitLayoutAll, latticeFromClicks, latticePoint, layoutsToFieldRows, mergeLayouts } from "./plantingLayout";
+import { type FittedLayout, type Lattice, type LayoutRaster, boxMean, fillPolygon, fitLayoutAll, latticeFromClicks, latticeIndex, latticePoint, layoutsToFieldRows, mergeLayouts } from "./plantingLayout";
 
 export type LayoutBlock = { points: [LatLng2, LatLng2, LatLng2] };
-export type PlantingLayout = { version: 1; blocks: LayoutBlock[]; confirmedAt: string | null };
+/** The operator's word on one expected position: a crop there, or none. */
+export type PositionVerdict = { lat: number; lng: number; crop: boolean; at?: string };
+export type PlantingLayout = { version: 1; blocks: LayoutBlock[]; confirmedAt: string | null; verdicts?: PositionVerdict[] };
 
 /** The field's rows from its planting layout, with what the layout says about the field. */
 /** A fit this thin is not trusted as the planting: fewer rows or a lower share of the expected plants found. */
@@ -133,8 +135,16 @@ export function fitPlantingLayout(r: LayoutRaster, layout: PlantingLayout): { ro
     const g = groups.find(x => sameLattice(x.L0, L0));
     if (g) { g.clicks.push(...pts); g.blocks.push(b); if (Math.abs(L0.across) < 0.75 * Math.abs(g.L0.across)) g.L0 = L0; } else groups.push({ L0, clicks: pts, blocks: [b] });
   }
-  for (const grp of groups) {
-    const all = fitLayoutAll(grp.L0, r, grp.clicks);
+  // Each verdict goes with the planting whose lattice it sits nearest to.
+  const verdictsOf = new Map<number, { x: number; y: number; crop: boolean }[]>();
+  for (const v of layout.verdicts ?? []) {
+    const [x, y] = toRaster(r, v);
+    let best = -1, bestD = Infinity;
+    groups.forEach((grp, n) => { const [i, j] = latticeIndex(grp.L0, x, y); const [px, py] = latticePoint(grp.L0, i, j); const dd = Math.hypot(px - x, py - y); if (dd < bestD) { bestD = dd; best = n; } });
+    if (best >= 0) (verdictsOf.get(best) ?? verdictsOf.set(best, []).get(best)!).push({ x, y, crop: v.crop });
+  }
+  for (const [n, grp] of groups.entries()) {
+    const all = fitLayoutAll(grp.L0, r, grp.clicks, undefined, verdictsOf.get(n) ?? []);
     const f = all[0];
     fits.push(...all);
     for (const b of grp.blocks) {

@@ -34,8 +34,18 @@ export type LayoutRaster = {
 /** A lattice in raster pixels: plant (i, j) stands at o + i * along * u + j * (across * n + stagger * u), u at `angle`, n a quarter turn on. */
 export type Lattice = { ox: number; oy: number; angle: number; along: number; across: number; stagger: number };
 
-export type LayoutPlant = { x: number; y: number; r: number; row: number; i: number; /** The stretch of its row it belongs to. */ run: number };
-export type LayoutGap = { x: number; y: number; row: number; i: number };
+/**
+ * What the evidence says about a plant at an expected position. The position itself proves nothing: a cultivated
+ * tree, a young tree, a weed and a merged tangle can all stand there.
+ *   confirmed  crown green at or over the planting's bar, a canopy of the planting's size, its edge found
+ *   probable   green there, but small (a young tree, or a weed) or under the planting's bar
+ *   ambiguous  the green did not end before the canopy cap: a crown merged with weeds or a neighbour
+ *   operator   the operator said "crop"
+ */
+export type PlantState = "confirmed" | "probable" | "ambiguous" | "operator";
+export type LayoutPlant = { x: number; y: number; /** Canopy radius, raster px, capped at the planting's reach; for an ambiguous plant the planting's typical radius. */ r: number; row: number; i: number; /** The stretch of its row it belongs to. */ run: number; state: PlantState; /** Crown-scale green at the plant. */ g: number; /** The measured canopy did not end before the cap. */ merged: boolean };
+/** An expected position with no plant placed: no visible evidence, some green under the bar, or the operator's "no crop". */
+export type LayoutGap = { x: number; y: number; row: number; i: number; evidence: "none" | "some" | "operator"; g: number };
 
 export type FittedLayout = {
   lattice: Lattice;
@@ -67,6 +77,8 @@ export const LAYOUT_PARAMS = {
   presentGreen: 0.3,
   /** The presence bar never goes under this, however pale the clicked plants. */
   anchorFloor: 0.08,
+  /** A plant whose canopy is under this share of the planting's typical one is "probable", not confirmed: a young tree, or a weed at a tree's place. */
+  smallCrownShare: 0.65,
   /** A finer spacing is taken when at least this share of its added positions hold a plant... */
   subdivideShare: 0.5,
   /** ...and the ground beside those plants (between the rows, or between plants when they stand apart) is less than this share as green. */
@@ -262,6 +274,23 @@ export function refineLattice(L0: Lattice, G: Float32Array, r: LayoutRaster): { 
 // ---------------------------------------------------------------- the plants
 
 /** A plant's crown radius: out from its centre until a ring of pixels is less green than crownEdgeGreen. */
+/** The canopy's radius out to where the ring of pixels stops being green, and whether it never stopped before the cap (merged). */
+export function canopyOf(r: LayoutRaster, x: number, y: number, rmax: number): { radius: number; merged: boolean } {
+  let last = 1;
+  for (let rad = 1; rad <= rmax; rad++) {
+    let g = 0, n = 0;
+    const steps = Math.max(8, Math.round(2 * Math.PI * rad));
+    for (let k = 0; k < steps; k++) {
+      const a = (2 * Math.PI * k) / steps, xi = Math.round(x + rad * Math.cos(a)), yi = Math.round(y + rad * Math.sin(a));
+      if (xi < 0 || yi < 0 || xi >= r.w || yi >= r.h) continue;
+      g += r.green[yi * r.w + xi] / 255; n++;
+    }
+    if (!n || g / n < LAYOUT_PARAMS.crownEdgeGreen) return { radius: Math.max(1, rad - 0.5), merged: false };
+    last = rad;
+  }
+  return { radius: last, merged: true };
+}
+
 function crownRadius(r: LayoutRaster, x: number, y: number, rmax: number): number {
   let last = 1;
   for (let rad = 1; rad <= rmax; rad++) {
@@ -379,7 +408,7 @@ export function seedsFor(L: Lattice, GF: Float32Array, r: LayoutRaster, near: { 
 export type Anchor = { i: number; j: number; x: number; y: number };
 /** `rowBar`: a lower presence bar for the rows the operator marked (by lattice row), the planting's own bar elsewhere. */
 /** `trace`: the fate of every expected position looked at, by "i,j": accepted, or why not (audits). */
-export type GrowOptions = { anchors?: Anchor[]; rowBar?: Map<number, number>; trace?: Map<string, string> };
+export type GrowOptions = { anchors?: Anchor[]; /** Positions the operator marked "no crop": never a plant, whatever grows there. */ noCrop?: Anchor[]; rowBar?: Map<number, number>; trace?: Map<string, string> };
 
 export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds: [number, number][], separate: boolean, opts: GrowOptions = {}): { plants: LayoutPlant[]; gaps: LayoutGap[]; rows: number; foundShare: number; lattice: Lattice } {
   const P = LAYOUT_PARAMS;
@@ -398,7 +427,9 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     return [q.x - lx, q.y - ly];
   };
   const note = (i: number, j: number, why: string) => { if (opts.trace && !opts.trace.get(key(i, j))?.startsWith("accepted")) opts.trace.set(key(i, j), why); };
-  const look = (i: number, j: number): { x: number; y: number; g: number } | null => {
+  const noCrop = new Set((opts.noCrop ?? []).map(a => key(a.i, a.j)));
+  const look = (i: number, j: number): { x: number; y: number; g: number; seen?: number } | null => {
+    if (noCrop.has(key(i, j))) { const [lx, ly] = latticePoint(L, i, j); note(i, j, "operator: no crop here"); return { x: lx, y: ly, g: -1, seen: -2 }; }
     const [lx, ly] = latticePoint(L, i, j);
     const near: [number, number][] = [];
     for (const [di, dj] of [[-1, 0], [1, 0], [-2, 0], [2, 0], [0, -1], [0, 1]]) { const v = resid(i + di, j + dj); if (v) near.push(v); }
@@ -421,19 +452,19 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       cells.push([x, y, g]);
       if (g > bg) bg = g;
     }
-    if (bg < barOf(j)) { note(i, j, `not present: crown green ${bg.toFixed(2)} under the bar ${barOf(j).toFixed(2)}`); return { x: ex, y: ey, g: -1 }; }
+    if (bg < barOf(j)) { note(i, j, `not present: crown green ${bg.toFixed(2)} under the bar ${barOf(j).toFixed(2)}`); return { x: ex, y: ey, g: -1, seen: bg }; }
     let bx = 0, by = 0, bn = 0;
     for (const [x, y, g] of cells) if (g >= 0.9 * bg) { bx += x; by += y; bn++; }
     bx /= bn; by /= bn;
     // Close to the layout itself, not only to the neighbours: a row may not turn into another planting.
     const offA = (bx - lx) * ux + (by - ly) * uy, offC = (bx - lx) * nx + (by - ly) * ny;
-    if (Math.abs(offA) > P.maxOffAlong * L.along || Math.abs(offC) > P.maxOffAcross * Math.abs(L.across)) { note(i, j, `off the layout: ${(offA * r.mpp).toFixed(2)} m along, ${(offC * r.mpp).toFixed(2)} m across (limits ${(P.maxOffAlong * L.along * r.mpp).toFixed(2)}, ${(P.maxOffAcross * Math.abs(L.across) * r.mpp).toFixed(2)})`); return { x: ex, y: ey, g: -1 }; }
+    if (Math.abs(offA) > P.maxOffAlong * L.along || Math.abs(offC) > P.maxOffAcross * Math.abs(L.across)) { note(i, j, `off the layout: ${(offA * r.mpp).toFixed(2)} m along, ${(offC * r.mpp).toFixed(2)} m across (limits ${(P.maxOffAlong * L.along * r.mpp).toFixed(2)}, ${(P.maxOffAcross * Math.abs(L.across) * r.mpp).toFixed(2)})`); return { x: ex, y: ey, g: -1, seen: bg }; }
     if (separate) {
       for (const di of [-1, 1]) {
         const q = plant.get(key(i + di, j));
         if (!q) continue;
         const mx = Math.round((q.x + bx) / 2), my = Math.round((q.y + by) / 2);
-        if (mx >= 0 && my >= 0 && mx < r.w && my < r.h && G[my * r.w + mx] > P.stripShare * Math.min(bg, q.g)) { note(i, j, `green all the way to the neighbour (a strip): ${G[my * r.w + mx].toFixed(2)} between`); return { x: ex, y: ey, g: -1 }; }
+        if (mx >= 0 && my >= 0 && mx < r.w && my < r.h && G[my * r.w + mx] > P.stripShare * Math.min(bg, q.g)) { note(i, j, `green all the way to the neighbour (a strip): ${G[my * r.w + mx].toFixed(2)} between`); return { x: ex, y: ey, g: -1, seen: bg }; }
       }
     }
     return { x: bx, y: by, g: bg };
@@ -443,7 +474,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
   const queue: [number, number, number, number, number][] = [];
   const seen = new Set<string>();
   for (const [i, j] of seeds) { queue.push([i, j, 0, 0, 0]); seen.add(key(i, j)); }
-  const gapAt = new Map<string, { x: number; y: number }>();
+  const gapAt = new Map<string, { x: number; y: number; seen: number }>();
   const bridged = new Set<string>();
   let sinceRefit = 0;
   const accept = (i: number, j: number, q: { x: number; y: number; g: number }, b: number) => {
@@ -472,7 +503,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       if (across && q.g >= 0 && ![-1, 1].some(di => { const v = look(i + di, j); return v != null && v.g >= 0; })) { seen.delete(key(i, j)); continue; }
       if (q.g < 0) {
         missing.set(key(i, j), empties + 1);
-        gapAt.set(key(i, j), { x: q.x, y: q.y });
+        gapAt.set(key(i, j), { x: q.x, y: q.y, seen: q.seen ?? 0 });
         if (across) {
           // A row with nothing here is stepped over: the field's spacing says where the next one stands.
           if (across <= P.maxMissingRows) for (const dj of [-1, 1]) { const k = key(i, j + dj); if (!seen.has(k)) { seen.add(k); queue.push([i, j + dj, 0, across + 1, 1]); } }
@@ -510,7 +541,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     for (const [i, j] of todo) {
       const q = look(i, j);
       if (!q) continue;
-      if (q.g < 0) { gapAt.set(key(i, j), { x: q.x, y: q.y }); continue; }
+      if (q.g < 0) { gapAt.set(key(i, j), { x: q.x, y: q.y, seen: q.seen ?? 0 }); continue; }
       // On its own in the field it is a weed; with a plant beside it along the row, or one in the next row in step, it is the planting.
       const company = [[-1, 0], [1, 0], [0, -1], [0, 1]].some(([di, dj]) => plant.has(key(i + di, j + dj)));
       if (!company) { note(i, j, "green on its own: no plant beside it along the row or in the next row"); seen.delete(key(i, j)); continue; }
@@ -595,7 +626,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
         if (Math.abs(jEst - jNear) <= 0.3 && !byJ.has(jNear)) {
           for (const q of found) {
             const iEst = (alongOf(q.x, q.y) - jNear * L.stagger) / L.along, iNear = Math.round(iEst);
-            if (Math.abs(iEst - iNear) <= 0.3 && !plant.has(key(iNear, jNear))) mapped.push([iNear, q]);
+            if (Math.abs(iEst - iNear) <= 0.3 && !plant.has(key(iNear, jNear)) && !noCrop.has(key(iNear, jNear))) mapped.push([iNear, q]);
           }
         }
         if (mapped.length >= 0.7 * found.length) { for (const [iNear, q] of mapped) { plant.set(key(iNear, jNear), q); bridged.delete(key(iNear, jNear)); } }
@@ -622,7 +653,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
         for (const k of peaks(pr, plantThreshold, P.interiorPlantSeparation * L.along)) {
           const t = ta + 0.3 * L.along + k, f = (t - ta) / Math.max(1, tb - ta), c = ca + f * (cb - ca);
           const iEst = (t - R.j * L.stagger) / L.along, iNear = Math.round(iEst);
-          if (iNear <= a.i || iNear >= b.i || plant.has(key(iNear, R.j))) continue;
+          if (iNear <= a.i || iNear >= b.i || plant.has(key(iNear, R.j)) || noCrop.has(key(iNear, R.j))) continue;
           let best = { x: 0, y: 0, g: -1 };
           for (let d = -0.1 * Math.abs(L.across); d <= 0.1 * Math.abs(L.across); d += 1) { const [x, y] = at(t, c + d); const v = g(x, y); if (v > best.g) best = { x, y, g: v }; }
           if (best.g >= plantThreshold) { plant.set(key(iNear, R.j), best); if (rowBridged) bridged.add(key(iNear, R.j)); }
@@ -635,8 +666,19 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
   for (const k of plant.keys()) { const [i, j] = k.split(",").map(Number); (byRow.get(j) ?? byRow.set(j, []).get(j)!).push(i); }
   const plants: LayoutPlant[] = [], gaps: LayoutGap[] = [];
   let rows = 0, expected = 0, found = 0, run = 0;
-  // The planting's typical crown, from the plants joined to the clicked ones.
-  const typicalCrown = median([...plant.entries()].filter(([k]) => !bridged.has(k)).map(([, q]) => crownRadius(r, q.x, q.y, rmax)));
+  // The planting's typical crown, from the plants joined to the clicked ones whose canopy edge was found.
+  const canopies = new Map<string, { radius: number; merged: boolean }>();
+  const canopyAt = (k: string, x: number, y: number) => { let c = canopies.get(k); if (!c) { c = canopyOf(r, x, y, rmax); canopies.set(k, c); } return c; };
+  const typicalCrown = median([...plant.entries()].filter(([k, q]) => !bridged.has(k) && !canopyAt(k, q.x, q.y).merged).map(([k]) => canopies.get(k)!.radius));
+  const anchorKeys = new Set((opts.anchors ?? []).map(a => key(a.i, a.j)));
+  const stateOf = (k: string, q: { x: number; y: number; g: number }, j: number): { state: PlantState; radius: number; merged: boolean } => {
+    const c = canopyAt(k, q.x, q.y);
+    if (anchorKeys.has(k)) return { state: "operator", radius: c.merged ? Math.min(c.radius, typicalCrown || c.radius) : c.radius, merged: c.merged };
+    if (c.merged) return { state: "ambiguous", radius: typicalCrown || c.radius, merged: true };
+    const small = typicalCrown > 0 && c.radius < P.smallCrownShare * typicalCrown;
+    return { state: q.g >= P.presentGreen && !small && barOf(j) >= P.presentGreen ? "confirmed" : "probable", radius: c.radius, merged: false };
+  };
+  const gapEvidence = (k: string): LayoutGap["evidence"] => { const seen = gapAt.get(k)?.seen ?? 0; return seen === -2 ? "operator" : seen >= P.anchorFloor ? "some" : "none"; };
   for (const [j, is] of byRow) {
     is.sort((a, b) => a - b);
     let cur: number[] = [is[0]];
@@ -685,8 +727,8 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
           rows++; run++; expected += span; found += n;
           for (let i = cur[0]; i <= cur[n - 1]; i++) {
             const q = plant.get(key(i, j));
-            if (q) { plants.push({ x: q.x, y: q.y, r: crownRadius(r, q.x, q.y, rmax), row: j, i, run }); opts.trace?.set(key(i, j), `accepted (crown green ${q.g.toFixed(2)})`); }
-            else { const g = gapAt.get(key(i, j)); const [lx, ly] = latticePoint(L, i, j); gaps.push({ x: g?.x ?? lx, y: g?.y ?? ly, row: j, i }); }
+            if (q) { const st = stateOf(key(i, j), q, j); plants.push({ x: q.x, y: q.y, r: st.radius, row: j, i, run, state: st.state, g: q.g, merged: st.merged }); opts.trace?.set(key(i, j), `accepted (crown green ${q.g.toFixed(2)}, ${st.state})`); }
+            else { const g = gapAt.get(key(i, j)); const [lx, ly] = latticePoint(L, i, j); gaps.push({ x: g?.x ?? lx, y: g?.y ?? ly, row: j, i, evidence: gapEvidence(key(i, j)), g: Math.max(0, g?.seen ?? 0) }); }
           }
         }
       }
@@ -699,7 +741,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
   }
   for (const fr of freeRows) {
     rows++; run++; expected += fr.plants.length; found += fr.plants.length;
-    fr.plants.forEach((q, k) => plants.push({ x: q.x, y: q.y, r: crownRadius(r, q.x, q.y, rmax), row: fr.j, i: k, run }));
+    fr.plants.forEach((q, k) => { const c = canopyOf(r, q.x, q.y, rmax); plants.push({ x: q.x, y: q.y, r: c.merged ? (typicalCrown || c.radius) : c.radius, row: fr.j, i: k, run, state: c.merged ? "ambiguous" : "probable", g: q.g, merged: c.merged }); });
   }
   return { plants, gaps, rows, foundShare: expected ? found / expected : 0, lattice: L };
 }
@@ -768,7 +810,10 @@ export function latticeIndex(L: Lattice, x: number, y: number): [number, number]
  * lowered only on those rows: lowered for the whole planting it let weed clumps into rows, which then failed the
  * straightness check and were dropped whole (DJI_0301: 98 trees to 89).
  */
-export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, number][] = [], trace?: Map<string, string>): FittedLayout[] {
+/** The operator's word on a position (raster px): a crop there, or none. */
+export type Verdict = { x: number; y: number; crop: boolean };
+
+export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, number][] = [], trace?: Map<string, string>, verdicts: Verdict[] = []): FittedLayout[] {
   const P = LAYOUT_PARAMS;
   const G = boxMean(r, P.crownShare * L0.along);
   const GF = boxMean(r, P.presenceRadiusM / r.mpp);
@@ -787,12 +832,14 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
   const rowPitch = rowPitchOf(main, derived);
   const out: FittedLayout[] = [];
   for (const L of [main, ...derived]) {
-    const anchors: Anchor[] = L === main ? clicks.map(([x, y]) => { const [i, j] = latticeIndex(L, x, y); return { i, j, x, y }; }) : [];
+    const toAnchor = ([x, y]: [number, number]): Anchor => { const [i, j] = latticeIndex(L, x, y); return { i, j, x, y }; };
+    const anchors: Anchor[] = L === main ? [...clicks, ...verdicts.filter(v => v.crop).map(v => [v.x, v.y] as [number, number])].map(toAnchor) : [];
+    const noCrop: Anchor[] = L === main ? verdicts.filter(v => !v.crop).map(v => toAnchor([v.x, v.y])) : [];
     const rowBar = new Map<number, number>();
     for (const a of anchors) { const bar = Math.min(P.presentGreen, Math.max(P.anchorFloor, 0.5 * gAt(a.x, a.y))); rowBar.set(a.j, Math.min(rowBar.get(a.j) ?? P.presentGreen, bar)); }
     const seeds = seedsFor(L, GF, r, near, 3, presentGreen);
     if (!seeds.length && !anchors.length) continue;
-    out.push({ score, rowPitch, ...growPlants(L, GF, r, seeds, separate, { anchors, rowBar, trace: L === main ? trace : undefined }) });
+    out.push({ score, rowPitch, ...growPlants(L, GF, r, seeds, separate, { anchors, noCrop, rowBar, trace: L === main ? trace : undefined }) });
   }
   return out.length ? out : [{ score, rowPitch, lattice: main, plants: [], gaps: [], rows: 0, foundShare: 0 }];
 }
@@ -866,10 +913,10 @@ export function layoutToFieldRows(f: FittedLayout, r: LayoutRaster): (FieldRows 
   const mppFrame = r.mpp / k;
   return {
     z: r.z, left: r.left, top: r.top, mpp: mppFrame,
-    ctx: { lines, crops: f.plants.map(p => ({ x: p.x * k, y: p.y * k, r: p.r * k })), bandPx: band, gsdM: mppFrame },
+    ctx: { lines, crops: f.plants.map(p => ({ x: p.x * k, y: p.y * k, r: p.r * k, state: p.state, uncertain: p.merged })), bandPx: band, gsdM: mppFrame },
     rows: f.rows, spacingM: spacing * mppFrame, seedSpacingM: step * mppFrame,
     directionDeg: ((((f.lattice.angle * 180) / Math.PI) % 180) + 180) % 180, blocks: 1,
-    source: "layout", gaps: f.gaps.map(g => ({ x: g.x * k, y: g.y * k })),
+    source: "layout", gaps: f.gaps.map(g => ({ x: g.x * k, y: g.y * k, evidence: g.evidence })),
   };
 }
 

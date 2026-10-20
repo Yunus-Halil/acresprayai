@@ -211,6 +211,54 @@ describe("the spacing is the clue", () => {
   });
 });
 
+describe("what the evidence says at each position", () => {
+  it("states: a full crown is confirmed, a small one probable, a merged one ambiguous; a gap says whether green was seen", () => {
+    const { r, trees } = orchard(new Set(["A5,1", "A9,2"]));
+    const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    const set = (x: number, y: number) => { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 255; };
+    const disc = (x: number, y: number, rad: number) => { for (let dy = -rad; dy <= rad; dy += MPP / 2) for (let dx = -rad; dx <= rad; dx += MPP / 2) if (dx * dx + dy * dy <= rad * rad) set(x + dx, y + dy); };
+    // A young tree where A5,1 is missing; a weed clump of 0.25 m where A9,2 is missing; A12,1's crown swollen to 1.7 m (merged with weeds).
+    const at = (i: number, j: number) => [2 + i * 3.2 * ux + j * 5 * nx, 2.5 + i * 3.2 * uy + j * 5 * ny] as const;
+    disc(...at(5, 1), 0.35); disc(...at(9, 2), 0.25); disc(...at(12, 1), 1.7);
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    const find = (i: number, j: number) => { const [x, y] = at(i, j); return fit.plants.find(p => Math.hypot(p.x * MPP - x, p.y * MPP - y) <= 0.5) ?? null; };
+    expect(find(6, 1)!.state).toBe("confirmed");
+    expect(find(5, 1)!.state).toBe("probable");
+    // The swollen crown is green all the way to its neighbours: either an ambiguous plant at its own size cap, or
+    // refused at its slot as a strip, which leaves an expected position with strong green for the operator. Never a
+    // confirmed crop, and never a canopy as wide as the merged green.
+    const [mx, my] = at(12, 1);
+    const atSlot = fit.plants.find(p => Math.hypot(p.x * MPP - mx, p.y * MPP - my) <= 0.9);
+    const slotGap = fit.gaps.find(g => Math.hypot(g.x * MPP - mx, g.y * MPP - my) <= 0.9);
+    expect(atSlot ? atSlot.state : slotGap?.evidence).toBeDefined();
+    expect(atSlot?.state ?? "gap").not.toBe("confirmed");
+    if (atSlot) { expect(atSlot.merged).toBe(true); expect(atSlot.r * MPP).toBeLessThan(1.2); }
+    else expect(slotGap!.evidence).toBe("some");
+    expect(fit.plants.some(p => p.state === "ambiguous" && p.merged)).toBe(true); // its neighbour's canopy runs into it
+    const gap = fit.gaps.find(g => { const [x, y] = at(9, 2); return Math.hypot(g.x * MPP - x, g.y * MPP - y) <= 0.6; });
+    expect(gap?.evidence === "some" || find(9, 2)?.state === "probable").toBe(true); // a weed at a tree's place: never a confirmed crop
+    expect(fit.gaps.some(g => g.evidence === "none")).toBe(true);
+  });
+
+  it("the operator's word: no crop makes a gap of a green position; a crop makes a plant of a pale one", () => {
+    const { r, trees } = orchard();
+    const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    const at = (i: number, j: number) => [2 + i * 3.2 * ux + j * 5 * nx, 2.5 + i * 3.2 * uy + j * 5 * ny] as const;
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const L0 = latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!;
+    const [tx, ty] = at(8, 1), [gx, gy] = at(3, 1);
+    // Remove tree A3,1's green and put nothing there; say "crop" there anyway; say "no crop" at A8,1 where a full tree stands.
+    for (let dy = -1; dy <= 1; dy += MPP / 2) for (let dx = -1; dx <= 1; dx += MPP / 2) { const xi = Math.floor((gx + dx) / MPP), yi = Math.floor((gy + dy) / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 0; }
+    const fits = fitLayoutAll(L0, r, [], undefined, [{ x: tx / MPP, y: ty / MPP, crop: false }, { x: gx / MPP, y: gy / MPP, crop: true }]);
+    const plants = fits.flatMap(f => f.plants), gaps = fits.flatMap(f => f.gaps);
+    expect(plants.some(p => Math.hypot(p.x * MPP - tx, p.y * MPP - ty) <= 0.5)).toBe(false);
+    expect(gaps.find(g => Math.hypot(g.x * MPP - tx, g.y * MPP - ty) <= 0.6)?.evidence).toBe("operator");
+    const forced = plants.find(p => Math.hypot(p.x * MPP - gx, p.y * MPP - gy) <= 0.5);
+    expect(forced?.state).toBe("operator");
+  });
+});
+
 describe("only between the rows", () => {
   it("paints the row band over with the picture's bare ground and nothing else", () => {
     const rows = { z: Z, left: 0, top: 0, mpp: 0.03, rows: 1, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "layout" as const, ctx: { lines: [{ x1: 0, y1: 20, x2: 64, y2: 20, band: 4 }], crops: [], bandPx: 4, gsdM: 0.03 } };

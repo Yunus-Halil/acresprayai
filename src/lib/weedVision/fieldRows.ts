@@ -60,7 +60,7 @@ export type FieldRows = {
   /** "layout" when the rows come from the field's confirmed planting layout (layout/), else read here. */
   source?: "reader" | "layout";
   /** Layout rows: expected plant positions with no plant (frame pixels). */
-  gaps?: { x: number; y: number }[];
+  gaps?: { x: number; y: number; /** none: no visible evidence; some: green under the bar; operator: marked "no crop". */ evidence?: "none" | "some" | "operator" }[];
   /** Layout rows: tree-sized green on no row (frame pixels), a row or block the layout does not cover yet. */
   unexplained?: { x: number; y: number; r: number }[];
 };

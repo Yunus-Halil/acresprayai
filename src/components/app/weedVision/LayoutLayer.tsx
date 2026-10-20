@@ -6,9 +6,12 @@
 import { useEffect } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
-import { latLngOfPx } from "@/lib/weedVision/mapRun";
+import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
 import { frameRunFieldRows, useFrameRun } from "@/lib/weedVision/frameRunStore";
-import { addClick, useLayoutUi } from "@/lib/weedVision/layout/layoutUi";
+import { addClick, pickPosition, useLayoutUi } from "@/lib/weedVision/layout/layoutUi";
+
+/** How each state is drawn: confirmed green, probable green dashed, ambiguous amber dashed, operator white-green, gaps red cross / amber ring / grey cross. */
+export const STATE_COLOUR = { confirmed: "#4ade80", probable: "#a3e635", ambiguous: "#ffb020", operator: "#e2ffe9" } as const;
 
 export function LayoutLayer({ taskId }: { taskId: string }) {
   const map = useMap();
@@ -16,7 +19,27 @@ export function LayoutLayer({ taskId }: { taskId: string }) {
   const run = useFrameRun(taskId);
   const visible = ui.show || ui.clicking;
   // Redrawn when the rows change (their summary changes with them) or the marking does.
-  const rowsSig = `${run.fieldRowsSource}|${run.fieldRows?.rows ?? 0}|${run.layoutStats?.plants ?? 0}|${run.layoutStats?.gaps ?? 0}|${run.fieldRowsState}`;
+  const rowsSig = `${run.fieldRowsSource}|${run.fieldRows?.rows ?? 0}|${run.layoutStats?.plants ?? 0}|${run.layoutStats?.gaps ?? 0}|${run.fieldRowsState}|${ui.picked ? `${ui.picked.lat},${ui.picked.lng}` : ""}`;
+
+  // A click on a plant or an expected position, when not marking, picks it for the operator's word.
+  useEffect(() => {
+    if (ui.clicking || !visible) return;
+    const click = (e: L.LeafletMouseEvent) => {
+      const rows = frameRunFieldRows(taskId);
+      if (!rows || rows.source !== "layout") return;
+      const [X, Y] = mercatorPx(e.latlng.lat, e.latlng.lng, rows.z);
+      const fx = X - rows.left, fy = Y - rows.top;
+      const typical = [...rows.ctx.crops.map(c => c.r)].sort((a, b) => a - b)[rows.ctx.crops.length >> 1] ?? (0.6 / rows.mpp);
+      let best: { d: number; p: { x: number; y: number; kind: "plant" | "gap"; state: string; uncertain: boolean } } | null = null;
+      for (const c of rows.ctx.crops) { const d = Math.hypot(c.x - fx, c.y - fy); if (d <= Math.max(c.r, 0.6 / rows.mpp) && (!best || d < best.d)) best = { d, p: { x: c.x, y: c.y, kind: "plant", state: c.state ?? "confirmed", uncertain: !!c.uncertain } }; }
+      for (const g of rows.gaps ?? []) { const d = Math.hypot(g.x - fx, g.y - fy); if (d <= Math.max(typical, 0.6 / rows.mpp) && (!best || d < best.d)) best = { d, p: { x: g.x, y: g.y, kind: "gap", state: g.evidence ?? "none", uncertain: g.evidence === "some" } }; }
+      if (!best) { pickPosition(taskId, null); return; }
+      const g = latLngOfPx(rows.left + best.p.x, rows.top + best.p.y, rows.z);
+      pickPosition(taskId, { lat: g.lat, lng: g.lng, kind: best.p.kind, state: best.p.state, uncertain: best.p.uncertain });
+    };
+    map.on("click", click);
+    return () => { map.off("click", click); };
+  }, [map, taskId, ui.clicking, visible]);
 
   useEffect(() => {
     if (!ui.clicking) return;
@@ -51,14 +74,32 @@ export function LayoutLayer({ taskId }: { taskId: string }) {
           ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
           ctx.strokeStyle = "#22d3ee"; ctx.lineWidth = 2; ctx.stroke();
         }
+        const typical = [...rows.ctx.crops.map(c => c.r)].sort((a, b) => a - b)[rows.ctx.crops.length >> 1] ?? 0;
         for (const c of rows.ctx.crops) {
           const q = pt(c.x, c.y), r = Math.max(3, c.r * rows.mpp * metre);
-          ctx.strokeStyle = "#4ade80"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.stroke();
+          const st = c.state ?? "confirmed";
+          ctx.strokeStyle = STATE_COLOUR[st]; ctx.lineWidth = st === "operator" ? 3 : 2;
+          ctx.setLineDash(st === "confirmed" || st === "operator" ? [] : [5, 4]);
+          ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]);
+          if (st === "ambiguous" || st === "probable") { ctx.fillStyle = STATE_COLOUR[st]; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", q.x, q.y); }
         }
         for (const g of rows.gaps ?? []) {
           const q = pt(g.x, g.y), s = 5;
-          ctx.strokeStyle = "#ff1a1a"; ctx.lineWidth = 2.5;
+          if (g.evidence === "some") {
+            // Green there, under the bar: a young tree or a weed; the operator decides.
+            const r = Math.max(6, typical * rows.mpp * metre);
+            ctx.strokeStyle = "#ffb020"; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+            ctx.fillStyle = "#ffb020"; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", q.x, q.y);
+            continue;
+          }
+          ctx.strokeStyle = g.evidence === "operator" ? "#9ca3af" : "#ff1a1a"; ctx.lineWidth = 2.5;
           ctx.beginPath(); ctx.moveTo(q.x - s, q.y - s); ctx.lineTo(q.x + s, q.y + s); ctx.moveTo(q.x + s, q.y - s); ctx.lineTo(q.x - s, q.y + s); ctx.stroke();
+        }
+        if (ui.picked) {
+          const q = map.latLngToContainerPoint([ui.picked.lat, ui.picked.lng]);
+          ctx.strokeStyle = "#000"; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(q.x, q.y, 12, 0, Math.PI * 2); ctx.stroke();
+          ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5; ctx.stroke();
         }
         for (const u of rows.unexplained ?? []) {
           const q = pt(u.x, u.y), r = Math.max(6, u.r * rows.mpp * metre);
@@ -74,6 +115,6 @@ export function LayoutLayer({ taskId }: { taskId: string }) {
     draw();
     map.on("moveend zoomend viewreset resize", draw);
     return () => { map.off("moveend zoomend viewreset resize", draw); canvas.remove(); };
-  }, [map, taskId, visible, ui.clicks, rowsSig]);
+  }, [map, taskId, visible, ui.clicks, rowsSig]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 }

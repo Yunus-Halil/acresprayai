@@ -203,7 +203,7 @@ export async function ensureFieldRows(taskId: string, opts: { reader?: FieldRows
   if (!map || !rings?.length) return;
   const mapKey = `${map.maxNative}|${rings.length}|${rings[0].length}|${rings[0][0]?.lat}|${rings[0][0]?.lng}`;
   const layout = layoutsByTask.get(taskId) ?? null;
-  const key = `${mapKey}|v${LAYOUT_VERSION}|${layout ? JSON.stringify(layout.blocks) : "auto"}`;
+  const key = `${mapKey}|v${LAYOUT_VERSION}|${layout ? JSON.stringify([layout.blocks, layout.verdicts ?? []]) : "auto"}`;
   if (fieldRowsTried.get(taskId) === key) return;
   fieldRowsTried.set(taskId, key);
   patchFrameRun(taskId, { fieldRowsState: "reading", fieldRowsProgress: 0 });

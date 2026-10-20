@@ -10,7 +10,8 @@ const localKey = (fieldId: string) => storageKey("plantingLayout", fieldId);
 
 function valid(x: unknown): x is PlantingLayout {
   const l = x as PlantingLayout;
-  return !!l && l.version === 1 && Array.isArray(l.blocks) && l.blocks.every(b => Array.isArray(b?.points) && b.points.length === 3 && b.points.every(p => Number.isFinite(p?.lat) && Number.isFinite(p?.lng)));
+  return !!l && l.version === 1 && Array.isArray(l.blocks) && l.blocks.every(b => Array.isArray(b?.points) && b.points.length === 3 && b.points.every(p => Number.isFinite(p?.lat) && Number.isFinite(p?.lng)))
+    && (l.verdicts === undefined || (Array.isArray(l.verdicts) && l.verdicts.every(v => Number.isFinite(v?.lat) && Number.isFinite(v?.lng) && typeof v?.crop === "boolean")));
 }
 
 export async function loadFieldLayout(fieldId: string): Promise<PlantingLayout | null> {

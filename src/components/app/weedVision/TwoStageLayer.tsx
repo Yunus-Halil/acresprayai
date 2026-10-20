@@ -65,6 +65,7 @@ export function TwoStageLayer({ taskId }: { taskId: string }) {
       const vb = map.getBounds().pad(0.05);
       const s0 = vb.getSouth(), n0 = vb.getNorth(), w0 = vb.getWest(), e0 = vb.getEast();
       const inView = (ring: { lat: number; lng: number }[]) => ring.some(q => q.lat >= s0 && q.lat <= n0 && q.lng >= w0 && q.lng <= e0);
+      const candidateCells = new Set(stage1.hotspots.flatMap(h => h.cells));
       if (layers.pressure) {
         for (const c of stage1.cells) {
           const unsure = c.uncertain.some(r => ROUTING_REASONS.has(r));
@@ -72,10 +73,10 @@ export function TwoStageLayer({ taskId }: { taskId: string }) {
           if (!inView(c.ring)) continue;
           const ps = c.ring.map(pt);
           if (off(ps)) continue;
-          if (c.pressure >= 0.01) {
-            // Yellow at a trace of pressure to red at 25% and over, never faint enough to turn muddy on soil.
+          if (c.pressure >= 0.01 && !candidateCells.has(c.key)) {
+            // A light tint for pressure under the hotspot floor, so the map stays readable; hotspot cells are drawn below.
             const v = Math.min(1, Math.sqrt(c.pressure / 0.25));
-            path(ps); ctx.fillStyle = `rgba(255, ${Math.round(230 - 200 * v)}, 0, ${0.3 + 0.4 * v})`; ctx.fill();
+            path(ps); ctx.fillStyle = `rgba(255, ${Math.round(230 - 200 * v)}, 0, ${0.08 + 0.17 * v})`; ctx.fill();
           }
           if (unsure) {
             const xs = ps.map(p => p.x), ys = ps.map(p => p.y);
@@ -107,16 +108,19 @@ export function TwoStageLayer({ taskId }: { taskId: string }) {
         }
       }
       if (layers.candidates) {
+        // The hotspot cells themselves, each filled and edged; no outline around a group (a hull around scattered
+        // cells covered the soil between them and read as one huge boundary).
         for (const h of stage1.hotspots) {
-          const ps = h.ring.map(pt);
-          if (ps.length < 3 || off(ps)) continue;
           const col = h.highPriority ? TWO_STAGE_COLOURS.highPriority : TWO_STAGE_COLOURS.candidate;
-          path(ps);
-          // Orange fill for both: a red fill over brown soil turns salmon-pink, the outline says which is high priority.
-          ctx.globalAlpha = 0.25; ctx.fillStyle = TWO_STAGE_COLOURS.candidate; ctx.fill(); ctx.globalAlpha = 1;
-          ctx.lineJoin = "round";
-          ctx.strokeStyle = TWO_STAGE_COLOURS.halo; ctx.lineWidth = h.highPriority ? 6 : 5; ctx.stroke();
-          ctx.strokeStyle = col; ctx.lineWidth = h.highPriority ? 3.5 : 2.5; ctx.stroke();
+          for (const k of h.cells) {
+            const c = byKey.get(k);
+            if (!c || !inView(c.ring)) continue;
+            const ps = c.ring.map(pt);
+            if (off(ps)) continue;
+            path(ps);
+            ctx.fillStyle = h.highPriority ? "rgba(255, 60, 30, 0.42)" : "rgba(255, 145, 0, 0.38)"; ctx.fill();
+            ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.stroke();
+          }
         }
       }
       if (weeds.length) {

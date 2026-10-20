@@ -9,7 +9,16 @@ import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtDistance } from "@/lib/units";
 import { useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { MIN_TRUSTED_FOUND, MIN_TRUSTED_ROWS } from "@/lib/weedVision/layout/readLayout";
-import { acceptReaderRows, cancelMarking, clearLayout, rereadRows, saveLayout, setShowRows, startMarking, undoLastPlanting, useLayoutUi } from "@/lib/weedVision/layout/layoutUi";
+import { acceptReaderRows, cancelMarking, clearLayout, pickPosition, rereadRows, saveLayout, setShowRows, setVerdict, startMarking, undoLastPlanting, useLayoutUi } from "@/lib/weedVision/layout/layoutUi";
+
+const STATE_TEXT: Record<string, string> = {
+  confirmed: "A crop here: green crown of the planting's size, its edge found.",
+  probable: "Probably a crop, but small: a young tree, or a weed at a tree's place.",
+  ambiguous: "Green here merges with other green: a crown among weeds, or weeds alone. The ring is the planting's typical size, not measured.",
+  operator: "You said: a crop here.",
+  none: "An expected position with no visible plant.",
+  some: "An expected position with a little green under the bar: a young tree, or a weed.",
+};
 
 const STEP = ["Click a tree.", "Click its neighbour in the same row.", "Click a tree in the next row."] as const;
 
@@ -75,6 +84,21 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
           <p className="text-neutral-500">Mark three trees once and Weed Scout finds the whole planting.</p>
           <button type="button" className={`${btn} border-[#22d3ee] text-[#22d3ee]`} onClick={() => startMarking(taskId)} data-testid="crop-rows-mark">Mark three trees</button>
         </div>
+      )}
+      {ui.picked && fromLayout && (
+        <div className="rounded-sm border border-[#3a3a3a] p-2 space-y-1.5" data-testid="crop-rows-verdict">
+          <p className="text-neutral-200">{STATE_TEXT[ui.picked.state] ?? ui.picked.state}</p>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" className={`${btn} border-[#4ade80] text-[#4ade80]`} onClick={() => void setVerdict(taskId, { fieldId, userId, crop: true })} data-testid="verdict-crop">A crop</button>
+            <button type="button" className={`${btn} border-[#ff1a1a] text-[#ff1a1a]`} onClick={() => void setVerdict(taskId, { fieldId, userId, crop: false })} data-testid="verdict-none">No crop</button>
+            {(ui.picked.state === "operator") && <button type="button" className={`${btn} border-[#333] text-neutral-300`} onClick={() => void setVerdict(taskId, { fieldId, userId, crop: null })}>Forget my word</button>}
+            <button type="button" className={`${btn} border-[#333] text-neutral-500`} onClick={() => pickPosition(taskId, null)}>Leave it</button>
+          </div>
+          <p className="text-neutral-600">Your word is kept for this field and used from now on. A weed at a tree's place stays a weed unless you say otherwise.</p>
+        </div>
+      )}
+      {fromLayout && !ui.picked && !ui.clicking && (
+        <p className="text-neutral-600">Rings: solid green a crop, dashed green probably a crop, amber "?" green that could be a crop or a weed, red cross nothing there. Click a ring or a cross to say what is there.</p>
       )}
       {run.fieldRowsNote && <p className="text-amber-400" data-testid="crop-rows-note">{run.fieldRowsNote}</p>}
       {ui.error && <p className="text-red-400">{ui.error}</p>}
