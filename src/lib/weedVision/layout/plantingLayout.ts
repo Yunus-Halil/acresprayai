@@ -83,8 +83,10 @@ export const LAYOUT_PARAMS = {
    * canopy that runs into other green is still a crop, only its extent is uncertain (merged).
    */
   tinyCrownShare: 0.5, tinyGreen: 0.15,
-  /** A plant is re-centred on the green mass within this share of the plant spacing of its first estimate, so the ring sits on the crown, not on the lattice point. */
+  /** A plant is re-centred on the green mass within this share of the plant spacing of its first estimate (nearer green weighing more), so the ring sits on the crown, not on the lattice point... */
   recentreShare: 0.35,
+  /** ...and moves at most this far, metres: the verge weeds beside an edge row pulled its trees a metre sideways and the row failed the straightness test (DJI_0327). */
+  recentreMaxM: 0.5,
   /** A finer spacing is taken when at least this share of its added positions hold a plant... */
   subdivideShare: 0.5,
   /** ...and the ground beside those plants (between the rows, or between plants when they stand apart) is less than this share as green. */
@@ -450,8 +452,9 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       let sx = 0, sy = 0, sw = 0;
       const ya = Math.max(0, Math.floor(y - R)), yb = Math.min(r.h - 1, Math.ceil(y + R)), xa = Math.max(0, Math.floor(x - R)), xb = Math.min(r.w - 1, Math.ceil(x + R));
       for (let yy = ya; yy <= yb; yy++) for (let xx = xa; xx <= xb; xx++) {
-        if ((xx - x) ** 2 + (yy - y) ** 2 > R * R) continue;
-        const w = r.green[yy * r.w + xx];
+        const dd = Math.hypot(xx - x, yy - y);
+        if (dd > R) continue;
+        const w = r.green[yy * r.w + xx] * (1 - dd / R); // the crown's own mass weighs most
         if (!w) continue;
         sx += xx * w; sy += yy * w; sw += w;
       }
@@ -461,8 +464,10 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       x = nx2; y = ny2;
       if (moved < 0.5) break;
     }
-    // Never further from the first estimate than the box it was found in: a neighbouring clump must not pull it away.
-    if (Math.hypot(x - x0, y - y0) > R) return [x0, y0];
+    // Never further from the first estimate than recentreMaxM: a neighbouring clump must not pull it away.
+    const maxPx = P.recentreMaxM / r.mpp;
+    const d = Math.hypot(x - x0, y - y0);
+    if (d > maxPx) return [x0 + ((x - x0) * maxPx) / d, y0 + ((y - y0) * maxPx) / d];
     return [x, y];
   };
   const look = (i: number, j: number): { x: number; y: number; g: number; seen?: number } | null => {
