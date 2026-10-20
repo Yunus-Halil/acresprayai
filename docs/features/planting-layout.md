@@ -143,15 +143,19 @@ a plant says what was seen, and the canopy is a measurement apart from the posit
 
 | On the map | State | Rule |
 |---|---|---|
-| solid green ring | confirmed | crown green at the planting's bar, canopy at least 65% of the planting's typical one, its edge found |
-| dashed green ring with ? | probable | green there but small: a young tree, or a weed at a tree's place |
-| dashed amber ring with ? | ambiguous | the green never ended before the canopy cap (0.45 of the smaller spacing): merged with weeds or a neighbour; drawn at the planting's typical size |
+| solid green ring | confirmed | green at its place; canopy at least half the planting's typical one and crown green at least 0.15 |
+| dashed green ring, no ? | confirmed, canopy uncertain | the green never ended before the canopy cap (0.45 of the smaller spacing): a crown that runs into weeds or a neighbour; drawn at the planting's typical size, never the merged extent |
+| dashed green ring with ? | probable | only a little green: a canopy under half the typical one, or crown green under 0.15: a young tree, or a weed at a tree's place |
+| dashed amber ring with ? | ambiguous | weak green that runs into other green: a crown among weeds, or weeds alone |
 | thick pale ring | operator | the operator said "a crop" |
 | amber dashed ring with ? | expected position, some green under the bar | a young tree or a weed: the operator decides |
 | red cross | expected position, nothing seen | no visible crop evidence; never reported as a dead tree by itself |
 | grey cross | operator: no crop | kept in the field's layout |
 
-Click a ring or a cross in the Crop rows panel's map to say "A crop" or "No crop"; the word is kept with the field's
+A plant is questioned only when there is little green (the first version questioned every plant on a row the
+operator had marked, and every crown wider than the cap). Each plant is centred on the green mass of its crown, not
+on the centre of the greenest spots in the search box, which clipped wide or offset crowns and left the ring on the
+lattice point. Click a ring or a cross in the Crop rows panel's map to say "A crop" or "No crop"; the word is kept with the field's
 layout and applied at once: a no-crop position is never a plant (the interior scans respect it too), a crop position
 is a plant whatever the green. A weed at a tree's place therefore stays a weed unless the operator says otherwise;
 the crown painted over for the model is the measured canopy, capped, never the merged extent.
