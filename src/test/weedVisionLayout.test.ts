@@ -261,6 +261,25 @@ describe("what the evidence says at each position", () => {
     expect(p.state).toBe("confirmed");
   });
 
+  it("\"a crop\" on an expected position beside a tree that stood too far off its slot finds the tree, at its size", () => {
+    const { r, trees } = orchard(new Set(["A8,1"]));
+    const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    const at = (i: number, j: number) => [2 + i * 3.2 * ux + j * 5 * nx, 2.5 + i * 3.2 * uy + j * 5 * ny] as const;
+    const [sx, sy] = at(8, 1);
+    const cx = sx + 1.0 * ux + 0.9 * nx, cy = sy + 1.0 * uy + 0.9 * ny; // 1.0 m along, 0.9 m across: beyond the layout's limit and the scans' reach
+    const set = (x: number, y: number) => { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 255; };
+    for (let dy = -0.8; dy <= 0.8; dy += MPP / 2) for (let dx = -0.8; dx <= 0.8; dx += MPP / 2) if (dx * dx + dy * dy <= 0.64) set(cx + dx, cy + dy);
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const L0 = latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!;
+    // Whether or not the fitter reached this tree by itself, the operator marks the expected position (the slot), not
+    // the crown: the ring must land on the crown, at the crown's size.
+    const after = fitLayoutAll(L0, r, [], undefined, [{ x: sx / MPP, y: sy / MPP, crop: true }])[0];
+    const p = after.plants.find(q => q.state === "operator")!;
+    expect(p).toBeDefined();
+    expect(Math.hypot(p.x * MPP - cx, p.y * MPP - cy)).toBeLessThan(0.2);
+    expect(p.r * MPP).toBeGreaterThan(0.6);
+  });
+
   it("the operator's word: no crop makes a gap of a green position; a crop makes a plant of a pale one", () => {
     const { r, trees } = orchard();
     const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;

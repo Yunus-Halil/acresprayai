@@ -87,6 +87,8 @@ export const LAYOUT_PARAMS = {
   recentreShare: 0.35,
   /** ...and moves at most this far, metres: the verge weeds beside an edge row pulled its trees a metre sideways and the row failed the straightness test (DJI_0327). */
   recentreMaxM: 0.5,
+  /** A plant the operator marks is looked for this far around the mark (metres): the mark may be on an expected position the tree stands beside. */
+  anchorSearchM: 1.0,
   /** A finer spacing is taken when at least this share of its added positions hold a plant... */
   subdivideShare: 0.5,
   /** ...and the ground beside those plants (between the rows, or between plants when they stand apart) is less than this share as green. */
@@ -528,12 +530,21 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       L = latticeFromPlants([...plant.entries()].map(([k, v]) => { const [a, b] = k.split(",").map(Number); return { i: a, j: b, x: v.x, y: v.y }; }), L);
     }
   };
-  // The clicked plants first: in the map as plants, their neighbours queued, whatever the green there.
+  // The clicked plants first: in the map as plants, their neighbours queued, whatever the green there. The plant is
+  // looked for around the mark (the mark may be an expected position the tree stands beside: a tree refused for
+  // standing too far off its slot, then marked "a crop" by the operator, got its canopy measured on bare soil).
   for (const a of opts.anchors ?? []) {
     const k = key(a.i, a.j);
-    const xi = Math.round(a.x), yi = Math.round(a.y);
-    const gv = xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? G[yi * r.w + xi] : 0;
-    plant.set(k, { x: a.x, y: a.y, g: Math.max(gv, barOf(a.j)) });
+    const R = P.anchorSearchM / r.mpp;
+    let bx = a.x, by = a.y, bg = -1;
+    for (let yy = Math.max(0, Math.floor(a.y - R)); yy <= Math.min(r.h - 1, Math.ceil(a.y + R)); yy++) for (let xx = Math.max(0, Math.floor(a.x - R)); xx <= Math.min(r.w - 1, Math.ceil(a.x + R)); xx++) {
+      if ((xx - a.x) ** 2 + (yy - a.y) ** 2 > R * R) continue;
+      const v = G[yy * r.w + xx];
+      if (v > bg) { bg = v; bx = xx; by = yy; }
+    }
+    if (bg >= P.anchorFloor) [bx, by] = recentre(bx, by);
+    else { bx = a.x; by = a.y; }
+    plant.set(k, { x: bx, y: by, g: Math.max(bg, barOf(a.j)) });
     seen.add(k);
     for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { const kk = key(a.i + di, a.j + dj); if (!seen.has(kk)) { seen.add(kk); queue.push([a.i + di, a.j + dj, 0, dj ? 1 : 0, 0]); } }
   }
@@ -733,7 +744,8 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
   const stateOf = (k: string, q: { x: number; y: number; g: number }, _j: number): { state: PlantState; radius: number; merged: boolean } => {
     const c = canopyAt(k, q.x, q.y);
     const radius = c.merged ? (typicalCrown || c.radius) : c.radius;
-    if (anchorKeys.has(k)) return { state: "operator", radius, merged: c.merged };
+    // The operator's plant is drawn at least half the planting's typical size: a ring on a pixel of green covers nothing.
+    if (anchorKeys.has(k)) return { state: "operator", radius: Math.max(radius, 0.5 * typicalCrown), merged: c.merged };
     const tiny = q.g < P.tinyGreen || (typicalCrown > 0 && c.radius < P.tinyCrownShare * typicalCrown);
     if (tiny) return { state: "probable", radius: c.radius, merged: c.merged };
     // Merged and weak: a tangle of green with no crown in it, or a crown among weeds; the operator decides.
