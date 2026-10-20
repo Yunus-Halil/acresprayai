@@ -150,8 +150,8 @@ export const LAYOUT_PARAMS = {
   refitEvery: 30,
   /** A stretch of row stands when its own line runs within this many degrees of the layout... */
   runAngleDeg: 4,
-  /** ...at least this share of its steps between neighbours is a whole number of plant spacings within runStepShare... */
-  runRegularShare: 0.7, runStepShare: 0.2,
+  /** ...at least this share of its steps between neighbours is a whole number of plant spacings within runStepShare (0.35: plants are centred on their crowns, up to half a metre from their slots, so a step may be off by a metre)... */
+  runRegularShare: 0.7, runStepShare: 0.35,
   /** ...and its plants sit within this share of the row spacing (root mean square) of its own line. */
   runLateralShare: 0.08,
 };
@@ -744,6 +744,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
   for (const [j, is] of byRow) {
     is.sort((a, b) => a - b);
     let cur: number[] = [is[0]];
+    let irregular = "";
     const regular = (is2: number[]): boolean => {
       // The stretch's own line through its plants, its direction against the layout's, and how evenly it steps.
       const pts = is2.map(i => plant.get(key(i, j))!);
@@ -753,17 +754,18 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       const th = 0.5 * Math.atan2(2 * sxy, sxx - syy);
       let turn = Math.abs(th - L.angle) % Math.PI;
       if (turn > Math.PI / 2) turn = Math.PI - turn;
-      if (turn > (P.runAngleDeg * Math.PI) / 180) return false;
+      if (turn > (P.runAngleDeg * Math.PI) / 180) { irregular = `turned ${((turn * 180) / Math.PI).toFixed(1)} degrees from the layout`; return false; }
       const vx = -Math.sin(th), vy = Math.cos(th);
       const rms = Math.sqrt(pts.reduce((a, q) => a + ((q.x - mx) * vx + (q.y - my) * vy) ** 2, 0) / pts.length);
-      if (rms > P.runLateralShare * Math.abs(L.across)) return false;
+      if (rms > P.runLateralShare * Math.abs(L.across)) { irregular = `plants ${(rms * r.mpp).toFixed(2)} m off their line on average (limit ${(P.runLateralShare * Math.abs(L.across) * r.mpp).toFixed(2)})`; return false; }
       let ok = 0, steps = 0;
       for (let k = 1; k < is2.length; k++) {
         const a = pts[k - 1], b = pts[k], d = Math.hypot(b.x - a.x, b.y - a.y), n2 = is2[k] - is2[k - 1];
         steps++;
         if (Math.abs(d - n2 * L.along) <= P.runStepShare * L.along) ok++;
       }
-      return steps > 0 && ok / steps >= P.runRegularShare;
+      if (!(steps > 0 && ok / steps >= P.runRegularShare)) { irregular = `only ${ok} of ${steps} steps a whole number of spacings`; return false; }
+      return true;
     };
     /** A bridged stretch: every plant reached by stepping over a row or by the sweep. It must sit tightly on the layout's own line. */
     const bridgedOk = (is2: number[]): boolean => {
@@ -780,7 +782,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     const flush = () => {
       const n = cur.length;
       const okReg = n >= P.minPlants && regular(cur), okBr = okReg && bridgedOk(cur);
-      if (!okReg) for (const i of cur) note(i, j, n < P.minPlants ? `in a stretch of only ${n} plant${n === 1 ? "" : "s"}` : "in a stretch that does not run straight and evenly");
+      if (!okReg) for (const i of cur) note(i, j, n < P.minPlants ? `in a stretch of only ${n} plant${n === 1 ? "" : "s"}` : `in a stretch that does not run straight and evenly: ${irregular}`);
       else if (!okBr) for (const i of cur) note(i, j, "in a stretch reached across an empty row that did not prove itself (plants, line, crown size)");
       if (okBr) {
         const span = cur[n - 1] - cur[0] + 1;
