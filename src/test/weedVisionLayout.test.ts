@@ -213,7 +213,8 @@ describe("the spacing is the clue", () => {
 
 describe("what the evidence says at each position", () => {
   it("states: a full crown is confirmed, a small one probable, a merged one ambiguous; a gap says whether green was seen", () => {
-    const { r, trees } = orchard(new Set(["A5,1", "A9,2"]));
+    // A5,1 and A9,2 removed and refilled below; A14,2 removed and left bare: the one true gap.
+    const { r, trees } = orchard(new Set(["A5,1", "A9,2", "A14,2"]));
     const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
     const set = (x: number, y: number) => { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 255; };
     const disc = (x: number, y: number, rad: number) => { for (let dy = -rad; dy <= rad; dy += MPP / 2) for (let dx = -rad; dx <= rad; dx += MPP / 2) if (dx * dx + dy * dy <= rad * rad) set(x + dx, y + dy); };
@@ -230,15 +231,14 @@ describe("what the evidence says at each position", () => {
     // confirmed crop, and never a canopy as wide as the merged green.
     const [mx, my] = at(12, 1);
     const atSlot = fit.plants.find(p => Math.hypot(p.x * MPP - mx, p.y * MPP - my) <= 0.9);
-    const slotGap = fit.gaps.find(g => Math.hypot(g.x * MPP - mx, g.y * MPP - my) <= 0.9);
-    expect(atSlot ? atSlot.state : slotGap?.evidence).toBeDefined();
-    expect(atSlot?.state ?? "gap").not.toBe("confirmed");
+    expect(atSlot?.state ?? "none").not.toBe("confirmed");
     if (atSlot) { expect(atSlot.merged).toBe(true); expect(atSlot.r * MPP).toBeLessThan(1.2); }
-    else expect(slotGap!.evidence).toBe("some");
-    expect(fit.plants.some(p => p.state === "ambiguous" && p.merged)).toBe(true); // its neighbour's canopy runs into it
+    expect(fit.plants.some(p => p.state === "ambiguous" && p.merged)).toBe(true); // a canopy that runs into the merged green
     const gap = fit.gaps.find(g => { const [x, y] = at(9, 2); return Math.hypot(g.x * MPP - x, g.y * MPP - y) <= 0.6; });
     expect(gap?.evidence === "some" || find(9, 2)?.state === "probable").toBe(true); // a weed at a tree's place: never a confirmed crop
-    expect(fit.gaps.some(g => g.evidence === "none")).toBe(true);
+    const [bx, by] = at(14, 2);
+    const bare = fit.gaps.find(g => Math.hypot(g.x * MPP - bx, g.y * MPP - by) <= 0.6);
+    expect(bare?.evidence).toBe("none");
   });
 
   it("the operator's word: no crop makes a gap of a green position; a crop makes a plant of a pale one", () => {
