@@ -114,3 +114,24 @@ Whether they are real is not known: the labels found no more of them.
 4. Check the cyan lines run through the trees, red crosses sit on missing trees, orange rings show what is not covered;
    mark another block there if it is trees. Press "Save for this field".
 5. Find weeds again: the yellow weeds should all be between the rows, none on a tree.
+
+## Weed hotspots between the rows (2026-10-19, later)
+
+With the rows known, the simple view runs in two quick steps: "Find weed hotspots" reads every 2 m cell's green off
+the crop rows and crowns from the map (Stage 1 of `twoStage/stage1.ts`, under a second per hectare in the browser,
+no model) and draws the hotspots; "Check the hotspots with the model" runs RF-DETR on those cells, the cells it could
+not judge, and a few at random elsewhere, and shows its weeds as outlines. Running the model over the whole field
+stays as a link.
+
+Measured on DJI_0301 against the 414 labelled weeds by cell density (`scripts/bench/hotspotEval.ts`; a "dense" cell
+holds at least 3 labels; labels are not exhaustive, so a flagged cell with no label is not shown wrong):
+
+| Stage 1 | Field flagged | Dense cells caught | Cells with any label caught | "Mostly crop row" cells |
+|---|---|---|---|---|
+| Before (share of the whole cell, 5% floor, crown area in the denominator) | 7% | 9 of 60 | 12 of 203 | 116 |
+| Now (share of the ground off the crop, plus one blob per m² floor) | 23% | 22 of 60 | 50 of 203 | 48 |
+| Random at 23% | 23% | about 14 of 60 | | |
+
+Rank correlation of the signals with label density: green share 0.28, blobs per cell 0.37, random 0. A modest,
+honest lift: the labels are single small weeds, and a hotspot is a concentration. The next measurement that matters is
+the operator's blind cell labels on the real map (the two-stage prototype's labelling mode).
