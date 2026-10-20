@@ -378,7 +378,8 @@ export function seedsFor(L: Lattice, GF: Float32Array, r: LayoutRaster, near: { 
 /** The operator's clicked plants: lattice position and place, taken as plants whatever the green there. */
 export type Anchor = { i: number; j: number; x: number; y: number };
 /** `rowBar`: a lower presence bar for the rows the operator marked (by lattice row), the planting's own bar elsewhere. */
-export type GrowOptions = { anchors?: Anchor[]; rowBar?: Map<number, number> };
+/** `trace`: the fate of every expected position looked at, by "i,j": accepted, or why not (audits). */
+export type GrowOptions = { anchors?: Anchor[]; rowBar?: Map<number, number>; trace?: Map<string, string> };
 
 export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds: [number, number][], separate: boolean, opts: GrowOptions = {}): { plants: LayoutPlant[]; gaps: LayoutGap[]; rows: number; foundShare: number; lattice: Lattice } {
   const P = LAYOUT_PARAMS;
@@ -396,14 +397,19 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     const [lx, ly] = latticePoint(L, i, j);
     return [q.x - lx, q.y - ly];
   };
+  const note = (i: number, j: number, why: string) => { if (opts.trace && !opts.trace.get(key(i, j))?.startsWith("accepted")) opts.trace.set(key(i, j), why); };
   const look = (i: number, j: number): { x: number; y: number; g: number } | null => {
     const [lx, ly] = latticePoint(L, i, j);
     const near: [number, number][] = [];
     for (const [di, dj] of [[-1, 0], [1, 0], [-2, 0], [2, 0], [0, -1], [0, 1]]) { const v = resid(i + di, j + dj); if (v) near.push(v); }
     const ox = near.length ? near.reduce((a, v) => a + v[0], 0) / near.length : 0, oy = near.length ? near.reduce((a, v) => a + v[1], 0) / near.length : 0;
     const ex = lx + ox, ey = ly + oy;
-    const xi = Math.round(ex), yi = Math.round(ey);
-    if (xi < 0 || yi < 0 || xi >= r.w || yi >= r.h || !r.inField[yi * r.w + xi]) return null;
+    // An expected position just outside the field (within a third of the plant spacing) is still looked at: a tree at
+    // the field's edge has its crown inside while its lattice point can fall outside (DJI_0301: three labelled trees
+    // at the frame's edge were never examined).
+    const inside = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h && r.inField[yi * r.w + xi] === 1; };
+    const reach = 0.33 * L.along;
+    if (!inside(ex, ey) && ![[reach, 0], [-reach, 0], [0, reach], [0, -reach]].some(([a, c]) => inside(ex + a * ux + c * nx, ey + a * uy + c * ny))) { note(i, j, "outside the field"); return null; }
     // The greenest spot in the search box; a crown wider than the box is a plateau of equally green spots, so the
     // plant is put at the centre of the spots within a tenth of the best, not at the first of them.
     let bg = -1;
@@ -415,19 +421,19 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       cells.push([x, y, g]);
       if (g > bg) bg = g;
     }
-    if (bg < barOf(j)) return { x: ex, y: ey, g: -1 };
+    if (bg < barOf(j)) { note(i, j, `not present: crown green ${bg.toFixed(2)} under the bar ${barOf(j).toFixed(2)}`); return { x: ex, y: ey, g: -1 }; }
     let bx = 0, by = 0, bn = 0;
     for (const [x, y, g] of cells) if (g >= 0.9 * bg) { bx += x; by += y; bn++; }
     bx /= bn; by /= bn;
     // Close to the layout itself, not only to the neighbours: a row may not turn into another planting.
     const offA = (bx - lx) * ux + (by - ly) * uy, offC = (bx - lx) * nx + (by - ly) * ny;
-    if (Math.abs(offA) > P.maxOffAlong * L.along || Math.abs(offC) > P.maxOffAcross * Math.abs(L.across)) return { x: ex, y: ey, g: -1 };
+    if (Math.abs(offA) > P.maxOffAlong * L.along || Math.abs(offC) > P.maxOffAcross * Math.abs(L.across)) { note(i, j, `off the layout: ${(offA * r.mpp).toFixed(2)} m along, ${(offC * r.mpp).toFixed(2)} m across (limits ${(P.maxOffAlong * L.along * r.mpp).toFixed(2)}, ${(P.maxOffAcross * Math.abs(L.across) * r.mpp).toFixed(2)})`); return { x: ex, y: ey, g: -1 }; }
     if (separate) {
       for (const di of [-1, 1]) {
         const q = plant.get(key(i + di, j));
         if (!q) continue;
         const mx = Math.round((q.x + bx) / 2), my = Math.round((q.y + by) / 2);
-        if (mx >= 0 && my >= 0 && mx < r.w && my < r.h && G[my * r.w + mx] > P.stripShare * Math.min(bg, q.g)) return { x: ex, y: ey, g: -1 };
+        if (mx >= 0 && my >= 0 && mx < r.w && my < r.h && G[my * r.w + mx] > P.stripShare * Math.min(bg, q.g)) { note(i, j, `green all the way to the neighbour (a strip): ${G[my * r.w + mx].toFixed(2)} between`); return { x: ex, y: ey, g: -1 }; }
       }
     }
     return { x: bx, y: by, g: bg };
@@ -507,7 +513,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       if (q.g < 0) { gapAt.set(key(i, j), { x: q.x, y: q.y }); continue; }
       // On its own in the field it is a weed; with a plant beside it along the row, or one in the next row in step, it is the planting.
       const company = [[-1, 0], [1, 0], [0, -1], [0, 1]].some(([di, dj]) => plant.has(key(i + di, j + dj)));
-      if (!company) { seen.delete(key(i, j)); continue; }
+      if (!company) { note(i, j, "green on its own: no plant beside it along the row or in the next row"); seen.delete(key(i, j)); continue; }
       accept(i, j, q, 1);
       added++;
       for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { const kk = key(i + di, j + dj); if (!seen.has(kk)) { seen.add(kk); queue.push([i + di, j + dj, 0, dj ? 1 : 0, 1]); } }
@@ -669,13 +675,17 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     };
     const flush = () => {
       const n = cur.length;
-      if (n >= P.minPlants && regular(cur) && bridgedOk(cur)) {
+      const okReg = n >= P.minPlants && regular(cur), okBr = okReg && bridgedOk(cur);
+      if (!okReg) for (const i of cur) note(i, j, n < P.minPlants ? `in a stretch of only ${n} plant${n === 1 ? "" : "s"}` : "in a stretch that does not run straight and evenly");
+      else if (!okBr) for (const i of cur) note(i, j, "in a stretch reached across an empty row that did not prove itself (plants, line, crown size)");
+      if (okBr) {
         const span = cur[n - 1] - cur[0] + 1;
+        if (n / span < P.minRowShare) for (const i of cur) note(i, j, "in a stretch with too few plants for its length");
         if (n / span >= P.minRowShare) {
           rows++; run++; expected += span; found += n;
           for (let i = cur[0]; i <= cur[n - 1]; i++) {
             const q = plant.get(key(i, j));
-            if (q) plants.push({ x: q.x, y: q.y, r: crownRadius(r, q.x, q.y, rmax), row: j, i, run });
+            if (q) { plants.push({ x: q.x, y: q.y, r: crownRadius(r, q.x, q.y, rmax), row: j, i, run }); opts.trace?.set(key(i, j), `accepted (crown green ${q.g.toFixed(2)})`); }
             else { const g = gapAt.get(key(i, j)); const [lx, ly] = latticePoint(L, i, j); gaps.push({ x: g?.x ?? lx, y: g?.y ?? ly, row: j, i }); }
           }
         }
@@ -758,7 +768,7 @@ export function latticeIndex(L: Lattice, x: number, y: number): [number, number]
  * lowered only on those rows: lowered for the whole planting it let weed clumps into rows, which then failed the
  * straightness check and were dropped whole (DJI_0301: 98 trees to 89).
  */
-export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, number][] = []): FittedLayout[] {
+export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, number][] = [], trace?: Map<string, string>): FittedLayout[] {
   const P = LAYOUT_PARAMS;
   const G = boxMean(r, P.crownShare * L0.along);
   const GF = boxMean(r, P.presenceRadiusM / r.mpp);
@@ -782,7 +792,7 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
     for (const a of anchors) { const bar = Math.min(P.presentGreen, Math.max(P.anchorFloor, 0.5 * gAt(a.x, a.y))); rowBar.set(a.j, Math.min(rowBar.get(a.j) ?? P.presentGreen, bar)); }
     const seeds = seedsFor(L, GF, r, near, 3, presentGreen);
     if (!seeds.length && !anchors.length) continue;
-    out.push({ score, rowPitch, ...growPlants(L, GF, r, seeds, separate, { anchors, rowBar }) });
+    out.push({ score, rowPitch, ...growPlants(L, GF, r, seeds, separate, { anchors, rowBar, trace: L === main ? trace : undefined }) });
   }
   return out.length ? out : [{ score, rowPitch, lattice: main, plants: [], gaps: [], rows: 0, foundShare: 0 }];
 }
@@ -829,13 +839,19 @@ export function mergeLayouts(fits: FittedLayout[]): FittedLayout[] {
 // ---------------------------------------------------------------- as the app's rows
 
 /** The fitted layout as FieldRows in the raster's frame (zoom z, origin left, top), with its gaps. */
+/** The crop band each side of a row line between the crowns, metres. */
+export const LAYOUT_BAND_M = 0.5;
+
 export function layoutToFieldRows(f: FittedLayout, r: LayoutRaster): (FieldRows & { source: "layout"; gaps: { x: number; y: number }[] }) | null {
   if (!f.rows) return null;
   const k = r.scale;
+  const mppFrame0 = r.mpp / k;
   const spacing = (f.rowPitch ?? Math.abs(f.lattice.across)) * k, step = f.lattice.along * k;
-  const radii = f.plants.map(p => p.r * k).sort((a, b) => a - b);
-  const plantR = radii[radii.length >> 1] ?? 0;
-  const band = Math.min(Math.max(plantR, ROW_BAND_PITCH_SHARE * spacing), 0.35 * spacing);
+  // The crop band along the row line, between the crowns: the trunk line, LAYOUT_BAND_M each side, never wider than
+  // the row filter's minimum share of the pitch. The crowns themselves are the plant discs. A band as wide as the
+  // crown radius (1.07 m on DJI_0301) took 63 of 414 labelled weeds standing on bare soil between trees for crop;
+  // 0.5 m takes 28, and keeps 97 of 104 labelled trees on a row.
+  const band = Math.min(Math.max(LAYOUT_BAND_M / mppFrame0, ROW_BAND_PITCH_SHARE * spacing * 0.5), 0.35 * spacing);
   const { ux, uy } = basis(f.lattice);
   const byRow = new Map<number, LayoutPlant[]>();
   for (const p of f.plants) (byRow.get(p.run) ?? byRow.set(p.run, []).get(p.run)!).push(p);
