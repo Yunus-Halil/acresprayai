@@ -35,14 +35,16 @@ export type LayoutRaster = {
 export type Lattice = { ox: number; oy: number; angle: number; along: number; across: number; stagger: number };
 
 /**
- * What the evidence says about a plant at an expected position. The position itself proves nothing: a cultivated
- * tree, a young tree, a weed and a merged tangle can all stand there.
- *   confirmed  crown green at or over the planting's bar, a canopy of the planting's size, its edge found
- *   probable   green there, but small (a young tree, or a weed) or under the planting's bar
- *   ambiguous  the green did not end before the canopy cap: a crown merged with weeds or a neighbour
+ * What stands at an expected position. The planting pattern is the proof: the planter put a plant at every lattice
+ * position, so a position on a kept row is a crop unless the ground there is plainly bare (2026-10-21; before, every
+ * position had to earn its place with green, and pale trees were questioned). The green only sizes the ring and says
+ * how sure the canopy's extent is.
+ *   confirmed  crown green at or over the planting's bar and a canopy of the planting's size
+ *   expected   a crop by the pattern: little green there (a young tree, a pale crown, a weed standing at a planted
+ *              position), or green that ran into other green; drawn at what was measured, never questioned
  *   operator   the operator said "crop"
  */
-export type PlantState = "confirmed" | "probable" | "ambiguous" | "operator";
+export type PlantState = "confirmed" | "expected" | "operator";
 export type LayoutPlant = {
   x: number; y: number;
   /** Canopy radius, raster px: where the crown's edge was seen along most rays out of its centre, never past the planting's reach (canopyOf). The ring drawn. */
@@ -51,8 +53,8 @@ export type LayoutPlant = {
   paint: number;
   row: number; i: number; /** The stretch of its row it belongs to. */ run: number; state: PlantState; /** Crown-scale green at the plant. */ g: number; /** Most rays out of the centre found no edge before the reach: the crown runs into weeds or a neighbour. */ merged: boolean;
 };
-/** An expected position with no plant placed: no visible evidence, some green under the bar, or the operator's "no crop". */
-export type LayoutGap = { x: number; y: number; row: number; i: number; evidence: "none" | "some" | "operator"; g: number };
+/** An expected position with no plant: plainly bare ground (none: a skip), or the operator's "no crop". */
+export type LayoutGap = { x: number; y: number; row: number; i: number; evidence: "none" | "operator"; g: number };
 
 export type FittedLayout = {
   lattice: Lattice;
@@ -68,7 +70,7 @@ export type FittedLayout = {
 };
 
 /** Bumped when the fitter changes, so rows read under an older fitter are read again. */
-export const LAYOUT_VERSION = 3;
+export const LAYOUT_VERSION = 4;
 
 export const LAYOUT_PARAMS = {
   /** Crown-scale smoothing radius, as a share of the plant spacing. */
@@ -85,9 +87,9 @@ export const LAYOUT_PARAMS = {
   /** The presence bar never goes under this, however pale the clicked plants. */
   anchorFloor: 0.08,
   /**
-   * A plant is questioned ("probable") only when there is just a little green: a canopy under this share of the
-   * planting's typical one, or crown-scale green under tinyGreen. Everything else green at its place is a crop; a
-   * canopy that runs into other green is still a crop, only its extent is uncertain (merged).
+   * A plant is "expected" (a crop by the pattern, with little of its own green) when its canopy is under this share
+   * of the planting's typical one, or its crown-scale green is under tinyGreen; otherwise it is confirmed. Either way
+   * it is a crop; a canopy that runs into other green is still a crop, only its extent is uncertain (merged).
    */
   tinyCrownShare: 0.5, tinyGreen: 0.15,
   /** A plant is re-centred on the green mass within this share of the plant spacing of its first estimate (nearer green weighing more), so the ring sits on the crown, not on the lattice point... */
@@ -793,12 +795,11 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
       return { state: "operator", ...at, radius: Math.max(radius, 0.5 * typicalCrown), paint: Math.max(paint, 0.5 * typicalCrown) };
     }
     const tiny = q.g < P.tinyGreen || (typicalCrown > 0 && c.radius < P.tinyCrownShare * typicalCrown);
-    if (tiny) return { state: "probable", ...at, radius, paint };
-    // Merged and weak: a tangle of green with no crown in it, or a crown among weeds; the operator decides.
-    if (c.merged && q.g < P.presentGreen) return { state: "ambiguous", ...at, radius, paint, merged: true };
+    // Little green, or weak green that runs into other green: a crop by the pattern, ringed at what was measured.
+    if (tiny || (c.merged && q.g < P.presentGreen)) return { state: "expected", ...at, radius, paint };
     return { state: "confirmed", ...at, radius, paint };
   };
-  const gapEvidence = (k: string): LayoutGap["evidence"] => { const seen = gapAt.get(k)?.seen ?? 0; return seen === -2 ? "operator" : seen >= P.anchorFloor ? "some" : "none"; };
+  const gapEvidence = (k: string): LayoutGap["evidence"] => (gapAt.get(k)?.seen === -2 ? "operator" : "none");
   for (const [j, is] of byRow) {
     is.sort((a, b) => a - b);
     let cur: number[] = [is[0]];
@@ -850,7 +851,19 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
           for (let i = cur[0]; i <= cur[n - 1]; i++) {
             const q = plant.get(key(i, j));
             if (q) { const st = stateOf(key(i, j), q, j); plants.push({ x: st.x, y: st.y, r: st.radius, paint: st.paint, row: j, i, run, state: st.state, g: q.g, merged: st.merged }); opts.trace?.set(key(i, j), `accepted (crown green ${q.g.toFixed(2)}, ${st.state})`); }
-            else { const g = gapAt.get(key(i, j)); const [lx, ly] = latticePoint(L, i, j); gaps.push({ x: g?.x ?? lx, y: g?.y ?? ly, row: j, i, evidence: gapEvidence(key(i, j)), g: Math.max(0, g?.seen ?? 0) }); }
+            else {
+              const g = gapAt.get(key(i, j)); const [lx, ly] = latticePoint(L, i, j); const x = g?.x ?? lx, y = g?.y ?? ly, seenG = g?.seen ?? 0;
+              if (seenG >= P.anchorFloor) {
+                // Green there (under the bar, off the layout, or running to the neighbour): a crop by the pattern, between
+                // two seen plants of a kept row. Ringed at the green joined to its slot, never wider than the planting's
+                // typical crown nor under half of it, so the ring is seen and says nothing it did not measure.
+                const c = canopyOf(r, x, y, reach), has = c.radius > 1;
+                const cap = typicalCrown > 0 ? typicalCrown : c.radius, radius = has ? Math.max(0.5 * cap, Math.min(c.radius, cap)) : cap;
+                plants.push({ x: has ? c.x : x, y: has ? c.y : y, r: radius, paint: radius, row: j, i, run, state: "expected", g: seenG, merged: has && c.merged });
+                found++;
+                opts.trace?.set(key(i, j), `expected by the pattern (crown green ${seenG.toFixed(2)} under the bar)`);
+              } else gaps.push({ x, y, row: j, i, evidence: gapEvidence(key(i, j)), g: Math.max(0, seenG) });
+            }
           }
         }
       }
@@ -881,7 +894,11 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     for (let n = 1; n < ts.length; n++) { const d = ts[n] - ts[n - 1], k = Math.max(1, Math.round(d / L.along)); if (Math.abs(d - k * L.along) <= P.runStepShare * L.along) ok++; }
     if (ok / (ts.length - 1) < P.runRegularShare) continue;
     rows++; run++; expected += fr.plants.length; found += fr.plants.length;
-    fr.plants.forEach((q, k) => { const c = canopyOf(r, q.x, q.y, reach); plants.push({ x: c.x, y: c.y, r: c.radius, paint: paintOf(c), row: fr.j, i: k, run, state: c.merged ? "ambiguous" : "probable", g: q.g, merged: c.merged }); });
+    fr.plants.forEach((q, k) => {
+      const c = canopyOf(r, q.x, q.y, reach);
+      const tiny = q.g < P.tinyGreen || (typicalCrown > 0 && c.radius < P.tinyCrownShare * typicalCrown);
+      plants.push({ x: c.x, y: c.y, r: c.radius, paint: paintOf(c), row: fr.j, i: k, run, state: tiny || (c.merged && q.g < P.presentGreen) ? "expected" : "confirmed", g: q.g, merged: c.merged });
+    });
   }
   return { plants, gaps, rows, foundShare: expected ? found / expected : 0, lattice: L };
 }

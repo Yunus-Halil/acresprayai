@@ -1,8 +1,9 @@
 // The field's crop rows on the map, on one canvas: the row lines (cyan), each
-// crop plant (green ring), each position with no plant (red cross), tree-sized
-// green that is on no row (orange dashed ring: a row or block not marked yet),
-// and, while marking, the plants clicked so far (white). Clicks on the map are
-// taken as plants while marking.
+// planted position (green ring: a crop, by the pattern), each planted position
+// with plainly bare ground (red cross: a skip), tree-sized green that is on no
+// row (orange dashed ring: a row or block not marked yet), and, while marking,
+// the plants clicked so far (white). Clicks on the map are taken as plants
+// while marking. Nothing on a row is ever drawn as a question.
 import { useEffect } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
@@ -10,8 +11,8 @@ import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
 import { frameRunFieldRows, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { addClick, pickPosition, useLayoutUi } from "@/lib/weedVision/layout/layoutUi";
 
-/** How each state is drawn: confirmed green, probable green dashed, ambiguous amber dashed, operator white-green, gaps red cross / amber ring / grey cross. */
-export const STATE_COLOUR = { confirmed: "#4ade80", probable: "#a3e635", ambiguous: "#ffb020", operator: "#e2ffe9" } as const;
+/** How each state is drawn: confirmed and expected the same green (dashed only where the canopy runs into other green), operator white-green; gaps a red cross (skip) or a grey cross (operator: no crop). */
+export const STATE_COLOUR = { confirmed: "#4ade80", expected: "#4ade80", operator: "#e2ffe9" } as const;
 
 export function LayoutLayer({ taskId }: { taskId: string }) {
   const map = useMap();
@@ -32,7 +33,7 @@ export function LayoutLayer({ taskId }: { taskId: string }) {
       const typical = [...rows.ctx.crops.map(c => c.r)].sort((a, b) => a - b)[rows.ctx.crops.length >> 1] ?? (0.6 / rows.mpp);
       let best: { d: number; p: { x: number; y: number; kind: "plant" | "gap"; state: string; uncertain: boolean } } | null = null;
       for (const c of rows.ctx.crops) { const d = Math.hypot(c.x - fx, c.y - fy); if (d <= Math.max(c.r, 0.6 / rows.mpp) && (!best || d < best.d)) best = { d, p: { x: c.x, y: c.y, kind: "plant", state: c.state ?? "confirmed", uncertain: !!c.uncertain } }; }
-      for (const g of rows.gaps ?? []) { const d = Math.hypot(g.x - fx, g.y - fy); if (d <= Math.max(typical, 0.6 / rows.mpp) && (!best || d < best.d)) best = { d, p: { x: g.x, y: g.y, kind: "gap", state: g.evidence ?? "none", uncertain: g.evidence === "some" } }; }
+      for (const g of rows.gaps ?? []) { const d = Math.hypot(g.x - fx, g.y - fy); if (d <= Math.max(typical, 0.6 / rows.mpp) && (!best || d < best.d)) best = { d, p: { x: g.x, y: g.y, kind: "gap", state: g.evidence ?? "none", uncertain: false } }; }
       if (!best) { pickPosition(taskId, null); return; }
       const g = latLngOfPx(rows.left + best.p.x, rows.top + best.p.y, rows.z);
       pickPosition(taskId, { lat: g.lat, lng: g.lng, kind: best.p.kind, state: best.p.state, uncertain: best.p.uncertain });
@@ -74,26 +75,17 @@ export function LayoutLayer({ taskId }: { taskId: string }) {
           ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
           ctx.strokeStyle = "#22d3ee"; ctx.lineWidth = 2; ctx.stroke();
         }
-        const typical = [...rows.ctx.crops.map(c => c.r)].sort((a, b) => a - b)[rows.ctx.crops.length >> 1] ?? 0;
         for (const c of rows.ctx.crops) {
           const q = pt(c.x, c.y), r = Math.max(3, c.r * rows.mpp * metre);
           const st = c.state ?? "confirmed";
           ctx.strokeStyle = STATE_COLOUR[st]; ctx.lineWidth = st === "operator" ? 3 : 2;
-          // Dashed when the canopy's extent is uncertain (merged) or the plant is in question; "?" only when in question.
-          ctx.setLineDash((st === "confirmed" && !c.uncertain) || st === "operator" ? [] : [5, 4]);
+          // Dashed only when the canopy's extent is uncertain (merged with other green). Never a "?": a planted position is a crop.
+          ctx.setLineDash(c.uncertain && st !== "operator" ? [5, 4] : []);
           ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.stroke();
           ctx.setLineDash([]);
-          if (st === "ambiguous" || st === "probable") { ctx.fillStyle = STATE_COLOUR[st]; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", q.x, q.y); }
         }
         for (const g of rows.gaps ?? []) {
           const q = pt(g.x, g.y), s = 5;
-          if (g.evidence === "some") {
-            // Green there, under the bar: a young tree or a weed; the operator decides.
-            const r = Math.max(6, typical * rows.mpp * metre);
-            ctx.strokeStyle = "#ffb020"; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-            ctx.fillStyle = "#ffb020"; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", q.x, q.y);
-            continue;
-          }
           ctx.strokeStyle = g.evidence === "operator" ? "#9ca3af" : "#ff1a1a"; ctx.lineWidth = 2.5;
           ctx.beginPath(); ctx.moveTo(q.x - s, q.y - s); ctx.lineTo(q.x + s, q.y + s); ctx.moveTo(q.x + s, q.y - s); ctx.lineTo(q.x - s, q.y + s); ctx.stroke();
         }

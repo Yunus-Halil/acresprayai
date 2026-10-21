@@ -21,7 +21,7 @@ export type RowContext = {
   /** Row lines, native px; a line may carry its own band half-width (a second planting in the field). */
   lines: { x1: number; y1: number; x2: number; y2: number; band?: number }[];
   /** Plants the pattern placed on rows (on pattern, double, between plants), native px. */
-  crops: { x: number; y: number; r: number; /** Layout plants: the radius painted over for the model when it differs from r (a merged canopy is painted at the planting's typical size, drawn at its measured one). */ paint?: number; /** Layout plants: what the evidence says (layout/plantingLayout.ts). */ state?: "confirmed" | "probable" | "ambiguous" | "operator"; /** The canopy merged with other green (most rays out of its centre found no edge): its extent is a measurement under doubt. */ uncertain?: boolean }[];
+  crops: { x: number; y: number; r: number; /** Layout plants: the radius painted over for the model when it differs from r (a merged canopy is painted at the planting's typical size, drawn at its measured one). */ paint?: number; /** Layout plants: what the evidence says (layout/plantingLayout.ts). */ state?: "confirmed" | "expected" | "operator"; /** The canopy merged with other green (most rays out of its centre found no edge): its extent is a measurement under doubt. */ uncertain?: boolean }[];
   /** Half-width of the row band, native px: the crop canopy's typical radius, never under ROW_BAND_MIN_M. */
   bandPx: number;
   /** Ground metres per native pixel. */

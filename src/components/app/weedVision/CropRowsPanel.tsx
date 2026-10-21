@@ -13,11 +13,9 @@ import { acceptReaderRows, cancelMarking, clearLayout, pickPosition, rereadRows,
 
 const STATE_TEXT: Record<string, string> = {
   confirmed: "A crop here. A dashed ring means its canopy runs into other green, so the ring is the planting's typical size, not measured.",
-  probable: "Only a little green here: a young tree, or a weed at a tree's place.",
-  ambiguous: "Weak green that runs into other green: a crown among weeds, or weeds alone.",
+  expected: "A crop here by the planting: a plant is due at this position and a little green was seen, so it is a crop unless you say no.",
   operator: "You said: a crop here.",
-  none: "An expected position with no visible plant.",
-  some: "An expected position with a little green under the bar: a young tree, or a weed.",
+  none: "A planted position with plainly bare ground: a skip.",
 };
 
 const STEP = ["Click a tree.", "Click its neighbour in the same row.", "Click a tree in the next row."] as const;
@@ -98,7 +96,7 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
         </div>
       )}
       {fromLayout && !ui.picked && !ui.clicking && (
-        <p className="text-neutral-600">Rings: green a crop (dashed where its canopy runs into other green), "?" only a little green there, red cross nothing there. Click a ring or a cross to say what is there.</p>
+        <p className="text-neutral-600">Rings: a crop at a planted position (dashed where its canopy runs into other green). Red cross: a planted position with bare ground, a skip. Click a ring to say no crop, a cross to say a crop.</p>
       )}
       {run.fieldRowsNote && <p className="text-amber-400" data-testid="crop-rows-note">{run.fieldRowsNote}</p>}
       {ui.error && <p className="text-red-400">{ui.error}</p>}

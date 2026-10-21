@@ -116,7 +116,7 @@ const cover = (() => {
     crownInRingMedian: s.length ? +s[s.length >> 1].toFixed(2) : null, ringsUnder80: shares.filter(v => v < 0.8).length, ringsUnder50: shares.filter(v => v < 0.5).length,
     bareInRingMedian: b.length ? +b[b.length >> 1].toFixed(2) : null, ringsOverHalfBare: bare.filter(v => v > 0.5).length,
     ringRadiusM: radii.length ? { min: +radii[0].toFixed(2), median: +radii[radii.length >> 1].toFixed(2), max: +radii[radii.length - 1].toFixed(2) } : null,
-    merged: fit.plants.filter(p => p.merged).length, states: Object.fromEntries(["confirmed", "probable", "ambiguous", "operator"].map(st => [st, fit.plants.filter(p => p.state === st).length])),
+    merged: fit.plants.filter(p => p.merged).length, states: Object.fromEntries(["confirmed", "expected", "operator"].map(st => [st, fit.plants.filter(p => p.state === st).length])),
   };
 })();
 const out = {

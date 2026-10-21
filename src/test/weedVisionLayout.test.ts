@@ -211,8 +211,8 @@ describe("the spacing is the clue", () => {
   });
 });
 
-describe("what the evidence says at each position", () => {
-  it("states: a full crown is confirmed, a small one probable, a merged one ambiguous; a gap says whether green was seen", () => {
+describe("what stands at each position: a crop by the pattern unless the ground is bare", () => {
+  it("states: a full crown is confirmed, a small or merged one expected (never questioned); a gap only where nothing green was seen", () => {
     // A5,1 and A9,2 removed and refilled below; A14,2 removed and left bare: the one true gap.
     const { r, trees } = orchard(new Set(["A5,1", "A9,2", "A14,2"]));
     const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
@@ -225,24 +225,48 @@ describe("what the evidence says at each position", () => {
     const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
     const find = (i: number, j: number) => { const [x, y] = at(i, j); return fit.plants.find(p => Math.hypot(p.x * MPP - x, p.y * MPP - y) <= 0.5) ?? null; };
     expect(find(6, 1)!.state).toBe("confirmed");
-    expect(find(5, 1)!.state).toBe("probable");
-    // The swollen crown is green all the way to its neighbours: either an ambiguous plant at its own size cap, or
-    // refused at its slot as a strip, which leaves an expected position with strong green for the operator. Never a
-    // confirmed crop, and never a canopy as wide as the merged green.
+    expect(find(5, 1)!.state).toBe("expected"); // a young tree: a crop by the pattern, not a question
+    // The swollen crown is green all the way to its neighbours: a plant at its slot (confirmed and merged at its size
+    // cap, or expected when it was refused as a strip and put back by the pattern). Never a gap, never a canopy as
+    // wide as the merged green.
     const [mx, my] = at(12, 1);
-    // Strong green that runs into other green is a crop with an uncertain canopy, not a question: the ring is capped.
     const atSlot = fit.plants.find(p => Math.hypot(p.x * MPP - mx, p.y * MPP - my) <= 0.9);
-    const slotGap = fit.gaps.find(g => Math.hypot(g.x * MPP - mx, g.y * MPP - my) <= 0.9);
-    if (atSlot) { expect(atSlot.state).toBe("confirmed"); expect(atSlot.merged).toBe(true); expect(atSlot.r * MPP).toBeLessThan(1.2); }
-    else { expect(slotGap?.evidence).toBe("some"); } // refused as a strip: an expected position with green, for the operator
+    expect(atSlot).toBeDefined();
+    if (atSlot!.state === "confirmed") expect(atSlot!.merged).toBe(true);
+    expect(atSlot!.r * MPP).toBeLessThan(1.2);
+    expect(fit.gaps.some(g => Math.hypot(g.x * MPP - mx, g.y * MPP - my) <= 0.9)).toBe(false);
     expect(fit.plants.every(p => p.r * MPP < 1.2)).toBe(true); // no canopy as wide as the merged green
-    // Full trees are not questioned: at most the young tree and the weed at a tree's place.
-    expect(fit.plants.filter(p => p.state !== "confirmed").length).toBeLessThanOrEqual(2);
-    const gap = fit.gaps.find(g => { const [x, y] = at(9, 2); return Math.hypot(g.x * MPP - x, g.y * MPP - y) <= 0.6; });
-    expect(gap?.evidence === "some" || find(9, 2)?.state === "probable").toBe(true); // a weed at a tree's place: never a confirmed crop
+    // Full trees are confirmed: at most the young tree, the weed at a tree's place and the swollen crown are "expected".
+    expect(fit.plants.filter(p => p.state !== "confirmed").length).toBeLessThanOrEqual(3);
+    // A weed standing exactly at a planted position is that position's crop by the pattern: a plant, drawn like one,
+    // never a confirmed crown and never a question.
+    const weedy = find(9, 2);
+    expect(weedy?.state).toBe("expected");
     const [bx, by] = at(14, 2);
     const bare = fit.gaps.find(g => Math.hypot(g.x * MPP - bx, g.y * MPP - by) <= 0.6);
     expect(bare?.evidence).toBe("none");
+    // Nothing on a row is a question: every gap is plainly bare or the operator's word.
+    expect(fit.gaps.every(g => g.evidence === "none" || g.evidence === "operator")).toBe(true);
+  });
+
+  it("a pale tree between two seen trees is a crop at its slot, a bare slot is a skip, and no position is in question", () => {
+    // A4,1 refilled faintly (green 60 of 255 over a 0.3 m disc: crown-scale green about 0.18, under the 0.3 bar); A10,1 left bare.
+    const { r, trees } = orchard(new Set(["A4,1", "A10,1"]));
+    const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    const at = (i: number, j: number) => [2 + i * 3.2 * ux + j * 5 * nx, 2.5 + i * 3.2 * uy + j * 5 * ny] as const;
+    const [px4, py4] = at(4, 1);
+    for (let dy = -0.3; dy <= 0.3; dy += MPP / 2) for (let dx = -0.3; dx <= 0.3; dx += MPP / 2) { if (dx * dx + dy * dy > 0.09) continue; const xi = Math.floor((px4 + dx) / MPP), yi = Math.floor((py4 + dy) / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 60; }
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    const pale = fit.plants.find(p => Math.hypot(p.x * MPP - px4, p.y * MPP - py4) <= 0.5);
+    expect(pale?.state).toBe("expected");
+    expect(pale!.r * MPP).toBeGreaterThanOrEqual(0.3); // a ring that can be seen: at least half the planting's typical crown
+    expect(fit.gaps.some(g => Math.hypot(g.x * MPP - px4, g.y * MPP - py4) <= 0.6)).toBe(false);
+    const [px10, py10] = at(10, 1);
+    const skip = fit.gaps.find(g => Math.hypot(g.x * MPP - px10, g.y * MPP - py10) <= 0.6);
+    expect(skip?.evidence).toBe("none");
+    expect(fit.plants.some(p => Math.hypot(p.x * MPP - px10, p.y * MPP - py10) <= 0.5)).toBe(false);
+    expect(fit.plants.every(p => p.state === "confirmed" || p.state === "expected")).toBe(true);
   });
 
   it("a crown standing half a metre off its slot gets its ring on the crown, not on the slot", () => {
