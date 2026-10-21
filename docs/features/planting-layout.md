@@ -63,6 +63,36 @@ as weeds.
 6. Saved per field (table `field_planting_layouts`, and this browser as a fallback) as the refined lattice's own three
    points, so the next scan of the field needs no clicks.
 
+## The planting's edges (2026-10-21, after the eye test)
+
+Growth ends a row at its last plant seen over the bar. On the real orchard one row stopped three small trees short
+of the track while its neighbours ran on, and a tree on the outer row along the boundary stood in an orange ring on
+no row. The operator: "understand the pattern at the edges and perimeters, where the other rows stop, find the
+averages". Research in `docs/research/planting-edges-2026-10-21.md`: rows are set out to end lines from a baseline,
+the planter's last seed lands where the interior row meets the headland pass, point-row ends are staggered along an
+oblique boundary, a crossing is a gap at the same index in every row, the outer row is a full row one pitch out. No
+published method completes a planting from its neighbouring rows; this is built from how fields are planted.
+
+`completeByPattern` runs after growth, per lattice:
+
+- **Along.** A position on a kept row with no plant is planted when at least half of the neighbouring rows (two each
+  way, those that exist, and at least two of them) hold a plant at the same lattice index, and the position lies
+  inside the field. Run to a fixed point, since a row carried on lets its neighbour carry on. A short row end is
+  filled to where its neighbours end; a track or waterway crossing every row is not; a hole in one row is. The local
+  consensus follows a curved boundary and staggered point-row ends where one straight end line would not.
+- **Across.** Beyond the outermost row, at the field's pitch, a row is a row when at least three of the positions
+  its inner neighbour spans show crown-scale green over the bar inside the field, 15% of them, with soil between a
+  position and the next where the planting's plants stand apart (the strip rule: a weed strip along a track is green
+  at every position and is not a row). Then it is filled along like any row, and the next row out is tried.
+- Each plant added stands at its lattice point shifted by its row's own offset (the mean of the row's plants from
+  their points, so the fill follows the row as planted), ringed at the green joined to it or at the planting's
+  typical size, state "expected". The operator's "no crop" is never filled.
+
+DJI_0301: 117 to 119 plants, labelled trees within 0.6 m 96 to 97, weeds taken for crop 36, unexplained green 1.
+Synthetic tests: a row cut four trees short is carried to its neighbours' end; a crossing at one index in every row
+stays empty while a hole in one row is filled; an outer row of four trees is found and filled, an outer row of bare
+ground is not invented; the weed strip along the track is not a row.
+
 ## The signal under the lattice, and where it holds (2026-10-21)
 
 Built after the literature sweeps in `docs/research/row-crop-detection-methods.md` and measured on the six grassed
