@@ -101,6 +101,17 @@ describe("the planting from three clicks", () => {
     const [X, Y] = mercatorPx(p0.lat, p0.lng, Z);
     expect(Math.hypot(((X - LEFT) / SCALE) * MPP - a.x, ((Y - TOP) / SCALE) * MPP - a.y)).toBeLessThan(3.3);
   });
+
+  it("never reports uncovered green at a centre outside the field: a hedge straddling the boundary counts by its part inside", async () => {
+    // The field ends at x = 40 m; a 3 m wide hedge of green runs along x 39 to 42 over block A's rows (its mass is outside).
+    const { r, trees } = orchard();
+    r.inField.fill(0); fillPolygon(r.inField, W, H, [[0, 0], [40 / MPP, 0], [40 / MPP, H], [0, H]]);
+    for (let y = 0; y <= 19; y += MPP / 2) for (let x = 39; x <= 42; x += MPP / 2) { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 255; }
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const ll = (t: Tree): LatLng2 => latLngOfPx(LEFT + (t.x / MPP) * SCALE, TOP + (t.y / MPP) * SCALE, Z);
+    const out = fitPlantingLayout(r, { version: 1, blocks: [{ points: [ll(a), ll(b), ll(c)] }], confirmedAt: null });
+    for (const u of out.rows!.unexplained) expect((u.x / SCALE) * MPP).toBeLessThanOrEqual(40);
+  });
 });
 
 describe("the spacing is the clue", () => {

@@ -95,13 +95,17 @@ export function unexplainedGreen(r: LayoutRaster, rows: FieldRows, fits: FittedL
       const x = i % r.w, y = (i - x) / r.w;
       n++; sx += x; sy += y;
       for (const j of [i - 1, i + 1, i - r.w, i + r.w]) {
-        if (j < 0 || j >= r.w * r.h || seen[j] || G[j] < 0.5) continue;
+        // The fill stays inside the field: a hedge or verge straddling the boundary is counted by its part inside,
+        // and never reported at a centre outside (2026-10-21: an orange ring stood beyond the boundary line).
+        if (j < 0 || j >= r.w * r.h || seen[j] || G[j] < 0.5 || !r.inField[j]) continue;
         if ((j === i - 1 && x === 0) || (j === i + 1 && x === r.w - 1)) continue;
         seen[j] = 1; stack.push(j);
       }
     }
     if (n < minArea) continue;
     const cx = sx / n, cy = sy / n;
+    const ci = Math.round(cy) * r.w + Math.round(cx);
+    if (ci < 0 || ci >= r.w * r.h || !r.inField[ci]) continue;
     if (near(cx, cy)) continue;
     out.push({ x: cx * r.scale, y: cy * r.scale, r: Math.sqrt(n / Math.PI) * r.scale });
   }
