@@ -69,6 +69,7 @@ import { HotspotPanel } from "../weedVision/HotspotPanel";
 import { LayoutLayer } from "../weedVision/LayoutLayer";
 import { PressureLayer } from "../weedVision/PressureLayer";
 import { PressurePanel } from "../weedVision/PressurePanel";
+import { weedObjectsOfScan } from "@/lib/weedVision/pressure/grade";
 import { CropRowsPanel } from "../weedVision/CropRowsPanel";
 import { loadFieldLayout } from "@/lib/weedVision/layout/fieldLayoutStore";
 import { TWO_STAGE_COLOURS, TwoStageLayer } from "../weedVision/TwoStageLayer";
@@ -601,6 +602,8 @@ export function WeedScoutTab({
 
   // Effective state per spot: the operator's edit, else the archive, else the default.
   const verdictOf = useCallback((c: Candidate): Verdict => verdicts[c.id] ?? saved[c.id]?.verdict ?? defaultVerdict(c), [verdicts, saved]);
+  // The scan's spots kept as weeds, as the pressure grade reads them when the model has not run on this scan.
+  const scanWeeds = useMemo(() => weedObjectsOfScan(candidates.filter(c => verdictOf(c) === "weed")), [candidates, verdictOf]);
   const identificationOf = useCallback(
     (c: Candidate): Identification => identifications[c.id] ?? identificationFromRow(saved[c.id], catalog, suggestionById.get(c.id) ?? null),
     [identifications, saved, catalog, suggestionById],
@@ -1123,7 +1126,7 @@ export function WeedScoutTab({
       <aside className="w-[400px] shrink-0 border-l border-[#1f1f1f] flex flex-col min-h-0" style={{ background: "#121212" }}>
         {simple ? (<>
           <SimpleWeedFinder taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} onShowOptions={() => setSimple(false)} fieldId={fieldId} />
-          <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} />
+          <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} scanWeeds={scanWeeds} />
         </>) : (<>
         {/* Header and run */}
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
@@ -1176,7 +1179,7 @@ export function WeedScoutTab({
         {frameRun.mapAvailable && <div className="p-4 border-b border-[#1f1f1f]"><CropRowsPanel taskId={taskId} fieldId={fieldId} userId={user?.id ?? null} /></div>}
         <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} />
         <HotspotPanel taskId={taskId} userId={user?.id ?? null} onOpenPhotos={openAreaPhotos} onMarkArea={markArea} />
-        <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} />
+        <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} scanWeeds={scanWeeds} />
         <TwoStagePanel taskId={taskId} userId={user?.id ?? null} sources={sources} />
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
           <details className="text-[11px]">

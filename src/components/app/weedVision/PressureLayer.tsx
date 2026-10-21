@@ -1,11 +1,14 @@
 // The weed-pressure grade on the map, on one canvas: each assessed cell tinted by its class (a sequence from pale to
 // red, the action point and over in warm colours), "possible" cells outlined dashed rather than tinted, cells that
 // were not assessed hatched white (unseen, not weed-free), the priority patches outlined, and the large escapes as
-// diamonds with their size. Nothing here is interactive except a click, which selects a cell for the panel.
+// diamonds with their size. The tint is cut away from the crop rows and crowns (the row band and each crown with
+// its margin), so pressure is drawn only on the ground it was measured on and never over a tree. Nothing here is
+// interactive except a click, which selects a cell for the panel.
 import { useEffect } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
-import { mercatorPx } from "@/lib/weedVision/mapRun";
+import { frameRunFieldRows } from "@/lib/weedVision/frameRunStore";
+import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
 import { type PressureClass } from "@/lib/weedVision/pressure/grade";
 import { selectPressureCell, usePressure } from "@/lib/weedVision/pressure/pressureStore";
 import { cellAt, cellKey } from "@/lib/weedVision/twoStage/stage1";
@@ -68,6 +71,25 @@ export function PressureLayer({ taskId }: { taskId: string }) {
         if (c.tier === "possible") { ctx.strokeStyle = PRESSURE_STROKES[c.klass]; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]); }
         else { ctx.fillStyle = PRESSURE_COLOURS[c.klass]; ctx.fill(); }
         if (c.treatWhileSmall) { const q = pt(c.centre); ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("small", q.x, q.y); }
+      }
+      // Cut the crop out of the tint: the rows' bands and the crowns, as the grade's own ground excluded them.
+      const rows = frameRunFieldRows(taskId);
+      if (rows) {
+        const metre = map.latLngToContainerPoint(map.getCenter()).distanceTo(map.latLngToContainerPoint(L.latLng(map.getCenter().lat + 1 / 111_320, map.getCenter().lng)));
+        const fp = (x: number, y: number) => { const q = latLngOfPx(rows.left + x, rows.top + y, rows.z); return map.latLngToContainerPoint([q.lat, q.lng]); };
+        ctx.save();
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.lineCap = "round";
+        for (const l of rows.ctx.lines) {
+          const a = fp(l.x1, l.y1), b = fp(l.x2, l.y2);
+          ctx.strokeStyle = "#000"; ctx.lineWidth = Math.max(2, 2 * (l.band ?? rows.ctx.bandPx) * rows.mpp * metre);
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+        for (const c of rows.ctx.crops) {
+          const q = fp(c.x, c.y), r = Math.max(3, (c.r * rows.mpp + 0.3) * metre);
+          ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
       }
       for (const p of grade.patches.filter(p => p.priority)) {
         for (const k of p.cells) {

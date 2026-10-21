@@ -10,7 +10,7 @@ import { fmtArea } from "@/lib/units";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
 import { type AlgorithmInfo, type Health, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
 import { useFrameRun } from "@/lib/weedVision/frameRunStore";
-import { CLASS_LABEL, CLASS_ORDER, type PressureClass, pressureLine } from "@/lib/weedVision/pressure/grade";
+import { CLASS_LABEL, CLASS_ORDER, type PressureClass, type WeedObject, pressureLine } from "@/lib/weedVision/pressure/grade";
 import { gradeField, selectPressureCell, showPressure, usePressure } from "@/lib/weedVision/pressure/pressureStore";
 import { useTwoStage } from "@/lib/weedVision/twoStage/twoStageStore";
 import { modelShaFor } from "./ModelDetectionsPanel";
@@ -20,7 +20,7 @@ const PARAMS = { algorithm: "rfdetr_seg_large", threshold: 0.5, tile: 1024, over
 const pct = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${(100 * v).toFixed(d)}%`);
 const cm = (m: number | null | undefined) => (m == null ? "–" : `${Math.round(m * 100)} cm`);
 
-export function PressurePanel({ taskId, sources, crop, fetchImpl }: { taskId: string; sources: ScanSources | null; crop: string | null; fetchImpl?: typeof fetch }) {
+export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl }: { taskId: string; sources: ScanSources | null; crop: string | null; /** The scan's spots kept as weeds (Scan this field, the operator's verdicts applied): graded when the model has not run. */ scanWeeds?: WeedObject[]; fetchImpl?: typeof fetch }) {
   const s = usePressure(taskId);
   const ts = useTwoStage(taskId);
   const run = useFrameRun(taskId);
@@ -48,8 +48,8 @@ export function PressurePanel({ taskId, sources, crop, fetchImpl }: { taskId: st
   const selected = useMemo(() => (gr && s.selectedCell ? gr.cells.find(c => c.key === s.selectedCell) ?? null : null), [gr, s.selectedCell]);
   const btn = "inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed";
   const reading = s.state === "reading" || ts.stage1State === "reading";
-  const haveWeeds = run.plants.length > 0 || Object.keys(ts.runs).length > 0;
-  const stale = gr && run.plants.length > 0 && gr.cells.reduce((a, c) => a + c.count, 0) === 0 && s.source !== null;
+  const haveWeeds = run.plants.length > 0 || scanWeeds.length > 0 || Object.keys(ts.runs).length > 0;
+  const stale = gr && (run.plants.length > 0 || scanWeeds.length > 0) && gr.cells.reduce((a, c) => a + c.count, 0) === 0 && gr.summary.belowFloor === 0;
 
   return (
     <div className="p-4 border-b border-[#1f1f1f] space-y-2 text-[11px]" data-testid="pressure-panel">
@@ -59,21 +59,21 @@ export function PressurePanel({ taskId, sources, crop, fetchImpl }: { taskId: st
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <button type="button" className={`${btn} border-[#fb923c] text-[#fb923c]`} disabled={reading || !run.mapAvailable} data-testid="pressure-grade"
-          onClick={() => void gradeField(taskId, { crop, stage1: { params: PARAMS, modelSha, photoGsdM } })}>
+          onClick={() => void gradeField(taskId, { crop, stage1: { params: PARAMS, modelSha, photoGsdM }, scanWeeds })}>
           {gr ? "Grade again" : "Grade the field"}
         </button>
         {reading && <span className="inline-flex items-center gap-1 text-neutral-400"><Loader2 className="h-3 w-3 animate-spin" /> reading the field into cells{ts.stage1Progress ? ` ${Math.round(100 * ts.stage1Progress)}%` : ""}…</span>}
-        {!haveWeeds && !gr && <span className="text-neutral-500">Run Find weeds first; the grade reads the weeds it put between the rows.</span>}
+        {!haveWeeds && !gr && <span className="text-neutral-500">The grade reads this scan's weeds: scan the field, or run Find weeds, first.</span>}
       </div>
       {s.error && <p className="text-amber-400 flex items-start gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {s.error}</p>}
-      {stale && <p className="text-amber-400">The grade was made before this scan's weeds were found: grade again.</p>}
+      {stale && <p className="text-amber-400">The grade found none of this scan's weeds between the rows: grade again, or check the rows.</p>}
 
       {gr && (
         <div className="space-y-2" data-testid="pressure-summary">
           <p className="text-neutral-200">{pressureLine(gr, area)}</p>
           <p className="text-neutral-500">
             Graded as {gr.group === "orchard" ? "an orchard" : gr.group === "cereal" ? "a drilled cereal" : "a wide-row crop"}{gr.crop ? ` (${gr.crop})` : ""}: action at {pct(gr.scheme.action)} cover, high at {pct(gr.scheme.high)}. {gr.scheme.source}.
-            {s.source && ` Weeds from ${s.source === "map" ? "the field map" : s.source === "photos" ? "the kept photographs" : "the two-stage windows"}.`}
+            {s.source && ` Weeds from ${s.source === "map" ? "the model on the field map" : s.source === "photos" ? "the model on the kept photographs" : s.source === "scan" ? "the scan's spots kept as weeds" : "the two-stage windows"}.`}
           </p>
           <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="pressure-legend">
             {CLASS_ORDER.filter(k => k !== "none").map(k => (

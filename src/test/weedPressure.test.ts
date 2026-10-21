@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { LatLng2 } from "@/lib/geo";
 import type { GroundPlant } from "@/lib/weedVision/frames";
 import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
-import { CLASS_ORDER, classOf, cropGroupOf, gradePressure, kropffLoss, pressureLine, schemeFor } from "@/lib/weedVision/pressure/grade";
+import { CLASS_ORDER, classOf, cropGroupOf, gradePressure, kropffLoss, pressureLine, schemeFor, weedObjectsOf, weedObjectsOfScan } from "@/lib/weedVision/pressure/grade";
 import { type GridFrame, type Stage1Cell, cellKey } from "@/lib/weedVision/twoStage/stage1";
 
 const LAT = 37.6, LNG = -78.4, Z = 23;
@@ -33,7 +33,7 @@ function weed(i: number, j: number, areaM2: number, opts: { id?: string; seenIn?
   return { id: opts.id ?? `w-${i}-${j}-${areaM2}-${opts.dx ?? 0}-${opts.dy ?? 0}`, frame: frames[0], instanceId: 1, klass: "weed", score: 0.8, scoreKind: "d", nativePolygon: [], nativeCentroid: [0, 0], nativeBbox: [0, 0, 0, 0], areaPx: 1, equivalentDiameterPx: opts.px ?? Math.round(d / MPP), ring: null, centre: latLngOfPx(X, Y, Z), gsdM: MPP, areaM2, diameterM: d, viewAngleDeg: 0, status: "ok", flags: [], tiny: false, touchesBorder: false, fusedFromTiles: 1, rowStatus: opts.onRow ? "on-row" : "off-row", seenIn: frames, duplicates: frames.length - 1 };
 }
 
-const grade = (plants: GroundPlant[], o: Partial<Parameters<typeof gradePressure>[0]> = {}) => gradePressure({ plants, grid, cells: cells(), rows: null, crop: "corn", canopyClosed: false, photoBased: false, ...o });
+const grade = (plants: GroundPlant[], o: Partial<Parameters<typeof gradePressure>[0]> = {}) => gradePressure({ objects: weedObjectsOf(plants), grid, cells: cells(), rows: null, crop: "corn", canopyClosed: false, photoBased: false, ...o });
 const groundM2 = cellM2 * 0.8;
 
 describe("crop groups and schemes", () => {
@@ -145,7 +145,7 @@ describe("the grade", () => {
 
   it("not assessed cells carry their reason and are never weed-free; weeds on a row never count", () => {
     const cs = cells({ [cellKey(4, 4)]: { uncertain: ["shadow"] } });
-    const gr = gradePressure({ plants: [weed(4, 4, 0.2 * groundM2), weed(4, 1, 0.2 * groundM2, { onRow: true })], grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    const gr = gradePressure({ objects: weedObjectsOf([weed(4, 4, 0.2 * groundM2), weed(4, 1, 0.2 * groundM2, { onRow: true })]), grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
     const shaded = gr.cells.find(x => x.key === cellKey(4, 4))!;
     expect(shaded.assessed).toBe(false);
     expect(shaded.whyNot).toEqual(["shadow"]);
@@ -161,14 +161,27 @@ describe("the grade", () => {
     const c = gr.cells.find(x => x.key === cellKey(1, 3))!;
     const cropM2 = cellM2 * 0.2;
     expect(c.cropM2).toBeCloseTo(0, 6); // no rows at all: no crop cover known
-    const withRows = gradePressure({ plants: [weed(1, 3, 0.1 * groundM2)], grid, cells: cells(), rows: { z: Z, left: LEFT, top: TOP, mpp: MPP, rows: 1, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "reader", ctx: { lines: [], crops: [], bandPx: 10, gsdM: MPP } }, crop: "corn", canopyClosed: false, photoBased: false });
+    const withRows = gradePressure({ objects: weedObjectsOf([weed(1, 3, 0.1 * groundM2)]), grid, cells: cells(), rows: { z: Z, left: LEFT, top: TOP, mpp: MPP, rows: 1, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "reader", ctx: { lines: [], crops: [], bandPx: 10, gsdM: MPP } }, crop: "corn", canopyClosed: false, photoBased: false });
     const r = withRows.cells.find(x => x.key === cellKey(1, 3))!;
     expect(r.cropM2).toBeCloseTo(cropM2, 3);
     expect(r.relativeCover).toBeCloseTo(r.weedM2 / (r.weedM2 + cropM2), 6);
     expect(r.lossBand![0]).toBeCloseTo(kropffLoss(r.relativeCover!, 0.54), 6);
     expect(r.lossBand![1]).toBeCloseTo(r.relativeCover!, 6); // q = 1 is the identity
-    const closed = gradePressure({ plants: [weed(1, 3, 0.1 * groundM2)], grid, cells: cells(), rows: withRows.cells.length ? ({ z: Z, left: LEFT, top: TOP, mpp: MPP, rows: 1, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "reader", ctx: { lines: [], crops: [], bandPx: 10, gsdM: MPP } }) : null, crop: "corn", canopyClosed: true, photoBased: false });
+    const closed = gradePressure({ objects: weedObjectsOf([weed(1, 3, 0.1 * groundM2)]), grid, cells: cells(), rows: withRows.cells.length ? ({ z: Z, left: LEFT, top: TOP, mpp: MPP, rows: 1, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "reader", ctx: { lines: [], crops: [], bandPx: 10, gsdM: MPP } }) : null, crop: "corn", canopyClosed: true, photoBased: false });
     expect(closed.cells.find(x => x.key === cellKey(1, 3))!.lossBand).toBeNull();
+  });
+});
+
+describe("weeds from the scan", () => {
+  it("the scan's kept spots grade like the model's plants: a region's area, a plant's blob area, no pixels so the floor is on the metres", () => {
+    const spot = (id: string, i: number, j: number, areaM2: number) => ({ id, tileId: "t", centroid: weed(i, j, areaM2).centre, kind: "off-row vegetation", score: 0.7, distanceToRowM: 1, rowConfidence: 0.8, anomalyZ: null, anomalyFeature: null, blobZ: null, blobZFeature: null, blob: null, region: null, areaM2, feedback: null, estimate: null }) as unknown as import("@/lib/weedScout/types").Candidate;
+    const objs = weedObjectsOfScan([spot("a", 2, 2, 0.12 * groundM2), spot("b", 3, 3, 0.0005), spot("c", 4, 4, 0)]);
+    expect(objs).toHaveLength(2); // a zero-area spot has nothing to grade
+    expect(objs[0].px).toBeNull();
+    const gr = gradePressure({ objects: objs, grid, cells: cells(), rows: null, crop: "apricot", canopyClosed: false, photoBased: false });
+    expect(gr.group).toBe("orchard");
+    expect(gr.cells.find(c => c.key === cellKey(2, 2))!.klass).toBe("moderate"); // 12% is under the apricot action point of 15%
+    expect(gr.summary.belowFloor).toBe(1); // 2.5 cm across, under the 6 cm floor
   });
 });
 

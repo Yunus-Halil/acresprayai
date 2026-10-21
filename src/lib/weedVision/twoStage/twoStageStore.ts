@@ -24,7 +24,7 @@ import { type MapWindow, type Routing, DEFAULT_ROUTER, planWindows, routeWindows
 import { type ChunkPainter, betweenRowsPainter, rowsSignature } from "../layout/rowBand";
 import type { CellLabel } from "./score";
 import { mergeSeamDuplicates } from "./seams";
-import { type Stage1Result, gridKeyOf, readStage1 } from "./stage1";
+import { type Stage1Params, type Stage1Result, DEFAULT_STAGE1, gridKeyOf, readStage1 } from "./stage1";
 
 export const TWO_STAGE_KEY_PREFIX = "two-stage|";
 
@@ -181,7 +181,7 @@ function tagRows(dets: FrameDetection[], rows: FieldRows | undefined): GroundPla
   return dets.map(d => ({ ...d, rowStatus: d.klass === "weed" ? (rows && d.centre ? fieldRowStatusAt(rows, d.centre) : "no-rows") : d.rowStatus, seenIn: [d.frame], duplicates: 0 }));
 }
 
-export type RunStage1Input = { params: FrameRunParams; modelSha: string | null; photoGsdM: number | null; deps?: Partial<TwoStageDeps> };
+export type RunStage1Input = { params: FrameRunParams; modelSha: string | null; photoGsdM: number | null; /** Stage 1's own parameters, the cell size among them; the defaults otherwise. */ stage1Params?: Partial<Stage1Params>; deps?: Partial<TwoStageDeps> };
 
 /** Stage 1 over the field, then the windows planned and routed, and windows already scored restored from the cache. */
 export async function runStage1(taskId: string, input: RunStage1Input): Promise<void> {
@@ -197,7 +197,7 @@ export async function runStage1(taskId: string, input: RunStage1Input): Promise<
   patchTwoStage(taskId, { stage1State: "reading", stage1Progress: 0, error: null });
   await deps.ensureRows(taskId);
   const rows = deps.rowsOf(taskId) ?? null;
-  const stage1 = await deps.readStage1({ rings, tile: map.tile, maxNative: map.maxNative, lat: map.lat, rows, signal: ctrl.signal, onProgress: f => patchTwoStage(taskId, { stage1Progress: f }) });
+  const stage1 = await deps.readStage1({ rings, tile: map.tile, maxNative: map.maxNative, lat: map.lat, rows, params: input.stage1Params ? { ...DEFAULT_STAGE1, ...input.stage1Params } : undefined, signal: ctrl.signal, onProgress: f => patchTwoStage(taskId, { stage1Progress: f }) });
   if (ctrl.signal.aborted || controllers.get(taskId) !== ctrl) return;
   if (!stage1) { patchTwoStage(taskId, { stage1State: "none", stage1Progress: null, error: "The field map could not be read here." }); return; }
   const upscale = upscaleFor(avail.mpp, input.photoGsdM);

@@ -16,7 +16,7 @@ how much does greenness count, how does the crop factor in?"
 
 1. **Find weeds** (unchanged): the rows and crowns are painted with the field's bare-ground colour before RF-DETR, and
    the weeds that land on a row are dropped (`rowBand.ts`, `rowFilter.ts`).
-2. **Grade the field** (new, one button under Find weeds): Stage 1 reads the field into 2 m cells from the map in
+2. **Grade the field** (new, one button under Find weeds): Stage 1 reads the field into 1 m cells from the map in
    seconds (imaged share, crop-band share, green share, shadow; `twoStage/stage1.ts`), and the weeds between the rows
    are graded on that grid.
 
@@ -35,6 +35,22 @@ how much does greenness count, how does the crop factor in?"
 | Not assessed | A cell Stage 1 could not judge (no rows read, partly imaged, mostly crop row, shadow) is hatched: unseen, not weed-free. | Stage 1's reasons. |
 | Canopy closure | Read from Stage 1's mean green share (0.85); after closure no step-ups and no loss band, and the grade says it under-counts. | Goldsmith 2025; Allmendinger 2024; Sentera's own stage limits. |
 | Painting the crop out, tested | The two-stage prototype can run the same windows with the crop painted out or left in (dropping what lands on the rows afterwards) and reports both counts side by side. | Row edges are the top source of false weeds; painted regions are untested in agriculture and general vision work finds models fire on paint edges (Jain 2022; Dwibedi 2017). |
+
+## After the first eye test (2026-10-21, night)
+
+The operator: "the tiles overlap the crop circles and the rows, we can't have that; what does 'no weeds found, run
+Find weeds' mean; the tiles are way too broad." Three changes:
+
+- **The grade reads at 1 m cells of its own** (`PRESSURE_CELL_M`), the spot-spray unit (a 1 × 1 m box per weed with
+  nozzle control; the 0.5 to 1 m grids of the UAV weed-map studies), not the 2 m boom-section cell the two-stage
+  prototype reads at. Stage 1 is re-read at 1 m when the grid on hand is another size, and the prototype's own layers
+  (its cells, candidates and windows) are switched off when Stage 1 was read for the grade.
+- **The tint is cut away from the rows and crowns.** The layer erases the row bands and each crown with its margin
+  from the tint, so pressure is drawn only on the ground it was measured on and never over a tree.
+- **The grade reads whatever weeds the scan has.** The model's plants from Find weeds when it ran; else the scan's
+  spots kept as weeds by "Scan this field" with the operator's verdicts applied (`weedObjectsOfScan`); else the
+  two-stage windows. A weed on a crop row by the field's own rows is the crop whichever system found it. The panel
+  says which source the grade came from, and only says "nothing to grade" when the scan truly has no weeds.
 
 ## On the map and in the panel
 

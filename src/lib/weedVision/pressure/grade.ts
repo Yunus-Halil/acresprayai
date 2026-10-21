@@ -31,13 +31,46 @@
 //   assessed   a cell Stage 1 could not judge (no rows read, partly imaged, mostly crop row, in shadow) is "not
 //              assessed", never "weed-free".
 //
-// Pure: plants, a grid, Stage 1's cells and the field's rows in; a grade out. Nothing here fetches or stores.
+// Pure: weed objects, a grid, Stage 1's cells and the field's rows in; a grade out. Nothing here fetches or stores.
 import type { LatLng2 } from "../../geo";
-import type { FieldRows } from "../fieldRows";
+import type { Candidate } from "../../weedScout/types";
+import { type FieldRows, fieldRowStatusAt } from "../fieldRows";
 import type { GroundPlant } from "../frames";
 import { latLngOfPx, mercatorPx } from "../mapRun";
 import { isOnRow } from "../rowFilter";
 import { type GridFrame, type Stage1Cell, type UncertainReason, cellAt, cellKey } from "../twoStage/stage1";
+
+/**
+ * A weed as the grade sees it, whichever system found it: the model's plants (Find weeds) or the scan's kept spots
+ * (Scan this field, the operator's verdicts applied). Only what the grade needs.
+ */
+export type WeedObject = {
+  id: string;
+  centre: LatLng2;
+  areaM2: number;
+  diameterM: number;
+  /** Width in the picture's pixels, when known: the floor is judged on it; else on the diameter against the map's pixel. */
+  px: number | null;
+  /** Photographs (or windows) that saw it. */
+  views: number;
+  /** On a crop row by the rows that placed it; the grade drops these, and checks the field's rows itself too. */
+  onRow: boolean;
+};
+
+/** The model's plants as weed objects: weeds with a place and an area, their row status kept. */
+export function weedObjectsOf(plants: GroundPlant[]): WeedObject[] {
+  const out: WeedObject[] = [];
+  for (const p of plants) {
+    if (p.klass !== "weed" || !p.centre || p.areaM2 == null) continue;
+    out.push({ id: p.id, centre: p.centre, areaM2: p.areaM2, diameterM: p.diameterM ?? 2 * Math.sqrt(p.areaM2 / Math.PI), px: p.equivalentDiameterPx > 0 ? p.equivalentDiameterPx : null, views: p.seenIn.length, onRow: isOnRow(p.rowStatus) });
+  }
+  return out;
+}
+
+/** The scan's spots kept as weeds (by the operator's verdicts, applied by the caller) as weed objects. */
+export function weedObjectsOfScan(spots: Candidate[]): WeedObject[] {
+  return spots.filter(c => c.areaM2 > 0).map(c => ({ id: c.id, centre: c.centroid, areaM2: c.areaM2, diameterM: 2 * Math.sqrt(c.areaM2 / Math.PI), px: null, views: 1, onRow: false }));
+}
 
 export type CropGroup = "wide-row" | "cereal" | "orchard";
 
@@ -199,7 +232,7 @@ function crownAreaByCell(rows: FieldRows | null, g: GridFrame): Map<string, numb
 }
 
 export function gradePressure(input: {
-  plants: GroundPlant[];
+  objects: WeedObject[];
   grid: GridFrame;
   cells: Stage1Cell[];
   rows: FieldRows | null;
@@ -218,14 +251,16 @@ export function gradePressure(input: {
   const floorM = P.floorPx * g.mpp;
   const crowns = crownAreaByCell(input.rows, g);
 
-  // The weeds between the rows, by cell; objects under the floor counted apart.
-  type Obj = { p: GroundPlant; d: number };
+  // The weeds between the rows, by cell; objects under the floor counted apart. A weed on a row by the field's own
+  // rows is the crop, whichever system found it.
+  type Obj = { p: WeedObject; d: number };
   const byCell = new Map<string, Obj[]>();
   let belowFloor = 0;
-  for (const p of input.plants) {
-    if (p.klass !== "weed" || !p.centre || isOnRow(p.rowStatus) || p.areaM2 == null) continue;
-    const d = p.diameterM ?? 2 * Math.sqrt(p.areaM2 / Math.PI);
-    if (p.equivalentDiameterPx < P.floorPx || d < floorM) { belowFloor++; continue; }
+  for (const p of input.objects) {
+    if (p.onRow || !(p.areaM2 > 0)) continue;
+    if (input.rows && isOnRow(fieldRowStatusAt(input.rows, p.centre))) continue;
+    const d = p.diameterM;
+    if ((p.px != null && p.px < P.floorPx) || d < floorM) { belowFloor++; continue; }
     const [X, Y] = mercatorPx(p.centre.lat, p.centre.lng, g.z);
     const c = cellAt(g, X, Y);
     if (!c) continue;
@@ -253,7 +288,7 @@ export function gradePressure(input: {
     const med = median(ds);
     const treatWhileSmall = assessed && input.canopyClosed !== true && count >= 2 && density >= P.denseObjectsPerM2 && med != null && med < P.smallDiameterM && klass !== "none" && klass !== "high";
     if (treatWhileSmall) klass = stepUp(klass);
-    const multiView = objs.filter(o => o.p.seenIn.length >= 2).length;
+    const multiView = objs.filter(o => o.p.views >= 2).length;
     const corroborated = cover >= P.corroborateCover || count >= P.corroborateCount;
     const tier: Tier = !assessed || count === 0 ? "none" : corroborated && (!input.photoBased || multiView >= 1) ? "confirmed" : "possible";
     cells.push({
@@ -264,7 +299,7 @@ export function gradePressure(input: {
     });
     for (const o of objs) {
       if (o.d < P.escapeDiameterM || !o.p.centre) continue;
-      escapes.push({ id: o.p.id, centre: o.p.centre, diameterM: o.d, areaM2: o.p.areaM2 ?? 0, cell: s.key, views: o.p.seenIn.length, tier: !input.photoBased || o.p.seenIn.length >= 2 ? "confirmed" : "possible" });
+      escapes.push({ id: o.p.id, centre: o.p.centre, diameterM: o.d, areaM2: o.p.areaM2, cell: s.key, views: o.p.views, tier: !input.photoBased || o.p.views >= 2 ? "confirmed" : "possible" });
     }
   }
   escapes.sort((a, b) => b.diameterM - a.diameterM);
