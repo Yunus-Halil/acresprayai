@@ -52,6 +52,14 @@ Find weeds' mean; the tiles are way too broad." Three changes:
   two-stage windows. A weed on a crop row by the field's own rows is the crop whichever system found it. The panel
   says which source the grade came from, and only says "nothing to grade" when the scan truly has no weeds.
 
+- **The cover comes from the map's own pixels.** The second eye test showed weed clumps between the rows with no
+  tint: the grade had counted only the scan's ranked, capped list of spots. Stage 1 already measures every green
+  thing off the rows per cell from the pixels, so that is the cell's cover (and its blob count); the model's plants
+  or the scan's spots add sizes, large escapes and corroboration, and win a cell's cover only where they say more.
+  The ground within the row band (half a metre each side of a row line) and 0.3 m around a crown is not assessed,
+  and the panel says so; where more than six in ten cells read at the action point, the panel says the alleys may
+  be a managed cover rather than weeds.
+
 ## On the map and in the panel
 
 Cells tinted from pale to red by class; "possible" cells dashed, not tinted; cells not assessed hatched white;

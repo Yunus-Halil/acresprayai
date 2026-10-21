@@ -200,3 +200,18 @@ describe("the store's pure parts", () => {
     expect(canopyClosedOf([{ greenShare: 0.3, uncertain: [] }, { greenShare: 0.95, uncertain: [] }])).toBe(false);
   });
 });
+
+describe("the map's own pixels", () => {
+  it("a cell with off-row green but no spot on the list is still graded, from Stage 1's measure", () => {
+    const cs = cells({ [cellKey(3, 1)]: { pressure: 0.12, density: 1.2, offRowGreenM2: 0.12 * groundM2 } });
+    const gr = gradePressure({ objects: [], grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    const c = gr.cells.find(x => x.key === cellKey(3, 1))!;
+    expect(c.cover).toBeCloseTo(0.12, 2);
+    expect(c.klass).toBe("action");
+    expect(c.count).toBe(Math.round(1.2 * groundM2));
+    expect(c.tier).toBe("confirmed");
+    // And an object that says more than the pixels wins the cell's cover, never less.
+    const more = gradePressure({ objects: weedObjectsOf([weed(3, 1, 0.3 * groundM2)]), grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    expect(more.cells.find(x => x.key === cellKey(3, 1))!.cover).toBeCloseTo(0.3, 2);
+  });
+});

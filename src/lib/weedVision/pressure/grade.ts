@@ -3,7 +3,10 @@
 // Built 2026-10-21 from docs/research/weed-pressure-grading-2026-10-21.md. The rules, and where each comes from:
 //
 //   cover      the cell's metric is weed canopy as a share of the VISIBLE GROUND (the imaged ground off the crop row
-//              band and crowns), never how green anything is: every threshold people act on is cover (the Turkish
+//              band and crowns), measured from the map's own pixels by Stage 1 (every green thing off the rows, so
+//              nothing between the rows is skipped: a ranked list of spots is not a weed map) and, where the model's
+//              plants or the scan's kept spots cover more, from those; never how green anything is: every threshold
+//              people act on is cover (the Turkish
 //              ministry's 10-15% cover per m² for maize, cotton, olive, apricot and citrus; German cereal thresholds
 //              of 5-10%; Peña's UAV classes <5 / 5-20 / >20%), and no paper or tool grades by index intensity.
 //   classes    by crop group, with the published action point inside them: wide-row crops act at 10%, drilled
@@ -274,11 +277,17 @@ export function gradePressure(input: {
     const objs = byCell.get(s.key) ?? [];
     const groundM2 = cellM2 * s.imagedShare * (1 - s.bandShare);
     const assessed = s.uncertain.length === 0 && groundM2 >= P.minGroundM2;
-    const weedM2 = objs.reduce((a, o) => a + (o.p.areaM2 ?? 0), 0);
-    const count = objs.length;
+    // The map's own measure first (Stage 1: off-row green over the visible ground, and its blobs), the objects where
+    // they say more: a spot list is ranked and capped, the pixels are not.
+    const objM2 = objs.reduce((a, o) => a + (o.p.areaM2 ?? 0), 0);
+    const pixelM2 = Math.min(groundM2, s.offRowGreenM2);
+    const weedM2 = Math.max(pixelM2, objM2);
+    const pixelBlobs = Math.round(s.density * groundM2);
+    const count = Math.max(pixelBlobs, objs.length);
     const cover = groundM2 > 0 ? Math.min(1, weedM2 / groundM2) : 0;
     const density = groundM2 > 0 ? count / groundM2 : 0;
-    const ds = objs.map(o => o.d);
+    // Sizes from the objects when there are any; else the mean blob of the pixels.
+    const ds = objs.length ? objs.map(o => o.d) : pixelBlobs > 0 && pixelM2 > 0 ? [2 * Math.sqrt(pixelM2 / pixelBlobs / Math.PI)] : [];
     const cropM2 = crowns.get(s.key) ?? (input.rows ? cellM2 * s.imagedShare * s.bandShare : 0);
     const relativeCover = cropM2 > 0 || weedM2 > 0 ? (weedM2 + cropM2 > 0 ? weedM2 / (weedM2 + cropM2) : null) : null;
     const lossBand: [number, number] | null = relativeCover != null && input.canopyClosed === false
@@ -348,7 +357,8 @@ export function gradePressure(input: {
 
   const cm = (m: number) => `${Math.round(m * 100)} cm`;
   const notes: string[] = [];
-  notes.push(`Cover is weed canopy over the visible ground between the rows, after the crop rows and crowns are taken out; greenness only decides what is a plant. Classes: ${scheme.source}.`);
+  notes.push(`Cover is green canopy over the visible ground between the rows, measured from the map's own pixels after the crop rows and crowns are taken out, so no patch between the rows is skipped; greenness only decides what is a plant. Ground within the row band (half a metre each side of a row line) and 0.3 m around a crown is not assessed. Classes: ${scheme.source}.`);
+  if (assessedCells.length >= 20 && over("action").length > 0.6 * assessedCells.length) notes.push("More than six in ten cells read at the action point or over: the ground between the rows may be a managed cover (a sward or cover crop) rather than weeds. If so, the alleys are cover, not pressure.");
   notes.push(`The smallest weed this grade can claim is about ${cm(floorM)} across (${P.floorPx} pixels at this map's ${(g.mpp * 100).toFixed(1)} cm a pixel)${belowFloor ? `; ${belowFloor} smaller object${belowFloor === 1 ? "" : "s"} counted as below the floor` : ""}.`);
   if (input.canopyClosed === true) notes.push("The canopy reads as closed: weeds under it are not seen, and no loss band is given. Grades after canopy closure under-count (Goldsmith 2025; Allmendinger 2024).");
   if (summary.treatWhileSmall) notes.push(`${summary.treatWhileSmall} cell${summary.treatWhileSmall === 1 ? "" : "s"} stepped up one class for many small weeds: scattered small weeds compete harder than clumped ones and are easiest to treat while small.`);
