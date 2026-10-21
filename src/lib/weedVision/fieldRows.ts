@@ -167,6 +167,26 @@ export function vegetationMask(px: PhotoPixels, index: VegetationIndex = VEGETAT
   return mask;
 }
 
+/**
+ * Cover, as against bare ground: excess green minus excess red over this bar. The vegetation mask's zero rejects
+ * yellowish cover on purpose (Meyer & Neto 2008 built it to drop straw and residue), which is right for "is this a
+ * plant" and wrong for "is this ground bare": a ripening wheat field next to the orchard read as bare with a green
+ * margin, and the rows ran on into it with a ring on the margin at every row's end (2026-10-21). On chromaticity,
+ * soil reads about -0.24, dry straw -0.14, shadowed soil -0.16, ripening wheat about 0, green leaves 0.3 and over.
+ */
+export const COVER_EXGR = -0.08;
+/** Pixels that are cover of any colour, green or yellow-green, as against bare soil, straw and shadowed soil (transparent ones never). */
+export function coverMask(px: PhotoPixels): Uint8Array {
+  const n = px.width * px.height;
+  const mask = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    if (px.rgba[o + 3] === 0) continue;
+    mask[i] = excessGreenRed(px.rgba[o], px.rgba[o + 1], px.rgba[o + 2]) > COVER_EXGR ? 1 : 0;
+  }
+  return mask;
+}
+
 /** A pixel is shadow when its brightness is under this share of the picture's mean brightness. */
 export const SHADOW_SHARE = 0.55;
 /**

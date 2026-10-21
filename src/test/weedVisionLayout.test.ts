@@ -331,6 +331,23 @@ describe("what stands at each position: a crop by the pattern unless the ground 
     void ux; void uy;
   });
 
+  it("a tree with a weed patch beside it across the row keeps its ring in the middle of the row", () => {
+    const { r, trees } = orchard();
+    const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
+    const t = treeA(trees, "9,1");
+    // A weed patch 1 m across, touching the crown on the alley side: the green mass of crown plus patch sits 0.8 m off the row.
+    const set = (x: number, y: number) => { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 255; };
+    const bx = t.x + 1.3 * nx, by = t.y + 1.3 * ny;
+    for (let dy = -0.6; dy <= 0.6; dy += MPP / 2) for (let dx = -0.6; dx <= 0.6; dx += MPP / 2) if (dx * dx + dy * dy <= 0.36) set(bx + dx, by + dy);
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    const p = fit.plants.find(q => Math.hypot(q.x * MPP - t.x, q.y * MPP - t.y) <= 1.2)!;
+    expect(p).toBeDefined();
+    const across = Math.abs((p.x * MPP - t.x) * nx + (p.y * MPP - t.y) * ny);
+    expect(across).toBeLessThanOrEqual(0.35);
+    void ux; void uy;
+  });
+
   it("\"a crop\" on an expected position beside a tree that stood too far off its slot finds the tree, at its size", () => {
     const { r, trees } = orchard(new Set(["A8,1"]));
     const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;

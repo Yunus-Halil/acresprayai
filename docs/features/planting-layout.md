@@ -118,6 +118,25 @@ DJI_0301: 119 plants, 96 of 104 labelled trees, 103 on rows; labelled weeds take
 straight line's band sits a little differently from the ring-to-ring chain. Synthetic tests: rows do not run on into
 a field green through and through beyond their ends; a weed strip across the row ends carries no confirmed plant.
 
+### Cover of any colour, and the tree in the middle of its row (2026-10-21, night)
+
+The rows still ran on into the wheat after the cover rule, with a ring on the wheat's margin at every row's end. The
+cause, by reasoning from the picture (the real map cannot be read headlessly here): the wheat was ripening
+yellow-green, and the vegetation mask's fixed zero rejects yellowish cover on purpose (Meyer & Neto built it to drop
+straw), so to the fitter the wheat was bare ground with a green margin, and the margin read as a tree at the end of
+every row; the rows then agreed with each other across. "Another cover" is now judged on `coverMask`
+(`COVER_EXGR` -0.08: on chromaticity soil reads about -0.24, straw -0.14, shadowed soil -0.16, ripening wheat about 0,
+leaves 0.3 and over), a `cover` channel on the raster beside `green` and `shadow`, so a neighbouring crop of any
+colour is cover and bare soil is not. The vegetation mask itself is unchanged: "is this a plant" and "is this ground
+bare" are two questions. The cached raster is keyed to `LAYOUT_VERSION` (now 5), since its channels change with the
+fitter.
+
+A ring had also sat 0.8 m beside its row, on a weed patch next to the tree. "The crop will obviously be planted in
+the middle of the row": `holdToRows` holds every ring's centre within `acrossHoldM` 0.3 m of its row's line
+(`rowLineOf`: the lattice's direction, at most two degrees of tilt, the row's median offset across); the operator's
+own marks are not held. DJI_0301: 119 plants, 97 of 104 labelled trees, 103 on rows, weeds taken for crop 38, rings
+under 80% of their crown's joined green 4 (was 2: a leaning crown's ring is now centred on the trunk line).
+
 ## The signal under the lattice, and where it holds (2026-10-21)
 
 Built after the literature sweeps in `docs/research/row-crop-detection-methods.md` and measured on the six grassed

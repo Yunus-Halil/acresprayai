@@ -31,6 +31,8 @@ export type LayoutRaster = {
   inField: Uint8Array;
   /** Shadow share of each raster pixel, 0 to 255, when the picture was read with its shadows (fieldRows.ts shadowMask). */
   shadow?: Uint8Array;
+  /** Cover share of each raster pixel, 0 to 255: cover of any colour against bare ground (fieldRows.ts coverMask), what "another cover" is judged on. The green itself when absent. */
+  cover?: Uint8Array;
 };
 
 /** A lattice in raster pixels: plant (i, j) stands at o + i * along * u + j * (across * n + stagger * u), u at `angle`, n a quarter turn on. */
@@ -76,7 +78,7 @@ export type FittedLayout = {
 };
 
 /** Bumped when the fitter changes, so rows read under an older fitter are read again. */
-export const LAYOUT_VERSION = 4;
+export const LAYOUT_VERSION = 5;
 
 export const LAYOUT_PARAMS = {
   /** Crown-scale smoothing radius, as a share of the plant spacing. */
@@ -126,6 +128,13 @@ export const LAYOUT_PARAMS = {
    * rows had run on into the wheat next door, green at every lattice position (2026-10-21).
    */
   closedCover: 0.7,
+  /**
+   * A plant stands in the middle of its row: its ring's centre is held within this of the row's line (metres), across
+   * the row. The crown may lean and a weed patch beside the tree may pull the measured mass sideways, but the trunk is
+   * on the planting line, and that is where the farmer put it (2026-10-21: a ring sat 0.8 m beside its row on a weed
+   * patch). The operator's own marks are not held.
+   */
+  acrossHoldM: 0.3,
   /**
    * A plant leaves its expected position for the greenest spot in the search box only when that spot is at least this
    * many times as green as the position itself; on flat ground it stays on the lattice. Measured 2026-10-21 on grassed
@@ -234,7 +243,7 @@ export function fillPolygon(mask: Uint8Array, w: number, h: number, poly: [numbe
 }
 
 /** The raster from a green mask (1 = green) at zoom z, frame origin (left, top), block-averaged by k. */
-export function rasterFromMask(mask: Uint8Array, mw: number, mh: number, k: number, z: number, left: number, top: number, maskMpp: number, rings: [number, number][][], shadow?: Uint8Array): LayoutRaster {
+export function rasterFromMask(mask: Uint8Array, mw: number, mh: number, k: number, z: number, left: number, top: number, maskMpp: number, rings: [number, number][][], shadow?: Uint8Array, cover?: Uint8Array): LayoutRaster {
   const w = Math.ceil(mw / k), h = Math.ceil(mh / k);
   const cnt = new Uint32Array(w * h);
   const pool = (src: Uint8Array, scale: number): Uint8Array => {
@@ -251,6 +260,7 @@ export function rasterFromMask(mask: Uint8Array, mw: number, mh: number, k: numb
   for (const r of rings) fillPolygon(inField, w, h, r.map(([X, Y]) => [(X - left) / k, (Y - top) / k]));
   const out: LayoutRaster = { z, left, top, scale: k, mpp: maskMpp * k, w, h, green, inField };
   if (shadow) out.shadow = pool(shadow, 255);
+  if (cover) out.cover = pool(cover, 255);
   return out;
 }
 
@@ -1096,8 +1106,9 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
   if (main.along !== refined.along) main = refineLattice(main, boxMean(r, P.crownShare * main.along, vote), r, holds).lattice;
   const derived = sub.derived.map(L => ({ ...L, along: main.along, across: main.across, angle: main.angle }));
   const separate = plantsStandApart(main, GF, r);
-  // The surroundings' green share, a box of half the smaller spacing, on the green itself: another cover reads near 1.
-  const GC = boxMean(r, 0.5 * Math.min(main.along, Math.abs(main.across)));
+  // The surroundings' cover share, a box of half the smaller spacing, on cover of any colour (the green itself when the
+  // raster has no cover channel): another cover reads near 1, bare alleys low.
+  const GC = boxMean(r, 0.5 * Math.min(main.along, Math.abs(main.across)), r.cover ?? r.green);
   const coverAt = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? GC[yi * r.w + xi] : 0; };
   const rowPitch = rowPitchOf(main, derived);
   const out: FittedLayout[] = [];
@@ -1110,7 +1121,7 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
     const seeds = seedsFor(L, GF, r, near, 3, presentGreen);
     if (!seeds.length && !anchors.length) continue;
     const grown = growPlants(L, GF, r, seeds, separate, { anchors, noCrop, rowBar, greenAt, coverAt, trace: L === main ? trace : undefined });
-    out.push({ score, rowPitch, ...completeByPattern(r, GF, grown, noCrop, L === main, separate, coverAt) });
+    out.push(holdToRows({ score, rowPitch, ...completeByPattern(r, GF, grown, noCrop, L === main, separate, coverAt) }, r));
   }
   return out.length ? out : [{ score, rowPitch, lattice: main, plants: [], gaps: [], rows: 0, foundShare: 0 }];
 }
@@ -1118,6 +1129,45 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
 /** The clicked planting alone (tests and callers that want one lattice). */
 export function fitLayout(L0: Lattice, r: LayoutRaster): FittedLayout {
   return fitLayoutAll(L0, r)[0];
+}
+
+/**
+ * The straight line through a row's plants: in the lattice's direction, tilted at most ROW_LINE_MAX_TILT_DEG by least
+ * squares, at the plants' median offset across. Coordinates along (t) and across (s) the lattice's basis; the line is
+ * s = sMed + slope * (t - tm).
+ */
+export function rowLineOf(L: Lattice, pts: { x: number; y: number }[]): { tm: number; sMed: number; slope: number } {
+  const { ux, uy, nx, ny } = basis(L);
+  const t = pts.map(q => q.x * ux + q.y * uy), s = pts.map(q => q.x * nx + q.y * ny);
+  const tm = t.reduce((a, b) => a + b, 0) / t.length, sm = s.reduce((a, b) => a + b, 0) / s.length;
+  let stt = 0, sts = 0;
+  for (let i = 0; i < t.length; i++) { stt += (t[i] - tm) ** 2; sts += (t[i] - tm) * (s[i] - sm); }
+  const maxTilt = Math.tan((ROW_LINE_MAX_TILT_DEG * Math.PI) / 180);
+  const slope = stt > L.along * L.along ? Math.max(-maxTilt, Math.min(maxTilt, sts / stt)) : 0;
+  const sMed = [...s].sort((a, b) => a - b)[s.length >> 1];
+  return { tm, sMed, slope };
+}
+
+/** Every plant held to the middle of its row: its centre within acrossHoldM of the row's line, across. The operator's marks stand where they were put. */
+export function holdToRows<T extends { plants: LayoutPlant[]; lattice: Lattice }>(fit: T, r: LayoutRaster): T {
+  const L = fit.lattice, { ux, uy, nx, ny } = basis(L), hold = LAYOUT_PARAMS.acrossHoldM / r.mpp;
+  const by = new Map<number, LayoutPlant[]>();
+  for (const p of fit.plants) (by.get(p.run) ?? by.set(p.run, []).get(p.run)!).push(p);
+  const plants = fit.plants.map(p => ({ ...p }));
+  const byOut = new Map<number, LayoutPlant[]>();
+  for (const p of plants) (byOut.get(p.run) ?? byOut.set(p.run, []).get(p.run)!).push(p);
+  for (const [run, ps] of byOut) {
+    if (ps.length < 2) continue;
+    const line = rowLineOf(L, by.get(run)!);
+    for (const p of ps) {
+      if (p.state === "operator") continue;
+      const t = p.x * ux + p.y * uy, s = p.x * nx + p.y * ny;
+      const sl = line.sMed + line.slope * (t - line.tm);
+      const held = Math.max(sl - hold, Math.min(sl + hold, s));
+      if (held !== s) { p.x = t * ux + held * nx; p.y = t * uy + held * ny; }
+    }
+  }
+  return { ...fit, plants };
 }
 
 /** The point on the row line through (x0, y0) (the lattice's along direction) nearest (cx, cy), moved at most 0.35 of the plant spacing along it. */
@@ -1301,13 +1351,8 @@ export function layoutToFieldRows(f: FittedLayout, r: LayoutRaster): (FieldRows 
     // (a ring beside the line does not bend the row), from half a step before the first plant to half a step past
     // the last.
     const m = [...ps].sort((a, b) => a.i - b.i).map(p => ({ x: p.x * k, y: p.y * k }));
-    const t = m.map(q => q.x * ux + q.y * uy), s = m.map(q => q.x * nx + q.y * ny);
-    const tm = t.reduce((a, b) => a + b, 0) / t.length, sm = s.reduce((a, b) => a + b, 0) / s.length;
-    let stt = 0, sts = 0;
-    for (let i = 0; i < t.length; i++) { stt += (t[i] - tm) ** 2; sts += (t[i] - tm) * (s[i] - sm); }
-    const maxTilt = Math.tan((ROW_LINE_MAX_TILT_DEG * Math.PI) / 180);
-    const slope = stt > step * step ? Math.max(-maxTilt, Math.min(maxTilt, sts / stt)) : 0;
-    const sMed = [...s].sort((a, b) => a - b)[s.length >> 1];
+    const t = m.map(q => q.x * ux + q.y * uy);
+    const { tm, sMed, slope } = rowLineOf({ ...f.lattice, along: step }, m);
     const at = (tt: number) => { const ss = sMed + slope * (tt - tm); return { x: tt * ux + ss * nx, y: tt * uy + ss * ny }; };
     const h = step / 2, a = at(Math.min(...t) - h), z = at(Math.max(...t) + h);
     lines.push({ x1: a.x, y1: a.y, x2: z.x, y2: z.y, band });

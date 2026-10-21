@@ -213,10 +213,12 @@ export async function ensureFieldRows(taskId: string, opts: { reader?: FieldRows
   // The field's planting layout when there is one: fitted on the field read into a coarse raster (kept for the next fit).
   if (layout && layout.blocks.length) {
     try {
+      // Keyed to the fitter's version too: the raster's channels change with it (the mask, the shadow and cover channels).
+      const rasterKey = `${mapKey}|v${LAYOUT_VERSION}`;
       let cached = rastersByTask.get(taskId);
-      if (!cached || cached.key !== mapKey) {
+      if (!cached || cached.key !== rasterKey) {
         const raster = await (opts.rasterReader ?? rowReaders.rasterReader)({ rings, tile: map.tile, maxNative: map.maxNative, lat: map.lat, onProgress: progress });
-        cached = raster ? { key: mapKey, raster } : undefined;
+        cached = raster ? { key: rasterKey, raster } : undefined;
         if (cached) rastersByTask.set(taskId, cached);
       }
       if (cached) {

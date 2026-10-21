@@ -9,7 +9,7 @@ import "./nodeStorageShim";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { encodePng } from "./images";
-import { shadowMask, vegetationMask, fieldRowsFromPixels } from "../../src/lib/weedVision/fieldRows";
+import { coverMask, shadowMask, vegetationMask, fieldRowsFromPixels } from "../../src/lib/weedVision/fieldRows";
 import { rowStatusOf, isOnRow } from "../../src/lib/weedVision/rowFilter";
 import { proposeFromRows, unexplainedGreen } from "../../src/lib/weedVision/layout/readLayout";
 import { mercatorPx } from "../../src/lib/weedVision/mapRun";
@@ -28,7 +28,7 @@ const shadow = argv.includes("--no-shadow") ? undefined : shadowMask({ width: w,
 const k = Math.max(1, Math.round(0.08 / mpp22));
 const X0 = meta.z22.X0, Y0 = meta.z22.Y0;
 const ring: [number, number][] = [[X0, Y0], [X0 + w, Y0], [X0 + w, Y0 + h], [X0, Y0 + h]];
-const r = rasterFromMask(mask, w, h, k, 22, X0, Y0, mpp22, [ring], shadow);
+const r = rasterFromMask(mask, w, h, k, 22, X0, Y0, mpp22, [ring], shadow, coverMask({ width: w, height: h, rgba }));
 const rasterMs = performance.now() - t0;
 const toR = (X23: number, Y23: number): [number, number] => [(X23 / 2 - X0) / k, (Y23 / 2 - Y0) / k];
 

@@ -8,7 +8,7 @@
 // from the refined layout and needs no clicks.
 import { type LatLng2 } from "../../geo";
 import type { PhotoPixels } from "../../photoScout/pattern";
-import { type FieldRows, fieldReadPlan, shadowMask, vegetationMask } from "../fieldRows";
+import { type FieldRows, coverMask, fieldReadPlan, shadowMask, vegetationMask } from "../fieldRows";
 import { latLngOfPx, mercatorPx } from "../mapRun";
 import { drawMapRect } from "../twoStage/stage1";
 import { type FittedLayout, type Lattice, type LayoutRaster, boxMean, fillPolygon, fitLayoutAll, latticeFromClicks, latticeIndex, latticePoint, layoutsToFieldRows, mergeLayouts } from "./plantingLayout";
@@ -41,7 +41,7 @@ export async function readLayoutRaster(input: {
   if (!plan) return null;
   const k = Math.max(1, Math.round(LAYOUT_MPP / plan.mpp));
   const w = Math.ceil(plan.width / k), h = Math.ceil(plan.height / k);
-  const sum = new Uint32Array(w * h), cnt = new Uint32Array(w * h), sumS = new Uint32Array(w * h);
+  const sum = new Uint32Array(w * h), cnt = new Uint32Array(w * h), sumS = new Uint32Array(w * h), sumC = new Uint32Array(w * h);
   const draw = input.draw ?? drawMapRect;
   for (let n = 0; n < plan.tiles.length; n++) {
     if (input.signal?.aborted) return null;
@@ -49,21 +49,21 @@ export async function readLayoutRaster(input: {
     const tw = t.x1 - t.x0, th = t.y1 - t.y0;
     const px = await draw(input.tile, plan.z, plan.left + t.x0, plan.top + t.y0, tw, th, input.signal);
     if (px) {
-      const m = vegetationMask(px), sh = shadowMask(px);
+      const m = vegetationMask(px), sh = shadowMask(px), cv = coverMask(px);
       for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
         if (px.rgba[(y * tw + x) * 4 + 3] === 0) continue;
         const c = Math.floor((t.y0 + y) / k) * w + Math.floor((t.x0 + x) / k), i = y * tw + x;
-        cnt[c]++; sum[c] += m[i]; sumS[c] += sh[i];
+        cnt[c]++; sum[c] += m[i]; sumS[c] += sh[i]; sumC[c] += cv[i];
       }
     }
     input.onProgress?.((n + 1) / plan.tiles.length);
     await new Promise(res => setTimeout(res, 0));
   }
-  const green = new Uint8Array(w * h), shadow = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) { if (!cnt[i]) continue; green[i] = Math.round((255 * sum[i]) / cnt[i]); shadow[i] = Math.round((255 * sumS[i]) / cnt[i]); }
+  const green = new Uint8Array(w * h), shadow = new Uint8Array(w * h), cover = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) { if (!cnt[i]) continue; green[i] = Math.round((255 * sum[i]) / cnt[i]); shadow[i] = Math.round((255 * sumS[i]) / cnt[i]); cover[i] = Math.round((255 * sumC[i]) / cnt[i]); }
   const inField = new Uint8Array(w * h);
   for (const ring of input.rings) fillPolygon(inField, w, h, ring.map(q => { const [X, Y] = mercatorPx(q.lat, q.lng, plan.z); return [(X - plan.left) / k, (Y - plan.top) / k] as [number, number]; }));
-  return { z: plan.z, left: plan.left, top: plan.top, scale: k, mpp: plan.mpp * k, w, h, green, inField, shadow };
+  return { z: plan.z, left: plan.left, top: plan.top, scale: k, mpp: plan.mpp * k, w, h, green, inField, shadow, cover };
 }
 
 const toRaster = (r: LayoutRaster, q: LatLng2): [number, number] => { const [X, Y] = mercatorPx(q.lat, q.lng, r.z); return [(X - r.left) / r.scale, (Y - r.top) / r.scale]; };

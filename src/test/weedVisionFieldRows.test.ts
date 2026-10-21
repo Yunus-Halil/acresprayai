@@ -11,7 +11,20 @@ import type { PhotoPixels } from "@/lib/photoScout/pattern";
 import type { GroundPlant } from "@/lib/weedVision/frames";
 import type { SavedFrameRun } from "@/lib/weedVision/frameRunCache";
 import { ensureFieldRows, getFrameRun, resetFrameRunStore, restoreFrameRun, setFrameRunBoundary, setFrameRunMap } from "@/lib/weedVision/frameRunStore";
-import { type Blob, type FieldRows, READ_OVERLAP_PX, fieldReadPlan, fieldRowStatusAt, fieldRowsFromPixels, fieldRowsFromPlants, joinPieces, piecesOf, plantCandidates, vegetationMask } from "@/lib/weedVision/fieldRows";
+import { type Blob, type FieldRows, READ_OVERLAP_PX, coverMask, fieldReadPlan, fieldRowStatusAt, fieldRowsFromPixels, fieldRowsFromPlants, joinPieces, piecesOf, plantCandidates, vegetationMask } from "@/lib/weedVision/fieldRows";
+
+describe("cover against bare ground", () => {
+  it("counts ripening yellow-green wheat as cover, green leaves as cover, and soil, straw and shadowed soil as bare", () => {
+    const px = (c: [number, number, number]) => ({ width: 1, height: 1, rgba: new Uint8ClampedArray([...c, 255]) });
+    expect(coverMask(px([190, 185, 100]))[0]).toBe(1); // ripening wheat, yellow-green: not a plant to the vegetation mask...
+    expect(vegetationMask(px([190, 185, 100]))[0]).toBe(0); // ...and that is right for "is this a plant"
+    expect(coverMask(px([80, 140, 45]))[0]).toBe(1); // green leaves
+    expect(coverMask(px([150, 122, 92]))[0]).toBe(0); // soil
+    expect(coverMask(px([200, 180, 130]))[0]).toBe(0); // dry straw
+    expect(coverMask(px([62, 56, 46]))[0]).toBe(0); // shadowed soil
+    expect(coverMask({ width: 1, height: 1, rgba: new Uint8ClampedArray([190, 185, 100, 0]) })[0]).toBe(0); // transparent
+  });
+});
 import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
 import { rowStatusOf } from "@/lib/weedVision/rowFilter";
 
