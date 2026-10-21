@@ -5,9 +5,11 @@ import { ROW_SPACINGS_M, nearestPlantedSpacing, pitchAmbiguityNote } from "@/lib
 
 describe("the planting catalogue", () => {
   it("names the frame a fitted orchard matches, Turkey among the regions", () => {
-    const d = describePlanting(3.2, 5.1);
+    const d = describePlanting(3.1, 5.1); // the operator's apricot orchard
     expect(d.matches.length).toBeGreaterThan(0);
-    expect(d.text).toMatch(/apricot|peach|cherry|citrus|almond|pear/);
+    expect(d.matches.some(e => e.crop === "apricot")).toBe(true);
+    expect(d.text).toMatch(/^Trees 3\.1 m apart in rows 5\.1 m apart: the frame shared by apricot/);
+    expect(d.text).toMatch(/Turkey/);
     expect(d.doubt).toBeNull();
     const t = describePlanting(6, 6);
     expect(t.text).toMatch(/Turkey/);

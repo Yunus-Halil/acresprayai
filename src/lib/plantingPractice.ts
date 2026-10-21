@@ -29,6 +29,10 @@ export const ORCHARD_PRACTICE: PracticeEntry[] = [
   { crop: "peach, nectarine", system: "open vase", region: "US", pitchM: [5.5, 6.1], alongM: [3.7, 4.0], stagger: [0] },
   { crop: "apricot", system: "standard rootstock", region: "Turkey", pitchM: [5, 10], alongM: [5, 10], stagger: [0, 0.5] },
   { crop: "apricot", system: "dwarf rootstock", region: "Turkey", pitchM: [3.0, 4.0], alongM: [2.5, 3.5], stagger: [0] },
+  // Not from a bulletin: the operator's own young apricot orchard, read by the fitter on 2026-10-21 at about 3.1 m
+  // along and 5.1 m across, rows aligned. A frame between the brochure's standard and dwarf ones; kept so the field
+  // that proves the fitter is named by its own crop.
+  { crop: "apricot", system: "young orchard, as observed", region: "Turkey (the operator's orchard)", pitchM: [4.5, 6.0], alongM: [2.6, 3.8], stagger: [0] },
   { crop: "apricot, peach, plum", system: "standard", region: "US", pitchM: [5.0, 6.0], alongM: [3.4, 4.0], stagger: [0] },
   { crop: "plum, prune", system: "standard", region: "US", pitchM: [3.7, 7.6], alongM: [3.7, 7.6], stagger: [0, 0.5] },
   { crop: "sweet cherry", system: "mahaleb or standard", region: "Turkey", pitchM: [5, 8], alongM: [4, 8], stagger: [0, 0.5] },
