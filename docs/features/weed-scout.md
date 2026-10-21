@@ -375,3 +375,31 @@ detector" (the confidence cut appears for RF-DETR), press **Run model on this ph
 service; weeds are outlined yellow with their confidence, crop plants cyan dashed, on the photo itself. The same plants
 are placed on the map and saved like a batch run's photo (`addFrameDetections` in `frameRunStore.ts`), so the batch run
 later skips that photo under the same settings.
+
+## The row model after the literature sweeps (2026-10-21)
+
+`src/lib/weedScout/rows.ts`, read against `docs/research/row-crop-detection-methods.md`:
+
+- **Pitch**: the finest interior autocorrelation peak within three quarters of the strongest that stands over a
+  valley of its own is the pitch (the true spacing is the finest at which the pattern keeps appearing; a twin row or
+  an alternate weaker row makes the double pitch the stronger peak); when the finest and the strongest differ, the
+  strongest is reported as the alternative (`pitchAlternativeM`). The plain, declining normalisation is kept on
+  purpose: with the overlap-corrected one every multiple of the period peaks alike and the fundamental is lost
+  (tried and reverted the same day). A grower's spacing still outranks a reading that disagrees by more than a tenth;
+  when the profile's other peak is the grower's spacing the confidence stands, otherwise it is halved as before.
+- **Planted spacings** (`ROW_SPACINGS_M`): corn, soybean, cotton and wheat at the spacings growers plant, and the
+  sprayer boom widths a tramline repeats at; `pitchAmbiguityNote` turns a second supported pitch into a sentence
+  (twin rows, an interplanted row, every second row, a tramline). The photo pass adds that note when most windows with
+  rows carry an alternative.
+- **The coherence gate** (`MIN_ROW_COHERENCE` 0.15): the length of the phase's circular mean says how much of the
+  green sits in step with the rows (1 on the centrelines, 0.64 for rows half a pitch wide, 0 for a uniform spread).
+  Under it the window is no rows, however sharp the angle looked. Judged only on a measured pitch; at a given or
+  candidate spacing the coherence says nothing. The photo pass falls through to brightness when the vegetation fit is
+  gated, which is how a closed canopy, whose chromaticity mask is shadow-blind and reads as noise, gets its rows from
+  the light and shadow instead.
+- **Row lines settle twice** (`photoScout/pattern.ts`, `ROW_LINE_OUTLIER_SHARE`): the second pass weighs each pixel
+  down by how far it stood from the first line (Tukey's biweight, nothing beyond three quarters of the band), so a weed
+  clump at the band's edge no longer drags a plain least-squares line toward it.
+- Blocks of different direction and pitch, and curved rows as piecewise straight windows with the neighbour's angle
+  as hint, were already there (`BLOCK_ANGLE_DEG`, `BLOCK_PITCH_TOL`, the second pass with the median angle).
+

@@ -41,7 +41,7 @@ import { shorth } from "../weedScout/baseline";
 import { minAreaPx } from "../weedScout/blobs";
 import {
   type FloatImage, HINT_SEARCH_DEG, MIN_TILE_CONFIDENCE, VEGETATION_FRACTION_RANGE, checkPitch, downsampleFactor, fitWindow,
-  groundAngleToPixel, phaseFromImage, pixelAngleToGround, poolWindow, projectionProfile, rowAngle, rowPitch, toSparse,
+  groundAngleToPixel, phaseFromImage, pitchAmbiguityNote, pixelAngleToGround, poolWindow, projectionProfile, rowAngle, rowPitch, toSparse,
 } from "../weedScout/rows";
 import type { RowTileFit } from "../weedScout/types";
 import { globalThreshold, indexRaster, maskWindow } from "../weedScout/vegetation";
@@ -124,6 +124,8 @@ export const BLOCK_EDGE_TOL = 0.25;
 export const BLOCK_HALF_PITCH_SHARE = 0.7;
 /** Each row line settles on the vegetation within this fraction of a spacing of the block's line for it. */
 export const ROW_LINE_BAND = 1 / 3;
+/** In the settling's second pass, vegetation further than this share of the band from the first line is an outlier and weighs nothing. */
+export const ROW_LINE_OUTLIER_SHARE = 0.75;
 /** A row line is refined only from at least this much pooled vegetation, spread over at least one spacing along the row. */
 export const ROW_LINE_MIN_MASS = 30;
 /** A row line may tilt at most this far from the block's direction, degrees. */
@@ -778,15 +780,20 @@ export function fitWindowBrightness(input: SoftFitInput): RowTileFit {
   const hintPx = input.angleHintDeg == null ? null : groundAngleToPixel(input.angleHintDeg);
   const { anglePxDeg, confidence: angleConfidence } = rowAngle(sp, { hintPxDeg: hintPx });
   const { profile } = projectionProfile(sp, anglePxDeg);
-  const { pitchM: recovered, confidence: rawPitchConf } = rowPitch(profile, sampleM, growerSpacingM);
-  let pitchM = recovered, pitchConfidence = rawPitchConf, pitchFromGrower = false;
-  if (!checkPitch(recovered, growerSpacingM)) { pitchM = growerSpacingM; pitchConfidence *= 0.5; pitchFromGrower = true; }
+  const { pitchM: recovered, confidence: rawPitchConf, alternativeM } = rowPitch(profile, sampleM, growerSpacingM);
+  let pitchM = recovered, pitchConfidence = rawPitchConf, pitchFromGrower = false, pitchAlternativeM = alternativeM;
+  if (!checkPitch(recovered, growerSpacingM)) {
+    pitchM = growerSpacingM; pitchFromGrower = true;
+    if (alternativeM != null && checkPitch(alternativeM, growerSpacingM)) pitchAlternativeM = recovered;
+    else pitchConfidence *= 0.5;
+  }
   const angleDeg = pixelAngleToGround(anglePxDeg);
   const phaseM = phaseFromImage(sp, toGround, centre.x, centre.y, angleDeg, pitchM);
+  // No concentration gate on brightness: a closed canopy's light-and-shadow stripes are rows by their period alone.
   return {
     centre, sizeM, angleDeg, pitchM, phaseM,
     confidence: Math.min(angleConfidence, pitchConfidence), angleConfidence, pitchConfidence,
-    vegetationFraction: input.vegetationFraction, pitchFromGrower, recoveredPitchM: recovered,
+    vegetationFraction: input.vegetationFraction, pitchFromGrower, recoveredPitchM: recovered, pitchAlternativeM,
   };
 }
 
@@ -1016,8 +1023,10 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     };
     const fits: Fitted[] = [];
     for (const c of candidates) {
+      // Brightness when the mask cannot carry rows, and when it could but its green does not sit in step with the
+      // rows it found (the coherence gate): a closed canopy's chromaticity mask is shadow-blind and reads as noise.
       const v = at(c, "vegetation");
-      fits.push(v ?? at(c, "brightness")!);
+      fits.push(v && v.fit.confidence > 0 ? v : at(c, "brightness")!);
     }
     // Second pass, auto only: every spacing a first-pass fit measured but
     // could not stand on (more than ten percent from its candidate) is tried
@@ -1379,32 +1388,52 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     // ROW_LINE_BAND of the model's line for that row, a straight line
     // through it (offset and tilt about the model), so rows that fan or
     // sit unevenly each get a line through them and not beside them.
+    // Fitted twice: the second pass weighs each pixel down by how far it
+    // stood from the first line (Tukey's biweight, zero beyond
+    // ROW_LINE_OUTLIER_SHARE of the band), so a weed clump at the band's
+    // edge, which pulled a plain least-squares line toward it, does not
+    // (Chen 2021, Khan 2024: gated and robust per-row fits beat plain LSQ).
     const settle = (mm: BlockModel): RowLine[] => {
       const t = (mm.angleDeg * Math.PI) / 180, nx = -Math.sin(t), ny = Math.cos(t), tx = Math.cos(t), ty = Math.sin(t);
-      const acc = new Map<number, { w: number; sl: number; sr: number; sll: number; slr: number }>();
-      for (let i = 0; i < sp.xs.length; i++) {
-        const g = toGround(sp.xs[i], sp.ys[i]), v = sp.vals[i];
-        const along = (g.x - mm.ref.x) * tx + (g.y - mm.ref.y) * ty;
-        const across = (g.x - mm.ref.x) * nx + (g.y - mm.ref.y) * ny - mm.phaseM;
-        const k = Math.round(across / mm.pitchM), r = across - k * mm.pitchM;
-        if (Math.abs(r) > ROW_LINE_BAND * mm.pitchM) continue;
-        let a = acc.get(k);
-        if (!a) { a = { w: 0, sl: 0, sr: 0, sll: 0, slr: 0 }; acc.set(k, a); }
-        a.w += v; a.sl += v * along; a.sr += v * r; a.sll += v * along * along; a.slr += v * along * r;
-      }
-      const lines: RowLine[] = [];
+      const band = ROW_LINE_BAND * mm.pitchM, cut = ROW_LINE_OUTLIER_SHARE * band;
       const maxSlope = Math.tan((ROW_LINE_MAX_TILT_DEG * Math.PI) / 180);
-      for (const [k, a] of acc) {
-        if (a.w < ROW_LINE_MIN_MASS) continue;
-        const lm = a.sl / a.w, rm = a.sr / a.w;
-        const sll = a.sll - a.w * lm * lm, slr = a.slr - a.w * lm * rm;
-        // Spread along the row of at least one spacing before a tilt is believed.
-        let slope = sll > mm.pitchM * mm.pitchM * a.w ? slr / sll : 0;
-        slope = Math.max(-maxSlope, Math.min(maxSlope, slope));
-        const offsetM = Math.max(-ROW_LINE_BAND * mm.pitchM, Math.min(ROW_LINE_BAND * mm.pitchM, rm - slope * lm));
-        lines.push({ index: k, offsetM, slope });
-      }
-      return lines;
+      const pass = (prev: Map<number, RowLine> | null): Map<number, RowLine> => {
+        const acc = new Map<number, { w: number; sl: number; sr: number; sll: number; slr: number }>();
+        for (let i = 0; i < sp.xs.length; i++) {
+          const g = toGround(sp.xs[i], sp.ys[i]);
+          const along = (g.x - mm.ref.x) * tx + (g.y - mm.ref.y) * ty;
+          const across = (g.x - mm.ref.x) * nx + (g.y - mm.ref.y) * ny - mm.phaseM;
+          const k = Math.round(across / mm.pitchM), r = across - k * mm.pitchM;
+          if (Math.abs(r) > band) continue;
+          let v = sp.vals[i];
+          if (prev) {
+            const line = prev.get(k);
+            const res = line ? r - (line.offsetM + line.slope * along) : r;
+            if (Math.abs(res) >= cut) continue;
+            const u = res / cut;
+            v *= (1 - u * u) * (1 - u * u);
+          }
+          let a = acc.get(k);
+          if (!a) { a = { w: 0, sl: 0, sr: 0, sll: 0, slr: 0 }; acc.set(k, a); }
+          a.w += v; a.sl += v * along; a.sr += v * r; a.sll += v * along * along; a.slr += v * along * r;
+        }
+        const lines = new Map<number, RowLine>();
+        for (const [k, a] of acc) {
+          if (a.w < ROW_LINE_MIN_MASS) continue;
+          const lm = a.sl / a.w, rm = a.sr / a.w;
+          const sll = a.sll - a.w * lm * lm, slr = a.slr - a.w * lm * rm;
+          // Spread along the row of at least one spacing before a tilt is believed.
+          let slope = sll > mm.pitchM * mm.pitchM * a.w ? slr / sll : 0;
+          slope = Math.max(-maxSlope, Math.min(maxSlope, slope));
+          const offsetM = Math.max(-band, Math.min(band, rm - slope * lm));
+          lines.set(k, { index: k, offsetM, slope });
+        }
+        return lines;
+      };
+      const first = pass(null);
+      const second = pass(first);
+      // A row the second pass lost (its mass fell under the floor once the outliers were cut) keeps its first line.
+      return [...first.values()].map(l => second.get(l.index) ?? l);
     };
     if (sp.xs.length < 64) return { model: m, rowLines: [] };
     const found = rowAngle(sp, { hintPxDeg: groundAngleToPixel(m.angleDeg) });
@@ -1632,6 +1661,14 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   }
   if (summary.brightnessWindows > 0) {
     notes.push(`${summary.brightnessWindows} of ${usable.length} windows with rows found them from brightness, not from vegetation against soil: the canopy is closed or nearly so there. The lines are the plant rows; blob classes in those windows are weaker evidence.`);
+  }
+  {
+    // A second pitch the profiles also support, in most windows with rows: twin rows, every second row, a tramline.
+    const twice = usable.filter(w => w.fit.pitchAlternativeM != null);
+    if (twice.length * 2 > usable.length && usable.length > 0) {
+      const alt = median(twice.map(w => w.fit.pitchAlternativeM!))!, pitch = median(twice.map(w => w.fit.pitchM))!;
+      notes.push(pitchAmbiguityNote(pitch, alt));
+    }
   }
   if (usable.length > 0 && seeds.length === 0) {
     notes.push("Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants.");

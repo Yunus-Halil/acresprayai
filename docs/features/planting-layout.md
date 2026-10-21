@@ -61,6 +61,50 @@ as weeds.
 6. Saved per field (table `field_planting_layouts`, and this browser as a fallback) as the refined lattice's own three
    points, so the next scan of the field needs no clicks.
 
+## The signal under the lattice, and where it holds (2026-10-21)
+
+Built after the literature sweeps in `docs/research/row-crop-detection-methods.md` and measured on the six grassed
+olive frames of `docs/research/olive-orchard-fitter-trial.md` (where the fitter had found 3 of 820 trees) and on
+DJI_0301 (bare ground, 104 labelled trees).
+
+1. **The mask is excess green minus excess red at a fixed zero** (`fieldRows.ts`, `VEGETATION_INDEX`), not excess
+   green with Otsu's split. Otsu assumes two balanced classes and on a scene that is mostly lit ground it paints the
+   sward greener than the crowns (DJI_0380: 0.48 inside the labelled crowns, 0.64 outside). The fixed bar reads the
+   crowns at 0.88 and the sward at 0.76 on the same frame, 0.94 against 0.82 at tree centres against the midpoints
+   between trees. On DJI_0301 nothing changed (94 to 95 of 104 trees matched within 0.6 m; 35 to 36 labelled weeds
+   taken for crop).
+2. **The crown vote** (`crownVote`): the lattice is fitted and presence judged on green weighed by the spread of green
+   and the shadow share within a crown radius; the rings are still measured on the green itself. On bare ground the
+   crowns have edges, so nothing changes; on a sward the vote is quieter. Measured on the olive frames, neither texture
+   nor shadow told crown from sward at 9 cm a cell (luma spread 23.4 against 23.3, shadow share 0.13 against 0.14),
+   and a per-field colour witness learnt from the three marks (blue share and saturation separate olive canopy from
+   sward by 0.6 to 0.8 of the field's spread) read the wrong way on one frame of two, so it was taken out. The vote
+   stays because it costs nothing on bare ground and helped on the swards once the two rules below held the phase
+   (DJI_0380: 55 trees with it, 33 without).
+3. **The marks hold the lattice** (`refineLattice`, `latticeHoldM` 0.5 m): a refined lattice that puts a clicked tree
+   further than half a metre from a lattice point is not a candidate. The free descent had walked the origin 0.7 to
+   1.4 m off the clicked tree on every olive frame, since the score landscape on a sward is flat, and the planting
+   followed.
+4. **A plant leaves its slot only for clearly greener ground** (`moveGain` 2): the greenest spot in the search box
+   takes the plant only when it is twice as green as the slot itself. On a sward the greenest patch is 1.3 to 1.5 times
+   the slot and the plants used to walk onto it; a tree beside its slot on bare ground is three to twelve times
+   greener, so DJI_0301 is unchanged at any setting.
+
+| Frame | Labelled trees | Found within 0.6 m, before | After (gain 2, vote, hold) | Clicks' lattice alone within 0.6 m |
+|---|---|---|---|---|
+| DJI_0365 | 143 | 0 | 43 | 37 |
+| DJI_0369 | 155 | 1 | 54 | n/m |
+| DJI_0380 | 186 | 0 | 55 | 89 |
+| DJI_0386 | 115 | 0 | 19 | n/m |
+| DJI_0395 | 94 | 2 | 5 | 7 (the clicks were on the wrong neighbour: 6.0 m along for a 5.3 m grid) |
+| DJI_0407 | 127 | 0 | 22 | n/m |
+
+198 of 820 against 3. What is left on grass is not the signal but the lattice: a rigid lattice from three clicks
+matches only a quarter to a half of the trees within 0.6 m over a 100 m frame (the planting drifts), and on a sward the
+growth cannot follow the drift because there is no green contrast to follow. Rings on grass sit at the half-spacing
+cap (median 2.4 m) because every crown's green merges with the sward; a ring there says where the planting stands, not
+how big the crown is. On bare ground the rings are the crowns (DJI_0301: 98% of the joined green inside the ring).
+
 ## Measured on the five orchard frames (stand-in maps; not the orthomosaic)
 
 | Frame | How marked | Rows | Trees found (first build / spacing rule / interior scan) | Gaps | Uncovered tree-sized patches |

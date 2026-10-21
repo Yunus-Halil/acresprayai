@@ -233,9 +233,9 @@ describe("what stands at each position: a crop by the pattern unless the ground 
     const atSlot = fit.plants.find(p => Math.hypot(p.x * MPP - mx, p.y * MPP - my) <= 0.9);
     expect(atSlot).toBeDefined();
     if (atSlot!.state === "confirmed") expect(atSlot!.merged).toBe(true);
-    expect(atSlot!.r * MPP).toBeLessThan(1.2);
+    expect(atSlot!.r * MPP).toBeLessThan(1.45); // under the planting's reach (0.45 of the 3.2 m spacing), never the merged 1.7 m
     expect(fit.gaps.some(g => Math.hypot(g.x * MPP - mx, g.y * MPP - my) <= 0.9)).toBe(false);
-    expect(fit.plants.every(p => p.r * MPP < 1.2)).toBe(true); // no canopy as wide as the merged green
+    expect(fit.plants.every(p => p.r * MPP < 1.45)).toBe(true); // no canopy as wide as the merged green
     // Full trees are confirmed: at most the young tree, the weed at a tree's place and the swollen crown are "expected".
     expect(fit.plants.filter(p => p.state !== "confirmed").length).toBeLessThanOrEqual(3);
     // A weed standing exactly at a planted position is that position's crop by the pattern: a plant, drawn like one,

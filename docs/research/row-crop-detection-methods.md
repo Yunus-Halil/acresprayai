@@ -114,15 +114,26 @@ Datasets with row-line or plant truth: CRDLD v2.1 (ground robot, licence not sta
 CC BY 4.0, zenodo 4890370), PhenoBench, WeedsGalore, WeedMap (orthomosaics), Agriculture-Vision (no row lines). No
 public UAV orthomosaic with row-line truth for corn, soy, cotton or wheat was found.
 
-## Improvement order built from this (each a visible layer, checked by eye)
+## What was built from this, and what was measured (2026-10-21)
 
-1. On-row positions are crops; skips only on bare ground (built 2026-10-21).
-2. Plant signal: ExGR at a fixed threshold; luma or hue for the angle step in a closed canopy.
-3. Orchard crown score from texture, cast shadow and crown shape, replacing box-mean green as the lattice vote.
-4. Pitch: windowed, interpolated peak, checked against crop-prior spacings with an ambiguity flag.
-5. Validity gate: a window whose "rows" look like weeds is reported as no rows.
-6. Blocks and curves from a per-window orientation map; curves as piecewise straight.
-7. Per-row fit gated to the pitch with outlier rejection.
+1. On-row positions are crops; skips only on bare ground. Built. DJI_0301: 113 plants, 94 of 104 labelled trees.
+2. Plant signal: ExGR at a fixed zero replaces ExG + Otsu in the weed-vision mask. Built. On the grassed olive
+   frames it reverses the mask's polarity (crowns 0.88 against sward 0.76 where Otsu gave 0.48 against 0.64).
+3. Orchard crown score. Built as texture + shadow within a crown radius; measured on the olive frames neither
+   discriminated (luma spread 23.4 vs 23.3; shadow 0.13 vs 0.14), and a per-field colour witness from the three
+   marks read the wrong way on one frame of two and was removed. What held the lattice on grass was two rules in the
+   fitter instead: the marks hold the lattice (0.5 m), and a plant leaves its slot only for ground twice as green.
+   Olive: 198 of 820 trees within 0.6 m against 3; the residual is planting drift a rigid three-click lattice cannot
+   follow without contrast (`docs/features/planting-layout.md`).
+4. Pitch: finest prominent peak within 0.75 of the strongest, alternative reported, planted-spacing table and an
+   ambiguity note. Built. A Hann taper and an overlap-corrected autocorrelation were tried and reverted: with them a
+   low-lag bump beat the true peak, and every multiple peaked alike.
+5. Validity gate: the coherence of the phase (circular-mean length) under 0.15 means no rows; applied on measured
+   pitches only; the photo pass falls through to brightness when a vegetation fit is gated. Built. It exposed that one
+   closed-canopy test had passed on a 1% modulation of a shadow-blind mask.
+6. Blocks and curves: already in the photo pass (blocks by angle and pitch, per-window angles with the median as
+   hint). Verified, not rebuilt.
+7. Per-row fit: a second settling pass with Tukey's biweight over the first line. Built.
 
 Out of scope by evidence: row-crop geometry after canopy closure, individual plants under about 1 cm/px, drilled-wheat
 plants, in-row weeds under canopy.

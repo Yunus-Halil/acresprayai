@@ -55,6 +55,54 @@ export const DEFAULT_ROW_WINDOW_M = 12;
 export const VEGETATION_FRACTION_RANGE: [number, number] = [0.01, 0.85];
 /** Half-width of the angle search when a hint is supplied, degrees. */
 export const HINT_SEARCH_DEG = 4;
+/**
+ * The pitch is the FINEST lag whose autocorrelation peak stands at least this share of the strongest peak: a periodic
+ * profile peaks at every multiple of its period, and the strongest peak is not always the first (a weak alternate
+ * row, a twin row). The finest spacing at which the pattern keeps appearing is the planting's; the strongest, when it
+ * is another, is reported as the alternative.
+ */
+export const FUNDAMENTAL_PEAK_SHARE = 0.75;
+/** A finer peak counts only when it stands at least this far above the lowest value between it and the strongest peak. */
+export const PEAK_PROMINENCE = 0.1;
+/**
+ * The row-coherence gate. The phase is a circular mean of exp(2 pi i across / pitch) over the vegetation; the length
+ * of that mean (0 to 1) says how much of the green sits in step with the rows: 1 when all of it is on the
+ * centrelines, 0.64 for rows half a pitch wide, 0.23 for rows four fifths of a pitch wide, and nothing for a uniform
+ * spread (weeds alone, a closed canopy, no planting), however sharp the angle looked. Under this the window is
+ * reported as no rows (RoWeeder 2024 and Moldvai 2025 gate the same way; docs/research/row-crop-detection-methods.md).
+ */
+export const MIN_ROW_COHERENCE = 0.15;
+
+/**
+ * Row spacings growers plant, metres, by crop: the priors a measured pitch is read against. Corn, soybean and cotton
+ * at 30 inches in most of the US, soybean also at 15 and 20 inches and drilled at 7.5; cotton at 38 and 40 inches in
+ * the South; wheat drilled at 6 to 10 inches; sprayer tramlines (the periodic feature a wheel track makes) at the
+ * boom widths. A pitch that lands on one of these at double or half the measured one is the ambiguity flagged.
+ */
+export const ROW_SPACINGS_M: Record<string, number[]> = {
+  corn: [0.762, 0.508, 0.559],
+  soybean: [0.762, 0.508, 0.381, 0.19],
+  cotton: [0.965, 1.016, 0.762],
+  wheat: [0.19, 0.152, 0.254],
+  tramline: [18, 24, 27, 30, 36],
+};
+/** The nearest planted spacing to a pitch within 10%, with its crop, or null. */
+export function nearestPlantedSpacing(pitchM: number): { crop: string; spacingM: number } | null {
+  let best: { crop: string; spacingM: number } | null = null, bestErr = 0.1;
+  for (const [crop, list] of Object.entries(ROW_SPACINGS_M)) for (const s of list) { const e = Math.abs(pitchM - s) / s; if (e < bestErr) { bestErr = e; best = { crop, spacingM: s }; } }
+  return best;
+}
+/** What a second supported pitch most likely means, for the notes. */
+export function pitchAmbiguityNote(pitchM: number, alternativeM: number): string {
+  const fine = Math.min(pitchM, alternativeM), coarse = Math.max(pitchM, alternativeM);
+  const cm = (m: number) => `${Math.round(m * 100)} cm`;
+  const known = nearestPlantedSpacing(coarse);
+  const half = Math.abs(fine * 2 - coarse) / coarse < 0.15;
+  const tramline = ROW_SPACINGS_M.tramline.some(t => Math.abs(coarse - t) / t < 0.1);
+  if (tramline) return `Rows read at ${cm(fine)}, with a pattern also at ${cm(coarse)}: a tramline or wheel track every ${cm(coarse)}, not a row.`;
+  if (half) return `Rows read at ${cm(fine)}, with a pattern nearly as strong at ${cm(coarse)}${known ? ` (${known.crop} at ${cm(known.spacingM)})` : ""}: twin rows, an interplanted row, or every second row standing out. The finer spacing is taken; check it on the map.`;
+  return `Rows read at ${cm(pitchM)}, with a pattern also at ${cm(alternativeM)}: check which is the planting on the map.`;
+}
 
 const clip01 = (v: number) => Math.max(0, Math.min(1, v));
 const median = (xs: number[]): number => {
@@ -242,25 +290,38 @@ export const groundAngleToPixel = (angleGroundDeg: number): number => norm180(-a
 
 /**
  * Row spacing from the perpendicular profile, by autocorrelation inside the
- * plausible band. Returns metres, and a confidence from how much the chosen
- * lag stands above the typical lag in the band.
+ * plausible band. Returns metres, a confidence from how much the chosen lag
+ * stands above the typical lag in the band, and the alternative pitch when
+ * the profile supports a second one.
+ *
+ * The autocorrelation keeps the plain (biased) normalisation on purpose: it
+ * declines with the lag, so among the equal peaks of a periodic profile the
+ * fundamental stands highest by itself. The peak is refined by a parabola
+ * through its neighbours, so the pitch is not quantised to the sample (at
+ * 5 cm/px a 76 cm row is 15 samples, a 20 cm drill 4). The pitch taken is the FINEST interior peak within
+ * FUNDAMENTAL_PEAK_SHARE of the strongest that stands over a valley of its own
+ * (PEAK_PROMINENCE): the true spacing is the finest one at which the pattern
+ * keeps appearing (a twin row or an alternate weaker row makes the double
+ * pitch the stronger peak), while a bump on the way down to the strongest
+ * peak is not a period. When the finest and the strongest differ, the
+ * strongest is the alternative.
  */
 export function rowPitch(
   profile: Float64Array, sampleM: number, nominalSpacingM: number,
-): { pitchM: number; confidence: number } {
+): { pitchM: number; confidence: number; alternativeM: number | null } {
   const vals: number[] = [];
   for (let i = 0; i < profile.length; i++) if (Number.isFinite(profile[i])) vals.push(profile[i]);
   const n = vals.length;
-  if (n < 8) return { pitchM: nominalSpacingM, confidence: 0 };
+  if (n < 8) return { pitchM: nominalSpacingM, confidence: 0, alternativeM: null };
   const m = vals.reduce((a, b) => a + b, 0) / n;
   const c = vals.map(v => v - m);
   let var0 = 0;
   for (const v of c) var0 += v * v;
-  if (var0 <= 0) return { pitchM: nominalSpacingM, confidence: 0 };
+  if (var0 <= 0) return { pitchM: nominalSpacingM, confidence: 0, alternativeM: null };
 
   const low = Math.max(2, Math.floor((nominalSpacingM * PITCH_SEARCH_BAND[0]) / sampleM));
   const high = Math.min(Math.floor(n / 3), Math.ceil((nominalSpacingM * PITCH_SEARCH_BAND[1]) / sampleM));
-  if (high <= low) return { pitchM: nominalSpacingM, confidence: 0 };
+  if (high <= low) return { pitchM: nominalSpacingM, confidence: 0, alternativeM: null };
 
   const r: number[] = [];
   for (let lag = low; lag <= high; lag++) {
@@ -268,28 +329,25 @@ export function rowPitch(
     for (let i = 0; i + lag < n; i++) s += c[i] * c[i + lag];
     r.push(s / var0);
   }
-  // The best INTERIOR maximum. Autocorrelation of texture that is not
-  // periodic falls away from lag zero, so the smallest allowed lag is the
-  // largest value in the band whenever there is no row pattern at all; on
-  // real photos that chose the band's lower edge in nearly every window and
+  // INTERIOR maxima only. Autocorrelation of texture that is not periodic
+  // falls away from lag zero, so the smallest allowed lag is the largest
+  // value in the band whenever there is no row pattern at all; on real
+  // photos that chose the band's lower edge in nearly every window and
   // called it rows. A maximum on the band's edge is not a peak.
-  let bi = -1;
-  for (let i = 1; i < r.length - 1; i++) {
-    if (r[i] < r[i - 1] || r[i] < r[i + 1]) continue;
-    if (bi < 0 || r[i] > r[bi]) bi = i;
-  }
-  if (bi < 0) return { pitchM: nominalSpacingM, confidence: 0 };
-  let lag = low + bi;
-  {
-    const a = r[bi - 1], b = r[bi], d = r[bi + 1];
-    const denom = a - 2 * b + d;
-    if (denom < 0) lag += 0.5 * (a - d) / denom;
-  }
+  const peaks: number[] = [];
+  for (let i = 1; i < r.length - 1; i++) if (r[i] >= r[i - 1] && r[i] >= r[i + 1]) peaks.push(i);
+  if (!peaks.length) return { pitchM: nominalSpacingM, confidence: 0, alternativeM: null };
+  const strongest = peaks.reduce((a, b) => (r[b] > r[a] ? b : a));
+  const prominent = (i: number) => { let valley = r[i]; for (let j = i; j <= strongest; j++) valley = Math.min(valley, r[j]); return r[i] - valley >= PEAK_PROMINENCE; };
+  const bi = peaks.find(i => i === strongest || (r[i] >= FUNDAMENTAL_PEAK_SHARE * r[strongest] && prominent(i))) ?? strongest;
+  const refine = (i: number) => { let lag = low + i; const a = r[i - 1], b = r[i], d = r[i + 1]; const denom = a - 2 * b + d; if (denom < 0) lag += 0.5 * (a - d) / denom; return lag * sampleM; };
   const peak = r[bi];
   const typical = median(r);
   const confidence = peak <= 0 ? 0 : clip01((peak - typical) / (Math.abs(peak) + Math.abs(typical) + 1e-9));
-  return { pitchM: lag * sampleM, confidence };
+  return { pitchM: refine(bi), confidence, alternativeM: bi === strongest ? null : refine(strongest) };
 }
+
+
 
 /** Does the recovered pitch agree with what the grower planted? */
 export function checkPitch(recoveredM: number, growerM: number): boolean {
@@ -311,7 +369,17 @@ export function phaseFromImage(
   cx: number, cy: number,
   angleGroundDeg: number, pitchM: number,
 ): number {
-  if (!(pitchM > 0)) return 0;
+  return phaseAndCoherence(sp, toGround, cx, cy, angleGroundDeg, pitchM).phaseM;
+}
+
+/** The phase as phaseFromImage, with the length of the circular mean (0 to 1): how much of the green sits in step with the rows. */
+export function phaseAndCoherence(
+  sp: SparseImage,
+  toGround: (px: number, py: number) => { x: number; y: number },
+  cx: number, cy: number,
+  angleGroundDeg: number, pitchM: number,
+): { phaseM: number; coherence: number } {
+  if (!(pitchM > 0) || !(sp.total > 0)) return { phaseM: 0, coherence: 0 };
   const th = (angleGroundDeg * Math.PI) / 180;
   const nx = -Math.sin(th), ny = Math.cos(th);
   let re = 0, im = 0;
@@ -322,9 +390,9 @@ export function phaseFromImage(
     re += sp.vals[i] * Math.cos(ang);
     im += sp.vals[i] * Math.sin(ang);
   }
-  if (re === 0 && im === 0) return 0;
+  if (re === 0 && im === 0) return { phaseM: 0, coherence: 0 };
   const ph = (Math.atan2(im, re) / (2 * Math.PI)) * pitchM;
-  return ((ph % pitchM) + pitchM) % pitchM;
+  return { phaseM: ((ph % pitchM) + pitchM) % pitchM, coherence: Math.hypot(re, im) / sp.total };
 }
 
 /** Signed metres from a point to the nearest centreline of one fitted window. */
@@ -379,7 +447,7 @@ export function fitWindow(input: FitWindowInput): RowTileFit {
   const empty: RowTileFit = {
     centre, sizeM, angleDeg: 0, pitchM: growerSpacingM, phaseM: 0,
     confidence: 0, angleConfidence: 0, pitchConfidence: 0,
-    vegetationFraction, pitchFromGrower: true, recoveredPitchM: 0,
+    vegetationFraction, pitchFromGrower: true, recoveredPitchM: 0, pitchAlternativeM: null, rowCoherence: 0,
   };
   if (img.width < 8 || img.height < 8) return empty;
   if (vegetationFraction < VEGETATION_FRACTION_RANGE[0] || vegetationFraction > VEGETATION_FRACTION_RANGE[1]) return empty;
@@ -388,20 +456,27 @@ export function fitWindow(input: FitWindowInput): RowTileFit {
   const hintPx = input.angleHintDeg == null ? null : groundAngleToPixel(input.angleHintDeg);
   const { anglePxDeg, confidence: angleConfidence } = rowAngle(sp, { hintPxDeg: hintPx });
   const { profile } = projectionProfile(sp, anglePxDeg);
-  const { pitchM: recovered, confidence: rawPitchConf } = rowPitch(profile, sampleM, growerSpacingM);
-  let pitchM = recovered, pitchConfidence = rawPitchConf, pitchFromGrower = false;
+  const { pitchM: recovered, confidence: rawPitchConf, alternativeM } = rowPitch(profile, sampleM, growerSpacingM);
+  let pitchM = recovered, pitchConfidence = rawPitchConf, pitchFromGrower = false, pitchAlternativeM = alternativeM;
   if (!checkPitch(recovered, growerSpacingM)) {
-    pitchM = growerSpacingM;
-    pitchConfidence *= 0.5;
-    pitchFromGrower = true;
+    // The grower's spacing outranks a reading that disagrees by more than a tenth: a harmonic. The grower's number is
+    // kept; when the profile's other peak IS the grower's spacing the confidence stands (the finer reading is the
+    // alternative to report), otherwise it is halved.
+    pitchM = growerSpacingM; pitchFromGrower = true;
+    if (alternativeM != null && checkPitch(alternativeM, growerSpacingM)) pitchAlternativeM = recovered;
+    else pitchConfidence *= 0.5;
   }
   const angleDeg = pixelAngleToGround(anglePxDeg);
-  const phaseM = phaseFromImage(sp, toGround, centre.x, centre.y, angleDeg, pitchM);
+  const { phaseM, coherence: rowCoherence } = phaseAndCoherence(sp, toGround, centre.x, centre.y, angleDeg, pitchM);
+  // The gate: green that does not sit in step with the rows is not rows, however sharp the angle looked. Judged only
+  // on the measured pitch: at a pitch the grower gave (or a candidate the automatic search is trying) the coherence
+  // says nothing about the field, and the halved confidence already marks the disagreement.
+  const confidence = !pitchFromGrower && rowCoherence < MIN_ROW_COHERENCE ? 0 : Math.min(angleConfidence, pitchConfidence);
   return {
     centre, sizeM, angleDeg, pitchM, phaseM,
-    confidence: Math.min(angleConfidence, pitchConfidence),
+    confidence,
     angleConfidence, pitchConfidence,
-    vegetationFraction, pitchFromGrower, recoveredPitchM: recovered,
+    vegetationFraction, pitchFromGrower, recoveredPitchM: recovered, pitchAlternativeM, rowCoherence,
   };
 }
 

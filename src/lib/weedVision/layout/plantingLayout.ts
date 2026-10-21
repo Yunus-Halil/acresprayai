@@ -29,6 +29,8 @@ export type LayoutRaster = {
   green: Uint8Array;
   /** 1 inside the field. */
   inField: Uint8Array;
+  /** Shadow share of each raster pixel, 0 to 255, when the picture was read with its shadows (fieldRows.ts shadowMask). */
+  shadow?: Uint8Array;
 };
 
 /** A lattice in raster pixels: plant (i, j) stands at o + i * along * u + j * (across * n + stagger * u), u at `angle`, n a quarter turn on. */
@@ -92,10 +94,27 @@ export const LAYOUT_PARAMS = {
    * it is a crop; a canopy that runs into other green is still a crop, only its extent is uncertain (merged).
    */
   tinyCrownShare: 0.5, tinyGreen: 0.15,
+  /**
+   * The crown vote (crownVote): 1 fits the lattice and judges presence on green weighed by crown structure (spread of
+   * green and shadow within two crown radii), 0 on green alone. voteFloor is the share of its green a flat, unshaded
+   * cell keeps; voteTextureRef the spread (0 to 0.5) that counts as a full edge; voteShadowRef the shadow share that
+   * counts as a full shadow.
+   */
+  crownVote: 1, voteFloor: 0.25, voteTextureRef: 0.3, voteShadowRef: 0.2,
   /** A plant is re-centred on the green mass within this share of the plant spacing of its first estimate (nearer green weighing more), so the ring sits on the crown, not on the lattice point... */
   recentreShare: 0.35,
   /** ...and moves at most this far, metres: the verge weeds beside an edge row pulled its trees a metre sideways and the row failed the straightness test (DJI_0327). */
   recentreMaxM: 0.5,
+  /** The refined lattice keeps every marked plant within this of a lattice point, metres: the marks are the truth. */
+  latticeHoldM: 0.5,
+  /**
+   * A plant leaves its expected position for the greenest spot in the search box only when that spot is at least this
+   * many times as green as the position itself; on flat ground it stays on the lattice. Measured 2026-10-21 on grassed
+   * olive frames: at 1.2 the plants walked onto the sward (12 of 186 trees found on DJI_0380), at 2 they held (55; 43
+   * of 143 on DJI_0365), at 3 the same; DJI_0301 (bare ground) unchanged at every setting, since a tree beside its
+   * slot is three to twelve times as green as the slot.
+   */
+  moveGain: 2,
   /** A plant the operator marks is looked for this far around the mark (metres): the mark may be on an expected position the tree stands beside. */
   anchorSearchM: 1.0,
   /** A finer spacing is taken when at least this share of its added positions hold a plant... */
@@ -196,21 +215,29 @@ export function fillPolygon(mask: Uint8Array, w: number, h: number, poly: [numbe
 }
 
 /** The raster from a green mask (1 = green) at zoom z, frame origin (left, top), block-averaged by k. */
-export function rasterFromMask(mask: Uint8Array, mw: number, mh: number, k: number, z: number, left: number, top: number, maskMpp: number, rings: [number, number][][]): LayoutRaster {
+export function rasterFromMask(mask: Uint8Array, mw: number, mh: number, k: number, z: number, left: number, top: number, maskMpp: number, rings: [number, number][][], shadow?: Uint8Array): LayoutRaster {
   const w = Math.ceil(mw / k), h = Math.ceil(mh / k);
-  const sum = new Uint32Array(w * h), cnt = new Uint32Array(w * h);
-  for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) { const c = Math.floor(y / k) * w + Math.floor(x / k); cnt[c]++; sum[c] += mask[y * mw + x]; }
-  const green = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) green[i] = cnt[i] ? Math.round((255 * sum[i]) / cnt[i]) : 0;
+  const cnt = new Uint32Array(w * h);
+  const pool = (src: Uint8Array, scale: number): Uint8Array => {
+    const s = new Uint32Array(w * h);
+    for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) s[Math.floor(y / k) * w + Math.floor(x / k)] += src[y * mw + x];
+    const o = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) o[i] = cnt[i] ? Math.round((scale * s[i]) / cnt[i]) : 0;
+    return o;
+  };
+  for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) cnt[Math.floor(y / k) * w + Math.floor(x / k)]++;
+  const green = pool(mask, 255);
   const inField = new Uint8Array(w * h);
   // Rings arrive in global pixels at zoom z.
   for (const r of rings) fillPolygon(inField, w, h, r.map(([X, Y]) => [(X - left) / k, (Y - top) / k]));
-  return { z, left, top, scale: k, mpp: maskMpp * k, w, h, green, inField };
+  const out: LayoutRaster = { z, left, top, scale: k, mpp: maskMpp * k, w, h, green, inField };
+  if (shadow) out.shadow = pool(shadow, 255);
+  return out;
 }
 
-/** Mean green (0 to 1) in the square of half-side r around each pixel, from an integral image. */
-export function boxMean(r: LayoutRaster, rad: number): Float32Array {
-  const { w, h, green } = r;
+/** Mean of a 0-255 channel (as 0 to 1) in the square of half-side r around each pixel, from an integral image. The raster's green unless another channel is given. */
+export function boxMean(r: LayoutRaster, rad: number, src: Uint8Array = r.green): Float32Array {
+  const { w, h } = r, green = src;
   const I = new Float64Array((w + 1) * (h + 1));
   for (let y = 0; y < h; y++) { let row = 0; for (let x = 0; x < w; x++) { row += green[y * w + x]; I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + row; } }
   const out = new Float32Array(w * h);
@@ -219,6 +246,39 @@ export function boxMean(r: LayoutRaster, rad: number): Float32Array {
     const x0 = Math.max(0, x - R), x1 = Math.min(w, x + R + 1), y0 = Math.max(0, y - R), y1 = Math.min(h, y + R + 1);
     const s = I[y1 * (w + 1) + x1] - I[y0 * (w + 1) + x1] - I[y1 * (w + 1) + x0] + I[y0 * (w + 1) + x0];
     out[y * w + x] = s / ((x1 - x0) * (y1 - y0) * 255);
+  }
+  return out;
+}
+
+/**
+ * The crown vote: what the lattice is fitted on and presence is judged from, in place of green alone. Green says
+ * "vegetation"; it does not say "crown". Each cell's green is weighed by the stronger of two witnesses measured
+ * within a crown radius, so a cell with neither keeps voteFloor of its green and bare-ground orchards, where green
+ * alone already worked, are unchanged (their crowns have edges):
+ *   texture  the spread of green: a crown on bare ground is an island with an edge; a sward is flat.
+ *   shadow   the share of shadow: a crown casts one (kept for low sun).
+ * What was measured on six grassed olive frames (2026-10-21, docs/research/row-crop-detection-methods.md): at 9 cm a
+ * cell neither texture nor shadow told crown from sward (luma spread 23.4 against 23.3; shadow share 0.13 against
+ * 0.14), and a per-field colour witness learnt from three marks read the wrong way on one frame of two, so it was
+ * taken out. What did tell them apart there was the mask itself: excess green minus excess red at zero reads the
+ * crowns at 0.94 and the sward at 0.82, where the old Otsu split read them the other way round. The lattice then
+ * holds its phase by the operator's marks (refineLattice) and a plant leaves its slot only for clearly greener ground
+ * (growPlants), which is what keeps the planting on the trees where the signal is this thin.
+ */
+export function crownVote(r: LayoutRaster, crownPx: number): Uint8Array {
+  const P = LAYOUT_PARAMS, n = r.w * r.h;
+  const R = Math.max(2, Math.round(crownPx));
+  const mean = boxMean(r, R);
+  const sq = new Uint8Array(n);
+  for (let i = 0; i < n; i++) sq[i] = Math.round((r.green[i] * r.green[i]) / 255);
+  const meanSq = boxMean(r, R, sq);
+  const shade = r.shadow ? boxMean(r, R, r.shadow) : null;
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const spread = Math.sqrt(Math.max(0, meanSq[i] - mean[i] * mean[i]));
+    const texture = Math.min(1, spread / P.voteTextureRef);
+    const shadow = shade ? Math.min(1, shade[i] / P.voteShadowRef) : 0;
+    out[i] = Math.round(r.green[i] * (P.voteFloor + (1 - P.voteFloor) * Math.max(texture, shadow)));
   }
   return out;
 }
@@ -276,10 +336,15 @@ export function latticeFromClicks(a: [number, number], b: [number, number], c: [
  * skip a plant or a row), then angle, spacings, stagger and origin by coordinate descent on the mean crown-scale
  * green at the lattice points.
  */
-export function refineLattice(L0: Lattice, G: Float32Array, r: LayoutRaster): { lattice: Lattice; score: number } {
+export function refineLattice(L0: Lattice, G: Float32Array, r: LayoutRaster, holds: [number, number][] = [[L0.ox, L0.oy]]): { lattice: Lattice; score: number } {
   // Scored near the clicks (about 8 plants and 5 rows each way): a second planting elsewhere in the field must not pull it.
   const near = { cx: L0.ox, cy: L0.oy, radius: 8 * Math.max(L0.along, Math.abs(L0.across)) };
-  const latticeScoreNear = (L: Lattice) => latticeScore(L, G, r, near);
+  // The marked plants are the truth: a lattice that puts any of them further than latticeHoldM from its nearest
+  // lattice point is not a candidate, however green it scores. On a grassed olive orchard the free descent walked the
+  // origin 0.7 to 1.4 m off the clicked tree (the score landscape on a sward is flat) and the whole planting followed.
+  const holdPx = LAYOUT_PARAMS.latticeHoldM / r.mpp;
+  const holdsAll = (L: Lattice) => holds.every(([x, y]) => { const [i, j] = latticeIndex(L, x, y); const [px, py] = latticePoint(L, i, j); return Math.hypot(px - x, py - y) <= holdPx; });
+  const latticeScoreNear = (L: Lattice) => (holdsAll(L) ? latticeScore(L, G, r, near) : -Infinity);
   // The spacing the clicks gave is kept here (finer spacings are tested afterwards by subdividedLattices, on presence,
   // never on mean greenness: a lattice that skips every fainter row is greener on average and used to win).
   let L = L0, S = latticeScoreNear(L0);
@@ -454,7 +519,7 @@ export function seedsFor(L: Lattice, GF: Float32Array, r: LayoutRaster, near: { 
 export type Anchor = { i: number; j: number; x: number; y: number };
 /** `rowBar`: a lower presence bar for the rows the operator marked (by lattice row), the planting's own bar elsewhere. */
 /** `trace`: the fate of every expected position looked at, by "i,j": accepted, or why not (audits). */
-export type GrowOptions = { anchors?: Anchor[]; /** Positions the operator marked "no crop": never a plant, whatever grows there. */ noCrop?: Anchor[]; rowBar?: Map<number, number>; trace?: Map<string, string> };
+export type GrowOptions = { anchors?: Anchor[]; /** Positions the operator marked "no crop": never a plant, whatever grows there. */ noCrop?: Anchor[]; rowBar?: Map<number, number>; trace?: Map<string, string>; /** Crown-scale green (not the crown vote) at a raster point: "plainly bare" is judged on green. */ greenAt?: (x: number, y: number) => number };
 
 export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds: [number, number][], separate: boolean, opts: GrowOptions = {}): { plants: LayoutPlant[]; gaps: LayoutGap[]; rows: number; foundShare: number; lattice: Lattice } {
   const P = LAYOUT_PARAMS;
@@ -532,6 +597,8 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     let bx = 0, by = 0, bn = 0;
     for (const [x, y, g] of cells) if (g >= 0.9 * bg) { bx += x; by += y; bn++; }
     bx /= bn; by /= bn;
+    // On flat ground the greenest spot is noise: the plant stays on its slot unless the spot is clearly greener.
+    { const xi = Math.round(ex), yi = Math.round(ey); const own = xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? G[yi * r.w + xi] : 0; if (own >= barOf(j) && bg < P.moveGain * own) { bx = ex; by = ey; } }
     [bx, by] = recentre(bx, by);
     // Close to the layout itself, not only to the neighbours: a row may not turn into another planting.
     const offA = (bx - lx) * ux + (by - ly) * uy, offC = (bx - lx) * nx + (by - ly) * ny;
@@ -853,7 +920,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
             if (q) { const st = stateOf(key(i, j), q, j); plants.push({ x: st.x, y: st.y, r: st.radius, paint: st.paint, row: j, i, run, state: st.state, g: q.g, merged: st.merged }); opts.trace?.set(key(i, j), `accepted (crown green ${q.g.toFixed(2)}, ${st.state})`); }
             else {
               const g = gapAt.get(key(i, j)); const [lx, ly] = latticePoint(L, i, j); const x = g?.x ?? lx, y = g?.y ?? ly, seenG = g?.seen ?? 0;
-              if (seenG >= P.anchorFloor) {
+              if (seenG !== -2 && Math.max(seenG, opts.greenAt?.(x, y) ?? 0) >= P.anchorFloor) {
                 // Green there (under the bar, off the layout, or running to the neighbour): a crop by the pattern, between
                 // two seen plants of a kept row. Ringed at the green joined to its slot, never wider than the planting's
                 // typical crown nor under half of it, so the ring is seen and says nothing it did not measure.
@@ -972,18 +1039,24 @@ export type Verdict = { x: number; y: number; crop: boolean };
 
 export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, number][] = [], trace?: Map<string, string>, verdicts: Verdict[] = []): FittedLayout[] {
   const P = LAYOUT_PARAMS;
-  const G = boxMean(r, P.crownShare * L0.along);
-  const GF = boxMean(r, P.presenceRadiusM / r.mpp);
+  // The lattice is fitted and presence judged on the crown vote; the rings (canopyOf) and the uncovered green are
+  // still measured on the green itself.
+  const vote = P.crownVote ? crownVote(r, P.crownShare * L0.along) : r.green;
+  const G = boxMean(r, P.crownShare * L0.along, vote);
+  const GF = boxMean(r, P.presenceRadiusM / r.mpp, vote);
+  const GFgreen = P.crownVote ? boxMean(r, P.presenceRadiusM / r.mpp) : GF;
+  const greenAt = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? GFgreen[yi * r.w + xi] : 0; };
   const gAt = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? GF[yi * r.w + xi] : 0; };
   const presentGreen = P.presentGreen;
-  const { lattice: refined, score } = refineLattice(L0, G, r);
+  const holds: [number, number][] = [[L0.ox, L0.oy], ...clicks];
+  const { lattice: refined, score } = refineLattice(L0, G, r, holds);
   const near = { cx: refined.ox, cy: refined.oy, radius: 8 * Math.max(refined.along, Math.abs(refined.across)) };
   const sub = subdividedLattices(refined, GF, r, near, plantsStandApart(refined, GF, r), presentGreen);
   let main = sub.main;
   // A spacing corrected along the row means the lattice was refined at the wrong scale: refined again at the right one,
   // and whether the plants stand apart is judged at the right one too (at twice the spacing, the plant between
   // two plants reads as green between them).
-  if (main.along !== refined.along) main = refineLattice(main, boxMean(r, P.crownShare * main.along), r).lattice;
+  if (main.along !== refined.along) main = refineLattice(main, boxMean(r, P.crownShare * main.along, vote), r, holds).lattice;
   const derived = sub.derived.map(L => ({ ...L, along: main.along, across: main.across, angle: main.angle }));
   const separate = plantsStandApart(main, GF, r);
   const rowPitch = rowPitchOf(main, derived);
@@ -996,7 +1069,7 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
     for (const a of anchors) { const bar = Math.min(P.presentGreen, Math.max(P.anchorFloor, 0.5 * gAt(a.x, a.y))); rowBar.set(a.j, Math.min(rowBar.get(a.j) ?? P.presentGreen, bar)); }
     const seeds = seedsFor(L, GF, r, near, 3, presentGreen);
     if (!seeds.length && !anchors.length) continue;
-    out.push({ score, rowPitch, ...growPlants(L, GF, r, seeds, separate, { anchors, noCrop, rowBar, trace: L === main ? trace : undefined }) });
+    out.push({ score, rowPitch, ...growPlants(L, GF, r, seeds, separate, { anchors, noCrop, rowBar, greenAt, trace: L === main ? trace : undefined }) });
   }
   return out.length ? out : [{ score, rowPitch, lattice: main, plants: [], gaps: [], rows: 0, foundShare: 0 }];
 }

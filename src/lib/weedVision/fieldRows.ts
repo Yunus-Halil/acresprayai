@@ -128,9 +128,32 @@ function otsu(values: Float32Array, n: number, lo: number, hi: number): number {
   return lo + ((at + 1) / 64) * (hi - lo);
 }
 
+/**
+ * Which index the vegetation mask is cut from.
+ *   exgr      excess green minus excess red on chromaticity (3g - 2.4r - b), cut at zero: a fixed bar that needs no
+ *             second class in the picture. Meyer & Neto 2008 measured it at 0.88 against 0.53 for ExG + Otsu on soil
+ *             with residue and straw; Otsu assumes two balanced classes and paints half the soil green on a scene that
+ *             is mostly lit ground, which is how a grassed olive orchard phase-locked the lattice onto the sward
+ *             (docs/research/olive-orchard-fitter-trial.md). The default since 2026-10-21.
+ *   exg-otsu  excess green with Otsu's split clamped to [0.06, 0.25]: what ran before, kept for comparison.
+ */
+export type VegetationIndex = "exgr" | "exg-otsu";
+export const VEGETATION_INDEX: VegetationIndex = "exgr";
+/** Excess green minus excess red on chromaticity; -1 for a pixel with no colour. */
+const excessGreenRed = (r: number, g: number, b: number) => { const s = r + g + b; if (s <= 0) return -1; const rr = r / s, gg = g / s, bb = b / s; return 2 * gg - rr - bb - (1.4 * rr - gg); };
+
 /** Green pixels (transparent ones never). */
-export function vegetationMask(px: PhotoPixels): Uint8Array {
+export function vegetationMask(px: PhotoPixels, index: VegetationIndex = VEGETATION_INDEX): Uint8Array {
   const n = px.width * px.height;
+  const mask = new Uint8Array(n);
+  if (index === "exgr") {
+    for (let i = 0; i < n; i++) {
+      const o = i * 4;
+      if (px.rgba[o + 3] === 0) continue;
+      mask[i] = excessGreenRed(px.rgba[o], px.rgba[o + 1], px.rgba[o + 2]) > 0 ? 1 : 0;
+    }
+    return mask;
+  }
   const g = new Float32Array(n), vals = new Float32Array(n);
   let m = 0;
   for (let i = 0; i < n; i++) {
@@ -140,8 +163,30 @@ export function vegetationMask(px: PhotoPixels): Uint8Array {
     vals[m++] = g[i];
   }
   const t = Math.min(0.25, Math.max(0.06, m ? otsu(vals, m, -0.2, 0.8) : 0.1));
-  const mask = new Uint8Array(n);
   for (let i = 0; i < n; i++) mask[i] = g[i] > t ? 1 : 0;
+  return mask;
+}
+
+/** A pixel is shadow when its brightness is under this share of the picture's mean brightness. */
+export const SHADOW_SHARE = 0.55;
+/**
+ * Shadow pixels (transparent ones never): darker than SHADOW_SHARE of the picture's mean brightness. A crown casts a
+ * shadow beside it and holds shadow inside it; a mown sward casts none, so shadow is a crown's witness where colour is
+ * not (olive canopy against grass). Used by the planting layout's crown vote (layout/plantingLayout.ts, crownVote).
+ */
+export function shadowMask(px: PhotoPixels): Uint8Array {
+  const n = px.width * px.height;
+  const luma = new Float32Array(n);
+  let sum = 0, m = 0;
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    if (px.rgba[o + 3] === 0) { luma[i] = -1; continue; }
+    luma[i] = 0.299 * px.rgba[o] + 0.587 * px.rgba[o + 1] + 0.114 * px.rgba[o + 2];
+    sum += luma[i]; m++;
+  }
+  const bar = m ? (SHADOW_SHARE * sum) / m : 0;
+  const mask = new Uint8Array(n);
+  for (let i = 0; i < n; i++) mask[i] = luma[i] >= 0 && luma[i] < bar ? 1 : 0;
   return mask;
 }
 

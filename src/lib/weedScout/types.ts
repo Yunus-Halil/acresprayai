@@ -301,6 +301,10 @@ export type RowTileFit = {
   vegetationFraction: number;
   pitchFromGrower: boolean;
   recoveredPitchM: number;
+  /** A second pitch the profile also supports (the longer one when the finer was taken, or the finer when the grower's was kept): twin rows, interplanted rows, every second row, a tramline. Null when the profile is unambiguous. */
+  pitchAlternativeM?: number | null;
+  /** How much of the window's green sits in step with the rows: the length of the phase's circular mean (0 a uniform spread, 1 all of it on the centrelines). Under MIN_ROW_COHERENCE the window has no rows, whatever the angle said. */
+  rowCoherence?: number;
 };
 
 export type RowModel = {
