@@ -17,6 +17,7 @@
 // only look between the rows) uses it unchanged, plus the gaps. Pure: a raster
 // in, a layout out; reading the map is layout/readLayout.ts.
 import type { FieldRows } from "../fieldRows";
+import { snapStagger } from "../../plantingPractice";
 import { ROW_BAND_PITCH_SHARE } from "../rowFilter";
 
 /** The field's green on a coarse grid. Global pixel at zoom z of raster pixel (x, y) is (left + x * scale, top + y * scale). */
@@ -1096,7 +1097,16 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
   const gAt = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? GF[yi * r.w + xi] : 0; };
   const presentGreen = P.presentGreen;
   const holds: [number, number][] = [[L0.ox, L0.oy], ...clicks];
-  const { lattice: refined, score } = refineLattice(L0, G, r, holds);
+  const { lattice: refined0, score } = refineLattice(L0, G, r, holds);
+  // Rows are laid out aligned or offset by half a spacing (docs/research/planting-practice-2026-10-21.md): a fitted
+  // stagger within a twentieth of a spacing of one of those is taken for it, when the marks still hold on it.
+  const refined = (() => {
+    const snapped = { ...refined0, stagger: snapStagger(refined0.stagger, refined0.along) };
+    if (snapped.stagger === refined0.stagger) return refined0;
+    const holdPx = P.latticeHoldM / r.mpp;
+    const ok = holds.every(([x, y]) => { const [i, j] = latticeIndex(snapped, x, y); const [px, py] = latticePoint(snapped, i, j); return Math.hypot(px - x, py - y) <= holdPx; });
+    return ok ? snapped : refined0;
+  })();
   const near = { cx: refined.ox, cy: refined.oy, radius: 8 * Math.max(refined.along, Math.abs(refined.across)) };
   const sub = subdividedLattices(refined, GF, r, near, plantsStandApart(refined, GF, r), presentGreen);
   let main = sub.main;

@@ -7,6 +7,7 @@
 import { Loader2 } from "lucide-react";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtDistance } from "@/lib/units";
+import { describePlanting } from "@/lib/plantingPractice";
 import { useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { MIN_TRUSTED_FOUND, MIN_TRUSTED_ROWS } from "@/lib/weedVision/layout/readLayout";
 import { acceptReaderRows, cancelMarking, clearLayout, pickPosition, rereadRows, saveLayout, setShowRows, setVerdict, startMarking, undoLastPlanting, useLayoutUi } from "@/lib/weedVision/layout/layoutUi";
@@ -49,6 +50,10 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
           <p className="text-neutral-200">
             {fr.rows} row{fr.rows === 1 ? "" : "s"}, {stats.plants.toLocaleString()} trees{stats.gaps ? `, ${stats.gaps.toLocaleString()} marked no crop` : ""}: rows {d(fr.spacingM)} apart, trees {d(fr.seedSpacingM)} apart.
           </p>
+          {(() => { const d2 = describePlanting(fr.seedSpacingM, fr.spacingM); return (<>
+            <p className="text-neutral-500" data-testid="crop-rows-practice">{d2.text}</p>
+            {d2.doubt && <p className="text-amber-400" data-testid="crop-rows-practice-doubt">{d2.doubt}</p>}
+          </>); })()}
           <p className="text-neutral-500">Weeds are looked for only between these rows; the rows themselves are left out of the search.</p>
           {(fr.rows < MIN_TRUSTED_ROWS || stats.foundShare < MIN_TRUSTED_FOUND) && (
             <p className="text-amber-400" data-testid="crop-rows-doubtful">This does not look like the whole planting ({fr.rows} row{fr.rows === 1 ? "" : "s"}, {Math.round(stats.foundShare * 100)}% of the expected trees found). Check it on the map; if it is wrong, start over and mark three trees.</p>

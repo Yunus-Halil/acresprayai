@@ -137,6 +137,26 @@ the middle of the row": `holdToRows` holds every ring's centre within `acrossHol
 own marks are not held. DJI_0301: 119 plants, 97 of 104 labelled trees, 103 on rows, weeds taken for crop 38, rings
 under 80% of their crown's joined green 4 (was 2: a leaning crown's ring is now centred on the trunk line).
 
+### How farmers plant, in the fitter (2026-10-21, night)
+
+"Research how farmers plant crops; it's always a row pattern and very specific; put that in the algorithms."
+Research in `docs/research/planting-practice-2026-10-21.md`; the catalogue in `src/lib/plantingPractice.ts`:
+
+- **The planting frames** per crop, system and region (apple tall spindle 0.9 × 3.35 m to traditional 8 × 10 m;
+  apricot in Turkey 5 × 5 to 8 × 8 m, dwarf 3 × 3.5; cherry, almond, walnut, pistachio, olive traditional to
+  super-high-density, citrus, hazelnut, avocado, kiwi, vines), each with the stagger a crew lays out. The Crop rows
+  panel names the frame the fitted planting matches ("Trees 3.1 m apart in rows 5.1 m apart: the frame shared by
+  apricot, peach, citrus...") and raises a doubt when the fit matches no frame and reads like a half spacing (trees
+  closer along the row than anything but a hedgerow) or a swapped axis (rows closer than the trees along them).
+- **The stagger snaps** to aligned or half-offset (the two values a planting crew sets out: rectangular, or square
+  and nut orchards planted on the diagonal) only when the fitted value is within a twentieth of a spacing of one and
+  the operator's marks still hold on the snapped lattice; a stagger error compounds row by row, so the band is tight.
+- **The row finder's spacing table** now carries corn at 76, 75, 70, 51, 56 and 38 cm, soybean, cotton at 36 to 40
+  inches and 70 to 76 cm, wheat from 12.5 to 25 cm, sunflower, sugar beet, potato, vegetable beds, rice and the
+  tramline periods, so a measured pitch is named and a half-or-double reading is called by its likely cause.
+- Kept as knowledge, not used: planter skip and double rates of 1 to 3%, the 5 to 7 cm pass-to-pass deviation of
+  guided tractors, pollinizer patterns (one in nine, alternate rows), filler trees, annual tree loss of 3 to 4%.
+
 ## The signal under the lattice, and where it holds (2026-10-21)
 
 Built after the literature sweeps in `docs/research/row-crop-detection-methods.md` and measured on the six grassed

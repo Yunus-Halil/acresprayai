@@ -37,6 +37,7 @@
 // the floor refuses to be queried rather than returning distances computed
 // from nothing.
 import type { RasterSource } from "../cellFeatures";
+import { ROW_CROP_PITCHES_M } from "../plantingPractice";
 import { type LatLng2, M_PER_DEG_LAT, mPerDegLng } from "../geo";
 import { rasterGsdM } from "./tiles";
 import type { RowModel, RowTileFit } from "./types";
@@ -74,18 +75,14 @@ export const PEAK_PROMINENCE = 0.1;
 export const MIN_ROW_COHERENCE = 0.15;
 
 /**
- * Row spacings growers plant, metres, by crop: the priors a measured pitch is read against. Corn, soybean and cotton
- * at 30 inches in most of the US, soybean also at 15 and 20 inches and drilled at 7.5; cotton at 38 and 40 inches in
- * the South; wheat drilled at 6 to 10 inches; sprayer tramlines (the periodic feature a wheel track makes) at the
- * boom widths. A pitch that lands on one of these at double or half the measured one is the ambiguity flagged.
+ * Row spacings growers plant, metres, by crop: the priors a measured pitch is read against (the catalogue in
+ * src/lib/plantingPractice.ts, from docs/research/planting-practice-2026-10-21.md: corn at 30 inches on 85% of US
+ * acres, 75 cm in the EU, 70 cm in Turkey; soybean at 30, 15 and 20 inches and drilled at 7.5; cotton at 36 to 40
+ * inches in the US South, 70 to 76 cm in Turkey; wheat drilled at 12.5 to 25 cm; sunflower, sugar beet, potato,
+ * vegetable beds, rice; sprayer tramlines, the periodic feature a wheel track makes, at the boom widths). A pitch
+ * that lands on one of these at double or half the measured one is the ambiguity flagged.
  */
-export const ROW_SPACINGS_M: Record<string, number[]> = {
-  corn: [0.762, 0.508, 0.559],
-  soybean: [0.762, 0.508, 0.381, 0.19],
-  cotton: [0.965, 1.016, 0.762],
-  wheat: [0.19, 0.152, 0.254],
-  tramline: [18, 24, 27, 30, 36],
-};
+export const ROW_SPACINGS_M: Record<string, number[]> = ROW_CROP_PITCHES_M;
 /** The nearest planted spacing to a pitch within 10%, with its crop, or null. */
 export function nearestPlantedSpacing(pitchM: number): { crop: string; spacingM: number } | null {
   let best: { crop: string; spacingM: number } | null = null, bestErr = 0.1;
