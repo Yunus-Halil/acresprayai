@@ -68,8 +68,10 @@ describe("the planting from three clicks", () => {
     const slot = (k: string) => { const i = Number(k.split(",")[0]), j = Number(k.split(",")[1]); const ux = Math.cos(4 * deg), uy = Math.sin(4 * deg); return { x: 2 + i * 3.2 * ux - j * 5 * uy, y: 2.5 + i * 3.2 * uy + j * 5 * ux }; };
     for (const k of ["5,1", "9,2"]) { const p = fit.plants.find(p => Math.hypot(p.x * MPP - slot(k).x, p.y * MPP - slot(k).y) <= 0.6); expect(p?.state).toBe("expected"); expect(p!.r * MPP).toBeGreaterThanOrEqual(0.3); }
     expect(fit.gaps).toHaveLength(0);
-    // Nothing on the weed strip (y about 20.5 to 25).
-    expect(fit.plants.every(p => p.y * MPP < 20)).toBe(true);
+    // Nothing from block B (y from 24): the edge pass carries block A's clipped last row on to where its neighbours
+    // end (to about y 21, since this test has no field boundary to stop it), but the weed strip itself is no row.
+    expect(fit.plants.every(p => p.y * MPP < 22)).toBe(true);
+    expect(fit.rows).toBe(4);
   });
 
   it("two plantings marked: both found, neither takes the other's trees; the rows put trees on the crop and weeds between them", () => {
@@ -238,8 +240,10 @@ describe("what stands at each position: a crop by the pattern unless the ground 
     expect(atSlot!.r * MPP).toBeLessThan(1.45); // under the planting's reach (0.45 of the 3.2 m spacing), never the merged 1.7 m
     expect(fit.gaps.some(g => Math.hypot(g.x * MPP - mx, g.y * MPP - my) <= 0.9)).toBe(false);
     expect(fit.plants.every(p => p.r * MPP < 1.45)).toBe(true); // no canopy as wide as the merged green
-    // Full trees are confirmed: at most the young tree, the weed at a tree's place and the swollen crown are "expected".
-    expect(fit.plants.filter(p => p.state !== "confirmed").length).toBeLessThanOrEqual(3);
+    // Full trees are confirmed: within the planted area at most the young tree, the weed at a tree's place, the bare
+    // slot, the swollen crown and the first tree of the last row (its crown cut by the raster's edge) are "expected"
+    // (beyond the planted area the edge pass carries the clipped last row on, by the pattern).
+    expect(fit.plants.filter(p => p.state !== "confirmed" && p.y * MPP < 19).length).toBeLessThanOrEqual(5);
     // A weed standing exactly at a planted position is that position's crop by the pattern: a plant, drawn like one,
     // never a confirmed crown and never a question.
     const weedy = find(9, 2);
@@ -361,6 +365,45 @@ describe("what stands at each position: a crop by the pattern unless the ground 
     expect(gaps.find(g => Math.hypot(g.x * MPP - tx, g.y * MPP - ty) <= 0.6)?.evidence).toBe("operator");
     const forced = plants.find(p => Math.hypot(p.x * MPP - gx, p.y * MPP - gy) <= 0.5);
     expect(forced?.state).toBe("operator");
+  });
+});
+
+describe("the planting's edges, by the pattern", () => {
+  const at = (i: number, j: number) => { const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux; return [2 + i * 3.2 * ux + j * 5 * nx, 2.5 + i * 3.2 * uy + j * 5 * ny] as const; };
+  const plantAt = (fit: { plants: { x: number; y: number; state: string }[] }, i: number, j: number) => { const [x, y] = at(i, j); return fit.plants.find(p => Math.hypot(p.x * MPP - x, p.y * MPP - y) <= 0.6) ?? null; };
+
+  it("a row that stops short is carried on to where its neighbours end", () => {
+    const { r, trees } = orchard(new Set(["A14,1", "A15,1", "A16,1", "A17,1"]));
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    for (const i of [14, 15, 16, 17]) expect(plantAt(fit, i, 1)?.state).toBe("expected");
+    expect(fit.gaps).toHaveLength(0);
+  });
+
+  it("a track crossing every row is not filled, a hole in one row is", () => {
+    const { r, trees } = orchard(new Set(["A8,0", "A8,1", "A8,2", "A8,3", "A11,2"]));
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    expect(plantAt(fit, 11, 2)?.state).toBe("expected");
+    // The crossing: no neighbour is planted at index 8, so no row is. (The interior fill inside a kept stretch still
+    // applies where the row's own stretch spans the crossing: it does, so each row keeps a crop there by the stretch
+    // rule; what the edge pass must not do is add anything beyond that.)
+    const crossing = [0, 1, 2, 3].map(j => plantAt(fit, 8, j)).filter(Boolean);
+    expect(crossing.every(p => p!.state === "expected")).toBe(true);
+  });
+
+  it("an outer row along the boundary with a few trees is a row, a bare outer row is not invented", () => {
+    // Row A3 reduced to four trees; the fitter must find the row and carry it along from its neighbours.
+    const few = new Set(Array.from({ length: 18 }, (_, i) => `A${i},3`).filter(k => !["A2,3", "A3,3", "A4,3", "A5,3"].includes(k)));
+    const { r, trees } = orchard(few);
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    for (const i of [3, 9, 15]) expect(plantAt(fit, i, 3)).not.toBeNull();
+    // Row A3 removed entirely: nothing stands there, no row is invented on bare ground.
+    const none = new Set(Array.from({ length: 18 }, (_, i) => `A${i},3`));
+    const o2 = orchard(none);
+    const fit2 = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, o2.r);
+    expect([3, 9, 15].map(i => plantAt(fit2, i, 3)).filter(Boolean)).toHaveLength(0);
   });
 });
 

@@ -112,6 +112,14 @@ export const LAYOUT_PARAMS = {
   /** The refined lattice keeps every marked plant within this of a lattice point, metres: the marks are the truth. */
   latticeHoldM: 0.5,
   /**
+   * The planting's edges (completeByPattern). Along a row, a position with no plant is planted when at least this
+   * share of the neighbouring rows (two each way, those that exist) hold a plant at the same index, and at least
+   * edgeMinRows of them do: where the other rows stop is where this row stops. Across, a row beyond the outermost one
+   * is a row when at least edgeOuterMinSeen of its positions inside the field show crown-scale green over the bar,
+   * and at least edgeOuterMinShare of them.
+   */
+  edgeAgreeShare: 0.5, edgeMinRows: 2, edgeOuterMinSeen: 3, edgeOuterMinShare: 0.15, edgePasses: 6,
+  /**
    * A plant leaves its expected position for the greenest spot in the search box only when that spot is at least this
    * many times as green as the position itself; on flat ground it stays on the lattice. Measured 2026-10-21 on grassed
    * olive frames: at 1.2 the plants walked onto the sward (12 of 186 trees found on DJI_0380), at 2 they held (55; 43
@@ -1074,7 +1082,8 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
     for (const a of anchors) { const bar = Math.min(P.presentGreen, Math.max(P.anchorFloor, 0.5 * gAt(a.x, a.y))); rowBar.set(a.j, Math.min(rowBar.get(a.j) ?? P.presentGreen, bar)); }
     const seeds = seedsFor(L, GF, r, near, 3, presentGreen);
     if (!seeds.length && !anchors.length) continue;
-    out.push({ score, rowPitch, ...growPlants(L, GF, r, seeds, separate, { anchors, noCrop, rowBar, greenAt, trace: L === main ? trace : undefined }) });
+    const grown = growPlants(L, GF, r, seeds, separate, { anchors, noCrop, rowBar, greenAt, trace: L === main ? trace : undefined });
+    out.push({ score, rowPitch, ...completeByPattern(r, GF, grown, noCrop, L === main, separate) });
   }
   return out.length ? out : [{ score, rowPitch, lattice: main, plants: [], gaps: [], rows: 0, foundShare: 0 }];
 }
@@ -1082,6 +1091,115 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
 /** The clicked planting alone (tests and callers that want one lattice). */
 export function fitLayout(L0: Lattice, r: LayoutRaster): FittedLayout {
   return fitLayoutAll(L0, r)[0];
+}
+
+// ---------------------------------------------------------------- the planting's edges
+
+/**
+ * The planting's edges, by the pattern: where the other rows stop is where this row stops (2026-10-21, after the
+ * operator saw a row end three small trees short of the track while its neighbours ran on: "understand the pattern
+ * at the edges and perimeters, where the other rows stop, find the averages"). Growth ends a row at its last plant
+ * seen over the bar; this pass carries it on from the neighbours' word.
+ *
+ *   along    a position on a kept row with no plant is planted when at least edgeAgreeShare of the neighbouring rows
+ *            (two each way, those that exist), and at least edgeMinRows of them, hold a plant at the same index, and
+ *            the position lies inside the field. A short row end is filled to where its neighbours end (a headland
+ *            on one row alone is a short row, by the pattern); a track or waterway crossing every row is not, since
+ *            no neighbour is planted there; a hole in one row among planted neighbours is. Run to a fixed point,
+ *            since a row carried on lets its neighbour carry on.
+ *   across   the rows beyond the outermost ones, at the field's pitch, inside the field: a row when at least
+ *            edgeOuterMinSeen of the positions its inner neighbour spans show crown-scale green over the bar, and
+ *            edgeOuterMinShare of them (the row along a boundary that growth could not prove with six tight plants);
+ *            then it is filled along like any row. Outward until a row fails or the field ends. Where the planting's
+ *            plants stand apart, a position counts as seen only with soil between it and the next (the strip rule):
+ *            a weed strip along a track is green at every position and is not a row.
+ *
+ * Each plant added stands at its lattice point shifted by its row's own offset (the mean of the row's plants from
+ * their points, so the fill follows the row as planted), ringed at the green joined to it when there is any and at
+ * the planting's typical size when there is none, state expected. The operator's "no crop" is never filled.
+ */
+export function completeByPattern(r: LayoutRaster, G: Float32Array, grown: { plants: LayoutPlant[]; gaps: LayoutGap[]; rows: number; foundShare: number; lattice: Lattice }, noCrop: Anchor[] = [], outer = true, separate = true): typeof grown {
+  const P = LAYOUT_PARAMS, L = grown.lattice;
+  const key = (i: number, j: number) => `${i},${j}`;
+  const have = new Map<string, LayoutPlant>();
+  const plants = [...grown.plants];
+  // Only plants that sit on this lattice take part (a free row at another pitch does not).
+  for (const p of plants) { const [lx, ly] = latticePoint(L, p.i, p.row); if (Math.hypot(p.x - lx, p.y - ly) <= 0.35 * L.along) have.set(key(p.i, p.row), p); }
+  if (!have.size) return grown;
+  const never = new Set([...noCrop.map(a => key(a.i, a.j)), ...grown.gaps.map(g => key(g.i, g.row))]);
+  const inside = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h && r.inField[yi * r.w + xi] === 1; };
+  const gAt = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? G[yi * r.w + xi] : 0; };
+  const reach = canopyReach(L);
+  const typical = median(plants.filter(p => !p.merged).map(p => p.r)) || median(plants.map(p => p.r));
+  const rowsOf = () => { const by = new Map<number, LayoutPlant[]>(); for (const p of have.values()) (by.get(p.row) ?? by.set(p.row, []).get(p.row)!).push(p); return by; };
+  const shiftOf = (ps: LayoutPlant[]): [number, number] => { let dx = 0, dy = 0; for (const p of ps) { const [lx, ly] = latticePoint(L, p.i, p.row); dx += p.x - lx; dy += p.y - ly; } return ps.length ? [dx / ps.length, dy / ps.length] : [0, 0]; };
+  let nextRun = plants.reduce((m, p) => Math.max(m, p.run), 0);
+  let added = 0, newRows = 0;
+  const place = (i: number, j: number, shift: [number, number], run: number) => {
+    const [lx, ly] = latticePoint(L, i, j);
+    const x = lx + shift[0], y = ly + shift[1];
+    const c = canopyOf(r, x, y, reach), has = c.radius > 1;
+    const radius = has ? Math.max(0.5 * typical, Math.min(c.radius, typical)) : typical;
+    const p: LayoutPlant = { x: has ? c.x : x, y: has ? c.y : y, r: radius, paint: radius, row: j, i, run, state: "expected", g: Math.max(0, gAt(x, y)), merged: has && c.merged };
+    plants.push(p); have.set(key(i, j), p); added++;
+  };
+  // Along: to a fixed point.
+  const along = () => {
+    for (let pass = 0; pass < P.edgePasses; pass++) {
+      const by = rowsOf();
+      const js = [...by.keys()];
+      let is = [...have.values()].map(p => p.i);
+      const iMin = Math.min(...is) - 1, iMax = Math.max(...is) + 1;
+      let changed = false;
+      for (const j of js) {
+        const ps = by.get(j)!, shift = shiftOf(ps);
+        const run = ps.map(p => p.run).sort((a, b) => ps.filter(q => q.run === b).length - ps.filter(q => q.run === a).length)[0];
+        const neighbours = [j - 2, j - 1, j + 1, j + 2].filter(jn => by.has(jn));
+        if (neighbours.length < 1) continue;
+        const need = Math.max(Math.min(P.edgeMinRows, neighbours.length), Math.ceil(P.edgeAgreeShare * neighbours.length));
+        for (let i = iMin; i <= iMax; i++) {
+          const k = key(i, j);
+          if (have.has(k) || never.has(k)) continue;
+          const agree = neighbours.filter(jn => have.has(key(i, jn))).length;
+          if (agree < need) continue;
+          const [lx, ly] = latticePoint(L, i, j);
+          if (!inside(lx + shift[0], ly + shift[1])) continue;
+          place(i, j, shift, run); changed = true;
+        }
+      }
+      is = [];
+      if (!changed) break;
+    }
+  };
+  along();
+  // Across: rows beyond the outermost, while they prove themselves.
+  if (outer) {
+    for (const side of [1, -1]) {
+      for (let step = 0; step < 8; step++) {
+        const by = rowsOf();
+        const js = [...by.keys()];
+        const j = side > 0 ? Math.max(...js) : Math.min(...js), jn = j + side;
+        if (by.has(jn)) break;
+        const inner = by.get(j)!, shift = shiftOf(inner);
+        const cand = inner.map(p => p.i).filter(i => { const [lx, ly] = latticePoint(L, i, jn); return !never.has(key(i, jn)) && inside(lx + shift[0], ly + shift[1]); });
+        if (!cand.length) break;
+        const seen = cand.filter(i => {
+          const [lx, ly] = latticePoint(L, i, jn), g = gAt(lx + shift[0], ly + shift[1]);
+          if (g < P.presentGreen) return false;
+          if (!separate) return true;
+          const [nx2, ny2] = latticePoint(L, i + 1, jn);
+          return gAt((lx + nx2) / 2 + shift[0], (ly + ny2) / 2 + shift[1]) < P.stripShare * g;
+        }).length;
+        if (seen < P.edgeOuterMinSeen || seen < P.edgeOuterMinShare * cand.length) break;
+        const run = ++nextRun;
+        for (const i of cand) place(i, jn, shift, run);
+        newRows++;
+        along();
+      }
+    }
+  }
+  if (!added) return grown;
+  return { ...grown, plants, rows: grown.rows + newRows, foundShare: grown.foundShare };
 }
 
 // ---------------------------------------------------------------- several plantings in one field
