@@ -15,6 +15,7 @@ import { useSyncExternalStore } from "react";
 import { storageKey } from "../../storage";
 import { type DetectOptions, type Outcome, type Progress, type WeedVisionResult, detectWeeds } from "../client";
 import { type FieldRows, fieldRowStatusAt } from "../fieldRows";
+import { isOnRow } from "../rowFilter";
 import { type SavedFrameRun, loadFrameRuns, saveFrameRun } from "../frameRunCache";
 import { ensureFieldRows, fieldRowsOf, frameRunBoundaryOf, frameRunMapOf } from "../frameRunStore";
 import type { FrameDetection, FrameRunParams, GroundPlant } from "../frames";
@@ -50,12 +51,26 @@ export type TwoStageSession = {
   labels: Record<string, CellLabel>;
   activeCell: string | null;
   focus: { lat: number; lng: number; nonce: number } | null;
+  /**
+   * Paint the crop rows and crowns with the field's bare-ground colour before the model sees a window (true), or
+   * leave the picture untouched and drop what lands on the rows afterwards (false). Painting is what Simple mode
+   * does; the literature has not tested it, and general vision work finds painted regions can make a model fire on
+   * the paint's edges (docs/research/weed-pressure-grading-2026-10-21.md, section 5), so the two can be run on the
+   * same windows and compared (paintComparison).
+   */
+  paintCrop: boolean;
+  /** The last Stage 1 input, kept so the windows can be restored under the other painting key. */
+  photoGsdM: number | null;
+  /** The windows' cache key without the painting suffix, and the rows' signature, for the comparison. */
+  keyBase: string | null;
+  rowsSig: string | null;
 };
 
 const EMPTY: TwoStageSession = {
   stage1: null, stage1State: "idle", stage1Progress: null, windows: [], routing: null, tilePx: null, paramsKey: null, params: null, modelSha: null,
   runs: {}, stage2: null, running: false, error: null,
   layers: { pressure: true, candidates: true, windows: true, weeds: true }, labelMode: false, labels: {}, activeCell: null, focus: null,
+  paintCrop: true, photoGsdM: null, keyBase: null, rowsSig: null,
 };
 
 const sessions = new Map<string, TwoStageSession>();
@@ -190,11 +205,60 @@ export async function runStage1(taskId: string, input: RunStage1Input): Promise<
   const windows = planWindows(rings, avail.z, tilePx);
   const routing = routeWindows(windows, stage1);
   const size = windows[0]?.size ?? tilePx;
-  const paramsKey = `${TWO_STAGE_KEY_PREFIX}${mapRunKey({ ...input.params, tile: tilePx, overlap: 0 }, input.modelSha, avail.z, 1)}|w${size}${rows?.source === "layout" ? `|between-rows|${rowsSignature(rows)}` : ""}`;
+  const keyBase = `${TWO_STAGE_KEY_PREFIX}${mapRunKey({ ...input.params, tile: tilePx, overlap: 0 }, input.modelSha, avail.z, 1)}|w${size}`;
+  const rowsSig = rows?.source === "layout" ? rowsSignature(rows) : null;
+  const paramsKey = windowsKey(keyBase, rowsSig, s0.paintCrop);
   const cached = await deps.cache.load(taskId, paramsKey);
   const runs: TwoStageSession["runs"] = {};
   for (const w of windows) { const hit = cached.get(w.name); if (hit) runs[w.name] = { plants: tagRows(hit.detections, rows ?? undefined), ms: hit.timingsMs?.total ?? null }; }
-  patchTwoStage(taskId, { stage1, stage1State: "done", stage1Progress: null, windows, routing, tilePx, paramsKey, params: input.params, modelSha: input.modelSha, runs, labels: loadLabels(taskId, stage1), activeCell: null });
+  patchTwoStage(taskId, { stage1, stage1State: "done", stage1Progress: null, windows, routing, tilePx, paramsKey, params: input.params, modelSha: input.modelSha, photoGsdM: input.photoGsdM, keyBase, rowsSig, runs, labels: loadLabels(taskId, stage1), activeCell: null });
+}
+
+/** The windows' cache key: the base, and the painting suffix only when the crop is painted out over a layout's rows. */
+export const windowsKey = (keyBase: string, rowsSig: string | null, paintCrop: boolean): string => `${keyBase}${rowsSig && paintCrop ? `|between-rows|${rowsSig}` : ""}`;
+
+/** Switch the painting on or off and restore the windows already scored under that key, without reading Stage 1 again. */
+export async function setPaintCrop(taskId: string, paintCrop: boolean, deps?: Partial<TwoStageDeps>): Promise<void> {
+  const s = getTwoStage(taskId);
+  if (s.running) return;
+  patchTwoStage(taskId, { paintCrop });
+  if (!s.stage1 || !s.keyBase) return;
+  const d = depsOf(deps);
+  const rows = d.rowsOf(taskId);
+  const paramsKey = windowsKey(s.keyBase, s.rowsSig, paintCrop);
+  const cached = await d.cache.load(taskId, paramsKey);
+  const runs: TwoStageSession["runs"] = {};
+  for (const w of s.windows) { const hit = cached.get(w.name); if (hit) runs[w.name] = { plants: tagRows(hit.detections, rows ?? undefined), ms: hit.timingsMs?.total ?? null }; }
+  patchTwoStage(taskId, { paramsKey, runs });
+}
+
+export type PaintComparison = {
+  /** Windows scored under both keys. */
+  windows: number;
+  /** Weeds between the rows found on those windows, painted and unpainted. */
+  painted: number;
+  unpainted: number;
+  /** Weeds the unpainted run put ON the rows (dropped afterwards): what painting takes out of the model's sight. */
+  unpaintedOnRow: number;
+};
+
+/**
+ * The same windows scored with the crop painted out and left in: how many weeds between the rows each gave. Null until
+ * both runs exist on at least one window. The two keys differ only in the painting suffix.
+ */
+export async function paintComparison(taskId: string, deps?: Partial<TwoStageDeps>): Promise<PaintComparison | null> {
+  const s = getTwoStage(taskId);
+  if (!s.keyBase || !s.rowsSig) return null;
+  const d = depsOf(deps);
+  const rows = d.rowsOf(taskId);
+  const [a, b] = await Promise.all([d.cache.load(taskId, windowsKey(s.keyBase, s.rowsSig, true)), d.cache.load(taskId, windowsKey(s.keyBase, s.rowsSig, false))]);
+  const names = s.windows.map(w => w.name).filter(n => a.has(n) && b.has(n));
+  if (!names.length) return null;
+  const between = (dets: FrameDetection[]) => tagRows(dets, rows ?? undefined).filter(p => p.klass === "weed" && p.centre && !isOnRow(p.rowStatus)).length;
+  const onRow = (dets: FrameDetection[]) => tagRows(dets, rows ?? undefined).filter(p => p.klass === "weed" && p.centre && isOnRow(p.rowStatus)).length;
+  let painted = 0, unpainted = 0, unpaintedOnRow = 0;
+  for (const n of names) { painted += between(a.get(n)!.detections); unpainted += between(b.get(n)!.detections); unpaintedOnRow += onRow(b.get(n)!.detections); }
+  return { windows: names.length, painted, unpainted, unpaintedOnRow };
 }
 
 /** Stage 2: RF-DETR on the routed windows, or on every window for the reference. */
@@ -211,7 +275,7 @@ export function runStage2(taskId: string, input: { userId: string | null; mode: 
   const todo = order.filter(n => !s.runs[n]);
   const { params, paramsKey, tilePx, modelSha } = s;
   const rows = deps.rowsOf(taskId);
-  const paint = rows?.source === "layout" ? betweenRowsPainter(rows) : undefined;
+  const paint = rows?.source === "layout" && s.paintCrop ? betweenRowsPainter(rows) : undefined;
   patchTwoStage(taskId, { running: true, error: null, stage2: { mode: input.mode, done: order.length - todo.length, total: order.length, fromCache: order.length - todo.length } });
   (async () => {
     for (const name of todo) {

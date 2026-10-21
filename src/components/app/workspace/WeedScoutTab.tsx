@@ -67,6 +67,8 @@ import { SimpleWeedFinder } from "../weedVision/SimpleWeedFinder";
 import { HeatmapLayer, HotspotFocus, HotspotLayer, REVIEW_COLOUR } from "../weedVision/HotspotLayer";
 import { HotspotPanel } from "../weedVision/HotspotPanel";
 import { LayoutLayer } from "../weedVision/LayoutLayer";
+import { PressureLayer } from "../weedVision/PressureLayer";
+import { PressurePanel } from "../weedVision/PressurePanel";
 import { CropRowsPanel } from "../weedVision/CropRowsPanel";
 import { loadFieldLayout } from "@/lib/weedVision/layout/fieldLayoutStore";
 import { TWO_STAGE_COLOURS, TwoStageLayer } from "../weedVision/TwoStageLayer";
@@ -929,6 +931,7 @@ export function WeedScoutTab({
             </>
           )}
           <TwoStageLayer taskId={taskId} />
+          <PressureLayer taskId={taskId} />
           <ModelDetectionLayer taskId={taskId} onMark={markPlant} showLabels={showLabels && labelsReadable} />
           <LayoutLayer taskId={taskId} />
           {/* Every spot carries its own decision and its own review panel.
@@ -1118,9 +1121,10 @@ export function WeedScoutTab({
       </div>
 
       <aside className="w-[400px] shrink-0 border-l border-[#1f1f1f] flex flex-col min-h-0" style={{ background: "#121212" }}>
-        {simple ? (
+        {simple ? (<>
           <SimpleWeedFinder taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} onShowOptions={() => setSimple(false)} fieldId={fieldId} />
-        ) : (<>
+          <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} />
+        </>) : (<>
         {/* Header and run */}
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
           <button type="button" onClick={() => setSimple(true)} className="text-[11px] underline text-neutral-500 hover:text-neutral-300" data-testid="back-to-simple">Back to the simple view</button>
@@ -1172,6 +1176,7 @@ export function WeedScoutTab({
         {frameRun.mapAvailable && <div className="p-4 border-b border-[#1f1f1f]"><CropRowsPanel taskId={taskId} fieldId={fieldId} userId={user?.id ?? null} /></div>}
         <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} />
         <HotspotPanel taskId={taskId} userId={user?.id ?? null} onOpenPhotos={openAreaPhotos} onMarkArea={markArea} />
+        <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} />
         <TwoStagePanel taskId={taskId} userId={user?.id ?? null} sources={sources} />
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
           <details className="text-[11px]">

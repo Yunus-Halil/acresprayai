@@ -12,7 +12,7 @@ import { fmtArea } from "@/lib/units";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
 import { type AlgorithmInfo, type Health, algorithmReady, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
 import { type Rate, COVER_CLASSES, scoreTwoStage } from "@/lib/weedVision/twoStage/score";
-import { type LabelFile, type TwoStageLayers, exportLabels, importLabels, labelCell, nextRandomCell, patchTwoStage, runStage1, runStage2, stopTwoStage, twoStagePlants, useTwoStage } from "@/lib/weedVision/twoStage/twoStageStore";
+import { type LabelFile, type PaintComparison, type TwoStageLayers, exportLabels, importLabels, labelCell, nextRandomCell, paintComparison, patchTwoStage, runStage1, runStage2, setPaintCrop, stopTwoStage, twoStagePlants, useTwoStage } from "@/lib/weedVision/twoStage/twoStageStore";
 import { LABEL_COLOURS, TWO_STAGE_COLOURS } from "./TwoStageLayer";
 import { modelShaFor } from "./ModelDetectionsPanel";
 
@@ -50,6 +50,12 @@ export function TwoStagePanel({ taskId, userId, sources, fetchImpl }: { taskId: 
   const gsdCm = sources?.stats?.odm_processing_statistics?.average_gsd;
   const photoGsdM = typeof gsdCm === "number" ? gsdCm / 100 : null;
 
+  const [paintCmp, setPaintCmp] = useState<PaintComparison | null>(null);
+  useEffect(() => {
+    let on = true;
+    void paintComparison(taskId).then(c => { if (on) setPaintCmp(c); });
+    return () => { on = false; };
+  }, [taskId, s.runs, s.paintCrop, s.keyBase]);
   const report = useMemo(() => {
     if (!s.stage1 || !s.routing) return null;
     const ran = new Map(Object.entries(s.runs).map(([k, v]) => [k, v.ms]));
@@ -219,6 +225,18 @@ export function TwoStagePanel({ taskId, userId, sources, fetchImpl }: { taskId: 
               {(["pressure", "candidates", "windows", "weeds"] as const).map(k => (
                 <label key={k} className="inline-flex items-center gap-1"><input type="checkbox" checked={s.layers[k]} onChange={() => setLayer(k)} /> {k}</label>
               ))}
+            </div>
+          )}
+          {s.rowsSig && (
+            <div className="space-y-0.5" data-testid="two-stage-paint">
+              <label className="inline-flex items-center gap-1 text-neutral-400" title="Painting is what Simple mode does. Leaving the crop in and dropping what lands on the rows is the published alternative; run both on the same windows to see what painting changes.">
+                <input type="checkbox" checked={s.paintCrop} disabled={s.running} onChange={e => void setPaintCrop(taskId, e.target.checked)} /> paint the crop out before the model
+              </label>
+              {paintCmp && (
+                <p className="text-neutral-500" data-testid="two-stage-paint-compare">
+                  On {paintCmp.windows} window{paintCmp.windows === 1 ? "" : "s"} scored both ways: {paintCmp.painted} weeds between the rows with the crop painted out, {paintCmp.unpainted} with it left in ({paintCmp.unpaintedOnRow} more landed on the rows and were dropped). A difference between the rows is the painting's own doing.
+                </p>
+              )}
             </div>
           )}
         </div>
