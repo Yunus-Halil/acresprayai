@@ -8,7 +8,9 @@ describe("the planting catalogue", () => {
     const d = describePlanting(3.1, 5.1); // the operator's apricot orchard
     expect(d.matches.length).toBeGreaterThan(0);
     expect(d.matches.some(e => e.crop === "apricot")).toBe(true);
-    expect(d.text).toMatch(/^Trees 3\.1 m apart in rows 5\.1 m apart: the frame shared by apricot/);
+    // The same frame is also a semi-dwarf apple frame: the catalogue names every crop it fits, apricot among them.
+    expect(d.text).toMatch(/^Trees 3\.1 m apart in rows 5\.1 m apart: the frame shared by /);
+    expect(d.text).toMatch(/apricot/);
     expect(d.text).toMatch(/Turkey/);
     expect(d.doubt).toBeNull();
     const t = describePlanting(6, 6);
