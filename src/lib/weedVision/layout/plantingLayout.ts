@@ -120,6 +120,13 @@ export const LAYOUT_PARAMS = {
    */
   edgeAgreeShare: 0.5, edgeMinRows: 2, edgeOuterMinSeen: 3, edgeOuterMinShare: 0.15, edgePasses: 6,
   /**
+   * Another cover: where the planting's plants stand apart, a position whose surroundings (a box of half the smaller
+   * spacing) are at least this share green is not a plant of this planting but another cover (a neighbouring crop,
+   * a closed weed bed): the rows do not run into it and the edge pass does not fill into it. On the real orchard the
+   * rows had run on into the wheat next door, green at every lattice position (2026-10-21).
+   */
+  closedCover: 0.7,
+  /**
    * A plant leaves its expected position for the greenest spot in the search box only when that spot is at least this
    * many times as green as the position itself; on flat ground it stays on the lattice. Measured 2026-10-21 on grassed
    * olive frames: at 1.2 the plants walked onto the sward (12 of 186 trees found on DJI_0380), at 2 they held (55; 43
@@ -531,7 +538,7 @@ export function seedsFor(L: Lattice, GF: Float32Array, r: LayoutRaster, near: { 
 export type Anchor = { i: number; j: number; x: number; y: number };
 /** `rowBar`: a lower presence bar for the rows the operator marked (by lattice row), the planting's own bar elsewhere. */
 /** `trace`: the fate of every expected position looked at, by "i,j": accepted, or why not (audits). */
-export type GrowOptions = { anchors?: Anchor[]; /** Positions the operator marked "no crop": never a plant, whatever grows there. */ noCrop?: Anchor[]; rowBar?: Map<number, number>; trace?: Map<string, string>; /** Crown-scale green (not the crown vote) at a raster point: "plainly bare" is judged on green. */ greenAt?: (x: number, y: number) => number };
+export type GrowOptions = { anchors?: Anchor[]; /** Positions the operator marked "no crop": never a plant, whatever grows there. */ noCrop?: Anchor[]; rowBar?: Map<number, number>; trace?: Map<string, string>; /** Crown-scale green (not the crown vote) at a raster point: "plainly bare" is judged on green. */ greenAt?: (x: number, y: number) => number; /** Green share of the surroundings (a box of half the smaller spacing) at a raster point: another cover when over closedCover. */ coverAt?: (x: number, y: number) => number };
 
 export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds: [number, number][], separate: boolean, opts: GrowOptions = {}): { plants: LayoutPlant[]; gaps: LayoutGap[]; rows: number; foundShare: number; lattice: Lattice } {
   const P = LAYOUT_PARAMS;
@@ -596,14 +603,14 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     if (!inside(ex, ey) && ![[reach, 0], [-reach, 0], [0, reach], [0, -reach]].some(([a, c]) => inside(ex + a * ux + c * nx, ey + a * uy + c * ny))) { note(i, j, "outside the field"); return null; }
     // The greenest spot in the search box; a crown wider than the box is a plateau of equally green spots, so the
     // plant is put at the centre of the spots within a tenth of the best, not at the first of them.
-    let bg = -1;
+    let bg = -1, gx = ex, gy = ey;
     const cells: [number, number, number][] = [];
     for (let a = -sa; a <= sa; a += 1) for (let c = -sc; c <= sc; c += 1) {
       const x = Math.round(ex + a * ux + c * nx), y = Math.round(ey + a * uy + c * ny);
       if (x < 0 || y < 0 || x >= r.w || y >= r.h) continue;
       const g = G[y * r.w + x];
       cells.push([x, y, g]);
-      if (g > bg) bg = g;
+      if (g > bg) { bg = g; gx = x; gy = y; }
     }
     if (bg < barOf(j)) { note(i, j, `not present: crown green ${bg.toFixed(2)} under the bar ${barOf(j).toFixed(2)}`); return { x: ex, y: ey, g: -1, seen: bg }; }
     let bx = 0, by = 0, bn = 0;
@@ -616,6 +623,20 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     const offA = (bx - lx) * ux + (by - ly) * uy, offC = (bx - lx) * nx + (by - ly) * ny;
     if (Math.abs(offA) > P.maxOffAlong * L.along || Math.abs(offC) > P.maxOffAcross * Math.abs(L.across)) { note(i, j, `off the layout: ${(offA * r.mpp).toFixed(2)} m along, ${(offC * r.mpp).toFixed(2)} m across (limits ${(P.maxOffAlong * L.along * r.mpp).toFixed(2)}, ${(P.maxOffAcross * Math.abs(L.across) * r.mpp).toFixed(2)})`); return { x: ex, y: ey, g: -1, seen: bg }; }
     if (separate) {
+      // Another cover: the surroundings are green through and through where this planting has bare alleys (a
+      // neighbouring crop, a closed weed bed). Not a plant of this planting; the row ends before it.
+      // Judged at the slot, where the plant would stand, at the greenest cell and half a spacing from it each way
+      // along and across: a position at the cover's edge reads half bare, and the crown vote lights an edge (it has
+      // texture) and darkens the flat interior, so the cover is read on the green itself, a step further in.
+      const cover = opts.coverAt ? Math.max(opts.coverAt(ex, ey), opts.coverAt(bx, by), opts.coverAt(gx, gy),
+        opts.coverAt(gx + 0.5 * L.along * ux, gy + 0.5 * L.along * uy), opts.coverAt(gx - 0.5 * L.along * ux, gy - 0.5 * L.along * uy),
+        opts.coverAt(gx + 0.5 * L.across * nx, gy + 0.5 * L.across * ny), opts.coverAt(gx - 0.5 * L.across * nx, gy - 0.5 * L.across * ny)) : 0;
+      if (cover >= P.closedCover) { note(i, j, `another cover: the surroundings are ${cover.toFixed(2)} green`); return { x: ex, y: ey, g: -1, seen: -3 }; }
+      // A strip across the rows (a weed line along the fence, a track verge): green as the plant on both sides across.
+      const gAt2 = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? G[yi * r.w + xi] : 0; };
+      const hx = 0.5 * L.across * nx, hy = 0.5 * L.across * ny;
+      const s1 = gAt2(bx + hx, by + hy), s2 = gAt2(bx - hx, by - hy);
+      if (s1 > P.stripShare * bg && s2 > P.stripShare * bg) { note(i, j, `green across the row on both sides (a strip across the rows): ${s1.toFixed(2)} and ${s2.toFixed(2)} beside`); return { x: ex, y: ey, g: -1, seen: -3 }; }
       for (const di of [-1, 1]) {
         const q = plant.get(key(i + di, j));
         if (!q) continue;
@@ -939,7 +960,10 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
                 // it; at the typical size when there is none, so the ring is seen and says nothing it did not measure.
                 const c = canopyOf(r, x, y, reach), has = c.radius > 1;
                 const cap = typicalCrown > 0 ? typicalCrown : c.radius, radius = has ? Math.max(0.5 * cap, Math.min(c.radius, cap)) : cap;
-                plants.push({ x: has ? c.x : x, y: has ? c.y : y, r: radius, paint: radius, row: j, i, run, state: "expected", g: Math.max(0, seenG), merged: has && c.merged });
+                // On the row's line: the trunk stands on the line, the crown leans; a plant put by the pattern moves
+                // only along the row toward its green, never across it (a ring beside the line bent the drawn row).
+                const [fx, fy] = has ? onRowLine(L, x, y, c.x, c.y) : [x, y];
+                plants.push({ x: fx, y: fy, r: radius, paint: radius, row: j, i, run, state: "expected", g: Math.max(0, seenG), merged: has && c.merged });
                 found++;
                 opts.trace?.set(key(i, j), `expected by the pattern (crown green ${Math.max(0, seenG).toFixed(2)})`);
               } else gaps.push({ x, y, row: j, i, evidence: "operator", g: 0 });
@@ -1072,6 +1096,9 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
   if (main.along !== refined.along) main = refineLattice(main, boxMean(r, P.crownShare * main.along, vote), r, holds).lattice;
   const derived = sub.derived.map(L => ({ ...L, along: main.along, across: main.across, angle: main.angle }));
   const separate = plantsStandApart(main, GF, r);
+  // The surroundings' green share, a box of half the smaller spacing, on the green itself: another cover reads near 1.
+  const GC = boxMean(r, 0.5 * Math.min(main.along, Math.abs(main.across)));
+  const coverAt = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? GC[yi * r.w + xi] : 0; };
   const rowPitch = rowPitchOf(main, derived);
   const out: FittedLayout[] = [];
   for (const L of [main, ...derived]) {
@@ -1082,8 +1109,8 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
     for (const a of anchors) { const bar = Math.min(P.presentGreen, Math.max(P.anchorFloor, 0.5 * gAt(a.x, a.y))); rowBar.set(a.j, Math.min(rowBar.get(a.j) ?? P.presentGreen, bar)); }
     const seeds = seedsFor(L, GF, r, near, 3, presentGreen);
     if (!seeds.length && !anchors.length) continue;
-    const grown = growPlants(L, GF, r, seeds, separate, { anchors, noCrop, rowBar, greenAt, trace: L === main ? trace : undefined });
-    out.push({ score, rowPitch, ...completeByPattern(r, GF, grown, noCrop, L === main, separate) });
+    const grown = growPlants(L, GF, r, seeds, separate, { anchors, noCrop, rowBar, greenAt, coverAt, trace: L === main ? trace : undefined });
+    out.push({ score, rowPitch, ...completeByPattern(r, GF, grown, noCrop, L === main, separate, coverAt) });
   }
   return out.length ? out : [{ score, rowPitch, lattice: main, plants: [], gaps: [], rows: 0, foundShare: 0 }];
 }
@@ -1091,6 +1118,13 @@ export function fitLayoutAll(L0: Lattice, r: LayoutRaster, clicks: [number, numb
 /** The clicked planting alone (tests and callers that want one lattice). */
 export function fitLayout(L0: Lattice, r: LayoutRaster): FittedLayout {
   return fitLayoutAll(L0, r)[0];
+}
+
+/** The point on the row line through (x0, y0) (the lattice's along direction) nearest (cx, cy), moved at most 0.35 of the plant spacing along it. */
+export function onRowLine(L: Lattice, x0: number, y0: number, cx: number, cy: number): [number, number] {
+  const { ux, uy } = basis(L);
+  const t = Math.max(-0.35 * L.along, Math.min(0.35 * L.along, (cx - x0) * ux + (cy - y0) * uy));
+  return [x0 + t * ux, y0 + t * uy];
 }
 
 // ---------------------------------------------------------------- the planting's edges
@@ -1118,7 +1152,7 @@ export function fitLayout(L0: Lattice, r: LayoutRaster): FittedLayout {
  * their points, so the fill follows the row as planted), ringed at the green joined to it when there is any and at
  * the planting's typical size when there is none, state expected. The operator's "no crop" is never filled.
  */
-export function completeByPattern(r: LayoutRaster, G: Float32Array, grown: { plants: LayoutPlant[]; gaps: LayoutGap[]; rows: number; foundShare: number; lattice: Lattice }, noCrop: Anchor[] = [], outer = true, separate = true): typeof grown {
+export function completeByPattern(r: LayoutRaster, G: Float32Array, grown: { plants: LayoutPlant[]; gaps: LayoutGap[]; rows: number; foundShare: number; lattice: Lattice }, noCrop: Anchor[] = [], outer = true, separate = true, coverAt?: (x: number, y: number) => number): typeof grown {
   const P = LAYOUT_PARAMS, L = grown.lattice;
   const key = (i: number, j: number) => `${i},${j}`;
   const have = new Map<string, LayoutPlant>();
@@ -1127,7 +1161,8 @@ export function completeByPattern(r: LayoutRaster, G: Float32Array, grown: { pla
   for (const p of plants) { const [lx, ly] = latticePoint(L, p.i, p.row); if (Math.hypot(p.x - lx, p.y - ly) <= 0.35 * L.along) have.set(key(p.i, p.row), p); }
   if (!have.size) return grown;
   const never = new Set([...noCrop.map(a => key(a.i, a.j)), ...grown.gaps.map(g => key(g.i, g.row))]);
-  const inside = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h && r.inField[yi * r.w + xi] === 1; };
+  // Inside the field, and not in another cover (a neighbouring crop green through and through) where the planting's plants stand apart.
+  const inside = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h && r.inField[yi * r.w + xi] === 1 && !(separate && coverAt && coverAt(x, y) >= P.closedCover); };
   const gAt = (x: number, y: number) => { const xi = Math.round(x), yi = Math.round(y); return xi >= 0 && yi >= 0 && xi < r.w && yi < r.h ? G[yi * r.w + xi] : 0; };
   const reach = canopyReach(L);
   const typical = median(plants.filter(p => !p.merged).map(p => p.r)) || median(plants.map(p => p.r));
@@ -1140,7 +1175,8 @@ export function completeByPattern(r: LayoutRaster, G: Float32Array, grown: { pla
     const x = lx + shift[0], y = ly + shift[1];
     const c = canopyOf(r, x, y, reach), has = c.radius > 1;
     const radius = has ? Math.max(0.5 * typical, Math.min(c.radius, typical)) : typical;
-    const p: LayoutPlant = { x: has ? c.x : x, y: has ? c.y : y, r: radius, paint: radius, row: j, i, run, state: "expected", g: Math.max(0, gAt(x, y)), merged: has && c.merged };
+    const [fx, fy] = has ? onRowLine(L, x, y, c.x, c.y) : [x, y];
+    const p: LayoutPlant = { x: fx, y: fy, r: radius, paint: radius, row: j, i, run, state: "expected", g: Math.max(0, gAt(x, y)), merged: has && c.merged };
     plants.push(p); have.set(key(i, j), p); added++;
   };
   // Along: to a fixed point.
@@ -1241,6 +1277,8 @@ export function mergeLayouts(fits: FittedLayout[]): FittedLayout[] {
 /** The fitted layout as FieldRows in the raster's frame (zoom z, origin left, top), with its gaps. */
 /** The crop band each side of a row line between the crowns, metres. */
 export const LAYOUT_BAND_M = 0.5;
+/** A drawn row line may tilt from the lattice's direction by at most this, degrees: rows are planted straight. */
+export const ROW_LINE_MAX_TILT_DEG = 2;
 
 export function layoutToFieldRows(f: FittedLayout, r: LayoutRaster): (FieldRows & { source: "layout"; gaps: { x: number; y: number }[] }) | null {
   if (!f.rows) return null;
@@ -1256,12 +1294,23 @@ export function layoutToFieldRows(f: FittedLayout, r: LayoutRaster): (FieldRows 
   const byRow = new Map<number, LayoutPlant[]>();
   for (const p of f.plants) (byRow.get(p.run) ?? byRow.set(p.run, []).get(p.run)!).push(p);
   const lines: FieldRows["ctx"]["lines"] = [];
+  const { nx, ny } = basis(f.lattice);
   for (const ps of byRow.values()) {
+    // One straight line per row: trunks stand on a line, crowns lean. The line runs in the lattice's direction,
+    // tilted at most ROW_LINE_MAX_TILT by least squares through the row's plants, at their median offset across
+    // (a ring beside the line does not bend the row), from half a step before the first plant to half a step past
+    // the last.
     const m = [...ps].sort((a, b) => a.i - b.i).map(p => ({ x: p.x * k, y: p.y * k }));
-    for (let i = 1; i < m.length; i++) lines.push({ x1: m[i - 1].x, y1: m[i - 1].y, x2: m[i].x, y2: m[i].y, band });
-    const h = step / 2, a = m[0], z = m[m.length - 1];
-    lines.push({ x1: a.x - h * ux, y1: a.y - h * uy, x2: a.x, y2: a.y, band });
-    lines.push({ x1: z.x, y1: z.y, x2: z.x + h * ux, y2: z.y + h * uy, band });
+    const t = m.map(q => q.x * ux + q.y * uy), s = m.map(q => q.x * nx + q.y * ny);
+    const tm = t.reduce((a, b) => a + b, 0) / t.length, sm = s.reduce((a, b) => a + b, 0) / s.length;
+    let stt = 0, sts = 0;
+    for (let i = 0; i < t.length; i++) { stt += (t[i] - tm) ** 2; sts += (t[i] - tm) * (s[i] - sm); }
+    const maxTilt = Math.tan((ROW_LINE_MAX_TILT_DEG * Math.PI) / 180);
+    const slope = stt > step * step ? Math.max(-maxTilt, Math.min(maxTilt, sts / stt)) : 0;
+    const sMed = [...s].sort((a, b) => a - b)[s.length >> 1];
+    const at = (tt: number) => { const ss = sMed + slope * (tt - tm); return { x: tt * ux + ss * nx, y: tt * uy + ss * ny }; };
+    const h = step / 2, a = at(Math.min(...t) - h), z = at(Math.max(...t) + h);
+    lines.push({ x1: a.x, y1: a.y, x2: z.x, y2: z.y, band });
   }
   const mppFrame = r.mpp / k;
   return {

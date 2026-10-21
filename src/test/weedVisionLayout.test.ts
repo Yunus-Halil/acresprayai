@@ -407,6 +407,34 @@ describe("the planting's edges, by the pattern", () => {
   });
 });
 
+describe("where the planting ends: another cover is not this planting", () => {
+  const paint = (r: LayoutRaster, x0: number, x1: number, y0: number, y1: number) => { for (let y = y0; y <= y1; y += MPP / 2) for (let x = x0; x <= x1; x += MPP / 2) { const xi = Math.floor(x / MPP), yi = Math.floor(y / MPP); if (xi >= 0 && yi >= 0 && xi < W && yi < H) r.green[yi * W + xi] = 255; } };
+  const at = (i: number, j: number) => { const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux; return [2 + i * 3.2 * ux + j * 5 * nx, 2.5 + i * 3.2 * uy + j * 5 * ny] as const; };
+
+  it("rows do not run on into a neighbouring crop that is green through and through", () => {
+    // Block A's rows end at x about 56.4; a wheat field fills x from 58 to the raster's edge over block A's rows.
+    const { r, trees } = orchard();
+    paint(r, 58, 60, 0, 19.5);
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    expect(fit.plants.some(p => p.x * MPP > 57.5)).toBe(false);
+    // and the rows themselves are whole: all 18 positions of row A1 are plants.
+    for (let i = 0; i < 18; i++) { const [x, y] = at(i, 1); expect(fit.plants.some(p => Math.hypot(p.x * MPP - x, p.y * MPP - y) <= 0.6)).toBe(true); }
+  });
+
+  it("a weed strip across the row ends is not a plant on any row", () => {
+    // Block A's last tree of each row removed; a 0.6 m green line runs across the rows just beyond where they end.
+    const { r, trees } = orchard(new Set(["A17,0", "A17,1", "A17,2", "A17,3"]));
+    paint(r, 56.4, 57.0, 0, 19.5);
+    const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
+    const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
+    // Nothing seen on the strip (a position there is green on both sides across): no plant stands on x 56.4-57
+    // other than what the pattern carries from the rows' own ends, and nothing beyond it.
+    expect(fit.plants.some(p => p.x * MPP > 57.2)).toBe(false);
+    expect(fit.plants.filter(p => p.state === "confirmed" && p.x * MPP > 56.2).length).toBe(0);
+  });
+});
+
 describe("only between the rows", () => {
   it("paints the row band over with the picture's bare ground and nothing else", () => {
     const rows = { z: Z, left: 0, top: 0, mpp: 0.03, rows: 1, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "layout" as const, ctx: { lines: [{ x1: 0, y1: 20, x2: 64, y2: 20, band: 4 }], crops: [], bandPx: 4, gsdM: 0.03 } };

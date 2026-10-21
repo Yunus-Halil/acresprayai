@@ -93,6 +93,31 @@ Synthetic tests: a row cut four trees short is carried to its neighbours' end; a
 stays empty while a hole in one row is filled; an outer row of four trees is found and filled, an outer row of bare
 ground is not invented; the weed strip along the track is not a row.
 
+### Where the planting ends, and straight rows (2026-10-21, later the same evening)
+
+Two more things the operator saw on the real orchard. The rows had run on into the wheat next door, green at every
+lattice position, and the edge pass had followed. And one row line bent to a small ring the pattern had put beside
+the line, on a weed clump next to the tree. "A planting ends where the ground pattern changes" and "rows are planted
+straight":
+
+- **Another cover** (`closedCover` 0.7): where the planting's plants stand apart, a position whose surroundings (a
+  box of half the smaller spacing, on the green itself) are at least 0.7 green is not a plant of this planting but
+  another cover (a neighbouring crop, a closed weed bed). Judged at the slot, where the plant would stand, at the
+  greenest cell, and half a spacing from it each way along and across, because a position at the cover's edge reads
+  half bare, and because the crown vote lights an edge (it has texture) and darkens a flat interior. The edge pass
+  never fills into another cover.
+- **A strip across the rows**: a position green as the plant on both sides across (the alley points half a pitch
+  each way) is a weed line along the fence or a track verge, not a plant.
+- **One straight line per row** (`ROW_LINE_MAX_TILT_DEG` 2): the drawn row runs in the lattice's direction, tilted
+  at most two degrees by least squares through the row's plants, at their median offset across, from half a step
+  before the first plant to half a step past the last. Trunks stand on a line; crowns lean; a ring beside the line
+  does not bend the row. A plant the pattern adds stands on that line and moves only along it toward its green
+  (`onRowLine`), never across.
+
+DJI_0301: 119 plants, 96 of 104 labelled trees, 103 on rows; labelled weeds taken for crop 36 to 39, since the
+straight line's band sits a little differently from the ring-to-ring chain. Synthetic tests: rows do not run on into
+a field green through and through beyond their ends; a weed strip across the row ends carries no confirmed plant.
+
 ## The signal under the lattice, and where it holds (2026-10-21)
 
 Built after the literature sweeps in `docs/research/row-crop-detection-methods.md` and measured on the six grassed
