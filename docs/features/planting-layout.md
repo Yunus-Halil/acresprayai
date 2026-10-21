@@ -8,10 +8,12 @@ rowBand, fieldLayoutStore, layoutUi), `CropRowsPanel.tsx`, `LayoutLayer.tsx`; mi
 ## Why
 
 **The pattern is the proof (2026-10-21).** The planter follows fixed waypoints at a fixed spacing, so a position on a
-kept row is a crop unless the ground there is plainly bare. The fitter does not ask the operator whether a planted
-position holds a crop; the first version did, with "?" rings on every pale tree, and the operator answered "a crop" to
-all of them. Only two marks remain on a row: a green ring (a crop, by the pattern) and a red cross (bare ground: a
-skip). This is also the field's stand count, read over the whole field rather than interpolated from samples.
+kept row is a crop. The fitter does not ask the operator whether a planted position holds a crop; the first version
+did, with "?" rings on every pale tree, and the operator answered "a crop" to all of them. A second version drew a red
+cross where the crown-scale green was under 0.08; on the real orchard those were small trees whose green fell under
+the floor at 8 cm a pixel, 99 of 100 by the operator's eye ("follow the spacing average"), so the fitter now never
+calls a planted position empty. One mark on a row: a green ring. A skip is the operator's word alone (a grey cross).
+The count of planted positions is the field's stand, read over the whole field rather than interpolated from samples.
 
 The automatic row reader builds rows tree by tree from green blobs. On the kept orchard frames it found no rows on 2 of
 5 and only one block on a third: weed clumps merge with crowns into blobs of up to 77 m², which push its idea of a
@@ -190,22 +192,21 @@ the operator's blind cell labels on the real map (the two-stage prototype's labe
 
 The position is the proof. Where the planting extends is still decided on evidence (stretches, straightness, the
 bridged-stretch proof and the density rule are judged on plants seen at or over the bar, and a row never extends past
-its last seen plant); inside a kept stretch every position is a crop unless the ground is plainly bare. Each fitted
-plant carries a state that says how much of its own green it had, and the canopy is a measurement apart from the
-position:
+its last seen plant); inside a kept stretch every position is a crop. Each fitted plant carries a state that says how
+much of its own green it had, and the canopy is a measurement apart from the position:
 
 | On the map | State | Rule |
 |---|---|---|
 | solid green ring | confirmed | green at its place over the bar; canopy at least half the planting's typical one and crown green at least 0.15 |
 | dashed green ring | confirmed or expected, canopy uncertain | the crown's green reaches the edge of its cell in half the directions or more: a crown that runs into weeds or a neighbour; drawn round what was measured, painted over for the model at the planting's typical size |
-| green ring | expected | a crop by the pattern: a young or pale tree (canopy under half the typical one, or crown green under 0.15), green under the bar but over the 0.08 floor, green that stood off the layout or ran to the neighbour (a strip), or a plant on a row found at another pitch; ringed at the green joined to the slot, between half and all of the typical crown |
+| green ring | expected | a crop by the pattern: a young or pale tree (canopy under half the typical one, or crown green under 0.15), green under the bar, green that stood off the layout or ran to the neighbour (a strip), a plant on a row found at another pitch, or a position with no green seen at all; ringed at the green joined to the slot, between half and all of the typical crown, at the typical size when there is none |
 | thick pale ring | operator | the operator said "a crop" |
-| red cross | skip | a planted position with plainly bare ground (best crown-scale green under 0.08); never reported as a dead tree by itself |
-| grey cross | operator: no crop | kept in the field's layout |
+| grey cross | operator: no crop | the only kind of gap; kept in the field's layout |
 
-No position on a row is drawn as a question, and the operator is never asked about one. A weed standing exactly at a
-planted position is shown as that position's crop (an "expected" ring): the pattern cannot tell them apart, and the
-planter did put a plant there. Click a ring to say "No crop" (a grey cross from then on) or a cross to say "A crop";
+No position on a row is drawn as a question or as missing, and the operator is never asked about one. A weed standing
+exactly at a planted position is shown as that position's crop (an "expected" ring): the pattern cannot tell them
+apart, and the planter did put a plant there. Click a ring to say "No crop" (a grey cross from then on) or a cross to
+take that back;
 the word is kept with the field's layout and applied at once: a no-crop position is never a plant (the interior scans
 respect it too), a crop position is a plant whatever the green. The crown painted over for the model is the measured
 canopy, capped, never the merged extent.

@@ -53,7 +53,7 @@ const treeA = (trees: (Tree & { key: string })[], k: string) => trees.find(t => 
 const treeB = (trees: (Tree & { key: string })[], k: string) => trees.find(t => t.key === `B${k}`)!;
 
 describe("the planting from three clicks", () => {
-  it("finds block A's trees and gaps, follows nothing into block B or along the weed strip", () => {
+  it("finds block A's trees, puts a crop by the pattern where two were removed, follows nothing into block B or along the weed strip", () => {
     const { r, trees } = orchard(new Set(["A5,1", "A9,2"]));
     const a = treeA(trees, "6,1"), b = treeA(trees, "7,1"), c = treeA(trees, "6,2");
     const fit = fitLayout(latticeFromClicks(px(a.x, a.y), px(b.x, b.y), px(c.x, c.y))!, r);
@@ -63,9 +63,11 @@ describe("the planting from three clicks", () => {
     const A = trees.filter(t => t.block === "A"), B = trees.filter(t => t.block === "B");
     expect(A.filter(t => near(t, fit.plants)).length / A.length).toBeGreaterThan(0.9);
     expect(B.filter(t => near(t, fit.plants)).length).toBe(0);
-    // The two removed trees are gaps, not plants.
-    const gap = (k: string) => { const i = Number(k.split(",")[0]), j = Number(k.split(",")[1]); const ux = Math.cos(4 * deg), uy = Math.sin(4 * deg); return { x: 2 + i * 3.2 * ux - j * 5 * uy, y: 2.5 + i * 3.2 * uy + j * 5 * ux }; };
-    for (const k of ["5,1", "9,2"]) expect(near(gap(k), fit.gaps, 0.6)).toBe(true);
+    // The two removed trees are crops by the pattern (expected, at the typical size), never gaps: the fitter does not
+    // call a planted position empty.
+    const slot = (k: string) => { const i = Number(k.split(",")[0]), j = Number(k.split(",")[1]); const ux = Math.cos(4 * deg), uy = Math.sin(4 * deg); return { x: 2 + i * 3.2 * ux - j * 5 * uy, y: 2.5 + i * 3.2 * uy + j * 5 * ux }; };
+    for (const k of ["5,1", "9,2"]) { const p = fit.plants.find(p => Math.hypot(p.x * MPP - slot(k).x, p.y * MPP - slot(k).y) <= 0.6); expect(p?.state).toBe("expected"); expect(p!.r * MPP).toBeGreaterThanOrEqual(0.3); }
+    expect(fit.gaps).toHaveLength(0);
     // Nothing on the weed strip (y about 20.5 to 25).
     expect(fit.plants.every(p => p.y * MPP < 20)).toBe(true);
   });
@@ -212,7 +214,7 @@ describe("the spacing is the clue", () => {
 });
 
 describe("what stands at each position: a crop by the pattern unless the ground is bare", () => {
-  it("states: a full crown is confirmed, a small or merged one expected (never questioned); a gap only where nothing green was seen", () => {
+  it("states: a full crown is confirmed, a small or merged one expected (never questioned); a bare slot is a crop by the pattern too", () => {
     // A5,1 and A9,2 removed and refilled below; A14,2 removed and left bare: the one true gap.
     const { r, trees } = orchard(new Set(["A5,1", "A9,2", "A14,2"]));
     const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
@@ -243,13 +245,13 @@ describe("what stands at each position: a crop by the pattern unless the ground 
     const weedy = find(9, 2);
     expect(weedy?.state).toBe("expected");
     const [bx, by] = at(14, 2);
-    const bare = fit.gaps.find(g => Math.hypot(g.x * MPP - bx, g.y * MPP - by) <= 0.6);
-    expect(bare?.evidence).toBe("none");
-    // Nothing on a row is a question: every gap is plainly bare or the operator's word.
-    expect(fit.gaps.every(g => g.evidence === "none" || g.evidence === "operator")).toBe(true);
+    const bare = fit.plants.find(p => Math.hypot(p.x * MPP - bx, p.y * MPP - by) <= 0.6);
+    expect(bare?.state).toBe("expected");
+    // Nothing on a row is a question or a skip: the only gap is the operator's word, and there is none here.
+    expect(fit.gaps).toHaveLength(0);
   });
 
-  it("a pale tree between two seen trees is a crop at its slot, a bare slot is a skip, and no position is in question", () => {
+  it("a pale tree between two seen trees is a crop at its slot, so is a bare one, and no position is in question", () => {
     // A4,1 refilled faintly (green 60 of 255 over a 0.3 m disc: crown-scale green about 0.18, under the 0.3 bar); A10,1 left bare.
     const { r, trees } = orchard(new Set(["A4,1", "A10,1"]));
     const ang = 4 * deg, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
@@ -263,9 +265,10 @@ describe("what stands at each position: a crop by the pattern unless the ground 
     expect(pale!.r * MPP).toBeGreaterThanOrEqual(0.3); // a ring that can be seen: at least half the planting's typical crown
     expect(fit.gaps.some(g => Math.hypot(g.x * MPP - px4, g.y * MPP - py4) <= 0.6)).toBe(false);
     const [px10, py10] = at(10, 1);
-    const skip = fit.gaps.find(g => Math.hypot(g.x * MPP - px10, g.y * MPP - py10) <= 0.6);
-    expect(skip?.evidence).toBe("none");
-    expect(fit.plants.some(p => Math.hypot(p.x * MPP - px10, p.y * MPP - py10) <= 0.5)).toBe(false);
+    const bare = fit.plants.find(p => Math.hypot(p.x * MPP - px10, p.y * MPP - py10) <= 0.5);
+    expect(bare?.state).toBe("expected");
+    expect(bare!.r * MPP).toBeGreaterThanOrEqual(0.3);
+    expect(fit.gaps).toHaveLength(0);
     expect(fit.plants.every(p => p.state === "confirmed" || p.state === "expected")).toBe(true);
   });
 

@@ -1,9 +1,10 @@
 // The field's crop rows on the map, on one canvas: the row lines (cyan), each
-// planted position (green ring: a crop, by the pattern), each planted position
-// with plainly bare ground (red cross: a skip), tree-sized green that is on no
-// row (orange dashed ring: a row or block not marked yet), and, while marking,
-// the plants clicked so far (white). Clicks on the map are taken as plants
-// while marking. Nothing on a row is ever drawn as a question.
+// planted position (green ring: a crop, by the pattern), each position the
+// operator marked "no crop" (grey cross), tree-sized green that is on no row
+// (orange dashed ring: a row or block not marked yet), and, while marking, the
+// plants clicked so far (white). Clicks on the map are taken as plants while
+// marking. Nothing on a row is ever drawn as a question or as missing: the
+// fitter never calls a planted position empty, only the operator does.
 import { useEffect } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
@@ -11,7 +12,7 @@ import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
 import { frameRunFieldRows, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { addClick, pickPosition, useLayoutUi } from "@/lib/weedVision/layout/layoutUi";
 
-/** How each state is drawn: confirmed and expected the same green (dashed only where the canopy runs into other green), operator white-green; gaps a red cross (skip) or a grey cross (operator: no crop). */
+/** How each state is drawn: confirmed and expected the same green (dashed only where the canopy runs into other green), operator white-green; a gap is a grey cross (operator: no crop). */
 export const STATE_COLOUR = { confirmed: "#4ade80", expected: "#4ade80", operator: "#e2ffe9" } as const;
 
 export function LayoutLayer({ taskId }: { taskId: string }) {
@@ -33,7 +34,7 @@ export function LayoutLayer({ taskId }: { taskId: string }) {
       const typical = [...rows.ctx.crops.map(c => c.r)].sort((a, b) => a - b)[rows.ctx.crops.length >> 1] ?? (0.6 / rows.mpp);
       let best: { d: number; p: { x: number; y: number; kind: "plant" | "gap"; state: string; uncertain: boolean } } | null = null;
       for (const c of rows.ctx.crops) { const d = Math.hypot(c.x - fx, c.y - fy); if (d <= Math.max(c.r, 0.6 / rows.mpp) && (!best || d < best.d)) best = { d, p: { x: c.x, y: c.y, kind: "plant", state: c.state ?? "confirmed", uncertain: !!c.uncertain } }; }
-      for (const g of rows.gaps ?? []) { const d = Math.hypot(g.x - fx, g.y - fy); if (d <= Math.max(typical, 0.6 / rows.mpp) && (!best || d < best.d)) best = { d, p: { x: g.x, y: g.y, kind: "gap", state: g.evidence ?? "none", uncertain: false } }; }
+      for (const g of rows.gaps ?? []) { const d = Math.hypot(g.x - fx, g.y - fy); if (d <= Math.max(typical, 0.6 / rows.mpp) && (!best || d < best.d)) best = { d, p: { x: g.x, y: g.y, kind: "gap", state: "operator", uncertain: false } }; }
       if (!best) { pickPosition(taskId, null); return; }
       const g = latLngOfPx(rows.left + best.p.x, rows.top + best.p.y, rows.z);
       pickPosition(taskId, { lat: g.lat, lng: g.lng, kind: best.p.kind, state: best.p.state, uncertain: best.p.uncertain });
@@ -86,7 +87,7 @@ export function LayoutLayer({ taskId }: { taskId: string }) {
         }
         for (const g of rows.gaps ?? []) {
           const q = pt(g.x, g.y), s = 5;
-          ctx.strokeStyle = g.evidence === "operator" ? "#9ca3af" : "#ff1a1a"; ctx.lineWidth = 2.5;
+          ctx.strokeStyle = "#9ca3af"; ctx.lineWidth = 2.5;
           ctx.beginPath(); ctx.moveTo(q.x - s, q.y - s); ctx.lineTo(q.x + s, q.y + s); ctx.moveTo(q.x + s, q.y - s); ctx.lineTo(q.x - s, q.y + s); ctx.stroke();
         }
         if (ui.picked) {

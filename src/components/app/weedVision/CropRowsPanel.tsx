@@ -14,8 +14,7 @@ import { acceptReaderRows, cancelMarking, clearLayout, pickPosition, rereadRows,
 const STATE_TEXT: Record<string, string> = {
   confirmed: "A crop here. A dashed ring means its canopy runs into other green, so the ring is the planting's typical size, not measured.",
   expected: "A crop here by the planting: a plant is due at this position and a little green was seen, so it is a crop unless you say no.",
-  operator: "You said: a crop here.",
-  none: "A planted position with plainly bare ground: a skip.",
+  operator: "Your word stands here.",
 };
 
 const STEP = ["Click a tree.", "Click its neighbour in the same row.", "Click a tree in the next row."] as const;
@@ -48,7 +47,7 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
       ) : fromLayout && fr && stats ? (
         <div className="space-y-1" data-testid="crop-rows-layout">
           <p className="text-neutral-200">
-            {fr.rows} row{fr.rows === 1 ? "" : "s"}, {stats.plants.toLocaleString()} trees{stats.gaps ? `, ${stats.gaps.toLocaleString()} missing` : ""}: rows {d(fr.spacingM)} apart, trees {d(fr.seedSpacingM)} apart.
+            {fr.rows} row{fr.rows === 1 ? "" : "s"}, {stats.plants.toLocaleString()} trees{stats.gaps ? `, ${stats.gaps.toLocaleString()} marked no crop` : ""}: rows {d(fr.spacingM)} apart, trees {d(fr.seedSpacingM)} apart.
           </p>
           <p className="text-neutral-500">Weeds are looked for only between these rows; the rows themselves are left out of the search.</p>
           {(fr.rows < MIN_TRUSTED_ROWS || stats.foundShare < MIN_TRUSTED_FOUND) && (
@@ -96,7 +95,7 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
         </div>
       )}
       {fromLayout && !ui.picked && !ui.clicking && (
-        <p className="text-neutral-600">Rings: a crop at a planted position (dashed where its canopy runs into other green). Red cross: a planted position with bare ground, a skip. Click a ring to say no crop, a cross to say a crop.</p>
+        <p className="text-neutral-600">Rings: a crop at every planted position (dashed where its canopy runs into other green). Grey cross: a position you marked no crop. Click a ring to say no crop, a cross to take it back.</p>
       )}
       {run.fieldRowsNote && <p className="text-amber-400" data-testid="crop-rows-note">{run.fieldRowsNote}</p>}
       {ui.error && <p className="text-red-400">{ui.error}</p>}

@@ -55,8 +55,12 @@ export type LayoutPlant = {
   paint: number;
   row: number; i: number; /** The stretch of its row it belongs to. */ run: number; state: PlantState; /** Crown-scale green at the plant. */ g: number; /** Most rays out of the centre found no edge before the reach: the crown runs into weeds or a neighbour. */ merged: boolean;
 };
-/** An expected position with no plant: plainly bare ground (none: a skip), or the operator's "no crop". */
-export type LayoutGap = { x: number; y: number; row: number; i: number; evidence: "none" | "operator"; g: number };
+/**
+ * An expected position with no plant: only the operator's "no crop". The fitter itself never calls a planted position
+ * empty (2026-10-21, second pass): on the real orchard the positions it had called bare were small trees whose green
+ * fell under the floor at 8 cm a pixel, 99 of 100 by the operator's eye, so a skip is the operator's word alone.
+ */
+export type LayoutGap = { x: number; y: number; row: number; i: number; evidence: "operator"; g: number };
 
 export type FittedLayout = {
   lattice: Lattice;
@@ -866,7 +870,7 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
     if (tiny || (c.merged && q.g < P.presentGreen)) return { state: "expected", ...at, radius, paint };
     return { state: "confirmed", ...at, radius, paint };
   };
-  const gapEvidence = (k: string): LayoutGap["evidence"] => (gapAt.get(k)?.seen === -2 ? "operator" : "none");
+
   for (const [j, is] of byRow) {
     is.sort((a, b) => a - b);
     let cur: number[] = [is[0]];
@@ -920,16 +924,17 @@ export function growPlants(L0: Lattice, G: Float32Array, r: LayoutRaster, seeds:
             if (q) { const st = stateOf(key(i, j), q, j); plants.push({ x: st.x, y: st.y, r: st.radius, paint: st.paint, row: j, i, run, state: st.state, g: q.g, merged: st.merged }); opts.trace?.set(key(i, j), `accepted (crown green ${q.g.toFixed(2)}, ${st.state})`); }
             else {
               const g = gapAt.get(key(i, j)); const [lx, ly] = latticePoint(L, i, j); const x = g?.x ?? lx, y = g?.y ?? ly, seenG = g?.seen ?? 0;
-              if (seenG !== -2 && Math.max(seenG, opts.greenAt?.(x, y) ?? 0) >= P.anchorFloor) {
-                // Green there (under the bar, off the layout, or running to the neighbour): a crop by the pattern, between
-                // two seen plants of a kept row. Ringed at the green joined to its slot, never wider than the planting's
-                // typical crown nor under half of it, so the ring is seen and says nothing it did not measure.
+              if (seenG !== -2) {
+                // No seen plant here (green under the bar, off the layout, running to the neighbour, or none at all):
+                // a crop by the pattern, between two seen plants of a kept row, whatever the green. Ringed at the green
+                // joined to its slot when there is any, never wider than the planting's typical crown nor under half of
+                // it; at the typical size when there is none, so the ring is seen and says nothing it did not measure.
                 const c = canopyOf(r, x, y, reach), has = c.radius > 1;
                 const cap = typicalCrown > 0 ? typicalCrown : c.radius, radius = has ? Math.max(0.5 * cap, Math.min(c.radius, cap)) : cap;
-                plants.push({ x: has ? c.x : x, y: has ? c.y : y, r: radius, paint: radius, row: j, i, run, state: "expected", g: seenG, merged: has && c.merged });
+                plants.push({ x: has ? c.x : x, y: has ? c.y : y, r: radius, paint: radius, row: j, i, run, state: "expected", g: Math.max(0, seenG), merged: has && c.merged });
                 found++;
-                opts.trace?.set(key(i, j), `expected by the pattern (crown green ${seenG.toFixed(2)} under the bar)`);
-              } else gaps.push({ x, y, row: j, i, evidence: gapEvidence(key(i, j)), g: Math.max(0, seenG) });
+                opts.trace?.set(key(i, j), `expected by the pattern (crown green ${Math.max(0, seenG).toFixed(2)})`);
+              } else gaps.push({ x, y, row: j, i, evidence: "operator", g: 0 });
             }
           }
         }
