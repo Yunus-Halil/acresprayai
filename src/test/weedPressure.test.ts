@@ -1,5 +1,5 @@
 // Weed pressure graded per cell: the classes by crop group, the three scenarios, the tiers, the floor, the patches.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { LatLng2 } from "@/lib/geo";
 import type { GroundPlant } from "@/lib/weedVision/frames";
 import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
@@ -265,6 +265,38 @@ describe("the store's pure parts", () => {
     expect(canopyClosedOf([])).toBeNull();
     expect(canopyClosedOf([{ greenShare: 0.9, uncertain: [] }, { greenShare: 0.95, uncertain: [] }, { greenShare: 0.1, uncertain: ["shadow"] }])).toBe(true);
     expect(canopyClosedOf([{ greenShare: 0.3, uncertain: [] }, { greenShare: 0.95, uncertain: [] }])).toBe(false);
+  });
+});
+
+describe("row crops are not graded yet", () => {
+  const readerRows = { z: Z, left: LEFT, top: TOP, mpp: MPP, rows: 4, spacingM: 0.76, seedSpacingM: 0.2, directionDeg: 0, blocks: 1, source: "reader" as const, ctx: { lines: [], crops: [], bandPx: 10, gsdM: MPP } };
+  const layoutRows = { ...readerRows, source: "layout" as const };
+  const MESSAGE = "Row-crop grading is not supported yet: the row reader needs rows at least 1 m apart and separate crop plants. Orchards and vineyards only for now.";
+
+  it("a wide-row or cereal crop on file without a fitted planting layout is refused; orchards, layouts and no crop on file are not", async () => {
+    const { pressureRefusal } = await import("@/lib/weedVision/pressure/pressureStore");
+    const { ROW_CROP_GRADING_UNSUPPORTED, rowCropGradingBlocked } = await import("@/lib/weedVision/fieldRows");
+    expect(ROW_CROP_GRADING_UNSUPPORTED).toBe(MESSAGE);
+    expect(pressureRefusal("corn", readerRows)).toBe(MESSAGE);
+    expect(pressureRefusal("Soybean", null)).toBe(MESSAGE); // no rows read at all
+    expect(pressureRefusal("winter wheat", readerRows)).toBe(MESSAGE);
+    expect(pressureRefusal("corn", layoutRows)).toBeNull(); // the operator's own rows
+    expect(pressureRefusal("apricot", readerRows)).toBeNull();
+    expect(pressureRefusal(null, readerRows)).toBeNull(); // no crop on file: nothing says it is a row crop
+    expect(pressureRefusal("  ", readerRows)).toBeNull();
+    expect(rowCropGradingBlocked("orchard", null)).toBe(false);
+    expect(rowCropGradingBlocked("cereal", undefined)).toBe(true);
+  });
+
+  it("gradeField sets the error and never reads Stage 1 or grades", async () => {
+    const { gradeField, getPressure } = await import("@/lib/weedVision/pressure/pressureStore");
+    const readStage1 = vi.fn();
+    await gradeField("row-crop-task", { crop: "corn", stage1: { params: {} as never, modelSha: null, photoGsdM: null, deps: { ensureRows: async () => undefined, rowsOf: () => readerRows, readStage1 } } });
+    const p = getPressure("row-crop-task");
+    expect(p.error).toBe(MESSAGE);
+    expect(p.grade).toBeNull();
+    expect(p.state).toBe("none");
+    expect(readStage1).not.toHaveBeenCalled();
   });
 });
 

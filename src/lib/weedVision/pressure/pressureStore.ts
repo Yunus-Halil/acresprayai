@@ -4,10 +4,13 @@
 // The plants come from the scan's frame run (the map run where the map is sharp enough, else the photographs),
 // and from the two-stage windows when those are what ran. The crop group comes from the field's crop, or from the
 // planting layout when the crop is not on file. Whether the canopy is closed is read off Stage 1 (the mean green
-// share of the assessed cells against the pattern pass's CANOPY_CLOSED).
+// share of the assessed cells against the pattern pass's CANOPY_CLOSED). A row crop on file (wide-row or cereal)
+// without a fitted planting layout is not graded at all: the row reader cannot read its rows (fieldRows.ts,
+// ROW_CROP_GRADING_UNSUPPORTED).
 import { useSyncExternalStore } from "react";
 import { CANOPY_CLOSED } from "../../photoScout/pattern";
-import { frameRunFieldRows, getFrameRun } from "../frameRunStore";
+import { ROW_CROP_GRADING_UNSUPPORTED, rowCropGradingBlocked } from "../fieldRows";
+import { ensureFieldRows, frameRunFieldRows, getFrameRun } from "../frameRunStore";
 import { isMapRunKey } from "../mapRun";
 import { type RunStage1Input, getTwoStage, patchTwoStage, runStage1, twoStagePlants } from "../twoStage/twoStageStore";
 import { type CropGroup, type PressureGrade, type WeedObject, cropGroupOf, gradePressure, weedObjectsOf } from "./grade";
@@ -62,15 +65,25 @@ export function canopyClosedOf(cells: { greenShare: number; uncertain: unknown[]
   return ok.reduce((a, c) => a + c.greenShare, 0) / ok.length >= CANOPY_CLOSED;
 }
 
+/** The grade refused before it starts, or null: a row crop on file whose rows are not a fitted planting layout. */
+export function pressureRefusal(crop: string | null, rows: Parameters<typeof rowCropGradingBlocked>[1]): string | null {
+  return crop?.trim() && rowCropGradingBlocked(cropGroupOf(crop, false), rows) ? ROW_CROP_GRADING_UNSUPPORTED : null;
+}
+
 /**
  * Grade the field: Stage 1 read if it has not been, then the plants between the rows graded on its grid.
- * `crop` is the field's crop on file (null when none); `group` overrides the crop group when the operator says so.
+ * `crop` is the field's crop on file (null when none); `group` overrides the crop group when the operator says so,
+ * but never the row-crop guard, which goes by the crop on file.
  */
 export async function gradeField(taskId: string, input: { crop: string | null; group?: CropGroup; stage1: RunStage1Input; /** The scan's spots kept as weeds, with the operator's verdicts applied. */ scanWeeds?: WeedObject[] }): Promise<void> {
   const cur = getPressure(taskId);
   if (cur.state === "reading") return;
   patchPressure(taskId, { state: "reading", error: null });
   try {
+    // The rows first (the saved layout may still be loading): a row crop on reader rows is refused before anything is read.
+    await (input.stage1.deps?.ensureRows ?? ensureFieldRows)(taskId);
+    const refusal = pressureRefusal(input.crop, (input.stage1.deps?.rowsOf ?? frameRunFieldRows)(taskId));
+    if (refusal) { patchPressure(taskId, { grade: null, state: "none", source: null, error: refusal }); return; }
     // Stage 1 is read fresh for every grade: it takes seconds, and a kept read can carry rows the field no longer
     // has (the first grade of 2026-10-22 ran on the automatic rows while the saved layout was still loading, and
     // "Grade again" kept that read).

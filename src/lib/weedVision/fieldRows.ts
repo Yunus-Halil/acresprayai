@@ -533,6 +533,18 @@ export function fieldRowsFromPixels(px: PhotoPixels, mpp: number): RowsResult | 
   return fieldRowsFromPlants(plantsOfPixels(px, mpp), mpp);
 }
 
+/**
+ * Row crops are not graded yet (2026-10-22). The reader finds rows at least MIN_ROW_SPACING_M apart made of separate,
+ * evenly spaced plants: an orchard's trees or a vineyard's vines. Maize at 70 to 76 cm, soybean, cotton and drilled
+ * cereals have neither, so the reader either finds nothing or reads weed strips as rows, and a grade on those rows
+ * would count the crop as weeds. A fitted planting layout is the operator's own word on the rows, so it is let through.
+ */
+export const ROW_CROP_GRADING_UNSUPPORTED = "Row-crop grading is not supported yet: the row reader needs rows at least 1 m apart and separate crop plants. Orchards and vineyards only for now.";
+/** True when the field's crop group (from its crop on file) is a row crop and its rows are not a fitted planting layout. */
+export function rowCropGradingBlocked(group: "wide-row" | "cereal" | "orchard" | null, rows: FieldRows | null | undefined): boolean {
+  return (group === "wide-row" || group === "cereal") && rows?.source !== "layout";
+}
+
 /** Where a place stands against the field's rows. */
 export function fieldRowStatusAt(rows: FieldRows, p: LatLng2): RowStatus {
   const [X, Y] = mercatorPx(p.lat, p.lng, rows.z);
