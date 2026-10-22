@@ -1,7 +1,7 @@
 // Recall of labelled weed points against the grade, count only: for each weed a person marked, did the grade see it,
 // and if not, why not. No sizes are invented and no cover is computed: the labels are points.
 //
-//   npx vite-node scripts/eval/pressure/points-recall.ts -- [--frame DJI_0301] [--labels <labels.json>] [--date 2026-10-22] [--out docs/eval]
+//   npx vite-node scripts/eval/pressure/points-recall.ts -- [--frame DJI_0301] [--labels <labels.json>] [--date 2026-10-22] [--out docs/eval] [--tag name]
 //
 // The classes, in order (seen, below-floor, in-band, not-assessed, missed), are defined in recall.ts.
 import "../../bench/nodeStorageShim";
@@ -23,12 +23,16 @@ async function main() {
   const labelsFile = arg("labels", "evaluation/groundtruth/image1/DJI_0301.labels.json")!;
   const date = arg("date", new Date().toISOString().slice(0, 10))!;
   const outDir = arg("out", "docs/eval")!;
+  // A second label set on the same frame gets its own report: DJI_0301-points-recall-<tag>-<date>.
+  const tag = arg("tag");
+  const stem = `${frame}-points-recall${tag ? `-${tag}` : ""}-${date}`;
   const f = trialFixture(frame);
   const meta = trialMeta(frame);
   const run = await runFixture(f);
   const g = run.stage1.grid;
   // The labels are in the photo's native pixels; the trial placed the photo at zoom 23 as X0 + x * scale (meta.json).
-  const all = (JSON.parse(readFileSync(labelsFile, "utf8")).labels as { id: string; cls: string; x: number; y: number }[]);
+  const file = JSON.parse(readFileSync(labelsFile, "utf8")) as { exhaustive?: boolean; exportedAt?: string };
+  const all = ((file as { labels: unknown }).labels as { id: string; cls: string; x: number; y: number }[]);
   const weeds = all.filter(l => l.cls === "weed");
   const points: PointLabel[] = weeds.map(l => ({ id: l.id, x: l.x, y: l.y, centre: latLngOfPx(meta.z23.X0 + l.x * meta.scale_to_z23, meta.z23.Y0 + l.y * meta.scale_to_z23, 23) }));
   // The objects as the store tags them against the rows, then as the grade takes them.
@@ -54,6 +58,7 @@ async function main() {
   L.push(`# ${frame}: recall of labelled weed points (${date})`, "");
   L.push("**What this measures, and what it does not.** Recall of labelled weed points only: of the weeds a person marked, how many the grade saw, and where the rest went. There is no precision (nothing here says how many of the grade's weeds are real), no cover error (the labels have no size, and none was invented), and no act / don't act verdict. The labels are not a complete census of the frame's weeds, and that does not affect these numbers: every label is a real weed, and an unlabelled weed cannot be a miss; it can only go uncounted.", "");
   L.push(`Inputs: the ${weeds.length} weed points of \`${labelsFile}\` (${all.length - weeds.length} other labels ignored), placed on the trial's stand-in map of ${frame} with the trial's own transform (photo pixel times ${meta.scale_to_z23.toFixed(4)} onto zoom 23, north-up, flat ground, EXIF pixel size); the frame's fitted planting layout (\`layout-rows.json\`, ${rows.ctx.crops.length} crowns); the saved RF-DETR results of 2026-10-19 (\`window-cache-layout.json\`, ${objects.length} weed objects, the crop painted out before the model ran); Stage 1 and the grade as the app runs them (0.5 m cells, grade ${run.grade.version}, no parameter changed). Of the objects the grade counted ${sorted.counted.length}, set ${sorted.belowFloor.length} under its floor and ${sorted.onRow.length} aside on a crop row. A label is "seen" when a counted object's centre is within ${RECALL_RADIUS_M} m.`, "");
+  if (file.exhaustive) L.push(`The label file (exported ${file.exportedAt ?? "at an unknown time"}) is marked "every weed labelled". Recall does not depend on whether that is so; precision would, and it is not computed here.`, "");
   L.push("## Where the labelled weeds went", "");
   L.push("| Class | Labels | Share | Meaning |", "|---|---|---|---|");
   const meaning: Record<RecallClass, string> = {
@@ -81,9 +86,9 @@ async function main() {
   L.push(`- Row band half-width: ${bands.map(b => `${b.toFixed(2)} m`).join(", ")} each side of a row line.`);
   L.push(`- Crown cut: a confirmed or operator crown at its painted radius plus ${PAINT_CROWN_MARGIN_M} m (typical confirmed crown radius ${typicalM.toFixed(2)} m, so about ${(typicalM + PAINT_CROWN_MARGIN_M).toFixed(2)} m from the trunk); an expected crown at half the typical radius, ${(0.5 * typicalM).toFixed(2)} m, with no margin.`);
   L.push(`- Detection floor: ${run.grade.params.floorPx} pixels, ${(run.grade.detectionFloorM * 100).toFixed(1)} cm at this map's ${(g.mpp * 100).toFixed(1)} cm a pixel.`, "");
-  L.push(`Every label with its class is in \`${frame}-points-recall-${date}.csv\` beside this report: id, photo pixel, position, class, reason, distance to the nearest counted and below-floor object, cell, the cell's class, tier and near-crop flag.`, "");
+  L.push(`Every label with its class is in \`${stem}.csv\` beside this report: id, photo pixel, position, class, reason, distance to the nearest counted and below-floor object, cell, the cell's class, tier and near-crop flag.`, "");
   mkdirSync(outDir, { recursive: true });
-  const base = join(outDir, `${frame}-points-recall-${date}`);
+  const base = join(outDir, stem);
   writeFileSync(`${base}.md`, L.join("\n"));
   writeFileSync(`${base}.csv`, recallCsv(rs));
   console.log(JSON.stringify({ n, ...Object.fromEntries(RECALL_CLASSES.map(k => [k, by(k).length])), reasons, seenKlass: klassOf, inBandPlusBelowFloorShare: +share.toFixed(3), bands, typicalCrownM: +typicalM.toFixed(3), floorM: run.grade.detectionFloorM, wrote: [`${base}.md`, `${base}.csv`] }));
