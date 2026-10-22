@@ -108,6 +108,23 @@ describe("the grade", () => {
     expect(closed.notes.join(" ")).toMatch(/canopy reads as closed/);
   });
 
+  it("scenario 1 reads size over the treatment unit: a cell with no weeds of its own inside a dense unit steps up with it", () => {
+    // 2 m cells, a 6 m unit (3 x 3 cells). Eight 6.7 cm weeds in each of the eight cells around (2,2), none in (2,2).
+    const small: GroundPlant[] = [];
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue;
+      for (let n = 0; n < 8; n++) small.push(weed(2 + di, 2 + dj, 0.0035, { id: `s${di}${dj}${n}`, dx: -0.6 + 0.17 * n, dy: 0.2 * (n % 3) }));
+    }
+    const gr = grade(small, { params: { unitM: 6 } });
+    const c = gr.cells.find(x => x.key === cellKey(2, 2))!;
+    expect(c.count).toBe(0);
+    expect(c.medianDiameterM).toBeNull(); // nothing of its own
+    expect(c.unitCount).toBe(64);
+    expect(c.unitMedianDiameterM).toBeCloseTo(2 * Math.sqrt(0.0035 / Math.PI), 6);
+    expect(c.treatWhileSmall).toBe(true);
+    expect(c.klass).toBe("low"); // trace over the unit, stepped up
+  });
+
   it("scenario 2: one large weed never raises its cell's class; it is a large escape with its size", () => {
     // A 0.5 m weed (0.196 m²) alone in a cell: cover about 6% (moderate), one escape.
     const gr = grade([weed(3, 3, 0.196)]);

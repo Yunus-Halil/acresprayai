@@ -18,7 +18,9 @@
 //   scenario 1 many tiny weeds: cover reads low while the count is high. Scattered weeds compete harder than clumped
 //              ones (Norris 2001) and are easiest to kill while small (late spot spraying 20% efficacy vs 86% early,
 //              Allmendinger 2024), so a cell with many small objects steps up one class and is tagged "treat while
-//              small", only before canopy closure. The density bar is ours (inference).
+//              small", only before canopy closure. Density and size are both read over the treatment unit (the
+//              median diameter of every object in it; Stage 1's mean blob where the unit has no objects), so a cell
+//              with no weed of its own inside a dense unit steps up with it. The density bar is ours (inference).
 //   scenario 2 one big weed: a seed and resistance risk, not a yield risk (one Palmer amaranth plant 200,000 to
 //              600,000 seeds; one plant's seed infested over 95% of a field by year 3, Norsworthy 2014). It never
 //              raises its cell's class; it is reported as a "large escape" point with its size. The 0.3 m size bar is
@@ -213,6 +215,8 @@ export type GradedCell = {
   /** Objects per m² of visible ground. */
   density: number;
   medianDiameterM: number | null;
+  /** Median diameter over the objects across the treatment unit (Stage 1's mean blob when the unit has none): what scenario 1 is judged on. */
+  unitMedianDiameterM: number | null;
   maxDiameterM: number | null;
   /** The crop's cover in the cell, m²: the layout's crowns, or the row band when no layout was fitted. */
   cropM2: number;
@@ -378,7 +382,7 @@ export function gradePressure(input: {
     cells.push({
       key: s.key, i: s.i, j: s.j, centre: s.centre, ring: s.ring,
       cover: assessed ? cover : 0, groundM2, weedM2, count, objects: objs.length, objectM2: objM2, disagreement, density, medianDiameterM: med, maxDiameterM: ds.length ? Math.max(...ds) : null,
-      unitCover: 0, unitGroundM2: 0, unitCount: 0, unitObjects: 0,
+      unitCover: 0, unitGroundM2: 0, unitCount: 0, unitObjects: 0, unitMedianDiameterM: null,
       cropM2, relativeCover: assessed ? relativeCover : null, lossBand: assessed ? lossBand : null,
       klass: "none", nearCrop, treatWhileSmall: false, tier: "none", multiView, assessed, whyNot,
     });
@@ -400,17 +404,21 @@ export function gradePressure(input: {
   const byKey = new Map(cells.map(c => [c.key, c]));
   for (const c of cells) {
     if (!c.assessed) continue;
-    let weed = 0, ground = 0, count = 0, objects = 0;
+    let weed = 0, ground = 0, count = 0, objects = 0, blobs = 0, blobM2 = 0;
+    const diameters: number[] = [];
     for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
       const n = byKey.get(cellKey(c.i + di, c.j + dj));
       if (!n || !n.assessed) continue;
       weed += n.weedM2; ground += n.groundM2; count += n.count; objects += n.objects;
+      for (const o of byCell.get(n.key) ?? []) diameters.push(o.d);
+      if (!n.objects) { blobs += n.count; blobM2 += n.weedM2; }
     }
     c.unitGroundM2 = ground; c.unitCount = count; c.unitObjects = objects;
+    c.unitMedianDiameterM = diameters.length ? median(diameters) : blobs > 0 && blobM2 > 0 ? 2 * Math.sqrt(blobM2 / blobs / Math.PI) : null;
     c.unitCover = ground > 0 ? Math.min(1, weed / ground) : 0;
     let klass = classOf(c.unitCover, count, scheme);
     const unitDensity = ground > 0 ? count / ground : 0;
-    c.treatWhileSmall = input.canopyClosed !== true && count >= 2 && unitDensity >= P.denseObjectsPerM2 && c.medianDiameterM != null && c.medianDiameterM < P.smallDiameterM && klass !== "none" && klass !== "high";
+    c.treatWhileSmall = input.canopyClosed !== true && count >= 2 && unitDensity >= P.denseObjectsPerM2 && c.unitMedianDiameterM != null && c.unitMedianDiameterM < P.smallDiameterM && klass !== "none" && klass !== "high";
     if (c.treatWhileSmall) klass = stepUp(klass);
     c.klass = klass;
     const corroborated = c.unitCover >= P.corroborateCover || objects >= P.corroborateCount;
