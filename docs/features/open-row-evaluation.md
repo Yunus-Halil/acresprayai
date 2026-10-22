@@ -76,7 +76,8 @@ give it a class: weed, crop, or uncertain (what the imagery cannot settle); mark
 diameter in cm when known. Predictions can be shown faintly for context and are never
 pre-filled. Export writes `<region>.labels.json` with the photo, the region, the pixel size,
 the annotator, and each label's native pixel, region pixel and time. Put the exports in
-`data/bench/eval/labels/`.
+`data/bench/eval/labels/`. Since 2026-10-22 a drag from a plant's centre to its edge sets its
+diameter, and an exhaustive-region mode labels a window completely: `exhaustive-labelling.md`.
 
 **Scoring.** `npm run eval:detections` matches labels to predictions one to one, nearest
 first, within the larger of 25 px and the prediction's own radius, so one large prediction

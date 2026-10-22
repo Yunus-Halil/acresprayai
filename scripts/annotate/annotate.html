@@ -11,11 +11,12 @@
   header label { display: inline-flex; gap: 6px; align-items: center; }
   input, select, button { font: inherit; background: #0f0f0f; color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: 4px 8px; }
   button.on { border-color: #4CAF50; color: #4CAF50; }
-  #wrap { position: relative; overflow: hidden; height: calc(100vh - 110px); cursor: crosshair; background: #000; }
+  #wrap { position: relative; overflow: hidden; height: calc(100vh - 150px); cursor: crosshair; background: #000; }
   #stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
   #img { display: block; user-select: none; -webkit-user-drag: none; }
   #marks { position: absolute; left: 0; top: 0; pointer-events: none; }
   footer { padding: 6px 14px; color: var(--muted); border-top: 1px solid var(--line); display: flex; gap: 14px; flex-wrap: wrap; }
+  #regionBar { color: #ffd54f; }
   .k { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid; vertical-align: middle; margin-right: 4px; }
 </style>
 </head>
@@ -24,16 +25,20 @@
   <label>Region image <input type="file" id="file" accept="image/png,image/jpeg"></label>
   <label>Predictions (optional) <input type="file" id="pred" accept="application/json"></label>
   <label title="Your own earlier labels for this photo (a *.labels.json): the ones inside this region are loaded as a starting point. Never predictions.">Earlier labels (optional) <input type="file" id="prior" accept="application/json"></label>
+  <label title="A regions file such as evaluation/groundtruth/image1/regions-exhaustive.json: windows of the photo to label exhaustively.">Exhaustive regions (optional) <input type="file" id="regions" accept="application/json"></label>
+  <label>Region <select id="regionPick"><option value="">none</option></select></label>
   <label>Annotator <input id="who" size="8" placeholder="initials"></label>
   <span>Class:</span>
   <button id="cw" class="on" data-cls="weed">weed (1)</button>
   <button id="cc" data-cls="crop">crop (2)</button>
   <button id="cu" data-cls="uncertain">uncertain (3)</button>
   <label><input type="checkbox" id="shadow"> in shadow</label>
-  <label>diameter cm <input id="diam" size="4" placeholder="optional"></label>
+  <label title="Used for a plain click (no drag). A drag from the centre to the edge sets the diameter itself.">diameter cm <input id="diam" size="4" placeholder="optional"></label>
+  <label title="The photo's centimetres per pixel: set by the predictions file; type it when there is none.">cm/px <input id="gsd" size="6" placeholder="from file"></label>
   <label><input type="checkbox" id="showPred"> show predictions</label>
   <label title="Tick only when every weed in the image is labelled: precision is computed only then."><input type="checkbox" id="exhaustive"> every weed labelled</label>
   <button id="undo">undo (z)</button>
+  <button id="next" title="The next weed in the active region with no diameter">next unsized (n)</button>
   <button id="export">export JSON</button>
 </header>
 <div id="wrap">
@@ -43,29 +48,47 @@
   </div>
 </div>
 <footer>
+  <span id="regionBar"></span>
   <span><span class="k" style="border-color:#ef5350"></span>weed</span>
   <span><span class="k" style="border-color:#4CAF50"></span>crop</span>
   <span><span class="k" style="border-color:#9e9e9e"></span>uncertain</span>
-  <span>Click a plant's centre to label it. Scroll to zoom, drag with the right button or Shift to pan. Labels are yours, never the software's: predictions are shown only when you ask, in faint colour, and are not pre-filled.</span>
+  <span>Click a plant's centre to label it; or press on its centre, drag to its edge and release to give it its size (the disc shows where it ended). Press on an existing label's centre and drag to size that label. Scroll to zoom, drag with the right button or Shift to pan. Labels are yours, never the software's: predictions are shown only when you ask, in faint colour, and are not pre-filled.</span>
   <span id="status"></span>
 </footer>
+<script src="labelCore.js"></script>
 <script>
 // A region's labels, by a person: the image is one of the region PNGs that
-// npm run eval:regions writes, with its <id>.predictions.json beside it for
-// the photo, the box and the pixel size. Each click is one plant: its centre
-// in the REGION's pixels, translated to the photo's native pixels on export.
+// npm run eval:regions writes (or the whole photo), with its predictions file
+// beside it for the photo, the box and the pixel size. Each click is one plant:
+// its centre in the IMAGE's pixels, translated to the photo's native pixels on
+// export. A drag from the centre to the edge gives the plant its diameter (the
+// drag's length in photo pixels times the photo's cm per pixel, twice). With an
+// exhaustive region active, its outline is drawn, the photo outside it dimmed,
+// and every label inside it is tagged with the region's id on export.
 // Nothing is pre-filled from the predictions; they can be shown faintly for
 // context and that is all.
+const C = window.LabelCore;
 const COLOUR = { weed: "#ef5350", crop: "#4CAF50", uncertain: "#9e9e9e" };
 const img = document.getElementById("img"), marks = document.getElementById("marks"), stage = document.getElementById("stage"), wrap = document.getElementById("wrap");
-let labels = [], cls = "weed", meta = null, preds = [], view = { tx: 0, ty: 0, s: 1 }, drag = null, imageName = "";
+let labels = [], cls = "weed", meta = null, preds = [], view = { tx: 0, ty: 0, s: 1 }, drag = null, size = null, imageName = "", regions = [], active = null, selected = -1;
 const status = (t) => { document.getElementById("status").textContent = t; };
 const apply = () => { stage.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`; };
+/** The image's top-left in the photo's native pixels: the predictions file's box, else the photo itself. */
+const origin = () => (meta ? { x: meta.region.x, y: meta.region.y } : { x: 0, y: 0 });
+const gsd = () => { const v = parseFloat(document.getElementById("gsd").value); return Number.isFinite(v) && v > 0 ? v : null; };
+/** Labels with their photo pixel, for the core's arithmetic. */
+const inPhoto = () => { const o = origin(); return labels.map(l => ({ ...l, x: +(o.x + l.rx).toFixed(1), y: +(o.y + l.ry).toFixed(1) })); };
 function draw() {
   marks.setAttribute("width", img.naturalWidth); marks.setAttribute("height", img.naturalHeight);
   marks.setAttribute("viewBox", `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
-  const sw = 2 / view.s;
+  const sw = 2 / view.s, o = origin(), g = gsd();
   let svg = "";
+  if (active) {
+    // The photo outside the region dimmed, the region's outline on top.
+    const x = active.x - o.x, y = active.y - o.y, W = img.naturalWidth, H = img.naturalHeight;
+    svg += `<path d="M0 0H${W}V${H}H0Z M${x} ${y}V${y + active.height}H${x + active.width}V${y}Z" fill="#000" fill-opacity="0.6" fill-rule="evenodd"/>`;
+    svg += `<rect x="${x}" y="${y}" width="${active.width}" height="${active.height}" fill="none" stroke="#ffd54f" stroke-width="${2 * sw}"/>`;
+  }
   if (document.getElementById("showPred").checked && meta) {
     for (const p of preds) {
       const r = Math.max(6, (p.equivDiameterM / (meta.gsdCmPx / 100)) / 2);
@@ -73,24 +96,43 @@ function draw() {
     }
   }
   labels.forEach((l, i) => {
-    const r = l.diameterCm && meta ? Math.max(6, (l.diameterCm / meta.gsdCmPx) / 2) : 10 / view.s;
-    svg += `<circle cx="${l.rx}" cy="${l.ry}" r="${r}" fill="none" stroke="${COLOUR[l.cls]}" stroke-width="${sw}"/>`;
-    svg += `<text x="${l.rx + r + 2}" y="${l.ry + 4 / view.s}" fill="${COLOUR[l.cls]}" font-size="${12 / view.s}" font-family="monospace">${i + 1}${l.shadow ? "s" : ""}</text>`;
+    const disc = C.radiusPx(l.diameterCm, g);
+    if (disc) {
+      // The disc at its true size, so a size can be checked against the plant; a centre dot for small ones.
+      svg += `<circle cx="${l.rx}" cy="${l.ry}" r="${Math.max(0.5, disc)}" fill="${COLOUR[l.cls]}" fill-opacity="0.18" stroke="${COLOUR[l.cls]}" stroke-width="${sw}"/>`;
+      svg += `<circle cx="${l.rx}" cy="${l.ry}" r="${1.5 / view.s}" fill="${COLOUR[l.cls]}"/>`;
+    } else {
+      svg += `<circle cx="${l.rx}" cy="${l.ry}" r="${10 / view.s}" fill="none" stroke="${COLOUR[l.cls]}" stroke-width="${sw}"/>`;
+    }
+    if (i === selected) svg += `<circle cx="${l.rx}" cy="${l.ry}" r="${Math.max(disc ?? 0, 10 / view.s) + 6 / view.s}" fill="none" stroke="#ffffff" stroke-width="${sw}" stroke-dasharray="${5 / view.s} ${4 / view.s}"/>`;
+    const tr = disc ?? 10 / view.s;
+    svg += `<text x="${l.rx + tr + 2}" y="${l.ry + 4 / view.s}" fill="${COLOUR[l.cls]}" font-size="${12 / view.s}" font-family="monospace">${i + 1}${l.shadow ? "s" : ""}</text>`;
   });
+  if (size) {
+    const r = Math.hypot(size.ex - size.cx, size.ey - size.cy);
+    svg += `<circle cx="${size.cx}" cy="${size.cy}" r="${r}" fill="none" stroke="#ffffff" stroke-width="${sw}"/>`;
+  }
   marks.innerHTML = svg;
-  status(`${labels.length} label(s): ${["weed", "crop", "uncertain"].map(k => `${labels.filter(l => l.cls === k).length} ${k}`).join(", ")}${meta ? ` · ${meta.photo} box ${meta.region.x},${meta.region.y} ${meta.region.width}x${meta.region.height} at ${meta.gsdCmPx.toFixed(2)} cm/px` : " · no predictions file: export carries region pixels only"}`);
+  if (active) {
+    const k = C.regionCounts(inPhoto(), active);
+    document.getElementById("regionBar").textContent = `Region ${active.id}: ${k.inside} label(s) inside, ${k.sized} with a diameter, ${k.unsized} without (weeds ${k.weedsSized} of ${k.weeds} sized). Press n for the next unsized weed.`;
+  } else document.getElementById("regionBar").textContent = "";
+  status(`${labels.length} label(s): ${["weed", "crop", "uncertain"].map(k => `${labels.filter(l => l.cls === k).length} ${k}`).join(", ")}${meta ? ` · ${meta.photo} box ${meta.region.x},${meta.region.y} ${meta.region.width}x${meta.region.height} at ${meta.gsdCmPx.toFixed(2)} cm/px` : " · no predictions file: export carries image pixels only"}${g ? "" : " · no cm/px: drags cannot set a diameter"}`);
 }
 document.getElementById("file").addEventListener("change", e => {
   const f = e.target.files[0]; if (!f) return;
-  imageName = f.name; labels = [];
+  imageName = f.name; labels = []; selected = -1;
   img.onload = () => { view = { tx: 0, ty: 0, s: Math.min(wrap.clientWidth / img.naturalWidth, wrap.clientHeight / img.naturalHeight) }; apply(); draw(); };
   img.src = URL.createObjectURL(f);
 });
 document.getElementById("pred").addEventListener("change", async e => {
   const f = e.target.files[0]; if (!f) return;
   const j = JSON.parse(await f.text());
-  meta = { region: j.region, photo: j.photo, gsdCmPx: j.gsdCmPx }; preds = j.predictions ?? []; draw();
+  meta = { region: j.region, photo: j.photo, gsdCmPx: j.gsdCmPx }; preds = j.predictions ?? [];
+  if (j.gsdCmPx > 0) document.getElementById("gsd").value = (+j.gsdCmPx).toFixed(4);
+  draw();
 });
+document.getElementById("gsd").addEventListener("change", draw);
 for (const b of document.querySelectorAll("button[data-cls]")) b.addEventListener("click", () => { cls = b.dataset.cls; for (const o of document.querySelectorAll("button[data-cls]")) o.classList.toggle("on", o === b); });
 // Earlier HUMAN labels for the same photo, restricted to this region and translated to its pixels. Exact duplicates are loaded once and reported.
 document.getElementById("prior").addEventListener("change", async e => {
@@ -103,14 +145,45 @@ document.getElementById("prior").addEventListener("change", async e => {
     const k = Math.round(l.x) + ":" + Math.round(l.y);
     if (seen.has(k)) { dup++; continue; } seen.add(k);
     if (l.x < meta.region.x || l.x >= meta.region.x + meta.region.width || l.y < meta.region.y || l.y >= meta.region.y + meta.region.height) continue;
-    labels.push({ rx: +(l.x - meta.region.x).toFixed(1), ry: +(l.y - meta.region.y).toFixed(1), cls: l.cls, shadow: !!l.shadow, diameterCm: l.diameterCm ?? null, at: l.labelledAt ?? new Date().toISOString(), prior: l.id ?? null });
+    labels.push({ rx: +(l.x - meta.region.x).toFixed(1), ry: +(l.y - meta.region.y).toFixed(1), cls: l.cls, shadow: !!l.shadow, diameterCm: l.diameterCm ?? null, at: l.labelledAt ?? new Date().toISOString(), prior: l.id ?? null, exhaustiveRegion: l.exhaustiveRegion ?? null });
     loaded++;
   }
   draw();
   status(`${loaded} earlier label(s) loaded into this region${dup ? `; ${dup} exact duplicate(s) in the file loaded once` : ""}. Check each, add every weed still unlabelled, then tick "every weed labelled".`);
 });
+// Exhaustive regions: windows of the photo, in its native pixels.
+document.getElementById("regions").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const j = JSON.parse(await f.text());
+  regions = (Array.isArray(j) ? j : [j]).filter(r => r && r.id && r.width > 0 && r.height > 0);
+  const pick = document.getElementById("regionPick");
+  pick.innerHTML = `<option value="">none</option>` + regions.map(r => `<option value="${r.id}">${r.id} (${r.x},${r.y} ${r.width}x${r.height})</option>`).join("");
+  status(`${regions.length} exhaustive region(s) loaded; pick one under Region.`);
+});
+document.getElementById("regionPick").addEventListener("change", e => {
+  active = regions.find(r => r.id === e.target.value) ?? null; selected = -1;
+  // A region is in the photo's pixels: without the predictions file the image's place in the photo is unknown.
+  if (active && !meta) { active = null; e.target.value = ""; status("load the image's predictions file first (for the whole photo, image1-full.predictions.json), so the region can be placed on it"); draw(); return; }
+  if (active && img.naturalWidth) {
+    // Fit the region in the view.
+    const o = origin(), s = Math.min(wrap.clientWidth / active.width, wrap.clientHeight / active.height) * 0.9;
+    view = { s, tx: wrap.clientWidth / 2 - (active.x - o.x + active.width / 2) * s, ty: wrap.clientHeight / 2 - (active.y - o.y + active.height / 2) * s }; apply();
+    if (meta && (active.x < meta.region.x || active.y < meta.region.y || active.x + active.width > meta.region.x + meta.region.width || active.y + active.height > meta.region.y + meta.region.height)) status(`region ${active.id} runs outside this image's box: open the whole photo or the region's own image`);
+  }
+  draw();
+});
 document.getElementById("showPred").addEventListener("change", draw);
-document.getElementById("undo").addEventListener("click", () => { labels.pop(); draw(); });
+document.getElementById("undo").addEventListener("click", () => { labels.pop(); selected = -1; draw(); });
+// The next weed in the region with no diameter: centred, zoomed in, ringed.
+document.getElementById("next").addEventListener("click", () => {
+  if (!active) { status("pick an exhaustive region first"); return; }
+  const i = C.nextUnsized(inPhoto(), active, selected);
+  if (i < 0) { selected = -1; draw(); status(`every weed and uncertain label in ${active.id} has a diameter`); return; }
+  selected = i;
+  const l = labels[i], s = Math.max(view.s, 3);
+  view = { s, tx: wrap.clientWidth / 2 - l.rx * s, ty: wrap.clientHeight / 2 - l.ry * s }; apply(); draw();
+});
+const imagePoint = (e) => { const r = wrap.getBoundingClientRect(); return { rx: (e.clientX - r.left - view.tx) / view.s, ry: (e.clientY - r.top - view.ty) / view.s }; };
 wrap.addEventListener("wheel", e => {
   e.preventDefault();
   const r = wrap.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
@@ -120,40 +193,54 @@ wrap.addEventListener("wheel", e => {
 wrap.addEventListener("pointerdown", e => {
   if (e.button === 2 || e.shiftKey) { drag = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty }; wrap.setPointerCapture(e.pointerId); return; }
   if (e.button !== 0 || !img.naturalWidth) return;
-  const r = wrap.getBoundingClientRect();
-  const rx = (e.clientX - r.left - view.tx) / view.s, ry = (e.clientY - r.top - view.ty) / view.s;
+  const { rx, ry } = imagePoint(e);
   if (rx < 0 || ry < 0 || rx > img.naturalWidth || ry > img.naturalHeight) return;
-  const diam = parseFloat(document.getElementById("diam").value);
-  labels.push({ rx: +rx.toFixed(1), ry: +ry.toFixed(1), cls, shadow: document.getElementById("shadow").checked, diameterCm: Number.isFinite(diam) && diam > 0 ? diam : null, at: new Date().toISOString() });
+  // Pressed on an existing label's centre (within 8 screen pixels): a drag sizes that label.
+  let on = -1, best = 8 / view.s;
+  labels.forEach((l, i) => { const d = Math.hypot(l.rx - rx, l.ry - ry); if (d <= best) { best = d; on = i; } });
+  size = on >= 0 ? { cx: labels[on].rx, cy: labels[on].ry, ex: rx, ey: ry, label: on, sx: e.clientX, sy: e.clientY } : { cx: rx, cy: ry, ex: rx, ey: ry, label: -1, sx: e.clientX, sy: e.clientY };
+  wrap.setPointerCapture(e.pointerId);
+});
+wrap.addEventListener("pointermove", e => {
+  if (drag) { view.tx = drag.tx + (e.clientX - drag.x); view.ty = drag.ty + (e.clientY - drag.y); apply(); return; }
+  if (size) { const p = imagePoint(e); size.ex = p.rx; size.ey = p.ry; draw(); }
+});
+wrap.addEventListener("pointerup", e => {
+  if (drag) { drag = null; return; }
+  if (!size) return;
+  const s = size; size = null;
+  const dragged = Math.hypot(e.clientX - s.sx, e.clientY - s.sy) >= C.CLICK_PX;
+  if (dragged) {
+    const o = origin(), d = C.diameterCmFromDrag(o.x + s.cx, o.y + s.cy, o.x + s.ex, o.y + s.ey, gsd());
+    if (d == null) { status("no cm/px for this image: load its predictions file or type the cm/px, then drag again"); draw(); return; }
+    if (s.label >= 0) { labels[s.label].diameterCm = d; selected = s.label; }
+    else labels.push({ rx: +s.cx.toFixed(1), ry: +s.cy.toFixed(1), cls, shadow: document.getElementById("shadow").checked, diameterCm: d, at: new Date().toISOString() });
+    status(`diameter ${d.toFixed(1)} cm`);
+  } else {
+    // A plain click: a point label, as before, sized only by the diameter box when it holds a number.
+    const diam = parseFloat(document.getElementById("diam").value);
+    labels.push({ rx: +s.cx.toFixed(1), ry: +s.cy.toFixed(1), cls, shadow: document.getElementById("shadow").checked, diameterCm: Number.isFinite(diam) && diam > 0 ? diam : null, at: new Date().toISOString() });
+  }
   draw();
 });
-wrap.addEventListener("pointermove", e => { if (!drag) return; view.tx = drag.tx + (e.clientX - drag.x); view.ty = drag.ty + (e.clientY - drag.y); apply(); });
-wrap.addEventListener("pointerup", () => { drag = null; });
 wrap.addEventListener("contextmenu", e => e.preventDefault());
 document.addEventListener("keydown", e => {
-  if (e.target.tagName === "INPUT") return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   if (e.key === "1") document.getElementById("cw").click();
   if (e.key === "2") document.getElementById("cc").click();
   if (e.key === "3") document.getElementById("cu").click();
   if (e.key === "z") document.getElementById("undo").click();
+  if (e.key === "n") document.getElementById("next").click();
 });
 document.getElementById("export").addEventListener("click", () => {
-  const who = document.getElementById("who").value.trim() || null;
-  const out = {
-    format: "swardus-region-labels-v1",
-    image: imageName, photo: meta?.photo ?? null, region: meta?.region ?? null, gsdCmPx: meta?.gsdCmPx ?? null,
-    annotator: who, exportedAt: new Date().toISOString(),
-    exhaustive: document.getElementById("exhaustive").checked,
-    labels: labels.map((l, i) => ({
-      id: `${meta?.region?.id ?? imageName}:L${i + 1}`, cls: l.cls,
-      // The photo's native pixel when the region is known, else the region's own pixel.
-      x: meta ? +(meta.region.x + l.rx).toFixed(1) : l.rx, y: meta ? +(meta.region.y + l.ry).toFixed(1) : l.ry,
-      regionX: l.rx, regionY: l.ry, diameterCm: l.diameterCm, shadow: l.shadow, labelledAt: l.at, priorId: l.prior ?? null,
-    })),
-  };
+  const out = C.exportLabels(inPhoto(), {
+    imageName, photo: meta?.photo ?? null, region: meta?.region ?? null, gsdCmPx: gsd() ?? meta?.gsdCmPx ?? null,
+    annotator: document.getElementById("who").value.trim() || null, exhaustive: document.getElementById("exhaustive").checked,
+    activeRegion: active, idPrefix: meta?.region?.id ?? imageName,
+  });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: "application/json" }));
-  a.download = `${meta?.region?.id ?? imageName.replace(/\.[^.]+$/, "")}.labels.json`;
+  a.download = `${active ? active.id : meta?.region?.id ?? imageName.replace(/\.[^.]+$/, "")}.labels.json`;
   a.click();
 });
 </script>
