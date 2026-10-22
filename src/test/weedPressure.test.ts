@@ -125,6 +125,17 @@ describe("the grade", () => {
     expect(c.klass).toBe("low"); // trace over the unit, stepped up
   });
 
+  it("scenario 1: a unit with no objects never steps up, however many small blobs Stage 1 counted", () => {
+    // Every cell full of specks (3 per m², 1% cover) and no objects: dense and small by the pixels, but no weed found.
+    const all: Record<string, Partial<Stage1Cell>> = {};
+    for (let j = 0; j < 6; j++) for (let i = 0; i < 6; i++) all[cellKey(i, j)] = { pressure: 0.01, density: 3, offRowGreenM2: 0.01 * groundM2 };
+    const gr = gradePressure({ objects: [], grid, cells: cells(all), rows: null, crop: "corn", canopyClosed: false, photoBased: false, params: { unitM: 6 } });
+    const c = gr.cells.find(x => x.key === cellKey(2, 2))!;
+    expect(c.unitCount).toBeGreaterThan(20);
+    expect(c.unitMedianDiameterM).toBeNull();
+    expect(gr.cells.some(x => x.treatWhileSmall)).toBe(false);
+  });
+
   it("scenario 2: one large weed never raises its cell's class; it is a large escape with its size", () => {
     // A 0.5 m weed (0.196 m²) alone in a cell: cover about 6% (moderate), one escape.
     const gr = grade([weed(3, 3, 0.196)]);

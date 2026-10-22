@@ -19,8 +19,10 @@
 //              ones (Norris 2001) and are easiest to kill while small (late spot spraying 20% efficacy vs 86% early,
 //              Allmendinger 2024), so a cell with many small objects steps up one class and is tagged "treat while
 //              small", only before canopy closure. Density and size are both read over the treatment unit (the
-//              median diameter of every object in it; Stage 1's mean blob where the unit has no objects), so a cell
-//              with no weed of its own inside a dense unit steps up with it. The density bar is ours (inference).
+//              median diameter of every object in it), so a cell with no weed of its own inside a dense unit steps up
+//              with it. A unit with no objects never steps up: the size then came only from Stage 1's mean blob, and
+//              that fallback carried 151 of the 189 cells the unit rule first stepped up on the orchard frames
+//              (2026-10-22), a speck's size standing in for a weed's. The density bar is ours (inference).
 //   scenario 2 one big weed: a seed and resistance risk, not a yield risk (one Palmer amaranth plant 200,000 to
 //              600,000 seeds; one plant's seed infested over 95% of a field by year 3, Norsworthy 2014). It never
 //              raises its cell's class; it is reported as a "large escape" point with its size. The 0.3 m size bar is
@@ -222,7 +224,7 @@ export type GradedCell = {
   /** Objects per m² of visible ground. */
   density: number;
   medianDiameterM: number | null;
-  /** Median diameter over the objects across the treatment unit (Stage 1's mean blob when the unit has none): what scenario 1 is judged on. */
+  /** Median diameter over the objects across the treatment unit, null when it has none (no step-up then): what scenario 1 is judged on. */
   unitMedianDiameterM: number | null;
   maxDiameterM: number | null;
   /** The crop's cover in the cell, m²: the layout's crowns, or the row band when no layout was fitted. */
@@ -414,17 +416,16 @@ export function gradePressure(input: {
   const byKey = new Map(cells.map(c => [c.key, c]));
   for (const c of cells) {
     if (!c.assessed) continue;
-    let weed = 0, ground = 0, count = 0, objects = 0, blobs = 0, blobM2 = 0;
+    let weed = 0, ground = 0, count = 0, objects = 0;
     const diameters: number[] = [];
     for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
       const n = byKey.get(cellKey(c.i + di, c.j + dj));
       if (!n || !n.assessed) continue;
       weed += n.weedM2; ground += n.groundM2; count += n.count; objects += n.objects;
       for (const o of byCell.get(n.key) ?? []) diameters.push(o.d);
-      if (!n.objects) { blobs += n.count; blobM2 += n.weedM2; }
     }
     c.unitGroundM2 = ground; c.unitCount = count; c.unitObjects = objects;
-    c.unitMedianDiameterM = diameters.length ? median(diameters) : blobs > 0 && blobM2 > 0 ? 2 * Math.sqrt(blobM2 / blobs / Math.PI) : null;
+    c.unitMedianDiameterM = diameters.length ? median(diameters) : null;
     c.unitCover = ground > 0 ? Math.min(1, weed / ground) : 0;
     let klass = classOf(c.unitCover, count, scheme);
     const unitDensity = ground > 0 ? count / ground : 0;
