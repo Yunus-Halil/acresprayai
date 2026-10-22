@@ -112,6 +112,16 @@ percentage. A 20 cm plant is 12% of a 0.5 m cell, 3% of 1 mÂ², under 0.4% of 3 Ã
 What the agronomist sees is therefore three things: one line on the whole field, the worst areas ranked, and the
 escapes. The cells behind them are context, in three light fills.
 
+## The rows the grade reads with (2026-10-22)
+
+"No cell could be assessed: 44,764 cells read, none judged (no rows 44,764)". The tab reads the rows automatically
+the moment it opens and loads the saved planting layout from the database separately; the first grade ran on the
+automatic rows, which reached none of the cells, and "Grade again" kept that Stage 1 read because the cell size
+matched. Three fixes in `frameRunStore.ts` and `pressureStore.ts`: the rows wait for a layout still loading
+(`setFrameRunLayoutLoading`), a second caller waits for a read in flight instead of taking stale rows, and every
+grade reads Stage 1 fresh (seconds). When the rows still reach no cell, the panel says which rows and what to do
+(mark the planting under Crop rows, or read the rows again), and the Grade button waits while the rows are read.
+
 ## On the map and in the panel
 
 Three light fills and nothing else on the cells (the operator, third eye test: "a lot of chaos; keep it simple: low

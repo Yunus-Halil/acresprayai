@@ -497,6 +497,31 @@ describe("in the app", () => {
     return { rr, trees, ll };
   }
 
+  it("the rows wait for a saved layout still loading, and a second caller waits for the read in flight", async () => {
+    const { setFrameRunLayoutLoading, fieldRowsOf } = await import("@/lib/weedVision/frameRunStore");
+    const { rr, trees, ll } = register("t");
+    const rasterReader = vi.fn(async () => rr);
+    const reader = vi.fn(async () => null);
+    setFieldRowsReaders({ reader, rasterReader });
+    // The layout arrives from the database a moment after the tab asks for the rows.
+    const a = ll(treeA(trees, "6,1")), b = ll(treeA(trees, "7,1")), c = ll(treeA(trees, "6,2"));
+    let resolveLoad!: () => void;
+    const load = new Promise<void>(res => { resolveLoad = res; }).then(() => { setFrameRunLayout("t", { version: 1, blocks: [{ points: [a, b, c] }], confirmedAt: null }); });
+    setFrameRunLayoutLoading("t", load);
+    const first = ensureFieldRows("t");
+    expect(reader).not.toHaveBeenCalled(); // not the automatic read: the layout is on its way
+    resolveLoad();
+    await first;
+    await vi.waitFor(() => expect(getFrameRun("t").fieldRowsSource).toBe("layout"));
+    expect(reader).not.toHaveBeenCalled();
+    expect(fieldRowsOf("t")?.source).toBe("layout");
+    // A second caller during a read gets the rows when they land, not before (the raster is cached, so this one is quick).
+    rereadFieldRows("t");
+    await ensureFieldRows("t");
+    expect(getFrameRun("t").fieldRowsState).toBe("found");
+    expect(rasterReader).toHaveBeenCalledTimes(1);
+  });
+
   it("three clicks become the scan's rows; a save keeps the refined planting; the map run looks only between the rows", async () => {
     const { rr, trees, ll } = register("t");
     const rasterReader = vi.fn(async () => rr);

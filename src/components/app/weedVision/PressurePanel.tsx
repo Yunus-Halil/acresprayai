@@ -47,7 +47,8 @@ export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl
   const gr = s.grade;
   const selected = useMemo(() => (gr && s.selectedCell ? gr.cells.find(c => c.key === s.selectedCell) ?? null : null), [gr, s.selectedCell]);
   const btn = "inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed";
-  const reading = s.state === "reading" || ts.stage1State === "reading";
+  const rowsReading = run.fieldRowsState === "reading";
+  const reading = s.state === "reading" || ts.stage1State === "reading" || rowsReading;
   const haveWeeds = run.plants.length > 0 || scanWeeds.length > 0 || Object.keys(ts.runs).length > 0;
   const stale = gr && (run.plants.length > 0 || scanWeeds.length > 0) && gr.cells.reduce((a, c) => a + c.count, 0) === 0 && gr.summary.belowFloor === 0;
 
@@ -62,7 +63,7 @@ export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl
           onClick={() => void gradeField(taskId, { crop, stage1: { params: PARAMS, modelSha, photoGsdM }, scanWeeds })}>
           {gr ? "Grade again" : "Grade the field"}
         </button>
-        {reading && <span className="inline-flex items-center gap-1 text-neutral-400"><Loader2 className="h-3 w-3 animate-spin" /> reading the field into cells{ts.stage1Progress ? ` ${Math.round(100 * ts.stage1Progress)}%` : ""}…</span>}
+        {reading && <span className="inline-flex items-center gap-1 text-neutral-400"><Loader2 className="h-3 w-3 animate-spin" /> {rowsReading && s.state !== "reading" ? "reading the rows first…" : `reading the field into cells${ts.stage1Progress ? ` ${Math.round(100 * ts.stage1Progress)}%` : ""}…`}</span>}
         {!haveWeeds && !gr && <span className="text-neutral-500">The grade reads this scan's weeds: scan the field, or run Find weeds, first.</span>}
       </div>
       {s.error && <p className="text-amber-400 flex items-start gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {s.error}</p>}

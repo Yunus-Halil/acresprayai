@@ -71,19 +71,24 @@ export async function gradeField(taskId: string, input: { crop: string | null; g
   if (cur.state === "reading") return;
   patchPressure(taskId, { state: "reading", error: null });
   try {
-    let ts = getTwoStage(taskId);
-    const cellOf = (g: { cellPx: number; mpp: number }) => g.cellPx * g.mpp;
-    if (!ts.stage1 || Math.abs(cellOf(ts.stage1.grid) - PRESSURE_CELL_M) > 0.25 * PRESSURE_CELL_M) {
-      await runStage1(taskId, { ...input.stage1, stage1Params: { ...(input.stage1.stage1Params ?? {}), cellM: PRESSURE_CELL_M } });
-      ts = getTwoStage(taskId);
-      // Stage 1 was read for the grade, not for the prototype: its own layers (cells, candidates, windows) stay off the map.
-      if (ts.stage1) patchTwoStage(taskId, { layers: { pressure: false, candidates: false, windows: false, weeds: false } });
-    }
+    // Stage 1 is read fresh for every grade: it takes seconds, and a kept read can carry rows the field no longer
+    // has (the first grade of 2026-10-22 ran on the automatic rows while the saved layout was still loading, and
+    // "Grade again" kept that read).
+    await runStage1(taskId, { ...input.stage1, stage1Params: { ...(input.stage1.stage1Params ?? {}), cellM: PRESSURE_CELL_M } });
+    const ts = getTwoStage(taskId);
+    // Stage 1 was read for the grade, not for the prototype: its own layers (cells, candidates, windows) stay off the map.
+    if (ts.stage1) patchTwoStage(taskId, { layers: { pressure: false, candidates: false, windows: false, weeds: false } });
     if (!ts.stage1) { patchPressure(taskId, { state: "none", error: ts.error ?? "The field could not be read into cells." }); return; }
     const { objects, source, photoBased } = pressureObjects(taskId, input.scanWeeds ?? []);
     const rows = frameRunFieldRows(taskId);
     const grade = gradePressure({ objects, grid: ts.stage1.grid, cells: ts.stage1.cells, rows, crop: input.crop, group: input.group ?? cropGroupOf(input.crop, rows?.source === "layout"), canopyClosed: canopyClosedOf(ts.stage1.cells), photoBased });
-    patchPressure(taskId, { grade, state: "done", source, error: objects.length ? null : "Nothing to grade yet: this scan has no weeds on it. Scan the field, or run Find weeds, and grade again." });
+    const noRows = grade.summary.assessed === 0 && grade.summary.cells > 0 && (grade.summary.whyNot["no rows"] ?? 0) >= 0.9 * grade.summary.cells;
+    const error = noRows
+      ? (rows?.source === "layout"
+        ? "The planting's rows reach none of the cells. Open Crop rows, read the rows again, and grade again."
+        : "The rows read automatically reach none of the cells (the read found no rows, or rows in one block only). Mark the planting under Crop rows and grade again.")
+      : objects.length ? null : "Nothing to grade yet: this scan has no weeds on it. Scan the field, or run Find weeds, and grade again.";
+    patchPressure(taskId, { grade, state: "done", source, error });
   } catch (e) {
     patchPressure(taskId, { state: "none", error: (e as Error)?.message ?? String(e) });
   }

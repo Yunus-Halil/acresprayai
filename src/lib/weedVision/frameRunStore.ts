@@ -177,6 +177,19 @@ const fieldRowsByTask = new Map<string, FieldRows>();
 /** The field's rows when they were read. */
 export const fieldRowsOf = (taskId: string): FieldRows | undefined => fieldRowsByTask.get(taskId);
 const fieldRowsTried = new Map<string, string>();
+/** The read in flight per scan, so a second caller waits for it instead of reading stale rows. */
+const fieldRowsInFlight = new Map<string, { key: string; done: Promise<void> }>();
+/** A saved planting layout still loading per scan: the rows wait for it, so the first read is never the automatic one by accident. */
+const layoutLoads = new Map<string, Promise<unknown>>();
+/**
+ * The scan's saved layout is loading: until it settles, the rows wait for it. The first grade on the apricot orchard
+ * (2026-10-22) ran on the automatic rows because the layout came from the database a moment later, and Stage 1 kept
+ * those rows: "no rows" in every cell.
+ */
+export function setFrameRunLayoutLoading(taskId: string, load: Promise<unknown>): void {
+  const p = load.then(() => undefined, () => undefined).finally(() => { if (layoutLoads.get(taskId) === p) layoutLoads.delete(taskId); });
+  layoutLoads.set(taskId, p);
+}
 type FieldRowsReader = typeof readFieldRows;
 /** The field's rows into the session; every plant on screen is judged against them at once. */
 export function setFieldRows(taskId: string, rows: FieldRows | null): void {
@@ -199,13 +212,26 @@ export function setFieldRows(taskId: string, rows: FieldRows | null): void {
 let rowReaders: { reader: FieldRowsReader; rasterReader: typeof readLayoutRaster } = { reader: readFieldRows, rasterReader: readLayoutRaster };
 export function setFieldRowsReaders(r: Partial<typeof rowReaders> | null): void { rowReaders = { reader: readFieldRows, rasterReader: readLayoutRaster, ...(r ?? {}) }; }
 export async function ensureFieldRows(taskId: string, opts: { reader?: FieldRowsReader; rasterReader?: typeof readLayoutRaster } = {}): Promise<void> {
+  const loading = layoutLoads.get(taskId);
+  if (loading) await loading;
   const map = maps.get(taskId), rings = boundaries.get(taskId);
   if (!map || !rings?.length) return;
   const mapKey = `${map.maxNative}|${rings.length}|${rings[0].length}|${rings[0][0]?.lat}|${rings[0][0]?.lng}`;
   const layout = layoutsByTask.get(taskId) ?? null;
   const key = `${mapKey}|v${LAYOUT_VERSION}|${layout ? JSON.stringify([layout.blocks, layout.verdicts ?? []]) : "auto"}`;
-  if (fieldRowsTried.get(taskId) === key) return;
+  if (fieldRowsTried.get(taskId) === key) {
+    const inFlight = fieldRowsInFlight.get(taskId);
+    if (inFlight && inFlight.key === key) await inFlight.done;
+    return;
+  }
   fieldRowsTried.set(taskId, key);
+  const done = readFieldRowsInto(taskId, key, map, rings, layout, opts).finally(() => { if (fieldRowsInFlight.get(taskId)?.key === key) fieldRowsInFlight.delete(taskId); });
+  fieldRowsInFlight.set(taskId, { key, done });
+  await done;
+}
+
+async function readFieldRowsInto(taskId: string, key: string, map: NonNullable<ReturnType<typeof maps.get>>, rings: NonNullable<ReturnType<typeof boundaries.get>>, layout: PlantingLayout | null, opts: { reader?: FieldRowsReader; rasterReader?: typeof readLayoutRaster }): Promise<void> {
+  const mapKey = `${map.maxNative}|${rings.length}|${rings[0].length}|${rings[0][0]?.lat}|${rings[0][0]?.lng}`;
   patchFrameRun(taskId, { fieldRowsState: "reading", fieldRowsProgress: 0 });
   const progress = (f: number) => { if (fieldRowsTried.get(taskId) === key) patchFrameRun(taskId, { fieldRowsProgress: f }); };
   let rows: FieldRows | null = null;
@@ -893,6 +919,8 @@ export function resetFrameRunStore(): void {
   boundaries.clear();
   fieldRowsByTask.clear();
   fieldRowsTried.clear();
+  fieldRowsInFlight.clear();
+  layoutLoads.clear();
   layoutsByTask.clear();
   rastersByTask.clear();
   refinedByTask.clear();

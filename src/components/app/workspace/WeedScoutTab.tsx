@@ -77,7 +77,7 @@ import { useTwoStage } from "@/lib/weedVision/twoStage/twoStageStore";
 import { TwoStagePanel } from "../weedVision/TwoStagePanel";
 import { type GroundPlant, countByClass, countByRow } from "@/lib/weedVision/frames";
 import type { Hotspot } from "@/lib/weedVision/hotspots";
-import { ensureFieldRows, patchFrameRun, setFrameRunAligner, setFrameRunBoundary, setFrameRunLayout, setFrameRunMap, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { ensureFieldRows, patchFrameRun, setFrameRunAligner, setFrameRunBoundary, setFrameRunLayout, setFrameRunLayoutLoading, setFrameRunMap, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { alignPhotoToMap } from "@/lib/weedVision/alignToMap";
 import { ringCandidate } from "@/lib/sourceFrames/spot";
 import { m2ToHectares, polygonAreaM2 } from "@/lib/geo";
@@ -452,7 +452,9 @@ export function WeedScoutTab({
   useEffect(() => {
     if (!fieldId) return;
     let on = true;
-    void loadFieldLayout(fieldId).then(l => { if (on && l) setFrameRunLayout(taskId, l); });
+    // The rows wait for this load: the first read must not be the automatic one while a saved layout is on its way.
+    const load = loadFieldLayout(fieldId).then(l => { if (on && l) setFrameRunLayout(taskId, l); });
+    setFrameRunLayoutLoading(taskId, load);
     return () => { on = false; };
   }, [fieldId, taskId]);
   /** An area's photographs: the same closer look a spot gets, on the area's outline. */
