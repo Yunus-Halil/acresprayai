@@ -45,7 +45,7 @@ async function main() {
     const s = grade.summary as typeof grade.summary & { disagreeing?: number };
     const row = {
       frame, assessed: s.assessed, notAssessed: s.notAssessed, confirmed: s.confirmed, possible: s.possible,
-      actionCells: s.byClass.action + s.byClass.high, highCells: s.byClass.high, escapes: s.escapes, treatWhileSmall: s.treatWhileSmall,
+      actionCells: s.byClass.action + s.byClass.high, highCells: s.byClass.high, escapes: s.escapes, escapesConfirmed: grade.escapes.filter(e => e.tier === "confirmed").length, treatWhileSmall: s.treatWhileSmall,
       fieldCover: +s.fieldCover.toFixed(4), fieldClass: s.fieldClass, patches: s.patches, unitM: s.unitM,
       withLossBand: grade.cells.filter(c => c.lossBand).length, disagreeing: s.disagreeing ?? null,
     };
@@ -53,7 +53,7 @@ async function main() {
     out.push(row);
   }
   const total = (k: string) => out.reduce((a, r) => a + (Number(r[k]) || 0), 0);
-  const sum = { frames: out.length, confirmed: total("confirmed"), possible: total("possible"), actionCells: total("actionCells"), escapes: total("escapes"), treatWhileSmall: total("treatWhileSmall"), withLossBand: total("withLossBand") };
+  const sum = { frames: out.length, confirmed: total("confirmed"), possible: total("possible"), actionCells: total("actionCells"), escapes: total("escapes"), escapesConfirmed: total("escapesConfirmed"), treatWhileSmall: total("treatWhileSmall"), withLossBand: total("withLossBand") };
   console.log(JSON.stringify({ total: sum }));
   if (arg("out")) writeFileSync(arg("out")!, JSON.stringify({ frames: out, total: sum }, null, 1));
   if (arg("disagreement")) writeFileSync(arg("disagreement")!, disagreementCsv(disagreeing));

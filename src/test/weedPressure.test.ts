@@ -146,6 +146,27 @@ describe("the grade", () => {
     expect(gr.escapes[0].diameterM).toBeCloseTo(0.5, 1);
     expect(gr.escapes[0].cell).toBe(cellKey(3, 3));
     expect(gr.notes.join(" ")).toMatch(/large escape/);
+    expect(gr.escapes[0].pixelSupport).toBeCloseTo(1, 6); // the pixels see the whole weed
+    expect(gr.escapes[0].tier).toBe("confirmed");
+  });
+
+  it("scenario 2: an escape the map's pixels barely back is possible, whatever its views; the 0.3 m bar is unchanged", () => {
+    const big = weed(3, 3, 0.196, { seenIn: ["p1", "p2"] });
+    // The cell's off-row green is a fifth of the weed's area: support 0.2, under the quarter.
+    const thin = cells({ [cellKey(3, 3)]: { offRowGreenM2: 0.2 * 0.196, pressure: 0.2 * 0.196 / groundM2 } });
+    const gr = gradePressure({ objects: weedObjectsOf([big]), grid, cells: thin, rows: null, crop: "corn", canopyClosed: false, photoBased: true });
+    expect(gr.escapes).toHaveLength(1);
+    expect(gr.escapes[0].views).toBe(2);
+    expect(gr.escapes[0].pixelSupport).toBeCloseTo(0.2, 6);
+    expect(gr.escapes[0].tier).toBe("possible");
+    // At a third it is backed, and seen twice it is confirmed.
+    const third = cells({ [cellKey(3, 3)]: { offRowGreenM2: 0.196 / 3, pressure: 0.196 / 3 / groundM2 } });
+    expect(gradePressure({ objects: weedObjectsOf([big]), grid, cells: third, rows: null, crop: "corn", canopyClosed: false, photoBased: true }).escapes[0].tier).toBe("confirmed");
+    // More green than the weed caps at 1.
+    const lush = cells({ [cellKey(3, 3)]: { offRowGreenM2: 0.5, pressure: 0.5 / groundM2 } });
+    expect(gradePressure({ objects: weedObjectsOf([big]), grid, cells: lush, rows: null, crop: "corn", canopyClosed: false, photoBased: true }).escapes[0].pixelSupport).toBe(1);
+    // A 0.29 m weed is still no escape.
+    expect(grade([weed(3, 3, Math.PI * 0.145 ** 2)]).escapes).toHaveLength(0);
   });
 
   it("scenario 3: a cluster across cells is one patch, ranked by area, a priority at 25 m² or high cover", () => {

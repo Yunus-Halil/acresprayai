@@ -26,7 +26,10 @@
 //   scenario 2 one big weed: a seed and resistance risk, not a yield risk (one Palmer amaranth plant 200,000 to
 //              600,000 seeds; one plant's seed infested over 95% of a field by year 3, Norsworthy 2014). It never
 //              raises its cell's class; it is reported as a "large escape" point with its size. The 0.3 m size bar is
-//              ours; at 1.5-5 cm a pixel a 10 cm label-size weed is near the detection floor.
+//              ours; at 1.5-5 cm a pixel a 10 cm label-size weed is near the detection floor. Each escape carries its
+//              pixel support: the map's own off-row green in its cell over the escape's area, capped at 1. Under a
+//              quarter it is "possible" however many views saw it: a large weed the map shows little green for is
+//              more likely a crown or soil the model outlined than a plant (ours).
 //   scenario 3 one large cluster: the class comes from cover; the field's priority from the patch's area (patches
 //              persist year to year, Rew & Cussans 1995). The patch rule stays at 5% (Peña's boundary); the 25 m²
 //              priority is ours and labelled so.
@@ -163,6 +166,8 @@ export type GradeParams = {
   smallDiameterM: number;
   /** Scenario 2: a single object this wide or wider is a large escape (ours; a 10 cm label-size weed is near the floor at our pixel sizes). */
   escapeDiameterM: number;
+  /** An escape whose cell holds less of the map's off-row green than this share of its own area is "possible" (ours). */
+  escapeSupport: number;
   /** Patches: touching cells at this cover or more (Peña 2013's low/moderate boundary). */
   patchCover: number;
   /** A patch is a field priority at this area (ours, labelled so) or at the scheme's "high" cover. */
@@ -195,7 +200,7 @@ export type GradeParams = {
   /** A cell's pixels and its objects disagree when their weed areas differ by more than this share of its ground (ours). */
   disagreeShare: number;
 };
-export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundShare: 0.3, nearCropGroundShare: 0.5, nearCropMarginM: 0.3, unitM: 2.5, disagreeShare: 0.1 };
+export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundShare: 0.3, nearCropGroundShare: 0.5, nearCropMarginM: 0.3, unitM: 2.5, disagreeShare: 0.1, escapeSupport: 0.25 };
 
 export type Tier = "confirmed" | "possible" | "none";
 
@@ -245,7 +250,11 @@ export type GradedCell = {
   whyNot: (UncertainReason | "too little ground")[];
 };
 
-export type Escape = { id: string; centre: LatLng2; diameterM: number; areaM2: number; cell: string; views: number; tier: Tier };
+export type Escape = {
+  id: string; centre: LatLng2; diameterM: number; areaM2: number; cell: string; views: number; tier: Tier;
+  /** Stage 1's off-row green in the escape's cell over the escape's own area, capped at 1: how much of it the map's pixels back. */
+  pixelSupport: number;
+};
 
 export type PressurePatch = { id: string; cells: string[]; areaM2: number; meanCover: number; maxCover: number; weedM2: number; rank: number; priority: boolean; centre: LatLng2 };
 
@@ -400,7 +409,9 @@ export function gradePressure(input: {
     });
     for (const o of objs) {
       if (o.d < P.escapeDiameterM || !o.p.centre) continue;
-      escapes.push({ id: o.p.id, centre: o.p.centre, diameterM: o.d, areaM2: o.p.areaM2, cell: s.key, views: o.p.views, tier: !input.photoBased || o.p.views >= 2 ? "confirmed" : "possible" });
+      const pixelSupport = Math.min(1, s.offRowGreenM2 / o.p.areaM2);
+      const seen = !input.photoBased || o.p.views >= 2;
+      escapes.push({ id: o.p.id, centre: o.p.centre, diameterM: o.d, areaM2: o.p.areaM2, cell: s.key, views: o.p.views, pixelSupport, tier: seen && pixelSupport >= P.escapeSupport ? "confirmed" : "possible" });
     }
   }
   escapes.sort((a, b) => b.diameterM - a.diameterM);
