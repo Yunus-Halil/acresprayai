@@ -64,6 +64,33 @@ export function rowBandMask(rows: FieldRows, z: number, originX: number, originY
   return mask;
 }
 
+type Crop = FieldRows["ctx"]["crops"][number];
+
+/** The planting's typical crown, frame px: the median radius of the plants the evidence confirmed, of every plant when none is. */
+export function typicalCrownPx(crops: Crop[]): number {
+  const conf = crops.filter(c => c.state === "confirmed");
+  const r = (conf.length ? conf : crops).map(c => c.r).sort((a, b) => a - b);
+  return r.length ? r[r.length >> 1] : 0;
+}
+
+/**
+ * How far round a crop plant the weed ground is cut, frame px, the crown margin included. A confirmed or operator
+ * crown (or one with no state: the row reader's plants) is cut as the model's picture paints it, its painted radius
+ * plus the margin. An "expected" crown (layout/plantingLayout.ts: placed by the pattern at the planting's typical
+ * size with little green under it) is cut at min(r, half the typical confirmed crown) and no margin: there is no
+ * measured canopy or rim to cover, and a full crown and margin at every such place took ground the grade never saw.
+ */
+export function groundCutPx(c: Crop, typicalPx: number, marginPx: number): number {
+  if (c.state === "expected") return typicalPx > 0 ? Math.min(c.r, 0.5 * typicalPx) : c.r;
+  return (c.paint ?? c.r) + marginPx;
+}
+
+/** The rows with every crop plant's paint set to its ground cut (margin included): what Stage 1 and the pressure layer take out of the weed ground. Paint the band from it with no further margin. */
+export function rowsForGround(rows: FieldRows, marginPx: number): FieldRows {
+  const typical = typicalCrownPx(rows.ctx.crops);
+  return { ...rows, ctx: { ...rows.ctx, crops: rows.ctx.crops.map(c => ({ ...c, paint: groundCutPx(c, typical, marginPx) })) } };
+}
+
 /**
  * Paint the crop row band over a picture with the picture's own bare-ground colour (the median of its non-green
  * pixels), so a model run on it sees only what grows between the rows. Returns how many pixels were painted.

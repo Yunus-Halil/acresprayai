@@ -91,6 +91,31 @@ describe("stage 1: pressure between the rows", () => {
     expect(treeCell.pressure).toBeLessThan(0.02);
   });
 
+  it("cuts an expected crown small and a confirmed one at its painted radius with the margin", async () => {
+    const { groundCutPx, rowsForGround, typicalCrownPx, PAINT_CROWN_MARGIN_M } = await import("@/lib/weedVision/layout/rowBand");
+    const r = CROWN_M / M, margin = PAINT_CROWN_MARGIN_M / M;
+    const crops = TREES.map((t, k) => ({ x: t.x / M, y: t.y / M, r: k === 0 ? 2 * r : r, state: (k === 5 ? "expected" : k === 6 ? "operator" : "confirmed") as "expected" | "operator" | "confirmed" }));
+    expect(typicalCrownPx(crops)).toBeCloseTo(r, 9);
+    expect(groundCutPx(crops[5], r, margin)).toBeCloseTo(0.5 * r, 9); // expected: half the typical crown, no margin
+    expect(groundCutPx({ ...crops[5], r: 0.3 * r }, r, margin)).toBeCloseTo(0.3 * r, 9); // never more than its own r
+    expect(groundCutPx(crops[6], r, margin)).toBeCloseTo(r + margin, 9); // operator: as painted
+    expect(groundCutPx({ ...crops[1], paint: 0.6 * r }, r, margin)).toBeCloseTo(0.6 * r + margin, 9); // a merged canopy keeps its paint
+    expect(groundCutPx({ x: 0, y: 0, r }, r, margin)).toBeCloseTo(r + margin, 9); // no state (the row reader's plants): as painted
+    const g = rowsForGround({ ...ROWS, source: "layout", ctx: { ...ROWS.ctx, crops } }, margin);
+    expect(g.ctx.crops[5].paint).toBeCloseTo(0.5 * r, 9);
+    // Stage 1 on the same map: the cell holding the expected crown's rim is no longer under the cut.
+    const confirmedRows: FieldRows = { ...ROWS, source: "layout", ctx: { ...ROWS.ctx, crops: crops.map(c => ({ ...c, state: "confirmed" as const, r })) } };
+    const expectedRows: FieldRows = { ...confirmedRows, ctx: { ...confirmedRows.ctx, crops: confirmedRows.ctx.crops.map((c, k) => (k === 5 ? { ...c, state: "expected" as const } : c)) } };
+    const a = (await readStage1({ rings: [RING], tile: () => "", maxNative: 23, lat: LAT, rows: confirmedRows, draw }))!;
+    const b = (await readStage1({ rings: [RING], tile: () => "", maxNative: 23, lat: LAT, rows: expectedRows, draw }))!;
+    const t = TREES[5];
+    const rim = (s: typeof a) => s.cells.find(c => c.key === keyAt(PLAN, s, t.x, t.y - 1.0))!;
+    expect(rim(b).bandShare).toBeLessThan(rim(a).bandShare);
+    // A confirmed tree elsewhere is cut the same either way.
+    const other = (s: typeof a) => s.cells.find(c => c.key === keyAt(PLAN, s, TREES[2].x, TREES[2].y - 1.0))!;
+    expect(other(b).bandShare).toBeCloseTo(other(a).bandShare, 9);
+  });
+
   it("cells the read rows do not reach are 'no rows', even when rows were read elsewhere in the field", async () => {
     // Rows read only in the northern half (the first four rows): the south is unexplained, not confident.
     const north: FieldRows = { ...ROWS, ctx: { ...ROWS.ctx, lines: ROWS.ctx.lines.slice(0, 4), crops: ROWS.ctx.crops.filter(c => c.y * M < 20) } };

@@ -8,6 +8,7 @@ import { useEffect } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
 import { frameRunFieldRows } from "@/lib/weedVision/frameRunStore";
+import { PAINT_CROWN_MARGIN_M, rowsForGround } from "@/lib/weedVision/layout/rowBand";
 import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
 import { type PressureBand, drawnBandOf } from "@/lib/weedVision/pressure/grade";
 import { selectPressureCell, usePressure } from "@/lib/weedVision/pressure/pressureStore";
@@ -69,8 +70,10 @@ export function PressureLayer({ taskId }: { taskId: string }) {
         ctx.strokeStyle = BAND_SWATCH[b]; ctx.lineWidth = borderPx; ctx.stroke();
         ctx.globalAlpha = 1;
       }
-      // Cut the crop out of the tint: the rows' bands and the crowns, as the grade's own ground excluded them.
-      const rows = frameRunFieldRows(taskId);
+      // Cut the crop out of the tint: the rows' bands and the crowns, as the grade's own ground excluded them (each
+      // crown at Stage 1's ground cut: an expected crown small, every other with its margin).
+      const fieldRows = frameRunFieldRows(taskId);
+      const rows = fieldRows ? rowsForGround(fieldRows, PAINT_CROWN_MARGIN_M / fieldRows.mpp) : null;
       if (rows) {
         const metre = map.latLngToContainerPoint(map.getCenter()).distanceTo(map.latLngToContainerPoint(L.latLng(map.getCenter().lat + 1 / 111_320, map.getCenter().lng)));
         const fp = (x: number, y: number) => { const q = latLngOfPx(rows.left + x, rows.top + y, rows.z); return map.latLngToContainerPoint([q.lat, q.lng]); };
@@ -83,7 +86,7 @@ export function PressureLayer({ taskId }: { taskId: string }) {
           ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
         }
         for (const c of rows.ctx.crops) {
-          const q = fp(c.x, c.y), r = Math.max(3, (c.r * rows.mpp + 0.3) * metre);
+          const q = fp(c.x, c.y), r = Math.max(3, (c.paint ?? c.r) * rows.mpp * metre);
           ctx.fillStyle = "#000"; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.fill();
         }
         ctx.restore();

@@ -18,7 +18,7 @@ import type { PhotoPixels } from "../../photoScout/pattern";
 import { fetchTileCached } from "../../tileCache";
 import { type FieldRows, coverMask, fieldReadPlan, vegetationMask } from "../fieldRows";
 import { convexHull } from "../hotspots";
-import { PAINT_CROWN_MARGIN_M, rowBandMask } from "../layout/rowBand";
+import { PAINT_CROWN_MARGIN_M, rowBandMask, rowsForGround } from "../layout/rowBand";
 
 export { fillConvex, fillDisc, rowBandMask } from "../layout/rowBand";
 import { TILE_PX, latLngOfPx } from "../mapRun";
@@ -328,14 +328,16 @@ export async function readStage1(input: {
   const counts = emptyCounts(g);
   if (input.rows) counts.reached = rowReach(g, input.rows, params.rowReachSpacings);
   const draw = input.draw ?? drawMapRect;
+  // The crop taken out as the model's input takes it out (the crowns with their margin, so a crown's rim is not
+  // pressure), except where the layout only expects a plant: there it is cut small (layout/rowBand.ts, groundCutPx).
+  const ground = input.rows ? rowsForGround(input.rows, PAINT_CROWN_MARGIN_M / input.rows.mpp) : null;
   for (let k = 0; k < plan.tiles.length; k++) {
     if (input.signal?.aborted) return null;
     const t = plan.tiles[k];
     const w = t.x1 - t.x0, h = t.y1 - t.y0;
     const px = await draw(input.tile, g.z, g.left + t.x0, g.top + t.y0, w, h, input.signal);
     if (!px) { if (input.signal?.aborted) return null; continue; }
-    // The crop taken out as the model's input takes it out: the crowns with their margin, so a crown's rim is not pressure.
-    const band = input.rows ? rowBandMask(input.rows, g.z, g.left + t.x0, g.top + t.y0, w, h, PAINT_CROWN_MARGIN_M / input.rows.mpp) : null;
+    const band = ground ? rowBandMask(ground, g.z, g.left + t.x0, g.top + t.y0, w, h) : null;
     accumulate(counts, g, px, t.x0, t.y0, band, params.darkLuma, Math.max(1, Math.round(params.blobMinM2 / (plan.mpp * plan.mpp))), params.mask ?? "cover");
     input.onProgress?.((k + 1) / plan.tiles.length);
     await new Promise(res => setTimeout(res, 0));

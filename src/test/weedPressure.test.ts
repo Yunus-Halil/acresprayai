@@ -228,6 +228,10 @@ describe("the grade", () => {
     expect(l.relativeCover).toBeCloseTo(l.weedM2 / (l.weedM2 + crownM2), 6);
     expect(l.lossBand![0]).toBeCloseTo(kropffLoss(l.relativeCover!, 0.54), 6);
     expect(l.lossBand![1]).toBeCloseTo(l.relativeCover!, 6); // q = 1 is the identity
+    // An expected crown (placed at the typical size, little green) counts at half the typical confirmed crown, not as a full canopy.
+    const expectedRows = { ...layoutRows, ctx: { ...layoutRows.ctx, crops: [{ ...layoutRows.ctx.crops[0], r: 0.5 / MPP, state: "expected" as const }, { x: crownX + 20 / MPP, y: crownY, r: 0.4 / MPP, state: "confirmed" as const }] } };
+    const ex = gradePressure({ objects: weedObjectsOf(one), grid, cells: plantsSeen(one), rows: expectedRows, crop: "olive", canopyClosed: false, photoBased: false });
+    expect(ex.cells.find(x => x.key === cellKey(1, 3))!.cropM2).toBeCloseTo(Math.PI * 0.2 ** 2, 6);
     // A layout cell with no crown in it gets the band's area for the card and no relative cover.
     expect(lay.cells.find(x => x.key === cellKey(4, 4))!.relativeCover).toBeNull();
     const closed = gradePressure({ objects: weedObjectsOf(one), grid, cells: plantsSeen(one), rows: layoutRows, crop: "olive", canopyClosed: true, photoBased: false });

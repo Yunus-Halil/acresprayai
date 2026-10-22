@@ -49,6 +49,7 @@ import type { Candidate } from "../../weedScout/types";
 import { type FieldRows, fieldRowStatusAt } from "../fieldRows";
 import type { GroundPlant } from "../frames";
 import { latLngOfPx, mercatorPx } from "../mapRun";
+import { typicalCrownPx } from "../layout/rowBand";
 import { isOnRow } from "../rowFilter";
 import { type GridFrame, type Stage1Cell, type UncertainReason, cellAt, cellKey } from "../twoStage/stage1";
 
@@ -298,15 +299,22 @@ export const kropffLoss = (lw: number, q: number) => (q * lw) / (1 + (q - 1) * l
 
 const median = (v: number[]): number | null => { if (!v.length) return null; const s = [...v].sort((a, b) => a - b); return s[s.length >> 1]; };
 
-/** The crop's crown area per cell from the planting layout, m², by the cell each crown's centre falls in; and the cells any crown's margin touches. */
+/**
+ * The crop's crown area per cell from the planting layout, m², by the cell each crown's centre falls in; and the cells
+ * any crown's margin touches. An "expected" crown (placed at the typical size with little green under it) counts at
+ * the radius Stage 1 cuts it at, min(r, half the typical confirmed crown), not as a full canopy; the touching test
+ * keeps every crown's own radius.
+ */
 function crownsByCell(rows: FieldRows | null, g: GridFrame, marginM: number): { area: Map<string, number>; touched: Set<string> } {
   const area = new Map<string, number>(), touched = new Set<string>();
   if (!rows) return { area, touched };
+  const typical = typicalCrownPx(rows.ctx.crops);
   for (const c of rows.ctx.crops) {
     const q = latLngOfPx(rows.left + c.x, rows.top + c.y, rows.z);
     const [X, Y] = mercatorPx(q.lat, q.lng, g.z);
     const cell = cellAt(g, X, Y);
-    if (cell && rows.source === "layout") { const k = cellKey(cell.i, cell.j); area.set(k, (area.get(k) ?? 0) + Math.PI * (c.r * rows.mpp) ** 2); }
+    const leafR = c.state === "expected" && typical > 0 ? Math.min(c.r, 0.5 * typical) : c.r;
+    if (cell && rows.source === "layout") { const k = cellKey(cell.i, cell.j); area.set(k, (area.get(k) ?? 0) + Math.PI * (leafR * rows.mpp) ** 2); }
     // Every cell the crown's margin reaches into.
     const rPx = (c.r * rows.mpp + marginM) / g.mpp;
     const i0 = Math.floor((X - rPx - g.left) / g.cellPx), i1 = Math.floor((X + rPx - g.left) / g.cellPx), j0 = Math.floor((Y - rPx - g.top) / g.cellPx), j1 = Math.floor((Y + rPx - g.top) / g.cellPx);
