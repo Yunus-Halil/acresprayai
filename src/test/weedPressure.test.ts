@@ -227,3 +227,26 @@ describe("the three bands the map draws", () => {
     expect(bandOf("high")).toBe("high");
   });
 });
+
+describe("near the crop", () => {
+  it("a scrap of ground beside the band, or a cell a crown's margin touches, is capped at medium on the map and said so", async () => {
+    const { drawnBandOf } = await import("@/lib/weedVision/pressure/grade");
+    // (5,0): 70% of the cell under the band, a leaf on the scrap reads 40% cover: class high, drawn medium, near the crop.
+    const cs = cells({ [cellKey(5, 0)]: { bandShare: 0.7, pressure: 0.4, density: 1, offRowGreenM2: 0.4 * cellM2 * 0.3 } });
+    const gr = gradePressure({ objects: [], grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    const c = gr.cells.find(x => x.key === cellKey(5, 0))!;
+    expect(c.assessed).toBe(true);
+    expect(c.klass).toBe("high");
+    expect(c.nearCrop).toBe(true);
+    expect(drawnBandOf(c)).toBe("medium");
+    expect(gr.summary.nearCrop).toBe(1);
+    expect(gr.notes.join(" ")).toMatch(/against the crop/);
+    // A crown whose margin reaches into cell (2,2) makes it near the crop too; a far cell is not.
+    const crownX = LEFT + 2 * grid.cellPx - 0.5 / MPP, crownY = TOP + 2.5 * grid.cellPx; // 0.5 m left of the cell's edge; crown radius 0.4 m plus the 0.3 m margin reaches it
+    const rows = { z: Z, left: 0, top: 0, mpp: MPP, rows: 1, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "layout" as const, ctx: { lines: [], crops: [{ x: crownX, y: crownY, r: 0.4 / MPP }], bandPx: 10, gsdM: MPP } };
+    const g2 = gradePressure({ objects: weedObjectsOf([weed(2, 2, 0.2 * groundM2), weed(4, 4, 0.2 * groundM2)]), grid, cells: cells(), rows, crop: "apricot", canopyClosed: false, photoBased: false });
+    expect(g2.cells.find(x => x.key === cellKey(2, 2))!.nearCrop).toBe(true);
+    expect(g2.cells.find(x => x.key === cellKey(4, 4))!.nearCrop).toBe(false);
+    expect(drawnBandOf(g2.cells.find(x => x.key === cellKey(4, 4))!)).toBe("high");
+  });
+});

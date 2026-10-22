@@ -123,6 +123,11 @@ export function bandOf(k: PressureClass): PressureBand {
   if (k === "moderate") return "medium";
   return "high";
 }
+/** The band drawn for a cell: its class's band, capped at medium when the cell is near the crop. */
+export function drawnBandOf(c: { klass: PressureClass; nearCrop: boolean }): PressureBand {
+  const b = bandOf(c.klass);
+  return c.nearCrop && b === "high" ? "medium" : b;
+}
 
 export function classOf(cover: number, count: number, s: ClassScheme): PressureClass {
   if (!(cover > 0) && count === 0) return "none";
@@ -155,8 +160,17 @@ export type GradeParams = {
   floorPx: number;
   /** A cell with less visible ground than this is not assessed. */
   minGroundM2: number;
+  /**
+   * Near the crop: a cell with less than this share of its ground visible (the rest under the row band and crowns),
+   * or touching a crown's margin, is ambiguous ground, not a place to call high. Vegetation there may be the crop's
+   * own rim, and a scrap of ground reads any leaf as high cover. Such a cell is capped at the medium band and
+   * reported as near the crop (the operator, 2026-10-21: "if it's too near the crop we should exercise caution
+   * making it red").
+   */
+  nearCropGroundShare: number;
+  nearCropMarginM: number;
 };
-export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundM2: 0.2 };
+export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundM2: 0.3, nearCropGroundShare: 0.5, nearCropMarginM: 0.3 };
 
 export type Tier = "confirmed" | "possible" | "none";
 
@@ -179,6 +193,8 @@ export type GradedCell = {
   /** Expected yield-loss band (shares) from Kropff & Spitters at the two q values, only before canopy closure. */
   lossBand: [number, number] | null;
   klass: PressureClass;
+  /** Near the crop (mostly under the band, or touching a crown's margin): capped at the medium band on the map, caution not action. */
+  nearCrop: boolean;
   /** Scenario 1: stepped up one class for many small objects before closure. */
   treatWhileSmall: boolean;
   tier: Tier;
@@ -200,6 +216,8 @@ export type PressureSummary = {
   actionAreaM2: number;
   highAreaM2: number;
   treatWhileSmall: number;
+  /** Cells at the action point or over that sit against the crop: capped at medium on the map, caution not action. */
+  nearCrop: number;
   escapes: number;
   patches: number;
   priorityPatches: number;
@@ -232,19 +250,25 @@ export const kropffLoss = (lw: number, q: number) => (q * lw) / (1 + (q - 1) * l
 
 const median = (v: number[]): number | null => { if (!v.length) return null; const s = [...v].sort((a, b) => a - b); return s[s.length >> 1]; };
 
-/** The crop's crown area per cell from the planting layout, m², by the cell each crown's centre falls in. */
-function crownAreaByCell(rows: FieldRows | null, g: GridFrame): Map<string, number> {
-  const out = new Map<string, number>();
-  if (!rows || rows.source !== "layout") return out;
+/** The crop's crown area per cell from the planting layout, m², by the cell each crown's centre falls in; and the cells any crown's margin touches. */
+function crownsByCell(rows: FieldRows | null, g: GridFrame, marginM: number): { area: Map<string, number>; touched: Set<string> } {
+  const area = new Map<string, number>(), touched = new Set<string>();
+  if (!rows) return { area, touched };
   for (const c of rows.ctx.crops) {
     const q = latLngOfPx(rows.left + c.x, rows.top + c.y, rows.z);
     const [X, Y] = mercatorPx(q.lat, q.lng, g.z);
     const cell = cellAt(g, X, Y);
-    if (!cell) continue;
-    const k = cellKey(cell.i, cell.j);
-    out.set(k, (out.get(k) ?? 0) + Math.PI * (c.r * rows.mpp) ** 2);
+    if (cell && rows.source === "layout") { const k = cellKey(cell.i, cell.j); area.set(k, (area.get(k) ?? 0) + Math.PI * (c.r * rows.mpp) ** 2); }
+    // Every cell the crown's margin reaches into.
+    const rPx = (c.r * rows.mpp + marginM) / g.mpp;
+    const i0 = Math.floor((X - rPx - g.left) / g.cellPx), i1 = Math.floor((X + rPx - g.left) / g.cellPx), j0 = Math.floor((Y - rPx - g.top) / g.cellPx), j1 = Math.floor((Y + rPx - g.top) / g.cellPx);
+    for (let j = Math.max(0, j0); j <= Math.min(g.ny - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(g.nx - 1, i1); i++) {
+      // Nearest point of the cell to the crown's centre.
+      const nx = Math.max(g.left + i * g.cellPx, Math.min(X, g.left + (i + 1) * g.cellPx)), ny = Math.max(g.top + j * g.cellPx, Math.min(Y, g.top + (j + 1) * g.cellPx));
+      if (Math.hypot(nx - X, ny - Y) <= rPx) touched.add(cellKey(i, j));
+    }
   }
-  return out;
+  return { area, touched };
 }
 
 export function gradePressure(input: {
@@ -265,7 +289,7 @@ export function gradePressure(input: {
   const scheme = schemeFor(group, input.crop);
   const cellM2 = (g.cellPx * g.mpp) ** 2;
   const floorM = P.floorPx * g.mpp;
-  const crowns = crownAreaByCell(input.rows, g);
+  const crowns = crownsByCell(input.rows, g, P.nearCropMarginM);
 
   // The weeds between the rows, by cell; objects under the floor counted apart. A weed on a row by the field's own
   // rows is the crop, whichever system found it.
@@ -301,7 +325,8 @@ export function gradePressure(input: {
     const density = groundM2 > 0 ? count / groundM2 : 0;
     // Sizes from the objects when there are any; else the mean blob of the pixels.
     const ds = objs.length ? objs.map(o => o.d) : pixelBlobs > 0 && pixelM2 > 0 ? [2 * Math.sqrt(pixelM2 / pixelBlobs / Math.PI)] : [];
-    const cropM2 = crowns.get(s.key) ?? (input.rows ? cellM2 * s.imagedShare * s.bandShare : 0);
+    const cropM2 = crowns.area.get(s.key) ?? (input.rows ? cellM2 * s.imagedShare * s.bandShare : 0);
+    const nearCrop = assessed && (1 - s.bandShare < P.nearCropGroundShare || crowns.touched.has(s.key));
     const relativeCover = cropM2 > 0 || weedM2 > 0 ? (weedM2 + cropM2 > 0 ? weedM2 / (weedM2 + cropM2) : null) : null;
     const lossBand: [number, number] | null = relativeCover != null && input.canopyClosed === false
       ? [kropffLoss(relativeCover, Math.min(...P.kropffQ)), kropffLoss(relativeCover, Math.max(...P.kropffQ))]
@@ -317,7 +342,7 @@ export function gradePressure(input: {
       key: s.key, i: s.i, j: s.j, centre: s.centre, ring: s.ring,
       cover: assessed ? cover : 0, groundM2, weedM2, count, density, medianDiameterM: med, maxDiameterM: ds.length ? Math.max(...ds) : null,
       cropM2, relativeCover: assessed ? relativeCover : null, lossBand: assessed ? lossBand : null,
-      klass, treatWhileSmall, tier, multiView, assessed, whyNot: s.uncertain,
+      klass, nearCrop, treatWhileSmall, tier, multiView, assessed, whyNot: s.uncertain,
     });
     for (const o of objs) {
       if (o.d < P.escapeDiameterM || !o.p.centre) continue;
@@ -363,6 +388,7 @@ export function gradePressure(input: {
     actionAreaM2: over("action").reduce((a, c) => a + c.groundM2, 0),
     highAreaM2: over("high").reduce((a, c) => a + c.groundM2, 0),
     treatWhileSmall: cells.filter(c => c.treatWhileSmall).length,
+    nearCrop: cells.filter(c => c.nearCrop && CLASS_ORDER.indexOf(c.klass) >= CLASS_ORDER.indexOf("action")).length,
     escapes: escapes.length, patches: patches.length, priorityPatches: patches.filter(p => p.priority).length,
     belowFloor,
     medianRelativeCover: median(over("action").map(c => c.relativeCover).filter((v): v is number => v != null)),
@@ -375,6 +401,7 @@ export function gradePressure(input: {
   notes.push(`The smallest weed this grade can claim is about ${cm(floorM)} across (${P.floorPx} pixels at this map's ${(g.mpp * 100).toFixed(1)} cm a pixel)${belowFloor ? `; ${belowFloor} smaller object${belowFloor === 1 ? "" : "s"} counted as below the floor` : ""}.`);
   if (input.canopyClosed === true) notes.push("The canopy reads as closed: weeds under it are not seen, and no loss band is given. Grades after canopy closure under-count (Goldsmith 2025; Allmendinger 2024).");
   if (summary.treatWhileSmall) notes.push(`${summary.treatWhileSmall} cell${summary.treatWhileSmall === 1 ? "" : "s"} stepped up one class for many small weeds: scattered small weeds compete harder than clumped ones and are easiest to treat while small.`);
+  if (summary.nearCrop) notes.push(`${summary.nearCrop} cell${summary.nearCrop === 1 ? "" : "s"} at the action point sit against the crop (mostly under the row band, or touching a crown's margin): shown as medium, not high. Green there may be the crop's own rim, and a scrap of ground reads any leaf as high cover. Look before acting.`);
   if (summary.escapes) notes.push(`${summary.escapes} large escape${summary.escapes === 1 ? "" : "s"} (${cm(P.escapeDiameterM)} across or more): a seed and resistance risk apart from any cell's class.`);
   if (summary.notAssessed) notes.push(`${summary.notAssessed} cell${summary.notAssessed === 1 ? " was" : "s were"} not assessed (no rows read, partly imaged, mostly crop row, or in shadow): not weed-free, unseen.`);
   notes.push(`"Possible" cells and escapes are kept for review, never dropped: a missed weed costs more than a false mark (every source), and nobody reaches zero false marks (best published 2 to 5%).`);

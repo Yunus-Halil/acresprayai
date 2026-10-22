@@ -9,7 +9,7 @@ import L from "leaflet";
 import { useMap } from "react-leaflet";
 import { frameRunFieldRows } from "@/lib/weedVision/frameRunStore";
 import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
-import { type PressureBand, bandOf } from "@/lib/weedVision/pressure/grade";
+import { type PressureBand, drawnBandOf } from "@/lib/weedVision/pressure/grade";
 import { selectPressureCell, usePressure } from "@/lib/weedVision/pressure/pressureStore";
 import { cellAt, cellKey } from "@/lib/weedVision/twoStage/stage1";
 
@@ -57,9 +57,12 @@ export function PressureLayer({ taskId }: { taskId: string }) {
         if (!c.assessed || c.klass === "none") continue;
         const ps = c.ring.map(pt);
         if (off(ps)) continue;
+        const b = drawnBandOf(c);
         path(ps);
         ctx.globalAlpha = c.tier === "possible" ? 0.6 : 1;
-        ctx.fillStyle = BAND_FILL[bandOf(c.klass)]; ctx.fill();
+        ctx.fillStyle = BAND_FILL[b]; ctx.fill();
+        // A solid border in the band's colour: a light fill over green weeds reads as green whatever its colour.
+        ctx.strokeStyle = BAND_SWATCH[b]; ctx.lineWidth = 1.5; ctx.stroke();
         ctx.globalAlpha = 1;
       }
       // Cut the crop out of the tint: the rows' bands and the crowns, as the grade's own ground excluded them.

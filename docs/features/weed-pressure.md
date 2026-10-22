@@ -60,6 +60,14 @@ Find weeds' mean; the tiles are way too broad." Three changes:
   and the panel says so; where more than six in ten cells read at the action point, the panel says the alleys may
   be a managed cover rather than weeds.
 
+- **Near the crop is caution, not action** (fourth eye test: red slivers beside crowns; "if it's too near the crop
+  we should exercise caution making it red"). A cell with less than half its ground visible (the rest under the row
+  band and crowns), or one a crown's 0.3 m margin reaches into, is ambiguous ground: green there may be the crop's
+  own rim, and a scrap of ground reads any leaf as high cover. Such a cell keeps its class in the data but is drawn
+  at medium at most, and the panel counts and explains them. Cells with under 0.3 m² visible are not assessed.
+- **A solid border in the cell's colour.** A light fill over green weeds read as green whatever its colour (a green
+  tile full of weeds, "how is it not red"); the border makes the band read regardless of the ground.
+
 ## On the map and in the panel
 
 Three light fills and nothing else on the cells (the operator, third eye test: "a lot of chaos; keep it simple: low

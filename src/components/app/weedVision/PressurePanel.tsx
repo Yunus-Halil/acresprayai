@@ -10,7 +10,7 @@ import { fmtArea } from "@/lib/units";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
 import { type AlgorithmInfo, type Health, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
 import { useFrameRun } from "@/lib/weedVision/frameRunStore";
-import { CLASS_LABEL, CLASS_ORDER, type PressureClass, type WeedObject, bandOf, pressureLine } from "@/lib/weedVision/pressure/grade";
+import { CLASS_LABEL, CLASS_ORDER, type PressureClass, type WeedObject, drawnBandOf, pressureLine } from "@/lib/weedVision/pressure/grade";
 import { gradeField, selectPressureCell, showPressure, usePressure } from "@/lib/weedVision/pressure/pressureStore";
 import { useTwoStage } from "@/lib/weedVision/twoStage/twoStageStore";
 import { modelShaFor } from "./ModelDetectionsPanel";
@@ -78,7 +78,7 @@ export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl
           <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="pressure-legend">
             {([["low", "under " + pct(gr.scheme.moderate)], ["medium", pct(gr.scheme.moderate) + " to " + pct(gr.scheme.action)], ["high", pct(gr.scheme.action) + " and over: act"]] as const).map(([b, t]) => (
               <span key={b} className="inline-flex items-center gap-1 text-neutral-300">
-                <span className="inline-block h-2.5 w-3 rounded-sm" style={{ background: BAND_SWATCH[b] }} /> {b} {t} <span className="text-neutral-600">({CLASS_ORDER.filter(k => bandOf(k) === b).reduce((a, k) => a + gr.summary.byClass[k], 0)})</span>
+                <span className="inline-block h-2.5 w-3 rounded-sm" style={{ background: BAND_SWATCH[b] }} /> {b} {t} <span className="text-neutral-600">({gr.cells.filter(c => c.assessed && drawnBandOf(c) === b).length})</span>
               </span>
             ))}
           </div>
@@ -110,7 +110,7 @@ export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl
       {gr && selected && (
         <div className="rounded-sm border border-[#3a3a3a] p-2 space-y-1" data-testid="pressure-cell">
           <p className="text-neutral-200">
-            Cell {selected.key}: {selected.assessed ? `${CLASS_LABEL[selected.klass]}${selected.treatWhileSmall ? " (stepped up: many small weeds)" : ""}, ${selected.tier === "none" ? "nothing found" : selected.tier}` : `not assessed (${selected.whyNot.join(", ")})`}.
+            Cell {selected.key}: {selected.assessed ? `${CLASS_LABEL[selected.klass]}${selected.treatWhileSmall ? " (stepped up: many small weeds)" : ""}${selected.nearCrop ? " (near the crop: shown as medium at most; green here may be the crop's rim)" : ""}, ${selected.tier === "none" ? "nothing found" : selected.tier}` : `not assessed (${selected.whyNot.join(", ")})`}.
           </p>
           {selected.assessed && (
             <p className="text-neutral-400">
