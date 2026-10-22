@@ -111,6 +111,19 @@ export function schemeFor(group: CropGroup, crop: string | null | undefined): Cl
   return { group, low: 0.01, moderate: 0.05, action: grassOnly ? 0.15 : 0.10, high: 0.20, source: "Turkish ministry: act at 10 to 15% cover (maize; cotton 10% broadleaf, 15% grass; TAGEM 2022); high at Peña's 20%" };
 }
 
+/**
+ * The three bands the map draws (the operator, 2026-10-21: "keep it simple: low green, medium yellow, high red"):
+ * low is anything under the moderate boundary (trace and low), medium is moderate, high is the action point and over.
+ * The six classes stay in the panel and the data; red on the map means act.
+ */
+export type PressureBand = "none" | "low" | "medium" | "high";
+export function bandOf(k: PressureClass): PressureBand {
+  if (k === "none") return "none";
+  if (k === "trace" || k === "low") return "low";
+  if (k === "moderate") return "medium";
+  return "high";
+}
+
 export function classOf(cover: number, count: number, s: ClassScheme): PressureClass {
   if (!(cover > 0) && count === 0) return "none";
   if (cover < s.low) return "trace";

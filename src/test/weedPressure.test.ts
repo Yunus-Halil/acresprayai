@@ -215,3 +215,15 @@ describe("the map's own pixels", () => {
     expect(more.cells.find(x => x.key === cellKey(3, 1))!.cover).toBeCloseTo(0.3, 2);
   });
 });
+
+describe("the three bands the map draws", () => {
+  it("low is trace and low, medium is moderate, high is the action point and over", async () => {
+    const { bandOf } = await import("@/lib/weedVision/pressure/grade");
+    expect(bandOf("none")).toBe("none");
+    expect(bandOf("trace")).toBe("low");
+    expect(bandOf("low")).toBe("low");
+    expect(bandOf("moderate")).toBe("medium");
+    expect(bandOf("action")).toBe("high");
+    expect(bandOf("high")).toBe("high");
+  });
+});

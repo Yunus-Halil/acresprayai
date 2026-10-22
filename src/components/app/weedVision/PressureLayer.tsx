@@ -1,23 +1,22 @@
-// The weed-pressure grade on the map, on one canvas: each assessed cell tinted by its class (a sequence from pale to
-// red, the action point and over in warm colours), "possible" cells outlined dashed rather than tinted, cells that
-// were not assessed hatched white (unseen, not weed-free), the priority patches outlined, and the large escapes as
-// diamonds with their size. The tint is cut away from the crop rows and crowns (the row band and each crown with
-// its margin), so pressure is drawn only on the ground it was measured on and never over a tree. Nothing here is
-// interactive except a click, which selects a cell for the panel.
+// The weed-pressure grade on the map, on one canvas, kept simple: each assessed cell filled lightly in one of three
+// colours (low green, medium yellow, high red: red is the published action point and over), "possible" cells a
+// little fainter, the large escapes as small diamonds, the selected cell outlined. Nothing else: no hatching, no
+// labels, no patch outlines (the panel carries those). The fill is cut away from the crop rows and crowns (the row
+// band and each crown with its margin), so pressure is drawn only on the ground it was measured on and never over a
+// tree. A click selects a cell for the panel.
 import { useEffect } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
 import { frameRunFieldRows } from "@/lib/weedVision/frameRunStore";
 import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
-import { type PressureClass } from "@/lib/weedVision/pressure/grade";
+import { type PressureBand, bandOf } from "@/lib/weedVision/pressure/grade";
 import { selectPressureCell, usePressure } from "@/lib/weedVision/pressure/pressureStore";
 import { cellAt, cellKey } from "@/lib/weedVision/twoStage/stage1";
 
-/** Pale to red: none clear, trace barely there, low, moderate, action, high. Chosen to read on red-brown soil and green canopy. */
-export const PRESSURE_COLOURS: Record<PressureClass, string> = { none: "rgba(0,0,0,0)", trace: "rgba(226,232,240,0.35)", low: "rgba(217,249,157,0.45)", moderate: "rgba(250,204,21,0.5)", action: "rgba(251,146,60,0.6)", high: "rgba(239,68,68,0.65)" };
-export const PRESSURE_STROKES: Record<PressureClass, string> = { none: "transparent", trace: "#e2e8f0", low: "#d9f99d", moderate: "#facc15", action: "#fb923c", high: "#ef4444" };
+/** Low green, medium yellow, high red; light, so the ground reads through. */
+export const BAND_FILL: Record<PressureBand, string> = { none: "rgba(0,0,0,0)", low: "rgba(74,222,128,0.28)", medium: "rgba(250,204,21,0.34)", high: "rgba(239,68,68,0.4)" };
+export const BAND_SWATCH: Record<PressureBand, string> = { none: "transparent", low: "#4ade80", medium: "#facc15", high: "#ef4444" };
 export const ESCAPE_COLOUR = "#ff1a1a";
-export const PATCH_COLOUR = "#ffffff";
 
 export function PressureLayer({ taskId }: { taskId: string }) {
   const map = useMap();
@@ -55,22 +54,13 @@ export function PressureLayer({ taskId }: { taskId: string }) {
       const off = (ps: L.Point[]) => ps.every(p => p.x < 0 || p.y < 0 || p.x > size.x || p.y > size.y);
       const path = (ps: L.Point[]) => { ctx.beginPath(); ctx.moveTo(ps[0].x, ps[0].y); for (const p of ps.slice(1)) ctx.lineTo(p.x, p.y); ctx.closePath(); };
       for (const c of grade.cells) {
+        if (!c.assessed || c.klass === "none") continue;
         const ps = c.ring.map(pt);
         if (off(ps)) continue;
-        if (!c.assessed) {
-          // Hatched white: unseen, not weed-free.
-          path(ps); ctx.save(); ctx.clip();
-          ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.lineWidth = 1;
-          const x0 = Math.min(...ps.map(p => p.x)), x1 = Math.max(...ps.map(p => p.x)), y0 = Math.min(...ps.map(p => p.y)), y1 = Math.max(...ps.map(p => p.y));
-          for (let d = -(y1 - y0); d < x1 - x0; d += 8) { ctx.beginPath(); ctx.moveTo(x0 + d, y0); ctx.lineTo(x0 + d + (y1 - y0), y1); ctx.stroke(); }
-          ctx.restore();
-          continue;
-        }
-        if (c.klass === "none") continue;
         path(ps);
-        if (c.tier === "possible") { ctx.strokeStyle = PRESSURE_STROKES[c.klass]; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]); }
-        else { ctx.fillStyle = PRESSURE_COLOURS[c.klass]; ctx.fill(); }
-        if (c.treatWhileSmall) { const q = pt(c.centre); ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("small", q.x, q.y); }
+        ctx.globalAlpha = c.tier === "possible" ? 0.6 : 1;
+        ctx.fillStyle = BAND_FILL[bandOf(c.klass)]; ctx.fill();
+        ctx.globalAlpha = 1;
       }
       // Cut the crop out of the tint: the rows' bands and the crowns, as the grade's own ground excluded them.
       const rows = frameRunFieldRows(taskId);
@@ -91,22 +81,13 @@ export function PressureLayer({ taskId }: { taskId: string }) {
         }
         ctx.restore();
       }
-      for (const p of grade.patches.filter(p => p.priority)) {
-        for (const k of p.cells) {
-          const c = byKey.get(k);
-          if (!c) continue;
-          const ps = c.ring.map(pt);
-          if (off(ps)) continue;
-          path(ps); ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.lineWidth = 4; ctx.stroke(); ctx.strokeStyle = PATCH_COLOUR; ctx.lineWidth = 2; ctx.stroke();
-        }
-      }
       for (const e of grade.escapes) {
         const q = pt(e.centre);
         if (q.x < -20 || q.y < -20 || q.x > size.x + 20 || q.y > size.y + 20) continue;
-        const r = 7;
+        const r = 6;
         ctx.beginPath(); ctx.moveTo(q.x, q.y - r); ctx.lineTo(q.x + r, q.y); ctx.lineTo(q.x, q.y + r); ctx.lineTo(q.x - r, q.y); ctx.closePath();
-        ctx.strokeStyle = "rgba(0,0,0,0.85)"; ctx.lineWidth = 4; ctx.stroke();
-        ctx.strokeStyle = ESCAPE_COLOUR; ctx.lineWidth = 2; if (e.tier === "possible") ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.strokeStyle = "rgba(0,0,0,0.85)"; ctx.lineWidth = 3.5; ctx.stroke();
+        ctx.strokeStyle = ESCAPE_COLOUR; ctx.lineWidth = 1.5; ctx.stroke();
       }
       if (selectedCell) {
         const c = byKey.get(selectedCell);

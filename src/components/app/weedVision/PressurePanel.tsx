@@ -10,11 +10,11 @@ import { fmtArea } from "@/lib/units";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
 import { type AlgorithmInfo, type Health, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
 import { useFrameRun } from "@/lib/weedVision/frameRunStore";
-import { CLASS_LABEL, CLASS_ORDER, type PressureClass, type WeedObject, pressureLine } from "@/lib/weedVision/pressure/grade";
+import { CLASS_LABEL, CLASS_ORDER, type PressureClass, type WeedObject, bandOf, pressureLine } from "@/lib/weedVision/pressure/grade";
 import { gradeField, selectPressureCell, showPressure, usePressure } from "@/lib/weedVision/pressure/pressureStore";
 import { useTwoStage } from "@/lib/weedVision/twoStage/twoStageStore";
 import { modelShaFor } from "./ModelDetectionsPanel";
-import { PRESSURE_STROKES } from "./PressureLayer";
+import { BAND_SWATCH } from "./PressureLayer";
 
 const PARAMS = { algorithm: "rfdetr_seg_large", threshold: 0.5, tile: 1024, overlap: 256, scale: 1 };
 const pct = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${(100 * v).toFixed(d)}%`);
@@ -76,14 +76,13 @@ export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl
             {s.source && ` Weeds from ${s.source === "map" ? "the model on the field map" : s.source === "photos" ? "the model on the kept photographs" : s.source === "scan" ? "the scan's spots kept as weeds" : "the two-stage windows"}.`}
           </p>
           <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="pressure-legend">
-            {CLASS_ORDER.filter(k => k !== "none").map(k => (
-              <span key={k} className="inline-flex items-center gap-1 text-neutral-400">
-                <span className="inline-block h-2.5 w-3 rounded-sm" style={{ background: PRESSURE_STROKES[k] }} /> {CLASS_LABEL[k]} {bound(k, gr.scheme)} <span className="text-neutral-600">({gr.summary.byClass[k]})</span>
+            {([["low", "under " + pct(gr.scheme.moderate)], ["medium", pct(gr.scheme.moderate) + " to " + pct(gr.scheme.action)], ["high", pct(gr.scheme.action) + " and over: act"]] as const).map(([b, t]) => (
+              <span key={b} className="inline-flex items-center gap-1 text-neutral-300">
+                <span className="inline-block h-2.5 w-3 rounded-sm" style={{ background: BAND_SWATCH[b] }} /> {b} {t} <span className="text-neutral-600">({CLASS_ORDER.filter(k => bandOf(k) === b).reduce((a, k) => a + gr.summary.byClass[k], 0)})</span>
               </span>
             ))}
-            <span className="inline-flex items-center gap-1 text-neutral-400"><span className="inline-block h-2.5 w-3 rounded-sm border border-dashed border-neutral-400" /> possible, for review ({gr.summary.possible})</span>
-            <span className="inline-flex items-center gap-1 text-neutral-400"><span className="inline-block h-2.5 w-3 rounded-sm" style={{ background: "repeating-linear-gradient(45deg, rgba(255,255,255,0.6) 0 1px, transparent 1px 4px)" }} /> not assessed ({gr.summary.notAssessed})</span>
           </div>
+          <p className="text-neutral-600">{CLASS_ORDER.filter(k => k !== "none").map(k => `${CLASS_LABEL[k]} ${bound(k, gr.scheme)}: ${gr.summary.byClass[k]}`).join("; ")}. Fainter cells are possible, for review ({gr.summary.possible}); {gr.summary.notAssessed} not assessed (not drawn).</p>
           {gr.summary.treatWhileSmall > 0 && <p className="text-neutral-300" data-testid="pressure-small">{gr.summary.treatWhileSmall} cell{gr.summary.treatWhileSmall === 1 ? "" : "s"} of many small weeds, stepped up one class: treat while small.</p>}
           {gr.escapes.length > 0 && (
             <div data-testid="pressure-escapes">

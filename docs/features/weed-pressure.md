@@ -62,8 +62,11 @@ Find weeds' mean; the tiles are way too broad." Three changes:
 
 ## On the map and in the panel
 
-Cells tinted from pale to red by class; "possible" cells dashed, not tinted; cells not assessed hatched white;
-priority patches outlined; large escapes as diamonds. The panel gives the field in one line ("N cells assessed; M at
+Three light fills and nothing else on the cells (the operator, third eye test: "a lot of chaos; keep it simple: low
+green, medium yellow, high red"): low is anything under the moderate boundary, medium is moderate, high is the
+published action point and over, so red means act. "Possible" cells are the same colour a little fainter; cells not
+assessed are not drawn; large escapes are small diamonds; the clicked cell is outlined. The six classes, the patches
+and the not-assessed count live in the panel. The panel gives the field in one line ("N cells assessed; M at
 the action point or over (area); priority patches; large escapes; possible, for review"), the scheme with its source,
 the legend with counts, the escapes list, the priority patches, the notes, and a card for the clicked cell with its
 cover, count, density, sizes, tier and loss band. Never a product rate.
