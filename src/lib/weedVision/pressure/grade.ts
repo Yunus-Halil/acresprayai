@@ -163,8 +163,8 @@ export type GradeParams = {
   kropffQ: [number, number];
   /** No plant-level claim under this many pixels across (Peña 2015). */
   floorPx: number;
-  /** A cell with less visible ground than this is not assessed. */
-  minGroundM2: number;
+  /** A cell with less of its ground visible than this share is not assessed, whatever the cell size. */
+  minGroundShare: number;
   /**
    * Near the crop: a cell with less than this share of its ground visible (the rest under the row band and crowns),
    * or touching a crown's margin, is ambiguous ground, not a place to call high. Vegetation there may be the crop's
@@ -175,7 +175,7 @@ export type GradeParams = {
   nearCropGroundShare: number;
   nearCropMarginM: number;
 };
-export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundM2: 0.3, nearCropGroundShare: 0.5, nearCropMarginM: 0.3 };
+export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundShare: 0.3, nearCropGroundShare: 0.5, nearCropMarginM: 0.3 };
 
 export type Tier = "confirmed" | "possible" | "none";
 
@@ -322,7 +322,7 @@ export function gradePressure(input: {
   for (const s of input.cells) {
     const objs = byCell.get(s.key) ?? [];
     const groundM2 = cellM2 * s.imagedShare * (1 - s.bandShare);
-    const assessed = s.uncertain.length === 0 && groundM2 >= P.minGroundM2;
+    const assessed = s.uncertain.length === 0 && groundM2 >= P.minGroundShare * cellM2;
     // The map's own measure first (Stage 1: off-row green over the visible ground, and its blobs), the objects where
     // they say more: a spot list is ranked and capped, the pixels are not.
     const objM2 = objs.reduce((a, o) => a + (o.p.areaM2 ?? 0), 0);

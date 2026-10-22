@@ -53,6 +53,10 @@ export function PressureLayer({ taskId }: { taskId: string }) {
       const pt = (q: { lat: number; lng: number }) => map.latLngToContainerPoint([q.lat, q.lng]);
       const off = (ps: L.Point[]) => ps.every(p => p.x < 0 || p.y < 0 || p.x > size.x || p.y > size.y);
       const path = (ps: L.Point[]) => { ctx.beginPath(); ctx.moveTo(ps[0].x, ps[0].y); for (const p of ps.slice(1)) ctx.lineTo(p.x, p.y); ctx.closePath(); };
+      // The border thins as the cells draw small, so a zoomed-out field reads as fills, not as a mesh of lines.
+      const first = grade.cells.find(c => c.assessed);
+      const cellScreenPx = first ? Math.hypot(pt(first.ring[1]).x - pt(first.ring[0]).x, pt(first.ring[1]).y - pt(first.ring[0]).y) : 20;
+      const borderPx = Math.min(1.5, Math.max(0.5, cellScreenPx / 10));
       for (const c of grade.cells) {
         if (!c.assessed || c.klass === "none") continue;
         const ps = c.ring.map(pt);
@@ -62,7 +66,7 @@ export function PressureLayer({ taskId }: { taskId: string }) {
         ctx.globalAlpha = c.tier === "possible" ? 0.6 : 1;
         ctx.fillStyle = BAND_FILL[b]; ctx.fill();
         // A solid border in the band's colour: a light fill over green weeds reads as green whatever its colour.
-        ctx.strokeStyle = BAND_SWATCH[b]; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.strokeStyle = BAND_SWATCH[b]; ctx.lineWidth = borderPx; ctx.stroke();
         ctx.globalAlpha = 1;
       }
       // Cut the crop out of the tint: the rows' bands and the crowns, as the grade's own ground excluded them.

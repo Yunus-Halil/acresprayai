@@ -277,3 +277,17 @@ describe("a patch the grid cut reads whole", () => {
     expect(gr.notes.join(" ")).toMatch(/treated whole/);
   });
 });
+
+describe("the cell size", () => {
+  it("the grade reads at half-metre cells and the not-assessed floor is a share of the cell, not a fixed area", async () => {
+    const { PRESSURE_CELL_M } = await import("@/lib/weedVision/pressure/pressureStore");
+    const { DEFAULT_GRADE } = await import("@/lib/weedVision/pressure/grade");
+    expect(PRESSURE_CELL_M).toBe(0.5);
+    // A cell with 29% of its ground visible is not assessed; one with 31% is, at any cell size.
+    const cs = cells({ [cellKey(0, 0)]: { bandShare: 0.71 }, [cellKey(1, 0)]: { bandShare: 0.69 } });
+    const gr = gradePressure({ objects: [], grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    expect(gr.cells.find(c => c.key === cellKey(0, 0))!.assessed).toBe(false);
+    expect(gr.cells.find(c => c.key === cellKey(1, 0))!.assessed).toBe(true);
+    expect(DEFAULT_GRADE.minGroundShare).toBe(0.3);
+  });
+});

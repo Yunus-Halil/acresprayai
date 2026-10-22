@@ -13,11 +13,13 @@ import { type RunStage1Input, getTwoStage, patchTwoStage, runStage1, twoStagePla
 import { type CropGroup, type PressureGrade, type WeedObject, cropGroupOf, gradePressure, weedObjectsOf } from "./grade";
 
 /**
- * The grade's cell, metres: the spot-spray unit (a 1 x 1 m box per weed with nozzle control, Allmendinger 2024; the
- * 0.5 to 1 m grids of the UAV weed-map studies), not the 2 m boom-section cell the two-stage prototype reads at.
- * The operator: "the tiles are way too broad" (2026-10-21).
+ * The grade's cell, metres: the finest grid of the UAV weed-map studies (0.5 m; Peña 2013, Lopez-Granados 2016),
+ * half the 1 x 1 m spot-spray box (Allmendinger 2024) and a quarter of the 2 m boom-section cell the two-stage
+ * prototype reads at. The operator: "the tiles are way too broad" (2026-10-21), then "make the tiles smaller for
+ * more accuracy, it's already very fast". At the map's 4 to 6 cm read a cell is about 100 pixels, so cover is read
+ * to the percent and the patches follow their own edges, not the grid's.
  */
-export const PRESSURE_CELL_M = 1;
+export const PRESSURE_CELL_M = 0.5;
 
 export type PressureSession = {
   grade: PressureGrade | null;

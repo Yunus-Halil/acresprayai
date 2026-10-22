@@ -16,7 +16,7 @@ how much does greenness count, how does the crop factor in?"
 
 1. **Find weeds** (unchanged): the rows and crowns are painted with the field's bare-ground colour before RF-DETR, and
    the weeds that land on a row are dropped (`rowBand.ts`, `rowFilter.ts`).
-2. **Grade the field** (new, one button under Find weeds): Stage 1 reads the field into 1 m cells from the map in
+2. **Grade the field** (new, one button under Find weeds): Stage 1 reads the field into 0.5 m cells from the map in
    seconds (imaged share, crop-band share, green share, shadow; `twoStage/stage1.ts`), and the weeds between the rows
    are graded on that grid.
 
@@ -64,7 +64,8 @@ Find weeds' mean; the tiles are way too broad." Three changes:
   we should exercise caution making it red"). A cell with less than half its ground visible (the rest under the row
   band and crowns), or one a crown's 0.3 m margin reaches into, is ambiguous ground: green there may be the crop's
   own rim, and a scrap of ground reads any leaf as high cover. Such a cell keeps its class in the data but is drawn
-  at medium at most, and the panel counts and explains them. Cells with under 0.3 m² visible are not assessed.
+  at medium at most, and the panel counts and explains them. Cells with under 30% of their ground visible are not
+  assessed.
 - **A solid border in the cell's colour.** A light fill over green weeds read as green whatever its colour (a green
   tile full of weeds, "how is it not red"); the border makes the band read regardless of the ground.
 
@@ -75,6 +76,10 @@ Find weeds' mean; the tiles are way too broad." Three changes:
   a cell with only a trace of green beside a patch is not, and a neighbour that is itself near the crop is never the
   reason. Treatment maps buffer a patch for the same reason (Allmendinger 2024; the Wallinga patch-margin rule). The
   class in the data is unchanged; the panel counts the buffered cells and explains them.
+- **The cell is 0.5 m** (sixth eye test: "make the tiles smaller for more accuracy, it's already very fast"). The
+  finest grid of the UAV weed-map studies, half the spot-spray box; at the map's 4 to 6 cm read a cell is about 100
+  pixels, enough to read cover to the percent. The not-assessed floor is a share of the cell (30% visible), so it
+  moves with the cell size; the border thins as cells draw small so a zoomed-out field reads as fills, not a mesh.
 - **Stage 1 counts off-row cover of any colour** (`Stage1Params.mask`, default `cover`). A cell full of drying
   yellow-green weeds read as low under the vegetation mask's fixed zero, which rejects yellowish cover on purpose for
   the plant masks. The cover mask (`fieldRows.ts coverMask`, anything standing out against bare ground, straw and
