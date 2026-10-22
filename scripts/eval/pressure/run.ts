@@ -4,11 +4,13 @@
 //   npm run eval:pressure -- --synthetic
 //
 // Reads the fixture (README.md beside this file), runs Stage 1 and the grade on it as the app does, scores the grade
-// against the truth quadrats and writes docs/eval/<fixture>-<date>.md and .json. Nothing is fetched or uploaded.
+// against the truth quadrats and writes docs/eval/<fixture>-<date>.md and .json, and the cells where pixels and
+// objects disagree as <fixture>-<date>.disagreement.csv. Nothing is fetched or uploaded.
 import "../../bench/nodeStorageShim";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PRESSURE_CELL_M } from "../../../src/lib/weedVision/pressure/pressureStore";
+import { disagreementCsv, disagreementRows } from "./disagreement";
 import { type LoadedFixture, loadFixture, runFixture } from "./fixture";
 import { buildReport, reportMarkdown } from "./report";
 import { scoreGrade } from "./score";
@@ -30,6 +32,8 @@ async function main() {
   const base = join(outDir, `${f.name}-${date}`);
   writeFileSync(`${base}.md`, reportMarkdown(report));
   writeFileSync(`${base}.json`, JSON.stringify(report, null, 1));
+  const disagreeing = disagreementRows(f.name, run.grade);
+  if (disagreeing.length) writeFileSync(`${base}.disagreement.csv`, disagreementCsv(disagreeing));
   console.log(JSON.stringify({ fixture: f.name, scored: metrics.scored, coverMae: metrics.cover.mae, coverBias: metrics.cover.bias, confusion: metrics.confusion, patchIoU: metrics.patchIoU, notAssessedCells: metrics.notAssessedCells, wrote: [`${base}.md`, `${base}.json`] }));
 }
 main().catch(e => { console.error(e); process.exit(1); });

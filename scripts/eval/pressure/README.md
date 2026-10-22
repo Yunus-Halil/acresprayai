@@ -10,6 +10,7 @@ cell of `PRESSURE_CELL_M`).
 npm run eval:pressure -- --fixture path/to/fixture-dir     # writes docs/eval/<name>-<date>.md and .json
 npm run eval:pressure -- --synthetic                       # the synthetic fixture, made in code
 npx vite-node scripts/eval/pressure/orchard.ts             # the grade's own counts on the five orchard trial frames (no truth)
+npx vite-node scripts/eval/pressure/orchard.ts -- --disagreement out.csv   # and the cells where pixels and objects disagree
 ```
 
 `--date` sets the date in the file names (default today) and `--out` the directory (default `docs/eval`).
@@ -105,6 +106,17 @@ is only as good as the truth.
   classed at the action point beside it.
 - **Not assessed**: the cells inside truth quadrats the grade could not judge, counted once each by reason
   (no rows, partly imaged, mostly crop row, shadow, too little ground, outside the field).
+
+## Cells where pixels and objects disagree
+
+`<fixture>-<date>.disagreement.csv` (and `orchard.ts -- --disagreement file.csv` for the trial frames) lists every
+assessed cell where the map's own green (Stage 1, `pixelM2`) and the weeds the model or scan found (`objM2`) differ by
+more than a tenth of the cell's visible ground (`groundM2`): `frame, cell, lat, lng, pixelM2, objM2, groundM2,
+nearCrop, tier, klass`, sorted by `objM2 - pixelM2`, largest first. **The top of that list is candidate model false
+positives**: places where the model claims far more weed than there is green to hold it (a crown or a crown's rim
+called a weed, an outline drawn round soil). They are candidates, not verdicts: open the frame at `lat, lng` and look.
+The bottom of the list runs the other way, green the model did not find, which is candidate misses. The grade's cover
+comes from the pixels either way; the objects only give the count and the sizes.
 
 ## The fixtures here
 

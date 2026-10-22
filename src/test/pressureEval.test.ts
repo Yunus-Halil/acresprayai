@@ -5,11 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { downsample, parseTruthCsv, rasterFromGeoTiff, runFixture, utmOf } from "../../scripts/eval/pressure/fixture";
+import { disagreementCsv, disagreementRows } from "../../scripts/eval/pressure/disagreement";
 import { buildReport, reportMarkdown } from "../../scripts/eval/pressure/report";
 import { scoreGrade } from "../../scripts/eval/pressure/score";
 import { makeSyntheticFixture } from "../../scripts/eval/pressure/synthetic";
-import { gradePressure } from "@/lib/weedVision/pressure/grade";
-import { mercatorPx } from "@/lib/weedVision/mapRun";
+import { gradePressure, weedObjectsOf } from "@/lib/weedVision/pressure/grade";
+import type { GroundPlant } from "@/lib/weedVision/frames";
+import { latLngOfPx, mercatorPx } from "@/lib/weedVision/mapRun";
 import { cellKey } from "@/lib/weedVision/twoStage/stage1";
 
 describe("the synthetic fixture", () => {
@@ -63,6 +65,29 @@ describe("the synthetic fixture", () => {
     expect(m.scored).toBe(11);
     expect(m.notAssessedCells).toBe(4);
     expect(m.notAssessedByReason).toEqual({ shadow: 4 });
+  });
+});
+
+describe("the disagreement export", () => {
+  it("lists assessed cells where pixels and objects differ by over a tenth of the ground, the model's excess first", async () => {
+    const f = makeSyntheticFixture();
+    const run = await runFixture(f);
+    const g = run.stage1.grid;
+    const cellCentre = (q: (typeof f.truth)[number], di: number) => { const [X, Y] = mercatorPx(q.centre.lat, q.centre.lng, g.z); return latLngOfPx(X + di * g.cellPx - g.cellPx / 2, Y - g.cellPx / 2, g.z); };
+    const obj = (id: string, centre: { lat: number; lng: number }, areaM2: number) => ({ id, frame: "t", klass: "weed", centre, areaM2, diameterM: 2 * Math.sqrt(areaM2 / Math.PI), equivalentDiameterPx: 20, seenIn: ["t"], rowStatus: "off-row" }) as unknown as GroundPlant;
+    const clean = f.truth.find(q => q.cover === 0)!, weedy = f.truth.find(q => q.cover > 0.3)!;
+    // A crown-sized "weed" over a clean cell, a small one (just over the 12 cm floor) over a weedy cell, and one too small to matter.
+    const objects = weedObjectsOf([obj("big", cellCentre(clean, 0), 0.2), obj("small", cellCentre(weedy, 0), 0.012), obj("ok", cellCentre(clean, 1), 0.01)]);
+    const grade = gradePressure({ objects, grid: g, cells: run.stage1.cells, rows: f.rows, crop: f.crop, canopyClosed: false, photoBased: false });
+    const rows = disagreementRows("t", grade);
+    expect(rows.map(r => r.objM2 > r.pixelM2)).toEqual([true, false]);
+    expect(rows[0].objM2).toBeCloseTo(0.2, 6);
+    expect(rows[0].pixelM2).toBe(0);
+    expect(rows.length).toBe(grade.summary.disagreeing);
+    const csv = disagreementCsv(rows).trim().split(/\r?\n/);
+    expect(csv[0]).toBe("frame,cell,lat,lng,pixelM2,objM2,groundM2,nearCrop,tier,klass");
+    expect(csv).toHaveLength(3);
+    expect(csv[1].startsWith(`t,${rows[0].cell},`)).toBe(true);
   });
 });
 

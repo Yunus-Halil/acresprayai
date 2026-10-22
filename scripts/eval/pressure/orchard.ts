@@ -1,7 +1,7 @@
 // The grade's headline numbers on the five orchard trial frames, so a change to the grade can be stated as before
 // and after (2026-10-22).
 //
-//   npx vite-node scripts/eval/pressure/orchard.ts -- --dir <trial dir> [--frames DJI_0301,...] [--out file.json]
+//   npx vite-node scripts/eval/pressure/orchard.ts -- --dir <trial dir> [--frames DJI_0301,...] [--out file.json] [--disagreement file.csv]
 //
 // The frames are the kept orchard flight prepared as stand-in field maps for the two-stage trial
 // (docs/features/two-stage-trial-2026-10-19.md; outputs on D:\swardus-research\weed-vision-lab-outputs\
@@ -15,6 +15,7 @@ import { join } from "node:path";
 import type { FieldRows } from "../../../src/lib/weedVision/fieldRows";
 import type { FrameDetection } from "../../../src/lib/weedVision/frames";
 import { latLngOfPx } from "../../../src/lib/weedVision/mapRun";
+import { type DisagreementRow, disagreementCsv, disagreementRows } from "./disagreement";
 import { type LoadedFixture, asPlant, runFixture } from "./fixture";
 
 const argv = process.argv.slice(2);
@@ -37,8 +38,10 @@ function frameFixture(frame: string): LoadedFixture {
 
 async function main() {
   const out: Record<string, unknown>[] = [];
+  const disagreeing: DisagreementRow[] = [];
   for (const frame of FRAMES) {
     const { grade } = await runFixture(frameFixture(frame));
+    disagreeing.push(...disagreementRows(frame, grade));
     const s = grade.summary as typeof grade.summary & { disagreeing?: number };
     const row = {
       frame, assessed: s.assessed, notAssessed: s.notAssessed, confirmed: s.confirmed, possible: s.possible,
@@ -53,5 +56,6 @@ async function main() {
   const sum = { frames: out.length, confirmed: total("confirmed"), possible: total("possible"), actionCells: total("actionCells"), escapes: total("escapes"), treatWhileSmall: total("treatWhileSmall"), withLossBand: total("withLossBand") };
   console.log(JSON.stringify({ total: sum }));
   if (arg("out")) writeFileSync(arg("out")!, JSON.stringify({ frames: out, total: sum }, null, 1));
+  if (arg("disagreement")) writeFileSync(arg("disagreement")!, disagreementCsv(disagreeing));
 }
 main().catch(e => { console.error(e); process.exit(1); });
