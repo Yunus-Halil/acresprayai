@@ -8,7 +8,7 @@
 import { createTileLayerComponent, updateGridLayer, createElementObject } from "@react-leaflet/core";
 import L from "leaflet";
 import type { TileLayerProps } from "react-leaflet";
-import { fetchTileCached } from "@/lib/tileCache";
+import { fetchTileCached, tileCacheKey } from "@/lib/tileCache";
 
 type TileEl = HTMLImageElement & { _abort?: AbortController; _objectUrl?: string };
 
@@ -57,6 +57,19 @@ export const OrthoTileLayer = createTileLayerComponent<L.TileLayer, TileLayerPro
   },
   function updateOrthoTileLayer(layer, props, prevProps) {
     updateGridLayer(layer, props, prevProps);
-    if (props.url != null && props.url !== prevProps.url) layer.setUrl(props.url);
+    if (props.url != null && props.url !== prevProps.url) layer.setUrl(props.url, sameImagery(props.url, prevProps.url));
   },
 );
+
+/**
+ * Two tile URLs show the same imagery when they differ only in the session token: the token rotates about hourly and
+ * on returning to the tab, the tiles do not. Then the tiles on screen are kept (setUrl without a redraw) and only new
+ * requests carry the new token; redrawing on every refresh dropped the whole orthomosaic to the blurry basemap for
+ * several seconds. A real change (another scan, a rebake's rev, a new render version) still redraws.
+ */
+export function sameImagery(a: string | undefined | null, b: string | undefined | null): boolean {
+  return !!a && !!b && tileCacheKey(a) === tileCacheKey(b);
+}
+
+/** The React key for an orthomosaic layer: the URL without its session token, so a token refresh never remounts it. */
+export const orthoLayerKey = (url: string): string => tileCacheKey(url);

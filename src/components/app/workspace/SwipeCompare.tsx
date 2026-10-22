@@ -17,7 +17,7 @@
 // and the dimming shows the person exactly where that is.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { bakedMaxZoom, nativeZoomFor } from "@/lib/bakedZoom";
-import { OrthoTileLayer } from "./OrthoTileLayer";
+import { OrthoTileLayer, orthoLayerKey } from "./OrthoTileLayer";
 import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { areaValueAc, fmtAreaAc } from "@/lib/units";
@@ -269,7 +269,7 @@ export function ComparePanes({
     <>
       {aUrl && (
         <OrthoTileLayer
-          key={`cmp-a-${aUrl}`}
+          key={`cmp-a-${orthoLayerKey(aUrl)}`}
           url={aUrl}
           pane={PANES.aTiles.name}
           maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, aMeta?.maxZoom ?? 20)}
@@ -282,7 +282,7 @@ export function ComparePanes({
       )}
       {bUrl && (
         <OrthoTileLayer
-          key={`cmp-b-${bUrl}`}
+          key={`cmp-b-${orthoLayerKey(bUrl)}`}
           url={bUrl}
           pane={PANES.bTiles.name}
           maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, bMeta?.maxZoom ?? 20)}

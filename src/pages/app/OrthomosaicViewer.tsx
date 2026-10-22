@@ -229,6 +229,10 @@ export default function OrthomosaicViewer() {
   // tiles rebaked) so the scan panel refetches; also busts the tile cache.
   const [scansNonce, setScansNonce] = useState(0);
   const [tileRev, setTileRev] = useState(0);
+  // Whether the render version (`v`, from /info) is known. The orthomosaic is not drawn before it: drawn first and
+  // then given its `v`, the layer was torn down and every tile fetched again a few seconds after it had loaded, and
+  // the map sat on the blurry basemap meanwhile (2026-10-22, "it goes back to bad quality").
+  const [renderSettled, setRenderSettled] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   // Database-backed manual polygon annotations (farmer's anomalies).
   const [userPolys, setUserPolys] = useState<UserPoly[]>([]);
@@ -531,7 +535,7 @@ export default function OrthomosaicViewer() {
   // sessions — a rebake changes the plan, the plan changes the URL, so a
   // browser holding tiles baked with the old plan cannot keep serving them.
   const renderV = renderVersion(ndviInfo as Parameters<typeof renderVersion>[0]);
-  const tileUrl = tileTemplate && token
+  const tileUrl = tileTemplate && token && renderSettled
     ? `${tileTemplate}?token=${token}${tileRev ? `&rev=${tileRev}` : ""}`
       + (renderV ? `&v=${encodeURIComponent(renderV)}` : "")
     : null;
@@ -781,8 +785,11 @@ export default function OrthomosaicViewer() {
         const j = await r.json();
         if (!cancelled && r.ok) setNdviInfo(j);
       } catch { /* noop */ }
+      if (!cancelled) setRenderSettled(true);
     })();
-    return () => { cancelled = true; };
+    // A slow /info never holds the map back for long: after 3 s the orthomosaic draws without its render version.
+    const fallback = setTimeout(() => { if (!cancelled) setRenderSettled(true); }, 3000);
+    return () => { cancelled = true; clearTimeout(fallback); };
   }, [taskId, token, tileTemplate]);
 
   // Real NDVI is worth showing unasked; the RGB-derived VARI proxy is not.

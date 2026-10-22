@@ -1,7 +1,7 @@
 // Extracted from OrthomosaicViewer.tsx. Mechanical move only - no
 // behaviour changes. See docs/features/workspace.md.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { OrthoTileLayer } from "./OrthoTileLayer";
+import { OrthoTileLayer, orthoLayerKey } from "./OrthoTileLayer";
 import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -980,7 +980,7 @@ export function PlannerTab({
           <BasemapLayer id={basemap} />
           {tileUrl && bounds && (
             <OrthoTileLayer
-              key={tileUrl} url={tileUrl}
+              key={orthoLayerKey(tileUrl)} url={tileUrl}
               maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)} maxZoom={MAP_MAX_ZOOM}
               tileSize={256} keepBuffer={4}
               bounds={bounds} noWrap zIndex={10}

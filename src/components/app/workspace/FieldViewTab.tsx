@@ -1,7 +1,7 @@
 // Extracted from OrthomosaicViewer.tsx. Mechanical move only - no
 // behaviour changes. See docs/features/workspace.md.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { MapContainer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "@geoman-io/leaflet-geoman-free";
@@ -29,7 +29,8 @@ import { ringCandidate, spotSources } from "@/lib/sourceFrames/spot";
 import { type CloserLookTarget, CloserLookDialog } from "./CloserLook";
 import { DetectionOverlay } from "./DetectionOverlay";
 import { ModelDetectionLayer } from "../weedVision/ModelDetectionLayer";
-import { OrthoTileLayer } from "./OrthoTileLayer";
+import { OrthoQualityBadge } from "./OrthoQualityBadge";
+import { OrthoTileLayer, orthoLayerKey } from "./OrthoTileLayer";
 import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { HotspotLayer } from "../weedVision/HotspotLayer";
 import { countByClass } from "@/lib/weedVision/frames";
@@ -176,6 +177,9 @@ export function FieldViewTab(props: {
   const units = useUnitSystem();
   const { user } = useAuth();
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
+  // Whether the orthomosaic layer is still fetching the tiles in view, for the quality badge.
+  const [orthoLoading, setOrthoLoading] = useState(false);
+  const orthoEvents = useMemo(() => ({ loading: () => setOrthoLoading(true), load: () => setOrthoLoading(false) }), []);
   const {
     bounds, tileUrl, ndviUrl, maxNative, layers, setLayers, ndviInfo,
     cursorCoordRef, cursorZoomRef, active, layersOpen, setLayersOpen,
@@ -433,8 +437,9 @@ export function FieldViewTab(props: {
             ground as if the newer flight had covered it. */}
         {!compareActive && layers.orthomosaic && tileUrl && (
           <OrthoTileLayer
-            key={tileUrl}
+            key={orthoLayerKey(tileUrl)}
             url={tileUrl}
+            eventHandlers={orthoEvents}
             opacity={1.0}
             maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)}
             maxZoom={MAP_MAX_ZOOM}
@@ -448,8 +453,8 @@ export function FieldViewTab(props: {
           />
         )}
         {!compareActive && layers.ndvi && ndviUrl && (
-          <TileLayer
-            key={`ndvi-${ndviUrl}`}
+          <OrthoTileLayer
+            key={`ndvi-${orthoLayerKey(ndviUrl)}`}
             url={ndviUrl}
             opacity={0.75}
             maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)}
@@ -467,6 +472,14 @@ export function FieldViewTab(props: {
         <FitOnCapture bounds={bounds} />
         <MouseReadout coordRef={cursorCoordRef} zoomRef={cursorZoomRef} active={active} />
         <MapControls fitTo={bounds} />
+        {!compareActive && layers.orthomosaic && tileUrl && bounds && (
+          <OrthoQualityBadge
+            lat={(bounds instanceof L.LatLngBounds ? bounds : L.latLngBounds(bounds as L.LatLngExpression[])).getCenter().lat}
+            maxNativeZoom={Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative)}
+            loading={orthoLoading}
+            units={units}
+          />
+        )}
         <BasemapToggle value={basemap} onChange={(id) => { setBasemap(id); saveBasemap(id); }} />
         {compareActive && aScan && bScan && (
           <ComparePanes
