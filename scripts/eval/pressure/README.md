@@ -13,6 +13,15 @@ npx vite-node scripts/eval/pressure/orchard.ts             # the grade's own cou
 npx vite-node scripts/eval/pressure/orchard.ts -- --disagreement out.csv   # and the cells where pixels and objects disagree
 ```
 
+For labels that are points with no size (the 414 on DJI_0301), cover cannot be scored; recall of the points can:
+
+```
+npx vite-node scripts/eval/pressure/points-recall.ts -- --date 2026-10-22   # docs/eval/DJI_0301-points-recall-<date>.md and .csv
+```
+
+Each weed point is seen (a counted object within 0.25 m), below the floor, in the band (inside the ground Stage 1
+cuts), not assessed, or missed (`recall.ts`). Recall only: no precision, no cover, no act / don't act.
+
 `--date` sets the date in the file names (default today) and `--out` the directory (default `docs/eval`).
 
 ## A fixture

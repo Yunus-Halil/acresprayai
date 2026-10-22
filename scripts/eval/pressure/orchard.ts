@@ -3,44 +3,25 @@
 //
 //   npx vite-node scripts/eval/pressure/orchard.ts -- --dir <trial dir> [--frames DJI_0301,...] [--out file.json] [--disagreement file.csv]
 //
-// The frames are the kept orchard flight prepared as stand-in field maps for the two-stage trial
-// (docs/features/two-stage-trial-2026-10-19.md; outputs on D:\swardus-research\weed-vision-lab-outputs\
-// two-stage-trial-2026-10-19): per frame its zoom 22 raster, its fitted planting layout (layout-rows.json) and the
-// RF-DETR windows run over it with the crop painted out (window-cache-layout.json), replayed from disk, so nothing
-// calls the model. No truth: these are the grade's own counts, not accuracy. The layout predates the "expected"
-// state's name; its "probable" and "ambiguous" plants are what the fitter now calls expected (c4454c2).
+// The frames are the kept orchard flight prepared as stand-in field maps for the two-stage trial (trialFrames.ts).
+// No truth: these are the grade's own counts, not accuracy.
 import "../../bench/nodeStorageShim";
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import type { FieldRows } from "../../../src/lib/weedVision/fieldRows";
-import type { FrameDetection } from "../../../src/lib/weedVision/frames";
-import { latLngOfPx } from "../../../src/lib/weedVision/mapRun";
+import { writeFileSync } from "node:fs";
 import { type DisagreementRow, disagreementCsv, disagreementRows } from "./disagreement";
-import { type LoadedFixture, asPlant, runFixture } from "./fixture";
+import { runFixture } from "./fixture";
+import { TRIAL_DIR, trialFixture } from "./trialFrames";
 
 const argv = process.argv.slice(2);
 const arg = (k: string, d?: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
-const DIR = arg("dir", "D:/swardus-research/weed-vision-lab-outputs/two-stage-trial-2026-10-19")!;
+const DIR = arg("dir", TRIAL_DIR)!;
 const FRAMES = (arg("frames") ?? "DJI_0301,DJI_0303,DJI_0312,DJI_0320,DJI_0327").split(",").filter(Boolean);
 
-function frameFixture(frame: string): LoadedFixture {
-  const d = join(DIR, frame);
-  const meta = JSON.parse(readFileSync(join(d, "meta.json"), "utf8"));
-  const { X0, Y0, w, h } = meta.z23;
-  const ring = [latLngOfPx(X0, Y0, 23), latLngOfPx(X0 + w, Y0, 23), latLngOfPx(X0 + w, Y0 + h, 23), latLngOfPx(X0, Y0 + h, 23)];
-  const rows: FieldRows = JSON.parse(readFileSync(join(d, "layout-rows.json"), "utf8"));
-  for (const c of rows.ctx.crops) if ((c.state as string) === "probable" || (c.state as string) === "ambiguous") c.state = "expected";
-  const cache: [string, { detections: FrameDetection[] }][] = JSON.parse(readFileSync(join(d, "window-cache-layout.json"), "utf8"));
-  const plants = cache.flatMap(([, run]) => run.detections).filter(p => p.klass === "weed").map(asPlant);
-  const raster = { z: 22, left: meta.z22.X0, top: meta.z22.Y0, width: meta.z22.w, height: meta.z22.h, rgba: new Uint8ClampedArray(readFileSync(join(d, "z22.rgba"))) };
-  return { name: frame, crop: null, ring, raster, rows, plants, photoBased: false, truth: [] };
-}
 
 async function main() {
   const out: Record<string, unknown>[] = [];
   const disagreeing: DisagreementRow[] = [];
   for (const frame of FRAMES) {
-    const { grade } = await runFixture(frameFixture(frame));
+    const { grade } = await runFixture(trialFixture(frame, DIR));
     disagreeing.push(...disagreementRows(frame, grade));
     const s = grade.summary as typeof grade.summary & { disagreeing?: number };
     const row = {

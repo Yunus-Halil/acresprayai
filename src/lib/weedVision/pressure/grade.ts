@@ -339,6 +339,26 @@ function crownsByCell(rows: FieldRows | null, g: GridFrame, marginM: number): { 
   return { area, touched };
 }
 
+/**
+ * The objects as the grade takes them: on a crop row (by the object's own tag or the field's rows) set aside as the
+ * crop, whichever system found it; under the floor (floorPx pixels across, or that many of the map's pixels in
+ * diameter) counted apart; the rest counted in the cell of their centre (none outside the grid). Shared with the
+ * harness (scripts/eval/pressure/points-recall.ts) so it scores exactly the objects the grade counted.
+ */
+export function sortObjects(objects: WeedObject[], rows: FieldRows | null, g: GridFrame, floorPx: number): { counted: { p: WeedObject; cell: string }[]; belowFloor: WeedObject[]; onRow: WeedObject[] } {
+  const floorM = floorPx * g.mpp;
+  const counted: { p: WeedObject; cell: string }[] = [], belowFloor: WeedObject[] = [], onRow: WeedObject[] = [];
+  for (const p of objects) {
+    if (!(p.areaM2 > 0)) continue;
+    if (p.onRow || (rows && isOnRow(fieldRowStatusAt(rows, p.centre)))) { onRow.push(p); continue; }
+    if ((p.px != null && p.px < floorPx) || p.diameterM < floorM) { belowFloor.push(p); continue; }
+    const [X, Y] = mercatorPx(p.centre.lat, p.centre.lng, g.z);
+    const c = cellAt(g, X, Y);
+    if (c) counted.push({ p, cell: cellKey(c.i, c.j) });
+  }
+  return { counted, belowFloor, onRow };
+}
+
 export function gradePressure(input: {
   objects: WeedObject[];
   grid: GridFrame;
@@ -359,22 +379,12 @@ export function gradePressure(input: {
   const floorM = P.floorPx * g.mpp;
   const crowns = crownsByCell(input.rows, g, P.nearCropMarginM);
 
-  // The weeds between the rows, by cell; objects under the floor counted apart. A weed on a row by the field's own
-  // rows is the crop, whichever system found it.
+  // The weeds between the rows, by cell; objects under the floor counted apart.
+  const sorted = sortObjects(input.objects, input.rows, g, P.floorPx);
   type Obj = { p: WeedObject; d: number };
   const byCell = new Map<string, Obj[]>();
-  let belowFloor = 0;
-  for (const p of input.objects) {
-    if (p.onRow || !(p.areaM2 > 0)) continue;
-    if (input.rows && isOnRow(fieldRowStatusAt(input.rows, p.centre))) continue;
-    const d = p.diameterM;
-    if ((p.px != null && p.px < P.floorPx) || d < floorM) { belowFloor++; continue; }
-    const [X, Y] = mercatorPx(p.centre.lat, p.centre.lng, g.z);
-    const c = cellAt(g, X, Y);
-    if (!c) continue;
-    const k = cellKey(c.i, c.j);
-    (byCell.get(k) ?? byCell.set(k, []).get(k)!).push({ p, d });
-  }
+  const belowFloor = sorted.belowFloor.length;
+  for (const o of sorted.counted) (byCell.get(o.cell) ?? byCell.set(o.cell, []).get(o.cell)!).push({ p: o.p, d: o.p.diameterM });
 
   const cells: GradedCell[] = [];
   const escapes: Escape[] = [];

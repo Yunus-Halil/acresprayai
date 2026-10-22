@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { type FixtureRun, type LoadedFixture, downsample, parseTruthCsv, rasterFromGeoTiff, runFixture, sliceRaster, utmOf } from "../../scripts/eval/pressure/fixture";
 import { disagreementCsv, disagreementRows } from "../../scripts/eval/pressure/disagreement";
+import { pointsRecall, recallCsv } from "../../scripts/eval/pressure/recall";
 import { buildReport, reportMarkdown } from "../../scripts/eval/pressure/report";
 import { scoreGrade } from "../../scripts/eval/pressure/score";
 import { makeSyntheticFixture } from "../../scripts/eval/pressure/synthetic";
@@ -85,6 +86,38 @@ describe("the disagreement export", () => {
     expect(csv[0]).toBe("frame,cell,lat,lng,pixelM2,objM2,groundM2,nearCrop,tier,klass");
     expect(csv).toHaveLength(3);
     expect(csv[1].startsWith(`t,${rows[0].cell},`)).toBe(true);
+  });
+});
+
+describe("recall of labelled points", () => {
+  it("classes each point: seen, below the floor, in the band, not assessed, missed, in that order", () => {
+    const rows = f.rows!, g = run.stage1.grid;
+    // Field metres (from the synthetic's north-west corner) to a position.
+    const at = (xm: number, ym: number) => latLngOfPx(rows.left + xm / rows.mpp, rows.top + ym / rows.mpp, rows.z);
+    const obj = (id: string, centre: { lat: number; lng: number }, areaM2: number) => ({ id, frame: "t", klass: "weed", centre, areaM2, diameterM: 2 * Math.sqrt(areaM2 / Math.PI), equivalentDiameterPx: Math.round(2 * Math.sqrt(areaM2 / Math.PI) / g.mpp), seenIn: ["t"], rowStatus: "off-row" }) as unknown as GroundPlant;
+    // In the alley at 12 m (rows at 9 and 15 m): a counted weed (16 cm) at x 20 m, one under the 12 cm floor at x 22 m.
+    const objects = weedObjectsOf([obj("counted", at(20, 12), 0.02), obj("small", at(22, 12), 0.003)]);
+    const [X, Y] = mercatorPx(at(18, 12).lat, at(18, 12).lng, g.z);
+    const shade = cellKey(Math.floor((X - g.left) / g.cellPx), Math.floor((Y - g.top) / g.cellPx));
+    const cells = run.stage1.cells.map(c => (c.key === shade ? { ...c, uncertain: ["shadow" as const] } : c));
+    const grade = gradePressure({ objects, grid: g, cells, rows, crop: f.crop, canopyClosed: false, photoBased: false });
+    const points = [
+      { id: "seen", centre: at(20.15, 12.1) }, // 18 cm from the counted weed
+      { id: "below", centre: at(22.1, 12) }, // 10 cm from the one under the floor
+      { id: "band", centre: at(6, 15) }, // a tree's trunk (trees every 4 m from 2 m on the row at 15 m)
+      { id: "shade", centre: at(18, 12) },
+      { id: "missed", centre: at(27, 18) }, // an alley, no object near
+      { id: "far", centre: at(20.4, 12) }, // 40 cm from the counted weed: not seen
+    ];
+    const rs = pointsRecall({ grade, grid: g, rows, objects, points });
+    expect(rs.map(r => r.class)).toEqual(["seen", "below-floor", "in-band", "not-assessed", "missed", "missed"]);
+    expect(rs[3].reason).toBe("shadow");
+    expect(rs[0].nearestCountedM).toBeCloseTo(Math.hypot(0.15, 0.1), 2);
+    expect(rs[0].klass).not.toBeNull();
+    expect(rs[3].klass).toBeNull(); // a not-assessed cell has no class
+    const csv = recallCsv(rs).trim().split(/\r?\n/);
+    expect(csv[0]).toBe("id,x,y,lat,lng,class,reason,nearestCountedM,nearestBelowFloorM,cell,klass,tier,nearCrop");
+    expect(csv).toHaveLength(7);
   });
 });
 
