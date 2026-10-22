@@ -6,7 +6,7 @@
 // planting layout when the crop is not on file. Whether the canopy is closed is read off Stage 1 (the mean green
 // share of the assessed cells against the pattern pass's CANOPY_CLOSED). A row crop on file (wide-row or cereal)
 // without a fitted planting layout is not graded at all: the row reader cannot read its rows (fieldRows.ts,
-// ROW_CROP_GRADING_UNSUPPORTED).
+// ROW_CROP_GRADING_UNSUPPORTED). Nor is a field with no crop on file and no layout: the group is never guessed.
 import { useSyncExternalStore } from "react";
 import { CANOPY_CLOSED } from "../../photoScout/pattern";
 import { ROW_CROP_GRADING_UNSUPPORTED, rowCropGradingBlocked } from "../fieldRows";
@@ -65,9 +65,17 @@ export function canopyClosedOf(cells: { greenShare: number; uncertain: unknown[]
   return ok.reduce((a, c) => a + c.greenShare, 0) / ok.length >= CANOPY_CLOSED;
 }
 
-/** The grade refused before it starts, or null: a row crop on file whose rows are not a fitted planting layout. */
+/** No crop on file and no planting layout: the grade does not guess the crop group (it used to fall back to wide-row). */
+export const NO_CROP_ON_FILE = "Set the field's crop before grading: the thresholds and the row reader depend on it.";
+
+/**
+ * The grade refused before it starts, or null: no crop on file without a fitted planting layout (a layout is the
+ * operator's own word that this is a planting of trees or vines, so it grades as an orchard), or a row crop on file
+ * whose rows are not a fitted planting layout.
+ */
 export function pressureRefusal(crop: string | null, rows: Parameters<typeof rowCropGradingBlocked>[1]): string | null {
-  return crop?.trim() && rowCropGradingBlocked(cropGroupOf(crop, false), rows) ? ROW_CROP_GRADING_UNSUPPORTED : null;
+  if (!crop?.trim()) return rows?.source === "layout" ? null : NO_CROP_ON_FILE;
+  return rowCropGradingBlocked(cropGroupOf(crop, false), rows) ? ROW_CROP_GRADING_UNSUPPORTED : null;
 }
 
 /**
