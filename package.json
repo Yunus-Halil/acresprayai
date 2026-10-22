@@ -24,7 +24,8 @@
     "eval:regions": "vite-node scripts/bench/evalRegions.ts --",
     "eval:detections": "vite-node scripts/bench/evalDetections.ts --",
     "eval:visuals": "vite-node scripts/bench/evalVisuals.ts --",
-    "rw:measure": "vite-node scripts/rwmeasure/run.ts --"
+    "rw:measure": "vite-node scripts/rwmeasure/run.ts --",
+    "eval:pressure": "vite-node scripts/eval/pressure/run.ts --"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",

@@ -18,7 +18,7 @@ import type { FrameDetection, GroundPlant } from "../../../src/lib/weedVision/fr
 import { fitLayoutAll, latticeFromClicks, layoutsToFieldRows, rasterFromMask } from "../../../src/lib/weedVision/layout/plantingLayout";
 import { latLngOfPx, mercatorPx, metresPerPixel } from "../../../src/lib/weedVision/mapRun";
 import { type CropGroup, type PressureGrade, cropGroupOf, gradePressure, weedObjectsOf } from "../../../src/lib/weedVision/pressure/grade";
-import { PRESSURE_CELL_M, canopyClosedOf } from "../../../src/lib/weedVision/pressure/pressureStore";
+import { PRESSURE_CELL_M, canopyClosedOf, pressureRefusal } from "../../../src/lib/weedVision/pressure/pressureStore";
 import { DEFAULT_STAGE1, type Stage1Result, readStage1 } from "../../../src/lib/weedVision/twoStage/stage1";
 
 /** Pixels in Web Mercator global pixels at zoom z: pixel (x, y) of the raster is global (left + x, top + y). */
@@ -251,8 +251,13 @@ export function rowsFromClicks(raster: Raster, ring: LatLng2[], clicks: LatLng2[
 
 export type FixtureRun = { stage1: Stage1Result; grade: PressureGrade; rows: FieldRows | null };
 
-/** Stage 1 and the grade on a fixture, the way gradeField runs them in the app (pressure/pressureStore.ts). */
+/**
+ * Stage 1 and the grade on a fixture, the way gradeField runs them in the app (pressure/pressureStore.ts), the
+ * row-crop guard included: a fixture the app would refuse throws with the app's message.
+ */
 export async function runFixture(f: LoadedFixture): Promise<FixtureRun> {
+  const refusal = pressureRefusal(f.crop, f.rows);
+  if (refusal) throw new Error(`${f.name}: ${refusal}`);
   const lat = f.ring.reduce((s, q) => s + q.lat, 0) / f.ring.length;
   const stage1 = await readStage1({ rings: [f.ring], tile: () => "", maxNative: f.raster.z, lat, rows: f.rows, params: { ...DEFAULT_STAGE1, cellM: PRESSURE_CELL_M }, draw: drawFrom(f.raster) as never });
   if (!stage1) throw new Error(`${f.name}: Stage 1 read nothing (is the ring inside the raster?)`);
