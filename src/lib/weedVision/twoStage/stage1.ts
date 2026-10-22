@@ -16,7 +16,7 @@
 import { type LatLng2, pointInRing } from "../../geo";
 import type { PhotoPixels } from "../../photoScout/pattern";
 import { fetchTileCached } from "../../tileCache";
-import { type FieldRows, fieldReadPlan, vegetationMask } from "../fieldRows";
+import { type FieldRows, coverMask, fieldReadPlan, vegetationMask } from "../fieldRows";
 import { convexHull } from "../hotspots";
 import { PAINT_CROWN_MARGIN_M, rowBandMask } from "../layout/rowBand";
 
@@ -46,6 +46,12 @@ export type Stage1Params = {
   darkLuma: number;
   /** A cell farther than this many row spacings from every row line read is "no rows": the rows say nothing there. */
   rowReachSpacings: number;
+  /**
+   * What counts as off-row pressure: "cover" (any cover against bare ground, straw and shadowed soil: fieldRows.ts
+   * coverMask) or "vegetation" (green plants only, the mask's fixed zero, which rejects yellowish cover on purpose).
+   * Cover since 2026-10-21: a cell full of drying yellow-green weeds read as low under the vegetation mask.
+   */
+  mask: "cover" | "vegetation";
 };
 
 export const DEFAULT_STAGE1: Stage1Params = {
@@ -61,6 +67,7 @@ export const DEFAULT_STAGE1: Stage1Params = {
   maxDarkShare: 0.25,
   darkLuma: 50,
   rowReachSpacings: 1,
+  mask: "cover",
 };
 
 export type UncertainReason = "no rows" | "partly imaged" | "mostly crop row" | "shadow";
@@ -156,9 +163,9 @@ export function rowReach(g: GridFrame, rows: FieldRows, spacings: number): Uint8
 }
 
 /** Add one raster's pixels to the counts. `fx, fy` is the raster's top-left in grid frame pixels (relative to left, top). */
-export function accumulate(counts: CellCounts, g: GridFrame, px: PhotoPixels, fx: number, fy: number, band: Uint8Array | null, darkLuma: number, blobMinPx = 1): void {
+export function accumulate(counts: CellCounts, g: GridFrame, px: PhotoPixels, fx: number, fy: number, band: Uint8Array | null, darkLuma: number, blobMinPx = 1, mask: Stage1Params["mask"] = "cover"): void {
   const { width: w, height: h, rgba } = px;
-  const green = vegetationMask(px);
+  const green = mask === "cover" ? coverMask(px) : vegetationMask(px);
   // Off-row green blobs, each counted in the cell of its centre (a blob cut by the raster's edge counts in each part).
   const seen = new Uint8Array(w * h);
   const stack: number[] = [];
@@ -329,7 +336,7 @@ export async function readStage1(input: {
     if (!px) { if (input.signal?.aborted) return null; continue; }
     // The crop taken out as the model's input takes it out: the crowns with their margin, so a crown's rim is not pressure.
     const band = input.rows ? rowBandMask(input.rows, g.z, g.left + t.x0, g.top + t.y0, w, h, PAINT_CROWN_MARGIN_M / input.rows.mpp) : null;
-    accumulate(counts, g, px, t.x0, t.y0, band, params.darkLuma, Math.max(1, Math.round(params.blobMinM2 / (plan.mpp * plan.mpp))));
+    accumulate(counts, g, px, t.x0, t.y0, band, params.darkLuma, Math.max(1, Math.round(params.blobMinM2 / (plan.mpp * plan.mpp))), params.mask ?? "cover");
     input.onProgress?.((k + 1) / plan.tiles.length);
     await new Promise(res => setTimeout(res, 0));
   }

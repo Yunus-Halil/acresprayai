@@ -123,9 +123,14 @@ export function bandOf(k: PressureClass): PressureBand {
   if (k === "moderate") return "medium";
   return "high";
 }
-/** The band drawn for a cell: its class's band, capped at medium when the cell is near the crop. */
-export function drawnBandOf(c: { klass: PressureClass; nearCrop: boolean }): PressureBand {
-  const b = bandOf(c.klass);
+/**
+ * The band drawn for a cell: its class's band, raised to high when it is buffered (beside a high cell with weeds of
+ * its own: a patch the grid cut reads whole, as treatment maps buffer a patch, Allmendinger 2024, Wallinga 1998),
+ * then capped at medium when the cell is near the crop.
+ */
+export function drawnBandOf(c: { klass: PressureClass; nearCrop: boolean; buffered?: boolean }): PressureBand {
+  let b = bandOf(c.klass);
+  if (c.buffered && b !== "none") b = "high";
   return c.nearCrop && b === "high" ? "medium" : b;
 }
 
@@ -195,6 +200,8 @@ export type GradedCell = {
   klass: PressureClass;
   /** Near the crop (mostly under the band, or touching a crown's margin): capped at the medium band on the map, caution not action. */
   nearCrop: boolean;
+  /** Beside a high cell with weeds of its own (cover at the moderate boundary or over): drawn high with it, so a patch the grid cut reads whole. */
+  buffered: boolean;
   /** Scenario 1: stepped up one class for many small objects before closure. */
   treatWhileSmall: boolean;
   tier: Tier;
@@ -218,6 +225,8 @@ export type PressureSummary = {
   treatWhileSmall: number;
   /** Cells at the action point or over that sit against the crop: capped at medium on the map, caution not action. */
   nearCrop: number;
+  /** Cells drawn high with a high neighbour: the grid's cut of a patch, undone. */
+  buffered: number;
   escapes: number;
   patches: number;
   priorityPatches: number;
@@ -342,7 +351,7 @@ export function gradePressure(input: {
       key: s.key, i: s.i, j: s.j, centre: s.centre, ring: s.ring,
       cover: assessed ? cover : 0, groundM2, weedM2, count, density, medianDiameterM: med, maxDiameterM: ds.length ? Math.max(...ds) : null,
       cropM2, relativeCover: assessed ? relativeCover : null, lossBand: assessed ? lossBand : null,
-      klass, nearCrop, treatWhileSmall, tier, multiView, assessed, whyNot: s.uncertain,
+      klass, nearCrop, buffered: false, treatWhileSmall, tier, multiView, assessed, whyNot: s.uncertain,
     });
     for (const o of objs) {
       if (o.d < P.escapeDiameterM || !o.p.centre) continue;
@@ -351,8 +360,19 @@ export function gradePressure(input: {
   }
   escapes.sort((a, b) => b.diameterM - a.diameterM);
 
-  // Patches: 8-connected assessed cells at the patch cover or over, ranked by area then cover.
+  // The buffer: a cell beside a high cell, with cover of its own at the moderate boundary or over, is drawn high with
+  // it. A fixed grid cuts a patch where it likes; the patch is treated whole (the operator, 2026-10-21: "the major one
+  // goes into another tile and that tile becomes yellow").
   const byKey = new Map(cells.map(c => [c.key, c]));
+  for (const c of cells) {
+    if (!c.assessed || bandOf(c.klass) === "high" || c.cover < scheme.moderate) continue;
+    for (let dj = -1; dj <= 1 && !c.buffered; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue;
+      const n = byKey.get(cellKey(c.i + di, c.j + dj));
+      if (n && n.assessed && !n.nearCrop && bandOf(n.klass) === "high") { c.buffered = true; break; }
+    }
+  }
+  // Patches: 8-connected assessed cells at the patch cover or over, ranked by area then cover.
   const on = new Set(cells.filter(c => c.assessed && c.cover >= P.patchCover).map(c => c.key));
   const seen = new Set<string>();
   const patches: PressurePatch[] = [];
@@ -389,6 +409,7 @@ export function gradePressure(input: {
     highAreaM2: over("high").reduce((a, c) => a + c.groundM2, 0),
     treatWhileSmall: cells.filter(c => c.treatWhileSmall).length,
     nearCrop: cells.filter(c => c.nearCrop && CLASS_ORDER.indexOf(c.klass) >= CLASS_ORDER.indexOf("action")).length,
+    buffered: cells.filter(c => c.buffered).length,
     escapes: escapes.length, patches: patches.length, priorityPatches: patches.filter(p => p.priority).length,
     belowFloor,
     medianRelativeCover: median(over("action").map(c => c.relativeCover).filter((v): v is number => v != null)),
@@ -401,6 +422,7 @@ export function gradePressure(input: {
   notes.push(`The smallest weed this grade can claim is about ${cm(floorM)} across (${P.floorPx} pixels at this map's ${(g.mpp * 100).toFixed(1)} cm a pixel)${belowFloor ? `; ${belowFloor} smaller object${belowFloor === 1 ? "" : "s"} counted as below the floor` : ""}.`);
   if (input.canopyClosed === true) notes.push("The canopy reads as closed: weeds under it are not seen, and no loss band is given. Grades after canopy closure under-count (Goldsmith 2025; Allmendinger 2024).");
   if (summary.treatWhileSmall) notes.push(`${summary.treatWhileSmall} cell${summary.treatWhileSmall === 1 ? "" : "s"} stepped up one class for many small weeds: scattered small weeds compete harder than clumped ones and are easiest to treat while small.`);
+  if (summary.buffered) notes.push(`${summary.buffered} cell${summary.buffered === 1 ? "" : "s"} beside a high cell carry weeds of their own and are drawn high with it: the grid cuts a patch where it likes, and a patch is treated whole (treatment maps buffer a patch).`);
   if (summary.nearCrop) notes.push(`${summary.nearCrop} cell${summary.nearCrop === 1 ? "" : "s"} at the action point sit against the crop (mostly under the row band, or touching a crown's margin): shown as medium, not high. Green there may be the crop's own rim, and a scrap of ground reads any leaf as high cover. Look before acting.`);
   if (summary.escapes) notes.push(`${summary.escapes} large escape${summary.escapes === 1 ? "" : "s"} (${cm(P.escapeDiameterM)} across or more): a seed and resistance risk apart from any cell's class.`);
   if (summary.notAssessed) notes.push(`${summary.notAssessed} cell${summary.notAssessed === 1 ? " was" : "s were"} not assessed (no rows read, partly imaged, mostly crop row, or in shadow): not weed-free, unseen.`);

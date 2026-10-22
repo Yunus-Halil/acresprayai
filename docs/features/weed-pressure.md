@@ -68,6 +68,19 @@ Find weeds' mean; the tiles are way too broad." Three changes:
 - **A solid border in the cell's colour.** A light fill over green weeds read as green whatever its colour (a green
   tile full of weeds, "how is it not red"); the border makes the band read regardless of the ground.
 
+- **A patch the grid cut reads whole** (fifth eye test: "when there is a red major one and the major one goes into
+  another tile that tile now becomes yellow, it's so weird"). A fixed 1 m grid cuts a patch where it likes, so the
+  patch's edge lands in a neighbouring cell at a lower cover. A cell beside a high cell that carries weeds of its own
+  (cover at the scheme's moderate boundary or over, 5% in most schemes) is marked `buffered` and drawn high with it;
+  a cell with only a trace of green beside a patch is not, and a neighbour that is itself near the crop is never the
+  reason. Treatment maps buffer a patch for the same reason (Allmendinger 2024; the Wallinga patch-margin rule). The
+  class in the data is unchanged; the panel counts the buffered cells and explains them.
+- **Stage 1 counts off-row cover of any colour** (`Stage1Params.mask`, default `cover`). A cell full of drying
+  yellow-green weeds read as low under the vegetation mask's fixed zero, which rejects yellowish cover on purpose for
+  the plant masks. The cover mask (`fieldRows.ts coverMask`, anything standing out against bare ground, straw and
+  shadowed soil) is what the grade needs: pressure is cover, whatever its colour. The crop paint and row drop are
+  unchanged.
+
 ## On the map and in the panel
 
 Three light fills and nothing else on the cells (the operator, third eye test: "a lot of chaos; keep it simple: low

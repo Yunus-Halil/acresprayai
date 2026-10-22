@@ -250,3 +250,30 @@ describe("near the crop", () => {
     expect(drawnBandOf(g2.cells.find(x => x.key === cellKey(4, 4))!)).toBe("high");
   });
 });
+
+describe("a patch the grid cut reads whole", () => {
+  it("a cell beside a high cell with weeds of its own is drawn high; a clean cell beside it is not; near the crop still caps it", async () => {
+    const { drawnBandOf } = await import("@/lib/weedVision/pressure/grade");
+    // (2,2) at 30% (high); (3,2) at 8% (moderate, the patch's other half); (2,3) at 1% (trace); (4,2) at 8% but not beside a high cell.
+    const cs = cells({
+      [cellKey(2, 2)]: { pressure: 0.3, density: 2, offRowGreenM2: 0.3 * groundM2 },
+      [cellKey(3, 2)]: { pressure: 0.08, density: 1, offRowGreenM2: 0.08 * groundM2 },
+      [cellKey(2, 3)]: { pressure: 0.01, density: 1, offRowGreenM2: 0.01 * groundM2 },
+      [cellKey(4, 2)]: { pressure: 0.08, density: 1, offRowGreenM2: 0.08 * groundM2 },
+      [cellKey(1, 2)]: { pressure: 0.08, density: 1, offRowGreenM2: 0.08 * cellM2 * 0.3, bandShare: 0.7 }, // 8% of its own visible ground, most of it under the band
+    });
+    const gr = gradePressure({ objects: [], grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    const at = (i: number, j: number) => gr.cells.find(x => x.key === cellKey(i, j))!;
+    expect(at(3, 2).klass).toBe("moderate");
+    expect(at(3, 2).buffered).toBe(true);
+    expect(drawnBandOf(at(3, 2))).toBe("high");
+    expect(at(2, 3).buffered).toBe(false); // a trace of green beside a patch is not the patch
+    expect(drawnBandOf(at(2, 3))).toBe("low");
+    expect(at(4, 2).buffered).toBe(false); // the same cover with no high neighbour stays medium
+    expect(drawnBandOf(at(4, 2))).toBe("medium");
+    expect(at(1, 2).buffered).toBe(true);
+    expect(drawnBandOf(at(1, 2))).toBe("medium"); // near the crop caps even a buffered cell
+    expect(gr.summary.buffered).toBe(2);
+    expect(gr.notes.join(" ")).toMatch(/treated whole/);
+  });
+});
