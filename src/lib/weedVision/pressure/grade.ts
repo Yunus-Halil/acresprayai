@@ -3,12 +3,15 @@
 // Built 2026-10-21 from docs/research/weed-pressure-grading-2026-10-21.md. The rules, and where each comes from:
 //
 //   cover      the cell's metric is weed canopy as a share of the VISIBLE GROUND (the imaged ground off the crop row
-//              band and crowns), measured from the map's own pixels by Stage 1 (every green thing off the rows, so
-//              nothing between the rows is skipped: a ranked list of spots is not a weed map) and, where the model's
-//              plants or the scan's kept spots cover more, from those; never how green anything is: every threshold
-//              people act on is cover (the Turkish
-//              ministry's 10-15% cover per m² for maize, cotton, olive, apricot and citrus; German cereal thresholds
-//              of 5-10%; Peña's UAV classes <5 / 5-20 / >20%), and no paper or tool grades by index intensity.
+//              band and crowns), measured from the map's own pixels by Stage 1 alone (every green thing off the rows,
+//              so nothing between the rows is skipped: a ranked list of spots is not a weed map); never how green
+//              anything is: every threshold people act on is cover (the Turkish ministry's 10-15% cover per m² for
+//              maize, cotton, olive, apricot and citrus; German cereal thresholds of 5-10%; Peña's UAV classes
+//              <5 / 5-20 / >20%), and no paper or tool grades by index intensity. Since 2026-10-22 the objects (the
+//              model's plants, the scan's kept spots) give the count and the sizes, never the cover: taking the larger
+//              of the two let one tree-sized detection (RF-DETR calls crowns weeds: the two-stage trial, 2026-10-19)
+//              set a cell's cover on its own outline. Where the two disagree by more than a tenth of the ground, the
+//              cell says so.
 //   classes    by crop group, with the published action point inside them: wide-row crops act at 10%, drilled
 //              cereals at 5% (barley) or 9% (wheat), orchards at 10% (apricot and citrus 15%). "High" is Peña's 20%
 //              (wide-row) or Braun-Blanquet's 25% (orchards). Our old 5-25% band hid the action point.
@@ -176,19 +179,27 @@ export type GradeParams = {
    * profitable control unit); 2 m is a spot-sprayer section or a hoe's pass. Ours as a default.
    */
   unitM: number;
+  /** A cell's pixels and its objects disagree when their weed areas differ by more than this share of its ground (ours). */
+  disagreeShare: number;
 };
-export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundShare: 0.3, nearCropGroundShare: 0.5, nearCropMarginM: 0.3, unitM: 2 };
+export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundShare: 0.3, nearCropGroundShare: 0.5, nearCropMarginM: 0.3, unitM: 2, disagreeShare: 0.1 };
 
 export type Tier = "confirmed" | "possible" | "none";
 
 export type GradedCell = {
   key: string; i: number; j: number;
   centre: LatLng2; ring: LatLng2[];
-  /** Weed canopy as a share of the cell's own visible ground (imaged, off the crop band and crowns). */
+  /** Weed canopy as a share of the cell's own visible ground (imaged, off the crop band and crowns), from Stage 1's pixels. */
   cover: number;
   groundM2: number;
+  /** Stage 1's off-row green in the cell, m²: what the cover is read from. */
   weedM2: number;
+  /** The objects in the cell when there are any, else Stage 1's blobs. */
   count: number;
+  /** The objects' canopy in the cell, m² (0 without objects). */
+  objectM2: number;
+  /** |pixels' weed - objects' weed| over the cell's ground, when the cell has objects; null without. */
+  disagreement: number | null;
   /** Weed over visible ground across the treatment unit around the cell: what the class is judged on. */
   unitCover: number;
   unitGroundM2: number;
@@ -242,6 +253,8 @@ export type PressureSummary = {
   belowFloor: number;
   /** Median relative cover over cells at action or over, null when none. */
   medianRelativeCover: number | null;
+  /** Assessed cells whose pixels and objects disagree by more than disagreeShare of the ground. */
+  disagreeing: number;
 };
 
 export type PressureGrade = {
@@ -335,13 +348,14 @@ export function gradePressure(input: {
     const groundM2 = cellM2 * s.imagedShare * (1 - s.bandShare);
     const assessed = s.uncertain.length === 0 && groundM2 >= P.minGroundShare * cellM2;
     const whyNot: GradedCell["whyNot"] = assessed ? [] : s.uncertain.length ? s.uncertain : ["too little ground"];
-    // The map's own measure first (Stage 1: off-row green over the visible ground, and its blobs), the objects where
-    // they say more: a spot list is ranked and capped, the pixels are not.
+    // Cover from the map's own measure (Stage 1: off-row green over the visible ground): a spot list is ranked and
+    // capped, the pixels are not. The count and the sizes from the objects when there are any, else Stage 1's blobs.
     const objM2 = objs.reduce((a, o) => a + (o.p.areaM2 ?? 0), 0);
     const pixelM2 = Math.min(groundM2, s.offRowGreenM2);
-    const weedM2 = Math.max(pixelM2, objM2);
+    const weedM2 = pixelM2;
     const pixelBlobs = Math.round(s.density * groundM2);
-    const count = Math.max(pixelBlobs, objs.length);
+    const count = objs.length ? objs.length : pixelBlobs;
+    const disagreement = objs.length && groundM2 > 0 ? Math.abs(pixelM2 - objM2) / groundM2 : null;
     const cover = groundM2 > 0 ? Math.min(1, weedM2 / groundM2) : 0;
     const density = groundM2 > 0 ? count / groundM2 : 0;
     // Sizes from the objects when there are any; else the mean blob of the pixels.
@@ -357,7 +371,7 @@ export function gradePressure(input: {
     // The class, the step-up and the tier are judged over the treatment unit below, once every cell is read.
     cells.push({
       key: s.key, i: s.i, j: s.j, centre: s.centre, ring: s.ring,
-      cover: assessed ? cover : 0, groundM2, weedM2, count, density, medianDiameterM: med, maxDiameterM: ds.length ? Math.max(...ds) : null,
+      cover: assessed ? cover : 0, groundM2, weedM2, count, objectM2: objM2, disagreement, density, medianDiameterM: med, maxDiameterM: ds.length ? Math.max(...ds) : null,
       unitCover: 0, unitGroundM2: 0, unitCount: 0,
       cropM2, relativeCover: assessed ? relativeCover : null, lossBand: assessed ? lossBand : null,
       klass: "none", nearCrop, treatWhileSmall: false, tier: "none", multiView, assessed, whyNot,
@@ -442,6 +456,7 @@ export function gradePressure(input: {
     escapes: escapes.length, patches: patches.length, priorityPatches: patches.filter(p => p.priority).length,
     belowFloor,
     medianRelativeCover: median(over("action").map(c => c.relativeCover).filter((v): v is number => v != null)),
+    disagreeing: assessedCells.filter(c => c.disagreement != null && c.disagreement > P.disagreeShare).length,
   };
 
   const cm = (m: number) => `${Math.round(m * 100)} cm`;
@@ -456,6 +471,7 @@ export function gradePressure(input: {
     ? `The floor as a whole reads at the action point (${pctOf(fieldCover)} cover): a floor pass first (mowing, hoeing or tillage; the Turkish guides bar non-selective herbicides where trunks are not yet woody), then the worst areas, ranked first in the list.`
     : `The field as a whole reads at the action point (${pctOf(fieldCover)} cover between the rows): a whole-field pass rather than spot work; the worst areas are ranked first in the list.`);
   if (summary.nearCrop) notes.push(`${summary.nearCrop} cell${summary.nearCrop === 1 ? "" : "s"} at the action point sit against the crop (mostly under the row band, or touching a crown's margin): shown as medium, not high. Green there may be the crop's own rim, and a scrap of ground reads any leaf as high cover. Look before acting.`);
+  if (summary.disagreeing) notes.push(`${summary.disagreeing} cell${summary.disagreeing === 1 ? "" : "s"} where the map's pixels and the weeds found differ by more than ${pctOf(P.disagreeShare)} of the ground: cover is read from the pixels, the count from the weeds found; look at ${summary.disagreeing === 1 ? "it" : "them"} before acting.`);
   if (summary.escapes) notes.push(`${summary.escapes} large escape${summary.escapes === 1 ? "" : "s"} (${cm(P.escapeDiameterM)} across or more): a seed and resistance risk apart from any cell's class.`);
   if (summary.notAssessed) notes.push(`${summary.notAssessed} cell${summary.notAssessed === 1 ? " was" : "s were"} not assessed (no rows read, partly imaged, mostly crop row, or in shadow): not weed-free, unseen.`);
   notes.push(`"Possible" cells and escapes are kept for review, never dropped: a missed weed costs more than a false mark (every source), and nobody reaches zero false marks (best published 2 to 5%).`);

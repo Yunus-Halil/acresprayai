@@ -33,7 +33,22 @@ function weed(i: number, j: number, areaM2: number, opts: { id?: string; seenIn?
   return { id: opts.id ?? `w-${i}-${j}-${areaM2}-${opts.dx ?? 0}-${opts.dy ?? 0}`, frame: frames[0], instanceId: 1, klass: "weed", score: 0.8, scoreKind: "d", nativePolygon: [], nativeCentroid: [0, 0], nativeBbox: [0, 0, 0, 0], areaPx: 1, equivalentDiameterPx: opts.px ?? Math.round(d / MPP), ring: null, centre: latLngOfPx(X, Y, Z), gsdM: MPP, areaM2, diameterM: d, viewAngleDeg: 0, status: "ok", flags: [], tiny: false, touchesBorder: false, fusedFromTiles: 1, rowStatus: opts.onRow ? "on-row" : "off-row", seenIn: frames, duplicates: frames.length - 1 };
 }
 
-const grade = (plants: GroundPlant[], o: Partial<Parameters<typeof gradePressure>[0]> = {}) => gradePressure({ objects: weedObjectsOf(plants), grid, cells: cells(), rows: null, crop: "corn", canopyClosed: false, photoBased: false, ...o });
+/** The cells as Stage 1 reads them under these weeds: each cell's off-row green is the canopy of the off-row weeds centred in it (the pixels see what the model saw). */
+function cellsSeeing(weeds: { centre: LatLng2 | null; areaM2: number | null; onRow?: boolean }[], over: Partial<Record<string, Partial<Stage1Cell>>> = {}): Stage1Cell[] {
+  const green = new Map<string, number>();
+  for (const w of weeds) {
+    if (!w.centre || w.onRow || !w.areaM2) continue;
+    const [X, Y] = mercatorPx(w.centre.lat, w.centre.lng, Z);
+    const k = cellKey(Math.floor((X - LEFT) / grid.cellPx), Math.floor((Y - TOP) / grid.cellPx));
+    green.set(k, (green.get(k) ?? 0) + w.areaM2);
+  }
+  const o: Partial<Record<string, Partial<Stage1Cell>>> = {};
+  for (const [k, m2] of green) o[k] = { offRowGreenM2: m2, pressure: m2 / (cellM2 * 0.8) };
+  for (const [k, v] of Object.entries(over)) o[k] = { ...(o[k] ?? {}), ...v };
+  return cells(o);
+}
+const plantsSeen = (plants: GroundPlant[]) => cellsSeeing(plants.map(p => ({ centre: p.centre, areaM2: p.areaM2, onRow: p.rowStatus === "on-row" })));
+const grade = (plants: GroundPlant[], o: Partial<Parameters<typeof gradePressure>[0]> = {}) => gradePressure({ objects: weedObjectsOf(plants), grid, cells: plantsSeen(plants), rows: null, crop: "corn", canopyClosed: false, photoBased: false, ...o });
 const groundM2 = cellM2 * 0.8;
 
 describe("crop groups and schemes", () => {
@@ -178,7 +193,7 @@ describe("weeds from the scan", () => {
     const objs = weedObjectsOfScan([spot("a", 2, 2, 0.12 * groundM2), spot("b", 3, 3, 0.0005), spot("c", 4, 4, 0)]);
     expect(objs).toHaveLength(2); // a zero-area spot has nothing to grade
     expect(objs[0].px).toBeNull();
-    const gr = gradePressure({ objects: objs, grid, cells: cells(), rows: null, crop: "apricot", canopyClosed: false, photoBased: false });
+    const gr = gradePressure({ objects: objs, grid, cells: cellsSeeing(objs), rows: null, crop: "apricot", canopyClosed: false, photoBased: false });
     expect(gr.group).toBe("orchard");
     expect(gr.cells.find(c => c.key === cellKey(2, 2))!.klass).toBe("moderate"); // 12% is under the apricot action point of 15%
     expect(gr.summary.belowFloor).toBe(1); // 2.5 cm across, under the 6 cm floor
@@ -210,9 +225,27 @@ describe("the map's own pixels", () => {
     expect(c.klass).toBe("action");
     expect(c.count).toBe(Math.round(1.2 * groundM2));
     expect(c.tier).toBe("confirmed");
-    // And an object that says more than the pixels wins the cell's cover, never less.
+    expect(c.disagreement).toBeNull(); // no objects: nothing to disagree with
+  });
+
+  it("cover comes from the pixels alone; the objects give the count and sizes, and a cell where the two disagree says so", () => {
+    const cs = cells({ [cellKey(3, 1)]: { pressure: 0.12, density: 1.2, offRowGreenM2: 0.12 * groundM2 } });
+    // One object of 30% of the ground over pixels that read 12%: the cover stays 12%, the count is the one object.
     const more = gradePressure({ objects: weedObjectsOf([weed(3, 1, 0.3 * groundM2)]), grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
-    expect(more.cells.find(x => x.key === cellKey(3, 1))!.cover).toBeCloseTo(0.3, 2);
+    const c = more.cells.find(x => x.key === cellKey(3, 1))!;
+    expect(c.cover).toBeCloseTo(0.12, 2);
+    expect(c.weedM2).toBeCloseTo(0.12 * groundM2, 6);
+    expect(c.objectM2).toBeCloseTo(0.3 * groundM2, 6);
+    expect(c.count).toBe(1);
+    expect(c.medianDiameterM).toBeCloseTo(2 * Math.sqrt((0.3 * groundM2) / Math.PI), 6);
+    expect(c.disagreement).toBeCloseTo(0.18, 6);
+    expect(more.summary.disagreeing).toBe(1);
+    expect(more.notes.join(" ")).toMatch(/1 cell where the map's pixels and the weeds found differ by more than 10%/);
+    // An object that agrees with the pixels: no disagreement counted, no note.
+    const agree = gradePressure({ objects: weedObjectsOf([weed(3, 1, 0.15 * groundM2)]), grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    expect(agree.cells.find(x => x.key === cellKey(3, 1))!.disagreement).toBeCloseTo(0.03, 6);
+    expect(agree.summary.disagreeing).toBe(0);
+    expect(agree.notes.join(" ")).not.toMatch(/differ by more than/);
   });
 });
 
@@ -244,7 +277,8 @@ describe("near the crop", () => {
     // A crown whose margin reaches into cell (2,2) makes it near the crop too; a far cell is not.
     const crownX = LEFT + 2 * grid.cellPx - 0.5 / MPP, crownY = TOP + 2.5 * grid.cellPx; // 0.5 m left of the cell's edge; crown radius 0.4 m plus the 0.3 m margin reaches it
     const rows = { z: Z, left: 0, top: 0, mpp: MPP, rows: 1, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "layout" as const, ctx: { lines: [], crops: [{ x: crownX, y: crownY, r: 0.4 / MPP }], bandPx: 10, gsdM: MPP } };
-    const g2 = gradePressure({ objects: weedObjectsOf([weed(2, 2, 0.2 * groundM2), weed(4, 4, 0.2 * groundM2)]), grid, cells: cells(), rows, crop: "apricot", canopyClosed: false, photoBased: false });
+    const near = [weed(2, 2, 0.2 * groundM2), weed(4, 4, 0.2 * groundM2)];
+    const g2 = gradePressure({ objects: weedObjectsOf(near), grid, cells: plantsSeen(near), rows, crop: "apricot", canopyClosed: false, photoBased: false });
     expect(g2.cells.find(x => x.key === cellKey(2, 2))!.nearCrop).toBe(true);
     expect(g2.cells.find(x => x.key === cellKey(4, 4))!.nearCrop).toBe(false);
     expect(drawnBandOf(g2.cells.find(x => x.key === cellKey(4, 4))!)).toBe("high");
