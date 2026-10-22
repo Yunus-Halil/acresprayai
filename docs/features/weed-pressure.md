@@ -86,6 +86,32 @@ Find weeds' mean; the tiles are way too broad." Three changes:
   shadowed soil) is what the grade needs: pressure is cover, whatever its colour. The crop paint and row drop are
   unchanged.
 
+## The treatment unit (2026-10-22): what the agronomist is shown
+
+The seventh eye test, on the half-metre grid: "so much red, so many weeds, how do we know what to show the
+agronomist". The research (`docs/research/weed-measurement-and-prioritisation-2026-10-21.md`) found the cause is
+arithmetic: every published cover threshold was measured at a larger unit (Peña 2013 on 1 m × row-width cells, the
+Turkish guides on the orchard mean of 10 to 30 quadrats, Paice 1998's 6 × 6 m bound on a profitable control unit),
+and the two studies that used 0.5 m cells did so to match nozzle spacing and then used "any weed" rather than a
+percentage. A 20 cm plant is 12% of a 0.5 m cell, 3% of 1 m², under 0.4% of 3 × 3 m.
+
+- **Classes are judged over the treatment unit, drawn on the fine grid.** Each cell's class comes from weed over
+  visible ground summed across the window of cells a sprayer section or a hoe treats together (`unitM`, 2 m by
+  default, rounded up to whole cells: 2.5 m on the 0.5 m grid), while the cell keeps its own cover for the card.
+  A lone plant is a plant, not a patch; a patch the grid cut reads whole. The buffer rule of 2026-10-21 is gone,
+  the window does its work.
+- **The field as a whole leads the line.** Cover over all visible ground between the rows, classed against the same
+  scheme: "Field as a whole: 7.5% cover, moderate (action at 10%)". When the whole field reads at the action point,
+  the notes say so and what it means: in an orchard a floor pass first (mowing, hoeing or tillage; the Turkish
+  guides bar non-selective herbicides where trunks are not yet woody), in a row crop a whole-field pass rather than
+  spot work, and then the worst areas.
+- **Worst areas first.** Patches (touching cells at 5% or more, judged at the unit) are ranked by weed area, the
+  most weed first, and the panel lists the top four with their ground and cover, priority marked. The escapes keep
+  their diamonds.
+
+What the agronomist sees is therefore three things: one line on the whole field, the worst areas ranked, and the
+escapes. The cells behind them are context, in three light fills.
+
 ## On the map and in the panel
 
 Three light fills and nothing else on the cells (the operator, third eye test: "a lot of chaos; keep it simple: low

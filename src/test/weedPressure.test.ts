@@ -251,30 +251,38 @@ describe("near the crop", () => {
   });
 });
 
-describe("a patch the grid cut reads whole", () => {
-  it("a cell beside a high cell with weeds of its own is drawn high; a clean cell beside it is not; near the crop still caps it", async () => {
-    const { drawnBandOf } = await import("@/lib/weedVision/pressure/grade");
-    // (2,2) at 30% (high); (3,2) at 8% (moderate, the patch's other half); (2,3) at 1% (trace); (4,2) at 8% but not beside a high cell.
-    const cs = cells({
-      [cellKey(2, 2)]: { pressure: 0.3, density: 2, offRowGreenM2: 0.3 * groundM2 },
-      [cellKey(3, 2)]: { pressure: 0.08, density: 1, offRowGreenM2: 0.08 * groundM2 },
-      [cellKey(2, 3)]: { pressure: 0.01, density: 1, offRowGreenM2: 0.01 * groundM2 },
-      [cellKey(4, 2)]: { pressure: 0.08, density: 1, offRowGreenM2: 0.08 * groundM2 },
-      [cellKey(1, 2)]: { pressure: 0.08, density: 1, offRowGreenM2: 0.08 * cellM2 * 0.3, bandShare: 0.7 }, // 8% of its own visible ground, most of it under the band
-    });
-    const gr = gradePressure({ objects: [], grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
-    const at = (i: number, j: number) => gr.cells.find(x => x.key === cellKey(i, j))!;
-    expect(at(3, 2).klass).toBe("moderate");
-    expect(at(3, 2).buffered).toBe(true);
-    expect(drawnBandOf(at(3, 2))).toBe("high");
-    expect(at(2, 3).buffered).toBe(false); // a trace of green beside a patch is not the patch
-    expect(drawnBandOf(at(2, 3))).toBe("low");
-    expect(at(4, 2).buffered).toBe(false); // the same cover with no high neighbour stays medium
-    expect(drawnBandOf(at(4, 2))).toBe("medium");
-    expect(at(1, 2).buffered).toBe(true);
-    expect(drawnBandOf(at(1, 2))).toBe("medium"); // near the crop caps even a buffered cell
-    expect(gr.summary.buffered).toBe(2);
-    expect(gr.notes.join(" ")).toMatch(/treated whole/);
+describe("the treatment unit", () => {
+  const at = (gr: ReturnType<typeof gradePressure>, i: number, j: number) => gr.cells.find(x => x.key === cellKey(i, j))!;
+  it("a lone high cell is a plant, not a patch, over the unit; a block of them stays high; the field verdict leads the line", () => {
+    // 2 m cells, a 6 m unit: each cell is judged over the 3 x 3 cells around it.
+    const lone = gradePressure({ objects: [], grid, cells: cells({ [cellKey(2, 2)]: { pressure: 0.3, density: 2, offRowGreenM2: 0.3 * groundM2 } }), rows: null, crop: "corn", canopyClosed: false, photoBased: false, params: { unitM: 6 } });
+    expect(lone.summary.unitM).toBeCloseTo(6, 0);
+    expect(at(lone, 2, 2).cover).toBeCloseTo(0.3, 5); // the cell's own cover, for the card
+    expect(at(lone, 2, 2).unitCover).toBeCloseTo(0.3 / 9, 5);
+    expect(at(lone, 2, 2).klass).toBe("low");
+    expect(lone.patches).toHaveLength(0);
+    const block: Record<string, Partial<Stage1Cell>> = {};
+    for (let j = 1; j <= 3; j++) for (let i = 1; i <= 3; i++) block[cellKey(i, j)] = { pressure: 0.3, density: 2, offRowGreenM2: 0.3 * groundM2 };
+    const patch = gradePressure({ objects: [], grid, cells: cells(block), rows: null, crop: "corn", canopyClosed: false, photoBased: false, params: { unitM: 6 } });
+    expect(at(patch, 2, 2).klass).toBe("high");
+    expect(at(patch, 1, 1).klass).toBe("action"); // the patch's corner: four of its nine unit cells are the patch, 13%
+    expect(at(patch, 4, 4).klass).toBe("low"); // one patch cell in nine, 3.3%
+    expect(patch.patches.length).toBeGreaterThan(0);
+    expect(patch.patches[0].rank).toBe(1);
+    expect(patch.summary.fieldCover).toBeCloseTo(9 * 0.3 / 36, 5);
+    expect(patch.summary.fieldClass).toBe("moderate");
+    expect(pressureLine(patch, m2 => `${Math.round(m2)} m²`)).toMatch(/^Field as a whole: 7\.5% cover, moderate \(action at 10%\); 36 cells assessed/);
+    expect(patch.notes.join(" ")).toMatch(/6\.0 m treatment unit/);
+  });
+  it("at the default unit on a 2 m grid the unit is the cell, and a field at the action point says so", () => {
+    const all: Record<string, Partial<Stage1Cell>> = {};
+    for (let j = 0; j < 6; j++) for (let i = 0; i < 6; i++) all[cellKey(i, j)] = { pressure: 0.12, density: 1, offRowGreenM2: 0.12 * groundM2 };
+    const gr = gradePressure({ objects: [], grid, cells: cells(all), rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    expect(gr.summary.unitM).toBeCloseTo(2, 0);
+    expect(gr.summary.fieldClass).toBe("action");
+    expect(gr.notes.join(" ")).toMatch(/field as a whole reads at the action point/);
+    const orchard = gradePressure({ objects: [], grid, cells: cells(all), rows: null, crop: "olive", group: "orchard", canopyClosed: false, photoBased: false });
+    expect(orchard.notes.join(" ")).toMatch(/floor pass first/);
   });
 });
 

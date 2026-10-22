@@ -123,14 +123,9 @@ export function bandOf(k: PressureClass): PressureBand {
   if (k === "moderate") return "medium";
   return "high";
 }
-/**
- * The band drawn for a cell: its class's band, raised to high when it is buffered (beside a high cell with weeds of
- * its own: a patch the grid cut reads whole, as treatment maps buffer a patch, Allmendinger 2024, Wallinga 1998),
- * then capped at medium when the cell is near the crop.
- */
-export function drawnBandOf(c: { klass: PressureClass; nearCrop: boolean; buffered?: boolean }): PressureBand {
-  let b = bandOf(c.klass);
-  if (c.buffered && b !== "none") b = "high";
+/** The band drawn for a cell: its class's band (judged over the treatment unit), capped at medium when the cell is near the crop. */
+export function drawnBandOf(c: { klass: PressureClass; nearCrop: boolean }): PressureBand {
+  const b = bandOf(c.klass);
   return c.nearCrop && b === "high" ? "medium" : b;
 }
 
@@ -174,19 +169,30 @@ export type GradeParams = {
    */
   nearCropGroundShare: number;
   nearCropMarginM: number;
+  /**
+   * The treatment unit, metres across: the window of cells a cell's class is judged over, rounded up to whole cells.
+   * Published cover thresholds were measured at this scale, never at a quarter square metre (Peña 2013 on 1 m × row
+   * width units; the Turkish guides on the orchard mean of 10 to 30 quadrats; Paice 1998's 6 × 6 m bound on a
+   * profitable control unit); 2 m is a spot-sprayer section or a hoe's pass. Ours as a default.
+   */
+  unitM: number;
 };
-export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundShare: 0.3, nearCropGroundShare: 0.5, nearCropMarginM: 0.3 };
+export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundShare: 0.3, nearCropGroundShare: 0.5, nearCropMarginM: 0.3, unitM: 2 };
 
 export type Tier = "confirmed" | "possible" | "none";
 
 export type GradedCell = {
   key: string; i: number; j: number;
   centre: LatLng2; ring: LatLng2[];
-  /** Weed canopy as a share of the visible ground (imaged, off the crop band and crowns). */
+  /** Weed canopy as a share of the cell's own visible ground (imaged, off the crop band and crowns). */
   cover: number;
   groundM2: number;
   weedM2: number;
   count: number;
+  /** Weed over visible ground across the treatment unit around the cell: what the class is judged on. */
+  unitCover: number;
+  unitGroundM2: number;
+  unitCount: number;
   /** Objects per m² of visible ground. */
   density: number;
   medianDiameterM: number | null;
@@ -200,8 +206,6 @@ export type GradedCell = {
   klass: PressureClass;
   /** Near the crop (mostly under the band, or touching a crown's margin): capped at the medium band on the map, caution not action. */
   nearCrop: boolean;
-  /** Beside a high cell with weeds of its own (cover at the moderate boundary or over): drawn high with it, so a patch the grid cut reads whole. */
-  buffered: boolean;
   /** Scenario 1: stepped up one class for many small objects before closure. */
   treatWhileSmall: boolean;
   tier: Tier;
@@ -227,8 +231,11 @@ export type PressureSummary = {
   treatWhileSmall: number;
   /** Cells at the action point or over that sit against the crop: capped at medium on the map, caution not action. */
   nearCrop: number;
-  /** Cells drawn high with a high neighbour: the grid's cut of a patch, undone. */
-  buffered: number;
+  /** The field as a whole: weed over visible ground across every assessed cell, and its class against the scheme. */
+  fieldCover: number;
+  fieldClass: PressureClass;
+  /** The treatment unit the classes were judged over, metres across (unitM rounded up to whole cells). */
+  unitM: number;
   escapes: number;
   patches: number;
   priorityPatches: number;
@@ -255,6 +262,8 @@ export type PressureGrade = {
 };
 
 export const GRADE_VERSION = "pressure-v1";
+
+const pctOf = (v: number) => `${(100 * v).toFixed(v < 0.1 ? 1 : 0)}%`;
 
 /** Kropff & Spitters: yield loss as a share from the weed's share of total cover at competitiveness q. */
 export const kropffLoss = (lw: number, q: number) => (q * lw) / (1 + (q - 1) * lw);
@@ -343,18 +352,15 @@ export function gradePressure(input: {
     const lossBand: [number, number] | null = relativeCover != null && input.canopyClosed === false
       ? [kropffLoss(relativeCover, Math.min(...P.kropffQ)), kropffLoss(relativeCover, Math.max(...P.kropffQ))]
       : null;
-    let klass = assessed ? classOf(cover, count, scheme) : "none";
     const med = median(ds);
-    const treatWhileSmall = assessed && input.canopyClosed !== true && count >= 2 && density >= P.denseObjectsPerM2 && med != null && med < P.smallDiameterM && klass !== "none" && klass !== "high";
-    if (treatWhileSmall) klass = stepUp(klass);
     const multiView = objs.filter(o => o.p.views >= 2).length;
-    const corroborated = cover >= P.corroborateCover || count >= P.corroborateCount;
-    const tier: Tier = !assessed || count === 0 ? "none" : corroborated && (!input.photoBased || multiView >= 1) ? "confirmed" : "possible";
+    // The class, the step-up and the tier are judged over the treatment unit below, once every cell is read.
     cells.push({
       key: s.key, i: s.i, j: s.j, centre: s.centre, ring: s.ring,
       cover: assessed ? cover : 0, groundM2, weedM2, count, density, medianDiameterM: med, maxDiameterM: ds.length ? Math.max(...ds) : null,
+      unitCover: 0, unitGroundM2: 0, unitCount: 0,
       cropM2, relativeCover: assessed ? relativeCover : null, lossBand: assessed ? lossBand : null,
-      klass, nearCrop, buffered: false, treatWhileSmall, tier, multiView, assessed, whyNot,
+      klass: "none", nearCrop, treatWhileSmall: false, tier: "none", multiView, assessed, whyNot,
     });
     for (const o of objs) {
       if (o.d < P.escapeDiameterM || !o.p.centre) continue;
@@ -363,20 +369,36 @@ export function gradePressure(input: {
   }
   escapes.sort((a, b) => b.diameterM - a.diameterM);
 
-  // The buffer: a cell beside a high cell, with cover of its own at the moderate boundary or over, is drawn high with
-  // it. A fixed grid cuts a patch where it likes; the patch is treated whole (the operator, 2026-10-21: "the major one
-  // goes into another tile and that tile becomes yellow").
+  // The treatment unit: a cell's class is judged over the window of cells around it that a sprayer section or a hoe
+  // treats together (P.unitM across, rounded up to whole cells), weed over ground summed across the assessed cells in
+  // it. A lone 20 cm plant is 12% of a 0.5 m cell and 3% of a square metre: judged at the unit it is a plant, not a
+  // patch, and a patch the grid cut reads whole (the operator, 2026-10-22: "so much red; how do we know what to show
+  // the agronomist"). The cell keeps its own cover for the card.
+  const cellM = Math.sqrt(cellM2);
+  const r = Math.max(0, Math.ceil((P.unitM / cellM - 1) / 2 - 0.01)); // a cell within 2% of the unit is the unit
+  const unitSideM = (2 * r + 1) * cellM;
   const byKey = new Map(cells.map(c => [c.key, c]));
   for (const c of cells) {
-    if (!c.assessed || bandOf(c.klass) === "high" || c.cover < scheme.moderate) continue;
-    for (let dj = -1; dj <= 1 && !c.buffered; dj++) for (let di = -1; di <= 1; di++) {
-      if (!di && !dj) continue;
+    if (!c.assessed) continue;
+    let weed = 0, ground = 0, count = 0;
+    for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
       const n = byKey.get(cellKey(c.i + di, c.j + dj));
-      if (n && n.assessed && !n.nearCrop && bandOf(n.klass) === "high") { c.buffered = true; break; }
+      if (!n || !n.assessed) continue;
+      weed += n.weedM2; ground += n.groundM2; count += n.count;
     }
+    c.unitGroundM2 = ground; c.unitCount = count;
+    c.unitCover = ground > 0 ? Math.min(1, weed / ground) : 0;
+    let klass = classOf(c.unitCover, count, scheme);
+    const unitDensity = ground > 0 ? count / ground : 0;
+    c.treatWhileSmall = input.canopyClosed !== true && count >= 2 && unitDensity >= P.denseObjectsPerM2 && c.medianDiameterM != null && c.medianDiameterM < P.smallDiameterM && klass !== "none" && klass !== "high";
+    if (c.treatWhileSmall) klass = stepUp(klass);
+    c.klass = klass;
+    const corroborated = c.unitCover >= P.corroborateCover || count >= P.corroborateCount;
+    c.tier = count === 0 ? "none" : corroborated && (!input.photoBased || c.multiView >= 1) ? "confirmed" : "possible";
   }
-  // Patches: 8-connected assessed cells at the patch cover or over, ranked by area then cover.
-  const on = new Set(cells.filter(c => c.assessed && c.cover >= P.patchCover).map(c => c.key));
+  // Patches: 8-connected assessed cells at the patch cover or over (judged at the unit), ranked by weed area: the
+  // most weed first is "treat first".
+  const on = new Set(cells.filter(c => c.assessed && c.unitCover >= P.patchCover).map(c => c.key));
   const seen = new Set<string>();
   const patches: PressurePatch[] = [];
   for (const k of on) {
@@ -397,7 +419,7 @@ export function gradePressure(input: {
     const lat = members.reduce((a, c) => a + c.centre.lat, 0) / members.length, lng = members.reduce((a, c) => a + c.centre.lng, 0) / members.length;
     patches.push({ id: `patch-${members[0].key}`, cells: members.map(c => c.key), areaM2, meanCover, maxCover: Math.max(...members.map(c => c.cover)), weedM2, rank: 0, priority: areaM2 >= P.patchPriorityAreaM2 || meanCover >= scheme.high, centre: { lat, lng } });
   }
-  patches.sort((a, b) => b.areaM2 - a.areaM2 || b.meanCover - a.meanCover);
+  patches.sort((a, b) => b.weedM2 - a.weedM2 || b.areaM2 - a.areaM2);
   patches.forEach((p, n) => { p.rank = n + 1; });
 
   const byClass = Object.fromEntries(CLASS_ORDER.map(k => [k, 0])) as Record<PressureClass, number>;
@@ -406,6 +428,8 @@ export function gradePressure(input: {
   const over = (k: PressureClass) => assessedCells.filter(c => CLASS_ORDER.indexOf(c.klass) >= CLASS_ORDER.indexOf(k));
   const whyNot: Record<string, number> = {};
   for (const c of cells) if (!c.assessed) for (const w of c.whyNot) whyNot[w] = (whyNot[w] ?? 0) + 1;
+  const fieldGround = assessedCells.reduce((a, c) => a + c.groundM2, 0), fieldWeed = assessedCells.reduce((a, c) => a + c.weedM2, 0);
+  const fieldCover = fieldGround > 0 ? Math.min(1, fieldWeed / fieldGround) : 0;
   const summary: PressureSummary = {
     cells: cells.length, assessed: assessedCells.length, notAssessed: cells.length - assessedCells.length, whyNot,
     byClass,
@@ -414,7 +438,7 @@ export function gradePressure(input: {
     highAreaM2: over("high").reduce((a, c) => a + c.groundM2, 0),
     treatWhileSmall: cells.filter(c => c.treatWhileSmall).length,
     nearCrop: cells.filter(c => c.nearCrop && CLASS_ORDER.indexOf(c.klass) >= CLASS_ORDER.indexOf("action")).length,
-    buffered: cells.filter(c => c.buffered).length,
+    fieldCover, fieldClass: assessedCells.length ? classOf(fieldCover, assessedCells.reduce((a, c) => a + c.count, 0), scheme) : "none", unitM: unitSideM,
     escapes: escapes.length, patches: patches.length, priorityPatches: patches.filter(p => p.priority).length,
     belowFloor,
     medianRelativeCover: median(over("action").map(c => c.relativeCover).filter((v): v is number => v != null)),
@@ -427,7 +451,10 @@ export function gradePressure(input: {
   notes.push(`The smallest weed this grade can claim is about ${cm(floorM)} across (${P.floorPx} pixels at this map's ${(g.mpp * 100).toFixed(1)} cm a pixel)${belowFloor ? `; ${belowFloor} smaller object${belowFloor === 1 ? "" : "s"} counted as below the floor` : ""}.`);
   if (input.canopyClosed === true) notes.push("The canopy reads as closed: weeds under it are not seen, and no loss band is given. Grades after canopy closure under-count (Goldsmith 2025; Allmendinger 2024).");
   if (summary.treatWhileSmall) notes.push(`${summary.treatWhileSmall} cell${summary.treatWhileSmall === 1 ? "" : "s"} stepped up one class for many small weeds: scattered small weeds compete harder than clumped ones and are easiest to treat while small.`);
-  if (summary.buffered) notes.push(`${summary.buffered} cell${summary.buffered === 1 ? "" : "s"} beside a high cell carry weeds of their own and are drawn high with it: the grid cuts a patch where it likes, and a patch is treated whole (treatment maps buffer a patch).`);
+  notes.push(`Classes are judged over a ${unitSideM.toFixed(1)} m treatment unit around each cell, not the cell alone: a lone plant is not a patch, and a patch the grid cut reads whole. Published action points were measured at that scale (Peña 2013; the Turkish guides' orchard mean; Paice 1998).`);
+  if (CLASS_ORDER.indexOf(summary.fieldClass) >= CLASS_ORDER.indexOf("action")) notes.push(group === "orchard"
+    ? `The floor as a whole reads at the action point (${pctOf(fieldCover)} cover): a floor pass first (mowing, hoeing or tillage; the Turkish guides bar non-selective herbicides where trunks are not yet woody), then the worst areas, ranked first in the list.`
+    : `The field as a whole reads at the action point (${pctOf(fieldCover)} cover between the rows): a whole-field pass rather than spot work; the worst areas are ranked first in the list.`);
   if (summary.nearCrop) notes.push(`${summary.nearCrop} cell${summary.nearCrop === 1 ? "" : "s"} at the action point sit against the crop (mostly under the row band, or touching a crown's margin): shown as medium, not high. Green there may be the crop's own rim, and a scrap of ground reads any leaf as high cover. Look before acting.`);
   if (summary.escapes) notes.push(`${summary.escapes} large escape${summary.escapes === 1 ? "" : "s"} (${cm(P.escapeDiameterM)} across or more): a seed and resistance risk apart from any cell's class.`);
   if (summary.notAssessed) notes.push(`${summary.notAssessed} cell${summary.notAssessed === 1 ? " was" : "s were"} not assessed (no rows read, partly imaged, mostly crop row, or in shadow): not weed-free, unseen.`);
@@ -445,7 +472,7 @@ export function pressureLine(gr: PressureGrade, fmtArea: (m2: number) => string)
     return `No cell could be assessed: ${s.cells} cells read, none judged (${why}).`;
   }
   const at = s.byClass.action + s.byClass.high;
-  const parts = [`${s.assessed} cells assessed`];
+  const parts = [`Field as a whole: ${pctOf(s.fieldCover)} cover, ${CLASS_LABEL[s.fieldClass]} (action at ${pctOf(gr.scheme.action)})`, `${s.assessed} cells assessed`];
   parts.push(at ? `${at} at the action point or over (${fmtArea(s.actionAreaM2)} of ground)` : "none at the action point");
   if (s.priorityPatches) parts.push(`${s.priorityPatches} priority patch${s.priorityPatches === 1 ? "" : "es"}`);
   if (s.escapes) parts.push(`${s.escapes} large escape${s.escapes === 1 ? "" : "s"}`);

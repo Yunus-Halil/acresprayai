@@ -95,9 +95,9 @@ export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl
               </ul>
             </div>
           )}
-          {gr.patches.some(p => p.priority) && (
+          {gr.patches.length > 0 && (
             <p className="text-neutral-300" data-testid="pressure-patches">
-              Priority patches: {gr.patches.filter(p => p.priority).slice(0, 4).map(p => `${area(p.areaM2)} at ${pct(p.meanCover)}`).join("; ")}{gr.patches.filter(p => p.priority).length > 4 ? "; and more" : ""}. Priority at {gr.params.patchPriorityAreaM2} m² of ground or {pct(gr.scheme.high)} cover (the area bar is ours).
+              Worst areas first: {gr.patches.slice(0, 4).map(p => `${area(p.areaM2)} at ${pct(p.meanCover)}${p.priority ? " (priority)" : ""}`).join("; ")}{gr.patches.length > 4 ? `; and ${gr.patches.length - 4} more` : ""}. Ranked by weed area; priority at {gr.params.patchPriorityAreaM2} m² of ground or {pct(gr.scheme.high)} cover (the area bar is ours).
             </p>
           )}
           {gr.summary.medianRelativeCover != null && gr.canopyClosed === false && (
@@ -114,7 +114,7 @@ export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl
           </p>
           {selected.assessed && (
             <p className="text-neutral-400">
-              Cover {pct(selected.cover, 1)} of {area(selected.groundM2)} visible ground; {selected.count} object{selected.count === 1 ? "" : "s"}{selected.count ? `, ${selected.density.toFixed(1)} per m², median ${cm(selected.medianDiameterM)} across, largest ${cm(selected.maxDiameterM)}` : ""}{selected.multiView ? `; ${selected.multiView} seen in two or more photographs` : ""}.
+              Cover {pct(selected.cover, 1)} of {area(selected.groundM2)} visible ground here, {pct(selected.unitCover, 1)} over the {gr.summary.unitM.toFixed(1)} m treatment unit around it; {selected.count} object{selected.count === 1 ? "" : "s"}{selected.count ? `, ${selected.density.toFixed(1)} per m², median ${cm(selected.medianDiameterM)} across, largest ${cm(selected.maxDiameterM)}` : ""}{selected.multiView ? `; ${selected.multiView} seen in two or more photographs` : ""}.
             </p>
           )}
           {selected.relativeCover != null && (
