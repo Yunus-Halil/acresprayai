@@ -150,6 +150,22 @@ describe("the grade", () => {
     expect(twice.cells.find(x => x.key === cellKey(2, 4))!.multiView).toBe(1);
   });
 
+  it("tiers: Stage 1's pixel blobs never corroborate by count; only objects do", () => {
+    // Twelve specks in a cell at 1% cover and no objects: counted, but not three objects, so possible.
+    const specks = cells({ [cellKey(2, 4)]: { pressure: 0.01, density: 12 / groundM2, offRowGreenM2: 0.01 * groundM2 } });
+    const gr = gradePressure({ objects: [], grid, cells: specks, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    const c = gr.cells.find(x => x.key === cellKey(2, 4))!;
+    expect(c.count).toBe(12);
+    expect(c.objects).toBe(0);
+    expect(c.unitObjects).toBe(0);
+    expect(c.tier).toBe("possible");
+    // The same cell with three objects found over its pixels is confirmed.
+    const three = [weed(2, 4, 0.01, { id: "a" }), weed(2, 4, 0.01, { id: "b", dx: 0.3 }), weed(2, 4, 0.01, { id: "c", dx: -0.3 })];
+    const withObjects = gradePressure({ objects: weedObjectsOf(three), grid, cells: specks, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    expect(withObjects.cells.find(x => x.key === cellKey(2, 4))!.unitObjects).toBe(3);
+    expect(withObjects.cells.find(x => x.key === cellKey(2, 4))!.tier).toBe("confirmed");
+  });
+
   it("the floor: objects under four pixels are counted apart, and the floor is stated in centimetres", () => {
     const gr = grade([weed(0, 5, 0.0005, { px: 2 }), weed(0, 5, 0.02, { dx: 0.4 })]);
     expect(gr.summary.belowFloor).toBe(1);

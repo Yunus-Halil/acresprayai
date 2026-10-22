@@ -29,9 +29,11 @@
 //   relative   weed / (weed + crop) per cell, the measure that tracks yield loss (Kropff & Spitters 1991; Goldsmith
 //              2025 from UAS imagery), with the crop's cover from the planting layout's crowns. Shown as a loss band
 //              between q 0.54 (the UAS maize mean) and q 1, only before canopy closure, never as a number to act on.
-//   tiers      "confirmed" needs corroboration (cover at or over 5%, or three objects, and, when the plants came from
-//              photographs, at least one object seen in two photographs); everything else that was found is
-//              "possible" and kept for review, never dropped: a lone escape is the costly miss (Norsworthy 2014).
+//   tiers      "confirmed" needs corroboration (cover at or over 5%, or three objects found by a model or the scan
+//              over the treatment unit, and, when the plants came from photographs, at least one object seen in two
+//              photographs); everything else that was found is "possible" and kept for review, never dropped: a lone
+//              escape is the costly miss (Norsworthy 2014). Stage 1's pixel blobs never count toward the three: they
+//              are any green speck from 0.003 m² (Stage 1's blobMinM2), so three of them corroborate nothing.
 //   floor      no plant-level claim under about four pixels (Peña 2015): objects smaller than that are counted as
 //              below the floor and the floor is stated in centimetres on every grade.
 //   assessed   a cell Stage 1 could not judge (no rows read, partly imaged, mostly crop row, in shadow) is "not
@@ -146,7 +148,7 @@ export const stepUp = (k: PressureClass): PressureClass => CLASS_ORDER[Math.min(
 export type GradeParams = {
   /** A cell is corroborated at this cover... */
   corroborateCover: number;
-  /** ...or this many objects. */
+  /** ...or this many objects (a model's plants or the scan's spots; never Stage 1's pixel blobs) over the treatment unit. */
   corroborateCount: number;
   /** Scenario 1: at this many objects per m² of visible ground, with a median object under smallDiameterM, the cell steps up one class (ours). */
   denseObjectsPerM2: number;
@@ -196,6 +198,8 @@ export type GradedCell = {
   weedM2: number;
   /** The objects in the cell when there are any, else Stage 1's blobs. */
   count: number;
+  /** The objects in the cell (a model's plants or the scan's spots), never blobs. */
+  objects: number;
   /** The objects' canopy in the cell, m² (0 without objects). */
   objectM2: number;
   /** |pixels' weed - objects' weed| over the cell's ground, when the cell has objects; null without. */
@@ -204,6 +208,8 @@ export type GradedCell = {
   unitCover: number;
   unitGroundM2: number;
   unitCount: number;
+  /** Objects across the treatment unit (no blobs): what the count corroboration is judged on. */
+  unitObjects: number;
   /** Objects per m² of visible ground. */
   density: number;
   medianDiameterM: number | null;
@@ -371,8 +377,8 @@ export function gradePressure(input: {
     // The class, the step-up and the tier are judged over the treatment unit below, once every cell is read.
     cells.push({
       key: s.key, i: s.i, j: s.j, centre: s.centre, ring: s.ring,
-      cover: assessed ? cover : 0, groundM2, weedM2, count, objectM2: objM2, disagreement, density, medianDiameterM: med, maxDiameterM: ds.length ? Math.max(...ds) : null,
-      unitCover: 0, unitGroundM2: 0, unitCount: 0,
+      cover: assessed ? cover : 0, groundM2, weedM2, count, objects: objs.length, objectM2: objM2, disagreement, density, medianDiameterM: med, maxDiameterM: ds.length ? Math.max(...ds) : null,
+      unitCover: 0, unitGroundM2: 0, unitCount: 0, unitObjects: 0,
       cropM2, relativeCover: assessed ? relativeCover : null, lossBand: assessed ? lossBand : null,
       klass: "none", nearCrop, treatWhileSmall: false, tier: "none", multiView, assessed, whyNot,
     });
@@ -394,20 +400,20 @@ export function gradePressure(input: {
   const byKey = new Map(cells.map(c => [c.key, c]));
   for (const c of cells) {
     if (!c.assessed) continue;
-    let weed = 0, ground = 0, count = 0;
+    let weed = 0, ground = 0, count = 0, objects = 0;
     for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
       const n = byKey.get(cellKey(c.i + di, c.j + dj));
       if (!n || !n.assessed) continue;
-      weed += n.weedM2; ground += n.groundM2; count += n.count;
+      weed += n.weedM2; ground += n.groundM2; count += n.count; objects += n.objects;
     }
-    c.unitGroundM2 = ground; c.unitCount = count;
+    c.unitGroundM2 = ground; c.unitCount = count; c.unitObjects = objects;
     c.unitCover = ground > 0 ? Math.min(1, weed / ground) : 0;
     let klass = classOf(c.unitCover, count, scheme);
     const unitDensity = ground > 0 ? count / ground : 0;
     c.treatWhileSmall = input.canopyClosed !== true && count >= 2 && unitDensity >= P.denseObjectsPerM2 && c.medianDiameterM != null && c.medianDiameterM < P.smallDiameterM && klass !== "none" && klass !== "high";
     if (c.treatWhileSmall) klass = stepUp(klass);
     c.klass = klass;
-    const corroborated = c.unitCover >= P.corroborateCover || count >= P.corroborateCount;
+    const corroborated = c.unitCover >= P.corroborateCover || objects >= P.corroborateCount;
     c.tier = count === 0 ? "none" : corroborated && (!input.photoBased || c.multiView >= 1) ? "confirmed" : "possible";
   }
   // Patches: 8-connected assessed cells at the patch cover or over (judged at the unit), ranked by weed area: the
