@@ -291,3 +291,17 @@ describe("the cell size", () => {
     expect(DEFAULT_GRADE.minGroundShare).toBe(0.3);
   });
 });
+
+describe("when nothing can be assessed", () => {
+  it("the line says why, by reason and count", () => {
+    const cs = cells();
+    for (const c of cs) c.uncertain = c.i < 3 ? ["no rows"] : ["partly imaged"];
+    cs[0].uncertain = [];
+    cs[0].bandShare = 0.95; // the grade's own floor: too little ground
+    const gr = gradePressure({ objects: [], grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    expect(gr.summary.assessed).toBe(0);
+    expect(gr.summary.whyNot).toEqual({ "no rows": 17, "partly imaged": 18, "too little ground": 1 });
+    expect(pressureLine(gr, m2 => `${m2}`)).toBe("No cell could be assessed: 36 cells read, none judged (partly imaged 18, no rows 17, too little ground 1).");
+    expect(gr.cells[0].whyNot).toEqual(["too little ground"]);
+  });
+});

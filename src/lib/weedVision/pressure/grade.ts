@@ -208,7 +208,7 @@ export type GradedCell = {
   /** Objects in the cell seen by two or more photographs. */
   multiView: number;
   assessed: boolean;
-  whyNot: UncertainReason[];
+  whyNot: (UncertainReason | "too little ground")[];
 };
 
 export type Escape = { id: string; centre: LatLng2; diameterM: number; areaM2: number; cell: string; views: number; tier: Tier };
@@ -217,6 +217,8 @@ export type PressurePatch = { id: string; cells: string[]; areaM2: number; meanC
 
 export type PressureSummary = {
   cells: number; assessed: number; notAssessed: number;
+  /** Why cells were not assessed, by reason (Stage 1's reasons, and "too little ground" for the grade's own floor). */
+  whyNot: Record<string, number>;
   byClass: Record<PressureClass, number>;
   confirmed: number; possible: number;
   /** Visible ground in cells at the action class or over, m². */
@@ -323,6 +325,7 @@ export function gradePressure(input: {
     const objs = byCell.get(s.key) ?? [];
     const groundM2 = cellM2 * s.imagedShare * (1 - s.bandShare);
     const assessed = s.uncertain.length === 0 && groundM2 >= P.minGroundShare * cellM2;
+    const whyNot: GradedCell["whyNot"] = assessed ? [] : s.uncertain.length ? s.uncertain : ["too little ground"];
     // The map's own measure first (Stage 1: off-row green over the visible ground, and its blobs), the objects where
     // they say more: a spot list is ranked and capped, the pixels are not.
     const objM2 = objs.reduce((a, o) => a + (o.p.areaM2 ?? 0), 0);
@@ -351,7 +354,7 @@ export function gradePressure(input: {
       key: s.key, i: s.i, j: s.j, centre: s.centre, ring: s.ring,
       cover: assessed ? cover : 0, groundM2, weedM2, count, density, medianDiameterM: med, maxDiameterM: ds.length ? Math.max(...ds) : null,
       cropM2, relativeCover: assessed ? relativeCover : null, lossBand: assessed ? lossBand : null,
-      klass, nearCrop, buffered: false, treatWhileSmall, tier, multiView, assessed, whyNot: s.uncertain,
+      klass, nearCrop, buffered: false, treatWhileSmall, tier, multiView, assessed, whyNot,
     });
     for (const o of objs) {
       if (o.d < P.escapeDiameterM || !o.p.centre) continue;
@@ -401,8 +404,10 @@ export function gradePressure(input: {
   for (const c of cells) if (c.assessed) byClass[c.klass]++;
   const assessedCells = cells.filter(c => c.assessed);
   const over = (k: PressureClass) => assessedCells.filter(c => CLASS_ORDER.indexOf(c.klass) >= CLASS_ORDER.indexOf(k));
+  const whyNot: Record<string, number> = {};
+  for (const c of cells) if (!c.assessed) for (const w of c.whyNot) whyNot[w] = (whyNot[w] ?? 0) + 1;
   const summary: PressureSummary = {
-    cells: cells.length, assessed: assessedCells.length, notAssessed: cells.length - assessedCells.length,
+    cells: cells.length, assessed: assessedCells.length, notAssessed: cells.length - assessedCells.length, whyNot,
     byClass,
     confirmed: cells.filter(c => c.tier === "confirmed").length, possible: cells.filter(c => c.tier === "possible").length,
     actionAreaM2: over("action").reduce((a, c) => a + c.groundM2, 0),
@@ -434,7 +439,11 @@ export function gradePressure(input: {
 /** One line for the panel: the field in the operator's terms. */
 export function pressureLine(gr: PressureGrade, fmtArea: (m2: number) => string): string {
   const s = gr.summary;
-  if (!s.assessed) return "No cell could be assessed.";
+  if (!s.assessed) {
+    if (!s.cells) return "No cell could be assessed: the read produced no cells inside the field boundary.";
+    const why = Object.entries(s.whyNot).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(", ");
+    return `No cell could be assessed: ${s.cells} cells read, none judged (${why}).`;
+  }
   const at = s.byClass.action + s.byClass.high;
   const parts = [`${s.assessed} cells assessed`];
   parts.push(at ? `${at} at the action point or over (${fmtArea(s.actionAreaM2)} of ground)` : "none at the action point");
