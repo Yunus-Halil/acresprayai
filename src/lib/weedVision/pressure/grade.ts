@@ -31,6 +31,8 @@
 //   relative   weed / (weed + crop) per cell, the measure that tracks yield loss (Kropff & Spitters 1991; Goldsmith
 //              2025 from UAS imagery), with the crop's cover from the planting layout's crowns. Shown as a loss band
 //              between q 0.54 (the UAS maize mean) and q 1, only before canopy closure, never as a number to act on.
+//              Only where a layout crown stands in the cell: the row band's share of a cell is band geometry, not leaf
+//              area, and Kropff & Spitters' Lw is leaf area (the card still shows the band's area as the crop's).
 //   tiers      "confirmed" needs corroboration (cover at or over 5%, or three objects found by a model or the scan
 //              over the treatment unit, and, when the plants came from photographs, at least one object seen in two
 //              photographs); everything else that was found is "possible" and kept for review, never dropped: a lone
@@ -220,7 +222,7 @@ export type GradedCell = {
   maxDiameterM: number | null;
   /** The crop's cover in the cell, m²: the layout's crowns, or the row band when no layout was fitted. */
   cropM2: number;
-  /** weed / (weed + crop), null without crop cover in the cell. */
+  /** weed / (weed + crop), only when the crop's cover came from the layout's crowns; null otherwise (the row band is not leaf area). */
   relativeCover: number | null;
   /** Expected yield-loss band (shares) from Kropff & Spitters at the two q values, only before canopy closure. */
   lossBand: [number, number] | null;
@@ -372,7 +374,8 @@ export function gradePressure(input: {
     const ds = objs.length ? objs.map(o => o.d) : pixelBlobs > 0 && pixelM2 > 0 ? [2 * Math.sqrt(pixelM2 / pixelBlobs / Math.PI)] : [];
     const cropM2 = crowns.area.get(s.key) ?? (input.rows ? cellM2 * s.imagedShare * s.bandShare : 0);
     const nearCrop = assessed && (1 - s.bandShare < P.nearCropGroundShare || crowns.touched.has(s.key));
-    const relativeCover = cropM2 > 0 || weedM2 > 0 ? (weedM2 + cropM2 > 0 ? weedM2 / (weedM2 + cropM2) : null) : null;
+    const fromCrowns = input.rows?.source === "layout" && crowns.area.has(s.key);
+    const relativeCover = fromCrowns && weedM2 + cropM2 > 0 ? weedM2 / (weedM2 + cropM2) : null;
     const lossBand: [number, number] | null = relativeCover != null && input.canopyClosed === false
       ? [kropffLoss(relativeCover, Math.min(...P.kropffQ)), kropffLoss(relativeCover, Math.max(...P.kropffQ))]
       : null;
