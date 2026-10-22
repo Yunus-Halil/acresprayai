@@ -28,11 +28,12 @@
 //   scenario 3 one large cluster: the class comes from cover; the field's priority from the patch's area (patches
 //              persist year to year, Rew & Cussans 1995). The patch rule stays at 5% (Peña's boundary); the 25 m²
 //              priority is ours and labelled so.
-//   relative   weed / (weed + crop) per cell, the measure that tracks yield loss (Kropff & Spitters 1991; Goldsmith
-//              2025 from UAS imagery), with the crop's cover from the planting layout's crowns. Shown as a loss band
-//              between q 0.54 (the UAS maize mean) and q 1, only before canopy closure, never as a number to act on.
-//              Only where a layout crown stands in the cell: the row band's share of a cell is band geometry, not leaf
-//              area, and Kropff & Spitters' Lw is leaf area (the card still shows the band's area as the crop's).
+//   relative   weed / (weed + crop), the measure that tracks yield loss (Kropff & Spitters 1991; Goldsmith 2025 from
+//              UAS imagery), and the loss band built on it: OFF since 2026-10-22, the fields kept as null. Per-cell
+//              relative cover beside a crown is not meaningful at 0.5 m: the crown's cell is under the cut and never
+//              assessed, the cells beside it hold weed but no crop, and the row band's share of a cell is band
+//              geometry, not leaf area. If it ever returns it is computed over the treatment unit, crop and weed
+//              summed across the window, never per cell. kropffLoss and kropffQ are kept for that.
 //   tiers      "confirmed" needs corroboration (cover at or over 5%, or three objects found by a model or the scan
 //              over the treatment unit, and, when the plants came from photographs, at least one object seen in two
 //              photographs); everything else that was found is "possible" and kept for review, never dropped: a lone
@@ -226,9 +227,9 @@ export type GradedCell = {
   maxDiameterM: number | null;
   /** The crop's cover in the cell, m²: the layout's crowns, or the row band when no layout was fitted. */
   cropM2: number;
-  /** weed / (weed + crop), only when the crop's cover came from the layout's crowns; null otherwise (the row band is not leaf area). */
+  /** Always null: per-cell relative cover beside a crown is not meaningful at 0.5 m (see "relative" above); if it returns, it is computed over the treatment unit. */
   relativeCover: number | null;
-  /** Expected yield-loss band (shares) from Kropff & Spitters at the two q values, only before canopy closure. */
+  /** Always null, with relativeCover: the Kropff & Spitters loss band is off until it can be computed over the treatment unit. */
   lossBand: [number, number] | null;
   klass: PressureClass;
   /** Near the crop (mostly under the band, or touching a crown's margin): capped at the medium band on the map, caution not action. */
@@ -267,7 +268,7 @@ export type PressureSummary = {
   patches: number;
   priorityPatches: number;
   belowFloor: number;
-  /** Median relative cover over cells at action or over, null when none. */
+  /** Always null while relative cover is off (see "relative" above). */
   medianRelativeCover: number | null;
   /** Assessed cells whose pixels and objects disagree by more than disagreeShare of the ground. */
   disagreeing: number;
@@ -385,11 +386,6 @@ export function gradePressure(input: {
     const ds = objs.length ? objs.map(o => o.d) : pixelBlobs > 0 && pixelM2 > 0 ? [2 * Math.sqrt(pixelM2 / pixelBlobs / Math.PI)] : [];
     const cropM2 = crowns.area.get(s.key) ?? (input.rows ? cellM2 * s.imagedShare * s.bandShare : 0);
     const nearCrop = assessed && (1 - s.bandShare < P.nearCropGroundShare || crowns.touched.has(s.key));
-    const fromCrowns = input.rows?.source === "layout" && crowns.area.has(s.key);
-    const relativeCover = fromCrowns && weedM2 + cropM2 > 0 ? weedM2 / (weedM2 + cropM2) : null;
-    const lossBand: [number, number] | null = relativeCover != null && input.canopyClosed === false
-      ? [kropffLoss(relativeCover, Math.min(...P.kropffQ)), kropffLoss(relativeCover, Math.max(...P.kropffQ))]
-      : null;
     const med = median(ds);
     const multiView = objs.filter(o => o.p.views >= 2).length;
     // The class, the step-up and the tier are judged over the treatment unit below, once every cell is read.
@@ -397,7 +393,7 @@ export function gradePressure(input: {
       key: s.key, i: s.i, j: s.j, centre: s.centre, ring: s.ring,
       cover: assessed ? cover : 0, groundM2, weedM2, count, objects: objs.length, objectM2: objM2, disagreement, density, medianDiameterM: med, maxDiameterM: ds.length ? Math.max(...ds) : null,
       unitCover: 0, unitGroundM2: 0, unitCount: 0, unitObjects: 0, unitMedianDiameterM: null,
-      cropM2, relativeCover: assessed ? relativeCover : null, lossBand: assessed ? lossBand : null,
+      cropM2, relativeCover: null, lossBand: null,
       klass: "none", nearCrop, treatWhileSmall: false, tier: "none", multiView, assessed, whyNot,
     });
     for (const o of objs) {
@@ -483,7 +479,7 @@ export function gradePressure(input: {
     fieldCover, fieldClass: assessedCells.length ? classOf(fieldCover, assessedCells.reduce((a, c) => a + c.count, 0), scheme) : "none", unitM: unitSideM,
     escapes: escapes.length, patches: patches.length, priorityPatches: patches.filter(p => p.priority).length,
     belowFloor,
-    medianRelativeCover: median(over("action").map(c => c.relativeCover).filter((v): v is number => v != null)),
+    medianRelativeCover: null,
     disagreeing: assessedCells.filter(c => c.disagreement != null && c.disagreement > P.disagreeShare).length,
   };
 

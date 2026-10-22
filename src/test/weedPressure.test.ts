@@ -203,39 +203,27 @@ describe("the grade", () => {
     expect(gr.notes.join(" ")).toMatch(/not weed-free, unseen/);
   });
 
-  it("relative cover and the loss band come from weed over weed plus crop, from layout crowns only, before closure only", () => {
-    const gr = grade([weed(1, 3, 0.1 * groundM2)]);
-    const c = gr.cells.find(x => x.key === cellKey(1, 3))!;
-    const bandM2 = cellM2 * 0.2;
-    expect(c.cropM2).toBeCloseTo(0, 6); // no rows at all: no crop cover known
-    expect(c.relativeCover).toBeNull();
-    // Reader rows: the crop's area is the row band's share of the cell, kept for the card, but band geometry is not
-    // leaf area, so no relative cover and no loss band.
-    const readerRows = { z: Z, left: LEFT, top: TOP, mpp: MPP, rows: 1, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "reader" as const, ctx: { lines: [], crops: [], bandPx: 10, gsdM: MPP } };
+  it("relative cover and the loss band are off: null in every cell, whatever the rows, before closure or after", () => {
     const one = [weed(1, 3, 0.1 * groundM2)];
-    const withRows = gradePressure({ objects: weedObjectsOf(one), grid, cells: plantsSeen(one), rows: readerRows, crop: "corn", canopyClosed: false, photoBased: false });
-    const r = withRows.cells.find(x => x.key === cellKey(1, 3))!;
-    expect(r.cropM2).toBeCloseTo(bandM2, 3);
-    expect(r.relativeCover).toBeNull();
-    expect(r.lossBand).toBeNull();
-    // Layout rows with a crown centred in the cell: the crown's area is the crop's, and the band follows Kropff & Spitters.
+    const readerRows = { z: Z, left: LEFT, top: TOP, mpp: MPP, rows: 1, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "reader" as const, ctx: { lines: [], crops: [], bandPx: 10, gsdM: MPP } };
+    // A layout crown centred in the cell: once the one case that produced a band.
     const crownX = LEFT + 1.5 * grid.cellPx + 0.6 / MPP, crownY = TOP + 3.5 * grid.cellPx;
     const layoutRows = { z: Z, left: 0, top: 0, mpp: MPP, rows: 1, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "layout" as const, ctx: { lines: [], crops: [{ x: crownX, y: crownY, r: 0.3 / MPP, state: "confirmed" as const }], bandPx: 10, gsdM: MPP } };
-    const lay = gradePressure({ objects: weedObjectsOf(one), grid, cells: plantsSeen(one), rows: layoutRows, crop: "olive", canopyClosed: false, photoBased: false });
-    const l = lay.cells.find(x => x.key === cellKey(1, 3))!;
-    const crownM2 = Math.PI * 0.3 ** 2;
-    expect(l.cropM2).toBeCloseTo(crownM2, 6);
-    expect(l.relativeCover).toBeCloseTo(l.weedM2 / (l.weedM2 + crownM2), 6);
-    expect(l.lossBand![0]).toBeCloseTo(kropffLoss(l.relativeCover!, 0.54), 6);
-    expect(l.lossBand![1]).toBeCloseTo(l.relativeCover!, 6); // q = 1 is the identity
+    for (const rows of [null, readerRows, layoutRows]) {
+      const gr = gradePressure({ objects: weedObjectsOf(one), grid, cells: plantsSeen(one), rows, crop: "olive", canopyClosed: false, photoBased: false });
+      expect(gr.cells.every(c => c.relativeCover === null && c.lossBand === null)).toBe(true);
+      expect(gr.summary.medianRelativeCover).toBeNull();
+    }
+    // The crop's area is still kept for the card: the band's share with reader rows, the crown's with a layout.
+    const r = gradePressure({ objects: weedObjectsOf(one), grid, cells: plantsSeen(one), rows: readerRows, crop: "corn", canopyClosed: false, photoBased: false });
+    expect(r.cells.find(x => x.key === cellKey(1, 3))!.cropM2).toBeCloseTo(cellM2 * 0.2, 3);
+    const l = gradePressure({ objects: weedObjectsOf(one), grid, cells: plantsSeen(one), rows: layoutRows, crop: "olive", canopyClosed: false, photoBased: false });
+    expect(l.cells.find(x => x.key === cellKey(1, 3))!.cropM2).toBeCloseTo(Math.PI * 0.3 ** 2, 6);
     // An expected crown (placed at the typical size, little green) counts at half the typical confirmed crown, not as a full canopy.
     const expectedRows = { ...layoutRows, ctx: { ...layoutRows.ctx, crops: [{ ...layoutRows.ctx.crops[0], r: 0.5 / MPP, state: "expected" as const }, { x: crownX + 20 / MPP, y: crownY, r: 0.4 / MPP, state: "confirmed" as const }] } };
     const ex = gradePressure({ objects: weedObjectsOf(one), grid, cells: plantsSeen(one), rows: expectedRows, crop: "olive", canopyClosed: false, photoBased: false });
     expect(ex.cells.find(x => x.key === cellKey(1, 3))!.cropM2).toBeCloseTo(Math.PI * 0.2 ** 2, 6);
-    // A layout cell with no crown in it gets the band's area for the card and no relative cover.
-    expect(lay.cells.find(x => x.key === cellKey(4, 4))!.relativeCover).toBeNull();
-    const closed = gradePressure({ objects: weedObjectsOf(one), grid, cells: plantsSeen(one), rows: layoutRows, crop: "olive", canopyClosed: true, photoBased: false });
-    expect(closed.cells.find(x => x.key === cellKey(1, 3))!.lossBand).toBeNull();
+    expect(kropffLoss(0.1, 1)).toBeCloseTo(0.1, 9); // kept for when it returns at the unit
   });
 });
 

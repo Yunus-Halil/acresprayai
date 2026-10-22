@@ -101,9 +101,6 @@ export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl
               Worst areas first: {gr.patches.slice(0, 4).map(p => `${area(p.areaM2)} at ${pct(p.meanCover)}${p.priority ? " (priority)" : ""}`).join("; ")}{gr.patches.length > 4 ? `; and ${gr.patches.length - 4} more` : ""}. Ranked by weed area; priority at {gr.params.patchPriorityAreaM2} m² of ground or {pct(gr.scheme.high)} cover (the area bar is ours).
             </p>
           )}
-          {gr.summary.medianRelativeCover != null && gr.canopyClosed === false && (
-            <p className="text-neutral-500">In cells at the action point or over, weeds hold a median {pct(gr.summary.medianRelativeCover)} of all cover (weeds and crop together): the measure that tracks yield loss, before canopy closure.</p>
-          )}
           <ul className="text-neutral-600 list-disc pl-4 space-y-0.5">{gr.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
         </div>
       )}
@@ -116,11 +113,6 @@ export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl
           {selected.assessed && (
             <p className="text-neutral-400">
               Cover {pct(selected.cover, 1)} of {area(selected.groundM2)} visible ground here, {pct(selected.unitCover, 1)} over the {gr.summary.unitM.toFixed(1)} m treatment unit around it; {selected.count} object{selected.count === 1 ? "" : "s"}{selected.count ? `, ${selected.density.toFixed(1)} per m², median ${cm(selected.medianDiameterM)} across, largest ${cm(selected.maxDiameterM)}` : ""}{selected.multiView ? `; ${selected.multiView} seen in two or more photographs` : ""}.
-            </p>
-          )}
-          {selected.relativeCover != null && (
-            <p className="text-neutral-400">
-              Weeds hold {pct(selected.relativeCover)} of all cover here.{selected.lossBand ? ` Left as they are, the expected yield loss band is ${pct(selected.lossBand[0])} to ${pct(selected.lossBand[1])} (Kropff and Spitters, q 0.54 to 1; a band, not a prediction).` : gr.canopyClosed ? " No loss band after canopy closure." : ""}
             </p>
           )}
           <button type="button" className={`${btn} border-[#333] text-neutral-500`} onClick={() => selectPressureCell(taskId, null)}>Leave it</button>
