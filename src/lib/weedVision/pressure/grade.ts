@@ -179,16 +179,19 @@ export type GradeParams = {
   nearCropGroundShare: number;
   nearCropMarginM: number;
   /**
-   * The treatment unit, metres across: the window of cells a cell's class is judged over, rounded up to whole cells.
-   * Published cover thresholds were measured at this scale, never at a quarter square metre (Peña 2013 on 1 m × row
-   * width units; the Turkish guides on the orchard mean of 10 to 30 quadrats; Paice 1998's 6 × 6 m bound on a
-   * profitable control unit); 2 m is a spot-sprayer section or a hoe's pass. Ours as a default.
+   * The treatment unit, metres across: the square window of cells, centred on the cell, that its class is judged over.
+   * The window is the odd number of cells nearest unitM (a window must be centred, so it has an odd side): 2.5 m is
+   * exactly five 0.5 m cells, and on a 2 m grid it is the cell itself. Published cover thresholds were measured at
+   * this scale, never at a quarter square metre (Peña 2013 on 1 m × row width units; the Turkish guides on the orchard
+   * mean of 10 to 30 quadrats; Paice 1998's 6 × 6 m bound on a profitable control unit). 2.5 m is the 2 m of a
+   * spot-sprayer's box with its half-metre lead and lag (Allmendinger 2024) or a hoe's pass, rounded up to whole cells
+   * centred on the cell. Ours as a default; the grade reports the side it actually used (summary.unitM).
    */
   unitM: number;
   /** A cell's pixels and its objects disagree when their weed areas differ by more than this share of its ground (ours). */
   disagreeShare: number;
 };
-export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundShare: 0.3, nearCropGroundShare: 0.5, nearCropMarginM: 0.3, unitM: 2, disagreeShare: 0.1 };
+export const DEFAULT_GRADE: GradeParams = { corroborateCover: 0.05, corroborateCount: 3, denseObjectsPerM2: 2, smallDiameterM: 0.15, escapeDiameterM: 0.30, patchCover: 0.05, patchPriorityAreaM2: 25, kropffQ: [0.54, 1], floorPx: 4, minGroundShare: 0.3, nearCropGroundShare: 0.5, nearCropMarginM: 0.3, unitM: 2.5, disagreeShare: 0.1 };
 
 export type Tier = "confirmed" | "possible" | "none";
 
@@ -257,7 +260,7 @@ export type PressureSummary = {
   /** The field as a whole: weed over visible ground across every assessed cell, and its class against the scheme. */
   fieldCover: number;
   fieldClass: PressureClass;
-  /** The treatment unit the classes were judged over, metres across (unitM rounded up to whole cells). */
+  /** The treatment unit the classes were judged over, metres across: the odd number of whole cells nearest unitM. */
   unitM: number;
   escapes: number;
   patches: number;
@@ -397,12 +400,12 @@ export function gradePressure(input: {
   escapes.sort((a, b) => b.diameterM - a.diameterM);
 
   // The treatment unit: a cell's class is judged over the window of cells around it that a sprayer section or a hoe
-  // treats together (P.unitM across, rounded up to whole cells), weed over ground summed across the assessed cells in
-  // it. A lone 20 cm plant is 12% of a 0.5 m cell and 3% of a square metre: judged at the unit it is a plant, not a
+  // treats together (the odd number of cells nearest P.unitM across), weed over ground summed across the assessed
+  // cells in it. A lone 20 cm plant is 12% of a 0.5 m cell and 3% of a square metre: judged at the unit it is a plant, not a
   // patch, and a patch the grid cut reads whole (the operator, 2026-10-22: "so much red; how do we know what to show
   // the agronomist"). The cell keeps its own cover for the card.
   const cellM = Math.sqrt(cellM2);
-  const r = Math.max(0, Math.ceil((P.unitM / cellM - 1) / 2 - 0.01)); // a cell within 2% of the unit is the unit
+  const r = Math.max(0, Math.round((P.unitM / cellM - 1) / 2)); // 2r + 1 cells: the odd count nearest the unit
   const unitSideM = (2 * r + 1) * cellM;
   const byKey = new Map(cells.map(c => [c.key, c]));
   for (const c of cells) {

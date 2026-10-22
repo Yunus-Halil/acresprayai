@@ -368,6 +368,28 @@ describe("the treatment unit", () => {
   });
 });
 
+describe("the default treatment unit on the grade's own grid", () => {
+  it("is 2.5 m, five half-metre cells, and the summary and the notes say the side actually used", async () => {
+    const { DEFAULT_GRADE } = await import("@/lib/weedVision/pressure/grade");
+    expect(DEFAULT_GRADE.unitM).toBe(2.5);
+    const g5: GridFrame = { ...grid, cellPx: Math.round(0.5 / MPP), nx: 11, ny: 11 };
+    const cs: Stage1Cell[] = [];
+    for (let j = 0; j < g5.ny; j++) for (let i = 0; i < g5.nx; i++) {
+      const corner = (dx: number, dy: number): LatLng2 => latLngOfPx(LEFT + (i + dx) * g5.cellPx, TOP + (j + dy) * g5.cellPx, Z);
+      const lone = i === 5 && j === 5;
+      cs.push({ i, j, key: cellKey(i, j), centre: corner(0.5, 0.5), ring: [corner(0, 0), corner(1, 0), corner(1, 1), corner(0, 1)], imagedShare: 1, greenShare: 0.1, bandShare: 0, darkShare: 0, pressure: lone ? 0.5 : 0, density: 0, offRowGreenM2: lone ? 0.5 * (g5.cellPx * MPP) ** 2 : 0, uncertain: [] });
+    }
+    const gr = gradePressure({ objects: [], grid: g5, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });
+    const side = 5 * g5.cellPx * MPP;
+    expect(gr.summary.unitM).toBeCloseTo(side, 9);
+    const c = gr.cells.find(x => x.key === cellKey(5, 5))!;
+    expect(c.unitCover).toBeCloseTo(0.5 / 25, 9); // one cell of 25 in the window
+    expect(gr.cells.find(x => x.key === cellKey(7, 7))!.unitCover).toBeCloseTo(0.5 / 25, 9); // two cells off: still inside
+    expect(gr.cells.find(x => x.key === cellKey(8, 5))!.unitCover).toBe(0); // three cells off: outside
+    expect(gr.notes.join(" ")).toMatch(new RegExp(`over a ${side.toFixed(1)} m treatment unit`));
+  });
+});
+
 describe("the cell size", () => {
   it("the grade reads at half-metre cells and the not-assessed floor is a share of the cell, not a fixed area", async () => {
     const { PRESSURE_CELL_M } = await import("@/lib/weedVision/pressure/pressureStore");

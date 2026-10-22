@@ -96,8 +96,9 @@ and the two studies that used 0.5 m cells did so to match nozzle spacing and the
 percentage. A 20 cm plant is 12% of a 0.5 m cell, 3% of 1 m², under 0.4% of 3 × 3 m.
 
 - **Classes are judged over the treatment unit, drawn on the fine grid.** Each cell's class comes from weed over
-  visible ground summed across the window of cells a sprayer section or a hoe treats together (`unitM`, 2 m by
-  default, rounded up to whole cells: 2.5 m on the 0.5 m grid), while the cell keeps its own cover for the card.
+  visible ground summed across the window of cells a sprayer section or a hoe treats together (`unitM`, 2.5 m by
+  default since 2026-10-22: the odd number of cells nearest it, exactly five on the 0.5 m grid; it was 2 m rounded up
+  to the same 2.5 m before, so only the label changed), while the cell keeps its own cover for the card.
   A lone plant is a plant, not a patch; a patch the grid cut reads whole. The buffer rule of 2026-10-21 is gone,
   the window does its work.
 - **The field as a whole leads the line.** Cover over all visible ground between the rows, classed against the same
