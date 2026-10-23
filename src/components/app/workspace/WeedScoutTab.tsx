@@ -70,6 +70,7 @@ import { HotspotPanel } from "../weedVision/HotspotPanel";
 import { LayoutLayer } from "../weedVision/LayoutLayer";
 import { PressureLayer } from "../weedVision/PressureLayer";
 import { PressurePanel } from "../weedVision/PressurePanel";
+import { weedModelAvailable } from "@/lib/weedVision/flag";
 import { weedObjectsOfScan } from "@/lib/weedVision/pressure/grade";
 import { CropRowsPanel } from "../weedVision/CropRowsPanel";
 import { loadFieldLayout } from "@/lib/weedVision/layout/fieldLayoutStore";
@@ -1185,12 +1186,13 @@ export function WeedScoutTab({
           {session.cache && !running && <p className="text-[10px] text-neutral-600">{session.cache}</p>}
         </div>
         {frameRun.mapAvailable && <div className="p-4 border-b border-[#1f1f1f]"><CropRowsPanel taskId={taskId} fieldId={fieldId} userId={user?.id ?? null} /></div>}
-        <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={passParamsWithCrop} />
+        {/* The model panels need the local service, which only a development build reaches. */}
+        {weedModelAvailable() && <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={passParamsWithCrop} />}
         <HotspotPanel taskId={taskId} userId={user?.id ?? null} onOpenPhotos={openAreaPhotos} onMarkArea={markArea} />
         <CropProfileCard crop={settings.crop_type || null} plantingDate={settings.planting_date || null} units={units} regionState={fieldRegion().state}
           observations={{ gsdM: result?.gsdM ?? null, measuredRowSpacingM: result?.pattern?.summary.rowSpacingM ?? null, rowsFound: result ? (result.pattern?.summary.blocks ?? 0) > 0 : null }} />
         <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} plantingDate={settings.planting_date || null} scanWeeds={scanWeeds} />
-        <TwoStagePanel taskId={taskId} userId={user?.id ?? null} sources={sources} />
+        {weedModelAvailable() && <TwoStagePanel taskId={taskId} userId={user?.id ?? null} sources={sources} />}
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
           <details className="text-[11px]">
             <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">

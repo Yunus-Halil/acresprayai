@@ -9,7 +9,9 @@ import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtArea } from "@/lib/units";
 import type { ScanSources } from "@/lib/sourceFrames/scan";
 import { type AlgorithmInfo, type Health, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
+import { weedModelAvailable } from "@/lib/weedVision/flag";
 import { useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { MAP_MAX_MPP } from "@/lib/weedVision/mapRun";
 import { CLASS_LABEL, CLASS_ORDER, type PressureClass, type WeedObject, drawnBandOf, pressureLine } from "@/lib/weedVision/pressure/grade";
 import { gradeField, selectPressureCell, showPressure, usePressure } from "@/lib/weedVision/pressure/pressureStore";
 import { useTwoStage } from "@/lib/weedVision/twoStage/twoStageStore";
@@ -20,7 +22,7 @@ const PARAMS = { algorithm: "rfdetr_seg_large", threshold: 0.5, tile: 1024, over
 const pct = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${(100 * v).toFixed(d)}%`);
 const cm = (m: number | null | undefined) => (m == null ? "–" : `${Math.round(m * 100)} cm`);
 
-export function PressurePanel({ taskId, sources, crop, plantingDate = null, scanWeeds = [], fetchImpl }: { taskId: string; sources: ScanSources | null; crop: string | null; /** YYYY-MM-DD, for the crop profile's stage window. */ plantingDate?: string | null; /** The scan's spots kept as weeds (Scan this field, the operator's verdicts applied): graded when the model has not run. */ scanWeeds?: WeedObject[]; fetchImpl?: typeof fetch }) {
+export function PressurePanel({ taskId, sources, crop, plantingDate = null, scanWeeds = [], fetchImpl, modelAvailable = weedModelAvailable() }: { taskId: string; sources: ScanSources | null; crop: string | null; /** YYYY-MM-DD, for the crop profile's stage window. */ plantingDate?: string | null; /** The scan's spots kept as weeds (Scan this field, the operator's verdicts applied): graded when the model has not run. */ scanWeeds?: WeedObject[]; fetchImpl?: typeof fetch; /** False on the live site: the grade reads the map alone, no model asked for. */ modelAvailable?: boolean }) {
   const s = usePressure(taskId);
   const ts = useTwoStage(taskId);
   const run = useFrameRun(taskId);
@@ -29,6 +31,7 @@ export function PressurePanel({ taskId, sources, crop, plantingDate = null, scan
   const [health, setHealth] = useState<Health | null>(null);
   const [algorithms, setAlgorithms] = useState<Record<string, AlgorithmInfo>>({});
   useEffect(() => {
+    if (!modelAvailable) return;
     const f = fetchImpl ?? fetch;
     let on = true;
     (async () => {
@@ -39,7 +42,7 @@ export function PressurePanel({ taskId, sources, crop, plantingDate = null, scan
       if (on && a.ok) setAlgorithms(a.value.algorithms);
     })();
     return () => { on = false; };
-  }, [fetchImpl]);
+  }, [fetchImpl, modelAvailable]);
   const modelSha = modelShaFor(algorithms[PARAMS.algorithm], health);
   const gsdCm = sources?.stats?.odm_processing_statistics?.average_gsd;
   const photoGsdM = typeof gsdCm === "number" ? gsdCm / 100 : null;
@@ -64,7 +67,8 @@ export function PressurePanel({ taskId, sources, crop, plantingDate = null, scan
           {gr ? "Grade again" : "Grade the field"}
         </button>
         {reading && <span className="inline-flex items-center gap-1 text-neutral-400"><Loader2 className="h-3 w-3 animate-spin" /> {rowsReading && s.state !== "reading" ? "reading the rows first…" : `reading the field into cells${ts.stage1Progress ? ` ${Math.round(100 * ts.stage1Progress)}%` : ""}…`}</span>}
-        {!haveWeeds && !gr && <span className="text-neutral-500">The grade reads this scan's weeds: scan the field, or run Find weeds, first.</span>}
+        {!run.mapAvailable && !gr && <span className="text-neutral-500" data-testid="pressure-hint">The grade reads the field map, and this one is coarser than about {(MAP_MAX_MPP * 100).toFixed(1)} cm a pixel: too coarse for the green between the rows.</span>}
+        {run.mapAvailable && !haveWeeds && !gr && <span className="text-neutral-500" data-testid="pressure-hint">The grade reads the green between the crop rows off the field map's own pixels: confirm the rows above, then grade.</span>}
       </div>
       {s.error && <p className="text-amber-400 flex items-start gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {s.error}</p>}
       {stale && <p className="text-amber-400">The grade found none of this scan's weeds between the rows: grade again, or check the rows.</p>}
@@ -74,6 +78,7 @@ export function PressurePanel({ taskId, sources, crop, plantingDate = null, scan
           <p className="text-neutral-200">{pressureLine(gr, area)}</p>
           <p className="text-neutral-500">
             Graded as {gr.group === "orchard" ? "an orchard" : gr.group === "cereal" ? "a drilled cereal" : "a wide-row crop"}{gr.crop ? ` (${gr.crop})` : ""}: action at {pct(gr.scheme.action)} cover, high at {pct(gr.scheme.high)}. {gr.scheme.source}.
+            {!s.source && " Cover read from the field map's own pixels; no single weeds were outlined, so the counts and sizes are empty."}
             {s.source && ` Weeds from ${s.source === "map" ? "the model on the field map" : s.source === "photos" ? "the model on the kept photographs" : s.source === "scan" ? "the scan's spots kept as weeds" : "the two-stage windows"}.`}
           </p>
           <div className="flex flex-wrap gap-x-3 gap-y-1" data-testid="pressure-legend">

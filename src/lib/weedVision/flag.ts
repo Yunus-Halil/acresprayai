@@ -14,5 +14,14 @@ export function isWeedVisionPreviewEnabled(env: { DEV?: boolean; VITE_WEED_VISIO
   return env.DEV === true && env.VITE_WEED_VISION_PREVIEW === "true";
 }
 
+/**
+ * Whether the weed model can be reached at all: the local service sits behind the Vite dev-server proxy, so only a
+ * development build has it. The live site never does, and never shows a button for it or a line about starting it.
+ * The crop rows, the hotspots and the weed-pressure grade read the map's own pixels and need no model.
+ */
+export function weedModelAvailable(env: { DEV?: boolean } = import.meta.env as unknown as { DEV?: boolean }): boolean {
+  return env.DEV === true;
+}
+
 /** The dev-server path the Vite proxy forwards to the local Python service (127.0.0.1:8765). */
 export const WEED_VISION_API_BASE = "/weed-vision-api";

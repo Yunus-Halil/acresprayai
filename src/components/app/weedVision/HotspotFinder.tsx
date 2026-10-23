@@ -10,8 +10,10 @@ import { patchTwoStage, runStage1, runStage2, stopTwoStage, twoStagePlants, useT
 
 const pct = (v: number) => `${Math.round(100 * v)}%`;
 
-export function HotspotFinder({ taskId, userId, params, modelSha, photoGsdM, modelReady, algorithmLabel }: {
-  taskId: string; userId: string | null; params: FrameRunParams; modelSha: string | null; photoGsdM: number | null; modelReady: boolean; algorithmLabel: string | null;
+export function HotspotFinder({ taskId, userId, params, modelSha, photoGsdM, modelReady, modelAvailable = true, algorithmLabel }: {
+  taskId: string; userId: string | null; params: FrameRunParams; modelSha: string | null; photoGsdM: number | null; modelReady: boolean;
+  /** False on the live site: the hotspots stand on their own, with no model check offered. */
+  modelAvailable?: boolean; algorithmLabel: string | null;
 }) {
   const s = useTwoStage(taskId);
   const run = useFrameRun(taskId);
@@ -43,11 +45,11 @@ export function HotspotFinder({ taskId, userId, params, modelSha, photoGsdM, mod
         <div className="rounded-sm border border-[#2a2a2a] p-3 space-y-1 text-[11px]" data-testid="hotspot-summary">
           <div className="text-[22px] font-semibold leading-none text-[#ff9100]">{st.summary.candidates.toLocaleString()}</div>
           <div className="text-[12px] text-neutral-300">weed hotspot{st.summary.candidates === 1 ? "" : "s"} between the rows, {pct(st.summary.flaggedShare)} of the field{st.summary.highPriority ? `, ${st.summary.highPriority} large or dense` : ""}</div>
-          <div className="text-neutral-500">Green off the crop rows and crowns, read from the map in {ms}. No model yet: a hotspot is where there is vegetation to look at, not a verdict.</div>
+          <div className="text-neutral-500">Green off the crop rows and crowns, read from the map in {ms}. {modelAvailable ? "No model yet: a" : "A"} hotspot is where there is vegetation to look at, not a verdict.</div>
           {st.summary.uncertainShare > 0.05 && <div className="text-amber-400">{pct(st.summary.uncertainShare)} of the field could not be judged ({Object.entries(st.summary.reasons).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(", ")}); hatched on the map.</div>}
         </div>
       )}
-      {st && s.routing && (
+      {modelAvailable && st && s.routing && (
         <div className="space-y-1.5">
           {!s.running ? (
             <button type="button" className={`${btn} bg-[#ffe600] text-black hover:brightness-95`} disabled={!modelReady || !userId} data-testid="check-hotspots"

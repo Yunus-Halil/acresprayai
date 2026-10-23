@@ -16,9 +16,10 @@ import { type AlgorithmInfo, type Health, algorithmReady, fetchAlgorithms, fetch
 import { type FrameRunParams, countByRow, frameRunKey } from "@/lib/weedVision/frames";
 import { listFrameRunKeys } from "@/lib/weedVision/frameRunCache";
 import { alignRun, patchFrameRun, restoreFrameRun, scorableFrames, startFrameRun, startMapRun, stopFrameRun, unalignedFrames, useFrameRun } from "@/lib/weedVision/frameRunStore";
-import { isMapRunKey } from "@/lib/weedVision/mapRun";
+import { MAP_MAX_MPP, isMapRunKey } from "@/lib/weedVision/mapRun";
 import { photoPassParams } from "@/lib/weedScout/photoPass";
 import { makeRowContextFor } from "@/lib/weedVision/photoRows";
+import { weedModelAvailable } from "@/lib/weedVision/flag";
 import { PLANT_COLOUR } from "./ModelDetectionLayer";
 import { modelShaFor } from "./ModelDetectionsPanel";
 import { CropRowsPanel } from "./CropRowsPanel";
@@ -32,7 +33,7 @@ const PHASE_LABEL = { rows: "Reading the crop rows, photo", model: "Looking for 
 const MAP_PHASE_LABEL = { rows: "Reading the crop rows, map part", model: "Looking for weeds, map part", align: "Map part" } as const;
 const DEFAULT_PASS = { rowSpacingAuto: true, rowSpacingM: 0.762, minBlobCm2: 1 };
 
-export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParams, onShowOptions, fetchImpl, fieldId = null }: {
+export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParams, onShowOptions, fetchImpl, fieldId = null, modelAvailable = weedModelAvailable() }: {
   taskId: string;
   /** The field the scan belongs to: its planting layout is kept per field. */
   fieldId?: string | null;
@@ -42,6 +43,8 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
   passParams: Pick<ScoutParams, "rowSpacingAuto" | "rowSpacingM" | "minBlobCm2"> | null;
   onShowOptions: () => void;
   fetchImpl?: typeof fetch;
+  /** False on the live site: no model button, no line about starting one; the rows, hotspots and grade still work. */
+  modelAvailable?: boolean;
 }) {
   const run = useFrameRun(taskId);
   const [health, setHealth] = useState<Health | null>(null);
@@ -52,6 +55,7 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
   // The map shows the weeds between the rows, nothing else.
   useEffect(() => { patchFrameRun(taskId, { viewMode: "detections", showWeeds: true, showCrops: false, showOnRow: false, selectedHotspotId: null }); }, [taskId]);
   useEffect(() => {
+    if (!modelAvailable) return;
     const f = fetchImpl ?? fetch;
     let on = true;
     (async () => {
@@ -63,7 +67,7 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
       if (on && a.ok) setAlgorithms(a.value.algorithms);
     })();
     return () => { on = false; };
-  }, [fetchImpl]);
+  }, [fetchImpl, modelAvailable]);
 
   const algorithm = algorithms[PREFERRED_ALGORITHM] ? PREFERRED_ALGORITHM : Object.keys(algorithms).find(k => k !== "selected" && algorithmReady(algorithms[k], health)) ?? PREFERRED_ALGORITHM;
   const info = algorithms[algorithm];
@@ -111,7 +115,9 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
   const between = rows.offRow + rows.noRows;
   const p = run.progress;
   const pct = p && p.framesTotal ? Math.round((100 * p.framesDone) / p.framesTotal) : 0;
-  const problem = serviceDown
+  const problem = !modelAvailable
+    ? (onMap ? null : `This field map is coarser than about ${(MAP_MAX_MPP * 100).toFixed(1)} cm a pixel, too coarse to tell the weeds between the rows apart. Fly the field lower for a sharper map.`)
+    : serviceDown
     ? "The weed model isn't running on this computer. In a terminal, run  npm run weed-vision:service  then press Find weeds again."
     : health && !ready ? "The weed model is still loading. Try again in a moment."
       : onMap ? null
@@ -123,10 +129,10 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
     <div className="p-4 space-y-4" data-testid="simple-weed-finder">
       <div>
         <h2 className="text-sm font-semibold">Weed Scout</h2>
-        <p className="text-[11px] text-neutral-500 mt-0.5">Finds the weeds growing between the crop rows and shows them on the map.</p>
+        <p className="text-[11px] text-neutral-500 mt-0.5">{modelAvailable ? "Finds the weeds growing between the crop rows and shows them on the map." : "Reads the crop rows and the green between them off the field map, then grades the weed pressure below."}</p>
       </div>
 
-      {!run.running ? (
+      {!modelAvailable ? null : !run.running ? (
         <button type="button" onClick={find} disabled={!!problem || !userId} data-testid="find-weeds"
           className={onMap ? "text-[11px] underline text-neutral-500 hover:text-neutral-300" : "w-full inline-flex items-center justify-center gap-2 rounded-sm bg-[#ffe600] text-black font-semibold text-[13px] py-2.5 hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"}>
           {onMap ? (run.plants.length ? "Run the model over the whole field again (slow)" : "Run the model over the whole field instead (slow)") : <><Search className="h-4 w-4" /> {run.plants.length ? "Find weeds again" : "Find weeds"}</>}
@@ -143,7 +149,7 @@ export function SimpleWeedFinder({ taskId, userId, sources, readStore, passParam
       )}
 
       {onMap && <CropRowsPanel taskId={taskId} fieldId={fieldId} userId={userId} />}
-      {onMap && <HotspotFinder taskId={taskId} userId={userId} params={{ algorithm, ...SIMPLE_PARAMS }} modelSha={modelSha} photoGsdM={typeof sources?.stats?.odm_processing_statistics?.average_gsd === "number" ? sources.stats.odm_processing_statistics.average_gsd / 100 : null} modelReady={ready} algorithmLabel={info?.label ?? null} />}
+      {onMap && <HotspotFinder taskId={taskId} userId={userId} params={{ algorithm, ...SIMPLE_PARAMS }} modelSha={modelSha} photoGsdM={typeof sources?.stats?.odm_processing_statistics?.average_gsd === "number" ? sources.stats.odm_processing_statistics.average_gsd / 100 : null} modelReady={ready} modelAvailable={modelAvailable} algorithmLabel={info?.label ?? null} />}
 
       {problem && !run.running && (
         <p className="text-[11px] text-amber-400 flex items-start gap-1.5" data-testid="simple-problem"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" /> {problem}</p>

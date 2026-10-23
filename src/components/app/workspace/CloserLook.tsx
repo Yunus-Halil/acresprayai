@@ -34,6 +34,7 @@ import type { ScoutParams } from "@/lib/weedScout/types";
 import { storageKey } from "@/lib/storage";
 import { type AlgorithmInfo, type Health, type WeedVisionResult, algorithmReady, detectWeeds, fetchAlgorithms, fetchHealth } from "@/lib/weedVision/client";
 import { type FrameDetection, countByClass, countByRow } from "@/lib/weedVision/frames";
+import { weedModelAvailable } from "@/lib/weedVision/flag";
 import { addFrameDetections } from "@/lib/weedVision/frameRunStore";
 import { type RowContext, isOnRow, rowContextFromPattern } from "@/lib/weedVision/rowFilter";
 import { PLANT_COLOUR } from "../weedVision/ModelDetectionLayer";
@@ -105,7 +106,7 @@ export function resetWholePhotoReads(): void { wholePhotoReads.clear(); }
 /** `id` names the finding on the map; the detector's boxes are filed under it. */
 export type CloserLookTarget = { id?: string; title: string; spot: SpotSources };
 
-export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null, spotLook = null, spotMeasurement = null, passParams = null, readStore = null, minWeedM = 0, modelRun = null, fetchImpl }: {
+export function CloserLookDialog({ target, sources, units, onClose, onDetections, rowSpacingM = null, spotDiameterM = null, spotLook = null, spotMeasurement = null, passParams = null, readStore = null, minWeedM = 0, modelRun = null, fetchImpl, modelAvailable = weedModelAvailable() }: {
   target: CloserLookTarget | null;
   sources: ScanSources | null;
   units: UnitSystem;
@@ -116,6 +117,8 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   modelRun?: { taskId: string; userId: string | null } | null;
   /** The fetch the model service is reached with (tests). */
   fetchImpl?: typeof fetch;
+  /** False on the live site: no model choice or run button, and the service is never asked. */
+  modelAvailable?: boolean;
   /** The field's row spacing from the scan's pattern, so the photo is read at it rather than searched. */
   rowSpacingM?: number | null;
   /** The spot's own size on the map, metres across, for the ring when the photo pass places nothing at it. */
@@ -161,7 +164,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
   useEffect(() => { setDetection(null); setCopied(false); setModelRunState(null); }, [look]);
   useEffect(() => { try { localStorage.setItem(CLOSER_LOOK_MODEL_KEY, JSON.stringify(modelChoice)); } catch { /* private mode */ } }, [modelChoice]);
   useEffect(() => {
-    if (!target) return;
+    if (!target || !modelAvailable) return;
     let on = true;
     const f = fetchImpl ?? fetch;
     (async () => {
@@ -171,7 +174,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
       if (on) setSvc({ health: h.value, algorithms: a.ok ? a.value.algorithms : {}, error: a.ok ? null : a.error });
     })();
     return () => { on = false; };
-  }, [target, fetchImpl]);
+  }, [target, fetchImpl, modelAvailable]);
   const modelInfo = svc?.algorithms[modelChoice.algorithm];
   const modelReady = algorithmReady(modelInfo, svc?.health ?? null);
   const modelChoices = useMemo(() => Object.entries(svc?.algorithms ?? {}).filter(([k]) => k !== "selected").sort(([, a], [, b]) => (a.family === "rfdetr" ? -1 : b.family === "rfdetr" ? 1 : 0)), [svc]);
@@ -403,7 +406,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
             {target ? `${target.spot.chosen.length} photo${target.spot.chosen.length === 1 ? "" : "s"} chosen to cover this shape, of ${target.spot.views.length} that saw it` : ""}
             {target && target.spot.chosen.length > views.length ? `; ${target.spot.chosen.length - views.length} not kept as originals.` : "."}
           </span>
-          <span className="ml-auto inline-flex items-center gap-1.5" data-testid="closer-look-model">
+          {modelAvailable && <span className="ml-auto inline-flex items-center gap-1.5" data-testid="closer-look-model">
             <select value={modelChoice.algorithm} disabled={modelRunState?.state === "running" || !modelChoices.length} data-testid="closer-look-model-select"
               onChange={e => { const a = svc?.algorithms[e.target.value]; setModelChoice(c => ({ algorithm: e.target.value, threshold: a?.default_threshold ?? c.threshold })); }}
               className="bg-[#0f0f0f] border border-[#333] rounded-sm px-1.5 py-1 text-neutral-200 max-w-[260px]" title={svc?.error ? `The local model service is not running: ${svc.error}` : modelInfo?.description ?? "Choose a model"}>
@@ -422,7 +425,7 @@ export function CloserLookDialog({ target, sources, units, onClose, onDetections
               title={!modelReady ? "The model is not loaded on the local service" : "Sends this whole original photo to the chosen model on the local service. Outlines are drawn on the photo and placed on the map; nothing is marked by itself."} data-testid="closer-look-run-model">
               {modelRunState?.state === "running" ? <><Loader2 className="h-3 w-3 animate-spin" /> {modelRunState.tilesTotal ? `tile ${modelRunState.tilesDone}/${modelRunState.tilesTotal}` : "sending"}</> : "Run model on this photo"}
             </button>
-          </span>
+          </span>}
           <button type="button" onClick={askDetector} disabled={!look || detection?.state === "asking"}
             className="rounded-sm border border-[#333] px-2 py-1 text-neutral-300 hover:bg-[#1f1f1f] disabled:opacity-40 inline-flex items-center gap-1.5"
             title="Sends this crop to the experimental baseline detector through the server. Its boxes are a yardstick, not a verdict." data-testid="closer-look-detect">

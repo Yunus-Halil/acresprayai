@@ -347,6 +347,26 @@ describe("no crop on file", () => {
 });
 
 describe("the map's own pixels", () => {
+  it("gradeField grades from Stage 1's cover with no weed outlined anywhere, and says nothing is missing (the live site has no model)", async () => {
+    const { gradeField, getPressure } = await import("@/lib/weedVision/pressure/pressureStore");
+    const { setFrameRunBoundary, setFrameRunMap } = await import("@/lib/weedVision/frameRunStore");
+    const { DEFAULT_STAGE1 } = await import("@/lib/weedVision/twoStage/stage1");
+    const layoutRows = { z: Z, left: LEFT, top: TOP, mpp: MPP, rows: 4, spacingM: 5, seedSpacingM: 3, directionDeg: 0, blocks: 1, source: "layout" as const, ctx: { lines: [], crops: [], bandPx: 10, gsdM: MPP } };
+    const ring = [latLngOfPx(LEFT, TOP, Z), latLngOfPx(LEFT + grid.nx * grid.cellPx, TOP, Z), latLngOfPx(LEFT + grid.nx * grid.cellPx, TOP + grid.ny * grid.cellPx, Z), latLngOfPx(LEFT, TOP + grid.ny * grid.cellPx, Z)];
+    setFrameRunMap("pixels-only", { tile: () => "", maxNative: Z, lat: LAT, lng: LNG, crop: "apricot" });
+    setFrameRunBoundary("pixels-only", [ring]);
+    // 18% cover: past apricot's 15% action point.
+    const cs = cells({ [cellKey(3, 1)]: { pressure: 0.18, density: 1.2, offRowGreenM2: 0.18 * groundM2 } });
+    const readStage1 = vi.fn(async () => ({ params: DEFAULT_STAGE1, grid, cells: cs, hotspots: [], rowsUsed: true, ms: 1, summary: { cells: cs.length, candidates: 0, highPriority: 0, flaggedShare: 0, uncertainShare: 0, reasons: {} as never } }));
+    await gradeField("pixels-only", { crop: "apricot", scanWeeds: [], stage1: { params: { algorithm: "a", threshold: 0.5, tile: 1024, overlap: 256, scale: 1 }, modelSha: null, photoGsdM: null, deps: { ensureRows: async () => undefined, rowsOf: () => layoutRows, readStage1, cache: { load: async () => new Map(), save: async () => undefined } as never } } });
+    const p = getPressure("pixels-only");
+    expect(readStage1).toHaveBeenCalled();
+    expect(p.error).toBeNull();
+    expect(p.state).toBe("done");
+    expect(p.source).toBeNull();
+    expect(p.grade?.cells.find(c => c.key === cellKey(3, 1))?.klass).toBe("action");
+  });
+
   it("a cell with off-row green but no spot on the list is still graded, from Stage 1's measure", () => {
     const cs = cells({ [cellKey(3, 1)]: { pressure: 0.12, density: 1.2, offRowGreenM2: 0.12 * groundM2 } });
     const gr = gradePressure({ objects: [], grid, cells: cs, rows: null, crop: "corn", canopyClosed: false, photoBased: false });

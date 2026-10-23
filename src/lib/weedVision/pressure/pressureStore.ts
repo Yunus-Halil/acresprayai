@@ -142,7 +142,7 @@ export async function gradeField(taskId: string, input: { crop: string | null; g
       ? (rows?.source === "layout"
         ? "The planting's rows reach none of the cells. Open Crop rows, read the rows again, and grade again."
         : "The rows read automatically reach none of the cells (the read found no rows, or rows in one block only). Mark the planting under Crop rows and grade again.")
-      : objects.length ? null : "Nothing to grade yet: this scan has no weeds on it. Scan the field, or run Find weeds, and grade again.";
+      : null;
     patchPressure(taskId, { grade, state: "done", source, error });
   } catch (e) {
     patchPressure(taskId, { state: "none", error: (e as Error)?.message ?? String(e) });

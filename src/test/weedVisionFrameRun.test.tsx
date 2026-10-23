@@ -354,6 +354,22 @@ describe("SimpleWeedFinder", () => {
     expect(onShow).toHaveBeenCalled();
   });
 
+  it("on the live site (no model service) never asks for a terminal, offers no model button, and never calls the service", async () => {
+    const f = vi.fn(async () => { throw new Error("must not be called"); });
+    setFrameRunMap("scan-s5", { tile: () => "", maxNative: 23, lat: 37.6, lng: -78.4 });
+    const { unmount } = render(<SimpleWeedFinder taskId="scan-s5" userId="u" sources={sourcesWithFrames(1)} readStore={null} passParams={null} onShowOptions={() => {}} fetchImpl={f as unknown as typeof fetch} modelAvailable={false} />);
+    expect(await screen.findByTestId("simple-weed-finder")).not.toHaveTextContent(/terminal|weed-vision:service|not running/);
+    expect(screen.queryByTestId("find-weeds")).toBeNull();
+    expect(screen.queryByTestId("simple-problem")).toBeNull();
+    expect(screen.getByTestId("hotspot-finder")).not.toHaveTextContent(/model/i);
+    unmount();
+    // A map too coarse to read between the rows says so, and still asks for nothing to be run.
+    render(<SimpleWeedFinder taskId="scan-s6" userId="u" sources={sourcesWithFrames(1)} readStore={null} passParams={null} onShowOptions={() => {}} fetchImpl={f as unknown as typeof fetch} modelAvailable={false} />);
+    expect(await screen.findByTestId("simple-problem")).toHaveTextContent(/too coarse/);
+    expect(screen.getByTestId("simple-problem")).not.toHaveTextContent(/terminal/);
+    expect(f).not.toHaveBeenCalled();
+  });
+
   it("shows the count of weeds between the rows once a run is in", async () => {
     const sources = sourcesWithFrames(2);
     const deps = fakeDeps(sources);
