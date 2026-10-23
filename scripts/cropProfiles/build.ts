@@ -18,7 +18,10 @@ const check = process.argv.includes("--check");
 let failed = false, stale = 0;
 
 function emit(file: string, content: string) {
-  const prev = existsSync(file) ? readFileSync(file, "utf8") : null;
+  // Line endings aside: a Windows checkout may turn LF into CRLF, which is not a change.
+  const prev = existsSync(file) ? readFileSync(file, "utf8").replace(/
+/g, "
+") : null;
   if (prev === content) return;
   if (check) { console.error(`stale: ${file}`); stale++; return; }
   mkdirSync(dirname(file), { recursive: true });
