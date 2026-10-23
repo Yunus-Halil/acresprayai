@@ -1,6 +1,6 @@
 {
   "status": "partial",
-  "summary": "6 of 6 benchmarks run (2026-10-23, code bdedeb7). Acceptance met: synthetic-corn-stands, corn-photos-label-free, weedsgalore-position, weedsgalore-stage. Not met: weedsgalore-vegetation, weedsgalore-cover. Written by npm run profiles:record from the result files; the profile stays experimental.",
+  "summary": "7 of 7 benchmarks run (2026-10-23, code bdedeb7). Acceptance met: synthetic-corn-stands, corn-photos-label-free, weedsgalore-position, weedsgalore-stage. Not met: weedsgalore-vegetation, weedsgalore-cover, map-corn-rows. Written by npm run profiles:record from the result files; the profile stays experimental.",
   "benchmarks": [
     {
       "id": "synthetic-corn-stands",
@@ -287,23 +287,42 @@
       "acceptance": [
         {
           "metric": "rows found on the held-out scenes",
-          "threshold": ">= 0.95"
+          "threshold": ">= 0.95",
+          "met": true
         },
         {
           "metric": "scenes whose row lines are on the crop (three quarters within a quarter pitch)",
-          "threshold": ">= 0.90"
+          "threshold": ">= 0.90",
+          "met": false
         },
         {
           "metric": "grade refused until the rows are confirmed, then run, on every scene with rows",
-          "threshold": "1.0"
+          "threshold": "1.0",
+          "met": true
         },
         {
           "metric": "field cover against the true weed cover between the rows, mean absolute error",
-          "threshold": "<= 0.03"
+          "threshold": "<= 0.03",
+          "met": true
         }
       ],
-      "status": "planned",
-      "notes": "Stand-in maps, not a real corn field map: the real-map test is still owed."
+      "status": "run",
+      "notes": "Stand-in maps, not a real corn field map: the real-map test is still owed.",
+      "date": "2026-10-23",
+      "codeRevision": "8158614",
+      "resultFile": "10_validation/results/map.json",
+      "metrics": {
+        "scenes": 60,
+        "rowsFound": 0.983,
+        "rowsOnCrop": 0.85,
+        "meanLinesOnCrop": 0.873,
+        "refusedUntilConfirmed": 1,
+        "gradedScenes": 59,
+        "coverMAE": 0.023,
+        "coverBias": 0.023,
+        "coverMAEStraw": 0.025,
+        "photosWithRows": 3
+      }
     }
   ],
   "failureCases": [
@@ -354,6 +373,15 @@
       "cause": "Neither model has seen corn.",
       "fix": "None: the crop profile never uses a model's crop/weed label for corn; position decides.",
       "status": "accepted"
+    },
+    {
+      "id": "fc-map-straw-phase",
+      "date": "2026-10-23",
+      "image": "map benchmark: evaluation-2, -9, -28, -52, -60 (red or dark soil with straw stripes) and twin-row scenes",
+      "symptom": "On stand-in field maps the corn rows are read at the right spacing but the lines sit on the straw between the rows (rows on the crop in 85% of held-out scenes against a 90% target).",
+      "cause": "Not yet diagnosed at map scale; the same scenes read as photos put the rows on the crop in several cases, so the map read (2.9 cm, 12 m fit windows inside 60 m pattern windows) is the suspect.",
+      "fix": "None yet. Mitigation in place: the grade and hotspots run only on rows the operator confirmed on the map.",
+      "status": "open"
     }
   ],
   "gaps": [

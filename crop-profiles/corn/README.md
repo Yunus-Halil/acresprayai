@@ -60,6 +60,11 @@ These results come from running `npm run bench:crop-profile`; see `10_validation
   - it is 0.031 against 0.013 without the profile at 2 cm, because the gate drops mixed edge pixels;
   - the 30 cm row band holds 95 to 97% of the maize;
   - a third of the weed area sits inside the band and is out of reach, as expected.
+- **Corn rows on a field map, and the grade on them** (stand-in maps: the 60 held-out scenes and the three photos).
+  - Rows were found on 98% of scenes and on all three photos.
+  - Rows sat on the crop in 85% of scenes, short of the 90% target. The misses are mostly straw scenes read at the
+    right spacing but on the straw, plus twin rows. This is why the grade waits for the operator's confirmation.
+  - Graded field cover was within 0.023 of the true weed cover between the rows.
 - **Stage estimate.** The authors' V1 falls inside the estimated range. The ranges are wide (VE to V9 at 28 days).
 
 ## Known weaknesses

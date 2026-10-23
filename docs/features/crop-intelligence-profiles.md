@@ -116,6 +116,10 @@ the Stage 1 parameters are in the profile but not read yet.
 | Between-row weed cover error | same (oracle rows) | 0.368 / 0.148 / 0.013 | 0.014 / 0.020 / 0.031 at 0.25 / 1 / 2 cm | ≤ 0.03 at all three not met (2 cm) |
 | Maize inside the row band | same | 0.95 to 0.97 | 0.95 to 0.97 | ≥ 0.85 met |
 | Stated stage in estimated range | WeedsGalore dates | n/a | 1 of 1 | met |
+| Corn rows on a stand-in field map: found | 60 held-out scenes, 3 photos | n/a (no corn map rows before) | 0.98; 3 of 3 photos | ≥ 0.95 met |
+| Same: rows on the crop | same | n/a | 0.85 | ≥ 0.90 not met (straw scenes at the right spacing but on the straw; twin rows) |
+| Same: grade refused until confirmed, then run | same | n/a | every scene with rows | met |
+| Same: graded cover against true cover between rows | same | n/a | error 0.023 | ≤ 0.03 met |
 
 **How the evaluation was kept honest.**
 - The first set of evaluation scenes was looked at while the ExGR gate replaced the ExG floor. It was moved to
