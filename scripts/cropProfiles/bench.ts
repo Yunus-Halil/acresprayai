@@ -43,7 +43,7 @@ const PICS = join("data", "bench", "crop-profile");
 
 const profile = JSON.parse(readFileSync(runtimePath(CROP), "utf8")) as RuntimeCropProfile;
 const prior = patternPriorFor(profile);
-const revision = (() => { try { const h = execSync("git rev-parse --short HEAD").toString().trim(); const dirty = execSync("git status --porcelain -- src scripts crop-profiles \":(exclude)crop-profiles/*/10_validation/results\"").toString().trim() ? "+uncommitted" : ""; return h + dirty; } catch { return "unknown"; } })();
+const revision = (() => { try { const h = execSync("git rev-parse --short HEAD").toString().trim(); const dirty = execSync("git status --porcelain -- src scripts crop-profiles \":(exclude)crop-profiles/*/10_validation/results/**\"").toString().trim() ? "+uncommitted" : ""; return h + dirty; } catch { return "unknown"; } })();
 const today = new Date().toISOString().slice(0, 10);
 
 type Img = { width: number; height: number; rgba: Uint8ClampedArray };
