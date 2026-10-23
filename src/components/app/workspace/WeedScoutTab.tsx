@@ -446,11 +446,12 @@ export function WeedScoutTab({
     const b = bounds instanceof L.LatLngBounds ? bounds : L.latLngBounds(bounds as L.LatLngExpression[]);
     const c = b.getCenter();
     const tile = (z: number, x: number, y: number) => tileUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
-    setFrameRunMap(taskId, { tile, maxNative: Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative), lat: c.lat, lng: c.lng });
+    // The crop on file goes with the map: its profile decides which reader reads the rows (corn: the pattern pass).
+    setFrameRunMap(taskId, { tile, maxNative: Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative), lat: c.lat, lng: c.lng, crop: settings.crop_type || null });
     return () => setFrameRunMap(taskId, null);
-  }, [taskId, tileUrl, maxNative, bounds]);
+  }, [taskId, tileUrl, maxNative, bounds, settings.crop_type]);
   // The field's crop rows, read once from the whole map (fieldRows.ts): evenly spaced lines of evenly spaced plants. Only weeds between them count.
-  useEffect(() => { void ensureFieldRows(taskId); }, [taskId, tileUrl, maxNative, bounds, rings]);
+  useEffect(() => { void ensureFieldRows(taskId); }, [taskId, tileUrl, maxNative, bounds, rings, settings.crop_type]);
   // The field's planting layout, when one was saved: the rows come from it on every scan of the field.
   useEffect(() => {
     if (!fieldId) return;

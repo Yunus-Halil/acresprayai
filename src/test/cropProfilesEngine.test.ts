@@ -21,8 +21,8 @@ function linesOnCrop(p: PhotoPattern, s: Scene, acrossToRow: (x: number, y: numb
 
 async function both(s: Scene) {
   const { px, truth } = renderScene(s);
-  const neutral = await analysePhoto(px, { gsdM: s.gsdM, rowSpacingM: "auto" }, { yieldBetweenWindows: false });
-  const corn = await analysePhoto(px, { gsdM: s.gsdM, rowSpacingM: "auto", prior }, { yieldBetweenWindows: false });
+  const neutral = await analysePhoto(px, { gsdM: s.gsdM, rowSpacingM: "auto" });
+  const corn = await analysePhoto(px, { gsdM: s.gsdM, rowSpacingM: "auto", prior });
   return { neutral, corn, onCrop: (p: PhotoPattern) => linesOnCrop(p, s, truth.acrossToRow) };
 }
 
@@ -54,7 +54,7 @@ describe("fc-pic1-pitch-confidence and fc-small-photo-blocks: close-up photos a 
   it("a photo with fewer windows than a block normally needs still forms a block (crop-neutral too)", async () => {
     const s: Scene = { ...closeUp, name: "two-windows", widthM: 6.9, heightM: 5.1, gsdM: 0.0047, seed: 78 };
     const { px } = renderScene(s);
-    const p = await analysePhoto(px, { gsdM: s.gsdM, rowSpacingM: 0.762 }, { yieldBetweenWindows: false });
+    const p = await analysePhoto(px, { gsdM: s.gsdM, rowSpacingM: 0.762 });
     expect(p.windows.length).toBeLessThan(3);
     expect(p.summary.blocks).toBe(1);
   }, 60_000);

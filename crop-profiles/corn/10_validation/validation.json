@@ -267,6 +267,43 @@
         "2023-06-06": "VE to V9",
         "2023-06-15": "V6 to V12"
       }
+    },
+    {
+      "id": "map-corn-rows",
+      "name": "Corn rows read from a field map, and the grade on them",
+      "capability": "weed-pressure-grade",
+      "dataset": "The 60 held-out rendered scenes (seeds 3000+) and the three early-corn photos, each placed as a stand-in field map (scripts/cropProfiles/standInMap.ts)",
+      "images": 63,
+      "gsdCm": "maps at the deepest zoom not finer than each image; rows read at about 3 cm, Stage 1 at 3 cm",
+      "stages": [
+        "V2",
+        "V3",
+        "V4",
+        "V5",
+        "V6"
+      ],
+      "split": "held-out scenes only; acceptance set before the first run",
+      "command": "npm run bench:crop-profile -- --suite map",
+      "acceptance": [
+        {
+          "metric": "rows found on the held-out scenes",
+          "threshold": ">= 0.95"
+        },
+        {
+          "metric": "scenes whose row lines are on the crop (three quarters within a quarter pitch)",
+          "threshold": ">= 0.90"
+        },
+        {
+          "metric": "grade refused until the rows are confirmed, then run, on every scene with rows",
+          "threshold": "1.0"
+        },
+        {
+          "metric": "field cover against the true weed cover between the rows, mean absolute error",
+          "threshold": "<= 0.03"
+        }
+      ],
+      "status": "planned",
+      "notes": "Stand-in maps, not a real corn field map: the real-map test is still owed."
     }
   ],
   "failureCases": [

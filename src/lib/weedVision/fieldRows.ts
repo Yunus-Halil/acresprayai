@@ -57,8 +57,11 @@ export type FieldRows = {
   seedSpacingM: number;
   directionDeg: number;
   blocks: number;
-  /** "layout" when the rows come from the field's confirmed planting layout (layout/), else read here. */
-  source?: "reader" | "layout";
+  /**
+   * "layout" when the rows come from the field's confirmed planting layout (layout/); "pattern" when a crop profile's
+   * continuous-row pass read them (patternRows.ts, corn); else read here (the tree reader).
+   */
+  source?: "reader" | "layout" | "pattern";
   /** Layout rows: expected plant positions with no plant (frame pixels). */
   gaps?: { x: number; y: number; /** Only the operator's word: marked "no crop". */ evidence?: "operator" }[];
   /** Layout rows: tree-sized green on no row (frame pixels), a row or block the layout does not cover yet. */
@@ -551,12 +554,15 @@ export function fieldRowStatusAt(rows: FieldRows, p: LatLng2): RowStatus {
   return rowStatusOf(rows.ctx, X - rows.left, Y - rows.top);
 }
 
-/** How the field is read: the zoom whose pixel is nearest READ_MPP (not finer than the map has), the extent, and the tiles. */
-export function fieldReadPlan(rings: LatLng2[][], maxNative: number, lat: number): { z: number; left: number; top: number; width: number; height: number; mpp: number; tiles: { x0: number; y0: number; x1: number; y1: number }[] } | null {
+/**
+ * How the field is read: the zoom whose pixel is nearest the target (READ_MPP unless a crop profile asks for finer;
+ * never finer than the map has), the extent, and the tiles.
+ */
+export function fieldReadPlan(rings: LatLng2[][], maxNative: number, lat: number, targetMpp: number = READ_MPP): { z: number; left: number; top: number; width: number; height: number; mpp: number; tiles: { x0: number; y0: number; x1: number; y1: number }[] } | null {
   const pts = rings.flat();
   if (!pts.length) return null;
   let z = Math.min(Math.floor(maxNative), 23);
-  while (z > 14 && metresPerPixel(lat, z) * 1.4 < READ_MPP) z--;
+  while (z > 14 && metresPerPixel(lat, z) * 1.4 < targetMpp) z--;
   const p = pts.map(q => mercatorPx(q.lat, q.lng, z));
   const xs = p.map(v => v[0]), ys = p.map(v => v[1]);
   const left = Math.floor(Math.min(...xs)), top = Math.floor(Math.min(...ys));

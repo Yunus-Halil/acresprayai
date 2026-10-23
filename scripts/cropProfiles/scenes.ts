@@ -45,6 +45,8 @@ export type SceneTruth = {
   inRowWeeds: { x: number; y: number; r: number }[];
   /** Share of the image that is crop, weed, straw. */
   shares: { crop: number; weed: number; straw: number };
+  /** Per pixel: 0 soil, 1 straw, 2 weed, 3 crop (crop drawn last, over everything). */
+  layer: Uint8Array;
 };
 
 function rng(seed: number) {
@@ -167,6 +169,7 @@ export function renderScene(s: Scene): { px: PhotoPixels; truth: SceneTruth } {
       acrossToRow: (x, y) => wrap(across(x, y), s.pitchM),
       plants, weeds, inRowWeeds,
       shares: { crop: crop / (W * H), weed: wd / (W * H), straw: st / (W * H) },
+      layer,
     },
   };
 }

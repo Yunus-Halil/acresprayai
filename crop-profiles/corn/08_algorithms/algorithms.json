@@ -18,7 +18,9 @@
     ],
     "verifyBrightnessAgainstVegetation": true,
     "continuousFromStage": "V6",
-    "rationale": "Corn rows are read by the photo pattern pass (projection angle, autocorrelation pitch, circular-mean phase), whose search band is 60 to 160% of each candidate. These five candidates cover every planted corn spacing from 23 cm to 1.46 m; the engine's crop-neutral candidates (0.2 to 6 m) are kept beside them so a field that is not what the crop on file says is still read at its own pitch. In auto mode a pitch is only ever one a fit measured: a fit left standing on a candidate it was handed is not rows. A green fit just under the confidence bar stands when its measured pitch is a planted corn spacing and its green is in step with the rows (coherence 0.5 or more): a photo a few rows wide gives the spacing estimate little to stand on. Windows stay at the engine's 4 m (a four-row window of about 3 m was tried and split small photos into blocks that did not join). In early corn the rows are green lines on soil, so a row block found from brightness is re-placed on the green when the green is in step with it: in no-till fields the bright stripes are the straw between the rows.",
+    "bandHalfWidthM": 0.15,
+    "readGsdCm": 3,
+    "rationale": "Corn rows are read by the photo pattern pass (projection angle, autocorrelation pitch, circular-mean phase), whose search band is 60 to 160% of each candidate. These five candidates cover every planted corn spacing from 23 cm to 1.46 m; the engine's crop-neutral candidates (0.2 to 6 m) are kept beside them so a field that is not what the crop on file says is still read at its own pitch. In auto mode a pitch is only ever one a fit measured: a fit left standing on a candidate it was handed is not rows. A green fit just under the confidence bar stands when its measured pitch is a planted corn spacing and its green is in step with the rows (coherence 0.5 or more): a photo a few rows wide gives the spacing estimate little to stand on. Windows stay at the engine's 4 m (a four-row window of about 3 m was tried and split small photos into blocks that did not join). In early corn the rows are green lines on soil, so a row block found from brightness is re-placed on the green when the green is in step with it: in no-till fields the bright stripes are the straw between the rows. The crop band is 15 cm either side of a row line (30 cm wide): on the WeedsGalore maize patches a band of that width held 95 to 97% of the maize from V1 to about V7, while a third of the weed area sat inside it and is left out by design. The field map is read for rows at about 3 cm a pixel, not the pass's crop-neutral 5 cm: on a rendered red-soil map with straw stripes, at 5.7 cm the thin corn leaves became mixed pixels that failed the ExGR gate, the read fell back on brightness and every line sat on the straw, 37 cm off the corn; at 2.9 cm every line sat on the corn, 5 mm off.",
     "sources": [
       "pioneer-row-width",
       "kws-uk-sowing",
@@ -150,7 +152,7 @@
         "unl-post-herbicide-stage"
       ]
     },
-    "rationale": "Between-row cover is what the imagery measures best until the alley closes at about V10 in 30 in rows; the grade is applicable from emergence to V9 and refused after. The cover thresholds keep the engine's current values (no regression) but are marked provisional, because no US source gives a cover action point for corn."
+    "rationale": "Between-row cover is what the imagery measures best until the alley closes at about V10 in 30 in rows; the grade is applicable from emergence to V9 and refused after. The cover thresholds keep the engine's current values (no regression) but are marked provisional, because no US source gives a cover action point for corn. Since 1.1.0 the grade runs on confirmed pattern rows; before that it was refused for corn."
   },
   "hotspots": {
     "minObjectDiameterM": 0.1,
@@ -255,17 +257,22 @@
       ]
     },
     "weed-pressure-grade": {
-      "status": "unsupported",
+      "status": "experimental",
       "maxGsdCm": 3,
       "stages": [
         "V1",
         "V9"
       ],
-      "reason": "The field-map row reader needs rows at least 1 m apart made of separate plants, and the planting-layout fitter is built for trees; corn rows are read only by the photo pattern pass, which does not yet feed the map grade. Grading corn on the map stays refused until a continuous-row map reader exists and passes its benchmark."
+      "reason": "Graded on corn rows read from the field map by the pattern pass with the corn profile (weedVision/patternRows.ts), and only after the operator has confirmed on the map that the rows sit on the corn. Not yet tested on a real corn field map: the evidence is three photos, rendered scenes and WeedsGalore patches.",
+      "validatedBy": [
+        "synthetic-corn-stands",
+        "weedsgalore-cover",
+        "map-corn-rows"
+      ]
     },
     "hotspots": {
-      "status": "unsupported",
-      "reason": "The hotspot finder runs on confirmed planting-layout rows, which corn does not have yet (see weed-pressure-grade)."
+      "status": "experimental",
+      "reason": "Hotspots are found between corn rows the operator confirmed on the map (as for the grade); not tested on a real corn field map."
     },
     "weed-isolation": {
       "status": "experimental",

@@ -205,10 +205,14 @@ describe("question 4: what can safely be concluded (capabilities)", () => {
     expect(state(b, "crop-vs-weed-by-position").findings.some(f => f.code === "WITHIN_ROW_UNRESOLVED")).toBe(true);
   });
 
-  it("the map grade is unsupported for corn and says why; species come with the not-an-identification note", () => {
+  it("the map grade is experimental for corn, provisional, and off on a map coarser than 3 cm; species carry the not-an-identification note", () => {
     const a = assessCapabilities(corn, { gsdM: 0.01, on: new Date() });
-    expect(state(a, "weed-pressure-grade").state).toBe("disabled");
-    expect(state(a, "weed-pressure-grade").findings[0].code).toBe("CAPABILITY_UNSUPPORTED");
+    expect(state(a, "weed-pressure-grade").state).toBe("enabled");
+    expect(state(a, "weed-pressure-grade").status).toBe("experimental");
+    expect(state(a, "weed-pressure-grade").findings.some(f => f.code === "THRESHOLD_PROVISIONAL")).toBe(true);
+    const coarse = assessCapabilities(corn, { gsdM: 0.05, on: new Date() });
+    expect(state(coarse, "weed-pressure-grade").state).toBe("disabled");
+    expect(state(coarse, "weed-pressure-grade").findings[0].code).toBe("INSUFFICIENT_RESOLUTION");
     expect(state(a, "species-priors").findings.some(f => f.code === "SPECIES_NOT_RESOLVABLE")).toBe(true);
   });
 });
@@ -238,10 +242,12 @@ describe("the engine reads the profile; crops without one are unchanged", () => 
     expect(schemeFor("wide-row", "cotton").basis).toBeUndefined();
   });
 
-  it("the grade refuses corn on automatic rows with the profile's reason, and past closure with the stage", () => {
+  it("the grade refuses corn on the tree reader's rows, waits for confirmed pattern rows, and refuses past closure", () => {
     const readerRows = { source: "reader" as const } as never;
     const layoutRows = { source: "layout" as const } as never;
-    expect(pressureRefusal("corn", readerRows)).toMatch(/^Corn is not graded on rows read automatically yet: The field-map row reader/);
+    expect(pressureRefusal("corn", readerRows)).toMatch(/^Corn rows have not been read from the map yet/);
+    expect(pressureRefusal("corn", { source: "pattern" } as never)).toMatch(/^Confirm the corn rows first/);
+    expect(pressureRefusal("corn", { source: "pattern" } as never, { rowsConfirmed: true })).toBeNull();
     expect(pressureRefusal("corn", layoutRows)).toBeNull();
     const old = new Date(); old.setDate(old.getDate() - 90);
     expect(pressureRefusal("corn", layoutRows, { plantingDate: old.toISOString().slice(0, 10) })).toMatch(/canopy has closed/);

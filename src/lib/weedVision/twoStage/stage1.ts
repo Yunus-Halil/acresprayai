@@ -52,6 +52,8 @@ export type Stage1Params = {
    * Cover since 2026-10-21: a cell full of drying yellow-green weeds read as low under the vegetation mask.
    */
   mask: "cover" | "vegetation";
+  /** Read the map at about this many metres per pixel; absent: fieldReadPlan's READ_MPP (about 4 cm). A crop profile sets it finer. */
+  readMpp?: number;
 };
 
 export const DEFAULT_STAGE1: Stage1Params = {
@@ -322,7 +324,7 @@ export async function readStage1(input: {
 }): Promise<Stage1Result | null> {
   const t0 = performance.now();
   const params = input.params ?? DEFAULT_STAGE1;
-  const plan = fieldReadPlan(input.rings, input.maxNative, input.lat);
+  const plan = fieldReadPlan(input.rings, input.maxNative, input.lat, params.readMpp);
   if (!plan) return null;
   const g = gridFor(plan, params.cellM);
   const counts = emptyCounts(g);

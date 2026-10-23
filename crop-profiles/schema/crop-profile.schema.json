@@ -4730,6 +4730,14 @@
             "continuousFromStage": {
               "type": "string"
             },
+            "bandHalfWidthM": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "readGsdCm": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
             "rationale": {
               "type": "string"
             },

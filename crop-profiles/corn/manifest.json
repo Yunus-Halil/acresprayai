@@ -1,6 +1,6 @@
 {
   "id": "corn",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "schemaVersion": "1.0.0",
   "status": "experimental",
   "files": {
@@ -18,5 +18,7 @@
     "references": "11_references/references.json"
   },
   "updated": "2026-10-23",
-  "maintainers": ["Swardus"]
+  "maintainers": [
+    "Swardus"
+  ]
 }

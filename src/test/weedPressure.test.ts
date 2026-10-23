@@ -297,8 +297,9 @@ describe("row crops are not graded yet", () => {
     const { pressureRefusal } = await import("@/lib/weedVision/pressure/pressureStore");
     const { ROW_CROP_GRADING_UNSUPPORTED, rowCropGradingBlocked } = await import("@/lib/weedVision/fieldRows");
     expect(ROW_CROP_GRADING_UNSUPPORTED).toBe(MESSAGE);
-    // Corn has a crop profile (crop-profiles/corn): its own reason replaces the generic one (2026-10-23).
-    expect(pressureRefusal("corn", readerRows)).toMatch(/^Corn is not graded on rows read automatically yet: /);
+    // Corn has a crop profile (crop-profiles/corn): it is graded only on its own pattern rows, confirmed, never on the
+    // tree reader's rows (2026-10-23; src/test/patternRows.test.ts covers the pattern path).
+    expect(pressureRefusal("corn", readerRows)).toMatch(/^Corn rows have not been read from the map yet/);
     expect(pressureRefusal("Soybean", null)).toBe(MESSAGE); // no rows read at all
     expect(pressureRefusal("winter wheat", readerRows)).toBe(MESSAGE);
     expect(pressureRefusal("corn", layoutRows)).toBeNull(); // the operator's own rows
@@ -313,7 +314,7 @@ describe("row crops are not graded yet", () => {
     const readStage1 = vi.fn();
     await gradeField("row-crop-task", { crop: "corn", stage1: { params: {} as never, modelSha: null, photoGsdM: null, deps: { ensureRows: async () => undefined, rowsOf: () => readerRows, readStage1 } } });
     const p = getPressure("row-crop-task");
-    expect(p.error).toMatch(/^Corn is not graded on rows read automatically yet: /);
+    expect(p.error).toMatch(/^Corn rows have not been read from the map yet/);
     expect(p.grade).toBeNull();
     expect(p.state).toBe("none");
     expect(readStage1).not.toHaveBeenCalled();

@@ -30,6 +30,7 @@ import { assessCapabilities, estimateStage, expectedCover } from "../../src/lib/
 import type { RuntimeCropProfile } from "../../src/lib/cropProfiles/runtime";
 import { renderScene, sceneSet, type Scene } from "./scenes";
 import { runtimePath } from "./fsProfiles";
+import { type MapRun, runMap } from "./mapSuite";
 
 const argv = process.argv.slice(2);
 const arg = (k: string, d?: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
@@ -393,8 +394,56 @@ async function stage() {
   return rows;
 }
 
+// ------------------------------------------------------------------------------------------- map
+async function mapSuite() {
+  const out: (MapRun & { kind: string; soil?: string; straw?: boolean; gsdCm?: number })[] = [];
+  // The three photos as stand-in maps (pixel size from the measured pitch and an assumed 30 in, as in the photos suite).
+  const files = existsSync(PHOTOS) ? readdirSync(PHOTOS).filter(f => /\.(jpe?g|png)$/i.test(f)).sort() : [];
+  for (const f of files) {
+    const raw = decodeImage(new Uint8Array(readFileSync(join(PHOTOS, f))));
+    const full: Img = { width: raw.width, height: raw.height, rgba: new Uint8ClampedArray(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength) };
+    const pp = pitchPx(full);
+    if (!pp) continue;
+    const r = await runMap(f, full as PhotoPixels, 0.762 / pp, { picture: join(PICS, "map", `${basename(f, extname(f))}-grade.png`) });
+    out.push({ ...r, kind: "photo" });
+    process.stdout.write("p");
+  }
+  // The held-out rendered scenes as stand-in maps.
+  for (const sc of sceneSet("evaluation")) {
+    const { px, truth } = renderScene(sc);
+    const r = await runMap(sc.name, px, sc.gsdM, { truth: { acrossToRow: truth.acrossToRow, pitchM: sc.pitchM, layer: truth.layer, width: px.width, bandM: 0.15 }, picture: PICTURES ? join(PICS, "map", `${sc.name}-grade.png`) : undefined });
+    out.push({ ...r, kind: "scene", soil: sc.soil, straw: !!sc.straw, gsdCm: sc.gsdM * 100 });
+    process.stdout.write(".");
+  }
+  console.log();
+  const scenes = out.filter(r => r.kind === "scene");
+  const graded = scenes.filter(r => r.fieldCover != null && r.truthCover != null);
+  const err = graded.map(r => Math.abs(r.fieldCover! - r.truthCover!));
+  const summary = {
+    scenes: scenes.length,
+    rowsFound: r3(share(scenes.map(r => r.rowsFound))),
+    correctRows: r3(share(scenes.map(r => r.rowsFound && (r.linesOnCrop ?? 0) >= 0.75))),
+    meanLinesOnCrop: r3(mean(scenes.filter(r => r.linesOnCrop != null).map(r => r.linesOnCrop!))),
+    refusedUntilConfirmed: r3(share(scenes.filter(r => r.rowsFound).map(r => r.refusedUnconfirmed && r.gradedWhenConfirmed))),
+    gradedScenes: graded.length,
+    coverMAE: r3(mean(err)),
+    coverBias: r3(mean(graded.map(r => r.fieldCover! - r.truthCover!))),
+    coverMAEStraw: r3(mean(graded.filter(r => r.straw).map(r => Math.abs(r.fieldCover! - r.truthCover!)))),
+    photosWithRows: out.filter(r => r.kind === "photo" && r.rowsFound).length,
+  };
+  const fmt = (v: unknown) => (v == null ? "-" : String(v));
+  const md = [`# Crop profile benchmark: corn rows on a field map, and the grade on them (${CROP})`, "",
+    `Run ${today}, code ${revision}. The map pattern pass with the ${CROP} profile reads the rows (src/lib/weedVision/patternRows.ts), Stage 1 reads the map at the profile's 3 cm, and the grade runs on those rows, all on stand-in maps (scripts/cropProfiles/standInMap.ts): the 60 held-out rendered scenes, whose true rows and weeds are known, and the three early-corn photos. No real corn field map has been run: that test is still owed.`, "",
+    `Rendered scenes: rows found ${fmt(summary.rowsFound)}, rows on the crop (three quarters of the lines within a quarter pitch) ${fmt(summary.correctRows)}, mean share of lines on the crop ${fmt(summary.meanLinesOnCrop)}. Refused until confirmed, then graded: ${fmt(summary.refusedUntilConfirmed)} of scenes with rows. Field cover against the true weed cover between the rows (beyond 15 cm of a true row): mean absolute error ${fmt(summary.coverMAE)}, bias ${fmt(summary.coverBias)} over ${summary.gradedScenes} graded scenes; ${fmt(summary.coverMAEStraw)} on scenes with straw stripes. Photos with rows: ${summary.photosWithRows} of 3.`, "",
+    "| Map | Kind | Rows found | Rows | Spacing (cm) | Lines on crop | On-green ratio | Read (cm/px) | Cells assessed | Field cover | True cover | Class |", "|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ...out.map(r => `| ${r.name.slice(0, 22)} | ${r.kind}${r.soil ? ` ${r.soil}${r.straw ? "+straw" : ""} ${r.gsdCm} cm` : ""} | ${r.rowsFound} | ${r.rows} | ${fmt(r.spacingCm)} | ${fmt(r3(r.linesOnCrop))} | ${fmt(r3(r.onGreenRatio))} | ${fmt(r.readGsdCm)} | ${r.assessed} of ${r.cells} | ${fmt(r.fieldCover)} | ${fmt(r3(r.truthCover))} | ${fmt(r.fieldClass)} |`), ""].join("\n");
+  writeResult("map", { suite: "map", crop: CROP, date: today, codeRevision: revision, summary, rows: out }, md);
+  return summary;
+}
+
 (async () => {
   const want = (s: string) => SUITE === "all" || SUITE === s;
+  if (want("map")) console.log(JSON.stringify(await mapSuite(), null, 1));
   if (want("synthetic")) console.log(JSON.stringify(await synthetic(), null, 1));
   if (want("photos")) await photos();
   if (want("weedsgalore")) console.log(JSON.stringify(await weedsgalore(), null, 1));

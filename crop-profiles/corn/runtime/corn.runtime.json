@@ -1,7 +1,7 @@
 {
   "runtimeVersion": 1,
   "id": "corn",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "schemaVersion": "1.0.0",
   "status": "experimental",
   "validation": "partial",
@@ -43,7 +43,9 @@
       0.85
     ],
     "verifyBrightnessAgainstVegetation": true,
-    "continuousFromStage": "V6"
+    "continuousFromStage": "V6",
+    "bandHalfWidthM": 0.15,
+    "readGsdCm": 3
   },
   "plantedSpacingsM": [
     {
@@ -326,17 +328,17 @@
       "reason": "Off-row cover against labelled weed cover on WeedsGalore held-out patches; one field."
     },
     "weed-pressure-grade": {
-      "status": "unsupported",
+      "status": "experimental",
       "maxGsdCm": 3,
       "stages": [
         "V1",
         "V9"
       ],
-      "reason": "The field-map row reader needs rows at least 1 m apart made of separate plants, and the planting-layout fitter is built for trees; corn rows are read only by the photo pattern pass, which does not yet feed the map grade. Grading corn on the map stays refused until a continuous-row map reader exists and passes its benchmark."
+      "reason": "Graded on corn rows read from the field map by the pattern pass with the corn profile (weedVision/patternRows.ts), and only after the operator has confirmed on the map that the rows sit on the corn. Not yet tested on a real corn field map: the evidence is three photos, rendered scenes and WeedsGalore patches."
     },
     "hotspots": {
-      "status": "unsupported",
-      "reason": "The hotspot finder runs on confirmed planting-layout rows, which corn does not have yet (see weed-pressure-grade)."
+      "status": "experimental",
+      "reason": "Hotspots are found between corn rows the operator confirmed on the map (as for the grade); not tested on a real corn field map."
     },
     "weed-isolation": {
       "status": "experimental",

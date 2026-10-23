@@ -79,7 +79,8 @@ See `crop-profiles/README.md`. In short:
 |---|---|---|
 | Photo pattern pass (scan map pass, photo pass, per-photo rows for models, closer look, Photo Scout) | Planted spacings searched beside the crop-neutral ones; ExGR gate on the green mask; pitch must be measured; prior-and-evidence rule; brightness rows re-placed on green | `photoScout/pattern.ts`, `weedScout/photoPass.ts photoPassParams`, `fieldPattern.ts`, `pipeline.ts` |
 | Saved photo reads | The key names the crop and profile version | `photoReadKey` |
-| Weed pressure grade | Crop group and cover classes from the profile (corn: same numbers, marked provisional); the refusal gives the crop's own reason; refused past the stage window when a planting date is set | `grade.ts`, `pressureStore.ts` |
+| Field rows for the grade, Stage 1 and hotspots | Corn: rows read from the map by the pattern pass with the profile, at 3 cm, band 15 cm each side, used only after the operator confirms them on the map (Crop rows panel, "They sit on the crop"); other crops keep the tree reader or the planting layout | `weedVision/patternRows.ts`, `frameRunStore.ts`, `CropRowsPanel.tsx` |
+| Weed pressure grade | Crop group and cover classes from the profile (corn: same numbers, marked provisional); waits for confirmed rows; Stage 1 reads at the profile's 3 cm and refuses a coarser map; refused past the stage window when a planting date is set | `grade.ts`, `pressureStore.ts`, `stage1.ts` |
 | Growth stage text | Estimated range from the profile's calendar, marked estimated | `farmerSettings.growthStage` |
 | Weed catalogue | Crop context by any alias (maize, mısır) | `weedCatalog/region.ts` |
 | Weed Scout panel | Crop profile card: expectations, observations, each analysis on, review or off with its reason, regional weed list marked as a reference | `CropProfileCard.tsx` |
@@ -95,8 +96,8 @@ photo-read keys are unchanged, and a test pins that.
 - the sizer's thresholds;
 - hotspots.
 
-For corn the map grade and hotspots stay refused. The size thresholds and Stage 1 parameters are in the profile but
-not read yet.
+Since corn profile 1.1.0 the map grade and hotspots run on confirmed corn rows. The size thresholds and the rest of
+the Stage 1 parameters are in the profile but not read yet.
 
 ## 5. Tests and real results
 
@@ -126,8 +127,8 @@ not read yet.
 
 - **No independent corn field with row-line truth or hand-measured weeds.** Real-field accuracy of rows, positions and
   sizes is unmeasured beyond three photos.
-- **The corn map grade, hotspots and stand count are unsupported.** The continuous-row reader for field maps does not
-  exist.
+- **The corn map grade and hotspots are experimental.** They run on confirmed rows, but only on stand-in maps so far.
+  Stand count is unsupported.
 - **Vegetation IoU misses its target.** On P4 Multispectral band composites it is 0.41 against 0.70. At 2 cm the gate
   under-reads cover by about 3 points.
 - **The calendar stage estimate is wide.** It is VE to V9 at 28 days. There is no GDD estimate without daily weather.
@@ -137,9 +138,9 @@ not read yet.
 
 ## 7. Next three engineering actions
 
-1. **A continuous-row reader for field maps**, behind the existing `FieldRows` contract. It would be tiled profile
-   reading with the corn prior, as `docs/research/crops/row-reading-approaches.md` recommends. With it, the corn
-   grade's capability can move from unsupported to experimental, and the grade and hotspots run on corn.
+1. **Done in corn 1.1.0: corn rows from the field map for the grade.** The map pattern pass with the corn profile
+   (the tiled profile reader `docs/research/crops/row-reading-approaches.md` recommends) feeds `FieldRows`, with the
+   operator's confirmation before any grade. Still owed: a real corn field map.
 2. **One real corn field end to end.** Use original frames with EXIF, the ortho and the planting date. Draw rows and
    off-row weeds on the frames for review. Add it to the benchmark as the first independent field, split by field.
 3. **Read the rest of the profile's contract.** Stage 1 parameters, sizer thresholds, hotspot minimum size and the

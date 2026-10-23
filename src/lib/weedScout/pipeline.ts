@@ -28,6 +28,7 @@
 // happening rather than spinning. Nothing here calls anything outside the
 // tile server and the operator's own archive.
 import { patternPriorForCrop } from "../cropProfiles/engine";
+import { cropProfileFor } from "../cropProfiles/registry";
 import { pointInAnyRing } from "../geo";
 import { ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { stitchTiles } from "../orthoRaster";
@@ -178,7 +179,9 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
   if (params.pattern && params.rowMode !== "none" && !canopy.closed) {
     report("pattern", 0);
     try {
-      const plan = planPatternWindows(bbox, boundary, maxNative);
+      // A crop profile may read the map finer than the pass's 5 cm (corn: 3 cm, or its thin leaves are mixed pixels).
+      const readGsdCm = cropProfileFor(opts.crop)?.rowReader.readGsdCm;
+      const plan = planPatternWindows(bbox, boundary, maxNative, readGsdCm ? { targetGsdM: readGsdCm / 100 } : {});
       const fp = await readFieldPattern(template, plan, { lat: bbox.north, lng: bbox.west }, {
         rowSpacingM: params.rowSpacingAuto ? "auto" : params.rowSpacingM,
         rowAngleDeg: params.rowAngleDeg,

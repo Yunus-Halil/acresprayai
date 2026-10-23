@@ -72,6 +72,15 @@ if (st) {
   setRun(bench("weedsgalore-stage"), st, "stage.json", metrics, [stated.length > 0 && stated.every(r => r.statedInRange)]);
 }
 
+const mp = res("map");
+if (mp && v.benchmarks.some(b => b.id === "map-corn-rows")) {
+  const m = mp.summary;
+  setRun(bench("map-corn-rows"), mp, "map.json", {
+    scenes: m.scenes, rowsFound: m.rowsFound, rowsOnCrop: m.correctRows, meanLinesOnCrop: m.meanLinesOnCrop, refusedUntilConfirmed: m.refusedUntilConfirmed,
+    gradedScenes: m.gradedScenes, coverMAE: m.coverMAE, coverBias: m.coverBias, coverMAEStraw: m.coverMAEStraw, photosWithRows: m.photosWithRows,
+  }, [m.rowsFound >= 0.95, m.correctRows >= 0.90, m.refusedUntilConfirmed === 1, m.coverMAE != null && m.coverMAE <= 0.03]);
+}
+
 const run = v.benchmarks.filter(b => b.status === "run");
 const allMet = run.length === v.benchmarks.length && run.every(b => b.acceptance.every(a => a.met));
 v.status = allMet ? "validated" : run.length ? "partial" : "unvalidated";

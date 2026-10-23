@@ -23,7 +23,7 @@ describe("CropProfileCard", () => {
     expect(screen.getByTestId("crop-profile-spacing").textContent).toMatch(/consistent/);
     expect(screen.getByTestId("capability-row-detection").getAttribute("data-state")).toBe("enabled");
     expect(screen.getByTestId("capability-weed-measurement").getAttribute("data-state")).toBe("disabled"); // 2 cm is coarser than the 1 cm it needs
-    expect(screen.getByTestId("capability-weed-pressure-grade").getAttribute("data-state")).toBe("disabled");
+    expect(screen.getByTestId("capability-weed-pressure-grade").getAttribute("data-state")).toBe("enabled"); // experimental, on confirmed rows
     expect(screen.getByTestId("crop-profile-weeds").textContent).toMatch(/a reference list, not an identification/);
   });
 

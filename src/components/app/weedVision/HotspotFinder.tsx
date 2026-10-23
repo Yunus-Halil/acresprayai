@@ -16,7 +16,8 @@ export function HotspotFinder({ taskId, userId, params, modelSha, photoGsdM, mod
   const s = useTwoStage(taskId);
   const run = useFrameRun(taskId);
   const st = s.stage1;
-  const rowsKnown = run.fieldRowsSource === "layout";
+  // Rows the operator stands behind: a marked planting layout, or crop rows read from the map and confirmed on it.
+  const rowsKnown = run.fieldRowsSource === "layout" || (run.fieldRowsSource === "pattern" && run.fieldRowsConfirmed);
   // The simple view shows pressure and hotspots, never the model's windows.
   useEffect(() => { patchTwoStage(taskId, { layers: { pressure: true, candidates: true, windows: false, weeds: false }, labelMode: false }); }, [taskId]);
   // The model's weeds from the hotspot check, shown as outlines through the scan's plants.

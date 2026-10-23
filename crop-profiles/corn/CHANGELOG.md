@@ -1,5 +1,16 @@
 # Corn profile changelog
 
+## 1.1.0 (2026-10-23)
+
+- **Grade and hotspots on corn rows.** The weed-pressure grade and the hotspots move from unsupported to experimental.
+  They run on corn rows read from the field map by the pattern pass with this profile (`weedVision/patternRows.ts`),
+  only after the operator confirms on the map that the rows sit on the corn.
+- **Map read.** Corn rows are read from the map at about 3 cm a pixel (`rowReader.readGsdCm`), not 5 cm. At
+  5.7 cm the leaves became mixed pixels and the rows fell onto the straw.
+- **Row band.** The crop band is set to 15 cm either side of a row line (`rowReader.bandHalfWidthM`), from the
+  WeedsGalore band result.
+- **Still owed.** No real corn field map has been graded yet.
+
 ## 1.0.0 (2026-10-23)
 
 First version. Status: experimental.

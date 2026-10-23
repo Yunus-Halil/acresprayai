@@ -12,7 +12,8 @@ import { CANOPY_CLOSED } from "../../photoScout/pattern";
 import { estimateStage, stageOutside } from "../../cropProfiles/checks";
 import { cropProfileFor } from "../../cropProfiles/registry";
 import { ROW_CROP_GRADING_UNSUPPORTED, rowCropGradingBlocked } from "../fieldRows";
-import { ensureFieldRows, frameRunFieldRows, getFrameRun } from "../frameRunStore";
+import { ensureFieldRows, frameRunBoundaryOf, frameRunFieldRows, frameRunMapOf, getFrameRun } from "../frameRunStore";
+import { fieldReadPlan } from "../fieldRows";
 import { isMapRunKey } from "../mapRun";
 import { type RunStage1Input, getTwoStage, patchTwoStage, runStage1, twoStagePlants } from "../twoStage/twoStageStore";
 import { type CropGroup, type PressureGrade, type WeedObject, cropGroupOf, gradePressure, weedObjectsOf } from "./grade";
@@ -75,7 +76,7 @@ export const NO_CROP_ON_FILE = "Set the field's crop before grading: the thresho
  * operator's own word that this is a planting of trees or vines, so it grades as an orchard), or a row crop on file
  * whose rows are not a fitted planting layout.
  */
-export function pressureRefusal(crop: string | null, rows: Parameters<typeof rowCropGradingBlocked>[1], ctx: { plantingDate?: string | null; on?: Date } = {}): string | null {
+export function pressureRefusal(crop: string | null, rows: Parameters<typeof rowCropGradingBlocked>[1], ctx: { plantingDate?: string | null; on?: Date; rowsConfirmed?: boolean } = {}): string | null {
   if (!crop?.trim()) return rows?.source === "layout" ? null : NO_CROP_ON_FILE;
   // A crop with a profile: the profile says whether the grade applies at this stage and on rows read automatically.
   const profile = cropProfileFor(crop);
@@ -87,7 +88,13 @@ export function pressureRefusal(crop: string | null, rows: Parameters<typeof row
         return `${profile.policies.UNSUPPORTED_STAGE?.message ?? "Past the stage this grade applies to."} ${est.note}`;
       }
     }
-    if (rows?.source !== "layout" && cap?.status === "unsupported") return `${profile.name[0].toUpperCase()}${profile.name.slice(1)} is not graded on rows read automatically yet: ${cap.reason}`;
+    const Name = `${profile.name[0].toUpperCase()}${profile.name.slice(1)}`;
+    if (rows?.source === "layout") return null;
+    if (cap?.status === "unsupported") return `${Name} is not graded on rows read automatically yet: ${cap.reason}`;
+    if (profile.rowReader.strategy === "continuous-row") {
+      if (rows?.source !== "pattern") return `${Name} rows have not been read from the map yet. Open Crop rows and read them, check them on the map, and grade again.`;
+      if (!ctx.rowsConfirmed) return `Confirm the ${profile.name} rows first: open Crop rows, turn on "show on map", and say whether the lines sit on the ${profile.name}. A wrong row spacing makes a wrong grade.`;
+    }
     return null;
   }
   return rowCropGradingBlocked(cropGroupOf(crop, false), rows) ? ROW_CROP_GRADING_UNSUPPORTED : null;
@@ -105,12 +112,24 @@ export async function gradeField(taskId: string, input: { crop: string | null; g
   try {
     // The rows first (the saved layout may still be loading): a row crop on reader rows is refused before anything is read.
     await (input.stage1.deps?.ensureRows ?? ensureFieldRows)(taskId);
-    const refusal = pressureRefusal(input.crop, (input.stage1.deps?.rowsOf ?? frameRunFieldRows)(taskId), { plantingDate: input.plantingDate });
+    const refusal = pressureRefusal(input.crop, (input.stage1.deps?.rowsOf ?? frameRunFieldRows)(taskId), { plantingDate: input.plantingDate, rowsConfirmed: getFrameRun(taskId).fieldRowsConfirmed });
     if (refusal) { patchPressure(taskId, { grade: null, state: "none", source: null, error: refusal }); return; }
+    // A crop profile reads the map at its own pixel (corn: 3 cm, what cover between 76 cm rows needs), and refuses a map
+    // coarser than that rather than grade it.
+    const profile = cropProfileFor(input.crop);
+    const maxGsdCm = profile?.capabilities["weed-pressure-grade"]?.maxGsdCm;
+    const map = frameRunMapOf(taskId);
+    if (profile && maxGsdCm && map) {
+      const plan = fieldReadPlan(frameRunBoundaryOf(taskId) ?? [], map.maxNative, map.lat, maxGsdCm / 100);
+      if (plan && plan.mpp * 100 > maxGsdCm * 1.25) {
+        patchPressure(taskId, { grade: null, state: "none", source: null, error: `${profile.policies.INSUFFICIENT_RESOLUTION?.message ?? "The map is too coarse."} This map is about ${(plan.mpp * 100).toFixed(1)} cm a pixel; ${profile.name} needs ${maxGsdCm} cm or finer for cover between the rows.` });
+        return;
+      }
+    }
     // Stage 1 is read fresh for every grade: it takes seconds, and a kept read can carry rows the field no longer
     // has (the first grade of 2026-10-22 ran on the automatic rows while the saved layout was still loading, and
     // "Grade again" kept that read).
-    await runStage1(taskId, { ...input.stage1, stage1Params: { ...(input.stage1.stage1Params ?? {}), cellM: PRESSURE_CELL_M } });
+    await runStage1(taskId, { ...input.stage1, stage1Params: { ...(input.stage1.stage1Params ?? {}), cellM: PRESSURE_CELL_M, ...(maxGsdCm ? { readMpp: maxGsdCm / 100 } : {}) } });
     const ts = getTwoStage(taskId);
     // Stage 1 was read for the grade, not for the prototype: its own layers (cells, candidates, windows) stay off the map.
     if (ts.stage1) patchTwoStage(taskId, { layers: { pressure: false, candidates: false, windows: false, weeds: false } });

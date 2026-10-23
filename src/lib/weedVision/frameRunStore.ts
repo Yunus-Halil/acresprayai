@@ -24,6 +24,7 @@ import { type MapChunk, type RenderedChunk, MIN_COVERAGE, chooseMapZoom, groundM
 import { type photoPassParams } from "../weedScout/photoPass";
 import type { PhotoPixels } from "../photoScout/pattern";
 import { type FieldRows, fieldRowStatusAt, readFieldRows } from "./fieldRows";
+import { readPatternRows, readsPatternRows } from "./patternRows";
 import { type LayoutBlock, type PlantingLayout, fitPlantingLayout, readLayoutRaster } from "./layout/readLayout";
 import type { LayoutRaster } from "./layout/plantingLayout";
 import { type ChunkPainter, betweenRowsPainter, rowsSignature } from "./layout/rowBand";
@@ -90,8 +91,10 @@ export type FrameRunSession = {
   fieldRowsState: "idle" | "reading" | "found" | "none";
   /** How far the read has got, 0 to 1, while reading. */
   fieldRowsProgress: number | null;
-  /** Where the rows came from: the field's planting layout, or the automatic reader. */
-  fieldRowsSource: "layout" | "reader" | null;
+  /** Where the rows came from: the field's planting layout, the crop's continuous-row pass, or the automatic tree reader. */
+  fieldRowsSource: "layout" | "reader" | "pattern" | null;
+  /** Pattern rows only: the operator looked at them on the map and said they sit on the crop. Layout rows are confirmed by being marked. */
+  fieldRowsConfirmed: boolean;
   /** Layout rows: plants found, positions with no plant, and tree-sized green on no row. */
   layoutStats: { plants: number; gaps: number; unexplained: number; foundShare: number } | null;
   /** What went wrong, or was skipped, when the rows were read from the marked trees; null when nothing. */
@@ -102,7 +105,7 @@ export const EMPTY_FRAME_RUN: FrameRunSession = {
   running: false, progress: null, params: null, paramsKey: null, algorithmLabel: null, modelSha: null,
   plants: [], raw: 0, outside: 0, scanSet: null, frames: {}, error: null, note: null, showWeeds: true, showCrops: false, showOnRow: false, selectedId: null, restoredAt: null, marked: {},
   hotspots: null, hotspotParams: DEFAULT_HOTSPOT_PARAMS, viewMode: "priority", selectedHotspotId: null, reviews: {}, focus: null, markedAreas: {},
-  alignAvailable: false, mapAvailable: null, fieldRows: null, fieldRowsState: "idle", fieldRowsProgress: null, fieldRowsSource: null, layoutStats: null, fieldRowsNote: null,
+  alignAvailable: false, mapAvailable: null, fieldRows: null, fieldRowsState: "idle", fieldRowsProgress: null, fieldRowsSource: null, fieldRowsConfirmed: false, layoutStats: null, fieldRowsNote: null,
 };
 
 const sessions = new Map<string, FrameRunSession>();
@@ -139,7 +142,8 @@ async function alignFrame(taskId: string, set: SourceFrameSet, altM: number, blo
   return { dets: applyAlignment(set, altM, a, base), aligned: { shiftM: a.shiftM, patches: a.usedPatches, rmsM: a.rmsM } };
 }
 /** The field map per scan, for a run on the map itself: its tiles and its deepest baked zoom. */
-export type FrameRunMap = { tile: (z: number, x: number, y: number) => string; maxNative: number; lat: number; lng: number };
+/** The scan's map, and the field's crop on file (its crop profile decides which row reader reads the field). */
+export type FrameRunMap = { tile: (z: number, x: number, y: number) => string; maxNative: number; lat: number; lng: number; crop?: string | null };
 const maps = new Map<string, FrameRunMap>();
 /** The field map registered for a scan, if any. */
 export const frameRunMapOf = (taskId: string): FrameRunMap | undefined => maps.get(taskId);
@@ -195,6 +199,7 @@ type FieldRowsReader = typeof readFieldRows;
 export function setFieldRows(taskId: string, rows: FieldRows | null): void {
   if (rows) fieldRowsByTask.set(taskId, rows); else fieldRowsByTask.delete(taskId);
   patchFrameRun(taskId, {
+    fieldRowsConfirmed: rows?.source === "pattern" ? readConfirmation(taskId) === patternRowsSignature(rows) : false,
     fieldRows: rows ? { rows: rows.rows, spacingM: rows.spacingM, seedSpacingM: rows.seedSpacingM, bandM: rows.ctx.bandPx * rows.mpp } : null,
     fieldRowsState: rows ? "found" : "none",
     fieldRowsProgress: null,
@@ -209,14 +214,31 @@ export function setFieldRows(taskId: string, rows: FieldRows | null): void {
  * and the boundary are both registered.
  */
 /** The map readers behind ensureFieldRows; tests replace them (the browser's canvas is not there). */
-let rowReaders: { reader: FieldRowsReader; rasterReader: typeof readLayoutRaster } = { reader: readFieldRows, rasterReader: readLayoutRaster };
-export function setFieldRowsReaders(r: Partial<typeof rowReaders> | null): void { rowReaders = { reader: readFieldRows, rasterReader: readLayoutRaster, ...(r ?? {}) }; }
+let rowReaders: { reader: FieldRowsReader; rasterReader: typeof readLayoutRaster; patternReader: typeof readPatternRows } = { reader: readFieldRows, rasterReader: readLayoutRaster, patternReader: readPatternRows };
+export function setFieldRowsReaders(r: Partial<typeof rowReaders> | null): void { rowReaders = { reader: readFieldRows, rasterReader: readLayoutRaster, patternReader: readPatternRows, ...(r ?? {}) }; }
+
+/**
+ * Pattern rows are confirmed per scan by the operator, and the confirmation holds only for the rows they saw: it is
+ * kept with a signature of those rows (count, spacing, direction), in this browser, so a reload keeps it and a
+ * changed read asks again.
+ */
+export const patternRowsSignature = (rows: FieldRows): string => `${rows.rows}|${rows.spacingM.toFixed(3)}|${Math.round(rows.directionDeg)}|${rows.ctx.lines.length}`;
+const confirmKey = (taskId: string) => `swardus.patternRowsConfirmed.${taskId}`;
+function readConfirmation(taskId: string): string | null { try { return localStorage.getItem(confirmKey(taskId)); } catch { return null; } }
+/** The operator's word that the pattern rows sit on the crop (or, with false, takes it back). */
+export function confirmFieldRows(taskId: string, confirmed = true): void {
+  const rows = fieldRowsByTask.get(taskId);
+  if (!rows || rows.source !== "pattern") return;
+  try { if (confirmed) localStorage.setItem(confirmKey(taskId), patternRowsSignature(rows)); else localStorage.removeItem(confirmKey(taskId)); } catch { /* private mode: held for this visit only */ }
+  patchFrameRun(taskId, { fieldRowsConfirmed: confirmed });
+}
+
 export async function ensureFieldRows(taskId: string, opts: { reader?: FieldRowsReader; rasterReader?: typeof readLayoutRaster } = {}): Promise<void> {
   const loading = layoutLoads.get(taskId);
   if (loading) await loading;
   const map = maps.get(taskId), rings = boundaries.get(taskId);
   if (!map || !rings?.length) return;
-  const mapKey = `${map.maxNative}|${rings.length}|${rings[0].length}|${rings[0][0]?.lat}|${rings[0][0]?.lng}`;
+  const mapKey = `${map.maxNative}|${rings.length}|${rings[0].length}|${rings[0][0]?.lat}|${rings[0][0]?.lng}|crop=${map.crop ?? ""}`;
   const layout = layoutsByTask.get(taskId) ?? null;
   const key = `${mapKey}|v${LAYOUT_VERSION}|${layout ? JSON.stringify([layout.blocks, layout.verdicts ?? []]) : "auto"}`;
   if (fieldRowsTried.get(taskId) === key) {
@@ -256,7 +278,14 @@ async function readFieldRowsInto(taskId: string, key: string, map: NonNullable<R
     } catch (e) { rows = null; note = `the marked trees could not be read: ${(e as Error)?.message ?? String(e)}`; }
     if (!rows) note = `${note ?? "no rows from the marked trees"}; the rows shown are the automatic read`;
   }
-  if (!rows) {
+  if (!rows && readsPatternRows(map.crop)) {
+    // A crop whose profile reads continuous rows (corn): the tree reader cannot read it, so the pattern pass does.
+    try {
+      const read = await rowReaders.patternReader({ rings, tile: map.tile, maxNative: map.maxNative, crop: map.crop ?? null, onProgress: progress });
+      rows = read.rows;
+      if (!rows) note = `No ${map.crop} rows were found on the map${read.pattern?.notes[0] ? `: ${read.pattern.notes[0]}` : ""}. Rows are read until the canopy closes, from a map of about 5 cm a pixel or finer.`;
+    } catch (e) { rows = null; note = `The ${map.crop} rows could not be read: ${(e as Error)?.message ?? String(e)}`; }
+  } else if (!rows) {
     try { rows = await (opts.reader ?? rowReaders.reader)({ rings, tile: map.tile, maxNative: map.maxNative, lat: map.lat, onProgress: progress }); } catch { rows = null; }
     if (rows) rows = { ...rows, source: "reader" };
   }

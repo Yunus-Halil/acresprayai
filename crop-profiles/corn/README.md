@@ -37,7 +37,8 @@ and no independent corn field with row truth exists yet.
 | Brightness check | Rows found from brightness are re-placed on the green when it is in step | No-till straw stripes are bright |
 | Cover classes | 1, 5, 10, 20%, marked provisional | US guidance acts on weed height (10 cm) and stage (by V4), not cover |
 | Grade window | V1 to V9 | The alley closes about V10 |
-| Map grade | unsupported, with the reason | The map row reader needs rows 1 m apart; corn's continuous-row map reader does not exist yet |
+| Corn rows on the field map | The map pattern pass with this profile, read at 3 cm, band 15 cm each side | At 5.7 cm the thin leaves became mixed pixels and the rows fell onto the straw |
+| Map grade and hotspots | Experimental, only on rows the operator confirmed on the map | A wrong spacing is a wrong grade; no real corn map has been graded yet |
 
 Every capability, its status, its pixel limit and its stage window are in `08_algorithms/algorithms.json`. The code and
 message for every condition are in `09_uncertainty/uncertainty.json`.
@@ -69,4 +70,5 @@ These results come from running `npm run bench:crop-profile`; see `10_validation
 - The calendar stage estimate is wide; no daily weather is read, so there is no GDD estimate.
 - Purple (cold or phosphorus) seedlings fall below the ExGR gate at V2 to V5 and read as skips.
 - Weeds inside the row, grass weeds and volunteer corn are not separable from the crop at 1 cm or coarser.
-- The map grade, hotspots and stand count are unsupported for corn.
+- The map grade and hotspots are experimental: they run on confirmed rows, but only on stand-in maps so far. Stand
+  count is unsupported.

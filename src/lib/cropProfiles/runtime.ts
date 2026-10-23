@@ -53,6 +53,8 @@ export type RuntimeCropProfile = {
     vegetationFractionRange: [number, number];
     verifyBrightnessAgainstVegetation: boolean;
     continuousFromStage: string | null;
+    bandHalfWidthM: number | null;
+    readGsdCm: number | null;
   };
   plantedSpacingsM: { m: number; label: string; regions: string[] }[];
   spacingToleranceShare: number;
@@ -114,6 +116,8 @@ export function compileRuntime(p: CropProfile, shared: Pick<Shared, "weedTaxonom
       vegetationFractionRange: [...a.rowReader.vegetationFractionRange] as [number, number],
       verifyBrightnessAgainstVegetation: a.rowReader.verifyBrightnessAgainstVegetation,
       continuousFromStage: a.rowReader.continuousFromStage ?? null,
+      bandHalfWidthM: a.rowReader.bandHalfWidthM ?? null,
+      readGsdCm: a.rowReader.readGsdCm ?? null,
     },
     plantedSpacingsM: p.planting.rowSpacing.candidatesM.map(c => ({ m: c.m, label: c.label, regions: [...c.regions] })),
     spacingToleranceShare: p.planting.rowSpacing.toleranceShare,

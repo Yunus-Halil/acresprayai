@@ -71,6 +71,9 @@ field settings crop_type ──► cropProfileFor()  (src/lib/cropProfiles/regis
                                │                           green is in step; brightness rows re-placed on the green.
                                │                           Used by the scan's map pattern pass, the photo pass, per-photo
                                │                           rows for model runs, the closer look and Photo Scout.
+                               ├─► weedVision/patternRows.ts: a crop whose profile reads continuous rows (corn) gets its
+                               │      field rows from the map pattern pass at the profile's pixel (3 cm), with its band;
+                               │      the grade and hotspots use them only after the operator confirms them on the map
                                ├─► grade.ts cropGroupOf / schemeFor: crop group and cover classes (corn: provisional)
                                ├─► pressureStore.pressureRefusal: the crop's own reason; refused past the stage window
                                ├─► farmerSettings.growthStage: the estimated stage range from the planting date

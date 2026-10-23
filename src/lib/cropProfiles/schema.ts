@@ -412,6 +412,10 @@ export const Algorithms = z.object({
     verifyBrightnessAgainstVegetation: z.boolean(),
     /** Plants merge into a continuous line along the row from this stage at the stated pixel size. */
     continuousFromStage: z.string().optional(),
+    /** Half-width of the crop band either side of a row line, metres: green inside it is the crop's, not graded. */
+    bandHalfWidthM: z.number().positive().optional(),
+    /** The pixel the field map is read at for rows, centimetres; absent: the pattern pass's 5 cm. */
+    readGsdCm: z.number().positive().optional(),
     rationale: z.string(),
     sources: z.array(SourceRef),
   }),

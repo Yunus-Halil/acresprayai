@@ -8,7 +8,8 @@ import { Loader2 } from "lucide-react";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtDistance } from "@/lib/units";
 import { describePlanting } from "@/lib/plantingPractice";
-import { useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { confirmFieldRows, frameRunMapOf, useFrameRun } from "@/lib/weedVision/frameRunStore";
+import { readsPatternRows } from "@/lib/weedVision/patternRows";
 import { MIN_TRUSTED_FOUND, MIN_TRUSTED_ROWS } from "@/lib/weedVision/layout/readLayout";
 import { acceptReaderRows, cancelMarking, clearLayout, pickPosition, rereadRows, saveLayout, setShowRows, setVerdict, startMarking, undoLastPlanting, useLayoutUi } from "@/lib/weedVision/layout/layoutUi";
 
@@ -27,6 +28,8 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
   const d = (m: number) => fmtDistance(m, units).text;
   const fr = run.fieldRows, stats = run.layoutStats;
   const fromLayout = run.fieldRowsSource === "layout";
+  // A crop whose profile reads continuous rows (corn): no trees to mark; its rows come from the map or not at all.
+  const rowCrop = readsPatternRows(frameRunMapOf(taskId)?.crop);
   const btn = "rounded-sm border px-2 py-0.5 text-[11px] disabled:opacity-40";
   return (
     <div className="rounded-sm border border-[#2a2a2a] p-3 space-y-1.5 text-[11px]" data-testid="crop-rows-panel">
@@ -45,6 +48,31 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
         </div>
       ) : run.fieldRowsState === "reading" ? (
         <p className="text-neutral-500 inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Finding the crop rows on the map{run.fieldRowsProgress ? ` (${Math.round(run.fieldRowsProgress * 100)}%)` : ""}…</p>
+      ) : run.fieldRowsSource === "pattern" && fr ? (
+        <div className="space-y-1" data-testid="crop-rows-pattern">
+          <p className="text-neutral-200">
+            {fr.rows} crop row{fr.rows === 1 ? "" : "s"} read from the map with the crop's profile: rows {d(fr.spacingM)} apart{fr.seedSpacingM > 0 ? `, plants about ${d(fr.seedSpacingM)} apart` : ""}.
+          </p>
+          <p className="text-neutral-500">Green within {d(fr.bandM)} of a row line is taken as the crop and left out; weeds are graded only between the rows. A weed inside the row cannot be told from the crop.</p>
+          {run.fieldRowsConfirmed ? (
+            <>
+              <p className="text-[#4ade80]" data-testid="crop-rows-confirmed">Confirmed: the lines sit on the crop. The grade and the hotspots use these rows.</p>
+              <div className="flex flex-wrap gap-1.5">
+                <button type="button" className={`${btn} border-[#333] text-neutral-400`} onClick={() => confirmFieldRows(taskId, false)} data-testid="crop-rows-unconfirm">Take it back</button>
+                <button type="button" className={`${btn} border-[#333] text-neutral-400`} onClick={() => rereadRows(taskId)}>Read again</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-amber-400" data-testid="crop-rows-unconfirmed">Not confirmed. Turn on "show on map" and zoom in: each cyan line should run along a crop row, not between two. The grade waits for your word.</p>
+              <div className="flex flex-wrap gap-1.5">
+                <button type="button" className={`${btn} border-[#4ade80] text-[#4ade80]`} onClick={() => confirmFieldRows(taskId, true)} data-testid="crop-rows-confirm">They sit on the crop</button>
+                <button type="button" className={`${btn} border-[#333] text-neutral-400`} onClick={() => rereadRows(taskId)}>Read again</button>
+              </div>
+              <p className="text-neutral-600">If they run between the rows or at the wrong spacing, do not confirm: say so, and the field is not graded.</p>
+            </>
+          )}
+        </div>
       ) : fromLayout && fr && stats ? (
         <div className="space-y-1" data-testid="crop-rows-layout">
           <p className="text-neutral-200">
@@ -83,8 +111,17 @@ export function CropRowsPanel({ taskId, fieldId, userId }: { taskId: string; fie
       ) : (
         <div className="space-y-1" data-testid="crop-rows-none">
           <p className="text-amber-400">No crop rows were found automatically, so the crop cannot be told from the weeds yet.</p>
-          <p className="text-neutral-500">Mark three trees once and Weed Scout finds the whole planting.</p>
-          <button type="button" className={`${btn} border-[#22d3ee] text-[#22d3ee]`} onClick={() => startMarking(taskId)} data-testid="crop-rows-mark">Mark three trees</button>
+          {rowCrop ? (
+            <>
+              <p className="text-neutral-500">The reason is below. Rows of a row crop are read until the canopy closes, from a map of about 5 cm a pixel or finer; without them nothing is graded.</p>
+              <button type="button" className={`${btn} border-[#333] text-neutral-400`} onClick={() => rereadRows(taskId)}>Read again</button>
+            </>
+          ) : (
+            <>
+              <p className="text-neutral-500">Mark three trees once and Weed Scout finds the whole planting.</p>
+              <button type="button" className={`${btn} border-[#22d3ee] text-[#22d3ee]`} onClick={() => startMarking(taskId)} data-testid="crop-rows-mark">Mark three trees</button>
+            </>
+          )}
         </div>
       )}
       {ui.picked && fromLayout && (
