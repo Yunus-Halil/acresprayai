@@ -3,7 +3,7 @@
  "set": "evaluation",
  "crop": "corn",
  "date": "2026-10-23",
- "codeRevision": "c28f705+uncommitted",
+ "codeRevision": "bdedeb7",
  "summary": {
   "all": {
    "neutral": {
@@ -17,7 +17,7 @@
     "scenesAllLinesOnCrop": 0.783,
     "offRowPrecision": 0.694,
     "offRowRecall": 0.432,
-    "medianMs": 393
+    "medianMs": 420
    },
    "corn": {
     "scenes": 60,
@@ -30,7 +30,7 @@
     "scenesAllLinesOnCrop": 0.9,
     "offRowPrecision": 0.848,
     "offRowRecall": 0.507,
-    "medianMs": 356
+    "medianMs": 365
    }
   },
   "straw stripes": {
@@ -45,7 +45,7 @@
     "scenesAllLinesOnCrop": 0.56,
     "offRowPrecision": 0.444,
     "offRowRecall": 0.248,
-    "medianMs": 393
+    "medianMs": 430
    },
    "corn": {
     "scenes": 25,
@@ -58,7 +58,7 @@
     "scenesAllLinesOnCrop": 0.8,
     "offRowPrecision": 0.728,
     "offRowRecall": 0.438,
-    "medianMs": 249
+    "medianMs": 275
    }
   },
   "no straw": {
@@ -73,7 +73,7 @@
     "scenesAllLinesOnCrop": 0.943,
     "offRowPrecision": 0.855,
     "offRowRecall": 0.535,
-    "medianMs": 386
+    "medianMs": 411
    },
    "corn": {
     "scenes": 35,
@@ -86,7 +86,7 @@
     "scenesAllLinesOnCrop": 0.971,
     "offRowPrecision": 0.915,
     "offRowRecall": 0.545,
-    "medianMs": 366
+    "medianMs": 373
    }
   },
   "small photo (under 7.5 m)": {
@@ -101,7 +101,7 @@
     "scenesAllLinesOnCrop": 0.793,
     "offRowPrecision": 0.761,
     "offRowRecall": 0.406,
-    "medianMs": 139
+    "medianMs": 144
    },
    "corn": {
     "scenes": 29,
@@ -114,7 +114,7 @@
     "scenesAllLinesOnCrop": 0.931,
     "offRowPrecision": 0.944,
     "offRowRecall": 0.467,
-    "medianMs": 104
+    "medianMs": 114
    }
   },
   "twin rows": {
@@ -129,7 +129,7 @@
     "scenesAllLinesOnCrop": 0.714,
     "offRowPrecision": 0.72,
     "offRowRecall": 0.179,
-    "medianMs": 393
+    "medianMs": 430
    },
    "corn": {
     "scenes": 7,
@@ -142,7 +142,7 @@
     "scenesAllLinesOnCrop": 0.714,
     "offRowPrecision": 0.72,
     "offRowRecall": 0.179,
-    "medianMs": 419
+    "medianMs": 472
    }
   },
   "red soil": {
@@ -157,7 +157,7 @@
     "scenesAllLinesOnCrop": 0.64,
     "offRowPrecision": 0.412,
     "offRowRecall": 0.251,
-    "medianMs": 406
+    "medianMs": 441
    },
    "corn": {
     "scenes": 25,
@@ -170,7 +170,7 @@
     "scenesAllLinesOnCrop": 0.88,
     "offRowPrecision": 0.709,
     "offRowRecall": 0.472,
-    "medianMs": 266
+    "medianMs": 262
    }
   },
   "gsd 2 to 3 cm": {
@@ -185,7 +185,7 @@
     "scenesAllLinesOnCrop": 0.792,
     "offRowPrecision": 0.688,
     "offRowRecall": 0.464,
-    "medianMs": 485
+    "medianMs": 481
    },
    "corn": {
     "scenes": 24,
@@ -198,7 +198,7 @@
     "scenesAllLinesOnCrop": 0.958,
     "offRowPrecision": 0.868,
     "offRowRecall": 0.541,
-    "medianMs": 366
+    "medianMs": 382
    }
   }
  },
@@ -218,7 +218,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.986,
    "offRowRecall": 0.583,
-   "ms": 641
+   "ms": 662
   },
   {
    "scene": "evaluation-1",
@@ -235,7 +235,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.986,
    "offRowRecall": 0.583,
-   "ms": 603
+   "ms": 666
   },
   {
    "scene": "evaluation-2",
@@ -252,7 +252,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": 0,
    "offRowRecall": 0,
-   "ms": 1121
+   "ms": 1195
   },
   {
    "scene": "evaluation-2",
@@ -269,145 +269,145 @@
    "linesOnCrop": 0,
    "offRowPrecision": 0.03,
    "offRowRecall": 0.581,
+   "ms": 493
+  },
+  {
+   "scene": "evaluation-3",
+   "mode": "neutral",
+   "gsdCm": 2,
+   "pitchM": 0.762,
+   "soil": "dark",
+   "straw": true,
+   "twin": true,
+   "widthM": 4.64,
+   "found": true,
+   "pitchErr": 0.001,
+   "angleErr": 0.4,
+   "linesOnCrop": 1,
+   "offRowPrecision": 1,
+   "offRowRecall": 0.176,
+   "ms": 82
+  },
+  {
+   "scene": "evaluation-3",
+   "mode": "corn",
+   "gsdCm": 2,
+   "pitchM": 0.762,
+   "soil": "dark",
+   "straw": true,
+   "twin": true,
+   "widthM": 4.64,
+   "found": true,
+   "pitchErr": 0.001,
+   "angleErr": 0.4,
+   "linesOnCrop": 1,
+   "offRowPrecision": 1,
+   "offRowRecall": 0.176,
+   "ms": 74
+  },
+  {
+   "scene": "evaluation-4",
+   "mode": "neutral",
+   "gsdCm": 2,
+   "pitchM": 0.508,
+   "soil": "light",
+   "straw": false,
+   "twin": false,
+   "widthM": 10.719,
+   "found": true,
+   "pitchErr": 0.003,
+   "angleErr": 0.016,
+   "linesOnCrop": 1,
+   "offRowPrecision": 0.846,
+   "offRowRecall": 0.407,
+   "ms": 448
+  },
+  {
+   "scene": "evaluation-4",
+   "mode": "corn",
+   "gsdCm": 2,
+   "pitchM": 0.508,
+   "soil": "light",
+   "straw": false,
+   "twin": false,
+   "widthM": 10.719,
+   "found": true,
+   "pitchErr": 0.003,
+   "angleErr": 0.016,
+   "linesOnCrop": 1,
+   "offRowPrecision": 0.846,
+   "offRowRecall": 0.407,
+   "ms": 365
+  },
+  {
+   "scene": "evaluation-5",
+   "mode": "neutral",
+   "gsdCm": 1,
+   "pitchM": 0.559,
+   "soil": "red",
+   "straw": true,
+   "twin": false,
+   "widthM": 5.675,
+   "found": true,
+   "pitchErr": 0,
+   "angleErr": 0.1,
+   "linesOnCrop": 1,
+   "offRowPrecision": null,
+   "offRowRecall": 0,
+   "ms": 144
+  },
+  {
+   "scene": "evaluation-5",
+   "mode": "corn",
+   "gsdCm": 1,
+   "pitchM": 0.559,
+   "soil": "red",
+   "straw": true,
+   "twin": false,
+   "widthM": 5.675,
+   "found": true,
+   "pitchErr": 0,
+   "angleErr": 0.1,
+   "linesOnCrop": 1,
+   "offRowPrecision": null,
+   "offRowRecall": 0,
+   "ms": 178
+  },
+  {
+   "scene": "evaluation-6",
+   "mode": "neutral",
+   "gsdCm": 0.5,
+   "pitchM": 0.762,
+   "soil": "red",
+   "straw": false,
+   "twin": false,
+   "widthM": 10,
+   "found": true,
+   "pitchErr": 0,
+   "angleErr": 0.05,
+   "linesOnCrop": 1,
+   "offRowPrecision": 1,
+   "offRowRecall": 0.448,
+   "ms": 441
+  },
+  {
+   "scene": "evaluation-6",
+   "mode": "corn",
+   "gsdCm": 0.5,
+   "pitchM": 0.762,
+   "soil": "red",
+   "straw": false,
+   "twin": false,
+   "widthM": 10,
+   "found": true,
+   "pitchErr": 0,
+   "angleErr": 0.05,
+   "linesOnCrop": 1,
+   "offRowPrecision": 1,
+   "offRowRecall": 0.448,
    "ms": 484
   },
   {
-   "scene": "evaluation-3",
-   "mode": "neutral",
-   "gsdCm": 2,
-   "pitchM": 0.762,
-   "soil": "dark",
-   "straw": true,
-   "twin": true,
-   "widthM": 4.64,
-   "found": true,
-   "pitchErr": 0.001,
-   "angleErr": 0.4,
-   "linesOnCrop": 1,
-   "offRowPrecision": 1,
-   "offRowRecall": 0.176,
-   "ms": 73
-  },
-  {
-   "scene": "evaluation-3",
-   "mode": "corn",
-   "gsdCm": 2,
-   "pitchM": 0.762,
-   "soil": "dark",
-   "straw": true,
-   "twin": true,
-   "widthM": 4.64,
-   "found": true,
-   "pitchErr": 0.001,
-   "angleErr": 0.4,
-   "linesOnCrop": 1,
-   "offRowPrecision": 1,
-   "offRowRecall": 0.176,
-   "ms": 70
-  },
-  {
-   "scene": "evaluation-4",
-   "mode": "neutral",
-   "gsdCm": 2,
-   "pitchM": 0.508,
-   "soil": "light",
-   "straw": false,
-   "twin": false,
-   "widthM": 10.719,
-   "found": true,
-   "pitchErr": 0.003,
-   "angleErr": 0.016,
-   "linesOnCrop": 1,
-   "offRowPrecision": 0.846,
-   "offRowRecall": 0.407,
-   "ms": 425
-  },
-  {
-   "scene": "evaluation-4",
-   "mode": "corn",
-   "gsdCm": 2,
-   "pitchM": 0.508,
-   "soil": "light",
-   "straw": false,
-   "twin": false,
-   "widthM": 10.719,
-   "found": true,
-   "pitchErr": 0.003,
-   "angleErr": 0.016,
-   "linesOnCrop": 1,
-   "offRowPrecision": 0.846,
-   "offRowRecall": 0.407,
-   "ms": 366
-  },
-  {
-   "scene": "evaluation-5",
-   "mode": "neutral",
-   "gsdCm": 1,
-   "pitchM": 0.559,
-   "soil": "red",
-   "straw": true,
-   "twin": false,
-   "widthM": 5.675,
-   "found": true,
-   "pitchErr": 0,
-   "angleErr": 0.1,
-   "linesOnCrop": 1,
-   "offRowPrecision": null,
-   "offRowRecall": 0,
-   "ms": 145
-  },
-  {
-   "scene": "evaluation-5",
-   "mode": "corn",
-   "gsdCm": 1,
-   "pitchM": 0.559,
-   "soil": "red",
-   "straw": true,
-   "twin": false,
-   "widthM": 5.675,
-   "found": true,
-   "pitchErr": 0,
-   "angleErr": 0.1,
-   "linesOnCrop": 1,
-   "offRowPrecision": null,
-   "offRowRecall": 0,
-   "ms": 162
-  },
-  {
-   "scene": "evaluation-6",
-   "mode": "neutral",
-   "gsdCm": 0.5,
-   "pitchM": 0.762,
-   "soil": "red",
-   "straw": false,
-   "twin": false,
-   "widthM": 10,
-   "found": true,
-   "pitchErr": 0,
-   "angleErr": 0.05,
-   "linesOnCrop": 1,
-   "offRowPrecision": 1,
-   "offRowRecall": 0.448,
-   "ms": 406
-  },
-  {
-   "scene": "evaluation-6",
-   "mode": "corn",
-   "gsdCm": 0.5,
-   "pitchM": 0.762,
-   "soil": "red",
-   "straw": false,
-   "twin": false,
-   "widthM": 10,
-   "found": true,
-   "pitchErr": 0,
-   "angleErr": 0.05,
-   "linesOnCrop": 1,
-   "offRowPrecision": 1,
-   "offRowRecall": 0.448,
-   "ms": 468
-  },
-  {
    "scene": "evaluation-7",
    "mode": "neutral",
    "gsdCm": 0.3,
@@ -422,7 +422,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 393
+   "ms": 430
   },
   {
    "scene": "evaluation-7",
@@ -439,7 +439,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 419
+   "ms": 472
   },
   {
    "scene": "evaluation-8",
@@ -456,7 +456,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 469
+   "ms": 503
   },
   {
    "scene": "evaluation-8",
@@ -473,7 +473,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 528
+   "ms": 564
   },
   {
    "scene": "evaluation-9",
@@ -490,7 +490,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 231
+   "ms": 249
   },
   {
    "scene": "evaluation-9",
@@ -507,7 +507,7 @@
    "linesOnCrop": 0.474,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 100
+   "ms": 102
   },
   {
    "scene": "evaluation-10",
@@ -524,7 +524,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.71,
-   "ms": 45
+   "ms": 53
   },
   {
    "scene": "evaluation-10",
@@ -541,7 +541,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.71,
-   "ms": 35
+   "ms": 37
   },
   {
    "scene": "evaluation-11",
@@ -558,7 +558,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.4,
-   "ms": 946
+   "ms": 1003
   },
   {
    "scene": "evaluation-11",
@@ -575,7 +575,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.4,
-   "ms": 910
+   "ms": 989
   },
   {
    "scene": "evaluation-12",
@@ -592,7 +592,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 539
+   "ms": 561
   },
   {
    "scene": "evaluation-12",
@@ -609,7 +609,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 555
+   "ms": 596
   },
   {
    "scene": "evaluation-13",
@@ -626,7 +626,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.67,
-   "ms": 375
+   "ms": 413
   },
   {
    "scene": "evaluation-13",
@@ -643,7 +643,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.67,
-   "ms": 354
+   "ms": 382
   },
   {
    "scene": "evaluation-14",
@@ -677,7 +677,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.25,
-   "ms": 63
+   "ms": 66
   },
   {
    "scene": "evaluation-15",
@@ -694,7 +694,7 @@
    "linesOnCrop": 0.889,
    "offRowPrecision": 0.222,
    "offRowRecall": 0.273,
-   "ms": 89
+   "ms": 92
   },
   {
    "scene": "evaluation-15",
@@ -711,7 +711,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.545,
-   "ms": 100
+   "ms": 103
   },
   {
    "scene": "evaluation-16",
@@ -728,7 +728,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.029,
-   "ms": 486
+   "ms": 521
   },
   {
    "scene": "evaluation-16",
@@ -745,7 +745,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.029,
-   "ms": 509
+   "ms": 572
   },
   {
    "scene": "evaluation-17",
@@ -762,7 +762,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.143,
-   "ms": 228
+   "ms": 248
   },
   {
    "scene": "evaluation-17",
@@ -779,7 +779,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.143,
-   "ms": 217
+   "ms": 232
   },
   {
    "scene": "evaluation-18",
@@ -796,7 +796,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 45
+   "ms": 48
   },
   {
    "scene": "evaluation-18",
@@ -813,7 +813,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 35
+   "ms": 37
   },
   {
    "scene": "evaluation-19",
@@ -830,7 +830,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.366,
-   "ms": 611
+   "ms": 616
   },
   {
    "scene": "evaluation-19",
@@ -847,7 +847,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.366,
-   "ms": 581
+   "ms": 576
   },
   {
    "scene": "evaluation-20",
@@ -864,7 +864,7 @@
    "linesOnCrop": 0.5,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 1101
+   "ms": 1212
   },
   {
    "scene": "evaluation-20",
@@ -881,28 +881,11 @@
    "linesOnCrop": 0.5,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 880
+   "ms": 938
   },
   {
    "scene": "evaluation-21",
    "mode": "neutral",
-   "gsdCm": 1,
-   "pitchM": 0.7,
-   "soil": "red",
-   "straw": true,
-   "twin": false,
-   "widthM": 4.334,
-   "found": true,
-   "pitchErr": 0.016,
-   "angleErr": 0.2,
-   "linesOnCrop": 1,
-   "offRowPrecision": 1,
-   "offRowRecall": 0.087,
-   "ms": 69
-  },
-  {
-   "scene": "evaluation-21",
-   "mode": "corn",
    "gsdCm": 1,
    "pitchM": 0.7,
    "soil": "red",
@@ -916,6 +899,23 @@
    "offRowPrecision": 1,
    "offRowRecall": 0.087,
    "ms": 80
+  },
+  {
+   "scene": "evaluation-21",
+   "mode": "corn",
+   "gsdCm": 1,
+   "pitchM": 0.7,
+   "soil": "red",
+   "straw": true,
+   "twin": false,
+   "widthM": 4.334,
+   "found": true,
+   "pitchErr": 0.016,
+   "angleErr": 0.2,
+   "linesOnCrop": 1,
+   "offRowPrecision": 1,
+   "offRowRecall": 0.087,
+   "ms": 75
   },
   {
    "scene": "evaluation-22",
@@ -932,7 +932,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 575
+   "ms": 636
   },
   {
    "scene": "evaluation-22",
@@ -949,7 +949,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 273
+   "ms": 291
   },
   {
    "scene": "evaluation-23",
@@ -966,7 +966,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 614
+   "ms": 658
   },
   {
    "scene": "evaluation-23",
@@ -983,7 +983,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 560
+   "ms": 573
   },
   {
    "scene": "evaluation-24",
@@ -1000,7 +1000,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 327
+   "ms": 344
   },
   {
    "scene": "evaluation-24",
@@ -1017,7 +1017,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 356
+   "ms": 373
   },
   {
    "scene": "evaluation-25",
@@ -1034,7 +1034,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.729,
-   "ms": 553
+   "ms": 549
   },
   {
    "scene": "evaluation-25",
@@ -1051,7 +1051,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.729,
-   "ms": 596
+   "ms": 608
   },
   {
    "scene": "evaluation-26",
@@ -1068,7 +1068,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 131
+   "ms": 135
   },
   {
    "scene": "evaluation-26",
@@ -1085,7 +1085,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 157
+   "ms": 167
   },
   {
    "scene": "evaluation-27",
@@ -1102,7 +1102,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 99
+   "ms": 89
   },
   {
    "scene": "evaluation-27",
@@ -1119,7 +1119,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 64
+   "ms": 66
   },
   {
    "scene": "evaluation-28",
@@ -1136,7 +1136,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": 0,
    "offRowRecall": 0,
-   "ms": 1117
+   "ms": 1272
   },
   {
    "scene": "evaluation-28",
@@ -1153,7 +1153,7 @@
    "linesOnCrop": 0.5,
    "offRowPrecision": 0.974,
    "offRowRecall": 0.302,
-   "ms": 483
+   "ms": 527
   },
   {
    "scene": "evaluation-29",
@@ -1170,7 +1170,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.393,
-   "ms": 126
+   "ms": 144
   },
   {
    "scene": "evaluation-29",
@@ -1187,7 +1187,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.393,
-   "ms": 129
+   "ms": 147
   },
   {
    "scene": "evaluation-30",
@@ -1204,7 +1204,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.239,
-   "ms": 764
+   "ms": 850
   },
   {
    "scene": "evaluation-30",
@@ -1221,7 +1221,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.239,
-   "ms": 768
+   "ms": 862
   },
   {
    "scene": "evaluation-31",
@@ -1238,7 +1238,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.085,
-   "ms": 1576
+   "ms": 1690
   },
   {
    "scene": "evaluation-31",
@@ -1255,7 +1255,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.085,
-   "ms": 1665
+   "ms": 1788
   },
   {
    "scene": "evaluation-32",
@@ -1272,7 +1272,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.333,
-   "ms": 124
+   "ms": 128
   },
   {
    "scene": "evaluation-32",
@@ -1289,7 +1289,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.333,
-   "ms": 128
+   "ms": 136
   },
   {
    "scene": "evaluation-33",
@@ -1323,7 +1323,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 104
+   "ms": 114
   },
   {
    "scene": "evaluation-34",
@@ -1340,7 +1340,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 515
+   "ms": 532
   },
   {
    "scene": "evaluation-34",
@@ -1357,7 +1357,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 444
+   "ms": 469
   },
   {
    "scene": "evaluation-35",
@@ -1374,7 +1374,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 58
+   "ms": 60
   },
   {
    "scene": "evaluation-35",
@@ -1391,7 +1391,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 51
+   "ms": 55
   },
   {
    "scene": "evaluation-36",
@@ -1408,7 +1408,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 235
+   "ms": 264
   },
   {
    "scene": "evaluation-36",
@@ -1425,7 +1425,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 248
+   "ms": 275
   },
   {
    "scene": "evaluation-37",
@@ -1442,7 +1442,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 26
+   "ms": 29
   },
   {
    "scene": "evaluation-37",
@@ -1459,7 +1459,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 21
+   "ms": 22
   },
   {
    "scene": "evaluation-38",
@@ -1476,7 +1476,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": 0,
    "offRowRecall": 0,
-   "ms": 640
+   "ms": 716
   },
   {
    "scene": "evaluation-38",
@@ -1493,7 +1493,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.923,
    "offRowRecall": 0.881,
-   "ms": 204
+   "ms": 224
   },
   {
    "scene": "evaluation-39",
@@ -1510,7 +1510,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 156
+   "ms": 173
   },
   {
    "scene": "evaluation-39",
@@ -1527,7 +1527,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 152
+   "ms": 169
   },
   {
    "scene": "evaluation-40",
@@ -1544,7 +1544,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.235,
-   "ms": 386
+   "ms": 411
   },
   {
    "scene": "evaluation-40",
@@ -1561,7 +1561,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.235,
-   "ms": 419
+   "ms": 391
   },
   {
    "scene": "evaluation-41",
@@ -1578,7 +1578,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.929,
-   "ms": 240
+   "ms": 241
   },
   {
    "scene": "evaluation-41",
@@ -1595,7 +1595,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.929,
-   "ms": 247
+   "ms": 262
   },
   {
    "scene": "evaluation-42",
@@ -1612,7 +1612,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 417
+   "ms": 449
   },
   {
    "scene": "evaluation-42",
@@ -1629,7 +1629,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 492
+   "ms": 494
   },
   {
    "scene": "evaluation-43",
@@ -1646,7 +1646,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.292,
-   "ms": 60
+   "ms": 62
   },
   {
    "scene": "evaluation-43",
@@ -1680,7 +1680,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 1128
+   "ms": 1164
   },
   {
    "scene": "evaluation-44",
@@ -1697,7 +1697,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 581
+   "ms": 595
   },
   {
    "scene": "evaluation-45",
@@ -1714,7 +1714,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 210
+   "ms": 217
   },
   {
    "scene": "evaluation-45",
@@ -1731,7 +1731,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 215
+   "ms": 214
   },
   {
    "scene": "evaluation-46",
@@ -1765,7 +1765,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.455,
-   "ms": 358
+   "ms": 356
   },
   {
    "scene": "evaluation-47",
@@ -1782,7 +1782,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.78,
-   "ms": 454
+   "ms": 469
   },
   {
    "scene": "evaluation-47",
@@ -1799,7 +1799,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.78,
-   "ms": 524
+   "ms": 522
   },
   {
    "scene": "evaluation-48",
@@ -1816,7 +1816,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.848,
-   "ms": 423
+   "ms": 427
   },
   {
    "scene": "evaluation-48",
@@ -1833,7 +1833,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.848,
-   "ms": 482
+   "ms": 446
   },
   {
    "scene": "evaluation-49",
@@ -1850,7 +1850,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.995,
    "offRowRecall": 0.585,
-   "ms": 1041
+   "ms": 993
   },
   {
    "scene": "evaluation-49",
@@ -1867,7 +1867,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.995,
    "offRowRecall": 0.585,
-   "ms": 914
+   "ms": 900
   },
   {
    "scene": "evaluation-50",
@@ -1884,7 +1884,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.442,
-   "ms": 485
+   "ms": 481
   },
   {
    "scene": "evaluation-50",
@@ -1901,28 +1901,11 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.442,
-   "ms": 504
+   "ms": 488
   },
   {
    "scene": "evaluation-51",
    "mode": "neutral",
-   "gsdCm": 0.3,
-   "pitchM": 0.762,
-   "soil": "red",
-   "straw": false,
-   "twin": false,
-   "widthM": 6,
-   "found": true,
-   "pitchErr": 0.003,
-   "angleErr": 0.4,
-   "linesOnCrop": 1,
-   "offRowPrecision": null,
-   "offRowRecall": null,
-   "ms": 284
-  },
-  {
-   "scene": "evaluation-51",
-   "mode": "corn",
    "gsdCm": 0.3,
    "pitchM": 0.762,
    "soil": "red",
@@ -1936,6 +1919,23 @@
    "offRowPrecision": null,
    "offRowRecall": null,
    "ms": 266
+  },
+  {
+   "scene": "evaluation-51",
+   "mode": "corn",
+   "gsdCm": 0.3,
+   "pitchM": 0.762,
+   "soil": "red",
+   "straw": false,
+   "twin": false,
+   "widthM": 6,
+   "found": true,
+   "pitchErr": 0.003,
+   "angleErr": 0.4,
+   "linesOnCrop": 1,
+   "offRowPrecision": null,
+   "offRowRecall": null,
+   "ms": 260
   },
   {
    "scene": "evaluation-52",
@@ -1952,7 +1952,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 311
+   "ms": 295
   },
   {
    "scene": "evaluation-52",
@@ -1969,7 +1969,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.889,
-   "ms": 103
+   "ms": 95
   },
   {
    "scene": "evaluation-53",
@@ -2003,7 +2003,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.467,
-   "ms": 93
+   "ms": 94
   },
   {
    "scene": "evaluation-54",
@@ -2020,7 +2020,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 620
+   "ms": 621
   },
   {
    "scene": "evaluation-54",
@@ -2037,7 +2037,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 249
+   "ms": 245
   },
   {
    "scene": "evaluation-55",
@@ -2054,7 +2054,7 @@
    "linesOnCrop": 0.5,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 98
+   "ms": 100
   },
   {
    "scene": "evaluation-55",
@@ -2071,7 +2071,7 @@
    "linesOnCrop": null,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 47
+   "ms": 46
   },
   {
    "scene": "evaluation-56",
@@ -2088,7 +2088,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.879,
    "offRowRecall": 0.51,
-   "ms": 1448
+   "ms": 1431
   },
   {
    "scene": "evaluation-56",
@@ -2105,7 +2105,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.879,
    "offRowRecall": 0.51,
-   "ms": 1592
+   "ms": 1574
   },
   {
    "scene": "evaluation-57",
@@ -2122,7 +2122,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 429
+   "ms": 420
   },
   {
    "scene": "evaluation-57",
@@ -2139,7 +2139,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 512
+   "ms": 496
   },
   {
    "scene": "evaluation-58",
@@ -2156,7 +2156,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 1065
+   "ms": 1073
   },
   {
    "scene": "evaluation-58",
@@ -2173,7 +2173,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 1181
+   "ms": 1171
   },
   {
    "scene": "evaluation-59",
@@ -2190,7 +2190,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.971,
-   "ms": 254
+   "ms": 269
   },
   {
    "scene": "evaluation-59",
@@ -2207,7 +2207,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.971,
-   "ms": 266
+   "ms": 257
   },
   {
    "scene": "evaluation-60",
@@ -2224,7 +2224,7 @@
    "linesOnCrop": 0.361,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 610
+   "ms": 605
   },
   {
    "scene": "evaluation-60",
@@ -2241,7 +2241,7 @@
    "linesOnCrop": 0.581,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 609
+   "ms": 617
   }
  ]
 }

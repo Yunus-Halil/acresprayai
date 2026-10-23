@@ -1,6 +1,6 @@
 # Crop profile benchmark: WeedsGalore held-out test patches (corn)
 
-Run 2026-10-23, code c28f705+uncommitted. WeedsGalore (Celikkan et al. 2025, CC BY 4.0): one maize field near Potsdam, Germany, 70 cm rows, four dates (sown 9 May 2023; 25 May, 30 May, 6 June, 15 June). 26 test patches of 1.5 x 1.5 m (the authors' spatial split; nothing here was set on them). RGB composites of the P4 Multispectral R, G and B bands with one gain from train and val (scripts/cropProfiles/prep_weedsgalore.py): not a consumer RGB camera. Scores at 1 and 2 cm come from box-averaging 0.25 cm pixels and are upper bounds for native imagery at those sizes (Velumani 2021).
+Run 2026-10-23, code 6d64eee. WeedsGalore (Celikkan et al. 2025, CC BY 4.0): one maize field near Potsdam, Germany, 70 cm rows, four dates (sown 9 May 2023; 25 May, 30 May, 6 June, 15 June). 26 test patches of 1.5 x 1.5 m (the authors' spatial split; nothing here was set on them). RGB composites of the P4 Multispectral R, G and B bands with one gain from train and val (scripts/cropProfiles/prep_weedsgalore.py): not a consumer RGB camera. Scores at 1 and 2 cm come from box-averaging 0.25 cm pixels and are upper bounds for native imagery at those sizes (Velumani 2021).
 
 Rows for the position rule are taken from the maize labels (oracle rows): these numbers measure the rule and the band width given correct rows, not the row reader. The row band is the engine's: half-width max(15 cm, 0.15 x pitch).
 

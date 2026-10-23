@@ -1,6 +1,6 @@
 # Crop profile benchmark: synthetic (corn)
 
-Run 2026-10-23, code c28f705+uncommitted, 80 development scenes (seeds 1000+ and the first evaluation set, seeds 2000+, which became development data when it prompted the ExGR gate), rendered by scripts/cropProfiles/scenes.ts. Synthetic: it tests the engine against known geometry and known failure conditions, not field accuracy.
+Run 2026-10-23, code 6d64eee, 80 development scenes (seeds 1000+ and the first evaluation set, seeds 2000+, which became development data when it prompted the ExGR gate), rendered by scripts/cropProfiles/scenes.ts. Synthetic: it tests the engine against known geometry and known failure conditions, not field accuracy.
 
 Correct rows: found, at least three quarters of the row lines within a quarter pitch of a true row, pitch within 5%. Wrong rows: found, and not correct. Off-row precision and recall: blobs the pass calls off-row against the weeds rendered between the rows (matched within 1.5 radii or 6 cm).
 

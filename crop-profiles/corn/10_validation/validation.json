@@ -1,6 +1,6 @@
 {
-  "status": "unvalidated",
-  "summary": "Benchmarks planned; results are written here only from actual runs of npm run bench:crop-profile.",
+  "status": "partial",
+  "summary": "6 of 6 benchmarks run (2026-10-23, code bdedeb7). Acceptance met: synthetic-corn-stands, corn-photos-label-free, weedsgalore-position, weedsgalore-stage. Not met: weedsgalore-vegetation, weedsgalore-cover. Written by npm run profiles:record from the result files; the profile stays experimental.",
   "benchmarks": [
     {
       "id": "synthetic-corn-stands",
@@ -21,19 +21,42 @@
       "acceptance": [
         {
           "metric": "rows found on evaluation scenes",
-          "threshold": ">= 95%"
+          "threshold": ">= 95%",
+          "met": true
         },
         {
           "metric": "median pitch error",
-          "threshold": "<= 3%"
+          "threshold": "<= 3%",
+          "met": true
         },
         {
           "metric": "row lines on the crop (phase error under a quarter pitch)",
-          "threshold": ">= 95%"
+          "threshold": ">= 95%",
+          "met": true
         }
       ],
-      "status": "planned",
-      "notes": "Synthetic: tests the engine against known geometry and known failure conditions, not field accuracy."
+      "status": "run",
+      "notes": "Synthetic: tests the engine against known geometry and known failure conditions, not field accuracy.",
+      "date": "2026-10-23",
+      "codeRevision": "bdedeb7",
+      "resultFile": "10_validation/results/synthetic.json",
+      "metrics": {
+        "scenes": 60,
+        "rowsFound": 0.983,
+        "correctRows": 0.9,
+        "wrongRows": 0.083,
+        "medianPitchErr": 0.001,
+        "linesOnCrop": 0.95,
+        "offRowPrecision": 0.848,
+        "offRowRecall": 0.507,
+        "neutralCorrectRows": 0.783,
+        "neutralWrongRows": 0.217,
+        "neutralLinesOnCrop": 0.821,
+        "neutralOffRowPrecision": 0.694,
+        "neutralOffRowRecall": 0.432,
+        "strawCorrectRows": 0.8,
+        "strawNeutralCorrectRows": 0.56
+      }
     },
     {
       "id": "corn-photos-label-free",
@@ -52,19 +75,35 @@
       "acceptance": [
         {
           "metric": "photos with rows found",
-          "threshold": "3 of 3"
+          "threshold": "3 of 3",
+          "met": true
         },
         {
           "metric": "green on the row lines against green mid-alley",
-          "threshold": ">= 2 on every photo"
+          "threshold": ">= 2 on every photo",
+          "met": true
         }
       ],
-      "status": "planned",
+      "status": "run",
       "notes": "No ground truth: the on-green ratio is a proxy that rows sit on the vegetation.",
       "sources": [
         "swardus-corn-photos-2026-10-23",
         "meyer-neto-2008"
-      ]
+      ],
+      "date": "2026-10-23",
+      "codeRevision": "6d64eee",
+      "resultFile": "10_validation/results/photos.json",
+      "metrics": {
+        "photosWithRows": 3,
+        "neutralPhotosWithRows": 2,
+        "minOnGreenRatio": 12.135,
+        "onGreen 0359_jpg": 12.135,
+        "onGreen ba2a945c": 134.774,
+        "onGreen pic1.jpg": 91.391,
+        "neutral onGreen 0359_jpg": 0.387,
+        "neutral onGreen ba2a945c": 134.774,
+        "neutral onGreen pic1.jpg": "none"
+      }
     },
     {
       "id": "weedsgalore-vegetation",
@@ -85,13 +124,25 @@
       "acceptance": [
         {
           "metric": "vegetation IoU at native resolution",
-          "threshold": ">= 0.70"
+          "threshold": ">= 0.70",
+          "met": false
         }
       ],
-      "status": "planned",
+      "status": "run",
       "sources": [
         "weedsgalore-2025"
-      ]
+      ],
+      "date": "2026-10-23",
+      "codeRevision": "6d64eee",
+      "resultFile": "10_validation/results/weedsgalore.json",
+      "metrics": {
+        "iou025": 0.41,
+        "iou1": 0.458,
+        "iou2": 0.394,
+        "neutralIou025": 0.25,
+        "neutralIou1": 0.405,
+        "neutralIou2": 0.451
+      }
     },
     {
       "id": "weedsgalore-position",
@@ -112,17 +163,32 @@
       "acceptance": [
         {
           "metric": "weed pixels off the row band (recall of the position rule)",
-          "threshold": "reported, no target: in-row weeds are out of reach by design"
+          "threshold": "reported, no target: in-row weeds are out of reach by design",
+          "met": true
         },
         {
           "metric": "maize pixels inside the row band",
-          "threshold": ">= 0.85"
+          "threshold": ">= 0.85",
+          "met": true
         }
       ],
-      "status": "planned",
+      "status": "run",
       "sources": [
         "weedsgalore-2025"
-      ]
+      ],
+      "date": "2026-10-23",
+      "codeRevision": "6d64eee",
+      "resultFile": "10_validation/results/weedsgalore.json",
+      "metrics": {
+        "weedOutsideBand025": 0.626,
+        "weedOutsideBand1": 0.624,
+        "weedOutsideBand2": 0.661,
+        "maizeInsideBand025": 0.968,
+        "maizeInsideBand1": 0.968,
+        "maizeInsideBand2": 0.946,
+        "offBandVegetationThatIsWeed1": 0.982,
+        "automaticRowsFound1cm": 0.692
+      }
     },
     {
       "id": "weedsgalore-cover",
@@ -143,13 +209,28 @@
       "acceptance": [
         {
           "metric": "mean absolute error of off-row weed cover per patch",
-          "threshold": "<= 0.03"
+          "threshold": "<= 0.03",
+          "met": false
         }
       ],
-      "status": "planned",
+      "status": "run",
       "sources": [
         "weedsgalore-2025"
-      ]
+      ],
+      "date": "2026-10-23",
+      "codeRevision": "6d64eee",
+      "resultFile": "10_validation/results/weedsgalore.json",
+      "metrics": {
+        "mae025": 0.014,
+        "mae1": 0.02,
+        "mae2": 0.031,
+        "bias025": -0.009,
+        "bias1": -0.02,
+        "bias2": -0.031,
+        "neutralMae025": 0.368,
+        "neutralMae1": 0.148,
+        "neutralMae2": 0.013
+      }
     },
     {
       "id": "weedsgalore-stage",
@@ -167,13 +248,25 @@
       "acceptance": [
         {
           "metric": "stated stage inside the estimated range",
-          "threshold": "every date with a stated stage"
+          "threshold": "every date with a stated stage",
+          "met": true
         }
       ],
-      "status": "planned",
+      "status": "run",
       "sources": [
         "weedsgalore-2025"
-      ]
+      ],
+      "date": "2026-10-23",
+      "codeRevision": "6d64eee",
+      "resultFile": "10_validation/results/stage.json",
+      "metrics": {
+        "statedDates": 1,
+        "statedInRange": 1,
+        "2023-05-25": "VE to V4",
+        "2023-05-30": "VE to V6",
+        "2023-06-06": "VE to V9",
+        "2023-06-15": "V6 to V12"
+      }
     }
   ],
   "failureCases": [

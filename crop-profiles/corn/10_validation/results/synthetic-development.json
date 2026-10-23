@@ -3,7 +3,7 @@
  "set": "development",
  "crop": "corn",
  "date": "2026-10-23",
- "codeRevision": "c28f705+uncommitted",
+ "codeRevision": "6d64eee",
  "summary": {
   "all": {
    "neutral": {
@@ -17,7 +17,7 @@
     "scenesAllLinesOnCrop": 0.813,
     "offRowPrecision": 0.859,
     "offRowRecall": 0.43,
-    "medianMs": 376
+    "medianMs": 368
    },
    "corn": {
     "scenes": 80,
@@ -30,7 +30,7 @@
     "scenesAllLinesOnCrop": 0.888,
     "offRowPrecision": 0.947,
     "offRowRecall": 0.507,
-    "medianMs": 343
+    "medianMs": 340
    }
   },
   "straw stripes": {
@@ -45,7 +45,7 @@
     "scenesAllLinesOnCrop": 0.762,
     "offRowPrecision": 0.791,
     "offRowRecall": 0.378,
-    "medianMs": 364
+    "medianMs": 366
    },
    "corn": {
     "scenes": 42,
@@ -58,7 +58,7 @@
     "scenesAllLinesOnCrop": 0.881,
     "offRowPrecision": 0.957,
     "offRowRecall": 0.515,
-    "medianMs": 322
+    "medianMs": 304
    }
   },
   "no straw": {
@@ -73,7 +73,7 @@
     "scenesAllLinesOnCrop": 0.868,
     "offRowPrecision": 0.925,
     "offRowRecall": 0.49,
-    "medianMs": 382
+    "medianMs": 374
    },
    "corn": {
     "scenes": 38,
@@ -86,7 +86,7 @@
     "scenesAllLinesOnCrop": 0.895,
     "offRowPrecision": 0.936,
     "offRowRecall": 0.499,
-    "medianMs": 370
+    "medianMs": 391
    }
   },
   "small photo (under 7.5 m)": {
@@ -101,7 +101,7 @@
     "scenesAllLinesOnCrop": 0.829,
     "offRowPrecision": 0.911,
     "offRowRecall": 0.389,
-    "medianMs": 147
+    "medianMs": 155
    },
    "corn": {
     "scenes": 41,
@@ -114,7 +114,7 @@
     "scenesAllLinesOnCrop": 0.854,
     "offRowPrecision": 0.972,
     "offRowRecall": 0.417,
-    "medianMs": 133
+    "medianMs": 118
    }
   },
   "twin rows": {
@@ -129,7 +129,7 @@
     "scenesAllLinesOnCrop": 0.6,
     "offRowPrecision": 0.751,
     "offRowRecall": 0.122,
-    "medianMs": 404
+    "medianMs": 385
    },
    "corn": {
     "scenes": 10,
@@ -142,7 +142,7 @@
     "scenesAllLinesOnCrop": 0.6,
     "offRowPrecision": 0.801,
     "offRowRecall": 0.136,
-    "medianMs": 347
+    "medianMs": 341
    }
   },
   "red soil": {
@@ -157,7 +157,7 @@
     "scenesAllLinesOnCrop": 0.69,
     "offRowPrecision": 0.732,
     "offRowRecall": 0.293,
-    "medianMs": 387
+    "medianMs": 385
    },
    "corn": {
     "scenes": 29,
@@ -170,7 +170,7 @@
     "scenesAllLinesOnCrop": 0.862,
     "offRowPrecision": 0.997,
     "offRowRecall": 0.468,
-    "medianMs": 315
+    "medianMs": 298
    }
   },
   "gsd 2 to 3 cm": {
@@ -185,7 +185,7 @@
     "scenesAllLinesOnCrop": 0.897,
     "offRowPrecision": 0.887,
     "offRowRecall": 0.483,
-    "medianMs": 376
+    "medianMs": 370
    },
    "corn": {
     "scenes": 29,
@@ -198,7 +198,7 @@
     "scenesAllLinesOnCrop": 0.931,
     "offRowPrecision": 0.934,
     "offRowRecall": 0.483,
-    "medianMs": 343
+    "medianMs": 341
    }
   }
  },
@@ -218,7 +218,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 2202
+   "ms": 2172
   },
   {
    "scene": "development-1",
@@ -235,7 +235,7 @@
    "linesOnCrop": null,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 609
+   "ms": 596
   },
   {
    "scene": "development-2",
@@ -252,7 +252,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 355
+   "ms": 345
   },
   {
    "scene": "development-2",
@@ -269,7 +269,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 386
+   "ms": 397
   },
   {
    "scene": "development-3",
@@ -286,7 +286,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 90
+   "ms": 93
   },
   {
    "scene": "development-3",
@@ -320,7 +320,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 809
+   "ms": 825
   },
   {
    "scene": "development-4",
@@ -337,7 +337,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 343
+   "ms": 354
   },
   {
    "scene": "development-5",
@@ -354,7 +354,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": 0,
    "offRowRecall": 0,
-   "ms": 509
+   "ms": 518
   },
   {
    "scene": "development-5",
@@ -371,7 +371,7 @@
    "linesOnCrop": null,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 229
+   "ms": 237
   },
   {
    "scene": "development-6",
@@ -388,7 +388,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.075,
-   "ms": 1059
+   "ms": 1113
   },
   {
    "scene": "development-6",
@@ -405,7 +405,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.075,
-   "ms": 1066
+   "ms": 1037
   },
   {
    "scene": "development-7",
@@ -422,7 +422,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.549,
-   "ms": 683
+   "ms": 673
   },
   {
    "scene": "development-7",
@@ -439,7 +439,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.549,
-   "ms": 757
+   "ms": 747
   },
   {
    "scene": "development-8",
@@ -456,7 +456,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.815,
-   "ms": 484
+   "ms": 496
   },
   {
    "scene": "development-8",
@@ -473,7 +473,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.815,
-   "ms": 460
+   "ms": 459
   },
   {
    "scene": "development-9",
@@ -490,7 +490,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 104
+   "ms": 106
   },
   {
    "scene": "development-9",
@@ -507,7 +507,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 96
+   "ms": 94
   },
   {
    "scene": "development-10",
@@ -524,7 +524,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 462
+   "ms": 468
   },
   {
    "scene": "development-10",
@@ -541,11 +541,28 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 492
+   "ms": 481
   },
   {
    "scene": "development-11",
    "mode": "neutral",
+   "gsdCm": 0.3,
+   "pitchM": 0.762,
+   "soil": "dark",
+   "straw": true,
+   "twin": false,
+   "widthM": 6,
+   "found": true,
+   "pitchErr": 0.001,
+   "angleErr": 0.05,
+   "linesOnCrop": 1,
+   "offRowPrecision": 1,
+   "offRowRecall": 0.714,
+   "ms": 281
+  },
+  {
+   "scene": "development-11",
+   "mode": "corn",
    "gsdCm": 0.3,
    "pitchM": 0.762,
    "soil": "dark",
@@ -559,23 +576,6 @@
    "offRowPrecision": 1,
    "offRowRecall": 0.714,
    "ms": 275
-  },
-  {
-   "scene": "development-11",
-   "mode": "corn",
-   "gsdCm": 0.3,
-   "pitchM": 0.762,
-   "soil": "dark",
-   "straw": true,
-   "twin": false,
-   "widthM": 6,
-   "found": true,
-   "pitchErr": 0.001,
-   "angleErr": 0.05,
-   "linesOnCrop": 1,
-   "offRowPrecision": 1,
-   "offRowRecall": 0.714,
-   "ms": 302
   },
   {
    "scene": "development-12",
@@ -592,7 +592,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 409
+   "ms": 407
   },
   {
    "scene": "development-12",
@@ -609,7 +609,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 469
+   "ms": 452
   },
   {
    "scene": "development-13",
@@ -626,7 +626,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 404
+   "ms": 385
   },
   {
    "scene": "development-13",
@@ -643,7 +643,7 @@
    "linesOnCrop": 0.5,
    "offRowPrecision": 1,
    "offRowRecall": 0.125,
-   "ms": 302
+   "ms": 298
   },
   {
    "scene": "development-14",
@@ -660,7 +660,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.818,
-   "ms": 299
+   "ms": 305
   },
   {
    "scene": "development-14",
@@ -694,7 +694,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.538,
-   "ms": 374
+   "ms": 368
   },
   {
    "scene": "development-15",
@@ -711,7 +711,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.538,
-   "ms": 439
+   "ms": 452
   },
   {
    "scene": "development-16",
@@ -728,7 +728,7 @@
    "linesOnCrop": 0.488,
    "offRowPrecision": 0.292,
    "offRowRecall": 0.333,
-   "ms": 376
+   "ms": 370
   },
   {
    "scene": "development-16",
@@ -745,7 +745,7 @@
    "linesOnCrop": 0.488,
    "offRowPrecision": 0.292,
    "offRowRecall": 0.333,
-   "ms": 347
+   "ms": 341
   },
   {
    "scene": "development-17",
@@ -762,7 +762,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.972,
    "offRowRecall": 0.628,
-   "ms": 322
+   "ms": 304
   },
   {
    "scene": "development-17",
@@ -779,7 +779,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.972,
    "offRowRecall": 0.628,
-   "ms": 279
+   "ms": 294
   },
   {
    "scene": "development-18",
@@ -796,7 +796,7 @@
    "linesOnCrop": null,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 442
+   "ms": 435
   },
   {
    "scene": "development-18",
@@ -813,7 +813,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.979,
-   "ms": 502
+   "ms": 493
   },
   {
    "scene": "development-19",
@@ -830,7 +830,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 844
+   "ms": 802
   },
   {
    "scene": "development-19",
@@ -847,7 +847,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 766
+   "ms": 742
   },
   {
    "scene": "development-20",
@@ -864,7 +864,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.368,
-   "ms": 387
+   "ms": 401
   },
   {
    "scene": "development-20",
@@ -881,7 +881,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.368,
-   "ms": 429
+   "ms": 430
   },
   {
    "scene": "development-v1eval-1",
@@ -898,7 +898,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.786,
-   "ms": 147
+   "ms": 146
   },
   {
    "scene": "development-v1eval-1",
@@ -915,7 +915,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.786,
-   "ms": 163
+   "ms": 159
   },
   {
    "scene": "development-v1eval-2",
@@ -932,7 +932,7 @@
    "linesOnCrop": 0.467,
    "offRowPrecision": 1,
    "offRowRecall": 0.438,
-   "ms": 488
+   "ms": 692
   },
   {
    "scene": "development-v1eval-2",
@@ -949,7 +949,7 @@
    "linesOnCrop": 0.467,
    "offRowPrecision": 1,
    "offRowRecall": 0.438,
-   "ms": 322
+   "ms": 304
   },
   {
    "scene": "development-v1eval-3",
@@ -966,7 +966,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.357,
-   "ms": 665
+   "ms": 653
   },
   {
    "scene": "development-v1eval-3",
@@ -983,7 +983,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.357,
-   "ms": 625
+   "ms": 631
   },
   {
    "scene": "development-v1eval-4",
@@ -1000,7 +1000,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 232
+   "ms": 221
   },
   {
    "scene": "development-v1eval-4",
@@ -1017,7 +1017,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 236
+   "ms": 229
   },
   {
    "scene": "development-v1eval-5",
@@ -1034,7 +1034,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.714,
    "offRowRecall": 1,
-   "ms": 83
+   "ms": 86
   },
   {
    "scene": "development-v1eval-5",
@@ -1051,7 +1051,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 64
+   "ms": 67
   },
   {
    "scene": "development-v1eval-6",
@@ -1068,7 +1068,7 @@
    "linesOnCrop": 0.51,
    "offRowPrecision": 0.912,
    "offRowRecall": 0.265,
-   "ms": 1020
+   "ms": 1050
   },
   {
    "scene": "development-v1eval-6",
@@ -1085,7 +1085,7 @@
    "linesOnCrop": 0.51,
    "offRowPrecision": 0.912,
    "offRowRecall": 0.265,
-   "ms": 885
+   "ms": 803
   },
   {
    "scene": "development-v1eval-7",
@@ -1102,7 +1102,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.783,
-   "ms": 560
+   "ms": 598
   },
   {
    "scene": "development-v1eval-7",
@@ -1119,7 +1119,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.783,
-   "ms": 494
+   "ms": 533
   },
   {
    "scene": "development-v1eval-8",
@@ -1136,7 +1136,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 286
+   "ms": 277
   },
   {
    "scene": "development-v1eval-8",
@@ -1153,7 +1153,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 283
+   "ms": 289
   },
   {
    "scene": "development-v1eval-9",
@@ -1170,7 +1170,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.942,
-   "ms": 461
+   "ms": 443
   },
   {
    "scene": "development-v1eval-9",
@@ -1187,7 +1187,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.942,
-   "ms": 412
+   "ms": 408
   },
   {
    "scene": "development-v1eval-10",
@@ -1221,7 +1221,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.5,
-   "ms": 32
+   "ms": 34
   },
   {
    "scene": "development-v1eval-11",
@@ -1238,7 +1238,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 382
+   "ms": 379
   },
   {
    "scene": "development-v1eval-11",
@@ -1255,7 +1255,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 407
+   "ms": 413
   },
   {
    "scene": "development-v1eval-12",
@@ -1289,7 +1289,7 @@
    "linesOnCrop": null,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 50
+   "ms": 49
   },
   {
    "scene": "development-v1eval-13",
@@ -1306,7 +1306,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.636,
-   "ms": 60
+   "ms": 65
   },
   {
    "scene": "development-v1eval-13",
@@ -1323,7 +1323,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.636,
-   "ms": 54
+   "ms": 64
   },
   {
    "scene": "development-v1eval-14",
@@ -1340,7 +1340,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 82
+   "ms": 85
   },
   {
    "scene": "development-v1eval-14",
@@ -1357,7 +1357,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 68
+   "ms": 67
   },
   {
    "scene": "development-v1eval-15",
@@ -1374,7 +1374,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.965,
-   "ms": 415
+   "ms": 412
   },
   {
    "scene": "development-v1eval-15",
@@ -1391,7 +1391,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.965,
-   "ms": 406
+   "ms": 428
   },
   {
    "scene": "development-v1eval-16",
@@ -1408,7 +1408,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.663,
-   "ms": 606
+   "ms": 595
   },
   {
    "scene": "development-v1eval-16",
@@ -1425,7 +1425,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.665,
-   "ms": 769
+   "ms": 749
   },
   {
    "scene": "development-v1eval-17",
@@ -1442,7 +1442,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.881,
-   "ms": 405
+   "ms": 395
   },
   {
    "scene": "development-v1eval-17",
@@ -1459,7 +1459,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.881,
-   "ms": 370
+   "ms": 391
   },
   {
    "scene": "development-v1eval-18",
@@ -1476,7 +1476,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 259
+   "ms": 253
   },
   {
    "scene": "development-v1eval-18",
@@ -1493,7 +1493,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 260
+   "ms": 254
   },
   {
    "scene": "development-v1eval-19",
@@ -1510,7 +1510,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 291
+   "ms": 306
   },
   {
    "scene": "development-v1eval-19",
@@ -1527,7 +1527,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 251
+   "ms": 241
   },
   {
    "scene": "development-v1eval-20",
@@ -1544,7 +1544,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.138,
-   "ms": 592
+   "ms": 626
   },
   {
    "scene": "development-v1eval-20",
@@ -1561,7 +1561,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.138,
-   "ms": 675
+   "ms": 683
   },
   {
    "scene": "development-v1eval-21",
@@ -1578,7 +1578,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 247
+   "ms": 265
   },
   {
    "scene": "development-v1eval-21",
@@ -1595,7 +1595,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 280
+   "ms": 244
   },
   {
    "scene": "development-v1eval-22",
@@ -1612,7 +1612,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": 0,
    "offRowRecall": 0,
-   "ms": 3139
+   "ms": 3030
   },
   {
    "scene": "development-v1eval-22",
@@ -1629,28 +1629,11 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.959,
    "offRowRecall": 0.975,
-   "ms": 865
+   "ms": 868
   },
   {
    "scene": "development-v1eval-23",
    "mode": "neutral",
-   "gsdCm": 0.5,
-   "pitchM": 0.762,
-   "soil": "dark",
-   "straw": true,
-   "twin": false,
-   "widthM": 4.692,
-   "found": true,
-   "pitchErr": 0.011,
-   "angleErr": 1,
-   "linesOnCrop": 1,
-   "offRowPrecision": 1,
-   "offRowRecall": 0.722,
-   "ms": 87
-  },
-  {
-   "scene": "development-v1eval-23",
-   "mode": "corn",
    "gsdCm": 0.5,
    "pitchM": 0.762,
    "soil": "dark",
@@ -1666,6 +1649,23 @@
    "ms": 93
   },
   {
+   "scene": "development-v1eval-23",
+   "mode": "corn",
+   "gsdCm": 0.5,
+   "pitchM": 0.762,
+   "soil": "dark",
+   "straw": true,
+   "twin": false,
+   "widthM": 4.692,
+   "found": true,
+   "pitchErr": 0.011,
+   "angleErr": 1,
+   "linesOnCrop": 1,
+   "offRowPrecision": 1,
+   "offRowRecall": 0.722,
+   "ms": 80
+  },
+  {
    "scene": "development-v1eval-24",
    "mode": "neutral",
    "gsdCm": 2,
@@ -1680,7 +1680,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 145
+   "ms": 155
   },
   {
    "scene": "development-v1eval-24",
@@ -1697,7 +1697,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 133
+   "ms": 115
   },
   {
    "scene": "development-v1eval-25",
@@ -1714,7 +1714,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.2,
-   "ms": 340
+   "ms": 331
   },
   {
    "scene": "development-v1eval-25",
@@ -1731,7 +1731,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.2,
-   "ms": 360
+   "ms": 309
   },
   {
    "scene": "development-v1eval-26",
@@ -1748,7 +1748,7 @@
    "linesOnCrop": 0.6,
    "offRowPrecision": 1,
    "offRowRecall": 0.733,
-   "ms": 101
+   "ms": 102
   },
   {
    "scene": "development-v1eval-26",
@@ -1765,7 +1765,7 @@
    "linesOnCrop": null,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 67
+   "ms": 71
   },
   {
    "scene": "development-v1eval-27",
@@ -1782,7 +1782,7 @@
    "linesOnCrop": null,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 44
+   "ms": 43
   },
   {
    "scene": "development-v1eval-27",
@@ -1799,7 +1799,7 @@
    "linesOnCrop": null,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 50
+   "ms": 49
   },
   {
    "scene": "development-v1eval-28",
@@ -1833,7 +1833,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.4,
-   "ms": 23
+   "ms": 24
   },
   {
    "scene": "development-v1eval-29",
@@ -1850,7 +1850,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 1341
+   "ms": 1248
   },
   {
    "scene": "development-v1eval-29",
@@ -1867,7 +1867,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.833,
-   "ms": 553
+   "ms": 542
   },
   {
    "scene": "development-v1eval-30",
@@ -1884,7 +1884,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 157
+   "ms": 159
   },
   {
    "scene": "development-v1eval-30",
@@ -1901,7 +1901,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 109
+   "ms": 105
   },
   {
    "scene": "development-v1eval-31",
@@ -1918,7 +1918,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 381
+   "ms": 378
   },
   {
    "scene": "development-v1eval-31",
@@ -1935,7 +1935,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 381
+   "ms": 392
   },
   {
    "scene": "development-v1eval-32",
@@ -1952,7 +1952,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 108
+   "ms": 106
   },
   {
    "scene": "development-v1eval-32",
@@ -1969,7 +1969,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 61
+   "ms": 59
   },
   {
    "scene": "development-v1eval-33",
@@ -1986,7 +1986,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 694
+   "ms": 698
   },
   {
    "scene": "development-v1eval-33",
@@ -2003,7 +2003,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0,
    "offRowRecall": null,
-   "ms": 582
+   "ms": 581
   },
   {
    "scene": "development-v1eval-34",
@@ -2020,7 +2020,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 716
+   "ms": 689
   },
   {
    "scene": "development-v1eval-34",
@@ -2037,7 +2037,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 816
+   "ms": 790
   },
   {
    "scene": "development-v1eval-35",
@@ -2054,7 +2054,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 178
+   "ms": 174
   },
   {
    "scene": "development-v1eval-35",
@@ -2071,7 +2071,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 164
+   "ms": 162
   },
   {
    "scene": "development-v1eval-36",
@@ -2088,7 +2088,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 57
+   "ms": 58
   },
   {
    "scene": "development-v1eval-36",
@@ -2105,7 +2105,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 44
+   "ms": 43
   },
   {
    "scene": "development-v1eval-37",
@@ -2122,7 +2122,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": 0,
    "offRowRecall": 0,
-   "ms": 733
+   "ms": 715
   },
   {
    "scene": "development-v1eval-37",
@@ -2139,7 +2139,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.773,
-   "ms": 454
+   "ms": 444
   },
   {
    "scene": "development-v1eval-38",
@@ -2156,7 +2156,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.222,
-   "ms": 364
+   "ms": 366
   },
   {
    "scene": "development-v1eval-38",
@@ -2173,7 +2173,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.222,
-   "ms": 364
+   "ms": 367
   },
   {
    "scene": "development-v1eval-39",
@@ -2190,7 +2190,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.989,
    "offRowRecall": 0.874,
-   "ms": 1180
+   "ms": 1192
   },
   {
    "scene": "development-v1eval-39",
@@ -2207,7 +2207,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.989,
    "offRowRecall": 0.874,
-   "ms": 1365
+   "ms": 1329
   },
   {
    "scene": "development-v1eval-40",
@@ -2224,7 +2224,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 487
+   "ms": 452
   },
   {
    "scene": "development-v1eval-40",
@@ -2241,7 +2241,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 473
+   "ms": 460
   },
   {
    "scene": "development-v1eval-41",
@@ -2258,7 +2258,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 62
+   "ms": 60
   },
   {
    "scene": "development-v1eval-41",
@@ -2275,7 +2275,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 43
+   "ms": 42
   },
   {
    "scene": "development-v1eval-42",
@@ -2292,7 +2292,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 174
+   "ms": 158
   },
   {
    "scene": "development-v1eval-42",
@@ -2309,7 +2309,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": null,
-   "ms": 195
+   "ms": 183
   },
   {
    "scene": "development-v1eval-43",
@@ -2326,7 +2326,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.846,
-   "ms": 145
+   "ms": 140
   },
   {
    "scene": "development-v1eval-43",
@@ -2343,7 +2343,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.846,
-   "ms": 123
+   "ms": 118
   },
   {
    "scene": "development-v1eval-44",
@@ -2360,7 +2360,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 356
+   "ms": 353
   },
   {
    "scene": "development-v1eval-44",
@@ -2377,7 +2377,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 383
+   "ms": 393
   },
   {
    "scene": "development-v1eval-45",
@@ -2394,7 +2394,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.75,
    "offRowRecall": 0.973,
-   "ms": 293
+   "ms": 301
   },
   {
    "scene": "development-v1eval-45",
@@ -2411,7 +2411,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.75,
    "offRowRecall": 0.973,
-   "ms": 294
+   "ms": 289
   },
   {
    "scene": "development-v1eval-46",
@@ -2445,7 +2445,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.904,
-   "ms": 341
+   "ms": 340
   },
   {
    "scene": "development-v1eval-47",
@@ -2462,7 +2462,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.111,
-   "ms": 268
+   "ms": 267
   },
   {
    "scene": "development-v1eval-47",
@@ -2479,7 +2479,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.111,
-   "ms": 297
+   "ms": 298
   },
   {
    "scene": "development-v1eval-48",
@@ -2496,7 +2496,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.8,
    "offRowRecall": 0.06,
-   "ms": 1185
+   "ms": 1148
   },
   {
    "scene": "development-v1eval-48",
@@ -2513,7 +2513,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.8,
    "offRowRecall": 0.06,
-   "ms": 1278
+   "ms": 1119
   },
   {
    "scene": "development-v1eval-49",
@@ -2547,7 +2547,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.867,
-   "ms": 24
+   "ms": 21
   },
   {
    "scene": "development-v1eval-50",
@@ -2564,7 +2564,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.535,
-   "ms": 409
+   "ms": 374
   },
   {
    "scene": "development-v1eval-50",
@@ -2581,7 +2581,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.535,
-   "ms": 435
+   "ms": 392
   },
   {
    "scene": "development-v1eval-51",
@@ -2598,7 +2598,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 390
+   "ms": 367
   },
   {
    "scene": "development-v1eval-51",
@@ -2615,7 +2615,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 1,
-   "ms": 427
+   "ms": 364
   },
   {
    "scene": "development-v1eval-52",
@@ -2632,7 +2632,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 950
+   "ms": 842
   },
   {
    "scene": "development-v1eval-52",
@@ -2649,7 +2649,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 946
+   "ms": 862
   },
   {
    "scene": "development-v1eval-53",
@@ -2666,7 +2666,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.909,
-   "ms": 60
+   "ms": 54
   },
   {
    "scene": "development-v1eval-53",
@@ -2683,7 +2683,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.909,
-   "ms": 46
+   "ms": 43
   },
   {
    "scene": "development-v1eval-54",
@@ -2700,7 +2700,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.06,
-   "ms": 607
+   "ms": 532
   },
   {
    "scene": "development-v1eval-54",
@@ -2717,7 +2717,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.06,
-   "ms": 581
+   "ms": 530
   },
   {
    "scene": "development-v1eval-55",
@@ -2734,7 +2734,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.667,
    "offRowRecall": 0.091,
-   "ms": 39
+   "ms": 32
   },
   {
    "scene": "development-v1eval-55",
@@ -2751,7 +2751,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 0.667,
    "offRowRecall": 0.091,
-   "ms": 34
+   "ms": 29
   },
   {
    "scene": "development-v1eval-56",
@@ -2768,7 +2768,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.136,
-   "ms": 898
+   "ms": 816
   },
   {
    "scene": "development-v1eval-56",
@@ -2785,7 +2785,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.136,
-   "ms": 924
+   "ms": 806
   },
   {
    "scene": "development-v1eval-57",
@@ -2802,7 +2802,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 79
+   "ms": 66
   },
   {
    "scene": "development-v1eval-57",
@@ -2819,7 +2819,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 63
+   "ms": 61
   },
   {
    "scene": "development-v1eval-58",
@@ -2836,7 +2836,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.84,
-   "ms": 329
+   "ms": 299
   },
   {
    "scene": "development-v1eval-58",
@@ -2853,7 +2853,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.84,
-   "ms": 315
+   "ms": 269
   },
   {
    "scene": "development-v1eval-59",
@@ -2870,7 +2870,7 @@
    "linesOnCrop": 0,
    "offRowPrecision": null,
    "offRowRecall": 0,
-   "ms": 731
+   "ms": 655
   },
   {
    "scene": "development-v1eval-59",
@@ -2887,7 +2887,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.643,
-   "ms": 253
+   "ms": 250
   },
   {
    "scene": "development-v1eval-60",
@@ -2904,7 +2904,7 @@
    "linesOnCrop": 1,
    "offRowPrecision": 1,
    "offRowRecall": 0.141,
-   "ms": 1402
+   "ms": 1333
   },
   {
    "scene": "development-v1eval-60",

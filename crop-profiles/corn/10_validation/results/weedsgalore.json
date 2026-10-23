@@ -2,7 +2,7 @@
  "suite": "weedsgalore",
  "crop": "corn",
  "date": "2026-10-23",
- "codeRevision": "c28f705+uncommitted",
+ "codeRevision": "6d64eee",
  "dataset": "WeedsGalore test split",
  "summary": {
   "0.25cm": {

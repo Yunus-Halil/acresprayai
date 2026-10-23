@@ -1,6 +1,6 @@
 # Crop profile benchmark: early-corn photos (corn)
 
-Run 2026-10-23, code c28f705+uncommitted. Three photos, no EXIF and no labels: the pixel size comes from the measured pitch and an assumed 30 in (76.2 cm) row spacing. The on-green ratio is the share of green (ExGR above zero, an index the pattern pass does not use) within an eighth of a pitch of the row lines, over the same share in the middle of the alleys: above 1 the lines sit on the green, under 1 they sit between the rows. Photo 0359 was used to diagnose the residue failure, so these are development results.
+Run 2026-10-23, code 6d64eee. Three photos, no EXIF and no labels: the pixel size comes from the measured pitch and an assumed 30 in (76.2 cm) row spacing. The on-green ratio is the share of green (ExGR above zero, an index the pattern pass does not use) within an eighth of a pitch of the row lines, over the same share in the middle of the alleys: above 1 the lines sit on the green, under 1 they sit between the rows. Photo 0359 was used to diagnose the residue failure, so these are development results.
 
 | Image | Resolution | Mode | Rows found | Pitch (cm) | On-green ratio | Brightness windows | Re-placed on green | ExGR-gated share | Otsu split | Row coherence |
 |---|---|---|---|---|---|---|---|---|---|---|

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "schemaVersion": "1.0.0",
   "status": "experimental",
-  "validation": "unvalidated",
+  "validation": "partial",
   "name": "corn",
   "scientificName": "Zea mays L.",
   "aliases": [

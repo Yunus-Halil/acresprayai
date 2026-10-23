@@ -1,6 +1,6 @@
 # Crop profile benchmark: stage estimate (corn)
 
-Run 2026-10-23, code c28f705+uncommitted. The calendar estimate from the WeedsGalore sowing date (9 May 2023) for each flight, against the one stage the authors state (V1 on 25 May), and the maize cover measured from the labels of every patch against the profile's expected crop cover at the estimated stages (tolerance 0.15). One field; the expected cover is for 30 in rows at about 84,000 plants/ha, WeedsGalore is 70 x 20 cm (about 71,000/ha).
+Run 2026-10-23, code 6d64eee. The calendar estimate from the WeedsGalore sowing date (9 May 2023) for each flight, against the one stage the authors state (V1 on 25 May), and the maize cover measured from the labels of every patch against the profile's expected crop cover at the estimated stages (tolerance 0.15). One field; the expected cover is for 30 in rows at about 84,000 plants/ha, WeedsGalore is 70 x 20 cm (about 71,000/ha).
 
 | Date | Days after sowing | Estimated stages | Stated | Stated in range | Maize cover (labels) | Expected crop cover | Within tolerance |
 |---|---|---|---|---|---|---|---|
