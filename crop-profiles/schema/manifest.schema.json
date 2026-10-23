@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Crop profile: manifest",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "experimental",
+        "validated"
+      ]
+    },
+    "files": {
+      "type": "object",
+      "properties": {
+        "identity": {
+          "type": "string"
+        },
+        "planting": {
+          "type": "string"
+        },
+        "growth": {
+          "type": "string"
+        },
+        "morphology": {
+          "type": "string"
+        },
+        "visual": {
+          "type": "string"
+        },
+        "weeds": {
+          "type": "string"
+        },
+        "fieldConditions": {
+          "type": "string"
+        },
+        "imagery": {
+          "type": "string"
+        },
+        "algorithms": {
+          "type": "string"
+        },
+        "uncertainty": {
+          "type": "string"
+        },
+        "validation": {
+          "type": "string"
+        },
+        "references": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "identity",
+        "planting",
+        "growth",
+        "morphology",
+        "visual",
+        "weeds",
+        "fieldConditions",
+        "imagery",
+        "algorithms",
+        "uncertainty",
+        "validation",
+        "references"
+      ]
+    },
+    "updated": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "maintainers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "schemaVersion",
+    "status",
+    "files",
+    "updated"
+  ]
+}

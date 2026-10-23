@@ -27,6 +27,7 @@
 // responsive during a run, and reports every stage so the UI can say what is
 // happening rather than spinning. Nothing here calls anything outside the
 // tile server and the operator's own archive.
+import { patternPriorForCrop } from "../cropProfiles/engine";
 import { pointInAnyRing } from "../geo";
 import { ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { stitchTiles } from "../orthoRaster";
@@ -181,6 +182,7 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
       const fp = await readFieldPattern(template, plan, { lat: bbox.north, lng: bbox.west }, {
         rowSpacingM: params.rowSpacingAuto ? "auto" : params.rowSpacingM,
         rowAngleDeg: params.rowAngleDeg,
+        prior: patternPriorForCrop(opts.crop),
         signal: opts.signal,
         onProgress: (i, n, note) => report("pattern", n ? i / n : null, note),
         onWindow: opts.onPatternWindow,

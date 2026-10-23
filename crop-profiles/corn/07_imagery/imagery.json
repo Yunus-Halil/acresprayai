@@ -1,0 +1,336 @@
+{
+  "requirements": [
+    {
+      "capability": "row-detection",
+      "maxGsdCm": 5,
+      "recommendedGsdCm": 2,
+      "stages": [
+        "V3",
+        "V4",
+        "V5",
+        "V6",
+        "V7",
+        "V8",
+        "V9"
+      ],
+      "basis": "Rows found 100% at 2 cm on early maize (Peña 2013) and at 1.5 to 3.8 cm in sunflower; a 76 cm alley is 15 px at 5 cm. Nothing found measures row finding against pixel size at 30, 20 or 15 in.",
+      "evidence": {
+        "sources": [
+          "pena-2013",
+          "pena-2014-rows"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "capability": "row-spacing",
+      "maxGsdCm": 5,
+      "basis": "Pitch from the autocorrelation needs about 8 samples per pitch after pooling; a 38 cm row at 5 cm is 7.6 px (marginal).",
+      "evidence": {
+        "sources": [
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "estimate"
+      }
+    },
+    {
+      "capability": "planting-positions",
+      "maxGsdCm": 1.5,
+      "recommendedGsdCm": 0.5,
+      "stages": [
+        "V2",
+        "V3",
+        "V4"
+      ],
+      "basis": "Coarsest published corn stand count 1.5 cm (Ohio, V2 to V4, R² 0.94); counting accuracy collapses on native 0.6 cm imagery of poor quality (rRMSE 0.48).",
+      "evidence": {
+        "sources": [
+          "katari-2024",
+          "velumani-2021"
+        ],
+        "strength": "strong"
+      }
+    },
+    {
+      "capability": "stand-count",
+      "maxGsdCm": 1.5,
+      "recommendedGsdCm": 0.3,
+      "stages": [
+        "V2",
+        "V3"
+      ],
+      "basis": "AP 0.95, rRMSE 0.08 at 0.25 to 0.35 cm (France, 8 sites); mosaics count worse than original frames (R² 0.616 against 0.906).",
+      "evidence": {
+        "sources": [
+          "velumani-2021",
+          "masc-2025"
+        ],
+        "strength": "strong"
+      }
+    },
+    {
+      "capability": "crop-vs-weed-by-position",
+      "maxGsdCm": 3,
+      "recommendedGsdCm": 2,
+      "basis": "Position rule validated at 2 cm on early maize; mixed pixels at row edges read as weeds from about 3 cm (sunflower: 71% correct at 1.5 cm, 19% at 3.8 cm).",
+      "evidence": {
+        "sources": [
+          "pena-2013",
+          "pena-2015"
+        ],
+        "strength": "strong"
+      }
+    },
+    {
+      "capability": "between-row-weed-cover",
+      "maxGsdCm": 3,
+      "recommendedGsdCm": 2,
+      "stages": [
+        "V2",
+        "V3",
+        "V4",
+        "V5",
+        "V6",
+        "V7",
+        "V8",
+        "V9"
+      ],
+      "basis": "Weed cover per 1 m cell R² 0.89 at 2 cm (Peña 2013); alley of 76 cm is 25 px at 3 cm.",
+      "evidence": {
+        "sources": [
+          "pena-2013"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "capability": "weed-isolation",
+      "maxGsdCm": 2.5,
+      "recommendedGsdCm": 1,
+      "basis": "Four pixels across the smallest object: a 10 cm weed (the US action size) needs 2.5 cm or finer.",
+      "evidence": {
+        "sources": [
+          "pena-2015",
+          "isu-early-competition"
+        ],
+        "strength": "strong"
+      }
+    },
+    {
+      "capability": "weed-measurement",
+      "maxGsdCm": 1,
+      "recommendedGsdCm": 0.5,
+      "basis": "The sizer withholds a size under 6 px across; a 6 cm weed needs 1 cm. Measure in the original frames, not the mosaic.",
+      "evidence": {
+        "sources": [
+          "pena-2015",
+          "masc-2025"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "capability": "species-priors",
+      "maxGsdCm": 1000,
+      "basis": "Priors come from region, season and stage, not pixels; any pixel size.",
+      "evidence": {
+        "sources": [
+          "lu-2024"
+        ],
+        "strength": "strong"
+      }
+    }
+  ],
+  "flight": [
+    {
+      "id": "altitude-gsd",
+      "parameter": "Height above the canopy for a target pixel",
+      "guidance": "GSD (cm) = height (m) / 36.5 on Phantom 4 RTK and Mavic 3E/3M; height / 28.4 to 28.9 on Air 3S and Mini 4 Pro at 12 MP (plan with the 12 MP figure; 48/50 MP modes overstate real detail). 0.3 cm: 11 m (9 m). 1 to 2 cm: 37 to 73 m (29 to 58 m). 3.3 cm is about the FAA 122 m ceiling on the 36.5 cameras.",
+      "evidence": {
+        "sources": [
+          "dji-p4rtk",
+          "dji-mavic3e-specs",
+          "dji-air3s-specs",
+          "faa-107-51"
+        ],
+        "strength": "moderate",
+        "notes": "Air 3S and Mini 4 Pro divisors are our arithmetic from published camera numbers."
+      }
+    },
+    {
+      "id": "overlap",
+      "parameter": "Front and side overlap",
+      "guidance": "80/80 for agriculture; 85/70 to 85 for dense vegetation; repetitive rows stitch badly at lower overlap.",
+      "evidence": {
+        "sources": [
+          "pix4d-overlap"
+        ],
+        "strength": "weak",
+        "notes": "Vendor advice, not a maize study."
+      }
+    },
+    {
+      "id": "motion-blur",
+      "parameter": "Speed against exposure",
+      "guidance": "Blur (px) = speed × exposure / GSD; keep under 0.5 to 1 px (sources disagree). At 1/1000 s, 0.3 cm allows 1.5 m/s; 1 to 2 cm allows 5 to 10 m/s; the photo interval caps speed first on consumer drones (Air 3S, Mini 4 Pro: 2 s at 12 MP).",
+      "evidence": {
+        "sources": [
+          "pix4d-overlap"
+        ],
+        "strength": "weak"
+      }
+    },
+    {
+      "id": "light",
+      "parameter": "Time of day and sky",
+      "guidance": "Diffuse light (overcast or early morning) or within about two hours of solar noon; avoid low sun once plants pass V5.",
+      "evidence": {
+        "sources": [
+          "makanza-2018"
+        ],
+        "strength": "weak"
+      }
+    }
+  ],
+  "cameras": [
+    {
+      "id": "p4rtk",
+      "name": "DJI Phantom 4 RTK",
+      "gsdCmPerMetreAltitude": 0.0274,
+      "evidence": {
+        "sources": [
+          "dji-p4rtk"
+        ],
+        "strength": "strong",
+        "notes": "H / 36.5."
+      }
+    },
+    {
+      "id": "mavic3e",
+      "name": "DJI Mavic 3 Enterprise / 3 Multispectral RGB",
+      "gsdCmPerMetreAltitude": 0.0272,
+      "evidence": {
+        "sources": [
+          "dji-mavic3e-specs"
+        ],
+        "strength": "moderate",
+        "notes": "About H / 36.7 (our arithmetic)."
+      }
+    },
+    {
+      "id": "air3s-12mp",
+      "name": "DJI Air 3S wide, 12 MP mode",
+      "gsdCmPerMetreAltitude": 0.0352,
+      "evidence": {
+        "sources": [
+          "dji-air3s-specs"
+        ],
+        "strength": "estimate",
+        "notes": "About H / 28.4 (our arithmetic)."
+      }
+    }
+  ],
+  "orthoVsFrames": [
+    {
+      "id": "measure-in-frames",
+      "topic": "Where to count and measure",
+      "guidance": "Count plants and measure weeds in the original frames: maize counting scored R² 0.616 on the mosaic against 0.906 on the frames (MaSC 2025). The mosaic is for the map, rows and cover.",
+      "evidence": {
+        "sources": [
+          "masc-2025"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "id": "georeference",
+      "topic": "Position accuracy",
+      "guidance": "Without RTK or ground control a mosaic can be a few metres off; tie a hotspot to its row through the photo's own pixels, never by GPS alone.",
+      "evidence": {
+        "sources": [
+          "pix4d-overlap"
+        ],
+        "strength": "snippet"
+      }
+    },
+    {
+      "id": "relief",
+      "topic": "Tall plants at the frame edge",
+      "guidance": "Lean d = D × h / (H - h): 15 cm at V5 and over a metre at tassel at 40 m, 20 m from the frame centre. Prefer the most nadir view (the app's frame selection already weights angle).",
+      "evidence": {
+        "sources": [
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "estimate"
+      }
+    }
+  ],
+  "qualityChecks": [
+    {
+      "id": "pixel-size",
+      "check": "Known pixel size",
+      "computedFrom": "Map georeference, EXIF/XMP altitude with camera geometry, or the operator",
+      "code": "UNKNOWN_RESOLUTION",
+      "evidence": {
+        "sources": [
+          "exiftool-dji"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "id": "gsd-requirement",
+      "check": "Pixel size within the capability's requirement",
+      "computedFrom": "GSD against this file's requirements",
+      "code": "INSUFFICIENT_RESOLUTION",
+      "evidence": {
+        "sources": [
+          "pena-2015"
+        ],
+        "strength": "strong"
+      }
+    },
+    {
+      "id": "vegetation-split",
+      "check": "Vegetation split above the index of grey",
+      "computedFrom": "Otsu threshold of the photo's vegetation index",
+      "threshold": "below 0: the split is soil against residue; the ExGR gate keeps the mask to green",
+      "code": "VEGETATION_MASK_SUSPECT",
+      "evidence": {
+        "sources": [
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "weak"
+      }
+    },
+    {
+      "id": "blur",
+      "check": "Blur",
+      "computedFrom": "Laplacian variance per frame",
+      "threshold": "No published threshold; calibrate within a flight.",
+      "evidence": {
+        "sources": [
+          "lboro-blur-detection"
+        ],
+        "strength": "weak"
+      }
+    },
+    {
+      "id": "shadow",
+      "check": "Deep-shadow share",
+      "computedFrom": "Share of pixels with luma under 50",
+      "threshold": "Over 0.25 of a cell: not assessed (engine default)",
+      "evidence": {
+        "sources": [
+          "shadow-removal-2018"
+        ],
+        "strength": "weak"
+      }
+    }
+  ],
+  "gaps": [
+    "Nothing found measures row finding against pixel size at 30, 20 or 15 in rows.",
+    "No published thresholds for blur, clipped exposure or shadow share; they must be calibrated within each flight.",
+    "Downsampled fine imagery flatters results against native coarse imagery (Velumani 2021): any score on downsampled data is an upper bound."
+  ]
+}

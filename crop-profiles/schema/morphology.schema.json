@@ -1,0 +1,485 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Crop profile: morphology",
+  "type": "object",
+  "properties": {
+    "plant": {
+      "type": "object",
+      "properties": {
+        "habit": {
+          "type": "string"
+        },
+        "leafArrangement": {
+          "type": "string"
+        },
+        "leafShape": {
+          "type": "string"
+        },
+        "leafOrientation": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "object",
+          "properties": {
+            "sources": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "strength": {
+              "type": "string",
+              "enum": [
+                "strong",
+                "moderate",
+                "weak",
+                "snippet",
+                "estimate",
+                "none"
+              ]
+            },
+            "geography": {
+              "type": "string"
+            },
+            "stages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "notes": {
+              "type": "string"
+            },
+            "disagreement": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sources",
+            "strength"
+          ]
+        }
+      },
+      "required": [
+        "habit",
+        "leafArrangement",
+        "leafShape",
+        "leafOrientation",
+        "evidence"
+      ]
+    },
+    "leafDimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "leafNumber": {
+            "type": "string"
+          },
+          "lengthCm": {
+            "type": "object",
+            "properties": {
+              "low": {
+                "type": "number"
+              },
+              "high": {
+                "type": "number"
+              },
+              "typical": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "low",
+              "high"
+            ]
+          },
+          "widthCm": {
+            "type": "object",
+            "properties": {
+              "low": {
+                "type": "number"
+              },
+              "high": {
+                "type": "number"
+              },
+              "typical": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "low",
+              "high"
+            ]
+          },
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "strength": {
+                "type": "string",
+                "enum": [
+                  "strong",
+                  "moderate",
+                  "weak",
+                  "snippet",
+                  "estimate",
+                  "none"
+                ]
+              },
+              "geography": {
+                "type": "string"
+              },
+              "stages": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "notes": {
+                "type": "string"
+              },
+              "disagreement": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sources",
+              "strength"
+            ]
+          }
+        },
+        "required": [
+          "leafNumber",
+          "evidence"
+        ]
+      }
+    },
+    "byStage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "stage": {
+            "type": "string"
+          },
+          "projectedAreaCm2": {
+            "type": "object",
+            "properties": {
+              "low": {
+                "type": "number"
+              },
+              "high": {
+                "type": "number"
+              },
+              "typical": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "low",
+              "high"
+            ]
+          },
+          "pixelsAtGsd": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "gsdCm": {
+                  "type": "number"
+                },
+                "pixels": {
+                  "type": "object",
+                  "properties": {
+                    "low": {
+                      "type": "number"
+                    },
+                    "high": {
+                      "type": "number"
+                    },
+                    "typical": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "low",
+                    "high"
+                  ]
+                },
+                "evidence": {
+                  "type": "object",
+                  "properties": {
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "strength": {
+                      "type": "string",
+                      "enum": [
+                        "strong",
+                        "moderate",
+                        "weak",
+                        "snippet",
+                        "estimate",
+                        "none"
+                      ]
+                    },
+                    "geography": {
+                      "type": "string"
+                    },
+                    "stages": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "notes": {
+                      "type": "string"
+                    },
+                    "disagreement": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sources",
+                    "strength"
+                  ]
+                }
+              },
+              "required": [
+                "gsdCm",
+                "pixels",
+                "evidence"
+              ]
+            }
+          },
+          "touchingAlongRow": {
+            "type": "string",
+            "enum": [
+              "separate",
+              "touching",
+              "merged"
+            ]
+          },
+          "notes": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "strength": {
+                "type": "string",
+                "enum": [
+                  "strong",
+                  "moderate",
+                  "weak",
+                  "snippet",
+                  "estimate",
+                  "none"
+                ]
+              },
+              "geography": {
+                "type": "string"
+              },
+              "stages": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "notes": {
+                "type": "string"
+              },
+              "disagreement": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sources",
+              "strength"
+            ]
+          }
+        },
+        "required": [
+          "stage",
+          "evidence"
+        ]
+      }
+    },
+    "resolvable": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string"
+          },
+          "minGsdCm": {
+            "type": "number"
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "strength": {
+                "type": "string",
+                "enum": [
+                  "strong",
+                  "moderate",
+                  "weak",
+                  "snippet",
+                  "estimate",
+                  "none"
+                ]
+              },
+              "geography": {
+                "type": "string"
+              },
+              "stages": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "notes": {
+                "type": "string"
+              },
+              "disagreement": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sources",
+              "strength"
+            ]
+          }
+        },
+        "required": [
+          "feature",
+          "minGsdCm",
+          "evidence"
+        ]
+      }
+    },
+    "vocabulary": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "variation": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "strength": {
+                "type": "string",
+                "enum": [
+                  "strong",
+                  "moderate",
+                  "weak",
+                  "snippet",
+                  "estimate",
+                  "none"
+                ]
+              },
+              "geography": {
+                "type": "string"
+              },
+              "stages": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "notes": {
+                "type": "string"
+              },
+              "disagreement": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sources",
+              "strength"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "effect",
+          "evidence"
+        ]
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "plant",
+    "leafDimensions",
+    "byStage",
+    "resolvable",
+    "vocabulary",
+    "variation",
+    "gaps"
+  ]
+}

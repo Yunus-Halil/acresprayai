@@ -1,0 +1,43 @@
+{
+  "plant": {
+    "habit": "Single erect stalk; tillers rare in grain corn, common in sweet corn.",
+    "leafArrangement": "Alternate, in one vertical plane, one leaf per node.",
+    "leafShape": "First leaf short, oval, round-tipped (about 4 to 4.5 cm); every later leaf pointed, broad lance-shaped and longer than the one before, length peaking at about 0.68 × the final leaf number.",
+    "leafOrientation": "A seedling's leaf plane follows the direction the kernel was planted, so early fields look random from above; between about 40 and 50 days after planting many hybrids turn leaves toward the alley (40 to 70% of the top two leaves within 30° of perpendicular to the row by 60 days in Iowa inbreds). Modern hybrids are more upright than older ones.",
+    "notes": "From above a seedling is two to four leaves in one plane: its longest span is about twice the longest leaf and its width only a leaf's width (our reading), not a disc.",
+    "evidence": { "sources": ["ritchie-1993", "msstate-vstages", "zhou-2024-leaf-orientation", "plants-2020-leaf-area", "dzievit-2023"], "strength": "moderate" }
+  },
+  "leafDimensions": [
+    { "leafNumber": "1", "lengthCm": { "low": 4, "high": 4.5 }, "evidence": { "sources": ["msstate-vstages"], "strength": "moderate" } },
+    { "leafNumber": "6", "widthCm": { "low": 6.6, "high": 8.3 }, "evidence": { "sources": ["plants-2020-leaf-area"], "strength": "moderate", "geography": "European and Mexican hybrid panel", "notes": "Base width of leaf 6." } },
+    { "leafNumber": "longest (rank about 0.68 × N)", "lengthCm": { "low": 62, "high": 88 }, "evidence": { "sources": ["plants-2020-leaf-area"], "strength": "moderate", "notes": "62 cm at rank 9 on 14-leaf plants; 88 cm at rank 16 on 26-leaf lines." } }
+  ],
+  "byStage": [
+    { "stage": "V3", "projectedAreaCm2": { "low": 24, "high": 230 }, "pixelsAtGsd": [
+        { "gsdCm": 1, "pixels": { "low": 25, "high": 230 }, "evidence": { "sources": ["gao-2023", "velumani-2021"], "strength": "estimate" } },
+        { "gsdCm": 3, "pixels": { "low": 3, "high": 25 }, "evidence": { "sources": ["gao-2023", "velumani-2021"], "strength": "estimate" } },
+        { "gsdCm": 5, "pixels": { "low": 1, "high": 9 }, "evidence": { "sources": ["gao-2023", "velumani-2021"], "strength": "estimate" } }
+      ], "touchingAlongRow": "separate", "notes": "24 to 37 cm² from 2.29% cover in Shanxi; 70 to 230 cm² for 3 to 5 leaf plants in France (806 to 2,253 px at 0.25 to 0.35 cm).", "evidence": { "sources": ["gao-2023", "velumani-2021"], "strength": "moderate" } },
+    { "stage": "V4", "touchingAlongRow": "touching", "notes": "Neighbours whose leaf planes lie along the row begin to touch at 14 to 20 cm in-row spacing (our estimate); counting accuracy falls from overlap (snippet).", "evidence": { "sources": ["gao-2023"], "strength": "estimate" } },
+    { "stage": "V6", "projectedAreaCm2": { "low": 400, "high": 650, "typical": 520 }, "touchingAlongRow": "merged", "notes": "About 520 cm² per plant from 32.2% cover at about 62,000 live plants/ha (our arithmetic); 'severe leaf overlapping'.", "evidence": { "sources": ["gao-2023"], "strength": "moderate" } }
+  ],
+  "resolvable": [
+    { "feature": "single seedling (four-pixel rule)", "minGsdCm": 1, "stages": ["V2"], "evidence": { "sources": ["pena-2015", "velumani-2021"], "strength": "estimate" } },
+    { "feature": "single plant, countable", "minGsdCm": 1.5, "stages": ["V2", "V3", "V4"], "evidence": { "sources": ["katari-2024", "gao-2023", "velumani-2021"], "strength": "strong", "notes": "Coarsest published counting GSD is 1.5 cm (Ohio, R² 0.94); nothing published counts corn at 3 to 5 cm." } },
+    { "feature": "plant as a blob", "minGsdCm": 3, "stages": ["V4", "V5"], "evidence": { "sources": ["gao-2023"], "strength": "estimate" } },
+    { "feature": "row as a continuous band", "minGsdCm": 5, "stages": ["V6", "V7", "V8", "V9"], "evidence": { "sources": ["pena-2013", "gao-2023"], "strength": "moderate" } },
+    { "feature": "leaf shape, collar, ligule, hairs", "minGsdCm": 0.1, "evidence": { "sources": ["missouri-ipm1024", "lu-2024"], "strength": "strong", "notes": "Millimetre features: even at 0.33 cm 'weeds that resembled maize in shape and color were detected as maize'." } }
+  ],
+  "vocabulary": ["whorl", "leaf-collar", "ligule", "coleoptile-spike", "alternate-distichous", "lanceolate", "rounded-tip", "erect", "canopy-closure", "projected-area", "alley", "row-band"],
+  "variation": [
+    { "id": "upright-hybrids", "name": "Upright versus flat leaf angle", "effect": "Upright hybrids show less projected area per plant at the same stage and keep the alley visible longer; the leaf-angle difference between upright and flat parents is 20 to 30°. Not quantified for imagery.", "evidence": { "sources": ["dzievit-2023"], "strength": "moderate" } },
+    { "id": "sweet-corn", "name": "Sweet corn", "effect": "Shorter, thinner leaves and tillers that widen the plant at the base.", "evidence": { "sources": ["msu-sweet-vs-field"], "strength": "snippet" } },
+    { "id": "two-cohorts", "name": "Uneven emergence and replant", "effect": "A one-week emergence gap is about two leaf stages: two plant sizes along the row. The field is staged by the 50% rule; the imagery should report both sizes.", "evidence": { "sources": ["purdue-ay264", "gao-2023"], "strength": "moderate" } },
+    { "id": "stress-shapes", "name": "Stress", "effect": "Drought leaf rolling reduces projected area and exposes soil (midday flights under-read cover); floppy shallow-planted seedlings lean the whorl off the row line.", "evidence": { "sources": ["zhang-2019-drought", "purdue-ve-v3-2021"], "strength": "weak" } }
+  ],
+  "gaps": [
+    "No US table of leaf length and width by leaf rank for leaves 1 to 8 (Dwyer and Stewart 1986 not retrieved).",
+    "No measured canopy width across the row or projected area in cm² by V stage from a US source; the areas are back-calculated.",
+    "Popcorn morphology and leafy-hybrid leaf dimensions not found."
+  ]
+}

@@ -1,0 +1,60 @@
+{
+ "suite": "stage",
+ "crop": "corn",
+ "date": "2026-10-23",
+ "codeRevision": "c28f705+uncommitted",
+ "rows": [
+  {
+   "date": "2023-05-25",
+   "daysAfterSowing": 16,
+   "estimatedStages": "VE to V4",
+   "statedStage": "V1",
+   "statedInRange": true,
+   "maizeCoverFromLabels": 0.007,
+   "expectedCropCover": [
+    0.005,
+    0.1
+   ],
+   "coverWithinTolerance": true
+  },
+  {
+   "date": "2023-05-30",
+   "daysAfterSowing": 21,
+   "estimatedStages": "VE to V6",
+   "statedStage": null,
+   "statedInRange": null,
+   "maizeCoverFromLabels": 0.012,
+   "expectedCropCover": [
+    0.005,
+    0.4
+   ],
+   "coverWithinTolerance": true
+  },
+  {
+   "date": "2023-06-06",
+   "daysAfterSowing": 28,
+   "estimatedStages": "VE to V9",
+   "statedStage": null,
+   "statedInRange": null,
+   "maizeCoverFromLabels": 0.034,
+   "expectedCropCover": [
+    0.005,
+    0.65
+   ],
+   "coverWithinTolerance": true
+  },
+  {
+   "date": "2023-06-15",
+   "daysAfterSowing": 37,
+   "estimatedStages": "V6 to V12",
+   "statedStage": null,
+   "statedInRange": null,
+   "maizeCoverFromLabels": 0.109,
+   "expectedCropCover": [
+    0.25,
+    0.85
+   ],
+   "coverWithinTolerance": true
+  }
+ ]
+}

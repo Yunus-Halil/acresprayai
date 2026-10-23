@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shared vocabulary: uncertaintyCodes",
+  "type": "object",
+  "properties": {
+    "codes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "caution",
+              "blocking"
+            ]
+          },
+          "meaning": {
+            "type": "string"
+          },
+          "defaultAction": {
+            "type": "string",
+            "enum": [
+              "note",
+              "review",
+              "disable"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "severity",
+          "meaning",
+          "defaultAction"
+        ]
+      }
+    }
+  },
+  "required": [
+    "codes"
+  ]
+}

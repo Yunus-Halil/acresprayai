@@ -45,6 +45,7 @@ import { type LatLng2, pointInAnyRing } from "../geo";
 import { type DecodedPhoto, MAX_EDGE_PX, decodePhoto } from "../photoScout/decode";
 import { type PhotoParams, type PhotoPattern, type PhotoPixels, rowSegmentsPx } from "../photoScout/pattern";
 import { analysePhotoOffThread } from "../photoScout/runPattern";
+import { patternPriorForCrop } from "../cropProfiles/engine";
 import { type FrameManifestEntry, lookupOriginal } from "../sourceFrames/manifest";
 import { type LatLngAlt, type Shot, type SourceFrameSet, frameFootprint, offNadirDeg, pixelToGround, projectToFrame, toEnu } from "../sourceFrames/odm";
 import { type PhotoLook, lookFromPattern, patternLookSideM } from "../sourceFrames/patternLook";
@@ -93,15 +94,23 @@ export type PhotoReadStore = {
   put: (filename: string, read: SavedPhotoRead) => void | Promise<unknown>;
 };
 
-/** The pass's settings for a photo, from the run's parameters: the one place both the pass and the closer look take them from. */
-export function photoPassParams(params: Pick<ScoutParams, "rowSpacingAuto" | "rowSpacingM" | "minBlobCm2">): Pick<PhotoParams, "rowSpacingM" | "windowM" | "minBlobAreaCm2"> {
-  return { rowSpacingM: params.rowSpacingAuto ? "auto" : params.rowSpacingM, windowM: PHOTO_PASS_WINDOW_M, minBlobAreaCm2: params.minBlobCm2 };
+/**
+ * The pass's settings for a photo, from the run's parameters: the one place both the pass and the closer look take them
+ * from. `crop` is the field's crop on file: when it has a crop profile, the profile's prior goes with the settings
+ * (spacings to search, vegetation floor, brightness check; src/lib/cropProfiles), and with none the settings are what
+ * they always were.
+ */
+export function photoPassParams(params: Pick<ScoutParams, "rowSpacingAuto" | "rowSpacingM" | "minBlobCm2"> & { crop?: string | null }): Pick<PhotoParams, "rowSpacingM" | "windowM" | "minBlobAreaCm2" | "prior"> {
+  const prior = patternPriorForCrop(params.crop);
+  return { rowSpacingM: params.rowSpacingAuto ? "auto" : params.rowSpacingM, windowM: PHOTO_PASS_WINDOW_M, minBlobAreaCm2: params.minBlobCm2, ...(prior ? { prior } : {}) };
 }
 
 /** The settings a saved read depends on. Two reads of one photo under the same key are the same read. */
-export function photoReadKey(p: Pick<PhotoParams, "rowSpacingM" | "windowM" | "minBlobAreaCm2">, maxEdgePx = MAX_EDGE_PX): string {
+export function photoReadKey(p: Pick<PhotoParams, "rowSpacingM" | "windowM" | "minBlobAreaCm2" | "prior">, maxEdgePx = MAX_EDGE_PX): string {
   const spacing = p.rowSpacingM === "auto" || p.rowSpacingM == null ? "auto" : (+p.rowSpacingM).toFixed(3);
-  return `${PHOTO_READ_VERSION}|spacing=${spacing}|window=${p.windowM ?? ""}|minBlob=${p.minBlobAreaCm2 ?? ""}|edge=${maxEdgePx}`;
+  // A crop-neutral read keeps the key it always had; a read with a crop profile names the profile and its version.
+  const prior = p.prior ? `|crop=${p.prior.cropId}@${p.prior.profileVersion ?? ""}` : "";
+  return `${PHOTO_READ_VERSION}|spacing=${spacing}|window=${p.windowM ?? ""}|minBlob=${p.minBlobAreaCm2 ?? ""}|edge=${maxEdgePx}${prior}`;
 }
 
 export type PhotoFinding = {
@@ -432,7 +441,7 @@ export async function runPhotoPass(opts: PhotoPassOptions): Promise<PhotoPassRes
   const fetchFrame = opts.fetchFrame ?? (async (entry: FrameManifestEntry) => (await import("../sourceFrames/scan")).downloadFrame(entry));
   const decode = opts.decode ?? decodePhoto;
   const analyse = opts.analyse ?? ((px: PhotoPixels, p: PhotoParams) => analysePhotoOffThread(px, p, { signal: opts.signal }));
-  const passParams = photoPassParams(params);
+  const passParams = photoPassParams({ ...params, crop: opts.crop });
   const existing: LatLng2[] = result.candidates.filter(c => !c.region).map(c => c.centroid);
   const sys: UnitSystem = opts.unitSystem ?? "metric";
   let found = 0, skipped = 0, failed = 0, looked = 0, fromSaved = 0, measured = 0;

@@ -9,6 +9,8 @@
 // ROW_CROP_GRADING_UNSUPPORTED). Nor is a field with no crop on file and no layout: the group is never guessed.
 import { useSyncExternalStore } from "react";
 import { CANOPY_CLOSED } from "../../photoScout/pattern";
+import { estimateStage, stageOutside } from "../../cropProfiles/checks";
+import { cropProfileFor } from "../../cropProfiles/registry";
 import { ROW_CROP_GRADING_UNSUPPORTED, rowCropGradingBlocked } from "../fieldRows";
 import { ensureFieldRows, frameRunFieldRows, getFrameRun } from "../frameRunStore";
 import { isMapRunKey } from "../mapRun";
@@ -73,8 +75,21 @@ export const NO_CROP_ON_FILE = "Set the field's crop before grading: the thresho
  * operator's own word that this is a planting of trees or vines, so it grades as an orchard), or a row crop on file
  * whose rows are not a fitted planting layout.
  */
-export function pressureRefusal(crop: string | null, rows: Parameters<typeof rowCropGradingBlocked>[1]): string | null {
+export function pressureRefusal(crop: string | null, rows: Parameters<typeof rowCropGradingBlocked>[1], ctx: { plantingDate?: string | null; on?: Date } = {}): string | null {
   if (!crop?.trim()) return rows?.source === "layout" ? null : NO_CROP_ON_FILE;
+  // A crop with a profile: the profile says whether the grade applies at this stage and on rows read automatically.
+  const profile = cropProfileFor(crop);
+  if (profile) {
+    const cap = profile.capabilities["weed-pressure-grade"];
+    if (ctx.plantingDate && cap?.stages) {
+      const est = estimateStage(profile, ctx.plantingDate, ctx.on ?? new Date());
+      if (est.status === "estimated" && stageOutside(profile, est, cap.stages) === "after") {
+        return `${profile.policies.UNSUPPORTED_STAGE?.message ?? "Past the stage this grade applies to."} ${est.note}`;
+      }
+    }
+    if (rows?.source !== "layout" && cap?.status === "unsupported") return `${profile.name[0].toUpperCase()}${profile.name.slice(1)} is not graded on rows read automatically yet: ${cap.reason}`;
+    return null;
+  }
   return rowCropGradingBlocked(cropGroupOf(crop, false), rows) ? ROW_CROP_GRADING_UNSUPPORTED : null;
 }
 
@@ -83,14 +98,14 @@ export function pressureRefusal(crop: string | null, rows: Parameters<typeof row
  * `crop` is the field's crop on file (null when none); `group` overrides the crop group when the operator says so,
  * but never the row-crop guard, which goes by the crop on file.
  */
-export async function gradeField(taskId: string, input: { crop: string | null; group?: CropGroup; stage1: RunStage1Input; /** The scan's spots kept as weeds, with the operator's verdicts applied. */ scanWeeds?: WeedObject[] }): Promise<void> {
+export async function gradeField(taskId: string, input: { crop: string | null; group?: CropGroup; stage1: RunStage1Input; /** The scan's spots kept as weeds, with the operator's verdicts applied. */ scanWeeds?: WeedObject[]; /** The field's planting date (YYYY-MM-DD), for the crop profile's stage window. */ plantingDate?: string | null }): Promise<void> {
   const cur = getPressure(taskId);
   if (cur.state === "reading") return;
   patchPressure(taskId, { state: "reading", error: null });
   try {
     // The rows first (the saved layout may still be loading): a row crop on reader rows is refused before anything is read.
     await (input.stage1.deps?.ensureRows ?? ensureFieldRows)(taskId);
-    const refusal = pressureRefusal(input.crop, (input.stage1.deps?.rowsOf ?? frameRunFieldRows)(taskId));
+    const refusal = pressureRefusal(input.crop, (input.stage1.deps?.rowsOf ?? frameRunFieldRows)(taskId), { plantingDate: input.plantingDate });
     if (refusal) { patchPressure(taskId, { grade: null, state: "none", source: null, error: refusal }); return; }
     // Stage 1 is read fresh for every grade: it takes seconds, and a kept read can carry rows the field no longer
     // has (the first grade of 2026-10-22 ran on the automatic rows while the saved layout was still loading, and

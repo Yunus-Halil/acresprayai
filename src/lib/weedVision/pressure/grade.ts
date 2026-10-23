@@ -50,6 +50,7 @@
 //              assessed", never "weed-free".
 //
 // Pure: weed objects, a grid, Stage 1's cells and the field's rows in; a grade out. Nothing here fetches or stores.
+import { cropProfileFor } from "../../cropProfiles/registry";
 import type { LatLng2 } from "../../geo";
 import type { Candidate } from "../../weedScout/types";
 import { type FieldRows, fieldRowStatusAt } from "../fieldRows";
@@ -96,8 +97,13 @@ export type CropGroup = "wide-row" | "cereal" | "orchard";
 const CEREALS = ["wheat", "barley", "oats", "oat", "rye", "triticale", "buğday", "arpa", "yulaf"];
 const ORCHARD_WORDS = ["apricot", "apple", "pear", "peach", "nectarine", "plum", "prune", "cherry", "olive", "citrus", "orange", "lemon", "mandarin", "grapefruit", "almond", "walnut", "pistachio", "hazelnut", "avocado", "kiwi", "vine", "grape", "orchard", "tree", "fig", "pomegranate", "kayısı", "elma", "kiraz", "zeytin", "fındık", "badem", "ceviz"];
 
-/** The crop group a field grades under: its crop's name, or an orchard when a planting layout (trees) was fitted. */
+/**
+ * The crop group a field grades under: its crop profile's group when the crop has one (crop-profiles/<crop>/identity.json),
+ * else its crop's name, or an orchard when a planting layout (trees) was fitted.
+ */
 export function cropGroupOf(crop: string | null | undefined, hasPlantingLayout: boolean): CropGroup {
+  const profile = cropProfileFor(crop);
+  if (profile) return profile.group;
   const c = (crop ?? "").toLowerCase();
   if (c && ORCHARD_WORDS.some(w => c.includes(w))) return "orchard";
   if (c && CEREALS.some(w => c.includes(w))) return "cereal";
@@ -109,11 +115,22 @@ export type PressureClass = "none" | "trace" | "low" | "moderate" | "action" | "
 export const CLASS_ORDER: readonly PressureClass[] = ["none", "trace", "low", "moderate", "action", "high"] as const;
 export const CLASS_LABEL: Record<PressureClass, string> = { none: "none", trace: "trace", low: "low", moderate: "moderate", action: "action", high: "high" };
 
-/** Lower bounds of cover for each class; cover over zero but under `low` is "trace". */
-export type ClassScheme = { group: CropGroup; low: number; moderate: number; action: number; high: number; source: string };
+/**
+ * Lower bounds of cover for each class; cover over zero but under `low` is "trace". `basis` is "provisional" when the
+ * crop's own guidance does not act on cover (corn in the US acts on weed height and stage), absent for the group schemes.
+ */
+export type ClassScheme = { group: CropGroup; low: number; moderate: number; action: number; high: number; source: string; basis?: "cover" | "provisional" };
 
-/** The scheme for a crop group, and the crop's own action point where the sources give one. */
+/**
+ * The scheme for a crop: its crop profile's classes when it has a profile and is graded in the profile's own group,
+ * else the group's scheme and the crop's own action point where the sources give one.
+ */
 export function schemeFor(group: CropGroup, crop: string | null | undefined): ClassScheme {
+  const profile = cropProfileFor(crop);
+  if (profile && profile.group === group) {
+    const s = profile.pressure.scheme;
+    return { group, low: s.low, moderate: s.moderate, action: s.action, high: s.high, source: s.source, basis: s.basis };
+  }
   const c = (crop ?? "").toLowerCase();
   if (group === "cereal") {
     const barley = c.includes("barley") || c.includes("arpa");

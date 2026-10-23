@@ -1,0 +1,618 @@
+{
+  "colour": {
+    "normal": "Mid to dark green from about V3; there is no single corn green. Chromaticity (each channel over the sum) removes most of the brightness difference between sunlit and shaded leaves; what remains varies with stage, stress, white balance and camera.",
+    "variants": [
+      {
+        "id": "emergence-yellow-green",
+        "name": "Yellow-green seedlings",
+        "appearance": "Pale yellow-green until the nodal roots take over at about V3.",
+        "stages": [
+          "VE",
+          "V1",
+          "V2"
+        ],
+        "evidence": {
+          "sources": [
+            "purdue-ve-v3-2021"
+          ],
+          "strength": "moderate"
+        }
+      },
+      {
+        "id": "purpling",
+        "name": "Purple seedlings (cold, wet soil or phosphorus)",
+        "appearance": "Anthocyanin on the oldest leaves, usually gone by V6; persistent purple margins on new leaves point to phosphorus. Worked example ExGR about -0.14, below the vegetation cut: false skips in the row.",
+        "stages": [
+          "V2",
+          "V3",
+          "V4",
+          "V5"
+        ],
+        "evidence": {
+          "sources": [
+            "bayer-purple",
+            "msu-purple-corn"
+          ],
+          "strength": "weak",
+          "notes": "The ExGR value is worked from an assumed colour ratio; it needs measuring on kept originals."
+        }
+      },
+      {
+        "id": "n-deficiency",
+        "name": "Nitrogen deficiency",
+        "appearance": "V-shaped yellowing from the tip down the midrib of the oldest leaves; from above after V8 a paler canopy. Worked example ExGR about +0.15: usually stays in the green mask.",
+        "evidence": {
+          "sources": [
+            "isu-ipm42"
+          ],
+          "strength": "moderate"
+        }
+      },
+      {
+        "id": "drought-rolling",
+        "name": "Drought leaf rolling",
+        "appearance": "Leaves roll to thin lines at midday: less cover, more sunlit soil; thin leaves lost at coarse pixel sizes.",
+        "evidence": {
+          "sources": [
+            "zhang-2019-drought"
+          ],
+          "strength": "snippet"
+        }
+      },
+      {
+        "id": "tassels",
+        "name": "Tassels",
+        "appearance": "Pale tassels on top of the canopy at VT to R1; below the vegetation cut, inside the cover mask.",
+        "stages": [
+          "VT",
+          "R1"
+        ],
+        "evidence": {
+          "sources": [
+            "tassel-detection-2021"
+          ],
+          "strength": "snippet"
+        }
+      },
+      {
+        "id": "senescence",
+        "name": "Senescence",
+        "appearance": "Yellow then brown from the lower leaves up at R5 to R6; the green mask empties.",
+        "stages": [
+          "R5",
+          "R6"
+        ],
+        "evidence": {
+          "sources": [
+            "makanza-2018"
+          ],
+          "strength": "strong"
+        }
+      }
+    ]
+  },
+  "indices": [
+    {
+      "id": "exg-cive-otsu",
+      "name": "ExG + 0.5 × CIVE on chromaticity, Otsu per window (the app's photo and map pattern mask)",
+      "formula": "(2g - r - b) + 0.5 × -(0.441 r - 0.811 g + 0.385 b), r g b chromaticity",
+      "thresholds": "Otsu per window with a whole-photo fallback. On every corn and orchard photo tested the split sits at 0.20 to 0.34; on a red-soil no-till photo it fell to -0.20, between soil and straw.",
+      "performance": "ExG and CIVE are the least stable indices over a day in wheat (coefficient of variation 56% and 58% against 2% for ExGR; Qseg 0.617 and 0.65 against 0.776).",
+      "evidence": {
+        "sources": [
+          "woebbecke-1995",
+          "sadeghi-tehran-2017",
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "strong",
+        "notes": "Otsu always returns a split; when one class is missing (closed canopy, all soil) or the two classes are soil and straw, the split is not a plant/ground split."
+      }
+    },
+    {
+      "id": "exgr",
+      "name": "ExGR (ExG - ExR) at zero (the app's field-map vegetation mask)",
+      "formula": "(2g - r - b) - (1.4 r - g), chromaticity; equivalently 4g - 1.4r - 1",
+      "thresholds": "Fixed at 0 (Meyer and Neto 2008). Measured on our imagery: soil about -0.24, straw about -0.14, neutral grey -0.133; the cover mask cuts at -0.08.",
+      "performance": "Quality factor 0.88 ± 0.12 against 0.53 ± 0.39 for ExG with Otsu in greenhouse tests; both about 0.88 on field soybean; most stable over a day in wheat.",
+      "evidence": {
+        "sources": [
+          "meyer-neto-2008",
+          "sadeghi-tehran-2017",
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "moderate",
+        "disagreement": "A UAV maize seedling study (snippet) ranked ExG with Otsu best; platforms, stages and scoring differ."
+      }
+    }
+  ],
+  "illumination": [
+    {
+      "id": "hard-shadow",
+      "name": "Hard shadows",
+      "effect": "Shadowed soil and leaves are misclassified; cover underestimated by up to 0.2 at peak growth; ExG is the worst affected. Shadow length = height / tan(sun elevation): a 30 cm V5 plant casts 17 cm at 60° and 52 cm at 30°; a 60 cm V8 plant at 30° spans a 76 cm alley.",
+      "guidance": "Fly in diffuse light (overcast or early morning) or within about two hours of solar noon; treat cells whose deep-shadow share exceeds the limit as not assessed.",
+      "evidence": {
+        "sources": [
+          "shadow-removal-2018",
+          "song-2015",
+          "makanza-2018"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "id": "glint-hotspot",
+      "name": "Glint, hotspot, wet leaves",
+      "effect": "Near-saturated colourless highlights drop out of the mask and leave holes in leaves; the hotspot sits opposite the sun.",
+      "evidence": {
+        "sources": [
+          "sadeghi-tehran-2017"
+        ],
+        "strength": "strong"
+      }
+    },
+    {
+      "id": "white-balance-drift",
+      "name": "White-balance drift between frames",
+      "effect": "A shift of 0.02 in green chromaticity moves ExGR by 0.08 (our arithmetic): enough to push soil or straw over the cover cut. Orthomosaic colour balancing can do the same across seams.",
+      "guidance": "Compare each frame's soil index with the field median; lock white balance when flying.",
+      "evidence": {
+        "sources": [
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "estimate"
+      }
+    }
+  ],
+  "backgrounds": [
+    {
+      "id": "light-soil",
+      "name": "Light, dry soil",
+      "appearance": "Pale brown, slightly negative excess green.",
+      "effectOnIndex": "Clean separation; Otsu at about 0.27 on the close-up corn photo.",
+      "evidence": {
+        "sources": [
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "weak"
+      }
+    },
+    {
+      "id": "red-soil",
+      "name": "Red, iron-rich soil (latossolo, terra rossa)",
+      "appearance": "Strongly red; very negative excess green (about -0.4).",
+      "effectOnIndex": "With bright straw present Otsu splits soil from straw (threshold about -0.20) and the 'vegetation' mask covers 79% of the photo.",
+      "evidence": {
+        "sources": [
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "weak",
+        "notes": "One photo; the cause is general (Otsu splits the two largest modes)."
+      }
+    },
+    {
+      "id": "wet-dark-soil",
+      "name": "Wet or dark soil",
+      "appearance": "Darker but its colour ratio barely changes; noisier; very wet soil can glint.",
+      "effectOnIndex": "Little change in chromaticity indices; more noise in dark pixels.",
+      "evidence": {
+        "sources": [
+          "asprs-1986"
+        ],
+        "strength": "snippet"
+      }
+    },
+    {
+      "id": "crop-residue",
+      "name": "Straw and stover residue",
+      "appearance": "Bright, near-neutral, elongated; in no-till it forms stripes at the crop's own pitch, often offset from the new rows.",
+      "effectOnIndex": "ExG with Otsu gives false positives on bright residue; ExGR at zero holds (straw about -0.14). Brightness profiles see the straw stripes as rows.",
+      "evidence": {
+        "sources": [
+          "meyer-neto-2008",
+          "camargo-neto-2004",
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "id": "algae-moss",
+      "name": "Algae or moss on wet soil",
+      "appearance": "Smooth, spread-out green without plant shape.",
+      "effectOnIndex": "Genuine green false positives.",
+      "evidence": {
+        "sources": [],
+        "strength": "none",
+        "notes": "Not found; mechanism only."
+      }
+    }
+  ],
+  "orthomosaicArtefacts": [
+    {
+      "id": "stitching-repetitive",
+      "name": "Stitching failure over repetitive rows",
+      "effect": "Misregistration, doubled or kinked rows, seams; rows break at seam lines.",
+      "evidence": {
+        "sources": [
+          "aktar-2020"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "id": "ortho-blur",
+      "name": "Resampling and blending blur",
+      "effect": "Maize stand counting R² 0.616 on mosaics against 0.906 on the original frames; holes and 'melted' seedlings in a WebODM mosaic. Measure plants in the original frames.",
+      "evidence": {
+        "sources": [
+          "masc-2025"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "id": "ghosting",
+      "name": "Wind or downdraft ghosting",
+      "effect": "Blurred or doubled plants in the mosaic.",
+      "evidence": {
+        "sources": [
+          "aktar-2020"
+        ],
+        "strength": "weak"
+      }
+    },
+    {
+      "id": "relief-displacement",
+      "name": "Relief displacement of tall corn",
+      "effect": "d = D × h / (H - h): at 60 m above ground and 20 m from the frame centre a 2.5 m canopy leans 0.87 m, more than a 76 cm row; at V5 the lean is about 15 cm at 40 m.",
+      "evidence": {
+        "sources": [
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "estimate",
+        "notes": "Geometry, our arithmetic."
+      }
+    }
+  ],
+  "failureConditions": [
+    {
+      "id": "hard-shadow",
+      "condition": "Hard shadows (low sun, from about V8)",
+      "effect": "Shadowed ground and leaves misclassified; cover underestimated by up to 0.2.",
+      "affects": [
+        "vegetation-segmentation",
+        "between-row-weed-cover"
+      ],
+      "detectable": "yes",
+      "detection": "Deep-shadow share per cell (luma under 50).",
+      "evidence": {
+        "sources": [
+          "shadow-removal-2018",
+          "song-2015"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "id": "glint",
+      "condition": "Glint, hotspot, wet leaves",
+      "effect": "Holes in the vegetation mask.",
+      "affects": [
+        "vegetation-segmentation"
+      ],
+      "detectable": "partly",
+      "detection": "Near-saturated colourless pixels.",
+      "evidence": {
+        "sources": [
+          "sadeghi-tehran-2017"
+        ],
+        "strength": "strong"
+      }
+    },
+    {
+      "id": "white-balance",
+      "condition": "White-balance drift between frames",
+      "effect": "Soil or straw crosses the cover cut.",
+      "affects": [
+        "vegetation-segmentation",
+        "between-row-weed-cover"
+      ],
+      "detectable": "yes",
+      "detection": "Frame soil index against the field median.",
+      "evidence": {
+        "sources": [
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "estimate"
+      }
+    },
+    {
+      "id": "residue-otsu",
+      "condition": "Bright residue on dark or red soil",
+      "effect": "The automatic vegetation split falls between soil and straw: most of the photo reads as vegetation, the green row fit fails and brightness puts the rows on the straw stripes.",
+      "affects": [
+        "vegetation-segmentation",
+        "row-detection",
+        "crop-vs-weed-by-position",
+        "between-row-weed-cover"
+      ],
+      "detectable": "yes",
+      "detection": "Otsu threshold below the index of grey (about zero); the profile's ExGR gate applies.",
+      "code": "VEGETATION_MASK_SUSPECT",
+      "evidence": {
+        "sources": [
+          "swardus-corn-photos-2026-10-23",
+          "meyer-neto-2008"
+        ],
+        "strength": "weak",
+        "notes": "Seen on one photo (0359, red soil with straw strips), reproduced on a rendered scene in the regression tests."
+      }
+    },
+    {
+      "id": "residue-stripes",
+      "condition": "Residue stripes at the crop's pitch",
+      "effect": "A brightness row fit locks onto the straw, half a row off the crop.",
+      "affects": [
+        "row-detection"
+      ],
+      "detectable": "partly",
+      "detection": "Green on the brightness lines against green half a pitch away.",
+      "evidence": {
+        "sources": [
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "weak"
+      }
+    },
+    {
+      "id": "soil-coated-crop",
+      "condition": "Crop coated in soil after heavy rain",
+      "effect": "Crop reads as soil: false skips.",
+      "affects": [
+        "vegetation-segmentation",
+        "planting-positions",
+        "stand-count"
+      ],
+      "detectable": "partly",
+      "detection": "Brown plant-shaped blobs in lattice gaps.",
+      "evidence": {
+        "sources": [
+          "guerrero-2012"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "id": "purpling",
+      "condition": "Cold or phosphorus purpling at V2 to V5",
+      "effect": "Purple seedlings fall below the green cut: false skips.",
+      "affects": [
+        "vegetation-segmentation",
+        "planting-positions",
+        "stand-count"
+      ],
+      "detectable": "partly",
+      "detection": "Reddish blobs at lattice positions in season.",
+      "evidence": {
+        "sources": [
+          "bayer-purple"
+        ],
+        "strength": "weak"
+      }
+    },
+    {
+      "id": "drought-rolling",
+      "condition": "Drought leaf rolling",
+      "effect": "Lower cover, thin leaves lost at coarse pixels.",
+      "affects": [
+        "vegetation-segmentation",
+        "between-row-weed-cover"
+      ],
+      "detectable": "partly",
+      "evidence": {
+        "sources": [
+          "zhang-2019-drought"
+        ],
+        "strength": "snippet"
+      }
+    },
+    {
+      "id": "tassels",
+      "condition": "Tassels (VT to R1)",
+      "effect": "Pale blobs on the canopy; green share drops.",
+      "affects": [
+        "vegetation-segmentation"
+      ],
+      "detectable": "yes",
+      "evidence": {
+        "sources": [
+          "tassel-detection-2021"
+        ],
+        "strength": "snippet"
+      }
+    },
+    {
+      "id": "senescence",
+      "condition": "Senescence (R5 to R6)",
+      "effect": "Canopy leaves the green mask.",
+      "affects": [
+        "vegetation-segmentation"
+      ],
+      "detectable": "yes",
+      "evidence": {
+        "sources": [
+          "makanza-2018"
+        ],
+        "strength": "strong"
+      }
+    },
+    {
+      "id": "canopy-closure",
+      "condition": "Canopy closure (about V10 in 30 in rows)",
+      "effect": "No ground between rows; Otsu has one class; rows visible only from brightness.",
+      "affects": [
+        "between-row-weed-cover",
+        "weed-pressure-grade",
+        "crop-vs-weed-by-position",
+        "row-detection"
+      ],
+      "detectable": "yes",
+      "detection": "Vegetation share of the photo or cells at 0.85 or more.",
+      "code": "CANOPY_CLOSED",
+      "evidence": {
+        "sources": [
+          "sadeghi-tehran-2017",
+          "unl-critical-period"
+        ],
+        "strength": "strong"
+      }
+    },
+    {
+      "id": "stitching",
+      "condition": "Stitching failure on repetitive rows",
+      "effect": "Doubled or kinked rows at seams.",
+      "affects": [
+        "row-detection",
+        "planting-positions"
+      ],
+      "detectable": "partly",
+      "detection": "Rows break at seam lines; compare with the kept originals.",
+      "evidence": {
+        "sources": [
+          "aktar-2020"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "id": "relief",
+      "condition": "Relief displacement of tall corn",
+      "effect": "Canopy leans into the alley away from the frame centre.",
+      "affects": [
+        "between-row-weed-cover",
+        "row-detection"
+      ],
+      "detectable": "partly",
+      "evidence": {
+        "sources": [
+          "swardus-corn-photos-2026-10-23"
+        ],
+        "strength": "estimate"
+      }
+    },
+    {
+      "id": "in-row-weeds",
+      "condition": "Weeds inside the row",
+      "effect": "Position rules call them crop: missed.",
+      "affects": [
+        "crop-vs-weed-by-position",
+        "between-row-weed-cover",
+        "weed-pressure-grade"
+      ],
+      "detectable": "no",
+      "detection": "Not from colour at 1 cm or coarser; shape only at millimetre pixels.",
+      "code": "WITHIN_ROW_UNRESOLVED",
+      "evidence": {
+        "sources": [
+          "pena-2013",
+          "louargant-2018"
+        ],
+        "strength": "strong"
+      }
+    },
+    {
+      "id": "grass-lookalikes",
+      "condition": "Grass weeds (johnsongrass, shattercane, foxtails, volunteer corn)",
+      "effect": "Spectrally and in form like corn; in the row they are corn to every rule we have.",
+      "affects": [
+        "crop-vs-weed-by-position",
+        "species-priors"
+      ],
+      "detectable": "partly",
+      "detection": "Off-row position; patch persistence across seasons; late height.",
+      "code": "SPECIES_NOT_RESOLVABLE",
+      "evidence": {
+        "sources": [
+          "csic-johnsongrass",
+          "pena-2013",
+          "missouri-ipm1024"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "id": "dense-infestation",
+      "condition": "Dense infestation hiding the rows",
+      "effect": "The row pattern weakens; weeds may be read as crop rows.",
+      "affects": [
+        "row-detection",
+        "crop-vs-weed-by-position",
+        "weed-pressure-grade"
+      ],
+      "detectable": "partly",
+      "detection": "Row coherence falls; cover exceeds what the crop alone gives at the stage.",
+      "code": "ROWS_UNCERTAIN",
+      "evidence": {
+        "sources": [
+          "pena-2013"
+        ],
+        "strength": "moderate"
+      }
+    },
+    {
+      "id": "lodging",
+      "condition": "Lodging",
+      "effect": "Stalks lie across rows; lattice broken.",
+      "affects": [
+        "row-detection"
+      ],
+      "detectable": "partly",
+      "evidence": {
+        "sources": [],
+        "strength": "none",
+        "notes": "Not found in the literature."
+      }
+    },
+    {
+      "id": "mixed-pixels",
+      "condition": "Mixed pixels at row edges at about 3 cm and coarser",
+      "effect": "Crop edges read as weed; small weeds vanish.",
+      "affects": [
+        "between-row-weed-cover",
+        "weed-isolation"
+      ],
+      "detectable": "partly",
+      "detection": "Pixel size against the profile's requirements.",
+      "code": "INSUFFICIENT_RESOLUTION",
+      "evidence": {
+        "sources": [
+          "pena-2015"
+        ],
+        "strength": "strong"
+      }
+    },
+    {
+      "id": "jpeg-chroma",
+      "condition": "JPEG chroma subsampling",
+      "effect": "Thin leaves lose colour; colour bleeds at edges.",
+      "affects": [
+        "vegetation-segmentation"
+      ],
+      "detectable": "yes",
+      "detection": "4:2:0 in the JPEG header.",
+      "evidence": {
+        "sources": [],
+        "strength": "none",
+        "notes": "Effect not measured anywhere found."
+      }
+    }
+  ],
+  "gaps": [
+    "No full-text index accuracy comparison for maize; the best full-text comparison (Sadeghi-Tehran 2017) is wheat.",
+    "ExGR of corn stover and soybean stubble, the darkening of wet soil, the green-cover drop at tasselling or under leaf rolling: not found.",
+    "The ExGR values for purple, yellow, tassel and brown leaves are worked from assumed colour ratios and need measuring on kept originals.",
+    "Ghosting and stitching failure rates in corn, JPEG effects on ExGR, algae and standing water: not found.",
+    "The ExGR gate at zero rests on the literature (Meyer and Neto 2008) and our measured straw and soil values; purple seedlings fall below it and no field set with soil and residue labels has measured its cost."
+  ]
+}

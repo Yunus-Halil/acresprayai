@@ -1,0 +1,36 @@
+{
+  "soils": [
+    { "id": "mollisol-dark", "name": "Dark prairie soils (Mollisols)", "appearance": "Dark brown to black, darker still when wet.", "regions": ["us-corn-belt", "us-northern-plains"], "effect": "Good chromatic contrast with green; deep shadows on dark soil are hard to separate from soil (both dark).", "evidence": { "sources": ["asprs-1986"], "strength": "snippet" } },
+    { "id": "light-loam", "name": "Light loams and sandy soils", "appearance": "Pale tan, bright.", "regions": ["us-southeast", "us-mid-atlantic", "turkey", "europe"], "effect": "Clean split; Otsu about 0.27 on the close-up photo tested.", "evidence": { "sources": ["swardus-corn-photos-2026-10-23"], "strength": "weak" } },
+    { "id": "red-latossolo", "name": "Red, iron-rich soils", "appearance": "Strongly red (excess green about -0.4).", "regions": ["brazil", "us-southeast", "sub-saharan-africa"], "effect": "With straw on the surface the automatic split falls between soil and straw; the profile's index floor is needed.", "evidence": { "sources": ["swardus-corn-photos-2026-10-23"], "strength": "weak" } }
+  ],
+  "residue": [
+    { "id": "corn-stover", "name": "Corn stover (corn after corn)", "appearance": "Coarse stalk pieces; old stalk rows offset about half a row from the new rows.", "effect": "Brightness stripes at the crop pitch out of phase with the crop; straw near ExGR -0.14 stays out of the green mask, but ExG with Otsu can pick it up.", "evidence": { "sources": ["meyer-neto-2008", "swardus-corn-photos-2026-10-23"], "strength": "weak" } },
+    { "id": "soybean-stubble", "name": "Soybean stubble (corn after soybean)", "appearance": "Thin grey stubble with faint drill lines; breaks down fast.", "effect": "Weak residue signal; drill lines at the soybean's narrower pitch.", "evidence": { "sources": ["msu-residue-cover"], "strength": "snippet" } },
+    { "id": "wheat-straw", "name": "Small-grain straw (double crop, cover crop)", "appearance": "Bright golden straw, uniform.", "effect": "Brightest background; the classic ExG false positive.", "evidence": { "sources": ["meyer-neto-2008", "camargo-neto-2004"], "strength": "moderate" } }
+  ],
+  "shadows": {
+    "description": "Corn casts shadows into the alley from about V5; by V8 at low sun they span a 76 cm alley. Shadow on soil is dark, not green: it inflates a not-soil cover mask but not a green mask, and it darkens weeds in the alley.",
+    "heightToShadowNote": "Shadow length = plant height / tan(sun elevation): 30 cm plant 17 cm at 60° sun and 52 cm at 30°; 60 cm plant 35 and 104 cm.",
+    "evidence": { "sources": ["song-2015", "shadow-removal-2018"], "strength": "moderate", "notes": "Geometry is our arithmetic; no corn shadow study found." }
+  },
+  "irrigation": [
+    { "id": "furrow", "system": "Furrow irrigation", "geometryEffect": "Every furrow or every other row; hard wheel-track middles and soft furrows; 40 in beds with twin rows in the South.", "regions": ["us-corn-belt", "us-southern-plains", "us-southeast"], "evidence": { "sources": ["unl-g1720"], "strength": "moderate", "notes": "About 40% of Nebraska irrigated acres." } },
+    { "id": "pivot", "system": "Centre pivot", "geometryEffect": "Concentric wheel tracks; dry corners.", "regions": ["us-corn-belt", "us-northern-plains", "us-southern-plains"], "evidence": { "sources": ["wikipedia-pivot"], "strength": "snippet" } }
+  ],
+  "coverCrops": [
+    { "id": "interseeded", "practice": "Cover crops drilled into the alley at V4 to V6 (1 to 3 lines per alley)", "effect": "Deliberate green between the rows: every off-row green would read as weed. The operator must say so; the profile cannot tell from the image.", "evidence": { "sources": ["usu-interseeding", "nrcs-interseeding"], "strength": "weak" } },
+    { "id": "green-planting", "practice": "Planting green into a living cover crop terminated after planting", "effect": "Dying cover in the alley; yellow-green cover mask lights it.", "evidence": { "sources": [], "strength": "none", "notes": "Not researched in this round." } }
+  ],
+  "calendar": [
+    { "region": "us-corn-belt", "plantingWindow": "mid April to late May", "priorityStageWindow": "V2 to V5 about 2 to 4 weeks after planting: mid May to late June", "evidence": { "sources": ["purdue-2006-stages", "hall-sdsu-gdu"], "strength": "moderate" } },
+    { "region": "us-mid-atlantic", "plantingWindow": "April to May", "priorityStageWindow": "May to early June", "evidence": { "sources": ["va-pmg-2021"], "strength": "weak", "notes": "Virginia: weed-free for the first 4 to 6 weeks." } },
+    { "region": "us-southeast", "plantingWindow": "March to April", "priorityStageWindow": "April to May; control 20 to 45 days after planting", "evidence": { "sources": ["uga-corn-2023"], "strength": "moderate" } },
+    { "region": "turkey", "plantingWindow": "April to May (first crop); June to July (second crop after wheat)", "priorityStageWindow": "May to June; July to August for second crop", "evidence": { "sources": ["tr-ministry-maize-brochures"], "strength": "weak" } }
+  ],
+  "gaps": [
+    "No measured index values for corn stover or soybean stubble; the residue descriptions are partly ours.",
+    "No corn shadow study; no study of planting green or interseeded alleys from the air.",
+    "Calendar windows are broad; the field's own planting date is what the profile uses."
+  ]
+}

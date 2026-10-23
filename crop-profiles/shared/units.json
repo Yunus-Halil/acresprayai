@@ -1,0 +1,29 @@
+{
+  "units": [
+    { "id": "m", "name": "metre", "symbol": "m", "dimension": "length" },
+    { "id": "cm", "name": "centimetre", "symbol": "cm", "dimension": "length" },
+    { "id": "mm", "name": "millimetre", "symbol": "mm", "dimension": "length" },
+    { "id": "in", "name": "inch", "symbol": "in", "dimension": "length", "notes": "1 in = 2.54 cm. US row widths are planted and quoted in inches; the profile stores metres beside them." },
+    { "id": "ft", "name": "foot", "symbol": "ft", "dimension": "length" },
+    { "id": "m2", "name": "square metre", "symbol": "m²", "dimension": "area" },
+    { "id": "cm2", "name": "square centimetre", "symbol": "cm²", "dimension": "area" },
+    { "id": "ha", "name": "hectare", "symbol": "ha", "dimension": "area" },
+    { "id": "ac", "name": "acre", "symbol": "ac", "dimension": "area", "notes": "1 ac = 0.4047 ha" },
+    { "id": "cm_per_px", "name": "ground sampling distance", "symbol": "cm/px", "dimension": "length per pixel", "notes": "The ground size of one image pixel. The app stores metres per pixel (gsdM, mpp); profiles quote centimetres." },
+    { "id": "px", "name": "pixel", "symbol": "px", "dimension": "count" },
+    { "id": "plants_per_ha", "name": "plants per hectare", "symbol": "plants/ha", "dimension": "density" },
+    { "id": "plants_per_ac", "name": "plants per acre", "symbol": "plants/ac", "dimension": "density", "notes": "US seeding rates are quoted in seeds or plants per acre; 1 plant/ac = 2.471 plants/ha." },
+    { "id": "plants_per_m_row", "name": "plants per metre of row", "symbol": "plants/m", "dimension": "linear density" },
+    { "id": "share", "name": "share", "symbol": "", "dimension": "ratio", "notes": "A fraction 0 to 1 of an area, a population or a count." },
+    { "id": "percent", "name": "percent", "symbol": "%", "dimension": "ratio" },
+    { "id": "gdd_f", "name": "growing degree days, Fahrenheit", "symbol": "GDD °F", "dimension": "thermal time", "notes": "Daily ((Tmax + Tmin)/2 - 50) with Tmax capped at 86 °F and Tmin floored at 50 °F unless a profile says otherwise. Also called growing degree units (GDU)." },
+    { "id": "gdd_c", "name": "growing degree days, Celsius", "symbol": "GDD °C", "dimension": "thermal time", "notes": "Base 10 °C, cap 30 °C. 1 GDD °C = 1.8 GDD °F." },
+    { "id": "days", "name": "days", "symbol": "d", "dimension": "time" },
+    { "id": "weeks", "name": "weeks", "symbol": "wk", "dimension": "time" },
+    { "id": "deg", "name": "degrees of angle", "symbol": "°", "dimension": "angle" },
+    { "id": "count", "name": "count", "symbol": "", "dimension": "count" },
+    { "id": "leaves", "name": "leaves", "symbol": "leaves", "dimension": "count" },
+    { "id": "rows", "name": "rows", "symbol": "rows", "dimension": "count" },
+    { "id": "m_per_s", "name": "metres per second", "symbol": "m/s", "dimension": "speed" }
+  ]
+}

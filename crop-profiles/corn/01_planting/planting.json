@@ -1,0 +1,149 @@
+{
+  "patterns": [
+    {
+      "id": "single-30in", "type": "single-row", "name": "Single rows at 30 in (76.2 cm)",
+      "rowSpacingM": { "unit": "m", "value": 0.762, "evidence": { "sources": ["pioneer-row-width", "unl-g2216"], "strength": "moderate", "geography": "US, Canada" } },
+      "share": { "unit": "share", "value": 0.86, "distribution": "about 86% of US and Canadian corn acres in 2015, up from about 80% in 2007", "evidence": { "sources": ["pioneer-row-width"], "strength": "weak", "geography": "US, Canada", "notes": "Vendor survey (Pioneer Brand Concentration Survey); respondent base not given. No newer national survey found; USDA NASS publishes row widths for soybean only." } },
+      "regions": ["us-corn-belt", "us-northern-plains", "us-southern-plains", "us-mid-atlantic", "us-northeast", "us-southeast"],
+      "evidence": { "sources": ["pioneer-row-width", "unl-g2216", "isu-row-spacing"], "strength": "moderate", "geography": "US" }
+    },
+    {
+      "id": "single-36-38in", "type": "single-row", "name": "Wide single rows at 36 to 38 in (91 to 97 cm)",
+      "rowSpacingM": { "unit": "m", "range": { "low": 0.914, "high": 0.965 }, "evidence": { "sources": ["pioneer-row-width"], "strength": "weak", "geography": "US South" } },
+      "share": { "unit": "share", "value": 0.07, "distribution": "about 7% of acres in 2015 and declining", "evidence": { "sources": ["pioneer-row-width"], "strength": "weak" } },
+      "regions": ["us-southeast", "us-southern-plains"],
+      "evidence": { "sources": ["pioneer-row-width"], "strength": "weak" }
+    },
+    {
+      "id": "narrow-20-22in", "type": "single-row", "name": "Narrow rows at 20 or 22 in (51 or 56 cm)",
+      "rowSpacingM": { "unit": "m", "range": { "low": 0.508, "high": 0.559 }, "evidence": { "sources": ["pioneer-row-width", "unl-g2216"], "strength": "weak" } },
+      "share": { "unit": "share", "range": { "low": 0.03, "high": 0.06 }, "distribution": "20 in 3.0%, 22 in 2.6% of acres (2012); all rows under 30 in about 6% (2015); highest in Minnesota then South Dakota, under 5% in the central Corn Belt", "evidence": { "sources": ["pioneer-row-width"], "strength": "weak" } },
+      "regions": ["us-northern-plains", "us-corn-belt"],
+      "evidence": { "sources": ["pioneer-row-width", "isu-row-spacing"], "strength": "weak", "notes": "Iowa State: 20 in beat 30 in by 8 to 10 bu/a only above about 235 bu/a." }
+    },
+    {
+      "id": "narrow-15in", "type": "single-row", "name": "15 in rows (38 cm)",
+      "rowSpacingM": { "unit": "m", "value": 0.381, "evidence": { "sources": ["pioneer-row-width"], "strength": "weak" } },
+      "share": { "unit": "share", "value": 0.007, "distribution": "0.7% of acres (2012)", "evidence": { "sources": ["pioneer-row-width"], "strength": "snippet" } },
+      "regions": ["us-corn-belt"],
+      "evidence": { "sources": ["pioneer-row-width"], "strength": "weak" }
+    },
+    {
+      "id": "twin-30in", "type": "twin-row", "name": "Twin rows 7 to 8 in apart on 30 in centres",
+      "rowSpacingM": { "unit": "m", "value": 0.762, "evidence": { "sources": ["unl-g2216", "pioneer-twin-row"], "strength": "weak", "notes": "Pair centres at 30 in; the two lines of a pair 18 to 20 cm apart, staggered along the row. In the South also 9.5 in pairs on 40 in beds (snippet)." } },
+      "share": { "unit": "share", "range": { "low": 0.002, "high": 0.01 }, "distribution": "under 1% of acres (vendor); under 0.2% in 2009 (snippet)", "evidence": { "sources": ["pioneer-twin-row"], "strength": "weak" } },
+      "regions": ["us-corn-belt", "us-southeast"],
+      "notes": "At 2 cm or coarser a twin pair reads as one wide row at the 30 in pitch; finer it is two lines at alternating short and long gaps, and the row reader may report the pair spacing as an alternative pitch.",
+      "evidence": { "sources": ["pioneer-twin-row", "unl-g2216"], "strength": "weak" }
+    },
+    {
+      "id": "eu-75cm", "type": "single-row", "name": "Europe, 75 cm (70 to 80 cm)",
+      "rowSpacingM": { "unit": "m", "range": { "low": 0.70, "high": 0.80, "typical": 0.75 }, "evidence": { "sources": ["kws-uk-sowing", "llg-sachsen-anhalt-maize"], "strength": "weak", "geography": "UK, Germany, France, Italy", "notes": "Vendor and regional guidance, no practice survey; 70 cm canonical in Italy." } },
+      "regions": ["europe"],
+      "evidence": { "sources": ["kws-uk-sowing", "llg-sachsen-anhalt-maize"], "strength": "weak" }
+    },
+    {
+      "id": "turkey-70cm", "type": "single-row", "name": "Turkey, 70 cm (60 to 80 coastal, 40 to 60 interior second crop)",
+      "rowSpacingM": { "unit": "m", "range": { "low": 0.60, "high": 0.80, "typical": 0.70 }, "evidence": { "sources": ["tr-ministry-maize-brochures", "topcueri-2024"], "strength": "moderate", "geography": "Turkey" } },
+      "regions": ["turkey"],
+      "evidence": { "sources": ["tr-ministry-maize-brochures"], "strength": "moderate" }
+    },
+    {
+      "id": "brazil-45-50cm", "type": "single-row", "name": "Brazil Centre-West, 45 to 50 cm (shares the soybean planter)",
+      "rowSpacingM": { "unit": "m", "range": { "low": 0.45, "high": 0.50 }, "evidence": { "sources": ["aegro-espacamento"], "strength": "weak", "geography": "Brazil", "notes": "80 to 90 cm historically; trials 45 to 90 cm. Trade and extension text, no survey." } },
+      "regions": ["brazil"],
+      "evidence": { "sources": ["aegro-espacamento"], "strength": "weak" }
+    },
+    {
+      "id": "africa-75-90cm", "type": "single-row", "name": "Sub-Saharan Africa, ridges at 75 to 90 cm with planting stations",
+      "rowSpacingM": { "unit": "m", "range": { "low": 0.75, "high": 0.92 }, "distribution": "Malawi, 240 fields measured: means 80 to 92 cm, over 75 cm in 90% of fields; 1 to 4 plants per station, mostly 2", "evidence": { "sources": ["frontiers-sfs-2025-malawi"], "strength": "strong", "geography": "Malawi; trials in Kenya, Nigeria, Zimbabwe" } },
+      "regions": ["sub-saharan-africa"],
+      "notes": "Stations of two plants at 21 to 115 cm read as clumps, not as singulated plants: the double rule does not apply.",
+      "evidence": { "sources": ["frontiers-sfs-2025-malawi"], "strength": "strong" }
+    },
+    {
+      "id": "china-60-65cm", "type": "single-row", "name": "China, 60 to 65 cm uniform rows (wide-narrow 80 + 40 cm trialled)",
+      "rowSpacingM": { "unit": "m", "range": { "low": 0.60, "high": 0.65 }, "evidence": { "sources": ["incda-fundulea-rar34", "agriculture-2021-china-rows"], "strength": "snippet", "geography": "Northeast China 65 cm ridges; Huang-Huai-Hai 60 cm" } },
+      "regions": ["china"],
+      "evidence": { "sources": ["incda-fundulea-rar34"], "strength": "snippet" }
+    }
+  ],
+  "rowSpacing": {
+    "defaultM": 0.762,
+    "candidatesM": [
+      { "m": 0.381, "label": "15 in", "regions": ["us-corn-belt"], "share": 0.007, "sources": ["pioneer-row-width"] },
+      { "m": 0.45, "label": "45 cm", "regions": ["brazil"], "sources": ["aegro-espacamento"] },
+      { "m": 0.50, "label": "50 cm", "regions": ["brazil"], "sources": ["aegro-espacamento"] },
+      { "m": 0.508, "label": "20 in", "regions": ["us-northern-plains", "us-corn-belt"], "share": 0.03, "sources": ["pioneer-row-width"] },
+      { "m": 0.559, "label": "22 in", "regions": ["us-northern-plains", "us-corn-belt"], "share": 0.026, "sources": ["pioneer-row-width"] },
+      { "m": 0.60, "label": "60 cm", "regions": ["china", "turkey"], "sources": ["incda-fundulea-rar34", "tr-ministry-maize-brochures"] },
+      { "m": 0.65, "label": "65 cm", "regions": ["china"], "sources": ["incda-fundulea-rar34"] },
+      { "m": 0.70, "label": "70 cm", "regions": ["turkey", "europe"], "sources": ["tr-ministry-maize-brochures", "kws-uk-sowing"] },
+      { "m": 0.75, "label": "75 cm", "regions": ["europe", "sub-saharan-africa"], "sources": ["kws-uk-sowing", "frontiers-sfs-2025-malawi"] },
+      { "m": 0.762, "label": "30 in", "regions": ["us-corn-belt", "us-northern-plains", "us-southern-plains", "us-mid-atlantic", "us-northeast", "us-southeast"], "share": 0.86, "sources": ["pioneer-row-width"] },
+      { "m": 0.80, "label": "80 cm", "regions": ["europe", "sub-saharan-africa"], "sources": ["kws-uk-sowing", "frontiers-sfs-2025-malawi"] },
+      { "m": 0.90, "label": "90 cm", "regions": ["sub-saharan-africa"], "sources": ["frontiers-sfs-2025-malawi"] },
+      { "m": 0.914, "label": "36 in", "regions": ["us-southeast", "us-southern-plains"], "sources": ["pioneer-row-width"] },
+      { "m": 0.965, "label": "38 in", "regions": ["us-southeast", "us-southern-plains"], "share": 0.07, "sources": ["pioneer-row-width"] }
+    ],
+    "toleranceShare": 0.08
+  },
+  "inRowSpacing": {
+    "rangeM": { "low": 0.10, "high": 0.27, "typical": 0.16 },
+    "byPopulation": [
+      { "plantsPerHa": 49420, "rowSpacingM": 0.762, "inRowM": 0.266, "note": "20,000 seeds/a" },
+      { "plantsPerHa": 64250, "rowSpacingM": 0.762, "inRowM": 0.204, "note": "26,000/a, Nebraska rainfed optimum" },
+      { "plantsPerHa": 84020, "rowSpacingM": 0.762, "inRowM": 0.156, "note": "34,000/a, Nebraska irrigated optimum" },
+      { "plantsPerHa": 103790, "rowSpacingM": 0.762, "inRowM": 0.126, "note": "42,000/a, top of the US range" },
+      { "plantsPerHa": 84020, "rowSpacingM": 0.508, "inRowM": 0.234, "note": "34,000/a in 20 in rows" },
+      { "plantsPerHa": 80000, "rowSpacingM": 0.75, "inRowM": 0.167, "note": "8 plants/m² in 75 cm rows (KWS UK table gives 15.8 cm)" },
+      { "plantsPerHa": 60000, "rowSpacingM": 0.45, "inRowM": 0.370, "note": "Brazil safrinha survey mean about 55,000 to 60,000/ha" }
+    ],
+    "evidence": { "sources": ["unl-g2216", "kws-uk-sowing", "aegro-espacamento"], "strength": "estimate", "notes": "In-row spacing = 1 / (plants per ha × row spacing in m), our arithmetic from the sourced populations. Harvest stands run 5 to 10% under the seeding rate (UNL G2216); field emergence 90 to 95% (Purdue AGRY-91-01)." }
+  },
+  "population": [
+    { "label": "US overall seeding range", "plantsPerHa": { "unit": "plants_per_ha", "range": { "low": 49420, "high": 103790 }, "distribution": "20,000 to 42,000 seeds/a", "evidence": { "sources": ["unl-g2216", "isu-seeding-rate"], "strength": "moderate", "geography": "US" } }, "regions": ["us-corn-belt", "us-northern-plains", "us-southern-plains", "us-southeast", "us-mid-atlantic", "us-northeast"] },
+    { "label": "Nebraska irrigated economic optimum", "plantsPerHa": { "unit": "plants_per_ha", "range": { "low": 69190, "high": 98840, "typical": 84020 }, "distribution": "28,000 to 40,000 seeds/a, mean 34,000", "evidence": { "sources": ["unl-g2216"], "strength": "strong", "geography": "Nebraska" } }, "regions": ["us-corn-belt"] },
+    { "label": "Nebraska rainfed economic optimum", "plantsPerHa": { "unit": "plants_per_ha", "range": { "low": 59300, "high": 74130, "typical": 64250 }, "distribution": "24,000 to 30,000 seeds/a, mean 26,000", "evidence": { "sources": ["unl-g2216"], "strength": "strong", "geography": "Nebraska" } }, "regions": ["us-corn-belt", "us-northern-plains"] },
+    { "label": "Europe", "plantsPerHa": { "unit": "plants_per_ha", "range": { "low": 60000, "high": 120000, "typical": 80000 }, "distribution": "6 to 12 plants/m²", "evidence": { "sources": ["kws-uk-sowing"], "strength": "weak" } }, "regions": ["europe"] },
+    { "label": "Brazil", "plantsPerHa": { "unit": "plants_per_ha", "range": { "low": 55000, "high": 80000 }, "evidence": { "sources": ["aegro-espacamento"], "strength": "weak" } }, "regions": ["brazil"] },
+    { "label": "Malawi observed", "plantsPerHa": { "unit": "plants_per_ha", "range": { "low": 20000, "high": 53333 }, "distribution": "fewer than 10% of fields reach the recommended 53,333/ha", "evidence": { "sources": ["frontiers-sfs-2025-malawi"], "strength": "strong" } }, "regions": ["sub-saharan-africa"] }
+  ],
+  "singulation": {
+    "skipShare": { "unit": "share", "range": { "low": 0.049, "high": 0.184, "typical": 0.113 }, "distribution": "share of spacings over 1.5 × nominal; 15 Nebraska sites, 2001; includes 5 to 10% non-emergence", "evidence": { "sources": ["isu-planter-speed-spacing"], "strength": "moderate", "geography": "Nebraska" } },
+    "doubleShare": { "unit": "share", "range": { "low": 0.015, "high": 0.106, "typical": 0.058 }, "distribution": "share of spacings under 0.5 × nominal; 15 Nebraska sites", "evidence": { "sources": ["isu-planter-speed-spacing"], "strength": "moderate", "geography": "Nebraska" } },
+    "spacingSdCm": { "unit": "cm", "range": { "low": 4.8, "high": 17.3, "typical": 11.4 }, "distribution": "Indiana and Ohio 354 fields (1987 to 1996) mean SD about 4.5 in; Wisconsin 127 fields mean 3.3 in (1.9 to 6.8)", "evidence": { "sources": ["purdue-agry9101", "purdue-nielsen-2004-spacing"], "strength": "strong", "geography": "Indiana, Ohio, Wisconsin", "disagreement": "Its yield cost is contested: 2.2 to 4.5 bu/a per inch of SD (Purdue, Pioneer) against no effect (Wisconsin, Ontario); the geometry figures agree." } },
+    "emergenceNotes": "Doubles sit 2.5 to 5 cm apart and read as one blob from above. Late emergers are one to two leaves behind; a one-week gap is about two leaf stages, so an uneven field shows two plant sizes along the row. Late-emerger frequency in commercial fields: not found.",
+    "evidence": { "sources": ["isu-planter-speed-spacing", "purdue-agry9101", "purdue-nielsen-2004-spacing", "purdue-ay264"], "strength": "moderate" }
+  },
+  "planterGeometry": {
+    "widthsRows": [6, 8, 12, 16, 24, 32, 36, 48],
+    "guessRowErrorCm": { "unit": "cm", "range": { "low": 5, "high": 15 }, "distribution": "measured means 7.4 manual, 5.0 CORS, 5.9 SBAS, 6.7 RTK (Turkey, 24 corn and cotton fields); receiver specs SF1 ±15, SF2 ±5, SF3 ±3, RTK ±2.5 cm (95%, 15 min); up to 23 cm on SF1-class signal", "evidence": { "sources": ["topcueri-2024", "deere-starfire-spec"], "strength": "moderate", "geography": "Turkey; vendor specs", "notes": "No North American corn-planter measurement found." } },
+    "autosteerPassErrorCm": { "unit": "cm", "range": { "low": 2.5, "high": 15 }, "evidence": { "sources": ["deere-starfire-spec"], "strength": "weak" } },
+    "notes": "Within one planter pass the pitch is exact; between passes (every 12, 16 or 24 rows on most farms) the guess row may be off by 5 to 15 cm. The row reader's per-window fits absorb a guess row only when a window does not straddle it.",
+    "evidence": { "sources": ["deere-planter-specs", "topcueri-2024"], "strength": "moderate" }
+  },
+  "fieldGeometry": [
+    { "id": "headlands", "name": "Headlands and end rows", "description": "2 to 4 planter widths planted perpendicular to the field body at each end (farmers report at least 12 rows, 16 for large combines).", "imageryEffect": "Rows change direction by 90 degrees; a window straddling the turn has two plantings and no clean pitch. Edge weeds concentrate here too.", "evidence": { "sources": ["wikipedia-headland"], "strength": "weak", "notes": "Forum and tertiary sources only." } },
+    { "id": "point-rows", "name": "Point rows", "description": "Short rows where a field edge is not parallel to the planting; without section control 0.1 to 20% of a field may be double-planted.", "imageryEffect": "Overlapping plantings at an angle: crossed rows, doubled plant density, and rows that end abruptly.", "evidence": { "sources": ["ncc-2011-overlap"], "strength": "snippet" } },
+    { "id": "guess-rows", "name": "Guess rows between planter passes", "description": "The gap between adjacent passes, 5 to 15 cm off the nominal pitch.", "imageryEffect": "A pitch anomaly every 12, 16 or 24 rows; harmless to a per-window fit, visible as a phase jump between windows.", "evidence": { "sources": ["topcueri-2024"], "strength": "moderate" } },
+    { "id": "contour-terrace", "name": "Contour and terrace planting", "description": "Rows following contours; Iowa alone has about 506,100 terraces. Share of corn on contours: not found.", "imageryEffect": "Rows curve; per-window direction changes; long windows blur the pitch.", "evidence": { "sources": ["iowa-bmp-mapping"], "strength": "snippet" } },
+    { "id": "pivot", "name": "Centre-pivot fields", "description": "A 160-acre circle in a quarter section leaves about 25 acres of corners; rows usually straight across the circle, circular only under some LEPA systems.", "imageryEffect": "Wheel tracks as concentric arcs; dry corners with different stand or weeds.", "evidence": { "sources": ["wikipedia-pivot", "uga-b882"], "strength": "snippet" } },
+    { "id": "row-direction", "name": "Row direction", "description": "No convention found; usually the field's long axis. Yield trials disagree on east-west versus north-south.", "imageryEffect": "None for the reader, which searches every angle; sun azimuth against row direction decides whether shadows fall into the alley.", "evidence": { "sources": ["ndsu-row-direction"], "strength": "weak" } }
+  ],
+  "tillage": [
+    { "id": "no-till", "system": "No-till", "share": { "unit": "share", "value": 0.36, "distribution": "16% of corn acres in 2001, 28% in 2016, 36% in 2021", "evidence": { "sources": ["ers-chart-105042"], "strength": "strong", "geography": "US" } }, "residueAppearance": "Previous crop's residue lies between and along the rows; after corn, old stalk rows offset about half a row (15 in) from the new rows in corn-on-corn; after soybeans, thin grey stubble with faint drill lines. In bright light the straw is brighter than the soil and forms stripes at the crop's own pitch.", "regions": ["us-corn-belt", "us-northern-plains", "us-mid-atlantic", "brazil"], "evidence": { "sources": ["ers-chart-105042", "msu-residue-cover"], "strength": "moderate", "notes": "The residue-pattern description is our inference from the planting geometry, confirmed on one photo (0359, red soil with straw strips); unsourced in the literature." } },
+    { "id": "strip-till", "system": "Strip-till", "residueAppearance": "A dark tilled band 20 to 25 cm wide on each row centre, residue between: a stripe pattern at the crop pitch, in phase with the rows.", "regions": ["us-corn-belt"], "evidence": { "sources": ["striptill-farmer-2020"], "strength": "snippet", "notes": "ERS folds strip-till into no-till; 7.7% of cropland in 2014 by a trade estimate; 84% of strip-tillers on 30 in rows." } },
+    { "id": "conventional", "system": "Conventional (full-width) tillage", "share": { "unit": "share", "value": 0.55, "distribution": "continuous full-width tillage on 55% of corn land in 2016", "evidence": { "sources": ["ers-eib-197"], "strength": "strong", "geography": "US" } }, "residueAppearance": "Mostly bare soil; plough or disc furrows may show as faint stripes not at the crop pitch.", "regions": ["us-corn-belt", "turkey", "europe"], "evidence": { "sources": ["ers-eib-197"], "strength": "strong" } }
+  ],
+  "gaps": [
+    "No US row-width survey newer than the 2015 Pioneer vendor survey; USDA NASS publishes measured row widths for soybean only.",
+    "Twin-row share rests on vendor statements (under 1%) and a 2009 snippet (under 0.2%).",
+    "Europe, Brazil and China spacings come from trial baselines and trade text, not practice surveys; Malawi (240 fields) is the only measured distribution outside the US.",
+    "Guess-row error measured on North American corn planters: not found (Turkish and Brazilian measurements and receiver specs stand in).",
+    "Headland depth, point-row area and their share of fields: forum and section-control snippets only.",
+    "Share of corn on contours and terraces, and of pivot corn planted in circles: not found.",
+    "Late-emerger frequency in commercial fields: not found.",
+    "Residue appearance by previous crop and tillage: the descriptions are ours; the Purdue residue-cover table could not be fetched."
+  ]
+}

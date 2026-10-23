@@ -1,0 +1,36 @@
+{
+  "id": "corn",
+  "scientificName": "Zea mays L.",
+  "family": "Poaceae",
+  "commonNames": [
+    { "name": "corn", "language": "en", "region": "US, Canada" },
+    { "name": "maize", "language": "en", "region": "international" },
+    { "name": "mısır", "language": "tr", "region": "Turkey" },
+    { "name": "Mais", "language": "de", "region": "Germany" },
+    { "name": "maïs", "language": "fr", "region": "France" },
+    { "name": "milho", "language": "pt", "region": "Brazil" }
+  ],
+  "aliases": ["corn", "maize", "field corn", "grain corn", "silage corn", "corn silage", "sweet corn", "seed corn", "popcorn", "zea mays", "mısır", "misir", "mais", "maïs", "milho"],
+  "cropGroup": "wide-row",
+  "growthHabit": "annual-row-crop",
+  "productionTypes": [
+    { "id": "grain", "name": "Grain (field) corn", "notes": "The reference production type for every number in this profile unless stated." },
+    { "id": "silage", "name": "Silage corn", "notes": "Grain hybrids or leafy hybrids at 2,000 to 4,000 more seeds per acre; rows under 30 in preferred in Wisconsin. Same staging." },
+    { "id": "sweet", "name": "Sweet corn", "notes": "Shorter, thinner leaves, tillers; fresh-market rows 30 to 40 in; processing populations about 56,000 to 90,000 plants/ha. Morphology entries are for grain corn and apply loosely." },
+    { "id": "seed", "name": "Seed corn production", "notes": "Female:male row patterns (4:1, 6:2); male rows cut out after pollination leave an empty row every fifth to eighth row from August. Reads as a skip-row pattern." }
+  ],
+  "regionsCovered": [
+    { "id": "us-corn-belt", "name": "US Corn Belt", "countries": ["US"], "states": ["IA", "IL", "IN", "OH", "MN", "WI", "MO", "NE", "SD", "MI"] },
+    { "id": "us-northern-plains", "name": "US Northern Plains", "countries": ["US"], "states": ["ND", "SD", "NE", "MT"] },
+    { "id": "us-southern-plains", "name": "US Southern Plains", "countries": ["US"], "states": ["KS", "OK", "TX"] },
+    { "id": "us-southeast", "name": "US Southeast", "countries": ["US"], "states": ["GA", "AL", "MS", "SC", "NC", "FL", "TN", "AR", "LA"] },
+    { "id": "us-mid-atlantic", "name": "US Mid-Atlantic", "countries": ["US"], "states": ["VA", "MD", "DE", "PA", "WV", "NJ"], "notes": "Virginia is the app's testing assumption for every field (src/lib/weedCatalog/region.ts)." },
+    { "id": "us-northeast", "name": "US Northeast", "countries": ["US"], "states": ["NY", "VT", "NH", "ME", "MA", "CT"] },
+    { "id": "turkey", "name": "Turkey", "countries": ["TR"] },
+    { "id": "europe", "name": "Europe", "countries": ["DE", "FR", "IT", "HU", "GB", "AT", "PL", "RO"] },
+    { "id": "brazil", "name": "Brazil", "countries": ["BR"] },
+    { "id": "sub-saharan-africa", "name": "Sub-Saharan Africa", "countries": ["MW", "KE", "NG", "ZW", "ZA"] },
+    { "id": "china", "name": "China", "countries": ["CN"] }
+  ],
+  "notes": "The reference implementation of the Crop Intelligence Profile. US grain corn in 30 in rows is the most thoroughly sourced case; every other region and production type is represented with its own evidence where found, and with its gaps where not."
+}

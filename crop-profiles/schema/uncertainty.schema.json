@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Crop profile: uncertainty",
+  "type": "object",
+  "properties": {
+    "principles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "policies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "when": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "note",
+              "review",
+              "disable"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "affects": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "row-detection",
+                "row-spacing",
+                "planting-positions",
+                "crop-vs-weed-by-position",
+                "vegetation-segmentation",
+                "between-row-weed-cover",
+                "weed-pressure-grade",
+                "hotspots",
+                "weed-isolation",
+                "weed-measurement",
+                "species-priors",
+                "stand-count",
+                "growth-stage-from-imagery",
+                "stage-estimate",
+                "canopy-height"
+              ]
+            }
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "code",
+          "when",
+          "action",
+          "message",
+          "affects"
+        ]
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "principles",
+    "policies",
+    "gaps"
+  ]
+}

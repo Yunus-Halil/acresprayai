@@ -145,7 +145,8 @@ describe("growthStage", () => {
   });
 
   it("names corn stages with V-numbers", () => {
-    expect(growthStage("corn", planting, eightWeeksLater)).toMatch(/V6/);
+    // From the corn profile's stage calendar since 2026-10-23: a range, marked estimated (eight weeks is past V6).
+    expect(growthStage("corn", planting, eightWeeksLater)).toMatch(/V\d+ to V?T?\d*, estimated from the planting date/);
   });
 
   it("falls back to a neutral week count for unknown crops", () => {

@@ -183,6 +183,8 @@ describe("reading fixtures", () => {
   });
 
   it("the harness refuses a row crop on reader rows, as the app does", async () => {
-    await expect(runFixture({ ...f, crop: "corn", rows: { ...f.rows!, source: "reader" } })).rejects.toThrow(/Row-crop grading is not supported yet/);
+    // Corn's own reason since its crop profile (2026-10-23); a row crop with no profile keeps the generic one.
+    await expect(runFixture({ ...f, crop: "corn", rows: { ...f.rows!, source: "reader" } })).rejects.toThrow(/Corn is not graded on rows read automatically yet/);
+    await expect(runFixture({ ...f, crop: "soybean", rows: { ...f.rows!, source: "reader" } })).rejects.toThrow(/Row-crop grading is not supported yet/);
   });
 });

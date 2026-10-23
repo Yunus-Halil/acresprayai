@@ -1,0 +1,553 @@
+{
+ "suite": "photos",
+ "crop": "corn",
+ "date": "2026-10-23",
+ "codeRevision": "c28f705+uncommitted",
+ "scaleBasis": "no EXIF: pixel size from the measured pitch and an assumed 0.762 m row spacing",
+ "rows": [
+  {
+   "image": "0359_jpg.rf.d79059c10cb92885e24805062a9de816.jpg",
+   "res": "photo",
+   "mode": "neutral",
+   "gsdCm": 0.326,
+   "ms": 6395,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 74.968,
+   "angleDeg": 85.034,
+   "brightnessWindows": 6,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": -0.164,
+   "vegetationFraction": 0.755,
+   "medianRowCoherence": null,
+   "onGreenRatio": 0.387,
+   "offRow": 13,
+   "onPattern": 0,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE",
+    "VEGETATION_MASK_SUSPECT"
+   ],
+   "notes": [
+    "6 of 6 windows with rows found them from brightness, not from vegetation against soil: the canopy is closed or nearly so there. The lines are the plant rows; blob classes in those windows are weaker evidence.",
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants.",
+    "11,909 specks under the minimum blob size were dropped against 33 blobs kept. If plants are being dropped, lower the minimum blob size."
+   ]
+  },
+  {
+   "image": "0359_jpg.rf.d79059c10cb92885e24805062a9de816.jpg",
+   "res": "photo",
+   "mode": "corn",
+   "gsdCm": 0.326,
+   "ms": 1507,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.44,
+   "angleDeg": 85.103,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0.687,
+   "priorSupportedWindows": 0,
+   "otsu": -0.164,
+   "vegetationFraction": 0.068,
+   "medianRowCoherence": 0.579,
+   "onGreenRatio": 12.135,
+   "offRow": 186,
+   "onPattern": 404,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE",
+    "VEGETATION_MASK_SUSPECT"
+   ],
+   "notes": [
+    "69% of the photo passed the automatic green split but not the corn ExGR gate (straw, residue or soil read as green by ExG): left out of the vegetation.",
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants.",
+    "7,955 specks under the minimum blob size were dropped against 636 blobs kept. If plants are being dropped, lower the minimum blob size."
+   ]
+  },
+  {
+   "image": "0359_jpg.rf.d79059c10cb92885e24805062a9de816.jpg",
+   "res": "2cm",
+   "mode": "neutral",
+   "gsdCm": 2,
+   "ms": 869,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 74.773,
+   "angleDeg": 85.257,
+   "brightnessWindows": 6,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.031,
+   "vegetationFraction": 0.258,
+   "medianRowCoherence": 0.265,
+   "onGreenRatio": 0.335,
+   "offRow": 316,
+   "onPattern": 129,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE",
+    "ROWS_UNCERTAIN"
+   ],
+   "notes": [
+    "6 of 6 windows with rows found them from brightness, not from vegetation against soil: the canopy is closed or nearly so there. The lines are the plant rows; blob classes in those windows are weaker evidence.",
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants."
+   ]
+  },
+  {
+   "image": "0359_jpg.rf.d79059c10cb92885e24805062a9de816.jpg",
+   "res": "2cm",
+   "mode": "corn",
+   "gsdCm": 2,
+   "ms": 484,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.439,
+   "angleDeg": 84.969,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0.195,
+   "priorSupportedWindows": 0,
+   "otsu": 0.031,
+   "vegetationFraction": 0.063,
+   "medianRowCoherence": 0.626,
+   "onGreenRatio": 15.045,
+   "offRow": 73,
+   "onPattern": 521,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE"
+   ],
+   "notes": [
+    "20% of the photo passed the automatic green split but not the corn ExGR gate (straw, residue or soil read as green by ExG): left out of the vegetation.",
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants."
+   ]
+  },
+  {
+   "image": "0359_jpg.rf.d79059c10cb92885e24805062a9de816.jpg",
+   "res": "4cm",
+   "mode": "neutral",
+   "gsdCm": 4,
+   "ms": 218,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.474,
+   "angleDeg": 84.941,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.023,
+   "vegetationFraction": 0.198,
+   "medianRowCoherence": 0.299,
+   "onGreenRatio": 16.144,
+   "offRow": 87,
+   "onPattern": 211,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE",
+    "ROWS_UNCERTAIN"
+   ],
+   "notes": [
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants."
+   ]
+  },
+  {
+   "image": "0359_jpg.rf.d79059c10cb92885e24805062a9de816.jpg",
+   "res": "4cm",
+   "mode": "corn",
+   "gsdCm": 4,
+   "ms": 249,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.457,
+   "angleDeg": 84.889,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0.144,
+   "priorSupportedWindows": 0,
+   "otsu": 0.023,
+   "vegetationFraction": 0.054,
+   "medianRowCoherence": 0.642,
+   "onGreenRatio": 17.796,
+   "offRow": 24,
+   "onPattern": 145,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE"
+   ],
+   "notes": [
+    "14% of the photo passed the automatic green split but not the corn ExGR gate (straw, residue or soil read as green by ExG): left out of the vegetation.",
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants."
+   ]
+  },
+  {
+   "image": "ba2a945c-2f8f-4e02-981a-596d97b1fe21.png",
+   "res": "photo",
+   "mode": "neutral",
+   "gsdCm": 0.474,
+   "ms": 246,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.799,
+   "angleDeg": 90.5,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.344,
+   "vegetationFraction": 0.163,
+   "medianRowCoherence": 0.829,
+   "onGreenRatio": 134.774,
+   "offRow": 10,
+   "onPattern": 0,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE"
+   ],
+   "notes": [
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants.",
+    "1,065 specks under the minimum blob size were dropped against 20 blobs kept. If plants are being dropped, lower the minimum blob size."
+   ]
+  },
+  {
+   "image": "ba2a945c-2f8f-4e02-981a-596d97b1fe21.png",
+   "res": "photo",
+   "mode": "corn",
+   "gsdCm": 0.474,
+   "ms": 277,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.799,
+   "angleDeg": 90.5,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.344,
+   "vegetationFraction": 0.163,
+   "medianRowCoherence": 0.842,
+   "onGreenRatio": 134.774,
+   "offRow": 10,
+   "onPattern": 0,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE"
+   ],
+   "notes": [
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants.",
+    "1,065 specks under the minimum blob size were dropped against 20 blobs kept. If plants are being dropped, lower the minimum blob size."
+   ]
+  },
+  {
+   "image": "ba2a945c-2f8f-4e02-981a-596d97b1fe21.png",
+   "res": "2cm",
+   "mode": "neutral",
+   "gsdCm": 2,
+   "ms": 210,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.659,
+   "angleDeg": 90.55,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.305,
+   "vegetationFraction": 0.177,
+   "medianRowCoherence": 0.841,
+   "onGreenRatio": 207.65,
+   "offRow": 3,
+   "onPattern": 4,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE"
+   ],
+   "notes": [
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants.",
+    "193 specks under the minimum blob size were dropped against 23 blobs kept. If plants are being dropped, lower the minimum blob size."
+   ]
+  },
+  {
+   "image": "ba2a945c-2f8f-4e02-981a-596d97b1fe21.png",
+   "res": "2cm",
+   "mode": "corn",
+   "gsdCm": 2,
+   "ms": 146,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.659,
+   "angleDeg": 90.55,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.305,
+   "vegetationFraction": 0.177,
+   "medianRowCoherence": 0.841,
+   "onGreenRatio": 207.65,
+   "offRow": 3,
+   "onPattern": 4,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE"
+   ],
+   "notes": [
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants.",
+    "193 specks under the minimum blob size were dropped against 23 blobs kept. If plants are being dropped, lower the minimum blob size."
+   ]
+  },
+  {
+   "image": "ba2a945c-2f8f-4e02-981a-596d97b1fe21.png",
+   "res": "4cm",
+   "mode": "neutral",
+   "gsdCm": 4,
+   "ms": 65,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.48,
+   "angleDeg": 90.9,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.273,
+   "vegetationFraction": 0.19,
+   "medianRowCoherence": 0.858,
+   "onGreenRatio": 344.527,
+   "offRow": 0,
+   "onPattern": 1,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE"
+   ],
+   "notes": [
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants."
+   ]
+  },
+  {
+   "image": "ba2a945c-2f8f-4e02-981a-596d97b1fe21.png",
+   "res": "4cm",
+   "mode": "corn",
+   "gsdCm": 4,
+   "ms": 73,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.48,
+   "angleDeg": 90.9,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.273,
+   "vegetationFraction": 0.19,
+   "medianRowCoherence": 0.858,
+   "onGreenRatio": 344.527,
+   "offRow": 0,
+   "onPattern": 1,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE"
+   ],
+   "notes": [
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants."
+   ]
+  },
+  {
+   "image": "pic1.jpg",
+   "res": "photo",
+   "mode": "neutral",
+   "gsdCm": 0.202,
+   "ms": 122,
+   "rowsFound": false,
+   "blocks": 0,
+   "pitchCm": null,
+   "angleDeg": null,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.266,
+   "vegetationFraction": 0.089,
+   "medianRowCoherence": null,
+   "onGreenRatio": null,
+   "offRow": 0,
+   "onPattern": 0,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE",
+    "NO_ROWS"
+   ],
+   "notes": [
+    "No window of this photo showed a row pattern the fit would trust. Either the crop is not in rows, the row spacing is wrong, the photo is too high for the rows to resolve, or the soil does not show between rows.",
+    "901 specks under the minimum blob size were dropped against 76 blobs kept. If plants are being dropped, lower the minimum blob size."
+   ]
+  },
+  {
+   "image": "pic1.jpg",
+   "res": "photo",
+   "mode": "corn",
+   "gsdCm": 0.202,
+   "ms": 236,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.737,
+   "angleDeg": 90,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.266,
+   "vegetationFraction": 0.089,
+   "medianRowCoherence": 0.79,
+   "onGreenRatio": 91.391,
+   "offRow": 2,
+   "onPattern": 10,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE"
+   ],
+   "notes": [
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants.",
+    "882 specks under the minimum blob size were dropped against 22 blobs kept. If plants are being dropped, lower the minimum blob size."
+   ]
+  },
+  {
+   "image": "pic1.jpg",
+   "res": "2cm",
+   "mode": "neutral",
+   "gsdCm": 2,
+   "ms": 56,
+   "rowsFound": false,
+   "blocks": 0,
+   "pitchCm": null,
+   "angleDeg": null,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.195,
+   "vegetationFraction": 0.102,
+   "medianRowCoherence": null,
+   "onGreenRatio": null,
+   "offRow": 0,
+   "onPattern": 0,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE",
+    "NO_ROWS"
+   ],
+   "notes": [
+    "No window of this photo showed a row pattern the fit would trust. Either the crop is not in rows, the row spacing is wrong, the photo is too high for the rows to resolve, or the soil does not show between rows."
+   ]
+  },
+  {
+   "image": "pic1.jpg",
+   "res": "2cm",
+   "mode": "corn",
+   "gsdCm": 2,
+   "ms": 45,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.415,
+   "angleDeg": 90.3,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 1,
+   "otsu": 0.195,
+   "vegetationFraction": 0.102,
+   "medianRowCoherence": 0.816,
+   "onGreenRatio": 127.009,
+   "offRow": 2,
+   "onPattern": 17,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE"
+   ],
+   "notes": [
+    "1 window fell just under the confidence bar but measured a spacing corn is planted at, with the green in step with the rows; it was kept. A photo only a few rows wide gives the spacing measurement little to stand on.",
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants."
+   ]
+  },
+  {
+   "image": "pic1.jpg",
+   "res": "4cm",
+   "mode": "neutral",
+   "gsdCm": 4,
+   "ms": 15,
+   "rowsFound": false,
+   "blocks": 0,
+   "pitchCm": null,
+   "angleDeg": null,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0,
+   "priorSupportedWindows": 0,
+   "otsu": 0.148,
+   "vegetationFraction": 0.122,
+   "medianRowCoherence": null,
+   "onGreenRatio": null,
+   "offRow": 0,
+   "onPattern": 0,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE",
+    "NO_ROWS"
+   ],
+   "notes": [
+    "No window of this photo showed a row pattern the fit would trust. Either the crop is not in rows, the row spacing is wrong, the photo is too high for the rows to resolve, or the soil does not show between rows."
+   ]
+  },
+  {
+   "image": "pic1.jpg",
+   "res": "4cm",
+   "mode": "corn",
+   "gsdCm": 4,
+   "ms": 18,
+   "rowsFound": true,
+   "blocks": 1,
+   "pitchCm": 76.22,
+   "angleDeg": 91.5,
+   "brightnessWindows": 0,
+   "brightnessReplaced": 0,
+   "flooredMaskWindows": 0,
+   "exgrGatedShare": 0.007,
+   "priorSupportedWindows": 1,
+   "otsu": 0.148,
+   "vegetationFraction": 0.116,
+   "medianRowCoherence": 0.828,
+   "onGreenRatio": 286.771,
+   "offRow": 0,
+   "onPattern": 17,
+   "findings": [
+    "PROFILE_EXPERIMENTAL",
+    "UNKNOWN_STAGE"
+   ],
+   "notes": [
+    "1 window fell just under the confidence bar but measured a spacing corn is planted at, with the green in step with the rows; it was kept. A photo only a few rows wide gives the spacing measurement little to stand on.",
+    "Rows were found but no window gave a consistent spacing between plants along the row, so skips, doubles and between-plant blobs are not counted. That is normal once plants touch along the row, or when the photo is too coarse for single plants."
+   ]
+  }
+ ]
+}

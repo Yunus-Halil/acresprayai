@@ -1,0 +1,21 @@
+{
+  "codes": [
+    { "id": "NO_PROFILE", "name": "No crop profile", "severity": "caution", "meaning": "The field's crop has no profile, or no crop is set; analyses run with the engine's crop-neutral defaults and say so.", "defaultAction": "note" },
+    { "id": "PROFILE_EXPERIMENTAL", "name": "Profile not validated", "severity": "info", "meaning": "The crop's profile is documented but its benchmarks have not met the acceptance criteria; results are offered as experimental.", "defaultAction": "note" },
+    { "id": "UNKNOWN_RESOLUTION", "name": "Pixel size unknown", "severity": "blocking", "meaning": "The ground size of a pixel is not known; no spacing, size or area is stated.", "defaultAction": "disable" },
+    { "id": "INSUFFICIENT_RESOLUTION", "name": "Imagery too coarse", "severity": "blocking", "meaning": "The pixel size is coarser than the analysis needs for this crop and stage.", "defaultAction": "disable" },
+    { "id": "UNKNOWN_STAGE", "name": "Growth stage unknown", "severity": "caution", "meaning": "No planting date and no observed stage; stage-dependent rules (closure, critical period, expected cover) are not applied.", "defaultAction": "note" },
+    { "id": "STAGE_ESTIMATED", "name": "Stage estimated, not observed", "severity": "info", "meaning": "The stage comes from the planting date and a calendar or thermal-time table, with its stated error, not from the imagery.", "defaultAction": "note" },
+    { "id": "UNSUPPORTED_STAGE", "name": "Stage outside the analysis window", "severity": "blocking", "meaning": "The crop is at a stage where the analysis does not apply (for example the canopy has closed and the ground between rows is no longer visible).", "defaultAction": "disable" },
+    { "id": "CANOPY_CLOSED", "name": "Canopy closed", "severity": "blocking", "meaning": "Almost all of the ground is under vegetation; between-row weed cover and weed counts cannot be measured.", "defaultAction": "disable" },
+    { "id": "ROW_SPACING_UNEXPECTED", "name": "Row spacing unlike the crop", "severity": "caution", "meaning": "The measured row spacing matches none of the spacings the crop is planted at; the field's own measurement is kept, and the crop on file or the read is worth checking.", "defaultAction": "review" },
+    { "id": "ROWS_UNCERTAIN", "name": "Rows uncertain", "severity": "caution", "meaning": "Rows were read with low confidence or low coherence (heavy weeds, closed canopy, curved rows); position-based crop-versus-weed reasoning is weaker.", "defaultAction": "review" },
+    { "id": "NO_ROWS", "name": "No rows", "severity": "blocking", "meaning": "No row pattern was found; nothing is called a weed by position.", "defaultAction": "disable" },
+    { "id": "COVER_STAGE_MISMATCH", "name": "Cover unlike the stage", "severity": "caution", "meaning": "The measured green cover is far outside what the crop covers at the estimated stage: the stage, the planting date or heavy weed pressure is off.", "defaultAction": "review" },
+    { "id": "VEGETATION_MASK_SUSPECT", "name": "Vegetation split suspect", "severity": "caution", "meaning": "The automatic vegetation threshold fell below the index of grey, so it was splitting soil from residue; the crop profile's index floor was applied.", "defaultAction": "note" },
+    { "id": "WITHIN_ROW_UNRESOLVED", "name": "Weeds in the row not separable", "severity": "info", "meaning": "Vegetation inside the crop row band is not judged: a weed there cannot be told from the crop at this resolution.", "defaultAction": "note" },
+    { "id": "SPECIES_NOT_RESOLVABLE", "name": "Species not resolvable", "severity": "info", "meaning": "The imagery cannot name the weed; any species list is a regional and seasonal prior, not an identification.", "defaultAction": "note" },
+    { "id": "THRESHOLD_PROVISIONAL", "name": "Threshold provisional", "severity": "caution", "meaning": "The pressure classes rest on a threshold that the crop's own guidance does not use (for example a cover threshold where the guidance acts on weed height and stage).", "defaultAction": "note" },
+    { "id": "CAPABILITY_UNSUPPORTED", "name": "Analysis not supported for this crop", "severity": "blocking", "meaning": "The crop profile states the analysis is not supported yet, with its reason.", "defaultAction": "disable" }
+  ]
+}

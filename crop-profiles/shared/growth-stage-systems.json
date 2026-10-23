@@ -1,0 +1,46 @@
+{
+  "systems": [
+    {
+      "id": "corn-leaf-collar",
+      "name": "Corn leaf-collar staging (Iowa State, Abendroth et al. 2011)",
+      "crops": ["corn"],
+      "description": "VE emergence; V(n) counts leaves with a visible collar (the first leaf has a rounded tip); VT when the last tassel branch is visible; R1 silking, R2 blister, R3 milk, R4 dough, R5 dent, R6 physiological maturity (black layer). Lower leaves are lost from about V6; staging then splits the stalk to find the fifth leaf node. Other methods (droopy-leaf, horizontal-leaf) count one to two leaves more and are not interchangeable.",
+      "source": "Iowa State University Extension PMR 1009, Corn Growth and Development (Abendroth, Elmore, Boyer, Marlay 2011); Purdue Agronomy, Nielsen, Determining corn leaf stages"
+    },
+    {
+      "id": "soybean-fehr-caviness",
+      "name": "Soybean staging (Fehr and Caviness 1977)",
+      "crops": ["soybean"],
+      "description": "VE, VC, V(n) by fully developed trifoliolate nodes; R1 to R8 from first flower to full maturity.",
+      "source": "Fehr and Caviness 1977, Stages of soybean development, Iowa State Special Report 80"
+    },
+    {
+      "id": "cereal-feekes-zadoks",
+      "name": "Small-grain staging (Feekes; Zadoks decimal code)",
+      "crops": ["wheat", "barley", "oats", "rye", "triticale"],
+      "description": "Feekes 1 to 11 (emergence to ripening) and the Zadoks 00 to 99 decimal code; tillering, jointing, boot, heading, grain fill.",
+      "source": "Large 1954 (Feekes); Zadoks, Chang and Konzak 1974"
+    },
+    {
+      "id": "cotton-mainstem-node",
+      "name": "Cotton staging by main-stem node and fruiting",
+      "crops": ["cotton"],
+      "description": "Emergence, node counts, first square, first flower, open boll; often expressed as days after planting and nodes above white flower.",
+      "source": "Extension cotton development guides (Texas A&M, Mississippi State)"
+    },
+    {
+      "id": "bbch",
+      "name": "BBCH decimal code",
+      "crops": ["any"],
+      "description": "A two-digit code from 00 (dry seed) to 99 (harvested product) with principal stages 0 to 9, defined per crop group; the common international scale.",
+      "source": "Meier (ed.) 2001, Growth stages of mono- and dicotyledonous plants, BBCH Monograph, Federal Biological Research Centre for Agriculture and Forestry"
+    },
+    {
+      "id": "orchard-phenology",
+      "name": "Tree-crop phenology",
+      "crops": ["apple", "apricot", "cherry", "olive", "citrus", "almond", "walnut", "peach", "plum"],
+      "description": "Dormant, bud break, bloom, fruit set, fruit growth, harvest, leaf fall; row geometry does not change with phenology, canopy size changes with age.",
+      "source": "BBCH monograph (pome and stone fruit, olive, citrus scales)"
+    }
+  ]
+}

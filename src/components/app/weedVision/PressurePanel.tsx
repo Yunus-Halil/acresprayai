@@ -20,7 +20,7 @@ const PARAMS = { algorithm: "rfdetr_seg_large", threshold: 0.5, tile: 1024, over
 const pct = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${(100 * v).toFixed(d)}%`);
 const cm = (m: number | null | undefined) => (m == null ? "–" : `${Math.round(m * 100)} cm`);
 
-export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl }: { taskId: string; sources: ScanSources | null; crop: string | null; /** The scan's spots kept as weeds (Scan this field, the operator's verdicts applied): graded when the model has not run. */ scanWeeds?: WeedObject[]; fetchImpl?: typeof fetch }) {
+export function PressurePanel({ taskId, sources, crop, plantingDate = null, scanWeeds = [], fetchImpl }: { taskId: string; sources: ScanSources | null; crop: string | null; /** YYYY-MM-DD, for the crop profile's stage window. */ plantingDate?: string | null; /** The scan's spots kept as weeds (Scan this field, the operator's verdicts applied): graded when the model has not run. */ scanWeeds?: WeedObject[]; fetchImpl?: typeof fetch }) {
   const s = usePressure(taskId);
   const ts = useTwoStage(taskId);
   const run = useFrameRun(taskId);
@@ -60,7 +60,7 @@ export function PressurePanel({ taskId, sources, crop, scanWeeds = [], fetchImpl
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <button type="button" className={`${btn} border-[#fb923c] text-[#fb923c]`} disabled={reading || !run.mapAvailable} data-testid="pressure-grade"
-          onClick={() => void gradeField(taskId, { crop, stage1: { params: PARAMS, modelSha, photoGsdM }, scanWeeds })}>
+          onClick={() => void gradeField(taskId, { crop, plantingDate, stage1: { params: PARAMS, modelSha, photoGsdM }, scanWeeds })}>
           {gr ? "Grade again" : "Grade the field"}
         </button>
         {reading && <span className="inline-flex items-center gap-1 text-neutral-400"><Loader2 className="h-3 w-3 animate-spin" /> {rowsReading && s.state !== "reading" ? "reading the rows first…" : `reading the field into cells${ts.stage1Progress ? ` ${Math.round(100 * ts.stage1Progress)}%` : ""}…`}</span>}

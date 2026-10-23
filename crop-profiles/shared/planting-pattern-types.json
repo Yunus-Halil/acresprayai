@@ -1,0 +1,13 @@
+{
+  "types": [
+    { "id": "single-row", "name": "Single rows", "description": "One line of plants per row at a fixed pitch, plants singulated along the row by a precision planter (corn, soybean in wide rows, cotton, sunflower, sugar beet). The row reader's default geometry." },
+    { "id": "twin-row", "name": "Twin rows", "description": "Two lines of plants 18 to 24 cm apart on a wider centre (corn 7 to 8 in on 30 in centres, staggered along the row). From above at 2 cm or coarser the pair reads as one wide row; finer, it is two lines at a pitch that alternates short and long." },
+    { "id": "skip-row", "name": "Skip rows", "description": "A regular pattern of planted and unplanted rows (cotton 2-and-1, seed-corn male rows cut out after pollination). The planted pitch and the pattern period differ; the reader sees the finer one and may report the coarser as an alternative." },
+    { "id": "drilled", "name": "Drilled", "description": "Narrow rows (12 to 25 cm) with plants not singulated along the row (small grains, drilled soybean). Rows resolve only while the canopy is open and at fine pixel sizes; plants do not." },
+    { "id": "bed", "name": "Beds", "description": "Raised beds carrying one to three rows each, separated by furrows (furrow-irrigated corn and cotton in the US South, vegetables). The bed period is coarser than the row pitch." },
+    { "id": "strip-intercrop", "name": "Strip intercrop", "description": "Alternating strips of two crops a few rows wide (corn and soybean strips, maize-legume strips). Each strip has its own pitch; the field has two plantings." },
+    { "id": "contour", "name": "Contour or terrace planting", "description": "Rows follow the land's contour lines, so they curve and change direction across the field. A row reader that fits straight lines per window still works if windows are small against the curvature." },
+    { "id": "pivot-circle", "name": "Circular planting under a pivot", "description": "Rows planted in circles under a centre pivot (some LEPA systems). Locally straight, globally curved." },
+    { "id": "lattice", "name": "Tree lattice", "description": "Trees or vines at a fixed spacing along rows and across them (square, rectangular, offset, hedgerow). The planting-layout fitter's geometry." }
+  ]
+}

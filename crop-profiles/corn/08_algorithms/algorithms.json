@@ -1,0 +1,309 @@
+{
+  "rowReader": {
+    "strategy": "continuous-row",
+    "defaultSpacingM": 0.762,
+    "candidatesM": [
+      0.381,
+      0.508,
+      0.7,
+      0.762,
+      0.914
+    ],
+    "pitchToleranceShare": 0.08,
+    "windowRows": null,
+    "maxNeighbourhoodM": 30,
+    "vegetationFractionRange": [
+      0.01,
+      0.85
+    ],
+    "verifyBrightnessAgainstVegetation": true,
+    "continuousFromStage": "V6",
+    "rationale": "Corn rows are read by the photo pattern pass (projection angle, autocorrelation pitch, circular-mean phase), whose search band is 60 to 160% of each candidate. These five candidates cover every planted corn spacing from 23 cm to 1.46 m; the engine's crop-neutral candidates (0.2 to 6 m) are kept beside them so a field that is not what the crop on file says is still read at its own pitch. In auto mode a pitch is only ever one a fit measured: a fit left standing on a candidate it was handed is not rows. A green fit just under the confidence bar stands when its measured pitch is a planted corn spacing and its green is in step with the rows (coherence 0.5 or more): a photo a few rows wide gives the spacing estimate little to stand on. Windows stay at the engine's 4 m (a four-row window of about 3 m was tried and split small photos into blocks that did not join). In early corn the rows are green lines on soil, so a row block found from brightness is re-placed on the green when the green is in step with it: in no-till fields the bright stripes are the straw between the rows.",
+    "sources": [
+      "pioneer-row-width",
+      "kws-uk-sowing",
+      "tr-ministry-maize-brochures",
+      "aegro-espacamento",
+      "swardus-corn-photos-2026-10-23"
+    ]
+  },
+  "plantingPositions": {
+    "alongRangeM": {
+      "low": 0.1,
+      "high": 0.27,
+      "typical": 0.16
+    },
+    "resolvableStages": [
+      "V2",
+      "V4"
+    ],
+    "maxGsdCm": 1.5,
+    "rationale": "Plants 10 to 27 cm apart along the row resolve as separate objects from about V2 to V4 at 1.5 cm or finer; they merge into a line from about V5 to V6. A position inferred from the planting pattern is an expected plant, never a verified one.",
+    "sources": [
+      "unl-g2216",
+      "katari-2024",
+      "gao-2023"
+    ]
+  },
+  "vegetation": {
+    "index": "exg-cive-otsu",
+    "indexFloor": null,
+    "exgrGate": 0,
+    "coverExgr": -0.08,
+    "canopyClosedShare": 0.85,
+    "expectedCoverByStage": [
+      {
+        "stage": "V2",
+        "range": {
+          "low": 0.005,
+          "high": 0.02
+        }
+      },
+      {
+        "stage": "V3",
+        "range": {
+          "low": 0.02,
+          "high": 0.04
+        }
+      },
+      {
+        "stage": "V4",
+        "range": {
+          "low": 0.04,
+          "high": 0.1
+        }
+      },
+      {
+        "stage": "V5",
+        "range": {
+          "low": 0.08,
+          "high": 0.2
+        }
+      },
+      {
+        "stage": "V6",
+        "range": {
+          "low": 0.25,
+          "high": 0.4
+        }
+      },
+      {
+        "stage": "V8",
+        "range": {
+          "low": 0.45,
+          "high": 0.65
+        }
+      },
+      {
+        "stage": "V10",
+        "range": {
+          "low": 0.7,
+          "high": 0.85
+        }
+      }
+    ],
+    "rationale": "The photo pass keeps its ExG + CIVE Otsu split and adds an ExGR gate: a pixel is vegetation only if its ExGR is also above zero (Meyer and Neto 2008). ExG is positive on bright yellow straw (about +0.06), so neither Otsu nor a floor on the ExG index keeps straw out; ExGR puts straw at about -0.14 and soil at about -0.24, measured on our imagery, and is the most stable index over a day in the literature (coefficient of variation 2% against 56% for ExG). On the red-soil no-till photo the Otsu split fell to -0.20 (soil against straw) and the rows were read on the straw; the gate removes both. Known cost: purple (cold or phosphorus) seedlings near ExGR -0.14 fall out of the mask at V2 to V5. Expected cover is the crop alone at 30 in rows; weeds add to it.",
+    "sources": [
+      "woebbecke-1995",
+      "meyer-neto-2008",
+      "sadeghi-tehran-2017",
+      "gao-2023",
+      "swardus-corn-photos-2026-10-23"
+    ]
+  },
+  "pressure": {
+    "group": "wide-row",
+    "scheme": {
+      "low": 0.01,
+      "moderate": 0.05,
+      "action": 0.1,
+      "high": 0.2,
+      "source": "Provisional for corn: US guidance acts on weed height (before about 10 cm) and crop stage (first pass by V4; the critical period runs to about V10), not on cover. The classes use the Turkish ministry's maize action point (10% cover, TAGEM 2022) with Peña's 20% as high; read them as relative pressure.",
+      "basis": "provisional",
+      "sources": [
+        "tagem-2022-maize",
+        "pena-2013",
+        "isu-early-competition",
+        "unl-critical-period"
+      ]
+    },
+    "applicableStages": [
+      "V1",
+      "V9"
+    ],
+    "grade": {
+      "escapeDiameterM": 0.3,
+      "smallDiameterM": 0.15,
+      "denseObjectsPerM2": 2
+    },
+    "stage1": {
+      "mask": "cover"
+    },
+    "actionSignals": {
+      "weedHeightActionCm": 10,
+      "firstPassByStage": "V4",
+      "notes": "Iowa State: mean yield loss 0% at 2 in weed height, 2% at 4 in, 6% at 6 in, 22% at 12 in (37 experiments); a first post pass before weeds reach 10 cm and no later than V4 (Gower 2003); each leaf stage of delay in the critical period costs about 2%. Label ceilings: V8 or 30 in for most post products. Decision support only: Swardus names zones and areas, never a product or rate.",
+      "sources": [
+        "isu-early-competition",
+        "gower-2003",
+        "unl-critical-period",
+        "unl-post-herbicide-stage"
+      ]
+    },
+    "rationale": "Between-row cover is what the imagery measures best until the alley closes at about V10 in 30 in rows; the grade is applicable from emergence to V9 and refused after. The cover thresholds keep the engine's current values (no regression) but are marked provisional, because no US source gives a cover action point for corn."
+  },
+  "hotspots": {
+    "minObjectDiameterM": 0.1,
+    "rationale": "The US action size is a weed of about 10 cm; smaller objects are reported in cover, not as hotspot plants."
+  },
+  "sourceFrames": {
+    "preferFramesForMeasurement": true,
+    "maxGsdCm": 1,
+    "rationale": "Counting and measuring in maize are far better in the original frames than in the mosaic (R² 0.906 against 0.616); weeds are measured in the frames at 1 cm or finer."
+  },
+  "weedMeasurement": {
+    "minPixelsAcross": 6,
+    "sizeThresholdsCm": {
+      "small": 10,
+      "medium": 30
+    },
+    "rationale": "The engine withholds a size under 6 px across. Small is up to 10 cm (the US label size for most post products on broadleaves, 4 in); medium to 30 cm.",
+    "sources": [
+      "isu-early-competition",
+      "unl-post-herbicide-stage"
+    ]
+  },
+  "species": {
+    "method": "environmental-priors-only",
+    "rationale": "Species are ordered from region, season and estimated stage, never identified from pixels: no study names weeds in corn at 1 cm a pixel or coarser.",
+    "sources": [
+      "lu-2024",
+      "pena-2013",
+      "wssa-2020-survey"
+    ]
+  },
+  "consistency": {
+    "rowSpacingMismatchShare": 0.08,
+    "minRowCoherence": 0.3,
+    "coverStageToleranceShare": 0.15,
+    "rationale": "A measured pitch more than 8% from every planted corn spacing is unexpected (guess-row errors are 5 to 15 cm on single rows, not on the field pitch). The engine's hard coherence gate is 0.15; under 0.30 the rows are flagged uncertain (rows half a pitch wide read 0.64, four fifths of a pitch wide 0.23). Cover more than 15 points outside the crop's expected range at the estimated stage is a mismatch worth review."
+  },
+  "capabilities": {
+    "row-detection": {
+      "status": "experimental",
+      "maxGsdCm": 5,
+      "stages": [
+        "V2",
+        "V9"
+      ],
+      "reason": "Photo pattern pass with the corn prior; benchmarked on rendered stands and on three real photos (one used to diagnose the residue failure), not on an independent field set with row truth.",
+      "validatedBy": [
+        "synthetic-corn-stands",
+        "corn-photos-label-free"
+      ]
+    },
+    "row-spacing": {
+      "status": "experimental",
+      "maxGsdCm": 5,
+      "stages": [
+        "V2",
+        "V9"
+      ],
+      "reason": "Pitch is measured, never assumed; checked against the planted corn spacings.",
+      "validatedBy": [
+        "synthetic-corn-stands"
+      ]
+    },
+    "planting-positions": {
+      "status": "experimental",
+      "maxGsdCm": 1.5,
+      "stages": [
+        "V2",
+        "V4"
+      ],
+      "reason": "The pattern pass places plants along rows when a consistent seed spacing is found; positions from the pattern are expected, not verified plants. Not benchmarked against plant truth."
+    },
+    "crop-vs-weed-by-position": {
+      "status": "experimental",
+      "maxGsdCm": 3,
+      "stages": [
+        "V1",
+        "V9"
+      ],
+      "reason": "Off-row green is a weed candidate; weeds in the row are not separable. Measured on WeedsGalore (one German maize field) held-out patches.",
+      "validatedBy": [
+        "weedsgalore-position"
+      ]
+    },
+    "vegetation-segmentation": {
+      "status": "experimental",
+      "reason": "ExG + CIVE Otsu with the corn ExGR gate; measured on WeedsGalore band composites, which are not a consumer RGB camera.",
+      "validatedBy": [
+        "weedsgalore-vegetation"
+      ]
+    },
+    "between-row-weed-cover": {
+      "status": "experimental",
+      "maxGsdCm": 3,
+      "stages": [
+        "V1",
+        "V9"
+      ],
+      "reason": "Off-row cover against labelled weed cover on WeedsGalore held-out patches; one field.",
+      "validatedBy": [
+        "weedsgalore-cover"
+      ]
+    },
+    "weed-pressure-grade": {
+      "status": "unsupported",
+      "maxGsdCm": 3,
+      "stages": [
+        "V1",
+        "V9"
+      ],
+      "reason": "The field-map row reader needs rows at least 1 m apart made of separate plants, and the planting-layout fitter is built for trees; corn rows are read only by the photo pattern pass, which does not yet feed the map grade. Grading corn on the map stays refused until a continuous-row map reader exists and passes its benchmark."
+    },
+    "hotspots": {
+      "status": "unsupported",
+      "reason": "The hotspot finder runs on confirmed planting-layout rows, which corn does not have yet (see weed-pressure-grade)."
+    },
+    "weed-isolation": {
+      "status": "experimental",
+      "maxGsdCm": 2.5,
+      "reason": "Local segmentation around a spot in the original frame; four pixels across the smallest object."
+    },
+    "weed-measurement": {
+      "status": "experimental",
+      "maxGsdCm": 1,
+      "reason": "The sizer's consistency was checked; its accuracy was never verified against hand-measured plants."
+    },
+    "species-priors": {
+      "status": "supported",
+      "reason": "A regional, seasonal reference list from surveys and extension guides; never an identification."
+    },
+    "stand-count": {
+      "status": "unsupported",
+      "maxGsdCm": 1.5,
+      "stages": [
+        "V2",
+        "V3"
+      ],
+      "reason": "Not implemented for corn; the pattern pass's seed fit is not a validated stand count."
+    },
+    "growth-stage-from-imagery": {
+      "status": "unsupported",
+      "reason": "No validated method infers corn V stage from RGB cover; the stage comes from the planting date, with its error stated."
+    },
+    "stage-estimate": {
+      "status": "experimental",
+      "reason": "Calendar estimate from the planting date: a range of stages, typically off by one to three leaves; no daily weather is read.",
+      "validatedBy": [
+        "weedsgalore-stage"
+      ]
+    },
+    "canopy-height": {
+      "status": "unsupported",
+      "reason": "No height model is read; photogrammetric height error (4 to 39 cm) is the size of a seedling."
+    }
+  }
+}

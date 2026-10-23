@@ -116,6 +116,8 @@ export function otsuFromHistogram(h: Histogram): OtsuResult | null {
 export type MaskStats = {
   threshold: number;
   usedFallback: boolean;
+  /** The window's split was raised to the floor (see maskWindow). */
+  floored: boolean;
   pixels: number;
   vegetation: number;
 };
@@ -126,11 +128,18 @@ export type MaskStats = {
  * `globalThreshold` is what a window falls back to when its own Otsu split has
  * no spread, or when it holds too few pixels to split at all. Writes only
  * inside the window, so callers can compose a field mask tile by tile.
+ *
+ * `floor` (default none) is the lowest split allowed. Otsu always splits the
+ * two largest modes; on red soil under bright straw those are soil and straw,
+ * and the split falls below the index of grey, so the "vegetation" is straw.
+ * A crop profile supplies the floor (crop-profiles/<crop>/08_algorithms,
+ * vegetation.indexFloor); without one the behaviour is unchanged.
  */
 export function maskWindow(
   index: Float32Array, width: number, w: PixelWindow,
   mask: Uint8Array, globalThreshold: number,
   minSpread = OTSU_MIN_SPREAD,
+  floor = -Infinity,
 ): MaskStats {
   const h = emptyHistogram();
   accumulateHistogram(h, index, width, w);
@@ -140,6 +149,8 @@ export function maskWindow(
     threshold = local.threshold;
     usedFallback = false;
   }
+  const floored = threshold < floor;
+  if (floored) threshold = floor;
   let pixels = 0, vegetation = 0;
   for (let y = w.y0; y <= w.y1; y++) {
     const row = y * width;
@@ -152,7 +163,7 @@ export function maskWindow(
       mask[row + x] = on;
     }
   }
-  return { threshold, usedFallback, pixels, vegetation };
+  return { threshold, usedFallback, floored, pixels, vegetation };
 }
 
 /** Whole-field Otsu threshold, the fallback every window may lean on. */

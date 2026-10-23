@@ -13,6 +13,9 @@ import { fmtAreaCm2, fmtLengthCm } from "@/lib/units";
 import { type DecodedPhoto, decodePhoto } from "@/lib/photoScout/decode";
 import { EMPTY_EXIF, type GsdEstimate, type PhotoExif, estimateGsd, readPhotoExif } from "@/lib/photoScout/exif";
 import { type BlobClass, DEFAULT_MIN_BLOB_AREA_CM2, DEFAULT_PHOTO_WINDOW_M, type PhotoPattern, analysePhoto, rowSegmentsPx } from "@/lib/photoScout/pattern";
+import { patternPriorFor } from "@/lib/cropProfiles/engine";
+import { checkRowSpacing } from "@/lib/cropProfiles/checks";
+import { cropProfileById, listCropProfiles } from "@/lib/cropProfiles/registry";
 
 type Status = "new" | "decoding" | "running" | "done" | "error";
 
@@ -59,6 +62,8 @@ export default function PhotoScout() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rowSpacingCm, setRowSpacingCm] = useState(AUTO);
+  /** The crop profile the read uses ("" for crop-neutral): its spacings, green gate and brightness check (src/lib/cropProfiles). */
+  const [cropId, setCropId] = useState("");
   const [heightM, setHeightM] = useState("");
   const [gsdCm, setGsdCm] = useState("");
   const [minBlobCm2, setMinBlobCm2] = useState(String(DEFAULT_MIN_BLOB_AREA_CM2));
@@ -113,6 +118,7 @@ export default function PhotoScout() {
         gsdM: g.gsdM, rowSpacingM: spacing,
         minBlobAreaCm2: Number.isFinite(minBlob) && minBlob > 0 ? minBlob : undefined,
         windowM: Number.isFinite(win) && win > 0 ? win : undefined,
+        prior: patternPriorFor(cropProfileById(cropId)),
       }, { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) });
       patch(p.id, { pattern, status: "done", progress: null });
     } catch (e) {
@@ -147,6 +153,13 @@ export default function PhotoScout() {
 
           <section className="rounded-sm border border-[#222] p-3 space-y-2" style={{ background: "#161616" }}>
             <div className="text-xs font-semibold">Settings</div>
+            <Field label="Crop">
+              <select className={input} value={cropId} onChange={e => setCropId(e.target.value)} data-testid="photo-scout-crop">
+                <option value="">not set (crop-neutral)</option>
+                {listCropProfiles().map(c => <option key={c.id} value={c.id}>{c.name} ({c.status} profile)</option>)}
+              </select>
+              <div className="text-[10px] text-neutral-500">{cropId ? "the crop's planted spacings are searched beside the usual ones, and only green that passes the crop's gate counts" : "no crop profile: the read uses the crop-neutral settings"}</div>
+            </Field>
             <Field label="Row spacing">
               <div className="flex gap-1">
                 <select className={input} value={rowSpacingCm === AUTO || ROW_SPACINGS.some(r => String(r.cm) === rowSpacingCm) ? rowSpacingCm : "custom"} onChange={e => setRowSpacingCm(e.target.value === "custom" ? "76.2" : e.target.value)}>
@@ -335,7 +348,12 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
 function Summary({ pattern, units }: { pattern: PhotoPattern; units: "metric" | "imperial" }) {
   const s = pattern.summary;
   const cm = (m: number | null) => (m == null ? "–" : fmtLengthCm(m * 100, units).text);
+  const profile = cropProfileById(s.priorCropId ?? "");
+  const spacingCheck = profile && s.medianPitchM ? checkRowSpacing(profile, s.medianPitchM) : null;
   const rows: [string, string][] = [
+    ["Crop profile", profile
+      ? `${profile.name} (${profile.status})${spacingCheck ? spacingCheck.finding ? `: the measured spacing is not one ${profile.name} is planted at (nearest ${spacingCheck.nearest?.label ?? "none"}); the measurement stands` : `: spacing consistent with ${spacingCheck.nearest?.label}` : ""}${(s.exgrGatedShare ?? 0) > 0.01 ? `; ${((s.exgrGatedShare ?? 0) * 100).toFixed(0)}% of the photo left out as straw, residue or soil by the green gate` : ""}${s.brightnessReplaced ? `; ${s.brightnessReplaced} brightness block(s) placed on the green` : ""}`
+      : "none (crop-neutral read)"],
     ["Windows with rows", `${s.usableWindows} of ${s.windows} at ${pattern.windowM} m${s.brightnessWindows ? `, ${s.brightnessWindows} from brightness (b)` : ""}`],
     ["Row direction", s.medianAngleDeg == null ? "–" : `${s.medianAngleDeg.toFixed(1)}° from the photo's x axis`],
     ["Row spacing measured", pattern.rowSpacingM == null

@@ -13,6 +13,7 @@
 //
 // Narrowing by state and crop is a ranking of the reference list, never
 // evidence: being on Virginia's list is not proof a plant is in this field.
+import { cropProfileFor } from "../cropProfiles/registry";
 import type { CropContext, FieldRegion } from "./types";
 
 export const ASSUMED_FIELD_REGION: FieldRegion = {
@@ -41,7 +42,7 @@ export const ASSUMED_REGION_WARNING =
 export function cropContextFor(cropType: string | null | undefined): CropContext | null {
   const c = (cropType ?? "").trim().toLowerCase();
   if (!c) return null;
-  if (c === "corn" || c === "maize") return "corn";
+  if (c === "corn" || c === "maize" || cropProfileFor(c)?.id === "corn") return "corn";
   if (c === "soybeans" || c === "soybean" || c === "soy") return "soybean";
   if (c === "wheat" || c === "barley" || c === "oats" || c === "rye" || c === "small grains") return "small_grains";
   if (c === "pasture" || c === "hay" || c === "grass" || c === "forage") return "pasture_hay";

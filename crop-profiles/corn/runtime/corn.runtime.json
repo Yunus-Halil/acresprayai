@@ -1,0 +1,1703 @@
+{
+  "runtimeVersion": 1,
+  "id": "corn",
+  "version": "1.0.0",
+  "schemaVersion": "1.0.0",
+  "status": "experimental",
+  "validation": "unvalidated",
+  "name": "corn",
+  "scientificName": "Zea mays L.",
+  "aliases": [
+    "corn",
+    "maize",
+    "field corn",
+    "grain corn",
+    "silage corn",
+    "corn silage",
+    "sweet corn",
+    "seed corn",
+    "popcorn",
+    "zea mays",
+    "mısır",
+    "misir",
+    "mais",
+    "maïs",
+    "milho"
+  ],
+  "group": "wide-row",
+  "rowReader": {
+    "strategy": "continuous-row",
+    "defaultSpacingM": 0.762,
+    "candidatesM": [
+      0.381,
+      0.508,
+      0.7,
+      0.762,
+      0.914
+    ],
+    "pitchToleranceShare": 0.08,
+    "windowRows": null,
+    "maxNeighbourhoodM": 30,
+    "vegetationFractionRange": [
+      0.01,
+      0.85
+    ],
+    "verifyBrightnessAgainstVegetation": true,
+    "continuousFromStage": "V6"
+  },
+  "plantedSpacingsM": [
+    {
+      "m": 0.381,
+      "label": "15 in",
+      "regions": [
+        "us-corn-belt"
+      ]
+    },
+    {
+      "m": 0.45,
+      "label": "45 cm",
+      "regions": [
+        "brazil"
+      ]
+    },
+    {
+      "m": 0.5,
+      "label": "50 cm",
+      "regions": [
+        "brazil"
+      ]
+    },
+    {
+      "m": 0.508,
+      "label": "20 in",
+      "regions": [
+        "us-northern-plains",
+        "us-corn-belt"
+      ]
+    },
+    {
+      "m": 0.559,
+      "label": "22 in",
+      "regions": [
+        "us-northern-plains",
+        "us-corn-belt"
+      ]
+    },
+    {
+      "m": 0.6,
+      "label": "60 cm",
+      "regions": [
+        "china",
+        "turkey"
+      ]
+    },
+    {
+      "m": 0.65,
+      "label": "65 cm",
+      "regions": [
+        "china"
+      ]
+    },
+    {
+      "m": 0.7,
+      "label": "70 cm",
+      "regions": [
+        "turkey",
+        "europe"
+      ]
+    },
+    {
+      "m": 0.75,
+      "label": "75 cm",
+      "regions": [
+        "europe",
+        "sub-saharan-africa"
+      ]
+    },
+    {
+      "m": 0.762,
+      "label": "30 in",
+      "regions": [
+        "us-corn-belt",
+        "us-northern-plains",
+        "us-southern-plains",
+        "us-mid-atlantic",
+        "us-northeast",
+        "us-southeast"
+      ]
+    },
+    {
+      "m": 0.8,
+      "label": "80 cm",
+      "regions": [
+        "europe",
+        "sub-saharan-africa"
+      ]
+    },
+    {
+      "m": 0.9,
+      "label": "90 cm",
+      "regions": [
+        "sub-saharan-africa"
+      ]
+    },
+    {
+      "m": 0.914,
+      "label": "36 in",
+      "regions": [
+        "us-southeast",
+        "us-southern-plains"
+      ]
+    },
+    {
+      "m": 0.965,
+      "label": "38 in",
+      "regions": [
+        "us-southeast",
+        "us-southern-plains"
+      ]
+    }
+  ],
+  "spacingToleranceShare": 0.08,
+  "plantingPositions": {
+    "alongRangeM": {
+      "low": 0.1,
+      "high": 0.27,
+      "typical": 0.16
+    },
+    "resolvableStages": [
+      "V2",
+      "V4"
+    ],
+    "maxGsdCm": 1.5
+  },
+  "vegetation": {
+    "index": "exg-cive-otsu",
+    "indexFloor": null,
+    "exgrGate": 0,
+    "coverExgr": -0.08,
+    "canopyClosedShare": 0.85,
+    "expectedCoverByStage": [
+      {
+        "stage": "V2",
+        "range": {
+          "low": 0.005,
+          "high": 0.02
+        }
+      },
+      {
+        "stage": "V3",
+        "range": {
+          "low": 0.02,
+          "high": 0.04
+        }
+      },
+      {
+        "stage": "V4",
+        "range": {
+          "low": 0.04,
+          "high": 0.1
+        }
+      },
+      {
+        "stage": "V5",
+        "range": {
+          "low": 0.08,
+          "high": 0.2
+        }
+      },
+      {
+        "stage": "V6",
+        "range": {
+          "low": 0.25,
+          "high": 0.4
+        }
+      },
+      {
+        "stage": "V8",
+        "range": {
+          "low": 0.45,
+          "high": 0.65
+        }
+      },
+      {
+        "stage": "V10",
+        "range": {
+          "low": 0.7,
+          "high": 0.85
+        }
+      }
+    ]
+  },
+  "pressure": {
+    "scheme": {
+      "low": 0.01,
+      "moderate": 0.05,
+      "action": 0.1,
+      "high": 0.2,
+      "source": "Provisional for corn: US guidance acts on weed height (before about 10 cm) and crop stage (first pass by V4; the critical period runs to about V10), not on cover. The classes use the Turkish ministry's maize action point (10% cover, TAGEM 2022) with Peña's 20% as high; read them as relative pressure.",
+      "basis": "provisional"
+    },
+    "applicableStages": [
+      "V1",
+      "V9"
+    ],
+    "grade": {
+      "escapeDiameterM": 0.3,
+      "smallDiameterM": 0.15,
+      "denseObjectsPerM2": 2
+    },
+    "stage1": {
+      "mask": "cover"
+    },
+    "actionSignals": {
+      "weedHeightActionCm": 10,
+      "firstPassByStage": "V4",
+      "notes": "Iowa State: mean yield loss 0% at 2 in weed height, 2% at 4 in, 6% at 6 in, 22% at 12 in (37 experiments); a first post pass before weeds reach 10 cm and no later than V4 (Gower 2003); each leaf stage of delay in the critical period costs about 2%. Label ceilings: V8 or 30 in for most post products. Decision support only: Swardus names zones and areas, never a product or rate."
+    }
+  },
+  "hotspots": {
+    "minObjectDiameterM": 0.1
+  },
+  "sourceFrames": {
+    "preferFramesForMeasurement": true,
+    "maxGsdCm": 1
+  },
+  "weedMeasurement": {
+    "minPixelsAcross": 6,
+    "sizeThresholdsCm": {
+      "small": 10,
+      "medium": 30
+    }
+  },
+  "consistency": {
+    "rowSpacingMismatchShare": 0.08,
+    "minRowCoherence": 0.3,
+    "coverStageToleranceShare": 0.15
+  },
+  "capabilities": {
+    "row-detection": {
+      "status": "experimental",
+      "maxGsdCm": 5,
+      "stages": [
+        "V2",
+        "V9"
+      ],
+      "reason": "Photo pattern pass with the corn prior; benchmarked on rendered stands and on three real photos (one used to diagnose the residue failure), not on an independent field set with row truth."
+    },
+    "row-spacing": {
+      "status": "experimental",
+      "maxGsdCm": 5,
+      "stages": [
+        "V2",
+        "V9"
+      ],
+      "reason": "Pitch is measured, never assumed; checked against the planted corn spacings."
+    },
+    "planting-positions": {
+      "status": "experimental",
+      "maxGsdCm": 1.5,
+      "stages": [
+        "V2",
+        "V4"
+      ],
+      "reason": "The pattern pass places plants along rows when a consistent seed spacing is found; positions from the pattern are expected, not verified plants. Not benchmarked against plant truth."
+    },
+    "crop-vs-weed-by-position": {
+      "status": "experimental",
+      "maxGsdCm": 3,
+      "stages": [
+        "V1",
+        "V9"
+      ],
+      "reason": "Off-row green is a weed candidate; weeds in the row are not separable. Measured on WeedsGalore (one German maize field) held-out patches."
+    },
+    "vegetation-segmentation": {
+      "status": "experimental",
+      "reason": "ExG + CIVE Otsu with the corn ExGR gate; measured on WeedsGalore band composites, which are not a consumer RGB camera."
+    },
+    "between-row-weed-cover": {
+      "status": "experimental",
+      "maxGsdCm": 3,
+      "stages": [
+        "V1",
+        "V9"
+      ],
+      "reason": "Off-row cover against labelled weed cover on WeedsGalore held-out patches; one field."
+    },
+    "weed-pressure-grade": {
+      "status": "unsupported",
+      "maxGsdCm": 3,
+      "stages": [
+        "V1",
+        "V9"
+      ],
+      "reason": "The field-map row reader needs rows at least 1 m apart made of separate plants, and the planting-layout fitter is built for trees; corn rows are read only by the photo pattern pass, which does not yet feed the map grade. Grading corn on the map stays refused until a continuous-row map reader exists and passes its benchmark."
+    },
+    "hotspots": {
+      "status": "unsupported",
+      "reason": "The hotspot finder runs on confirmed planting-layout rows, which corn does not have yet (see weed-pressure-grade)."
+    },
+    "weed-isolation": {
+      "status": "experimental",
+      "maxGsdCm": 2.5,
+      "reason": "Local segmentation around a spot in the original frame; four pixels across the smallest object."
+    },
+    "weed-measurement": {
+      "status": "experimental",
+      "maxGsdCm": 1,
+      "reason": "The sizer's consistency was checked; its accuracy was never verified against hand-measured plants."
+    },
+    "species-priors": {
+      "status": "supported",
+      "reason": "A regional, seasonal reference list from surveys and extension guides; never an identification."
+    },
+    "stand-count": {
+      "status": "unsupported",
+      "maxGsdCm": 1.5,
+      "stages": [
+        "V2",
+        "V3"
+      ],
+      "reason": "Not implemented for corn; the pattern pass's seed fit is not a validated stand count."
+    },
+    "growth-stage-from-imagery": {
+      "status": "unsupported",
+      "reason": "No validated method infers corn V stage from RGB cover; the stage comes from the planting date, with its error stated."
+    },
+    "stage-estimate": {
+      "status": "experimental",
+      "reason": "Calendar estimate from the planting date: a range of stages, typically off by one to three leaves; no daily weather is read."
+    },
+    "canopy-height": {
+      "status": "unsupported",
+      "reason": "No height model is read; photogrammetric height error (4 to 39 cm) is the size of a seedling."
+    }
+  },
+  "stages": [
+    {
+      "id": "VE",
+      "order": 0,
+      "name": "Emergence",
+      "daysAfterPlanting": {
+        "low": 4,
+        "high": 28,
+        "typical": 8
+      },
+      "gddF": {
+        "low": 90,
+        "high": 216
+      },
+      "alleyOpen": "open"
+    },
+    {
+      "id": "V1",
+      "order": 1,
+      "name": "First leaf collar",
+      "daysAfterPlanting": {
+        "low": 10,
+        "high": 17
+      },
+      "gddF": {
+        "low": 180,
+        "high": 282
+      },
+      "alleyOpen": "open"
+    },
+    {
+      "id": "V2",
+      "order": 2,
+      "name": "Second leaf collar",
+      "daysAfterPlanting": {
+        "low": 13,
+        "high": 20
+      },
+      "gddF": {
+        "low": 200,
+        "high": 348
+      },
+      "alleyOpen": "open"
+    },
+    {
+      "id": "V3",
+      "order": 3,
+      "name": "Third leaf collar",
+      "daysAfterPlanting": {
+        "low": 16,
+        "high": 24
+      },
+      "gddF": {
+        "low": 346,
+        "high": 414
+      },
+      "alleyOpen": "open"
+    },
+    {
+      "id": "V4",
+      "order": 4,
+      "name": "Fourth leaf collar",
+      "daysAfterPlanting": {
+        "low": 19,
+        "high": 26
+      },
+      "gddF": {
+        "low": 360,
+        "high": 480
+      },
+      "alleyOpen": "open"
+    },
+    {
+      "id": "V5",
+      "order": 5,
+      "name": "Fifth leaf collar",
+      "daysAfterPlanting": {
+        "low": 22,
+        "high": 29
+      },
+      "gddF": {
+        "low": 490,
+        "high": 546
+      },
+      "alleyOpen": "open"
+    },
+    {
+      "id": "V6",
+      "order": 6,
+      "name": "Sixth leaf collar",
+      "daysAfterPlanting": {
+        "low": 25,
+        "high": 50
+      },
+      "gddF": {
+        "low": 520,
+        "high": 612
+      },
+      "alleyOpen": "open"
+    },
+    {
+      "id": "V7",
+      "order": 7,
+      "name": "Seventh leaf collar",
+      "daysAfterPlanting": {
+        "low": 28,
+        "high": 38
+      },
+      "gddF": {
+        "low": 628,
+        "high": 700
+      },
+      "alleyOpen": "open"
+    },
+    {
+      "id": "V8",
+      "order": 8,
+      "name": "Eighth leaf collar",
+      "daysAfterPlanting": {
+        "low": 31,
+        "high": 42
+      },
+      "gddF": {
+        "low": 680,
+        "high": 760
+      },
+      "alleyOpen": "open"
+    },
+    {
+      "id": "V9",
+      "order": 9,
+      "name": "Ninth leaf collar",
+      "daysAfterPlanting": {
+        "low": 34,
+        "high": 49
+      },
+      "gddF": {
+        "low": 760,
+        "high": 840
+      },
+      "alleyOpen": "closing"
+    },
+    {
+      "id": "V10",
+      "order": 10,
+      "name": "Tenth leaf collar",
+      "daysAfterPlanting": {
+        "low": 37,
+        "high": 50
+      },
+      "gddF": {
+        "low": 800,
+        "high": 940
+      },
+      "alleyOpen": "closing"
+    },
+    {
+      "id": "V11",
+      "order": 11,
+      "name": "Eleventh leaf collar",
+      "daysAfterPlanting": {
+        "low": 40,
+        "high": 50
+      },
+      "gddF": {
+        "low": 850,
+        "high": 1000
+      },
+      "alleyOpen": "closed"
+    },
+    {
+      "id": "V12",
+      "order": 12,
+      "name": "Twelfth leaf collar",
+      "daysAfterPlanting": {
+        "low": 43,
+        "high": 50
+      },
+      "gddF": {
+        "low": 900,
+        "high": 1020
+      },
+      "alleyOpen": "closed"
+    },
+    {
+      "id": "V15",
+      "order": 15,
+      "name": "Fifteenth leaf collar",
+      "daysAfterPlanting": {
+        "low": 51,
+        "high": 58
+      },
+      "gddF": {
+        "low": 1085,
+        "high": 1188
+      },
+      "alleyOpen": "closed"
+    },
+    {
+      "id": "V18",
+      "order": 18,
+      "name": "Eighteenth leaf collar",
+      "daysAfterPlanting": {
+        "low": 57,
+        "high": 64
+      },
+      "gddF": {
+        "low": 1200,
+        "high": 1332
+      },
+      "alleyOpen": "closed"
+    },
+    {
+      "id": "VT",
+      "order": 20,
+      "name": "Tasseling",
+      "daysAfterPlanting": {
+        "low": 65,
+        "high": 72
+      },
+      "gddF": {
+        "low": 1350,
+        "high": 1528
+      },
+      "alleyOpen": "closed"
+    },
+    {
+      "id": "R1",
+      "order": 21,
+      "name": "Silking",
+      "daysAfterPlanting": {
+        "low": 69,
+        "high": 76
+      },
+      "gddF": {
+        "low": 1420,
+        "high": 1628
+      },
+      "alleyOpen": "closed"
+    },
+    {
+      "id": "R2",
+      "order": 22,
+      "name": "Blister",
+      "daysAfterPlanting": {
+        "low": 82,
+        "high": 89
+      },
+      "gddF": {
+        "low": 1686,
+        "high": 1953
+      },
+      "alleyOpen": "closed"
+    },
+    {
+      "id": "R3",
+      "order": 23,
+      "name": "Milk",
+      "daysAfterPlanting": {
+        "low": 91,
+        "high": 98
+      },
+      "gddF": {
+        "low": 1830,
+        "high": 2153
+      },
+      "alleyOpen": "closed"
+    },
+    {
+      "id": "R4",
+      "order": 24,
+      "name": "Dough",
+      "daysAfterPlanting": {
+        "low": 100,
+        "high": 107
+      },
+      "gddF": {
+        "low": 1950,
+        "high": 2353
+      },
+      "alleyOpen": "closed"
+    },
+    {
+      "id": "R5",
+      "order": 25,
+      "name": "Dent",
+      "daysAfterPlanting": {
+        "low": 113,
+        "high": 120
+      },
+      "gddF": {
+        "low": 2300,
+        "high": 2578
+      },
+      "alleyOpen": "closed"
+    },
+    {
+      "id": "R6",
+      "order": 26,
+      "name": "Physiological maturity",
+      "daysAfterPlanting": {
+        "low": 128,
+        "high": 135
+      },
+      "gddF": {
+        "low": 2650,
+        "high": 2953
+      },
+      "alleyOpen": "closed"
+    }
+  ],
+  "priorityStages": [
+    "V2",
+    "V3",
+    "V4",
+    "V5"
+  ],
+  "closure": [
+    {
+      "rowSpacingM": 0.762,
+      "stage": "V10"
+    },
+    {
+      "rowSpacingM": 0.381,
+      "stage": "V9"
+    }
+  ],
+  "stageEstimate": {
+    "calendarErrorStages": 2,
+    "daysWindowShare": [
+      0.8,
+      1.25
+    ]
+  },
+  "policies": {
+    "NO_PROFILE": {
+      "action": "note",
+      "message": "No crop profile for this field: the analysis uses crop-neutral defaults."
+    },
+    "PROFILE_EXPERIMENTAL": {
+      "action": "note",
+      "message": "Corn profile is experimental: its row, cover and position rules are benchmarked on rendered stands, three photos and one public field, not yet on your fields."
+    },
+    "UNKNOWN_RESOLUTION": {
+      "action": "disable",
+      "message": "The pixel size is not known, so no spacing, size or area is stated."
+    },
+    "INSUFFICIENT_RESOLUTION": {
+      "action": "disable",
+      "message": "The imagery is too coarse for this in corn; the limit and the reason are named per analysis."
+    },
+    "UNKNOWN_STAGE": {
+      "action": "note",
+      "message": "No planting date: closure, the critical period and the expected cover are not checked."
+    },
+    "STAGE_ESTIMATED": {
+      "action": "note",
+      "message": "Stage estimated from the planting date (calendar), often off by one to three leaves; not observed."
+    },
+    "UNSUPPORTED_STAGE": {
+      "action": "disable",
+      "message": "The canopy has closed or is closing at this stage: weed cover between the rows can no longer be measured from above."
+    },
+    "CANOPY_CLOSED": {
+      "action": "disable",
+      "message": "Almost all of the ground is under green: between-row cover and weed counts are not measured."
+    },
+    "ROW_SPACING_UNEXPECTED": {
+      "action": "review",
+      "message": "The rows read at a spacing corn is not planted at: the reading is kept; check the crop on file or the read."
+    },
+    "ROWS_UNCERTAIN": {
+      "action": "review",
+      "message": "The rows are uncertain (heavy weeds, closed canopy, curved rows): position-based weed calls are weaker here."
+    },
+    "NO_ROWS": {
+      "action": "disable",
+      "message": "No rows found: nothing is called a weed by position."
+    },
+    "COVER_STAGE_MISMATCH": {
+      "action": "review",
+      "message": "The green cover does not fit corn at this stage: the planting date, the stage or heavy weed pressure is off."
+    },
+    "VEGETATION_MASK_SUSPECT": {
+      "action": "note",
+      "message": "The automatic green split was separating soil from residue; the corn ExGR gate kept the mask to green plants."
+    },
+    "WITHIN_ROW_UNRESOLVED": {
+      "action": "note",
+      "message": "Weeds inside the crop row are not judged: they cannot be told from corn at this resolution."
+    },
+    "SPECIES_NOT_RESOLVABLE": {
+      "action": "note",
+      "message": "Species are not identified from the imagery; the list is what is commonly reported in corn here at this time of year."
+    },
+    "THRESHOLD_PROVISIONAL": {
+      "action": "note",
+      "message": "Corn pressure classes are provisional: US guidance acts on weed height (before about 10 cm) and stage, not on cover."
+    },
+    "CAPABILITY_UNSUPPORTED": {
+      "action": "disable",
+      "message": "Not supported for corn yet; the reason is named."
+    }
+  },
+  "regions": [
+    {
+      "id": "us-corn-belt",
+      "name": "US Corn Belt",
+      "states": [
+        "IA",
+        "IL",
+        "IN",
+        "OH",
+        "MN",
+        "WI",
+        "MO",
+        "NE",
+        "SD",
+        "MI"
+      ],
+      "countries": [
+        "US"
+      ]
+    },
+    {
+      "id": "us-northern-plains",
+      "name": "US Northern Plains",
+      "states": [
+        "ND",
+        "SD",
+        "NE",
+        "MT"
+      ],
+      "countries": [
+        "US"
+      ]
+    },
+    {
+      "id": "us-southern-plains",
+      "name": "US Southern Plains",
+      "states": [
+        "KS",
+        "OK",
+        "TX"
+      ],
+      "countries": [
+        "US"
+      ]
+    },
+    {
+      "id": "us-southeast",
+      "name": "US Southeast",
+      "states": [
+        "GA",
+        "AL",
+        "MS",
+        "SC",
+        "NC",
+        "FL",
+        "TN",
+        "AR",
+        "LA"
+      ],
+      "countries": [
+        "US"
+      ]
+    },
+    {
+      "id": "us-mid-atlantic",
+      "name": "US Mid-Atlantic",
+      "states": [
+        "VA",
+        "MD",
+        "DE",
+        "PA",
+        "WV",
+        "NJ"
+      ],
+      "countries": [
+        "US"
+      ]
+    },
+    {
+      "id": "us-northeast",
+      "name": "US Northeast",
+      "states": [
+        "NY",
+        "VT",
+        "NH",
+        "ME",
+        "MA",
+        "CT"
+      ],
+      "countries": [
+        "US"
+      ]
+    },
+    {
+      "id": "turkey",
+      "name": "Turkey",
+      "states": [],
+      "countries": [
+        "TR"
+      ]
+    },
+    {
+      "id": "europe",
+      "name": "Europe",
+      "states": [],
+      "countries": [
+        "DE",
+        "FR",
+        "IT",
+        "HU",
+        "GB",
+        "AT",
+        "PL",
+        "RO"
+      ]
+    },
+    {
+      "id": "brazil",
+      "name": "Brazil",
+      "states": [],
+      "countries": [
+        "BR"
+      ]
+    },
+    {
+      "id": "sub-saharan-africa",
+      "name": "Sub-Saharan Africa",
+      "states": [],
+      "countries": [
+        "MW",
+        "KE",
+        "NG",
+        "ZW",
+        "ZA"
+      ]
+    },
+    {
+      "id": "china",
+      "name": "China",
+      "states": [],
+      "countries": [
+        "CN"
+      ]
+    }
+  ],
+  "weeds": [
+    {
+      "region": "us-corn-belt",
+      "species": [
+        {
+          "speciesId": "chenopodium-album",
+          "name": "common lambsquarters",
+          "scientificName": "Chenopodium album",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V5"
+          ],
+          "months": [
+            4,
+            5,
+            6
+          ],
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "setaria-faberi",
+          "name": "giant foxtail",
+          "scientificName": "Setaria faberi",
+          "lifeForm": "annual-grass",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V5"
+          ],
+          "months": [
+            5,
+            6
+          ],
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "amaranthus-tuberculatus",
+          "name": "waterhemp",
+          "scientificName": "Amaranthus tuberculatus",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "V3",
+            "V12"
+          ],
+          "months": [
+            5,
+            6,
+            7,
+            8
+          ],
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "amaranthus-palmeri",
+          "name": "Palmer amaranth",
+          "scientificName": "Amaranthus palmeri",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "V2",
+            "R1"
+          ],
+          "months": [
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "ambrosia-trifida",
+          "name": "giant ragweed",
+          "scientificName": "Ambrosia trifida",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V4"
+          ],
+          "months": [
+            3,
+            4,
+            5
+          ],
+          "escapesAboveCanopy": true
+        },
+        {
+          "speciesId": "abutilon-theophrasti",
+          "name": "velvetleaf",
+          "scientificName": "Abutilon theophrasti",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V4"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "ambrosia-artemisiifolia",
+          "name": "common ragweed",
+          "scientificName": "Ambrosia artemisiifolia",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V4"
+          ],
+          "months": [
+            4,
+            5
+          ],
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "sorghum-halepense",
+          "name": "johnsongrass",
+          "scientificName": "Sorghum halepense",
+          "lifeForm": "perennial-grass",
+          "prevalence": "regional",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V6"
+          ],
+          "months": null,
+          "escapesAboveCanopy": true
+        },
+        {
+          "speciesId": "zea-mays-volunteer",
+          "name": "volunteer corn",
+          "scientificName": "Zea mays (volunteer)",
+          "lifeForm": "annual-grass",
+          "prevalence": "regional",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V3"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "bassia-scoparia",
+          "name": "kochia",
+          "scientificName": "Bassia scoparia",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "regional",
+          "lookAlikeWithCrop": "low",
+          "stages": null,
+          "months": null,
+          "escapesAboveCanopy": false
+        }
+      ]
+    },
+    {
+      "region": "us-mid-atlantic",
+      "species": [
+        {
+          "speciesId": "amaranthus-palmeri",
+          "name": "Palmer amaranth",
+          "scientificName": "Amaranthus palmeri",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "V2",
+            "R1"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "amaranthus-tuberculatus",
+          "name": "waterhemp",
+          "scientificName": "Amaranthus tuberculatus",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "V3",
+            "V12"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "chenopodium-album",
+          "name": "common lambsquarters",
+          "scientificName": "Chenopodium album",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V5"
+          ],
+          "months": [
+            5,
+            6
+          ],
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "setaria-faberi",
+          "name": "giant foxtail",
+          "scientificName": "Setaria faberi",
+          "lifeForm": "annual-grass",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V5"
+          ],
+          "months": [
+            5
+          ],
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "digitaria-sanguinalis",
+          "name": "large crabgrass",
+          "scientificName": "Digitaria sanguinalis",
+          "lifeForm": "annual-grass",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "medium",
+          "stages": [
+            "V1",
+            "V6"
+          ],
+          "months": [
+            5,
+            6
+          ],
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "ambrosia-artemisiifolia",
+          "name": "common ragweed",
+          "scientificName": "Ambrosia artemisiifolia",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V3"
+          ],
+          "months": [
+            4,
+            5
+          ],
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "ambrosia-trifida",
+          "name": "giant ragweed",
+          "scientificName": "Ambrosia trifida",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "occasional",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V4"
+          ],
+          "months": null,
+          "escapesAboveCanopy": true
+        },
+        {
+          "speciesId": "xanthium-strumarium",
+          "name": "common cocklebur",
+          "scientificName": "Xanthium strumarium",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V4"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "sorghum-halepense",
+          "name": "johnsongrass",
+          "scientificName": "Sorghum halepense",
+          "lifeForm": "perennial-grass",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V6"
+          ],
+          "months": null,
+          "escapesAboveCanopy": true
+        },
+        {
+          "speciesId": "sorghum-bicolor-shattercane",
+          "name": "shattercane",
+          "scientificName": "Sorghum bicolor (shattercane)",
+          "lifeForm": "annual-grass",
+          "prevalence": "occasional",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V4"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "ipomoea-spp",
+          "name": "morningglory",
+          "scientificName": "Ipomoea spp.",
+          "lifeForm": "vine",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V8"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "conyza-canadensis",
+          "name": "horseweed",
+          "scientificName": "Erigeron canadensis",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V2"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        }
+      ]
+    },
+    {
+      "region": "us-southeast",
+      "species": [
+        {
+          "speciesId": "urochloa-texana",
+          "name": "Texas panicum",
+          "scientificName": "Urochloa texana",
+          "lifeForm": "annual-grass",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V5"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "digitaria-sanguinalis",
+          "name": "large crabgrass",
+          "scientificName": "Digitaria sanguinalis",
+          "lifeForm": "annual-grass",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "medium",
+          "stages": [
+            "V1",
+            "V6"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "ipomoea-spp",
+          "name": "morningglory",
+          "scientificName": "Ipomoea spp.",
+          "lifeForm": "vine",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V8"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "amaranthus-palmeri",
+          "name": "Palmer amaranth",
+          "scientificName": "Amaranthus palmeri",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "V2",
+            "R1"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "senna-obtusifolia",
+          "name": "sicklepod",
+          "scientificName": "Senna obtusifolia",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": null,
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "cyperus-esculentus",
+          "name": "yellow nutsedge",
+          "scientificName": "Cyperus esculentus",
+          "lifeForm": "sedge",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "medium",
+          "stages": null,
+          "months": null,
+          "escapesAboveCanopy": false
+        }
+      ]
+    },
+    {
+      "region": "us-northeast",
+      "species": [
+        {
+          "speciesId": "amaranthus-retroflexus",
+          "name": "redroot pigweed",
+          "scientificName": "Amaranthus retroflexus",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V10"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "chenopodium-album",
+          "name": "common lambsquarters",
+          "scientificName": "Chenopodium album",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V5"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "setaria-faberi",
+          "name": "giant foxtail",
+          "scientificName": "Setaria faberi",
+          "lifeForm": "annual-grass",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V5"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "abutilon-theophrasti",
+          "name": "velvetleaf",
+          "scientificName": "Abutilon theophrasti",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V4"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "elymus-repens",
+          "name": "quackgrass",
+          "scientificName": "Elymus repens",
+          "lifeForm": "perennial-grass",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V4"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "cirsium-arvense",
+          "name": "Canada thistle",
+          "scientificName": "Cirsium arvense",
+          "lifeForm": "perennial-broadleaf",
+          "prevalence": "occasional",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V6"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        }
+      ]
+    },
+    {
+      "region": "us-northern-plains",
+      "species": [
+        {
+          "speciesId": "bassia-scoparia",
+          "name": "kochia",
+          "scientificName": "Bassia scoparia",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": null,
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "setaria-viridis",
+          "name": "green foxtail",
+          "scientificName": "Setaria viridis",
+          "lifeForm": "annual-grass",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V5"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "amaranthus-tuberculatus",
+          "name": "waterhemp",
+          "scientificName": "Amaranthus tuberculatus",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "V3",
+            "V12"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        }
+      ]
+    },
+    {
+      "region": "us-southern-plains",
+      "species": [
+        {
+          "speciesId": "amaranthus-palmeri",
+          "name": "Palmer amaranth",
+          "scientificName": "Amaranthus palmeri",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "V2",
+            "R1"
+          ],
+          "months": [
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "bassia-scoparia",
+          "name": "kochia",
+          "scientificName": "Bassia scoparia",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": null,
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "sorghum-bicolor-shattercane",
+          "name": "shattercane",
+          "scientificName": "Sorghum bicolor (shattercane)",
+          "lifeForm": "annual-grass",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V4"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        }
+      ]
+    },
+    {
+      "region": "turkey",
+      "species": [
+        {
+          "speciesId": "sorghum-halepense",
+          "name": "johnsongrass",
+          "scientificName": "Sorghum halepense",
+          "lifeForm": "perennial-grass",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V6"
+          ],
+          "months": null,
+          "escapesAboveCanopy": true
+        },
+        {
+          "speciesId": "cyperus-rotundus",
+          "name": "purple nutsedge",
+          "scientificName": "Cyperus rotundus",
+          "lifeForm": "sedge",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "medium",
+          "stages": null,
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "xanthium-strumarium",
+          "name": "common cocklebur",
+          "scientificName": "Xanthium strumarium",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V4"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "amaranthus-retroflexus",
+          "name": "redroot pigweed",
+          "scientificName": "Amaranthus retroflexus",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V10"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "portulaca-oleracea",
+          "name": "common purslane",
+          "scientificName": "Portulaca oleracea",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "V3",
+            "V10"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "echinochloa-crus-galli",
+          "name": "barnyardgrass",
+          "scientificName": "Echinochloa crus-galli",
+          "lifeForm": "annual-grass",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V6"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "convolvulus-arvensis",
+          "name": "field bindweed",
+          "scientificName": "Convolvulus arvensis",
+          "lifeForm": "vine",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": null,
+          "months": null,
+          "escapesAboveCanopy": false
+        }
+      ]
+    },
+    {
+      "region": "europe",
+      "species": [
+        {
+          "speciesId": "chenopodium-album",
+          "name": "common lambsquarters",
+          "scientificName": "Chenopodium album",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V5"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "echinochloa-crus-galli",
+          "name": "barnyardgrass",
+          "scientificName": "Echinochloa crus-galli",
+          "lifeForm": "annual-grass",
+          "prevalence": "dominant",
+          "lookAlikeWithCrop": "high",
+          "stages": [
+            "VE",
+            "V6"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "amaranthus-retroflexus",
+          "name": "redroot pigweed",
+          "scientificName": "Amaranthus retroflexus",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V10"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        },
+        {
+          "speciesId": "solanum-nigrum",
+          "name": "black nightshade",
+          "scientificName": "Solanum nigrum",
+          "lifeForm": "annual-broadleaf",
+          "prevalence": "common",
+          "lookAlikeWithCrop": "low",
+          "stages": [
+            "VE",
+            "V6"
+          ],
+          "months": null,
+          "escapesAboveCanopy": false
+        }
+      ]
+    }
+  ]
+}

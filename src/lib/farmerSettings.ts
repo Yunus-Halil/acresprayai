@@ -4,6 +4,8 @@
 // "available inputs" gate, and the flight planner's aircraft selection. Kept out
 // of the viewer component so ReportsTab and the planner can import it without
 // pulling in a 5k-line React module.
+import { estimateStage } from "./cropProfiles/checks";
+import { cropProfileFor } from "./cropProfiles/registry";
 import { type DroneSpec, DRONE_SPECS } from "./droneSpecs";
 import { DEFAULT_HEADLAND_M } from "./headland";
 import { DEFAULT_GROUPING_SWATHS } from "./zoneGroups";
@@ -357,12 +359,20 @@ export function issueToCostKey(
 /**
  * Days since planting → a coarse growth-stage hint for the AI prompt.
  * `now` is injectable so this is testable without freezing the clock.
+ *
+ * A crop with a profile (src/lib/cropProfiles) is staged from the profile's stage calendar, as a range and marked
+ * estimated: the calendar ignores temperature and is often off by one to three leaf stages.
  */
 export function growthStage(crop: string, planting: string, now: number = Date.now()): string | null {
   if (!planting) return null;
   const days = Math.floor((now - new Date(planting).getTime()) / 86400000);
   if (!Number.isFinite(days) || days < 0) return null;
   const wk = Math.round(days / 7);
+  const profile = cropProfileFor(crop);
+  if (profile) {
+    const est = estimateStage(profile, planting, new Date(now));
+    if (est.status === "estimated") return `~${wk} weeks (${est.from.id === est.to.id ? est.from.id : `${est.from.id} to ${est.to.id}`}, estimated from the planting date)`;
+  }
   const c = crop.toLowerCase();
   if (c === "wheat" || c === "barley" || c === "oats" || c === "rye") {
     if (wk < 4) return `~${wk} weeks (emergence / tillering)`;

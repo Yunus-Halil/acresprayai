@@ -40,8 +40,8 @@ import type { RasterSource } from "../cellFeatures";
 import { shorth } from "../weedScout/baseline";
 import { minAreaPx } from "../weedScout/blobs";
 import {
-  type FloatImage, HINT_SEARCH_DEG, MIN_TILE_CONFIDENCE, VEGETATION_FRACTION_RANGE, checkPitch, downsampleFactor, fitWindow,
-  groundAngleToPixel, phaseFromImage, pitchAmbiguityNote, pixelAngleToGround, poolWindow, projectionProfile, rowAngle, rowPitch, toSparse,
+  type FloatImage, HINT_SEARCH_DEG, MIN_ROW_COHERENCE, MIN_TILE_CONFIDENCE, VEGETATION_FRACTION_RANGE, checkPitch, downsampleFactor, fitWindow,
+  groundAngleToPixel, phaseAndCoherence, phaseFromImage, pitchAmbiguityNote, pixelAngleToGround, poolWindow, projectionProfile, rowAngle, rowPitch, toSparse,
 } from "../weedScout/rows";
 import type { RowTileFit } from "../weedScout/types";
 import { globalThreshold, indexRaster, maskWindow } from "../weedScout/vegetation";
@@ -68,7 +68,44 @@ export type PhotoParams = {
    * absent: the pass decides.
    */
   rowAngleDeg?: number | null;
+  /**
+   * What the crop on file says to expect (src/lib/cropProfiles, patternPriorFor): where to look for the spacing, how
+   * wide a window is, what counts as green. A prior, never the answer: the crop's spacings are searched BESIDE the
+   * crop-neutral ones, so a field planted otherwise is still read at its own pitch. Null or absent: crop-neutral.
+   */
+  prior?: PatternPrior | null;
 };
+
+/** The crop-profile inputs to the pattern pass. */
+export type PatternPrior = {
+  cropId: string;
+  /** The profile's version: part of every saved read's key, so a changed profile reads again. */
+  profileVersion?: string;
+  /** Planted spacings to search beside AUTO_SPACING_CANDIDATES_M in "auto" mode, metres. */
+  spacingCandidatesM: number[];
+  /** The spacing the window size is measured in, metres. */
+  defaultSpacingM: number;
+  /** Window edge in rows of defaultSpacingM; null keeps DEFAULT_PHOTO_WINDOW_M. */
+  windowRows: number | null;
+  /** The lowest vegetation split allowed (vegetation.ts maskWindow); null: none. */
+  vegetationIndexFloor: number | null;
+  /** A vegetation pixel must also have ExGR above this (straw and soil sit below zero); null: no gate. */
+  vegetationExgrGate?: number | null;
+  /** A block whose rows came from brightness is re-placed on the green when the green is in step with it. */
+  verifyBrightness: boolean;
+  /** Every row spacing the crop is planted at, metres, and how close a measured pitch must be to count as one. */
+  plantedSpacingsM: number[];
+  spacingToleranceShare: number;
+};
+
+/**
+ * With a crop prior, a green fit just under MIN_TILE_CONFIDENCE is accepted when the prior and the evidence agree:
+ * its own measured pitch is a spacing the crop is planted at, its direction is confident, and at least this share of
+ * the green sits in step with the rows (rows half a pitch wide read 0.64; weeds or noise alone read near 0). The
+ * autocorrelation's confidence is unreliable on a photo a few rows wide: a 4 m close-up of five corn rows read 0.31
+ * against the bar of 0.35 with 80% of its green in step (2026-10-23).
+ */
+export const PRIOR_SUPPORT_COHERENCE = 0.5;
 
 export const DEFAULT_MIN_BLOB_AREA_CM2 = 4;
 /**
@@ -262,6 +299,20 @@ export type PhotoSummary = {
   blocks: number;
   /** Any block sits on a square grid, where the direction is brightness's call or the grower's. */
   squareGrid: boolean;
+  /** The whole-photo automatic vegetation split (ExG + CIVE Otsu), before any floor. Absent on reads made before 2026-10-23. */
+  otsuThreshold?: number;
+  /** Mask windows whose split was raised to the crop profile's floor. */
+  flooredMaskWindows?: number;
+  /** Share of the photo the crop profile's ExGR gate took out of the vegetation. */
+  exgrGatedShare?: number;
+  /** Blocks whose rows brightness found and the green re-placed (crop profile verifyBrightness). */
+  brightnessReplaced?: number;
+  /** Median row coherence of the usable vegetation windows (0 to 1); null when none. */
+  medianRowCoherence?: number | null;
+  /** The crop profile the read used, or null for a crop-neutral read. */
+  priorCropId?: string | null;
+  /** Windows kept by the prior-and-evidence rule (PRIOR_SUPPORT_COHERENCE). */
+  priorSupportedWindows?: number;
 };
 
 /**
@@ -333,20 +384,40 @@ const median = (xs: number[]): number | null => {
 };
 
 /** The vegetation mask of a photo: one global Otsu, then per-window refinement. */
-export function photoMask(px: PhotoPixels, windowPx: number): { mask: Uint8Array; vegetationFraction: number } {
+export function photoMask(px: PhotoPixels, windowPx: number, floor: number | null = null, exgrGate: number | null = null): { mask: Uint8Array; vegetationFraction: number; otsuThreshold: number; flooredWindows: number; windows: number; gatedPixels: number } {
   // indexRaster only reads width, height and rgba; the bounds are a type requirement.
   const src: RasterSource = { ...px, bounds: { north: 1, south: 0, east: 1, west: 0 } };
   const index = indexRaster(src);
-  const t = globalThreshold(index, px.width);
+  const otsuThreshold = globalThreshold(index, px.width);
+  const f = floor ?? -Infinity;
+  const t = Math.max(otsuThreshold, f);
   const mask = new Uint8Array(px.width * px.height);
-  let veg = 0, pixels = 0;
+  let veg = 0, pixels = 0, flooredWindows = 0, windows = 0, gatedPixels = 0;
   // Even tiles, as planWindows lays them: a thin leftover strip at the
   // bottom or the right thresholded on its own found soil against soil.
   for (const w of planWindows(px.width, px.height, 1, windowPx)) {
-    const s = maskWindow(index, px.width, w, mask, t);
-    veg += s.vegetation; pixels += s.pixels;
+    const s = maskWindow(index, px.width, w, mask, t, undefined, f);
+    veg += s.vegetation; pixels += s.pixels; windows++;
+    if (s.floored) flooredWindows++;
   }
-  return { mask, vegetationFraction: pixels ? veg / pixels : 0 };
+  if (exgrGate != null) {
+    // ExGR = (2g - r - b) - (1.4r - g) on chromaticity = 4g - 1.4r - 1.
+    const rgba = px.rgba;
+    for (let i = 0; i < mask.length; i++) {
+      if (!mask[i]) continue;
+      const o = i * 4, sum = rgba[o] + rgba[o + 1] + rgba[o + 2];
+      if (sum > 0 && (4 * rgba[o + 1] - 1.4 * rgba[o]) / sum - 1 > exgrGate) continue;
+      mask[i] = 0; veg--; gatedPixels++;
+    }
+  }
+  return { mask, vegetationFraction: pixels ? veg / pixels : 0, otsuThreshold, flooredWindows, windows, gatedPixels };
+}
+
+/** The spacings to search: the crop's planted ones, then every crop-neutral candidate not within 15% of one of them. */
+export function spacingCandidates(prior: PatternPrior | null | undefined): number[] {
+  if (!prior?.spacingCandidatesM.length) return AUTO_SPACING_CANDIDATES_M;
+  const crop = [...new Set(prior.spacingCandidatesM)].sort((a, b) => a - b);
+  return [...crop, ...AUTO_SPACING_CANDIDATES_M.filter(c => !crop.some(k => Math.abs(c - k) / k < 0.15))];
 }
 
 export type RawBlob = { n: number; sx: number; sy: number; minX: number; maxX: number; minY: number; maxY: number; /** Component labels (1-based) in the label map this blob is made of. */ labels?: number[]; /** Pixel indices, only when a caller asked to keep them. */ pixels?: number[] };
@@ -899,13 +970,20 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   const rowSpacingM = auto ? null : (params.rowSpacingM as number);
   if (!(gsdM > 0)) throw new Error("A pixel size is needed before a photo can be read.");
   if (!auto && !(rowSpacingM! > 0)) throw new Error("A row spacing is needed before rows can be fitted.");
-  const candidates = auto ? AUTO_SPACING_CANDIDATES_M : [rowSpacingM!];
-  const windowM = params.windowM ?? DEFAULT_PHOTO_WINDOW_M;
+  const prior = params.prior ?? null;
+  const candidates = auto ? spacingCandidates(prior) : [rowSpacingM!];
+  const windowM = params.windowM ?? (prior?.windowRows ? Math.max(2, prior.windowRows * prior.defaultSpacingM) : DEFAULT_PHOTO_WINDOW_M);
   const notes: string[] = [];
   const plan = planWindows(px.width, px.height, gsdM, windowM);
   const windowPx = Math.max(16, Math.round(windowM / gsdM));
+  // A block needs MIN_BLOCK_WINDOWS windows, but never more than the photo has: a close-up of a few metres has one or
+  // two windows, each fitted on the whole photo, and used to be refused however clear its rows were (2026-10-23, a
+  // 6.9 x 5.1 m corn photo with a whole-photo fit of confidence 0.98 found no rows).
+  const minBlockWindows = Math.min(MIN_BLOCK_WINDOWS, plan.length);
 
-  const { mask, vegetationFraction } = photoMask(px, windowPx);
+  const { mask, vegetationFraction, otsuThreshold, flooredWindows, windows: maskWindows, gatedPixels } = photoMask(px, windowPx, prior?.vegetationIndexFloor ?? null, prior?.vegetationExgrGate ?? null);
+  if (gatedPixels > 0.02 * px.width * px.height) notes.push(`${Math.round((100 * gatedPixels) / (px.width * px.height))}% of the photo passed the automatic green split but not the ${prior?.cropId ?? "crop"} ExGR gate (straw, residue or soil read as green by ExG): left out of the vegetation.`);
+  if (flooredWindows > 0) notes.push(`The automatic green split fell below the ${prior?.cropId ?? "crop"} floor in ${flooredWindows} of ${maskWindows} mask windows (whole-photo split ${otsuThreshold.toFixed(2)}): it was separating soil from residue, not plants from ground, so the floor (${prior?.vegetationIndexFloor}) was used.`);
   const luma = lumaRaster(px);
 
   type Fitted = { fit: RowTileFit; signal: RowSignal; squareGrid?: boolean };
@@ -985,6 +1063,8 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   // Narrow spacings on a small photo widen every window to the same
   // neighbourhood; the fit is then the same for every window and is done once.
   const fitCache = new Map<string, RowTileFit>();
+  /** Windows whose fit stood on the prior-and-evidence rule (PRIOR_SUPPORT_COHERENCE). */
+  const priorSupported = new Set<string>();
   const vegCache = new Map<string, number>();
 
   /** One window at every candidate spacing on both signals; the best fit, refitted on the spacing it measured. */
@@ -1055,6 +1135,26 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
       const ratio = best.fit.pitchM / f.fit.pitchM;
       if (Math.abs(ratio - Math.round(ratio)) <= 0.15 && Math.round(ratio) >= 2) best = f;
     }
+    if (prior) {
+      // In "auto" a candidate is not the grower's word: a fit that kept its candidate measured another pitch, and that
+      // measurement is the one to stand on (a 4 m corn photo at 2 cm kept the 50.8 cm candidate while measuring 77 cm).
+      if (auto && best.fit.pitchFromGrower && best.fit.recoveredPitchM > 0) {
+        const again = at(best.fit.recoveredPitchM, best.signal);
+        // The refit may find no autocorrelation peak of its own on a photo a few rows wide (confidence 0, its pitch the
+        // one handed in); the pitch is still the one measured above, and the planted-spacing rule below decides.
+        if (again && !again.fit.pitchFromGrower && (again.fit.confidence > 0 || (again.fit.rowCoherence ?? 0) >= PRIOR_SUPPORT_COHERENCE)) best = again;
+        // Still standing only on a candidate nobody measured: not rows. (A dark-soil corn scene read straw stripes at
+        // 90 cm through the 70 cm candidate's band and kept 70 cm.)
+        if (best.fit.pitchFromGrower) best = { ...best, fit: { ...best.fit, confidence: 0 } };
+      }
+      const f = best.fit;
+      const planted = prior.plantedSpacingsM.some(m => Math.abs(f.pitchM - m) / m <= prior.spacingToleranceShare);
+      if (best.signal === "vegetation" && !f.pitchFromGrower && f.confidence < MIN_TILE_CONFIDENCE && planted
+        && (f.rowCoherence ?? 0) >= PRIOR_SUPPORT_COHERENCE && f.angleConfidence >= MIN_TILE_CONFIDENCE) {
+        best = { ...best, fit: { ...f, confidence: MIN_TILE_CONFIDENCE } };
+        priorSupported.add(`${w.x0},${w.y0}`);
+      }
+    }
     return localisePhase(w, best);
   };
   /** Is the quarter-turned direction as good a fit as this one on the window's neighbourhood, and which way is brighter? Cached per neighbourhood. */
@@ -1092,9 +1192,12 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   if (canopyClosed) notes.push("The canopy is closed in this photo: almost every pixel is vegetation, so no plant is separate and blobs are not placed. Rows can still be found from brightness.");
 
   const windows: PhotoWindow[] = [];
+  /** Each window's own row coherence on the vegetation, before blocks replace its fit; null on brightness. */
+  const ownCoherence: (number | null)[] = [];
   for (let i = 0; i < plan.length; i++) {
     const w = plan[i];
     const { fit, signal } = fitOne(w, params.rowAngleDeg ?? null);
+    ownCoherence[i] = signal === "vegetation" ? fit.rowCoherence ?? null : null;
     windows.push({ index: i, ...w, fit, signal, usable: fit.confidence >= MIN_TILE_CONFIDENCE, block: null, own: null, rowLines: null, squareGrid: false, seed: null, onRow: 0, offRow: 0 });
     if (opts.onProgress?.(i + 1, plan.length) === false) break;
     if (opts.yieldBetweenWindows !== false) await tick();
@@ -1167,6 +1270,30 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   };
   const centreOf = (w: { x0: number; y0: number; x1: number; y1: number }) => ({ x: ((w.x0 + w.x1 + 1) / 2) * gsdM, y: -((w.y0 + w.y1 + 1) / 2) * gsdM });
   const wrapHalf = (d: number, p: number) => ((((d + p / 2) % p) + p) % p) - p / 2;
+  /**
+   * Whether the block's green sits in step with rows at this direction and spacing: coherence of the vegetation's phase
+   * at least MIN_ROW_COHERENCE, over windows whose vegetation share can carry rows at all.
+   */
+  let brightnessReplaced = 0;
+  const greenInStep = (members: number[], angleDeg: number, pitchM: number): boolean => {
+    const factor = Math.max(1, Math.floor(pitchM / gsdM / PATCH_PITCH_PX)), sampleM = gsdM * factor;
+    const w = Math.floor(px.width / factor), h = Math.floor(px.height / factor);
+    const whole = poolWindow(mask, px.width, 0, 0, w * factor, h * factor, factor);
+    const data = new Float32Array(whole.data.length);
+    let n = 0, on = 0;
+    for (const i of members) {
+      const win = windows[i];
+      const cx0 = Math.ceil(win.x0 / factor), cx1 = Math.min(whole.width - 1, Math.floor((win.x1 + 1) / factor) - 1);
+      const cy0 = Math.ceil(win.y0 / factor), cy1 = Math.min(whole.height - 1, Math.floor((win.y1 + 1) / factor) - 1);
+      for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) { const v = whole.data[cy * whole.width + cx]; data[cy * whole.width + cx] = v; n++; on += v; }
+    }
+    const share = n ? on / n : 0;
+    if (share < VEGETATION_FRACTION_RANGE[0] || share > VEGETATION_FRACTION_RANGE[1]) return false;
+    const sp = toSparse({ data, width: whole.width, height: whole.height });
+    if (!sp.xs.length) return false;
+    const toGround = (sx: number, sy: number) => ({ x: sx * sampleM, y: -sy * sampleM });
+    return phaseAndCoherence(sp, toGround, 0, 0, angleDeg, pitchM).coherence >= MIN_ROW_COHERENCE;
+  };
   type BlockModel = { angleDeg: number; pitchM: number; phaseM: number; ref: { x: number; y: number }; fromGrower: boolean; signal: RowSignal; typical: { confidence: number; angleConfidence: number; pitchConfidence: number; recoveredPitchM: number } };
   /**
    * One straight model through a block's windows. Each window's phase is a
@@ -1208,7 +1335,10 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
         phaseM = circularPhase(pitchM);
       }
     }
-    const signal: RowSignal = members.filter(i => windows[i].signal === "brightness").length * 2 > members.length ? "brightness" : "vegetation";
+    let signal: RowSignal = members.filter(i => windows[i].signal === "brightness").length * 2 > members.length ? "brightness" : "vegetation";
+    // Brightness found the period; where the crop is green against soil, the green says where the rows are. In a no-till
+    // field the bright stripes are the straw between the rows, a part of a row off the crop (2026-10-23).
+    if (signal === "brightness" && prior?.verifyBrightness && greenInStep(members, angleDeg, pitchM)) { signal = "vegetation"; brightnessReplaced++; }
     return {
       angleDeg, pitchM, phaseM, ref, fromGrower, signal,
       typical: {
@@ -1258,7 +1388,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
   };
   // Too small a block is not a planting: a lone window that found rows
   // beside a road found shrubs. Its window loses its rows.
-  const blocks = flood(new Set(windows.filter(w => w.usable).map(w => w.index))).filter(b => b.length >= MIN_BLOCK_WINDOWS);
+  const blocks = flood(new Set(windows.filter(w => w.usable).map(w => w.index))).filter(b => b.length >= minBlockWindows);
   const models: (BlockModel | null)[] = blocks.map(modelOf);
   const blockOf = new Array<number>(windows.length).fill(-1);
   const mapBlocks = () => { blockOf.fill(-1); blocks.forEach((b, id) => b.forEach(i => { blockOf[i] = id; })); };
@@ -1305,7 +1435,7 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
       const m = models[id];
       if (!m) continue;
       const out = blocks[id].filter(i => { const p = rowPoint(windows[i].fit); return Math.abs(rowOffset(m, p.x, p.y)) > BLOCK_EDGE_TOL * m.pitchM; });
-      if (out.length === 0 || blocks[id].length - out.length < MIN_BLOCK_WINDOWS) continue;
+      if (out.length === 0 || blocks[id].length - out.length < minBlockWindows) continue;
       const outSet = new Set(out);
       blocks[id] = blocks[id].filter(i => !outSet.has(i));
       models[id] = modelOf(blocks[id]);
@@ -1644,7 +1774,16 @@ export async function analysePhoto(px: PhotoPixels, params: PhotoParams, opts: A
     skips: seeds.reduce((s, f) => s + f.skips, 0),
     blocks: blocksOut.length,
     squareGrid: blocksOut.some(b => b.squareGrid),
+    otsuThreshold,
+    flooredMaskWindows: flooredWindows,
+    exgrGatedShare: gatedPixels / Math.max(1, px.width * px.height),
+    brightnessReplaced,
+    medianRowCoherence: median(usable.map(w => ownCoherence[w.index]).filter((c): c is number => c != null)),
+    priorCropId: prior?.cropId ?? null,
+    priorSupportedWindows: priorSupported.size,
   };
+  if (priorSupported.size > 0) notes.push(`${priorSupported.size} window${priorSupported.size === 1 ? "" : "s"} fell just under the confidence bar but measured a spacing ${prior?.cropId ?? "the crop"} is planted at, with the green in step with the rows; ${priorSupported.size === 1 ? "it was" : "they were"} kept. A photo only a few rows wide gives the spacing measurement little to stand on.`);
+  if (brightnessReplaced > 0) notes.push(`${brightnessReplaced} block${brightnessReplaced === 1 ? "" : "s"} of rows found from brightness ${brightnessReplaced === 1 ? "was" : "were"} placed on the green instead: the ${prior?.cropId ?? "crop"} rows are green lines on soil at this stage, and bright stripes in step with them (straw, wheel marks) are not the rows.`);
   for (const bl of blocksOut) {
     const members = new Set(bl.windows);
     bl.plants = blobs.filter(b => b.cls === "on pattern" && b.window != null && members.has(b.window)).length;

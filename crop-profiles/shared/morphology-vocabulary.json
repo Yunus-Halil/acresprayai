@@ -1,0 +1,21 @@
+{
+  "terms": [
+    { "id": "whorl", "name": "whorl", "category": "plant structure", "definition": "The funnel of rolled young leaves at the top of a grass plant, from which new leaves emerge. From above, the plant's centre." },
+    { "id": "leaf-collar", "name": "leaf collar", "category": "plant structure", "definition": "The pale band where the leaf blade meets the sheath; the counting unit of the corn V-stage system. Not resolvable from a drone." },
+    { "id": "ligule", "name": "ligule", "category": "plant structure", "definition": "A membrane or fringe of hairs at the collar of a grass leaf; the key that separates grass species on the ground. Millimetre scale; never resolvable from a drone." },
+    { "id": "coleoptile-spike", "name": "spike", "category": "seedling", "definition": "The pointed coleoptile of an emerging grass seedling before the first leaf unrolls (corn VE)." },
+    { "id": "alternate-distichous", "name": "alternate, in one plane", "category": "leaf arrangement", "definition": "Leaves borne one per node, alternating sides, all in one vertical plane (corn, sorghum). From above the plant is a line of leaves, not a disc." },
+    { "id": "lanceolate", "name": "lanceolate", "category": "leaf shape", "definition": "Long and narrow, widest below the middle, tapering to a point (corn leaves after the first, pigweed first true leaves)." },
+    { "id": "rounded-tip", "name": "rounded tip", "category": "leaf shape", "definition": "A blunt, oval leaf tip; the corn first leaf has one, every later leaf is pointed." },
+    { "id": "lobed", "name": "lobed", "category": "leaf shape", "definition": "Leaf margin cut into rounded or pointed lobes (giant ragweed 3 to 5 lobes, cocklebur shallow lobes)." },
+    { "id": "cordate", "name": "heart-shaped", "category": "leaf shape", "definition": "Broad leaf with a notched base (velvetleaf, morningglory)." },
+    { "id": "rosette", "name": "rosette", "category": "habit", "definition": "Leaves radiating from a short stem near the ground; from above a compact disc or star." },
+    { "id": "erect", "name": "erect", "category": "habit", "definition": "Growing upright; projected area from above smaller than the leaf area." },
+    { "id": "prostrate", "name": "prostrate or decumbent", "category": "habit", "definition": "Lying along the ground or rising only at the tip (crabgrass, purslane, yellow foxtail); from above a flat mat with large projected area for its height." },
+    { "id": "tuft", "name": "tuft", "category": "habit", "definition": "A tight cluster of grass shoots from one point; from above a small irregular star of narrow leaves." },
+    { "id": "canopy-closure", "name": "canopy closure", "category": "canopy", "definition": "The stage at which leaves from neighbouring rows meet over the alley, so the ground between rows is no longer visible from above." },
+    { "id": "projected-area", "name": "projected area", "category": "measurement", "definition": "The area a plant covers seen straight from above; what a nadir image measures. Smaller than leaf area for erect plants." },
+    { "id": "alley", "name": "alley", "category": "field geometry", "definition": "The ground between two crop rows; where row-crop weed cover is measured from above." },
+    { "id": "row-band", "name": "row band", "category": "field geometry", "definition": "The strip along a row line taken to hold the crop; vegetation inside it is not counted as between-row weed cover." }
+  ]
+}

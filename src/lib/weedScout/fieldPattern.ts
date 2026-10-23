@@ -368,6 +368,8 @@ export type ReadPatternOptions = {
   onWindow?: (live: PatternLive) => void;
   rowAngleDeg?: number | null;
   minBlobAreaCm2?: number;
+  /** The field's crop profile prior (src/lib/cropProfiles/engine.ts patternPriorFor); null or absent: crop-neutral. */
+  prior?: PhotoParams["prior"];
   signal?: AbortSignal;
   onProgress?: (done: number, total: number, note: string) => void;
   /** Injected for tests: the pass on one raster. Defaults to the worker. */
@@ -397,7 +399,7 @@ export async function readFieldPattern(
     try {
       const pattern = await analyse(raster, {
         gsdM: rasterGsdM(raster), rowSpacingM: opts.rowSpacingM, windowM: PATTERN_FIT_WINDOW_M,
-        minBlobAreaCm2: opts.minBlobAreaCm2, rowAngleDeg: opts.rowAngleDeg ?? null,
+        minBlobAreaCm2: opts.minBlobAreaCm2, rowAngleDeg: opts.rowAngleDeg ?? null, prior: opts.prior ?? null,
       });
       results.push(convertPattern(raster, win, pattern, missingTiles));
     } catch (e) {

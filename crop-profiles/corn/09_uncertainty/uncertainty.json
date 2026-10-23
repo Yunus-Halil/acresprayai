@@ -1,0 +1,215 @@
+{
+  "principles": [
+    "The profile is a prior, not ground truth: a row spacing, a stage or a cover the imagery measures reliably outranks what the profile expects, and a disagreement is reported rather than corrected toward the profile.",
+    "A position inferred from the planting pattern is an expected plant, never a verified one.",
+    "Green off the row is a weed candidate, not a weed: corn that leans, a double, a volunteer or an interseeded cover crop is also green off the row.",
+    "No species name from the pixels at 1 cm or coarser; species lists are regional and seasonal priors.",
+    "Without a known pixel size no metric claim is made; with a pixel size coarser than the analysis needs, the analysis is disabled with its reason instead of producing a weaker answer.",
+    "A stage from the planting date is an estimate with its error stated; the profile never reports a single stage from the calendar."
+  ],
+  "policies": [
+    {
+      "code": "NO_PROFILE",
+      "when": "No crop on file, or a crop with no profile.",
+      "action": "note",
+      "message": "No crop profile for this field: the analysis uses crop-neutral defaults.",
+      "affects": [
+        "row-detection",
+        "weed-pressure-grade"
+      ]
+    },
+    {
+      "code": "PROFILE_EXPERIMENTAL",
+      "when": "The corn profile's status is experimental.",
+      "action": "note",
+      "message": "Corn profile is experimental: its row, cover and position rules are benchmarked on rendered stands, three photos and one public field, not yet on your fields.",
+      "affects": [
+        "row-detection",
+        "crop-vs-weed-by-position",
+        "between-row-weed-cover"
+      ]
+    },
+    {
+      "code": "UNKNOWN_RESOLUTION",
+      "when": "The imagery has no pixel size (no georeference, no EXIF altitude, none given).",
+      "action": "disable",
+      "message": "The pixel size is not known, so no spacing, size or area is stated.",
+      "affects": [
+        "row-spacing",
+        "weed-measurement",
+        "weed-isolation",
+        "between-row-weed-cover",
+        "planting-positions"
+      ]
+    },
+    {
+      "code": "INSUFFICIENT_RESOLUTION",
+      "when": "The pixel size is coarser than the capability's maxGsdCm in the algorithm file.",
+      "action": "disable",
+      "message": "The imagery is too coarse for this in corn; the limit and the reason are named per analysis.",
+      "affects": [
+        "row-detection",
+        "planting-positions",
+        "crop-vs-weed-by-position",
+        "between-row-weed-cover",
+        "weed-isolation",
+        "weed-measurement"
+      ],
+      "sources": [
+        "pena-2015",
+        "katari-2024"
+      ]
+    },
+    {
+      "code": "UNKNOWN_STAGE",
+      "when": "No planting date on file.",
+      "action": "note",
+      "message": "No planting date: closure, the critical period and the expected cover are not checked.",
+      "affects": [
+        "weed-pressure-grade",
+        "between-row-weed-cover"
+      ]
+    },
+    {
+      "code": "STAGE_ESTIMATED",
+      "when": "A stage range was estimated from the planting date.",
+      "action": "note",
+      "message": "Stage estimated from the planting date (calendar), often off by one to three leaves; not observed.",
+      "affects": [
+        "weed-pressure-grade"
+      ],
+      "sources": [
+        "hall-sdsu-gdu",
+        "illinois-2015-gdd"
+      ]
+    },
+    {
+      "code": "UNSUPPORTED_STAGE",
+      "when": "The whole estimated stage range lies past V9 (30 in rows close about V10).",
+      "action": "disable",
+      "message": "The canopy has closed or is closing at this stage: weed cover between the rows can no longer be measured from above.",
+      "affects": [
+        "between-row-weed-cover",
+        "weed-pressure-grade",
+        "crop-vs-weed-by-position"
+      ],
+      "sources": [
+        "unl-critical-period"
+      ]
+    },
+    {
+      "code": "CANOPY_CLOSED",
+      "when": "The vegetation share of the photo or the cells is 0.85 or more.",
+      "action": "disable",
+      "message": "Almost all of the ground is under green: between-row cover and weed counts are not measured.",
+      "affects": [
+        "between-row-weed-cover",
+        "weed-pressure-grade"
+      ]
+    },
+    {
+      "code": "ROW_SPACING_UNEXPECTED",
+      "when": "The measured pitch is more than 8% from every planted corn spacing.",
+      "action": "review",
+      "message": "The rows read at a spacing corn is not planted at: the reading is kept; check the crop on file or the read.",
+      "affects": [
+        "row-spacing",
+        "crop-vs-weed-by-position"
+      ]
+    },
+    {
+      "code": "ROWS_UNCERTAIN",
+      "when": "Row coherence under 0.30, or rows from brightness only.",
+      "action": "review",
+      "message": "The rows are uncertain (heavy weeds, closed canopy, curved rows): position-based weed calls are weaker here.",
+      "affects": [
+        "crop-vs-weed-by-position",
+        "between-row-weed-cover"
+      ]
+    },
+    {
+      "code": "NO_ROWS",
+      "when": "No row pattern found.",
+      "action": "disable",
+      "message": "No rows found: nothing is called a weed by position.",
+      "affects": [
+        "crop-vs-weed-by-position",
+        "between-row-weed-cover",
+        "weed-pressure-grade"
+      ]
+    },
+    {
+      "code": "COVER_STAGE_MISMATCH",
+      "when": "Measured green cover is more than 15 points outside the crop's expected range at every stage in the estimated range.",
+      "action": "review",
+      "message": "The green cover does not fit corn at this stage: the planting date, the stage or heavy weed pressure is off.",
+      "affects": [
+        "weed-pressure-grade"
+      ]
+    },
+    {
+      "code": "VEGETATION_MASK_SUSPECT",
+      "when": "The automatic vegetation split fell below the index of grey (0).",
+      "action": "note",
+      "message": "The automatic green split was separating soil from residue; the corn ExGR gate kept the mask to green plants.",
+      "affects": [
+        "vegetation-segmentation",
+        "row-detection"
+      ]
+    },
+    {
+      "code": "WITHIN_ROW_UNRESOLVED",
+      "when": "Always, for corn at 1 cm or coarser.",
+      "action": "note",
+      "message": "Weeds inside the crop row are not judged: they cannot be told from corn at this resolution.",
+      "affects": [
+        "crop-vs-weed-by-position",
+        "between-row-weed-cover"
+      ],
+      "sources": [
+        "pena-2013"
+      ]
+    },
+    {
+      "code": "SPECIES_NOT_RESOLVABLE",
+      "when": "Always, for corn at 1 cm or coarser.",
+      "action": "note",
+      "message": "Species are not identified from the imagery; the list is what is commonly reported in corn here at this time of year.",
+      "affects": [
+        "species-priors"
+      ],
+      "sources": [
+        "lu-2024"
+      ]
+    },
+    {
+      "code": "THRESHOLD_PROVISIONAL",
+      "when": "The pressure scheme's basis is provisional.",
+      "action": "note",
+      "message": "Corn pressure classes are provisional: US guidance acts on weed height (before about 10 cm) and stage, not on cover.",
+      "affects": [
+        "weed-pressure-grade"
+      ],
+      "sources": [
+        "isu-early-competition"
+      ]
+    },
+    {
+      "code": "CAPABILITY_UNSUPPORTED",
+      "when": "A capability's status is unsupported.",
+      "action": "disable",
+      "message": "Not supported for corn yet; the reason is named.",
+      "affects": [
+        "weed-pressure-grade",
+        "hotspots",
+        "stand-count",
+        "growth-stage-from-imagery",
+        "canopy-height"
+      ]
+    }
+  ],
+  "gaps": [
+    "No calibration of how often an uncertainty code is right: the codes are rules from the research, not measured detectors (except the resolution and canopy gates, which are arithmetic).",
+    "The coherence level for ROWS_UNCERTAIN (0.30) is reasoned from the coherence of rows of known width, not measured against row truth."
+  ]
+}

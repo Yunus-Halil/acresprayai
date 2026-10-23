@@ -25,7 +25,11 @@
     "eval:detections": "vite-node scripts/bench/evalDetections.ts --",
     "eval:visuals": "vite-node scripts/bench/evalVisuals.ts --",
     "rw:measure": "vite-node scripts/rwmeasure/run.ts --",
-    "eval:pressure": "vite-node scripts/eval/pressure/run.ts --"
+    "eval:pressure": "vite-node scripts/eval/pressure/run.ts --",
+    "profiles:build": "vite-node scripts/cropProfiles/build.ts --",
+    "profiles:check": "vite-node scripts/cropProfiles/build.ts -- --check",
+    "bench:crop-profile": "vite-node scripts/cropProfiles/bench.ts --",
+    "profiles:record": "vite-node scripts/cropProfiles/record.ts --"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",

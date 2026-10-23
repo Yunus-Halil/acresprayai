@@ -1,0 +1,20 @@
+{
+  "gsdBands": [
+    { "id": "sub-cm", "name": "under 1 cm a pixel", "gsdCm": [0, 1], "description": "Low flights (about 35 m or lower on 1-inch and 4/3 sensors) and original frames. Corn plants countable at V2 to V3; individual small weeds resolvable. Species work in the literature lives below 0.5 cm." },
+    { "id": "fine", "name": "1 to 2.5 cm a pixel", "gsdCm": [1, 2.5], "description": "Typical scouting orthomosaic. Rows found, weeds of about 5 to 10 cm resolvable by the four-pixel rule, crop vs weed by position only." },
+    { "id": "medium", "name": "2.5 to 5 cm a pixel", "gsdCm": [2.5, 5], "description": "High flights and downsampled maps. Rows of 76 cm still resolve; seedling plants are dots; cover by position only, single weeds under 10 to 20 cm are not objects." },
+    { "id": "coarse", "name": "over 5 cm a pixel", "gsdCm": [5, 1000], "description": "Patch-scale only. Row-crop rows marginal or lost; no plant-level claims." }
+  ],
+  "smallestObjectRule": {
+    "pixelsAcross": 4,
+    "statement": "At least four pixels across are needed to detect the smallest object of interest; an object narrower is not claimed, and its size is not measured.",
+    "source": "Peña, Torres-Sánchez, Serrano-Pérez, de Castro, López-Granados 2015, Sensors 15:5609, https://pmc.ncbi.nlm.nih.gov/articles/PMC4435221/"
+  },
+  "checks": [
+    { "id": "known-gsd", "name": "Known pixel size", "definition": "The ground size of a pixel comes from the map's georeference, the frame's EXIF/XMP altitude with camera geometry, or the operator. Without it no metric claim (spacing, size, area) is made: UNKNOWN_RESOLUTION." },
+    { "id": "gsd-vs-capability", "name": "Pixel size against the analysis", "definition": "Each capability states the coarsest pixel it is offered at (profile imagery requirements); coarser imagery disables it with INSUFFICIENT_RESOLUTION instead of producing a weaker answer silently." },
+    { "id": "vegetation-split", "name": "The vegetation split is a plant split", "definition": "An automatic (Otsu) vegetation threshold that falls below the index of grey (excess green about zero) is splitting soil from residue, not plants from ground; the profile's index floor applies and VEGETATION_MASK_SUSPECT is raised." },
+    { "id": "shadow-share", "name": "Shadow share", "definition": "Share of pixels darker than the deep-shadow luma (50 on 0 to 255); cells above the limit are not assessed." },
+    { "id": "imaged-share", "name": "Imaged share", "definition": "Share of a cell inside the imagery; partly imaged cells are not assessed." }
+  ]
+}

@@ -47,6 +47,7 @@ import {
   type Identification, REJECTED, UNIDENTIFIED, identificationFromEntry, identificationFromText, isStatedFinding,
 } from "@/lib/weedCatalog/identification";
 import { cropContextFor, fieldRegion } from "@/lib/weedCatalog/region";
+import { CropProfileCard } from "@/components/app/weedVision/CropProfileCard";
 import { loadCatalog } from "@/lib/weedCatalog/repo";
 import {
   type Suggestion, cropShortlist, narrowCatalog, recentLabels, searchRanked, suggestionsFor,
@@ -375,9 +376,11 @@ export function WeedScoutTab({
   useEffect(() => {
     if (!user || photoRunning) return;
     let on = true;
-    openPhotoReadStore({ userId: user.id, scanId: taskId, paramsKey: photoReadKey(photoPassParams(params)) }).then(s => { if (on) setReadStore(s); });
+    openPhotoReadStore({ userId: user.id, scanId: taskId, paramsKey: photoReadKey(photoPassParams({ ...params, crop: settings.crop_type || null })) }).then(s => { if (on) setReadStore(s); });
     return () => { on = false; };
-  }, [user, taskId, params.rowSpacingAuto, params.rowSpacingM, params.minBlobCm2, photoRunning]);
+  }, [user, taskId, params.rowSpacingAuto, params.rowSpacingM, params.minBlobCm2, photoRunning, settings.crop_type]);
+  // The photo-reading panels get the field's crop with the run's settings, so every photo read uses its crop profile.
+  const passParamsWithCrop = useMemo(() => ({ ...params, crop: settings.crop_type || null }), [params, settings.crop_type]);
   // Developer tools only: the pattern pass drawn as it runs, window by window.
   const dev = useDeveloperMode();
   const [watchPass, setWatchPass] = useState(true);
@@ -1029,7 +1032,7 @@ export function WeedScoutTab({
           spotDiameterM={closerLook ? (candidates.find(c => c.id === closerLook.id)?.blob?.equivDiameterM ?? null) : null}
           spotLook={closerLook ? (candidates.find(c => c.id === closerLook.id)?.look ?? null) : null}
           spotMeasurement={closerLook ? (candidates.find(c => c.id === closerLook.id)?.measurement ?? null) : null}
-          passParams={params} readStore={readStore} minWeedM={params.photoMinWeedM} />
+          passParams={passParamsWithCrop} readStore={readStore} minWeedM={params.photoMinWeedM} />
 
         {simple && (frameRun.plants.length > 0 || twoStage.stage1) && (
           <div className="absolute top-3 left-3 z-[400] bg-black/75 text-[11px] px-2.5 py-2 rounded-sm border border-[#222] flex flex-col gap-1 text-neutral-300" data-testid="simple-legend">
@@ -1127,8 +1130,10 @@ export function WeedScoutTab({
 
       <aside className="w-[400px] shrink-0 border-l border-[#1f1f1f] flex flex-col min-h-0" style={{ background: "#121212" }}>
         {simple ? (<>
-          <SimpleWeedFinder taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} onShowOptions={() => setSimple(false)} fieldId={fieldId} />
-          <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} scanWeeds={scanWeeds} />
+          <SimpleWeedFinder taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={passParamsWithCrop} onShowOptions={() => setSimple(false)} fieldId={fieldId} />
+          <CropProfileCard crop={settings.crop_type || null} plantingDate={settings.planting_date || null} units={units} regionState={fieldRegion().state}
+            observations={{ gsdM: result?.gsdM ?? null, measuredRowSpacingM: result?.pattern?.summary.rowSpacingM ?? null, rowsFound: result ? (result.pattern?.summary.blocks ?? 0) > 0 : null }} />
+          <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} plantingDate={settings.planting_date || null} scanWeeds={scanWeeds} />
         </>) : (<>
         {/* Header and run */}
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
@@ -1179,9 +1184,11 @@ export function WeedScoutTab({
           {session.cache && !running && <p className="text-[10px] text-neutral-600">{session.cache}</p>}
         </div>
         {frameRun.mapAvailable && <div className="p-4 border-b border-[#1f1f1f]"><CropRowsPanel taskId={taskId} fieldId={fieldId} userId={user?.id ?? null} /></div>}
-        <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={params} />
+        <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={passParamsWithCrop} />
         <HotspotPanel taskId={taskId} userId={user?.id ?? null} onOpenPhotos={openAreaPhotos} onMarkArea={markArea} />
-        <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} scanWeeds={scanWeeds} />
+        <CropProfileCard crop={settings.crop_type || null} plantingDate={settings.planting_date || null} units={units} regionState={fieldRegion().state}
+          observations={{ gsdM: result?.gsdM ?? null, measuredRowSpacingM: result?.pattern?.summary.rowSpacingM ?? null, rowsFound: result ? (result.pattern?.summary.blocks ?? 0) > 0 : null }} />
+        <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} plantingDate={settings.planting_date || null} scanWeeds={scanWeeds} />
         <TwoStagePanel taskId={taskId} userId={user?.id ?? null} sources={sources} />
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">
           <details className="text-[11px]">

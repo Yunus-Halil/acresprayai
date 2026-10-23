@@ -1,0 +1,234 @@
+{
+  "status": "unvalidated",
+  "summary": "Benchmarks planned; results are written here only from actual runs of npm run bench:crop-profile.",
+  "benchmarks": [
+    {
+      "id": "synthetic-corn-stands",
+      "name": "Rendered corn stands: rows, pitch, phase, off-row weeds",
+      "capability": "row-detection",
+      "dataset": "Rendered scenes (scripts/cropProfiles/scenes.ts): 20, 22, 30, 36 in and twin rows; 0.3 to 4 cm; soil, red soil with straw stripes, weeds; development seeds 1 to 20, evaluation seeds 101 to 160",
+      "images": 0,
+      "gsdCm": "0.3 to 4",
+      "stages": [
+        "V2",
+        "V3",
+        "V4",
+        "V5",
+        "V6"
+      ],
+      "split": "seeded scenes; parameters were set on development seeds only, scores reported on evaluation seeds",
+      "command": "npm run bench:crop-profile -- --suite synthetic",
+      "acceptance": [
+        {
+          "metric": "rows found on evaluation scenes",
+          "threshold": ">= 95%"
+        },
+        {
+          "metric": "median pitch error",
+          "threshold": "<= 3%"
+        },
+        {
+          "metric": "row lines on the crop (phase error under a quarter pitch)",
+          "threshold": ">= 95%"
+        }
+      ],
+      "status": "planned",
+      "notes": "Synthetic: tests the engine against known geometry and known failure conditions, not field accuracy."
+    },
+    {
+      "id": "corn-photos-label-free",
+      "name": "Three early-corn photos: rows found and rows on green (label-free)",
+      "capability": "row-detection",
+      "dataset": "CropTesting/Corn/earlystage (3 photos, no EXIF, no labels)",
+      "images": 3,
+      "gsdCm": "0.2 to 0.5 (from the measured pitch and an assumed 30 in)",
+      "stages": [
+        "V3",
+        "V4",
+        "V5"
+      ],
+      "split": "development: 0359 was used to diagnose the residue failure",
+      "command": "npm run bench:crop-profile -- --suite photos",
+      "acceptance": [
+        {
+          "metric": "photos with rows found",
+          "threshold": "3 of 3"
+        },
+        {
+          "metric": "green on the row lines against green mid-alley",
+          "threshold": ">= 2 on every photo"
+        }
+      ],
+      "status": "planned",
+      "notes": "No ground truth: the on-green ratio is a proxy that rows sit on the vegetation.",
+      "sources": [
+        "swardus-corn-photos-2026-10-23",
+        "meyer-neto-2008"
+      ]
+    },
+    {
+      "id": "weedsgalore-vegetation",
+      "name": "WeedsGalore held-out patches: vegetation segmentation",
+      "capability": "vegetation-segmentation",
+      "dataset": "WeedsGalore (Celikkan et al. 2025), test split",
+      "licence": "CC BY 4.0",
+      "images": 26,
+      "gsdCm": "0.25 native; 1 and 2 by box averaging",
+      "stages": [
+        "V1",
+        "V3",
+        "V5",
+        "V7"
+      ],
+      "split": "the authors spatial split (field patches never shared between splits); band gains set on train+val only",
+      "command": "npm run bench:crop-profile -- --suite weedsgalore",
+      "acceptance": [
+        {
+          "metric": "vegetation IoU at native resolution",
+          "threshold": ">= 0.70"
+        }
+      ],
+      "status": "planned",
+      "sources": [
+        "weedsgalore-2025"
+      ]
+    },
+    {
+      "id": "weedsgalore-position",
+      "name": "WeedsGalore held-out patches: crop versus weed by position",
+      "capability": "crop-vs-weed-by-position",
+      "dataset": "WeedsGalore test split",
+      "licence": "CC BY 4.0",
+      "images": 26,
+      "gsdCm": "0.25, 1, 2",
+      "stages": [
+        "V1",
+        "V3",
+        "V5",
+        "V7"
+      ],
+      "split": "as above",
+      "command": "npm run bench:crop-profile -- --suite weedsgalore",
+      "acceptance": [
+        {
+          "metric": "weed pixels off the row band (recall of the position rule)",
+          "threshold": "reported, no target: in-row weeds are out of reach by design"
+        },
+        {
+          "metric": "maize pixels inside the row band",
+          "threshold": ">= 0.85"
+        }
+      ],
+      "status": "planned",
+      "sources": [
+        "weedsgalore-2025"
+      ]
+    },
+    {
+      "id": "weedsgalore-cover",
+      "name": "WeedsGalore held-out patches: between-row weed cover against labels",
+      "capability": "between-row-weed-cover",
+      "dataset": "WeedsGalore test split",
+      "licence": "CC BY 4.0",
+      "images": 26,
+      "gsdCm": "0.25, 1, 2",
+      "stages": [
+        "V1",
+        "V3",
+        "V5",
+        "V7"
+      ],
+      "split": "as above",
+      "command": "npm run bench:crop-profile -- --suite weedsgalore",
+      "acceptance": [
+        {
+          "metric": "mean absolute error of off-row weed cover per patch",
+          "threshold": "<= 0.03"
+        }
+      ],
+      "status": "planned",
+      "sources": [
+        "weedsgalore-2025"
+      ]
+    },
+    {
+      "id": "weedsgalore-stage",
+      "name": "WeedsGalore dates: calendar stage estimate against the stated stages",
+      "capability": "stage-estimate",
+      "dataset": "WeedsGalore dates (sown 9 May 2023; first flight stated as V1)",
+      "licence": "CC BY 4.0",
+      "images": 0,
+      "gsdCm": "n/a",
+      "stages": [
+        "V1"
+      ],
+      "split": "n/a",
+      "command": "npm run bench:crop-profile -- --suite stage",
+      "acceptance": [
+        {
+          "metric": "stated stage inside the estimated range",
+          "threshold": "every date with a stated stage"
+        }
+      ],
+      "status": "planned",
+      "sources": [
+        "weedsgalore-2025"
+      ]
+    }
+  ],
+  "failureCases": [
+    {
+      "id": "fc-0359-residue-rows",
+      "date": "2026-10-23",
+      "image": "CropTesting/Corn/earlystage/0359_jpg.rf.d79059c10cb92885e24805062a9de816.jpg",
+      "symptom": "The photo pattern pass drew every row line on the straw strips between the corn rows.",
+      "cause": "On red soil with bright straw the per-window Otsu split fell to -0.20, between soil and straw; the vegetation mask covered 79% of the photo, the green row fit failed the coherence gate, and the brightness fit locked onto the straw stripes.",
+      "fix": "Corn profile ExGR gate at zero on the vegetation mask (vegetation.exgrGate): straw and soil fall below it whatever the Otsu split; brightness-found blocks re-placed on the green when it is in step (rowReader.verifyBrightnessAgainstVegetation). A floor of 0.05 on the ExG index fixed this photo but not bright yellow straw (rendered scenes), so it was replaced by the gate.",
+      "regressionTest": "src/test/cropProfilesEngine.test.ts: residue stripes on red soil",
+      "status": "fixed"
+    },
+    {
+      "id": "fc-pic1-pitch-confidence",
+      "date": "2026-10-23",
+      "image": "CropTesting/Corn/earlystage/pic1.jpg",
+      "symptom": "No rows found on a clean close-up of five corn rows: every window's pitch confidence was 0.31 against a bar of 0.35.",
+      "cause": "A 4 m photo holds five rows; at the 0.76 m candidate the autocorrelation band covers about one period and its median sits near the peak. The 0.70 m candidate's band gives 0.89 on the same pixels with coherence 0.79.",
+      "fix": "Corn candidates (0.381, 0.508, 0.70, 0.762, 0.914) searched beside the crop-neutral ones.",
+      "regressionTest": "src/test/cropProfilesEngine.test.ts: small close-up photo",
+      "status": "fixed"
+    },
+    {
+      "id": "fc-small-photo-blocks",
+      "date": "2026-10-23",
+      "image": "CropTesting/Corn/earlystage/ba2a945c-2f8f-4e02-981a-596d97b1fe21.png",
+      "symptom": "No rows on a 6.9 × 5.1 m photo whose whole-photo fit had confidence 0.98 and coherence 0.83.",
+      "cause": "A row block needs three usable windows; a 4 m window plan gives a photo this size two windows.",
+      "fix": "Blocks need at most as many windows as the photo has (engine, crop-neutral); corn windows of four rows (about 3 m).",
+      "regressionTest": "src/test/cropProfilesEngine.test.ts: small close-up photo",
+      "status": "fixed"
+    },
+    {
+      "id": "fc-0359-grade-on-residue-rows",
+      "date": "2026-10-23",
+      "image": "CropTesting/Corn/earlystage/0359_jpg.rf.d79059c10cb92885e24805062a9de816.jpg",
+      "symptom": "A diagnostic grade on the misplaced rows called the field 10.9% cover, action, with corn counted as weeds.",
+      "cause": "Rows in the alleys cut the band out of the straw and left the corn as off-row green.",
+      "fix": "Root cause fixed with the rows; the map grade for corn stays refused (capability weed-pressure-grade unsupported) until a continuous-row map reader passes its benchmark.",
+      "status": "accepted"
+    },
+    {
+      "id": "fc-phenobench-models-on-corn",
+      "date": "2026-10-23",
+      "image": "CropTesting/Corn/earlystage (all three)",
+      "symptom": "RF-DETR and ERFNet (trained on sugar beet) call much or all of the corn 'weed'.",
+      "cause": "Neither model has seen corn.",
+      "fix": "None: the crop profile never uses a model's crop/weed label for corn; position decides.",
+      "status": "accepted"
+    }
+  ],
+  "gaps": [
+    "No independent corn field with row-line truth: row detection is benchmarked on rendered stands and checked label-free on three photos.",
+    "WeedsGalore is one German field at 0.25 cm in band composites from a multispectral camera; scores downsampled to our pixel sizes are upper bounds.",
+    "No hand-measured weeds or plant counts on corn: planting positions, stand count and weed measurement are not benchmarked."
+  ]
+}

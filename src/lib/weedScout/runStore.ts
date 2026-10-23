@@ -116,7 +116,7 @@ export function startRun(taskId: string, inputs: ScoutInputs, opts: Omit<RunOpti
     patchSession(taskId, { photo: { running: true, done: 0, total: 0, found: 0, looks: 0, measured: 0, note: null } });
     try {
       // The scan's saved photo reads, when signed in: a photo read by an earlier run is not read again.
-      const reads = opts.persist ? await openPhotoReadStore({ userId: opts.persist.userId, scanId: taskId, paramsKey: photoReadKey(photoPassParams(inputs.params)) }) : null;
+      const reads = opts.persist ? await openPhotoReadStore({ userId: opts.persist.userId, scanId: taskId, paramsKey: photoReadKey(photoPassParams({ ...inputs.params, crop: opts.crop })) }) : null;
       const pass = await runPhotoPass({
         result, sources, boundary: inputs.boundary, params: inputs.params, reads,
         crop: opts.crop, growthStage: opts.growthStage, unitSystem: opts.unitSystem, signal: ctrl.signal,

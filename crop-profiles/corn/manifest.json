@@ -1,0 +1,22 @@
+{
+  "id": "corn",
+  "version": "1.0.0",
+  "schemaVersion": "1.0.0",
+  "status": "experimental",
+  "files": {
+    "identity": "identity.json",
+    "planting": "01_planting/planting.json",
+    "growth": "02_growth/growth.json",
+    "morphology": "03_morphology/morphology.json",
+    "visual": "04_visual-characteristics/visual.json",
+    "weeds": "05_weed-ecology/weeds.json",
+    "fieldConditions": "06_field-conditions/field-conditions.json",
+    "imagery": "07_imagery/imagery.json",
+    "algorithms": "08_algorithms/algorithms.json",
+    "uncertainty": "09_uncertainty/uncertainty.json",
+    "validation": "10_validation/validation.json",
+    "references": "11_references/references.json"
+  },
+  "updated": "2026-10-23",
+  "maintainers": ["Swardus"]
+}
