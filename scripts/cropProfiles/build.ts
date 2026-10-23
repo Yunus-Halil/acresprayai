@@ -19,9 +19,7 @@ let failed = false, stale = 0;
 
 function emit(file: string, content: string) {
   // Line endings aside: a Windows checkout may turn LF into CRLF, which is not a change.
-  const prev = existsSync(file) ? readFileSync(file, "utf8").replace(/
-/g, "
-") : null;
+  const prev = existsSync(file) ? readFileSync(file, "utf8").replace(/\r\n/g, "\n") : null;
   if (prev === content) return;
   if (check) { console.error(`stale: ${file}`); stale++; return; }
   mkdirSync(dirname(file), { recursive: true });
