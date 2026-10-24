@@ -48,6 +48,7 @@ import {
 } from "@/lib/weedCatalog/identification";
 import { cropContextFor, fieldRegion } from "@/lib/weedCatalog/region";
 import { CropProfileCard } from "@/components/app/weedVision/CropProfileCard";
+import { metresPerPixel } from "@/lib/weedVision/mapRun";
 import { loadCatalog } from "@/lib/weedCatalog/repo";
 import {
   type Suggestion, cropShortlist, narrowCatalog, recentLabels, searchRanked, suggestionsFor,
@@ -512,6 +513,14 @@ export function WeedScoutTab({
   useEffect(() => { reloadArchive(); }, [reloadArchive]);
 
   const candidates = useMemo(() => result?.candidates ?? [], [result]);
+  // What the crop profile card is told about this scan. The pixel is the scan's own measure once it has run, and
+  // before that the map's pixel at the deepest zoom the analysis reads (orthoZoom.ts): known from the zoom and the
+  // field's latitude, so the card never says "not known" about a map it can see.
+  const profileObservations = useMemo(() => ({
+    gsdM: result?.gsdM ?? metresPerPixel(center[0], Math.min(ANALYSIS_MAX_ZOOM, maxNative)),
+    measuredRowSpacingM: result?.pattern?.summary.rowSpacingM ?? null,
+    rowsFound: result ? (result.pattern?.summary.blocks ?? 0) > 0 : null,
+  }), [result, center[0], maxNative]); // eslint-disable-line react-hooks/exhaustive-deps
   // Permanent labels only while the map pass's own findings are few enough to read at once.
   const labelsFit = useMemo(() => candidates.filter(c => !isPhotoFinding(c)).length <= MAX_PERMANENT_LABELS, [candidates]);
   // The spots with no measured size, for the diagnostic view: refused by the measurement, or never reached by a photo.
@@ -1134,7 +1143,7 @@ export function WeedScoutTab({
         {simple ? (<>
           <SimpleWeedFinder taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={passParamsWithCrop} onShowOptions={() => setSimple(false)} fieldId={fieldId} />
           <CropProfileCard crop={settings.crop_type || null} plantingDate={settings.planting_date || null} units={units} regionState={fieldRegion().state}
-            observations={{ gsdM: result?.gsdM ?? null, measuredRowSpacingM: result?.pattern?.summary.rowSpacingM ?? null, rowsFound: result ? (result.pattern?.summary.blocks ?? 0) > 0 : null }} />
+            observations={profileObservations} />
           <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} plantingDate={settings.planting_date || null} scanWeeds={scanWeeds} />
         </>) : (<>
         {/* Header and run */}
@@ -1190,7 +1199,7 @@ export function WeedScoutTab({
         {weedModelAvailable() && <ModelDetectionsPanel taskId={taskId} userId={user?.id ?? null} sources={sources} readStore={readStore} passParams={passParamsWithCrop} />}
         <HotspotPanel taskId={taskId} userId={user?.id ?? null} onOpenPhotos={openAreaPhotos} onMarkArea={markArea} />
         <CropProfileCard crop={settings.crop_type || null} plantingDate={settings.planting_date || null} units={units} regionState={fieldRegion().state}
-          observations={{ gsdM: result?.gsdM ?? null, measuredRowSpacingM: result?.pattern?.summary.rowSpacingM ?? null, rowsFound: result ? (result.pattern?.summary.blocks ?? 0) > 0 : null }} />
+          observations={profileObservations} />
         <PressurePanel taskId={taskId} sources={sources} crop={settings.crop_type || null} plantingDate={settings.planting_date || null} scanWeeds={scanWeeds} />
         {weedModelAvailable() && <TwoStagePanel taskId={taskId} userId={user?.id ?? null} sources={sources} />}
         <div className="p-4 border-b border-[#1f1f1f] space-y-2">

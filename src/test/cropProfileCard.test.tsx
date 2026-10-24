@@ -27,6 +27,14 @@ describe("CropProfileCard", () => {
     expect(screen.getByTestId("crop-profile-weeds").textContent).toMatch(/a reference list, not an identification/);
   });
 
+  it("on the first corn map's own pixel (zoom 23 at 30.55 N, 1.61 cm) nothing is 'not known', and each analysis says what the pixel allows", () => {
+    render(<CropProfileCard crop="Corn" plantingDate={null} units="metric" observations={{ gsdM: 0.0161, measuredRowSpacingM: null, rowsFound: null }} />);
+    const card = screen.getByTestId("crop-profile-card").textContent ?? "";
+    expect(card).not.toMatch(/pixel size is not known/);
+    expect(screen.getByTestId("capability-between-row-weed-cover").getAttribute("data-state")).not.toBe("disabled");
+    expect(screen.getByTestId("capability-weed-measurement").getAttribute("data-state")).toBe("disabled"); // needs 1 cm
+  });
+
   it("flags a measured spacing corn is not planted at, and keeps the measurement", () => {
     render(<CropProfileCard crop="Corn" plantingDate={null} units="metric" observations={{ gsdM: 0.02, measuredRowSpacingM: 1.4, rowsFound: true }} />);
     expect(screen.getByTestId("crop-profile-spacing").textContent).toMatch(/not a spacing corn is planted at; the measurement stands/);
