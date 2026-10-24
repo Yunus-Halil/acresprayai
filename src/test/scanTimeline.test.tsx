@@ -242,6 +242,30 @@ describe("actions", () => {
     expect(btn.title).toMatch(/black borders|wrong colours/i);
   });
 
+  it("a scan baked to zoom 23 offers finer tiles, asks the baker for depth 24 only, and a scan already at 24 does not", async () => {
+    const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(String(url).includes("bake-tiles") ? { done: true, completed: 9, total: 9, maxZ: 24 } : {}), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    renderPanel({ scans: [scan("d1", "2026-03-10T09:00:00Z", { tiles_max_zoom: 23 }), scan("d2", "2026-04-20T09:00:00Z", { tiles_max_zoom: 24 })] });
+    expect(within(cardOf("April 20, 2026")).queryByTestId("deepen-tiles")).toBeNull();
+    const btn = within(cardOf("March 10, 2026")).getByTestId("deepen-tiles");
+    expect(btn.title).toMatch(/Existing tiles and the orthophoto are kept/);
+    fireEvent.click(btn);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes("bake-tiles"))).toBe(true));
+    const bakes = fetchMock.mock.calls.map(([u]) => String(u)).filter(u => u.includes("bake-tiles"));
+    expect(bakes[0]).toMatch(/task_id=d1&depth=24$/);
+    expect(bakes.some(u => u.includes("rebake=1"))).toBe(false);
+  });
+
+  it("a baker from before depth existed is not mistaken for 'no finer detail'", async () => {
+    const { toast } = await import("sonner");
+    const err = vi.spyOn(toast, "error"), ok = vi.spyOn(toast, "success");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(String(url).includes("bake-tiles") ? { done: true, completed: 9, total: 9, failed: 0 } : {}), { status: 200 })));
+    renderPanel({ scans: [scan("d1", "2026-03-10T09:00:00Z", { tiles_max_zoom: 23 })] });
+    fireEvent.click(within(cardOf("March 10, 2026")).getByTestId("deepen-tiles"));
+    await waitFor(() => expect(err).toHaveBeenCalledWith(expect.stringMatching(/aren't available on the server yet/)));
+    expect(ok).not.toHaveBeenCalled();
+  });
+
   it("in compare mode, clicking a card picks that scan", () => {
     const { onPick } = renderPanel({ compareOn: true, picked: [] });
     fireEvent.click(cardOf("March 10, 2026"));

@@ -1132,7 +1132,11 @@ export default function OrthomosaicViewer() {
               openTreatmentGrid: () => openTab("treatment"),
               onTilesRebaked: (id) => {
                 setScansNonce(n => n + 1);
-                if (id === taskId) setTileRev(r => r + 1);
+                if (id === taskId) {
+                  setTileRev(r => r + 1);
+                  // A deepening changes how far the map has real tiles: read the stored depth again.
+                  void bakedMaxZoom(id).then(z => { if (z != null) setMaxNative(nativeZoomFor(z, null)); });
+                }
               },
               openScan: (id) => window.open(`/app/orthomosaic/${id}`, "_blank"),
             }}

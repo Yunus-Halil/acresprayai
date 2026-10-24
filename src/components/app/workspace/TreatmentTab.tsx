@@ -14,7 +14,7 @@
 // recognises as their own.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OrthoTileLayer, orthoLayerKey } from "./OrthoTileLayer";
-import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
+import { ANALYSIS_MAX_ZOOM, MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { MapContainer, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -484,7 +484,7 @@ export function TreatmentTab({
       template,
       { north: bb.maxLat, south: bb.minLat, east: bb.maxLng, west: bb.minLng },
       grid.cellSizeM,
-      Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative),
+      Math.min(ANALYSIS_MAX_ZOOM, maxNative),
     );
     if (!resolutionSufficient(cellPx)) {
       const msg =

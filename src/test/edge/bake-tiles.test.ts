@@ -381,3 +381,60 @@ describe("bake-tiles · upstream failure", () => {
     expect((await res.json()).error).toMatch(/bounds/i);
   });
 });
+
+describe("bake-tiles · depth (the zoom-24 cap and deepening a baked scan)", () => {
+  const routes = (maxzoom: number) => [
+    { match: "tilejson.json", respond: () => tilejson(maxzoom) },
+    { match: "/cog/tiles/", respond: () => new Response(PNG) },
+  ];
+  const uploadedZooms = () => db.storage.calls.filter(c => c.op === "upload").map(c => Number(c.path.split("/")[2]));
+
+  it("a new bake follows the file to zoom 24 and stops there", async () => {
+    const handler = await boot();
+    mockFetch(routes(26));
+    const body = await (await handler(req())).json();
+    expect(body.maxZ).toBe(24);
+    expect(task().tiles_max_zoom).toBe(24);
+  });
+
+  it("deepening a baked scan bakes only the new level, with its stored render plan, and leaves the old tiles alone", async () => {
+    const handler = await boot({ tiles_baked: true, tiles_done: 3, tiles_total: 3, tiles_plan_locked: true, tiles_min_zoom: 10, tiles_max_zoom: 12, band_mapping: { fingerprint: "f", render: { dtype: "uint8", bidx: [1, 2, 3], rescale: [] } } });
+    const fetchMock = mockFetch(routes(12));
+    const body = await (await handler(req("&depth=13"))).json();
+    expect(body.done).toBe(true);
+    expect(body.maxZ).toBe(13);
+    expect(body.fileMaxZoom).toBe(12);
+    expect(task().tiles_max_zoom).toBe(13);
+    expect(task().tiles_baked).toBe(true);
+    expect(new Set(uploadedZooms())).toEqual(new Set([13]));
+    // The stored plan renders the new level: no band probe, no rebake.
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/cog/info") || String(u).includes("/statistics"))).toBe(false);
+  });
+
+  it("goes at most one level past the file's own zoom", async () => {
+    const handler = await boot({ tiles_baked: true, tiles_done: 3, tiles_total: 3, tiles_plan_locked: true, tiles_min_zoom: 10, tiles_max_zoom: 12, band_mapping: { fingerprint: "f", render: { dtype: "uint8", bidx: null, rescale: [] } } });
+    mockFetch(routes(12));
+    const body = await (await handler(req("&depth=20"))).json();
+    expect(body.maxZ).toBe(13);
+  });
+
+  it("asking for the old depth undoes a deepening without baking anything", async () => {
+    const handler = await boot({ tiles_baked: true, tiles_done: 4, tiles_total: 4, tiles_plan_locked: true, tiles_min_zoom: 10, tiles_max_zoom: 13, band_mapping: { fingerprint: "f", render: { dtype: "uint8", bidx: null, rescale: [] } } });
+    mockFetch(routes(12));
+    const body = await (await handler(req("&depth=12"))).json();
+    expect(body.done).toBe(true);
+    expect(task().tiles_max_zoom).toBe(12);
+    expect(task().tiles_total).toBe(3);
+    expect(task().tiles_baked).toBe(true);
+    expect(uploadedZooms()).toHaveLength(0);
+  });
+
+  it("refuses a depth on a scan with no stored plan, alongside a rebake, or that is not a zoom", async () => {
+    let handler = await boot();
+    mockFetch(routes(12));
+    expect((await handler(req("&depth=13"))).status).toBe(409);
+    handler = await boot({ tiles_plan_locked: true, tiles_min_zoom: 10, tiles_max_zoom: 12 });
+    expect((await handler(req("&depth=13&rebake=1"))).status).toBe(400);
+    expect((await handler(req("&depth=abc"))).status).toBe(400);
+  });
+});

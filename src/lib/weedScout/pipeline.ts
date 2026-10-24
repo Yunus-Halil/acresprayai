@@ -30,7 +30,7 @@
 import { patternPriorForCrop } from "../cropProfiles/engine";
 import { cropProfileFor } from "../cropProfiles/registry";
 import { pointInAnyRing } from "../geo";
-import { ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
+import { ANALYSIS_MAX_ZOOM } from "@/lib/orthoZoom";
 import { stitchTiles } from "../orthoRaster";
 import {
   MIN_BASELINE_TILES, canopyClosed, fieldBaseline, flagTiles, growRegions, sampleTiles, scoreTiles,
@@ -82,7 +82,9 @@ class Aborted extends Error {
 }
 
 export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): Promise<ScoutResult> {
-  const { boundary, tileUrl, maxNative, params } = inputs;
+  const { boundary, tileUrl, params } = inputs;
+  // The display may hold finer tiles than the analysis was set at (orthoZoom.ts): no read below goes deeper than zoom 23.
+  const maxNative = Math.min(ANALYSIS_MAX_ZOOM, inputs.maxNative);
   const report = (stage: ScoutProgress["stage"], fraction: number | null = null, note?: string) =>
     opts.onProgress?.({ stage, fraction, note });
   const check = () => { if (opts.signal?.aborted) throw new Aborted(); };
@@ -102,7 +104,7 @@ export async function runWeedScout(inputs: ScoutInputs, opts: RunOptions = {}): 
     north: lattice.minLat + lattice.rows * lattice.dLat, south: lattice.minLat,
     east: lattice.minLng + lattice.cols * lattice.dLng, west: lattice.minLng,
   };
-  const { raster, missingTiles } = await stitchTiles(template, bbox, tileM, Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative));
+  const { raster, missingTiles } = await stitchTiles(template, bbox, tileM, maxNative);
   check();
   const gsdM = rasterGsdM(raster);
   if (missingTiles) notes.push(`${missingTiles} imagery tile(s) failed to load in the base pass; ground under them is unmeasured.`);

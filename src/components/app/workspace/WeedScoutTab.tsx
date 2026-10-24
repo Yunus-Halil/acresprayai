@@ -16,7 +16,7 @@
 // from their own past verdicts (lib/weedCatalog/suggest.ts). Nothing here
 // calls anything outside the tile server and the operator's own archive.
 import { NOT_WEED_BELOW, WEED_AT_OR_ABOVE } from "@/lib/weedScout/classify";
-import { MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
+import { ANALYSIS_MAX_ZOOM, MAP_MAX_ZOOM, ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleMarker, MapContainer, Polygon, Polyline, Popup, Rectangle, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
 import { useDeveloperMode } from "@/hooks/useDeveloperMode";
@@ -436,7 +436,7 @@ export function WeedScoutTab({
   useEffect(() => {
     const set = sources?.set, altM = sources?.groundAltM;
     if (!set || altM == null || !tileUrl) { setFrameRunAligner(taskId, null); return; }
-    const maxZoom = Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative);
+    const maxZoom = Math.min(ANALYSIS_MAX_ZOOM, maxNative);
     const tile = (z: number, x: number, y: number) => tileUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
     setFrameRunAligner(taskId, (blob, shot) => alignPhotoToMap({ set, shot, altM, blob, tileUrl: tile, maxZoom }));
     return () => setFrameRunAligner(taskId, null);
@@ -448,7 +448,7 @@ export function WeedScoutTab({
     const c = b.getCenter();
     const tile = (z: number, x: number, y: number) => tileUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
     // The crop on file goes with the map: its profile decides which reader reads the rows (corn: the pattern pass).
-    setFrameRunMap(taskId, { tile, maxNative: Math.min(ORTHO_MAX_NATIVE_ZOOM, maxNative), lat: c.lat, lng: c.lng, crop: settings.crop_type || null });
+    setFrameRunMap(taskId, { tile, maxNative: Math.min(ANALYSIS_MAX_ZOOM, maxNative), lat: c.lat, lng: c.lng, crop: settings.crop_type || null });
     return () => setFrameRunMap(taskId, null);
   }, [taskId, tileUrl, maxNative, bounds, settings.crop_type]);
   // The field's crop rows, read once from the whole map (fieldRows.ts): evenly spaced lines of evenly spaced plants. Only weeds between them count.

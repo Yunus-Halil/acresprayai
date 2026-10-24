@@ -22,11 +22,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
   AlertTriangle, CheckCircle2, Clock, Columns2, FileBarChart, Grid3x3, Loader2,
-  Plane, RefreshCw, Trash2, X,
+  Plane, RefreshCw, Trash2, X, ZoomIn,
 } from "lucide-react";
 import Timelapse from "@/components/app/Timelapse";
 import { isPlayable } from "@/lib/timelapse";
 import { FN_BASE, NDVI_BASE } from "./constants";
+import { ORTHO_MAX_NATIVE_ZOOM } from "@/lib/orthoZoom";
 import {
   type ScanIndexInfo, isComparable, notComparableReason, rgbLayerLabel,
 } from "@/lib/scanLayers";
@@ -43,6 +44,8 @@ export type FieldScan = {
   ai_analysis: unknown;
   ai_analysis_at: string | null;
   tiles_baked: boolean | null;
+  /** The deepest zoom baked (null before the depth was stored per scan). */
+  tiles_max_zoom?: number | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -61,7 +64,7 @@ export function useFieldScans(fieldId: string | null, nonce: number) {
       setLoading(true);
       const { data: ts } = await supabase
         .from("odm_tasks")
-        .select("id, odm_uuid, status, created_at, image_count, ai_analysis, ai_analysis_at, tiles_baked")
+        .select("id, odm_uuid, status, created_at, image_count, ai_analysis, ai_analysis_at, tiles_baked, tiles_max_zoom")
         .eq("field_id", fieldId)
         .order("created_at", { ascending: true });
       if (cancelled) return;
@@ -135,12 +138,15 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
  * Drive a full tile re-render for one scan. The first call passes ?rebake=1
  * (clears the completion latch and re-derives the render plan); the rest let
  * the persisted plan carry the bake, same loop the workspace shell uses.
+ * Given a `depth`, the first call passes ?depth= instead: the scan keeps its
+ * tiles and render plan, and only the zoom levels past its current depth are
+ * baked (bake-tiles holds the depth to what the orthophoto has).
  */
 export function useRebake(token: string | null, onDone: (taskId: string) => void) {
   const [rebaking, setRebaking] = useState<{ taskId: string; completed: number; total: number } | null>(null);
   const busy = useRef(false);
 
-  const rebake = async (taskId: string) => {
+  const rebake = async (taskId: string, depth?: number) => {
     if (!token || busy.current) return;
     busy.current = true;
     setRebaking({ taskId, completed: 0, total: 0 });
@@ -150,7 +156,7 @@ export function useRebake(token: string | null, onDone: (taskId: string) => void
       let last = -1;
       for (let pass = 0; pass < 400; pass++) {
         const r = await fetch(
-          `${FN_BASE}/bake-tiles?task_id=${taskId}${first ? "&rebake=1" : ""}`,
+          `${FN_BASE}/bake-tiles?task_id=${taskId}${first ? (depth ? `&depth=${depth}` : "&rebake=1") : ""}`,
           { method: "POST", headers: { Authorization: `Bearer ${token}` } },
         );
         first = false;
@@ -162,7 +168,11 @@ export function useRebake(token: string | null, onDone: (taskId: string) => void
         setRebaking({ taskId, completed: j.completed ?? 0, total: j.total ?? 0 });
         if (j.done) {
           forgetScanInfo(taskId);
-          toast.success("Map tiles re-rendered.");
+          if (!depth) toast.success("Map tiles re-rendered.");
+          // A baker from before depth existed answers "done" with no depth at all: say so rather than "no finer detail".
+          else if (typeof j.maxZ !== "number") toast.error("Finer map tiles aren't available on the server yet. Nothing was changed.");
+          else if (j.maxZ >= depth) toast.success(`Finer map tiles baked, to zoom ${j.maxZ}.`);
+          else toast.success("This map has no finer detail to bake: its tiles already show every pixel of the orthophoto.");
           onDone(taskId);
           return;
         }
@@ -306,7 +316,7 @@ function ScanCard({
   pickBadge: "A" | "B" | null;
   onPick: (id: string) => void;
   rebaking: { taskId: string; completed: number; total: number } | null;
-  onRebake: (id: string) => void;
+  onRebake: (id: string, depth?: number) => void;
 }) {
   const state = analysisStateOf(scan);
   const units = useUnitSystem();
@@ -467,6 +477,21 @@ function ScanCard({
           ? `Re-rendering… ${rebaking!.completed}/${rebaking!.total || "?"}`
           : "Re-render map tiles"}
       </button>
+      {/* Scans baked before 2026-10-24 stop at zoom 23, which can be coarser than the orthophoto (1.61 cm a pixel at
+          30° N against a 1.07 cm flight). Deepening adds the finer level and touches nothing else. */}
+      {scan.tiles_baked && scan.tiles_max_zoom != null && scan.tiles_max_zoom < ORTHO_MAX_NATIVE_ZOOM && (
+        <button
+          type="button"
+          disabled={!!rebaking || !!blocked}
+          onClick={(e) => { e.stopPropagation(); onRebake(scan.id, ORTHO_MAX_NATIVE_ZOOM); }}
+          title={`This scan's map tiles stop at zoom ${scan.tiles_max_zoom}. Bakes the next zoom level from the orthophoto, when it holds that much detail, so close-ups show the flight's own pixels instead of enlarged ones. Existing tiles and the orthophoto are kept; nothing is re-processed.`}
+          className="mt-1.5 ml-3 inline-flex items-center gap-1 text-[10px] text-neutral-600 transition-colors hover:text-neutral-400 disabled:opacity-50"
+          data-testid="deepen-tiles"
+        >
+          <ZoomIn className="h-3 w-3" />
+          Bake finer map tiles
+        </button>
+      )}
     </div>
   );
 }

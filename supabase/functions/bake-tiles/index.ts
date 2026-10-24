@@ -14,9 +14,11 @@ const json = (b: unknown, s = 200) =>
 
 const SIGNED_TTL = 60 * 60 * 6;
 const MIN_Z = 10;
-// Zoom 23 is about 1.5 cm per pixel at mid latitudes. Below the cap TiTiler's maxzoom for the file
-// decides, so a 6 cm orthophoto still stops at zoom 21 and nothing is baked that cannot be shown.
-const MAX_Z_CAP = 23;
+// Below the cap TiTiler's maxzoom for the file decides (the zoom whose pixel is nearest the file's own), so a
+// 6 cm orthophoto still stops at zoom 21 and nothing is baked that cannot be shown. The cap was 23 until
+// 2026-10-24: zoom 23 is 1.61 cm a pixel at 30.5 deg N, coarser than a 1.07 cm corn flight, and it cost the map
+// half its edge sharpness (src/lib/orthoZoom.ts). Zoom 24 is 0.80 cm there.
+const MAX_Z_CAP = 24;
 const BATCH_PER_INVOCATION = 220; // tiles per HTTP call (keeps us well under 150s)
 const CONCURRENCY = 12;
 const TITILER = "https://titiler.xyz";
@@ -65,6 +67,15 @@ Deno.serve(async (req) => {
     const taskId = url.searchParams.get("task_id");
     // ?rebake=1 clears the completion latch so a map with holes can be repaired.
     const rebake = url.searchParams.get("rebake") === "1";
+    // ?depth=N re-plans the zoom range of a scan already baked, keeping its render plan and every tile it has. The
+    // list runs coarse to fine, so a deeper plan only appends the new levels and the cursor resumes at the first new
+    // tile; a shallower one only shortens the plan (the deeper tiles stay in storage, unused), which is how a
+    // deepening is undone. N is held to one level past the file's own maxzoom (TiTiler's zoom NEAREST the file's
+    // pixel, which can be coarser than it: a 1.2 cm file at 30 deg N rounds to zoom 23, 1.61 cm), so every pixel the
+    // orthophoto has reaches the map, oversampled at most twice and never invented, and nothing past MAX_Z_CAP.
+    const depthParam = url.searchParams.get("depth");
+    const depth = depthParam != null && /^\d{1,2}$/.test(depthParam) ? Number(depthParam) : null;
+    if (depthParam != null && depth == null) return json({ error: "depth must be a zoom level" }, 400);
     if (!taskId) return json({ error: "Missing task_id" }, 400);
 
     const admin = createClient(
@@ -88,7 +99,12 @@ Deno.serve(async (req) => {
       task.tiles_plan_locked = false;
     }
 
-    if (task.tiles_baked) {
+    if (depth != null && rebake) return json({ error: "depth and rebake are separate actions" }, 400);
+    if (depth != null && (!task.tiles_plan_locked || task.tiles_min_zoom == null || task.tiles_max_zoom == null)) {
+      return json({ error: "This scan's tiles have no stored plan yet. Re-render the map tiles first." }, 409);
+    }
+
+    if (task.tiles_baked && depth == null) {
       return json({ done: true, completed: task.tiles_done, total: task.tiles_total, failed: 0 });
     }
 
@@ -119,11 +135,15 @@ Deno.serve(async (req) => {
     }
     bounds = [b[0], b[1], b[2], b[3]];
 
-    if (task.tiles_plan_locked && task.tiles_min_zoom != null && task.tiles_max_zoom != null) {
+    const fileMaxZoom = typeof tj?.maxzoom === "number" ? Math.ceil(tj.maxzoom) : null;
+    const maxNative = Math.min(MAX_Z_CAP, fileMaxZoom ?? MAX_Z_CAP);
+    if (depth != null) {
+      minZ = task.tiles_min_zoom!;
+      maxZ = Math.max(minZ, Math.min(depth, MAX_Z_CAP, (fileMaxZoom ?? MAX_Z_CAP) + 1));
+    } else if (task.tiles_plan_locked && task.tiles_min_zoom != null && task.tiles_max_zoom != null) {
       minZ = task.tiles_min_zoom;
       maxZ = task.tiles_max_zoom;
     } else {
-      const maxNative = Math.min(MAX_Z_CAP, typeof tj?.maxzoom === "number" ? Math.ceil(tj.maxzoom) : MAX_Z_CAP);
       minZ = MIN_Z;
       maxZ = Math.max(minZ, maxNative);
     }
@@ -153,7 +173,16 @@ Deno.serve(async (req) => {
     const list = buildTileList(bounds, minZ, maxZ);
     const total = list.length;
 
-    if (!task.tiles_plan_locked || task.tiles_total !== total) {
+    if (depth != null) {
+      // A shallower (or equal) plan is already baked in full; a deeper one resumes at its first new tile.
+      const already = Math.min(task.tiles_baked ? (task.tiles_total ?? 0) : (task.tiles_done ?? 0), total);
+      await admin.from("odm_tasks").update({
+        tiles_total: total, tiles_max_zoom: maxZ, tiles_done: already, tiles_baked: already >= total, tiles_failed: 0,
+      }).eq("id", task.id);
+      task.tiles_done = already;
+      task.tiles_failed = 0;
+      if (already >= total) return json({ done: true, completed: total, total, failed: 0, minZ, maxZ, fileMaxZoom });
+    } else if (!task.tiles_plan_locked || task.tiles_total !== total) {
       await admin.from("odm_tasks").update({
         tiles_total: total,
         tiles_min_zoom: minZ,
@@ -254,7 +283,7 @@ Deno.serve(async (req) => {
 
     return json({
       done, completed: newDone, total, failed,
-      batch: batch.length, minZ, maxZ,
+      batch: batch.length, minZ, maxZ, fileMaxZoom,
       // Tells the client to keep going even though the cursor barely moved.
       retrying: failed > 0 && !done,
     });
