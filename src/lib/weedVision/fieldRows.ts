@@ -42,6 +42,7 @@
 //                      the spacing, never more than MAX_BAND_SHARE
 import type { LatLng2 } from "../geo";
 import type { PhotoPixels } from "../photoScout/pattern";
+import { ANALYSIS_MAX_ZOOM } from "../orthoZoom";
 import { fetchTileCached } from "../tileCache";
 import { TILE_PX, mercatorPx, metresPerPixel } from "./mapRun";
 import { ROW_BAND_PITCH_SHARE, type RowContext, type RowStatus, rowStatusOf } from "./rowFilter";
@@ -556,17 +557,23 @@ export function fieldRowStatusAt(rows: FieldRows, p: LatLng2): RowStatus {
 
 /**
  * How the field is read: the zoom whose pixel is nearest the target (READ_MPP unless a crop profile asks for finer;
- * never finer than the map has), the extent, and the tiles.
+ * never finer than the map has), the extent, and the tiles. With `maxPixels`, a zoom whose read would pass that many
+ * pixels gives way to the one above it: a target of 0 reads the finest pixel the map has, within the budget.
  */
-export function fieldReadPlan(rings: LatLng2[][], maxNative: number, lat: number, targetMpp: number = READ_MPP): { z: number; left: number; top: number; width: number; height: number; mpp: number; tiles: { x0: number; y0: number; x1: number; y1: number }[] } | null {
+export function fieldReadPlan(rings: LatLng2[][], maxNative: number, lat: number, targetMpp: number = READ_MPP, maxPixels = Infinity): { z: number; left: number; top: number; width: number; height: number; mpp: number; tiles: { x0: number; y0: number; x1: number; y1: number }[] } | null {
   const pts = rings.flat();
   if (!pts.length) return null;
-  let z = Math.min(Math.floor(maxNative), 23);
+  let z = Math.min(Math.floor(maxNative), ANALYSIS_MAX_ZOOM);
   while (z > 14 && metresPerPixel(lat, z) * 1.4 < targetMpp) z--;
-  const p = pts.map(q => mercatorPx(q.lat, q.lng, z));
-  const xs = p.map(v => v[0]), ys = p.map(v => v[1]);
-  const left = Math.floor(Math.min(...xs)), top = Math.floor(Math.min(...ys));
-  const width = Math.ceil(Math.max(...xs)) - left, height = Math.ceil(Math.max(...ys)) - top;
+  const extent = (zz: number) => {
+    const p = pts.map(q => mercatorPx(q.lat, q.lng, zz));
+    const xs = p.map(v => v[0]), ys = p.map(v => v[1]);
+    const left = Math.floor(Math.min(...xs)), top = Math.floor(Math.min(...ys));
+    return { left, top, width: Math.ceil(Math.max(...xs)) - left, height: Math.ceil(Math.max(...ys)) - top };
+  };
+  let e = extent(z);
+  while (z > 14 && e.width * e.height > maxPixels) e = extent(--z);
+  const { left, top, width, height } = e;
   if (width < 8 || height < 8) return null;
   const tiles: { x0: number; y0: number; x1: number; y1: number }[] = [];
   for (let y0 = 0; y0 < height; y0 += READ_TILE_PX) for (let x0 = 0; x0 < width; x0 += READ_TILE_PX) tiles.push({ x0, y0, x1: Math.min(width, x0 + READ_TILE_PX), y1: Math.min(height, y0 + READ_TILE_PX) });

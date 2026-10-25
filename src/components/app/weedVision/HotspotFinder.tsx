@@ -7,8 +7,18 @@ import { AlertTriangle, Loader2, Search, Square } from "lucide-react";
 import type { FrameRunParams } from "@/lib/weedVision/frames";
 import { setExternalDetections, useFrameRun } from "@/lib/weedVision/frameRunStore";
 import { patchTwoStage, runStage1, runStage2, stopTwoStage, twoStagePlants, useTwoStage } from "@/lib/weedVision/twoStage/twoStageStore";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
+import { fmtLengthCm } from "@/lib/units";
 
 const pct = (v: number) => `${Math.round(100 * v)}%`;
+/**
+ * The hotspots read the finest pixel the map has (0.2-1.6 cm on a low flight, where the rows and the grade read at
+ * 3-4 cm), so a weed the map can show is a patch here. Within 250 million pixels, about 3,800 tiles and a few
+ * minutes (Stage 1 runs about 20 ms a million pixels; fetching the tiles is the most of it): a 6 ha field at
+ * 1 cm reads at zoom 23, a test patch at 0.3 cm at its own pixel. A patch of 9 pixels (3 x 3) counts, the smallest
+ * the imagery shows; on a coarse read the 30 cm2 floor stands.
+ */
+export const HOTSPOT_READ = { readMpp: 0, maxReadPixels: 250e6, blobMinPx: 9 } as const;
 
 export function HotspotFinder({ taskId, userId, params, modelSha, photoGsdM, modelReady, modelAvailable = true, algorithmLabel }: {
   taskId: string; userId: string | null; params: FrameRunParams; modelSha: string | null; photoGsdM: number | null; modelReady: boolean;
@@ -17,6 +27,7 @@ export function HotspotFinder({ taskId, userId, params, modelSha, photoGsdM, mod
 }) {
   const s = useTwoStage(taskId);
   const run = useFrameRun(taskId);
+  const units = useUnitSystem();
   const st = s.stage1;
   // Rows the operator stands behind: a marked planting layout, or crop rows read from the map and confirmed on it.
   const rowsKnown = run.fieldRowsSource === "layout" || (run.fieldRowsSource === "pattern" && run.fieldRowsConfirmed);
@@ -38,14 +49,14 @@ export function HotspotFinder({ taskId, userId, params, modelSha, photoGsdM, mod
         <p className="text-[11px] text-neutral-500">Confirm the crop rows above first: the hotspots are what grows between them.</p>
       )}
       <button type="button" className={`${btn} bg-[#ff9100] text-black hover:brightness-95`} disabled={busy || !rowsKnown} data-testid="find-hotspots"
-        onClick={() => void runStage1(taskId, { params, modelSha, photoGsdM })}>
+        onClick={() => void runStage1(taskId, { params, modelSha, photoGsdM, stage1Params: HOTSPOT_READ })}>
         {s.stage1State === "reading" ? <><Loader2 className="h-4 w-4 animate-spin" /> Reading the field{s.stage1Progress ? ` ${pct(s.stage1Progress)}` : ""}…</> : <><Search className="h-4 w-4" /> {st ? "Find weed hotspots again" : "Find weed hotspots"}</>}
       </button>
       {st && (
         <div className="rounded-sm border border-[#2a2a2a] p-3 space-y-1 text-[11px]" data-testid="hotspot-summary">
           <div className="text-[22px] font-semibold leading-none text-[#ff9100]">{st.summary.candidates.toLocaleString()}</div>
           <div className="text-[12px] text-neutral-300">weed hotspot{st.summary.candidates === 1 ? "" : "s"} between the rows, {pct(st.summary.flaggedShare)} of the field{st.summary.highPriority ? `, ${st.summary.highPriority} large or dense` : ""}</div>
-          <div className="text-neutral-500">Green off the crop rows and crowns, read from the map in {ms}. {modelAvailable ? "No model yet: a" : "A"} hotspot is where there is vegetation to look at, not a verdict.</div>
+          <div className="text-neutral-500" data-testid="hotspot-read">Green off the crop rows and crowns, read from the map at {fmtLengthCm(st.grid.mpp * 100, units).text} a pixel in {ms}. {modelAvailable ? "No model yet: a" : "A"} hotspot is where there is vegetation to look at, not a verdict.</div>
           {st.summary.uncertainShare > 0.05 && <div className="text-amber-400">{pct(st.summary.uncertainShare)} of the field could not be judged ({Object.entries(st.summary.reasons).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(", ")}); hatched on the map.</div>}
         </div>
       )}

@@ -66,8 +66,9 @@ describe("nativeZoomFor", () => {
   it("uses the stored bake depth, never the file's deeper maxzoom", () => {
     expect(nativeZoomFor(20, 22)).toBe(20); // the bug: a scan baked to 20 asked for 22 and went blank
     expect(nativeZoomFor(23, 23)).toBe(23);
-    expect(nativeZoomFor(24, 24)).toBe(24); // zoom 24 since 2026-10-24 (orthoZoom.ts)
-    expect(nativeZoomFor(25, 25)).toBe(24); // never past the cap
+    expect(nativeZoomFor(24, 24)).toBe(24);
+    expect(nativeZoomFor(26, 26)).toBe(26); // zoom 26 since 2026-10-25 (orthoZoom.ts)
+    expect(nativeZoomFor(27, 27)).toBe(26); // never past the cap
   });
   it("falls back to the legacy bake depth when the row has none", () => {
     expect(nativeZoomFor(null, 22)).toBe(LEGACY_BAKED_ZOOM);

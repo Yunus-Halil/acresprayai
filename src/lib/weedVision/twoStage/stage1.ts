@@ -52,8 +52,15 @@ export type Stage1Params = {
    * Cover since 2026-10-21: a cell full of drying yellow-green weeds read as low under the vegetation mask.
    */
   mask: "cover" | "vegetation";
-  /** Read the map at about this many metres per pixel; absent: fieldReadPlan's READ_MPP (about 4 cm). A crop profile sets it finer. */
+  /** Read the map at about this many metres per pixel; absent: fieldReadPlan's READ_MPP (about 4 cm). A crop profile sets it finer; 0 is the finest the map has. */
   readMpp?: number;
+  /** The most pixels one read may cover; a finer zoom past it gives way to the one above (fieldReadPlan). */
+  maxReadPixels?: number;
+  /**
+   * A green patch of at least this many pixels counts toward a cell's density even when smaller than blobMinM2: on a
+   * fine read the smallest weed the imagery can show, not the 4 cm read's floor. Absent: blobMinM2 alone.
+   */
+  blobMinPx?: number;
 };
 
 export const DEFAULT_STAGE1: Stage1Params = {
@@ -315,6 +322,12 @@ export async function drawMapRect(tile: (z: number, x: number, y: number) => str
   return { width: w, height: h, rgba: ctx.getImageData(0, 0, w, h).data };
 }
 
+/** The smallest green patch, in pixels, that counts toward a cell's density at this read's pixel. */
+export function blobFloorPx(params: Pick<Stage1Params, "blobMinM2" | "blobMinPx">, mpp: number): number {
+  const byArea = Math.max(1, Math.round(params.blobMinM2 / (mpp * mpp)));
+  return params.blobMinPx ? Math.max(1, Math.min(byArea, params.blobMinPx)) : byArea;
+}
+
 /** Stage 1 over the field: the map read in the row reader's tiles, the rows' band taken out. */
 export async function readStage1(input: {
   rings: LatLng2[][]; tile: (z: number, x: number, y: number) => string; maxNative: number; lat: number; rows: FieldRows | null;
@@ -324,7 +337,7 @@ export async function readStage1(input: {
 }): Promise<Stage1Result | null> {
   const t0 = performance.now();
   const params = input.params ?? DEFAULT_STAGE1;
-  const plan = fieldReadPlan(input.rings, input.maxNative, input.lat, params.readMpp);
+  const plan = fieldReadPlan(input.rings, input.maxNative, input.lat, params.readMpp, params.maxReadPixels);
   if (!plan) return null;
   const g = gridFor(plan, params.cellM);
   const counts = emptyCounts(g);
@@ -340,7 +353,7 @@ export async function readStage1(input: {
     const px = await draw(input.tile, g.z, g.left + t.x0, g.top + t.y0, w, h, input.signal);
     if (!px) { if (input.signal?.aborted) return null; continue; }
     const band = ground ? rowBandMask(ground, g.z, g.left + t.x0, g.top + t.y0, w, h) : null;
-    accumulate(counts, g, px, t.x0, t.y0, band, params.darkLuma, Math.max(1, Math.round(params.blobMinM2 / (plan.mpp * plan.mpp))), params.mask ?? "cover");
+    accumulate(counts, g, px, t.x0, t.y0, band, params.darkLuma, blobFloorPx(params, plan.mpp), params.mask ?? "cover");
     input.onProgress?.((k + 1) / plan.tiles.length);
     await new Promise(res => setTimeout(res, 0));
   }

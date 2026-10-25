@@ -171,8 +171,12 @@ export function useRebake(token: string | null, onDone: (taskId: string) => void
           if (!depth) toast.success("Map tiles re-rendered.");
           // A baker from before depth existed answers "done" with no depth at all: say so rather than "no finer detail".
           else if (typeof j.maxZ !== "number") toast.error("Finer map tiles aren't available on the server yet. Nothing was changed.");
-          else if (j.maxZ >= depth) toast.success(`Finer map tiles baked, to zoom ${j.maxZ}.`);
-          else toast.success("This map has no finer detail to bake: its tiles already show every pixel of the orthophoto.");
+          else {
+            const own = typeof j.filePixelCm === "number" ? ` The map's own pixel is ${j.filePixelCm} cm.` : "";
+            if (j.limitedBy === "tiles") toast.success(`Map tiles baked to zoom ${j.maxZ}. Deeper would pass the tile limit for one bake.${own}`);
+            else if (j.maxZ >= depth) toast.success(`Finer map tiles baked, to zoom ${j.maxZ}.${own}`);
+            else toast.success(`Map tiles baked to zoom ${j.maxZ}: every pixel of the orthophoto is shown.${own}`);
+          }
           onDone(taskId);
           return;
         }
@@ -477,8 +481,9 @@ function ScanCard({
           ? `Re-rendering… ${rebaking!.completed}/${rebaking!.total || "?"}`
           : "Re-render map tiles"}
       </button>
-      {/* Scans baked before 2026-10-24 stop at zoom 23, which can be coarser than the orthophoto (1.61 cm a pixel at
-          30° N against a 1.07 cm flight). Deepening adds the finer level and touches nothing else. */}
+      {/* A scan baked shallower than the cap (before 2026-10-24 at 23, or held by the automatic tile budget) can have
+          finer detail in its orthophoto than its tiles show. Deepening adds the finer levels the file holds and
+          touches nothing else; bake-tiles says when there was nothing finer. */}
       {scan.tiles_baked && scan.tiles_max_zoom != null && scan.tiles_max_zoom < ORTHO_MAX_NATIVE_ZOOM && (
         <button
           type="button"

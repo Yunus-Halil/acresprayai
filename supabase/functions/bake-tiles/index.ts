@@ -14,11 +14,21 @@ const json = (b: unknown, s = 200) =>
 
 const SIGNED_TTL = 60 * 60 * 6;
 const MIN_Z = 10;
-// Below the cap TiTiler's maxzoom for the file decides (the zoom whose pixel is nearest the file's own), so a
-// 6 cm orthophoto still stops at zoom 21 and nothing is baked that cannot be shown. The cap was 23 until
-// 2026-10-24: zoom 23 is 1.61 cm a pixel at 30.5 deg N, coarser than a 1.07 cm corn flight, and it cost the map
-// half its edge sharpness (src/lib/orthoZoom.ts). Zoom 24 is 0.80 cm there.
-const MAX_Z_CAP = 24;
+// The deepest zoom ever baked: zoom 26 is 0.19 cm a pixel at 38 deg N, finer than any flight this app plans. Below
+// it the orthophoto's own pixel decides (filePixelM): the shallowest zoom that still shows its detail, so a 6 cm
+// orthophoto stops at zoom 21 and nothing is baked that cannot be shown. The cap was 23 until 2026-10-24 (1.61 cm
+// at 30.5 deg N, coarser than a 1.07 cm corn flight: it cost the map half its edge sharpness) and 24 until
+// 2026-10-25 (src/lib/orthoZoom.ts).
+const MAX_Z_CAP = 26;
+// Each zoom is four times the tiles of the one above. An automatic bake goes past zoom 23 (the old cap, never
+// undercut) only while the whole pyramid fits AUTO_TILE_BUDGET: a 6 ha field at 1 cm is about 20,000 tiles to zoom
+// 24. Deeper is on request (the scan panel's "Bake finer map tiles"), up to EXPLICIT_TILE_LIMIT, what one session of
+// the client's bake loop carries (400 passes of 220 tiles).
+const AUTO_FLOOR_Z = 23;
+const AUTO_TILE_BUDGET = 60_000;
+const EXPLICIT_TILE_LIMIT = 80_000;
+// A zoom shows the orthophoto's detail when its pixel is no coarser than this many of the file's own pixels.
+const SHOWS_DETAIL = 1.4;
 const BATCH_PER_INVOCATION = 220; // tiles per HTTP call (keeps us well under 150s)
 const CONCURRENCY = 12;
 const TITILER = "https://titiler.xyz";
@@ -32,6 +42,47 @@ function lat2tileY(lat: number, z: number) {
 }
 
 type Tile = { z: number; x: number; y: number };
+
+const metresPerPixel = (lat: number, z: number) => (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** z;
+
+/** How many tiles the pyramid from minZ to maxZ holds over these bounds. */
+function tileCount(bounds: [number, number, number, number], minZ: number, maxZ: number): number {
+  const [w, s, e, n] = bounds;
+  let total = 0;
+  for (let z = minZ; z <= maxZ; z++) {
+    total += (Math.abs(lon2tileX(e, z) - lon2tileX(w, z)) + 1) * (Math.abs(lat2tileY(s, z) - lat2tileY(n, z)) + 1);
+  }
+  return total;
+}
+
+/**
+ * The orthophoto's own ground pixel in metres, from TiTiler's /cog/info (its width and its bounds in the file's own
+ * CRS); null when it cannot be read. Geographic bounds (degrees) are converted at the field's latitude, and Web
+ * Mercator metres are taken back to ground metres. TiTiler's own maxzoom stays the floor wherever this is used, so
+ * a CRS read wrongly here (a projection in feet) can only leave the bake where it was.
+ */
+async function filePixelM(cogUrl: string, lat: number): Promise<number | null> {
+  try {
+    const r = await fetchResilient(`${TITILER}/cog/info?url=${encodeURIComponent(cogUrl)}`, { timeoutMs: 30_000, attempts: 2, label: "bake:info" });
+    if (!r.ok) { await r.body?.cancel().catch(() => {}); return null; }
+    const info = await jsonSafe<{ bounds?: number[]; width?: number; crs?: string }>(r);
+    const b = info?.bounds, w = info?.width;
+    if (!Array.isArray(b) || b.length !== 4 || !w) return null;
+    const dx = Math.abs(b[2] - b[0]) / w;
+    const cos = Math.cos((lat * Math.PI) / 180);
+    const geographic = Math.abs(b[0]) <= 180 && Math.abs(b[2]) <= 180 && Math.abs(b[2] - b[0]) < 1;
+    const m = geographic ? dx * 111_320 * cos : /3857|900913/.test(info?.crs ?? "") ? dx * cos : dx;
+    return m > 0 && Number.isFinite(m) ? m : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The shallowest zoom whose pixel is no coarser than `tolerance` file pixels, within MIN_Z..MAX_Z_CAP. */
+function zoomShowing(pixelM: number, lat: number, tolerance: number): number {
+  for (let z = MIN_Z; z <= MAX_Z_CAP; z++) if (metresPerPixel(lat, z) <= pixelM * tolerance) return z;
+  return MAX_Z_CAP;
+}
 
 function buildTileList(bounds: [number, number, number, number], minZ: number, maxZ: number): Tile[] {
   const [w, s, e, n] = bounds;
@@ -136,17 +187,28 @@ Deno.serve(async (req) => {
     bounds = [b[0], b[1], b[2], b[3]];
 
     const fileMaxZoom = typeof tj?.maxzoom === "number" ? Math.ceil(tj.maxzoom) : null;
-    const maxNative = Math.min(MAX_Z_CAP, fileMaxZoom ?? MAX_Z_CAP);
+    const lat = (bounds[1] + bounds[3]) / 2;
+    let pixelM: number | null = null;
+    let limitedBy: "tiles" | null = null;
     if (depth != null) {
+      // On request: every pixel the file has, oversampled at most twice. Without the file's pixel, one level past
+      // TiTiler's zoom, which is the zoom NEAREST the file's pixel and can be coarser than it.
+      pixelM = await filePixelM(cogUrl, lat);
+      const fileZ = pixelM ? Math.max(fileMaxZoom ?? MIN_Z, zoomShowing(pixelM, lat, 1)) : (fileMaxZoom ?? MAX_Z_CAP) + 1;
       minZ = task.tiles_min_zoom!;
-      maxZ = Math.max(minZ, Math.min(depth, MAX_Z_CAP, (fileMaxZoom ?? MAX_Z_CAP) + 1));
+      maxZ = Math.max(minZ, Math.min(depth, MAX_Z_CAP, fileZ));
+      while (maxZ > minZ && maxZ > task.tiles_max_zoom! && tileCount(bounds, minZ, maxZ) > EXPLICIT_TILE_LIMIT) { maxZ--; limitedBy = "tiles"; }
     } else if (task.tiles_plan_locked && task.tiles_min_zoom != null && task.tiles_max_zoom != null) {
       minZ = task.tiles_min_zoom;
       maxZ = task.tiles_max_zoom;
     } else {
+      pixelM = await filePixelM(cogUrl, lat);
+      const fileZ = Math.max(fileMaxZoom ?? MIN_Z, pixelM ? zoomShowing(pixelM, lat, SHOWS_DETAIL) : (fileMaxZoom ?? MAX_Z_CAP));
       minZ = MIN_Z;
-      maxZ = Math.max(minZ, maxNative);
+      maxZ = Math.max(minZ, Math.min(MAX_Z_CAP, fileZ));
+      while (maxZ > AUTO_FLOOR_Z && tileCount(bounds, minZ, maxZ) > AUTO_TILE_BUDGET) { maxZ--; limitedBy = "tiles"; }
     }
+    const filePixelCm = pixelM ? Math.round(pixelM * 10000) / 100 : null;
 
     // ---- Determine how the tiles are rendered -----------------------------
     // Band order, display stretch and nodata come from the file itself and are
@@ -181,7 +243,7 @@ Deno.serve(async (req) => {
       }).eq("id", task.id);
       task.tiles_done = already;
       task.tiles_failed = 0;
-      if (already >= total) return json({ done: true, completed: total, total, failed: 0, minZ, maxZ, fileMaxZoom });
+      if (already >= total) return json({ done: true, completed: total, total, failed: 0, minZ, maxZ, fileMaxZoom, filePixelCm, limitedBy });
     } else if (!task.tiles_plan_locked || task.tiles_total !== total) {
       await admin.from("odm_tasks").update({
         tiles_total: total,
@@ -283,7 +345,7 @@ Deno.serve(async (req) => {
 
     return json({
       done, completed: newDone, total, failed,
-      batch: batch.length, minZ, maxZ, fileMaxZoom,
+      batch: batch.length, minZ, maxZ, fileMaxZoom, filePixelCm, limitedBy,
       // Tells the client to keep going even though the cursor barely moved.
       retrying: failed > 0 && !done,
     });

@@ -153,3 +153,21 @@ None to ODM. The options already ask for the most the photographs hold. Recommen
   close look matters.
 - **Analysis:** keep reading at zoom 23 or coarser until the move to 24 is measured on a real map. Plant-scale work (size,
   closer look, model on photos) already reads the original photographs, which stay the sharpest source the field has.
+
+## Update 2026-10-25: the chain opened to the flight's own pixel
+
+- **ODM** is asked for 0.1 cm (`odmOptions.ts`), which it caps at its GSD estimate. The orthophoto comes back at the
+  photographs' own pixel; the 1 cm request had held lower flights to 1 cm.
+- **Tiles** go to the orthophoto's own pixel, read by `bake-tiles` from the file's size and extent (`/cog/info`). The
+  bake picks the shallowest zoom whose pixel is within 1.4 file pixels, up to zoom 26, never shallower than TiTiler's
+  zoom.
+  - **Automatic bakes** go past zoom 23 only while the pyramid fits 60,000 tiles.
+  - **"Bake finer map tiles"** goes as deep as the file's pixel allows, up to 80,000 tiles.
+- **Analysis:** the readers keep their own pixel.
+  - The row readers stay at 3–5 cm, the pattern pass at 5 cm, and the field scan sizes by cell.
+  - The weed hotspots now read at the finest pixel the map has, within 250 million pixels, which takes a few minutes.
+    They count a 3 × 3 pixel patch, where the 4 cm read counted 30 cm².
+  - The summary names the pixel read.
+  - The grade still reads at the crop profile's pixel (3 cm for corn).
+- **Limits measured:** Stage 1 runs about 20 ms a million pixels; fetching the tiles is most of a fine read.
+- **Not yet done:** none of it has run on a fine real flight. `resolution-ceiling-test.md` is the test.

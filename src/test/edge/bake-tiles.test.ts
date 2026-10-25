@@ -382,50 +382,85 @@ describe("bake-tiles · upstream failure", () => {
   });
 });
 
-describe("bake-tiles · depth (the zoom-24 cap and deepening a baked scan)", () => {
-  const routes = (maxzoom: number) => [
-    { match: "tilejson.json", respond: () => tilejson(maxzoom) },
+describe("bake-tiles · depth (the file's own pixel, the zoom-26 cap, deepening a baked scan)", () => {
+  // TiTiler's /cog/info for a file of this ground pixel over BOUNDS (geographic, as a reprojected file reports it).
+  const info = (pixelM: number, bounds = BOUNDS) => {
+    const widthDeg = bounds[2] - bounds[0];
+    const width = Math.round((widthDeg * 111_320 * Math.cos((((bounds[1] + bounds[3]) / 2) * Math.PI) / 180)) / pixelM);
+    return jsonResponse({ bounds, width, height: width, crs: "http://www.opengis.net/def/crs/EPSG/0/4326" });
+  };
+  const routes = (maxzoom: number, pixelM?: number, bounds = BOUNDS) => [
+    { match: "tilejson.json", respond: () => jsonResponse({ bounds, maxzoom }) },
+    { match: "/cog/info", respond: () => (pixelM ? info(pixelM, bounds) : jsonResponse({}, 500)) },
     { match: "/cog/tiles/", respond: () => new Response(PNG) },
   ];
   const uploadedZooms = () => db.storage.calls.filter(c => c.op === "upload").map(c => Number(c.path.split("/")[2]));
+  const baked = (minZ: number, maxZ: number, n: number) => ({ tiles_baked: true, tiles_done: n, tiles_total: n, tiles_plan_locked: true, tiles_min_zoom: minZ, tiles_max_zoom: maxZ, band_mapping: { fingerprint: "f", render: { dtype: "uint8", bidx: [1, 2, 3], rescale: [] } } });
 
-  it("a new bake follows the file to zoom 24 and stops there", async () => {
+  it("a new bake follows TiTiler's zoom to the cap of 26 and stops there", async () => {
     const handler = await boot();
-    mockFetch(routes(26));
+    mockFetch(routes(28));
     const body = await (await handler(req())).json();
-    expect(body.maxZ).toBe(24);
-    expect(task().tiles_max_zoom).toBe(24);
+    expect(body.maxZ).toBe(26);
+    expect(task().tiles_max_zoom).toBe(26);
   });
 
-  it("deepening a baked scan bakes only the new level, with its stored render plan, and leaves the old tiles alone", async () => {
-    const handler = await boot({ tiles_baked: true, tiles_done: 3, tiles_total: 3, tiles_plan_locked: true, tiles_min_zoom: 10, tiles_max_zoom: 12, band_mapping: { fingerprint: "f", render: { dtype: "uint8", bidx: [1, 2, 3], rescale: [] } } });
-    const fetchMock = mockFetch(routes(12));
+  it("a new bake goes as deep as the file's own pixel shows detail, past TiTiler's nearest zoom", async () => {
+    // 0.3 cm at 45 N: zoom 25 is 0.33 cm (within 1.4 file pixels), zoom 24 0.66 cm (not).
+    const handler = await boot();
+    mockFetch(routes(24, 0.003));
+    const body = await (await handler(req())).json();
+    expect(body.maxZ).toBe(25);
+    expect(body.filePixelCm).toBeCloseTo(0.3, 1);
+  });
+
+  it("a new bake of a large fine map stops past zoom 23 once the pyramid outgrows the automatic budget, never above 23", async () => {
+    const big: [number, number, number, number] = [-93.01, 45.0, -93.0, 45.01]; // about 80 ha
+    const handler = await boot();
+    mockFetch(routes(26, 0.003, big));
+    const body = await (await handler(req())).json();
+    expect(body.maxZ).toBe(23);
+    expect(body.limitedBy).toBe("tiles");
+  });
+
+  it("deepening a baked scan bakes only the new level with its stored render plan, as deep as the file's pixel allows", async () => {
+    const handler = await boot(baked(10, 12, 3));
+    mockFetch(routes(12));
     const body = await (await handler(req("&depth=13"))).json();
     expect(body.done).toBe(true);
     expect(body.maxZ).toBe(13);
-    expect(body.fileMaxZoom).toBe(12);
     expect(task().tiles_max_zoom).toBe(13);
     expect(task().tiles_baked).toBe(true);
     expect(new Set(uploadedZooms())).toEqual(new Set([13]));
-    // The stored plan renders the new level: no band probe, no rebake.
-    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/cog/info") || String(u).includes("/statistics"))).toBe(false);
+    expect(task().band_mapping).toEqual(baked(10, 12, 3).band_mapping);
   });
 
-  it("goes at most one level past the file's own zoom", async () => {
-    const handler = await boot({ tiles_baked: true, tiles_done: 3, tiles_total: 3, tiles_plan_locked: true, tiles_min_zoom: 10, tiles_max_zoom: 12, band_mapping: { fingerprint: "f", render: { dtype: "uint8", bidx: null, rescale: [] } } });
+  it("without the file's pixel, goes at most one level past TiTiler's zoom; with it, no deeper than the pixel", async () => {
+    let handler = await boot(baked(10, 12, 3));
     mockFetch(routes(12));
-    const body = await (await handler(req("&depth=20"))).json();
-    expect(body.maxZ).toBe(13);
+    expect((await (await handler(req("&depth=20"))).json()).maxZ).toBe(13);
+    // A 1 cm file at 45 N: zoom 24 is 0.66 cm, the first no coarser than the file; zoom 25 would add nothing.
+    handler = await boot(baked(10, 23, 14));
+    mockFetch(routes(24, 0.01));
+    expect((await (await handler(req("&depth=26"))).json()).maxZ).toBe(24);
+  });
+
+  it("an explicit deepening stops at the explicit tile limit and says so", async () => {
+    const big: [number, number, number, number] = [-93.01, 45.0, -93.0, 45.01];
+    const handler = await boot(baked(10, 23, 1));
+    mockFetch(routes(26, 0.002, big));
+    const body = await (await handler(req("&depth=26"))).json();
+    expect(body.limitedBy).toBe("tiles");
+    expect(body.maxZ).toBeLessThan(26);
   });
 
   it("asking for the old depth undoes a deepening without baking anything", async () => {
-    const handler = await boot({ tiles_baked: true, tiles_done: 4, tiles_total: 4, tiles_plan_locked: true, tiles_min_zoom: 10, tiles_max_zoom: 13, band_mapping: { fingerprint: "f", render: { dtype: "uint8", bidx: null, rescale: [] } } });
+    const handler = await boot(baked(10, 13, 4));
     mockFetch(routes(12));
     const body = await (await handler(req("&depth=12"))).json();
     expect(body.done).toBe(true);
     expect(task().tiles_max_zoom).toBe(12);
     expect(task().tiles_total).toBe(3);
-    expect(task().tiles_baked).toBe(true);
     expect(uploadedZooms()).toHaveLength(0);
   });
 
