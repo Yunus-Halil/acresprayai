@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Direct Photo Georeferencing</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg: #f6f5f1; --panel: #ffffff; --ink: #1d2320; --muted: #5d6762; --line: #d9ddd8; --accent: #2f7d4f; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #121614; --panel: #1b201d; --ink: #e8ece9; --muted: #9aa59f; --line: #2c3430; --accent: #6cc28f; } }
+  :root[data-theme="dark"] { --bg: #121614; --panel: #1b201d; --ink: #e8ece9; --muted: #9aa59f; --line: #2c3430; --accent: #6cc28f; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  #app { display: grid; grid-template-columns: 340px 1fr; height: 100%; }
+  #panel { overflow-y: auto; padding: 16px; background: var(--panel); border-right: 1px solid var(--line); }
+  #map { height: 100%; }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 18px 0 6px; }
+  p, li { color: var(--muted); margin: 4px 0; }
+  label { display: flex; gap: 8px; align-items: center; margin: 5px 0; cursor: pointer; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  button { font: inherit; padding: 4px 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; cursor: pointer; }
+  input[type=range] { flex: 1; }
+  .frame { font-weight: 600; font-variant-numeric: tabular-nums; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  td { padding: 2px 4px; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; margin-right: 4px; }
+  .warp { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; image-rendering: auto; }
+  @media (max-width: 760px) { #app { grid-template-columns: 1fr; grid-template-rows: 46% 54%; } #panel { order: 2; border-right: 0; border-top: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="panel">
+    <h1>Direct photo georeferencing v0</h1>
+    <p>Each photograph is placed on the map from its own header alone (camera position, gimbal angles, focal length) and drawn from its four projected corners. No orthomosaic, no stitching, no ground control.</p>
+
+    <h2>Flip through the photographs</h2>
+    <div class="row"><button id="prev" aria-label="Previous photograph">&larr;</button><span class="frame" id="fname"></span><button id="next" aria-label="Next photograph">&rarr;</button></div>
+    <div class="row"><input id="slider" type="range" min="0" value="0" aria-label="Photograph"></div>
+    <p id="fmeta"></p>
+    <p>Use the arrow keys. Soil marks and plants should stay put while the photographs change under them. Tick "Header only" to see the placement before the overlap calibration: legs flown in opposite directions then sit about 1.9 m apart.</p>
+
+    <h2>Layers</h2>
+    <label><input type="checkbox" id="lRaw"> Header only (before the overlap calibration)</label>
+    <label><input type="checkbox" id="lSel" checked> Selected photograph</label>
+    <div class="row"><span style="color:var(--muted)">Opacity</span><input id="op" type="range" min="0" max="100" value="100" aria-label="Photograph opacity"></div>
+    <label><input type="checkbox" id="lAll"> All photographs underneath</label>
+    <label><input type="checkbox" id="lFoot" checked> Footprints</label>
+    <label><input type="checkbox" id="lObj" checked> Green patches of the selected photograph</label>
+    <label><input type="checkbox" id="lClu"> Multi-view positions (all photographs)</label>
+    <label><input type="checkbox" id="lLab"> DJI_0301 hand labels, projected</label>
+
+    <h2>Legend</h2>
+    <p><span class="sw" style="background:#ffd23f"></span>patch under 0.2 m² &nbsp; <span class="sw" style="background:#ff8c42"></span>0.2 to 1 m² &nbsp; <span class="sw" style="background:#7cff6b"></span>over 1 m²</p>
+    <p>Grey dashed: cut by the photograph's edge. Multi-view positions are coloured by triangulated height, <span class="sw" style="background:#3b82f6"></span>low to <span class="sw" style="background:#ef4444"></span>2 m and up. Hand labels: white ring = labelled crop, magenta dot = labelled weed.</p>
+
+    <h2>How well the photographs agree</h2>
+    <table id="stats"></table>
+    <p id="inputs"></p>
+  </div>
+  <div id="map" role="application" aria-label="Map"></div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="data.js"></script>
+<script>
+const D = window.DATA, F = D.frames;
+let useRaw = false;
+const map = L.map("map", { zoomAnimation: false, preferCanvas: true, maxZoom: 24 });
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxNativeZoom: 19, maxZoom: 24, attribution: "Esri World Imagery" }).addTo(map);
+
+// A homography from the image's corners to the map's: the same four-corner map the module tests (homography.ts).
+function homography(src, dst) {
+  const A = [];
+  for (let i = 0; i < 4; i++) { const [x, y] = src[i], [X, Y] = dst[i]; A.push([x, y, 1, 0, 0, 0, -x * X, -y * X, X]); A.push([0, 0, 0, x, y, 1, -x * Y, -y * Y, Y]); }
+  for (let c = 0; c < 8; c++) {
+    let p = c; for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]];
+    for (let r = 0; r < 8; r++) { if (r === c) continue; const k = A[r][c] / A[c][c]; for (let j = c; j < 9; j++) A[r][j] -= k * A[c][j]; }
+  }
+  const h = A.map((row, i) => row[8] / row[i]);
+  return [...h, 1];
+}
+const Warp = L.Layer.extend({
+  initialize(f) { this.f = f; },
+  onAdd(m) {
+    const img = this.img = L.DomUtil.create("img", "warp");
+    img.src = `frames/${this.f.name}.jpg`; img.width = this.f.w; img.height = this.f.h; img.alt = "";
+    m.getPane(this.options.pane || "overlayPane").appendChild(img);
+    m.on("zoomend viewreset resize", this.update, this); this.update();
+  },
+  onRemove(m) { this.img.remove(); m.off("zoomend viewreset resize", this.update, this); },
+  setOpacity(o) { if (this.img) this.img.style.opacity = o; },
+  update() {
+    const pts = (useRaw ? this.f.rawCorners : this.f.corners).map(c => { const p = this._map.latLngToLayerPoint(c); return [p.x, p.y]; });
+    const h = homography([[0, 0], [this.f.w, 0], [this.f.w, this.f.h], [0, this.f.h]], pts);
+    this.img.style.transform = `matrix3d(${h[0]},${h[3]},0,${h[6]},${h[1]},${h[4]},0,${h[7]},0,0,1,0,${h[2]},${h[5]},0,${h[8]})`;
+  },
+});
+map.createPane("under").style.zIndex = 390;
+map.createPane("sel").style.zIndex = 395;
+
+const all = L.layerGroup(F.map(f => { const w = new Warp(f); w.options.pane = "under"; return w; }));
+const foot = L.layerGroup();
+const drawFoot = () => { foot.clearLayers(); F.forEach(f => foot.addLayer(L.polygon(useRaw ? f.rawCorners : f.corners, { color: "#ffffff", weight: 1, opacity: 0.6, fill: false, interactive: false }))); };
+drawFoot();
+const objLayer = L.layerGroup();
+const heightColour = h => { const t = Math.max(0, Math.min(1, h / 2)); return `hsl(${220 - 220 * t}, 85%, 55%)`; };
+const clu = L.layerGroup(D.clusters.map(([lat, lng, n, h, s]) => L.circleMarker([lat, lng], { radius: 3.5, weight: 1, color: "#000", fillColor: heightColour(h), fillOpacity: 0.95 }).bindPopup(`Seen in ${n} photographs<br>height above take-off ${h} m<br>spread of the pair positions ${s} m`)));
+const lab = L.layerGroup(D.labels.map(([lat, lng, cls]) => cls === "crop" ? L.circleMarker([lat, lng], { radius: 6, color: "#fff", weight: 2, fill: false }) : L.circleMarker([lat, lng], { radius: 2.5, color: "#ff3df2", fillColor: "#ff3df2", fillOpacity: 1, weight: 0 })));
+
+let sel = null, idx = Math.max(0, F.findIndex(f => f.name === "DJI_0301"));
+const $ = id => document.getElementById(id);
+$("slider").max = F.length - 1;
+function show(i) {
+  idx = (i + F.length) % F.length;
+  const f = F[idx];
+  if (sel) map.removeLayer(sel);
+  sel = new Warp(f); sel.options.pane = "sel";
+  if ($("lSel").checked) { sel.addTo(map); sel.setOpacity($("op").value / 100); }
+  objLayer.clearLayers();
+  for (const o of f.objects) {
+    const c = o.e ? "#9aa0a6" : o.a < 0.2 ? "#ffd23f" : o.a < 1 ? "#ff8c42" : "#7cff6b";
+    objLayer.addLayer(L.polygon(o.o, { color: c, weight: 1.2, fill: false, dashArray: o.e ? "3 3" : null, interactive: false }));
+  }
+  $("fname").textContent = `${f.name}  (${idx + 1} / ${F.length})`;
+  $("fmeta").textContent = `gimbal yaw ${f.yaw}°, pitch ${f.pitch}°, roll ${f.roll}°${f.turn ? " (turn frame)" : ""}; ${f.objects.length} patches over 0.02 m²`;
+  $("slider").value = idx;
+}
+const toggle = (id, layer) => { const s = () => $(id).checked ? layer.addTo(map) : map.removeLayer(layer); $(id).onchange = s; s(); };
+toggle("lAll", all); toggle("lFoot", foot); toggle("lObj", objLayer); toggle("lClu", clu); toggle("lLab", lab);
+$("lSel").onchange = () => show(idx);
+$("lRaw").onchange = () => { useRaw = $("lRaw").checked; drawFoot(); all.eachLayer(l => l._map && l.update()); show(idx); };
+$("op").oninput = () => sel && sel.setOpacity($("op").value / 100);
+$("prev").onclick = () => show(idx - 1); $("next").onclick = () => show(idx + 1);
+$("slider").oninput = e => show(+e.target.value);
+document.addEventListener("keydown", e => { if (e.key === "ArrowLeft") show(idx - 1); if (e.key === "ArrowRight") show(idx + 1); });
+show(idx);
+map.fitBounds(L.latLngBounds(F[idx].corners).pad(0.2));
+
+const S = D.summary, A = S.agreement;
+const rows = [
+  ["Photographs", S.photographs], ["Green patches projected", S.patches.toLocaleString()], ["Pixel at frame centre", `${S.gsdAtCentreCm} cm`],
+  ["Overlapping pairs matched", A.all.pairs], ["Patches matched across pairs", A.all.matches.toLocaleString()],
+  ["Flat-ground disagreement, median", `${A.all.flatDisagreementM.median} m`], ["Ray miss, median", `${A.all.rayMissM.median} m`],
+  ["Seen in 2+ photographs", S.clusters.count.toLocaleString()], ["Their position spread, median", `${S.clusters.spreadM.median} m`],
+];
+$("stats").innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+$("inputs").textContent = `Inputs: ${S.inputs.position}. ${S.inputs.intrinsics}. Calibration: ${S.calibration.basis}; ground plane ${S.calibration.groundOffsetM.toFixed(2)} m against take-off. Patches, multi-view positions and labels are drawn with the calibrated cameras.`;
+</script>
+</body>
+</html>

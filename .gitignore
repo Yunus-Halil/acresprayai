@@ -47,6 +47,8 @@ data/
 
 # Local test photos for Photo Scout (tens of MB, Yunus's own)
 samplerowtestingimagery/
+# Original photographs for the direct-georeferencing prototype (scripts/directGeoref): 586 MB, imagery stays local.
+directtestimagery/
 # Crop test photos and their outputs (scripts/bench/cropTest.ts): imagery stays local.
 CropTesting/
 
