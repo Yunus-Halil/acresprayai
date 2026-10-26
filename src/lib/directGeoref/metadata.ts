@@ -16,6 +16,7 @@
 //                                    while the aircraft rolls up to 23 degrees, and gimbal yaw follows flight yaw on
 //                                    every straight leg, so the angles are world-referenced, not airframe-relative
 //   FlightYaw/Pitch/RollDegree       the aircraft's attitude (recorded, not used: the gimbal is stabilised)
+//   FlightX/Y/ZSpeed                 velocity north / east / down, m/s (checked: +2.7 / +2.3 on a 40 degree leg)
 //   CalibratedFocalLength            focal length in pixels
 //   CalibratedOpticalCenterX/Y       principal point in pixels
 //   DewarpFlag / DewarpData          1 = the camera already removed lens distortion (no coefficients written);
@@ -52,6 +53,10 @@ export type DjiPhotoMeta = {
   flightYawDeg: number | null;
   flightPitchDeg: number | null;
   flightRollDeg: number | null;
+  /** Aircraft velocity, metres per second north, east and down. */
+  speedNorthMs: number | null;
+  speedEastMs: number | null;
+  speedDownMs: number | null;
   calibratedFocalPx: number | null;
   opticalCenterX: number | null;
   opticalCenterY: number | null;
@@ -109,6 +114,9 @@ export function parseDjiHeader(bytes: Uint8Array): DjiPhotoMeta {
     flightYawDeg: xmpNumber(x, "FlightYawDegree"),
     flightPitchDeg: xmpNumber(x, "FlightPitchDegree"),
     flightRollDeg: xmpNumber(x, "FlightRollDegree"),
+    speedNorthMs: xmpNumber(x, "FlightXSpeed"),
+    speedEastMs: xmpNumber(x, "FlightYSpeed"),
+    speedDownMs: xmpNumber(x, "FlightZSpeed"),
     calibratedFocalPx: xmpNumber(x, "CalibratedFocalLength"),
     opticalCenterX: xmpNumber(x, "CalibratedOpticalCenterX"),
     opticalCenterY: xmpNumber(x, "CalibratedOpticalCenterY"),

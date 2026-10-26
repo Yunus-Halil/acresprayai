@@ -114,7 +114,18 @@ against.
    height. The module accepts a terrain function, and the same overlap gives heights directly (the triangulated
    heights above), so a coarse ground model from the photos themselves is the natural next ground model.
 
-## Next steps, not built
+## Experiments 1 to 3 (same day)
+
+Soil-texture ties, held-out evaluation, the cheap-GPS simulation and the app's detectors per photograph:
+[direct-photo-georeferencing-experiments.md](direct-photo-georeferencing-experiments.md). In short:
+
+- **Per-photo attitude was the leftover error.** A small attitude correction per photograph (about 0.6 deg)
+  brings held-out misalignment to 7 cm.
+- **Cheap GPS.** Overlap restores photo-to-photo agreement under consumer GPS errors, but not the block's common
+  offset.
+- **Trees reconcile.** Trees seen in several photographs reconcile to 8 cm at their own height.
+
+## Next steps, not built (as of v0)
 
 - Calibrate on soil texture (the phase correlation used as the check) with half the photo pairs held out for
   checking. This should remove the remaining along-track offset between opposite legs, which a small pitch offset or

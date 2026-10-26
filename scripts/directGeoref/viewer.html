@@ -40,10 +40,13 @@
     <div class="row"><button id="prev" aria-label="Previous photograph">&larr;</button><span class="frame" id="fname"></span><button id="next" aria-label="Next photograph">&rarr;</button></div>
     <div class="row"><input id="slider" type="range" min="0" value="0" aria-label="Photograph"></div>
     <p id="fmeta"></p>
-    <p>Use the arrow keys. Soil marks and plants should stay put while the photographs change under them. Tick "Header only" to see the placement before the overlap calibration: legs flown in opposite directions then sit about 1.9 m apart.</p>
+    <p>Use the arrow keys. Soil marks and plants should stay put while the photographs change under them. Switch the camera model to compare: with "Header only", legs flown in opposite directions sit about 1.9 m apart.</p>
+
+    <h2>Camera model</h2>
+    <select id="model" aria-label="Camera model" style="width:100%;font:inherit;padding:4px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px"></select>
+    <p id="modelNote"></p>
 
     <h2>Layers</h2>
-    <label><input type="checkbox" id="lRaw"> Header only (before the overlap calibration)</label>
     <label><input type="checkbox" id="lSel" checked> Selected photograph</label>
     <div class="row"><span style="color:var(--muted)">Opacity</span><input id="op" type="range" min="0" max="100" value="100" aria-label="Photograph opacity"></div>
     <label><input type="checkbox" id="lAll"> All photographs underneath</label>
@@ -51,12 +54,18 @@
     <label><input type="checkbox" id="lObj" checked> Green patches of the selected photograph</label>
     <label><input type="checkbox" id="lClu"> Multi-view positions (all photographs)</label>
     <label><input type="checkbox" id="lLab"> DJI_0301 hand labels, projected</label>
+    <label><input type="checkbox" id="lRes"> Held-out soil ties: misalignment x10 (experiment 1)</label>
+    <label><input type="checkbox" id="lCrown"> Tree crowns found in the selected photograph (experiment 3)</label>
+    <label><input type="checkbox" id="lTree"> Trees reconciled across photographs (experiment 3)</label>
+    <label><input type="checkbox" id="lRows"> Field rows from all photographs (experiment 3)</label>
 
     <h2>Legend</h2>
     <p><span class="sw" style="background:#ffd23f"></span>patch under 0.2 m² &nbsp; <span class="sw" style="background:#ff8c42"></span>0.2 to 1 m² &nbsp; <span class="sw" style="background:#7cff6b"></span>over 1 m²</p>
     <p>Grey dashed: cut by the photograph's edge. Multi-view positions are coloured by triangulated height, <span class="sw" style="background:#3b82f6"></span>low to <span class="sw" style="background:#ef4444"></span>2 m and up. Hand labels: white ring = labelled crop, magenta dot = labelled weed.</p>
 
-    <h2>How well the photographs agree</h2>
+    <div id="expPanel"></div>
+
+    <h2>How well the photographs agree (v0)</h2>
     <table id="stats"></table>
     <p id="inputs"></p>
   </div>
@@ -64,9 +73,14 @@
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="data.js"></script>
+<script src="exp.js"></script>
 <script>
-const D = window.DATA, F = D.frames;
-let useRaw = false;
+const D = window.DATA, F = D.frames, X = window.EXP || null;
+// Camera models: v0 (patch calibration) and the header from data.js, the experiments' from exp.js.
+const MODELS = [{ key: "v0", label: "Overlap calibration v0 (green patches)", corners: null }, { key: "raw", label: "Header only (v0 run)", corners: null }];
+if (X) { MODELS.length = 0; X.models.forEach(m => MODELS.push(m)); MODELS.push({ key: "v0", label: "Overlap calibration v0 (green patches)", corners: null }); }
+let modelKey = X ? "best" : "v0";
+const cornersOf = f => { const m = MODELS.find(x => x.key === modelKey); if (m && m.corners && m.corners[f.name]) return m.corners[f.name]; return modelKey === "raw" ? f.rawCorners : f.corners; };
 const map = L.map("map", { zoomAnimation: false, preferCanvas: true, maxZoom: 24 });
 L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxNativeZoom: 19, maxZoom: 24, attribution: "Esri World Imagery" }).addTo(map);
 
@@ -93,7 +107,7 @@ const Warp = L.Layer.extend({
   onRemove(m) { this.img.remove(); m.off("zoomend viewreset resize", this.update, this); },
   setOpacity(o) { if (this.img) this.img.style.opacity = o; },
   update() {
-    const pts = (useRaw ? this.f.rawCorners : this.f.corners).map(c => { const p = this._map.latLngToLayerPoint(c); return [p.x, p.y]; });
+    const pts = cornersOf(this.f).map(c => { const p = this._map.latLngToLayerPoint(c); return [p.x, p.y]; });
     const h = homography([[0, 0], [this.f.w, 0], [this.f.w, this.f.h], [0, this.f.h]], pts);
     this.img.style.transform = `matrix3d(${h[0]},${h[3]},0,${h[6]},${h[1]},${h[4]},0,${h[7]},0,0,1,0,${h[2]},${h[5]},0,${h[8]})`;
   },
@@ -103,7 +117,7 @@ map.createPane("sel").style.zIndex = 395;
 
 const all = L.layerGroup(F.map(f => { const w = new Warp(f); w.options.pane = "under"; return w; }));
 const foot = L.layerGroup();
-const drawFoot = () => { foot.clearLayers(); F.forEach(f => foot.addLayer(L.polygon(useRaw ? f.rawCorners : f.corners, { color: "#ffffff", weight: 1, opacity: 0.6, fill: false, interactive: false }))); };
+const drawFoot = () => { foot.clearLayers(); F.forEach(f => foot.addLayer(L.polygon(cornersOf(f), { color: "#ffffff", weight: 1, opacity: 0.6, fill: false, interactive: false }))); };
 drawFoot();
 const objLayer = L.layerGroup();
 const heightColour = h => { const t = Math.max(0, Math.min(1, h / 2)); return `hsl(${220 - 220 * t}, 85%, 55%)`; };
@@ -127,17 +141,63 @@ function show(i) {
   $("fname").textContent = `${f.name}  (${idx + 1} / ${F.length})`;
   $("fmeta").textContent = `gimbal yaw ${f.yaw}°, pitch ${f.pitch}°, roll ${f.roll}°${f.turn ? " (turn frame)" : ""}; ${f.objects.length} patches over 0.02 m²`;
   $("slider").value = idx;
+  if (window.__drawCrowns) window.__drawCrowns();
 }
 const toggle = (id, layer) => { const s = () => $(id).checked ? layer.addTo(map) : map.removeLayer(layer); $(id).onchange = s; s(); };
 toggle("lAll", all); toggle("lFoot", foot); toggle("lObj", objLayer); toggle("lClu", clu); toggle("lLab", lab);
 $("lSel").onchange = () => show(idx);
-$("lRaw").onchange = () => { useRaw = $("lRaw").checked; drawFoot(); all.eachLayer(l => l._map && l.update()); show(idx); };
+const sel0 = $("model");
+MODELS.forEach(m => { const o = document.createElement("option"); o.value = m.key; o.textContent = m.label; sel0.appendChild(o); });
+sel0.value = modelKey;
+const NOTES = {
+  header: "Each photograph placed from its own header alone.",
+  global: "Four numbers for the whole flight, fitted to soil-texture ties: camera tilt across and along, spin, ground height.",
+  best: "The four numbers plus a small attitude correction per photograph (prior 1 degree), positions held at RTK quality.",
+  v0: "The first version's calibration, fitted to green patches. The patches, multi-view positions and hand labels are drawn with it.",
+};
+const setModel = () => {
+  modelKey = sel0.value;
+  $("modelNote").textContent = NOTES[modelKey] || (modelKey.endsWith("before") ? "Simulated consumer GPS: these RTK photographs with GPS errors added, placed from the noisy positions." : modelKey.endsWith("after") ? "The same noisy photographs after the overlap adjustment. The whole block can still sit off by the GPS's common error." : "");
+  drawFoot(); all.eachLayer(l => l._map && l.update()); show(idx); drawRes();
+};
+sel0.onchange = setModel;
 $("op").oninput = () => sel && sel.setOpacity($("op").value / 100);
 $("prev").onclick = () => show(idx - 1); $("next").onclick = () => show(idx + 1);
 $("slider").oninput = e => show(+e.target.value);
 document.addEventListener("keydown", e => { if (e.key === "ArrowLeft") show(idx - 1); if (e.key === "ArrowRight") show(idx + 1); });
 show(idx);
 map.fitBounds(L.latLngBounds(F[idx].corners).pad(0.2));
+
+// Experiment layers.
+const resLayer = L.layerGroup(), crownLayer = L.layerGroup(), treeLayer = L.layerGroup(), rowLayer = L.layerGroup();
+const mPerLat = 111320, mPerLng = lat => 111320 * Math.cos(lat * Math.PI / 180);
+function drawRes() {
+  resLayer.clearLayers();
+  if (!X || !X.residuals[modelKey]) return;
+  for (const [lat, lng, de, dn] of X.residuals[modelKey]) {
+    const d = Math.hypot(de, dn), c = d < 0.1 ? "#22c55e" : d < 0.3 ? "#eab308" : d < 1 ? "#f97316" : "#ef4444";
+    resLayer.addLayer(L.polyline([[lat, lng], [lat + 10 * dn / mPerLat, lng + 10 * de / mPerLng(lat)]], { color: c, weight: 2, interactive: false }));
+    resLayer.addLayer(L.circleMarker([lat, lng], { radius: 1.5, color: c, weight: 1, fillOpacity: 1, interactive: false }));
+  }
+}
+if (X && X.exp3) {
+  for (const [lat, lng, n, h, r] of X.exp3.trees) {
+    treeLayer.addLayer(L.circle([lat, lng], { radius: r, color: "#22d3ee", weight: 2, fill: false }).bindPopup(`Seen in ${n} photographs<br>crown radius ${r} m<br>height ${h} m above the ground plane`));
+  }
+  for (const r of X.exp3.rows) rowLayer.addLayer(L.polyline(r.line, { color: "#a78bfa", opacity: r.photos >= 2 ? 1 : 0.5, weight: 2 }).bindPopup(`Row seen in ${r.photos} photographs`));
+}
+const drawCrowns = () => { crownLayer.clearLayers(); if (!X || !X.exp3) return; for (const o of (X.exp3.crowns[F[idx].name] || [])) crownLayer.addLayer(L.polygon(o, { color: "#f472b6", weight: 1.5, fill: false, interactive: false })); };
+window.__drawCrowns = drawCrowns;
+toggle("lRes", resLayer); toggle("lCrown", crownLayer); toggle("lTree", treeLayer); toggle("lRows", rowLayer);
+if (X) {
+  const t = (rows, cols) => `<table>${rows.map(r => `<tr>${cols.map(c => `<td>${c(r)}</td>`).join("")}</tr>`).join("")}</table>`;
+  let h = "";
+  if (X.exp1) h += `<h2>Experiment 1: alignment, held-out photo pairs</h2><p>Soil-texture ties between photographs, 30 % of photo pairs kept out of every fit. Median / 90th percentile misalignment, metres.</p>` + t(X.exp1, [r => r.model, r => `${r.heldOut.all.median} / ${r.heldOut.all.p90}`]);
+  if (X.exp2) h += `<h2>Experiment 2: without RTK</h2><p>Ground error against the RTK cameras, median metres: before, after the overlap adjustment, and the common offset left in the whole block.</p>` + t(X.exp2, [r => `${r.id} ${r.label}`, r => `${r.groundBefore.absMedian} &rarr; ${r.groundAfter.absMedian}`, r => `${r.groundAfter.commonOffsetM}`]);
+  if (X.exp3) { const R = X.exp3.results; h += `<h2>Experiment 3: detectors on every photo</h2>` + t([["Photos read by the detectors", `${R.read} / ${R.photos}`], ["Tree crowns found", R.trees.crownsDetected], ["Trees reconciled across photos", R.trees.reconciledTrees], ["Photos per tree, median", R.trees.viewsPerTree.median], ["View to tree, flat ground", `${R.trees.viewFromTreeFlatM.median} m`], ["View to tree, at its height", `${R.trees.viewFromTreeAtItsHeightM.median} m`], ["Tree height above ground, median", `${R.trees.heightAboveGroundM.median} m`], ["Field rows seen in 2+ photos", R.rows.fieldRowsSeenInTwoOrMorePhotos], ["Row offset spread across photos", `${R.rows.acrossOffsetSdM.median} m`]], [r => r[0], r => r[1]]); }
+  $("expPanel").innerHTML = h;
+}
+setModel();
 
 const S = D.summary, A = S.agreement;
 const rows = [

@@ -4,7 +4,7 @@ import {
   frameFootprint, frameFromDji, groundSampleAt, groundToPixel, homographyFrom4, matchPair, objectsToGround, parseDewarpData, parseDjiHeader,
   pixelToGround, takeoffPlane, triangulateRays, vegetationObjects, type DjiPhotoMeta, type GroundObject, type P2,
 } from "@/lib/directGeoref";
-import { applyCalibration, boresightOf, calibrateFromOverlap, NO_CALIBRATION, type PixelObject } from "@/lib/directGeoref";
+import { adjust, applyCalibration, boresightOf, calibrateFromOverlap, emptyModel, evaluateTies, frameUnder, NO_CALIBRATION, phaseCorrelate, type BaseFrame, type PixelObject, type SoilTie } from "@/lib/directGeoref";
 import { toEnu } from "@/lib/sourceFrames/odm";
 
 // A Phantom 4 RTK-like camera: 5472 x 3648, f = 3666.67 px, principal point at the centre.
@@ -380,4 +380,116 @@ describe("calibration from the flight's own overlap", () => {
     expect(a.northM).toBeCloseTo(-b.northM, 9);
     expect(Math.hypot(a.eastM, a.northM)).toBeCloseTo(36 * Math.tan(Math.PI / 180), 6);
   });
+});
+
+describe("phase correlation", () => {
+  it("finds a sub-cell shift with the documented sign: b(x + dx, y + dy) ~ a(x, y)", () => {
+    const n = 64, src = new Float64Array(96 * 96);
+    let seed = 3;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let k = 0; k < src.length; k++) src[k] = rnd();
+    // Smooth a little so bilinear resampling is faithful.
+    const sm = new Float64Array(src.length);
+    for (let y = 1; y < 95; y++) for (let x = 1; x < 95; x++) { let t = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) t += src[(y + dy) * 96 + x + dx]; sm[y * 96 + x] = t / 9; }
+    const at = (x: number, y: number) => { const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0; return sm[y0 * 96 + x0] * (1 - fx) * (1 - fy) + sm[y0 * 96 + x0 + 1] * fx * (1 - fy) + sm[(y0 + 1) * 96 + x0] * (1 - fx) * fy + sm[(y0 + 1) * 96 + x0 + 1] * fx * fy; };
+    const a = new Float64Array(n * n), b = new Float64Array(n * n);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { a[y * n + x] = at(x + 16, y + 16); b[y * n + x] = at(x + 16 - 3.4, y + 16 + 2.2); }
+    const r = phaseCorrelate(a, b, n);
+    expect(r.dx).toBeCloseTo(3.4, 0);
+    expect(r.dy).toBeCloseTo(-2.2, 0);
+    expect(Math.abs(r.dx - 3.4)).toBeLessThan(0.25);
+    expect(r.peak).toBeGreaterThan(0.3);
+  });
+});
+
+describe("block adjustment over pixel ties", () => {
+  // Two legs flown NE and SW at 3.5 m/s, a small camera for speed.
+  const small: Intrinsics = { width: 800, height: 534, fx: 540, fy: 540, cx: 400, cy: 267, distortion: null, basis: "test" };
+  const mPerLat = 111319.49, mPerLng = 111319.49 * Math.cos((LAT * Math.PI) / 180);
+  const at = (e: number, n: number) => ({ lat: LAT + n / mPerLat, lng: LNG + e / mPerLng });
+  const legs: [number, number, number][] = [];
+  for (const k of [-1, 0, 1, 2]) { legs.push([45, -7 + 7 * k, -7 + 7 * k]); legs.push([225, 7 + 7 * k, -21 + 7 * k]); }
+  const speed = 3.5 / Math.SQRT2;
+  const bases: BaseFrame[] = legs.map(([yaw, e, n], i) => {
+    const p = at(e, n);
+    return { frame: frame(yaw, -90, 0, { name: `f${i}`, intrinsics: small, lat: p.lat, lng: p.lng }), velocity: yaw === 45 ? [speed, speed] : [-speed, -speed] };
+  });
+  let seed = 11;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const ground = Array.from({ length: 400 }, () => at(-35 + 70 * rnd(), -35 + 70 * rnd()));
+  const tiesUnder = (truth: ReturnType<typeof emptyModel>): SoilTie[] => {
+    const fs = bases.map(b => frameUnder(b, truth));
+    const out: SoilTie[] = [];
+    for (let i = 0; i < fs.length; i++) for (let j = i + 1; j < fs.length; j++) for (const g of ground) {
+      const pa = groundToPixel(fs[i], g.lat, g.lng, truth.globals.groundOffsetM), pb = groundToPixel(fs[j], g.lat, g.lng, truth.globals.groundOffsetM);
+      if (!pa?.inside || !pb?.inside) continue;
+      out.push({ a: fs[i].name, b: fs[j].name, ua: pa.u, va: pa.v, ub: pb.u, vb: pb.v, lat: g.lat, lng: g.lng, peak: 1 });
+    }
+    return out;
+  };
+
+  it("recovers a shutter delay, a camera tilt and the ground height; held-out ties agree to millimetres", () => {
+    const spec = { name: "global", globals: ["tiltAcrossDeg", "spinDeg", "groundOffsetM", "timingS"] as const };
+    const truth = emptyModel({ ...spec, globals: [...spec.globals] }, bases);
+    Object.assign(truth.globals, { tiltAcrossDeg: 1.2, spinDeg: -0.3, groundOffsetM: 0.4, timingS: 0.1 });
+    const ties = tiesUnder(truth);
+    const train = ties.filter((_, i) => i % 3), test = ties.filter((_, i) => i % 3 === 0);
+    const r = adjust(bases, train, { ...spec, globals: [...spec.globals] });
+    expect(r.model.globals.timingS).toBeCloseTo(0.1, 2);
+    expect(r.model.globals.tiltAcrossDeg).toBeCloseTo(1.2, 2);
+    expect(r.model.globals.groundOffsetM).toBeCloseTo(0.4, 1);
+    const before = evaluateTies(new Map(bases.map(b => [b.frame.name, b])), emptyModel({ ...spec, globals: [...spec.globals] }, bases), test);
+    const after = evaluateTies(new Map(bases.map(b => [b.frame.name, b])), r.model, test);
+    expect(before.median).toBeGreaterThan(0.3);
+    expect(after.median).toBeLessThan(0.01);
+  });
+
+  it("per-photo corrections move one displaced photo back, and the prior keeps the others home", () => {
+    const spec = { name: "photo", globals: [] as never[], perPhoto: { keys: ["dE", "dN"] as ("dE" | "dN")[], sigma: { dE: 1, dN: 1 } } };
+    const truth = emptyModel(spec, bases);
+    truth.photo.get("f3")!.dE = 0.8;
+    truth.photo.get("f3")!.dN = -0.5;
+    const r = adjust(bases, tiesUnder(truth), spec);
+    // Ties see only RELATIVE positions: f3 relative to the others is recovered exactly; how the correction is shared
+    // between f3 and the block is the priors' call (equal priors: f3 moves 7/8 of it, the others 1/8 the other way).
+    const others = [...r.model.photo].filter(([k]) => k !== "f3").map(([, v]) => v);
+    const mean = (k: "dE" | "dN") => others.reduce((s2, v) => s2 + v[k], 0) / others.length;
+    expect(r.model.photo.get("f3")!.dE - mean("dE")).toBeCloseTo(0.8, 2);
+    expect(r.model.photo.get("f3")!.dN - mean("dN")).toBeCloseTo(-0.5, 2);
+    for (const v of others) expect(Math.hypot(v.dE - mean("dE"), v.dN - mean("dN"))).toBeLessThan(0.02);
+  });
+});
+
+describe("soil ties end to end", () => {
+  it("finds soil ties between two rendered photographs and the adjustment recovers the hidden camera tilt", async () => {
+    const { findSoilTies, greyRaster } = await import("@/lib/directGeoref");
+    const small: Intrinsics = { width: 640, height: 480, fx: 900, fy: 900, cx: 320, cy: 240, distortion: null, basis: "test" };
+    const mPerLat = 111319.49, mPerLng = 111319.49 * Math.cos((LAT * Math.PI) / 180);
+    const at = (e: number, n: number) => ({ lat: LAT + n / mPerLat, lng: LNG + e / mPerLng });
+    // Procedural soil: hashed value noise on 8 cm cells, two octaves, bilinear.
+    const hash = (i: number, j: number) => { let h = (i * 374761393 + j * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+    const noise = (x: number, y: number) => { const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j; return hash(i, j) * (1 - fx) * (1 - fy) + hash(i + 1, j) * fx * (1 - fy) + hash(i, j + 1) * (1 - fx) * fy + hash(i + 1, j + 1) * fx * fy; };
+    const soil = (e: number, n: number) => 90 + 70 * noise(e / 0.08, n / 0.08) + 40 * noise(e / 0.3 + 17, n / 0.3 - 5);
+    const truthCal = { ...NO_CALIBRATION, tiltAcrossDeg: 1.5 };
+    const legs: [number, number, number][] = [[45, 0, 0], [225, 4, -4]];
+    const bases: BaseFrame[] = legs.map(([yaw, e, n], i) => { const p = at(e, n); return { frame: frame(yaw, -90, 0, { name: `s${i}`, intrinsics: small, lat: p.lat, lng: p.lng }), velocity: [0, 0] }; });
+    const render = (f: GeorefFrame) => {
+      const real = applyCalibration(f, truthCal, "truth");
+      const rgba = new Uint8ClampedArray(640 * 480 * 4);
+      for (let v = 0; v < 480; v++) for (let u = 0; u < 640; u++) {
+        const g = pixelToGround(real, u + 0.5, v + 0.5)!;
+        const en = toEnu({ lat: g.lat, lng: g.lng, altM: 0 }, { lat: LAT, lng: LNG, altM: 0 });
+        const val = soil(en[0], en[1]);
+        rgba.set([val, val * 0.95, val * 0.85, 255], (v * 640 + u) * 4);
+      }
+      return greyRaster({ width: 640, height: 480, rgba }, 1);
+    };
+    const ra = render(bases[0].frame), rb = render(bases[1].frame);
+    const r = findSoilTies(bases[0].frame, ra, bases[1].frame, rb, { fineRes: 0.04, fineN: 32, coarseRes: 0.08, coarseN: 128, stepM: 1.2, maxPerPair: 60, minPeak: 0.1 });
+    expect(r.coarseShiftM).not.toBeNull();
+    expect(r.ties.length).toBeGreaterThan(15);
+    const fit = adjust(bases, r.ties, { name: "tilt", globals: ["tiltAcrossDeg"] });
+    expect(fit.model.globals.tiltAcrossDeg).toBeCloseTo(1.5, 1);
+    expect(fit.train.median).toBeLessThan(0.02);
+  }, 30000);
 });
