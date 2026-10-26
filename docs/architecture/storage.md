@@ -7,6 +7,7 @@ signed URLs minted by an edge function, or streams bytes through the `tile` prox
 |---|---|---|
 | `scans` | `{user_id}/odm/{odm_uuid}/all.zip` | The complete OpenDroneMap output archive, mirrored off the processing node |
 | `orthos` | `{user_id}/{odm_uuid}.tif` | The extracted orthophoto GeoTIFF. This is the file TiTiler renders from | An imported orthomosaic (`ortho-import`) lands at the identical path, keyed on a locally-generated `odm_uuid` rather than one ODM issued - every downstream reader only ever looks at the path, never at where the uuid came from |
+| `orthos` | `{user_id}/field-twins/{twin_id}/{twin.json,atlas-N.jpg}` | A Field Twin bundle (prototype, `src/lib/fieldTwin/store.ts`): the field as vectors plus crops of the original photographs. Built on a computer by `scripts/directGeoref/buildTwin.ts`, saved and read by the Field Twin page with the signed-in session; the owner-only `orthos` policies are what keep it to that account |
 | `tiles` | `{user_id}/{odm_uuid}/{z}/{x}/{y}.png` | Pre-baked XYZ map tiles |
 | `field-reports` | `{user_id}/{field_id}/{task_id}/{timestamp}.pdf` | Generated mission report PDFs |
 

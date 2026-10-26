@@ -105,3 +105,34 @@ export function isHeldOut(t: { a: string; b: string }): boolean {
 export const r2 = (x: number) => Math.round(x * 100) / 100;
 export const r3 = (x: number) => Math.round(x * 1000) / 1000;
 export const quant = (v: number[], q: number) => { const s = v.filter(Number.isFinite).sort((a, b) => a - b); return s.length ? s[Math.floor(q * (s.length - 1))] : NaN; };
+
+// ------------------------------------------------------------------------------------------------------------------
+// Reference cameras (experiment 1's best adjustment) and quarter-size photographs, for the milestone scripts.
+// ------------------------------------------------------------------------------------------------------------------
+import type { AdjustModel, ModelSpec, PhotoKey } from "../../src/lib/directGeoref";
+import { frameUnder } from "../../src/lib/directGeoref";
+
+export const REFERENCE_MODEL = "global + per-photo attitude 1 deg";
+
+export function loadReference(): { model: AdjustModel; frames: Map<string, GeorefFrame>; bases: BaseFrame[]; cached: Cached[] } {
+  type Saved = { name: string; spec: ModelSpec; origin: AdjustModel["origin"]; globals: AdjustModel["globals"]; photo: [string, Record<PhotoKey, number>][] };
+  const saved = (JSON.parse(readFileSync(join(OUT, "exp1", "models.json"), "utf8")) as Saved[]).find(m => m.name === REFERENCE_MODEL);
+  if (!saved) throw new Error(`no "${REFERENCE_MODEL}" in exp1/models.json: run exp1Align.ts first`);
+  const model: AdjustModel = { spec: saved.spec, origin: saved.origin, globals: saved.globals, photo: new Map(saved.photo), terrain: null };
+  const cached = loadCache();
+  const bases = baseFrames(cached);
+  return { model, frames: new Map(bases.map(b => [b.frame.name, frameUnder(b, model)])), bases, cached };
+}
+
+/** An original photograph decoded and box-averaged by `down` (4: 1368 x 912 for the Phantom 4 RTK). */
+export function quarterPixels(name: string, down = 4): { width: number; height: number; rgba: Uint8ClampedArray } {
+  const img = decodeImage(new Uint8Array(readFileSync(join(PHOTOS, `${name}.JPG`))));
+  const W = Math.floor(img.width / down), H = Math.floor(img.height / down), rgba = new Uint8ClampedArray(W * H * 4), kk = down * down;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let r = 0, g = 0, b = 0;
+    for (let dy = 0; dy < down; dy++) { let o = ((y * down + dy) * img.width + x * down) * 4; for (let dx = 0; dx < down; dx++, o += 4) { r += img.data[o]; g += img.data[o + 1]; b += img.data[o + 2]; } }
+    const p = (y * W + x) * 4;
+    rgba[p] = r / kk; rgba[p + 1] = g / kk; rgba[p + 2] = b / kk; rgba[p + 3] = 255;
+  }
+  return { width: W, height: H, rgba };
+}

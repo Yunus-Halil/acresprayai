@@ -5,7 +5,8 @@ import { setUnitSystem, useUnitSystem } from "@/hooks/useUnitSystem";
 import { loadUnitPreference, saveUnitPreference } from "@/lib/unitPreference";
 import { UnitsPrompt } from "@/components/app/UnitsPrompt";
 import type { UnitSystem } from "@/lib/units";
-import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays, Sprout, Camera, FlaskConical } from "lucide-react";
+import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays, Sprout, Camera, FlaskConical, Shapes } from "lucide-react";
+import { isFieldTwinReviewer } from "@/lib/fieldTwin/reviewers";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import RequireAuth from "@/components/RequireAuth";
@@ -95,7 +96,9 @@ function AppShell() {
   // RequireAuth guarantees a user by the time this renders.
   const { user, signOut } = useAuth();
   const dev = useDeveloperMode();
-  const items = dev.developerTools ? [...nav, ...devNav] : nav;
+  // The Field Twin prototype: listed for its reviewers only (lib/fieldTwin/reviewers.ts).
+  const twinNav = isFieldTwinReviewer(user.email) ? [{ to: "/app/field-twin", label: "Field Twin", icon: Shapes, end: false }] : [];
+  const items = [...nav, ...twinNav, ...(dev.developerTools ? devNav : [])];
   const { units, promptOpen, choose } = useAccountUnits(user.id);
 
   return (

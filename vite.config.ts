@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 import { execSync } from "child_process";
+import fs from "fs";
+import type { Plugin } from "vite";
 
 // The commit the build came from, stamped into the bundle so the scan page's
 // footer can say which version is on screen. Vercel sets the SHA at build
@@ -22,6 +24,32 @@ const weedVisionProxy = (mode: string) =>
     ? { "/weed-vision-api": { target: "http://127.0.0.1:8765", changeOrigin: false, rewrite: (p: string) => p.replace(/^\/weed-vision-api/, "/weed-vision") } }
     : undefined;
 
+// Field Twin (dev server only): serve the twins scripts/directGeoref/buildTwin.ts wrote to
+// data/direct-georef/twin/<id>/, so the Field Twin page can save one to the signed-in account. Only twin ids and
+// the bundle's own file names are answered; nothing else under data/ is reachable. Never part of a build.
+const fieldTwinDevFiles = (): Plugin => ({
+  name: "field-twin-dev-files",
+  apply: "serve",
+  configureServer(server) {
+    const root = path.resolve(__dirname, "data/direct-georef/twin");
+    server.middlewares.use("/__field-twin", (req, res, next) => {
+      const url = (req.url ?? "/").split("?")[0];
+      if (url === "/" || url === "") {
+        const ids = fs.existsSync(root) ? fs.readdirSync(root).filter(d => /^[a-z0-9][a-z0-9-]{0,63}$/.test(d) && fs.existsSync(path.join(root, d, "twin.json"))) : [];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(ids));
+        return;
+      }
+      const m = /^\/([a-z0-9][a-z0-9-]{0,63})\/(twin\.json|atlas-\d+\.jpg)$/.exec(url);
+      if (!m) return next();
+      const file = path.join(root, m[1], m[2]);
+      if (!fs.existsSync(file)) { res.statusCode = 404; res.end(); return; }
+      res.setHeader("Content-Type", m[2].endsWith(".json") ? "application/json" : "image/jpeg");
+      fs.createReadStream(file).pipe(res);
+    });
+  },
+});
+
 export default defineConfig(({ mode }) => ({
   define: {
     __BUILD_SHA__: JSON.stringify(buildSha()),
@@ -37,6 +65,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
+    fieldTwinDevFiles(),
     // The offline shell. Operators plan at home and stand in fields with no
     // signal: the app shell precaches so a cold open renders, and everything
     // browsed with connectivity (field/grid/plan/log rows, ortho tiles,

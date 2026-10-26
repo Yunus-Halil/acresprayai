@@ -493,3 +493,42 @@ describe("soil ties end to end", () => {
     expect(fit.train.median).toBeLessThan(0.02);
   }, 30000);
 });
+
+describe("reconciling observations into objects", () => {
+  it("one object per plant, at its own height, never two sightings from one photo, coverage counted", async () => {
+    const { reconcile } = await import("@/lib/directGeoref");
+    const mPerLat = 111319.49, mPerLng = 111319.49 * Math.cos((LAT * Math.PI) / 180);
+    const at = (e: number, n: number) => ({ lat: LAT + n / mPerLat, lng: LNG + e / mPerLng });
+    const cams = [[0, 0, 45], [7, 7, 45], [14, -14, 225], [21, -7, 225]].map(([e, n, yaw], i) => { const p = at(e, n); return frame(yaw, -90, 0, { name: `p${i}`, lat: p.lat, lng: p.lng }); });
+    const frames = new Map(cams.map(f => [f.name, f]));
+    // A 1.2 m tree 1.5 m tall, two small weeds 0.15 m apart on the soil, one weed only one camera's detector saw.
+    const plants = [
+      { key: "tree", e: 10, n: 0, h: 1.5, size: 1.2, seenBy: ["p0", "p1", "p2", "p3"] },
+      { key: "w1", e: 8, n: -3, h: 0, size: 0.08, seenBy: ["p0", "p1", "p2", "p3"] },
+      { key: "w2", e: 8.15, n: -3, h: 0, size: 0.08, seenBy: ["p0", "p1", "p2", "p3"] },
+      { key: "w3", e: 6, n: 2, h: 0, size: 0.1, seenBy: ["p1"] },
+    ];
+    const obs = cams.flatMap(f => plants.filter(p => p.seenBy.includes(f.name)).map((p, i) => {
+      const g = at(p.e, p.n), px = groundToPixel(f, g.lat, g.lng, p.h)!;
+      return { frame: f.name, id: i + 1, u: px.u, v: px.v, sizeM: p.size, areaM2: (Math.PI * p.size * p.size) / 4, touchesEdge: !px.inside, data: { key: p.key } };
+    }));
+    const out = reconcile(obs, frames);
+    const byKey = (k: string) => out.filter(o => o.members.some(m => m.data?.key === k));
+    expect(byKey("tree")).toHaveLength(1);
+    const tree = byKey("tree")[0];
+    expect(tree.seenBy).toBe(4);
+    expect(tree.heightM!).toBeCloseTo(1.5, 2);
+    expect(tree.viewSpreadM).toBeLessThan(0.01);
+    const t = toEnu({ lat: tree.lat, lng: tree.lng, altM: 0 }, { lat: LAT, lng: LNG, altM: 0 });
+    expect(Math.hypot(t[0] - 10, t[1])).toBeLessThan(0.01);
+    // The two close weeds stay two objects, each seen four times; no object holds one photo twice.
+    expect(byKey("w1")).toHaveLength(1);
+    expect(byKey("w2")).toHaveLength(1);
+    expect(byKey("w1")[0]).not.toBe(byKey("w2")[0]);
+    for (const o of out) expect(new Set(o.members.map(m => m.frame)).size).toBe(o.members.length);
+    // The weed one detector saw: one view, but more photographs covered it.
+    const w3 = byKey("w3")[0];
+    expect(w3.seenBy).toBe(1);
+    expect(w3.coveredBy).toBeGreaterThan(1);
+  });
+});

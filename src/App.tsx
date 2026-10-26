@@ -24,6 +24,8 @@ import PhotoScout from "./pages/app/PhotoScout.tsx";
 import { lazy, Suspense } from "react";
 import { isWeedVisionPreviewEnabled } from "./lib/weedVision/flag";
 const WeedVisionPreview = lazy(() => import("./pages/app/WeedVisionPreview.tsx"));
+// The Field Twin prototype: its own chunk, loaded only when opened.
+const FieldTwin = lazy(() => import("./pages/app/FieldTwin.tsx"));
 import { AuthProvider } from "./lib/auth";
 
 const queryClient = new QueryClient();
@@ -52,6 +54,7 @@ const App = () => (
               <Route path="schedule" element={<Schedule />} />
               <Route path="weeds" element={<WeedLibrary />} />
               <Route path="photo" element={<PhotoScout />} />
+              <Route path="field-twin" element={<Suspense fallback={null}><FieldTwin /></Suspense>} />
               {/* WEED-VISION-PREVIEW: dev builds with VITE_WEED_VISION_PREVIEW=true only */}
               {isWeedVisionPreviewEnabled() && <Route path="weed-vision" element={<Suspense fallback={null}><WeedVisionPreview /></Suspense>} />}
             </Route>

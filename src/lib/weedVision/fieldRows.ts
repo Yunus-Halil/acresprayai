@@ -431,13 +431,27 @@ function neighbourGaps(rows: Chain[], slack: number): { left: number; right: num
   });
 }
 
+/**
+ * What the reader did along one direction, for diagnosis (scripts/directGeoref/m2Rows.ts): how many plants and rows
+ * each check left, and the check that stopped it. Filled only when a caller passes a trace; the reading is the same.
+ */
+export type RowReadTrace = {
+  directionDeg: number; plants: number; stepM?: number; chains?: number; rowsAlongChecked?: number; rowsSameStep?: number;
+  rowsAcross?: number; spacingM?: number; explainedShare?: number; stoppedAt?: string;
+};
+export type RowReadTraceLog = { candidates?: number; sizeRef?: number; blocks: RowReadTrace[][] };
+
 /** One planting's rows along theta, or null when they fail the spacing checks. */
-function rowsAlong(c: Blob[], theta: number, mpp: number): Block | null {
+function rowsAlong(c: Blob[], theta: number, mpp: number, trace?: RowReadTrace): Block | null {
   const step0 = typicalGap(c, theta, mpp);
-  if (!(step0 > 0)) return null;
+  if (trace) { trace.stepM = step0 * mpp; }
+  const stop = (why: string) => { if (trace) trace.stoppedAt = why; return null; };
+  if (!(step0 > 0)) return stop("no typical gap between neighbouring plants");
   const nx = -Math.sin(theta), ny = Math.cos(theta), ux = Math.cos(theta), uy = Math.sin(theta);
   let rows: Chain[] = [];
-  for (const raw of chainsOf(c, theta, step0)) {
+  const chains = chainsOf(c, theta, step0);
+  if (trace) trace.chains = chains.filter(ch => ch.length >= MIN_PLANTS_PER_ROW).length;
+  for (const raw of chains) {
     if (raw.length < MIN_PLANTS_PER_ROW) continue;
     const a = checkAlong(raw, theta, step0);
     if (a.members.length < MIN_PLANTS_PER_ROW || a.whole < MIN_WHOLE_GAPS) continue;
@@ -445,40 +459,48 @@ function rowsAlong(c: Blob[], theta: number, mpp: number): Block | null {
     rows.push({ members: a.members, step: a.step, offset: median(a.members.map(b => b.x * nx + b.y * ny)), t0: Math.min(...ts), t1: Math.max(...ts) });
   }
   // One planting, one spacing along.
+  if (trace) trace.rowsAlongChecked = rows.length;
   const refStep = median(rows.map(r => r.step));
   rows = rows.filter(r => Math.abs(r.step - refStep) <= SEED_SPACING_TOL * refStep);
-  if (rows.length < MIN_ROWS) return null;
+  if (trace) trace.rowsSameStep = rows.length;
+  if (rows.length < MIN_ROWS) return stop(trace && (trace.rowsAlongChecked ?? 0) < MIN_ROWS ? "fewer than 3 rows of evenly spaced plants" : "rows disagree on the plant spacing");
   // Across: kept when a neighbour on either side is a whole number of row spacings away.
   for (let pass = 0; pass < 3; pass++) {
     const sides = neighbourGaps(rows, refStep);
     const spacing = median(sides.flatMap(s => [s.left, s.right]).filter(Number.isFinite));
-    if (!(spacing > 0)) return null;
+    if (!(spacing > 0)) return stop("no neighbouring rows side by side");
     const isWhole = (d: number) => { if (!Number.isFinite(d)) return false; const k = Math.round(d / spacing); return k >= 1 && k <= 2 && Math.abs(d - k * spacing) <= ROW_SPACING_TOL * spacing; };
     const kept = rows.filter((_, i) => isWhole(sides[i].left) || isWhole(sides[i].right));
     if (kept.length === rows.length) break;
     rows = kept;
-    if (rows.length < MIN_ROWS) return null;
+    if (rows.length < MIN_ROWS) return stop("rows not evenly spaced across");
   }
+  if (trace) trace.rowsAcross = rows.length;
   const spacing = median(neighbourGaps(rows, refStep).map(s => Math.min(s.left, s.right)).filter(Number.isFinite));
-  if (spacing * mpp < MIN_ROW_SPACING_M) return null;
+  if (trace) trace.spacingM = spacing * mpp;
+  if (spacing * mpp < MIN_ROW_SPACING_M) return stop("rows closer than 1 m");
   // The rows explain their area: most of the crop-sized green within their extent is on them.
   const t0 = Math.min(...rows.map(r => r.t0)), t1 = Math.max(...rows.map(r => r.t1));
   const o0 = Math.min(...rows.map(r => r.offset)) - spacing / 2, o1 = Math.max(...rows.map(r => r.offset)) + spacing / 2;
   const inside = c.filter(b => { const t = b.x * ux + b.y * uy, o = b.x * nx + b.y * ny; return t >= t0 && t <= t1 && o >= o0 && o <= o1; });
   const members = new Set(rows.flatMap(r => r.members));
   const insideArea = inside.reduce((s, b) => s + b.area, 0), onArea = inside.filter(b => members.has(b)).reduce((s, b) => s + b.area, 0);
-  if (!(insideArea > 0) || onArea < MIN_EXPLAINED_SHARE * insideArea) return null;
+  if (trace) trace.explainedShare = insideArea > 0 ? onArea / insideArea : 0;
+  if (!(insideArea > 0) || onArea < MIN_EXPLAINED_SHARE * insideArea) return stop("rows explain under half the crop-sized green");
   const plantR = median(rows.flatMap(r => r.members.map(m => m.r)));
   const band = Math.min(Math.max(plantR, ROW_BAND_PITCH_SHARE * spacing), MAX_BAND_SHARE * spacing);
   return { rows, theta, spacing, step: refStep, band };
 }
 
 /** One planting among the plants: read along the best-stacking direction and a quarter turn from it; the rows are the way with the wider alleys. */
-function readBlock(c: Blob[], mpp: number): Block | null {
-  if (c.length < MIN_ROWS * MIN_PLANTS_PER_ROW) return null;
+function readBlock(c: Blob[], mpp: number, trace?: RowReadTrace[]): Block | null {
+  if (c.length < MIN_ROWS * MIN_PLANTS_PER_ROW) { trace?.push({ directionDeg: NaN, plants: c.length, stoppedAt: "fewer than 12 plant-sized patches" }); return null; }
   const { theta } = bestDirection(c, mpp);
-  const main = rowsAlong(c, theta, mpp);
-  const other = rowsAlong(c, theta + Math.PI / 2, mpp);
+  const ta: RowReadTrace | undefined = trace ? { directionDeg: (((theta * 180) / Math.PI) % 180 + 180) % 180, plants: c.length } : undefined;
+  const tb: RowReadTrace | undefined = trace ? { directionDeg: ((((theta + Math.PI / 2) * 180) / Math.PI) % 180 + 180) % 180, plants: c.length } : undefined;
+  if (ta && tb) trace!.push(ta, tb);
+  const main = rowsAlong(c, theta, mpp, ta);
+  const other = rowsAlong(c, theta + Math.PI / 2, mpp, tb);
   if (main && other) return other.spacing > main.spacing ? other : main;
   return main ?? other;
 }
@@ -505,13 +527,16 @@ function rowLines(r: Chain, theta: number, band: number): RowContext["lines"] {
 type RowsResult = Omit<FieldRows, "z" | "left" | "top" | "mpp">;
 
 /** The field's rows from its plants (frame pixels), or null when no evenly spaced rows of evenly spaced plants are there. */
-export function fieldRowsFromPlants(plants: Blob[], mpp: number): RowsResult | null {
+export function fieldRowsFromPlants(plants: Blob[], mpp: number, trace?: RowReadTraceLog, sizeShare: number = MIN_ROW_SIZE_SHARE): RowsResult | null {
   const ref = weightedMedianArea(plants);
-  let left = plants.filter(b => b.area >= MIN_ROW_SIZE_SHARE * ref);
+  let left = plants.filter(b => b.area >= sizeShare * ref);
+  if (trace) { trace.candidates = plants.length; trace.sizeRef = ref * mpp * mpp; }
   const total = left.reduce((s, b) => s + b.area, 0);
   const blocks: Block[] = [];
   for (let k = 0; k < MAX_BLOCKS; k++) {
-    const b = readBlock(left, mpp);
+    const bt: RowReadTrace[] | undefined = trace ? [] : undefined;
+    if (bt) trace!.blocks.push(bt);
+    const b = readBlock(left, mpp, bt);
     if (!b) break;
     blocks.push(b);
     const lines = b.rows.flatMap(r => rowLines(r, b.theta, b.band));
@@ -533,8 +558,14 @@ export function fieldRowsFromPlants(plants: Blob[], mpp: number): RowsResult | n
 }
 
 /** The field's rows from one raster's pixels. */
-export function fieldRowsFromPixels(px: PhotoPixels, mpp: number): RowsResult | null {
-  return fieldRowsFromPlants(plantsOfPixels(px, mpp), mpp);
+/**
+ * `sizeShare` (default MIN_ROW_SIZE_SHARE) is the share of the area-weighted median patch a plant must reach to be
+ * read. Lowering it keeps young trees in a mixed-age planting but lets weed patches in too; the direct-photo pipeline
+ * (scripts/directGeoref/m2Rows.ts) tries a lower share only on photographs the default failed, and keeps the result
+ * only when it agrees with the rows read in other photographs. The app's map reading always uses the default.
+ */
+export function fieldRowsFromPixels(px: PhotoPixels, mpp: number, trace?: RowReadTraceLog, sizeShare: number = MIN_ROW_SIZE_SHARE): RowsResult | null {
+  return fieldRowsFromPlants(plantsOfPixels(px, mpp), mpp, trace, sizeShare);
 }
 
 /**
