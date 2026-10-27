@@ -1,147 +1,213 @@
-// The Field Twin's map: vectors only, no satellite and no orthomosaic underneath.
-//
-// Detail follows the zoom (lib/fieldTwin/view.ts): the overview shows the photographs' coverage, the rows and a
-// weed density grid; closer, trees and weeds are points; closest, every crown and weed is drawn as measured.
-// Everything is drawn on one canvas renderer (thousands of objects stay smooth), and every object can be clicked.
+// The Field Twin map: a Leaflet map with one canvas layer for the whole scene (TwinCanvasLayer), the field's
+// surroundings from OpenStreetMap data underneath while the field is seen whole, a locate-field control, a
+// mini-map, a scale bar in the account's units and a north mark. Optionally, a developer-only reference
+// orthomosaic in a pane BELOW the canvas, with its own opacity and a swipe divider. Neither underlay is ever read:
+// the scene's coordinates come from the photographs alone.
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { type DetailLevel, detailAt, weedDensity } from "@/lib/fieldTwin/view";
-import type { TwinBundle, TwinWeed } from "@/lib/fieldTwin/types";
-import { ROW_COLOUR, TREE_COLOUR, type TwinLayers, WEED_COLOUR, weedColour } from "@/lib/fieldTwin/style";
+import { CachedTileLayer } from "@/components/app/workspace/OrthoTileLayer";
+import { type Detail, type Scene, zoomForSize } from "@/lib/fieldTwin/scene";
+import { TWIN_COLOURS, type TwinLayers } from "@/lib/fieldTwin/style";
+import type { UnitSystem } from "@/lib/units";
+import { type DrawStats, TwinCanvasLayer, type TwinPick } from "./TwinCanvasLayer";
 
-export type TwinSelection = { kind: "tree"; id: number } | { kind: "weed"; id: number } | null;
-
-/** Convex hull of points (lat/lng), for the photographs' coverage outline. */
-function hull(pts: [number, number][]): [number, number][] {
-  const p = [...pts].sort((a, b) => a[1] - b[1] || a[0] - b[0]);
-  const cross = (o: [number, number], a: [number, number], b: [number, number]) => (a[1] - o[1]) * (b[0] - o[0]) - (a[0] - o[0]) * (b[1] - o[1]);
-  const lo: [number, number][] = [], up: [number, number][] = [];
-  for (const q of p) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
-  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
-  return lo.slice(0, -1).concat(up.slice(0, -1));
-}
-
-/** Which layer groups are on, from the toggles and the zoom; returns the detail level it applied. */
-function applyLayers(map: L.Map, G: Record<string, L.LayerGroup>, l: TwinLayers, ensure: (key: string) => void): DetailLevel {
-  const d = detailAt(map.getZoom());
-  const want: Record<string, boolean> = {
-    coverage: l.coverage, rows: l.rows, droppedRows: l.droppedRows,
-    density: l.verified && d === "overview",
-    treePoints: l.trees && d === "points", treeCrowns: l.trees && (d === "outlines" || d === "overview"),
-    inferred: l.inferred && d !== "overview",
-    verifiedPoints: l.verified && d === "points", verifiedOutlines: l.verified && d === "outlines",
-    singlePoints: l.singleView && d === "points", singleOutlines: l.singleView && d === "outlines",
-    onTreePoints: l.onTree && d === "points", onTreeOutlines: l.onTree && d === "outlines",
-    vegetation: l.vegetation && d !== "overview",
-  };
-  for (const [k, grp] of Object.entries(G)) {
-    const on = want[k];
-    if (on) ensure(k);
-    if (on && !map.hasLayer(grp)) grp.addTo(map);
-    if (!on && map.hasLayer(grp)) map.removeLayer(grp);
-  }
-  return d;
-}
-
-type Props = {
-  twin: TwinBundle;
-  layers: TwinLayers;
-  selection: TwinSelection;
-  onSelect: (s: TwinSelection) => void;
-  onDetail?: (d: DetailLevel, zoom: number) => void;
+export type ReferenceImagery = {
+  /** XYZ tile URL template, from the account's own scan tiles. */
+  url: string;
+  maxNativeZoom: number;
+  /** 0 to 1. */
+  opacity: number;
+  /** Swipe divider position, 0 to 1 of the map width, or null for a plain overlay. */
+  swipe: number | null;
 };
 
-export default function TwinMap({ twin, layers, selection, onSelect, onDetail }: Props) {
-  const el = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const groups = useRef<Record<string, L.LayerGroup>>({});
-  const selRef = useRef<L.LayerGroup | null>(null);
-  const rendererRef = useRef<L.Canvas | null>(null);
-  const builders = useRef<Record<string, (g: L.LayerGroup) => void>>({});
-  const built = useRef<Set<string>>(new Set());
-  const layersRef = useRef(layers);
-  layersRef.current = layers;
-  const onSelectRef = useRef(onSelect);
-  onSelectRef.current = onSelect;
-  const onDetailRef = useRef(onDetail);
-  onDetailRef.current = onDetail;
+export type TwinMapHandle = { map: L.Map; layer: TwinCanvasLayer; locate: () => void };
 
-  const ensure = (key: string) => {
-    if (built.current.has(key)) return;
-    built.current.add(key);
-    builders.current[key]?.(groups.current[key]);
+/**
+ * The surroundings: OpenStreetMap's own tiles (roads, water, buildings, names; no photography), darkened and desaturated
+ * by a CSS filter on their pane so they sit under the twin rather than compete with it.
+ */
+export const SURROUNDINGS_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+export const SURROUNDINGS_ATTRIBUTION = 'Surroundings: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+export const SURROUNDINGS_FILTER = "invert(1) hue-rotate(180deg) brightness(0.55) saturate(0.25) contrast(0.9)";
+const SURROUNDINGS_MAX_NATIVE = 19;
+
+type Props = {
+  scene: Scene;
+  layers: TwinLayers;
+  selection: TwinPick;
+  units: UnitSystem;
+  onPick: (p: TwinPick) => void;
+  onDetail?: (d: Detail) => void;
+  onStats?: (s: DrawStats) => void;
+  onMove?: (centre: { lat: number; lng: number }, zoom: number) => void;
+  onReady?: (h: TwinMapHandle) => void;
+  reference?: ReferenceImagery | null;
+  onSwipe?: (pct: number) => void;
+};
+
+const bar = "background:rgba(20,22,20,.86);border:1px solid #333;color:#d9ddd6;";
+
+const NorthControl = L.Control.extend({
+  onAdd() {
+    const div = L.DomUtil.create("div", "leaflet-bar");
+    div.style.cssText = `${bar}width:30px;height:38px;display:flex;flex-direction:column;align-items:center;justify-content:center;font:600 10px system-ui,sans-serif;`;
+    div.title = "North is up";
+    div.innerHTML = '<svg width="14" height="18" viewBox="0 0 14 18" aria-hidden="true"><path d="M7 1 L12 15 L7 11 L2 15 Z" fill="#d9ddd6"/></svg><span>N</span>';
+    return div;
+  },
+});
+
+const LocateControl = L.Control.extend({
+  onAdd(this: L.Control & { options: { locate: () => void } }) {
+    const div = L.DomUtil.create("div", "leaflet-bar");
+    const a = L.DomUtil.create("a", "", div) as HTMLAnchorElement;
+    a.href = "#"; a.role = "button"; a.title = "Locate the field"; a.setAttribute("aria-label", "Locate the field");
+    a.style.cssText = `${bar}font:600 11px system-ui,sans-serif;width:auto;padding:0 8px;line-height:30px;`;
+    a.textContent = "⌖ Field";
+    L.DomEvent.on(a, "click", e => { L.DomEvent.stop(e); this.options.locate(); });
+    return div;
+  },
+});
+
+export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe }: Props) {
+  const el = useRef<HTMLDivElement>(null);
+  const miniEl = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const layerRef = useRef<TwinCanvasLayer | null>(null);
+  const scaleRef = useRef<L.Control.Scale | null>(null);
+  const refLayerRef = useRef<L.TileLayer | null>(null);
+  const contextRef = useRef<L.TileLayer | null>(null);
+  const dividerRef = useRef<HTMLDivElement>(null);
+  const onPickRef = useRef(onPick); onPickRef.current = onPick;
+  const onDetailRef = useRef(onDetail); onDetailRef.current = onDetail;
+  const onStatsRef = useRef(onStats); onStatsRef.current = onStats;
+  const onMoveRef = useRef(onMove); onMoveRef.current = onMove;
+  const onSwipeRef = useRef(onSwipe); onSwipeRef.current = onSwipe;
+  const layersRef = useRef(layers); layersRef.current = layers;
+  const detailRef = useRef<Detail | null>(null);
+
+  /** The surroundings tiles fade with the detail and are removed outright when invisible (no tile requests then). */
+  const updateContext = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    const want = layersRef.current.surroundings && layersRef.current.ground ? (detailRef.current?.surroundings ?? 1) : 0;
+    let tl = contextRef.current;
+    if (want <= 0.02) { if (tl && map.hasLayer(tl)) map.removeLayer(tl); return; }
+    if (!tl) { tl = L.tileLayer(SURROUNDINGS_URL, { pane: "twinContext", maxNativeZoom: SURROUNDINGS_MAX_NATIVE, maxZoom: 26, minZoom: 10, attribution: SURROUNDINGS_ATTRIBUTION, opacity: want }); contextRef.current = tl; }
+    if (!map.hasLayer(tl)) tl.addTo(map);
+    tl.setOpacity(want);
   };
 
-  // Build the map once per twin; the layer groups are filled on first use (ensure).
+  // The map and the canvas layer, once per scene.
   useEffect(() => {
     if (!el.current) return;
-    const map = L.map(el.current, { preferCanvas: true, maxZoom: 25, zoomSnap: 0.5, attributionControl: false, zoomControl: true });
+    const map = L.map(el.current, { attributionControl: false, zoomControl: false, zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 80, minZoom: 12, maxZoom: 26, zoomAnimation: true });
     mapRef.current = map;
-    const renderer = L.canvas({ padding: 0.3, tolerance: 4 });
-    rendererRef.current = renderer;
-    const pick = (s: TwinSelection) => (e: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(e); onSelectRef.current(s); };
-    const weedsOf = (status: TwinWeed["status"]) => twin.weeds.filter(w => w.status === status);
-    const plant = twin.field.plantSpacingM;
-    const typicalCrown = twin.trees.length ? [...twin.trees].map(t => t.crownRadiusM).sort((a, b) => a - b)[Math.floor(twin.trees.length / 2)] : plant / 4;
-    const weedPoint = (w: TwinWeed) => { const c = weedColour(w); return L.circleMarker([w.lat, w.lng], { renderer, radius: w.status === "verified" ? 3 : 2.5, color: c, weight: 1, fillColor: c, fillOpacity: w.status === "single view" ? 0 : 0.9 }).on("click", pick({ kind: "weed", id: w.id })); };
-    const weedOutline = (w: TwinWeed) => {
-      const c = weedColour(w);
-      return (w.ring.length >= 3 ? L.polygon(w.ring, { renderer, color: c, weight: 1.5, fillColor: c, fillOpacity: w.status === "single view" ? 0.05 : 0.3, dashArray: w.status === "single view" ? "3 3" : undefined }) : L.circle([w.lat, w.lng], { renderer, radius: w.diameterM / 2, color: c, weight: 1.5, fillOpacity: 0.3 })).on("click", pick({ kind: "weed", id: w.id }));
-    };
-    // Each group is built the first time the zoom or a toggle asks for it: zoomed out, the thousands of weed outlines
-    // are never made at all.
-    const build: Record<string, (g: L.LayerGroup) => void> = {
-      coverage: g => { g.addLayer(L.polygon(hull(twin.footprints.flatMap(f => f.ring)), { renderer, color: "#6b7280", weight: 1, dashArray: "4 4", fillColor: "#2a241f", fillOpacity: 0.35, interactive: false })); },
-      rows: g => { for (const r of twin.rows) if (r.kept) g.addLayer(L.polyline(r.line, { renderer, color: ROW_COLOUR, weight: 2, opacity: 0.9 }).bindTooltip(`Row ${r.id}: ${r.trees} trees, seen in ${r.photos} photographs`, { sticky: true })); },
-      droppedRows: g => { for (const r of twin.rows) if (!r.kept) g.addLayer(L.polyline(r.line, { renderer, color: "#6b7280", weight: 1.5, dashArray: "6 6", opacity: 0.9 }).bindTooltip(`Not kept as a row: ${r.reason}`, { sticky: true })); },
-      density: g => {
-        const cells = weedDensity(twin, 5, w => w.status === "verified");
-        const maxCount = Math.max(1, ...cells.map(c => c.count));
-        for (const c of cells) g.addLayer(L.rectangle([[c.south, c.west], [c.north, c.east]], { renderer, stroke: false, fillColor: WEED_COLOUR.betweenRows, fillOpacity: 0.12 + 0.6 * (c.count / maxCount), interactive: false }));
-      },
-      treePoints: g => { for (const t of twin.trees) g.addLayer(L.circleMarker([t.lat, t.lng], { renderer, radius: 3, color: TREE_COLOUR, weight: 1, fillColor: TREE_COLOUR, fillOpacity: 0.8 }).on("click", pick({ kind: "tree", id: t.id }))); },
-      treeCrowns: g => { for (const t of twin.trees) g.addLayer(L.circle([t.lat, t.lng], { renderer, radius: t.crownRadiusM, color: TREE_COLOUR, weight: 1.5, fillColor: TREE_COLOUR, fillOpacity: 0.08 }).on("click", pick({ kind: "tree", id: t.id }))); },
-      inferred: g => { for (const p of twin.inferredTrees) g.addLayer(L.circle([p.lat, p.lng], { renderer, radius: typicalCrown, color: TREE_COLOUR, weight: 1, dashArray: "3 4", fill: false, interactive: false })); },
-      verifiedPoints: g => { for (const w of weedsOf("verified")) g.addLayer(weedPoint(w)); },
-      verifiedOutlines: g => { for (const w of weedsOf("verified")) g.addLayer(weedOutline(w)); },
-      singlePoints: g => { for (const w of weedsOf("single view")) g.addLayer(weedPoint(w)); },
-      singleOutlines: g => { for (const w of weedsOf("single view")) g.addLayer(weedOutline(w)); },
-      onTreePoints: g => { for (const w of weedsOf("on a tree")) g.addLayer(weedPoint(w)); },
-      onTreeOutlines: g => { for (const w of weedsOf("on a tree")) g.addLayer(weedOutline(w)); },
-      vegetation: g => { for (const v of twin.vegetation) if (v.ring.length >= 3) g.addLayer(L.polygon(v.ring, { renderer, color: "#86efac", weight: 1, fillColor: "#86efac", fillOpacity: 0.12, interactive: false })); },
-    };
-    const G: Record<string, L.LayerGroup> = {};
-    for (const k of Object.keys(build)) G[k] = L.layerGroup();
-    groups.current = G;
-    builders.current = build;
-    built.current = new Set();
+    const contextPane = map.createPane("twinContext");
+    contextPane.style.zIndex = "200";
+    contextPane.style.filter = SURROUNDINGS_FILTER;
+    map.createPane("twinReference").style.zIndex = "250";
+    L.control.zoom({ position: "topright" }).addTo(map);
+    L.control.attribution({ position: "bottomright", prefix: false }).addTo(map);
+    const layer = new TwinCanvasLayer(layersRef.current);
+    layerRef.current = layer;
+    layer.setScene(scene);
+    layer.addTo(map);
+    const [x0, y0, x1, y1] = scene.bbox;
+    const fieldBounds = L.latLngBounds(map.unproject(L.point(x0, y1), 0), map.unproject(L.point(x1, y0), 0));
+    const locate = () => map.fitBounds(fieldBounds, { padding: [24, 24] });
+    layer.on("twinclick", (e: L.LeafletEvent & { pick?: TwinPick }) => {
+      const p = e.pick ?? null;
+      if (p && p.kind === "cluster") {
+        // A cluster is a stand-in: open it up to the measured outlines it stands for.
+        map.flyTo([p.lat, p.lng], Math.min(26, zoomForSize(scene.intel.summary.medianWeedDiameterM, 9, scene.twin.origin.lat)), { duration: 0.6 });
+        return;
+      }
+      onPickRef.current(p);
+    });
+    layer.watchDetail(d => { detailRef.current = d; updateContext(); onDetailRef.current?.(d); });
+    map.on("moveend zoomend", () => { onStatsRef.current?.(layer.stats); const c = map.getCenter(); onMoveRef.current?.({ lat: c.lat, lng: c.lng }, map.getZoom()); });
+    new LocateControl({ position: "topright", locate } as L.ControlOptions).addTo(map);
+    new NorthControl({ position: "bottomright" }).addTo(map);
+    locate();
 
-    map.fitBounds(L.latLngBounds(twin.bounds[0], twin.bounds[1]), { padding: [20, 20] });
-    map.on("click", () => onSelectRef.current(null));
-    const sync = () => onDetailRef.current?.(applyLayers(map, groups.current, layersRef.current, ensure), map.getZoom());
-    map.on("zoomend", sync);
-    sync();
-    selRef.current = L.layerGroup().addTo(map);
-    return () => { map.remove(); mapRef.current = null; };
-  }, [twin]);
+    // The mini-map: the field in its surroundings at a fixed scale, with the main view drawn as a rectangle.
+    let mini: L.Map | null = null;
+    if (miniEl.current) {
+      mini = L.map(miniEl.current, { preferCanvas: true, attributionControl: false, zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false, zoomAnimation: false });
+      const tilePane = mini.getPane("tilePane");
+      if (tilePane) tilePane.style.filter = SURROUNDINGS_FILTER;
+      L.tileLayer(SURROUNDINGS_URL, { maxNativeZoom: SURROUNDINGS_MAX_NATIVE, maxZoom: 20, opacity: 0.9 }).addTo(mini);
+      const hull: [number, number][] = [];
+      for (let i = 0; i < scene.imagery.length; i += 2) { const ll = map.unproject(L.point(scene.imagery[i], scene.imagery[i + 1]), 0); hull.push([ll.lat, ll.lng]); }
+      L.polygon(hull, { color: TWIN_COLOURS.blockEdge, weight: 1, fillColor: TWIN_COLOURS.soil, fillOpacity: 0.7, interactive: false }).addTo(mini);
+      const view = L.rectangle(map.getBounds(), { color: "#ffffff", weight: 1, fill: false, interactive: false }).addTo(mini);
+      mini.fitBounds(fieldBounds.pad(1.2));
+      const miniZoom = mini.getZoom();
+      const sync = () => { view.setBounds(map.getBounds()); mini!.setView(map.getCenter(), Math.min(miniZoom, Math.max(11, map.getZoom() - 5)), { animate: false }); };
+      map.on("move zoomend", sync);
+      mini.on("click", (e: L.LeafletMouseEvent) => map.panTo(e.latlng));
+      sync();
+    }
+    onReady?.({ map, layer, locate });
+    return () => { mini?.remove(); map.remove(); mapRef.current = null; layerRef.current = null; refLayerRef.current = null; scaleRef.current = null; contextRef.current = null; };
+    // The scene is the identity of the map; everything else is pushed through the refs and effects below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scene]);
 
-  useEffect(() => { const map = mapRef.current; if (map) onDetailRef.current?.(applyLayers(map, groups.current, layers, ensure), map.getZoom()); }, [layers]);
+  useEffect(() => { layerRef.current?.setLayers(layers); updateContext(); }, [layers]);
+  useEffect(() => { layerRef.current?.setSelection(selection); }, [selection]);
 
-  // The selected object: a ring around it, and the map brought to it if it is off screen.
+  // The scale bar follows the account's units.
   useEffect(() => {
-    const map = mapRef.current, grp = selRef.current;
-    if (!map || !grp) return;
-    grp.clearLayers();
-    if (!selection) return;
-    const o = selection.kind === "tree" ? twin.trees.find(t => t.id === selection.id) : twin.weeds.find(w => w.id === selection.id);
-    if (!o) return;
-    const r = selection.kind === "tree" ? (o as { crownRadiusM: number }).crownRadiusM + 0.3 : Math.max(0.25, (o as TwinWeed).diameterM / 2 + 0.15);
-    // On the SAME canvas as the objects. Without a renderer Leaflet made a second canvas above this one for the
-    // ring, and that canvas kept catching every later click: after one selection nothing could be selected again.
-    grp.addLayer(L.circle([o.lat, o.lng], { renderer: rendererRef.current ?? undefined, radius: r, color: "#ffffff", weight: 2.5, fill: false, interactive: false }));
-    if (!map.getBounds().contains([o.lat, o.lng])) map.panTo([o.lat, o.lng]);
-  }, [selection, twin]);
+    const map = mapRef.current;
+    if (!map) return;
+    scaleRef.current?.remove();
+    scaleRef.current = L.control.scale({ position: "bottomright", metric: units === "metric", imperial: units === "imperial", maxWidth: 140 }).addTo(map);
+  }, [units, scene]);
 
-  return <div ref={el} className="h-full w-full" style={{ background: "#1c1916" }} aria-label="Field Twin map" role="application" />;
+  // Reference imagery under the canvas: the account's own scan tiles, with opacity and an optional swipe clip.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const pane = map.getPane("twinReference");
+    if (!reference) { refLayerRef.current?.remove(); refLayerRef.current = null; if (pane) pane.style.clipPath = ""; return; }
+    let tl = refLayerRef.current;
+    if (!tl || (tl as unknown as { _url: string })._url !== reference.url) {
+      tl?.remove();
+      tl = new CachedTileLayer(reference.url, { pane: "twinReference", maxNativeZoom: reference.maxNativeZoom, maxZoom: 26, minZoom: 13, tileSize: 256, opacity: reference.opacity, crossOrigin: false });
+      tl.addTo(map);
+      refLayerRef.current = tl;
+    }
+    tl.setOpacity(reference.opacity);
+    if (pane) pane.style.clipPath = reference.swipe == null ? "" : `inset(0 ${Math.round((1 - reference.swipe) * 1000) / 10}% 0 0)`;
+  }, [reference, scene]);
+
+  // The swipe divider: a handle the user drags; the pane's clip follows.
+  useEffect(() => {
+    const d = dividerRef.current, host = el.current;
+    if (!d || !host || !reference || reference.swipe == null) return;
+    let dragging = false;
+    const move = (ev: PointerEvent) => { if (!dragging) return; const r = host.getBoundingClientRect(); onSwipeRef.current?.(Math.max(0.02, Math.min(0.98, (ev.clientX - r.left) / r.width))); };
+    const down = (ev: PointerEvent) => { dragging = true; d.setPointerCapture(ev.pointerId); ev.preventDefault(); ev.stopPropagation(); };
+    const up = () => { dragging = false; };
+    d.addEventListener("pointerdown", down); d.addEventListener("pointermove", move); d.addEventListener("pointerup", up);
+    return () => { d.removeEventListener("pointerdown", down); d.removeEventListener("pointermove", move); d.removeEventListener("pointerup", up); };
+  }, [reference]);
+
+  return (
+    <div className="relative h-full w-full" style={{ background: TWIN_COLOURS.outside }}>
+      <div ref={el} className="h-full w-full" style={{ background: TWIN_COLOURS.outside }} aria-label="Field Twin map" role="application" />
+      <div ref={miniEl} className="absolute bottom-[92px] z-[650] h-[110px] w-[170px] overflow-hidden rounded-sm border border-[#333] bg-[#1a1c1a] shadow" style={{ right: "calc(var(--twin-right, 0px) + 12px)", transition: "right .15s ease" }} aria-label="Mini-map: the field in its surroundings" role="img" />
+      {reference && reference.swipe != null && (
+        <div ref={dividerRef} role="separator" aria-label="Reference imagery swipe divider" aria-valuenow={Math.round(reference.swipe * 100)}
+          className="absolute top-0 bottom-0 z-[600] w-5 -ml-2.5 cursor-col-resize touch-none" style={{ left: `${reference.swipe * 100}%` }}>
+          <div className="mx-auto h-full w-0.5 bg-white/80" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/70 bg-[#1a1c1a]/90 px-1.5 py-0.5 text-[10px] text-neutral-200">⇔</div>
+        </div>
+      )}
+    </div>
+  );
 }

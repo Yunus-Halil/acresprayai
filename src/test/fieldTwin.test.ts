@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { FIELD_TWIN_FORMAT, parseTwin, type TwinBundle, type TwinWeed } from "@/lib/fieldTwin/types";
 import { bundleFileNames, missingFiles, twinPath } from "@/lib/fieldTwin/store";
 import { isFieldTwinReviewer } from "@/lib/fieldTwin/reviewers";
-import { OUTLINES_FROM_ZOOM, POINTS_FROM_ZOOM, detailAt, treeLines, weedDensity, weedLines } from "@/lib/fieldTwin/view";
+import { distanceToRowM, treeLines, weedDensity, weedLines } from "@/lib/fieldTwin/view";
 import { WEED_COLOUR, weedColour } from "@/lib/fieldTwin/style";
 import { fieldRowsFromPixels, type RowReadTraceLog } from "@/lib/weedVision/fieldRows";
 
@@ -67,10 +67,11 @@ describe("Field Twin reviewers", () => {
 });
 
 describe("Field Twin view", () => {
-  it("shows more as the map zooms in", () => {
-    expect(detailAt(POINTS_FROM_ZOOM - 0.5)).toBe("overview");
-    expect(detailAt(POINTS_FROM_ZOOM)).toBe("points");
-    expect(detailAt(OUTLINES_FROM_ZOOM)).toBe("outlines");
+  it("measures a weed's distance to the nearest kept row", () => {
+    const d = distanceToRowM(bundle(), 33.88, -5.42)!;
+    expect(d.rowId).toBe(1);
+    expect(d.distanceM).toBeLessThan(0.01);
+    expect(distanceToRowM(bundle({ rows: [] }), 33.88, -5.42)).toBeNull();
   });
 
   it("counts weeds per square for the overview, aligned to the twin's origin", () => {
@@ -84,13 +85,14 @@ describe("Field Twin view", () => {
 
   it("describes a weed in the account's units, saying how it was verified", () => {
     const m = weedLines(weed(), "metric");
-    expect(m.find(l => l.label === "Status")!.value).toBe("Verified: seen in 4 of 5 photographs");
+    expect(m.find(l => l.label === "Status")!.value).toBe("Seen in 4 of 5 photographs that covered it");
     expect(m.find(l => l.label === "Size across")!.value).toMatch(/^20(\.0)? cm$/);
     expect(m.find(l => l.label === "Ground cover")!.value).toMatch(/cm²$/);
     const i = weedLines(weed(), "imperial");
     expect(i.find(l => l.label === "Size across")!.value).toMatch(/ in$/);
     expect(i.find(l => l.label === "Ground cover")!.value).toMatch(/in²$/);
-    expect(weedLines(weed({ status: "single view", seenBy: 1, coveredBy: 3 }), "metric")[0].value).toBe("Unverified: seen in 1 of 3 photographs");
+    expect(weedLines(weed({ status: "single view", seenBy: 1, coveredBy: 3 }), "metric")[0].value).toBe("Seen in 1 of 3 photographs: unverified");
+    expect(weedLines(weed(), "metric", bundle()).some(l => l.label === "Nearest crop row")).toBe(true);
     expect(weedLines(weed({ status: "on a tree" }), "metric")[0].value).toMatch(/tree crown/);
     // One sighting has no cross-view agreement to report.
     expect(weedLines(weed({ status: "single view", seenBy: 1 }), "metric").some(l => l.label.startsWith("Views agree"))).toBe(false);

@@ -153,6 +153,12 @@ inspector wording in metric and imperial, and colours. It also parses the real b
 every layer. jsdom cannot hold the map for the real 10,000-object bundle, so the full twin has not been rendered in
 a test; the first look at it is Yunus's.
 
+## Afterwards
+
+The page was redrawn on 2026-10-27 as a field rather than a cloud of detections: one canvas, detail by rendered
+size, surroundings from OpenStreetMap data, a developer-only reference orthomosaic from the account's own scan
+tiles. See [field-twin-visualization.md](field-twin-visualization.md).
+
 ## Not verified, and not done
 
 - **No browser check.** The page has not been looked at in a browser with the real twin. The tests cover a

@@ -26,6 +26,9 @@ import { isWeedVisionPreviewEnabled } from "./lib/weedVision/flag";
 const WeedVisionPreview = lazy(() => import("./pages/app/WeedVisionPreview.tsx"));
 // The Field Twin prototype: its own chunk, loaded only when opened.
 const FieldTwin = lazy(() => import("./pages/app/FieldTwin.tsx"));
+// Development only: the viewer over a twin built on this computer, no sign-in (for the screenshot/benchmark script).
+// The import sits inside the DEV condition so a production build emits no chunk for it at all.
+const FieldTwinDevPreview = import.meta.env.DEV ? lazy(() => import("./pages/app/FieldTwinDevPreview.tsx")) : null;
 import { AuthProvider } from "./lib/auth";
 
 const queryClient = new QueryClient();
@@ -41,6 +44,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/apply" element={<PilotApply />} />
+            {FieldTwinDevPreview && <Route path="/dev/field-twin" element={<Suspense fallback={null}><FieldTwinDevPreview /></Suspense>} />}
             <Route
               path="/admin/pilot-applications"
               element={<RequireAuth><PilotApplications /></RequireAuth>}

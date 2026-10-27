@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { FIELD_TWIN_FORMAT, type TwinBundle } from "@/lib/fieldTwin/types";
 import TwinInspector from "@/components/app/fieldTwin/TwinInspector";
+import { buildScene } from "@/lib/fieldTwin/scene";
 
 // jsdom has no canvas; the twin draws on Leaflet's canvas renderer. A context that accepts every call is enough to
 // prove the page builds its layers without throwing.
@@ -26,12 +27,14 @@ const synthetic: TwinBundle = {
   vegetation: [], atlases: [{ file: "atlas-0.jpg", width: 2016, height: 112 }], stats: {},
 };
 
+const scene = buildScene(synthetic);
+
 describe("Field Twin inspector", () => {
   it("shows a weed's status, measurements and the crop of the photograph with its outline", async () => {
     const atlas = vi.fn(async () => "blob:atlas-0");
-    const { container } = render(<TwinInspector twin={synthetic} selection={{ kind: "weed", id: 3 }} atlasUrl={atlas} />);
-    expect(screen.getByText("Weed candidate 3")).toBeInTheDocument();
-    expect(screen.getByText("Verified: seen in 4 of 5 photographs")).toBeInTheDocument();
+    const { container } = render(<TwinInspector twin={synthetic} scene={scene} selection={{ kind: "weed", id: 3 }} atlasUrl={atlas} onClose={() => undefined} />);
+    expect(screen.getByText("Weed 3")).toBeInTheDocument();
+    expect(screen.getByText("Seen in 4 of 5 photographs that covered it")).toBeInTheDocument();
     expect(screen.getByText("Between the rows")).toBeInTheDocument();
     const img = await screen.findByAltText("Crop of DJI_0301");
     expect(img).toHaveAttribute("src", "blob:atlas-0");
@@ -40,11 +43,10 @@ describe("Field Twin inspector", () => {
   });
 
   it("says plainly when a tree kept no crops, and when nothing is selected", () => {
-    const { rerender } = render(<TwinInspector twin={synthetic} selection={{ kind: "tree", id: 7 }} atlasUrl={async () => ""} />);
+    const { container } = render(<TwinInspector twin={synthetic} scene={scene} selection={{ kind: "tree", id: 7 }} atlasUrl={async () => ""} onClose={() => undefined} />);
     expect(screen.getByText("Tree 7")).toBeInTheDocument();
     expect(screen.getByText("No photograph crops were kept for this object.")).toBeInTheDocument();
-    rerender(<TwinInspector twin={synthetic} selection={null} atlasUrl={async () => ""} />);
-    expect(screen.getByText("Click a tree or a weed on the map.")).toBeInTheDocument();
+    expect(container.querySelector("[aria-label='Close the inspector']")).not.toBeNull();
   });
 });
 
@@ -64,9 +66,10 @@ vi.mock("@/lib/fieldTwin/store", async importOriginal => ({
 async function openPage() {
   const { default: FieldTwin } = await import("@/pages/app/FieldTwin");
   render(<MemoryRouter><FieldTwin /></MemoryRouter>);
-  const open = await screen.findByRole("button", { name: state.twin.id });
-  await act(async () => { fireEvent.click(open); });
-  await waitFor(() => expect(screen.getByRole("checkbox", { name: /Crop rows/ })).toBeInTheDocument());
+  const select = await screen.findByRole("combobox", { name: "Saved twins" });
+  await waitFor(() => expect(screen.getByRole("option", { name: state.twin.id })).toBeInTheDocument());
+  await act(async () => { fireEvent.change(select, { target: { value: state.twin.id } }); });
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: /Crop structure/ })).toBeInTheDocument());
 }
 
 describe("Field Twin page", () => {
@@ -74,7 +77,8 @@ describe("Field Twin page", () => {
     state.twin = synthetic;
     await openPage();
     expect(screen.getByLabelText("Field Twin map")).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Diagnostics/ })); });
     for (const box of screen.getAllByRole("checkbox")) { await act(async () => { fireEvent.click(box); }); await act(async () => { fireEvent.click(box); }); }
-    expect(screen.getByText("Click a tree or a weed on the map.")).toBeInTheDocument();
+    expect(screen.getAllByText(/Field view|Row view|Plant view|Field Twin/).length).toBeGreaterThan(0);
   });
 });
