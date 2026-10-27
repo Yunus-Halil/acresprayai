@@ -1,34 +1,29 @@
+import { Label } from "./Cta";
 import { Reveal } from "./Reveal";
 import { AUDIENCES } from "./copy";
 
+/**
+ * "Built for those who work the land": four readers, set as an editorial list on warm ivory. Large names, one
+ * line each, rules between them. No cards.
+ */
 export const Audiences = () => (
-  <Reveal className="relative mx-auto max-w-[1200px] px-5 pt-24 sm:px-10 sm:pt-[130px]">
-    <section id="who">
-      <div className="font-plex text-xs tracking-[0.1em] text-sw-green">WHO IT'S FOR</div>
-      <h2 className="m-0 mt-4 max-w-[700px] text-[clamp(30px,5vw,48px)] font-semibold tracking-[-0.03em] text-sw-ink sm:mt-[18px]">
-        Built for the field. Ready for the fleet.
-      </h2>
+  <section id="who" className="bg-sw-ivory text-sw-night">
+    <div className="mx-auto max-w-[1440px] px-5 py-[clamp(96px,12vw,180px)] sm:px-10 lg:px-16">
+      <Reveal>
+        <h2 className="m-0 max-w-[16ch] font-geist text-[clamp(44px,7vw,112px)] font-medium leading-[0.95] tracking-[-0.045em]">{AUDIENCES.heading}</h2>
+      </Reveal>
 
-      <div className="mt-10 grid gap-8 sm:mt-14 sm:gap-10 md:grid-cols-3">
-        {AUDIENCES.map((audience) => (
-          <div
-            key={audience.label}
-            className="rounded-md border border-sw-line bg-sw-card p-6 sm:p-7"
-          >
-            <div className="font-plex text-xs tracking-[0.1em] text-sw-green">
-              {audience.label}
-            </div>
-            <h3 className="m-0 mb-2.5 mt-3.5 text-xl font-semibold text-sw-ink">
-              {audience.title}
-            </h3>
-            <p className="m-0 text-[15px] leading-[1.55] text-sw-muted">{audience.body}</p>
-          </div>
+      <ul className="m-0 mt-16 list-none border-b border-sw-night/15 p-0 sm:mt-24">
+        {AUDIENCES.items.map((a, i) => (
+          <li key={a.label} className="border-t border-sw-night/15">
+            <Reveal className="grid gap-3 py-7 sm:py-9 md:grid-cols-[80px_minmax(0,1fr)_minmax(0,1fr)] md:items-baseline md:gap-8">
+              <Label className="text-sw-night/45">{String(i + 1).padStart(2, "0")}</Label>
+              <h3 className="m-0 font-geist text-[clamp(30px,3.6vw,52px)] font-medium leading-[1] tracking-[-0.035em]">{a.label}</h3>
+              <p className="m-0 max-w-[36ch] text-[clamp(17px,1.4vw,20px)] leading-[1.4] text-sw-night/65">{a.line}</p>
+            </Reveal>
+          </li>
         ))}
-      </div>
-
-      <p className="mt-7 font-plex text-xs leading-relaxed text-sw-muted">
-        YOUR FIELDS, YOUR DATA. IMAGERY AND ANALYSIS STAY IN YOUR ACCOUNT AND ARE NOT SHARED WITH ANYONE ELSE.
-      </p>
-    </section>
-  </Reveal>
+      </ul>
+    </div>
+  </section>
 );

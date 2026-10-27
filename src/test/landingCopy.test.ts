@@ -12,20 +12,24 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  AUDIENCES, CTA_PRIMARY, HERO, RAIL, SOFTWARE, STATEMENT, STATUS_BADGE,
+  ACCESS, ACCESS_HREF, AUDIENCES, BEYOND, CTA_EXPLORE, CTA_PRIMARY, HERO, NAV, OPERATIONS, PLANT, STATUS_BADGE,
 } from "@/components/landing/copy";
 
 const LANDING = join(__dirname, "..", "components", "landing");
 
 /** Every string a visitor can read, flattened out of copy.ts. */
 const VISIBLE: string[] = [
-  STATUS_BADGE, CTA_PRIMARY,
-  HERO.headline, HERO.lead, ...HERO.shifts, HERO.brand, ...HERO.body,
-  STATEMENT.lead.map(p => p.text).join(""), STATEMENT.findings, STATEMENT.softwareHeading,
-  ...SOFTWARE.flatMap(s => [s.name, s.body]),
-  ...RAIL.flatMap(r => [r.eyebrow, r.title, r.alt]),
-  ...AUDIENCES.flatMap(a => [a.title, a.body]),
+  STATUS_BADGE, CTA_PRIMARY, CTA_EXPLORE, ...NAV.map(n => n.label),
+  HERO.headline, ...HERO.lines, HERO.sub, HERO.brand,
+  BEYOND.heading, BEYOND.caption, BEYOND.photosLabel, ...BEYOND.stages.flatMap(s => [s.label, s.line]),
+  PLANT.heading, PLANT.across, PLANT.ground, PLANT.seen, PLANT.seenValue, PLANT.seenNote, PLANT.caption,
+  OPERATIONS.heading, ...OPERATIONS.steps.flatMap(s => [s.label, s.line, s.alt]),
+  AUDIENCES.heading, ...AUDIENCES.items.flatMap(a => [a.label, a.line]),
+  ACCESS.heading, ACCESS.status, ACCESS.email,
 ];
+
+/** The redesign brief's headline is the one place "every" is allowed (2026-10-27). */
+const EVERY_ALLOWED = new Set([HERO.headline, HERO.lines[0]]);
 
 /** The JSX of every landing component, comments stripped, for the strings that live inline. */
 const componentSource = (): string =>
@@ -119,6 +123,7 @@ describe("nothing points off-site", () => {
 describe("closed testing", () => {
   it("has one primary call to action, and it asks for access rather than promising a place", () => {
     expect(CTA_PRIMARY).toBe("Request access");
+    expect(ACCESS_HREF).toBe("/apply");
     expect(STATUS_BADGE).toMatch(/CLOSED TESTING/);
     expect(STATUS_BADGE).toMatch(/INVITE ONLY/);
   });
@@ -136,13 +141,14 @@ describe("closed testing", () => {
 });
 
 describe("the category", () => {
-  it("says precision agriculture, not only weeds", () => {
-    // Weeds are the flagship job and the page leads with them. They are not the
-    // whole product, and a rewrite narrowed the brand to one feature once
-    // already. The category has to be on the page, above the headline.
+  it("keeps the redesign's hero and the brand line", () => {
+    // The hero is word for word from the 2026-10-27 redesign brief. The brand
+    // line is kept verbatim; it moved to the footer.
+    expect(HERO.headline).toBe("Every field. Understood.");
+    expect(HERO.lines.join(" ")).toBe(HERO.headline);
+    expect(HERO.sub).toBe("From drone imagery to field intelligence.");
     expect(HERO.brand).toBe("Precision Agriculture, Precisely Simple.");
-    expect(HERO.lead + " " + HERO.shifts[0]).toBe("Field intelligence built for action.");
-    expect(HERO.body.join(" ")).toMatch(/weeds/i);
+    expect(VISIBLE.join(" ")).toMatch(/weed/i);
   });
 
   it("names the findings that are not weeds", () => {
@@ -183,13 +189,13 @@ describe("claims the product can stand behind", () => {
     expect(all).not.toMatch(/identifies the species|knows the species|tells you the species/i);
   });
 
-  it("is broad and bold about the weeds, by decision, and still sells nothing else it lacks", () => {
-    // Rule 8 as rewritten on 2026-10-08: the hero says all of them. What it
-    // may still not say is a savings number, a species from pixels, or that
-    // the aircraft flies itself; those are checked beside this.
-    expect(HERO.body.join(" ")).toMatch(/finds the weeds, all of them/i);
-    // And no "every" anywhere a visitor reads: Yunus, 2026-10-08.
-    expect(VISIBLE.filter(s => /every/i.test(s))).toEqual([]);
+  it("presents nothing unmeasured as an established result", () => {
+    // Rule 8 as rewritten on 2026-10-27 (the redesign brief): no turnaround
+    // time, no accuracy figure, and no claim that it finds every weed. The
+    // 2026-10-08 "finds the weeds, all of them" line is gone on purpose.
+    expect(all).not.toMatch(/all of them|every weed|accura|(hours?|minutes?|days?)|turnaround/i);
+    // "Every" only in the brief's headline: Yunus, 2026-10-08, with that one exception.
+    expect(VISIBLE.filter(s => /every/i.test(s) && !EVERY_ALLOWED.has(s))).toEqual([]);
     expect(all).not.toMatch(/does not guess|any drone, any camera/i);
   });
 

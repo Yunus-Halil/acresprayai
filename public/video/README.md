@@ -74,3 +74,10 @@ clip scrolls into view, and skips loading entirely for `prefers-reduced-motion`
 or a connection the browser reports as slow or data-saving. The poster is
 therefore load-bearing, not decoration: pick a frame that tells the story on
 its own, because for some viewers it is the whole story.
+
+## Which clips play, and in what order
+
+`src/components/landing/heroMedia.ts` is the list. One clip loops; several play in order and wrap. Each entry
+names the wide and narrow encodes and a poster frame, and may set `zoom` to crop black bars baked into the
+source (the current cut has pillarboxed screen-recording seconds at 9, 10 and 17 s, so it plays at 1.1).
+

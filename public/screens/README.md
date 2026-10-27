@@ -1,5 +1,9 @@
 # Landing page screenshots
 
+**Since the 2026-10-27 redesign the website serves WebP copies of three of these from `public/site/ops`**
+(scout-findings, treatment-zone, mission-route); the rest are not on the page. Recapture here, then re-encode
+(see `public/site/README.md`). The service worker no longer precaches this folder.
+
 Real captures of the Swardus app, used by `src/components/landing/`. These are
 product proof, so the rule is: never replace one with stock imagery, a mock-up,
 or a render. If a screenshot no longer matches the UI, take a new one — don't

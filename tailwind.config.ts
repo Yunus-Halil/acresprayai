@@ -16,6 +16,9 @@ export default {
       fontFamily: {
         grotesk: ['"Manrope"', "sans-serif"],
         plex: ['"IBM Plex Mono"', "monospace"],
+        // The public website (2026-10-27 redesign): one grotesk and its mono.
+        geist: ['"Geist"', "system-ui", "sans-serif"],
+        "geist-mono": ['"Geist Mono"', "ui-monospace", "monospace"],
       },
       colors: {
         // Landing page palette. The marketing site is a field-equipment
@@ -39,6 +42,15 @@ export default {
           error: "#a8321f",
           "on-dark": "#9aa192",
           "on-dark-faint": "#7a8a72",
+          // The 2026-10-27 website: near-black, charcoal, warm ivory and a quiet field green.
+          // The vivid green ("bright-hi") is for emphasis only.
+          night: "#0b0d0b",
+          coal: "#151815",
+          "coal-2": "#1d211d",
+          ivory: "#efece3",
+          "ivory-2": "#e4e0d4",
+          sage: "#879d85",
+          amber: "#c58a44",
         },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

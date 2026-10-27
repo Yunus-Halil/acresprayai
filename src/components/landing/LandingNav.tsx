@@ -1,45 +1,45 @@
+import { useEffect, useState } from "react";
 import { Wordmark } from "./Wordmark";
-import { CTA_PRIMARY } from "./copy";
-
-const LINKS = [
-  { label: "What it finds", href: "#detection" },
-  { label: "The software", href: "#software" },
-  { label: "Who it's for", href: "#who" },
-];
+import { ACCESS_HREF, CTA_PRIMARY, NAV } from "./copy";
 
 /**
- * "Sign in" stays and "Sign up" does not. Testers already have accounts and
- * need the door; everyone else is sent to the access request, which is the
- * only way in during closed testing.
+ * Fixed at the top. Clear over the hero footage, then a solid near-black bar once the page has moved, so it
+ * never sits as a translucent smear over the product pictures. "Sign in" stays for the testers who already
+ * have accounts; everyone else is sent to the access request.
  */
-export const LandingNav = () => (
-  <nav className="sw-load absolute inset-x-0 top-0 z-20 mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-x-6 gap-y-4 px-5 pt-6 sm:px-10 sm:pt-7">
-    <a href="#top" className="flex items-center gap-2.5">
-      <Wordmark tone="paper" glass />
-    </a>
+export const LandingNav = () => {
+  const [solid, setSolid] = useState(false);
+  useEffect(() => {
+    const on = () => setSolid(window.scrollY > 24);
+    on();
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, []);
 
-    <div className="flex items-center gap-6 text-[15px] sm:gap-8">
-      {LINKS.map((link) => (
-        <a
-          key={link.href}
-          href={link.href}
-          className="hidden text-white/90 transition-colors hover:text-sw-bright-hi md:inline"
-        >
-          {link.label}
+  return (
+    <nav
+      className={`fixed inset-x-0 top-0 z-50 border-b transition-colors duration-300 ${solid ? "border-sw-ivory/10 bg-sw-night" : "border-transparent bg-transparent"}`}
+    >
+      <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-6 px-5 sm:h-[72px] sm:px-10 lg:px-16">
+        <a href="#top" aria-label="Swardus, back to the top" className="shrink-0">
+          <Wordmark tone="paper" size="sm" className="[&_img]:h-[22px] sm:[&_img]:h-6" />
         </a>
-      ))}
-      <a
-        href="/auth"
-        className="text-white/90 underline underline-offset-4 transition-colors hover:text-sw-bright-hi"
-      >
-        Sign in
-      </a>
-      <a
-        href="#pilot"
-        className="inline-flex items-center gap-2 rounded bg-white px-5 py-3 font-medium text-sw-ink transition-colors hover:bg-sw-bright-hi"
-      >
-        {CTA_PRIMARY} <span className="font-plex" aria-hidden="true">→</span>
-      </a>
-    </div>
-  </nav>
-);
+
+        <div className="flex items-center gap-5 text-[14px] text-sw-ivory/75 sm:gap-8">
+          {NAV.map(link => (
+            <a key={link.href} href={link.href} className="hidden transition-colors hover:text-sw-ivory lg:inline">
+              {link.label}
+            </a>
+          ))}
+          <a href="/auth" className="transition-colors hover:text-sw-ivory">Sign in</a>
+          <a
+            href={ACCESS_HREF}
+            className="hidden border border-sw-ivory/35 px-4 py-2 text-sw-ivory transition-colors hover:border-sw-ivory sm:inline-block"
+          >
+            {CTA_PRIMARY}
+          </a>
+        </div>
+      </div>
+    </nav>
+  );
+};

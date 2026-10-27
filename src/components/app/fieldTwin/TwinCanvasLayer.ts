@@ -282,21 +282,23 @@ export class TwinCanvasLayer extends L.Canvas {
     //     made the map drag its feet.)
     if (this.selection) {
       const g = this.geometryOf(this.selection);
-      if (g) { ctx.beginPath(); ctx.arc(X(g[0]), Y(g[1]), Math.max(6, g[2] * pxPerM + 4), 0, 2 * Math.PI); ctx.strokeStyle = C.selection; ctx.lineWidth = 2.5; ctx.stroke(); }
+      // The ring clears the object's own outline (its farthest point), not only the equal-area circle: an
+      // irregular weed reaches well past that circle, and a ring through the plant reads as a mistake up close.
+      if (g) { const reachPx = X(g[0] + g[3]) - X(g[0]); ctx.beginPath(); ctx.arc(X(g[0]), Y(g[1]), Math.max(6, g[2] * pxPerM + 4, reachPx + 5), 0, 2 * Math.PI); ctx.strokeStyle = C.selection; ctx.lineWidth = 2.5; ctx.stroke(); }
     }
     ctx.restore();
     this.stats = { lastDrawMs: performance.now() - t0, drawn, level: d.level, detail: d, draws: this.stats.draws + 1 };
     if (!this.lastDetail || this.lastDetail.level !== d.level || Math.abs(this.lastDetail.mpp - d.mpp) > 1e-9) { this.lastDetail = d; this.onDetailChange?.(d); }
   }
 
-  /** Centre and radius (metres) of a pick, zoom-0 units, for the highlight. */
-  private geometryOf(p: TwinPick): [number, number, number] | null {
+  /** Centre (zoom-0 units), radius (metres) and outline reach (zoom-0 units, 0 without an outline) of a pick, for the highlight. */
+  private geometryOf(p: TwinPick): [number, number, number, number] | null {
     const s = this.scene;
     if (!s || !p) return null;
-    if (p.kind === "tree") { const k = indexOfId(s.trees.id, p.id); return k < 0 ? null : [s.trees.x[k], s.trees.y[k], s.trees.rM[k]]; }
-    if (p.kind === "weed") { const k = indexOfId(s.weeds.id, p.id); return k < 0 ? null : [s.weeds.x[k], s.weeds.y[k], s.weeds.rM[k]]; }
-    if (p.kind === "vegetation") { const k = indexOfId(s.vegetation.id, p.id); return k < 0 ? null : [s.vegetation.x[k], s.vegetation.y[k], s.vegetation.rM[k]]; }
-    if (p.kind === "cluster") return [s.clusters.x[p.index], s.clusters.y[p.index], s.clusters.rM[p.index]];
+    if (p.kind === "tree") { const k = indexOfId(s.trees.id, p.id); return k < 0 ? null : [s.trees.x[k], s.trees.y[k], s.trees.rM[k], 0]; }
+    if (p.kind === "weed") { const k = indexOfId(s.weeds.id, p.id); return k < 0 ? null : [s.weeds.x[k], s.weeds.y[k], s.weeds.rM[k], reach(s.weeds.rings, k, s.weeds.x[k], s.weeds.y[k])]; }
+    if (p.kind === "vegetation") { const k = indexOfId(s.vegetation.id, p.id); return k < 0 ? null : [s.vegetation.x[k], s.vegetation.y[k], s.vegetation.rM[k], reach(s.vegetation.rings, k, s.vegetation.x[k], s.vegetation.y[k])]; }
+    if (p.kind === "cluster") return [s.clusters.x[p.index], s.clusters.y[p.index], s.clusters.rM[p.index], 0];
     return null;
   }
 
@@ -395,6 +397,12 @@ function indexOfId(ids: Int32Array, id: number): number { for (let i = 0; i < id
 function ring(ctx: Ctx, xy: Float64Array, X: (u: number) => number, Y: (u: number) => number) {
   for (let i = 0; i < xy.length; i += 2) { if (i === 0) ctx.moveTo(X(xy[0]), Y(xy[1])); else ctx.lineTo(X(xy[i]), Y(xy[i + 1])); }
   ctx.closePath();
+}
+/** The farthest point of an outline from a centre, in the outline's own (zoom-0) units. */
+function reach(r: { xy: Float64Array; off: Int32Array }, k: number, cx: number, cy: number): number {
+  let m = 0;
+  for (let i = r.off[k]; i < r.off[k + 1]; i += 2) m = Math.max(m, Math.hypot(r.xy[i] - cx, r.xy[i + 1] - cy));
+  return m;
 }
 function packed(ctx: Ctx, r: { xy: Float64Array; off: Int32Array }, k: number, X: (u: number) => number, Y: (u: number) => number) {
   const o = r.off[k], e = r.off[k + 1];

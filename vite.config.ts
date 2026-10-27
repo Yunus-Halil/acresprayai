@@ -96,6 +96,10 @@ export default defineConfig(({ mode }) => ({
         // silently skips it and offline cold-opens render a blank page.
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
+        // The raw website screenshots (public/screens) are source captures, not served by any page since the
+        // 2026-10-27 redesign (it uses the WebP copies in public/site). Precaching them cost every install
+        // about 3 MB, which matters on a rural connection.
+        globIgnores: ["screens/**"],
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/functions\//, /^\/rest\//],
         runtimeCaching: [
