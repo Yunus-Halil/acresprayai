@@ -139,6 +139,16 @@ screenshots in `data/direct-georef/twin/shots-before/`:
 The field intelligence, the objects and their measurements are unchanged; only the drawing changed. Draw times
 stayed under 3 ms (the wash's blur is the costliest step, 2.4 ms at the field view).
 
+## Final polish (2026-10-27, later still)
+
+Palette only, no new effects, after the lag report: the canvas blur, the tile-pane CSS filter, per-hover redraws
+and per-drag mini-map updates were removed first (commit ae166b0). Then: surroundings charcoal (#191d1a) with the
+OpenStreetMap tiles at 22 % so roads and land use read faintly; field interior #292f27 inside a sage imagery edge
+(#879d85) and a warm-white block edge, both muted and 1 px; crop structure sage (#78977c, rows #8aa08c at half
+alpha); weeds and the pressure wash one amber (#c58a44, wash alpha 0.03 to 0.2); zones #d77645 / #c58a44 / #a9955f
+at 0.3 / 0.2 / 0.12 with a hairline edge on the first two priorities only; zone corners cut three times; panels
+flat with a 1 px border. Screenshots before this pass in `shots-prev/`, after in `shots/`. Draws: 0.3 to 1.6 ms.
+
 ## Remaining issues
 
 - **Not seen in a real session.** Playwright ran the dev preview without an account; the reference layer and the

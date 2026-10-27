@@ -35,37 +35,39 @@ export const DEFAULT_LAYERS: TwinLayers = {
   pressure: true, zones: true, uncertainty: false, coverage: true, footprints: false, ground: true, surroundings: true,
 };
 
+// One palette for the whole twin: charcoal ground, sage for the crop and the boundaries, amber for weeds, a
+// restrained orange for the findings that matter most. No glow, no gradients.
 export const TWIN_COLOURS = {
-  outside: "#1f221f",
-  hatch: "#2a2e2a",
-  imagery: "#262a22",
-  imageryEdge: "#5f665c",
-  soil: "#3b3129",
-  blockEdge: "#c9c0ae",
-  /** Rows: quiet, a warm grey-violet. */
-  row: "#8f88a8",
-  rowDropped: "#5e6470",
+  outside: "#191d1a",
+  hatch: "#20251f",
+  imagery: "#222822",
+  imageryEdge: "#879d85",
+  soil: "#292f27",
+  blockEdge: "#b9b3a4",
+  /** Rows: quiet sage. */
+  row: "#8aa08c",
+  rowDropped: "#5a615b",
   /** Crop: muted green. */
-  tree: "#6aa884",
-  treeFill: "rgba(106, 168, 132, 0.12)",
-  vegetation: "#7fb393",
-  vegetationFill: "rgba(127, 179, 147, 0.10)",
+  tree: "#78977c",
+  treeFill: "rgba(120, 151, 124, 0.10)",
+  vegetation: "#84a888",
+  vegetationFill: "rgba(132, 168, 136, 0.09)",
   /** Weeds: controlled amber. */
-  weed: "#d9a93a",
-  weedOnRow: "#d98b45",
-  weedSingle: "#bfa86a",
-  weedOnTree: "#7f8891",
+  weed: "#c58a44",
+  weedOnRow: "#c9783d",
+  weedSingle: "#a9955f",
+  weedOnTree: "#767e86",
   /** The pressure wash, one hue; alpha carries the amount. */
-  pressureWash: "#b8862a",
-  /** Scouting zones by priority: 1 red-orange, 2 orange, 3 amber. */
-  zoneFill: ["", "#d2602c", "#d48a33", "#c9a53a"],
-  zoneEdge: ["", "#e8805a", "#e0a55a", "#d8bb66"],
-  uncertain: "rgba(140, 148, 160, 0.14)",
-  footprint: "#7d8a7a",
-  fieldHalo: "#e6c76a",
-  labelBg: "rgba(24, 26, 24, 0.86)",
-  labelText: "#eae6dc",
-  labelOnField: "#1f221f",
+  pressureWash: "#c58a44",
+  /** Scouting zones by priority: 1 the finding that matters most, 2 amber, 3 a pale amber. */
+  zoneFill: ["", "#d77645", "#c58a44", "#a9955f"],
+  zoneEdge: ["", "#d77645", "#c58a44", "#a9955f"],
+  uncertain: "rgba(140, 148, 160, 0.12)",
+  footprint: "#6c7a6c",
+  fieldHalo: "#879d85",
+  labelBg: "rgba(25, 29, 26, 0.9)",
+  labelText: "#e4e1d8",
+  labelOnField: "#191d1a",
   hover: "rgba(255, 255, 255, 0.5)",
   selection: "#ffffff",
 };

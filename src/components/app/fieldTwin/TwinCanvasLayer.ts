@@ -110,7 +110,7 @@ export class TwinCanvasLayer extends L.Canvas {
         const o = r.off[k];
         if (r.xy[o] < vx0 - 0.01 || r.xy[o] > vx1 + 0.01 || r.xy[o + 1] < vy0 - 0.01 || r.xy[o + 1] > vy1 + 0.01) continue;
         ctx.beginPath(); packed(ctx, r, k, X, Y);
-        ctx.globalAlpha = d.pressure * Math.min(0.34, 0.05 + 0.065 * v);
+        ctx.globalAlpha = d.pressure * Math.min(0.2, 0.03 + 0.04 * v);
         ctx.fill();
         n++;
       }
@@ -138,8 +138,8 @@ export class TwinCanvasLayer extends L.Canvas {
       for (let k = 0; k < scene.twin.footprints.length; k++) { ctx.beginPath(); packed(ctx, scene.footprints, k, X, Y); ctx.closePath(); ctx.stroke(); }
       ctx.setLineDash([]);
     }
-    if (L_.coverage) { ctx.beginPath(); ring(ctx, scene.imagery, X, Y); ctx.strokeStyle = C.imageryEdge; ctx.lineWidth = 1; ctx.setLineDash([6, 5]); ctx.stroke(); ctx.setLineDash([]); }
-    if (scene.block) { ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.strokeStyle = C.blockEdge; ctx.lineWidth = 1.5; ctx.stroke(); }
+    if (L_.coverage) { ctx.beginPath(); ring(ctx, scene.imagery, X, Y); ctx.strokeStyle = C.imageryEdge; ctx.lineWidth = 1; ctx.globalAlpha = 0.7; ctx.stroke(); ctx.globalAlpha = 1; }
+    if (scene.block) { ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.strokeStyle = C.blockEdge; ctx.lineWidth = 1.2; ctx.globalAlpha = 0.75; ctx.stroke(); ctx.globalAlpha = 1; }
 
     // 6. Scouting zones: filled regions with rounded edges, coloured by priority, labels on the ones that matter.
     //    The region is the zone's own cells (chained and corner-rounded); nothing is merged for looks.
@@ -149,8 +149,8 @@ export class TwinCanvasLayer extends L.Canvas {
         if (z.priority !== p || !z.rings.length) continue;
         ctx.beginPath();
         for (const r of z.rings) ring(ctx, r, X, Y);
-        ctx.fillStyle = C.zoneFill[p]; ctx.globalAlpha = d.zones * (p === 1 ? 0.36 : p === 2 ? 0.28 : 0.2); ctx.fill("evenodd");
-        ctx.strokeStyle = C.zoneEdge[p]; ctx.lineWidth = p === 1 ? 1.2 : 0.8; ctx.globalAlpha = d.zones * 0.7; ctx.stroke();
+        ctx.fillStyle = C.zoneFill[p]; ctx.globalAlpha = d.zones * (p === 1 ? 0.3 : p === 2 ? 0.2 : 0.12); ctx.fill("evenodd");
+        if (p < 3) { ctx.strokeStyle = C.zoneEdge[p]; ctx.lineWidth = 0.8; ctx.globalAlpha = d.zones * (p === 1 ? 0.55 : 0.35); ctx.stroke(); }
         n++;
       }
       if (d.zoneLabels) {
@@ -173,7 +173,7 @@ export class TwinCanvasLayer extends L.Canvas {
     if (L_.surroundings && L_.ground && d.surroundings > 0.3) {
       ctx.globalAlpha = (d.surroundings - 0.3) / 0.7;
       ctx.beginPath(); ring(ctx, scene.imagery, X, Y);
-      ctx.strokeStyle = C.fieldHalo; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = C.fieldHalo; ctx.lineWidth = 1.5; ctx.stroke();
       const cx = (X(scene.bbox[0]) + X(scene.bbox[2])) / 2, top = Y(scene.bbox[1]) - 14;
       ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       const w = ctx.measureText(scene.twin.name).width + 14;

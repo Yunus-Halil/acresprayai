@@ -30,7 +30,7 @@ export type TwinMapHandle = { map: L.Map; layer: TwinCanvasLayer; locate: () => 
  */
 export const SURROUNDINGS_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 export const SURROUNDINGS_ATTRIBUTION = 'Surroundings: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-const SURROUNDINGS_OPACITY = 0.4;
+const SURROUNDINGS_OPACITY = 0.22;
 const SURROUNDINGS_MAX_NATIVE = 19;
 
 type Props = {
@@ -135,7 +135,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
     let mini: L.Map | null = null;
     if (miniEl.current) {
       mini = L.map(miniEl.current, { preferCanvas: true, attributionControl: false, zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false, zoomAnimation: false });
-      L.tileLayer(SURROUNDINGS_URL, { maxNativeZoom: SURROUNDINGS_MAX_NATIVE, maxZoom: 20, opacity: 0.5 }).addTo(mini);
+      L.tileLayer(SURROUNDINGS_URL, { maxNativeZoom: SURROUNDINGS_MAX_NATIVE, maxZoom: 20, opacity: 0.3 }).addTo(mini);
       const hull: [number, number][] = [];
       for (let i = 0; i < scene.imagery.length; i += 2) { const ll = map.unproject(L.point(scene.imagery[i], scene.imagery[i + 1]), 0); hull.push([ll.lat, ll.lng]); }
       L.polygon(hull, { color: TWIN_COLOURS.blockEdge, weight: 1, fillColor: TWIN_COLOURS.soil, fillOpacity: 0.7, interactive: false }).addTo(mini);
@@ -199,7 +199,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   return (
     <div className="relative h-full w-full" style={{ background: TWIN_COLOURS.outside }}>
       <div ref={el} className="h-full w-full" style={{ background: TWIN_COLOURS.outside }} aria-label="Field Twin map" role="application" />
-      <div ref={miniEl} className="absolute bottom-[92px] z-[650] h-[110px] w-[170px] overflow-hidden rounded-sm border border-[#333] bg-[#1a1c1a] shadow" style={{ right: "calc(var(--twin-right, 0px) + 12px)", transition: "right .15s ease" }} aria-label="Mini-map: the field in its surroundings" role="img" />
+      <div ref={miniEl} className="absolute bottom-[92px] z-[650] h-[110px] w-[170px] overflow-hidden rounded-sm border border-[#343834] bg-[#191d1a]" style={{ right: "calc(var(--twin-right, 0px) + 12px)", transition: "right .15s ease" }} aria-label="Mini-map: the field in its surroundings" role="img" />
       {reference && reference.swipe != null && (
         <div ref={dividerRef} role="separator" aria-label="Reference imagery swipe divider" aria-valuenow={Math.round(reference.swipe * 100)}
           className="absolute top-0 bottom-0 z-[600] w-5 -ml-2.5 cursor-col-resize touch-none" style={{ left: `${reference.swipe * 100}%` }}>

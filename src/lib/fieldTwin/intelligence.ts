@@ -207,7 +207,7 @@ export function scoutingZones(grid: PressureGrid, fromPct = 1.5, minCells = 3): 
     zones.push({
       id: 0, priority: 3, cells: members, areaM2, coverM2, meanCoverPct: (100 * coverM2) / areaM2, weeds: members.reduce((s, c) => s + c.verified, 0),
       centre: [members.reduce((s, c) => s + c.centre[0], 0) / members.length, members.reduce((s, c) => s + c.centre[1], 0) / members.length], edges,
-      rings: chainEdges(edges).map(r => roundCorners(r, 2)),
+      rings: chainEdges(edges).map(r => roundCorners(r, 3)),
     });
   }
   zones.sort((a, b) => b.coverM2 - a.coverM2);

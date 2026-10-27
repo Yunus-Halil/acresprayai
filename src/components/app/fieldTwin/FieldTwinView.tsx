@@ -37,7 +37,7 @@ const LEVEL_TEXT: Record<Detail["level"], string> = {
 };
 const LEVEL_NAME: Record<Detail["level"], string> = { field: "Field", row: "Rows", plant: "Plants" };
 
-const panel = "rounded-md border border-[#343834] bg-[#171a17] shadow-[0_6px_24px_rgba(0,0,0,.45)]";
+const panel = "rounded-md border border-[#343834] bg-[#171a17]";
 
 export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], expose = false }: Props) {
   const units = useUnitSystem();
