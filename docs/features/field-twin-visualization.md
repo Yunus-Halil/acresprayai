@@ -113,6 +113,32 @@ and a swipe divider (imagery left of it). It is pure display: the twin's coordin
 - Removed: the zoom-number levels (`detailAt`), the per-object Leaflet layers, the compass-aligned density grid as
   the overview (the row-aligned pressure cells replaced it; `weedDensity` remains for callers).
 
+## Correction pass (2026-10-27, later)
+
+Yunus's visual review of the first screenshots: too dense and technical. What changed, judged against the saved
+screenshots in `data/direct-georef/twin/shots-before/`:
+
+- **Field view.** The 21 stair-stepped zone outlines are gone. Each zone is now a filled region with rounded
+  corners (its own cells, chained and corner-cut; nothing merged or added), coloured by priority: the three heaviest
+  by verified cover in red-orange, the next five in orange, the rest in amber, and only the first priority labelled
+  until the rows come in. Pressure is a blurred single-hue wash whose strength is the cover averaged over
+  neighbouring cells, so no cell edge is visible. Rows are drawn over the zones, in a quiet grey-violet at 45 %
+  until the crowns appear. No tree points, no weed candidates. Before: a yellow mass with 21 labels; after: a block
+  with three regions and three labels.
+- **Row view.** Only patches of two or more candidates are drawn, at lower alpha; a lone candidate waits for the
+  plant level, where its outline is drawn. Crowns in muted green, rows firmer.
+- **Surroundings.** A halo on the imagery hull and the field's name while zoomed out, so the selected field is
+  unmistakable within its roads; the charcoal outside the imagery is lighter and keeps its hatch, so the field never
+  floats in a void at any zoom.
+- **Colours.** Rows grey-violet, crop muted green, weeds controlled amber, zones a restrained orange scale,
+  uncertainty neutral grey.
+- **Inspector.** Opaque panel with sections: identity and state, a plain sentence on what the state means,
+  measurements, confidence, the photographs, and technical diagnostics folded away. The layer panel and status strip
+  are opaque too.
+
+The field intelligence, the objects and their measurements are unchanged; only the drawing changed. Draw times
+stayed under 3 ms (the wash's blur is the costliest step, 2.4 ms at the field view).
+
 ## Remaining issues
 
 - **Not seen in a real session.** Playwright ran the dev preview without an account; the reference layer and the

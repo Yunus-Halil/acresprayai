@@ -31,10 +31,13 @@ type Props = {
 };
 
 const LEVEL_TEXT: Record<Detail["level"], string> = {
-  field: "Field view: rows, the orchard block and weed pressure per cell. Zoom in for trees and weed clusters.",
-  row: "Row view: trees at their measured crowns, weed candidates as clusters. Zoom in for every measured outline.",
-  plant: "Plant view: every weed candidate and crown as measured in the photographs. Click one to inspect it.",
+  field: "Rows, the orchard block, weed pressure and the scouting zones. Zoom in for trees and weed patches.",
+  row: "Trees at their measured crowns and patches where candidates stand together. Zoom in for every outline.",
+  plant: "Every weed candidate and crown as measured in the photographs. Click one to inspect it.",
 };
+const LEVEL_NAME: Record<Detail["level"], string> = { field: "Field", row: "Rows", plant: "Plants" };
+
+const panel = "rounded-md border border-[#343834] bg-[#171a17] shadow-[0_6px_24px_rgba(0,0,0,.45)]";
 
 export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], expose = false }: Props) {
   const units = useUnitSystem();
@@ -75,50 +78,51 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
   }, [expose, scene, stats]);
 
   const toggle = (k: keyof TwinLayers, label: string, swatch: string, hint?: string) => (
-    <label key={k} className="flex items-start gap-2 py-0.5 text-xs text-neutral-300 cursor-pointer">
-      <input type="checkbox" className="mt-0.5" checked={layers[k]} onChange={e => setLayers(l => ({ ...l, [k]: e.target.checked }))} />
+    <label key={k} className="flex items-start gap-2 py-1 text-xs text-neutral-200 cursor-pointer">
+      <input type="checkbox" className="mt-0.5 accent-[#c9a53a]" checked={layers[k]} onChange={e => setLayers(l => ({ ...l, [k]: e.target.checked }))} />
       <span className="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: swatch }} />
-      <span>{label}{hint ? <span className="block text-[10px] text-neutral-500">{hint}</span> : null}</span>
+      <span>{label}{hint ? <span className="block text-[10px] leading-snug text-neutral-500">{hint}</span> : null}</span>
     </label>
   );
   const s = intel.summary;
   const counts = { verified: twin.weeds.filter(w => w.status === "verified").length, single: twin.weeds.filter(w => w.status === "single view").length, onTree: twin.weeds.filter(w => w.status === "on a tree").length, rows: twin.rows.filter(r => r.kept).length };
+  const priorityZones = intel.zones.filter(z => z.priority === 1).length;
 
   return (
-    <div className="twin-root relative h-full w-full min-h-0 overflow-hidden" style={{ background: TWIN_COLOURS.outside, ["--twin-right" as string]: selection ? "352px" : "0px" }}>
-      <style>{`.twin-root .leaflet-top.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; }`}</style>
+    <div className="twin-root relative h-full w-full min-h-0 overflow-hidden" style={{ background: TWIN_COLOURS.outside, ["--twin-right" as string]: selection ? "368px" : "0px" }}>
+      <style>{`.twin-root .leaflet-top.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; } .twin-root .leaflet-control-scale-line { background: rgba(24,26,24,.85); color: #d9ddd6; border-color: #8a8f88; } .twin-root .leaflet-control-attribution { background: rgba(24,26,24,.85); color: #9aa09a; }`}</style>
       <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={setSelection} onDetail={setDetail} onStats={setStats}
         onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} />
 
       {/* Layer panel, top left. */}
-      <div className="absolute left-3 top-3 z-[700] w-[270px] rounded-md border border-[#2a2d2a] bg-[#141614]/95 text-sm shadow-lg backdrop-blur">
-        <button type="button" className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium text-neutral-200" onClick={() => setPanelOpen(o => !o)} aria-expanded={panelOpen}>
+      <div className={`absolute left-3 top-3 z-[700] w-[272px] text-sm ${panel}`}>
+        <button type="button" className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-semibold text-neutral-100" onClick={() => setPanelOpen(o => !o)} aria-expanded={panelOpen}>
           <span className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5" />Layers</span>{panelOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </button>
         {panelOpen && (
-          <div className="border-t border-[#2a2d2a] px-3 py-2">
-            {toggle("structure", `Crop structure`, TWIN_COLOURS.row, `${counts.rows} rows, ${twin.trees.length.toLocaleString()} trees`)}
+          <div className="border-t border-[#2e322e] px-3 py-2">
+            {toggle("structure", "Crop structure", TWIN_COLOURS.row, `${counts.rows} rows, ${twin.trees.length.toLocaleString()} trees`)}
             {toggle("weeds", "Weed candidates", TWIN_COLOURS.weed, `${counts.verified.toLocaleString()} seen in 2+ photographs`)}
-            {toggle("pressure", "Weed pressure", TWIN_COLOURS.pressure[3], `% of ground covered, per ${intel.grid.cellM} m cell`)}
-            {toggle("zones", "Scouting zones", TWIN_COLOURS.zone, `${intel.zones.length} connected areas at 1.5 % cover or more`)}
+            {toggle("pressure", "Weed pressure", TWIN_COLOURS.pressureWash, `% of ground covered, per ${intel.grid.cellM} m`)}
+            {toggle("zones", "Scouting zones", TWIN_COLOURS.zoneFill[1], `${intel.zones.length} areas at 1.5 % cover or more, ${priorityZones} first priority`)}
             {toggle("vegetation", "Other vegetation", TWIN_COLOURS.vegetation, `${twin.vegetation.length} patches, unclassed`)}
-            {toggle("uncertainty", "Uncertainty", "#8a949e", `${s.cellsSingleCoverage} cells one photograph saw: nothing can be verified there`)}
+            {toggle("uncertainty", "Uncertainty", "#8c949f", `${s.cellsSingleCoverage} cells one photograph saw`)}
             {toggle("coverage", "Photo coverage", TWIN_COLOURS.imageryEdge, "the ground the photographs looked at")}
-            {toggle("surroundings", "Surroundings", "#3b3f3b", "roads and places from OpenStreetMap data, shown while the field is seen whole")}
+            {toggle("surroundings", "Surroundings", "#4a4f4a", "roads and places, OpenStreetMap data")}
             <button type="button" className="mt-2 flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => setDiagOpen(o => !o)} aria-expanded={diagOpen}>
               {diagOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}Diagnostics
             </button>
             {diagOpen && (
-              <div className="mt-1 border-l border-[#2a2d2a] pl-2">
+              <div className="mt-1 border-l border-[#2e322e] pl-2">
                 {toggle("singleView", "Single-sighting candidates", TWIN_COLOURS.weedSingle, `${counts.single.toLocaleString()}, dashed`)}
                 {toggle("onTree", "Detections on tree crowns", TWIN_COLOURS.weedOnTree, `${counts.onTree.toLocaleString()}, kept apart from weeds`)}
                 {toggle("inferred", "Inferred tree positions", TWIN_COLOURS.tree, `${twin.inferredTrees.length}, dashed, from the planting pattern`)}
                 {toggle("droppedRows", "Row candidates not kept", TWIN_COLOURS.rowDropped, `${twin.rows.length - counts.rows}`)}
                 {toggle("footprints", "Photo footprints", TWIN_COLOURS.footprint, `${twin.footprints.length}`)}
                 {referenceOptions.length > 0 && (
-                  <div className="mt-2 text-xs text-neutral-300">
+                  <div className="mt-2 text-xs text-neutral-200">
                     <label className="block text-[11px] text-neutral-400" htmlFor="twin-ref">Reference Orthomosaic</label>
-                    <select id="twin-ref" value={refId} onChange={e => setRefId(e.target.value)} className="mt-0.5 w-full rounded-sm border border-[#333] bg-[#0f0f0f] px-1.5 py-1 text-xs text-neutral-200">
+                    <select id="twin-ref" value={refId} onChange={e => setRefId(e.target.value)} className="mt-0.5 w-full rounded-sm border border-[#3a3f3a] bg-[#111311] px-1.5 py-1 text-xs text-neutral-100">
                       <option value="">Off</option>
                       {referenceOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                     </select>
@@ -141,17 +145,17 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
       </div>
 
       {/* Status strip, bottom left: what this zoom shows. */}
-      <div className="absolute bottom-3 left-3 z-[700] max-w-[420px] rounded-md border border-[#2a2d2a] bg-[#141614]/95 px-3 py-2 text-[11px] text-neutral-300 shadow-lg backdrop-blur">
-        <p><span className="font-medium text-neutral-100">{detail ? { field: "Field view", row: "Row view", plant: "Plant view" }[detail.level] : "Field Twin"}</span> · {twin.name}</p>
-        <p className="text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>
-        {detail?.level === "field" && <p className="text-neutral-500">{s.blockHa != null ? `Orchard block ${fmtArea(s.blockHa * 10_000, units).text}; ` : ""}imagery {fmtArea(s.imageryHa * 10_000, units).text}; {s.cellsWithWeeds} of {intel.grid.cells.length} cells hold verified candidates.</p>}
-        <p className="text-neutral-500">Centre {(centre ?? twin.origin).lat.toFixed(6)}, {(centre ?? twin.origin).lng.toFixed(6)} · north up</p>
-        {reference && <p className="text-amber-300/90">Reference imagery is on (diagnostics). It is display only and never moves the twin's objects.</p>}
+      <div className={`absolute bottom-3 left-3 z-[700] max-w-[400px] px-3 py-2 text-[11px] text-neutral-300 ${panel}`}>
+        <p className="text-xs"><span className="font-semibold text-neutral-100">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · {twin.name}</span></p>
+        <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>
+        {detail?.level === "field" && <p className="mt-0.5 text-neutral-500">{s.blockHa != null ? `Orchard block ${fmtArea(s.blockHa * 10_000, units).text}; ` : ""}{intel.zones.length} scouting zones, {priorityZones} first priority.</p>}
+        <p className="mt-0.5 text-neutral-500 tabular-nums">Centre {(centre ?? twin.origin).lat.toFixed(6)}, {(centre ?? twin.origin).lng.toFixed(6)} · north up</p>
+        {reference && <p className="mt-0.5 text-amber-300/90">Reference imagery on (diagnostics): display only, it never moves the twin's objects.</p>}
       </div>
 
       {/* Inspector, docked right. */}
       {selection && (
-        <aside className="absolute right-3 top-3 bottom-3 z-[700] w-[340px] overflow-y-auto rounded-md border border-[#2a2d2a] bg-[#141614]/97 p-3 text-sm shadow-lg backdrop-blur" aria-label="Inspector">
+        <aside className={`absolute right-3 top-3 bottom-3 z-[700] w-[356px] overflow-y-auto p-3.5 text-sm ${panel}`} aria-label="Inspector">
           <TwinInspector twin={twin} scene={scene} selection={selection} atlasUrl={atlasUrl} onClose={() => setSelection(null)} onZoomTo={zoomTo} />
         </aside>
       )}

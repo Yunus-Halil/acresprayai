@@ -96,22 +96,26 @@ export class TwinCanvasLayer extends L.Canvas {
       if (scene.block) { ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.fillStyle = C.soil; ctx.fill(); }
     }
 
-    // 2. Weed pressure cells, inside the viewport, faded by the detail rule.
+    // 2. Weed pressure: a faint wash of one hue, its strength the cover averaged over neighbouring cells, so the
+    //    field reads as regions of more and less rather than a grid. Faded by the detail rule.
     if (L_.pressure && d.pressure > 0.02) {
       const r = scene.cells.rings;
       let n = 0;
+      ctx.save();
+      // Softened by the cell's own rendered size, so the wash has no edges at any zoom.
+      ctx.filter = `blur(${Math.max(1.5, d.px.cell * 0.45).toFixed(1)}px)`;
+      ctx.fillStyle = C.pressureWash;
       for (let k = 0; k < scene.cells.n; k++) {
-        const cls = scene.cells.cls[k];
-        if (cls === 0) continue;
+        const v = scene.cells.smoothPct[k];
+        if (v < 0.05) continue;
         const o = r.off[k];
         if (r.xy[o] < vx0 - 0.01 || r.xy[o] > vx1 + 0.01 || r.xy[o + 1] < vy0 - 0.01 || r.xy[o + 1] > vy1 + 0.01) continue;
         ctx.beginPath(); packed(ctx, r, k, X, Y);
-        ctx.fillStyle = C.pressure[cls];
-        ctx.globalAlpha = d.pressure * (0.18 + 0.12 * cls);
+        ctx.globalAlpha = d.pressure * Math.min(0.34, 0.05 + 0.065 * v);
         ctx.fill();
         n++;
       }
-      ctx.globalAlpha = 1;
+      ctx.restore();
       drawn.cells = n;
     }
 
@@ -138,9 +142,51 @@ export class TwinCanvasLayer extends L.Canvas {
     if (L_.coverage) { ctx.beginPath(); ring(ctx, scene.imagery, X, Y); ctx.strokeStyle = C.imageryEdge; ctx.lineWidth = 1; ctx.setLineDash([6, 5]); ctx.stroke(); ctx.setLineDash([]); }
     if (scene.block) { ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.strokeStyle = C.blockEdge; ctx.lineWidth = 1.5; ctx.stroke(); }
 
-    // 5. Rows: one straight line each; dropped candidates dashed when asked for.
+    // 6. Scouting zones: filled regions with rounded edges, coloured by priority, labels on the ones that matter.
+    //    The region is the zone's own cells (chained and corner-rounded); nothing is merged for looks.
+    if (L_.zones && d.zones > 0.02) {
+      let n = 0;
+      for (let p = 3; p >= 1; p--) for (const z of scene.zones) {
+        if (z.priority !== p || !z.rings.length) continue;
+        ctx.beginPath();
+        for (const r of z.rings) ring(ctx, r, X, Y);
+        ctx.fillStyle = C.zoneFill[p]; ctx.globalAlpha = d.zones * (p === 1 ? 0.36 : p === 2 ? 0.28 : 0.2); ctx.fill("evenodd");
+        ctx.strokeStyle = C.zoneEdge[p]; ctx.lineWidth = p === 1 ? 1.2 : 0.8; ctx.globalAlpha = d.zones * 0.7; ctx.stroke();
+        n++;
+      }
+      if (d.zoneLabels) {
+        ctx.font = "600 11px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        for (const z of scene.zones) {
+          if (z.priority === 3 || (z.priority === 2 && !d.zoneLabelsAll)) continue;
+          const x = X(z.cx), y = Y(z.cy);
+          if (x < bx0 || x > bx1 || y < by0 || y > by1) continue;
+          const text = `Zone ${z.id}`;
+          const w = ctx.measureText(text).width + 12;
+          ctx.globalAlpha = d.zones;
+          ctx.fillStyle = C.labelBg; ctx.fillRect(x - w / 2, y - 9, w, 18);
+          ctx.fillStyle = C.labelText; ctx.fillText(text, x, y);
+        }
+      }
+      ctx.globalAlpha = 1;
+      drawn.zones = n;
+    }
+    // 6b. The field within its surroundings: a halo on the imagery hull and the field's name, while zoomed out.
+    if (L_.surroundings && L_.ground && d.surroundings > 0.3) {
+      ctx.globalAlpha = (d.surroundings - 0.3) / 0.7;
+      ctx.beginPath(); ring(ctx, scene.imagery, X, Y);
+      ctx.strokeStyle = C.fieldHalo; ctx.lineWidth = 2; ctx.stroke();
+      const cx = (X(scene.bbox[0]) + X(scene.bbox[2])) / 2, top = Y(scene.bbox[1]) - 14;
+      ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const w = ctx.measureText(scene.twin.name).width + 14;
+      ctx.fillStyle = C.labelBg; ctx.fillRect(cx - w / 2, top - 10, w, 20);
+      ctx.fillStyle = C.labelText; ctx.fillText(scene.twin.name, cx, top);
+      ctx.globalAlpha = 1;
+    }
+
+    // 5. Rows: one straight line each, quiet at the field level and firmer close in; dropped candidates dashed.
     if (L_.structure) {
       ctx.lineWidth = d.rowWidth;
+      ctx.globalAlpha = 0.45 + 0.4 * d.crowns;
       let n = 0;
       for (let k = 0; k < scene.rows.n; k++) {
         const kept = scene.rows.kept[k] === 1;
@@ -148,32 +194,8 @@ export class TwinCanvasLayer extends L.Canvas {
         ctx.strokeStyle = kept ? C.row : C.rowDropped; ctx.setLineDash(kept ? [] : [8, 6]);
         ctx.beginPath(); ctx.moveTo(X(scene.rows.x1[k]), Y(scene.rows.y1[k])); ctx.lineTo(X(scene.rows.x2[k]), Y(scene.rows.y2[k])); ctx.stroke(); n++;
       }
-      ctx.setLineDash([]);
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
       drawn.rows = n;
-    }
-
-    // 6. Scouting zones: outlines and a label, while the field is seen whole.
-    if (L_.zones && d.zones > 0.02) {
-      ctx.strokeStyle = C.zone; ctx.lineWidth = 1.5; ctx.globalAlpha = d.zones;
-      for (const z of scene.zones) {
-        ctx.beginPath();
-        for (let i = 0; i < z.edges.length; i += 4) { ctx.moveTo(X(z.edges[i]), Y(z.edges[i + 1])); ctx.lineTo(X(z.edges[i + 2]), Y(z.edges[i + 3])); }
-        ctx.stroke();
-      }
-      if (d.zoneLabels) {
-        ctx.font = "600 11px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        for (const z of scene.zones) {
-          if (z.id > 8) break; // the eight heaviest zones carry labels; the rest keep their outline
-          const x = X(z.cx), y = Y(z.cy);
-          if (x < bx0 || x > bx1 || y < by0 || y > by1) continue;
-          const text = `Zone ${z.id}`;
-          const w = ctx.measureText(text).width + 10;
-          ctx.fillStyle = C.labelBg; ctx.fillRect(x - w / 2, y - 9, w, 18);
-          ctx.fillStyle = C.zone; ctx.fillText(text, x, y);
-        }
-      }
-      ctx.globalAlpha = 1;
-      drawn.zones = scene.zones.length;
     }
 
     // 7. Trees: crowns at their measured radius, or points; inferred positions dashed.
@@ -216,12 +238,14 @@ export class TwinCanvasLayer extends L.Canvas {
         ctx.globalAlpha = d.clusters;
         for (const k of idx) {
           if (!L_.singleView && K.verified[k] === 0) continue;
+          // A lone candidate is not a patch: it waits for the plant level, where its outline is drawn.
+          if ((L_.singleView ? K.count[k] : K.verified[k]) < 2) continue;
           const x = X(K.x[k]), y = Y(K.y[k]), r = K.rM[k] * pxPerM;
           ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI);
           // A soft disc: the ground the candidates stand on, denser where more of them do.
-          ctx.globalAlpha = d.clusters * Math.min(0.55, 0.14 + 0.07 * Math.min(6, K.count[k]));
+          ctx.globalAlpha = d.clusters * Math.min(0.42, 0.1 + 0.06 * Math.min(6, K.count[k]));
           ctx.fillStyle = K.verified[k] ? C.weed : C.weedSingle; ctx.fill();
-          ctx.globalAlpha = d.clusters * 0.5; ctx.strokeStyle = K.verified[k] ? C.weed : C.weedSingle; ctx.lineWidth = 1; ctx.stroke();
+          ctx.globalAlpha = d.clusters * 0.35; ctx.strokeStyle = K.verified[k] ? C.weed : C.weedSingle; ctx.lineWidth = 1; ctx.stroke();
           ctx.globalAlpha = d.clusters;
         }
         if (d.clusterLabels) {
@@ -321,6 +345,7 @@ export class TwinCanvasLayer extends L.Canvas {
     }
     if (L_.zones && d.zones >= 0.5) {
       for (const z of s.zones) {
+        if (z.priority === 3 && d.zones < 0.9) continue;
         // Inside the zone: the point's cell is one of the zone's cells (a cell holds the point when its ring does).
         const cellU = s.intel.grid.cellM / s.mpu;
         if (Math.hypot(z.cx - x, z.cy - y) > Math.sqrt(z.areaM2) / s.mpu + cellU) continue;

@@ -34,7 +34,7 @@ describe("Field Twin inspector", () => {
     const atlas = vi.fn(async () => "blob:atlas-0");
     const { container } = render(<TwinInspector twin={synthetic} scene={scene} selection={{ kind: "weed", id: 3 }} atlasUrl={atlas} onClose={() => undefined} />);
     expect(screen.getByText("Weed 3")).toBeInTheDocument();
-    expect(screen.getByText("Seen in 4 of 5 photographs that covered it")).toBeInTheDocument();
+    expect(screen.getByText("4 of 5 photographs that covered it")).toBeInTheDocument();
     expect(screen.getByText("Between the rows")).toBeInTheDocument();
     const img = await screen.findByAltText("Crop of DJI_0301");
     expect(img).toHaveAttribute("src", "blob:atlas-0");

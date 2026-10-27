@@ -36,32 +36,37 @@ export const DEFAULT_LAYERS: TwinLayers = {
 };
 
 export const TWIN_COLOURS = {
-  outside: "#1a1c1a",
-  hatch: "#262927",
-  imagery: "#23271f",
-  imageryEdge: "#5a6058",
-  soil: "#3a3028",
-  blockEdge: "#d2c9b8",
-  row: "#a394e0",
-  rowDropped: "#6b7280",
-  tree: "#5fbf7a",
-  treeFill: "rgba(95, 191, 122, 0.14)",
-  vegetation: "#8fd3a5",
-  vegetationFill: "rgba(143, 211, 165, 0.12)",
-  weed: "#f2c230",
-  weedOnRow: "#f49a3e",
-  weedSingle: "#d9c37a",
-  weedOnTree: "#8a949e",
-  clusterFill: "rgba(242, 194, 48, 0.26)",
-  clusterSingleFill: "rgba(217, 195, 122, 0.12)",
-  /** Indexed by pressure class: none, trace, low, moderate, high. */
-  pressure: ["", "#4a4430", "#6e5b2a", "#9a7a22", "#cf9a1c"],
-  zone: "#f2c230",
-  uncertain: "rgba(130, 140, 160, 0.16)",
+  outside: "#1f221f",
+  hatch: "#2a2e2a",
+  imagery: "#262a22",
+  imageryEdge: "#5f665c",
+  soil: "#3b3129",
+  blockEdge: "#c9c0ae",
+  /** Rows: quiet, a warm grey-violet. */
+  row: "#8f88a8",
+  rowDropped: "#5e6470",
+  /** Crop: muted green. */
+  tree: "#6aa884",
+  treeFill: "rgba(106, 168, 132, 0.12)",
+  vegetation: "#7fb393",
+  vegetationFill: "rgba(127, 179, 147, 0.10)",
+  /** Weeds: controlled amber. */
+  weed: "#d9a93a",
+  weedOnRow: "#d98b45",
+  weedSingle: "#bfa86a",
+  weedOnTree: "#7f8891",
+  /** The pressure wash, one hue; alpha carries the amount. */
+  pressureWash: "#b8862a",
+  /** Scouting zones by priority: 1 red-orange, 2 orange, 3 amber. */
+  zoneFill: ["", "#d2602c", "#d48a33", "#c9a53a"],
+  zoneEdge: ["", "#e8805a", "#e0a55a", "#d8bb66"],
+  uncertain: "rgba(140, 148, 160, 0.14)",
   footprint: "#7d8a7a",
-  labelBg: "rgba(20, 22, 20, 0.78)",
-  labelOnField: "#1a1c1a",
-  hover: "rgba(255, 255, 255, 0.55)",
+  fieldHalo: "#e6c76a",
+  labelBg: "rgba(24, 26, 24, 0.86)",
+  labelText: "#eae6dc",
+  labelOnField: "#1f221f",
+  hover: "rgba(255, 255, 255, 0.5)",
   selection: "#ffffff",
 };
 

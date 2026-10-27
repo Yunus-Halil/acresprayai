@@ -110,6 +110,8 @@ export type PressureCell = {
   /** Ground covered by verified weed candidates, square metres and percent of the cell. */
   coverM2: number;
   coverPct: number;
+  /** Cover percent averaged with the neighbouring cells (3 x 3), for a wash without cell edges. */
+  smoothPct: number;
   cls: PressureClass;
   /** Photographs whose footprint holds the cell centre. */
   photos: number;
@@ -138,7 +140,7 @@ export function pressureGrid(twin: TwinBundle, cellM = 4, frame: LocalFrame = lo
     const photos = foot.reduce((s, r) => s + (pointInRing(centre[0], centre[1], r) ? 1 : 0), 0);
     if (!photos) continue;
     const ring: [number, number][] = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]].map(([a, b]) => frame.fromField(a * cellM, b * cellM));
-    const cell: PressureCell = { i, j, ring, centre, cellM, verified: 0, singleView: 0, coverM2: 0, coverPct: 0, cls: "none", photos, inBlock: block ? pointInRing(centre[0], centre[1], block) : true };
+    const cell: PressureCell = { i, j, ring, centre, cellM, verified: 0, singleView: 0, coverM2: 0, coverPct: 0, smoothPct: 0, cls: "none", photos, inBlock: block ? pointInRing(centre[0], centre[1], block) : true };
     byIndex.set(`${i},${j}`, cell);
     cells.push(cell);
   }
@@ -150,11 +152,18 @@ export function pressureGrid(twin: TwinBundle, cellM = 4, frame: LocalFrame = lo
     if (w.status === "verified") { cell.verified++; cell.coverM2 += w.areaM2; } else cell.singleView++;
   }
   for (const c of cells) { c.coverPct = (100 * c.coverM2) / (cellM * cellM); c.cls = pressureClass(c.coverPct); }
+  for (const c of cells) {
+    let s = 0, n = 0;
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) { const q = byIndex.get(`${c.i + di},${c.j + dj}`); if (q) { s += q.coverPct; n++; } }
+    c.smoothPct = n ? s / n : c.coverPct;
+  }
   return { cellM, cells, byIndex };
 }
 
 export type ScoutingZone = {
   id: number;
+  /** 1 for the heaviest zones (the first three by verified cover), 2 for the next five, 3 for the rest. */
+  priority: 1 | 2 | 3;
   cells: PressureCell[];
   areaM2: number;
   coverM2: number;
@@ -163,6 +172,8 @@ export type ScoutingZone = {
   centre: [number, number];
   /** Outer edges of the zone's cells, local metres: segments to draw. */
   edges: [[number, number], [number, number]][];
+  /** The same edges chained into closed rings (outer boundary first, then holes), corners rounded for drawing. */
+  rings: [number, number][][];
 };
 
 /**
@@ -194,13 +205,55 @@ export function scoutingZones(grid: PressureGrid, fromPct = 1.5, minCells = 3): 
     }
     const areaM2 = members.length * grid.cellM * grid.cellM, coverM2 = members.reduce((s, c) => s + c.coverM2, 0);
     zones.push({
-      id: 0, cells: members, areaM2, coverM2, meanCoverPct: (100 * coverM2) / areaM2, weeds: members.reduce((s, c) => s + c.verified, 0),
+      id: 0, priority: 3, cells: members, areaM2, coverM2, meanCoverPct: (100 * coverM2) / areaM2, weeds: members.reduce((s, c) => s + c.verified, 0),
       centre: [members.reduce((s, c) => s + c.centre[0], 0) / members.length, members.reduce((s, c) => s + c.centre[1], 0) / members.length], edges,
+      rings: chainEdges(edges).map(r => roundCorners(r, 2)),
     });
   }
   zones.sort((a, b) => b.coverM2 - a.coverM2);
-  zones.forEach((z, k) => { z.id = k + 1; });
+  zones.forEach((z, k) => { z.id = k + 1; z.priority = k < 3 ? 1 : k < 8 ? 2 : 3; });
   return zones;
+}
+
+/** Closed rings from a set of boundary segments (each vertex meets exactly two segments), longest ring first. */
+export function chainEdges(edges: [[number, number], [number, number]][]): [number, number][][] {
+  const key = (p: [number, number]) => `${p[0].toFixed(4)},${p[1].toFixed(4)}`;
+  const next = new Map<string, { p: [number, number]; q: [number, number]; used: boolean }[]>();
+  const segs = edges.map(([p, q]) => ({ p, q, used: false }));
+  for (const s of segs) for (const [a] of [[s.p], [s.q]] as const) (next.get(key(a)) ?? next.set(key(a), []).get(key(a))!).push(s);
+  const rings: [number, number][][] = [];
+  for (const start of segs) {
+    if (start.used) continue;
+    const ring: [number, number][] = [start.p];
+    let cur = start, at = start.q;
+    start.used = true;
+    for (let guard = 0; guard < segs.length; guard++) {
+      ring.push(at);
+      const cand = (next.get(key(at)) ?? []).find(s => !s.used);
+      if (!cand) break;
+      cand.used = true;
+      at = key(cand.p) === key(at) ? cand.q : cand.p;
+      cur = cand;
+      if (key(at) === key(start.p)) break;
+    }
+    void cur;
+    if (ring.length >= 4) rings.push(ring);
+  }
+  return rings.sort((a, b) => b.length - a.length);
+}
+
+/** Chaikin's corner cutting, `n` passes: a stepped cell boundary becomes a soft region edge (shape kept, corners rounded). */
+export function roundCorners(ring: [number, number][], n = 2): [number, number][] {
+  let r = ring[0] !== undefined && ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1] ? ring.slice(0, -1) : ring;
+  for (let pass = 0; pass < n; pass++) {
+    const out: [number, number][] = [];
+    for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length];
+      out.push([0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]], [0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]]);
+    }
+    r = out;
+  }
+  return r;
 }
 
 export type WeedCluster = {

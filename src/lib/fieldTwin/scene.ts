@@ -68,8 +68,8 @@ export type Scene = {
   inferred: { n: number; x: Float64Array; y: Float64Array; rM: number };
   vegetation: { n: number; x: Float64Array; y: Float64Array; rM: Float32Array; id: Int32Array; rings: PackedRings; index: GridIndex; maxRM: number };
   rows: { n: number; x1: Float64Array; y1: Float64Array; x2: Float64Array; y2: Float64Array; kept: Uint8Array; id: Int32Array };
-  cells: { n: number; rings: PackedRings; cls: Uint8Array; coverPct: Float32Array; photos: Uint8Array; verified: Int32Array; single: Int32Array; inBlock: Uint8Array };
-  zones: { id: number; cx: number; cy: number; edges: Float64Array; areaM2: number; coverM2: number; meanCoverPct: number; weeds: number }[];
+  cells: { n: number; rings: PackedRings; cls: Uint8Array; coverPct: Float32Array; smoothPct: Float32Array; photos: Uint8Array; verified: Int32Array; single: Int32Array; inBlock: Uint8Array };
+  zones: { id: number; priority: 1 | 2 | 3; cx: number; cy: number; edges: Float64Array; rings: Float64Array[]; areaM2: number; coverM2: number; meanCoverPct: number; weeds: number }[];
   clusters: { n: number; x: Float64Array; y: Float64Array; rM: Float32Array; count: Int32Array; verified: Int32Array; coverM2: Float32Array; index: GridIndex; maxRM: number };
   block: Float64Array | null;
   imagery: Float64Array;
@@ -115,17 +115,17 @@ export function buildScene(twin: TwinBundle, intel: FieldIntelligence = fieldInt
   R.forEach((r, i) => { const a = ll(...r.line[0]), b = ll(...r.line[r.line.length - 1]); rows.x1[i] = a[0]; rows.y1[i] = a[1]; rows.x2[i] = b[0]; rows.y2[i] = b[1]; rows.kept[i] = r.kept ? 1 : 0; rows.id[i] = r.id; });
 
   const C = intel.grid.cells, nc = C.length;
-  const cells = { n: nc, rings: pack(C.map(c => c.ring.map(([e, n]) => intel.frame.toLatLng(e, n)))), cls: new Uint8Array(nc), coverPct: new Float32Array(nc), photos: new Uint8Array(nc), verified: new Int32Array(nc), single: new Int32Array(nc), inBlock: new Uint8Array(nc) };
-  C.forEach((c, i) => { cells.cls[i] = PRESSURE_INDEX[c.cls]; cells.coverPct[i] = c.coverPct; cells.photos[i] = Math.min(255, c.photos); cells.verified[i] = c.verified; cells.single[i] = c.singleView; cells.inBlock[i] = c.inBlock ? 1 : 0; });
+  const cells = { n: nc, rings: pack(C.map(c => c.ring.map(([e, n]) => intel.frame.toLatLng(e, n)))), cls: new Uint8Array(nc), coverPct: new Float32Array(nc), smoothPct: new Float32Array(nc), photos: new Uint8Array(nc), verified: new Int32Array(nc), single: new Int32Array(nc), inBlock: new Uint8Array(nc) };
+  C.forEach((c, i) => { cells.cls[i] = PRESSURE_INDEX[c.cls]; cells.coverPct[i] = c.coverPct; cells.smoothPct[i] = c.smoothPct; cells.photos[i] = Math.min(255, c.photos); cells.verified[i] = c.verified; cells.single[i] = c.singleView; cells.inBlock[i] = c.inBlock ? 1 : 0; });
 
-  const zones = intel.zones.map(z => { const [cx, cy] = local(z.centre[0], z.centre[1]); const edges = new Float64Array(z.edges.length * 4); z.edges.forEach(([a, b], k) => { const p = local(a[0], a[1]), q = local(b[0], b[1]); edges[4 * k] = p[0]; edges[4 * k + 1] = p[1]; edges[4 * k + 2] = q[0]; edges[4 * k + 3] = q[1]; }); return { id: z.id, cx, cy, edges, areaM2: z.areaM2, coverM2: z.coverM2, meanCoverPct: z.meanCoverPct, weeds: z.weeds }; });
+  const ringOf = (pts: [number, number][]) => { const out = new Float64Array(pts.length * 2); pts.forEach(([e, n], i) => { const [x, y] = local(e, n); out[2 * i] = x; out[2 * i + 1] = y; }); return out; };
+  const zones = intel.zones.map(z => { const [cx, cy] = local(z.centre[0], z.centre[1]); const edges = new Float64Array(z.edges.length * 4); z.edges.forEach(([a, b], k) => { const p = local(a[0], a[1]), q = local(b[0], b[1]); edges[4 * k] = p[0]; edges[4 * k + 1] = p[1]; edges[4 * k + 2] = q[0]; edges[4 * k + 3] = q[1]; }); return { id: z.id, priority: z.priority, cx, cy, edges, rings: z.rings.map(ringOf), areaM2: z.areaM2, coverM2: z.coverM2, meanCoverPct: z.meanCoverPct, weeds: z.weeds }; });
 
   const K = intel.clusters, nk = K.length;
   const clusters = { n: nk, x: new Float64Array(nk), y: new Float64Array(nk), rM: new Float32Array(nk), count: new Int32Array(nk), verified: new Int32Array(nk), coverM2: new Float32Array(nk), index: null as unknown as GridIndex, maxRM: 0 };
   K.forEach((k, i) => { const [x, y] = local(k.centre[0], k.centre[1]); clusters.x[i] = x; clusters.y[i] = y; clusters.rM[i] = k.radiusM; clusters.count[i] = k.count; clusters.verified[i] = k.verified; clusters.coverM2[i] = k.coverM2; clusters.maxRM = Math.max(clusters.maxRM, k.radiusM); });
   clusters.index = new GridIndex(clusters.x, clusters.y, cell);
 
-  const ringOf = (pts: [number, number][]) => { const out = new Float64Array(pts.length * 2); pts.forEach(([e, n], i) => { const [x, y] = local(e, n); out[2 * i] = x; out[2 * i + 1] = y; }); return out; };
   const block = intel.block ? ringOf(intel.block) : null;
   const imagery = ringOf(intel.imagery);
   const footprints = pack(twin.footprints.map(f => f.ring));
@@ -157,6 +157,8 @@ export type Detail = {
   pressure: number;
   zones: number;
   zoneLabels: boolean;
+  /** Labels for the second-priority zones too (closer in). */
+  zoneLabelsAll: boolean;
   rowWidth: number;
   /** The field's surroundings (a muted basemap): 1 when the field is seen small within them, 0 by the row level. */
   surroundings: number;
@@ -181,7 +183,7 @@ export function detailFor(mpp: number, scene: Pick<Scene, "intel">): Detail {
   return {
     level: outlines >= 0.5 ? "plant" : crowns >= 0.5 || clusters >= 0.5 ? "row" : "field",
     mpp, outlines, clusters, clusterLabels: cluster >= 28 && outlines < 0.5, crowns, treePoints: ramp(crown, 4, 8) * (1 - crowns) * (1 - pressure), inferred: crowns,
-    pressure, zones, zoneLabels: zones > 0.3 && cell >= 6, rowWidth: 1 + 1.5 * ramp(crown, 2, 16),
+    pressure, zones, zoneLabels: zones > 0.3 && cell >= 6, zoneLabelsAll: zones > 0.3 && cell >= 14, rowWidth: 1 + 1.5 * ramp(crown, 2, 16),
     surroundings: 1 - ramp(cell, 24, 70),
     px: { weed, crown, cluster, cell },
   };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fieldIntelligence, localFrame, orchardBlock, pointInRing, pressureClass, pressureGrid, scoutingZones, weedClusters } from "@/lib/fieldTwin/intelligence";
+import { chainEdges, fieldIntelligence, localFrame, orchardBlock, pointInRing, pressureClass, pressureGrid, roundCorners, scoutingZones, weedClusters } from "@/lib/fieldTwin/intelligence";
 import { GridIndex, buildScene, detailFor, metresPerPixel, toWorld, zoomForSize } from "@/lib/fieldTwin/scene";
 import { FIELD_TWIN_FORMAT, type TwinBundle, type TwinWeed } from "@/lib/fieldTwin/types";
 
@@ -77,6 +77,24 @@ describe("weed pressure", () => {
     expect(zones[0].weeds).toBe(12);
     expect(zones[0].edges.length).toBeGreaterThanOrEqual(4);
     expect(zones[0].meanCoverPct).toBeGreaterThan(1.5);
+  });
+
+  it("a zone's boundary chains into closed rings with rounded corners, and ranks carry a priority", () => {
+    const g = pressureGrid(twin, 1);
+    const zones = scoutingZones(g, 1.5, 3);
+    const z = zones[0];
+    expect(z.priority).toBe(1);
+    expect(z.rings.length).toBeGreaterThanOrEqual(1);
+    // Two corner-cutting passes turn every boundary vertex into four, and every ring point stays inside the zone's cells' hull.
+    const raw = chainEdges(z.edges);
+    expect(raw[0].length).toBeGreaterThanOrEqual(4);
+    expect(roundCorners(raw[0], 2).length).toBe(4 * raw[0].length);
+    const es = z.cells.flatMap(c => c.ring.map(p => p[0])), ns = z.cells.flatMap(c => c.ring.map(p => p[1]));
+    for (const [e, n] of z.rings[0]) { expect(e).toBeGreaterThanOrEqual(Math.min(...es) - 1e-9); expect(e).toBeLessThanOrEqual(Math.max(...es) + 1e-9); expect(n).toBeGreaterThanOrEqual(Math.min(...ns) - 1e-9); expect(n).toBeLessThanOrEqual(Math.max(...ns) + 1e-9); }
+    // Smoothed cover: a cell's smoothPct is the mean over its 3 x 3 neighbourhood of listed cells.
+    const dense = g.byIndex.get(`${Math.floor(29.9)},${Math.floor(12.5)}`)!;
+    expect(dense.smoothPct).toBeGreaterThan(0);
+    expect(dense.smoothPct).toBeLessThanOrEqual(Math.max(...g.cells.map(c => c.coverPct)));
   });
 
   it("clusters group candidates on a row-aligned grid and keep their ids", () => {
