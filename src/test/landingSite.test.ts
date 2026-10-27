@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ACCESS_HREF, NAV, OPERATIONS } from "@/components/landing/copy";
+import { ACCESS_HREF, NAV } from "@/components/landing/copy";
 import { HERO_MEDIA } from "@/components/landing/heroMedia";
 import { SPECIMEN } from "@/components/landing/specimen";
 
@@ -30,10 +30,6 @@ describe("the website's pictures", () => {
       expect(p.poly.length).toBeGreaterThan(3);
       for (const [x, y] of p.poly) expect(x >= 0 && y >= 0 && x <= SPECIMEN.cropPx && y <= SPECIMEN.cropPx).toBe(true);
     }
-  });
-
-  it("has the operations captures", () => {
-    for (const s of OPERATIONS.steps) expect(inPublic(s.src), s.src).toBe(true);
   });
 
   it("has a playable hero list: at least one clip, each with its files", () => {

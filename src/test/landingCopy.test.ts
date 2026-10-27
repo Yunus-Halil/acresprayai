@@ -21,9 +21,9 @@ const LANDING = join(__dirname, "..", "components", "landing");
 const VISIBLE: string[] = [
   STATUS_BADGE, CTA_PRIMARY, CTA_EXPLORE, ...NAV.map(n => n.label),
   HERO.headline, ...HERO.lines, HERO.sub, HERO.brand,
-  BEYOND.heading, BEYOND.caption, BEYOND.photosLabel, ...BEYOND.stages.flatMap(s => [s.label, s.line]),
+  BEYOND.heading, BEYOND.photosLabel, ...BEYOND.stages.flatMap(s => [s.label, s.line]),
   PLANT.heading, PLANT.across, PLANT.ground, PLANT.seen, PLANT.seenValue, PLANT.seenNote, PLANT.caption,
-  OPERATIONS.heading, ...OPERATIONS.steps.flatMap(s => [s.label, s.line, s.alt]),
+  OPERATIONS.heading, ...OPERATIONS.steps.flatMap(s => [s.label, s.line]),
   AUDIENCES.heading, ...AUDIENCES.items.flatMap(a => [a.label, a.line]),
   ACCESS.heading, ACCESS.status, ACCESS.email,
 ];

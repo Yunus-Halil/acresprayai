@@ -77,7 +77,6 @@ export const HERO = {
  */
 export const BEYOND = {
   heading: "Beyond the map.",
-  caption: "APRICOT ORCHARD · ONE FLIGHT · 71 PHOTOGRAPHS",
   stages: [
     { label: "Field", line: "The whole field from one flight.", from: 0 },
     { label: "Crop", line: "Each tree where it stands.", from: 0.2 },
@@ -102,7 +101,7 @@ export const PLANT = {
 
 /**
  * "From finding to field operation": scouting, zones and the mission as one
- * line of work. The findings line names what is found besides weeds; the
+ * line of work, in words only (Yunus removed the pictures, 2026-10-27). The findings line names what is found besides weeds; the
  * mission line keeps the pilot in the seat (rule 6).
  */
 export const OPERATIONS = {
@@ -111,23 +110,14 @@ export const OPERATIONS = {
     {
       label: "Scout",
       line: "Weeds, thin stand, bare or wet ground: outlined and sized.",
-      src: "/site/ops/scout.webp",
-      alt: "A field map with each finding outlined and labeled",
-      position: "50% 40%",
     },
     {
       label: "Zones",
       line: "What you confirm becomes a treatment zone.",
-      src: "/site/ops/zone.webp",
-      alt: "A treatment zone selected on the field map, with its area",
-      position: "72% 40%",
     },
     {
       label: "Mission",
       line: "Planned over those zones. Flown by you, on your license.",
-      src: "/site/ops/mission.webp",
-      alt: "A spray mission route over the field map, from start to end",
-      position: "50% 45%",
     },
   ],
 };

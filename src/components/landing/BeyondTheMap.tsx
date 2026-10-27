@@ -230,8 +230,7 @@ export const BeyondTheMap = () => {
     <section id="beyond" className="relative bg-sw-night text-sw-ivory">
       <div className="mx-auto max-w-[1440px] px-5 pb-12 pt-[clamp(96px,12vw,180px)] sm:px-10 sm:pb-16 lg:px-16">
         <Reveal>
-          <Label className="text-sw-ivory/50">{BEYOND.caption}</Label>
-          <h2 className="m-0 mt-5 font-geist text-[clamp(44px,7vw,112px)] font-medium leading-[0.95] tracking-[-0.045em]">{BEYOND.heading}</h2>
+          <h2 className="m-0 font-geist text-[clamp(44px,7vw,112px)] font-medium leading-[0.95] tracking-[-0.045em]">{BEYOND.heading}</h2>
         </Reveal>
       </div>
       {reduced ? <Stills /> : <Scrub />}

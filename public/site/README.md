@@ -9,7 +9,6 @@ page, or stock (rule 10 in `src/components/landing/copy.ts`).
 | `twin/mobile/...` | The same zoom at 720 x 1120 for tall screens | same | same, when the screen is taller than it is wide |
 | `plant/plant-wide.webp`, `plant-tall.webp` | Weed 1678 selected, closer in | `captureTwin.mjs` | "Down to the individual plant" |
 | `plant/photo-1..4.jpg` | 320 px crops of four of the 12 original photographs that saw weed 1678, native resolution, untouched | `scripts/site/plantPhotos.py` | both sections; outlines from `specimen.ts` are drawn over them as SVG |
-| `ops/scout.webp`, `zone.webp`, `mission.webp` | WebP copies of `public/screens/scout-findings.png`, `treatment-zone.png`, `mission-route.jpg` | PIL, quality 80 | "From finding to field operation" |
 
 ## Location privacy
 
