@@ -101,9 +101,8 @@ export class TwinCanvasLayer extends L.Canvas {
     if (L_.pressure && d.pressure > 0.02) {
       const r = scene.cells.rings;
       let n = 0;
-      ctx.save();
-      // Softened by the cell's own rendered size, so the wash has no edges at any zoom.
-      ctx.filter = `blur(${Math.max(1.5, d.px.cell * 0.45).toFixed(1)}px)`;
+      // Plain fills: the 3 x 3 smoothing already takes the grid out of it, and a canvas blur cost more than every
+      // other step together (laggy on a real screen, 2026-10-27).
       ctx.fillStyle = C.pressureWash;
       for (let k = 0; k < scene.cells.n; k++) {
         const v = scene.cells.smoothPct[k];
@@ -115,7 +114,7 @@ export class TwinCanvasLayer extends L.Canvas {
         ctx.fill();
         n++;
       }
-      ctx.restore();
+      ctx.globalAlpha = 1;
       drawn.cells = n;
     }
 
@@ -279,13 +278,11 @@ export class TwinCanvasLayer extends L.Canvas {
       }
     }
 
-    // 10. Hover and selection, on this same canvas.
-    for (const [p, style] of [[this.hover, C.hover], [this.selection, C.selection]] as const) {
-      if (!p) continue;
-      const g = this.geometryOf(p);
-      if (!g) continue;
-      ctx.beginPath(); ctx.arc(X(g[0]), Y(g[1]), Math.max(6, g[2] * pxPerM + 4), 0, 2 * Math.PI);
-      ctx.strokeStyle = style; ctx.lineWidth = p === this.selection ? 2.5 : 1.5; ctx.stroke();
+    // 10. The selection ring, on this same canvas. (Hover only changes the cursor: a redraw per mouse move is what
+    //     made the map drag its feet.)
+    if (this.selection) {
+      const g = this.geometryOf(this.selection);
+      if (g) { ctx.beginPath(); ctx.arc(X(g[0]), Y(g[1]), Math.max(6, g[2] * pxPerM + 4), 0, 2 * Math.PI); ctx.strokeStyle = C.selection; ctx.lineWidth = 2.5; ctx.stroke(); }
     }
     ctx.restore();
     this.stats = { lastDrawMs: performance.now() - t0, drawn, level: d.level, detail: d, draws: this.stats.draws + 1 };
@@ -369,16 +366,20 @@ export class TwinCanvasLayer extends L.Canvas {
     this.fire("twinclick", { pick, originalEvent: e });
     L.DomEvent.stop(e);
   }
+  private hoverPending = false;
   _onMouseMove(e: MouseEvent) {
     const me = this as unknown as Internals;
-    if (!me._map || (me._map.dragging as unknown as { moving: () => boolean }).moving() || me._map._animatingZoom) return;
-    const pick = this.pickAt(me._map.mouseEventToLayerPoint(e));
-    const same = JSON.stringify(pick) === JSON.stringify(this.hover);
-    if (same) return;
-    this.hover = pick;
-    me._container.style.cursor = pick ? "pointer" : "";
-    this.fire("twinhover", { pick });
-    this.requestRedraw();
+    if (!me._map || this.hoverPending || (me._map.dragging as unknown as { moving: () => boolean }).moving() || me._map._animatingZoom) return;
+    // At most one hit-test per animation frame; the result only sets the cursor.
+    this.hoverPending = true;
+    L.Util.requestAnimFrame(() => {
+      this.hoverPending = false;
+      if (!me._map || !me._container) return;
+      const pick = this.pickAt(me._map.mouseEventToLayerPoint(e));
+      const was = !!this.hover;
+      this.hover = pick;
+      if (!!pick !== was) { me._container.style.cursor = pick ? "pointer" : ""; this.fire("twinhover", { pick }); }
+    });
   }
   _handleMouseOut() {
     const me = this as unknown as Internals;
@@ -386,7 +387,6 @@ export class TwinCanvasLayer extends L.Canvas {
     this.hover = null;
     if (me._container) me._container.style.cursor = "";
     this.fire("twinhover", { pick: null });
-    this.requestRedraw();
   }
 }
 

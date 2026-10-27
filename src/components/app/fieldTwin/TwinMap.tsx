@@ -25,12 +25,12 @@ export type ReferenceImagery = {
 export type TwinMapHandle = { map: L.Map; layer: TwinCanvasLayer; locate: () => void };
 
 /**
- * The surroundings: OpenStreetMap's own tiles (roads, water, buildings, names; no photography), darkened and desaturated
- * by a CSS filter on their pane so they sit under the twin rather than compete with it.
+ * The surroundings: OpenStreetMap's own tiles (roads, water, buildings, names; no photography), shown dim over the
+ * charcoal ground. Dimmed by opacity alone: a CSS filter on the tile pane re-rasterised during every zoom and drag.
  */
 export const SURROUNDINGS_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 export const SURROUNDINGS_ATTRIBUTION = 'Surroundings: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-export const SURROUNDINGS_FILTER = "invert(1) hue-rotate(180deg) brightness(0.55) saturate(0.25) contrast(0.9)";
+const SURROUNDINGS_OPACITY = 0.4;
 const SURROUNDINGS_MAX_NATIVE = 19;
 
 type Props = {
@@ -92,7 +92,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   const updateContext = () => {
     const map = mapRef.current;
     if (!map) return;
-    const want = layersRef.current.surroundings && layersRef.current.ground ? (detailRef.current?.surroundings ?? 1) : 0;
+    const want = layersRef.current.surroundings && layersRef.current.ground ? (detailRef.current?.surroundings ?? 1) * SURROUNDINGS_OPACITY : 0;
     let tl = contextRef.current;
     if (want <= 0.02) { if (tl && map.hasLayer(tl)) map.removeLayer(tl); return; }
     if (!tl) { tl = L.tileLayer(SURROUNDINGS_URL, { pane: "twinContext", maxNativeZoom: SURROUNDINGS_MAX_NATIVE, maxZoom: 26, minZoom: 10, attribution: SURROUNDINGS_ATTRIBUTION, opacity: want }); contextRef.current = tl; }
@@ -105,9 +105,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
     if (!el.current) return;
     const map = L.map(el.current, { attributionControl: false, zoomControl: false, zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 80, minZoom: 12, maxZoom: 26, zoomAnimation: true });
     mapRef.current = map;
-    const contextPane = map.createPane("twinContext");
-    contextPane.style.zIndex = "200";
-    contextPane.style.filter = SURROUNDINGS_FILTER;
+    map.createPane("twinContext").style.zIndex = "200";
     map.createPane("twinReference").style.zIndex = "250";
     L.control.zoom({ position: "topright" }).addTo(map);
     L.control.attribution({ position: "bottomright", prefix: false }).addTo(map);
@@ -137,17 +135,18 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
     let mini: L.Map | null = null;
     if (miniEl.current) {
       mini = L.map(miniEl.current, { preferCanvas: true, attributionControl: false, zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false, zoomAnimation: false });
-      const tilePane = mini.getPane("tilePane");
-      if (tilePane) tilePane.style.filter = SURROUNDINGS_FILTER;
-      L.tileLayer(SURROUNDINGS_URL, { maxNativeZoom: SURROUNDINGS_MAX_NATIVE, maxZoom: 20, opacity: 0.9 }).addTo(mini);
+      L.tileLayer(SURROUNDINGS_URL, { maxNativeZoom: SURROUNDINGS_MAX_NATIVE, maxZoom: 20, opacity: 0.5 }).addTo(mini);
       const hull: [number, number][] = [];
       for (let i = 0; i < scene.imagery.length; i += 2) { const ll = map.unproject(L.point(scene.imagery[i], scene.imagery[i + 1]), 0); hull.push([ll.lat, ll.lng]); }
       L.polygon(hull, { color: TWIN_COLOURS.blockEdge, weight: 1, fillColor: TWIN_COLOURS.soil, fillOpacity: 0.7, interactive: false }).addTo(mini);
       const view = L.rectangle(map.getBounds(), { color: "#ffffff", weight: 1, fill: false, interactive: false }).addTo(mini);
       mini.fitBounds(fieldBounds.pad(1.2));
       const miniZoom = mini.getZoom();
-      const sync = () => { view.setBounds(map.getBounds()); mini!.setView(map.getCenter(), Math.min(miniZoom, Math.max(11, map.getZoom() - 5)), { animate: false }); };
-      map.on("move zoomend", sync);
+      // The rectangle follows every move (cheap); the mini-map itself re-centres only when a move ends.
+      const rect = () => view.setBounds(map.getBounds());
+      const sync = () => { rect(); mini!.setView(map.getCenter(), Math.min(miniZoom, Math.max(11, map.getZoom() - 5)), { animate: false }); };
+      map.on("move", rect);
+      map.on("moveend zoomend", sync);
       mini.on("click", (e: L.LeafletMouseEvent) => map.panTo(e.latlng));
       sync();
     }
