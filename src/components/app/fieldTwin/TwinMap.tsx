@@ -57,6 +57,7 @@ export default function TwinMap({ twin, layers, selection, onSelect, onDetail }:
   const mapRef = useRef<L.Map | null>(null);
   const groups = useRef<Record<string, L.LayerGroup>>({});
   const selRef = useRef<L.LayerGroup | null>(null);
+  const rendererRef = useRef<L.Canvas | null>(null);
   const builders = useRef<Record<string, (g: L.LayerGroup) => void>>({});
   const built = useRef<Set<string>>(new Set());
   const layersRef = useRef(layers);
@@ -78,6 +79,7 @@ export default function TwinMap({ twin, layers, selection, onSelect, onDetail }:
     const map = L.map(el.current, { preferCanvas: true, maxZoom: 25, zoomSnap: 0.5, attributionControl: false, zoomControl: true });
     mapRef.current = map;
     const renderer = L.canvas({ padding: 0.3, tolerance: 4 });
+    rendererRef.current = renderer;
     const pick = (s: TwinSelection) => (e: L.LeafletMouseEvent) => { L.DomEvent.stopPropagation(e); onSelectRef.current(s); };
     const weedsOf = (status: TwinWeed["status"]) => twin.weeds.filter(w => w.status === status);
     const plant = twin.field.plantSpacingM;
@@ -135,7 +137,9 @@ export default function TwinMap({ twin, layers, selection, onSelect, onDetail }:
     const o = selection.kind === "tree" ? twin.trees.find(t => t.id === selection.id) : twin.weeds.find(w => w.id === selection.id);
     if (!o) return;
     const r = selection.kind === "tree" ? (o as { crownRadiusM: number }).crownRadiusM + 0.3 : Math.max(0.25, (o as TwinWeed).diameterM / 2 + 0.15);
-    grp.addLayer(L.circle([o.lat, o.lng], { radius: r, color: "#ffffff", weight: 2.5, fill: false, interactive: false }));
+    // On the SAME canvas as the objects. Without a renderer Leaflet made a second canvas above this one for the
+    // ring, and that canvas kept catching every later click: after one selection nothing could be selected again.
+    grp.addLayer(L.circle([o.lat, o.lng], { renderer: rendererRef.current ?? undefined, radius: r, color: "#ffffff", weight: 2.5, fill: false, interactive: false }));
     if (!map.getBounds().contains([o.lat, o.lng])) map.panTo([o.lat, o.lng]);
   }, [selection, twin]);
 
