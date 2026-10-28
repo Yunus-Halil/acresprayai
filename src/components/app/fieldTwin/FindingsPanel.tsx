@@ -15,6 +15,8 @@ type ControlProps = {
   result: FindingsResult | null;
   open: boolean;
   onToggle: () => void;
+  /** The Simple stop: the mode and the rule sentence only, no thresholds. */
+  compact?: boolean;
 };
 
 const MODES: FindingMode[] = ["overview", "largest", "clusters", "pressure", "extent", "confidence", "rows"];
@@ -34,7 +36,7 @@ const input = "w-full rounded-sm border border-[#3a3f3a] bg-[#111311] px-1.5 py-
 /** The area of one small thing in the account's units (square centimetres or square feet below a square metre). */
 export const areaText = (m2: number, u: UnitSystem) => (m2 < 1 ? fmtAreaCm2(m2 * 10_000, u).text : fmtArea(m2, u).text);
 
-export function FindingsControl({ query, onChange, result, open, onToggle }: ControlProps) {
+export function FindingsControl({ query, onChange, result, open, onToggle, compact = false }: ControlProps) {
   const set = (patch: Partial<FindingsQuery>) => onChange({ ...query, ...patch });
   const m = query.mode;
   const threshold = (() => {
@@ -56,13 +58,13 @@ export function FindingsControl({ query, onChange, result, open, onToggle }: Con
             {MODES.map(k => <option key={k} value={k}>{MODE_LABEL[k]}</option>)}
           </select>
           <p className="mt-1 text-[10px] leading-snug text-neutral-500">{MODE_HINT[m]}</p>
-          {threshold && (
+          {threshold && !compact && (
             <label className="mt-2 block text-[11px] text-neutral-400">{threshold.label}
               <input type="number" min={threshold.min} step={threshold.step} value={threshold.value} className={`mt-0.5 ${input}`} aria-label={threshold.label}
                 onChange={e => { const v = Number(e.target.value); set({ [threshold.key]: threshold.key === "minScore" ? Math.max(0, Math.min(1, v / 100)) : Math.max(threshold.min, v) }); }} />
             </label>
           )}
-          {(m === "largest" || m === "clusters" || m === "confidence" || m === "rows") && (
+          {!compact && (m === "largest" || m === "clusters" || m === "confidence" || m === "rows") && (
             <label className="mt-2 block text-[11px] text-neutral-400">Crop rows
               <select value={query.rowRelation ?? (m === "rows" ? "on a row" : "any")} onChange={e => set({ rowRelation: e.target.value as FindingsQuery["rowRelation"] })} className={`mt-0.5 ${input}`} aria-label="Crop-row relationship">
                 <option value="any">Either</option><option value="on a row">On a crop row</option><option value="between rows">Between rows</option>

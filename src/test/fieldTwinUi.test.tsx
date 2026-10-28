@@ -69,14 +69,17 @@ async function openPage() {
   const select = await screen.findByRole("combobox", { name: "Saved twins" });
   await waitFor(() => expect(screen.getByRole("option", { name: state.twin.id })).toBeInTheDocument());
   await act(async () => { fireEvent.change(select, { target: { value: state.twin.id } }); });
-  await waitFor(() => expect(screen.getByRole("checkbox", { name: /Crop structure/ })).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole("group", { name: "Detail" })).toBeInTheDocument());
 }
+const dial = (stop: string) => act(async () => { fireEvent.click(screen.getByRole("button", { name: stop })); });
 
 describe("Field Twin page", () => {
   it("lists the account's twin, opens it, and every layer switches on and off without errors", async () => {
     state.twin = synthetic;
     await openPage();
     expect(screen.getByLabelText("Field Twin map")).toBeInTheDocument();
+    await dial("Full");
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: /Tree crowns/ })).toBeInTheDocument());
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Diagnostics/ })); });
     for (const box of screen.getAllByRole("checkbox")) { await act(async () => { fireEvent.click(box); }); await act(async () => { fireEvent.click(box); }); }
     expect(screen.getAllByText(/Field view|Row view|Plant view|Field Twin/).length).toBeGreaterThan(0);
@@ -85,6 +88,7 @@ describe("Field Twin page", () => {
   it("Explore Findings lists the qualifying objects, selecting one opens it, and the empty state says why", async () => {
     state.twin = synthetic;
     await openPage();
+    await dial("Standard");
     const mode = screen.getByRole("combobox", { name: "Show" });
     await act(async () => { fireEvent.change(mode, { target: { value: "largest" } }); });
     const list = await screen.findByRole("list", { name: "Findings" });
@@ -98,5 +102,29 @@ describe("Field Twin page", () => {
     expect(await screen.findByText("Nothing qualifies.")).toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Clear filter" })); });
     expect(screen.queryByLabelText("Findings results")).not.toBeInTheDocument();
+  });
+
+  it("opens Simple (no layer panel, no thresholds), Full shows everything, a hand toggle reads Custom, the stop is remembered", async () => {
+    state.twin = synthetic;
+    localStorage.removeItem("swathwise:twin-detail");
+    await openPage();
+    expect(screen.getByRole("button", { name: "Simple" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: /^Layers/ })).not.toBeInTheDocument();
+    await act(async () => { fireEvent.change(screen.getByRole("combobox", { name: "Show" }), { target: { value: "largest" } }); });
+    expect(screen.queryByLabelText("Least ground cover, m²")).not.toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Findings" })).toHaveTextContent("Weed 3");
+    await dial("Full");
+    expect(screen.getByRole("button", { name: "Full" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("Least ground cover, m²")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Finding markers" })).toHaveValue("all");
+    await act(async () => { fireEvent.click(screen.getByRole("checkbox", { name: /Tree crowns/ })); });
+    expect(screen.getByText("Custom")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Full" })).toHaveAttribute("aria-pressed", "false");
+    await dial("Standard");
+    expect(localStorage.getItem("swathwise:twin-detail")).toBe("standard");
+    // Standard keeps the layer panel collapsed; opened, it shows the preset.
+    expect(screen.queryByRole("combobox", { name: "Finding markers" })).not.toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /^Layers/ })); });
+    expect(screen.getByRole("combobox", { name: "Finding markers" })).toHaveValue("summary");
   });
 });

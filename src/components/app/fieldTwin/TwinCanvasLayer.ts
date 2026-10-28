@@ -13,7 +13,7 @@ import L from "leaflet";
 import { type Finding, type FindingsResult } from "@/lib/fieldTwin/findings";
 import { type HeatLevels, type HeatRaster, buildHeatLevels, pickHeatLevel } from "@/lib/fieldTwin/heatmap";
 import { type Detail, GridIndex, PRESSURE_INDEX, ROW_STATUS, type Scene, WEED_STATUS, detailFor, metresPerPixel, toWorld } from "@/lib/fieldTwin/scene";
-import { type TwinLayers, TWIN_COLOURS as C } from "@/lib/fieldTwin/style";
+import { type TwinLayers, TWIN_COLOURS as C, badgesAllowed } from "@/lib/fieldTwin/style";
 
 export type TwinPick =
   | { kind: "tree"; id: number } | { kind: "weed"; id: number } | { kind: "vegetation"; id: number }
@@ -51,6 +51,8 @@ type FindingsScene = {
   y: Float64Array;
   /** Reach in zoom-0 units. */
   reachU: Float32Array;
+  /** The median reach (zoom-0 units): the size the typical finding draws at. */
+  medianReachU: number;
   /** Boundaries per finding (zoom-0 units, flat x y pairs), or null. */
   rings: (Float64Array[] | null)[];
   index: GridIndex;
@@ -129,7 +131,8 @@ export class TwinCanvasLayer extends L.Canvas {
       // Once nearly every bin holds one finding, finer levels add nothing: the points themselves are drawn.
       if (m >= 0.9 * n) break;
     }
-    this.findings = { result, n, x, y, reachU, rings, index, levels, finest };
+    const sortedReach = Float32Array.from(reachU).sort();
+    this.findings = { result, n, x, y, reachU, medianReachU: n ? sortedReach[n >> 1] : 0, rings, index, levels, finest };
     this.binLevel = null;
     this.requestRedraw();
   }
@@ -155,6 +158,21 @@ export class TwinCanvasLayer extends L.Canvas {
     const cur = this.binLevel;
     if (cur == null || zoom > cur + 1.15 || zoom < cur - 0.15) this.binLevel = want;
     return Math.max(LEVEL_MIN, Math.min(f.finest, this.binLevel!));
+  }
+
+  /**
+   * How the findings are marked at this detail, from the markers layer: whether count badges may summarise them
+   * (only where they are not drawn as themselves, unless "all"), and whether only the emphasised ones get a
+   * marker. Weeds are drawn as themselves once the row-level discs or the plant-level outlines are on screen;
+   * patches once their boundaries read as shapes (the typical one at 4 px of reach). Shared by draw and pick.
+   */
+  private markerPolicy(d: Detail, zoom: number): { badges: boolean; emphasisedOnly: boolean; drawnAsThemselves: boolean } {
+    const F = this.findings, L_ = this.layers, markers = L_.markers;
+    if (!F) return { badges: false, emphasisedOnly: false, drawnAsThemselves: false };
+    const mode = F.result.query.mode;
+    const drawnAsThemselves = mode === "clusters" ? F.medianReachU * 2 ** zoom >= 4 : L_.weeds && (d.outlines >= 0.5 || (L_.clusters && d.clusters >= 0.5));
+    const badges = badgesAllowed(markers, drawnAsThemselves);
+    return { badges, emphasisedOnly: markers === "emphasised" || (markers === "summary" && drawnAsThemselves), drawnAsThemselves };
   }
 
   // ----------------------------------------------------------------------------------------------------------------
@@ -261,8 +279,9 @@ export class TwinCanvasLayer extends L.Canvas {
     // 6. Rows: one straight line each from first to last observed tree, quiet at the field level and firmer close
     //    in; dropped candidates dashed. One path per style.
     if (L_.structure) {
-      ctx.lineWidth = d.rowWidth;
-      ctx.globalAlpha = 0.6 + 0.3 * d.crowns;
+      // Without the crowns (the Simple stop) the rows are orientation, not structure: thinner and quieter.
+      ctx.lineWidth = L_.crowns ? d.rowWidth : Math.max(1, d.rowWidth * 0.6);
+      ctx.globalAlpha = L_.crowns ? 0.6 + 0.3 * d.crowns : 0.45 + 0.2 * d.crowns;
       let n = 0;
       for (const kept of [1, 0]) {
         if (!kept && !L_.droppedRows) continue;
@@ -276,7 +295,8 @@ export class TwinCanvasLayer extends L.Canvas {
     }
 
     // 7. Trees: crowns at their measured radius, or points; inferred positions dashed. All crowns in one path.
-    if (L_.structure) {
+    //    With the crowns layer off they still come in at the plant level, where they are the measurement.
+    if (L_.structure && (L_.crowns || d.outlines >= 0.5)) {
       const T = scene.trees, pad = T.maxRM / scene.mpu;
       const idx = T.index.query(vx0, vy0, vx1, vy1, pad);
       if (d.crowns > 0.02) {
@@ -318,7 +338,7 @@ export class TwinCanvasLayer extends L.Canvas {
 
     // 9. Weeds: clusters at the row level, every measured outline at the plant level. Never dots.
     if (L_.weeds) {
-      if (d.clusters > 0.02) {
+      if (L_.clusters && d.clusters > 0.02) {
         const K = scene.clusters, idx = K.index.query(vx0, vy0, vx1, vy1, K.maxRM / scene.mpu);
         // Soft discs of the ground the candidates stand on, denser where more of them do: one path per density step.
         const steps = [2, 3, 4, 5, 6];
@@ -408,10 +428,11 @@ export class TwinCanvasLayer extends L.Canvas {
 
   private drawFindings(ctx: Ctx, F: FindingsScene, d: Detail, zoom: number, X: (u: number) => number, Y: (u: number) => number, pxPerM: number,
     vx0: number, vy0: number, vx1: number, vy1: number, sx0: number, sy0: number, sx1: number, sy1: number, drawn: Record<string, number>, labels: DrawStats["labels"]) {
-    const res = F.result, emph = res.prominence.count, mode = res.query.mode;
+    const res = F.result, emph = res.prominence.count, mode = res.query.mode, markers = this.layers.markers;
     labels.qualifying = F.n; labels.emphasized = emph;
     const regionMode = mode === "overview" || mode === "pressure" || mode === "extent";
     const colour = regionMode ? C.region : C.finding;
+    const { badges, emphasisedOnly } = this.markerPolicy(d, zoom);
     const selIndex = this.selection?.kind === "finding" ? this.selection.index : this.selection?.kind === "weed" ? this.findingIndexOfWeed(this.selection.id) : -1;
 
     // Boundaries: every region in the list (they are the major affected areas); patches once they are big enough
@@ -425,7 +446,7 @@ export class TwinCanvasLayer extends L.Canvas {
         for (let i = 0; i < F.n; i++) {
           const rings = F.rings[i];
           if (!rings || (i < emph) !== strong) continue;
-          if (mode === "overview" && !strong) continue;
+          if ((mode === "overview" || markers === "emphasised") && !strong) continue;
           if (X(F.x[i]) + F.reachU[i] * 2 ** zoom < X(vx0) || X(F.x[i]) - F.reachU[i] * 2 ** zoom > X(vx1) || Y(F.y[i]) + F.reachU[i] * 2 ** zoom < Y(vy0) || Y(F.y[i]) - F.reachU[i] * 2 ** zoom > Y(vy1)) continue;
           if (F.reachU[i] * 2 ** zoom < (res.findings[i].kind === "patch" ? 4 : 6)) continue;
           for (const r of rings) ring(ctx, r, X, Y);
@@ -446,8 +467,11 @@ export class TwinCanvasLayer extends L.Canvas {
     const scale = 2 ** zoom;
     type Mark = { x: number; y: number; count: number; best: number };
     const marks: Mark[] = [];
-    if (lvl && lvl.n < F.n) {
+    if (badges && lvl && lvl.n < F.n) {
       lvl.index.each(vx0 - lvl.sizeU, vy0 - lvl.sizeU, vx1 + lvl.sizeU, vy1 + lvl.sizeU, b => marks.push({ x: X(lvl.x[b]), y: Y(lvl.y[b]), count: lvl.count[b], best: lvl.best[b] }));
+    } else if (emphasisedOnly) {
+      // Only the emphasised findings carry a marker: the others are on the map as themselves (or in the list).
+      F.index.each(vx0, vy0, vx1, vy1, i => { if (i < emph) marks.push({ x: X(F.x[i]), y: Y(F.y[i]), count: 1, best: i }); });
     } else {
       F.index.each(vx0, vy0, vx1, vy1, i => marks.push({ x: X(F.x[i]), y: Y(F.y[i]), count: 1, best: i }));
     }
@@ -550,6 +574,7 @@ export class TwinCanvasLayer extends L.Canvas {
     if (F) {
       const regionMode = F.result.findings[0]?.kind === "region";
       const level = this.levelFor(zoom), lvl = regionMode ? undefined : F.levels.get(level);
+      const policy = this.markerPolicy(d, zoom), emph = F.result.prominence.count;
       let best = -1, bd = Infinity, bestMark: { count: number; x: number; y: number; best: number } | null = null;
       const consider = (mx: number, my: number, count: number, bi: number) => {
         const rPx = count > 1 ? 9 + 3 * Math.log10(count) : Math.max(5, F.reachU[bi] * scale + 3);
@@ -557,8 +582,8 @@ export class TwinCanvasLayer extends L.Canvas {
         if (dPx <= rPx + tol && dPx < bd) { bd = dPx; best = bi; bestMark = { count, x: mx, y: my, best: bi }; }
       };
       const r = (60 + tol) / scale;
-      if (lvl && lvl.n < F.n) lvl.index.each(x - r, y - r, x + r, y + r, b => consider(lvl.x[b], lvl.y[b], lvl.count[b], lvl.best[b]));
-      else F.index.each(x - r, y - r, x + r, y + r, i => consider(F.x[i], F.y[i], 1, i));
+      if (policy.badges && lvl && lvl.n < F.n) lvl.index.each(x - r, y - r, x + r, y + r, b => consider(lvl.x[b], lvl.y[b], lvl.count[b], lvl.best[b]));
+      else F.index.each(x - r, y - r, x + r, y + r, i => { if (!policy.emphasisedOnly || i < emph) consider(F.x[i], F.y[i], 1, i); });
       if (bestMark) {
         const bm = bestMark as { count: number; x: number; y: number; best: number };
         if (bm.count > 1) { const ll = map.unproject(L.point(bm.x * scale, bm.y * scale), zoom); return { kind: "group", lat: ll.lat, lng: ll.lng, count: bm.count }; }

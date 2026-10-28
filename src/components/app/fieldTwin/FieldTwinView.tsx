@@ -1,7 +1,7 @@
-// The Field Twin viewer: the map, a compact layer panel, the Explore Findings control, a status strip with the
-// pressure legend, the docked inspector or results panel, and an expandable diagnostics section (technical layers,
-// draw timing, the developer-only reference imagery). The twin itself comes from the shell (account, files, or
-// the dev server).
+// The Field Twin viewer: the map, the detail dial (Simple, Standard, Full), the Explore Findings control, a
+// compact layer panel (Standard and Full), a status strip with the pressure legend, the docked inspector or results
+// panel, and an expandable diagnostics section (Full only: technical layers, draw timing, the developer-only
+// reference imagery). The twin itself comes from the shell (account, files, or the dev server).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Layers } from "lucide-react";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
@@ -10,7 +10,7 @@ import { FindingsEngine, type FindingsQuery, type FindingsResult } from "@/lib/f
 import { HEAT_STOPS } from "@/lib/fieldTwin/heatmap";
 import { fieldIntelligence } from "@/lib/fieldTwin/intelligence";
 import { type Detail, buildScene, zoomForSize } from "@/lib/fieldTwin/scene";
-import { DEFAULT_LAYERS, TWIN_COLOURS, type TwinLayers } from "@/lib/fieldTwin/style";
+import { DEFAULT_LAYERS, DETAIL_LABEL, DETAIL_PRESETS, DETAIL_STOPS, TWIN_COLOURS, type TwinDetail, type TwinDetailStop, type TwinLayers, detailOf } from "@/lib/fieldTwin/style";
 import type { TwinBundle } from "@/lib/fieldTwin/types";
 import { FindingsControl, FindingsPanel } from "./FindingsPanel";
 import type { DrawStats, TwinPick } from "./TwinCanvasLayer";
@@ -20,7 +20,7 @@ import TwinMap, { type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
 export type ReferenceOption = { id: string; label: string; url: string; maxNativeZoom: number; note: string };
 
 export type DevApi = {
-  map: L.Map; setView: (lat: number, lng: number, zoom: number) => void; setLayers: (patch: Partial<TwinLayers>) => void; select: (p: TwinPick) => void;
+  map: L.Map; setView: (lat: number, lng: number, zoom: number) => void; setLayers: (patch: Partial<TwinLayers>) => void; setDetail: (stop: TwinDetailStop) => void; select: (p: TwinPick) => void;
   stats: () => DrawStats; detail: () => Detail | null; scene: ReturnType<typeof buildScene>; ready: true;
   /** Run a findings query (null returns to the overview); answers with the counts for the benchmark. */
   setFindings: (q: FindingsQuery | null) => { qualifying: number; emphasized: number; rule: string };
@@ -34,7 +34,22 @@ type Props = {
   referenceOptions?: ReferenceOption[];
   /** Expose the map to window.__fieldTwin (development builds, for the screenshot and benchmark script). */
   expose?: boolean;
+  /** The detail stop to open at, instead of the remembered one (the dev preview's ?detail=). */
+  detail?: TwinDetailStop;
 };
+
+const DETAIL_KEY = "swathwise:twin-detail";
+const DETAIL_HINT: Record<TwinDetail, string> = {
+  simple: "Where the problems are: pressure, the regions and findings that stand apart, every outline up close.",
+  standard: "Plus the crop structure and where candidates stand together.",
+  full: "Everything measured, a marker for every finding, diagnostics.",
+  custom: "Layers set by hand. Pick a stop to reset them.",
+};
+
+function rememberedDetail(): TwinDetailStop {
+  try { const v = localStorage.getItem(DETAIL_KEY); if (v && (DETAIL_STOPS as string[]).includes(v)) return v as TwinDetailStop; } catch { /* private window, blocked storage */ }
+  return "simple";
+}
 
 const LEVEL_TEXT: Record<Detail["level"], string> = {
   field: "Weed pressure over the observable ground, the regions that matter most, the rows. Zoom in for trees and weed patches.",
@@ -54,17 +69,20 @@ function measured<T>(name: string, fn: () => T): T {
   return v;
 }
 
-export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], expose = false }: Props) {
+export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], expose = false, detail: detailProp }: Props) {
   const units = useUnitSystem();
   const intel = useMemo(() => measured("twin:intelligence", () => fieldIntelligence(twin)), [twin]);
   const scene = useMemo(() => measured("twin:scene", () => buildScene(twin, intel)), [twin, intel]);
   const engine = useMemo(() => new FindingsEngine(twin, intel), [twin, intel]);
-  const [layers, setLayers] = useState<TwinLayers>(DEFAULT_LAYERS);
+  const [layers, setLayers] = useState<TwinLayers>(() => DETAIL_PRESETS[detailProp ?? rememberedDetail()] ?? DEFAULT_LAYERS);
+  const detailStop = detailOf(layers);
+  /** A stop on the dial: the preset's layers, remembered for next time. */
+  const chooseDetail = useCallback((stop: TwinDetailStop) => { setLayers(DETAIL_PRESETS[stop]); setPanelOpen(stop === "full"); try { localStorage.setItem(DETAIL_KEY, stop); } catch { /* storage blocked */ } }, []);
   const [selection, setSelection] = useState<TwinPick>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [stats, setStats] = useState<DrawStats | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(true);
   const [query, setQuery] = useState<FindingsQuery>(OVERVIEW);
   const [refId, setRefId] = useState<string>("");
@@ -109,14 +127,15 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
     const h = handle.current;
     if (!h) return;
     window.__fieldTwin = {
-      map: h.map, setView: (lat, lng, zoom) => { h.map.setView([lat, lng], zoom, { animate: false }); }, setLayers: patch => setLayers(l => ({ ...l, ...patch })),
+      map: h.map, setView: (lat, lng, zoom) => { h.map.setView([lat, lng], zoom, { animate: false }); }, setLayers: patch => setLayers(l => ({ ...l, ...patch })), setDetail: chooseDetail,
       select: p => setSelection(p), stats: () => h.layer.stats, detail: () => h.layer.detailNow(), scene, ready: true,
       setFindings: q => { const nq = q ?? OVERVIEW; const r = engine.run(nq); setQuery(nq); return { qualifying: r.findings.length, emphasized: r.prominence.count, rule: r.prominence.rule }; },
     };
     return () => { delete window.__fieldTwin; };
-  }, [expose, scene, stats, engine]);
+  }, [expose, scene, stats, engine, chooseDetail]);
 
-  const toggle = (k: keyof TwinLayers, label: string, swatch: string, hint?: string) => (
+  type BoolLayer = { [K in keyof TwinLayers]: TwinLayers[K] extends boolean ? K : never }[keyof TwinLayers];
+  const toggle = (k: BoolLayer, label: string, swatch: string, hint?: string) => (
     <label key={k} className="flex items-start gap-2 py-1 text-xs text-neutral-200 cursor-pointer">
       <input type="checkbox" className="mt-0.5 accent-[#f0a63a]" checked={layers[k]} onChange={e => setLayers(l => ({ ...l, [k]: e.target.checked }))} />
       <span className="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: swatch }} />
@@ -128,6 +147,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
   const counts = useMemo(() => ({ verified: twin.weeds.filter(w => w.status === "verified").length, single: twin.weeds.filter(w => w.status === "single view").length, onTree: twin.weeds.filter(w => w.status === "on a tree").length, rows: twin.rows.filter(r => r.kept).length }), [twin]);
   const canopyCells = useMemo(() => intel.grid.cells.filter(c => c.canopy).length, [intel]);
   const dockOpen = !!selection || resultsOpen;
+  const full = detailStop === "full" || detailStop === "custom", simple = detailStop === "simple";
   const swatch = (rgb: [number, number, number], a: number) => `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.min(1, a + 0.15)})`;
 
   return (
@@ -136,10 +156,23 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
       <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={setSelection} onDetail={setDetail} onStats={setStats}
         onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings} />
 
-      {/* Left column: Explore Findings, then the layers. */}
+      {/* Left column: the detail dial, Explore Findings, then the layers (Standard and Full). */}
       <div className="absolute left-3 top-3 z-[700] flex max-h-[calc(100%-120px)] flex-col gap-2 overflow-y-auto">
-        <FindingsControl query={query} onChange={q => { setQuery(q); setSelection(null); }} result={result} open={findOpen} onToggle={() => setFindOpen(o => !o)} />
-        <div className={`w-[272px] text-sm ${panel}`}>
+        <div className={`w-[272px] px-3 py-2 ${panel}`} role="group" aria-label="Detail">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-neutral-100">Detail</span>
+            {detailStop === "custom" && <span className="text-[10px] text-neutral-400">{DETAIL_LABEL.custom}</span>}
+          </div>
+          <div className="mt-1.5 grid grid-cols-3 gap-0.5 rounded-sm border border-[#3a3f3a] bg-[#111311] p-0.5">
+            {DETAIL_STOPS.map(stop => (
+              <button key={stop} type="button" onClick={() => chooseDetail(stop)} aria-pressed={detailStop === stop}
+                className={`rounded-[2px] px-1 py-1 text-[11px] ${detailStop === stop ? "bg-[#f0a63a] font-semibold text-[#171a18]" : "text-neutral-300 hover:bg-[#262a26] hover:text-neutral-100"}`}>{DETAIL_LABEL[stop]}</button>
+            ))}
+          </div>
+          <p className="mt-1 text-[10px] leading-snug text-neutral-500">{DETAIL_HINT[detailStop]}</p>
+        </div>
+        <FindingsControl query={query} onChange={q => { setQuery(q); setSelection(null); }} result={result} open={findOpen} onToggle={() => setFindOpen(o => !o)} compact={simple} />
+        {!simple && <div className={`w-[272px] text-sm ${panel}`}>
           <button type="button" className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-semibold text-neutral-100" onClick={() => setPanelOpen(o => !o)} aria-expanded={panelOpen}>
             <span className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5" />Layers</span>{panelOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
@@ -147,16 +180,25 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
             <div className="border-t border-[#2e322e] px-3 py-2">
               {toggle("pressure", "Weed pressure", swatch(HEAT_STOPS[2].rgb, HEAT_STOPS[2].alpha), `verified cover, % of observable ground, per ${intel.grid.cellM} m`)}
               {toggle("zones", "Findings", TWIN_COLOURS.region, `${intel.zones.length} regions at 1.5 % cover or more; patches and weeds by filter`)}
-              {toggle("structure", "Crop structure", TWIN_COLOURS.row, `${counts.rows} rows, ${twin.trees.length.toLocaleString()} trees`)}
-              {toggle("weeds", "Weed candidates", TWIN_COLOURS.weed, `${counts.verified.toLocaleString()} seen in 2+ photographs`)}
+              {toggle("structure", "Crop rows", TWIN_COLOURS.row, `${counts.rows} rows`)}
+              {toggle("crowns", "Tree crowns", TWIN_COLOURS.tree, `${twin.trees.length.toLocaleString()} trees; always drawn at the plant level`)}
+              {toggle("weeds", "Weed candidates", TWIN_COLOURS.weed, `${counts.verified.toLocaleString()} seen in 2+ photographs, every outline at the plant level`)}
+              {toggle("clusters", "Weed groups", TWIN_COLOURS.weed, "soft discs where candidates stand together, at the row level")}
+              <label className="mt-1 block text-[11px] text-neutral-400">Finding markers
+                <select value={layers.markers} onChange={e => setLayers(l => ({ ...l, markers: e.target.value as TwinLayers["markers"] }))} className="mt-0.5 w-full rounded-sm border border-[#3a3f3a] bg-[#111311] px-1.5 py-1 text-xs text-neutral-100" aria-label="Finding markers">
+                  <option value="emphasised">Emphasised findings only</option>
+                  <option value="summary">Plus counts where they are not drawn as themselves</option>
+                  <option value="all">Every qualifying finding, counts everywhere</option>
+                </select>
+              </label>
               {toggle("vegetation", "Other vegetation", TWIN_COLOURS.vegetation, `${twin.vegetation.length} patches, unclassed`)}
               {toggle("uncertainty", "Uncertainty", "#8c949f", `${s.cellsSingleCoverage} cells one photograph saw`)}
               {toggle("coverage", "Photo coverage", TWIN_COLOURS.imageryEdge, "the ground the photographs looked at")}
               {toggle("surroundings", "Surroundings", "#4a4f4a", "roads and places, OpenStreetMap data")}
-              <button type="button" className="mt-2 flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => setDiagOpen(o => !o)} aria-expanded={diagOpen}>
+              {full && <button type="button" className="mt-2 flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => setDiagOpen(o => !o)} aria-expanded={diagOpen}>
                 {diagOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}Diagnostics
-              </button>
-              {diagOpen && (
+              </button>}
+              {full && diagOpen && (
                 <div className="mt-1 border-l border-[#2e322e] pl-2">
                   {toggle("singleView", "Single-sighting candidates", TWIN_COLOURS.weedSingle, `${counts.single.toLocaleString()}, dashed`)}
                   {toggle("onTree", "Detections on tree crowns", TWIN_COLOURS.weedOnTree, `${counts.onTree.toLocaleString()}, kept apart from weeds`)}
@@ -186,7 +228,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
               )}
             </div>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* Status strip and legend, bottom left: what this zoom shows, what the colours mean. */}
@@ -201,8 +243,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
             <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />not observed</span>
           </div>
         )}
-        {detail?.level === "field" && <p className="mt-0.5 text-neutral-500">{s.blockHa != null ? `Orchard block ${fmtArea(s.blockHa * 10_000, units).text}; ` : ""}{intel.zones.length} regions at 1.5 % cover or more, {result.query.mode === "overview" ? `${result.prominence.count} emphasised` : `${result.findings.length} findings listed`}.</p>}
-        <p className="mt-0.5 text-neutral-500 tabular-nums">Centre {(centre ?? twin.origin).lat.toFixed(6)}, {(centre ?? twin.origin).lng.toFixed(6)} · north up</p>
+        {detail?.level === "field" && !simple && <p className="mt-0.5 text-neutral-500">{s.blockHa != null ? `Orchard block ${fmtArea(s.blockHa * 10_000, units).text}; ` : ""}{intel.zones.length} regions at 1.5 % cover or more, {result.query.mode === "overview" ? `${result.prominence.count} emphasised` : `${result.findings.length} findings listed`}.</p>}
+        {full && <p className="mt-0.5 text-neutral-500 tabular-nums">Centre {(centre ?? twin.origin).lat.toFixed(6)}, {(centre ?? twin.origin).lng.toFixed(6)} · north up</p>}
         {reference && <p className="mt-0.5 text-amber-300/90">Reference imagery on (diagnostics): display only, it never moves the twin's objects.</p>}
       </div>
 

@@ -173,6 +173,40 @@ Screenshots: [surroundings](field-twin-adaptive-map/surroundings.png), [field](f
 [most extensive](field-twin-adaptive-map/findings-extent.png), [highest confidence](field-twin-adaptive-map/findings-confidence.png),
 [near rows](field-twin-adaptive-map/findings-rows.png), [the top patch selected](field-twin-adaptive-map/findings-selected.png).
 
+## The detail dial (2026-10-28)
+
+The row view with a filter on was confusing: count badges for every qualifying weed sat on top of the cluster
+discs that already drew the same weeds, with 1,040 crown rings, the rows, the heatmap and the labels all at the
+same weight, and two control panels open before anything was asked for. The fix is one control, the **Detail**
+dial, with three stops. Nothing in the engine, the prominence rule or the results panel changed: every qualifying
+finding stays in the list at every stop.
+
+| | Simple (default) | Standard | Full |
+|---|---|---|---|
+| Heatmap, block, boundary, hatch, surroundings | yes | yes | yes |
+| Rows | thin, as orientation | yes | yes |
+| Tree crowns | plant level only | yes | yes |
+| Weed groups (row-level discs) | no | yes | yes |
+| Weed outlines (plant level) | yes, always | yes | yes |
+| Other vegetation | no | yes | yes |
+| Finding markers | emphasised only | emphasised, plus count badges where the findings are not drawn as themselves | every qualifying finding, badges everywhere |
+| Controls | dial, Show, the rule sentence | plus thresholds and a collapsed Layers panel | Layers open, Diagnostics, centre coordinates |
+
+The one rule behind the badges (`badgesAllowed` in `style.ts`): **a count badge summarises findings only where
+they are not drawn as themselves**. Weeds are drawn as themselves once the row-level discs or the plant-level
+outlines are on screen; patches once the typical one's boundary reads as a shape (4 px of reach). Full keeps the
+badges everywhere so the complete picture is still one click away. The same policy drives hit-testing, so a click
+lands on what is drawn. The stop is remembered per browser (`swathwise:twin-detail`); a layer toggled by hand
+turns the dial to "Custom" until a stop is chosen again; the dev preview takes `?detail=simple|standard|full`.
+
+Row view, "Largest individual weeds" on, the busiest spot of the apricot twin (same view at every stop):
+
+| Stop | Draw | Drawn |
+|---|---|---|
+| [Simple](field-twin-adaptive-map/detail-simple.png) | 0.4 ms | heatmap, 14 rows, 6 emphasised rings with labels |
+| [Standard](field-twin-adaptive-map/detail-standard.png) | 1.6 ms | plus 437 crowns and 1,895 weed discs; no badges, the discs are the weeds |
+| [Full](field-twin-adaptive-map/detail-full.png) | 0.9 ms | plus 197 count badges and 25 single markers (the picture before the dial) |
+
 ## Opening a twin: bytes to first frame
 
 `scripts/directGeoref/twinOpenBench.mjs` reads phase marks the page records (median of four runs, apricot twin,

@@ -24,7 +24,7 @@ const errors = [];
 page.on("pageerror", e => errors.push(String(e)));
 page.on("console", m => { if (m.type() === "error") errors.push(m.text()); });
 const t0 = Date.now();
-await page.goto(`${BASE}/dev/field-twin?id=${ID}`, { waitUntil: "domcontentloaded" });
+await page.goto(`${BASE}/dev/field-twin?id=${ID}&detail=full`, { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => window.__fieldTwin?.ready === true, null, { timeout: 120000 });
 const loadMs = Date.now() - t0;
 const settle = async () => { await page.waitForTimeout(700); await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))); };
@@ -84,6 +84,21 @@ for (const mode of ["largest", "clusters", "pressure", "extent", "confidence", "
   await settle();
   await page.screenshot({ path: join(OUT, `findings-${mode}.png`) });
 }
+// The detail dial: the three stops over the row view with "Largest individual weeds" on (the view that was confusing).
+bench.detail = {};
+for (const stop of ["simple", "standard", "full"]) {
+  const r = await page.evaluate(async ([st, la, ln]) => {
+    window.__fieldTwin.setDetail(st); window.__fieldTwin.setFindings({ mode: "largest" }); window.__fieldTwin.setView(la, ln, 20.5);
+    await new Promise(r => setTimeout(r, 300)); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const s = window.__fieldTwin.stats();
+    return { drawMs: +s.lastDrawMs.toFixed(2), drawn: s.drawn, labels: s.labels };
+  }, [stop, spot.lat, spot.lng]);
+  bench.detail[stop] = r;
+  await settle();
+  await page.screenshot({ path: join(OUT, `detail-${stop}.png`) });
+}
+await page.evaluate(() => { window.__fieldTwin.setDetail("full"); window.__fieldTwin.setFindings(null); });
+await settle();
 // The top patch selected from the panel: zooms to it and highlights it.
 await page.evaluate(() => window.__fieldTwin.setFindings({ mode: "clusters" }));
 await page.waitForTimeout(300);

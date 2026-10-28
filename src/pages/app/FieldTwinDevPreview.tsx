@@ -14,6 +14,9 @@ export default function FieldTwinDevPreview() {
   const id = params.get("id") ?? "";
   // ?synthetic=100000: a generated field of that many observations, for the benchmark script (never a real field).
   const synthetic = Number(params.get("synthetic") ?? 0);
+  // ?detail=simple|standard|full: the dial's stop to open at (the screenshot script), else the remembered one.
+  const detailParam = params.get("detail");
+  const detail = detailParam === "simple" || detailParam === "standard" || detailParam === "full" ? detailParam : undefined;
   useEffect(() => {
     (async () => {
       try {
@@ -38,7 +41,7 @@ export default function FieldTwinDevPreview() {
   if (!twin) return <div className="p-6 text-sm text-neutral-400">Loading the twin…</div>;
   return (
     <div className="h-screen w-screen bg-[#1a1c1a]">
-      <FieldTwinView twin={twin} atlasUrl={async i => `/__field-twin/${twin.id}/${twin.atlases[i].file}`} expose />
+      <FieldTwinView twin={twin} atlasUrl={async i => `/__field-twin/${twin.id}/${twin.atlases[i].file}`} expose detail={detail} />
     </div>
   );
 }

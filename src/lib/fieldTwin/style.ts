@@ -6,12 +6,21 @@
 import type { TwinWeed } from "./types";
 
 export type TwinLayers = {
-  /** Crop structure: rows, trees, the orchard block. */
+  /** Crop structure: the rows (and, with `crowns`, the trees). */
   structure: boolean;
+  /** Tree crowns and tree points. Off, the crowns still come in at the plant level, where they are the measurement. */
+  crowns: boolean;
   inferred: boolean;
   droppedRows: boolean;
-  /** Weed candidates: clusters at the row level, measured outlines at the plant level. */
+  /** Weed candidates: measured outlines at the plant level (and, with `clusters`, soft discs at the row level). */
   weeds: boolean;
+  clusters: boolean;
+  /**
+   * Which findings get a marker on the map: only the emphasised ones; those plus count badges where the findings
+   * are not drawn as themselves ("summary"); or every qualifying finding, badges everywhere ("all"). The results
+   * panel lists every qualifying finding whatever this says.
+   */
+  markers: TwinMarkers;
   singleView: boolean;
   /** Model detections that sit on tree crowns (diagnostics). */
   onTree: boolean;
@@ -32,10 +41,50 @@ export type TwinLayers = {
   surroundings: boolean;
 };
 
-export const DEFAULT_LAYERS: TwinLayers = {
-  structure: true, inferred: true, droppedRows: false, weeds: true, singleView: false, onTree: false, vegetation: true,
-  pressure: true, zones: true, uncertainty: false, coverage: true, footprints: false, ground: true, surroundings: true,
+export type TwinMarkers = "emphasised" | "summary" | "all";
+
+/** The detail dial: three stops, or "custom" once a layer has been toggled by hand. */
+export type TwinDetail = "simple" | "standard" | "full" | "custom";
+export type TwinDetailStop = Exclude<TwinDetail, "custom">;
+
+const DIAGNOSTICS = { inferred: true, droppedRows: false, singleView: false, onTree: false, uncertainty: false, footprints: false };
+const GROUND = { pressure: true, zones: true, coverage: true, ground: true, surroundings: true };
+
+/**
+ * What each stop of the dial draws. Simple answers "where are the problems": the heatmap, the rows as orientation,
+ * the emphasised findings, and the measured outlines once the plant level is reached. Standard adds the crop
+ * structure and the row-level weed discs. Full is everything, with a marker for every qualifying finding.
+ */
+export const DETAIL_PRESETS: Record<TwinDetailStop, TwinLayers> = {
+  simple: { ...GROUND, ...DIAGNOSTICS, structure: true, crowns: false, weeds: true, clusters: false, vegetation: false, markers: "emphasised" },
+  standard: { ...GROUND, ...DIAGNOSTICS, structure: true, crowns: true, weeds: true, clusters: true, vegetation: true, markers: "summary" },
+  full: { ...GROUND, ...DIAGNOSTICS, structure: true, crowns: true, weeds: true, clusters: true, vegetation: true, markers: "all" },
 };
+
+export const DEFAULT_LAYERS: TwinLayers = DETAIL_PRESETS.simple;
+export const DETAIL_STOPS: TwinDetailStop[] = ["simple", "standard", "full"];
+export const DETAIL_LABEL: Record<TwinDetail, string> = { simple: "Simple", standard: "Standard", full: "Full", custom: "Custom" };
+
+/** The stop whose preset the layers match exactly, else "custom". */
+export function detailOf(layers: TwinLayers): TwinDetail {
+  for (const stop of DETAIL_STOPS) {
+    const p = DETAIL_PRESETS[stop];
+    if ((Object.keys(p) as (keyof TwinLayers)[]).every(k => p[k] === layers[k])) return stop;
+  }
+  return "custom";
+}
+
+/**
+ * The one rule behind the count badges: a badge summarises findings only where they are not drawn as themselves.
+ * With "all" markers a badge is always allowed (the full picture); with "emphasised" never (only the emphasised
+ * findings are marked, each on itself). In between, weeds are "drawn as themselves" once the row-level discs or
+ * the plant-level outlines are on screen, and patches once their boundaries are.
+ */
+export function badgesAllowed(markers: TwinMarkers, drawnAsThemselves: boolean): boolean {
+  if (markers === "all") return true;
+  if (markers === "emphasised") return false;
+  return !drawnAsThemselves;
+}
 
 export const TWIN_COLOURS = {
   outside: "#171a18",
