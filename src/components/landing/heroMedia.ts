@@ -13,7 +13,7 @@ export type HeroClip = { src: string; srcSmall?: string; poster: string; zoom?: 
 
 export const HERO_MEDIA: HeroClip[] = [
   // The 2026-10-28 cut: the 20 s flight film with the Field Twin's largest-weed demo (3.3 s, played at 1.2x)
-  // spliced into its middle at 10 s, crossfaded both ways; 23 s in all. Seconds 9, 10 and 20 are an app screen
+  // spliced in 1 s from the start, crossfaded both ways; 23 s in all. Seconds 12, 13 and 20 are an app screen
   // recording with black bars down both sides (about 4.3 % of the width each); 1.1 crops them off and costs the
   // drone footage a sliver at its edges. The demo was scaled to the full width and cropped top and bottom, so it
   // carries no bars of its own.

@@ -8,7 +8,7 @@ dress up an old one.
 |---|---|---|
 | `cockpit-sim.mp4` / `.webm` | The flight planner running a mission simulation at 32× | Nothing, since 2026-10-08: the cockpit section was cut while the product is in closed testing. Kept for when it comes back. |
 | `cockpit-sim-poster.jpg` | Frame 11s in — tank dynamics, transport and full telemetry all visible | Poster for the above |
-| `hero.mp4` / `hero-1280.mp4` | The hero film: real flights, the field, the route and the map, with the Field Twin's largest-weed demo spliced into the middle at 1.2x; 23 s, muted (cut 2026-10-28) | The hero, behind the headline; the 1280 cut for screens under 900 px |
+| `hero.mp4` / `hero-1280.mp4` | The hero film: real flights, the field, the route and the map, with the Field Twin's largest-weed demo spliced in 1 s from the start at 1.2x; 23 s, muted (cut 2026-10-28) | The hero, behind the headline; the 1280 cut for screens under 900 px |
 | `hero-poster.jpg` | Frame 2.5 s in, the drone lifting off the rig over the beans | Poster for the above, and all that anyone on reduced motion or a slow connection sees |
 
 ## The hero film
@@ -19,25 +19,29 @@ Two masters, both gitignored for the same reason as the capture masters below:
 recording of the Field Twin's "Largest individual weeds" filter, 2026-10-28). WebM was tried and came
 out larger than the MP4 on this footage, so only MP4 is served.
 
-The served film is the flight cut with the demo spliced into its middle: the first 10 s, a 0.4 s
-crossfade, the demo at 1.2x (3.3 s, scaled to the full width and cropped top and bottom so it
-fills the 16:9 frame without bars), a 0.4 s crossfade, then the last 10 s. 23 s in all.
+The served film is the flight cut with the demo spliced in 1 s from the start: the first second, a
+0.4 s crossfade, the demo at 1.2x (3.3 s, scaled to the full width and cropped top and bottom so it
+fills the 16:9 frame without bars), a 0.4 s crossfade, then the rest of the flight cut from its
+second 1. 23 s in all. The poster is still the master's frame at 2.5 s (the lift-off), which now
+plays about 5.8 s in.
 
 ```sh
 SRC="herovideo/Timeline 1.mov"; DEMO="additionalherosectionvideo/swarduslargestweeddemo.mp4"
 enc() { W=$1; H=$2; OUT=$3; ffmpeg -y -i "$SRC" -i "$DEMO" -filter_complex \
-  "[0:v]trim=0:10.4,setpts=PTS-STARTPTS,scale=$W:$H,fps=30,format=yuv420p[a];\
+  "[0:v]trim=0:1.4,setpts=PTS-STARTPTS,scale=$W:$H,fps=30,format=yuv420p[a];\
    [1:v]setpts=PTS/1.2,fps=30,scale=$W:-2,crop=$W:$H,format=yuv420p[d];\
-   [0:v]trim=10:20.0333,setpts=PTS-STARTPTS,scale=$W:$H,fps=30,format=yuv420p[b];\
-   [a][d]xfade=transition=fade:duration=0.4:offset=10[ad];\
-   [ad][b]xfade=transition=fade:duration=0.4:offset=12.933[v]" \
+   [0:v]trim=1:20.0333,setpts=PTS-STARTPTS,scale=$W:$H,fps=30,format=yuv420p[b];\
+   [a][d]xfade=transition=fade:duration=0.4:offset=1[ad];\
+   [ad][b]xfade=transition=fade:duration=0.4:offset=3.933[v]" \
   -map "[v]" -an -c:v libx264 -profile:v high -crf 30 -preset slow -movflags +faststart -pix_fmt yuv420p "$OUT"; }
 enc 1920 1080 public/video/hero.mp4        # ~6.1 MB
 enc 1280 720 public/video/hero-1280.mp4    # ~3.1 MB
 ffmpeg -y -ss 2.5 -i "$SRC" -vframes 1 -vf "scale=1920:-2" -q:v 4 public/video/hero-poster.jpg
 ```
 
-To change the demo's speed, change `PTS/1.2` and the second offset (10.4 + demo seconds − 0.8).
+To move the demo, change the first trim's end (start + 0.4), the second trim's start, and both
+offsets (first = start; second = start + 0.4 + demo seconds − 0.8). To change its speed, change
+`PTS/1.2` and the second offset.
 
 ## The master is not in git
 
@@ -92,5 +96,5 @@ its own, because for some viewers it is the whole story.
 
 `src/components/landing/heroMedia.ts` is the list. One clip loops; several play in order and wrap. Each entry
 names the wide and narrow encodes and a poster frame, and may set `zoom` to crop black bars baked into the
-source (the current cut has pillarboxed screen-recording seconds at 9, 10 and 20 s, so it plays at 1.1).
+source (the current cut has pillarboxed screen-recording seconds at 12, 13 and 20 s, so it plays at 1.1).
 
