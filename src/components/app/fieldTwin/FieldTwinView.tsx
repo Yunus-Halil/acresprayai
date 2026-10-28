@@ -352,7 +352,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
           <button type="button" className="-mr-1 -mt-0.5 rounded-sm px-1 text-[13px] leading-none text-neutral-500 hover:bg-[#262a26] hover:text-neutral-200" onClick={() => setKeyOpen(false)} aria-label="Close the key" title="Close the key">×</button>
         </div>
         <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>
-        {twin.stats.weedTier === "colour" && <p className="mt-0.5 text-amber-300/90">Weeds by colour rules, not a model: green patches over bare soil. Small, dark or yellowing plants are missed.</p>}
+        {twin.stats.weedTier === "colour" && <p className="mt-0.5 text-amber-300/90">Weeds by colour rules, not a model: green against the soil around it, crowns left out, strips split at their plants. Yellowing plants and plants under 4 cm are missed; a green shoot at a crown's edge can be counted.</p>}
         {twin.stats.weedTier === "none" && <p className="mt-0.5 text-neutral-500">No weed pass ran on this twin.</p>}
         {layers.pressure && (
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-neutral-400" aria-label="Weed pressure legend">

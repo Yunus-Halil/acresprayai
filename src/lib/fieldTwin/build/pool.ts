@@ -6,7 +6,8 @@
 // Memory rule: a helper holds the grey rasters it was sent and nothing else. The ties are partitioned by their
 // first photograph, so each helper receives only the rasters of its own first photographs and their partners
 // (about a tenth to a quarter of the flight each), never the whole flight.
-import { type GeorefFrame, type GreyRaster, type Observation, type SoilTieOptions, type SoilTie, findSoilTies, windowCacheFor } from "../../directGeoref";
+import { type GeorefFrame, type GreenOptions, type GreyRaster, type Observation, type SoilTieOptions, type SoilTie, findSoilTies, windowCacheFor } from "../../directGeoref";
+import type { CrownRef } from "./weeds";
 
 export type PoolTask =
   /** Keep a photograph's grey raster for later tie tasks. */
@@ -14,7 +15,7 @@ export type PoolTask =
   /** Soil ties for pairs that share a first photograph (frames given with the task: they change between rounds). */
   | { kind: "ties"; a: string; frames: [string, GeorefFrame][]; partners: string[]; opts: SoilTieOptions }
   /** The colour weed pass on one photograph: green patches at a decode, as observations. */
-  | { kind: "colour"; name: string; file: Blob; frame: GeorefFrame; down: number; minM2: number }
+  | { kind: "colour"; name: string; file: Blob; frame: GeorefFrame; down: number; minM2: number; crowns: CrownRef[]; green: Partial<GreenOptions> }
   /** Crops of one photograph for the atlases. */
   | { kind: "crops"; name: string; file: Blob; reqs: { x0: number; y0: number; size: number; out: number }[] };
 
@@ -39,7 +40,7 @@ export type TaskContext = {
   rasters: Map<string, GreyRaster>;
   /** Opens a photograph's file for decoding (the browser's PhotoSource, injected so this module stays free of DOM types). */
   photo: (file: Blob, name: string) => { decode(down: number): Promise<{ width: number; height: number; rgba: Uint8ClampedArray }>; crops(reqs: { x0: number; y0: number; size: number; out: number }[]): Promise<Uint8ClampedArray[]> };
-  colour: (name: string, frame: GeorefFrame, px: { width: number; height: number; rgba: Uint8ClampedArray }, minM2: number) => Observation[];
+  colour: (name: string, frame: GeorefFrame, px: { width: number; height: number; rgba: Uint8ClampedArray }, minM2: number, crowns: CrownRef[], green: Partial<GreenOptions>) => Observation[];
 };
 
 export async function handleTask(task: PoolTask, ctx: TaskContext): Promise<{ result: PoolResult; transfer: ArrayBuffer[] }> {
@@ -67,7 +68,7 @@ export async function handleTask(task: PoolTask, ctx: TaskContext): Promise<{ re
     }
     case "colour": {
       const px = await ctx.photo(task.file, task.name).decode(task.down);
-      return { result: { kind: "colour", name: task.name, observations: ctx.colour(task.name, task.frame, px, task.minM2) }, transfer: [] };
+      return { result: { kind: "colour", name: task.name, observations: ctx.colour(task.name, task.frame, px, task.minM2, task.crowns, task.green) }, transfer: [] };
     }
     case "crops": {
       const cells = await ctx.photo(task.file, task.name).crops(task.reqs);

@@ -61,11 +61,12 @@ describe("twin build, the pure pieces", () => {
   it("the colour tier turns green patches into observations with their hulls, leaving out the specks", () => {
     const f = frameFromDji("a", meta(), { ground: takeoffPlane(0) });
     if (!("frame" in f)) throw new Error("frame");
-    // A 96 x 64 picture of bare soil with one 12 x 12 green square (a weed) and one 2 x 2 speck.
+    // A 96 x 64 picture of bare soil with one 12 x 12 green square (a weed) and one single-pixel speck (under the
+    // two cells a patch needs).
     const w = 96, h = 64, rgba = new Uint8ClampedArray(w * h * 4);
     for (let i = 0; i < w * h; i++) rgba.set([150, 110, 80, 255], i * 4);
     for (let y = 20; y < 32; y++) for (let x = 30; x < 42; x++) rgba.set([40, 160, 40, 255], (y * w + x) * 4);
-    for (let y = 50; y < 52; y++) for (let x = 80; x < 82; x++) rgba.set([40, 160, 40, 255], (y * w + x) * 4);
+    rgba.set([40, 160, 40, 255], (50 * w + 80) * 4);
     const obs = colourObservations("a", f.frame, { width: w, height: h, rgba }, 0.01);
     expect(obs.length).toBe(1);
     expect(obs[0].u).toBeCloseTo(36 * 57, -1);
@@ -185,7 +186,7 @@ describe("the helper pool's task handler", () => {
     const pool = inlinePool(ctx);
     const r1 = await pool.run({ kind: "raster", name: "a", width: 2, height: 1, grey: new Uint8Array([1, 2]), green: new Uint8Array([0, 1]), toOriginal: 4 });
     expect(r1.kind).toBe("raster"); expect(ctx.rasters.get("a")?.width).toBe(2);
-    const r2 = await pool.run({ kind: "colour", name: "a", file: new Blob(), frame: f.frame, down: 1, minM2: 0.001 });
+    const r2 = await pool.run({ kind: "colour", name: "a", file: new Blob(), frame: f.frame, down: 1, minM2: 0.001 , crowns: [], green: {}});
     expect(r2.kind === "colour" && r2.observations.length).toBe(1);
     const r3 = await handleTask({ kind: "crops", name: "a", file: new Blob(), reqs: [{ x0: 0, y0: 0, size: 10, out: 4 }] }, ctx);
     expect(r3.result.kind === "crops" && r3.result.cells[0].length).toBe(64);

@@ -119,7 +119,9 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
   const twinWeeds = weeds.map(w => {
     const evidence: TwinEvidence[] = [];
     const best = [...w.members].filter(m => frames.has(m.frame)).sort((a, b) => centreDist(a.frame, a.u, a.v) - centreDist(b.frame, b.u, b.v));
-    const nEvidence = w.onTree ? 1 : 2;
+    // Evidence crops: two for a model weed, one for a weed on a tree; the colour tier, with ten times the candidates,
+    // keeps one crop for a verified weed and none for a single sighting (the twin stays a few megabytes).
+    const nEvidence = weedsRes.tier === "colour" ? (w.verified ? 1 : 0) : w.onTree ? 1 : 2;
     for (const m of best.slice(0, nEvidence)) request(m.frame, m.u, m.v, Math.max(0.6, 2.4 * w.diameterM), m.poly ?? [], evidence);
     const b = best[0], f = b ? frames.get(b.frame)! : null;
     const c0 = f ? pixelToGround(f, b.u, b.v) : null, [ce, cn] = enOf(w.lat, w.lng);

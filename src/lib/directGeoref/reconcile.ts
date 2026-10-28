@@ -16,6 +16,11 @@
 //                instead of leaning away from each camera; one view: the flat projection
 //   repeatability how many photographs had the plant inside their frame (with a margin), against how many saw it:
 //                a plant every covering photo detects is a consistent detection; one seen once out of five is not
+//   outlines     (linkBy "overlap", absorb) for sightings that carry a ground outline, as the colour rules' green
+//                patches do: two sightings are the same plant when one's centre lies inside the other's outline on
+//                the ground, and after grouping a small object whose centre lies inside a larger object's outline is
+//                absorbed into it, from the same photograph or not: a patch one photograph sees whole and another
+//                sees as three pieces is one plant, not four. Sizes are then summed per photograph before the median.
 //
 // Observations cut by the photo's edge are left out of linking and positions (their centroid is truncated).
 import { toEnu, type LatLngAlt } from "../sourceFrames/odm";
@@ -55,8 +60,15 @@ export type ReconcileOptions = {
   maxPairM?: number;
   /** Per frame, the ground its detector actually looked at (rings, local metres about the set's origin); when given, `runBy` counts them. */
   runRings?: Map<string, [number, number][][]>;
+  /** How two sightings are matched: by their rays meeting (the default), or by one's centre lying inside the other's ground outline (`data.poly`, original-frame pixels). */
+  linkBy?: "rays" | "overlap";
+  /** After grouping, absorb an object whose centre lies inside a larger object's outline (at most `absorbRatio` of its area), whatever the photographs. */
+  absorb?: boolean;
+  absorbRatio?: number;
+  /** Overlap linking: centres at most this far apart are the same patch whatever their outlines, metres. */
+  overlapMinM?: number;
 };
-export const RECONCILE_DEFAULTS: Required<Omit<ReconcileOptions, "runRings">> & { runRings: Map<string, [number, number][][]> | null } = { searchM: 2, missBaseM: 0.1, missSizeFactor: 0.25, minHeightM: -0.6, maxHeightM: 6, flatWeight: 0.2, maxSizeRatio: 3, coverMarginM: 0.3, maxPairM: 45, runRings: null };
+export const RECONCILE_DEFAULTS: Required<Omit<ReconcileOptions, "runRings">> & { runRings: Map<string, [number, number][][]> | null } = { searchM: 2, missBaseM: 0.1, missSizeFactor: 0.25, minHeightM: -0.6, maxHeightM: 6, flatWeight: 0.2, maxSizeRatio: 3, coverMarginM: 0.3, maxPairM: 45, runRings: null, linkBy: "rays", absorb: false, absorbRatio: 0.5, overlapMinM: 0.15 };
 
 export type ReconciledObject = {
   id: number;
@@ -79,7 +91,17 @@ export type ReconciledObject = {
   runBy: number;
 };
 
-type Prepared = Observation & { key: string; e: number; n: number; C: V3; d: V3; groundZ: number };
+type Prepared = Observation & { key: string; e: number; n: number; C: V3; d: V3; groundZ: number; /** Ground outline, local metres (overlap linking and absorption). */ ring: [number, number][] | null };
+
+/** Point in a ring (local metres). */
+const inRing = (ring: [number, number][], e: number, n: number): boolean => {
+  let hit = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > n) !== (yj > n) && e < ((xj - xi) * (n - yi)) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+};
 
 /** Least-squares point closest to a set of rays (C + t d). */
 export function closestPointToRays(rays: { C: V3; d: V3 }[]): V3 | null {
@@ -123,7 +145,12 @@ export function reconcile(observations: Observation[], frames: Map<string, Geore
     const g = pixelToGround(f, ob.u, ob.v), d = worldRay(f, ob.u, ob.v);
     if (!g || !d) continue;
     const [e, n] = en(g.lat, g.lng);
-    prep.push({ ...ob, key: `${ob.frame}#${ob.id}`, e, n, C: cameraCentreIn(f, origin), d, groundZ: g.altM });
+    let ring: [number, number][] | null = null;
+    if (o.linkBy === "overlap" || o.absorb) {
+      const poly = ob.data?.poly as [number, number][] | undefined;
+      if (poly && poly.length >= 3) { ring = []; for (const [u, v] of poly) { const q = pixelToGround(f, u, v); if (q) ring.push(en(q.lat, q.lng)); } if (ring.length < 3) ring = null; }
+    }
+    prep.push({ ...ob, key: `${ob.frame}#${ob.id}`, e, n, C: cameraCentreIn(f, origin), d, groundZ: g.altM, ring });
   }
   const byFrame = new Map<string, Prepared[]>();
   for (const p of prep) (byFrame.get(p.frame) ?? byFrame.set(p.frame, []).get(p.frame)!).push(p);
@@ -137,6 +164,13 @@ export function reconcile(observations: Observation[], frames: Map<string, Geore
   const score = (p: Prepared, q: Prepared): number | null => {
     const flat = Math.hypot(q.e - p.e, q.n - p.n);
     if (flat > o.searchM) return null;
+    if (o.linkBy === "overlap") {
+      // One's centre inside the other's outline, or the centres closer than the mean radius or than overlapMinM (the
+      // cameras agree to about 6 cm; a small patch's centres from two views sit that far apart): the same patch.
+      const r = Math.max(o.overlapMinM, (p.sizeM + q.sizeM) / 4);
+      const within = (p.ring && inRing(p.ring, q.e, q.n)) || (q.ring && inRing(q.ring, p.e, p.n)) || flat <= r;
+      return within ? flat / Math.max(0.05, Math.max(p.sizeM, q.sizeM)) : null;
+    }
     const ratio = Math.max(p.sizeM, q.sizeM) / Math.max(1e-6, Math.min(p.sizeM, q.sizeM));
     if (ratio > o.maxSizeRatio) return null;
     const size = (p.sizeM + q.sizeM) / 2, tol = o.missBaseM + o.missSizeFactor * size;
@@ -188,6 +222,30 @@ export function reconcile(observations: Observation[], frames: Map<string, Geore
   const groups = new Map<string, Prepared[]>();
   for (const p of prep) { const r = find(p.key); (groups.get(r) ?? groups.set(r, []).get(r)!).push(p); }
 
+  // Absorption: an object whose centre lies inside a larger object's member outline joins it, whatever the
+  // photographs (a piece of a plant another photograph saw whole). Smallest first, so pieces of pieces resolve.
+  if (o.absorb) {
+    type G = { root: string; members: Prepared[]; e: number; n: number; area: number };
+    const gs: G[] = [...groups].map(([root, members]) => ({ root, members, e: members.reduce((s, m) => s + m.e, 0) / members.length, n: members.reduce((s, m) => s + m.n, 0) / members.length, area: members.reduce((s, m) => s + m.areaM2, 0) / members.length }));
+    const gcell = Math.max(1, o.searchM);
+    const ggrid = new Map<string, G[]>();
+    for (const g of gs) { const k = `${Math.floor(g.e / gcell)},${Math.floor(g.n / gcell)}`; (ggrid.get(k) ?? ggrid.set(k, []).get(k)!).push(g); }
+    const alive = new Set(gs);
+    for (const g of [...gs].sort((a, b) => a.area - b.area)) {
+      if (!alive.has(g)) continue;
+      const gx = Math.floor(g.e / gcell), gy = Math.floor(g.n / gcell);
+      let host: G | null = null;
+      for (let dx = -1; dx <= 1 && !host; dx++) for (let dy = -1; dy <= 1 && !host; dy++) for (const h of ggrid.get(`${gx + dx},${gy + dy}`) ?? []) {
+        if (h === g || !alive.has(h) || g.area > o.absorbRatio * h.area) continue;
+        if (h.members.some(m => m.ring && inRing(m.ring, g.e, g.n))) { host = h; break; }
+      }
+      if (!host) continue;
+      host.members.push(...g.members);
+      alive.delete(g);
+      groups.delete(g.root);
+    }
+  }
+
   // Footprints for coverage, in the same local metres.
   const foot = new Map(frameNames.length ? fs.map(f => [f.name, (frameFootprint(f, 8) ?? []).map(g => en(g.lat, g.lng))]) : []);
   const inside = (ring: [number, number][], e: number, n: number, margin: number) => {
@@ -208,10 +266,14 @@ export function reconcile(observations: Observation[], frames: Map<string, Geore
   const out: ReconciledObject[] = [];
   let id = 1;
   for (const members of groups.values()) {
-    const rays = members.map(m => ({ C: m.C, d: m.d }));
-    let e = members.reduce((s, m) => s + m.e, 0) / members.length, n = members.reduce((s, m) => s + m.n, 0) / members.length;
+    // One sighting per photograph for the geometry: the largest; the areas of the pieces add up per photograph.
+    const perFrame = new Map<string, { lead: Prepared; area: number }>();
+    for (const m of members) { const cur = perFrame.get(m.frame); if (!cur) perFrame.set(m.frame, { lead: m, area: m.areaM2 }); else { cur.area += m.areaM2; if (m.areaM2 > cur.lead.areaM2) cur.lead = m; } }
+    const leads = [...perFrame.values()].map(x => x.lead);
+    const rays = leads.map(m => ({ C: m.C, d: m.d }));
+    let e = leads.reduce((s, m) => s + m.e, 0) / leads.length, n = leads.reduce((s, m) => s + m.n, 0) / leads.length;
     let heightM: number | null = null, z: number | null = null;
-    if (members.length >= 2) {
+    if (leads.length >= 2) {
       // A usable baseline: cameras at least 3 m apart.
       const cs = rays.map(r => r.C);
       let base = 0;
@@ -220,7 +282,7 @@ export function reconcile(observations: Observation[], frames: Map<string, Geore
       if (p) {
         e = p[0]; n = p[1]; z = p[2];
         const ll = { lat: origin.lat + (n / 6378137) * (180 / Math.PI), lng: origin.lng + (e / (6378137 * Math.cos((origin.lat * Math.PI) / 180))) * (180 / Math.PI) };
-        const f0 = frames.get(members[0].frame)!;
+        const f0 = frames.get(leads[0].frame)!;
         const groundAt = f0.ground.kind === "flat" ? f0.ground.altM : f0.ground.altAt(ll.lat, ll.lng) ?? 0;
         heightM = z - groundAt;
       }
@@ -229,18 +291,19 @@ export function reconcile(observations: Observation[], frames: Map<string, Geore
     // triangulated, else its flat projection.
     const spread = z != null
       ? rays.map(r => { const s = (z! - r.C[2]) / r.d[2]; return Math.hypot(r.C[0] + s * r.d[0] - e, r.C[1] + s * r.d[1] - n); })
-      : members.map(m => Math.hypot(m.e - e, m.n - n));
-    const sizes = members.map(m => m.sizeM), ms = sizes.reduce((s, x) => s + x, 0) / sizes.length;
+      : leads.map(m => Math.hypot(m.e - e, m.n - n));
+    const areas = [...perFrame.values()].map(x => x.area);
+    const sizes = areas.map(a => Math.sqrt((4 * a) / Math.PI)), ms = sizes.reduce((s, x) => s + x, 0) / sizes.length;
     const sizeM = median(sizes);
     const ll = { lat: origin.lat + (n / 6378137) * (180 / Math.PI), lng: origin.lng + (e / (6378137 * Math.cos((origin.lat * Math.PI) / 180))) * (180 / Math.PI) };
     const coveredBy = fs.filter(f => inside(foot.get(f.name)!, e, n, o.coverMarginM + sizeM / 2)).length;
     const runBy = o.runRings ? fs.filter(f => { const rings = o.runRings!.get(f.name); return rings ? rings.some(r => inside(r, e, n, 0)) : inside(foot.get(f.name)!, e, n, o.coverMarginM + sizeM / 2); }).length : coveredBy;
     out.push({
-      id: id++, members: members.map(({ key: _k, e: _e, n: _n, C: _c, d: _d, groundZ: _g, ...m }) => m), lat: ll.lat, lng: ll.lng, heightM, sizeM,
-      areaM2: median(members.map(m => m.areaM2)),
-      sizeCv: members.length > 1 ? Math.sqrt(sizes.reduce((s, x) => s + (x - ms) ** 2, 0) / sizes.length) / ms : 0,
+      id: id++, members: members.map(({ key: _k, e: _e, n: _n, C: _c, d: _d, groundZ: _g, ring: _r, ...m }) => m), lat: ll.lat, lng: ll.lng, heightM, sizeM,
+      areaM2: median(areas),
+      sizeCv: sizes.length > 1 ? Math.sqrt(sizes.reduce((s, x) => s + (x - ms) ** 2, 0) / sizes.length) / ms : 0,
       viewSpreadM: median(spread),
-      coveredBy: Math.max(coveredBy, members.length), runBy: Math.max(runBy, members.length), seenBy: members.length,
+      coveredBy: Math.max(coveredBy, leads.length), runBy: Math.max(runBy, leads.length), seenBy: leads.length,
     });
   }
   return out;
