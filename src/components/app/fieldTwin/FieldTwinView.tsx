@@ -331,6 +331,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
       <div className={`absolute bottom-3 left-3 z-[700] max-w-[420px] px-3 py-2 text-[11px] text-neutral-300 ${panel}`}>
         <p className="text-xs"><span className="font-semibold text-neutral-100">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · {twin.name}</span></p>
         <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>
+        {twin.stats.weedTier === "colour" && <p className="mt-0.5 text-amber-300/90">Weeds by colour rules, not a model: green patches over bare soil. Small, dark or yellowing plants are missed.</p>}
+        {twin.stats.weedTier === "none" && <p className="mt-0.5 text-neutral-500">No weed pass ran on this twin.</p>}
         {layers.pressure && (
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-neutral-400" aria-label="Weed pressure legend">
             <span className="text-neutral-500">Cover of observable ground:</span>

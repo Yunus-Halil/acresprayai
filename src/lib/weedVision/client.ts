@@ -42,7 +42,7 @@ export type WeedVisionResult = {
   run_id: string;
   research_only: boolean;
   image: { filename: string; format: string | null; bytes: number; width: number; height: number; exif: Record<string, unknown>; coordinate_system: string };
-  processing: { scale: number; width: number; height: number; tiles: number | null; tile_px: number | null; overlap_px: number | null; threshold?: number | null; model_resolution?: number | null; device?: string | null };
+  processing: { scale: number; width: number; height: number; tiles: number | null; /** Tiles the model ran (all of them unless `tiles` asked for fewer). */ tiles_run?: number | null; tile_px: number | null; overlap_px: number | null; threshold?: number | null; model_resolution?: number | null; device?: string | null };
   algorithm: { name: string; label: string; family: string; benchmark: string; description: string; requested: string; separation?: Record<string, number> | null; model?: ModelKey | null; default_threshold?: number };
   model: ModelStatus | null;
   versions: { service: string; lab: string };
@@ -98,7 +98,7 @@ export function algorithmReady(info: AlgorithmInfo | undefined, health: Health |
   return !!st?.loaded;
 }
 
-export type DetectOptions = { algorithm: string; scale: number; tile?: number; overlap?: number; includeCrop?: boolean; /** RF-DETR confidence cut, 0.05 to 0.95. */ threshold?: number; /** "lite" skips the hull-based shape measures the map never reads. */ geometry?: "full" | "lite" };
+export type DetectOptions = { algorithm: string; scale: number; tile?: number; overlap?: number; includeCrop?: boolean; /** RF-DETR confidence cut, 0.05 to 0.95. */ threshold?: number; /** "lite" skips the hull-based shape measures the map never reads. */ geometry?: "full" | "lite"; /** Only these tiles of the service's plan (indices in plan order): ground already seen from a nearer photograph is left out. */ tiles?: number[] };
 export type Progress = { phase: "uploading" | "queued" | "running" | "done"; tilesDone: number; tilesTotal: number | null; elapsedMs: number };
 
 // Both arms carry both keys (one undefined) so the union narrows even without strictNullChecks.
@@ -143,6 +143,8 @@ function form(file: Blob, filename: string, opts: DetectOptions, extra: Record<s
   if (opts.threshold !== undefined) fd.append("threshold", String(opts.threshold));
   fd.append("include_crop", opts.includeCrop === false ? "0" : "1");
   if (opts.geometry) fd.append("geometry", opts.geometry);
+  if (opts.tiles) fd.append("tiles", JSON.stringify(opts.tiles));
+  if (opts.tiles) fd.append("tiles", JSON.stringify(opts.tiles));
   for (const [k, v] of Object.entries(extra)) fd.append(k, v);
   return fd;
 }

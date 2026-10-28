@@ -53,8 +53,10 @@ export type ReconcileOptions = {
   coverMarginM?: number;
   /** Camera centres further apart than this are not compared. */
   maxPairM?: number;
+  /** Per frame, the ground its detector actually looked at (rings, local metres about the set's origin); when given, `runBy` counts them. */
+  runRings?: Map<string, [number, number][][]>;
 };
-export const RECONCILE_DEFAULTS: Required<ReconcileOptions> = { searchM: 2, missBaseM: 0.1, missSizeFactor: 0.25, minHeightM: -0.6, maxHeightM: 6, flatWeight: 0.2, maxSizeRatio: 3, coverMarginM: 0.3, maxPairM: 45 };
+export const RECONCILE_DEFAULTS: Required<Omit<ReconcileOptions, "runRings">> & { runRings: Map<string, [number, number][][]> | null } = { searchM: 2, missBaseM: 0.1, missSizeFactor: 0.25, minHeightM: -0.6, maxHeightM: 6, flatWeight: 0.2, maxSizeRatio: 3, coverMarginM: 0.3, maxPairM: 45, runRings: null };
 
 export type ReconciledObject = {
   id: number;
@@ -73,6 +75,8 @@ export type ReconciledObject = {
   /** Photographs whose frame holds the object (with margin), and how many of them saw it. */
   coveredBy: number;
   seenBy: number;
+  /** Photographs whose detector looked at this ground (the run tiles), when the run was limited; else equal to coveredBy. */
+  runBy: number;
 };
 
 type Prepared = Observation & { key: string; e: number; n: number; C: V3; d: V3; groundZ: number };
@@ -230,12 +234,13 @@ export function reconcile(observations: Observation[], frames: Map<string, Geore
     const sizeM = median(sizes);
     const ll = { lat: origin.lat + (n / 6378137) * (180 / Math.PI), lng: origin.lng + (e / (6378137 * Math.cos((origin.lat * Math.PI) / 180))) * (180 / Math.PI) };
     const coveredBy = fs.filter(f => inside(foot.get(f.name)!, e, n, o.coverMarginM + sizeM / 2)).length;
+    const runBy = o.runRings ? fs.filter(f => { const rings = o.runRings!.get(f.name); return rings ? rings.some(r => inside(r, e, n, 0)) : inside(foot.get(f.name)!, e, n, o.coverMarginM + sizeM / 2); }).length : coveredBy;
     out.push({
       id: id++, members: members.map(({ key: _k, e: _e, n: _n, C: _c, d: _d, groundZ: _g, ...m }) => m), lat: ll.lat, lng: ll.lng, heightM, sizeM,
       areaM2: median(members.map(m => m.areaM2)),
       sizeCv: members.length > 1 ? Math.sqrt(sizes.reduce((s, x) => s + (x - ms) ** 2, 0) / sizes.length) / ms : 0,
       viewSpreadM: median(spread),
-      coveredBy: Math.max(coveredBy, members.length), seenBy: members.length,
+      coveredBy: Math.max(coveredBy, members.length), runBy: Math.max(runBy, members.length), seenBy: members.length,
     });
   }
   return out;

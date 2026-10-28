@@ -121,7 +121,7 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
     const c0 = f ? pixelToGround(f, b.u, b.v) : null, [ce, cn] = enOf(w.lat, w.lng);
     const ring = c0 && f ? thinTo(b.poly ?? [], 16).map(([x, y]) => { const g = pixelToGround(f, x + 0.5, y + 0.5); if (!g) return null; const [e, n] = enOf(g.lat, g.lng), [e0, n0] = enOf(c0.lat, c0.lng); return ll(ce + e - e0, cn + n - n0); }).filter((p): p is [number, number] => !!p) : [];
     const status: "verified" | "single view" | "on a tree" = w.onTree ? "on a tree" : w.verified ? "verified" : "single view";
-    return { id: w.id, lat: +w.lat.toFixed(8), lng: +w.lng.toFixed(8), status, rowStatus: w.rowStatus, diameterM: fix(w.diameterM)!, areaM2: fix(w.areaM2, 4)!, spanM: fix(w.spanM), heightM: fix(w.heightM, 2), seenBy: w.seenBy, coveredBy: w.coveredBy, viewSpreadM: fix(w.viewSpreadM)!, sizeCv: fix(w.sizeCv)!, score: fix(w.score, 2), treeId: w.treeId, ring, evidence };
+    return { id: w.id, lat: +w.lat.toFixed(8), lng: +w.lng.toFixed(8), status, rowStatus: w.rowStatus, diameterM: fix(w.diameterM)!, areaM2: fix(w.areaM2, 4)!, spanM: fix(w.spanM), heightM: fix(w.heightM, 2), seenBy: w.seenBy, coveredBy: w.coveredBy, runBy: w.runBy, viewSpreadM: fix(w.viewSpreadM)!, sizeCv: fix(w.sizeCv)!, score: fix(w.score, 2), treeId: w.treeId, ring, evidence };
   });
   const twinVeg = vegetation.map(v => {
     const m = [...v.members].filter(x => frames.has(x.frame)).sort((a, b) => centreDist(a.frame, a.u, a.v) - centreDist(b.frame, b.u, b.v))[0], f = m ? frames.get(m.frame)! : null;
@@ -188,7 +188,7 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
     source: {
       photographs: frames.size, camera: `${first?.make ?? ""} ${first?.model ?? ""}`.trim(), capturedAt, groundPixelCm: r2(100 * quant([...frames.values()].map(f => groundSampleAt(f, f.intrinsics.cx, f.intrinsics.cy) ?? NaN), 0.5)),
       method: "direct georeferencing from each photograph's header, cameras adjusted to soil-texture ties between overlapping photographs (no orthomosaic); objects reconciled across photographs; built in the app",
-      weedModel: inp.detector ? "RF-DETR Seg-Large, confidence 0.5, 1024 px tiles at the photographs' full resolution" : "none (built without the weed model)",
+      weedModel: weedsRes.describe,
       treeModel: "planting layout (rows read per photograph, fitted, reconciled)",
     },
     origin: { lat: +origin.lat.toFixed(8), lng: +origin.lng.toFixed(8) },
@@ -206,7 +206,7 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
       cameras: inp.cameraReport,
       weedDetections: weedsRes.detections, weedObjects: weeds.length, verifiedWeeds: twinWeeds.filter(w => w.status === "verified").length,
       verifiedBetweenRows: twinWeeds.filter(w => w.status === "verified" && w.rowStatus === "between rows").length, weedsOnTrees: twinWeeds.filter(w => w.status === "on a tree").length, singleViewWeeds: twinWeeds.filter(w => w.status === "single view").length,
-      weedStats: weedsRes.stats, photographsWithoutWeedAnswer: weedsRes.photographsFailed,
+      weedTier: weedsRes.tier, weedSettings: weedsRes.settings, weedViews: weedsRes.views, weedStats: weedsRes.stats, photographsWithoutWeedAnswer: weedsRes.photographsFailed,
       trees: twinTrees.length, treePositionSpreadM: r3(quant(twinTrees.map(t => t.viewSpreadM), 0.5)), keptRows: (rows?.rows ?? []).filter(r => r.kept).length,
       vegetationPatches: twinVeg.length,
     },

@@ -87,7 +87,7 @@ function WeedPanel({ w, twin, atlasUrl, onClose, units }: { w: TwinWeed; twin: T
     ...(w.treeId != null ? [{ label: "On tree", value: `Tree ${w.treeId}` }] : []),
   ];
   const confidence: Line[] = [
-    { label: "Seen in", value: `${w.seenBy} of ${w.coveredBy} photographs that covered it` },
+    { label: "Seen in", value: w.runBy != null && w.runBy < w.coveredBy ? `${w.seenBy} of the ${w.runBy} photographs the model looked at (${w.coveredBy} covered it)` : `${w.seenBy} of ${w.coveredBy} photographs that covered it` },
     ...(w.seenBy >= 2 ? [{ label: "Position agreement", value: `within ${cm(w.viewSpreadM, units)}` }, { label: "Size agreement", value: `within ${Math.round(w.sizeCv * 100)} %` }] : [{ label: "Position agreement", value: "one sighting, none to compare" }]),
     ...(w.score != null ? [{ label: "Model confidence", value: `${Math.round(w.score * 100)} %` }] : []),
   ];

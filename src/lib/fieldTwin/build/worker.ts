@@ -3,10 +3,11 @@
 // log lines and the result (twin.json and the atlases as Blobs). One worker per build; the page terminates it to stop.
 import { type DetectOptions, detectWeeds } from "../../weedVision/client";
 import { browserCodec, browserPhoto } from "./browserPhotos";
+import { detectionKey, indexedDbStore, sha256Hex } from "./detectionCache";
 import { type BuildReport, buildFieldTwin } from "./pipeline";
 import { BuildCancelled, type BuildProgress } from "./types";
 
-export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; withWeeds: boolean; detect?: DetectOptions } | { type: "cancel" };
+export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; /** The weed pass: the model through the local service, the colour rules, or none. */ weeds: "model" | "colour" | "none"; /** Model tier: nearest views per ground cell to run (0, the default: every tile; measured on the apricot flight, 1024 px tiles prune only 8 %). */ views?: number; detect?: DetectOptions } | { type: "cancel" };
 export type BuildWorkerMessage =
   | { type: "progress"; progress: BuildProgress }
   | { type: "log"; line: string }
@@ -27,17 +28,24 @@ self.onmessage = async (e: MessageEvent<BuildWorkerRequest>) => {
   if (m.type !== "build") return;
   try {
     const photos = m.files.map(f => browserPhoto(f, f.name));
-    const detect = m.detect ?? { algorithm: "rfdetr_seg_large", scale: 1, tile: 1024, overlap: 256, threshold: 0.5, includeCrop: true, geometry: "full" };
-    const detector = m.withWeeds
-      ? async (p: { name: string; bytes: () => Promise<Blob | Uint8Array> }, signal?: AbortSignal) => {
+    // "lite" geometry and the service's own 128 px overlap: the twin reads only the outline and the span (taken
+    // from the outline), and 24 tiles instead of 35 cover the photograph (step C0 of the speed plan).
+    const detect = m.detect ?? { algorithm: "rfdetr_seg_large", scale: 1, tile: 1024, overlap: 128, threshold: 0.5, includeCrop: true, geometry: "lite" };
+    const store = indexedDbStore();
+    const detector = m.weeds === "model"
+      ? async (p: { name: string; bytes: () => Promise<Blob | Uint8Array> }, signal?: AbortSignal, tiles?: number[]) => {
         const bytes = await p.bytes();
         const blob = bytes instanceof Blob ? bytes : new Blob([bytes]);
-        const r = await detectWeeds(blob, `${p.name}.JPG`, detect, { signal });
+        const opts = tiles ? { ...detect, tiles } : detect;
+        const key = store ? detectionKey(await sha256Hex(new Uint8Array(await blob.arrayBuffer())), opts as unknown as Record<string, unknown>) : null;
+        if (store && key) { const hit = await store.get(key); if (hit) { post({ type: "log", line: `${p.name}: the model's answer from the cache` }); return hit; } }
+        const r = await detectWeeds(blob, `${p.name}.JPG`, opts, { signal });
         if (!r.ok) throw new Error(r.error);
+        if (store && key) await store.put(key, r.value);
         return r.value;
       }
       : null;
-    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, detector, atlases: "later" }, browserCodec, {
+    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, detector, weedTier: m.weeds, weedViews: m.views ?? 0, detectPlan: { tile: detect.tile ?? 1024, overlap: detect.overlap ?? 128, scale: detect.scale }, atlases: "later" }, browserCodec, {
       signal: abort.signal,
       onProgress: progress => post({ type: "progress", progress }),
       log: line => post({ type: "log", line }),

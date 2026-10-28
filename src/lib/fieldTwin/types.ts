@@ -70,6 +70,8 @@ export type TwinWeed = {
   heightM: number | null;
   seenBy: number;
   coveredBy: number;
+  /** Photographs whose model run looked at this ground (equal to coveredBy unless the run was limited to the nearest views); absent in older bundles. */
+  runBy?: number;
   viewSpreadM: number;
   sizeCv: number;
   score: number | null;

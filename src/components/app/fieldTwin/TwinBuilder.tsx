@@ -25,7 +25,7 @@ export default function TwinBuilder({ onBuilt, onClose }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [name, setName] = useState("");
   const [modelState, setModelState] = useState<"checking" | "ready" | "missing" | "unavailable">(weedModelAvailable() ? "checking" : "unavailable");
-  const [withWeeds, setWithWeeds] = useState(false);
+  const [weeds, setWeeds] = useState<"model" | "colour" | "none">("colour");
   const [run, setRun] = useState<BuildRun | null>(null);
   const [progress, setProgress] = useState<BuildProgress | null>(null);
   const [doneStages, setDoneStages] = useState<BuildStage[]>([]);
@@ -39,7 +39,7 @@ export default function TwinBuilder({ onBuilt, onClose }: Props) {
   useEffect(() => {
     if (!weedModelAvailable()) return;
     let live = true;
-    fetchHealth().then(h => { if (!live) return; const ready = h.ok && !!h.value.models?.rfdetr?.loaded; setModelState(ready ? "ready" : "missing"); setWithWeeds(ready); });
+    fetchHealth().then(h => { if (!live) return; const ready = h.ok && !!h.value.models?.rfdetr?.loaded; setModelState(ready ? "ready" : "missing"); if (ready) setWeeds("model"); });
     return () => { live = false; };
   }, []);
 
@@ -56,7 +56,7 @@ export default function TwinBuilder({ onBuilt, onClose }: Props) {
     setError(null); setResult(null); setLines([]); setDoneStages([]); setProgress(null); started.current = Date.now();
     let r: BuildRun;
     try {
-      r = startTwinBuild(files, { name: fieldName, withWeeds }, {
+      r = startTwinBuild(files, { name: fieldName, weeds }, {
         onProgress: p => { setProgress(prev => { if (prev && prev.stage !== p.stage) setDoneStages(d => (d.includes(prev.stage) ? d : [...d, prev.stage])); return p; }); },
         onLog: line => setLines(l => [...l.slice(-11), line]),
       });
@@ -85,14 +85,19 @@ export default function TwinBuilder({ onBuilt, onClose }: Props) {
       <label className="block text-xs text-neutral-400">Field name
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Apricot orchard, north block" disabled={!!run} className="mt-0.5 w-full rounded-sm border border-[#3a3f3a] bg-[#111311] px-2 py-1 text-sm text-neutral-100" />
       </label>
-      <label className="flex items-start gap-2 text-xs text-neutral-300">
-        <input type="checkbox" className="mt-0.5 accent-[#f0a63a]" checked={withWeeds} onChange={e => setWithWeeds(e.target.checked)} disabled={!!run || modelState !== "ready"} />
-        <span>Run the weed model on every photograph (RF-DETR, about 15 s per photograph on this computer's GPU)
-          <span className="block text-[10px] leading-snug text-neutral-500">
-            {modelState === "checking" ? "Checking the local service…" : modelState === "ready" ? "The local weed-vision service is up with RF-DETR loaded." : modelState === "missing" ? "The local service is not reachable or RF-DETR is not loaded; the twin is built without weeds (rows, trees, vegetation and the block only)." : "The weed model runs only in a development build with the local service; this build makes a twin without weeds."}
-          </span>
-        </span>
-      </label>
+      <fieldset className="text-xs text-neutral-300" disabled={!!run}>
+        <legend className="text-[11px] text-neutral-400">Weeds</legend>
+        {([
+          ["colour", "Colour rules, no model (seconds on any computer)", "Green patches over bare soil, between the rows and off the crowns, from the photographs' own pixels. Misses the small, the dark and the yellowing; on the apricot flight it found about three quarters of what the model finds."],
+          ["model", "The weed model (RF-DETR through the local service, about 8 s per photograph on this GPU)", modelState === "checking" ? "Checking the local service…" : modelState === "ready" ? "The local weed-vision service is up with RF-DETR loaded. Answers are cached, so a rebuild does not run it again." : modelState === "missing" ? "The local service is not reachable or RF-DETR is not loaded." : "Only in a development build with the local service."],
+          ["none", "No weed pass", "Rows, trees, other vegetation and the cultivated block only."],
+        ] as const).map(([v, label, hint]) => (
+          <label key={v} className="flex items-start gap-2 py-0.5">
+            <input type="radio" name="weed-tier" className="mt-0.5 accent-[#f0a63a]" value={v} checked={weeds === v} onChange={() => setWeeds(v)} disabled={v === "model" && modelState !== "ready"} />
+            <span>{label}<span className="block text-[10px] leading-snug text-neutral-500">{hint}</span></span>
+          </label>
+        ))}
+      </fieldset>
 
       {!run && !result && <button type="button" className={primary} onClick={start} disabled={!files.length}>Build the twin</button>}
 
@@ -123,7 +128,7 @@ export default function TwinBuilder({ onBuilt, onClose }: Props) {
           <ul className="mt-1 space-y-0.5 text-neutral-300">
             <li>{result.report.photographs.read} of {result.report.photographs.given} photographs with a camera{result.report.photographs.refused.length ? ` (${result.report.photographs.refused.length} left out)` : ""}; soil ties agree to {typeof result.report.cameras.residualM === "number" && Number.isFinite(result.report.cameras.residualM) ? `${(result.report.cameras.residualM * 100).toFixed(0)} cm` : "n/a"}</li>
             <li>{result.twin.trees.length} trees on {result.twin.rows.filter(r => r.kept).length} rows{result.twin.field.rowSpacingM ? ` (${result.twin.field.rowSpacingM} m apart, plants ${result.twin.field.plantSpacingM} m)` : ""}</li>
-            <li>{result.twin.weeds.length ? `${result.twin.weeds.filter(w => w.status === "verified").length} verified weed candidates of ${result.twin.weeds.length} objects (${result.report.weeds.detections} detections)` : "no weeds (built without the model)"}</li>
+            <li>{result.twin.weeds.length ? `${result.twin.weeds.filter(w => w.status === "verified").length} verified weed candidates of ${result.twin.weeds.length} objects (${result.report.weeds.detections} ${result.twin.stats.weedTier === "colour" ? "green patches, colour rules" : "detections"})` : "no weeds (no weed pass)"}</li>
             <li>{result.report.boundary ? `cultivated block ${(result.report.boundary.areaM2 / 10_000).toFixed(2)} ha, ${Math.round(100 * result.report.boundary.supportPhotographs)} % of the edges seen in the photographs` : "no cultivated block"}</li>
             <li>{result.report.crops} evidence crops in {result.twin.atlases.length} atlases{result.progress.done < result.progress.total ? " (being cut in the background; the twin opens without waiting)" : ""}</li>
           </ul>

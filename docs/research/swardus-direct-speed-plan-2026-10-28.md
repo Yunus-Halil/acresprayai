@@ -532,3 +532,61 @@ atlases are now two thirds of the build (step 4).
   cutting at once; the test proves the two paths give the same evidence entries and the same atlas bytes.
 - `store.ts` uploads twin.json gzipped as `twin.json.gz` (about five times smaller) and reads either form; older
   twins in an account still open. Not done from L: centimetre rings, the evidence sidecar, smaller atlases.
+
+### Step 3, done and measured: the weed tiers, the service defaults, and two findings that change the plan
+
+**D tier 1, the colour rules** (`colourObservations` in `build/weeds.ts`, `weedTier: "colour"`, a radio in the
+builder, the twin says `source.weedModel: colour rules…` and the status strip warns). Against DJI_0301's 414
+hand-labelled weeds, twin-level, verified candidates within 0.6 m:
+
+| Tier | Labelled weeds found by a verified candidate | by any candidate | Verified in the twin | Weed stage |
+|---|---|---|---|---|
+| Seg-Large, every tile (the saved answers) | 239 (58 %) | 275 | 4,426 | 10 min on the GPU |
+| Colour rules on the quarter decode | 149 (36 %) | 181 | 3,596 | 78 s in Node (the decodes); about 30 s in a browser |
+| Colour rules on the 960 × 640 preview | 63 (15 %) | 84 | 1,421 | 1 s |
+
+The colour tier is the default for a computer without the service, on the quarter decode (the preview is too
+coarse for weeds under 20 cm). It finds 62 % of what the model finds, in seconds, and the twin says so.
+
+**C0 in the client**: the worker asks for `geometry: "lite"` and the service's own 128 px overlap (24 tiles
+instead of 35), takes the span from the outline when the answer has none, records the settings the answer
+reports, and caches answers in IndexedDB by the photograph's digest and the settings (Node: a folder). The
+service-side half-size upload is not done; it needs the service running to measure.
+
+**C, measured, and not switched on.** The tile list is implemented on both sides (`tiles` form field →
+`infer_rfdetr(tiles=)`, `processing.tiles_run`; `views.ts` plans tiles as the service does and chooses each 2 m
+cell's nearest views; a third pass looks again where one view alone saw a plant; `runBy` beside `coveredBy`;
+tests on both sides). Emulated on the saved answers (an instance counts as found when its centroid lies in a
+requested tile):
+
+| Rule | Tiles run of 2,485 | Verified weeds | Labelled weeds found (verified) |
+|---|---|---|---|
+| Every tile | 2,485 | 4,426 | 239 |
+| 2 nearest views + third pass | 1,724 + 563 = 2,287 (92 %) | 4,360 | 239 |
+| 3 nearest views + third pass | 1,937 + 421 = 2,358 (95 %) | 4,387 | 239 |
+
+A 1024 px tile covers 10 m of ground; with 2 m cells almost every tile holds some cell whose nearest views include
+that photograph, so pruning by views saves 5 to 8 % of the tiles, and the third pass gives most of it back. The
+39 % figure in Part 3 was per ground cell, not per tile. The mechanism stays (it is right at 512 px tiles or for a
+sparser flight) but `views` defaults to 0 (every tile).
+
+**K, measured offline, and the answer is no.** Every second photograph dropped from the whole build (36 of 71,
+30 % of pairs held out):
+
+| | 71 photographs | 36 photographs |
+|---|---|---|
+| Soil ties (train) | 7,353 in 478 pairs | 1,375 in 111 pairs |
+| Held-out tie residual | 7.5 cm | **28.6 cm** |
+| Observed trees | 1,014 to 1,037 | 771 |
+| Verified weeds | 4,360 to 4,426 | 2,576 |
+| Labelled weeds found (verified) | 239 | 143 |
+| Block | 1.32 ha, 90 to 95 % photographed edges | 1.25 ha, 77 % |
+
+And the model on every second photograph only, the rest of the build on all 71: verified 2,961, labelled weeds
+found 204 (any sighting 263). The flight's overlap is not excess for this method: the soil ties need the
+neighbouring legs, the trees need their four views, and a weed is seen in only half the views that cover it. The
+planner keeps 80 / 80 for a twin flight. The farmer's saving is in the processing, not in the flight.
+
+### Where the Node build stands (71 photographs, saved answers, every stage)
+About 110 to 125 s: photographs 3 to 6 s, cameras 25 to 32 s, rows 5 s, weeds 1 s (10 min on the GPU, or 78 s
+colour), atlases 75 to 79 s (now after the twin opens in the browser), evidence 0.5 s. From 387 s plus 10 min.

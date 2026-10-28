@@ -129,6 +129,48 @@ def _holder(model):
     return h
 
 
+def test_tiles_param_runs_only_the_asked_tiles_and_reports_them():
+    # Two tiles side by side (512 x 256, tile 256, no overlap); a weed in each. Asking for tile 1 runs one forward pass
+    # and returns only the second weed; an index outside the plan is refused.
+    rgb = np.full((256, 512, 3), 120, np.uint8)
+    for cx in (100, 400):
+        yy, xx = np.mgrid[:256, :512]
+        rgb[(yy - 128) ** 2 + (xx - cx) ** 2 <= 10 ** 2] = (40, 200, 40)
+    seg = GreenDiscSegmenter(big_px=100000)
+    out = run_rfdetr(rgb, _holder(seg), tile=256, overlap=0, threshold=0.5, scale=1.0, tolerance=0.8, include_rle=False, tiles=[1])
+    assert seg.calls == 1
+    assert out["info"]["tiles"] == 2 and out["info"]["tiles_run"] == 1
+    assert len(out["instances"]) == 1 and out["instances"][0]["centroid_px"][0] > 256
+    with pytest.raises(ValueError):
+        run_rfdetr(rgb, _holder(GreenDiscSegmenter()), tile=256, overlap=0, threshold=0.5, scale=1.0, tolerance=0.8, include_rle=False, tiles=[2])
+    assert parse_params({"tiles": "[0, 1]"})["tiles"] == [0, 1]
+    assert parse_params({"tiles": "3,1,1"})["tiles"] == [1, 3]
+    assert parse_params({})["tiles"] is None
+    with pytest.raises(ValueError):
+        parse_params({"tiles": "[-1]"})
+
+
+def test_tiles_param_runs_only_the_asked_tiles_and_reports_them():
+    # Two tiles side by side (512 x 256, tile 256, no overlap); a weed in each. Asking for tile 1 runs one forward pass
+    # and returns only the second weed; an index outside the plan is refused.
+    rgb = np.full((256, 512, 3), 120, np.uint8)
+    for cx in (100, 400):
+        yy, xx = np.mgrid[:256, :512]
+        rgb[(yy - 128) ** 2 + (xx - cx) ** 2 <= 10 ** 2] = (40, 200, 40)
+    seg = GreenDiscSegmenter(big_px=100000)
+    out = run_rfdetr(rgb, _holder(seg), tile=256, overlap=0, threshold=0.5, scale=1.0, tolerance=0.8, include_rle=False, tiles=[1])
+    assert seg.calls == 1
+    assert out["info"]["tiles"] == 2 and out["info"]["tiles_run"] == 1
+    assert len(out["instances"]) == 1 and out["instances"][0]["centroid_px"][0] > 256
+    with pytest.raises(ValueError):
+        run_rfdetr(rgb, _holder(GreenDiscSegmenter()), tile=256, overlap=0, threshold=0.5, scale=1.0, tolerance=0.8, include_rle=False, tiles=[2])
+    assert parse_params({"tiles": "[0, 1]"})["tiles"] == [0, 1]
+    assert parse_params({"tiles": "3,1,1"})["tiles"] == [1, 3]
+    assert parse_params({})["tiles"] is None
+    with pytest.raises(ValueError):
+        parse_params({"tiles": "[-1]"})
+
+
 def test_run_rfdetr_returns_weeds_and_crops_in_original_pixels_at_half_scale():
     rgb = _scene(400, 600, [(100, 100, 12), (300, 450, 40)])  # a small weed and a big crop
     small = rgb[::2, ::2]  # processing scale 0.5

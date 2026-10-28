@@ -28,8 +28,14 @@ export type Codec = {
   encodeJpeg(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number, quality: number): Promise<Blob | Uint8Array>;
 };
 
-/** The weed model, injected: the browser calls the local service through the dev proxy, a script may read saved answers; null skips the weeds. */
-export type WeedDetector = ((photo: PhotoSource, signal?: AbortSignal) => Promise<WeedVisionResult | null>) | null;
+/**
+ * The weed model, injected: the browser calls the local service through the dev proxy, a script may read saved
+ * answers; null skips the weeds. `tiles` asks for only those tiles of the service's plan (see views.ts); the
+ * answer's `processing.tile_px` / `overlap_px` / `width` must describe the plan the indices were made for.
+ */
+export type WeedDetector = ((photo: PhotoSource, signal?: AbortSignal, tiles?: number[]) => Promise<WeedVisionResult | null>) | null;
+/** The tile plan the detector will use, so the views can be chosen before it runs. */
+export type DetectPlan = { tile: number; overlap: number; scale: number };
 
 export type BuildStage = "photographs" | "cameras" | "rows" | "weeds" | "vegetation" | "evidence" | "boundary" | "bundle";
 export const BUILD_STAGES: { id: BuildStage; label: string }[] = [
@@ -61,6 +67,14 @@ export type BuildOptions = {
   evidenceCellM?: number;
   /** The weed model, or null to build without weeds. */
   detector: WeedDetector;
+  /** Which weed pass runs: the model (needs `detector`), the colour rules on the photographs' own pixels, or none. Default: model when a detector is given, else none. */
+  weedTier?: "model" | "colour" | "none";
+  /** Colour tier: read a quarter decode (default; finer, slower) or the camera's preview. */
+  colourPixels?: "quarter" | "preview";
+  /** Model tier: run the model only on each ground cell's nearest views (this many; 0 = every tile of every photograph), with a third pass where one view alone saw a plant. */
+  weedViews?: number;
+  /** Model tier: the tile plan the detector uses, needed to choose the views. */
+  detectPlan?: DetectPlan;
   /** Fewest photographs with ties for the per-photo attitude fit; under it only the four global numbers are fitted. */
   minTiePhotos?: number;
   /** Read the camera's embedded preview instead of decoding the frame (default true); false forces the `down` decode. */

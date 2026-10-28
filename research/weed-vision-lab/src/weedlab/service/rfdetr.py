@@ -174,17 +174,24 @@ def _detections_to_preds(det, y: int, x: int, W: int, H: int) -> list[dict]:
     return out
 
 
-def infer_rfdetr(model, rgb: np.ndarray, tile: int, overlap: int, threshold: float, progress=None, lock: threading.Lock | None = None) -> tuple[list[dict], object, dict]:
-    """Tiled prediction at processing scale. Returns (fused bbox-local predictions, tile plan, timings_ms)."""
+def infer_rfdetr(model, rgb: np.ndarray, tile: int, overlap: int, threshold: float, progress=None, lock: threading.Lock | None = None, tiles: list[int] | None = None) -> tuple[list[dict], object, dict]:
+    """Tiled prediction at processing scale. Returns (fused bbox-local predictions, tile plan, timings_ms).
+    `tiles` restricts the run to those indices of the plan (the caller has seen that ground from a nearer view); an
+    index outside the plan is a ValueError."""
     H, W = rgb.shape[:2]
     t0 = time.perf_counter()
     plan = plan_tiles(H, W, tile, overlap)
+    if tiles is not None:
+        bad = [i for i in tiles if i >= plan.n_tiles]
+        if bad:
+            raise ValueError(f"tile index {bad[0]} is outside the plan of {plan.n_tiles} tiles")
+    chosen = [(i, plan.origins[i]) for i in (tiles if tiles is not None else range(plan.n_tiles))]
     padded = np.pad(rgb, ((0, plan.pad_bottom), (0, plan.pad_right), (0, 0)), mode="reflect") if (plan.pad_bottom or plan.pad_right) else rgb
     t = {"tiling_setup": round((time.perf_counter() - t0) * 1000.0, 1)}
     preds: list[dict] = []
     fwd = 0.0
     n_raw = 0
-    for k, (y, x) in enumerate(plan.origins, 1):
+    for k, (_i, (y, x)) in enumerate(chosen, 1):
         tile_rgb = padded[y:y + tile, x:x + tile]
         a = time.perf_counter()
         if lock is not None:
@@ -197,8 +204,9 @@ def infer_rfdetr(model, rgb: np.ndarray, tile: int, overlap: int, threshold: flo
         n_raw += len(new)
         preds.extend(new)
         if progress:
-            progress(k, plan.n_tiles)
+            progress(k, len(chosen))
     t["forward"] = round(fwd * 1000.0, 1)
+    t["tiles_run"] = len(chosen)
     a = time.perf_counter()
     fused = fuse(preds)
     t["fusion"] = round((time.perf_counter() - a) * 1000.0, 1)
@@ -222,7 +230,7 @@ def rasterize(preds: list[dict], cls: int, shape: tuple[int, int]) -> tuple[np.n
     return labels, score, sel
 
 
-def run_rfdetr(rgb_p: np.ndarray, holder: RFDetrHolder, *, tile: int, overlap: int, threshold: float, scale: float, tolerance: float, include_rle: bool, progress=None, geometry: str = "full") -> dict:
+def run_rfdetr(rgb_p: np.ndarray, holder: RFDetrHolder, *, tile: int, overlap: int, threshold: float, scale: float, tolerance: float, include_rle: bool, progress=None, geometry: str = "full", tiles: list[int] | None = None) -> dict:
     """Everything run_detection needs: weed instances (+ labels for evaluation), crop instances and regions, info."""
     import torch
 
@@ -230,7 +238,8 @@ def run_rfdetr(rgb_p: np.ndarray, holder: RFDetrHolder, *, tile: int, overlap: i
         raise RuntimeError(f"RF-DETR checkpoint unavailable: {holder.error}")
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
-    preds, plan, t = infer_rfdetr(holder.model, rgb_p, tile, overlap, threshold, progress=progress, lock=holder.lock)
+    preds, plan, t = infer_rfdetr(holder.model, rgb_p, tile, overlap, threshold, progress=progress, lock=holder.lock, tiles=tiles)
+    tiles_run = t.pop("tiles_run")
     a = time.perf_counter()
     weed_labels, weed_score, weed_sel = rasterize(preds, 1, rgb_p.shape[:2])
     crop_labels, crop_score, crop_sel = rasterize(preds, 0, rgb_p.shape[:2])
@@ -248,7 +257,7 @@ def run_rfdetr(rgb_p: np.ndarray, holder: RFDetrHolder, *, tile: int, overlap: i
     crop_regions = [r["polygons_px"][0] for r in crops if r["polygons_px"]]
     info = {
         "algorithm": "rfdetr_seg_large", "timings_ms": {f"inference_{k}": v for k, v in t.items() if k != "raw_predictions"} | {"rasterize": t["rasterize"], "geometry_and_polygons": t["geometry_and_polygons"]},
-        "tiles": plan.n_tiles, "tile_px": tile, "overlap_px": overlap, "score_kind": "detector_confidence", "crop_mask": crop_labels > 0,
+        "tiles": plan.n_tiles, "tiles_run": tiles_run, "tile_px": tile, "overlap_px": overlap, "score_kind": "detector_confidence", "crop_mask": crop_labels > 0,
         "weed_pixel_fraction": round(float((weed_labels > 0).mean()), 5), "crop_pixel_fraction": round(float((crop_labels > 0).mean()), 5),
         "raw_predictions": t["raw_predictions"], "fused_instances": len(preds), "threshold": threshold, "model_resolution": holder.resolution, "device": holder.device,
         "peak_gpu_mb": round(torch.cuda.max_memory_allocated() / 1e6, 1) if torch.cuda.is_available() else None,

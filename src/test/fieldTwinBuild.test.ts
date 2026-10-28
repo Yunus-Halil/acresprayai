@@ -9,7 +9,9 @@ import { candidatePairs } from "@/lib/fieldTwin/build/cameras";
 import { greyRasterBytes, readPhotographs } from "@/lib/fieldTwin/build/photos";
 import { buildFieldTwin } from "@/lib/fieldTwin/build/pipeline";
 import { type PhotoSource, twinIdFrom } from "@/lib/fieldTwin/build/types";
-import { observationsOf } from "@/lib/fieldTwin/build/weeds";
+import { colourObservations, observationsOf } from "@/lib/fieldTwin/build/weeds";
+import { chooseViews, planTiles, runRings, tilesAt } from "@/lib/fieldTwin/build/views";
+import { detectionKey, memoryStore } from "@/lib/fieldTwin/build/detectionCache";
 import { frameFromDji, mpfEntries, mpfPreview, takeoffPlane } from "@/lib/directGeoref";
 import { isHeldOutPair } from "@/lib/fieldTwin/build/cameras";
 import type { DjiPhotoMeta } from "@/lib/directGeoref/metadata";
@@ -50,6 +52,59 @@ describe("twin build, the pure pieces", () => {
     expect(obs[0].sizeM).toBeCloseTo(39 * 0.00982, 3);
     expect((obs[0].data!.poly as number[][]).length).toBe(4);
     expect(obs[0].data!.spanM).toBeCloseTo(60 * 0.00982, 3);
+    // "lite" geometry: no span in the answer, so it comes from the outline.
+    const lite = observationsOf("a", f.frame, [{ ...inst, max_span_px: null }]);
+    expect(lite[0].data!.spanM).toBeCloseTo(Math.hypot(72, 48) * 0.00982, 3);
+  });
+
+  it("the colour tier turns green patches into observations with their hulls, leaving out the specks", () => {
+    const f = frameFromDji("a", meta(), { ground: takeoffPlane(0) });
+    if (!("frame" in f)) throw new Error("frame");
+    // A 96 x 64 picture of bare soil with one 12 x 12 green square (a weed) and one 2 x 2 speck.
+    const w = 96, h = 64, rgba = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < w * h; i++) rgba.set([150, 110, 80, 255], i * 4);
+    for (let y = 20; y < 32; y++) for (let x = 30; x < 42; x++) rgba.set([40, 160, 40, 255], (y * w + x) * 4);
+    for (let y = 50; y < 52; y++) for (let x = 80; x < 82; x++) rgba.set([40, 160, 40, 255], (y * w + x) * 4);
+    const obs = colourObservations("a", f.frame, { width: w, height: h, rgba }, 0.01);
+    expect(obs.length).toBe(1);
+    expect(obs[0].u).toBeCloseTo(36 * 57, -1);
+    expect(obs[0].areaM2).toBeGreaterThan(0.3);
+    expect((obs[0].data!.poly as number[][]).length).toBeGreaterThanOrEqual(3);
+    expect(obs[0].data!.spanM).toBeGreaterThan(0.5);
+  });
+
+  it("plans tiles as the service does, and chooses each ground cell's nearest views", () => {
+    // 5472 x 3648 at 1024 / 256: x starts 0, 768, ..., 3840, then 4448 (7); y starts 0, 768, 1536, 2304, then 2624 (5): 35 tiles.
+    const p = planTiles(5472, 3648, 1024, 256);
+    expect(p.origins.length).toBe(35);
+    expect(p.origins[0]).toEqual([0, 0]); expect(p.origins[6]).toEqual([0, 4448]); expect(p.origins[34]).toEqual([2624, 4448]);
+    expect(planTiles(5472, 3648, 1024, 128).origins.length).toBe(24);
+    expect(planTiles(500, 400, 1024, 128).origins).toEqual([[0, 0]]);
+    expect(tilesAt(p, 800, 100)).toEqual([0, 1]); // in the overlap of the first two tiles
+    expect(tilesAt(p, 5000, 3000)).toEqual([27, 34]); // the last two rows of tiles overlap there
+    // Two cameras 10 m apart along north: the ground under each is nearest to it; with one view per cell the
+    // tiles chosen in each photograph cover its own half, with two views both photographs run everywhere they overlap.
+    const a = frameFromDji("a", meta(), { ground: takeoffPlane(0) }), b = frameFromDji("b", meta({ lat: 33.884 + 10 / 111320 }), { ground: takeoffPlane(0) });
+    if (!("frame" in a) || !("frame" in b)) throw new Error("frames");
+    const frames = new Map([["a", a.frame], ["b", b.frame]]);
+    const plans = new Map([["a", p], ["b", p]]);
+    const one = chooseViews(frames, plans, { lat: 33.884, lng: -5.4196 }, 0, 1, 2);
+    const two = chooseViews(frames, plans, { lat: 33.884, lng: -5.4196 }, 0, 2, 2);
+    expect(one.total).toBe(70);
+    expect(one.run).toBeGreaterThan(35); expect(one.run).toBeLessThan(70);
+    expect(two.run).toBe(70);
+    const rings = runRings(a.frame, p, [0, 34], { lat: 33.884, lng: -5.4196 });
+    expect(rings.length).toBe(2);
+    expect(rings[0].length).toBe(4);
+  });
+
+  it("caches a detection by the photograph's digest and the settings", async () => {
+    const store = memoryStore();
+    const k1 = detectionKey("abc", { tile: 1024, overlap: 128 }), k2 = detectionKey("abc", { overlap: 128, tile: 1024 }), k3 = detectionKey("abc", { tile: 1024, overlap: 256 });
+    expect(k1).toBe(k2); expect(k1).not.toBe(k3);
+    expect(await store.get(k1)).toBeNull();
+    await store.put(k1, { count: 1 } as never);
+    expect(await store.get(k2)).toEqual({ count: 1 });
   });
 
   it("pairs cameras within 45 m", () => {
@@ -134,6 +189,7 @@ describe.skipIf(!haveFlight)("twin build on the local test flight (eight photogr
     expect(out.twin.rows.filter(r => r.kept).length).toBeGreaterThanOrEqual(3);
     expect(out.twin.trees.length).toBeGreaterThan(50);
     expect(out.twin.weeds.length).toBe(0);
+    expect(out.twin.stats.weedTier).toBe("none");
     expect(out.twin.boundary?.cultivated.areaM2 ?? 0).toBeGreaterThan(1000);
     expect(out.twin.atlases.length).toBeGreaterThanOrEqual(1);
     for (const a of out.twin.atlases) expect(out.files.has(a.file)).toBe(true);
@@ -147,5 +203,11 @@ describe.skipIf(!haveFlight)("twin build on the local test flight (eight photogr
     const cut: string[] = [];
     for await (const a of later.cutAtlases!()) { cut.push(a.file); expect(Buffer.from(a.bytes as Uint8Array).equals(Buffer.from(out.files.get(a.file) as Uint8Array))).toBe(true); }
     expect(cut).toEqual(out.twin.atlases.map(a => a.file));
+    // The colour tier on the preview: weeds from green patches, said so in the bundle.
+    const colour = await buildFieldTwin(photos, { name: "Test flight", detector: null, weedTier: "colour", colourPixels: "preview" }, nodeCodec);
+    expect(colour.twin.stats.weedTier).toBe("colour");
+    expect(colour.twin.source.weedModel).toMatch(/colour rules/);
+    expect(colour.twin.weeds.length).toBeGreaterThan(20);
+    expect(colour.twin.weeds.filter(w => w.status === "verified").length).toBeGreaterThan(5);
   }, 900_000);
 });

@@ -57,8 +57,11 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   checkCancelled(hooks.signal);
 
   const kept = photos.filter(p => cams.frames.has(p.name));
-  const weeds = await timed("weeds", () => findWeeds(kept, cams.frames, cams.model, rows, options.detector, hooks));
-  if (!options.detector) notes.push("built without the weed model: no weed candidates");
+  const tier = options.weedTier ?? (options.detector ? "model" : "none");
+  const colourPixels = options.colourPixels === "preview" ? pixels : (name: string) => sources.get(name)!.decode(down);
+  const weeds = await timed("weeds", () => findWeeds(kept, cams.frames, cams.model, rows, options.detector, hooks, { tier, colourPixels, views: options.weedViews ?? 0, plan: options.detectPlan }));
+  if (weeds.tier === "none") notes.push("built without a weed pass: no weed candidates");
+  else if (weeds.tier === "colour") notes.push("weeds by the colour rules, not the model: green patches over bare soil; the small, the dark and the yellowing are missed");
   for (const f of weeds.photographsFailed) notes.push(`${f.name}: the weed model gave no answer (${f.reason})`);
 
   const later = options.atlases === "later";

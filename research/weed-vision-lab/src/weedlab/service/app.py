@@ -147,7 +147,25 @@ def parse_params(form) -> dict:
         raise ValueError("threshold must be between 0.05 and 0.95")
     return {"algorithm": alg, "scale": scale, "tile": tile, "overlap": overlap, "threshold": threshold,
             "include_rle": form.get("include_rle", "0") in ("1", "true"), "include_crop": form.get("include_crop", "1") in ("1", "true"),
-            "polygon_tolerance": float(form.get("polygon_tolerance", "0.8")), "geometry": _geometry(form.get("geometry", "full"))}
+            "polygon_tolerance": float(form.get("polygon_tolerance", "0.8")), "geometry": _geometry(form.get("geometry", "full")),
+            "tiles": _tiles(form.get("tiles"))}
+
+
+def _tiles(v):
+    """Which tiles of the service's own plan to run (indices in plan order), or None for all. A caller that has seen
+    the ground from a nearer photograph can leave a tile out; the plan is deterministic, so indices mean the same
+    tiles on both sides."""
+    if v is None or v == "":
+        return None
+    import json as _json
+
+    try:
+        raw = _json.loads(v) if v.strip().startswith("[") else [int(x) for x in v.split(",") if x.strip()]
+    except (ValueError, TypeError) as e:
+        raise ValueError("tiles must be a JSON list or comma list of tile indices") from e
+    if not isinstance(raw, list) or not all(isinstance(x, int) and x >= 0 for x in raw):
+        raise ValueError("tiles must be non-negative tile indices")
+    return sorted(set(raw))
 
 
 def _geometry(v: str) -> str:
@@ -186,7 +204,7 @@ def run_detection(rgb: np.ndarray, meta: dict, params: dict, holders, progress=N
     a = time.perf_counter()
     crop_instances = None
     if ALGORITHMS[name]["family"] == "rfdetr":
-        rf = run_rfdetr(rgb_p, holder, tile=params["tile"], overlap=params["overlap"], threshold=params["threshold"], scale=params["scale"], tolerance=params["polygon_tolerance"], include_rle=params["include_rle"], progress=progress, geometry=params.get("geometry", "full"))
+        rf = run_rfdetr(rgb_p, holder, tile=params["tile"], overlap=params["overlap"], threshold=params["threshold"], scale=params["scale"], tolerance=params["polygon_tolerance"], include_rle=params["include_rle"], progress=progress, geometry=params.get("geometry", "full"), tiles=params.get("tiles"))
         labels, score_img, info, instances, crop_instances = rf["labels"], rf["score_img"], rf["info"], rf["instances"], rf["crop_instances"]
         warnings += rf["warnings"]
         t.update(info["timings_ms"])
@@ -232,7 +250,7 @@ def run_detection(rgb: np.ndarray, meta: dict, params: dict, holders, progress=N
         "run_id": uuid.uuid4().hex[:12],
         "research_only": True,
         "image": {**meta, "coordinate_system": "original image pixels, x right, y down, pixel centres at integers"},
-        "processing": {"scale": params["scale"], "width": rgb_p.shape[1], "height": rgb_p.shape[0], "tiles": info.get("tiles"), "tile_px": info.get("tile_px"), "overlap_px": info.get("overlap_px"), "effective_px_per_original_px": params["scale"],
+        "processing": {"scale": params["scale"], "width": rgb_p.shape[1], "height": rgb_p.shape[0], "tiles": info.get("tiles"), "tiles_run": info.get("tiles_run", info.get("tiles")), "tile_px": info.get("tile_px"), "overlap_px": info.get("overlap_px"), "effective_px_per_original_px": params["scale"],
                        "threshold": params["threshold"] if family == "rfdetr" else None, "geometry": params.get("geometry", "full"), "model_resolution": info.get("model_resolution"), "device": info.get("device")},
         "algorithm": {"name": name, **{k: v for k, v in ALGORITHMS[name].items() if k != "alias_of"}, "requested": params["algorithm"], "separation": info.get("separation")},
         "model": holder.status() if ALGORITHMS[name]["needs_model"] else None,
