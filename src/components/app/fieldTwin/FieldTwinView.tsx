@@ -45,6 +45,7 @@ type Props = {
 
 const DETAIL_KEY = "swathwise:twin-detail";
 const BOUNDARY_KEY = (id: string) => `swathwise:twin-boundary:${id}`;
+const KEY_OPEN_KEY = "swathwise:twin-key";
 
 /** The operator's boundary state for a twin: a corrected ring and whether it (or the inferred one) was accepted for operations. */
 type BoundaryState = { corrected: LatLngPair[] | null; operational: OperationalBoundaryState };
@@ -109,6 +110,9 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
   const [diagOpen, setDiagOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(true);
+  // The key (status strip and legend) can be closed; the choice is remembered in the browser.
+  const [keyOpen, setKeyOpenState] = useState<boolean>(() => { try { return localStorage.getItem(KEY_OPEN_KEY) !== "closed"; } catch { return true; } });
+  const setKeyOpen = (open: boolean) => { setKeyOpenState(open); try { localStorage.setItem(KEY_OPEN_KEY, open ? "open" : "closed"); } catch { /* storage blocked */ } };
   const [query, setQuery] = useState<FindingsQuery>(OVERVIEW);
   const [refId, setRefId] = useState<string>("");
   const [refOpacity, setRefOpacity] = useState(0.7);
@@ -336,9 +340,17 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
         </div>}
       </div>
 
-      {/* Status strip and legend, bottom left: what this zoom shows, what the colours mean. */}
-      <div className={`absolute bottom-3 left-3 z-[700] max-w-[420px] px-3 py-2 text-[11px] text-neutral-300 ${panel}`}>
-        <p className="text-xs"><span className="font-semibold text-neutral-100">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · {twin.name}</span></p>
+      {/* Status strip and legend, bottom left: what this zoom shows, what the colours mean. Closable; a small "Key" pill brings it back. */}
+      {!keyOpen && (
+        <button type="button" className={`absolute bottom-3 left-3 z-[700] px-2.5 py-1 text-[11px] text-neutral-300 hover:text-neutral-100 ${panel}`} onClick={() => setKeyOpen(true)} aria-label="Show the key">
+          <span className="font-semibold">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · key</span>
+        </button>
+      )}
+      {keyOpen && <div className={`absolute bottom-3 left-3 z-[700] max-w-[420px] px-3 py-2 text-[11px] text-neutral-300 ${panel}`}>
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-xs"><span className="font-semibold text-neutral-100">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · {twin.name}</span></p>
+          <button type="button" className="-mr-1 -mt-0.5 rounded-sm px-1 text-[13px] leading-none text-neutral-500 hover:bg-[#262a26] hover:text-neutral-200" onClick={() => setKeyOpen(false)} aria-label="Close the key" title="Close the key">×</button>
+        </div>
         <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>
         {twin.stats.weedTier === "colour" && <p className="mt-0.5 text-amber-300/90">Weeds by colour rules, not a model: green patches over bare soil. Small, dark or yellowing plants are missed.</p>}
         {twin.stats.weedTier === "none" && <p className="mt-0.5 text-neutral-500">No weed pass ran on this twin.</p>}
@@ -354,7 +366,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
         {detail?.level === "field" && !simple && <p className="mt-0.5 text-neutral-500">{s.blockHa != null ? `Cultivated block ${fmtArea(s.blockHa * 10_000, units).text} (${intel.blockSource === "corrected" ? "corrected by you" : intel.blockSource === "inferred" ? "inferred from the photographs" : "from the rows"}); ` : ""}{intel.zones.length} regions at 1.5 % cover or more, {result.query.mode === "overview" ? `${result.prominence.count} emphasised` : `${result.findings.length} findings listed`}.</p>}
         {full && <p className="mt-0.5 text-neutral-500 tabular-nums">Centre {(centre ?? twin.origin).lat.toFixed(6)}, {(centre ?? twin.origin).lng.toFixed(6)} · north up</p>}
         {reference && <p className="mt-0.5 text-amber-300/90">Reference imagery on (diagnostics): display only, it never moves the twin's objects.</p>}
-      </div>
+      </div>}
 
       {/* Right dock: the inspector for a selected object, else the results panel for an active filter. */}
       {selection ? (
