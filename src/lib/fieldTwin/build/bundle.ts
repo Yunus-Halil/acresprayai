@@ -5,8 +5,8 @@ import { type AdjustModel, type GeorefFrame, type Observation, frameCorners, gro
 import type { PhotoPixels } from "../../photoScout/pattern";
 import { toEnu } from "../../sourceFrames/odm";
 import { COVER_EXGR } from "../../weedVision/fieldRows";
-import { type BoundaryResult, inferBoundary, reliableRows, toTwinBoundary, treesInCover } from "../boundary";
-import { type EvidenceMeasures, type EvidenceTree, classifyEvidence, downsampleEvidence, encodeEvidence } from "../boundaryEvidence";
+import { type BoundaryResult, inferBoundaryFromMeasures, toTwinBoundary } from "../boundary";
+import { type EvidenceMeasures, downsampleEvidence, encodeEvidence } from "../boundaryEvidence";
 import { localFrame, pointInRing } from "../intelligence";
 import { FIELD_TWIN_FORMAT, type TwinBundle, type TwinEvidence } from "../types";
 import { yieldToEvents } from "./cameras";
@@ -309,19 +309,11 @@ export async function evidenceAndBoundary(twin: TwinBundle, photos: PhotoSource[
   checkCancelled(hooks.signal);
   hooks.onProgress?.({ stage: "boundary", done: 0, total: null, message: "classifying the ground and walking the edges", elapsedMs: Date.now() - t0 });
   await yieldToEvents();
-  const t1 = Date.now();
-  const treesFor = (rowIds: Set<number>, exclude: Set<number>): EvidenceTree[] => twin.trees.map(t => { const [al, ac] = fr.toField(...fr.toLocal(t.lat, t.lng)); return { along: al, across: ac, r: t.crownRadiusM, onRow: !exclude.has(t.id) && t.rowId != null && rowIds.has(t.rowId) }; });
-  const pass1 = reliableRows(twin);
-  let raster = classifyEvidence(measures, treesFor(new Set(pass1.rows.map(r => r.id)), new Set(pass1.trimmed.flatMap(t => t.ids)))).raster;
-  const inCover = treesInCover(twin, raster, fr);
-  const pass2 = reliableRows(twin, raster, {}, inCover, fr);
-  raster = classifyEvidence(measures, treesFor(new Set(pass2.rows.map(r => r.id)), new Set([...inCover, ...pass2.trimmed.flatMap(t => t.ids)]))).raster;
-  const result = inferBoundary(twin, raster);
-  const classifyMs = Date.now() - t1;
+  const { result, raster, classifyMs } = inferBoundaryFromMeasures(twin, measures, {}, fr);
   if (!result) { twin.boundary = null; return { boundary: null, cells: N, sampledMs, classifyMs, note: "no reliable row: no cultivated block" }; }
   const coarse = downsampleEvidence(raster, Math.max(1, Math.round(0.5 / raster.cellM)));
   twin.boundary = toTwinBoundary(result, fr, encodeEvidence(coarse));
-  hooks.log?.(`cultivated block ${(result.areaM2 / 10_000).toFixed(3)} ha, ${result.vertices.length} vertices, ${Math.round(100 * result.stats.support.photographs)} % of the edges seen in the photographs`);
+  hooks.log?.(`cultivated block ${(result.areaM2 / 10_000).toFixed(3)} ha, ${result.vertices.length} vertices, ${Math.round(100 * result.stats.lengthBySupport.photographs)} % of the edges seen in the photographs, confidence ${result.confidence.overall} (${result.confidence.level})`);
   for (const f of result.failures) hooks.log?.(`  note: ${f}`);
   return { boundary: result, cells: N, sampledMs, classifyMs, note: null };
 }

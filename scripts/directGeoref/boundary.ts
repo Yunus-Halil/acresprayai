@@ -3,7 +3,8 @@
 //
 //   npx vite-node scripts/directGeoref/boundary.ts -- [--id apricot-2021-04-27] [--no-patch]
 //
-// Reads boundary/measures.{json,bin} (boundaryEvidence.ts) and the twin, writes boundary/:
+// Reads boundary/measures.{json,bin} (boundaryEvidence.ts) and the twin, writes boundary/ (boundaryBench.ts runs the
+// metrics and the ablations):
 //   classes.png     the evidence raster (soil brown, canopy green, cover yellow-green, road grey, foreign purple,
 //                   unseen dark)
 //   boundary.png    the sampled ground with the inferred boundary (white: supported by the photographs; dotted
@@ -12,59 +13,33 @@
 //   boundary.json   the bundle record (TwinBoundary) and the full result
 //   report.md       polygon, area, uncertainty, timing, failure cases
 // and, unless --no-patch, writes the record into the twin's twin.json as `boundary`.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { encodePng } from "../bench/images";
-import { type BoundaryResult, inferBoundary, reliableRows, toTwinBoundary, treesInCover } from "../../src/lib/fieldTwin/boundary";
-import { EV, EVIDENCE_CLASSES, type EvidenceMeasures, type EvidenceTree, classifyEvidence, downsampleEvidence, encodeEvidence } from "../../src/lib/fieldTwin/boundaryEvidence";
+import { inferBoundaryFromMeasures, toTwinBoundary } from "../../src/lib/fieldTwin/boundary";
+import { EV, EVIDENCE_CLASSES, downsampleEvidence, encodeEvidence } from "../../src/lib/fieldTwin/boundaryEvidence";
 import { localFrame } from "../../src/lib/fieldTwin/intelligence";
 import type { TwinBundle } from "../../src/lib/fieldTwin/types";
-import { OUT } from "./common";
+import { BOUNDARY_DIR as DIR, loadMeasures, loadTwin, twinPathOf } from "./boundaryCommon";
 
 const argv = process.argv.slice(2);
 const arg = (k: string, d: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
 const ID = arg("id", "apricot-2021-04-27");
-const DIR = join(OUT, "boundary");
-const twinPath = join(OUT, "..", "twin", ID, "twin.json");
-const twin = JSON.parse(readFileSync(twinPath, "utf8")) as TwinBundle;
+const twinPath = twinPathOf(ID);
+const twin = loadTwin(ID);
 const fr = localFrame(twin);
-
-// The measurements.
-type Header = { cellM: number; along0: number; across0: number; width: number; height: number; layout: [string, "Uint8" | "Float32" | "Int16", number][]; sampledMs: number };
-const h = JSON.parse(readFileSync(join(DIR, "measures.json"), "utf8")) as Header;
-const raw = readFileSync(join(DIR, "measures.bin"));
+const { header: h, arrays, measures } = loadMeasures();
 const N = h.width * h.height;
-const arrays: Record<string, Uint8Array | Float32Array | Int16Array> = {};
-let off = 0;
-for (const [name, typ, k] of h.layout) {
-  const bytes = N * k * (typ === "Uint8" ? 1 : typ === "Int16" ? 2 : 4);
-  const buf = raw.buffer.slice(raw.byteOffset + off, raw.byteOffset + off + bytes);
-  arrays[name] = typ === "Uint8" ? new Uint8Array(buf) : typ === "Int16" ? new Int16Array(buf) : new Float32Array(buf);
-  off += bytes;
-}
-const photoOf = arrays.photoOf as Int16Array;
-const seen = new Uint8Array(N);
-for (let c = 0; c < N; c++) seen[c] = photoOf[c] >= 0 ? 1 : 0;
-const measures: EvidenceMeasures = { cellM: h.cellM, along0: h.along0, across0: h.across0, width: h.width, height: h.height, seen, cover: arrays.cover as Float32Array, luma: arrays.luma as Float32Array, sat: arrays.sat as Float32Array };
+const seen = measures.seen;
 
-// The trees, in the field frame: on one of the reliable rows (the field's own canopy) or not (a hedge, another
-// planting). Reliable rows are judged on geometry first; after classification, the trees standing in dense cover
-// are found and the rows judged again with them left out, and the raster is classified once more so those
-// trees are not painted as the field's canopy.
-const treesFor = (rowIds: Set<number>, exclude: Set<number>): EvidenceTree[] => twin.trees.map(t => { const [al, ac] = fr.toField(...fr.toLocal(t.lat, t.lng)); return { along: al, across: ac, r: t.crownRadiusM, onRow: !exclude.has(t.id) && t.rowId != null && rowIds.has(t.rowId) }; });
-const t0 = Date.now();
-const pass1 = reliableRows(twin);
-let { raster, stats: cstats } = classifyEvidence(measures, treesFor(new Set(pass1.rows.map(r => r.id)), new Set(pass1.trimmed.flatMap(t => t.ids))));
-const inCover = treesInCover(twin, raster, fr);
-const pass2 = reliableRows(twin, raster, {}, inCover, fr);
-({ raster, stats: cstats } = classifyEvidence(measures, treesFor(new Set(pass2.rows.map(r => r.id)), new Set([...inCover, ...pass2.trimmed.flatMap(t => t.ids)]))));
-const classifyMs = Date.now() - t0;
-console.log(`classified in ${classifyMs} ms (${inCover.size} trees in cover; rows ${pass2.rows.map(r => r.id).join(", ")}):`, cstats);
-
-const result = inferBoundary(twin, raster);
+// The rows judged on geometry, the ground classified, the trees in dense cover found, the rows judged again, the
+// ground classified once more, the inference (inferBoundaryFromMeasures: the same pass the build runs).
+const { result, raster, classifyMs, treesInCover: inCover } = inferBoundaryFromMeasures(twin, measures, {}, fr);
 if (!result) throw new Error("no reliable row: nothing to infer");
-console.log(`inferred in ${result.processingMs.toFixed(1)} ms: ${result.vertices.length} vertices, ${(result.areaM2 / 10_000).toFixed(3)} ha +- ${(result.uncertaintyM2 / 10_000).toFixed(3)}`);
-for (const f of result.failures) console.log(`  failure: ${f}`);
+console.log(`classified in ${classifyMs.toFixed(0)} ms (${inCover} trees in cover; rows ${result.rowsUsed.join(", ")})`);
+console.log(`inferred in ${result.processingMs.toFixed(1)} ms: ${result.vertices.length} vertices, ${(result.areaM2 / 10_000).toFixed(3)} ha +- ${(result.uncertaintyM2 / 10_000).toFixed(3)}, confidence ${result.confidence.overall} (${result.confidence.level})`);
+for (const f of result.failureModes) console.log(`  ${f.code}: ${f.detail}`);
+for (const f of result.failures) console.log(`  note: ${f}`);
 
 // The bundle record: the raster at 0.5 m (two cells), run-length encoded.
 const coarse = downsampleEvidence(raster, Math.max(1, Math.round(0.5 / raster.cellM)));
@@ -140,16 +115,25 @@ Inferred ${new Date().toISOString().slice(0, 10)} from ${result.rowsUsed.length}
 | Ground inside by class | ${s.inside ? EVIDENCE_CLASSES.map(k => `${k} ${pct(s.inside![k])}`).join(", ") : "no photographs"} |
 | Row-aligned baseline (half-spacing margins) | ${(result.baselines.rowAligned.areaM2 / 10_000).toFixed(3)} ha |
 | Concave baseline (closing of the on-row trees) | ${result.baselines.concave ? `${(result.baselines.concave.areaM2 / 10_000).toFixed(3)} ha, overlap ${pct(result.baselines.concave.overlapShare)}` : "none"} |
-| Processing | sampling ${(h.sampledMs / 1000).toFixed(1)} s (71 photographs), classification ${classifyMs} ms, inference ${result.processingMs.toFixed(0)} ms |
+| Confidence | ${result.confidence.overall} overall (length-weighted 20th percentile of the edges; mean ${result.confidence.mean}): ${result.confidence.level}${result.confidence.review ? ", review the boundary" : ""} |
+| Edge length by support | ${(Object.keys(s.lengthBySupport) as (keyof typeof s.lengthBySupport)[]).map(k => `${k} ${pct(s.lengthBySupport[k])}`).join(", ")} |
+| Image coverage | ${(result.coverage.areaM2 / 10_000).toFixed(3)} ha seen by any photograph, ${(result.coverage.twoPlusAreaM2 / 10_000).toFixed(3)} ha by two or more, ${result.coverage.meanViews.toFixed(1)} views on average |
+| Stability (${result.stability?.variants ?? 0} variants of the rules) | ${result.stability ? `area ${(result.stability.areaMinM2 / 10_000).toFixed(3)} to ${(result.stability.areaMaxM2 / 10_000).toFixed(3)} ha; vertices move ${result.stability.medianShiftM.toFixed(2)} m (median), ${result.stability.maxShiftM.toFixed(2)} m at most` : "not run"} |
+| Blocks of rows | ${result.components.map(c => `${c.rows.length} rows, ${c.trees} trees, score ${c.score.toFixed(2)}${c.chosen ? " (the field)" : ""}`).join("; ")} |
+| Trees off the rows inside | ${s.offRowTreesInside} |
+| Fill of the used rows | ${pct(s.fillShare)} of the positions at the plant spacing |
+| Processing | sampling ${(h.sampledMs / 1000).toFixed(1)} s (${h.photos.length} photographs), classification ${classifyMs.toFixed(0)} ms, inference ${result.processingMs.toFixed(0)} ms (including the stability ensemble) |
 | Evidence raster | ${raster.width} x ${raster.height} cells at ${raster.cellM} m; in the bundle ${coarse.width} x ${coarse.height} at ${coarse.cellM} m, ${(encoded.rle.length / 1024).toFixed(0)} KB |
 
 ## Failure cases
 
-${result.failures.length ? result.failures.map(f => `- ${f}`).join("\n") : "- none diagnosed"}
+${result.failureModes.length ? result.failureModes.map(f => `- \`${f.code}\`: ${f.detail}`).join("\n") : "- no failure code raised"}
+
+Notes: ${result.failures.length ? result.failures.map(f => `\n- ${f}`).join("") : "none"}
 
 ## Polygon (latitude, longitude)
 
-${record.cultivated.ring.map((p, i) => `${i + 1}. ${p[0]}, ${p[1]} (${record.cultivated.vertices[i].support}${record.cultivated.vertices[i].stoppedBy ? `: ${record.cultivated.vertices[i].stoppedBy}` : ""}, margin ${record.cultivated.vertices[i].marginM} m, ± ${record.cultivated.vertices[i].uncertaintyM} m)`).join("\n")}
+${record.cultivated.ring.map((p, i) => `${i + 1}. ${p[0]}, ${p[1]} (${record.cultivated.vertices[i].support}${record.cultivated.vertices[i].stoppedBy ? `: ${record.cultivated.vertices[i].stoppedBy}` : ""}, margin ${record.cultivated.vertices[i].marginM} m, ± ${record.cultivated.vertices[i].uncertaintyM} m, confidence ${record.cultivated.vertices[i].confidence})`).join("\n")}
 `;
 writeFileSync(join(DIR, "report.md"), report);
 if (!argv.includes("--no-patch")) {
@@ -158,4 +142,3 @@ if (!argv.includes("--no-patch")) {
   console.log(`boundary written into ${twinPath}`);
 }
 console.log(`-> ${DIR}`);
-void existsSync; void (null as unknown as BoundaryResult);

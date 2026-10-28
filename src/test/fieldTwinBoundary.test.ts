@@ -2,7 +2,7 @@
 // photographs, what it refuses to do (extend into unseen ground, promote itself to an operational limit), the
 // operator's state, and how the intelligence clips to the block while keeping the observations outside it.
 import { describe, expect, it } from "vitest";
-import { BOUNDARY_DEFAULTS, NO_OPERATIONAL_BOUNDARY, concaveBaseline, inferBoundary, operationalBoundary, polygonArea, reliableRows, simplifyRing, toTwinBoundary, treesInCover, validRing } from "@/lib/fieldTwin/boundary";
+import { BOUNDARY_DEFAULTS, NO_OPERATIONAL_BOUNDARY, STABILITY_VARIANTS, concaveBaseline, imageCoverage, inferBoundary, inferBoundaryFromMeasures, operationalBoundary, polygonArea, reliableRows, simplifyRing, toTwinBoundary, treesInCover, validRing, viewsAt } from "@/lib/fieldTwin/boundary";
 import { EV, type EvidenceMeasures, type EvidenceRaster, classifyEvidence, decodeEvidence, downsampleEvidence, encodeEvidence, evidenceAt } from "@/lib/fieldTwin/boundaryEvidence";
 import { buildHeatRaster } from "@/lib/fieldTwin/heatmap";
 import { blockOf, fieldIntelligence, localFrame, pointInRing, pressureGrid, scoutingZones } from "@/lib/fieldTwin/intelligence";
@@ -128,7 +128,7 @@ describe("boundary inference without photographs", () => {
     twin.trees.push(tree(62, 20.2, 4), tree(64.6, 20.9, 4), tree(67.2, 21.6, 4));
     twin.trees.push(tree(62, 5, 1), tree(65, 5.1, 1));
     const { rows, trimmed } = reliableRows(twin);
-    expect(trimmed).toEqual([{ rowId: 4, ids: expect.any(Array), end: "end", gapM: expect.any(Number) }]);
+    expect(trimmed).toEqual([{ rowId: 4, ids: expect.any(Array), end: "end", gapM: expect.any(Number), why: "off the line" }]);
     expect(trimmed[0].ids.length).toBe(3);
     expect(rows.find(r => r.id === 4)!.a1).toBeCloseTo(47, 6);
     expect(rows.find(r => r.id === 1)!.a1).toBeCloseTo(65, 6);
@@ -267,6 +267,112 @@ describe("intelligence clipped to the block", () => {
     expect(both.painted).toBeGreaterThan(inside.painted);
     const [e, n] = intel.frame.toLocal(...at(70, 12));
     expect(pointInRing(e, n, intel.block!)).toBe(false);
+  });
+});
+
+describe("blocks of rows, coverage, confidence and failure codes", () => {
+  const rasterOf = (twin: TwinBundle, m: EvidenceMeasures) => { const fr = localFrame(twin); return classifyEvidence(m, twin.trees.map(t => { const [al, ac] = fr.toField(...fr.toLocal(t.lat, t.lng)); return { along: al, across: ac, r: t.crownRadiusM, onRow: t.rowId != null }; })).raster; };
+
+  it("keeps a block of rows beyond a gap of three pitches as another block: reported, never merged", () => {
+    const twin = baseTwin();
+    // Three rows of 6 trees at across 35, 40, 45: the same pitch, 15 m (three pitches) beyond row 4.
+    for (const [k, ac] of [35, 40, 45].entries()) {
+      twin.rows.push({ id: 5 + k, kept: true, reason: null, line: [at(6.5, ac), at(24.5, ac)], trees: 6, inferred: 0, photos: 2, lengthM: 18, straightnessSdM: 0.1 });
+      twin.trees.push(...Array.from({ length: 6 }, (_, i) => tree(8 + 3 * i, ac, 5 + k)));
+    }
+    const { rows, excluded, components } = reliableRows(twin);
+    expect(rows.map(r => r.id)).toEqual([1, 2, 3, 4]);
+    expect(components.length).toBe(2);
+    expect(components.find(c => c.chosen)!.rows).toEqual([1, 2, 3, 4]);
+    expect(components.find(c => !c.chosen)).toMatchObject({ rows: [5, 6, 7], trees: 18, separatedBy: "gap" });
+    expect(excluded.filter(x => /another block of 3 rows/.test(x.reason)).map(x => x.id)).toEqual([5, 6, 7]);
+    const r = inferBoundary(twin, rasterOf(twin, measures(0.5)))!;
+    expect(Math.max(...r.ringField.map(p => p[1]))).toBeLessThan(30);
+    expect(r.failureModes.some(f => f.code === "ADJACENT_CULTIVATED_BLOCK_DETECTED" && /another block of 3 rows/.test(f.detail))).toBe(true);
+    expect(r.failureModes.some(f => f.code === "MULTIPLE_COMPETING_BLOCKS")).toBe(false);
+    expect(r.components.length).toBe(2);
+  });
+
+  it("splits two groups of rows two pitches apart when the ground between is a track, and merges them when it is soil", () => {
+    const twin = baseTwin();
+    for (const [k, ac] of [30, 35].entries()) {
+      twin.rows.push({ id: 5 + k, kept: true, reason: null, line: [at(6.5, ac), at(48.5, ac)], trees: 14, inferred: 0, photos: 2, lengthM: 42, straightnessSdM: 0.1 });
+      twin.trees.push(...Array.from({ length: 14 }, (_, i) => tree(8 + 3 * i, ac, 5 + k)));
+    }
+    const soil = rasterOf(twin, measures(0.5));
+    expect(reliableRows(twin, soil).rows.map(r => r.id)).toEqual([1, 2, 3, 4, 5, 6]);
+    const track = rasterOf(twin, measures(0.5, (_al, ac) => (ac >= 23.5 && ac <= 26.5 ? { cover: 0, luma: 170, sat: 0.25 } : null)));
+    const { rows, components } = reliableRows(twin, track);
+    expect(rows.map(r => r.id)).toEqual([1, 2, 3, 4]);
+    expect(components.find(c => !c.chosen)).toMatchObject({ rows: [5, 6], separatedBy: "ground" });
+    const r = inferBoundary(twin, track)!;
+    expect(Math.max(...r.ringField.map(p => p[1]))).toBeLessThan(24);
+    expect(r.failureModes.some(f => f.code === "ADJACENT_CULTIVATED_BLOCK_DETECTED")).toBe(true);
+  });
+
+  it("measures the image coverage from the footprints: by any photograph and by two or more", () => {
+    const twin = baseTwin();
+    const c = imageCoverage(twin);
+    expect(c.anyView).not.toBeNull(); expect(c.twoPlusViews).not.toBeNull();
+    expect(c.areaM2).toBeGreaterThan(100 * 50 * 0.95); expect(c.areaM2).toBeLessThan(100 * 50 * 1.05);
+    expect(c.twoPlusAreaM2).toBeGreaterThan(10 * 50 * 0.8); expect(c.twoPlusAreaM2).toBeLessThan(10 * 50 * 1.2);
+    expect(c.anyView!.areaM2).toBeGreaterThan(100 * 50 * 0.9);
+    expect(c.meanViews).toBeGreaterThan(1); expect(c.meanViews).toBeLessThan(1.2);
+    expect(viewsAt(c, 30, 10)).toBe(2); expect(viewsAt(c, 0, 10)).toBe(1); expect(viewsAt(c, 200, 0)).toBe(0);
+    expect(imageCoverage({ ...twin, footprints: [] }).anyView).toBeNull();
+  });
+
+  it("scores every vertex and the whole boundary, conservatively, deterministically, with the stability ensemble", () => {
+    const twin = baseTwin();
+    const foreign = Array.from({ length: 14 }, (_, i) => tree(8 + 3 * i, 26, null));
+    twin.trees.push(...foreign);
+    const m = measures(0.25, (al, ac) => (al >= 55 ? { cover: 1 } : ac <= 1 ? { cover: 0, luma: 170, sat: 0.25 } : ac >= 32 ? { unseen: true } : null));
+    const raster = rasterOf(twin, m);
+    const r = inferBoundary(twin, raster)!, again = inferBoundary(twin, raster)!;
+    expect(r.ringField).toEqual(again.ringField);
+    expect(r.confidence).toEqual(again.confidence);
+    expect(r.stability!.variants).toBe(STABILITY_VARIANTS.length);
+    expect(r.stability!.perVertexShiftM.length).toBe(r.vertices.length);
+    for (const v of r.vertices) { expect(v.confidence).toBeGreaterThanOrEqual(0); expect(v.confidence).toBeLessThanOrEqual(1); expect(v.scores).not.toBeNull(); }
+    const seen = r.vertices.filter(v => v.support === "photographs"), capped = r.vertices.filter(v => v.support === "cap");
+    expect(seen.length).toBeGreaterThan(0); expect(capped.length).toBeGreaterThan(0);
+    expect(Math.min(...seen.map(v => v.scores!.e))).toBeGreaterThan(Math.max(...capped.map(v => v.scores!.e)));
+    expect(r.confidence.overall).toBeLessThanOrEqual(r.confidence.mean + 1e-9);
+    expect(r.confidence.review).toBe(r.confidence.level !== "high");
+    expect(r.stats.lengthBySupport.photographs + r.stats.lengthBySupport.cap + r.stats.lengthBySupport.bridged + r.stats.lengthBySupport.coverage + r.stats.lengthBySupport.default).toBeCloseTo(1, 6);
+    // Without photographs: the code says so, and the stability ensemble still runs (the default margins vary).
+    const dry = inferBoundary(twin)!;
+    expect(dry.failureModes.map(f => f.code)).toContain("NO_PHOTOGRAPHS");
+    expect(dry.stability!.areaMaxM2).toBeGreaterThan(dry.stability!.areaMinM2);
+    expect(inferBoundary(twin, raster, { ensemble: false })!.stability).toBeNull();
+  });
+
+  it("codes the end of the photographs, and runs the whole pass from measurements as the build does", () => {
+    const twin = baseTwin();
+    const m = measures(0.25, (_al, ac) => (ac >= 23 ? { unseen: true } : null));
+    const { result, raster, classifyMs, treesInCover: n } = inferBoundaryFromMeasures(twin, m);
+    expect(result).not.toBeNull();
+    expect(raster.cellM).toBe(0.25);
+    expect(classifyMs).toBeGreaterThanOrEqual(0);
+    expect(n).toBe(0);
+    expect(result!.failureModes.filter(f => f.code === "BOUNDARY_EXTENDS_BEYOND_IMAGE_COVERAGE").length).toBe(1); // merged, not repeated
+    expect(result!.excludedTrees).toEqual({ inCover: [], trimmed: [] });
+  });
+
+  it("carries the confidence, the codes, the coverage and the stability in the record, and still parses a record without them", () => {
+    const twin = baseTwin();
+    const r = inferBoundary(twin, rasterOf(twin, measures(0.5, wheatEast)))!;
+    const record = toTwinBoundary(r, localFrame(twin), null);
+    expect(record.cultivated.confidence).toEqual(r.confidence);
+    expect(record.cultivated.failureModes).toEqual(r.failureModes);
+    expect(record.cultivated.vertices.every(v => typeof v.confidence === "number")).toBe(true);
+    expect(record.coverage!.anyView!.ring.length).toBeGreaterThan(3);
+    expect(record.coverage!.areaM2).toBe(Math.round(r.coverage.areaM2));
+    expect(record.stability!.variants).toBe(STABILITY_VARIANTS.length);
+    expect(parseTwin({ ...twin, boundary: record }).ok).toBe(true);
+    const old = { ...record, cultivated: { ...record.cultivated, confidence: undefined, failureModes: undefined, components: undefined, vertices: record.cultivated.vertices.map(v => ({ ...v, confidence: undefined })) }, coverage: undefined, stability: undefined };
+    expect(parseTwin({ ...twin, boundary: JSON.parse(JSON.stringify(old)) }).ok).toBe(true);
+    expect(buildScene({ ...twin, boundary: JSON.parse(JSON.stringify(old)) }).boundary?.n).toBe(record.cultivated.ring.length);
   });
 });
 

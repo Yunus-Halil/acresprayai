@@ -237,6 +237,15 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
                 {inferred ? `Inferred from ${inferred.rowsUsed.length} rows and the photographs${inferred.uncertaintyM2 ? `, plausible range ${fmtArea(Math.max(0, inferred.areaM2 - inferred.uncertaintyM2), units).text} to ${fmtArea(inferred.areaM2 + inferred.uncertaintyM2, units).text}` : ""}. Edges: ${Math.round(100 * inferred.stats.support.photographs)} % seen in the photographs${inferred.stats.support.bridged ? `, ${Math.round(100 * inferred.stats.support.bridged)} % bridged between seen pieces` : ""}${inferred.stats.support.cap ? `, ${Math.round(100 * inferred.stats.support.cap)} % at the cap` : ""}${inferred.stats.support.coverage ? `, ${Math.round(100 * inferred.stats.support.coverage)} % at the end of the photographs` : ""}.`
                   : intel.blockSource === "rows" ? "From the rows' own geometry, half a spacing beyond them. No photographs were read for the edges." : "No boundary: the twin has no reliable row."}
               </p>
+              {inferred?.confidence && !boundary.corrected && (
+                <p className={`mt-1 text-[10px] leading-snug ${inferred.confidence.level === "high" ? "text-neutral-400" : "text-amber-300/90"}`}>
+                  {inferred.confidence.level === "high"
+                    ? `Confidence ${Math.round(100 * inferred.confidence.overall)} %: inferred.`
+                    : inferred.confidence.level === "medium"
+                      ? `Confidence ${Math.round(100 * inferred.confidence.overall)} %: review the boundary. The dashed and dotted edges are the ones to check; Adjust moves a corner.`
+                      : `Confidence ${Math.round(100 * inferred.confidence.overall)} %: low. Check the edges against the photographs before relying on this block; Adjust moves a corner.`}
+                </p>
+              )}
               {inferred && inferred.failures.length > 0 && (
                 <button type="button" className="mt-1 flex items-center gap-1 text-[10px] text-neutral-400 hover:text-neutral-200" onClick={() => setNotesOpen(o => !o)} aria-expanded={notesOpen}>
                   {notesOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}{inferred.failures.length} note{inferred.failures.length > 1 ? "s" : ""} on what could not be settled
