@@ -205,14 +205,19 @@ export async function rowsAndTrees(frames: Map<string, GeorefFrame>, model: Adju
     const photosOwn = new Set([...photos].filter(n => reads.get(n)!.source !== "seeded from the field"));
     return { id: i + 1, offsetM: quant(g.map(t => t.across), 0.5), trees: g.sort((a, b) => a.along - b.along), photos, photosOwn, kept: true };
   });
+  // Straightness is judged robustly: the median absolute deviation of the trees from the row's line (scaled to a
+  // standard deviation). The plain sd let a few trees of another planting crossing a row's end drop a row of 79
+  // trees at 0.53 m against the 0.5 m allowed, and a 4 cm change in the cameras decided it (2026-10-28, the same
+  // flight built in Node and in a browser kept different rows). The sd is still reported.
   const ROW_MIN_TREES = 4, ROW_MIN_PHOTOS = 2, ROW_MAX_SD_M = 0.5, ROW_MIN_FILL = 0.35;
+  const robustSd = (v: number[]) => { const a = v.map(Math.abs); return 1.4826 * quant(a, 0.5); };
   for (const r of rows) {
-    const offs = r.trees.map(t => t.across - r.offsetM), sd = Math.sqrt(offs.reduce((a, x) => a + x * x, 0) / offs.length);
+    const offs = r.trees.map(t => t.across - r.offsetM), sd = Math.sqrt(offs.reduce((a, x) => a + x * x, 0) / offs.length), rsd = robustSd(offs);
     const len = r.trees[r.trees.length - 1].along - r.trees[0].along + field1.plantSpacingM;
     const fill = r.trees.length / Math.max(1, len / field1.plantSpacingM);
     if (r.trees.length < ROW_MIN_TREES) { r.kept = false; r.reason = `${r.trees.length} observed trees (${ROW_MIN_TREES} needed)`; }
     else if (r.photos.size < ROW_MIN_PHOTOS) { r.kept = false; r.reason = "seen in one photograph only"; }
-    else if (sd > ROW_MAX_SD_M) { r.kept = false; r.reason = `trees ${sd.toFixed(2)} m off one straight line (sd; ${ROW_MAX_SD_M} allowed)`; }
+    else if (rsd > ROW_MAX_SD_M) { r.kept = false; r.reason = `trees ${rsd.toFixed(2)} m off one straight line (robust sd; ${ROW_MAX_SD_M} allowed; plain sd ${sd.toFixed(2)})`; }
     else if (fill < ROW_MIN_FILL) { r.kept = false; r.reason = `observed trees on ${Math.round(fill * 100)} % of the positions along it (${ROW_MIN_FILL * 100} % needed)`; }
   }
   const kept = rows.filter(r => r.kept);

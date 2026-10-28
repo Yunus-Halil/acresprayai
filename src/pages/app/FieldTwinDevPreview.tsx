@@ -4,20 +4,25 @@
 // import.meta.env.DEV only), and it never shows reference imagery (that needs the account's session).
 import { useEffect, useState } from "react";
 import FieldTwinView from "@/components/app/fieldTwin/FieldTwinView";
+import TwinBuilder, { type BuiltTwin } from "@/components/app/fieldTwin/TwinBuilder";
 import { syntheticTwin } from "@/lib/fieldTwin/synthetic";
 import { type TwinBundle, parseTwin } from "@/lib/fieldTwin/types";
 
 export default function FieldTwinDevPreview() {
   const [twin, setTwin] = useState<TwinBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [built, setBuilt] = useState<BuiltTwin | null>(null);
   const params = new URLSearchParams(window.location.search);
   const id = params.get("id") ?? "";
+  // ?build=1: the builder panel instead of a twin from disk (the build benchmark script, and a look without a sign-in).
+  const build = params.get("build") === "1";
   // ?synthetic=100000: a generated field of that many observations, for the benchmark script (never a real field).
   const synthetic = Number(params.get("synthetic") ?? 0);
   // ?detail=simple|standard|full: the dial's stop to open at (the screenshot script), else the remembered one.
   const detailParam = params.get("detail");
   const detail = detailParam === "simple" || detailParam === "standard" || detailParam === "full" ? detailParam : undefined;
   useEffect(() => {
+    if (build) return;
     (async () => {
       try {
         if (synthetic > 0) { setTwin(syntheticTwin({ weeds: synthetic })); return; }
@@ -36,12 +41,24 @@ export default function FieldTwinDevPreview() {
         setTwin(parsed.twin);
       } catch (e) { setError((e as Error).message); }
     })();
-  }, [id, synthetic]);
+  }, [id, synthetic, build]);
   if (error) return <div className="p-6 text-sm text-red-400">{error}</div>;
+  if (build && !twin) {
+    return (
+      <div className="h-screen w-screen bg-[#1a1c1a]">
+        <aside className="absolute right-3 top-3 bottom-3 z-[800] w-[420px] rounded-md border border-[#343834] bg-[#171a17]" aria-label="Twin builder">
+          <TwinBuilder expose onBuilt={b => { setBuilt(b); setTwin(b.twin); }} onClose={() => undefined} />
+        </aside>
+      </div>
+    );
+  }
   if (!twin) return <div className="p-6 text-sm text-neutral-400">Loading the twin…</div>;
+  const atlasUrl = built
+    ? async (i: number) => { const file = twin.atlases[i].file; let b = built.files.get(file); if (!b) { await built.atlases; b = built.files.get(file); } if (!b) throw new Error(`${file} missing`); return URL.createObjectURL(b); }
+    : async (i: number) => `/__field-twin/${twin.id}/${twin.atlases[i].file}`;
   return (
     <div className="h-screen w-screen bg-[#1a1c1a]">
-      <FieldTwinView twin={twin} atlasUrl={async i => `/__field-twin/${twin.id}/${twin.atlases[i].file}`} expose detail={detail} />
+      <FieldTwinView twin={twin} atlasUrl={atlasUrl} expose detail={detail} />
     </div>
   );
 }

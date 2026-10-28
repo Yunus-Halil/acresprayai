@@ -590,3 +590,28 @@ planner keeps 80 / 80 for a twin flight. The farmer's saving is in the processin
 ### Where the Node build stands (71 photographs, saved answers, every stage)
 About 110 to 125 s: photographs 3 to 6 s, cameras 25 to 32 s, rows 5 s, weeds 1 s (10 min on the GPU, or 78 s
 colour), atlases 75 to 79 s (now after the twin opens in the browser), evidence 0.5 s. From 387 s plus 10 min.
+
+### The build in a real browser (headless Chrome through `scripts/directGeoref/twinBuildBench.mjs`)
+The dev preview page now offers the builder without a sign-in (`/dev/field-twin?build=1`), and the benchmark
+script feeds it the 71 photographs and reads `window.__twinBuild`. First browser run ever, colour tier:
+
+| | Browser (Chrome, one worker) | Node (one thread) |
+|---|---|---|
+| Twin ready | **42 s** | about 110 s |
+| Photographs (preview decode) | 1.5 s | 3 to 6 s |
+| Cameras (ties + fits) | 26 s | 25 to 32 s |
+| Rows and trees | 3.8 s | 5 s |
+| Weeds, colour rules on the quarter decode | 9 s | 78 s |
+| Atlases, after the twin opened | 9 s more (51 s in all) | 75 s |
+| Evidence and the block | 0.7 s | 0.7 s |
+
+The cameras are now two thirds of the browser's time to a twin; the worker pool (step I) is the next lever.
+
+**A real difference between the two builds, fixed.** The browser's first twin kept 12 rows and a 1.16 ha block
+where Node kept 13 rows and 1.32 ha: two orchard rows of 79 and 63 trees were dropped as "0.54 m and 0.53 m
+off one straight line (0.5 allowed)". The plain standard deviation counts the few trees of the other planting
+crossing a row's end, and a 4 cm shift in the cameras (the browser's decode is not jpeg-js's) tipped them over
+the line. The straightness rule now uses the median absolute deviation (scaled); the plain sd is still reported.
+After it: Node 13 rows and 1.320 ha, the browser 14 rows (one short candidate of 9 trees in 2 photographs, which
+the boundary's pitch rule then leaves out) and 1.318 ha. Rows of a planting no longer hang on a threshold a
+camera shift can cross.

@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { type BuildResult, type BuildRun, BuildAborted, startTwinBuild } from "@/lib/fieldTwin/build/runBuild";
+import type { BuildReport } from "@/lib/fieldTwin/build/pipeline";
 import { BUILD_STAGES, type BuildProgress, type BuildStage } from "@/lib/fieldTwin/build/types";
 import type { TwinBundle } from "@/lib/fieldTwin/types";
 import { fetchHealth } from "@/lib/weedVision/client";
@@ -14,14 +15,17 @@ export type BuiltTwin = BuildResult;
 type Props = {
   onBuilt: (b: BuiltTwin) => void;
   onClose: () => void;
+  /** Development builds: publish the result on window.__twinBuild for the benchmark script. */
+  expose?: boolean;
 };
+declare global { interface Window { __twinBuild?: { report: BuildReport; twin: { trees: number; rows: number; weeds: number; verified: number; atlases: number; blockHa: number | null; rowList: { id: number; kept: boolean; trees: number; photos: number; straightnessSdM: number; reason: string | null }[]; field: TwinBundle["field"] }; atlasesDone: boolean; error?: string } } }
 
 const btn = "inline-flex items-center gap-1.5 rounded-sm border border-[#333] px-2.5 py-1 text-xs text-neutral-300 hover:bg-[#1f1f1f] disabled:opacity-40";
 const primary = "inline-flex items-center gap-1.5 rounded-sm bg-[#f0a63a] px-3 py-1 text-xs font-semibold text-[#171a18] disabled:opacity-40";
 
 const fmtMs = (ms: number) => (ms >= 60_000 ? `${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`);
 
-export default function TwinBuilder({ onBuilt, onClose }: Props) {
+export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [name, setName] = useState("");
   const [modelState, setModelState] = useState<"checking" | "ready" | "missing" | "unavailable">(weedModelAvailable() ? "checking" : "unavailable");
@@ -62,7 +66,12 @@ export default function TwinBuilder({ onBuilt, onClose }: Props) {
       });
     } catch (e) { setError((e as Error).message); return; }
     setRun(r);
-    r.done.then(out => { setResult(out); setDoneStages(BUILD_STAGES.filter(s => s.id !== "bundle").map(s => s.id)); setRun(null); out.atlases.then(() => setDoneStages(BUILD_STAGES.map(s => s.id))).catch(() => undefined); }).catch(e => { setError(e instanceof BuildAborted ? "Build cancelled." : (e as Error).message); setRun(null); });
+    const summary = (out: BuildResult, atlasesDone: boolean) => ({ report: out.report, twin: { trees: out.twin.trees.length, rows: out.twin.rows.filter(x => x.kept).length, weeds: out.twin.weeds.length, verified: out.twin.weeds.filter(w => w.status === "verified").length, atlases: out.twin.atlases.length, blockHa: out.twin.boundary ? out.twin.boundary.cultivated.areaM2 / 10_000 : null, rowList: out.twin.rows.map(r => ({ id: r.id, kept: r.kept, trees: r.trees, photos: r.photos, straightnessSdM: r.straightnessSdM, reason: r.reason })), field: out.twin.field }, atlasesDone });
+    r.done.then(out => {
+      setResult(out); setDoneStages(BUILD_STAGES.filter(s => s.id !== "bundle").map(s => s.id)); setRun(null);
+      if (expose) window.__twinBuild = summary(out, false);
+      out.atlases.then(() => { setDoneStages(BUILD_STAGES.map(s => s.id)); if (expose) window.__twinBuild = summary(out, true); }).catch(() => undefined);
+    }).catch(e => { const msg = e instanceof BuildAborted ? "Build cancelled." : (e as Error).message; setError(msg); setRun(null); if (expose) window.__twinBuild = { report: null as unknown as BuildReport, twin: { trees: 0, rows: 0, weeds: 0, verified: 0, atlases: 0, blockHa: null, rowList: [], field: { rowDirectionDeg: 0, rowSpacingM: 0, plantSpacingM: 0 } }, atlasesDone: false, error: msg }; });
   };
   const stageIndex = progress ? BUILD_STAGES.findIndex(s => s.id === progress.stage) : -1;
   const size = files.reduce((s, f) => s + f.size, 0);
