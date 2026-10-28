@@ -43,7 +43,7 @@ type Prepared = { px: PhotoPixels; f: GeorefFrame; mpp: number; k: number; left:
  * Rows and trees from the aligned cameras. `pixels(name)` gives a photograph decoded at `down` (quarter size).
  * Returns null when no photograph reads rows at all (a field without rows, or none the reader understands).
  */
-export async function rowsAndTrees(frames: Map<string, GeorefFrame>, model: AdjustModel, pixels: (name: string) => Promise<PhotoPixels>, down: number, hooks: BuildHooks = {}): Promise<RowsResult | null> {
+export async function rowsAndTrees(frames: Map<string, GeorefFrame>, model: AdjustModel, pixels: (name: string) => Promise<PhotoPixels>, hooks: BuildHooks = {}): Promise<RowsResult | null> {
   const t0 = Date.now();
   const groundAlt = model.globals.groundOffsetM;
   const origin = model.origin;
@@ -51,6 +51,8 @@ export async function rowsAndTrees(frames: Map<string, GeorefFrame>, model: Adju
 
   async function prepare(name: string): Promise<Prepared> {
     const px = await pixels(name), f = frames.get(name)!;
+    // The decode ratio of this photograph (a quarter decode, or a preview): original pixels per decoded pixel.
+    const down = f.intrinsics.width / px.width;
     const mpp = ((f.pose.altM - groundAlt) / f.intrinsics.fx) * down;
     const [cx, cy] = mercatorPx(f.pose.lat, f.pose.lng, Z);
     const left = Math.round(cx - px.width / 2), top = Math.round(cy - px.height / 2);
@@ -120,7 +122,7 @@ export async function rowsAndTrees(frames: Map<string, GeorefFrame>, model: Adju
   const thF = (field1.directionDeg * Math.PI) / 180;
   let ux = Math.cos(thF), uy = Math.sin(thF);
   const enOf = (lat: number, lng: number) => { const e = toEnu({ lat, lng, altM: 0 }, origin); return [e[0], e[1]] as [number, number]; };
-  function seedsFor(name: string): { clicks: [number, number][]; seedTrees: number[] } | null {
+  function seedsFor(name: string, down: number): { clicks: [number, number][]; seedTrees: number[] } | null {
     const f = frames.get(name)!, { width: w, height: h } = f.intrinsics;
     const inside = trees1.map(t => {
       const px = groundToPixel(f, t.lat, t.lng, groundAlt + (t.heightM ?? 1));
@@ -156,7 +158,7 @@ export async function rowsAndTrees(frames: Map<string, GeorefFrame>, model: Adju
       counts.relaxedRejected++;
       r.reason = `lower size share read rows ${r2(b.rowSpacingM)} x ${r2(b.plantSpacingM)} m at ${r2(b.directionGroundDeg)} deg, which disagrees with the field`;
     }
-    const s = seedsFor(r.name);
+    const s = seedsFor(r.name, p.down);
     if (s) {
       const res = fit(p, s.clicks);
       if (res && res.trees.length) { Object.assign(r, { source: "seeded from the field", trees: res.trees, lines: res.lines, reason: `seeded by trees ${s.seedTrees.join(", ")} reconciled from other photographs` }); counts.seeded++; continue; }

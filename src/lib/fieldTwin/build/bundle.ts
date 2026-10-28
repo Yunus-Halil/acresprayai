@@ -228,7 +228,6 @@ export async function evidenceAndBoundary(twin: TwinBundle, photos: PhotoSource[
     (cellsBy.get(best) ?? cellsBy.set(best, []).get(best)!).push(j * width + i);
   }
   const sources = new Map(photos.map(p => [p.name, p]));
-  const HALF = Math.max(1, Math.round(cellM / (0.0392 * (down / 4)) / 2));
   let done = 0;
   for (const [k, cells] of cellsBy) {
     checkCancelled(hooks.signal);
@@ -238,6 +237,10 @@ export async function evidenceAndBoundary(twin: TwinBundle, photos: PhotoSource[
     if (!src || !f) continue;
     const img = await src.decode(down);
     const dn = f.intrinsics.width / img.width;
+    // The box averaged per cell: the cell's width in this photograph's own pixels (its ground sample at the
+    // frame centre times the decode ratio), half each way.
+    const pxM = (groundSampleAt(f, f.intrinsics.cx, f.intrinsics.cy) ?? 0.01) * dn;
+    const HALF = Math.max(1, Math.round(cellM / pxM / 2));
     for (const c of cells) {
       const i = c % width, j = (c - i) / width;
       const [e, n] = fr.fromField(along0 + (i + 0.5) * cellM, across0 + (j + 0.5) * cellM);

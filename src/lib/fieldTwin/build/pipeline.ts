@@ -41,7 +41,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   if (cams.report.note) notes.push(cams.report.note);
   const sources = new Map(photos.map(p => [p.name, p]));
   const pixels = (name: string) => sources.get(name)!.decode(down);
-  const rows = await timed("rows", () => rowsAndTrees(cams.frames, cams.model, pixels, down, hooks));
+  const rows = await timed("rows", () => rowsAndTrees(cams.frames, cams.model, pixels, hooks));
   if (!rows) notes.push("no rows were read in any photograph: the twin has no crop rows, no trees and no cultivated block");
   checkCancelled(hooks.signal);
 

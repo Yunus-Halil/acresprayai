@@ -25,10 +25,12 @@ export function nodePhoto(path: string): PhotoSource {
     header: async () => new Uint8Array(readFileSync(path)).subarray(0, 1 << 20),
     bytes: async () => new Uint8Array(readFileSync(path)),
     async decode(down) {
+      // The cache first: until 2026-10-28 the full 20 MP decode ran before this check, so every quarter-size
+      // request paid it again (four full decodes per photograph through a build).
+      const c = down > 1 ? small.get(down) : undefined;
+      if (c) return c;
       const img = full();
       if (down <= 1) return { width: img.width, height: img.height, rgba: new Uint8ClampedArray(img.data.buffer, img.data.byteOffset, img.data.byteLength) };
-      const c = small.get(down);
-      if (c) return c;
       const px = boxDown(img, down);
       small.set(down, px);
       return px;

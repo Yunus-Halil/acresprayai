@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type GeorefFrame, type Intrinsics, GeorefError, TAKEOFF_DATUM, UNCALIBRATED_BORESIGHT, applyHomography, bilinear, clusterMatches, frameCorners,
   frameFootprint, frameFromDji, groundSampleAt, groundToPixel, homographyFrom4, matchPair, objectsToGround, parseDewarpData, parseDjiHeader,
-  pixelToGround, takeoffPlane, triangulateRays, vegetationObjects, type DjiPhotoMeta, type GroundObject, type P2,
+  pixelToGround, rotationOf, enuFromCamera, takeoffPlane, triangulateRays, vegetationObjects, type DjiPhotoMeta, type GroundObject, type P2,
 } from "@/lib/directGeoref";
 import { adjust, applyCalibration, boresightOf, calibrateFromOverlap, emptyModel, evaluateTies, frameUnder, NO_CALIBRATION, phaseCorrelate, type BaseFrame, type PixelObject, type SoilTie } from "@/lib/directGeoref";
 import { toEnu } from "@/lib/sourceFrames/odm";
@@ -79,6 +79,17 @@ describe("conventions", () => {
   it("refuses a ground in another vertical datum", () => {
     const f = frame(0, -90, 0, { ground: { kind: "flat", altM: 600, datum: "ellipsoid", basis: "x" } });
     expect(() => pixelToGround(f, 1, 1)).toThrow(GeorefError);
+  });
+
+  it("caches the camera rotation per pose object and gives a new pose its own", () => {
+    const f = frame(37);
+    const r1 = rotationOf(f.pose), r2 = rotationOf(f.pose);
+    expect(r2).toBe(r1);
+    expect(Array.from(r1)).toEqual(Array.from(enuFromCamera(f.pose.attitude, f.pose.boresight)));
+    const g = { ...f, pose: { ...f.pose, attitude: { ...f.pose.attitude, yawDeg: f.pose.attitude.yawDeg + 10 } } };
+    const r3 = rotationOf(g.pose);
+    expect(r3).not.toBe(r1);
+    expect(Array.from(r3)).toEqual(Array.from(enuFromCamera(g.pose.attitude, g.pose.boresight)));
   });
 
   it("returns null for a ray at or above the horizon", () => {

@@ -129,6 +129,19 @@ export function enuFromCamera(att: Attitude, boresight: Boresight = UNCALIBRATED
   return mulM(ENU_FROM_NED, mulM(nedFromBody(att.yawDeg, att.pitchDeg, att.rollDeg, att.order ?? "ZYX"), mulM(BODY_FROM_CAMERA, boresight.rotation)));
 }
 
+/**
+ * The same rotation, computed once per pose object. A pose is never changed in place (the adjustment and the
+ * calibration build a new pose for every model), so the object's identity is the cache key: the millions of
+ * projections a build makes (ties, the solver, reconciliation, the evidence raster) rebuilt six trig calls and
+ * eight matrices each until 2026-10-28. Anyone who mutates a pose must make a new object instead.
+ */
+const rotationCache = new WeakMap<CameraPose, M3>();
+export function rotationOf(pose: CameraPose): M3 {
+  let r = rotationCache.get(pose);
+  if (!r) { r = enuFromCamera(pose.attitude, pose.boresight); rotationCache.set(pose, r); }
+  return r;
+}
+
 // ------------------------------------------------------------------------------------------------------------------
 // Lens
 // ------------------------------------------------------------------------------------------------------------------
@@ -187,7 +200,7 @@ const cameraOrigin = (p: CameraPose): LatLngAlt => ({ lat: p.lat, lng: p.lng, al
 /** The ray of pixel (u, v) in local east-north-up, unnormalised; null where the lens model cannot be inverted. */
 export function worldRay(f: GeorefFrame, u: number, v: number): V3 | null {
   const r = pixelRay(f.intrinsics, u, v);
-  return r ? mulV(enuFromCamera(f.pose.attitude, f.pose.boresight), r) : null;
+  return r ? mulV(rotationOf(f.pose), r) : null;
 }
 
 function sameDatum(f: GeorefFrame) {
@@ -211,7 +224,9 @@ export function pixelToGround(f: GeorefFrame, u: number, v: number): GroundPoint
   };
   let P: V3 | null;
   if (f.ground.kind === "flat") {
-    P = hit(f.ground.altM);
+    // The plane: the one case every build runs, written out without the closure (the same arithmetic).
+    const t = (f.ground.altM - C[2]) / d[2];
+    P = t > 0 ? [0 + t * d[0], 0 + t * d[1], f.ground.altM] : null;
   } else {
     const below = f.ground.altAt(f.pose.lat, f.pose.lng);
     if (below == null) return null;
@@ -242,7 +257,7 @@ export type PixelHit = { u: number; v: number; inside: boolean; depthM: number }
 export function groundToPixel(f: GeorefFrame, lat: number, lng: number, altM: number): PixelHit | null {
   const X = toEnu({ lat, lng, altM }, cameraOrigin(f.pose));
   const rel: V3 = [X[0], X[1], X[2] - f.pose.altM];
-  const c = mulTV(enuFromCamera(f.pose.attitude, f.pose.boresight), rel);
+  const c = mulTV(rotationOf(f.pose), rel);
   if (c[2] <= 1e-9) return null;
   let x = c[0] / c[2], y = c[1] / c[2];
   if (f.intrinsics.distortion) [x, y] = distortNormalised(f.intrinsics.distortion, x, y);
