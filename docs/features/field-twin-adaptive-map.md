@@ -207,6 +207,30 @@ Row view, "Largest individual weeds" on, the busiest spot of the apricot twin (s
 | [Standard](field-twin-adaptive-map/detail-standard.png) | 1.6 ms | plus 437 crowns and 1,895 weed discs; no badges, the discs are the weeds |
 | [Full](field-twin-adaptive-map/detail-full.png) | 0.9 ms | plus 197 count badges and 25 single markers (the picture before the dial) |
 
+## Pressure colours set by the field (2026-10-28)
+
+On the apricot twin the fixed bands saturate: most of the block is above the top band (8 %), so the heatmap says
+"everywhere" when the question is "where first". The heat scale now has two settings (Layers panel, "Pressure
+colours"), with **spread over this field** the default at every stop of the dial:
+
+- **Spread over this field**: the colour stops are raised to this field's own distribution of verified cover over
+  the observed, non-canopy cells *inside the crop block* (the headland cells beyond it would only drag the
+  percentiles down): the block's median is the first raised stop, then its 80th, 95th and 99th percentiles. So
+  the block's ordinary ground is green to amber and only its worst 5 % is orange, its worst 1 % red. A stop is
+  never lowered below the fixed band, so a clean field never shows a red spot at 0.3 % cover (`heatScaleFor` in
+  `heatmap.ts`, tested on a clean and a saturated synthetic field). The legend always prints the real cover at
+  each stop and says "bands set by this field" when any stop was raised.
+- **Fixed bands**: the same cover is the same colour on every field, for comparing fields.
+
+| Apricot, field view | Stops | |
+|---|---|---|
+| [spread over this field](field-twin-adaptive-map/heat-field.png) | 0 · 1.6 · 4.4 · 10.2 · 17.7 %+ | the north half reads green to amber, the worst spots red |
+| [fixed bands](field-twin-adaptive-map/heat-fixed.png) | 0 · 0.5 · 1.5 · 4 · 8 %+ | the whole block orange-red |
+
+Also fixed: inside a region's boundary every click landed on the region, so no weed could be opened at the plant
+level. The pick order is now markers, then weeds, trees, vegetation and discs, and a region or patch boundary
+last: verified in the browser (a weed inside Region 1 picks the weed, bare ground 0.6 m beside it picks the region).
+
 ## Opening a twin: bytes to first frame
 
 `scripts/directGeoref/twinOpenBench.mjs` reads phase marks the page records (median of four runs, apricot twin,

@@ -87,12 +87,17 @@ export class TwinCanvasLayer extends L.Canvas {
   setScene(scene: Scene | null) {
     this.scene = scene;
     const t0 = performance.now();
-    this.heat = scene ? buildHeatLevels(scene.intel) : null;
+    this.heat = scene ? buildHeatLevels(scene.intel, this.layers.heatScale) : null;
     try { performance.measure("twin:heatmap", { start: t0, end: performance.now() }); } catch { /* older browsers */ }
     this.heatCanvas.clear(); this.findings = null; this.firstDraw = true; this.requestRedraw();
   }
   private firstDraw = true;
-  setLayers(layers: TwinLayers) { this.layers = layers; this.requestRedraw(); }
+  setLayers(layers: TwinLayers) {
+    const rescale = layers.heatScale !== this.layers.heatScale;
+    this.layers = layers;
+    if (rescale && this.scene) { this.heat = buildHeatLevels(this.scene.intel, layers.heatScale); this.heatCanvas = new Map(); }
+    this.requestRedraw();
+  }
   setSelection(p: TwinPick) { this.selection = p; this.requestRedraw(); }
   watchDetail(cb: ((d: Detail) => void) | null) { this.onDetailChange = cb; }
 
@@ -590,8 +595,6 @@ export class TwinCanvasLayer extends L.Canvas {
         const f = F.result.findings[best];
         return f.kind === "weed" ? { kind: "weed", id: f.id } : { kind: "finding", index: best };
       }
-      // Inside a boundary (region or patch); weed lists have none, so a million-row list is never walked here.
-      if (F.result.findings[0]?.kind !== "weed") for (let i = 0; i < F.n; i++) { const rings = F.rings[i]; if (!rings) continue; if (Math.hypot(F.x[i] - x, F.y[i] - y) > F.reachU[i] * 1.2 + tolU) continue; if (inFlatRing(x, y, rings[0])) return { kind: "finding", index: i }; }
     }
     if (L_.weeds && d.outlines >= 0.5) {
       const idx = s.weeds.index.query(x - tolU, y - tolU, x + tolU, y + tolU, s.weeds.maxRM / s.mpu);
@@ -620,6 +623,10 @@ export class TwinCanvasLayer extends L.Canvas {
         return { kind: "cluster", index: k, lat: ll.lat, lng: ll.lng, radiusM: s.clusters.rM[k] };
       }
     }
+    // Last, inside a region's or patch's boundary: a region covers whole rows, so anything drawn inside it (a weed,
+    // a tree, a disc) wins the click, and the region is picked only where nothing else is. Weed lists have no
+    // boundaries, so a million-row list is never walked here.
+    if (F && F.result.findings[0]?.kind !== "weed") for (let i = 0; i < F.n; i++) { const rings = F.rings[i]; if (!rings) continue; if (Math.hypot(F.x[i] - x, F.y[i] - y) > F.reachU[i] * 1.2 + tolU) continue; if (inFlatRing(x, y, rings[0])) return { kind: "finding", index: i }; }
     return null;
   }
 

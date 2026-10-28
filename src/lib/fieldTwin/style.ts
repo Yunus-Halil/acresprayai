@@ -3,6 +3,7 @@
 // One palette on a dark ground: charcoal outside, a green-grey observed ground, a warmer block, sage crop
 // structure, the pressure heatmap on fixed bands (green, amber, orange-red: heatmap.ts), amber for weed
 // candidates, orange-red for the regions that matter. Flat colour, no glow, no gradients beyond the heatmap.
+import type { HeatScaleMode } from "./heatmap";
 import type { TwinWeed } from "./types";
 
 export type TwinLayers = {
@@ -27,6 +28,8 @@ export type TwinLayers = {
   vegetation: boolean;
   /** The weed pressure heatmap (field level, fading as the detail comes in). */
   pressure: boolean;
+  /** Its colour scale: the bands raised to this field's own distribution of cover, or the fixed bands. */
+  heatScale: HeatScaleMode;
   /** Boundaries and labels of the findings (regions, patches, weeds) the Explore Findings control selects. */
   zones: boolean;
   /** Ground only one photograph saw. */
@@ -48,7 +51,7 @@ export type TwinDetail = "simple" | "standard" | "full" | "custom";
 export type TwinDetailStop = Exclude<TwinDetail, "custom">;
 
 const DIAGNOSTICS = { inferred: true, droppedRows: false, singleView: false, onTree: false, uncertainty: false, footprints: false };
-const GROUND = { pressure: true, zones: true, coverage: true, ground: true, surroundings: true };
+const GROUND = { pressure: true, heatScale: "field" as HeatScaleMode, zones: true, coverage: true, ground: true, surroundings: true };
 
 /**
  * What each stop of the dial draws. Simple answers "where are the problems": the heatmap, the rows as orientation,

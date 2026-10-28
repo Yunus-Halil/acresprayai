@@ -7,7 +7,7 @@ import { ChevronDown, ChevronRight, Layers } from "lucide-react";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtArea } from "@/lib/units";
 import { FindingsEngine, type FindingsQuery, type FindingsResult } from "@/lib/fieldTwin/findings";
-import { HEAT_STOPS } from "@/lib/fieldTwin/heatmap";
+import { HEAT_STOPS, heatScaleFor } from "@/lib/fieldTwin/heatmap";
 import { fieldIntelligence } from "@/lib/fieldTwin/intelligence";
 import { type Detail, buildScene, zoomForSize } from "@/lib/fieldTwin/scene";
 import { DEFAULT_LAYERS, DETAIL_LABEL, DETAIL_PRESETS, DETAIL_STOPS, TWIN_COLOURS, type TwinDetail, type TwinDetailStop, type TwinLayers, detailOf } from "@/lib/fieldTwin/style";
@@ -22,6 +22,8 @@ export type ReferenceOption = { id: string; label: string; url: string; maxNativ
 export type DevApi = {
   map: L.Map; setView: (lat: number, lng: number, zoom: number) => void; setLayers: (patch: Partial<TwinLayers>) => void; setDetail: (stop: TwinDetailStop) => void; select: (p: TwinPick) => void;
   stats: () => DrawStats; detail: () => Detail | null; scene: ReturnType<typeof buildScene>; ready: true;
+  /** What a click at this place would pick at the current zoom (the screenshot script checks the pick order). */
+  pick: (lat: number, lng: number) => TwinPick;
   /** Run a findings query (null returns to the overview); answers with the counts for the benchmark. */
   setFindings: (q: FindingsQuery | null) => { qualifying: number; emphasized: number; rule: string };
 };
@@ -129,6 +131,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
     window.__fieldTwin = {
       map: h.map, setView: (lat, lng, zoom) => { h.map.setView([lat, lng], zoom, { animate: false }); }, setLayers: patch => setLayers(l => ({ ...l, ...patch })), setDetail: chooseDetail,
       select: p => setSelection(p), stats: () => h.layer.stats, detail: () => h.layer.detailNow(), scene, ready: true,
+      pick: (lat, lng) => h.layer.pickAt(h.map.latLngToLayerPoint([lat, lng])),
       setFindings: q => { const nq = q ?? OVERVIEW; const r = engine.run(nq); setQuery(nq); return { qualifying: r.findings.length, emphasized: r.prominence.count, rule: r.prominence.rule }; },
     };
     return () => { delete window.__fieldTwin; };
@@ -146,6 +149,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
   // Counted once per twin: a render happens on every move end, and a million candidates are not re-walked for it.
   const counts = useMemo(() => ({ verified: twin.weeds.filter(w => w.status === "verified").length, single: twin.weeds.filter(w => w.status === "single view").length, onTree: twin.weeds.filter(w => w.status === "on a tree").length, rows: twin.rows.filter(r => r.kept).length }), [twin]);
   const canopyCells = useMemo(() => intel.grid.cells.filter(c => c.canopy).length, [intel]);
+  const heatScale = useMemo(() => heatScaleFor(intel, layers.heatScale), [intel, layers.heatScale]);
+  const pctText = (v: number) => (v === 0 ? "0" : Number.isInteger(v) ? String(v) : v.toFixed(1));
   const dockOpen = !!selection || resultsOpen;
   const full = detailStop === "full" || detailStop === "custom", simple = detailStop === "simple";
   const swatch = (rgb: [number, number, number], a: number) => `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.min(1, a + 0.15)})`;
@@ -179,6 +184,12 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
           {panelOpen && (
             <div className="border-t border-[#2e322e] px-3 py-2">
               {toggle("pressure", "Weed pressure", swatch(HEAT_STOPS[2].rgb, HEAT_STOPS[2].alpha), `verified cover, % of observable ground, per ${intel.grid.cellM} m`)}
+              <label className="mb-1 block text-[11px] text-neutral-400">Pressure colours
+                <select value={layers.heatScale} onChange={e => setLayers(l => ({ ...l, heatScale: e.target.value as TwinLayers["heatScale"] }))} className="mt-0.5 w-full rounded-sm border border-[#3a3f3a] bg-[#111311] px-1.5 py-1 text-xs text-neutral-100" aria-label="Pressure colours">
+                  <option value="field">Spread over this field (its worst spots red)</option>
+                  <option value="fixed">Fixed bands, the same on every field</option>
+                </select>
+              </label>
               {toggle("zones", "Findings", TWIN_COLOURS.region, `${intel.zones.length} regions at 1.5 % cover or more; patches and weeds by filter`)}
               {toggle("structure", "Crop rows", TWIN_COLOURS.row, `${counts.rows} rows`)}
               {toggle("crowns", "Tree crowns", TWIN_COLOURS.tree, `${twin.trees.length.toLocaleString()} trees; always drawn at the plant level`)}
@@ -238,7 +249,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
         {layers.pressure && (
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-neutral-400" aria-label="Weed pressure legend">
             <span className="text-neutral-500">Cover of observable ground:</span>
-            {HEAT_STOPS.map(st => <span key={st.pct} className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: swatch(st.rgb, st.alpha) }} />{st.pct === 0 ? "0" : `${st.pct}`} %{st.pct === HEAT_STOPS[HEAT_STOPS.length - 1].pct ? "+" : ""}</span>)}
+            {HEAT_STOPS.map((st, i) => <span key={st.pct} className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: swatch(st.rgb, st.alpha) }} />{pctText(heatScale.stops[i])} %{i === HEAT_STOPS.length - 1 ? "+" : ""}</span>)}
+            {heatScale.stretched && <span className="text-neutral-500" title="This field's cover runs above the fixed bands, so the colours are spread over its own range: the median of the block's observed ground is the first raised stop, its worst 1 % the last. The numbers are real cover.">bands set by this field</span>}
             <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: "rgba(96,122,98,0.6)" }} />under canopy{canopyCells ? ` (${canopyCells} cells)` : ""}</span>
             <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />not observed</span>
           </div>
