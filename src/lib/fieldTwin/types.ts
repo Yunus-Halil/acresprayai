@@ -5,6 +5,8 @@
 // by the Field Twin page (src/pages/app/FieldTwin.tsx). parseTwin is the only way in: anything that is not a
 // well-formed bundle is refused with a reason, never half-drawn.
 
+import type { TwinBoundary } from "./boundary";
+
 export const FIELD_TWIN_FORMAT = "swardus-field-twin-v1";
 
 export type LatLngPair = [number, number];
@@ -98,6 +100,11 @@ export type TwinBundle = {
   vegetation: TwinVegetation[];
   atlases: { file: string; width: number; height: number }[];
   stats: Record<string, unknown>;
+  /**
+   * The inferred cultivated block with its evidence (boundary.ts), written by the build; absent in older bundles.
+   * Never an operational boundary: that is the operator's, kept by the app.
+   */
+  boundary?: TwinBoundary | null;
 };
 
 export type ParseResult = { ok: true; twin: TwinBundle } | { ok: false; reason: string };
@@ -136,6 +143,12 @@ export function parseTwin(json: unknown): ParseResult {
     if (!["verified", "single view", "on a tree"].includes(w.status as string)) return { ok: false, reason: `weed ${w.id} has an unknown status` };
     if (!isArr(w.ring) || !w.ring.every(isLatLng)) return { ok: false, reason: `weed ${w.id} has a broken outline` };
     for (const e of w.evidence ?? []) { const why = checkEvidence(e, nAtlas); if (why) return { ok: false, reason: `weed ${w.id}: ${why}` }; }
+  }
+  if (t.boundary != null) {
+    const b = t.boundary as Partial<TwinBoundary>;
+    if (b.version !== 1 || !b.cultivated || !isArr(b.cultivated.ring) || b.cultivated.ring.length < 3 || !b.cultivated.ring.every(isLatLng)) return { ok: false, reason: "boundary is not a version 1 record with a ring of latitude/longitude pairs" };
+    if (!isArr(b.cultivated.vertices) || b.cultivated.vertices.length !== b.cultivated.ring.length) return { ok: false, reason: "boundary vertices do not match its ring" };
+    if (!isNum(b.cultivated.areaM2) || !isArr(b.cultivated.failures)) return { ok: false, reason: "boundary has no area or failure list" };
   }
   return { ok: true, twin: t as TwinBundle };
 }

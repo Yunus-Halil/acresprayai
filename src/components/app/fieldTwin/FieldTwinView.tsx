@@ -4,6 +4,7 @@
 // reference imagery). The twin itself comes from the shell (account, files, or the dev server).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Layers } from "lucide-react";
+import { NO_OPERATIONAL_BOUNDARY, type OperationalBoundaryState, operationalBoundary, validRing } from "@/lib/fieldTwin/boundary";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtArea } from "@/lib/units";
 import { FindingsEngine, type FindingsQuery, type FindingsResult } from "@/lib/fieldTwin/findings";
@@ -11,7 +12,7 @@ import { HEAT_STOPS, heatScaleFor } from "@/lib/fieldTwin/heatmap";
 import { fieldIntelligence } from "@/lib/fieldTwin/intelligence";
 import { type Detail, buildScene, zoomForSize } from "@/lib/fieldTwin/scene";
 import { DEFAULT_LAYERS, DETAIL_LABEL, DETAIL_PRESETS, DETAIL_STOPS, TWIN_COLOURS, type TwinDetail, type TwinDetailStop, type TwinLayers, detailOf } from "@/lib/fieldTwin/style";
-import type { TwinBundle } from "@/lib/fieldTwin/types";
+import type { LatLngPair, TwinBundle } from "@/lib/fieldTwin/types";
 import { FindingsControl, FindingsPanel } from "./FindingsPanel";
 import type { DrawStats, TwinPick } from "./TwinCanvasLayer";
 import TwinInspector from "./TwinInspector";
@@ -26,6 +27,8 @@ export type DevApi = {
   pick: (lat: number, lng: number) => TwinPick;
   /** Run a findings query (null returns to the overview); answers with the counts for the benchmark. */
   setFindings: (q: FindingsQuery | null) => { qualifying: number; emphasized: number; rule: string };
+  /** The boundaries as the page holds them: the bundle's inferred record, the operator's correction and acceptance, the block in use. */
+  boundary: () => { inferred: TwinBundle["boundary"]; corrected: LatLngPair[] | null; operational: OperationalBoundaryState; blockSource: string | null; blockHa: number | null };
 };
 declare global { interface Window { __fieldTwin?: DevApi } }
 
@@ -41,6 +44,22 @@ type Props = {
 };
 
 const DETAIL_KEY = "swathwise:twin-detail";
+const BOUNDARY_KEY = (id: string) => `swathwise:twin-boundary:${id}`;
+
+/** The operator's boundary state for a twin: a corrected ring and whether it (or the inferred one) was accepted for operations. */
+type BoundaryState = { corrected: LatLngPair[] | null; operational: OperationalBoundaryState };
+const NO_BOUNDARY_STATE: BoundaryState = { corrected: null, operational: NO_OPERATIONAL_BOUNDARY };
+function rememberedBoundary(id: string): BoundaryState {
+  try {
+    const raw = localStorage.getItem(BOUNDARY_KEY(id));
+    if (!raw) return NO_BOUNDARY_STATE;
+    const v = JSON.parse(raw) as Partial<BoundaryState>;
+    const corrected = validRing(v.corrected) ? v.corrected : null;
+    const op = v.operational;
+    const operational: OperationalBoundaryState = op && validRing(op.ring) && (op.source === "accepted" || op.source === "corrected") ? { ring: op.ring, source: op.source, at: typeof op.at === "string" ? op.at : null } : NO_OPERATIONAL_BOUNDARY;
+    return { corrected, operational };
+  } catch { return NO_BOUNDARY_STATE; }
+}
 const DETAIL_HINT: Record<TwinDetail, string> = {
   simple: "Where the problems are: pressure, the regions and findings that stand apart, every outline up close.",
   standard: "Plus the crop structure and where candidates stand together.",
@@ -73,7 +92,11 @@ function measured<T>(name: string, fn: () => T): T {
 
 export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], expose = false, detail: detailProp }: Props) {
   const units = useUnitSystem();
-  const intel = useMemo(() => measured("twin:intelligence", () => fieldIntelligence(twin)), [twin]);
+  const [boundary, setBoundaryState] = useState<BoundaryState>(() => rememberedBoundary(twin.id));
+  const [editing, setEditing] = useState<LatLngPair[] | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const setBoundary = useCallback((next: BoundaryState) => { setBoundaryState(next); try { localStorage.setItem(BOUNDARY_KEY(twin.id), JSON.stringify(next)); } catch { /* storage blocked */ } }, [twin.id]);
+  const intel = useMemo(() => measured("twin:intelligence", () => fieldIntelligence(twin, 4, boundary.corrected)), [twin, boundary.corrected]);
   const scene = useMemo(() => measured("twin:scene", () => buildScene(twin, intel)), [twin, intel]);
   const engine = useMemo(() => new FindingsEngine(twin, intel), [twin, intel]);
   const [layers, setLayers] = useState<TwinLayers>(() => DETAIL_PRESETS[detailProp ?? rememberedDetail()] ?? DEFAULT_LAYERS);
@@ -133,9 +156,24 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
       select: p => setSelection(p), stats: () => h.layer.stats, detail: () => h.layer.detailNow(), scene, ready: true,
       pick: (lat, lng) => h.layer.pickAt(h.map.latLngToLayerPoint([lat, lng])),
       setFindings: q => { const nq = q ?? OVERVIEW; const r = engine.run(nq); setQuery(nq); return { qualifying: r.findings.length, emphasized: r.prominence.count, rule: r.prominence.rule }; },
+      boundary: () => ({ inferred: twin.boundary ?? null, corrected: boundary.corrected, operational: boundary.operational, blockSource: intel.blockSource, blockHa: intel.summary.blockHa }),
     };
     return () => { delete window.__fieldTwin; };
-  }, [expose, scene, stats, engine, chooseDetail]);
+  }, [expose, scene, stats, engine, chooseDetail, twin, boundary, intel]);
+
+  // The boundary in use as latitude/longitude: the correction, else the inferred ring, else the rows' block.
+  const currentRing = useMemo<LatLngPair[] | null>(() => {
+    if (boundary.corrected) return boundary.corrected;
+    if (twin.boundary?.cultivated.ring) return twin.boundary.cultivated.ring;
+    return intel.block ? intel.block.map(([e, n]) => intel.frame.toLatLng(e, n)) : null;
+  }, [boundary.corrected, twin.boundary, intel]);
+  const operationalRing = operationalBoundary(boundary.operational);
+  const startEditing = () => { setSelection(null); setEditing(currentRing); };
+  const finishEditing = () => { if (editing) setBoundary({ corrected: editing, operational: boundary.operational.ring ? { ...boundary.operational, ring: editing, source: "corrected", at: new Date().toISOString() } : boundary.operational }); setEditing(null); };
+  const resetBoundary = () => { setEditing(null); setBoundary({ corrected: null, operational: NO_OPERATIONAL_BOUNDARY }); };
+  const acceptBoundary = () => { if (currentRing) setBoundary({ ...boundary, operational: { ring: currentRing, source: boundary.corrected ? "corrected" : "accepted", at: new Date().toISOString() } }); };
+  const withdrawBoundary = () => setBoundary({ ...boundary, operational: NO_OPERATIONAL_BOUNDARY });
+  const inferred = twin.boundary?.cultivated ?? null;
 
   type BoolLayer = { [K in keyof TwinLayers]: TwinLayers[K] extends boolean ? K : never }[keyof TwinLayers];
   const toggle = (k: BoolLayer, label: string, swatch: string, hint?: string) => (
@@ -159,7 +197,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
     <div className="twin-root relative h-full w-full min-h-0 overflow-hidden" style={{ background: TWIN_COLOURS.outside, ["--twin-right" as string]: dockOpen ? "368px" : "0px" }}>
       <style>{`.twin-root .leaflet-top.leaflet-right, .twin-root .leaflet-bottom.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; } .twin-root .leaflet-control-scale-line { background: rgba(24,26,24,.85); color: #d9ddd6; border-color: #8a8f88; } .twin-root .leaflet-control-attribution { background: rgba(24,26,24,.85); color: #9aa09a; }`}</style>
       <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={setSelection} onDetail={setDetail} onStats={setStats}
-        onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings} />
+        onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
+        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} />
 
       {/* Left column: the detail dial, Explore Findings, then the layers (Standard and Full). */}
       <div className="absolute left-3 top-3 z-[700] flex max-h-[calc(100%-120px)] flex-col gap-2 overflow-y-auto">
@@ -177,6 +216,49 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
           <p className="mt-1 text-[10px] leading-snug text-neutral-500">{DETAIL_HINT[detailStop]}</p>
         </div>
         <FindingsControl query={query} onChange={q => { setQuery(q); setSelection(null); }} result={result} open={findOpen} onToggle={() => setFindOpen(o => !o)} compact={simple} />
+        {/* The field boundary: inferred from the rows and the photographs, correctable, never an operational limit until accepted. */}
+        <div className={`w-[272px] px-3 py-2 text-xs ${panel}`} role="group" aria-label="Field boundary">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-neutral-100">Field boundary</span>
+            {s.blockHa != null && <span className="text-[11px] text-neutral-300 tabular-nums">{fmtArea(s.blockHa * 10_000, units).text}</span>}
+          </div>
+          {editing ? (
+            <>
+              <p className="mt-1 text-[10px] leading-snug text-neutral-400">Drag a corner to move it. Drag an edge's small handle to add a corner. Double-click a corner to remove it.</p>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                <button type="button" className="rounded-sm bg-[#f0a63a] px-2 py-1 text-[11px] font-semibold text-[#171a18]" onClick={finishEditing}>Done</button>
+                <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={() => setEditing(null)}>Cancel</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mt-1 text-[10px] leading-snug text-neutral-400">
+                {boundary.corrected ? "Corrected by you. " : ""}
+                {inferred ? `Inferred from ${inferred.rowsUsed.length} rows and the photographs${inferred.uncertaintyM2 ? `, plausible range ${fmtArea(Math.max(0, inferred.areaM2 - inferred.uncertaintyM2), units).text} to ${fmtArea(inferred.areaM2 + inferred.uncertaintyM2, units).text}` : ""}. Edges: ${Math.round(100 * inferred.stats.support.photographs)} % seen in the photographs${inferred.stats.support.bridged ? `, ${Math.round(100 * inferred.stats.support.bridged)} % bridged between seen pieces` : ""}${inferred.stats.support.cap ? `, ${Math.round(100 * inferred.stats.support.cap)} % at the cap` : ""}${inferred.stats.support.coverage ? `, ${Math.round(100 * inferred.stats.support.coverage)} % at the end of the photographs` : ""}.`
+                  : intel.blockSource === "rows" ? "From the rows' own geometry, half a spacing beyond them. No photographs were read for the edges." : "No boundary: the twin has no reliable row."}
+              </p>
+              {inferred && inferred.failures.length > 0 && (
+                <button type="button" className="mt-1 flex items-center gap-1 text-[10px] text-neutral-400 hover:text-neutral-200" onClick={() => setNotesOpen(o => !o)} aria-expanded={notesOpen}>
+                  {notesOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}{inferred.failures.length} note{inferred.failures.length > 1 ? "s" : ""} on what could not be settled
+                </button>
+              )}
+              {inferred && notesOpen && <ul className="mt-1 space-y-1 border-l border-[#2e322e] pl-2 text-[10px] leading-snug text-neutral-400">{inferred.failures.map(f => <li key={f}>{f}</li>)}</ul>}
+              {operationalRing ? (
+                <p className="mt-1 text-[10px] leading-snug text-emerald-300/90">{boundary.operational.source === "corrected" ? "Corrected and accepted" : "Accepted"} by you{boundary.operational.at ? ` on ${new Date(boundary.operational.at).toLocaleDateString()}` : ""} as the operational boundary.</p>
+              ) : (
+                <p className="mt-1 text-[10px] leading-snug text-neutral-500">Not an operational limit: an inferred boundary is never used to limit an operation until you accept it.</p>
+              )}
+              {currentRing && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={startEditing}>Adjust</button>
+                  {operationalRing ? <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={withdrawBoundary}>Withdraw acceptance</button>
+                    : <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={acceptBoundary}>Accept for operations</button>}
+                  {(boundary.corrected || operationalRing) && <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-400 hover:bg-[#262a26]" onClick={resetBoundary}>Reset to inferred</button>}
+                </div>
+              )}
+            </>
+          )}
+        </div>
         {!simple && <div className={`w-[272px] text-sm ${panel}`}>
           <button type="button" className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-semibold text-neutral-100" onClick={() => setPanelOpen(o => !o)} aria-expanded={panelOpen}>
             <span className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5" />Layers</span>{panelOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
@@ -190,7 +272,9 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
                   <option value="fixed">Fixed bands, the same on every field</option>
                 </select>
               </label>
-              {toggle("zones", "Findings", TWIN_COLOURS.region, `${intel.zones.length} regions at 1.5 % cover or more; patches and weeds by filter`)}
+              {toggle("boundary", "Field boundary", TWIN_COLOURS.boundaryPhotographs, intel.blockSource === "inferred" ? "solid where the photographs showed the edge, dashed where bridged, dotted at a cap or the end of the photographs" : intel.blockSource === "corrected" ? "as you corrected it" : "the rows' own geometry")}
+              {toggle("beyondBoundary", "Pressure beyond the boundary", "#4a5a4a", `${s.verifiedOutsideBlock.toLocaleString()} verified candidates outside the block are kept as observations`)}
+              {toggle("zones", "Findings", TWIN_COLOURS.region, `${intel.zones.length} regions at 1.5 % cover or more inside the block; patches and weeds by filter`)}
               {toggle("structure", "Crop rows", TWIN_COLOURS.row, `${counts.rows} rows`)}
               {toggle("crowns", "Tree crowns", TWIN_COLOURS.tree, `${twin.trees.length.toLocaleString()} trees; always drawn at the plant level`)}
               {toggle("weeds", "Weed candidates", TWIN_COLOURS.weed, `${counts.verified.toLocaleString()} seen in 2+ photographs, every outline at the plant level`)}
@@ -216,6 +300,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
                   {toggle("inferred", "Inferred tree positions", TWIN_COLOURS.tree, `${twin.inferredTrees.length}, dashed, from the planting pattern`)}
                   {toggle("droppedRows", "Row candidates not kept", TWIN_COLOURS.rowDropped, `${twin.rows.length - counts.rows}`)}
                   {toggle("footprints", "Photo footprints", TWIN_COLOURS.footprint, `${twin.footprints.length}`)}
+                  {scene.evidence && toggle("evidence", "Boundary evidence", TWIN_COLOURS.evidence.cover, `what the photographs showed per ${scene.evidence.cellM} m: soil brown, canopy green, cover yellow, road grey, trees off the rows purple`)}
                   {referenceOptions.length > 0 && (
                     <div className="mt-2 text-xs text-neutral-200">
                       <label className="block text-[11px] text-neutral-400" htmlFor="twin-ref">Reference Orthomosaic</label>
@@ -255,7 +340,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
             <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />not observed</span>
           </div>
         )}
-        {detail?.level === "field" && !simple && <p className="mt-0.5 text-neutral-500">{s.blockHa != null ? `Orchard block ${fmtArea(s.blockHa * 10_000, units).text}; ` : ""}{intel.zones.length} regions at 1.5 % cover or more, {result.query.mode === "overview" ? `${result.prominence.count} emphasised` : `${result.findings.length} findings listed`}.</p>}
+        {detail?.level === "field" && !simple && <p className="mt-0.5 text-neutral-500">{s.blockHa != null ? `Cultivated block ${fmtArea(s.blockHa * 10_000, units).text} (${intel.blockSource === "corrected" ? "corrected by you" : intel.blockSource === "inferred" ? "inferred from the photographs" : "from the rows"}); ` : ""}{intel.zones.length} regions at 1.5 % cover or more, {result.query.mode === "overview" ? `${result.prominence.count} emphasised` : `${result.findings.length} findings listed`}.</p>}
         {full && <p className="mt-0.5 text-neutral-500 tabular-nums">Centre {(centre ?? twin.origin).lat.toFixed(6)}, {(centre ?? twin.origin).lng.toFixed(6)} · north up</p>}
         {reference && <p className="mt-0.5 text-amber-300/90">Reference imagery on (diagnostics): display only, it never moves the twin's objects.</p>}
       </div>

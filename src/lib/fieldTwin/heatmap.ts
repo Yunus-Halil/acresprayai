@@ -79,17 +79,18 @@ export type HeatRaster = {
   along0: number;
   across0: number;
   data: Uint8ClampedArray;
-  /** How many pixels were painted as pressure, as canopy, and left transparent (not observed). */
+  /** How many pixels were painted as pressure, as canopy, left transparent (not observed), and left transparent beyond the block. */
   painted: number;
   canopy: number;
   unobserved: number;
+  beyond: number;
 };
 
 /**
  * The raster at `mPerPx` metres per pixel. Pixels run along the rows (x) and across them (y), from the cells'
  * minimum corner.
  */
-export function buildHeatRaster(intel: FieldIntelligence, mPerPx = 1, scale?: HeatScale): HeatRaster | null {
+export function buildHeatRaster(intel: FieldIntelligence, mPerPx = 1, scale?: HeatScale, beyondBlock = false): HeatRaster | null {
   const grid = intel.grid, cells = grid.cells, cellM = grid.cellM, stops = scale?.stops;
   if (!cells.length) return null;
   let i0 = Infinity, i1 = -Infinity, j0 = Infinity, j1 = -Infinity;
@@ -102,12 +103,15 @@ export function buildHeatRaster(intel: FieldIntelligence, mPerPx = 1, scale?: He
   const width = Math.ceil((ni * cellM) / mPerPx), height = Math.ceil((nj * cellM) / mPerPx);
   const data = new Uint8ClampedArray(width * height * 4);
   const along0 = i0 * cellM, across0 = j0 * cellM;
-  let painted = 0, canopy = 0, unobserved = 0;
+  let painted = 0, canopy = 0, unobserved = 0, beyond = 0;
   for (let py = 0; py < height; py++) for (let px = 0; px < width; px++) {
     const al = along0 + (px + 0.5) * mPerPx, ac = across0 + (py + 0.5) * mPerPx;
     const own = cellAt(Math.floor(al / cellM), Math.floor(ac / cellM));
     const o = (py * width + px) * 4;
     if (!own) { unobserved++; continue; }
+    // The wash is the field's: ground beyond the cultivated block stays unpainted unless asked for. Its cells
+    // keep their counts; they are observations, not this field's pressure.
+    if (!beyondBlock && intel.clipToBlock && !own.inBlock) { beyond++; continue; }
     if (own.canopy) { data[o] = CANOPY_RGBA[0]; data[o + 1] = CANOPY_RGBA[1]; data[o + 2] = CANOPY_RGBA[2]; data[o + 3] = CANOPY_RGBA[3]; canopy++; continue; }
     // Bilinear between the four cell centres around the pixel, over observed, non-canopy cells only.
     const fi = al / cellM - 0.5, fj = ac / cellM - 0.5, bi = Math.floor(fi), bj = Math.floor(fj), ti = fi - bi, tj = fj - bj;
@@ -123,15 +127,15 @@ export function buildHeatRaster(intel: FieldIntelligence, mPerPx = 1, scale?: He
     data[o] = r; data[o + 1] = g; data[o + 2] = b; data[o + 3] = a;
     painted++;
   }
-  return { width, height, mPerPx, along0, across0, data, painted, canopy, unobserved };
+  return { width, height, mPerPx, along0, across0, data, painted, canopy, unobserved, beyond };
 }
 
-export type HeatLevels = { fine: HeatRaster | null; coarse: HeatRaster | null; scale: HeatScale };
+export type HeatLevels = { fine: HeatRaster | null; coarse: HeatRaster | null; scale: HeatScale; beyondBlock: boolean };
 
 /** Two levels of detail: 1 m per pixel for the field and row views, 4 m (one cell) for the whole field seen small. */
-export function buildHeatLevels(intel: FieldIntelligence, mode: HeatScaleMode = "field"): HeatLevels {
+export function buildHeatLevels(intel: FieldIntelligence, mode: HeatScaleMode = "field", beyondBlock = false): HeatLevels {
   const scale = heatScaleFor(intel, mode);
-  return { fine: buildHeatRaster(intel, 1, scale), coarse: buildHeatRaster(intel, intel.grid.cellM, scale), scale };
+  return { fine: buildHeatRaster(intel, 1, scale, beyondBlock), coarse: buildHeatRaster(intel, intel.grid.cellM, scale, beyondBlock), scale, beyondBlock };
 }
 
 /** The level whose pixels are closest to the screen's at `mpp` metres per screen pixel. */

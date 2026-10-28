@@ -7,8 +7,13 @@
 //   3. field intelligence  pressure cells, zones, clusters (intelligence.ts): aggregates computed from the objects
 //   4. render geometry     the circles, simplified rows and cluster discs this module prepares for drawing only
 // A detail rule never alters 1 to 3; it decides which of 2 to 4 is legible at the current ground scale.
+import type { BoundarySupport } from "./boundary";
+import { type EvidenceRaster, decodeEvidence } from "./boundaryEvidence";
 import { type FieldIntelligence, type PressureClass, fieldIntelligence } from "./intelligence";
 import type { LatLngPair, TwinBundle } from "./types";
+
+export const SUPPORT_INDEX: Record<BoundarySupport, number> = { photographs: 0, bridged: 1, cap: 2, coverage: 3, default: 4 };
+export const SUPPORT_ORDER: BoundarySupport[] = ["photographs", "bridged", "cap", "coverage", "default"];
 
 const WORLD = 256;
 /** Latitude/longitude to zoom-0 Web Mercator units (256 across the world). */
@@ -102,7 +107,12 @@ export type Scene = {
   cells: { n: number; rings: PackedRings; cls: Uint8Array; coverPct: Float32Array; smoothPct: Float32Array; photos: Uint8Array; verified: Int32Array; single: Int32Array; inBlock: Uint8Array };
   zones: { id: number; priority: 1 | 2 | 3; cx: number; cy: number; edges: Float64Array; rings: Float64Array[]; areaM2: number; coverM2: number; meanCoverPct: number; weeds: number }[];
   clusters: { n: number; x: Float64Array; y: Float64Array; rM: Float32Array; count: Int32Array; verified: Int32Array; coverM2: Float32Array; index: GridIndex; maxRM: number };
+  /** The cultivated block (the operator's correction, the inferred boundary, or the rows' own geometry). */
   block: Float64Array | null;
+  /** The inferred boundary as the bundle carries it, with each vertex's support (SUPPORT_INDEX); null in older bundles. */
+  boundary: { xy: Float64Array; support: Uint8Array; n: number } | null;
+  /** The boundary evidence raster, decoded, or null. */
+  evidence: EvidenceRaster | null;
   imagery: Float64Array;
   footprints: PackedRings;
   /** Bounding box of everything, zoom-0 units. */
@@ -176,11 +186,14 @@ export function buildScene(twin: TwinBundle, intel: FieldIntelligence = fieldInt
   clusters.index = new GridIndex(clusters.x, clusters.y, cell);
 
   const block = intel.block ? ringOf(intel.block) : null;
+  const B = twin.boundary?.cultivated ?? null;
+  const boundary = B ? { xy: new Float64Array(B.ring.flatMap(([lat, lng]) => ll(lat, lng))), support: Uint8Array.from(B.vertices.map(v => SUPPORT_INDEX[v.support] ?? SUPPORT_INDEX.default)), n: B.ring.length } : null;
+  const evidence = twin.boundary?.evidence ? decodeEvidence(twin.boundary.evidence) : null;
   const imagery = ringOf(intel.imagery);
   const footprints = pack(twin.footprints.map(f => f.ring));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (let i = 0; i < imagery.length; i += 2) { x0 = Math.min(x0, imagery[i]); x1 = Math.max(x1, imagery[i]); y0 = Math.min(y0, imagery[i + 1]); y1 = Math.max(y1, imagery[i + 1]); }
-  return { twin, intel, mpu, weeds, trees, inferred, vegetation, rows, cells, zones, clusters, block, imagery, footprints, bbox: [x0, y0, x1, y1] };
+  return { twin, intel, mpu, weeds, trees, inferred, vegetation, rows, cells, zones, clusters, block, boundary, evidence, imagery, footprints, bbox: [x0, y0, x1, y1] };
 }
 
 // ------------------------------------------------------------------------------------------------------------------

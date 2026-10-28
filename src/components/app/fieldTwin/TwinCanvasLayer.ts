@@ -12,8 +12,13 @@
 import L from "leaflet";
 import { type Finding, type FindingsResult } from "@/lib/fieldTwin/findings";
 import { type HeatLevels, type HeatRaster, buildHeatLevels, pickHeatLevel } from "@/lib/fieldTwin/heatmap";
-import { type Detail, GridIndex, PRESSURE_INDEX, ROW_STATUS, type Scene, WEED_STATUS, detailFor, metresPerPixel, toWorld } from "@/lib/fieldTwin/scene";
+import { EV, type EvidenceRaster } from "@/lib/fieldTwin/boundaryEvidence";
+import { type Detail, GridIndex, PRESSURE_INDEX, ROW_STATUS, SUPPORT_ORDER, type Scene, WEED_STATUS, detailFor, metresPerPixel, toWorld } from "@/lib/fieldTwin/scene";
 import { type TwinLayers, TWIN_COLOURS as C, badgesAllowed } from "@/lib/fieldTwin/style";
+import type { LatLngPair } from "@/lib/fieldTwin/types";
+
+/** How far (screen pixels) a pointer may be from a boundary handle to take it. */
+const HANDLE_PX = 9;
 
 export type TwinPick =
   | { kind: "tree"; id: number } | { kind: "weed"; id: number } | { kind: "vegetation"; id: number }
@@ -78,6 +83,12 @@ export class TwinCanvasLayer extends L.Canvas {
   private onDetailChange: ((d: Detail) => void) | null = null;
   private findings: FindingsScene | null = null;
   private binLevel: number | null = null;
+  /** The operator's accepted or corrected boundary (zoom-0 units, flat x y), drawn apart from the inferred one. */
+  private operational: Float64Array | null = null;
+  /** The ring being corrected: its vertices are handles the pointer can drag, add (on an edge's midpoint) and remove (double-click). */
+  private editing: number[] | null = null;
+  private drag: { index: number; moved: boolean } | null = null;
+  private evidenceCanvas: HTMLCanvasElement | null = null;
 
   constructor(layers: TwinLayers, options: L.RendererOptions = {}) {
     super({ padding: 0.25, tolerance: 6, ...options });
@@ -89,14 +100,114 @@ export class TwinCanvasLayer extends L.Canvas {
     const t0 = performance.now();
     this.heat = scene ? buildHeatLevels(scene.intel, this.layers.heatScale) : null;
     try { performance.measure("twin:heatmap", { start: t0, end: performance.now() }); } catch { /* older browsers */ }
-    this.heatCanvas.clear(); this.findings = null; this.firstDraw = true; this.requestRedraw();
+    this.heatCanvas.clear(); this.evidenceCanvas = null; this.findings = null; this.firstDraw = true; this.requestRedraw();
   }
   private firstDraw = true;
   setLayers(layers: TwinLayers) {
-    const rescale = layers.heatScale !== this.layers.heatScale;
+    const rescale = layers.heatScale !== this.layers.heatScale || layers.beyondBoundary !== this.layers.beyondBoundary;
     this.layers = layers;
-    if (rescale && this.scene) { this.heat = buildHeatLevels(this.scene.intel, layers.heatScale); this.heatCanvas = new Map(); }
+    if (rescale && this.scene) { this.heat = buildHeatLevels(this.scene.intel, layers.heatScale, layers.beyondBoundary); this.heatCanvas = new Map(); }
     this.requestRedraw();
+  }
+  setOperational(ring: LatLngPair[] | null) {
+    this.operational = ring && ring.length >= 3 ? new Float64Array(ring.flatMap(([lat, lng]) => toWorld(lat, lng))) : null;
+    this.requestRedraw();
+  }
+  /** Start (a ring) or stop (null) correcting the boundary. While editing, clicks move handles and pick nothing. */
+  setEditing(ring: LatLngPair[] | null) {
+    const me = this as unknown as Internals;
+    this.editing = ring && ring.length >= 3 ? ring.flatMap(([lat, lng]) => toWorld(lat, lng)) : null;
+    this.drag = null;
+    if (me._map) { if (this.editing) me._map.doubleClickZoom.disable(); else me._map.doubleClickZoom.enable(); }
+    this.requestRedraw();
+  }
+  /** The ring being edited, latitude/longitude, or null. */
+  editingRing(): LatLngPair[] | null {
+    const me = this as unknown as Internals;
+    if (!this.editing || !me._map) return null;
+    const out: LatLngPair[] = [];
+    for (let i = 0; i < this.editing.length; i += 2) { const ll = me._map.unproject(L.point(this.editing[i], this.editing[i + 1]), 0); out.push([+ll.lat.toFixed(8), +ll.lng.toFixed(8)]); }
+    return out;
+  }
+  onAdd(map: L.Map) {
+    super.onAdd(map);
+    const me = this as unknown as Internals;
+    // Boundary handles: pointer events on the canvas container, document-wide while a handle is held.
+    L.DomEvent.on(me._container, "pointerdown", this.onPointerDown as EventListener, this);
+    return this;
+  }
+  onRemove(map: L.Map) {
+    const me = this as unknown as Internals;
+    if (me._container) L.DomEvent.off(me._container, "pointerdown", this.onPointerDown as EventListener, this);
+    this.endDrag();
+    super.onRemove(map);
+    return this;
+  }
+  /** Zoom-0 units of a pointer event, and the screen scale. */
+  private pointerWorld(e: PointerEvent | MouseEvent): { x: number; y: number; scale: number } | null {
+    const me = this as unknown as Internals;
+    if (!me._map) return null;
+    const p = me._map.mouseEventToLayerPoint(e as MouseEvent), zoom = me._map.getZoom(), scale = 2 ** zoom, origin = me._map.getPixelOrigin();
+    return { x: (p.x + origin.x) / scale, y: (p.y + origin.y) / scale, scale };
+  }
+  /** The handle under a pointer: a vertex, or an edge's midpoint (which inserts a vertex). */
+  private handleAt(x: number, y: number, scale: number): { kind: "vertex" | "midpoint"; index: number } | null {
+    const E = this.editing;
+    if (!E) return null;
+    const n = E.length / 2, tol = HANDLE_PX / scale;
+    let best: { kind: "vertex" | "midpoint"; index: number } | null = null, bd = tol;
+    for (let i = 0; i < n; i++) { const d = Math.hypot(E[2 * i] - x, E[2 * i + 1] - y); if (d <= bd) { bd = d; best = { kind: "vertex", index: i }; } }
+    if (best) return best;
+    for (let i = 0; i < n; i++) { const j = (i + 1) % n, mx = (E[2 * i] + E[2 * j]) / 2, my = (E[2 * i + 1] + E[2 * j + 1]) / 2; const d = Math.hypot(mx - x, my - y); if (d <= bd) { bd = d; best = { kind: "midpoint", index: i }; } }
+    return best;
+  }
+  private onPointerDown(e: PointerEvent) {
+    if (!this.editing || e.button !== 0) return;
+    const w = this.pointerWorld(e);
+    if (!w) return;
+    const h = this.handleAt(w.x, w.y, w.scale);
+    if (!h) return;
+    L.DomEvent.stop(e);
+    if (h.kind === "midpoint") { const j = (h.index + 1) % (this.editing.length / 2); const mx = (this.editing[2 * h.index] + this.editing[2 * j]) / 2, my = (this.editing[2 * h.index + 1] + this.editing[2 * j + 1]) / 2; this.editing.splice(2 * h.index + 2, 0, mx, my); h.index = h.index + 1; }
+    const me = this as unknown as Internals;
+    me._map.dragging.disable();
+    this.drag = { index: h.index, moved: h.kind === "midpoint" };
+    document.addEventListener("pointermove", this.onPointerMove);
+    document.addEventListener("pointerup", this.onPointerUp);
+    this.requestRedraw();
+  }
+  private onPointerMove = (e: PointerEvent) => {
+    if (!this.drag || !this.editing) return;
+    const w = this.pointerWorld(e);
+    if (!w) return;
+    this.editing[2 * this.drag.index] = w.x; this.editing[2 * this.drag.index + 1] = w.y; this.drag.moved = true;
+    this.requestRedraw();
+  };
+  private onPointerUp = () => {
+    const moved = this.drag?.moved;
+    this.endDrag();
+    if (moved) this.fire("boundaryedit", { ring: this.editingRing() });
+  };
+  private endDrag() {
+    const me = this as unknown as Internals;
+    if (this.drag && me._map) me._map.dragging.enable();
+    this.drag = null;
+    document.removeEventListener("pointermove", this.onPointerMove);
+    document.removeEventListener("pointerup", this.onPointerUp);
+  }
+  /** A canvas of the evidence raster's classes, built once; unseen cells transparent. */
+  private evidenceCanvasFor(ev: EvidenceRaster): HTMLCanvasElement | null {
+    if (this.evidenceCanvas) return this.evidenceCanvas;
+    try {
+      const c = document.createElement("canvas"); c.width = ev.width; c.height = ev.height;
+      const g = c.getContext("2d"); if (!g) return null;
+      const img = g.createImageData(ev.width, ev.height);
+      const rgba: Record<number, [number, number, number, number]> = { [EV.soil]: [150, 110, 80, 115], [EV.canopy]: [70, 150, 80, 128], [EV.cover]: [190, 200, 70, 140], [EV.road]: [210, 210, 210, 140], [EV.foreign]: [170, 90, 200, 140] };
+      for (let k = 0; k < ev.cls.length; k++) { const v = rgba[ev.cls[k]]; if (!v) continue; const o = k * 4; img.data[o] = v[0]; img.data[o + 1] = v[1]; img.data[o + 2] = v[2]; img.data[o + 3] = v[3]; }
+      g.putImageData(img, 0, 0);
+      this.evidenceCanvas = c;
+      return c;
+    } catch { return null; }
   }
   setSelection(p: TwinPick) { this.selection = p; this.requestRedraw(); }
   watchDetail(cb: ((d: Detail) => void) | null) { this.onDetailChange = cb; }
@@ -241,6 +352,22 @@ export class TwinCanvasLayer extends L.Canvas {
       }
     }
 
+    // 2b. Boundary evidence (diagnostics): what the photographs showed at each half metre, in the field frame.
+    if (L_.evidence && scene.evidence) {
+      const ev = scene.evidence, canvas = this.evidenceCanvasFor(ev);
+      if (canvas) {
+        const fr = scene.intel.frame;
+        const at = (px: number, py: number): [number, number] => { const [e, no] = fr.fromField(ev.along0 + px * ev.cellM, ev.across0 + py * ev.cellM); const [lat, lng] = fr.toLatLng(e, no); const [wx, wy] = toWorld(lat, lng); return [X(wx), Y(wy)]; };
+        const p00 = at(0, 0), p10 = at(ev.width, 0), p01 = at(0, ev.height);
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.transform((p10[0] - p00[0]) / ev.width, (p10[1] - p00[1]) / ev.width, (p01[0] - p00[0]) / ev.height, (p01[1] - p00[1]) / ev.height, p00[0], p00[1]);
+        ctx.drawImage(canvas, 0, 0);
+        ctx.restore();
+        drawn.evidence = 1;
+      }
+    }
+
     // 3. Uncertainty: ground only one photograph saw (no second view can verify a weed there).
     if (L_.uncertainty) {
       const r = scene.cells.rings;
@@ -266,7 +393,37 @@ export class TwinCanvasLayer extends L.Canvas {
       ctx.setLineDash([]);
     }
     if (L_.coverage) { ctx.beginPath(); ring(ctx, scene.imagery, X, Y); ctx.strokeStyle = C.imageryEdge; ctx.lineWidth = 1; ctx.globalAlpha = 0.8; ctx.stroke(); ctx.globalAlpha = 1; }
-    if (scene.block) { ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.strokeStyle = C.blockEdge; ctx.lineWidth = 1.2; ctx.globalAlpha = 0.85; ctx.stroke(); ctx.globalAlpha = 1; }
+    if (L_.boundary && scene.block) {
+      const B = scene.boundary;
+      if (B && scene.intel.blockSource === "inferred") {
+        // Each edge drawn by the weaker support of its two vertices: an edge the photographs showed is solid,
+        // a bridged one dashed, a cap or the end of the photographs dotted in their own colours.
+        const colour = [C.boundaryPhotographs, C.boundaryBridged, C.boundaryCap, C.boundaryCoverage, C.boundaryDefault];
+        const dash: number[][] = [[], [6, 4], [3, 4], [2, 4], [5, 3]];
+        for (let s = 0; s < SUPPORT_ORDER.length; s++) {
+          let any = false;
+          ctx.beginPath();
+          for (let i = 0; i < B.n; i++) {
+            const j = (i + 1) % B.n, w = Math.max(B.support[i], B.support[j]);
+            if (w !== s) continue;
+            ctx.moveTo(X(B.xy[2 * i]), Y(B.xy[2 * i + 1])); ctx.lineTo(X(B.xy[2 * j]), Y(B.xy[2 * j + 1])); any = true;
+          }
+          if (!any) continue;
+          ctx.strokeStyle = colour[s]; ctx.setLineDash(dash[s]); ctx.lineWidth = s === 0 ? 1.4 : 1.6; ctx.globalAlpha = 0.9; ctx.stroke();
+        }
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+      } else {
+        ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.strokeStyle = C.blockEdge; ctx.lineWidth = 1.2; ctx.globalAlpha = 0.85; ctx.setLineDash(scene.intel.blockSource === "rows" ? [5, 3] : []); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+      drawn.boundary = 1;
+    }
+    // The operator's boundary: white over a dark halo, so it reads against any ground.
+    if (this.operational && !this.editing) {
+      ctx.beginPath(); ring(ctx, this.operational, X, Y);
+      ctx.strokeStyle = C.labelBg; ctx.lineWidth = 4; ctx.stroke();
+      ctx.strokeStyle = C.boundaryOperational; ctx.lineWidth = 1.8; ctx.stroke();
+      drawn.operational = 1;
+    }
 
     // 5. The field within its surroundings: a halo on the imagery hull and the field's name, while zoomed out.
     if (L_.surroundings && L_.ground && d.surroundings > 0.3) {
@@ -403,6 +560,23 @@ export class TwinCanvasLayer extends L.Canvas {
     //     view (summarised into count badges where they crowd), labels for the emphasised ones that fit.
     const labels = { placed: 0, emphasized: 0, qualifying: 0, binLevel: null as number | null };
     if (this.findings) this.drawFindings(ctx, this.findings, d, zoom, X, Y, pxPerM, vx0, vy0, vx1, vy1, sx0, sy0, sx1, sy1, drawn, labels);
+
+    // 10b. The boundary being corrected: the ring, a handle on every vertex, a small one on every edge's midpoint.
+    if (this.editing) {
+      const E = this.editing, n = E.length / 2;
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(X(E[0]), Y(E[1])); else ctx.lineTo(X(E[2 * i]), Y(E[2 * i + 1])); }
+      ctx.closePath();
+      ctx.strokeStyle = C.labelBg; ctx.lineWidth = 4; ctx.stroke();
+      ctx.strokeStyle = C.boundaryOperational; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) { const j = (i + 1) % n, mx = X((E[2 * i] + E[2 * j]) / 2), my = Y((E[2 * i + 1] + E[2 * j + 1]) / 2); ctx.moveTo(mx + 3, my); ctx.arc(mx, my, 3, 0, 2 * Math.PI); }
+      ctx.fillStyle = C.labelBg; ctx.fill(); ctx.strokeStyle = C.boundaryHandle; ctx.lineWidth = 1; ctx.stroke();
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) { const x = X(E[2 * i]), y = Y(E[2 * i + 1]); ctx.moveTo(x + 5.5, y); ctx.arc(x, y, 5.5, 0, 2 * Math.PI); }
+      ctx.fillStyle = C.boundaryHandle; ctx.fill(); ctx.strokeStyle = C.labelBg; ctx.lineWidth = 1.5; ctx.stroke();
+      drawn.handles = n;
+    }
 
     // 11. The selection ring, on this same canvas. (Hover only changes the cursor: a redraw per mouse move is what
     //     made the map drag its feet.)
@@ -568,7 +742,7 @@ export class TwinCanvasLayer extends L.Canvas {
   pickAt(point: L.Point): TwinPick {
     const me = this as unknown as Internals;
     const s = this.scene, map = me._map;
-    if (!s || !map) return null;
+    if (!s || !map || this.editing) return null;
     const d = detailFor(metresPerPixel(map.getZoom(), s.twin.origin.lat), s);
     const zoom = map.getZoom(), scale = 2 ** zoom, origin = map.getPixelOrigin();
     const x = (point.x + origin.x) / scale, y = (point.y + origin.y) / scale;
@@ -635,6 +809,16 @@ export class TwinCanvasLayer extends L.Canvas {
     const me = this as unknown as Internals;
     if (!me._map) return;
     if (e.type === "click" && me._map._draggableMoved(this)) return;
+    if (this.editing) {
+      // Double-click on a vertex removes it (a triangle keeps its three).
+      if (e.type === "dblclick") {
+        const w = this.pointerWorld(e);
+        const h = w ? this.handleAt(w.x, w.y, w.scale) : null;
+        if (h && h.kind === "vertex" && this.editing.length / 2 > 3) { this.editing.splice(2 * h.index, 2); this.requestRedraw(); this.fire("boundaryedit", { ring: this.editingRing() }); }
+        L.DomEvent.stop(e);
+      }
+      return;
+    }
     if (e.type !== "click") return;
     const pick = this.pickAt(me._map.mouseEventToLayerPoint(e));
     this.fire("twinclick", { pick, originalEvent: e });

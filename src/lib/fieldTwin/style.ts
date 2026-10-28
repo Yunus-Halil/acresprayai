@@ -28,6 +28,12 @@ export type TwinLayers = {
   vegetation: boolean;
   /** The weed pressure heatmap (field level, fading as the detail comes in). */
   pressure: boolean;
+  /** The pressure wash beyond the cultivated block too (observations there are kept either way). */
+  beyondBoundary: boolean;
+  /** The cultivated block's boundary, drawn by what each edge stands on. */
+  boundary: boolean;
+  /** The boundary evidence: what the photographs showed at each half metre (soil, canopy, cover, road, foreign). */
+  evidence: boolean;
   /** Its colour scale: the bands raised to this field's own distribution of cover, or the fixed bands. */
   heatScale: HeatScaleMode;
   /** Boundaries and labels of the findings (regions, patches, weeds) the Explore Findings control selects. */
@@ -50,8 +56,8 @@ export type TwinMarkers = "emphasised" | "summary" | "all";
 export type TwinDetail = "simple" | "standard" | "full" | "custom";
 export type TwinDetailStop = Exclude<TwinDetail, "custom">;
 
-const DIAGNOSTICS = { inferred: true, droppedRows: false, singleView: false, onTree: false, uncertainty: false, footprints: false };
-const GROUND = { pressure: true, heatScale: "field" as HeatScaleMode, zones: true, coverage: true, ground: true, surroundings: true };
+const DIAGNOSTICS = { inferred: true, droppedRows: false, singleView: false, onTree: false, uncertainty: false, footprints: false, evidence: false };
+const GROUND = { pressure: true, beyondBoundary: false, boundary: true, heatScale: "field" as HeatScaleMode, zones: true, coverage: true, ground: true, surroundings: true };
 
 /**
  * What each stop of the dial draws. Simple answers "where are the problems": the heatmap, the rows as orientation,
@@ -98,6 +104,17 @@ export const TWIN_COLOURS = {
   /** The orchard block: warmer and a step lighter, so the rows read as inside it. */
   soil: "#2f3429",
   blockEdge: "#d9d3c0",
+  /** The boundary by what it stands on: an edge in the photographs, bridged between found pieces, a cap, the
+   * end of the photographs, the planting's default margin; and the operator's accepted or corrected boundary. */
+  boundaryPhotographs: "#d9d3c0",
+  boundaryBridged: "#b9d9b0",
+  boundaryCap: "#f0a63a",
+  boundaryCoverage: "#7fb0ff",
+  boundaryDefault: "#9a9f98",
+  boundaryOperational: "#ffffff",
+  boundaryHandle: "#ffffff",
+  /** Boundary evidence classes (soil, canopy, cover, road, foreign), translucent over the ground. */
+  evidence: { soil: "rgba(150,110,80,0.45)", canopy: "rgba(70,150,80,0.5)", cover: "rgba(190,200,70,0.55)", road: "rgba(210,210,210,0.55)", foreign: "rgba(170,90,200,0.55)" },
   /** Rows: sage, readable over the heatmap. */
   row: "#a7bfa8",
   rowDropped: "#5f665f",

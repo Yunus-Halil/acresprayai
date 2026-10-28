@@ -10,6 +10,7 @@ import { CachedTileLayer } from "@/components/app/workspace/OrthoTileLayer";
 import type { FindingsResult } from "@/lib/fieldTwin/findings";
 import { type Detail, type Scene, zoomForSize } from "@/lib/fieldTwin/scene";
 import { TWIN_COLOURS, type TwinLayers } from "@/lib/fieldTwin/style";
+import type { LatLngPair } from "@/lib/fieldTwin/types";
 import type { UnitSystem } from "@/lib/units";
 import { type DrawStats, TwinCanvasLayer, type TwinPick } from "./TwinCanvasLayer";
 
@@ -48,6 +49,12 @@ type Props = {
   onSwipe?: (pct: number) => void;
   /** The active findings (markers, boundaries, labels); null draws none. */
   findings?: FindingsResult | null;
+  /** The operator's accepted or corrected boundary, drawn apart from the inferred one. */
+  operational?: LatLngPair[] | null;
+  /** The ring being corrected (handles on the map), or null. */
+  editing?: LatLngPair[] | null;
+  /** The ring after each handle move, add or removal. */
+  onBoundaryEdit?: (ring: LatLngPair[]) => void;
 };
 
 const bar = "background:rgba(20,22,20,.86);border:1px solid #333;color:#d9ddd6;";
@@ -74,7 +81,7 @@ const LocateControl = L.Control.extend({
   },
 });
 
-export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null }: Props) {
+export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const miniEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -88,6 +95,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   const onStatsRef = useRef(onStats); onStatsRef.current = onStats;
   const onMoveRef = useRef(onMove); onMoveRef.current = onMove;
   const onSwipeRef = useRef(onSwipe); onSwipeRef.current = onSwipe;
+  const onBoundaryEditRef = useRef(onBoundaryEdit); onBoundaryEditRef.current = onBoundaryEdit;
   const layersRef = useRef(layers); layersRef.current = layers;
   const detailRef = useRef<Detail | null>(null);
 
@@ -137,6 +145,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
     map.on("moveend zoomend", () => { const c = map.getCenter(); onMoveRef.current?.({ lat: c.lat, lng: c.lng }, map.getZoom()); });
     // Draws happen on move end, zoom end and state changes, not per dragged frame, so one state update each is cheap.
     layer.on("twindraw", () => onStatsRef.current?.(layer.stats));
+    layer.on("boundaryedit", (e: L.LeafletEvent & { ring?: LatLngPair[] | null }) => { if (e.ring) onBoundaryEditRef.current?.(e.ring); });
     new LocateControl({ position: "topright", locate } as L.ControlOptions).addTo(map);
     new NorthControl({ position: "bottomright" }).addTo(map);
     locate();
@@ -170,6 +179,8 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   useEffect(() => { layerRef.current?.setLayers(layers); updateContext(); }, [layers]);
   useEffect(() => { layerRef.current?.setSelection(selection); }, [selection]);
   useEffect(() => { layerRef.current?.setFindings(findings); }, [findings, scene]);
+  useEffect(() => { layerRef.current?.setOperational(operational); }, [operational, scene]);
+  useEffect(() => { layerRef.current?.setEditing(editing); }, [editing, scene]);
 
   // The scale bar follows the account's units.
   useEffect(() => {

@@ -77,6 +77,18 @@ export function orchardBlock(twin: TwinBundle, frame: LocalFrame = localFrame(tw
   return [...left, ...right.reverse()].map(([al, ac]) => frame.fromField(al, ac));
 }
 
+/**
+ * The cultivated block the twin stands on, local metres: the operator's corrected ring when given, else the
+ * inferred boundary the bundle carries (boundary.ts), else the rows' own geometry (orchardBlock). Null when the
+ * twin has none of them.
+ */
+export function blockOf(twin: TwinBundle, frame: LocalFrame = localFrame(twin), corrected: LatLngPair[] | null = null): { ring: [number, number][]; source: "corrected" | "inferred" | "rows" } | null {
+  const ring = corrected ?? twin.boundary?.cultivated.ring ?? null;
+  if (ring && ring.length >= 3) return { ring: ring.map(([lat, lng]) => frame.toLocal(lat, lng)), source: corrected ? "corrected" : "inferred" };
+  const rows = orchardBlock(twin, frame);
+  return rows ? { ring: rows, source: "rows" } : null;
+}
+
 /** The ground the photographs cover: the convex hull of every footprint, local metres. */
 export function imageryHull(twin: TwinBundle, frame: LocalFrame = localFrame(twin)): [number, number][] {
   return convexHull(twin.footprints.flatMap(f => f.ring.map(([lat, lng]) => frame.toLocal(lat, lng))));
@@ -131,9 +143,8 @@ export type PressureGrid = { cellM: number; cells: PressureCell[]; byIndex: Map<
  * Cells of `cellM` metres aligned to the rows, over the imagery hull. A cell is listed when the ground is covered by
  * at least one photograph; cells with no weeds are listed too, so "none" is a statement, not an absence.
  */
-export function pressureGrid(twin: TwinBundle, cellM = 4, frame: LocalFrame = localFrame(twin)): PressureGrid {
+export function pressureGrid(twin: TwinBundle, cellM = 4, frame: LocalFrame = localFrame(twin), block: [number, number][] | null = blockOf(twin, frame)?.ring ?? null): PressureGrid {
   const hull = imageryHull(twin, frame);
-  const block = orchardBlock(twin, frame);
   const foot = twin.footprints.map(f => f.ring.map(([lat, lng]) => frame.toLocal(lat, lng)));
   // Footprints bucketed by their bounding box on a coarse lattice (local metres), so a cell asks only the
   // photographs that could hold its centre: a large field has thousands of footprints and tens of thousands of cells.
@@ -231,12 +242,15 @@ export type ScoutingZone = {
 /**
  * Scouting zones: connected runs of cells at or above `fromPct` cover, at least `minCells` cells, ranked by total
  * verified cover. A zone is a place worth walking to; it holds the pressure cells that make it, nothing more.
+ * By default only cells inside the cultivated block make zones (the headland beyond a hedge is not this field's
+ * scouting); `withinBlock: false` ranks every observed cell.
  */
-export function scoutingZones(grid: PressureGrid, fromPct = 1.5, minCells = 3): ScoutingZone[] {
+export function scoutingZones(grid: PressureGrid, fromPct = 1.5, minCells = 3, withinBlock = true): ScoutingZone[] {
   const seen = new Set<PressureCell>();
   const zones: ScoutingZone[] = [];
+  const eligible = (c: PressureCell) => c.coverPct >= fromPct && (!withinBlock || c.inBlock);
   for (const start of grid.cells) {
-    if (seen.has(start) || start.coverPct < fromPct) continue;
+    if (seen.has(start) || !eligible(start)) continue;
     const members: PressureCell[] = [];
     const stack = [start];
     seen.add(start);
@@ -245,7 +259,7 @@ export function scoutingZones(grid: PressureGrid, fromPct = 1.5, minCells = 3): 
       members.push(c);
       for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const n = grid.byIndex.get(`${c.i + di},${c.j + dj}`);
-        if (n && !seen.has(n) && n.coverPct >= fromPct) { seen.add(n); stack.push(n); }
+        if (n && !seen.has(n) && eligible(n)) { seen.add(n); stack.push(n); }
       }
     }
     if (members.length < minCells) continue;
@@ -349,7 +363,12 @@ export function weedClusters(twin: TwinBundle, cellM = 1.5, frame: LocalFrame = 
 
 export type FieldIntelligence = {
   frame: LocalFrame;
+  /** The cultivated block (blockOf): what the pressure wash, the zones and the field-wide statistics are clipped to. */
   block: [number, number][] | null;
+  blockSource: "corrected" | "inferred" | "rows" | null;
+  /** Whether the pressure wash and the zones are clipped to the block: only for an inferred or corrected
+   * boundary. The rows' own geometry is a half-spacing guess, and clipping to it would hide the headlands. */
+  clipToBlock: boolean;
   imagery: [number, number][];
   grid: PressureGrid;
   zones: ScoutingZone[];
@@ -359,6 +378,8 @@ export type FieldIntelligence = {
     imageryHa: number;
     cellsWithWeeds: number;
     cellsSingleCoverage: number;
+    /** Verified weed candidates outside the block: kept as observations, left out of the field's pressure. */
+    verifiedOutsideBlock: number;
     byClass: Record<PressureClass, number>;
     medianWeedDiameterM: number;
     medianCrownRadiusM: number;
@@ -368,21 +389,28 @@ export type FieldIntelligence = {
 const polyArea = (ring: [number, number][]) => Math.abs(ring.reduce((s, [x, y], i) => { const [x2, y2] = ring[(i + 1) % ring.length]; return s + x * y2 - x2 * y; }, 0)) / 2;
 const median = (v: number[]) => { const s = [...v].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : 0; };
 
-/** Everything the map's wide views stand on, computed once per twin. */
-export function fieldIntelligence(twin: TwinBundle, cellM = 4): FieldIntelligence {
+/**
+ * Everything the map's wide views stand on, computed once per twin. `corrected` is the operator's corrected
+ * boundary (latitude/longitude), which then stands in for the inferred block.
+ */
+export function fieldIntelligence(twin: TwinBundle, cellM = 4, corrected: LatLngPair[] | null = null): FieldIntelligence {
   const frame = localFrame(twin);
-  const block = orchardBlock(twin, frame);
+  const blk = blockOf(twin, frame, corrected);
+  const block = blk?.ring ?? null;
   const imagery = imageryHull(twin, frame);
-  const grid = pressureGrid(twin, cellM, frame);
-  const zones = scoutingZones(grid);
+  const clipToBlock = blk != null && blk.source !== "rows";
+  const grid = pressureGrid(twin, cellM, frame, block);
+  const zones = scoutingZones(grid, 1.5, 3, clipToBlock);
+  let verifiedOutsideBlock = 0;
+  if (block) for (const w of twin.weeds) { if (w.status !== "verified") continue; const [e, n] = frame.toLocal(w.lat, w.lng); if (!pointInRing(e, n, block)) verifiedOutsideBlock++; }
   const clusters = weedClusters(twin, 1.5, frame);
   const byClass: Record<PressureClass, number> = { none: 0, trace: 0, low: 0, moderate: 0, high: 0 };
   for (const c of grid.cells) byClass[c.cls]++;
   return {
-    frame, block, imagery, grid, zones, clusters,
+    frame, block, blockSource: blk?.source ?? null, clipToBlock, imagery, grid, zones, clusters,
     summary: {
       blockHa: block ? polyArea(block) / 10_000 : null, imageryHa: polyArea(imagery) / 10_000,
-      cellsWithWeeds: grid.cells.filter(c => c.verified > 0).length, cellsSingleCoverage: grid.cells.filter(c => c.photos < 2).length, byClass,
+      cellsWithWeeds: grid.cells.filter(c => c.verified > 0).length, cellsSingleCoverage: grid.cells.filter(c => c.photos < 2).length, verifiedOutsideBlock, byClass,
       medianWeedDiameterM: median(twin.weeds.filter(w => w.status === "verified").map(w => w.diameterM)) || 0.2,
       medianCrownRadiusM: median(twin.trees.map(t => t.crownRadiusM)) || 1,
     },

@@ -10,7 +10,7 @@
 //                   nearest the frame centre), 112 px cells packed 18 x 18; each evidence entry carries the object's
 //                   outline in the cell's own pixels so the app draws it over the crop
 // Nothing here is a satellite image or an orthomosaic: the map is vectors, the pictures are the drone's own frames.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { decodeImage, encodeJpeg } from "../bench/images";
 import { type Observation, frameCorners, groundSampleAt, pixelToGround, reconcile } from "../../src/lib/directGeoref";
@@ -184,5 +184,10 @@ const bundle: TwinBundle = {
     vegetationPatches: twinVeg.length,
   },
 };
+// The cultivated-block boundary (scripts/directGeoref/boundary.ts) is carried over when it has been inferred.
+// It was inferred on the previous twin's rows and trees: rerun boundaryEvidence.ts and boundary.ts after this
+// build when those changed.
+const boundaryPath = join(OUT, "boundary", "boundary.json");
+if (existsSync(boundaryPath)) { bundle.boundary = (JSON.parse(readFileSync(boundaryPath, "utf8")) as { record: TwinBundle["boundary"] }).record; console.log("boundary carried over from boundary/boundary.json (rerun boundary.ts if the rows changed)"); }
 writeFileSync(join(DIR, "twin.json"), JSON.stringify(bundle));
 console.log(`twin ${ID}: ${twinTrees.length} trees, ${bundle.inferredTrees.length} inferred positions, ${bundle.rows.filter(r => r.kept).length} rows, ${twinWeeds.length} weed objects (${twinWeeds.filter(w => w.status === "verified").length} verified), ${twinVeg.length} other vegetation patches -> ${DIR}`);
