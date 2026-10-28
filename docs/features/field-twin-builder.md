@@ -51,11 +51,22 @@ The small differences come from the camera fit (all ties used, no held-out split
 reading bytes rather than floats. The in-app boundary leaves 7 trees of the used rows outside at the south-west
 corner, where the scripts' twin left none: the one stretch to look at by eye.
 
+## Since the first version (2026-10-28, the speed plan)
+
+- The photographs are read from the camera's own 960 × 640 preview (MPF) instead of a 20 MP decode; the quarter
+  decode stays for the colour weed pass and the fallback.
+- Weed tiers in the panel: colour rules (default without the service), the model, or none; the twin's
+  `source.weedModel` and `stats.weedTier` say which ran.
+- The twin opens before its atlases; they are cut in the background and the twin is saved when they are in.
+- A pool of helper workers (cores − 1) runs the ties, the colour pass and the crops.
+- The dev preview offers the builder without a sign-in (`/dev/field-twin?build=1`), and
+  `scripts/directGeoref/twinBuildBench.mjs` drives it headlessly: 71 photographs, twin ready in 21 s on this
+  machine (6 helpers), 45 s with one worker. Measurements and the reasoning: 
+  docs/research/swardus-direct-speed-plan-2026-10-28.md.
+
 ## Limits
 
 - The weed model needs the local service (development builds, `VITE_WEED_VISION_PREVIEW`): on the live site the
-  builder makes a twin without weeds and says so. About 15 s per photograph on the GPU when it is on.
-- One flight at a time, in one browser tab; seventy 20-megapixel photographs take a few minutes. The tab must
-  stay open.
-- Not yet checked in a browser by eye (the Node run is the same code, but `createImageBitmap` scaling is not
-  jpeg-js box averaging). That check is the next step.
+  builder offers the colour rules (seconds, about 60 % of what the model finds on the apricot flight) and no model.
+- One flight at a time, in one browser tab; the tab must stay open while it builds.
+- Checked in headless Chrome by the benchmark script; the eye test on the opened twin is Yunus's.
