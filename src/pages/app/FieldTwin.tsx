@@ -12,6 +12,7 @@ import { isFieldTwinReviewer } from "@/lib/fieldTwin/reviewers";
 import { type SavedTwin, listTwins, loadAtlas, loadTwin, missingFiles, saveTwin } from "@/lib/fieldTwin/store";
 import { type TwinBundle, parseTwin } from "@/lib/fieldTwin/types";
 import FieldTwinView, { type ReferenceOption } from "@/components/app/fieldTwin/FieldTwinView";
+import TwinBuilder, { type BuiltTwin } from "@/components/app/fieldTwin/TwinBuilder";
 
 const btn = "inline-flex items-center gap-1.5 text-xs border border-[#333] text-neutral-300 hover:bg-[#1f1f1f] disabled:opacity-40 rounded-sm px-2.5 py-1";
 
@@ -32,6 +33,7 @@ export default function FieldTwin() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scans, setScans] = useState<ScanRow[]>([]);
+  const [building, setBuilding] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const urls = useRef(new Map<string, Promise<string>>());
 
@@ -105,6 +107,17 @@ export default function FieldTwin() {
       open(parsed.twin, { kind: "dev" });
     } catch (e) { setError((e as Error).message); } finally { setBusy(null); }
   };
+  /** A twin built in the browser from the flight's photographs: opened at once, saved to the account behind it. */
+  const fromBuilder = async (b: BuiltTwin) => {
+    setBuilding(false);
+    open(b.twin, { kind: "files", files: b.files });
+    if (!userId) return;
+    try {
+      await saveTwin(userId, b.twin, b.files, (d, n) => setBusy(`Saving to your account: ${d} of ${n} files`));
+      await refresh();
+      setSource({ kind: "account", userId });
+    } catch (e) { setError(`The twin is open but could not be saved: ${(e as Error).message}`); } finally { setBusy(null); }
+  };
   const fromFiles = async (list: FileList | null) => {
     if (!list || !userId) return;
     setError(null);
@@ -156,13 +169,19 @@ export default function FieldTwin() {
         ))}
         <input ref={fileInput} type="file" multiple accept=".json,.jpg,image/jpeg,application/json" className="hidden" onChange={e => void fromFiles(e.target.files)} />
         <button className={btn} onClick={() => fileInput.current?.click()} disabled={!!busy}><Upload className="h-3 w-3" />Add a twin from files</button>
+        <button className={btn} onClick={() => setBuilding(b => !b)} disabled={!!busy} aria-pressed={building}>Build a twin from photographs</button>
         {busy && <span className="flex items-center gap-1.5 text-xs text-neutral-300"><Loader2 className="h-3.5 w-3.5 animate-spin" />{busy}</span>}
         {error && <span className="flex items-center gap-1.5 text-xs text-red-400"><AlertTriangle className="h-3.5 w-3.5 shrink-0" />{error}</span>}
         {twin && <span className="ml-auto text-[11px] text-neutral-500">{twin.source.photographs} photographs · {twin.source.camera} · built {new Date(twin.builtAt).toLocaleDateString()} · no orthomosaic</span>}
       </header>
       <main className="relative min-h-0 flex-1">
         {twin ? <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={referenceOptions} expose={import.meta.env.DEV} />
-          : <div className="grid h-full place-items-center text-sm text-neutral-500">Choose a twin to see the field.</div>}
+          : <div className="grid h-full place-items-center text-sm text-neutral-500">{building ? "" : "Choose a twin to see the field, or build one from a flight's photographs."}</div>}
+        {building && (
+          <aside className="absolute right-3 top-3 bottom-3 z-[800] w-[420px] rounded-md border border-[#343834] bg-[#171a17]" aria-label="Twin builder">
+            <TwinBuilder onBuilt={b => void fromBuilder(b)} onClose={() => setBuilding(false)} />
+          </aside>
+        )}
       </main>
     </div>
   );

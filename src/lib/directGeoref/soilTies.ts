@@ -17,7 +17,7 @@ import { applyHomography, homographyFrom4, type H3, type P2 } from "./homography
 import { pointInFootprint } from "./multiView";
 import { type GeorefFrame, frameCorners, frameFootprint } from "./projection";
 
-export type GreyRaster = { width: number; height: number; grey: Float32Array; green: Uint8Array; /** Original pixels per raster pixel. */ toOriginal: number };
+export type GreyRaster = { width: number; height: number; /** Luma per pixel, floats or bytes (the ties read it by index either way; bytes hold seventy photographs in a browser). */ grey: Float32Array | Uint8Array; green: Uint8Array; /** Original pixels per raster pixel. */ toOriginal: number };
 
 export function greyRaster(px: PhotoPixels, toOriginal: number): GreyRaster {
   const n = px.width * px.height, grey = new Float32Array(n);
