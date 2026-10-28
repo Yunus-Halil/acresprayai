@@ -10,7 +10,8 @@ import { greyRasterBytes, readPhotographs } from "@/lib/fieldTwin/build/photos";
 import { buildFieldTwin } from "@/lib/fieldTwin/build/pipeline";
 import { type PhotoSource, twinIdFrom } from "@/lib/fieldTwin/build/types";
 import { observationsOf } from "@/lib/fieldTwin/build/weeds";
-import { frameFromDji, takeoffPlane } from "@/lib/directGeoref";
+import { frameFromDji, mpfEntries, mpfPreview, takeoffPlane } from "@/lib/directGeoref";
+import { isHeldOutPair } from "@/lib/fieldTwin/build/cameras";
 import type { DjiPhotoMeta } from "@/lib/directGeoref/metadata";
 import { parseTwin } from "@/lib/fieldTwin/types";
 import type { WeedInstance } from "@/lib/weedVision/client";
@@ -60,12 +61,59 @@ describe("twin build, the pure pieces", () => {
   });
 
   it("refuses photographs without a camera and the whole build without two of them", async () => {
-    const bad: PhotoSource = { name: "x", header: async () => new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0, 4, 0, 0]), bytes: async () => new Uint8Array(), decode: async () => ({ width: 1, height: 1, rgba: new Uint8ClampedArray(4) }), crops: async () => [] };
+    const bad: PhotoSource = { name: "x", header: async () => new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0, 4, 0, 0]), bytes: async () => new Uint8Array(), decode: async () => ({ width: 1, height: 1, rgba: new Uint8ClampedArray(4) }), preview: async () => null, crops: async () => [] };
     const { reads, refused } = await readPhotographs([bad], 4);
     expect(reads.length).toBe(0); expect(refused.length).toBe(1);
     expect(refused[0].reason).toMatch(/no camera position|header/);
     await expect(buildFieldTwin([bad], { name: "x", detector: null }, nodeCodec)).rejects.toThrow(/no photograph holds a camera/);
     await expect(buildFieldTwin([], { name: "x", detector: null }, nodeCodec)).rejects.toThrow(/no photographs/);
+  });
+});
+
+/** A JPEG head with an MPF index listing a primary and one preview at `offset` (relative to the MP header) of `size` bytes. */
+function mpfHead(offset: number, size: number): Uint8Array {
+  const tiff = [0x49, 0x49, 42, 0, 8, 0, 0, 0]; // II, 42, IFD at 8
+  const n = 2, ifd: number[] = [n, 0];
+  const entry = (tag: number, type: number, count: number, value: number) => ifd.push(tag & 255, tag >> 8, type & 255, type >> 8, count & 255, (count >> 8) & 255, (count >> 16) & 255, count >>> 24, value & 255, (value >> 8) & 255, (value >> 16) & 255, value >>> 24);
+  entry(0xb001, 4, 1, 2);
+  const entriesAt = 8 + 2 + 12 * n + 4;
+  entry(0xb002, 7, 32, entriesAt);
+  ifd.push(0, 0, 0, 0);
+  const mp = (attr: number, sz: number, off: number) => [attr & 255, (attr >> 8) & 255, (attr >> 16) & 255, attr >>> 24, sz & 255, (sz >> 8) & 255, (sz >> 16) & 255, sz >>> 24, off & 255, (off >> 8) & 255, (off >> 16) & 255, off >>> 24, 0, 0, 0, 0];
+  const payload = [0x4d, 0x50, 0x46, 0, ...tiff, ...ifd, ...mp(0x030000, 1000, 0), ...mp(0x010001, size, offset)];
+  const len = payload.length + 2;
+  return Uint8Array.from([0xff, 0xd8, 0xff, 0xe2, len >> 8, len & 255, ...payload, 0xff, 0xda]);
+}
+
+describe("the camera's embedded preview (MPF)", () => {
+  it("reads the index: the preview's offset from the MP header and its size; none without an MPF segment", () => {
+    const head = mpfHead(500_000, 250_000);
+    const base = 2 + 4 + 4; // SOI, APP2 marker + length, "MPF\0"
+    expect(mpfEntries(head)).toEqual([{ offset: base + 500_000, size: 250_000, attribute: 0x010001 }]);
+    expect(mpfPreview(head)).toEqual({ offset: base + 500_000, size: 250_000, attribute: 0x010001 });
+    expect(mpfPreview(new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0, 4, 0, 0, 0xff, 0xda]))).toBeNull();
+    expect(mpfPreview(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+
+  it.skipIf(!haveFlight)("finds DJI_0301's 960 x 640 preview and decodes it", async () => {
+    const p = nodePhoto(join(PHOTOS, "DJI_0301.JPG"));
+    const e = mpfPreview(await p.header());
+    expect(e).toEqual({ offset: 8_509_664, size: 252_097, attribute: expect.any(Number) });
+    const px = await p.preview();
+    expect(px).not.toBeNull();
+    expect(px!.width).toBe(960); expect(px!.height).toBe(640);
+  });
+
+  it("reads a photograph from its preview with the measured decode ratio, and falls back to the decode without one", async () => {
+    const header = new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0, 4, 0, 0, 0xff, 0xda]);
+    const px = (w: number, h: number) => ({ width: w, height: h, rgba: new Uint8ClampedArray(w * h * 4).fill(120) });
+    const withPreview: PhotoSource = { name: "p", header: async () => header, bytes: async () => new Uint8Array(), decode: async () => px(1368, 912), preview: async () => px(96, 64), crops: async () => [] };
+    const { reads } = await readPhotographs([withPreview], 4);
+    // The header holds no camera, so the photograph is refused before its pixels are read; the ratio is checked on the decode path instead.
+    expect(reads.length).toBe(0);
+    expect(isHeldOutPair("DJI_0301", "DJI_0302", 0)).toBe(false);
+    const share = [..."abcdefghijklmnopqrstuvwxyz"].filter(c => isHeldOutPair(`DJI_${c}`, "DJI_0302", 0.3)).length / 26;
+    expect(share).toBeGreaterThan(0.1); expect(share).toBeLessThan(0.5);
   });
 });
 
@@ -80,6 +128,7 @@ describe.skipIf(!haveFlight)("twin build on the local test flight (eight photogr
     const parsed = parseTwin(JSON.parse(new TextDecoder().decode(out.files.get("twin.json") as Uint8Array)));
     expect(parsed.ok).toBe(true);
     expect(out.twin.source.photographs).toBe(8);
+    expect(out.report.photographs.previews).toBe(8);
     expect(out.report.cameras.ties as number).toBeGreaterThan(40);
     expect(out.report.cameras.residualM as number).toBeLessThan(0.3);
     expect(out.twin.rows.filter(r => r.kept).length).toBeGreaterThanOrEqual(3);

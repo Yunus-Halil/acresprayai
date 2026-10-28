@@ -43,7 +43,7 @@ type Prepared = { px: PhotoPixels; f: GeorefFrame; mpp: number; k: number; left:
  * Rows and trees from the aligned cameras. `pixels(name)` gives a photograph decoded at `down` (quarter size).
  * Returns null when no photograph reads rows at all (a field without rows, or none the reader understands).
  */
-export async function rowsAndTrees(frames: Map<string, GeorefFrame>, model: AdjustModel, pixels: (name: string) => Promise<PhotoPixels>, hooks: BuildHooks = {}): Promise<RowsResult | null> {
+export async function rowsAndTrees(frames: Map<string, GeorefFrame>, model: AdjustModel, pixels: (name: string) => Promise<PhotoPixels>, hooks: BuildHooks = {}, rasterCellM = 0.08): Promise<RowsResult | null> {
   const t0 = Date.now();
   const groundAlt = model.globals.groundOffsetM;
   const origin = model.origin;
@@ -56,7 +56,11 @@ export async function rowsAndTrees(frames: Map<string, GeorefFrame>, model: Adju
     const mpp = ((f.pose.altM - groundAlt) / f.intrinsics.fx) * down;
     const [cx, cy] = mercatorPx(f.pose.lat, f.pose.lng, Z);
     const left = Math.round(cx - px.width / 2), top = Math.round(cy - px.height / 2);
-    const k = Math.max(1, Math.round(0.08 / mpp));
+    // The fitter's raster cell: the whole number of decoded pixels whose size is nearest `rasterCellM` (8 cm) in
+    // ratio: two quarter-size pixels (7.8 cm), two preview pixels (11.2 cm rather than one of 5.6: measured on
+    // the apricot flight, one pixel changed the fitter's count by 3 %, two by 0.2 %).
+    const lo = Math.max(1, Math.floor(rasterCellM / mpp)), hi = lo + 1;
+    const k = Math.abs(Math.log((hi * mpp) / rasterCellM)) < Math.abs(Math.log((lo * mpp) / rasterCellM)) ? hi : lo;
     const ring: [number, number][] = [[left, top], [left + px.width, top], [left + px.width, top + px.height], [left, top + px.height]];
     const r = rasterFromMask(vegetationMask(px), px.width, px.height, k, Z, left, top, mpp, [ring], shadowMask(px), coverMask(px));
     return { px, f, mpp, k, left, top, r, down };

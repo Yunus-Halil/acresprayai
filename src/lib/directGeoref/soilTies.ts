@@ -12,9 +12,8 @@
 import { toEnu, type LatLngAlt } from "../sourceFrames/odm";
 import type { PhotoPixels } from "../photoScout/pattern";
 import { vegetationMask } from "../weedVision/fieldRows";
-import { phaseCorrelate } from "./fft";
+import { type Spectrum, correlate, spectrum } from "./fft";
 import { applyHomography, homographyFrom4, type H3, type P2 } from "./homography";
-import { pointInFootprint } from "./multiView";
 import { type GeorefFrame, frameCorners, frameFootprint } from "./projection";
 
 export type GreyRaster = { width: number; height: number; /** Luma per pixel, floats or bytes (the ties read it by index either way; bytes hold seventy photographs in a browser). */ grey: Float32Array | Uint8Array; green: Uint8Array; /** Original pixels per raster pixel. */ toOriginal: number };
@@ -71,8 +70,12 @@ function sampleWindow(m: Mapper, cx: number, cy: number, res: number, n: number)
   const { r, H } = m, grey = new Float64Array(n * n);
   let green = 0, outside = 0, sum = 0, valid = 0;
   const bad: number[] = [];
+  const h0 = H[0], h1 = H[1], h2 = H[2], h3 = H[3], h4 = H[4], h5 = H[5], h6 = H[6], h7 = H[7], h8 = H[8];
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    const [u, v] = applyHomography(H, cx + (i - n / 2 + 0.5) * res, cy - (j - n / 2 + 0.5) * res);
+    // The homography inlined (the same expression as applyHomography), no tuple per sample.
+    const gx = cx + (i - n / 2 + 0.5) * res, gy = cy - (j - n / 2 + 0.5) * res;
+    const w = h6 * gx + h7 * gy + h8;
+    const u = (h0 * gx + h1 * gy + h2) / w, v = (h3 * gx + h4 * gy + h5) / w;
     const x = u - 0.5, y = v - 0.5;
     if (x < 0 || y < 0 || x >= r.width - 1 || y >= r.height - 1) { outside++; bad.push(j * n + i); continue; }
     const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, o = y0 * r.width + x0;
@@ -101,8 +104,38 @@ function texture(g: Float64Array, n: number): { std: number; anisotropy: number 
 
 export type PairTies = { ties: SoilTie[]; coarseShiftM: [number, number] | null; windowsTried: number; rejected: Record<string, number> };
 
+/** Inside a ring (east/north metres, the same frame as the point) and at least `marginM` from its border. */
+function inRingM(e: number, n: number, q: P2[], marginM: number): boolean {
+  let inside = false;
+  for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
+    const xi = q[i][0] - e, yi = q[i][1] - n, xj = q[j][0] - e, yj = q[j][1] - n;
+    if ((yi > 0) !== (yj > 0) && 0 < ((xj - xi) * (0 - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  if (!inside) return false;
+  if (marginM <= 0) return true;
+  for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
+    const ax = q[j][0] - e, ay = q[j][1] - n, bx = q[i][0] - e, by = q[i][1] - n;
+    const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
+    const t = L2 ? Math.max(0, Math.min(1, -(ax * (bx - ax) + ay * (by - ay)) / L2)) : 0;
+    if (Math.hypot(ax + t * (bx - ax), ay + t * (by - ay)) < marginM) return false;
+  }
+  return true;
+}
+
+/** What a window of photograph A gave: its verdict, and when it passed, its pixels and spectrum. */
+type WindowMemo = { reason: string | null; A: Window | null; spec: Spectrum | null };
+
+/**
+ * A's windows, kept while the photograph is the first of its pairs: the window lattice is anchored to A's own
+ * footprint, so the same lattice index is the same ground in every pair A begins (to about a nanometre; the
+ * homography is built per pair, so the pixels agree to 1e-10 px, not to the bit). The caller clears it when A
+ * changes. At most a few hundred windows of 32 KB plus their spectra.
+ */
+export type WindowCache = { photo: string; fineRes: number; fineN: number; windows: Map<number, WindowMemo> };
+export const windowCacheFor = (photo: string, fineRes: number, fineN: number): WindowCache => ({ photo, fineRes, fineN, windows: new Map() });
+
 /** Soil ties between two overlapping photographs under their current camera models. */
-export function findSoilTies(fa: GeorefFrame, ra: GreyRaster, fb: GeorefFrame, rb: GreyRaster, opts: SoilTieOptions = {}): PairTies {
+export function findSoilTies(fa: GeorefFrame, ra: GreyRaster, fb: GeorefFrame, rb: GreyRaster, opts: SoilTieOptions = {}, cache: WindowCache | null = null): PairTies {
   const o = { ...SOIL_TIE_DEFAULTS, ...opts };
   const origin: LatLngAlt = { lat: (fa.pose.lat + fb.pose.lat) / 2, lng: (fa.pose.lng + fb.pose.lng) / 2, altM: 0 };
   const rejected: Record<string, number> = {};
@@ -117,13 +150,16 @@ export function findSoilTies(fa: GeorefFrame, ra: GreyRaster, fb: GeorefFrame, r
     const R = 6378137, lat0 = (origin.lat * Math.PI) / 180;
     return { lat: origin.lat + (nn / R) * (180 / Math.PI), lng: origin.lng + (e / (R * Math.cos(lat0))) * (180 / Math.PI) };
   };
-  // Candidate centres: a grid over A's footprint, inside both.
-  const pa = ringA.map(enOf);
+  // Candidate centres: a grid over A's footprint, inside both. Both rings are projected once about the pair's
+  // origin and every grid point is tested in that frame (the rings used to be re-projected about each point).
+  const pa = ringA.map(enOf), pb = ringB.map(enOf);
   const xs = pa.map(p => p[0]), ys = pa.map(p => p[1]);
-  const inBoth = (e: number, nn: number, margin: number) => { const ll = llOf(e, nn); return pointInFootprint(ll, ringA, margin) && pointInFootprint(ll, ringB, margin); };
+  const xMin = Math.min(...xs), xMax = Math.max(...xs), yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const inBoth = (e: number, nn: number, margin: number) => inRingM(e, nn, pa, margin) && inRingM(e, nn, pb, margin);
   const overlap: P2[] = [];
-  for (let e = Math.min(...xs); e <= Math.max(...xs); e += 1) for (let nn = Math.min(...ys); nn <= Math.max(...ys); nn += 1) if (inBoth(e, nn, 0)) overlap.push([e, nn]);
+  for (let e = xMin; e <= xMax; e += 1) for (let nn = yMin; nn <= yMax; nn += 1) if (inBoth(e, nn, 0)) overlap.push([e, nn]);
   if (overlap.length < 25) return empty;
+  const memo = cache && cache.photo === fa.name && cache.fineRes === o.fineRes && cache.fineN === o.fineN ? cache.windows : null;
 
   // Coarse: the whole overlap at 16 cm.
   const cx = overlap.reduce((s, p) => s + p[0], 0) / overlap.length, cy = overlap.reduce((s, p) => s + p[1], 0) / overlap.length;
@@ -131,7 +167,7 @@ export function findSoilTies(fa: GeorefFrame, ra: GreyRaster, fb: GeorefFrame, r
   {
     const A = sampleWindow(ma, cx, cy, o.coarseRes, o.coarseN), B = sampleWindow(mb, cx, cy, o.coarseRes, o.coarseN);
     if (A.outside < 0.6 && B.outside < 0.6) {
-      const ps = phaseCorrelate(A.grey, B.grey, o.coarseN);
+      const ps = correlate(spectrum(A.grey, o.coarseN), spectrum(B.grey, o.coarseN));
       if (ps.peak >= 0.04 && ps.secondRatio <= 0.8) { s0 = [ps.dx * o.coarseRes, -ps.dy * o.coarseRes]; coarse = s0; }
       else reject("coarse unclear");
     }
@@ -139,28 +175,37 @@ export function findSoilTies(fa: GeorefFrame, ra: GreyRaster, fb: GeorefFrame, r
 
   // Fine: soil windows on a grid, seeded by the coarse shift.
   const half = (o.fineN * o.fineRes) / 2;
-  const centres: P2[] = [];
-  for (let e = Math.min(...xs); e <= Math.max(...xs); e += o.stepM) for (let nn = Math.min(...ys); nn <= Math.max(...ys); nn += o.stepM) {
-    if (inBoth(e, nn, half * 1.45) && inBoth(e + s0[0], nn + s0[1], half * 1.45)) centres.push([e, nn]);
-  }
+  const centres: [number, number, number][] = [];
+  let ie = 0;
+  for (let e = xMin; e <= xMax; e += o.stepM, ie++) { let inn = 0; for (let nn = yMin; nn <= yMax; nn += o.stepM, inn++) {
+    if (inBoth(e, nn, half * 1.45) && inBoth(e + s0[0], nn + s0[1], half * 1.45)) centres.push([e, nn, ie * 65536 + inn]);
+  } }
   const ties: SoilTie[] = [];
   let tried = 0;
-  for (const [e, nn] of centres) {
+  for (const [e, nn, key] of centres) {
     if (ties.length >= o.maxPerPair) break;
     tried++;
-    const A = sampleWindow(ma, e, nn, o.fineRes, o.fineN);
-    if (A.outside > 0 || A.green > o.maxGreenShare) { reject("green or outside"); continue; }
-    const t = texture(A.grey, o.fineN);
-    if (t.std < o.minTextureStd) { reject("no texture"); continue; }
-    if (t.anisotropy > o.maxAnisotropy) { reject("parallel lines"); continue; }
+    // Window A: from the memo when this photograph's lattice point was sampled in an earlier pair.
+    let m = memo?.get(key);
+    if (!m) {
+      const A = sampleWindow(ma, e, nn, o.fineRes, o.fineN);
+      if (A.outside > 0 || A.green > o.maxGreenShare) m = { reason: "green or outside", A: null, spec: null };
+      else {
+        const t = texture(A.grey, o.fineN);
+        m = t.std < o.minTextureStd ? { reason: "no texture", A: null, spec: null } : t.anisotropy > o.maxAnisotropy ? { reason: "parallel lines", A: null, spec: null } : { reason: null, A, spec: spectrum(A.grey, o.fineN) };
+      }
+      memo?.set(key, m);
+    }
+    if (m.reason) { reject(m.reason); continue; }
+    const specA = m.spec!;
     const B = sampleWindow(mb, e + s0[0], nn + s0[1], o.fineRes, o.fineN);
     if (B.outside > 0 || B.green > o.maxGreenShare) { reject("green or outside"); continue; }
-    const ps = phaseCorrelate(A.grey, B.grey, o.fineN);
+    const ps = correlate(specA, spectrum(B.grey, o.fineN));
     if (ps.peak < o.minPeak || ps.secondRatio > o.maxSecondRatio) { reject("unclear peak"); continue; }
     const d: P2 = [s0[0] + ps.dx * o.fineRes, s0[1] - ps.dy * o.fineRes];
     const B2 = sampleWindow(mb, e + d[0], nn + d[1], o.fineRes, o.fineN);
     if (B2.outside > 0) { reject("green or outside"); continue; }
-    const back = phaseCorrelate(A.grey, B2.grey, o.fineN);
+    const back = correlate(specA, spectrum(B2.grey, o.fineN));
     if (Math.hypot(back.dx, back.dy) * o.fineRes > o.maxBackM) { reject("not consistent"); continue; }
     const da: P2 = [d[0] + back.dx * o.fineRes, d[1] - back.dy * o.fineRes];
     const pa2 = applyHomography(ma.H, e, nn), pb2 = applyHomography(mb.H, e + da[0], nn + da[1]);

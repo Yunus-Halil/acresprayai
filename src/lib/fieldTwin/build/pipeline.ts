@@ -10,7 +10,7 @@ import { type BuildHooks, type BuildOptions, type BuildStage, type Codec, type P
 import { findWeeds } from "./weeds";
 
 export type BuildReport = {
-  photographs: { given: number; read: number; refused: { name: string; reason: string }[] };
+  photographs: { given: number; read: number; refused: { name: string; reason: string }[]; previews: number };
   cameras: Record<string, unknown>;
   rows: Record<string, unknown> | null;
   weeds: { detections: number; photographsRun: number; failed: { name: string; reason: string }[]; stats: Record<string, unknown> };
@@ -32,16 +32,20 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   const timed = async <T>(stage: BuildStage, fn: () => Promise<T>): Promise<T> => { const t = Date.now(); const v = await fn(); timings[stage] = Date.now() - t; return v; };
   if (!photos.length) throw new Error("no photographs");
 
-  const { reads, refused } = await timed("photographs", () => readPhotographs(photos, down, hooks));
+  const usePreview = options.usePreview ?? true;
+  const { reads, refused } = await timed("photographs", () => readPhotographs(photos, down, hooks, usePreview));
   for (const r of refused) notes.push(`${r.name} left out: ${r.reason}`);
   if (reads.length < 2) throw new Error(reads.length ? "only one photograph holds a camera: a twin needs overlapping photographs" : `no photograph holds a camera (${refused[0]?.reason ?? "unknown"})`);
   checkCancelled(hooks.signal);
 
-  const cams = await timed("cameras", () => alignCameras(reads, hooks));
+  const cams = await timed("cameras", () => alignCameras(reads, hooks, 40, options.holdOutShare ?? 0));
   if (cams.report.note) notes.push(cams.report.note);
+  const previews = reads.filter(r => r.source === "preview").length;
+  if (usePreview && previews) notes.push(`${previews} of ${reads.length} photographs read from the camera's own ${reads.find(r => r.source === "preview")!.viewW} x ${reads.find(r => r.source === "preview")!.viewH} preview`);
   const sources = new Map(photos.map(p => [p.name, p]));
-  const pixels = (name: string) => sources.get(name)!.decode(down);
-  const rows = await timed("rows", () => rowsAndTrees(cams.frames, cams.model, pixels, hooks));
+  const readBy = new Map(reads.map(r => [r.name, r]));
+  const pixels = async (name: string) => { const src = sources.get(name)!; if (readBy.get(name)?.source === "preview") { const p = await src.preview(); if (p) return p; } return src.decode(down); };
+  const rows = await timed("rows", () => rowsAndTrees(cams.frames, cams.model, pixels, hooks, options.rowRasterCellM ?? 0.08));
   if (!rows) notes.push("no rows were read in any photograph: the twin has no crop rows, no trees and no cultivated block");
   checkCancelled(hooks.signal);
 
@@ -51,7 +55,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   for (const f of weeds.photographsFailed) notes.push(`${f.name}: the weed model gave no answer (${f.reason})`);
 
   const built = await timed("bundle", () => assembleBundle({ id: options.id, name: options.name, photos: kept, reads, frames: cams.frames, model: cams.model, rows, weeds, detector: options.detector, cameraReport: cams.report as unknown as Record<string, unknown>, codec, down }, hooks));
-  const ev = await timed("evidence", () => evidenceAndBoundary(built.twin, kept, cams.frames, cams.model, down, options.evidenceCellM ?? 0.25, hooks));
+  const ev = await timed("evidence", () => evidenceAndBoundary(built.twin, kept, cams.frames, cams.model, pixels, options.evidenceCellM ?? 0.25, hooks));
   if (ev.note) notes.push(ev.note);
   timings.boundary = ev.classifyMs; timings.evidence = ev.sampledMs;
 
@@ -62,7 +66,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   // Bytes, never a Blob: Node has Blob too, and the scripts write files. The worker wraps the bytes for the page.
   files.set("twin.json", new TextEncoder().encode(json));
   const report: BuildReport = {
-    photographs: { given: photos.length, read: reads.length, refused },
+    photographs: { given: photos.length, read: reads.length, refused, previews },
     cameras: cams.report as unknown as Record<string, unknown>,
     rows: rows?.report ?? null,
     weeds: { detections: weeds.detections, photographsRun: weeds.photographsRun, failed: weeds.photographsFailed, stats: weeds.stats },

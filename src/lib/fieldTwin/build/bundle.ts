@@ -2,6 +2,7 @@
 // show at the edges and the cultivated block. The ports of scripts/directGeoref/buildTwin.ts,
 // boundaryEvidence.ts and boundary.ts.
 import { type AdjustModel, type GeorefFrame, type Observation, frameCorners, groundSampleAt, groundToPixel, pixelToGround, reconcile } from "../../directGeoref";
+import type { PhotoPixels } from "../../photoScout/pattern";
 import { toEnu } from "../../sourceFrames/odm";
 import { COVER_EXGR } from "../../weedVision/fieldRows";
 import { type BoundaryResult, inferBoundary, reliableRows, toTwinBoundary, treesInCover } from "../boundary";
@@ -195,7 +196,7 @@ export type EvidenceOutput = { boundary: BoundaryResult | null; cells: number; s
  * Stages 6 and 7: the evidence raster sampled from the photographs (the nearest-nadir photograph per cell), the
  * classes, and the cultivated block written into the twin. Without rows there is no block and nothing is sampled.
  */
-export async function evidenceAndBoundary(twin: TwinBundle, photos: PhotoSource[], frames: Map<string, GeorefFrame>, model: AdjustModel, down: number, cellM: number, hooks: BuildHooks = {}): Promise<EvidenceOutput> {
+export async function evidenceAndBoundary(twin: TwinBundle, photos: PhotoSource[], frames: Map<string, GeorefFrame>, model: AdjustModel, pixels: (name: string) => Promise<PhotoPixels>, cellM: number, hooks: BuildHooks = {}): Promise<EvidenceOutput> {
   const t0 = Date.now();
   if (!twin.rows.some(r => r.kept)) { twin.boundary = null; return { boundary: null, cells: 0, sampledMs: 0, classifyMs: 0, note: "no kept rows: no cultivated block" }; }
   const fr = localFrame(twin);
@@ -235,7 +236,7 @@ export async function evidenceAndBoundary(twin: TwinBundle, photos: PhotoSource[
     const src = sources.get(ph[k].name), f = frames.get(ph[k].name);
     done++;
     if (!src || !f) continue;
-    const img = await src.decode(down);
+    const img = await pixels(src.name);
     const dn = f.intrinsics.width / img.width;
     // The box averaged per cell: the cell's width in this photograph's own pixels (its ground sample at the
     // frame centre times the decode ratio), half each way.

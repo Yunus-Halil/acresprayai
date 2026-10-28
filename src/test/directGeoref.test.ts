@@ -411,6 +411,18 @@ describe("phase correlation", () => {
     expect(Math.abs(r.dx - 3.4)).toBeLessThan(0.25);
     expect(r.peak).toBeGreaterThan(0.3);
   });
+
+  it("a spectrum computed once correlates against many windows with the one-shot result, to the bit, and is not written into", async () => {
+    const { spectrum, correlate } = await import("@/lib/directGeoref");
+    const n = 32, a = new Float64Array(n * n), b = new Float64Array(n * n), c = new Float64Array(n * n);
+    let seed = 11;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let k = 0; k < a.length; k++) { a[k] = rnd(); b[k] = rnd(); c[k] = rnd(); }
+    const A = spectrum(a, n), re0 = Float64Array.from(A.re), im0 = Float64Array.from(A.im);
+    expect(correlate(A, spectrum(b, n))).toEqual(phaseCorrelate(a, b, n));
+    expect(correlate(A, spectrum(c, n))).toEqual(phaseCorrelate(a, c, n));
+    expect(Array.from(A.re)).toEqual(Array.from(re0)); expect(Array.from(A.im)).toEqual(Array.from(im0));
+  });
 });
 
 describe("block adjustment over pixel ties", () => {
@@ -496,9 +508,17 @@ describe("soil ties end to end", () => {
       return greyRaster({ width: 640, height: 480, rgba }, 1);
     };
     const ra = render(bases[0].frame), rb = render(bases[1].frame);
-    const r = findSoilTies(bases[0].frame, ra, bases[1].frame, rb, { fineRes: 0.04, fineN: 32, coarseRes: 0.08, coarseN: 128, stepM: 1.2, maxPerPair: 60, minPeak: 0.1 });
+    const tieOpts = { fineRes: 0.04, fineN: 32, coarseRes: 0.08, coarseN: 128, stepM: 1.2, maxPerPair: 60, minPeak: 0.1 };
+    const r = findSoilTies(bases[0].frame, ra, bases[1].frame, rb, tieOpts);
     expect(r.coarseShiftM).not.toBeNull();
     expect(r.ties.length).toBeGreaterThan(15);
+    // The first photograph's windows kept across its pairs: the same ties, to the bit, from the memo.
+    const { windowCacheFor } = await import("@/lib/directGeoref");
+    const memo = windowCacheFor(bases[0].frame.name, tieOpts.fineRes, tieOpts.fineN);
+    const r1 = findSoilTies(bases[0].frame, ra, bases[1].frame, rb, tieOpts, memo);
+    expect(memo.windows.size).toBeGreaterThan(0);
+    const r2 = findSoilTies(bases[0].frame, ra, bases[1].frame, rb, tieOpts, memo);
+    expect(r1.ties).toEqual(r.ties); expect(r2.ties).toEqual(r.ties); expect(r2.rejected).toEqual(r.rejected);
     const fit = adjust(bases, r.ties, { name: "tilt", globals: ["tiltAcrossDeg"] });
     expect(fit.model.globals.tiltAcrossDeg).toBeCloseTo(1.5, 1);
     expect(fit.train.median).toBeLessThan(0.02);

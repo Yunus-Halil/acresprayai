@@ -167,9 +167,10 @@ export function adjust(basesList: BaseFrame[], ties: SoilTie[], spec: ModelSpec,
   if (spec.perPhoto) for (const b of basesList) for (const k of spec.perPhoto.keys) params.push({ kind: "photo", name: b.frame.name, key: k });
   const P = params.length;
 
-  // Which ties each parameter touches.
+  // Which ties each parameter touches, and which end of the tie the photograph is (0 = a, 1 = b).
   const byPhoto = new Map<string, number[]>();
-  used.forEach((t, i) => { for (const nm of [t.a, t.b]) (byPhoto.get(nm) ?? byPhoto.set(nm, []).get(nm)!).push(i); });
+  const sideOf = new Map<string, Map<number, 0 | 1>>();
+  used.forEach((t, i) => { for (const [nm, side] of [[t.a, 0], [t.b, 1]] as const) { (byPhoto.get(nm) ?? byPhoto.set(nm, []).get(nm)!).push(i); (sideOf.get(nm) ?? sideOf.set(nm, new Map()).get(nm)!).set(i, side); } });
   const tieEN = used.map(t => toEnu({ lat: t.lat, lng: t.lng, altM: 0 }, m.origin));
   const all = used.map((_, i) => i);
   const touched = params.map(p => {
@@ -180,10 +181,43 @@ export function adjust(basesList: BaseFrame[], ties: SoilTie[], spec: ModelSpec,
     return all.filter(i => Math.abs(tieEN[i][0] - ce) < t.spacing * 1.5 && Math.abs(tieEN[i][1] - cn) < t.spacing * 1.5);
   });
 
+  // Both ends of every tie on the ground (east, north about the origin), and the residual b minus a from them.
+  // The ends are kept per iteration so that a per-photo parameter re-projects only that photograph's end.
+  const endsOf = (model: AdjustModel): Float64Array => {
+    const out = new Float64Array(used.length * 4).fill(NaN), cache = new Map<string, GeorefFrame>();
+    const fr = (nm: string) => { let f = cache.get(nm); if (!f) { f = frameUnder(bases.get(nm)!, model); cache.set(nm, f); } return f; };
+    used.forEach((t, i) => {
+      const ga = pixelToGround(fr(t.a), t.ua, t.va), gb = pixelToGround(fr(t.b), t.ub, t.vb);
+      if (!ga || !gb) return;
+      const ea = toEnu({ lat: ga.lat, lng: ga.lng, altM: 0 }, model.origin), eb = toEnu({ lat: gb.lat, lng: gb.lng, altM: 0 }, model.origin);
+      out[4 * i] = ea[0]; out[4 * i + 1] = ea[1]; out[4 * i + 2] = eb[0]; out[4 * i + 3] = eb[1];
+    });
+    return out;
+  };
+  const residualsFrom = (ends: Float64Array): Float64Array => {
+    const out = new Float64Array(used.length * 2);
+    for (let i = 0; i < used.length; i++) { const ok = Number.isFinite(ends[4 * i]); out[2 * i] = ok ? ends[4 * i + 2] - ends[4 * i] : 0; out[2 * i + 1] = ok ? ends[4 * i + 3] - ends[4 * i + 1] : 0; }
+    return out;
+  };
   const residuals = (model: AdjustModel, idx: number[]) => {
     const out = new Float64Array(idx.length * 2), cache = new Map<string, GeorefFrame>();
     const fr = (nm: string) => { let f = cache.get(nm); if (!f) { f = frameUnder(bases.get(nm)!, model); cache.set(nm, f); } return f; };
     idx.forEach((ti, k) => { const t = used[ti]; const r = tieResidual(fr(t.a), fr(t.b), t, model.origin); out[2 * k] = r ? r[0] : 0; out[2 * k + 1] = r ? r[1] : 0; });
+    return out;
+  };
+  // The residuals of the ties a photo parameter touches, with only that photograph's end re-projected under the
+  // perturbed model; the other end is the current one. Identical floats to recomputing both ends.
+  const residualsOneEnd = (model: AdjustModel, name: string, idx: number[], ends: Float64Array) => {
+    const out = new Float64Array(idx.length * 2), f = frameUnder(bases.get(name)!, model), sides = sideOf.get(name)!;
+    idx.forEach((ti, k) => {
+      const t = used[ti], side = sides.get(ti)!;
+      if (!Number.isFinite(ends[4 * ti])) return;
+      const g = side === 0 ? pixelToGround(f, t.ua, t.va) : pixelToGround(f, t.ub, t.vb);
+      if (!g) return;
+      const e = toEnu({ lat: g.lat, lng: g.lng, altM: 0 }, model.origin);
+      if (side === 0) { out[2 * k] = ends[4 * ti + 2] - e[0]; out[2 * k + 1] = ends[4 * ti + 3] - e[1]; }
+      else { out[2 * k] = e[0] - ends[4 * ti]; out[2 * k + 1] = e[1] - ends[4 * ti + 1]; }
+    });
     return out;
   };
   const priorSigma = (p: Param) => p.kind === "global" ? GLOBAL_PRIOR[p.key] : p.kind === "terrain" ? TERRAIN_ABS_SIGMA_M : spec.perPhoto!.sigma[p.key] ?? 1;
@@ -198,7 +232,7 @@ export function adjust(basesList: BaseFrame[], ties: SoilTie[], spec: ModelSpec,
     return c;
   };
 
-  let r = residuals(m, all), cost = costOf(m, r), mu = 1e-3, it = 0;
+  let ends = endsOf(m), r = residualsFrom(ends), cost = costOf(m, r), mu = 1e-3, it = 0;
   for (; it < iters; it++) {
     // Huber weights from the current residuals.
     const w = new Float64Array(used.length);
@@ -210,7 +244,7 @@ export function adjust(basesList: BaseFrame[], ties: SoilTie[], spec: ModelSpec,
       if (!idx.length) return;
       const v0 = getP(m, p), h = stepOf(p);
       setP(m, p, v0 + h);
-      const rp = residuals(m, idx);
+      const rp = p.kind === "photo" ? residualsOneEnd(m, p.name, idx, ends) : residuals(m, idx);
       setP(m, p, v0);
       idx.forEach((ti, k) => { const dx = (rp[2 * k] - r[2 * ti]) / h, dy = (rp[2 * k + 1] - r[2 * ti + 1]) / h; if (dx || dy) entries[ti].push({ p: j, dx, dy }); });
     });
@@ -233,11 +267,11 @@ export function adjust(basesList: BaseFrame[], ties: SoilTie[], spec: ModelSpec,
       if (!dx) { mu *= 10; continue; }
       const trial = cloneModel(m, spec);
       params.forEach((p, j) => setP(trial, p, getP(trial, p) + dx[j]));
-      const rt = residuals(trial, all), ct = costOf(trial, rt);
+      const et = endsOf(trial), rt = residualsFrom(et), ct = costOf(trial, rt);
       if (ct < cost) {
         params.forEach((p, j) => setP(m, p, getP(trial, p)));
         const rel = (cost - ct) / cost;
-        r = rt; cost = ct; mu = Math.max(1e-7, mu / 5); improved = true;
+        ends = et; r = rt; cost = ct; mu = Math.max(1e-7, mu / 5); improved = true;
         opts.log?.(`  ${spec.name} it ${it + 1}: cost ${ct.toFixed(2)}`);
         if (rel < 1e-5) it = iters;
       } else mu *= 10;

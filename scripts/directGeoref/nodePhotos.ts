@@ -1,8 +1,9 @@
 // Photographs and JPEG encoding in Node for the in-app build pipeline (src/lib/fieldTwin/build): jpeg-js through
 // scripts/bench/images, with the quarter-size decode cached per photograph (Node has the memory for it).
-import { readFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import { basename } from "node:path";
 import { decodeImage, encodeJpeg } from "../bench/images";
+import { mpfPreview } from "../../src/lib/directGeoref/mpf";
 import type { PhotoPixels } from "../../src/lib/photoScout/pattern";
 import type { Codec, PhotoSource } from "../../src/lib/fieldTwin/build/types";
 
@@ -19,10 +20,25 @@ function boxDown(img: { width: number; height: number; data: Uint8Array }, k: nu
 
 export function nodePhoto(path: string): PhotoSource {
   const small = new Map<number, PhotoPixels>();
+  let preview: PhotoPixels | null | undefined;
   const full = () => decodeImage(new Uint8Array(readFileSync(path)));
+  const head = () => { const fd = openSync(path, "r"); try { const buf = new Uint8Array(1 << 20); const n = readSync(fd, buf, 0, buf.length, 0); return buf.subarray(0, n); } finally { closeSync(fd); } };
   return {
     name: basename(path).replace(/\.[^.]+$/, ""),
-    header: async () => new Uint8Array(readFileSync(path)).subarray(0, 1 << 20),
+    header: async () => head(),
+    async preview() {
+      if (preview !== undefined) return preview;
+      const e = mpfPreview(head());
+      if (!e) return (preview = null);
+      const fd = openSync(path, "r");
+      try {
+        const buf = new Uint8Array(e.size);
+        const n = readSync(fd, buf, 0, e.size, e.offset);
+        const img = decodeImage(buf.subarray(0, n));
+        preview = { width: img.width, height: img.height, rgba: new Uint8ClampedArray(img.data.buffer, img.data.byteOffset, img.data.byteLength) };
+      } catch { preview = null; } finally { closeSync(fd); }
+      return preview;
+    },
     bytes: async () => new Uint8Array(readFileSync(path)),
     async decode(down) {
       // The cache first: until 2026-10-28 the full 20 MP decode ran before this check, so every quarter-size

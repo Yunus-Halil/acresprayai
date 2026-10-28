@@ -468,3 +468,56 @@ support, not prescriptions".
   RTK, no feature matching): https://ira.agroscope.ch/en-US/publication/59424
 - Offline in-field processing as the answer to rural connectivity (Pix4Dfields field test):
   https://www.pix4d.com/blog/input-savings-mavic-3-m
+
+## Progress (2026-10-28, same day)
+
+### Step 1a, done: bit-identical
+Rotation cached per pose (`rotationOf`), the Node photo source's cache checked before the decode, the evidence
+box from the real pixel size, the decode ratio per photograph. The apricot twin was byte-identical (only the
+boundary's own `processingMs` differed). Node build 387 s → 199 s: rows 94 → 14 s, evidence 60 → 0.5 s.
+
+### Step 1b, done: the camera's preview, checked with 30 % of the pairs held out
+`src/lib/directGeoref/mpf.ts` reads the MPF index; `PhotoSource.preview()` slices the tail of the file; the fine
+tie window follows the raster (5.6 cm on the preview, `maxBackM` half a sample); `cameras.heldOutResidualM` and
+the rejection counts are reported; `BuildOptions.usePreview`, `holdOutShare`, `rowRasterCellM`.
+
+| 30 % of pairs held out | Quarter decode (before) | Preview, fitter cell 1 px (5.6 cm) | Preview, fitter cell 2 px (11.2 cm) |
+|---|---|---|---|
+| Held-out tie residual | 7.58 cm (4,296 ties) | 7.53 cm (3,083 ties) | 7.53 cm |
+| Training residual | 6.55 cm | 6.48 cm | 6.48 cm |
+| Observed trees | 1,031 | 1,003 (−2.7 %) | 1,029 (−0.2 %) |
+| Rows kept | 14 | 14 | 14 |
+| Verified weeds | 4,384 | 4,415 | 4,367 (−0.4 %) |
+| Other vegetation | 204 | 179 | 176 (−14 %: patches near the 0.1 m² floor at 5.7 cm) |
+| Block | 1.340 ha | 1.385 ha | 1.373 ha (+2.5 %) |
+| Photographs stage | 62 s | 3.2 s | 3.2 s |
+| Rows stage | 8.3 s | 8.8 s | 4.7 s |
+
+The preview's ties are as good as the quarter decode's (held-out 7.5 cm either way) with 30 % fewer of them. The
+fitter's raster cell is now the whole number of preview pixels nearest 8 cm in ratio (two: 11.2 cm), which keeps
+the tree count; one pixel (finer than today) changed it by 3 %. The block moved 2.5 %, more than the 1 %
+tolerance asked for: the evidence classes are sampled from 5.6 cm pixels (a 5 × 5 box per quarter-metre cell
+instead of 7 × 7 of 3.9 cm) and the trees differ; which is nearer the truth needs the eye test, and the operator
+corrects the boundary either way. Noted, not hidden.
+
+### Step 2, done: ties and the solver
+E1 both rings projected once per pair; E2 `spectrum` / `correlate` with A's spectrum computed once and a window
+memo per first photograph (`windowCacheFor`, cleared when the photograph changes); E3 the homography inlined in
+the window sampler, scratch rows in `fft2`, scratch in `correlate`; F(i) the per-end residual: a photo parameter
+re-projects only its own end of each tie (bit-identical). Cameras 41 s → 24.5 s on the preview; held-out
+residual 7.55 cm (unchanged). Tiny tie differences from the memo (1e-9 m) moved the cameras at the fourth
+decimal and the fitter followed: trees 1,029 → 1,014, block 1.373 → 1.317 ha. **The twin's tree and block counts
+swing by about 2 % and 4 % between equivalent camera solutions: a sensitivity of the planting-layout fitter and
+the boundary probes, not of the cameras (ties agree to the millimetre).** Worth its own look later.
+
+Not yet done from step 2: the analytic Jacobian (F ii), the real-to-complex FFT and the WASM FFT (E3/E4).
+
+Node build after steps 1 and 2 (71 photographs, saved weed answers): about 110 s with the hold-out, of which the
+atlases are 75 s (step 4, H) and the cameras 25 s.
+
+### The shipped build after steps 1 and 2 (no hold-out)
+1,037 trees, **13 rows kept of 21** (the 13 orchard rows; the hedge along the track, kept as "row 1" with 18
+hedge trees by the quarter decode and excluded again by the boundary engine, is no longer read as a row at
+all), 4,426 verified weeds of 9,593 objects, 176 vegetation patches, block 1.320 ha, ties agree to 6.2 cm.
+124 s in Node: photographs 6.5 s, cameras 32 s, rows 5 s, weeds 1 s, atlases 79 s, evidence 0.5 s. The
+atlases are now two thirds of the build (step 4).

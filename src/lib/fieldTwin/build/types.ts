@@ -17,6 +17,8 @@ export type PhotoSource = {
   bytes(): Promise<Blob | Uint8Array>;
   /** The photograph decoded and box-averaged by `down` (1 = full size). */
   decode(down: number): Promise<PhotoPixels>;
+  /** The preview the camera wrote into the file (the MPF index; DJI: 960 x 640), decoded; null when the file has none. */
+  preview(): Promise<PhotoPixels | null>;
   /** Square windows of the ORIGINAL (x0, y0, size in original pixels), each resampled to `out` x `out` RGBA pixels (box-averaged when shrinking); one decode for all of them. */
   crops(reqs: { x0: number; y0: number; size: number; out: number }[]): Promise<Uint8ClampedArray[]>;
 };
@@ -61,6 +63,12 @@ export type BuildOptions = {
   detector: WeedDetector;
   /** Fewest photographs with ties for the per-photo attitude fit; under it only the four global numbers are fitted. */
   minTiePhotos?: number;
+  /** Read the camera's embedded preview instead of decoding the frame (default true); false forces the `down` decode. */
+  usePreview?: boolean;
+  /** Share of photo pairs whose ties are held out of every fit and reported as `cameras.heldOutResidualM` (0 = none, the shipped twin). */
+  holdOutShare?: number;
+  /** The planting-layout fitter's raster cell, metres (default 0.08; rounded to whole decoded pixels). */
+  rowRasterCellM?: number;
 };
 
 export class BuildCancelled extends Error { constructor() { super("cancelled"); } }

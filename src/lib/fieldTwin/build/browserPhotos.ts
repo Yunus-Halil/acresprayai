@@ -3,6 +3,7 @@
 // A photograph is decoded in full only when asked (crops for the atlases, the full-size pixels); the quarter-size
 // decode the detectors and the soil ties read is kept as a small JPEG and decoded again from that, so seventy
 // 20-megapixel photographs never sit decoded in memory together.
+import { mpfPreview } from "../../directGeoref/mpf";
 import type { PhotoPixels } from "../../photoScout/pattern";
 import type { Codec, PhotoSource } from "./types";
 
@@ -26,12 +27,19 @@ async function toPixels(bitmap: ImageBitmap, w: number, h: number): Promise<Phot
 export function browserPhoto(file: Blob, name: string): PhotoSource {
   const base = name.replace(/\.[^.]+$/, "");
   const small = new Map<number, Blob>();
-  let size: { w: number; h: number } | null = null;
-  const full = async (): Promise<ImageBitmap> => { const b = await createImageBitmap(file); size = { w: b.width, h: b.height }; return b; };
+  let previewBlob: Blob | null | undefined;
+  const full = async (): Promise<ImageBitmap> => createImageBitmap(file);
+  const header = async () => new Uint8Array(await file.slice(0, HEADER_BYTES).arrayBuffer());
   return {
     name: base,
-    header: async () => new Uint8Array(await file.slice(0, HEADER_BYTES).arrayBuffer()),
+    header,
     bytes: async () => file,
+    async preview() {
+      // The camera's own preview: a slice of the file's tail, decoded in milliseconds. The slice is kept, not the pixels.
+      if (previewBlob === undefined) { const e = mpfPreview(await header()); previewBlob = e ? file.slice(e.offset, e.offset + e.size, "image/jpeg") : null; }
+      if (!previewBlob) return null;
+      try { const b = await createImageBitmap(previewBlob); try { return await toPixels(b, b.width, b.height); } finally { b.close(); } } catch { previewBlob = null; return null; }
+    },
     async decode(down: number): Promise<PhotoPixels> {
       if (down <= 1) { const b = await full(); try { return await toPixels(b, b.width, b.height); } finally { b.close(); } }
       const cached = small.get(down);
@@ -62,7 +70,6 @@ export function browserPhoto(file: Blob, name: string): PhotoSource {
       } finally { b.close(); }
     },
   };
-  void size;
 }
 
 export const browserCodec: Codec = {
