@@ -521,3 +521,14 @@ hedge trees by the quarter decode and excluded again by the boundary engine, is 
 all), 4,426 verified weeds of 9,593 objects, 176 vegetation patches, block 1.320 ha, ties agree to 6.2 cm.
 124 s in Node: photographs 6.5 s, cameras 32 s, rows 5 s, weeds 1 s, atlases 79 s, evidence 0.5 s. The
 atlases are now two thirds of the build (step 4).
+
+### Step 4 (H + L), done in part: the twin opens before its atlases, twin.json gzipped at rest
+- `assembleBundle` now places every evidence crop in its atlas when the twin is assembled (the entries are
+  identical to before) and hands back `cutAtlases()`, a generator that cuts the pixels one atlas at a time. The
+  worker posts the twin as soon as it is complete and the atlases as they come; the page opens the twin at once
+  (an inspector crop whose atlas is still being cut waits for it), shows "Cutting the evidence crops in the
+  background: n of m atlases", and saves to the account when all are in. In the browser the operator sees the
+  field about 80 s earlier on this flight (the atlases were two thirds of the build). Node and the tests keep
+  cutting at once; the test proves the two paths give the same evidence entries and the same atlas bytes.
+- `store.ts` uploads twin.json gzipped as `twin.json.gz` (about five times smaller) and reads either form; older
+  twins in an account still open. Not done from L: centimetre rings, the evidence sidecar, smaller atlases.

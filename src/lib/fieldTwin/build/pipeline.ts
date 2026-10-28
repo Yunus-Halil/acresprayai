@@ -2,7 +2,7 @@
 // operator, and the report the page shows. Runs wherever the two abstractions (PhotoSource, Codec) are provided:
 // a browser worker (worker.ts) or Node (scripts/directGeoref/buildTwinApp.ts).
 import { parseTwin, type TwinBundle } from "../types";
-import { assembleBundle, evidenceAndBoundary } from "./bundle";
+import { type AtlasFile, assembleBundle, evidenceAndBoundary } from "./bundle";
 import { alignCameras } from "./cameras";
 import { readPhotographs } from "./photos";
 import { rowsAndTrees } from "./rows";
@@ -21,7 +21,14 @@ export type BuildReport = {
   notes: string[];
 };
 
-export type BuildOutput = { twin: TwinBundle; files: Map<string, Blob | Uint8Array>; report: BuildReport };
+export type BuildOutput = {
+  twin: TwinBundle;
+  /** twin.json (bytes) and, with `atlases: "now"`, every atlas; with "later" the atlases arrive from `cutAtlases`. */
+  files: Map<string, Blob | Uint8Array>;
+  report: BuildReport;
+  /** With `atlases: "later"`: cuts the atlases after the twin has opened, one file at a time. */
+  cutAtlases: (() => AsyncGenerator<AtlasFile>) | null;
+};
 
 /** Build a Field Twin from photographs. Throws BuildCancelled on cancel, an Error with the reason when nothing can be built. */
 export async function buildFieldTwin(photos: PhotoSource[], options: BuildOptions, codec: Codec, hooks: BuildHooks = {}): Promise<BuildOutput> {
@@ -54,7 +61,8 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   if (!options.detector) notes.push("built without the weed model: no weed candidates");
   for (const f of weeds.photographsFailed) notes.push(`${f.name}: the weed model gave no answer (${f.reason})`);
 
-  const built = await timed("bundle", () => assembleBundle({ id: options.id, name: options.name, photos: kept, reads, frames: cams.frames, model: cams.model, rows, weeds, detector: options.detector, cameraReport: cams.report as unknown as Record<string, unknown>, codec, down }, hooks));
+  const later = options.atlases === "later";
+  const built = await timed("bundle", () => assembleBundle({ id: options.id, name: options.name, photos: kept, reads, frames: cams.frames, model: cams.model, rows, weeds, detector: options.detector, cameraReport: cams.report as unknown as Record<string, unknown>, codec, down }, hooks, !later));
   const ev = await timed("evidence", () => evidenceAndBoundary(built.twin, kept, cams.frames, cams.model, pixels, options.evidenceCellM ?? 0.25, hooks));
   if (ev.note) notes.push(ev.note);
   timings.boundary = ev.classifyMs; timings.evidence = ev.sampledMs;
@@ -73,5 +81,5 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
     boundary: ev.boundary ? { areaM2: ev.boundary.areaM2, uncertaintyM2: ev.boundary.uncertaintyM2, supportPhotographs: ev.boundary.stats.support.photographs, failures: ev.boundary.failures } : null,
     crops: built.crops, timings, totalMs: Date.now() - T0, notes,
   };
-  return { twin: built.twin, files, report };
+  return { twin: built.twin, files, report, cutAtlases: later ? built.cutAtlases : null };
 }

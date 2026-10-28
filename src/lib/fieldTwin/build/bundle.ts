@@ -36,13 +36,25 @@ export type BundleInputs = {
   down: number;
 };
 
-export type BundleOutput = { twin: TwinBundle; atlases: Map<string, Blob | Uint8Array>; crops: number };
+export type AtlasFile = { file: string; bytes: Blob | Uint8Array; index: number; total: number };
+export type BundleOutput = {
+  twin: TwinBundle;
+  /** The atlas files, filled when the bundle was assembled with `cutNow`; otherwise empty until `cutAtlases` has run. */
+  atlases: Map<string, Blob | Uint8Array>;
+  crops: number;
+  /** Cuts the evidence crops into their atlases, one file at a time, in the order the twin's evidence entries name them. Runs once. */
+  cutAtlases: () => AsyncGenerator<AtlasFile>;
+};
 
 const CELL = 112, PER_ROW = 18, PER_ATLAS = PER_ROW * PER_ROW, ATLAS = CELL * PER_ROW;
 type Req = { photo: string; x0: number; y0: number; size: number; poly: [number, number][]; target: TwinEvidence[] };
 
-/** Stages 5 and 8: the twin bundle with its atlases (no boundary yet). */
-export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}): Promise<BundleOutput> {
+/**
+ * Stages 5 and 8: the twin bundle (no boundary yet). Every evidence entry is placed in its atlas here, so the
+ * twin is complete and can open at once; the atlases' pixels are cut by `cutAtlases`, now (`cutNow`) or after
+ * the twin has opened, with the same result either way.
+ */
+export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, cutNow = true): Promise<BundleOutput> {
   const t0 = Date.now();
   const { frames, model, reads, rows, weeds: weedsRes, codec, photos } = inp;
   const origin = model.origin;
@@ -118,39 +130,51 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}):
     return { id: v.id, lat: +v.lat.toFixed(8), lng: +v.lng.toFixed(8), areaM2: fix(v.areaM2, 3)!, seenBy: v.seenBy, ring };
   });
 
-  // Stage 8: cut the crops, photographs in order, atlases filled in order.
+  // Stage 8, the plan: photographs in order, atlases filled in order, every crop's cell decided now.
   reqs.sort((a, b) => (a.photo < b.photo ? -1 : a.photo > b.photo ? 1 : 0));
-  const byPhoto = new Map<string, Req[]>();
-  for (const r of reqs) (byPhoto.get(r.photo) ?? byPhoto.set(r.photo, []).get(r.photo)!).push(r);
+  const nAtlas = Math.ceil(reqs.length / PER_ATLAS);
+  const atlases: { file: string; width: number; height: number }[] = Array.from({ length: nAtlas }, (_, a) => { const cells = a === nAtlas - 1 ? reqs.length - a * PER_ATLAS : PER_ATLAS; return { file: `atlas-${a}.jpg`, width: ATLAS, height: Math.ceil(cells / PER_ROW) * CELL }; });
+  reqs.forEach((r, idx) => {
+    const a = Math.floor(idx / PER_ATLAS), c = idx % PER_ATLAS, cx = (c % PER_ROW) * CELL, cy = Math.floor(c / PER_ROW) * CELL, s = r.size / CELL;
+    const f = frames.get(r.photo)!;
+    r.target.push({ photo: r.photo, atlas: a, x: cx, y: cy, size: CELL, metresAcross: fix(r.size * (groundSampleAt(f, r.x0 + r.size / 2, r.y0 + r.size / 2) ?? 0.01), 2), poly: thinTo(r.poly, 20).map(([x, y]) => [Math.round((x - r.x0) / s), Math.round((y - r.y0) / s)] as [number, number]) });
+  });
+  hooks.log?.(`${reqs.length} evidence crops planned in ${atlases.length} atlases`);
+  // The cutting, as a generator: one full decode per photograph, an atlas yielded as soon as its last cell is in.
   const sources = new Map(photos.map(p => [p.name, p]));
-  let atlas = new Uint8ClampedArray(ATLAS * ATLAS * 4).fill(255), atlasIdx = 0, cellIdx = 0;
-  const atlases: { file: string; width: number; height: number }[] = [];
   const atlasFiles = new Map<string, Blob | Uint8Array>();
-  const flush = async () => {
-    const rowsN = Math.ceil(cellIdx / PER_ROW), hgt = rowsN * CELL;
-    const file = `atlas-${atlasIdx}.jpg`;
-    atlasFiles.set(file, await codec.encodeJpeg(atlas.subarray(0, ATLAS * hgt * 4), ATLAS, hgt, 0.72));
-    atlases.push({ file, width: ATLAS, height: hgt });
-    atlasIdx++; cellIdx = 0; atlas = new Uint8ClampedArray(ATLAS * ATLAS * 4).fill(255);
-  };
-  let done = 0;
-  for (const [name, list] of byPhoto) {
-    checkCancelled(hooks.signal);
-    hooks.onProgress?.({ stage: "bundle", done, total: reqs.length, message: `${name}: ${list.length} evidence crops`, elapsedMs: Date.now() - t0 });
-    const src = sources.get(name);
-    if (!src) continue;
-    const cut = await src.crops(list.map(r => ({ x0: r.x0, y0: r.y0, size: r.size, out: CELL })));
-    for (const [k, r] of list.entries()) {
-      const px = cut[k], cx = (cellIdx % PER_ROW) * CELL, cy = Math.floor(cellIdx / PER_ROW) * CELL, s = r.size / CELL;
-      for (let y = 0; y < CELL; y++) atlas.set(px.subarray(y * CELL * 4, (y + 1) * CELL * 4), ((cy + y) * ATLAS + cx) * 4);
-      const f = frames.get(r.photo)!;
-      r.target.push({ photo: r.photo, atlas: atlasIdx, x: cx, y: cy, size: CELL, metresAcross: fix(r.size * (groundSampleAt(f, r.x0 + r.size / 2, r.y0 + r.size / 2) ?? 0.01), 2), poly: thinTo(r.poly, 20).map(([x, y]) => [Math.round((x - r.x0) / s), Math.round((y - r.y0) / s)] as [number, number]) });
-      cellIdx++; done++;
-      if (cellIdx === PER_ATLAS) await flush();
+  let cutStarted = false;
+  async function* cutAtlases(): AsyncGenerator<AtlasFile> {
+    if (cutStarted) throw new Error("the atlases are already being cut");
+    cutStarted = true;
+    const t1 = Date.now();
+    const byPhoto = new Map<string, Req[]>();
+    for (const r of reqs) (byPhoto.get(r.photo) ?? byPhoto.set(r.photo, []).get(r.photo)!).push(r);
+    let atlas = new Uint8ClampedArray(ATLAS * ATLAS * 4).fill(255), atlasIdx = 0, cellIdx = 0, done = 0;
+    const flush = async (): Promise<AtlasFile> => {
+      const hgt = atlases[atlasIdx].height, file = atlases[atlasIdx].file;
+      const bytes = await codec.encodeJpeg(atlas.subarray(0, ATLAS * hgt * 4), ATLAS, hgt, 0.72);
+      atlasFiles.set(file, bytes);
+      const out = { file, bytes, index: atlasIdx, total: nAtlas };
+      atlasIdx++; cellIdx = 0; atlas = new Uint8ClampedArray(ATLAS * ATLAS * 4).fill(255);
+      return out;
+    };
+    for (const [name, list] of byPhoto) {
+      checkCancelled(hooks.signal);
+      hooks.onProgress?.({ stage: "bundle", done, total: reqs.length, message: `${name}: ${list.length} evidence crops`, elapsedMs: Date.now() - t1 });
+      const src = sources.get(name);
+      if (!src) { done += list.length; cellIdx += list.length; while (cellIdx >= PER_ATLAS) { cellIdx -= PER_ATLAS; yield await flush(); } continue; }
+      const cut = await src.crops(list.map(r => ({ x0: r.x0, y0: r.y0, size: r.size, out: CELL })));
+      for (const [k] of list.entries()) {
+        const px = cut[k], cx = (cellIdx % PER_ROW) * CELL, cy = Math.floor(cellIdx / PER_ROW) * CELL;
+        for (let y = 0; y < CELL; y++) atlas.set(px.subarray(y * CELL * 4, (y + 1) * CELL * 4), ((cy + y) * ATLAS + cx) * 4);
+        cellIdx++; done++;
+        if (cellIdx === PER_ATLAS) yield await flush();
+      }
     }
+    if (cellIdx) yield await flush();
+    hooks.log?.(`${reqs.length} evidence crops cut into ${atlases.length} atlases (${((Date.now() - t1) / 1000).toFixed(0)} s)`);
   }
-  if (cellIdx) await flush();
-  hooks.log?.(`${reqs.length} evidence crops in ${atlases.length} atlases`);
 
   const footprints = [...frames.values()].map(f => ({ photo: f.name, ring: (frameCorners(f) ?? []).map(g => [+g.lat.toFixed(7), +g.lng.toFixed(7)] as [number, number]) })).filter(f => f.ring.length === 4);
   const allPts = [...twinTrees.map(t => [t.lat, t.lng]), ...footprints.flatMap(f => f.ring)];
@@ -187,7 +211,8 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}):
       vegetationPatches: twinVeg.length,
     },
   };
-  return { twin: bundle, atlases: atlasFiles, crops: reqs.length };
+  if (cutNow) for await (const _ of cutAtlases()) void _;
+  return { twin: bundle, atlases: atlasFiles, crops: reqs.length, cutAtlases };
 }
 
 export type EvidenceOutput = { boundary: BoundaryResult | null; cells: number; sampledMs: number; classifyMs: number; note: string | null };

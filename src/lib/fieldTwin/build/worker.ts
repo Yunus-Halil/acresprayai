@@ -11,6 +11,9 @@ export type BuildWorkerMessage =
   | { type: "progress"; progress: BuildProgress }
   | { type: "log"; line: string }
   | { type: "result"; twinJson: string; files: [string, Blob][]; report: BuildReport }
+  /** An atlas cut after the result: the page opens the twin while these arrive. */
+  | { type: "atlas"; file: string; blob: Blob; index: number; total: number }
+  | { type: "atlases-done" }
   | { type: "cancelled" }
   | { type: "error"; message: string };
 
@@ -34,7 +37,7 @@ self.onmessage = async (e: MessageEvent<BuildWorkerRequest>) => {
         return r.value;
       }
       : null;
-    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, detector }, browserCodec, {
+    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, detector, atlases: "later" }, browserCodec, {
       signal: abort.signal,
       onProgress: progress => post({ type: "progress", progress }),
       log: line => post({ type: "log", line }),
@@ -42,6 +45,8 @@ self.onmessage = async (e: MessageEvent<BuildWorkerRequest>) => {
     const files: [string, Blob][] = [];
     for (const [k, v] of out.files) files.push([k, v instanceof Blob ? v : new Blob([v])]);
     post({ type: "result", twinJson: JSON.stringify(out.twin), files, report: out.report });
+    if (out.cutAtlases) for await (const a of out.cutAtlases()) post({ type: "atlas", file: a.file, blob: a.bytes instanceof Blob ? a.bytes : new Blob([a.bytes]), index: a.index, total: a.total });
+    post({ type: "atlases-done" });
   } catch (err) {
     if (err instanceof BuildCancelled || abort.signal.aborted) post({ type: "cancelled" });
     else post({ type: "error", message: (err as Error)?.message ?? String(err) });

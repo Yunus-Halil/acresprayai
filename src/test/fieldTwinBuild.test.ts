@@ -137,5 +137,15 @@ describe.skipIf(!haveFlight)("twin build on the local test flight (eight photogr
     expect(out.twin.boundary?.cultivated.areaM2 ?? 0).toBeGreaterThan(1000);
     expect(out.twin.atlases.length).toBeGreaterThanOrEqual(1);
     for (const a of out.twin.atlases) expect(out.files.has(a.file)).toBe(true);
-  }, 600_000);
+    expect(out.cutAtlases).toBeNull();
+    // The same build with the atlases cut after the twin: the twin's evidence entries are identical, the atlases the same bytes.
+    const later = await buildFieldTwin(photos, { name: "Test flight", detector: null, atlases: "later" }, nodeCodec);
+    expect(later.cutAtlases).not.toBeNull();
+    expect(later.files.has("atlas-0.jpg")).toBe(false);
+    const evidenceOf = (t: typeof out.twin) => JSON.stringify([...t.trees.map(x => x.evidence), ...t.weeds.map(x => x.evidence)]);
+    expect(evidenceOf(later.twin)).toBe(evidenceOf(out.twin));
+    const cut: string[] = [];
+    for await (const a of later.cutAtlases!()) { cut.push(a.file); expect(Buffer.from(a.bytes as Uint8Array).equals(Buffer.from(out.files.get(a.file) as Uint8Array))).toBe(true); }
+    expect(cut).toEqual(out.twin.atlases.map(a => a.file));
+  }, 900_000);
 });

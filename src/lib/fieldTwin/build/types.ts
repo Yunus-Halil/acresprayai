@@ -69,6 +69,8 @@ export type BuildOptions = {
   holdOutShare?: number;
   /** The planting-layout fitter's raster cell, metres (default 0.08; rounded to whole decoded pixels). */
   rowRasterCellM?: number;
+  /** Cut the evidence atlases before returning ("now", the default) or hand back a generator to cut them after the twin has opened ("later"). */
+  atlases?: "now" | "later";
 };
 
 export class BuildCancelled extends Error { constructor() { super("cancelled"); } }

@@ -17,7 +17,7 @@ import TwinBuilder, { type BuiltTwin } from "@/components/app/fieldTwin/TwinBuil
 const btn = "inline-flex items-center gap-1.5 text-xs border border-[#333] text-neutral-300 hover:bg-[#1f1f1f] disabled:opacity-40 rounded-sm px-2.5 py-1";
 
 /** Where the open twin's atlases come from: the account, the dev server, or files just picked. */
-type Source = { kind: "account"; userId: string } | { kind: "dev" } | { kind: "files"; files: Map<string, Blob> };
+type Source = { kind: "account"; userId: string } | { kind: "dev" } | { kind: "files"; files: Map<string, Blob>; /** Atlases still being cut by the builder: an atlas not yet in `files` arrives through this. */ pending?: Promise<Map<string, Blob>> };
 
 type ScanRow = ComparableScan & { image_count: number | null; tiles_max_zoom: number | null; field_id: string };
 
@@ -69,7 +69,7 @@ export default function FieldTwin() {
     if (!p) {
       p = source.kind === "account" ? loadAtlas(source.userId, twin.id, file)
         : source.kind === "dev" ? Promise.resolve(`/__field-twin/${twin.id}/${file}`)
-        : Promise.resolve(URL.createObjectURL(source.files.get(file)!));
+        : (async () => { let b = source.files.get(file); if (!b && source.pending) { await source.pending; b = source.files.get(file); } if (!b) throw new Error(`${file} is not among the files`); return URL.createObjectURL(b); })();
       urls.current.set(file, p);
     }
     return p;
@@ -110,9 +110,14 @@ export default function FieldTwin() {
   /** A twin built in the browser from the flight's photographs: opened at once, saved to the account behind it. */
   const fromBuilder = async (b: BuiltTwin) => {
     setBuilding(false);
-    open(b.twin, { kind: "files", files: b.files });
+    open(b.twin, { kind: "files", files: b.files, pending: b.atlases });
     if (!userId) return;
     try {
+      if (b.progress.done < b.progress.total) {
+        setBusy(`Cutting the evidence crops in the background: ${b.progress.done} of ${b.progress.total} atlases`);
+        b.onAtlas((d, n) => setBusy(`Cutting the evidence crops in the background: ${d} of ${n} atlases`));
+        await b.atlases;
+      }
       await saveTwin(userId, b.twin, b.files, (d, n) => setBusy(`Saving to your account: ${d} of ${n} files`));
       await refresh();
       setSource({ kind: "account", userId });

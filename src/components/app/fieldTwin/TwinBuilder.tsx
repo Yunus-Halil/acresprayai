@@ -3,14 +3,13 @@
 // account or view it as it is. The work runs in a worker (lib/fieldTwin/build/runBuild.ts); this is the panel.
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
-import { type BuildRun, BuildAborted, startTwinBuild } from "@/lib/fieldTwin/build/runBuild";
-import type { BuildReport } from "@/lib/fieldTwin/build/pipeline";
+import { type BuildResult, type BuildRun, BuildAborted, startTwinBuild } from "@/lib/fieldTwin/build/runBuild";
 import { BUILD_STAGES, type BuildProgress, type BuildStage } from "@/lib/fieldTwin/build/types";
 import type { TwinBundle } from "@/lib/fieldTwin/types";
 import { fetchHealth } from "@/lib/weedVision/client";
 import { weedModelAvailable } from "@/lib/weedVision/flag";
 
-export type BuiltTwin = { twin: TwinBundle; files: Map<string, Blob>; report: BuildReport };
+export type BuiltTwin = BuildResult;
 
 type Props = {
   onBuilt: (b: BuiltTwin) => void;
@@ -63,7 +62,7 @@ export default function TwinBuilder({ onBuilt, onClose }: Props) {
       });
     } catch (e) { setError((e as Error).message); return; }
     setRun(r);
-    r.done.then(out => { setResult(out); setDoneStages(BUILD_STAGES.map(s => s.id)); setRun(null); }).catch(e => { setError(e instanceof BuildAborted ? "Build cancelled." : (e as Error).message); setRun(null); });
+    r.done.then(out => { setResult(out); setDoneStages(BUILD_STAGES.filter(s => s.id !== "bundle").map(s => s.id)); setRun(null); out.atlases.then(() => setDoneStages(BUILD_STAGES.map(s => s.id))).catch(() => undefined); }).catch(e => { setError(e instanceof BuildAborted ? "Build cancelled." : (e as Error).message); setRun(null); });
   };
   const stageIndex = progress ? BUILD_STAGES.findIndex(s => s.id === progress.stage) : -1;
   const size = files.reduce((s, f) => s + f.size, 0);
@@ -126,7 +125,7 @@ export default function TwinBuilder({ onBuilt, onClose }: Props) {
             <li>{result.twin.trees.length} trees on {result.twin.rows.filter(r => r.kept).length} rows{result.twin.field.rowSpacingM ? ` (${result.twin.field.rowSpacingM} m apart, plants ${result.twin.field.plantSpacingM} m)` : ""}</li>
             <li>{result.twin.weeds.length ? `${result.twin.weeds.filter(w => w.status === "verified").length} verified weed candidates of ${result.twin.weeds.length} objects (${result.report.weeds.detections} detections)` : "no weeds (built without the model)"}</li>
             <li>{result.report.boundary ? `cultivated block ${(result.report.boundary.areaM2 / 10_000).toFixed(2)} ha, ${Math.round(100 * result.report.boundary.supportPhotographs)} % of the edges seen in the photographs` : "no cultivated block"}</li>
-            <li>{result.report.crops} evidence crops in {result.twin.atlases.length} atlases</li>
+            <li>{result.report.crops} evidence crops in {result.twin.atlases.length} atlases{result.progress.done < result.progress.total ? " (being cut in the background; the twin opens without waiting)" : ""}</li>
           </ul>
           {result.report.notes.length > 0 && <ul className="mt-1.5 space-y-0.5 border-t border-[#2e322e] pt-1.5 text-[10px] leading-snug text-neutral-500">{result.report.notes.map(n => <li key={n}>{n}</li>)}</ul>}
           <div className="mt-2 flex flex-wrap gap-1.5">

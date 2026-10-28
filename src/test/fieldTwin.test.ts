@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FIELD_TWIN_FORMAT, parseTwin, type TwinBundle, type TwinWeed } from "@/lib/fieldTwin/types";
-import { bundleFileNames, missingFiles, twinPath } from "@/lib/fieldTwin/store";
+import { bundleFileNames, gunzipText, gzipBlob, missingFiles, twinPath } from "@/lib/fieldTwin/store";
 import { isFieldTwinReviewer } from "@/lib/fieldTwin/reviewers";
 import { distanceToRowM, treeLines, weedDensity, weedLines } from "@/lib/fieldTwin/view";
 import { WEED_COLOUR, weedColour } from "@/lib/fieldTwin/style";
@@ -46,6 +46,13 @@ describe("Field Twin bundle", () => {
     expect(bundleFileNames(b)).toEqual(["twin.json", "atlas-0.jpg", "atlas-1.jpg"]);
     expect(missingFiles(b, ["twin.json", "atlas-1.jpg"])).toEqual(["atlas-0.jpg"]);
     expect(twinPath("user-1", b.id, "twin.json")).toBe("user-1/field-twins/apricot-2021-04-27/twin.json");
+  });
+
+  it("stores twin.json gzipped and reads it back", async () => {
+    const text = JSON.stringify({ format: "swardus-field-twin-v1", weeds: Array.from({ length: 2000 }, (_, i) => ({ id: i, lat: 33.88 + i * 1e-6, lng: -5.42 })) });
+    const gz = await gzipBlob(new Blob([text], { type: "application/json" }));
+    expect(gz.size).toBeLessThan(text.length / 3);
+    expect(await gunzipText(gz)).toBe(text);
   });
 
   const real = join(process.cwd(), "data/direct-georef/twin/apricot-2021-04-27/twin.json");

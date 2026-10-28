@@ -8,6 +8,25 @@ import { parseTwin, type TwinBundle } from "./types";
 
 export const TWIN_BUCKET = "orthos";
 
+/** twin.json is stored gzipped (about five times smaller: 9 MB to 1.7 MB on the apricot twin); older twins hold it plain. */
+export const TWIN_JSON_GZ = "twin.json.gz";
+
+/** A blob's bytes (every Blob implementation, including ones without `stream` or `arrayBuffer`). */
+async function bytesOf(blob: Blob): Promise<Uint8Array> {
+  if (typeof blob.arrayBuffer === "function") return new Uint8Array(await blob.arrayBuffer());
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(new Uint8Array(r.result as ArrayBuffer)); r.onerror = () => rej(r.error); r.readAsArrayBuffer(blob); });
+}
+export async function gzipBlob(blob: Blob): Promise<Blob> {
+  if (typeof CompressionStream === "undefined") return blob;
+  const stream = new Response(await bytesOf(blob)).body!.pipeThrough(new CompressionStream("gzip"));
+  return new Blob([new Uint8Array(await new Response(stream).arrayBuffer())], { type: "application/gzip" });
+}
+export async function gunzipText(blob: Blob): Promise<string> {
+  if (typeof DecompressionStream === "undefined") throw new Error("this browser cannot read a compressed twin");
+  const stream = new Response(await bytesOf(blob)).body!.pipeThrough(new DecompressionStream("gzip"));
+  return new Response(stream).text();
+}
+
 export const twinFolder = (userId: string, twinId: string) => `${userId}/field-twins/${twinId}`;
 export const twinPath = (userId: string, twinId: string, file: string) => `${twinFolder(userId, twinId)}/${file}`;
 
@@ -32,9 +51,16 @@ export async function listTwins(userId: string): Promise<SavedTwin[]> {
 }
 
 export async function loadTwin(userId: string, twinId: string): Promise<TwinBundle> {
-  const { data, error } = await supabase.storage.from(TWIN_BUCKET).download(twinPath(userId, twinId, "twin.json"));
-  if (error || !data) throw new Error(error?.message ?? "no twin.json");
-  const parsed = parseTwin(JSON.parse(await data.text()));
+  // The compressed file first; a twin saved before 2026-10-28 holds twin.json plain.
+  const gz = await supabase.storage.from(TWIN_BUCKET).download(twinPath(userId, twinId, TWIN_JSON_GZ));
+  let text: string;
+  if (!gz.error && gz.data) text = await gunzipText(gz.data);
+  else {
+    const { data, error } = await supabase.storage.from(TWIN_BUCKET).download(twinPath(userId, twinId, "twin.json"));
+    if (error || !data) throw new Error(error?.message ?? "no twin.json");
+    text = await data.text();
+  }
+  const parsed = parseTwin(JSON.parse(text));
   if ("reason" in parsed) throw new Error(parsed.reason);
   return parsed.twin;
 }
@@ -52,10 +78,12 @@ export async function saveTwin(userId: string, twin: TwinBundle, files: Map<stri
   const missing = names.filter(n => !files.has(n));
   if (missing.length) throw new Error(`missing ${missing.join(", ")}`);
   let done = 0;
-  // The atlases first, twin.json last: a twin listed in the account always has its pictures.
+  // The atlases first, twin.json last: a twin listed in the account always has its pictures. twin.json goes up
+  // gzipped under its own name.
   for (const n of [...names.slice(1), names[0]]) {
-    const blob = files.get(n)!;
-    const { error } = await supabase.storage.from(TWIN_BUCKET).upload(twinPath(userId, twin.id, n), blob, { upsert: true, contentType: n.endsWith(".json") ? "application/json" : "image/jpeg" });
+    const json = n === "twin.json";
+    const blob = json ? await gzipBlob(files.get(n)!) : files.get(n)!;
+    const { error } = await supabase.storage.from(TWIN_BUCKET).upload(twinPath(userId, twin.id, json ? TWIN_JSON_GZ : n), blob, { upsert: true, contentType: json ? "application/gzip" : "image/jpeg" });
     if (error) throw new Error(`${n}: ${error.message}`);
     onProgress?.(++done, names.length);
   }
