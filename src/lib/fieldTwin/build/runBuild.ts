@@ -24,7 +24,7 @@ export type BuildRun = {
 
 export class BuildAborted extends Error { constructor() { super("The build was cancelled."); this.name = "Aborted"; } }
 
-export function startTwinBuild(files: File[], options: { name: string; id?: string; weeds: "model" | "colour" | "none" }, hooks: { onProgress?: (p: BuildProgress) => void; onLog?: (line: string) => void } = {}): BuildRun {
+export function startTwinBuild(files: File[], options: { name: string; id?: string; weeds: "model" | "colour" | "none"; helpers?: number }, hooks: { onProgress?: (p: BuildProgress) => void; onLog?: (line: string) => void } = {}): BuildRun {
   if (typeof Worker === "undefined") throw new Error("this browser cannot run the build off the main thread (no Worker)");
   const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
   let settled = false;
@@ -57,7 +57,7 @@ export function startTwinBuild(files: File[], options: { name: string; id?: stri
     };
     worker.onerror = e => fail(new Error(e.message || "The build worker failed to start."));
   });
-  const req: BuildWorkerRequest = { type: "build", files, name: options.name, id: options.id, weeds: options.weeds };
+  const req: BuildWorkerRequest = { type: "build", files, name: options.name, id: options.id, weeds: options.weeds, helpers: options.helpers };
   worker.postMessage(req);
   return { done, cancel: () => { if (!settled) { const c: BuildWorkerRequest = { type: "cancel" }; worker.postMessage(c); } } };
 }

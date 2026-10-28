@@ -6,6 +6,7 @@
 // and in Node (scripts/directGeoref/nodePhotos.ts: jpeg-js) for the scripts and the tests.
 import type { PhotoPixels } from "../../photoScout/pattern";
 import type { WeedVisionResult } from "../../weedVision/client";
+import type { Pool } from "./pool";
 
 /** One original photograph, read on demand. Nothing is held decoded between calls unless the source caches it. */
 export type PhotoSource = {
@@ -85,6 +86,8 @@ export type BuildOptions = {
   rowRasterCellM?: number;
   /** Cut the evidence atlases before returning ("now", the default) or hand back a generator to cut them after the twin has opened ("later"). */
   atlases?: "now" | "later";
+  /** Helper workers for the parallel stages (ties, the colour pass, the crops); without one everything runs inline. */
+  pool?: Pool;
 };
 
 export class BuildCancelled extends Error { constructor() { super("cancelled"); } }

@@ -12,6 +12,7 @@ import { FIELD_TWIN_FORMAT, type TwinBundle, type TwinEvidence } from "../types"
 import { yieldToEvents } from "./cameras";
 import type { PhotoRead } from "./photos";
 import type { RowsResult } from "./rows";
+import type { Pool } from "./pool";
 import { type BuildHooks, type Codec, type PhotoSource, type WeedDetector, checkCancelled, twinIdFrom } from "./types";
 import type { WeedsResult } from "./weeds";
 
@@ -34,6 +35,9 @@ export type BundleInputs = {
   cameraReport: Record<string, unknown>;
   codec: Codec;
   down: number;
+  /** Helper workers and the photographs' files, for the crops. */
+  pool?: Pool | null;
+  files?: Map<string, Blob>;
 };
 
 export type AtlasFile = { file: string; bytes: Blob | Uint8Array; index: number; total: number };
@@ -159,12 +163,26 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
       atlasIdx++; cellIdx = 0; atlas = new Uint8ClampedArray(ATLAS * ATLAS * 4).fill(255);
       return out;
     };
+    // With a pool, the next photographs' crops are cut ahead while this one's cells are placed.
+    const pool = inp.pool && inp.pool.size > 1 && inp.files ? inp.pool : null;
+    const ahead = new Map<string, Promise<Uint8ClampedArray[] | null>>();
+    const names = [...byPhoto.keys()];
+    const cutOf = (name: string): Promise<Uint8ClampedArray[] | null> => {
+      const list = byPhoto.get(name)!, reqs2 = list.map(r => ({ x0: r.x0, y0: r.y0, size: r.size, out: CELL }));
+      const file = inp.files?.get(name);
+      if (pool && file) return pool.run({ kind: "crops", name, file, reqs: reqs2 }).then(r => (r.kind === "crops" ? r.cells : null));
+      const src = sources.get(name);
+      return src ? src.crops(reqs2) : Promise.resolve(null);
+    };
+    let nextToStart = 0;
+    const startAhead = () => { while (pool && nextToStart < names.length && ahead.size < pool.size + 1) { const n = names[nextToStart++]; ahead.set(n, cutOf(n)); } };
     for (const [name, list] of byPhoto) {
       checkCancelled(hooks.signal);
       hooks.onProgress?.({ stage: "bundle", done, total: reqs.length, message: `${name}: ${list.length} evidence crops`, elapsedMs: Date.now() - t1 });
-      const src = sources.get(name);
-      if (!src) { done += list.length; cellIdx += list.length; while (cellIdx >= PER_ATLAS) { cellIdx -= PER_ATLAS; yield await flush(); } continue; }
-      const cut = await src.crops(list.map(r => ({ x0: r.x0, y0: r.y0, size: r.size, out: CELL })));
+      startAhead();
+      const cut = await (ahead.get(name) ?? cutOf(name));
+      ahead.delete(name);
+      if (!cut) { done += list.length; cellIdx += list.length; while (cellIdx >= PER_ATLAS) { cellIdx -= PER_ATLAS; yield await flush(); } continue; }
       for (const [k] of list.entries()) {
         const px = cut[k], cx = (cellIdx % PER_ROW) * CELL, cy = Math.floor(cellIdx / PER_ROW) * CELL;
         for (let y = 0; y < CELL; y++) atlas.set(px.subarray(y * CELL * 4, (y + 1) * CELL * 4), ((cy + y) * ATLAS + cx) * 4);

@@ -1,6 +1,7 @@
 // Stage 4: the weed model on every original photograph, reconciled into one object per plant and classed
 // against the trees and rows. The port of scripts/directGeoref/m1Weeds.ts (milestone 1).
 import { type AdjustModel, type GeorefFrame, type Observation, type ReconciledObject, groundSampleAt, groundToPixel, pixelToGround, reconcile, vegetationObjects } from "../../directGeoref";
+import type { Pool } from "./pool";
 import { type TilePlan, chooseViews, planTiles, runRings, tilesAt } from "./views";
 import type { PhotoPixels } from "../../photoScout/pattern";
 import { toEnu } from "../../sourceFrames/odm";
@@ -28,6 +29,10 @@ export type WeedsResult = { tier: WeedTier; weeds: BuildWeed[]; detections: numb
 
 export type WeedsOptions = {
   tier: WeedTier;
+  /** Helper workers for the colour pass; the photographs' files are needed for it. */
+  pool?: Pool | null;
+  files?: Map<string, Blob>;
+  colourDown?: number;
   /** Model tier: nearest views per ground cell to run (0 = all tiles), and the detector's tile plan. */
   views?: number;
   plan?: DetectPlan;
@@ -101,7 +106,26 @@ export async function findWeeds(photos: PhotoSource[], frames: Map<string, Geore
     for (const [name, list] of choice.tiles) runTiles.set(name, list);
     hooks.log?.(`views: ${views} nearest per 2 m cell: ${choice.run} of ${choice.total} tiles`);
   }
+  // The colour pass through the pool: one task per photograph, results in photograph order.
+  if (tier === "colour" && opts.pool && opts.pool.size > 1 && opts.files) {
+    const jobs = photos.map(async p => {
+      const f = frames.get(p.name), file = opts.files!.get(p.name);
+      if (!f || !file) return null;
+      const r = await opts.pool!.run({ kind: "colour", name: p.name, file, frame: f, down: opts.colourDown ?? 4, minM2: opts.colourMinM2 ?? 0.01 });
+      return r.kind === "colour" ? { f, obs: r.observations } : null;
+    });
+    let i = 0;
+    for (const job of jobs) {
+      const r = await job;
+      checkCancelled(hooks.signal);
+      hooks.onProgress?.({ stage: "weeds", done: ++i, total: photos.length, message: "green patches", elapsedMs: Date.now() - t0 });
+      if (!r) continue;
+      if (!settings.model) settings = { model: "colour rules: ExGR green patches, 2-pixel cells, 3 cells or more", pixelsM: +((groundSampleAt(r.f, r.f.intrinsics.cx, r.f.intrinsics.cy) ?? 0.01) * (opts.colourDown ?? 4)).toFixed(4), minM2: opts.colourMinM2 ?? 0.01 };
+      run++; detections += r.obs.length; obs.push(...r.obs);
+    }
+  }
   for (const [i, p] of photos.entries()) {
+    if (tier === "colour" && opts.pool && opts.pool.size > 1 && opts.files) break;
     const f = frames.get(p.name);
     if (!f) continue;
     checkCancelled(hooks.signal);

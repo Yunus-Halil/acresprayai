@@ -615,3 +615,21 @@ the line. The straightness rule now uses the median absolute deviation (scaled);
 After it: Node 13 rows and 1.320 ha, the browser 14 rows (one short candidate of 9 trees in 2 photographs, which
 the boundary's pitch rule then leaves out) and 1.318 ha. Rows of a planting no longer hang on a threshold a
 camera shift can cross.
+
+### Step 5 (I), done: the helper pool
+`build/pool.ts` and `helper.ts`: the build worker spawns cores − 1 helpers (at most six). The soil ties are
+partitioned by first photograph, each helper receiving only its own photographs' rasters and their partners'
+(sent once, transferred, never the whole flight); the colour pass runs one photograph per task; the crops are
+cut a few photographs ahead of the atlas assembly. Without a pool everything runs inline through the same
+handler (Node, tests), so the twin is the same either way (checked: identical counts, rows and block).
+
+| 71 photographs in Chrome, colour tier | One worker | 6 helpers (12 cores) |
+|---|---|---|
+| Twin ready | 45 s | **21 s** |
+| Atlases done | 54 s | 24 s |
+| Cameras | 27.8 s | 9.2 s |
+| Colour weeds | 9.3 s | 3.9 s |
+| Rows | 4.1 s | 4.2 s (serial) |
+
+On a 4-core laptop (3 helpers) expect roughly 30 s to a twin. The rows stage (4 s) and the fits inside the
+cameras stage are the serial remainder; the analytic Jacobian (F ii) is the next cut there.

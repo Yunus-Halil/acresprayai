@@ -45,7 +45,8 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   if (reads.length < 2) throw new Error(reads.length ? "only one photograph holds a camera: a twin needs overlapping photographs" : `no photograph holds a camera (${refused[0]?.reason ?? "unknown"})`);
   checkCancelled(hooks.signal);
 
-  const cams = await timed("cameras", () => alignCameras(reads, hooks, 40, options.holdOutShare ?? 0));
+  const pool = options.pool ?? null;
+  const cams = await timed("cameras", () => alignCameras(reads, hooks, 40, options.holdOutShare ?? 0, pool));
   if (cams.report.note) notes.push(cams.report.note);
   const previews = reads.filter(r => r.source === "preview").length;
   if (usePreview && previews) notes.push(`${previews} of ${reads.length} photographs read from the camera's own ${reads.find(r => r.source === "preview")!.viewW} x ${reads.find(r => r.source === "preview")!.viewH} preview`);
@@ -59,13 +60,14 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   const kept = photos.filter(p => cams.frames.has(p.name));
   const tier = options.weedTier ?? (options.detector ? "model" : "none");
   const colourPixels = options.colourPixels === "preview" ? pixels : (name: string) => sources.get(name)!.decode(down);
-  const weeds = await timed("weeds", () => findWeeds(kept, cams.frames, cams.model, rows, options.detector, hooks, { tier, colourPixels, views: options.weedViews ?? 0, plan: options.detectPlan }));
+  const photoFiles = pool ? new Map(await Promise.all(kept.map(async p => { const b = await p.bytes(); return [p.name, b instanceof Blob ? b : new Blob([b as BlobPart])] as [string, Blob]; }))) : undefined;
+  const weeds = await timed("weeds", () => findWeeds(kept, cams.frames, cams.model, rows, options.detector, hooks, { tier, colourPixels, colourDown: down, views: options.weedViews ?? 0, plan: options.detectPlan, pool: options.colourPixels === "preview" ? null : pool, files: photoFiles }));
   if (weeds.tier === "none") notes.push("built without a weed pass: no weed candidates");
   else if (weeds.tier === "colour") notes.push("weeds by the colour rules, not the model: green patches over bare soil; the small, the dark and the yellowing are missed");
   for (const f of weeds.photographsFailed) notes.push(`${f.name}: the weed model gave no answer (${f.reason})`);
 
   const later = options.atlases === "later";
-  const built = await timed("bundle", () => assembleBundle({ id: options.id, name: options.name, photos: kept, reads, frames: cams.frames, model: cams.model, rows, weeds, detector: options.detector, cameraReport: cams.report as unknown as Record<string, unknown>, codec, down }, hooks, !later));
+  const built = await timed("bundle", () => assembleBundle({ id: options.id, name: options.name, photos: kept, reads, frames: cams.frames, model: cams.model, rows, weeds, detector: options.detector, cameraReport: cams.report as unknown as Record<string, unknown>, codec, down, pool, files: photoFiles }, hooks, !later));
   const ev = await timed("evidence", () => evidenceAndBoundary(built.twin, kept, cams.frames, cams.model, pixels, options.evidenceCellM ?? 0.25, hooks));
   if (ev.note) notes.push(ev.note);
   timings.boundary = ev.classifyMs; timings.evidence = ev.sampledMs;

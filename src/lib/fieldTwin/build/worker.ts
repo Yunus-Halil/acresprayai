@@ -4,10 +4,11 @@
 import { type DetectOptions, detectWeeds } from "../../weedVision/client";
 import { browserCodec, browserPhoto } from "./browserPhotos";
 import { detectionKey, indexedDbStore, sha256Hex } from "./detectionCache";
+import { workerPool } from "./pool";
 import { type BuildReport, buildFieldTwin } from "./pipeline";
 import { BuildCancelled, type BuildProgress } from "./types";
 
-export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; /** The weed pass: the model through the local service, the colour rules, or none. */ weeds: "model" | "colour" | "none"; /** Model tier: nearest views per ground cell to run (0, the default: every tile; measured on the apricot flight, 1024 px tiles prune only 8 %). */ views?: number; detect?: DetectOptions } | { type: "cancel" };
+export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; /** The weed pass: the model through the local service, the colour rules, or none. */ weeds: "model" | "colour" | "none"; /** Model tier: nearest views per ground cell to run (0, the default: every tile; measured on the apricot flight, 1024 px tiles prune only 8 %). */ views?: number; /** Helper workers (default: cores - 1, at most 6; 1 = none). */ helpers?: number; detect?: DetectOptions } | { type: "cancel" };
 export type BuildWorkerMessage =
   | { type: "progress"; progress: BuildProgress }
   | { type: "log"; line: string }
@@ -20,6 +21,7 @@ export type BuildWorkerMessage =
 
 const post = (m: BuildWorkerMessage) => (self as unknown as { postMessage: (m: BuildWorkerMessage) => void }).postMessage(m);
 const abort = new AbortController();
+let pool: ReturnType<typeof workerPool> | null = null;
 
 self.onmessage = async (e: MessageEvent<BuildWorkerRequest>) => {
   const m = e.data;
@@ -45,7 +47,12 @@ self.onmessage = async (e: MessageEvent<BuildWorkerRequest>) => {
         return r.value;
       }
       : null;
-    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, detector, weedTier: m.weeds, weedViews: m.views ?? 0, detectPlan: { tile: detect.tile ?? 1024, overlap: detect.overlap ?? 128, scale: detect.scale }, atlases: "later" }, browserCodec, {
+    // Helper workers for the ties, the colour pass and the crops: one fewer than the cores, at most six.
+    const cores = typeof navigator !== "undefined" && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 2;
+    const helpers = m.helpers ?? Math.max(1, Math.min(6, cores - 1));
+    pool = helpers > 1 ? workerPool(helpers, () => new Worker(new URL("./helper.ts", import.meta.url), { type: "module" })) : null;
+    if (pool) post({ type: "log", line: `${helpers} helper workers (${cores} cores)` });
+    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, detector, weedTier: m.weeds, weedViews: m.views ?? 0, detectPlan: { tile: detect.tile ?? 1024, overlap: detect.overlap ?? 128, scale: detect.scale }, atlases: "later", pool: pool ?? undefined }, browserCodec, {
       signal: abort.signal,
       onProgress: progress => post({ type: "progress", progress }),
       log: line => post({ type: "log", line }),
@@ -58,5 +65,5 @@ self.onmessage = async (e: MessageEvent<BuildWorkerRequest>) => {
   } catch (err) {
     if (err instanceof BuildCancelled || abort.signal.aborted) post({ type: "cancelled" });
     else post({ type: "error", message: (err as Error)?.message ?? String(err) });
-  }
+  } finally { pool?.close(); pool = null; }
 };

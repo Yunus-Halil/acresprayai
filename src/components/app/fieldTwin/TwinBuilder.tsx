@@ -60,7 +60,8 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
     setError(null); setResult(null); setLines([]); setDoneStages([]); setProgress(null); started.current = Date.now();
     let r: BuildRun;
     try {
-      r = startTwinBuild(files, { name: fieldName, weeds }, {
+      const helpers = Number(new URLSearchParams(window.location.search).get("helpers") ?? "") || undefined;
+      r = startTwinBuild(files, { name: fieldName, weeds, helpers }, {
         onProgress: p => { setProgress(prev => { if (prev && prev.stage !== p.stage) setDoneStages(d => (d.includes(prev.stage) ? d : [...d, prev.stage])); return p; }); },
         onLog: line => setLines(l => [...l.slice(-11), line]),
       });

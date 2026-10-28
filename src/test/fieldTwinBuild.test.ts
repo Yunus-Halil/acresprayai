@@ -11,6 +11,7 @@ import { buildFieldTwin } from "@/lib/fieldTwin/build/pipeline";
 import { type PhotoSource, twinIdFrom } from "@/lib/fieldTwin/build/types";
 import { colourObservations, observationsOf } from "@/lib/fieldTwin/build/weeds";
 import { chooseViews, planTiles, runRings, tilesAt } from "@/lib/fieldTwin/build/views";
+import { handleTask, inlinePool } from "@/lib/fieldTwin/build/pool";
 import { detectionKey, memoryStore } from "@/lib/fieldTwin/build/detectionCache";
 import { frameFromDji, mpfEntries, mpfPreview, takeoffPlane } from "@/lib/directGeoref";
 import { isHeldOutPair } from "@/lib/fieldTwin/build/cameras";
@@ -169,6 +170,28 @@ describe("the camera's embedded preview (MPF)", () => {
     expect(isHeldOutPair("DJI_0301", "DJI_0302", 0)).toBe(false);
     const share = [..."abcdefghijklmnopqrstuvwxyz"].filter(c => isHeldOutPair(`DJI_${c}`, "DJI_0302", 0.3)).length / 26;
     expect(share).toBeGreaterThan(0.1); expect(share).toBeLessThan(0.5);
+  });
+});
+
+describe("the helper pool's task handler", () => {
+  it("keeps rasters, answers a colour task with observations and a crops task with cells", async () => {
+    const f = frameFromDji("a", meta({ width: 96, height: 64 }), { ground: takeoffPlane(0) });
+    if (!("frame" in f)) throw new Error("frame");
+    const w = 96, h = 64, rgba = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < w * h; i++) rgba.set([150, 110, 80, 255], i * 4);
+    for (let y = 20; y < 32; y++) for (let x = 30; x < 42; x++) rgba.set([40, 160, 40, 255], (y * w + x) * 4);
+    const photo = () => ({ decode: async () => ({ width: w, height: h, rgba }), crops: async (reqs: { out: number }[]) => reqs.map(r => new Uint8ClampedArray(r.out * r.out * 4).fill(7)) });
+    const ctx = { rasters: new Map(), photo, colour: colourObservations };
+    const pool = inlinePool(ctx);
+    const r1 = await pool.run({ kind: "raster", name: "a", width: 2, height: 1, grey: new Uint8Array([1, 2]), green: new Uint8Array([0, 1]), toOriginal: 4 });
+    expect(r1.kind).toBe("raster"); expect(ctx.rasters.get("a")?.width).toBe(2);
+    const r2 = await pool.run({ kind: "colour", name: "a", file: new Blob(), frame: f.frame, down: 1, minM2: 0.001 });
+    expect(r2.kind === "colour" && r2.observations.length).toBe(1);
+    const r3 = await handleTask({ kind: "crops", name: "a", file: new Blob(), reqs: [{ x0: 0, y0: 0, size: 10, out: 4 }] }, ctx);
+    expect(r3.result.kind === "crops" && r3.result.cells[0].length).toBe(64);
+    expect(r3.transfer.length).toBe(1);
+    const r4 = await pool.run({ kind: "ties", a: "a", frames: [["a", f.frame]], partners: ["b"], opts: {} });
+    expect(r4.kind === "ties" && r4.ties.length).toBe(0);
   });
 });
 
