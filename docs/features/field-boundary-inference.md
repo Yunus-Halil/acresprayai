@@ -130,8 +130,8 @@ cap, unseen ground, bridging, trimming, the record, the operational guard, clipp
 
 ## Not done
 
-- The boundary is inferred by the build scripts; a twin built in the app will run the same code once the
-  builder is in the app.
+- The in-app builder (docs/features/field-twin-builder.md) runs the same evidence sampling and inference on
+  every twin it builds.
 - The operator's correction lives in the browser only, not in the account.
 - One field. The rules carry one field's numbers (cover share 0.6, 40 m², the road thresholds); a grassed
   orchard would read as cover everywhere and needs the canopy-versus-sward mask the planting layout also needs.
