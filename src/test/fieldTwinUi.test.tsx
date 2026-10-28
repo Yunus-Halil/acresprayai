@@ -81,4 +81,22 @@ describe("Field Twin page", () => {
     for (const box of screen.getAllByRole("checkbox")) { await act(async () => { fireEvent.click(box); }); await act(async () => { fireEvent.click(box); }); }
     expect(screen.getAllByText(/Field view|Row view|Plant view|Field Twin/).length).toBeGreaterThan(0);
   });
+
+  it("Explore Findings lists the qualifying objects, selecting one opens it, and the empty state says why", async () => {
+    state.twin = synthetic;
+    await openPage();
+    const mode = screen.getByRole("combobox", { name: "Show" });
+    await act(async () => { fireEvent.change(mode, { target: { value: "largest" } }); });
+    const list = await screen.findByRole("list", { name: "Findings" });
+    expect(list).toHaveTextContent("Weed 3");
+    expect(screen.getByLabelText("Findings results")).toHaveTextContent("1 result");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Weed 3/ })); });
+    expect(await screen.findByLabelText("Inspector")).toHaveTextContent("Weed 3");
+    // A threshold nothing meets: an explicit empty state, with what was excluded.
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Close the inspector" })); });
+    await act(async () => { fireEvent.change(screen.getByLabelText("Least ground cover, m²"), { target: { value: "5" } }); });
+    expect(await screen.findByText("Nothing qualifies.")).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Clear filter" })); });
+    expect(screen.queryByLabelText("Findings results")).not.toBeInTheDocument();
+  });
 });

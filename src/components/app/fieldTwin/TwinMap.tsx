@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { CachedTileLayer } from "@/components/app/workspace/OrthoTileLayer";
+import type { FindingsResult } from "@/lib/fieldTwin/findings";
 import { type Detail, type Scene, zoomForSize } from "@/lib/fieldTwin/scene";
 import { TWIN_COLOURS, type TwinLayers } from "@/lib/fieldTwin/style";
 import type { UnitSystem } from "@/lib/units";
@@ -45,6 +46,8 @@ type Props = {
   onReady?: (h: TwinMapHandle) => void;
   reference?: ReferenceImagery | null;
   onSwipe?: (pct: number) => void;
+  /** The active findings (markers, boundaries, labels); null draws none. */
+  findings?: FindingsResult | null;
 };
 
 const bar = "background:rgba(20,22,20,.86);border:1px solid #333;color:#d9ddd6;";
@@ -71,7 +74,7 @@ const LocateControl = L.Control.extend({
   },
 });
 
-export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe }: Props) {
+export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const miniEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -123,10 +126,17 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
         map.flyTo([p.lat, p.lng], Math.min(26, zoomForSize(scene.intel.summary.medianWeedDiameterM, 9, scene.twin.origin.lat)), { duration: 0.6 });
         return;
       }
+      if (p && p.kind === "group") {
+        // Several findings in one marker: two zoom levels closer, where they come apart.
+        map.flyTo([p.lat, p.lng], Math.min(26, map.getZoom() + 2), { duration: 0.5 });
+        return;
+      }
       onPickRef.current(p);
     });
     layer.watchDetail(d => { detailRef.current = d; updateContext(); onDetailRef.current?.(d); });
-    map.on("moveend zoomend", () => { onStatsRef.current?.(layer.stats); const c = map.getCenter(); onMoveRef.current?.({ lat: c.lat, lng: c.lng }, map.getZoom()); });
+    map.on("moveend zoomend", () => { const c = map.getCenter(); onMoveRef.current?.({ lat: c.lat, lng: c.lng }, map.getZoom()); });
+    // Draws happen on move end, zoom end and state changes, not per dragged frame, so one state update each is cheap.
+    layer.on("twindraw", () => onStatsRef.current?.(layer.stats));
     new LocateControl({ position: "topright", locate } as L.ControlOptions).addTo(map);
     new NorthControl({ position: "bottomright" }).addTo(map);
     locate();
@@ -150,6 +160,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
       mini.on("click", (e: L.LeafletMouseEvent) => map.panTo(e.latlng));
       sync();
     }
+    layer.setFindings(findings);
     onReady?.({ map, layer, locate });
     return () => { mini?.remove(); map.remove(); mapRef.current = null; layerRef.current = null; refLayerRef.current = null; scaleRef.current = null; contextRef.current = null; };
     // The scene is the identity of the map; everything else is pushed through the refs and effects below.
@@ -158,6 +169,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
 
   useEffect(() => { layerRef.current?.setLayers(layers); updateContext(); }, [layers]);
   useEffect(() => { layerRef.current?.setSelection(selection); }, [selection]);
+  useEffect(() => { layerRef.current?.setFindings(findings); }, [findings, scene]);
 
   // The scale bar follows the account's units.
   useEffect(() => {

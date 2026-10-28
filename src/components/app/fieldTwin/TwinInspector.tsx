@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtArea, fmtAreaCm2, fmtDistance, fmtLengthCm } from "@/lib/units";
 import type { UnitSystem } from "@/lib/units";
+import { type Finding, type FindingsResult } from "@/lib/fieldTwin/findings";
 import type { Scene } from "@/lib/fieldTwin/scene";
 import type { TwinBundle, TwinEvidence, TwinTree, TwinWeed } from "@/lib/fieldTwin/types";
 import { TREE_COLOUR, TWIN_COLOURS, weedColour } from "@/lib/fieldTwin/style";
@@ -12,7 +13,7 @@ import { distanceToRowM } from "@/lib/fieldTwin/view";
 import EvidenceCrop from "./EvidenceCrop";
 import type { TwinPick } from "./TwinCanvasLayer";
 
-type Props = { twin: TwinBundle; scene: Scene; selection: TwinPick; atlasUrl: (index: number) => Promise<string>; onClose: () => void; onZoomTo?: (lat: number, lng: number, metresAcross: number) => void };
+type Props = { twin: TwinBundle; scene: Scene; selection: TwinPick; atlasUrl: (index: number) => Promise<string>; onClose: () => void; onZoomTo?: (lat: number, lng: number, metresAcross: number) => void; findings?: FindingsResult | null; onSelectWeed?: (id: number) => void };
 
 type Line = { label: string; value: string };
 const cm = (m: number, u: UnitSystem) => fmtLengthCm(m * 100, u).text;
@@ -129,7 +130,51 @@ function TreePanel({ t, atlasUrl, onClose, units }: { t: TwinTree; atlasUrl: Pro
   );
 }
 
-export default function TwinInspector({ twin, scene, selection, atlasUrl, onClose, onZoomTo }: Props) {
+function FindingPanel({ f, rank, emphasised, units, onClose, onZoomTo, onSelectWeed }: { f: Finding; rank: number; emphasised: boolean; units: UnitSystem; onClose: () => void; onZoomTo?: Props["onZoomTo"]; onSelectWeed?: (id: number) => void }) {
+  const [showMembers, setShowMembers] = useState(false);
+  const area = (m2: number) => (m2 < 1 ? fmtAreaCm2(m2 * 10_000, units).text : fmtArea(m2, units).text);
+  if (f.kind === "patch") {
+    return (
+      <div>
+        <Header kind={`Weed patch, rank ${rank}${emphasised ? ", emphasised" : ""}`} title={`Patch ${f.id}`} colour={TWIN_COLOURS.finding} onClose={onClose} />
+        <p className="mt-2 text-xs text-neutral-300">Verified candidates whose extents touch or nearly touch (gaps of 0.75 m or less). The footprint is the ground the group spans; the summed cover is the plants themselves. Each candidate is one reconciled object, counted once.</p>
+        <Section title="Measurements"><Rows lines={[
+          { label: "Footprint", value: area(f.footprintM2!) },
+          { label: "Summed cover", value: area(f.coverM2!) },
+          { label: "Candidates", value: String(f.members) },
+          { label: "Where", value: f.rowStatus === "on a row" ? "Mostly on a crop row" : f.rowStatus === "between rows" ? "Between the rows" : "No rows read here" },
+        ]} /></Section>
+        <Section title="Confidence"><Rows lines={[
+          { label: "Median model score", value: f.score != null ? `${Math.round(f.score * 100)} %` : "not recorded" },
+          { label: "Median size agreement", value: `within ${Math.round(f.uncertainty * 100)} %` },
+        ]} /></Section>
+        {onZoomTo && <button type="button" className="mt-3 rounded-sm border border-[#3a3f3a] bg-[#242824] px-3 py-1.5 text-xs text-neutral-200 hover:bg-[#2c312c]" onClick={() => onZoomTo(f.lat, f.lng, Math.max(3, f.reachM * 2.6))}>Zoom to this patch</button>}
+        <Section title="Members">
+          <button type="button" className="text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => setShowMembers(o => !o)} aria-expanded={showMembers}>{showMembers ? "Hide" : "List"} the {f.members} candidates</button>
+          {showMembers && <ul className="mt-1 flex flex-wrap gap-1">{(f.weedIds ?? []).slice(0, 400).map(id => <li key={id}><button type="button" className="rounded-sm border border-[#3a3f3a] px-1.5 py-0.5 text-[10px] text-neutral-300 hover:bg-[#262a26]" onClick={() => onSelectWeed?.(id)}>{id}</button></li>)}{(f.weedIds?.length ?? 0) > 400 && <li className="text-[10px] text-neutral-500">and {(f.weedIds!.length - 400).toLocaleString()} more</li>}</ul>}
+        </Section>
+        <Diagnostics><p>Boundary: the convex hull of the members' extents (four points per candidate). The footprint is never less than the summed cover.</p><p>Position {f.lat.toFixed(7)}, {f.lng.toFixed(7)}.</p></Diagnostics>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <Header kind={`Pressure region, rank ${rank}${emphasised ? ", emphasised" : ""}`} title={`Region ${f.id}`} colour={TWIN_COLOURS.region} onClose={onClose} />
+      <p className="mt-2 text-xs text-neutral-300">Connected ground where verified candidates cover at least the chosen share of the observable soil. Ground under tree crowns and ground no photograph saw are left out of the share; they are not weed-free, they are unobserved.</p>
+      <Section title="Measurements"><Rows lines={[
+        { label: "Affected ground", value: fmtArea(f.affectedM2!, units).text },
+        { label: "Observable ground", value: fmtArea(f.observableM2!, units).text },
+        { label: "Verified cover", value: `${area(f.coverM2!)} (${f.coverPct!.toFixed(1)} % of observable)` },
+        { label: "Verified candidates", value: String(f.members) },
+      ]} /></Section>
+      <Section title="Confidence"><Rows lines={[{ label: "Ground seen once", value: `${Math.round(f.uncertainty * 100)} % of the region` }]} /></Section>
+      {onZoomTo && <button type="button" className="mt-3 rounded-sm border border-[#3a3f3a] bg-[#242824] px-3 py-1.5 text-xs text-neutral-200 hover:bg-[#2c312c]" onClick={() => onZoomTo(f.lat, f.lng, Math.sqrt(f.affectedM2!) * 1.6)}>Zoom to this region</button>}
+      <Diagnostics><p>The region drawn is its own cells with their corners rounded; nothing was added or merged for looks. Position {f.lat.toFixed(7)}, {f.lng.toFixed(7)}.</p></Diagnostics>
+    </div>
+  );
+}
+
+export default function TwinInspector({ twin, scene, selection, atlasUrl, onClose, onZoomTo, findings = null, onSelectWeed }: Props) {
   const units = useUnitSystem();
   if (!selection) return null;
   if (selection.kind === "weed") {
@@ -151,6 +196,11 @@ export default function TwinInspector({ twin, scene, selection, atlasUrl, onClos
         <Diagnostics><p>Object id {v.id}; position {v.lat.toFixed(7)}, {v.lng.toFixed(7)}.</p></Diagnostics>
       </div>
     );
+  }
+  if (selection.kind === "finding") {
+    const f = findings?.findings[selection.index];
+    if (!f) return <p className="text-xs text-neutral-500">That finding is not in the current list.</p>;
+    return <FindingPanel f={f} rank={selection.index + 1} emphasised={selection.index < (findings?.prominence.count ?? 0)} units={units} onClose={onClose} onZoomTo={onZoomTo} onSelectWeed={onSelectWeed} />;
   }
   if (selection.kind === "zone") {
     const z = scene.intel.zones.find(x => x.id === selection.id);

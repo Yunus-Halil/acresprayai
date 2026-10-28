@@ -1,7 +1,8 @@
 // Field Twin colours and the layer set, shared by the renderer, the controls and the inspector.
 //
-// A restrained palette on a dark ground: soil and olive for the field, lavender for the planting, green for the
-// crop, amber for weeds (the one thing meant to stand out), grey for what is uncertain or diagnostic.
+// One palette on a dark ground: charcoal outside, a green-grey observed ground, a warmer block, sage crop
+// structure, the pressure heatmap on fixed bands (green, amber, orange-red: heatmap.ts), amber for weed
+// candidates, orange-red for the regions that matter. Flat colour, no glow, no gradients beyond the heatmap.
 import type { TwinWeed } from "./types";
 
 export type TwinLayers = {
@@ -15,8 +16,9 @@ export type TwinLayers = {
   /** Model detections that sit on tree crowns (diagnostics). */
   onTree: boolean;
   vegetation: boolean;
-  /** Weed pressure cells (field level). */
+  /** The weed pressure heatmap (field level, fading as the detail comes in). */
   pressure: boolean;
+  /** Boundaries and labels of the findings (regions, patches, weeds) the Explore Findings control selects. */
   zones: boolean;
   /** Ground only one photograph saw. */
   uncertainty: boolean;
@@ -35,39 +37,39 @@ export const DEFAULT_LAYERS: TwinLayers = {
   pressure: true, zones: true, uncertainty: false, coverage: true, footprints: false, ground: true, surroundings: true,
 };
 
-// One palette for the whole twin: charcoal ground, sage for the crop and the boundaries, amber for weeds, a
-// restrained orange for the findings that matter most. No glow, no gradients.
 export const TWIN_COLOURS = {
-  outside: "#191d1a",
-  hatch: "#20251f",
-  imagery: "#222822",
-  imageryEdge: "#879d85",
-  soil: "#292f27",
-  blockEdge: "#b9b3a4",
-  /** Rows: quiet sage. */
-  row: "#8aa08c",
-  rowDropped: "#5a615b",
-  /** Crop: muted green. */
-  tree: "#78977c",
-  treeFill: "rgba(120, 151, 124, 0.10)",
-  vegetation: "#84a888",
-  vegetationFill: "rgba(132, 168, 136, 0.09)",
-  /** Weeds: controlled amber. */
-  weed: "#c58a44",
-  weedOnRow: "#c9783d",
-  weedSingle: "#a9955f",
-  weedOnTree: "#767e86",
-  /** The pressure wash, one hue; alpha carries the amount. */
-  pressureWash: "#c58a44",
-  /** Scouting zones by priority: 1 the finding that matters most, 2 amber, 3 a pale amber. */
-  zoneFill: ["", "#d77645", "#c58a44", "#a9955f"],
-  zoneEdge: ["", "#d77645", "#c58a44", "#a9955f"],
-  uncertain: "rgba(140, 148, 160, 0.12)",
+  outside: "#171a18",
+  hatch: "#2a2f29",
+  /** Observed ground inside the imagery hull. */
+  imagery: "#212823",
+  imageryEdge: "#8fb08f",
+  /** The orchard block: warmer and a step lighter, so the rows read as inside it. */
+  soil: "#2f3429",
+  blockEdge: "#d9d3c0",
+  /** Rows: sage, readable over the heatmap. */
+  row: "#a7bfa8",
+  rowDropped: "#5f665f",
+  /** Crop: a fresh green. */
+  tree: "#86c290",
+  treeFill: "rgba(134, 194, 144, 0.12)",
+  vegetation: "#8fd19a",
+  vegetationFill: "rgba(143, 209, 154, 0.10)",
+  /** Weeds: amber. */
+  weed: "#f0a63a",
+  weedOnRow: "#ee7e3a",
+  weedSingle: "#b7a062",
+  weedOnTree: "#7d868e",
+  /** Findings: weeds and patches in amber, regions in orange-red (the heatmap's high end). */
+  finding: "#f5b955",
+  region: "#ff7a45",
+  /** Kept for the inspector's zone header. */
+  zoneFill: ["", "#ff7a45", "#f0a63a", "#b7a062"],
+  uncertain: "rgba(140, 148, 160, 0.14)",
   footprint: "#6c7a6c",
-  fieldHalo: "#879d85",
-  labelBg: "rgba(25, 29, 26, 0.9)",
-  labelText: "#e4e1d8",
-  labelOnField: "#191d1a",
+  fieldHalo: "#8fb08f",
+  labelBg: "rgba(20, 23, 20, 0.92)",
+  labelText: "#ece8dc",
+  labelOnField: "#171a18",
   hover: "rgba(255, 255, 255, 0.5)",
   selection: "#ffffff",
 };

@@ -4,7 +4,8 @@
 //   npm run dev   (in another terminal, port 8080)
 //   node scripts/directGeoref/twinShots.mjs [--id apricot-2021-04-27] [--base http://localhost:8080]
 //
-// Writes data/direct-georef/twin/shots/{field,row,plant,inspector,surroundings}.png and benchmark.json. The
+// Writes data/direct-georef/twin/shots/{field,row,plant,inspector,surroundings}.png, one screenshot per Explore
+// Findings filter (findings-<mode>.png) and benchmark.json. Console errors in the page fail the run. The
 // numbers come from the renderer's own timing (TwinCanvasLayer.stats) and from frame times measured in the page.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -19,6 +20,9 @@ const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: true, args: ["--disable-gpu-vsync"] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+const errors = [];
+page.on("pageerror", e => errors.push(String(e)));
+page.on("console", m => { if (m.type() === "error") errors.push(m.text()); });
 const t0 = Date.now();
 await page.goto(`${BASE}/dev/field-twin?id=${ID}`, { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => window.__fieldTwin?.ready === true, null, { timeout: 120000 });
@@ -46,7 +50,7 @@ const shot = async (name, lat, lng, zoom) => {
   return s;
 };
 // Field: everything in view (the locate control's framing).
-await page.evaluate(() => window.__fieldTwin.map.fitBounds(window.__fieldTwin.map.getBounds()));
+await page.evaluate(() => { window.__fieldTwin.map.fitBounds(window.__fieldTwin.map.getBounds()); });
 const fieldZoom = await page.evaluate(() => window.__fieldTwin.map.getZoom());
 await shot("surroundings", sceneInfo.lat, sceneInfo.lng, Math.max(12, fieldZoom - 2.5));
 await shot("field", sceneInfo.lat, sceneInfo.lng, fieldZoom);
@@ -65,6 +69,29 @@ if (weedId != null) {
   await page.screenshot({ path: join(OUT, "inspector.png") });
   await page.evaluate(() => window.__fieldTwin.select(null));
 }
+
+// Explore Findings: each filter at the field view, the results panel open, then the top result selected.
+bench.findings = {};
+for (const mode of ["largest", "clusters", "pressure", "extent", "confidence", "rows"]) {
+  const r = await page.evaluate(async m => {
+    const t = performance.now(); const res = window.__fieldTwin.setFindings({ mode: m }); const rankMs = performance.now() - t;
+    await new Promise(r => setTimeout(r, 200)); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const s = window.__fieldTwin.stats();
+    return { rankMs: +rankMs.toFixed(1), ...res, drawMs: +s.lastDrawMs.toFixed(2), labels: s.labels, drawn: s.drawn };
+  }, mode);
+  bench.findings[mode] = r;
+  await page.evaluate(([la, ln, z]) => window.__fieldTwin.setView(la, ln, z), [sceneInfo.lat, sceneInfo.lng, fieldZoom]);
+  await settle();
+  await page.screenshot({ path: join(OUT, `findings-${mode}.png`) });
+}
+// The top patch selected from the panel: zooms to it and highlights it.
+await page.evaluate(() => window.__fieldTwin.setFindings({ mode: "clusters" }));
+await page.waitForTimeout(300);
+await page.click('ol[aria-label="Findings"] li:first-child button');
+await page.waitForTimeout(1200);
+await page.screenshot({ path: join(OUT, "findings-selected.png") });
+await page.evaluate(() => { window.__fieldTwin.select(null); window.__fieldTwin.setFindings(null); });
+await settle();
 
 // Pan: 12 steps of 240 px at the plant level, frame time per step (moveend -> redraw).
 const panAt = async (zoom) => {
@@ -103,6 +130,8 @@ for (const key of ["weeds", "structure", "vegetation", "singleView", "onTree", "
   }, key);
   bench.layerSwitch[key] = r;
 }
+bench.pageErrors = errors;
 writeFileSync(join(OUT, "benchmark.json"), JSON.stringify(bench, null, 1));
 console.log(JSON.stringify(bench, null, 1));
 await browser.close();
+if (errors.length) { console.error("PAGE ERRORS:\n" + errors.join("\n")); process.exit(1); }

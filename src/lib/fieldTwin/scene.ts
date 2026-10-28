@@ -19,25 +19,56 @@ export function toWorld(lat: number, lng: number): [number, number] {
 /** Ground metres per zoom-0 unit at a latitude. */
 export const metresPerUnitAt = (lat: number) => 156543.03392 * Math.cos((lat * Math.PI) / 180);
 
-/** A uniform grid over points: which indices fall in a box. Built once; a query is a few map lookups. */
+/**
+ * A uniform grid over points, stored compactly (counting sort into one index array, one offset per cell: no Map,
+ * no string keys), so a million points index in a few tens of milliseconds and a query is a few array reads.
+ */
 export class GridIndex {
-  private cells = new Map<string, number[]>();
+  private readonly nx: number;
+  private readonly ny: number;
+  private readonly x0: number;
+  private readonly y0: number;
+  private readonly start: Int32Array;
+  private readonly items: Int32Array;
+  readonly n: number;
   constructor(private xs: ArrayLike<number>, private ys: ArrayLike<number>, readonly cell: number) {
-    for (let i = 0; i < xs.length; i++) { const k = `${Math.floor(xs[i] / cell)},${Math.floor(ys[i] / cell)}`; (this.cells.get(k) ?? this.cells.set(k, []).get(k)!).push(i); }
+    const n = (this.n = xs.length);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < n; i++) { const x = xs[i], y = ys[i]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (!n) { x0 = y0 = 0; x1 = y1 = 0; }
+    this.x0 = x0; this.y0 = y0;
+    this.nx = Math.max(1, Math.floor((x1 - x0) / cell) + 1); this.ny = Math.max(1, Math.floor((y1 - y0) / cell) + 1);
+    const cellOf = new Int32Array(n), start = new Int32Array(this.nx * this.ny + 1);
+    for (let i = 0; i < n; i++) { const c = this.cellIndex(xs[i], ys[i]); cellOf[i] = c; start[c + 1]++; }
+    for (let c = 0; c < this.nx * this.ny; c++) start[c + 1] += start[c];
+    const fill = start.slice(0, -1), items = new Int32Array(n);
+    for (let i = 0; i < n; i++) items[fill[cellOf[i]]++] = i;
+    this.start = start; this.items = items;
+  }
+  private cellIndex(x: number, y: number): number {
+    const i = Math.min(this.nx - 1, Math.max(0, Math.floor((x - this.x0) / this.cell))), j = Math.min(this.ny - 1, Math.max(0, Math.floor((y - this.y0) / this.cell)));
+    return j * this.nx + i;
   }
   /** Indices inside [x0, x1] x [y0, y1], expanded by `pad` (the largest object radius, same units). */
   query(x0: number, y0: number, x1: number, y1: number, pad = 0, out: number[] = []): number[] {
-    const c = this.cell;
-    const i0 = Math.floor((x0 - pad) / c), i1 = Math.floor((x1 + pad) / c), j0 = Math.floor((y0 - pad) / c), j1 = Math.floor((y1 + pad) / c);
-    if ((i1 - i0 + 1) * (j1 - j0 + 1) > this.cells.size * 4) { for (const list of this.cells.values()) for (const i of list) if (this.xs[i] >= x0 - pad && this.xs[i] <= x1 + pad && this.ys[i] >= y0 - pad && this.ys[i] <= y1 + pad) out.push(i); return out; }
-    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const list = this.cells.get(`${i},${j}`); if (list) for (const k of list) if (this.xs[k] >= x0 - pad && this.xs[k] <= x1 + pad && this.ys[k] >= y0 - pad && this.ys[k] <= y1 + pad) out.push(k); }
+    this.each(x0 - pad, y0 - pad, x1 + pad, y1 + pad, k => { out.push(k); });
     return out;
   }
   /** The nearest index to (x, y) within `r`, by centre distance, or -1. */
   nearest(x: number, y: number, r: number): number {
     let best = -1, bd = r * r;
-    for (const k of this.query(x - r, y - r, x + r, y + r)) { const d = (this.xs[k] - x) ** 2 + (this.ys[k] - y) ** 2; if (d <= bd) { bd = d; best = k; } }
+    this.each(x - r, y - r, x + r, y + r, k => { const d = (this.xs[k] - x) ** 2 + (this.ys[k] - y) ** 2; if (d <= bd) { bd = d; best = k; } });
     return best;
+  }
+  /** Calls fn(k) for every point in the box, without building a list. */
+  each(x0: number, y0: number, x1: number, y1: number, fn: (k: number) => void): void {
+    const xs = this.xs, ys = this.ys;
+    const i0 = Math.max(0, Math.floor((x0 - this.x0) / this.cell)), i1 = Math.min(this.nx - 1, Math.floor((x1 - this.x0) / this.cell));
+    const j0 = Math.max(0, Math.floor((y0 - this.y0) / this.cell)), j1 = Math.min(this.ny - 1, Math.floor((y1 - this.y0) / this.cell));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const c = j * this.nx + i;
+      for (let p = this.start[c], e = this.start[c + 1]; p < e; p++) { const k = this.items[p], x = xs[k], y = ys[k]; if (x >= x0 && x <= x1 && y >= y0 && y <= y1) fn(k); }
+    }
   }
 }
 
@@ -112,7 +143,25 @@ export function buildScene(twin: TwinBundle, intel: FieldIntelligence = fieldInt
 
   const R = twin.rows, nr = R.length;
   const rows = { n: nr, x1: new Float64Array(nr), y1: new Float64Array(nr), x2: new Float64Array(nr), y2: new Float64Array(nr), kept: new Uint8Array(nr), id: new Int32Array(nr) };
-  R.forEach((r, i) => { const a = ll(...r.line[0]), b = ll(...r.line[r.line.length - 1]); rows.x1[i] = a[0]; rows.y1[i] = a[1]; rows.x2[i] = b[0]; rows.y2[i] = b[1]; rows.kept[i] = r.kept ? 1 : 0; rows.id[i] = r.id; });
+  // A row is drawn from its first observed tree to its last: the bundle's line reaches half a plant spacing beyond
+  // them (that margin belongs to the block), and a line running past the trees read as a row leaving the field.
+  const treeSpan = new Map<number, [number, number, number, number, number, number]>(); // rowId -> min t, max t, line start, line vector (zoom-0)
+  const rowOf = new Map<number, (typeof R)[number]>(); R.forEach(r => rowOf.set(r.id, r));
+  for (const t of T) {
+    if (t.rowId == null) continue;
+    const r = rowOf.get(t.rowId); if (!r || r.line.length < 2) continue;
+    const a = ll(...r.line[0]), b = ll(...r.line[r.line.length - 1]);
+    const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1;
+    const [x, y] = ll(t.lat, t.lng), u = ((x - a[0]) * dx + (y - a[1]) * dy) / L2;
+    const s = treeSpan.get(t.rowId);
+    if (!s) treeSpan.set(t.rowId, [u, u, a[0], a[1], dx, dy]); else { if (u < s[0]) s[0] = u; if (u > s[1]) s[1] = u; }
+  }
+  R.forEach((r, i) => {
+    const a = ll(...r.line[0]), b = ll(...r.line[r.line.length - 1]), s = treeSpan.get(r.id);
+    if (s) { rows.x1[i] = s[2] + s[4] * s[0]; rows.y1[i] = s[3] + s[5] * s[0]; rows.x2[i] = s[2] + s[4] * s[1]; rows.y2[i] = s[3] + s[5] * s[1]; }
+    else { rows.x1[i] = a[0]; rows.y1[i] = a[1]; rows.x2[i] = b[0]; rows.y2[i] = b[1]; }
+    rows.kept[i] = r.kept ? 1 : 0; rows.id[i] = r.id;
+  });
 
   const C = intel.grid.cells, nc = C.length;
   const cells = { n: nc, rings: pack(C.map(c => c.ring.map(([e, n]) => intel.frame.toLatLng(e, n)))), cls: new Uint8Array(nc), coverPct: new Float32Array(nc), smoothPct: new Float32Array(nc), photos: new Uint8Array(nc), verified: new Int32Array(nc), single: new Int32Array(nc), inBlock: new Uint8Array(nc) };

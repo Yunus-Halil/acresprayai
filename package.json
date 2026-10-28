@@ -30,7 +30,9 @@
     "profiles:build": "vite-node scripts/cropProfiles/build.ts --",
     "profiles:check": "vite-node scripts/cropProfiles/build.ts -- --check",
     "bench:crop-profile": "vite-node scripts/cropProfiles/bench.ts --",
-    "profiles:record": "vite-node scripts/cropProfiles/record.ts --"
+    "profiles:record": "vite-node scripts/cropProfiles/record.ts --",
+    "bench:twin": "node scripts/directGeoref/twinBench.mjs",
+    "shots:twin": "node scripts/directGeoref/twinShots.mjs"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",

@@ -1,5 +1,10 @@
 # Field Twin: visual architecture and progressive zoom (2026-10-27)
 
+> Superseded in part by [field-twin-adaptive-map.md](field-twin-adaptive-map.md) (later the same day): the zone
+> fills and the per-cell pressure wash gave way to a heatmap on fixed bands over observable ground, the Explore
+> findings control, the prominence rule and the results panel. The architecture below (one canvas, projected once,
+> detail by rendered size) still holds.
+
 The Field Twin page (`/app/field-twin`) redrawn as a field rather than a cloud of detections: a vector map with the
 field's surroundings from OpenStreetMap data while it is seen whole, detail that follows the ground scale, one
 drawing surface for everything, and a docked inspector with the photographs behind each object. Same bundle

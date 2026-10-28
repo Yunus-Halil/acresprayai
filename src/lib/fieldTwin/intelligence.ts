@@ -115,6 +115,12 @@ export type PressureCell = {
   cls: PressureClass;
   /** Photographs whose footprint holds the cell centre. */
   photos: number;
+  /** Share of the cell's ground not under a tree crown (sampled on a 3 x 3 lattice): the ground a photograph could see. */
+  observable: number;
+  /** That ground in square metres; cover percent is taken over it, never over the whole cell. */
+  observableM2: number;
+  /** Mostly under canopy: too little observable ground for a cover percent to mean anything (under 25 %). */
+  canopy: boolean;
   /** Inside the orchard block (when the twin has one). */
   inBlock: boolean;
 };
@@ -129,18 +135,58 @@ export function pressureGrid(twin: TwinBundle, cellM = 4, frame: LocalFrame = lo
   const hull = imageryHull(twin, frame);
   const block = orchardBlock(twin, frame);
   const foot = twin.footprints.map(f => f.ring.map(([lat, lng]) => frame.toLocal(lat, lng)));
+  // Footprints bucketed by their bounding box on a coarse lattice (local metres), so a cell asks only the
+  // photographs that could hold its centre: a large field has thousands of footprints and tens of thousands of cells.
+  const FB = 40;
+  const footBuckets = new Map<number, number[]>();
+  const FKEY = 1 << 16, FHALF = FKEY >> 1;
+  foot.forEach((r, k) => {
+    let e0 = Infinity, e1 = -Infinity, n0 = Infinity, n1 = -Infinity;
+    for (const [e, n] of r) { if (e < e0) e0 = e; if (e > e1) e1 = e; if (n < n0) n0 = n; if (n > n1) n1 = n; }
+    for (let a = Math.floor(e0 / FB); a <= Math.floor(e1 / FB); a++) for (let b = Math.floor(n0 / FB); b <= Math.floor(n1 / FB); b++) { const key = (a + FHALF) * FKEY + (b + FHALF); (footBuckets.get(key) ?? footBuckets.set(key, []).get(key)!).push(k); }
+  });
+  const photosAt = (e: number, n: number): number => {
+    const l = footBuckets.get((Math.floor(e / FB) + FHALF) * FKEY + (Math.floor(n / FB) + FHALF));
+    if (!l) return 0;
+    let c = 0;
+    for (const k of l) if (pointInRing(e, n, foot[k])) c++;
+    return c;
+  };
   const inField = hull.map(p => frame.toField(p[0], p[1]));
   const i0 = Math.floor(Math.min(...inField.map(p => p[0])) / cellM), i1 = Math.ceil(Math.max(...inField.map(p => p[0])) / cellM);
   const j0 = Math.floor(Math.min(...inField.map(p => p[1])) / cellM), j1 = Math.ceil(Math.max(...inField.map(p => p[1])) / cellM);
   const byIndex = new Map<string, PressureCell>();
   const cells: PressureCell[] = [];
+  // Tree crowns in the field frame, bucketed by cell, so a cell asks only its neighbours which crowns cover it.
+  const crowns = new Map<number, { al: number; ac: number; r: number }[]>();
+  const KEY = 1 << 20, HALF = KEY >> 1;
+  for (const t of twin.trees) {
+    const [al, ac] = frame.toField(...frame.toLocal(t.lat, t.lng));
+    const k = (Math.floor(al / cellM) + HALF) * KEY + (Math.floor(ac / cellM) + HALF);
+    (crowns.get(k) ?? crowns.set(k, []).get(k)!).push({ al, ac, r: t.crownRadiusM });
+  }
+  let maxCrown = 0; for (const t of twin.trees) if (t.crownRadiusM > maxCrown) maxCrown = t.crownRadiusM;
+  const reach = Math.ceil(maxCrown / cellM);
+  const observableOf = (i: number, j: number): number => {
+    if (!crowns.size) return 1;
+    const near: { al: number; ac: number; r: number }[] = [];
+    for (let di = -reach; di <= reach; di++) for (let dj = -reach; dj <= reach; dj++) { const l = crowns.get((i + di + HALF) * KEY + (j + dj + HALF)); if (l) near.push(...l); }
+    if (!near.length) return 1;
+    let open = 0;
+    for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
+      const al = (i + (a + 0.5) / 3) * cellM, ac = (j + (b + 0.5) / 3) * cellM;
+      if (!near.some(c => (c.al - al) ** 2 + (c.ac - ac) ** 2 <= c.r * c.r)) open++;
+    }
+    return open / 9;
+  };
   for (let i = i0; i < i1; i++) for (let j = j0; j < j1; j++) {
     const centre = frame.fromField((i + 0.5) * cellM, (j + 0.5) * cellM);
     if (!pointInRing(centre[0], centre[1], hull)) continue;
-    const photos = foot.reduce((s, r) => s + (pointInRing(centre[0], centre[1], r) ? 1 : 0), 0);
+    const photos = photosAt(centre[0], centre[1]);
     if (!photos) continue;
     const ring: [number, number][] = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]].map(([a, b]) => frame.fromField(a * cellM, b * cellM));
-    const cell: PressureCell = { i, j, ring, centre, cellM, verified: 0, singleView: 0, coverM2: 0, coverPct: 0, smoothPct: 0, cls: "none", photos, inBlock: block ? pointInRing(centre[0], centre[1], block) : true };
+    const observable = observableOf(i, j);
+    const cell: PressureCell = { i, j, ring, centre, cellM, verified: 0, singleView: 0, coverM2: 0, coverPct: 0, smoothPct: 0, cls: "none", photos, observable, observableM2: observable * cellM * cellM, canopy: observable < 0.25, inBlock: block ? pointInRing(centre[0], centre[1], block) : true };
     byIndex.set(`${i},${j}`, cell);
     cells.push(cell);
   }
@@ -151,10 +197,12 @@ export function pressureGrid(twin: TwinBundle, cellM = 4, frame: LocalFrame = lo
     if (!cell) continue;
     if (w.status === "verified") { cell.verified++; cell.coverM2 += w.areaM2; } else cell.singleView++;
   }
-  for (const c of cells) { c.coverPct = (100 * c.coverM2) / (cellM * cellM); c.cls = pressureClass(c.coverPct); }
+  // Cover is a share of the ground a photograph could see. A cell mostly under canopy keeps its count and its
+  // square metres but no percent: it is unobservable, not weed-free.
+  for (const c of cells) { c.coverPct = c.canopy ? 0 : (100 * c.coverM2) / c.observableM2; c.cls = pressureClass(c.coverPct); }
   for (const c of cells) {
     let s = 0, n = 0;
-    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) { const q = byIndex.get(`${c.i + di},${c.j + dj}`); if (q) { s += q.coverPct; n++; } }
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) { const q = byIndex.get(`${c.i + di},${c.j + dj}`); if (q && !q.canopy) { s += q.coverPct; n++; } }
     c.smoothPct = n ? s / n : c.coverPct;
   }
   return { cellM, cells, byIndex };
@@ -162,13 +210,17 @@ export function pressureGrid(twin: TwinBundle, cellM = 4, frame: LocalFrame = lo
 
 export type ScoutingZone = {
   id: number;
+  /** Share of the zone's cells only one photograph saw: ground no second view could verify. */
+  singleCoverageShare: number;
   /** 1 for the heaviest zones (the first three by verified cover), 2 for the next five, 3 for the rest. */
   priority: 1 | 2 | 3;
   cells: PressureCell[];
   areaM2: number;
   coverM2: number;
+  /** Cover as a share of the zone's observable ground (not of its whole area). */
   meanCoverPct: number;
   weeds: number;
+  observableM2: number;
   centre: [number, number];
   /** Outer edges of the zone's cells, local metres: segments to draw. */
   edges: [[number, number], [number, number]][];
@@ -204,8 +256,9 @@ export function scoutingZones(grid: PressureGrid, fromPct = 1.5, minCells = 3): 
       for (const [[di, dj], a, b] of sides) { const n = grid.byIndex.get(`${c.i + di},${c.j + dj}`); if (!n || !set.has(n)) edges.push([a, b]); }
     }
     const areaM2 = members.length * grid.cellM * grid.cellM, coverM2 = members.reduce((s, c) => s + c.coverM2, 0);
+    const observableM2 = members.reduce((s, c) => s + c.observableM2, 0);
     zones.push({
-      id: 0, priority: 3, cells: members, areaM2, coverM2, meanCoverPct: (100 * coverM2) / areaM2, weeds: members.reduce((s, c) => s + c.verified, 0),
+      id: 0, priority: 3, singleCoverageShare: members.filter(c => c.photos < 2).length / members.length, cells: members, areaM2, coverM2, meanCoverPct: observableM2 > 0 ? (100 * coverM2) / observableM2 : 0, weeds: members.reduce((s, c) => s + c.verified, 0), observableM2,
       centre: [members.reduce((s, c) => s + c.centre[0], 0) / members.length, members.reduce((s, c) => s + c.centre[1], 0) / members.length], edges,
       rings: chainEdges(edges).map(r => roundCorners(r, 3)),
     });
@@ -272,11 +325,12 @@ export type WeedCluster = {
  * many candidates stand here and how much ground they cover. The candidates themselves are drawn at the plant level.
  */
 export function weedClusters(twin: TwinBundle, cellM = 1.5, frame: LocalFrame = localFrame(twin), keep: (w: TwinWeed) => boolean = w => w.status !== "on a tree"): WeedCluster[] {
-  const groups = new Map<string, TwinWeed[]>();
+  const groups = new Map<number, TwinWeed[]>();
+  const KEY = 1 << 21, HALF = KEY >> 1;
   for (const w of twin.weeds) {
     if (!keep(w)) continue;
     const [al, ac] = frame.toField(...frame.toLocal(w.lat, w.lng));
-    const k = `${Math.floor(al / cellM)},${Math.floor(ac / cellM)}`;
+    const k = (Math.floor(al / cellM) + HALF) * KEY + (Math.floor(ac / cellM) + HALF);
     (groups.get(k) ?? groups.set(k, []).get(k)!).push(w);
   }
   const out: WeedCluster[] = [];
