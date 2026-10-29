@@ -125,3 +125,33 @@ RGB and multispectral input (uni-weed and multi-weed, deterministic and probabil
 Phantom 4 Multispectral. No licence is stated for the checkpoints themselves. Not run yet: it would be a second
 opinion on the green inside the band (weeds in the row), which the rules cannot give; whether it transfers to 0.5 cm
 consumer RGB is unproven.
+
+## Our own corn segmenter (2026-10-29, evening)
+
+Yunus: "do whatever you deem fit" after no published model transferred. Built on an Apache-2.0 base with licensed
+data only, everything at 0.5 cm a pixel:
+
+- **Data.** USU-Corn-WeedDB tiles with green-inside-box weed labels (every fifth source held out), WeedsGalore masks
+  resampled to 0.5 cm (its test split held out), and weak labels from the mid-stage reader on 34 of the 40 mid
+  photographs (`scripts/rowCrop/weakLabels.ts`: bands corn, alley patches weed, unjudged green ignored). Photos 9, 11,
+  22 and 88 are held out and are the ones drawn.
+- **Model.** Frozen DINOv2-small patch features (14 px patches) and a small convolutional head, trained on the CPU in
+  minutes (`scripts/rowCrop/seg_train.py`). Checkpoints on D: (`checkpoints/corn-seg-dinov2-public`, `-mixed`).
+- **Measured on held-out tiles (IoU).**
+
+| Model | USU crop | USU weed | WeedsGalore weed | Mid photos crop | Mid photos weed (vs the reader) |
+|---|---|---|---|---|---|
+| Public data only | 0.59 | 0.35 | 0.44 | not trained | not trained |
+| Public + weak mid labels | 0.63 | 0.37 | 0.44 | 0.67 | 0.02 |
+
+- **What the pictures show.** Public-only at 2x finds alley seedlings but also paints corn whorls red (a habit from
+  USU, whose pigweed stands in the row). The mixed model draws the best corn mask of anything tried, every row cleanly,
+  but calls almost nothing weed: the weak labels taught it what corn is, not what a weed is.
+- **Hybrid (`scripts/rowCrop/seg_hybrid.py`).** The model decides what is corn, soil-relative colour decides what is
+  green, and green that is not within 3 px (about 3 cm) of the model's corn is a weed candidate. On the four held-out
+  photos it marks 1,277 to 5,801 candidates a photograph, most on the alley floor where the photographs show small
+  seedlings (mostly grass), some on corn leaf tips the model left just outside its mask. Verges light up as expected.
+  Not verified against truth.
+- **Limits.** 14 px patches are about 7 cm at native scale, so the model is run at 2x (3.5 cm); 80 s a photograph on
+  this CPU. A weed among the corn leaves is still the model's corn, since the weak labels say so. The next real step
+  is a few hundred hand-checked weed outlines on these photographs; the reader's patches are not truth.

@@ -75,6 +75,9 @@ if args.mode == "features":
 elif args.mode == "train":
     os.makedirs(args.out, exist_ok=True)
     items = [it for it in load_manifests() if it["split"] == "train"]
+    missing = [it for it in items if not os.path.exists(f"{args.cache}/{it['key']}.npy")]
+    if missing: print(f"{len(missing)} train tiles have no cached features yet and are left out")
+    items = [it for it in items if os.path.exists(f"{args.cache}/{it['key']}.npy")]
     dw = {k: float(v) for k, v in (p.split(":") for p in args.domain_weights.split(","))}
     X, Y, Wd = [], [], []
     for it in items:
@@ -105,7 +108,7 @@ elif args.mode == "eval":
     with torch.no_grad():
         for split in ("heldout", "train"):
             for dom in sorted({it["domain"] for it in items}):
-                sel = [it for it in items if it["split"] == split and it["domain"] == dom]
+                sel = [it for it in items if it["split"] == split and it["domain"] == dom and os.path.exists(f"{args.cache}/{it['key']}.npy")]
                 if not sel: continue
                 inter = np.zeros(3); union = np.zeros(3); boxes_total = boxes_hit = 0; weed_comp = weed_comp_in = 0
                 for it in sel:
