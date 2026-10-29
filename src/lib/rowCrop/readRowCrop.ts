@@ -193,21 +193,26 @@ const r3 = (v: number) => Math.round(v * 1000) / 1000;
  * next to a dark road does not swamp the row periodicity.
  */
 export const SATURATED_SHARE = 0.45;
-export function coarseDensity(mask: Uint8Array, W: number, H: number, coarse: number, R: number): { d: Float32Array; sat: Uint8Array; w: number; h: number; satShare: number } {
+/** Over this share of green a neighbourhood is solid whatever its periodicity (a lawn, a hedge, closed canopy). */
+export const SOLID_SHARE = 0.6;
+/** Between the two shares, a neighbourhood is solid only where the rows' periodicity is weak (a dense V7 row stand keeps it). */
+export const SOLID_MIN_COHERENCE = 0.25;
+export function coarseDensity(mask: Uint8Array, W: number, H: number, coarse: number, R: number): { d: Float32Array; mean: Float32Array; sat: Uint8Array; w: number; h: number; satShare: number } {
   const w = Math.max(1, Math.floor(W / coarse)), h = Math.max(1, Math.floor(H / coarse));
   const d = new Float32Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let n = 0; for (let yy = 0; yy < coarse; yy++) for (let xx = 0; xx < coarse; xx++) n += mask[(y * coarse + yy) * W + x * coarse + xx]; d[y * w + x] = n / (coarse * coarse); }
   // Box mean over (2R+1)^2 cells through a summed-area table.
-  const sat = new Uint8Array(w * h), hp = new Float32Array(w * h);
+  const sat = new Uint8Array(w * h), hp = new Float32Array(w * h), mean = new Float32Array(w * h);
   const S = new Float64Array((w + 1) * (h + 1));
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) S[(y + 1) * (w + 1) + x + 1] = d[y * w + x] + S[y * (w + 1) + x + 1] + S[(y + 1) * (w + 1) + x] - S[y * (w + 1) + x];
   let satN = 0;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const x0 = Math.max(0, x - R), x1 = Math.min(w - 1, x + R), y0 = Math.max(0, y - R), y1 = Math.min(h - 1, y + R);
     const m = (S[(y1 + 1) * (w + 1) + x1 + 1] - S[y0 * (w + 1) + x1 + 1] - S[(y1 + 1) * (w + 1) + x0] + S[y0 * (w + 1) + x0]) / ((x1 - x0 + 1) * (y1 - y0 + 1));
+    mean[y * w + x] = m;
     if (m > SATURATED_SHARE) { sat[y * w + x] = 1; satN++; hp[y * w + x] = 0; } else hp[y * w + x] = d[y * w + x] - m;
   }
-  return { d: hp, sat, w, h, satShare: satN / (w * h) };
+  return { d: hp, mean, sat, w, h, satShare: satN / (w * h) };
 }
 
 /** Projection of a density raster along the axis at `alpha`, detrended; its periodicity: the strongest autocorrelation between the lags, times the profile's standard deviation. */
@@ -349,10 +354,10 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   const coarse = given ? Math.max(1, Math.round(0.04 / gsdW)) : Math.max(1, Math.round(Math.max(W, H) / 500));
   const satR = given ? Math.max(2, Math.round(0.75 / gsdW / coarse)) : Math.max(2, Math.round(Math.max(W, H) / coarse / 25));
   const cd = coarseDensity(mask, W, H, coarse, satR);
-  // Per work pixel: inside a saturated cell (left out of the rows).
+  // Per work pixel: inside a saturated cell (left out of the direction and the pitch; re-judged below once the pitch is known).
   const skip = new Uint8Array(W * H);
-  for (let y = 0; y < H; y++) { const cy = Math.min(cd.h - 1, Math.floor(y / coarse)); for (let x = 0; x < W; x++) if (cd.sat[cy * cd.w + Math.min(cd.w - 1, Math.floor(x / coarse))]) skip[y * W + x] = 1; }
-  if (cd.satShare > 0.02) notes.push(`${Math.round(cd.satShare * 100)}% of the photo is solid green (a border, a lawn or a closed canopy) and is left out of the rows.`);
+  const skipFrom = (sat: Uint8Array) => { skip.fill(0); for (let y = 0; y < H; y++) { const cy = Math.min(cd.h - 1, Math.floor(y / coarse)); for (let x = 0; x < W; x++) if (sat[cy * cd.w + Math.min(cd.w - 1, Math.floor(x / coarse))]) skip[y * W + x] = 1; } };
+  skipFrom(cd.sat);
   const minPitchM = 0.8 * Math.min(...P.spacingsM, P.defaultSpacingM);
   const rowAngle = rowDirection(cd.d, cd.w, cd.h, given ? minPitchM / gsdW / coarse : 2, given ? 2.0 / gsdW / coarse : Math.max(cd.w, cd.h) / 6);
   checkStop(opts);
@@ -362,7 +367,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   const { profile, aMin } = acrossProfile(mask, skip, W, H, rowAngle, Math.round(maxLagRaw));
   const maxLag = Math.min(profile.length / 3, maxLagRaw);
   const pitchPx = pitchFromProfile(profile, minLag, maxLag, given ? { lagsPx: P.spacingsM.map(m => m / gsdW), tolerance: P.pitchToleranceShare } : undefined);
-  opts.debug?.(`direction ${((rowAngle * 180) / Math.PI).toFixed(1)} deg, pitch ${pitchPx == null ? "none" : pitchPx.toFixed(1)} work px, saturated ${(cd.satShare * 100).toFixed(1)}%`);
+  opts.debug?.(`direction ${((rowAngle * 180) / Math.PI).toFixed(1)} deg, pitch ${pitchPx == null ? "none" : pitchPx.toFixed(1)} work px, saturated by density ${(cd.satShare * 100).toFixed(1)}%`);
   if (pitchPx == null) return empty(given ?? NaN, given ? "given" : "assumed spacing", "No periodic rows across the green: the field may be bare, closed, or the photo may not show rows.", vegetationFraction);
   let matchedSpacingM: number | null = null;
   let scaleBasis: RowCropRead["scaleBasis"] = "given";
@@ -379,6 +384,29 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   const gsdM = gsdW / f;
   const pitchM = pitchPx * gsdW;
   const mPx = (m: number) => m / gsdW; // metres to work pixels
+
+  // Solid green, now that the pitch is known: a neighbourhood over SOLID_SHARE green, or over SATURATED_SHARE with no
+  // row periodicity around it (3 m windows). A dense V7 stand is green and periodic; a lawn is green and not.
+  const cs0 = Math.cos(rowAngle), sn0 = Math.sin(rowAngle);
+  const cohWin = Math.max(coarse * 4, Math.round(mPx(3)));
+  const cohW = Math.ceil(W / cohWin), cohH = Math.ceil(H / cohWin);
+  const cohMap = new Float32Array(cohW * cohH).fill(1);
+  for (let y0 = 0; y0 < H; y0 += cohWin) for (let x0 = 0; x0 < W; x0 += cohWin) {
+    const prof = new Float64Array(Math.ceil(cohWin * 1.5) + 2); let g = 0;
+    for (let y = y0; y < Math.min(H, y0 + cohWin); y++) for (let x = x0; x < Math.min(W, x0 + cohWin); x++) { const i = y * W + x; if (!mask[i]) continue; g++; const b = Math.round(-(x - x0) * sn0 + (y - y0) * cs0 + cohWin * 0.75); if (b >= 0 && b < prof.length) prof[b]++; }
+    let c = 1;
+    if (g > 0.005 * cohWin * cohWin) { let m = 0; for (const v of prof) m += v; m /= prof.length; let a0 = 0, aP = 0; const lag = Math.round(pitchPx); for (let i = 0; i < prof.length; i++) { a0 += (prof[i] - m) ** 2; if (i + lag < prof.length) aP += (prof[i] - m) * (prof[i + lag] - m); } c = a0 > 0 ? aP / a0 : 0; }
+    cohMap[Math.floor(y0 / cohWin) * cohW + Math.floor(x0 / cohWin)] = c;
+  }
+  const sat2 = new Uint8Array(cd.w * cd.h); let satN2 = 0;
+  for (let cy = 0; cy < cd.h; cy++) for (let cx = 0; cx < cd.w; cx++) {
+    const m = cd.mean[cy * cd.w + cx]; if (m <= SATURATED_SHARE) continue;
+    const c = cohMap[Math.min(cohH - 1, Math.floor((cy * coarse) / cohWin)) * cohW + Math.min(cohW - 1, Math.floor((cx * coarse) / cohWin))];
+    if (m > SOLID_SHARE || c < SOLID_MIN_COHERENCE) { sat2[cy * cd.w + cx] = 1; satN2++; }
+  }
+  skipFrom(sat2);
+  const satShare = satN2 / (cd.w * cd.h);
+  if (satShare > 0.02) notes.push(`${Math.round(satShare * 100)}% of the photo is solid green (a border, a lawn or a closed canopy) and is left out of the rows.`);
 
   // 4. Strips along the rows; the green peaks across each strip, settled on the strip's lattice, chained into rows.
   const cs = Math.cos(rowAngle), sn = Math.sin(rowAngle);
@@ -463,7 +491,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     for (const s of ss) { a[s - s0] = t.pts.get(s)!.a; support[s - s0] = 1; }
     // Linear bridge over the gaps.
     for (let i = 0; i < n; i++) if (!support[i]) { let lo = i - 1; while (lo >= 0 && !support[lo]) lo--; let hi = i + 1; while (hi < n && !support[hi]) hi++; a[i] = lo >= 0 && hi < n ? a[lo] + ((a[hi] - a[lo]) * (i - lo)) / (hi - lo) : lo >= 0 ? a[lo] : a[hi]; }
-    rowsW.push({ k: t.k, s0, s1, a, support });
+    rowsW.push({ k: t.k, s0, s1, a: smoothRow(a), support });
   }
   // Settle the lattice indices from position: the rows' mean across positions, sorted, divided by the pitch.
   for (const r of rowsW) { let m = 0; for (let i = 0; i < r.a.length; i++) m += r.a[i]; r.k = m / r.a.length; }
@@ -486,7 +514,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     const pos = new Float64Array(n), sup = new Uint8Array(n), has = new Uint8Array(n);
     for (const r of [b, a]) for (let j = 0; j < r.a.length; j++) { const t = r.s0 + j - s0; if (!has[t] || (r.support[j] && !sup[t])) { pos[t] = r.a[j]; sup[t] = r.support[j]; has[t] = 1; } }
     for (let t = 0; t < n; t++) if (!has[t]) { let lo = t - 1; while (lo >= 0 && !has[lo]) lo--; let hi = t + 1; while (hi < n && !has[hi]) hi++; pos[t] = lo >= 0 && hi < n ? pos[lo] + ((pos[hi] - pos[lo]) * (t - lo)) / (hi - lo) : lo >= 0 ? pos[lo] : pos[hi]; }
-    rowsW.splice(i - 1, 2, { k: a.k, s0, s1, a: pos, support: sup });
+    rowsW.splice(i - 1, 2, { k: a.k, s0, s1, a: smoothRow(pos), support: sup });
   }
   const kMin = 0;
   if (!rowsW.length) return empty(gsdM, scaleBasis, "Rows were periodic across the photo but none could be traced along it.", vegetationFraction);
@@ -693,6 +721,17 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     },
     notes, crop: P.crop,
   };
+}
+
+/** Leaf clusters alternate sides of a row while the row itself bends slowly: a three-point mean, twice. */
+function smoothRow(a: Float64Array): Float64Array {
+  let cur = a;
+  for (let pass = 0; pass < 2; pass++) {
+    const out = new Float64Array(cur.length);
+    for (let i = 0; i < cur.length; i++) { const lo = Math.max(0, i - 1), hi = Math.min(cur.length - 1, i + 1); let sum = 0; for (let j = lo; j <= hi; j++) sum += cur[j]; out[i] = sum / (hi - lo + 1); }
+    cur = out;
+  }
+  return cur;
 }
 
 function checkStop(opts: RowCropOptions) { if (opts.signal?.aborted) throw new Error("cancelled"); }
