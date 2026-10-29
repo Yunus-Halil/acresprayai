@@ -1,7 +1,7 @@
 # Field Twin builder in the app (2026-10-28)
 
 The Field Twin can now be built inside the app from a flight's photographs. The page's "Build a twin from
-photographs" button opens the builder: pick the original JPEG files (or a folder), name the field, choose whether
+photographs" button opens the builder: pick the original JPEG or TIFF files (or a folder), name the field, choose whether
 the weed model runs, watch the eight stages, then open the twin and save it to the account. Nothing leaves the
 browser except the photographs sent to the local weed model when it is on.
 
@@ -63,6 +63,30 @@ corner, where the scripts' twin left none: the one stretch to look at by eye.
   `scripts/directGeoref/twinBuildBench.mjs` drives it headlessly: 71 photographs, twin ready in 21 s on this
   machine (6 helpers), 45 s with one worker. Measurements and the reasoning: 
   docs/research/swardus-direct-speed-plan-2026-10-28.md.
+
+## TIFF photographs (2026-10-28, evening)
+
+The builder takes TIFFs beside JPEGs (`.tif`, `.tiff`; the folder picker takes both):
+
+- **An RGB TIFF** (three or more bands, 8 or 16 bits) is one photograph. Its DJI header is read from the TIFF's
+  own directories (`src/lib/directGeoref/tiffHeader.ts`: the drone-dji XMP packet in tag 700, the EXIF and GPS
+  sub-directories; the whole file is handed over because DJI writes the directories after the pixels).
+- **A DJI multispectral shot** is read from its band files as one photograph: Phantom 4 Multispectral
+  `DJI_0011_1.TIF` to `_5.TIF` (1 blue, 2 green, 3 red) become `DJI_0011` with the red, green and blue bands as its
+  colour; the blue band is the reference grid and the header. The bands are aligned by DJI's
+  RelativeOpticalCenterX/Y (each band read at its own offset less the blue band's). The sign of that shift is
+  this code's reading of DJI's guide and is to be checked by eye on a real set. A Mavic 3 Multispectral shot has
+  no blue band (`_MS_G`, `_MS_R`, `_MS_RE`, `_MS_NIR`) and is refused with the reason: use its RGB JPEG. A
+  single-band TIFF on its own is refused the same way.
+- 16-bit bands are stretched per band to their 99.5th percentile and gamma-encoded (1 / 2.2), so the colour rules
+  read a chromaticity like a camera JPEG's. No preview exists in a TIFF, so the builder decodes it at the quarter
+  size (geotiff.js, bilinear). The weed model and the helper pool get a JPEG re-encoded from the full decode.
+- Code: `src/lib/fieldTwin/build/tiffPhotos.ts` (`tiffPhoto`, `bandSetPhoto`, `djiBandOf`, `refusedPhoto`) and
+  `groupPhotoFiles` in `browserPhotos.ts`, which the worker uses for every build. Tests:
+  `src/test/tiffPhotos.test.ts` (a TIFF written with its directories after the pixels, the header walked, a band
+  set decoded and aligned). Not in Node's `buildTwinApp.ts` (JPEG only there).
+- Not tested on a real multispectral set: none is on this machine. The first real set decides the shift's sign
+  and whether the per-band stretch gives the colour rules what they need.
 
 ## Limits
 

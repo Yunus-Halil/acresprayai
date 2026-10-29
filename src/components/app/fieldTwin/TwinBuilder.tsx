@@ -49,13 +49,13 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
 
   const pick = (list: FileList | null) => {
     if (!list) return;
-    const jpegs = [...list].filter(f => /\.jpe?g$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
+    const jpegs = [...list].filter(f => /\.(jpe?g|tiff?)$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
     setFiles(jpegs);
     if (!name && jpegs.length) { const folder = (jpegs[0] as File & { webkitRelativePath?: string }).webkitRelativePath?.split("/")[0]; if (folder) setName(folder); }
     setError(null); setResult(null);
   };
   const start = () => {
-    if (!files.length) { setError("Pick the flight's photographs first (the original JPEG files, straight from the drone)."); return; }
+    if (!files.length) { setError("Pick the flight's photographs first (the original JPEG or TIFF files, straight from the drone)."); return; }
     const fieldName = name.trim() || "Field";
     setError(null); setResult(null); setLines([]); setDoneStages([]); setProgress(null); started.current = Date.now();
     let r: BuildRun;
@@ -83,10 +83,10 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
         <h2 className="font-display text-base">Build a twin from photographs</h2>
         <button type="button" className="text-neutral-400 hover:text-neutral-100" onClick={onClose} aria-label="Close the builder" disabled={!!run}><X className="h-4 w-4" /></button>
       </div>
-      <p className="text-xs text-neutral-400">The original photographs of one flight, straight from the drone (DJI JPEG files with their position and gimbal angles). The twin is built from them alone: cameras aligned on the soil, rows and trees, weeds when the model is on, the cultivated block. No orthomosaic.</p>
+      <p className="text-xs text-neutral-400">The original photographs of one flight, straight from the drone (DJI JPEG files with their position and gimbal angles; RGB TIFFs too, and a DJI multispectral set's blue, green and red bands, read as one photograph per shot). The twin is built from them alone: cameras aligned on the soil, rows and trees, weeds when the model is on, the cultivated block. No orthomosaic.</p>
 
       <div className="flex flex-wrap items-center gap-2">
-        <input ref={fileInput} type="file" multiple accept=".jpg,.jpeg,image/jpeg" className="hidden" onChange={e => pick(e.target.files)} />
+        <input ref={fileInput} type="file" multiple accept=".jpg,.jpeg,.tif,.tiff,image/jpeg,image/tiff" className="hidden" onChange={e => pick(e.target.files)} />
         <input ref={folderInput} type="file" className="hidden" {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={e => pick(e.target.files)} />
         <button type="button" className={btn} onClick={() => fileInput.current?.click()} disabled={!!run}>Pick photographs</button>
         <button type="button" className={btn} onClick={() => folderInput.current?.click()} disabled={!!run}>Pick a folder</button>

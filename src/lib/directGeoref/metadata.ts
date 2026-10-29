@@ -23,6 +23,7 @@
 //                                    0 with DewarpData = a raw frame plus its per-unit Brown coefficients
 //   RtkFlag / RtkStdLon/Lat/Hgt      50 = RTK fixed solution; the standard deviations are metres
 import { app1Segments, parsePhotoHeader } from "../photoScout/exif";
+import { isTiff, tiffHeader } from "./tiffHeader";
 
 export type DewarpData = {
   /** Calibration date as written. */
@@ -91,10 +92,17 @@ export function parseDewarpData(s: string | null): DewarpData | null {
   return { date: maybeDate ? maybeDate.trim() : null, fx: v[0], fy: v[1], dcx: v[2], dcy: v[3], k1: v[4], k2: v[5], p1: v[6], p2: v[7], k3: v[8] };
 }
 
-/** Parse the leading bytes of a DJI JPEG (1 MB is plenty: EXIF and XMP sit at the front). */
+/**
+ * Parse the leading bytes of a DJI JPEG (1 MB is plenty: EXIF and XMP sit at the front), or the whole of a TIFF
+ * (a DJI multispectral band, an RGB TIFF: its directories may sit after the pixels, so the caller hands the
+ * whole file). The drone-dji XMP fields are the same in both.
+ */
 export function parseDjiHeader(bytes: Uint8Array): DjiPhotoMeta {
-  const exif = parsePhotoHeader(bytes);
-  const { xmp } = app1Segments(bytes);
+  const tiff = isTiff(bytes) ? tiffHeader(bytes) : null;
+  const exif = tiff
+    ? { make: tiff.make, model: tiff.model, width: tiff.width, height: tiff.height, focalMm: tiff.focalMm, focal35Mm: null, capturedAt: tiff.capturedAt, lat: tiff.lat, lng: tiff.lng }
+    : parsePhotoHeader(bytes);
+  const { xmp } = tiff ? { xmp: tiff.xmp } : app1Segments(bytes);
   const x = xmp ?? "";
   const xmpLat = xmpNumber(x, "GpsLatitude", "GPSLatitude");
   const xmpLng = xmpNumber(x, "GpsLongtitude", "GpsLongitude", "GPSLongitude", "GPSLongtitude");

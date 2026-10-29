@@ -2,7 +2,7 @@
 // pipeline over browserPhotos, calls the local weed model through the dev proxy when asked, and posts progress,
 // log lines and the result (twin.json and the atlases as Blobs). One worker per build; the page terminates it to stop.
 import { type DetectOptions, detectWeeds } from "../../weedVision/client";
-import { browserCodec, browserPhoto } from "./browserPhotos";
+import { browserCodec, groupPhotoFiles } from "./browserPhotos";
 import { detectionKey, indexedDbStore, sha256Hex } from "./detectionCache";
 import { workerPool } from "./pool";
 import { type BuildReport, buildFieldTwin } from "./pipeline";
@@ -29,7 +29,7 @@ self.onmessage = async (e: MessageEvent<BuildWorkerRequest>) => {
   if (m.type === "cancel") { abort.abort(); return; }
   if (m.type !== "build") return;
   try {
-    const photos = m.files.map(f => browserPhoto(f, f.name));
+    const photos = groupPhotoFiles(m.files);
     // "lite" geometry and the service's own 128 px overlap: the twin reads only the outline and the span (taken
     // from the outline), and 24 tiles instead of 35 cover the photograph (step C0 of the speed plan).
     const detect = m.detect ?? { algorithm: "rfdetr_seg_large", scale: 1, tile: 1024, overlap: 128, threshold: 0.5, includeCrop: true, geometry: "lite" };

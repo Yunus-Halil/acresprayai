@@ -51,6 +51,9 @@ const fieldTwinDevFiles = (): Plugin => ({
 });
 
 export default defineConfig(({ mode }) => ({
+  // The twin's build worker and its helpers are module workers (runBuild.ts, worker.ts); they carry geotiff.js,
+  // which splits its decoders into chunks, and a split bundle cannot be an IIFE worker.
+  worker: { format: "es" },
   define: {
     __BUILD_SHA__: JSON.stringify(buildSha()),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),

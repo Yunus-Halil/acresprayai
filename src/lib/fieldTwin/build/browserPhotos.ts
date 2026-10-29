@@ -5,6 +5,7 @@
 // 20-megapixel photographs never sit decoded in memory together.
 import { mpfPreview } from "../../directGeoref/mpf";
 import type { PhotoPixels } from "../../photoScout/pattern";
+import { bandSetPhoto, djiBandOf, refusedPhoto, tiffPhoto } from "./tiffPhotos";
 import type { Codec, PhotoSource } from "./types";
 
 const HEADER_BYTES = 1 << 20;
@@ -80,3 +81,44 @@ export const browserCodec: Codec = {
     return c.convertToBlob({ type: "image/jpeg", quality });
   },
 };
+
+/**
+ * The flight's files as photo sources: JPEGs as they are; an RGB TIFF through geotiff.js; a DJI multispectral
+ * shot's band files grouped into one photograph when its blue, green and red bands are all there (a shot
+ * without blue, as the Mavic 3 Multispectral writes, is refused with the reason: use its RGB JPEG). A single-band
+ * TIFF on its own is refused when the pipeline reads its header. Sources are returned in file-name order.
+ */
+export function groupPhotoFiles(files: File[], codec: Codec | null = browserCodec): PhotoSource[] {
+  const sorted = [...files].sort((a, b) => a.name.localeCompare(b.name));
+  const shots = new Map<string, Partial<Record<"blue" | "green" | "red" | "rededge" | "nir", File>>>();
+  const out: PhotoSource[] = [];
+  const order: string[] = [];
+  for (const f of sorted) {
+    if (/\.jpe?g$/i.test(f.name)) { out.push(browserPhoto(f, f.name)); continue; }
+    if (!/\.tiff?$/i.test(f.name)) continue;
+    const band = djiBandOf(f.name);
+    if (!band) { out.push(tiffPhoto(f, f.name, codec)); continue; }
+    if (!shots.has(band.shot)) { shots.set(band.shot, {}); order.push(band.shot); }
+    shots.get(band.shot)![band.band] = f;
+  }
+  for (const shot of order) {
+    const b = shots.get(shot)!;
+    if (b.blue && b.green && b.red) out.push(lazyPhoto(shot, () => bandSetPhoto(shot, { blue: b.blue!, green: b.green!, red: b.red! }, codec)));
+    else out.push(refusedPhoto(shot, `a multispectral shot without ${!b.blue ? "a blue" : !b.green ? "a green" : "a red"} band file: no colour to read from the bands; give the shot's RGB JPEG instead`));
+  }
+  return out;
+}
+
+/** A source made on first use (a band set reads its headers to align its bands). */
+function lazyPhoto(name: string, make: () => Promise<PhotoSource>): PhotoSource {
+  let p: Promise<PhotoSource> | null = null;
+  const get = () => (p ??= make());
+  return {
+    name,
+    header: async () => (await get()).header(),
+    bytes: async () => (await get()).bytes(),
+    decode: async d => (await get()).decode(d),
+    preview: async () => (await get()).preview(),
+    crops: async r => (await get()).crops(r),
+  };
+}
