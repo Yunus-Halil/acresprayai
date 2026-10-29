@@ -29,11 +29,15 @@ edges, where the lens bends them. Yunus's screenshots of 2026-10-29 showed all t
    at the frame edges), thinned to one per slot, and chained strip to strip into rows. Rows are trimmed to their
    supported span, bridged inside it, dropped under three strips or 30 % support; two traces of one row are joined.
 7. **Crop band per row** from the row's own green: the density of green by distance from the centreline falls from
-   the row's peak to the alley's floor; the band ends at the outermost offset still a quarter of the way up. The
-   profile's `bandHalfWidthM` is the floor; a twin row's second line keeps the density up and stays inside.
-8. **Components** of the green: a patch that touches a band is the crop; a patch clear of every band is a weed
-   candidate with its outline, area and distance from the row; a patch beyond the outermost rows or a pitch from
-   any row is not judged; a patch wider across than one and a half pitches is a border or cover.
+   the row's peak to the alley's floor; the band ends at the outermost offset still a tenth of the way up, so it
+   reaches the leaves' tails (Yunus, 2026-10-29: the band must take in every leaf ending). The profile's
+   `bandHalfWidthM` is the floor; a twin row's second line keeps the density up and stays inside. On the V5 to V7
+   photographs the band is 20 to 21 cm either side of the row.
+8. **Components** of the green: a patch that touches a band is the crop; so is a leaf tip cut off from its row by
+   shadow or a pale midrib (at most 80 cm², within six tenths of a band beyond the band, elongated and pointing at
+   the row); a patch clear of every band is a weed candidate with its outline, area and distance from the row; a
+   patch beyond the outermost rows or a pitch from any row is not judged; a patch wider across than one and a half
+   pitches is a border or cover.
 9. **Along each row**: the green share inside the band, gaps longer than twice the seed spacing (at least 30 cm), and,
    at 1.5 cm a pixel and finer, a stand estimate from the green peaks along the row, marked unverified.
 
@@ -52,7 +56,7 @@ Everything is deterministic and runs in about half a second on a 21 MP photograp
 
 | Set | Result |
 |---|---|
-| `directtestimagery`, 15 top-down photographs of one V5 to V7 field, 5280 × 3956, no EXIF | Every visible row traced on the crop in all 15, including the rows at the frame edges where straight lines failed; 1 to 14 patches between rows per photograph; the lawn and verge left out; 0.4 to 0.5 s each. The scale is assumed from the pitch and 76.2 cm. |
+| `directtestimagery`, 15 top-down photographs of one V5 to V7 field, 5280 × 3956, no EXIF | Every visible row traced on the crop in all 15, including the rows at the frame edges where straight lines failed; 1 to 11 patches between rows per photograph once the band reaches the leaf tails; the lawn and verge left out; about 0.6 s each. The scale is assumed from the pitch and 76.2 cm. |
 | `CropTesting/Corn/earlystage`, three residue and close-up photographs | Rows on the corn in all three (the no-till photograph had put the lattice pass's lines on the straw); the weeds between the rows outlined. |
 | Rendered development stands (24, `scripts/cropProfiles/scenes.ts`) | Rows found on 24, on the crop (within a quarter pitch) on 23; the pitch within 10 % on all; between-row weeds found in more than half the cases at 1 cm and finer; the crop never reported except on the V2 stand under weeds larger than its plants. |
 
@@ -62,7 +66,9 @@ real-field precision and recall are not numbers; the pictures are the evidence.
 ## Known limits
 
 - A row's end can run a metre or two into a mown verge beside the field.
-- A weed touching the crop's leaves is the crop; weeds inside the row are never separable by position.
+- A weed touching the crop's leaves, or standing within the leaves' reach of the row, is the crop; weeds inside the
+  row are never separable by position. The band reaching the leaf tails was Yunus's call: a leaf tip called a weed
+  is worse than a weed under the leaves called corn.
 - Twin rows share one band, so a weed between the pair is hidden.
 - A V2 stand (6 cm plants) under weeds larger than its plants can have weed peaks pass for rows.
 - The stand estimate has never been checked against counted plants.

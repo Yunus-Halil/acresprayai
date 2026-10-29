@@ -49,6 +49,13 @@ export const PEAK_OVER_ALLEY = 3;
 /** Green components under this area must stand clearly above their soil (mean excess over the margin) to count. */
 export const SMALL_PATCH_CM2 = 50;
 export const SMALL_PATCH_EXCESS = 0.1;
+/** The band ends where the row's green density has fallen this close to the alley's floor: the tails of the leaves. */
+export const BAND_FALL_SHARE = 0.1;
+/** A patch no larger than this, within half a band beyond the band, elongated and pointing at the row, is a leaf tip. */
+export const LEAF_TIP_MAX_CM2 = 80;
+export const LEAF_TIP_REACH_SHARE = 0.6;
+export const LEAF_TIP_ASPECT = 1.8;
+export const LEAF_TIP_ANGLE_DEG = 40;
 
 export type RowCropParams = {
   /** Metres per pixel of the photo, or null when unknown. */
@@ -127,6 +134,8 @@ export type RowCropSummary = {
   cropComponents: number;
   /** Green patches where no rows were read (a border, a headland): not judged. */
   noRowsPatches: number;
+  /** Small patches just beyond a band, elongated toward the row, counted as the crop (a leaf tip cut off by shadow). */
+  leafTips: number;
   specks: number;
   gaps: number;
   gapLengthM: number;
@@ -324,7 +333,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   let gsdW = given ? given * f : NaN; // metres per work pixel; set from the pitch when the scale is assumed
   const empty = (gsdM: number, scaleBasis: RowCropRead["scaleBasis"], why: string, vegetationFraction: number): RowCropRead => ({
     version: ROW_CROP_READ_VERSION, width: px.width, height: px.height, gsdM, scaleBasis, workFactor: f, directionDeg: null, pitchM: null, matchedSpacingM: null, rows: [], weeds: [], excluded: [],
-    summary: { rows: 0, rowsDropped: 0, totalRowLengthM: 0, medianBandHalfWidthM: null, medianRowGreenShare: null, weeds: 0, weedAreaM2: 0, betweenRowCover: null, cropComponents: 0, noRowsPatches: 0, specks: 0, gaps: 0, gapLengthM: 0, plants: null, coherence: null, vegetationFraction, ms: Date.now() - t0 },
+    summary: { rows: 0, rowsDropped: 0, totalRowLengthM: 0, medianBandHalfWidthM: null, medianRowGreenShare: null, weeds: 0, weedAreaM2: 0, betweenRowCover: null, cropComponents: 0, noRowsPatches: 0, leafTips: 0, specks: 0, gaps: 0, gapLengthM: 0, plants: null, coherence: null, vegetationFraction, ms: Date.now() - t0 },
     notes: [...notes, why], crop: P.crop,
   });
 
@@ -461,9 +470,10 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   rowsW.sort((u, v) => u.k - v.k);
   // Indices in order of position: the next row's index steps by its distance in pitches, at least one unless the two
   // traces are the same row (overlapping in strips and within a third of a pitch, or one after the other within half).
+  const meanA = rowsW.map(r => r.k); // the mean across positions, before k becomes an index
   for (let i = 0; i < rowsW.length; i++) {
     if (i === 0) { rowsW[i].k = 0; continue; }
-    const prev = rowsW[i - 1], cur = rowsW[i], d = cur.k - prev.k, overlap = cur.s0 <= prev.s1 && prev.s0 <= cur.s1;
+    const prev = rowsW[i - 1], cur = rowsW[i], d = meanA[i] - meanA[i - 1], overlap = cur.s0 <= prev.s1 && prev.s0 <= cur.s1;
     const same = overlap ? d < pitchPx / 3 : d < pitchPx / 2;
     cur.k = same ? prev.k : prev.k + Math.max(1, Math.round(d / pitchPx));
   }
@@ -518,10 +528,10 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     let peak = 0; for (let b = 0; b <= Math.min(halfP - 1, Math.round(bandMax)); b++) peak = Math.max(peak, sm[b]);
     let floor = 0, n = 0; for (let b = Math.round(0.35 * pitchPx); b < halfP; b++) { floor += sm[b]; n++; } floor = n ? floor / n : 0;
     if (!(peak > floor)) return bandMin;
-    const thr = floor + 0.25 * (peak - floor);
-    // The outermost offset still above the threshold (a twin row's second line keeps the density up past the dip between the pair).
+    const thr = floor + BAND_FALL_SHARE * (peak - floor);
+    // The outermost offset still above the threshold: the leaves' tails (a twin row's second line keeps the density up too).
     let b = Math.min(halfP - 1, Math.round(bandMax)); while (b > bandMin && sm[b] < thr) b--;
-    return Math.max(bandMin, Math.min(bandMax, b + 2));
+    return Math.max(bandMin, Math.min(bandMax, b + 3));
   });
   const bandMed = quantile(bandRaw, 0.5) ?? bandMin;
   const band = bandRaw.map(b => Math.max(bandMin, Math.min(bandMax, Math.max(0.6 * bandMed, Math.min(1.5 * bandMed, b)))));
@@ -531,7 +541,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   const minWeedPx = Math.max(2, Math.round((P.minWeedAreaCm2 / 1e4) / (gsdW * gsdW)));
   const weeds: RowCropWeed[] = [];
   const excluded: RowCropExcluded[] = [];
-  let cropComponents = 0, specks = 0, betweenGreen = 0, noRowsPatches = 0, noRowsAreaM2 = 0;
+  let cropComponents = 0, specks = 0, betweenGreen = 0, noRowsPatches = 0, noRowsAreaM2 = 0, leafTips = 0;
   const stack = new Int32Array(W * H);
   const smallPx = Math.round((SMALL_PATCH_CM2 / 1e4) / (gsdW * gsdW));
   let label = 0, faint = 0;
@@ -542,9 +552,11 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     let top = 0; stack[top++] = i0; labels[i0] = label;
     const pix: number[] = [];
     let minD = Infinity, minBand = 0, noRows = 0, touchesEdge = false, aLo = Infinity, aHi = -Infinity, exc = 0, satN = 0;
+    let mL = 0, mA = 0, mLL = 0, mAA = 0, mLA = 0; // moments in the (along, across) frame for the leaf-tip test
     while (top) {
       const i = stack[--top]; pix.push(i); exc += excess[i]; satN += skip[i];
       const x = i % W, y = (i - x) / W;
+      { const l = along(x, y), a = across(x, y); mL += l; mA += a; mLL += l * l; mAA += a * a; mLA += l * a; }
       if (x === 0 || y === 0 || x === W - 1 || y === H - 1) touchesEdge = true;
       const nr = nearestRow(pxStrip[i], pxA[i]);
       if (!nr || nr.d > pitchPx) noRows++; else { const rel = nr.d - band[nr.r]; if (rel < minD) { minD = rel; minBand = band[nr.r]; } }
@@ -563,6 +575,15 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
       continue;
     }
     if (noRows < n && minD <= 0) { cropComponents++; continue; } // touches a row's band: crop
+    if (noRows < n && areaM2 <= LEAF_TIP_MAX_CM2 / 1e4 && minD <= LEAF_TIP_REACH_SHARE * minBand) {
+      // A leaf tip cut off from its row by shadow or a pale midrib: small, close, elongated across the rows (toward the row).
+      const cl = mL / n, ca = mA / n, vLL = mLL / n - cl * cl, vAA = mAA / n - ca * ca, vLA = mLA / n - cl * ca;
+      const tr = vLL + vAA, det = vLL * vAA - vLA * vLA, disc = Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
+      const e1 = tr / 2 + disc, e2 = Math.max(1e-9, tr / 2 - disc);
+      // Principal axis angle from the across direction: 0 means pointing straight at the row.
+      const theta = Math.abs(Math.atan2(2 * vLA, vAA - vLL) / 2) * (180 / Math.PI);
+      if (Math.sqrt(e1 / e2) >= LEAF_TIP_ASPECT && theta <= LEAF_TIP_ANGLE_DEG) { cropComponents++; leafTips++; continue; }
+    }
     const hullPts: [number, number][] = [];
     const step = Math.max(1, Math.floor(n / 400));
     for (let q = 0; q < n; q += step) { const i = pix[q], x = i % W, y = (i - x) / W; hullPts.push(toPhoto(x, y)); }
@@ -575,7 +596,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     weeds.push({ id: weeds.length + 1, x: r3(cx), y: r3(cy), areaM2: r3(areaM2), equivDiameterM: r3(2 * Math.sqrt(areaM2 / Math.PI)), hull, distToRowM: noRows === n ? null : r3((minD + minBand) * gsdW), bandHalfWidthM: noRows === n ? null : r3(minBand * gsdW), touchesEdge, status: noRows === n ? "no rows here" : "between rows" });
   }
   checkStop(opts);
-  opts.debug?.(`rows ${rowsW.length} (dropped ${rowsDropped}; k ${rowsW.map(r => r.k - kMin).join(",")}), band px ${band.map(b => b.toFixed(0)).join(",")}, components: crop ${cropComponents}, weeds ${weeds.length}, specks ${specks}, faint ${faint}, excluded ${excluded.length}`);
+  opts.debug?.(`rows ${rowsW.length} (dropped ${rowsDropped}; k ${rowsW.map(r => r.k - kMin).join(",")}), band px ${band.map(b => b.toFixed(0)).join(",")}, components: crop ${cropComponents} (leaf tips ${leafTips}), weeds ${weeds.length}, specks ${specks}, faint ${faint}, excluded ${excluded.length}`);
 
   // 7. Along each row: green share inside the band, gaps, and (fine pixels only) the stand from the green peaks.
   const binPx = Math.max(1, Math.round(mPx(0.1)));
@@ -668,7 +689,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
       rows: rows.length, rowsDropped, totalRowLengthM: r3(rows.reduce((u, r) => u + r.lengthM, 0)),
       medianBandHalfWidthM: quantile(rows.map(r => r.bandHalfWidthM), 0.5), medianRowGreenShare: quantile(rows.map(r => r.greenShare), 0.5),
       weeds: weeds.length, weedAreaM2: r3(weedAreaM2), betweenRowCover: betweenArea ? r3(betweenGreen / betweenArea) : null,
-      cropComponents, noRowsPatches, specks, gaps: gapsN, gapLengthM: r3(gapLen), plants: plantsTotal, coherence: coherence == null ? null : r3(coherence), vegetationFraction: r3(vegetationFraction), ms: Date.now() - t0,
+      cropComponents, noRowsPatches, leafTips, specks, gaps: gapsN, gapLengthM: r3(gapLen), plants: plantsTotal, coherence: coherence == null ? null : r3(coherence), vegetationFraction: r3(vegetationFraction), ms: Date.now() - t0,
     },
     notes, crop: P.crop,
   };
