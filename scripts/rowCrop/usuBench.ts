@@ -68,7 +68,7 @@ for (const f of files) {
   const o = rowCropOverlay(read);
   for (const b of o.bands) poly(c, px.width, px.height, b, [120, 200, 255], 0, false);
   for (const r of o.rows) poly(c, px.width, px.height, r, [0, 230, 255], 1, false);
-  for (const wd of o.weeds) poly(c, px.width, px.height, wd, [255, 40, 40], 1, true);
+  for (const wd of [...o.weeds, ...o.escapes]) poly(c, px.width, px.height, wd, [255, 40, 40], 1, true);
   meta.boxes.forEach((b, i) => { const col: Rgb = foundFlags[i] ? [255, 255, 0] : [255, 0, 255]; const x0 = b.x - b.w / 2, y0 = b.y - b.h / 2, x1 = b.x + b.w / 2, y1 = b.y + b.h / 2; poly(c, px.width, px.height, [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], col, 1, true); });
   writeFileSync(join(OUT, `${name}.png`), encodePng({ width: px.width, height: px.height, data: c }));
   const s = read.summary;

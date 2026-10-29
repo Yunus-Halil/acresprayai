@@ -43,7 +43,9 @@ function draw(img: PhotoPixels, read: RowCropRead, file: string) {
   for (const r of o.rows) poly(c, w, h, r, [0, 230, 255], t, false);
   for (const g of o.gaps) line(c, w, h, g.x1, g.y1, g.x2, g.y2, [255, 160, 0], t + 1);
   for (const e of o.excluded) poly(c, w, h, e, [160, 160, 160], t, true);
+  for (const [x, y] of o.seedlings) for (let dy = -t - 1; dy <= t + 1; dy++) for (let dx = -t - 1; dx <= t + 1; dx++) { const xx = Math.round(x + dx), yy = Math.round(y + dy); if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const q = (yy * w + xx) * 4; c[q] = 255; c[q + 1] = 190; c[q + 2] = 0; }
   for (const wd of o.weeds) poly(c, w, h, wd, [255, 40, 40], t, true);
+  for (const wd of o.escapes) poly(c, w, h, wd, [255, 0, 200], t + 2, true);
   for (const [x, y] of o.plants) line(c, w, h, x, y, x, y, [60, 255, 90], t);
   mkdirSync(join(file, ".."), { recursive: true });
   writeFileSync(file, encodePng({ width: w, height: h, data: c }));
@@ -61,8 +63,8 @@ async function main() {
     if (argv.includes("--debug")) for (const l of dbg) console.log("   ", l);
     draw(px, read, join(OUT, TAG, `${basename(f, extname(f))}.png`));
     const s = read.summary;
-    rows.push({ image: f, gsdCm: Math.round(read.gsdM * 1e4) / 100, scaleBasis: read.scaleBasis, directionDeg: read.directionDeg, pitchCm: read.pitchM == null ? null : Math.round(read.pitchM * 1000) / 10, matchedSpacingCm: read.matchedSpacingM == null ? null : Math.round(read.matchedSpacingM * 100), rows: s.rows, rowsDropped: s.rowsDropped, rowLengthM: s.totalRowLengthM, bandCm: s.medianBandHalfWidthM == null ? null : Math.round(s.medianBandHalfWidthM * 100), rowGreenShare: s.medianRowGreenShare, coherence: s.coherence, weeds: s.weeds, weedAreaM2: s.weedAreaM2, betweenRowCover: s.betweenRowCover, cropComponents: s.cropComponents, excluded: read.excluded.length, gaps: s.gaps, gapLengthM: s.gapLengthM, plants: s.plants, vegetation: s.vegetationFraction, ms: s.ms, notes: read.notes });
-    process.stdout.write(`${f}: rows ${s.rows} (${s.rowsDropped} dropped), pitch ${read.pitchM == null ? "-" : (read.pitchM * 100).toFixed(1)} cm, band ${s.medianBandHalfWidthM == null ? "-" : (s.medianBandHalfWidthM * 100).toFixed(0)} cm, weeds ${s.weeds}, crop comps ${s.cropComponents}, gaps ${s.gaps}, plants ${s.plants ?? "-"}, coh ${s.coherence ?? "-"}, ${s.ms} ms\n`);
+    rows.push({ seedlings: read.seedlings ? { count: read.seedlings.count, cover: read.seedlings.cover } : null, escapes: s.escapes ?? null, image: f, gsdCm: Math.round(read.gsdM * 1e4) / 100, scaleBasis: read.scaleBasis, directionDeg: read.directionDeg, pitchCm: read.pitchM == null ? null : Math.round(read.pitchM * 1000) / 10, matchedSpacingCm: read.matchedSpacingM == null ? null : Math.round(read.matchedSpacingM * 100), rows: s.rows, rowsDropped: s.rowsDropped, rowLengthM: s.totalRowLengthM, bandCm: s.medianBandHalfWidthM == null ? null : Math.round(s.medianBandHalfWidthM * 100), rowGreenShare: s.medianRowGreenShare, coherence: s.coherence, weeds: s.weeds, weedAreaM2: s.weedAreaM2, betweenRowCover: s.betweenRowCover, cropComponents: s.cropComponents, excluded: read.excluded.length, gaps: s.gaps, gapLengthM: s.gapLengthM, plants: s.plants, vegetation: s.vegetationFraction, ms: s.ms, notes: read.notes });
+    process.stdout.write(`${f}: rows ${s.rows} (${s.rowsDropped} dropped), pitch ${read.pitchM == null ? "-" : (read.pitchM * 100).toFixed(1)} cm, band ${s.medianBandHalfWidthM == null ? "-" : (s.medianBandHalfWidthM * 100).toFixed(0)} cm, weeds ${s.weeds}${read.seedlings ? ` (escapes ${s.escapes}), seedlings ${read.seedlings.count} cover ${read.seedlings.cover}` : ""}, crop comps ${s.cropComponents}, gaps ${s.gaps}, plants ${s.plants ?? "-"}, coh ${s.coherence ?? "-"}, ${s.ms} ms\n`);
   }
   const today = new Date().toISOString().slice(0, 10);
   const fmt = (v: unknown) => (v == null ? "-" : String(v));

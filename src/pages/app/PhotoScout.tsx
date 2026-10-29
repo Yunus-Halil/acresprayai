@@ -240,7 +240,7 @@ export default function PhotoScout() {
                 ))}
                 <span className="text-[10px] text-neutral-500 ml-auto inline-flex gap-3">
                   {selected.rowCrop
-                    ? ([["#00E6FF", "row (the crop)"], ["#78C8FF", "crop band"], ["#EF5350", "between rows"], ["#FFA000", "gap in the row"], ["#3CFF5A", "plant (estimate)"], ["#9E9E9E", "not judged"]] as const).map(([c, l]) => <span key={l} className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: c }} />{l}</span>)
+                    ? ([["#00E6FF", "row (the crop)"], ["#78C8FF", "crop band"], ["#EF5350", "between rows"], ...(selected.rowCrop.seedlings ? [["#FFBE00", "late seedling"], ["#FF00C8", "escape (15 cm+)"]] as const : []), ["#FFA000", "gap in the row"], ["#3CFF5A", "plant (estimate)"], ["#9E9E9E", "not judged"]] as const).map(([c, l]) => <span key={l} className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: c }} />{l}</span>)
                     : CLASS_ORDER.map(c => <span key={c} className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: CLASS_COLOUR[c] }} />{c}</span>)}
                 </span>
               </div>
@@ -337,7 +337,11 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
         for (const g of overlay.gaps) { ctx.beginPath(); ctx.moveTo(g.x1 * s, g.y1 * s); ctx.lineTo(g.x2 * s, g.y2 * s); ctx.stroke(); }
       }
       if (show.windows) { ctx.strokeStyle = "rgba(158,158,158,0.7)"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); for (const e of overlay.excluded) path(e, true); ctx.setLineDash([]); }
-      if (show.blobs) { ctx.strokeStyle = "#EF5350"; ctx.lineWidth = 2; for (const w of overlay.weeds) path(w, true); }
+      if (show.blobs) {
+        ctx.fillStyle = "rgba(255,190,0,0.85)"; for (const [x, y] of overlay.seedlings) ctx.fillRect(x * s - 1.5, y * s - 1.5, 3, 3);
+        ctx.strokeStyle = "#EF5350"; ctx.lineWidth = 2; for (const w of overlay.weeds) path(w, true);
+        ctx.strokeStyle = "#FF00C8"; ctx.lineWidth = 3; for (const w of overlay.escapes) path(w, true);
+      }
       if (show.unplaced) { ctx.fillStyle = "#3CFF5A"; for (const [x, y] of overlay.plants) ctx.fillRect(x * s - 1.5, y * s - 1.5, 3, 3); }
       return;
     }
@@ -403,7 +407,8 @@ function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | 
     ["Crop band", s.medianBandHalfWidthM == null ? "–" : `${cm(s.medianBandHalfWidthM)} either side of the row (from the rows' own green)`],
     ["Green on the rows", s.medianRowGreenShare == null ? "–" : `${Math.round(s.medianRowGreenShare * 100)}% of the band`],
     ["Row coherence", s.coherence == null ? "–" : s.coherence.toFixed(2)],
-    ["Between the rows", `${s.weeds} patch${s.weeds === 1 ? "" : "es"}, ${s.weedAreaM2.toFixed(2)} m²${s.betweenRowCover == null ? "" : `, ${(s.betweenRowCover * 100).toFixed(1)}% of the ground between the bands`}`],
+    ["Between the rows", `${s.weeds} patch${s.weeds === 1 ? "" : "es"}, ${s.weedAreaM2.toFixed(2)} m²${s.betweenRowCover == null ? "" : `, ${(s.betweenRowCover * 100).toFixed(1)}% of the ground between the bands`}${s.escapes != null ? `; ${s.escapes} escape${s.escapes === 1 ? "" : "s"} 15 cm or more across` : ""}`],
+    ...(read.seedlings ? [["Late seedlings", `${read.seedlings.count.toLocaleString()} on the alley floor, ${read.seedlings.cover == null ? "–" : (read.seedlings.cover * 100).toFixed(1) + "%"} of the ground between the rows; a layer, not findings`] as [string, string]] : []),
     ["On the rows", `${s.cropComponents.toLocaleString()} green patches counted as the crop${s.leafTips ? `, ${s.leafTips} of them leaf tips just beyond a band` : ""}`],
     ["Gaps along the rows", s.gaps ? `${s.gaps}, ${s.gapLengthM.toFixed(1)} m in all` : "none over the minimum length"],
     ["Plants (estimate)", s.plants == null ? "not estimated at this pixel size" : `${s.plants.toLocaleString()} green peaks along the rows; unverified`],

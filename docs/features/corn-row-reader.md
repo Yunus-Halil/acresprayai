@@ -155,3 +155,37 @@ data only, everything at 0.5 cm a pixel:
 - **Limits.** 14 px patches are about 7 cm at native scale, so the model is run at 2x (3.5 cm); 80 s a photograph on
   this CPU. A weed among the corn leaves is still the model's corn, since the weak labels say so. The next real step
   is a few hundred hand-checked weed outlines on these photographs; the reader's patches are not truth.
+
+## Mid stage: what the alley seedlings are, and what the read reports (2026-10-29, night)
+
+Yunus could not tell whether the small green things on the alley floor of the mid-phase photographs were weeds or
+expected. Looked at at full resolution they are weeds: a late flush of annual grass seedlings, two to four leaves,
+spread over the soil between the rows. Whether they matter is settled by the critical period for weed control in
+corn: weeds that emerge after about V8, under a closing canopy, rarely reduce this year's yield and matter for next
+year's seed (our weed-ecology research: "After V8 new emergence matters for seed, not yield"; Steckel and Sprague 2004:
+waterhemp emerging after V8 did not reduce yield; Iowa State: the later a weed emerges after the crop, the less it
+affects yield; UNL: about 2 % yield per leaf stage of delay until canopy closure). The broadcast post window on most
+labels closes at V8 or 30 in. What still matters at mid season is an escape: a plant that came through early control
+and is now large.
+
+So the mid-stage variant now reports three things, and draws them differently in Photo Scout and the bench pictures:
+
+- **Late seedlings** (amber dots): green on the alley floor between 2 and 20 cm², clear of every band, standing above
+  its soil. A layer with a count and a cover figure, never individual findings.
+- **Between-row plants** (red outlines): 20 cm² and up, clear of every band.
+- **Escapes** (magenta, thick): between-row plants 15 cm across or wider (the corn profile's small-weed ceiling).
+- The read's notes carry the agronomic reading above, and that the post window is a label matter (no product, no
+  rate: decision support only).
+
+**Two false alarms found by eye and fixed (mid only).** The first escape sheets of photo 22 were all verge grass and
+frame-cut corn leaves. Now a patch is judged only where a corn row stands beside a soil alley: in the 3 x 3 cells of
+0.5 m around it the crop bands are at least 25 % green and at least three times as green as the alleys, and the alleys
+are under 30 % green; a verge or lawn the rows were traced into fails that because band and alley look alike there.
+A patch touching the photo's edge is not judged. Rows are drawn only over their longest run where a row stands
+(band at least 25 % green and 1.5 times the alleys), at least 3 m and a quarter of the photo's longest row, so no
+stubs in a lawn. On the 40 mid photographs: 0 to 1 escape a photograph (the ones left are worth a look by eye),
+7 to 36 between-row plants, 0 to 261 late seedlings (under 0.3 % of the alley ground), every field row drawn on the
+photographs looked at (11, 22, 88). Establishment reads are unchanged, number for number.
+
+**Known limit.** One row direction per photograph: photo 16 holds two plantings at different directions and its lines
+cross the rows. Nothing is judged there (0 plants), but the lines are wrong.

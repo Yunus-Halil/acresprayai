@@ -105,3 +105,29 @@ describe("pieces", () => {
     expect(readsContinuousRows(null)).toBe(false);
   });
 });
+
+describe("mid-stage variant", () => {
+  it("reports late seedlings as a layer and sizes the between-row plants; the establishment read carries neither", () => {
+    const s = scenes.find(x => x.weedsPerM2 > 0 && x.gsdM <= 0.01 && !x.twinM)!;
+    const { px } = renderScene(s);
+    const early = readRowCrop(px, rowCropParamsFor(profile, s.gsdM, "establishment"));
+    const mid = readRowCrop(px, rowCropParamsFor(profile, s.gsdM, "mid"));
+    expect(early.stage).toBe("establishment");
+    expect(early.seedlings).toBeNull();
+    expect(early.weeds.every(w => w.sizeClass === undefined)).toBe(true);
+    expect(mid.stage).toBe("mid");
+    if (mid.rows.length) {
+      expect(mid.seedlings).not.toBeNull();
+      expect(mid.weeds.every(w => w.sizeClass === "small" || w.sizeClass === "escape")).toBe(true);
+      expect(mid.notes.some(n => /V8/.test(n))).toBe(true);
+    }
+  });
+
+  it("refuses a photo with no readable rows", () => {
+    const W = 400, H = 300, rgba = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < W * H; i++) { rgba[i * 4] = 60; rgba[i * 4 + 1] = 140; rgba[i * 4 + 2] = 50; rgba[i * 4 + 3] = 255; }
+    const read = readRowCrop({ width: W, height: H, rgba }, rowCropParamsFor(profile, 0.01, "mid"));
+    expect(read.rows).toEqual([]);
+    expect(read.weeds).toEqual([]);
+  });
+});

@@ -57,7 +57,7 @@ for (const f of files) {
   const o = rowCropOverlay(read);
   const toWork = (pts: [number, number][]): [number, number][] => pts.map(([x, y]) => [x / fac, y / fac]);
   for (let r = 0; r < read.rows.length; r++) { const left = o.bands[2 * r], right = o.bands[2 * r + 1]; fillPolygon(lab, W, H, toWork([...left, ...[...right].reverse()]), 1, i => green[i] === 1); }
-  for (const h of o.weeds) fillPolygon(lab, W, H, toWork(h), 2, i => green[i] === 1);
+  for (const h of [...o.weeds, ...o.escapes]) fillPolygon(lab, W, H, toWork(h), 2, i => green[i] === 1);
   for (const e of o.excluded) fillPolygon(lab, W, H, toWork(e), 255, () => true);
   // Ground the reader did not judge (no rows there): leave soil as background only within a pitch of a row; mark the rest ignore.
   // Approximation: a bounding strip around all bands. Pixels whose nearest band polygon is far are ignored.

@@ -105,6 +105,41 @@ export const MID = {
   minCoherence: 0.2,
   /** Under this share of coherent windows the canopy is closed or the rows unreadable: the read is refused. */
   minCoherentShare: 0.15,
+  /**
+   * Late-flush seedlings: green on the alley floor between this area and the weed floor (minWeedAreaCm2), clear of
+   * every band, counted as a layer, never as individual findings. At V8 and after, weeds that emerge under the closing
+   * canopy matter for next year's seed, not this year's yield (docs/research/crops/corn/weed-ecology.md: "After V8 new
+   * emergence matters for seed, not yield"; Steckel and Sprague 2004: waterhemp emerging after V8 did not reduce yield;
+   * Iowa State: the later a weed emerges after the crop, the less it affects yield).
+   */
+  seedlingMinCm2: 2,
+  /** Seedlings kept as points for drawing, at most. */
+  maxSeedlingPoints: 6000,
+  /**
+   * A between-row plant this wide or wider (equivalent diameter) is an escape: it came through the post pass and is
+   * now large, the plant worth a look at mid season (corn profile pressure.grade.smallDiameterM is 0.15 m).
+   */
+  escapeDiameterM: 0.15,
+  /**
+   * A between-row patch is judged only where the alley around it is mostly soil: over this share of green on the
+   * between-band ground of its neighbourhood (MID.alleyCellM cells, 3 x 3) the alley is a verge, a lawn or cover the
+   * rows were traced into, and nothing there is a weed finding. A 30 cm escape in a soil alley covers under a tenth.
+   */
+  greenAlleyShare: 0.3,
+  /**
+   * ... and only where a real corn row is nearby: the crop bands of the neighbourhood must be at least this many times
+   * as green as its alleys, and at least MID.minBandGreen green. In a verge or lawn the rows were traced into, band and
+   * alley look alike (pale grass flecks both); in the field the band is dense leaf and the alley mostly soil.
+   */
+  bandOverAlley: 3,
+  minBandGreen: 0.25,
+  /** Looser, for drawing a row at all: its band green and at least this many times its alleys (a dense V10 stand still passes; a lawn does not). */
+  rowBandOverAlley: 1.5,
+  /** A mid-stage row is drawn only over a run of at least this many metres where it stands, and at least
+   * minRowRunShare of the photo's longest such run (stubs in a verge are not rows; a close-up keeps its short rows). */
+  minRowRunM: 3,
+  minRowRunShare: 0.25,
+  alleyCellM: 0.5,
 };
 
 export type RowCropGap = { x1: number; y1: number; x2: number; y2: number; lengthM: number };
@@ -143,7 +178,12 @@ export type RowCropWeed = {
   bandHalfWidthM: number | null;
   touchesEdge: boolean;
   status: RowCropWeedStatus;
+  /** Mid stage only: "escape" when the plant is MID.escapeDiameterM across or wider, else "small". Absent at establishment. */
+  sizeClass?: "small" | "escape";
 };
+
+/** Mid stage: the late-flush seedling layer on the alley floor (never individual findings). */
+export type RowCropSeedlings = { count: number; areaM2: number; /** Seedling area over the between-band area. */ cover: number | null; points: [number, number][] };
 
 export type RowCropExcluded = { hull: [number, number][]; areaM2: number; reason: string };
 
@@ -162,6 +202,8 @@ export type RowCropSummary = {
   noRowsPatches: number;
   /** Small patches just beyond a band, elongated toward the row, counted as the crop (a leaf tip cut off by shadow). */
   leafTips: number;
+  /** Mid stage: between-row plants MID.escapeDiameterM across or wider. */
+  escapes?: number;
   specks: number;
   gaps: number;
   gapLengthM: number;
@@ -189,6 +231,8 @@ export type RowCropRead = {
   rows: RowCropRow[];
   weeds: RowCropWeed[];
   excluded: RowCropExcluded[];
+  /** Mid stage only: the late-flush seedling layer; null at establishment. */
+  seedlings: RowCropSeedlings | null;
   summary: RowCropSummary;
   notes: string[];
   crop: { id: string; version: string } | null;
@@ -392,7 +436,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   const { W, H } = work;
   let gsdW = given ? given * f : NaN; // metres per work pixel; set from the pitch when the scale is assumed
   const empty = (gsdM: number, scaleBasis: RowCropRead["scaleBasis"], why: string, vegetationFraction: number): RowCropRead => ({
-    version: ROW_CROP_READ_VERSION, stage: P.stage, width: px.width, height: px.height, gsdM, scaleBasis, workFactor: f, directionDeg: null, pitchM: null, matchedSpacingM: null, rows: [], weeds: [], excluded: [],
+    version: ROW_CROP_READ_VERSION, stage: P.stage, width: px.width, height: px.height, gsdM, scaleBasis, workFactor: f, directionDeg: null, pitchM: null, matchedSpacingM: null, rows: [], weeds: [], excluded: [], seedlings: null,
     summary: { rows: 0, rowsDropped: 0, totalRowLengthM: 0, medianBandHalfWidthM: null, medianRowGreenShare: null, weeds: 0, weedAreaM2: 0, betweenRowCover: null, cropComponents: 0, noRowsPatches: 0, leafTips: 0, specks: 0, gaps: 0, gapLengthM: 0, plants: null, coherence: null, vegetationFraction, ms: Date.now() - t0 },
     notes: [...notes, why], crop: P.crop,
   });
@@ -634,12 +678,42 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   const labels = new Int32Array(W * H);
   const minWeedPx = Math.max(2, Math.round(((mid ? Math.max(P.minWeedAreaCm2, MID.minWeedAreaCm2) : P.minWeedAreaCm2) / 1e4) / (gsdW * gsdW)));
   const leafTipMaxM2 = (mid ? MID.leafTipMaxCm2 : LEAF_TIP_MAX_CM2) / 1e4;
+  // Mid stage: the green share of the between-band ground per cell, to tell a soil alley from a verge the rows ran into.
+  const cellPx = Math.max(4, Math.round(mPx(MID.alleyCellM))), cW = Math.ceil(W / cellPx), cH = Math.ceil(H / cellPx);
+  const alleyG = mid ? new Float32Array(cW * cH) : null, alleyN = mid ? new Float32Array(cW * cH) : null;
+  const bandG = mid ? new Float32Array(cW * cH) : null, bandN = mid ? new Float32Array(cW * cH) : null;
+  if (mid) for (let i = 0; i < W * H; i++) {
+    if (skip[i]) continue;
+    const nr = nearestRow(pxStrip[i], pxA[i]);
+    if (!nr || nr.d > pitchPx) continue;
+    const x = i % W, c = Math.floor((i - x) / W / cellPx) * cW + Math.floor(x / cellPx);
+    if (nr.d <= band[nr.r]) { bandN![c]++; if (mask[i]) bandG![c]++; } else { alleyN![c]++; if (mask[i]) alleyG![c]++; }
+  }
+  /** Mid: whether a corn row stands at a work pixel (looser than judging a patch there). */
+  const rowStandsAt = (x: number, y: number): boolean => {
+    const cx = Math.floor(x / cellPx), cy = Math.floor(y / cellPx); let ag = 0, an = 0, bg = 0, bn = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = cx + dx, yy = cy + dy; if (xx < 0 || yy < 0 || xx >= cW || yy >= cH) continue; const c = yy * cW + xx; ag += alleyG![c]; an += alleyN![c]; bg += bandG![c]; bn += bandN![c]; }
+    if (!bn) return false;
+    const b = bg / bn, a = an ? ag / an : 0;
+    return b >= MID.minBandGreen && b >= MID.rowBandOverAlley * a;
+  };
+  /** Mid: 1 when the ground around a work pixel is not a soil alley beside a corn row (a verge, a lawn, cover), else 0. */
+  const alleyGreenAt = (x: number, y: number): number => {
+    const cx = Math.floor(x / cellPx), cy = Math.floor(y / cellPx); let ag = 0, an = 0, bg = 0, bn = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = cx + dx, yy = cy + dy; if (xx < 0 || yy < 0 || xx >= cW || yy >= cH) continue; const c = yy * cW + xx; ag += alleyG![c]; an += alleyN![c]; bg += bandG![c]; bn += bandN![c]; }
+    if (!an || !bn) return 1;
+    const a = ag / an, b = bg / bn;
+    return a > MID.greenAlleyShare || b < MID.minBandGreen || b < MID.bandOverAlley * a ? 1 : 0;
+  };
+  let greenAlley = 0, edgeCut = 0;
   const weeds: RowCropWeed[] = [];
   const excluded: RowCropExcluded[] = [];
   let cropComponents = 0, specks = 0, betweenGreen = 0, noRowsPatches = 0, noRowsAreaM2 = 0, leafTips = 0;
   const stack = new Int32Array(W * H);
   const smallPx = Math.round((SMALL_PATCH_CM2 / 1e4) / (gsdW * gsdW));
   let label = 0, faint = 0;
+  const seedlingMinPx = Math.max(2, Math.round((MID.seedlingMinCm2 / 1e4) / (gsdW * gsdW)));
+  let seedlingN = 0, seedlingPx = 0; const seedlingPts: [number, number][] = [];
   const toPhoto = (x: number, y: number): [number, number] => [(x + 0.5) * f, (y + 0.5) * f];
   for (let i0 = 0; i0 < W * H; i0++) {
     if (!mask[i0] || labels[i0]) continue;
@@ -662,7 +736,15 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
       }
     }
     const n = pix.length;
-    if (n < minWeedPx) { specks++; continue; }
+    if (n < minWeedPx) {
+      // Mid stage: a small green patch on the alley floor, clear of every band, standing above its soil, is a late-flush seedling.
+      if (mid && n >= seedlingMinPx && noRows === 0 && minD > 0 && satN === 0 && !touchesEdge && exc / n >= gopts.soilMargin + SMALL_PATCH_EXCESS && alleyGreenAt(pix[0] % W, Math.floor(pix[0] / W)) === 0) {
+        seedlingN++; seedlingPx += n;
+        if (seedlingPts.length < MID.maxSeedlingPoints) { let sx = 0, sy = 0; for (const i of pix) { const x = i % W; sx += x; sy += (i - x) / W; } const [px0, py0] = toPhoto(sx / n, sy / n); seedlingPts.push([r3(px0), r3(py0)]); }
+        continue;
+      }
+      specks++; continue;
+    }
     if (n < smallPx && exc / n < gopts.soilMargin + SMALL_PATCH_EXCESS) { faint++; continue; }
     const areaM2 = n * gsdW * gsdW;
     if (satN > n / 2) { // solid green: a border, a lawn, a closed canopy
@@ -687,8 +769,11 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     const [cx, cy] = toPhoto(sx / n, sy / n);
     if (noRows === n) { noRowsPatches++; noRowsAreaM2 += areaM2; if (areaM2 > LARGE_PATCH_M2) excluded.push({ hull, areaM2: r3(areaM2), reason: "vegetation where no rows were read (a border, a headland, cover)" }); continue; }
     if ((aHi - aLo) > BORDER_ACROSS_PITCHES * pitchPx) { excluded.push({ hull, areaM2: r3(areaM2), reason: "vegetation wider than the rows' spacing across them (a border or cover, not a plant between rows)" }); continue; }
+    if (mid && touchesEdge) { edgeCut++; continue; } // cut by the frame: its row may be outside the photo
+    if (mid && alleyGreenAt(sx / n, sy / n) === 1) { greenAlley++; continue; } // a verge or cover, not an alley
     betweenGreen += n;
-    weeds.push({ id: weeds.length + 1, x: r3(cx), y: r3(cy), areaM2: r3(areaM2), equivDiameterM: r3(2 * Math.sqrt(areaM2 / Math.PI)), hull, distToRowM: noRows === n ? null : r3((minD + minBand) * gsdW), bandHalfWidthM: noRows === n ? null : r3(minBand * gsdW), touchesEdge, status: noRows === n ? "no rows here" : "between rows" });
+    const eqD = 2 * Math.sqrt(areaM2 / Math.PI);
+    weeds.push({ ...(mid ? { sizeClass: eqD >= MID.escapeDiameterM ? "escape" as const : "small" as const } : {}), id: weeds.length + 1, x: r3(cx), y: r3(cy), areaM2: r3(areaM2), equivDiameterM: r3(2 * Math.sqrt(areaM2 / Math.PI)), hull, distToRowM: noRows === n ? null : r3((minD + minBand) * gsdW), bandHalfWidthM: noRows === n ? null : r3(minBand * gsdW), touchesEdge, status: noRows === n ? "no rows here" : "between rows" });
   }
   checkStop(opts);
   opts.debug?.(`rows ${rowsW.length} (dropped ${rowsDropped}; k ${rowsW.map(r => r.k - kMin).join(",")}), band px ${band.map(b => b.toFixed(0)).join(",")}, components: crop ${cropComponents} (leaf tips ${leafTips}), weeds ${weeds.length}, specks ${specks}, faint ${faint}, excluded ${excluded.length}`);
@@ -769,22 +854,54 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   let betweenArea = 0;
   for (let i = 0; i < W * H; i++) { const nr = nearestRow(pxStrip[i], pxA[i]); if (nr && nr.d > band[nr.r] && nr.d <= pitchPx) betweenArea++; }
   const weedAreaM2 = weeds.reduce((u, w) => u + w.areaM2, 0);
-  const gapsN = rows.reduce((u, r) => u + r.gaps.length, 0), gapLen = rows.reduce((u, r) => u + r.gaps.reduce((a, g) => a + g.lengthM, 0), 0);
-  const plantsTotal = standOk ? rows.reduce((u, r) => u + (r.plants ?? 0), 0) : null;
+  const totalsOf = (rs: RowCropRow[]) => ({ gapsN: rs.reduce((u, r) => u + r.gaps.length, 0), gapLen: rs.reduce((u, r) => u + r.gaps.reduce((a, g) => a + g.lengthM, 0), 0), plantsTotal: standOk ? rs.reduce((u, r) => u + (r.plants ?? 0), 0) : null });
+  let { gapsN, gapLen, plantsTotal } = totalsOf(rows);
   if (!standOk) notes.push(P.seedSpacingM == null ? "No seed spacing for the crop: no gaps by spacing and no stand estimate." : `The pixel is coarser than ${P.maxStandGsdCm} cm: no stand estimate.`);
   else notes.push("The stand is an estimate from the green peaks along each row; it has not been verified against counted plants.");
   if (excluded.length) notes.push(`${excluded.length} patch${excluded.length === 1 ? "" : "es"} of vegetation left out as border or cover, not weeds.`);
   if (noRowsPatches) notes.push(`${noRowsPatches} green patch${noRowsPatches === 1 ? "" : "es"} (${noRowsAreaM2.toFixed(1)} m²) lie where no rows were read and are not judged.`);
+  // Mid stage: rows are drawn and counted only where a real corn row stands (the same test that judges the patches);
+  // each row keeps its longest run of such points, and a row with fewer than MIN_ROW_STRIPS of them is dropped. A row
+  // traced on into a lawn or verge is not a row there.
+  let rowsOut = rows;
+  if (mid) {
+    rowsOut = [];
+    const runs = rows.map(r => {
+      const ok = r.points.map(([x, y]) => rowStandsAt(x / f, y / f));
+      let best = [0, -1], i = 0;
+      while (i < ok.length) { if (!ok[i]) { i++; continue; } let j = i; while (j + 1 < ok.length && ok[j + 1]) j++; if (j - i > best[1] - best[0]) best = [i, j]; i = j + 1; }
+      return best;
+    });
+    const longest = Math.max(0, ...runs.map(b => b[1] - b[0] + 1));
+    const minRun = Math.max(MIN_ROW_STRIPS, Math.ceil(MID.minRowRunM / STRIP_M), Math.ceil(MID.minRowRunShare * longest));
+    for (let ri = 0; ri < rows.length; ri++) {
+      const r = rows[ri], best = runs[ri];
+      if (best[1] - best[0] + 1 < minRun) { rowsDropped++; continue; }
+      const pts = r.points.slice(best[0], best[1] + 1);
+      const inside = (x: number, y: number) => rowStandsAt(x / f, y / f);
+      rowsOut.push({ ...r, points: pts, lengthM: r3((r.lengthM * pts.length) / r.points.length), gaps: r.gaps.filter(g => inside((g.x1 + g.x2) / 2, (g.y1 + g.y2) / 2)), plantPoints: r.plantPoints ? r.plantPoints.filter(([x, y]) => inside(x, y)) : null, plants: r.plantPoints ? r.plantPoints.filter(([x, y]) => inside(x, y)).length : r.plants });
+    }
+    rowsOut.forEach((r, k) => { r.id = k + 1; });
+  }
+  if (mid) ({ gapsN, gapLen, plantsTotal } = totalsOf(rowsOut));
+  const escapes = mid ? weeds.filter(w => w.sizeClass === "escape").length : 0;
+  const seedlings: RowCropSeedlings | null = mid ? { count: seedlingN, areaM2: r3(seedlingPx * gsdW * gsdW), cover: betweenArea ? r3(seedlingPx / betweenArea) : null, points: seedlingPts } : null;
+  if (mid && (greenAlley || edgeCut)) notes.push(`Not judged: ${greenAlley} patch${greenAlley === 1 ? "" : "es"} where the ground between the rows is mostly green (a verge or cover the rows run into), ${edgeCut} cut by the photo's edge.`);
+  if (mid) {
+    notes.push(`Mid stage: ${seedlingN} late-flush seedling${seedlingN === 1 ? "" : "s"} on the alley floor (${seedlings!.cover == null ? "-" : (seedlings!.cover * 100).toFixed(1)}% of the ground between the rows), drawn as a layer, not as findings. Weeds that emerge after about V8 under a closing canopy rarely reduce this year's yield; they matter for next year's seed.`);
+    notes.push(escapes ? `${escapes} between-row plant${escapes === 1 ? "" : "s"} ${Math.round(MID.escapeDiameterM * 100)} cm or more across: escapes from earlier control, the plants worth a look.` : `No between-row plant ${Math.round(MID.escapeDiameterM * 100)} cm or more across: no escapes seen.`);
+    notes.push("The broadcast post window on most corn labels closes at V8 or 30 in; after that, directed sprays and next season's plan are what remain. Check the label and your local guidance.");
+  }
   opts.onProgress?.(nStrips + 2, nStrips + 2);
   return {
     version: ROW_CROP_READ_VERSION, stage: P.stage, width: px.width, height: px.height, gsdM, scaleBasis, workFactor: f,
     directionDeg: r3(((rowAngle * 180) / Math.PI + 180) % 180), pitchM: r3(pitchM), matchedSpacingM,
-    rows, weeds, excluded,
+    rows: rowsOut, weeds, excluded, seedlings,
     summary: {
-      rows: rows.length, rowsDropped, totalRowLengthM: r3(rows.reduce((u, r) => u + r.lengthM, 0)),
-      medianBandHalfWidthM: quantile(rows.map(r => r.bandHalfWidthM), 0.5), medianRowGreenShare: quantile(rows.map(r => r.greenShare), 0.5),
+      rows: rowsOut.length, rowsDropped, totalRowLengthM: r3(rowsOut.reduce((u, r) => u + r.lengthM, 0)),
+      medianBandHalfWidthM: quantile(rowsOut.map(r => r.bandHalfWidthM), 0.5), medianRowGreenShare: quantile(rowsOut.map(r => r.greenShare), 0.5),
       weeds: weeds.length, weedAreaM2: r3(weedAreaM2), betweenRowCover: betweenArea ? r3(betweenGreen / betweenArea) : null,
-      cropComponents, noRowsPatches, leafTips, specks, gaps: gapsN, gapLengthM: r3(gapLen), plants: plantsTotal, coherence: coherence == null ? null : r3(coherence), vegetationFraction: r3(vegetationFraction), ms: Date.now() - t0,
+      cropComponents, noRowsPatches, leafTips, ...(mid ? { escapes } : {}), specks, gaps: gapsN, gapLengthM: r3(gapLen), plants: plantsTotal, coherence: coherence == null ? null : r3(coherence), vegetationFraction: r3(vegetationFraction), ms: Date.now() - t0,
     },
     notes, crop: P.crop,
   };
@@ -814,7 +931,7 @@ function convexHull(pts: [number, number][]): [number, number][] {
 }
 
 /** Everything to draw, in photo pixels: rows, each row's band edges, weeds, gaps, plants, excluded patches. */
-export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][]; bands: [number, number][][]; weeds: [number, number][][]; gaps: RowCropGap[]; plants: [number, number][]; excluded: [number, number][][] } {
+export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][]; bands: [number, number][][]; weeds: [number, number][][]; escapes: [number, number][][]; seedlings: [number, number][]; gaps: RowCropGap[]; plants: [number, number][]; excluded: [number, number][][] } {
   const bands: [number, number][][] = [];
   for (const r of read.rows) {
     const half = r.bandHalfWidthM / read.gsdM;
@@ -827,5 +944,5 @@ export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][];
     }
     bands.push(left, right);
   }
-  return { rows: read.rows.map(r => r.points), bands, weeds: read.weeds.map(w => w.hull), gaps: read.rows.flatMap(r => r.gaps), plants: read.rows.flatMap(r => r.plantPoints ?? []), excluded: read.excluded.map(e => e.hull) };
+  return { rows: read.rows.map(r => r.points), bands, weeds: read.weeds.filter(w => w.sizeClass !== "escape").map(w => w.hull), escapes: read.weeds.filter(w => w.sizeClass === "escape").map(w => w.hull), seedlings: read.seedlings?.points ?? [], gaps: read.rows.flatMap(r => r.gaps), plants: read.rows.flatMap(r => r.plantPoints ?? []), excluded: read.excluded.map(e => e.hull) };
 }
