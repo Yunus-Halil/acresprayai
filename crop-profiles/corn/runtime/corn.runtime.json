@@ -1,7 +1,7 @@
 {
   "runtimeVersion": 1,
   "id": "corn",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "schemaVersion": "1.0.0",
   "status": "experimental",
   "validation": "partial",
@@ -285,7 +285,7 @@
         "V2",
         "V9"
       ],
-      "reason": "Photo pattern pass with the corn prior; benchmarked on rendered stands and on three real photos (one used to diagnose the residue failure), not on an independent field set with row truth."
+      "reason": "Continuous-row reader on photographs (rows traced on the green, polylines, no brightness); on 15 real top-down photographs of one V5 to V7 field (no EXIF, scale assumed from the pitch) every visible row was traced on the crop including the frame edges, and on the three residue photographs; rendered stands: rows on the crop on 23 of 24 development scenes (the exception is a V2 stand under weeds larger than its plants). The field map still goes through the pattern pass."
     },
     "row-spacing": {
       "status": "experimental",
@@ -303,7 +303,7 @@
         "V2",
         "V4"
       ],
-      "reason": "The pattern pass places plants along rows when a consistent seed spacing is found; positions from the pattern are expected, not verified plants. Not benchmarked against plant truth."
+      "reason": "Photographs: plants are estimated as the green peaks along each traced row at pixels of 1.5 cm and finer; an unverified estimate, shown as such. The lattice pattern pass's positions no longer apply to this crop's photographs."
     },
     "crop-vs-weed-by-position": {
       "status": "experimental",
@@ -312,7 +312,7 @@
         "V1",
         "V9"
       ],
-      "reason": "Off-row green is a weed candidate; weeds in the row are not separable. Measured on WeedsGalore (one German maize field) held-out patches."
+      "reason": "Photographs: the whole row is the crop (a crop band per row from its own green), a green patch is a weed candidate only when it stands clear of every band; weeds in the row and weeds touching the crop's leaves are not separable. Rendered stands: between-row weeds found at 1 cm and finer in more than half the cases, crop never reported outside the V2 weak case. Field map: off-row green as before, measured on WeedsGalore."
     },
     "vegetation-segmentation": {
       "status": "experimental",
@@ -355,13 +355,13 @@
       "reason": "A regional, seasonal reference list from surveys and extension guides; never an identification."
     },
     "stand-count": {
-      "status": "unsupported",
+      "status": "experimental",
       "maxGsdCm": 1.5,
       "stages": [
         "V2",
-        "V3"
+        "V6"
       ],
-      "reason": "Not implemented for corn; the pattern pass's seed fit is not a validated stand count."
+      "reason": "An estimate from the green peaks along each traced row (continuous-row reader), reported as unverified: never checked against counted plants."
     },
     "growth-stage-from-imagery": {
       "status": "unsupported",

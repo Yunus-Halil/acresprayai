@@ -16,6 +16,8 @@ import { type BlobClass, DEFAULT_MIN_BLOB_AREA_CM2, DEFAULT_PHOTO_WINDOW_M, type
 import { patternPriorFor } from "@/lib/cropProfiles/engine";
 import { checkRowSpacing } from "@/lib/cropProfiles/checks";
 import { cropProfileById, listCropProfiles } from "@/lib/cropProfiles/registry";
+import { type RowCropRead, readRowCrop, rowCropOverlay } from "@/lib/rowCrop/readRowCrop";
+import { readsContinuousRows, rowCropParamsFor } from "@/lib/rowCrop/params";
 
 type Status = "new" | "decoding" | "running" | "done" | "error";
 
@@ -26,6 +28,8 @@ type Photo = {
   exif: PhotoExif | null;
   decoded: DecodedPhoto | null;
   pattern: PhotoPattern | null;
+  /** The continuous-row read (corn and any crop whose profile traces rows on the green) instead of the lattice pattern. */
+  rowCrop: RowCropRead | null;
   status: Status;
   progress: { done: number; total: number } | null;
   error: string | null;
@@ -79,7 +83,7 @@ export default function PhotoScout() {
     const list = Array.from(files).filter(f => /\.(jpe?g)$/i.test(f.name) || f.type === "image/jpeg");
     if (!list.length) return;
     const fresh: Photo[] = list.map(file => ({
-      id: `p${nextId++}`, name: file.name, file, exif: null, decoded: null, pattern: null, status: "new", progress: null, error: null, used: null,
+      id: `p${nextId++}`, name: file.name, file, exif: null, decoded: null, pattern: null, rowCrop: null, status: "new", progress: null, error: null, used: null,
     }));
     setPhotos(ps => [...ps, ...fresh]);
     setSelectedId(s => s ?? fresh[0].id);
@@ -111,6 +115,14 @@ export default function PhotoScout() {
         patch(p.id, { decoded });
       }
       const g = gsdFor(p, decoded);
+      if (readsContinuousRows(cropId)) {
+        // Corn and its kind: rows traced on the green, the whole row is the crop. Without a pixel size the scale is
+        // assumed from the measured pitch and the profile's default spacing, and the read says so.
+        patch(p.id, { status: "running", progress: null, used: g.gsdM ? { gsdM: g.gsdM, basis: g.basis } : null });
+        const read = readRowCrop(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) });
+        patch(p.id, { rowCrop: read, pattern: null, status: "done", progress: null, used: { gsdM: read.gsdM, basis: read.scaleBasis === "given" ? g.basis : "assumed from the measured row pitch and the crop's default spacing" } });
+        return;
+      }
       if (!g.gsdM) { patch(p.id, { status: "error", error: `Cannot size the pixels: ${g.basis}.` }); return; }
       patch(p.id, { status: "running", progress: null, used: { gsdM: g.gsdM, basis: g.basis } });
       const minBlob = Number(minBlobCm2), win = Number(windowM);
@@ -120,7 +132,7 @@ export default function PhotoScout() {
         windowM: Number.isFinite(win) && win > 0 ? win : undefined,
         prior: patternPriorFor(cropProfileById(cropId)),
       }, { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) });
-      patch(p.id, { pattern, status: "done", progress: null });
+      patch(p.id, { pattern, rowCrop: null, status: "done", progress: null });
     } catch (e) {
       patch(p.id, { status: "error", error: e instanceof Error ? e.message : String(e) });
     }
@@ -158,7 +170,7 @@ export default function PhotoScout() {
                 <option value="">not set (crop-neutral)</option>
                 {listCropProfiles().map(c => <option key={c.id} value={c.id}>{c.name} ({c.status} profile)</option>)}
               </select>
-              <div className="text-[10px] text-neutral-500">{cropId ? "the crop's planted spacings are searched beside the usual ones, and only green that passes the crop's gate counts" : "no crop profile: the read uses the crop-neutral settings"}</div>
+              <div className="text-[10px] text-neutral-500">{readsContinuousRows(cropId) ? "rows are traced on the green and the whole row is the crop; only green clear of every row is reported, as patches between the rows" : cropId ? "the crop's planted spacings are searched beside the usual ones, and only green that passes the crop's gate counts" : "no crop profile: the read uses the crop-neutral settings"}</div>
             </Field>
             <Field label="Row spacing">
               <div className="flex gap-1">
@@ -208,7 +220,7 @@ export default function PhotoScout() {
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" className={btn} disabled={selected.status === "decoding" || selected.status === "running"} onClick={() => void run(selected)}>
                   {(selected.status === "decoding" || selected.status === "running") && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  {selected.status === "decoding" ? "Decoding" : selected.status === "running" ? `Fitting${selected.progress ? ` ${selected.progress.done}/${selected.progress.total}` : ""}` : selected.pattern ? "Run again" : "Read this photo"}
+                  {selected.status === "decoding" ? "Decoding" : selected.status === "running" ? `Fitting${selected.progress ? ` ${selected.progress.done}/${selected.progress.total}` : ""}` : selected.pattern || selected.rowCrop ? "Run again" : "Read this photo"}
                 </button>
                 {(["rows", "blobs", "unplaced", "windows"] as const).map(k => (
                   <label key={k} className="text-xs text-neutral-400 inline-flex items-center gap-1">
@@ -216,13 +228,16 @@ export default function PhotoScout() {
                   </label>
                 ))}
                 <span className="text-[10px] text-neutral-500 ml-auto inline-flex gap-3">
-                  {CLASS_ORDER.map(c => <span key={c} className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: CLASS_COLOUR[c] }} />{c}</span>)}
+                  {selected.rowCrop
+                    ? ([["#00E6FF", "row (the crop)"], ["#78C8FF", "crop band"], ["#EF5350", "between rows"], ["#FFA000", "gap in the row"], ["#3CFF5A", "plant (estimate)"], ["#9E9E9E", "not judged"]] as const).map(([c, l]) => <span key={l} className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: c }} />{l}</span>)
+                    : CLASS_ORDER.map(c => <span key={c} className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: CLASS_COLOUR[c] }} />{c}</span>)}
                 </span>
               </div>
               {selected.error && <div className="text-xs text-red-400 flex items-start gap-1.5"><AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" /> {selected.error}</div>}
               <ExifCard photo={selected} units={units} />
               <PhotoCanvas photo={selected} show={show} />
               {selected.pattern && <Summary pattern={selected.pattern} units={units} />}
+              {selected.rowCrop && <RowCropSummary read={selected.rowCrop} units={units} />}
             </>
           )}
         </main>
@@ -235,6 +250,10 @@ function statusLine(p: Photo, units: "metric" | "imperial"): string {
   if (p.status === "error") return "error";
   if (p.status === "decoding") return "decoding";
   if (p.status === "running") return "fitting rows";
+  if (p.rowCrop) {
+    const s = p.rowCrop.summary;
+    return s.rows ? `${s.rows} rows, ${s.weeds} between rows, ${fmtLengthCm(p.rowCrop.gsdM * 100, units).text}/px` : "no rows read";
+  }
   if (p.pattern) {
     const s = p.pattern.summary;
     return `${s.usableWindows}/${s.windows} windows, ${s.offRow} off-row, ${fmtLengthCm(p.pattern.gsdM * 100, units).text}/px`;
@@ -282,8 +301,9 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
     setWidth(el.clientWidth);
     return () => ro.disconnect();
   }, []);
-  const decoded = photo.decoded, pattern = photo.pattern;
+  const decoded = photo.decoded, pattern = photo.pattern, rowCrop = photo.rowCrop;
   const segments = useMemo(() => (pattern ? pattern.windows.flatMap(w => rowSegmentsPx(w, pattern.gsdM).map(s => ({ ...s, w }))) : []), [pattern]);
+  const overlay = useMemo(() => (rowCrop ? rowCropOverlay(rowCrop) : null), [rowCrop]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -295,6 +315,21 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(decoded.bitmap, 0, 0, canvas.width, canvas.height);
+    if (overlay) {
+      const path = (pts: [number, number][], close: boolean) => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * s, y * s) : ctx.moveTo(x * s, y * s))); if (close) ctx.closePath(); ctx.stroke(); };
+      if (show.rows) {
+        ctx.strokeStyle = "rgba(120,200,255,0.35)"; ctx.lineWidth = 1;
+        for (const b of overlay.bands) path(b, false);
+        ctx.strokeStyle = "rgba(0,230,255,0.9)"; ctx.lineWidth = 2;
+        for (const r of overlay.rows) path(r, false);
+        ctx.strokeStyle = "rgba(255,160,0,0.95)"; ctx.lineWidth = 3;
+        for (const g of overlay.gaps) { ctx.beginPath(); ctx.moveTo(g.x1 * s, g.y1 * s); ctx.lineTo(g.x2 * s, g.y2 * s); ctx.stroke(); }
+      }
+      if (show.windows) { ctx.strokeStyle = "rgba(158,158,158,0.7)"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); for (const e of overlay.excluded) path(e, true); ctx.setLineDash([]); }
+      if (show.blobs) { ctx.strokeStyle = "#EF5350"; ctx.lineWidth = 2; for (const w of overlay.weeds) path(w, true); }
+      if (show.unplaced) { ctx.fillStyle = "#3CFF5A"; for (const [x, y] of overlay.plants) ctx.fillRect(x * s - 1.5, y * s - 1.5, 3, 3); }
+      return;
+    }
     if (!pattern) return;
     if (show.windows) {
       for (const w of pattern.windows) {
@@ -336,12 +371,44 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
         ctx.stroke();
       }
     }
-  }, [decoded, pattern, segments, show, width]);
+  }, [decoded, pattern, overlay, segments, show, width]);
 
   return (
     <div ref={holder} className="w-full rounded-sm border border-[#222] overflow-hidden" style={{ background: "#0f0f0f" }}>
       {decoded ? <canvas ref={ref} className="block w-full" /> : <div className="p-6 text-xs text-neutral-500">Press "Read this photo" to decode it.</div>}
     </div>
+  );
+}
+
+function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | "imperial" }) {
+  const s = read.summary;
+  const cm = (m: number | null) => (m == null ? "–" : fmtLengthCm(m * 100, units).text);
+  const rows: [string, string][] = [
+    ["Crop profile", read.crop ? `${read.crop.id} ${read.crop.version}: rows traced on the green, the whole row is the crop` : "none"],
+    ["Scale", read.scaleBasis === "given" ? `${cm(read.gsdM)}/px` : `${cm(read.gsdM)}/px, ASSUMED from the measured pitch and the crop's default spacing`],
+    ["Row direction", read.directionDeg == null ? "–" : `${read.directionDeg.toFixed(1)}° from the photo's x axis`],
+    ["Row spacing measured", read.pitchM == null ? "–" : `${cm(read.pitchM)}${read.matchedSpacingM ? ` (a planted spacing: ${cm(read.matchedSpacingM)})` : " (matches no planted spacing; the measurement stands)"}`],
+    ["Rows", `${s.rows} traced, ${s.totalRowLengthM.toFixed(0)} m in all${s.rowsDropped ? `, ${s.rowsDropped} short traces dropped` : ""}`],
+    ["Crop band", s.medianBandHalfWidthM == null ? "–" : `${cm(s.medianBandHalfWidthM)} either side of the row (from the rows' own green)`],
+    ["Green on the rows", s.medianRowGreenShare == null ? "–" : `${Math.round(s.medianRowGreenShare * 100)}% of the band`],
+    ["Row coherence", s.coherence == null ? "–" : s.coherence.toFixed(2)],
+    ["Between the rows", `${s.weeds} patch${s.weeds === 1 ? "" : "es"}, ${s.weedAreaM2.toFixed(2)} m²${s.betweenRowCover == null ? "" : `, ${(s.betweenRowCover * 100).toFixed(1)}% of the ground between the bands`}`],
+    ["On the rows", `${s.cropComponents.toLocaleString()} green patches counted as the crop`],
+    ["Gaps along the rows", s.gaps ? `${s.gaps}, ${s.gapLengthM.toFixed(1)} m in all` : "none over the minimum length"],
+    ["Plants (estimate)", s.plants == null ? "not estimated at this pixel size" : `${s.plants.toLocaleString()} green peaks along the rows; unverified`],
+    ["Not judged", `${s.noRowsPatches} patches where no rows were read; ${read.excluded.length} borders or cover`],
+    ["Vegetation", `${(s.vegetationFraction * 100).toFixed(1)}% of pixels; ${s.specks.toLocaleString()} specks dropped`],
+    ["Time", `${s.ms} ms`],
+  ];
+  return (
+    <section className="rounded-sm border border-[#222] p-3 text-[11px] space-y-2" style={{ background: "#161616" }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+        {rows.map(([k, v]) => <div key={k} className="flex gap-2"><span className="text-neutral-500 w-44 shrink-0">{k}</span><span className="text-neutral-300">{v}</span></div>)}
+      </div>
+      {read.notes.map((n, i) => (
+        <div key={i} className="text-neutral-500 flex items-start gap-1.5 pt-1"><AlertTriangle className="h-3 w-3 shrink-0 mt-0.5 text-amber-500/80" /> {n}</div>
+      ))}
+    </section>
   );
 }
 

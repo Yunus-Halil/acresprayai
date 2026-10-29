@@ -382,6 +382,15 @@
       "cause": "Not yet diagnosed at map scale; the same scenes read as photos put the rows on the crop in several cases, so the map read (2.9 cm, 12 m fit windows inside 60 m pattern windows) is the suspect.",
       "fix": "None yet. Mitigation in place: the grade and hotspots run only on rows the operator confirmed on the map.",
       "status": "open"
+    },
+    {
+      "id": "fc-photo-lattice-corn",
+      "date": "2026-10-29",
+      "image": "Operator's screenshots of the Photo Scout on residue corn photographs, and directtestimagery (15 top-down V5 to V7 photographs)",
+      "symptom": "The lattice pattern pass drew the row lines on the straw stripes between the rows and circled every corn plant as off-row; on the clean field its straight lines drifted off the curved rows at the frame edges.",
+      "cause": "The pattern pass models plants on a lattice (trees, vines) and takes phase from brightness where the green is weak; from V4 a corn row is one ragged line of leaves, all crop, and lens distortion bends it.",
+      "fix": "The continuous-row reader (src/lib/rowCrop/readRowCrop.ts): rows traced strip by strip on the soil-relative green, the whole row the crop, a band per row from its own green, weeds only clear of every band. Photo Scout uses it for every crop whose profile reads continuous rows. Regression tests in src/test/rowCrop.test.ts; pictures in directtestimagery/outputs/row-crop/.",
+      "status": "fixed"
     }
   ],
   "gaps": [

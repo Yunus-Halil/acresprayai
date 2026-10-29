@@ -20,7 +20,7 @@
     "continuousFromStage": "V6",
     "bandHalfWidthM": 0.15,
     "readGsdCm": 3,
-    "rationale": "Corn rows are read by the photo pattern pass (projection angle, autocorrelation pitch, circular-mean phase), whose search band is 60 to 160% of each candidate. These five candidates cover every planted corn spacing from 23 cm to 1.46 m; the engine's crop-neutral candidates (0.2 to 6 m) are kept beside them so a field that is not what the crop on file says is still read at its own pitch. In auto mode a pitch is only ever one a fit measured: a fit left standing on a candidate it was handed is not rows. A green fit just under the confidence bar stands when its measured pitch is a planted corn spacing and its green is in step with the rows (coherence 0.5 or more): a photo a few rows wide gives the spacing estimate little to stand on. Windows stay at the engine's 4 m (a four-row window of about 3 m was tried and split small photos into blocks that did not join). In early corn the rows are green lines on soil, so a row block found from brightness is re-placed on the green when the green is in step with it: in no-till fields the bright stripes are the straw between the rows. The crop band is 15 cm either side of a row line (30 cm wide): on the WeedsGalore maize patches a band of that width held 95 to 97% of the maize from V1 to about V7, while a third of the weed area sat inside it and is left out by design. The field map is read for rows at about 3 cm a pixel, not the pass's crop-neutral 5 cm: on a rendered red-soil map with straw stripes, at 5.7 cm the thin corn leaves became mixed pixels that failed the ExGR gate, the read fell back on brightness and every line sat on the straw, 37 cm off the corn; at 2.9 cm every line sat on the corn, 5 mm off.",
+    "rationale": "Corn rows are read by the photo pattern pass (projection angle, autocorrelation pitch, circular-mean phase), whose search band is 60 to 160% of each candidate. These five candidates cover every planted corn spacing from 23 cm to 1.46 m; the engine's crop-neutral candidates (0.2 to 6 m) are kept beside them so a field that is not what the crop on file says is still read at its own pitch. In auto mode a pitch is only ever one a fit measured: a fit left standing on a candidate it was handed is not rows. A green fit just under the confidence bar stands when its measured pitch is a planted corn spacing and its green is in step with the rows (coherence 0.5 or more): a photo a few rows wide gives the spacing estimate little to stand on. Windows stay at the engine's 4 m (a four-row window of about 3 m was tried and split small photos into blocks that did not join). In early corn the rows are green lines on soil, so a row block found from brightness is re-placed on the green when the green is in step with it: in no-till fields the bright stripes are the straw between the rows. The crop band is 15 cm either side of a row line (30 cm wide): on the WeedsGalore maize patches a band of that width held 95 to 97% of the maize from V1 to about V7, while a third of the weed area sat inside it and is left out by design. The field map is read for rows at about 3 cm a pixel, not the pass's crop-neutral 5 cm: on a rendered red-soil map with straw stripes, at 5.7 cm the thin corn leaves became mixed pixels that failed the ExGR gate, the read fell back on brightness and every line sat on the straw, 37 cm off the corn; at 2.9 cm every line sat on the corn, 5 mm off. Since profile 1.2.0 (2026-10-29) photographs of this crop are read by the continuous-row reader (src/lib/rowCrop/readRowCrop.ts): rows traced strip by strip on the soil-relative green (never on brightness, so never on straw), the whole row is the crop, the crop band comes from each row's own green with bandHalfWidthM as its floor, and only green clear of every band is a weed candidate. The candidates and tolerance here are what the reader prefers when the measured pitch is near one; the measurement always stands.",
     "sources": [
       "pioneer-row-width",
       "kws-uk-sowing",
@@ -198,7 +198,7 @@
         "V2",
         "V9"
       ],
-      "reason": "Photo pattern pass with the corn prior; benchmarked on rendered stands and on three real photos (one used to diagnose the residue failure), not on an independent field set with row truth.",
+      "reason": "Continuous-row reader on photographs (rows traced on the green, polylines, no brightness); on 15 real top-down photographs of one V5 to V7 field (no EXIF, scale assumed from the pitch) every visible row was traced on the crop including the frame edges, and on the three residue photographs; rendered stands: rows on the crop on 23 of 24 development scenes (the exception is a V2 stand under weeds larger than its plants). The field map still goes through the pattern pass.",
       "validatedBy": [
         "synthetic-corn-stands",
         "corn-photos-label-free"
@@ -223,7 +223,7 @@
         "V2",
         "V4"
       ],
-      "reason": "The pattern pass places plants along rows when a consistent seed spacing is found; positions from the pattern are expected, not verified plants. Not benchmarked against plant truth."
+      "reason": "Photographs: plants are estimated as the green peaks along each traced row at pixels of 1.5 cm and finer; an unverified estimate, shown as such. The lattice pattern pass's positions no longer apply to this crop's photographs."
     },
     "crop-vs-weed-by-position": {
       "status": "experimental",
@@ -232,7 +232,7 @@
         "V1",
         "V9"
       ],
-      "reason": "Off-row green is a weed candidate; weeds in the row are not separable. Measured on WeedsGalore (one German maize field) held-out patches.",
+      "reason": "Photographs: the whole row is the crop (a crop band per row from its own green), a green patch is a weed candidate only when it stands clear of every band; weeds in the row and weeds touching the crop's leaves are not separable. Rendered stands: between-row weeds found at 1 cm and finer in more than half the cases, crop never reported outside the V2 weak case. Field map: off-row green as before, measured on WeedsGalore.",
       "validatedBy": [
         "weedsgalore-position"
       ]
@@ -289,13 +289,13 @@
       "reason": "A regional, seasonal reference list from surveys and extension guides; never an identification."
     },
     "stand-count": {
-      "status": "unsupported",
+      "status": "experimental",
       "maxGsdCm": 1.5,
       "stages": [
         "V2",
-        "V3"
+        "V6"
       ],
-      "reason": "Not implemented for corn; the pattern pass's seed fit is not a validated stand count."
+      "reason": "An estimate from the green peaks along each traced row (continuous-row reader), reported as unverified: never checked against counted plants."
     },
     "growth-stage-from-imagery": {
       "status": "unsupported",

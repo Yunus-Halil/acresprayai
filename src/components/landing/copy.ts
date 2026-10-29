@@ -50,7 +50,7 @@ export const CTA_EXPLORE = "Explore Swardus";
 export const ACCESS_HREF = "/apply";
 
 /** The one address the site hands out. */
-export const CONTACT_EMAIL = "yunus@swathwise.com";
+export const CONTACT_EMAIL = "yunus@swardus.com";
 
 export const NAV = [
   { label: "Platform", href: "#beyond" },

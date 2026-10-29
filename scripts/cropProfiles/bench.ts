@@ -39,6 +39,10 @@ const CROP = arg("crop", "corn")!;
 const PICTURES = argv.includes("--pictures");
 const WG = arg("weedsgalore", "D:/swardus-research/datasets/weedsgalore/rgb")!;
 const PHOTOS = arg("photos", "CropTesting/Corn/earlystage")!;
+// --tag names a photo set other than the three development photos: results and pictures go to photos-<tag> / map-<tag>.
+const TAG = arg("tag", "")!;
+const SFX = TAG ? `-${TAG}` : "";
+const NO_SCENES = argv.includes("--no-scenes");
 const RESULTS = join("crop-profiles", CROP, "10_validation", "results");
 const PICS = join("data", "bench", "crop-profile");
 
@@ -206,17 +210,17 @@ async function photos() {
         const ratio = onGreenRatio(img, p);
         const a = assessCapabilities(profile, { gsdM: g, on: new Date(), rowsFound: p.summary.blocks > 0, rowCoherence: p.summary.medianRowCoherence ?? null, measuredRowSpacingM: p.summary.medianPitchM, vegetationShare: p.vegetationFraction, otsuThreshold: p.summary.otsuThreshold ?? null });
         out.push({ image: f, res, mode, gsdCm: r3(g * 100), ms: Date.now() - t0, rowsFound: p.summary.blocks > 0, blocks: p.summary.blocks, pitchCm: p.summary.medianPitchM ? r3(p.summary.medianPitchM * 100) : null, angleDeg: r3(p.summary.medianAngleDeg), brightnessWindows: p.summary.brightnessWindows, brightnessReplaced: p.summary.brightnessReplaced ?? 0, flooredMaskWindows: p.summary.flooredMaskWindows ?? 0, exgrGatedShare: r3(p.summary.exgrGatedShare ?? 0), priorSupportedWindows: p.summary.priorSupportedWindows ?? 0, otsu: r3(p.summary.otsuThreshold), vegetationFraction: r3(p.vegetationFraction), medianRowCoherence: r3(p.summary.medianRowCoherence), onGreenRatio: r3(ratio), offRow: p.summary.offRow, onPattern: p.summary.onPattern, findings: a.findings.map(x => x.code), notes: p.notes });
-        if (PICTURES || res === "photo") drawPattern(img, p, join(PICS, "photos", basename(f, extname(f)), `pattern-${res}-${mode}.png`));
+        if (PICTURES || res === "photo") drawPattern(img, p, join(PICS, `photos${SFX}`, basename(f, extname(f)), `pattern-${res}-${mode}.png`));
       }
       process.stdout.write(".");
     }
   }
   console.log();
   const fmt = (v: unknown) => (v == null ? "-" : String(v));
-  const md = [`# Crop profile benchmark: early-corn photos (${CROP})`, "", `Run ${today}, code ${revision}. Three photos, no EXIF and no labels: the pixel size comes from the measured pitch and an assumed 30 in (76.2 cm) row spacing. The on-green ratio is the share of green (ExGR above zero, an index the pattern pass does not use) within an eighth of a pitch of the row lines, over the same share in the middle of the alleys: above 1 the lines sit on the green, under 1 they sit between the rows. Photo 0359 was used to diagnose the residue failure, so these are development results.`, "",
+  const md = [`# Crop profile benchmark: early-corn photos (${CROP})`, "", `Run ${today}, code ${revision}. ${TAG ? `${files.length} photos from ${PHOTOS} (${TAG}): not used in development` : "Three photos"}, no EXIF and no labels: the pixel size comes from the measured pitch and an assumed 30 in (76.2 cm) row spacing. The on-green ratio is the share of green (ExGR above zero, an index the pattern pass does not use) within an eighth of a pitch of the row lines, over the same share in the middle of the alleys: above 1 the lines sit on the green, under 1 they sit between the rows. ${TAG ? "" : "Photo 0359 was used to diagnose the residue failure, so these are development results."}`, "",
     "| Image | Resolution | Mode | Rows found | Pitch (cm) | On-green ratio | Brightness windows | Re-placed on green | ExGR-gated share | Otsu split | Row coherence |", "|---|---|---|---|---|---|---|---|---|---|---|",
     ...out.map(r => `| ${String(r.image).slice(0, 14)} | ${fmt(r.res)} | ${fmt(r.mode)} | ${fmt(r.rowsFound)} | ${fmt(r.pitchCm)} | ${fmt(r.onGreenRatio)} | ${fmt(r.brightnessWindows)} | ${fmt(r.brightnessReplaced)} | ${fmt(r.exgrGatedShare)} | ${fmt(r.otsu)} | ${fmt(r.medianRowCoherence)} |`), ""].join("\n");
-  writeResult("photos", { suite: "photos", crop: CROP, date: today, codeRevision: revision, scaleBasis: "no EXIF: pixel size from the measured pitch and an assumed 0.762 m row spacing", rows: out }, md);
+  writeResult(`photos${SFX}`, { suite: "photos", set: TAG || "development", photos: PHOTOS, crop: CROP, date: today, codeRevision: revision, scaleBasis: "no EXIF: pixel size from the measured pitch and an assumed 0.762 m row spacing", rows: out }, md);
   return out;
 }
 
@@ -404,12 +408,12 @@ async function mapSuite() {
     const full: Img = { width: raw.width, height: raw.height, rgba: new Uint8ClampedArray(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength) };
     const pp = pitchPx(full);
     if (!pp) continue;
-    const r = await runMap(f, full as PhotoPixels, 0.762 / pp, { picture: join(PICS, "map", `${basename(f, extname(f))}-grade.png`) });
+    const r = await runMap(f, full as PhotoPixels, 0.762 / pp, { picture: join(PICS, `map${SFX}`, `${basename(f, extname(f))}-grade.png`) });
     out.push({ ...r, kind: "photo" });
     process.stdout.write("p");
   }
   // The held-out rendered scenes as stand-in maps.
-  for (const sc of sceneSet("evaluation")) {
+  for (const sc of NO_SCENES ? [] : sceneSet("evaluation")) {
     const { px, truth } = renderScene(sc);
     const r = await runMap(sc.name, px, sc.gsdM, { truth: { acrossToRow: truth.acrossToRow, pitchM: sc.pitchM, layer: truth.layer, width: px.width, bandM: 0.15 }, picture: PICTURES ? join(PICS, "map", `${sc.name}-grade.png`) : undefined });
     out.push({ ...r, kind: "scene", soil: sc.soil, straw: !!sc.straw, gsdCm: sc.gsdM * 100 });
@@ -434,10 +438,10 @@ async function mapSuite() {
   const fmt = (v: unknown) => (v == null ? "-" : String(v));
   const md = [`# Crop profile benchmark: corn rows on a field map, and the grade on them (${CROP})`, "",
     `Run ${today}, code ${revision}. The map pattern pass with the ${CROP} profile reads the rows (src/lib/weedVision/patternRows.ts), Stage 1 reads the map at the profile's 3 cm, and the grade runs on those rows, all on stand-in maps (scripts/cropProfiles/standInMap.ts): the 60 held-out rendered scenes, whose true rows and weeds are known, and the three early-corn photos. No real corn field map has been run: that test is still owed.`, "",
-    `Rendered scenes: rows found ${fmt(summary.rowsFound)}, rows on the crop (three quarters of the lines within a quarter pitch) ${fmt(summary.correctRows)}, mean share of lines on the crop ${fmt(summary.meanLinesOnCrop)}. Refused until confirmed, then graded: ${fmt(summary.refusedUntilConfirmed)} of scenes with rows. Field cover against the true weed cover between the rows (beyond 15 cm of a true row): mean absolute error ${fmt(summary.coverMAE)}, bias ${fmt(summary.coverBias)} over ${summary.gradedScenes} graded scenes; ${fmt(summary.coverMAEStraw)} on scenes with straw stripes. Photos with rows: ${summary.photosWithRows} of 3.`, "",
+    `Rendered scenes: rows found ${fmt(summary.rowsFound)}, rows on the crop (three quarters of the lines within a quarter pitch) ${fmt(summary.correctRows)}, mean share of lines on the crop ${fmt(summary.meanLinesOnCrop)}. Refused until confirmed, then graded: ${fmt(summary.refusedUntilConfirmed)} of scenes with rows. Field cover against the true weed cover between the rows (beyond 15 cm of a true row): mean absolute error ${fmt(summary.coverMAE)}, bias ${fmt(summary.coverBias)} over ${summary.gradedScenes} graded scenes; ${fmt(summary.coverMAEStraw)} on scenes with straw stripes. Photos with rows: ${summary.photosWithRows} of ${files.length}${TAG ? ` (${TAG}: ${PHOTOS}, not used in development)` : ""}.`, "",
     "| Map | Kind | Rows found | Rows | Spacing (cm) | Lines on crop | On-green ratio | Read (cm/px) | Cells assessed | Field cover | True cover | Class |", "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ...out.map(r => `| ${r.name.slice(0, 22)} | ${r.kind}${r.soil ? ` ${r.soil}${r.straw ? "+straw" : ""} ${r.gsdCm} cm` : ""} | ${r.rowsFound} | ${r.rows} | ${fmt(r.spacingCm)} | ${fmt(r3(r.linesOnCrop))} | ${fmt(r3(r.onGreenRatio))} | ${fmt(r.readGsdCm)} | ${r.assessed} of ${r.cells} | ${fmt(r.fieldCover)} | ${fmt(r3(r.truthCover))} | ${fmt(r.fieldClass)} |`), ""].join("\n");
-  writeResult("map", { suite: "map", crop: CROP, date: today, codeRevision: revision, summary, rows: out }, md);
+  writeResult(`map${SFX}`, { suite: "map", set: TAG || "development", photos: PHOTOS, crop: CROP, date: today, codeRevision: revision, summary, rows: out }, md);
   return summary;
 }
 
