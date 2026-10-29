@@ -22,7 +22,18 @@
 import { type GreenOptions, GREEN_DEFAULTS, greenMaskWithExcess } from "../directGeoref/green";
 import type { PhotoPixels } from "../photoScout/pattern";
 
-export const ROW_CROP_READ_VERSION = 1;
+export const ROW_CROP_READ_VERSION = 2;
+
+/**
+ * The growth stage the reader is tuned for. Each stage is its own variant with its own rules, kept apart so that
+ * tuning one never moves the other (Yunus, 2026-10-29):
+ * - "establishment": V2 to about V7, plants in a line with soil between the rows; rows traced on the green peaks,
+ *   weeds are green clear of every row's band.
+ * - "mid": V8 to tasselling, the canopy nearly meeting over narrow alleys; rows traced from the alley troughs
+ *   (the soil stripes), the band reaches the alley edge, weeds are green standing on the alley floor.
+ * A closed canopy (late) is refused by both with the reason; automatic stage detection is a later step.
+ */
+export type RowCropStage = "establishment" | "mid";
 
 /** Target pixel size of the work raster, metres. Corn leaves are 2 cm and wider; finer buys nothing here. */
 export const WORK_GSD_M = 0.01;
@@ -74,11 +85,26 @@ export type RowCropParams = {
   /** Green components under this area are specks, square centimetres. */
   minWeedAreaCm2: number;
   crop: { id: string; version: string } | null;
+  stage: RowCropStage;
 };
 
 export const DEFAULT_ROW_CROP_PARAMS: RowCropParams = {
   gsdM: null, spacingsM: [0.381, 0.508, 0.70, 0.762, 0.914], defaultSpacingM: 0.762, pitchToleranceShare: 0.08,
-  bandMinHalfWidthM: 0.08, seedSpacingM: 0.16, maxStandGsdCm: 1.5, minWeedAreaCm2: 4, crop: null,
+  bandMinHalfWidthM: 0.08, seedSpacingM: 0.16, maxStandGsdCm: 1.5, minWeedAreaCm2: 4, crop: null, stage: "establishment",
+};
+
+/** Mid-stage constants (never read by the establishment variant). */
+export const MID = {
+  /** Green components under this area between the rows are leaf flakes, not weeds, square centimetres. */
+  minWeedAreaCm2: 20,
+  /** A leaf tip at mid stage can be this large. */
+  leafTipMaxCm2: 150,
+  /** A strip's alley trough must sit this far below the mean of its two plateaus (share of the plateau). */
+  troughDepthShare: 0.25,
+  /** Windows (3 m) whose coherence at the pitch is under this hold no readable rows: not traced, not judged. */
+  minCoherence: 0.2,
+  /** Under this share of coherent windows the canopy is closed or the rows unreadable: the read is refused. */
+  minCoherentShare: 0.15,
 };
 
 export type RowCropGap = { x1: number; y1: number; x2: number; y2: number; lengthM: number };
@@ -148,6 +174,7 @@ export type RowCropSummary = {
 
 export type RowCropRead = {
   version: number;
+  stage: RowCropStage;
   width: number;
   height: number;
   /** Metres per photo pixel used by every metre in this read. */
@@ -197,7 +224,7 @@ export const SATURATED_SHARE = 0.45;
 export const SOLID_SHARE = 0.6;
 /** Between the two shares, a neighbourhood is solid only where the rows' periodicity is weak (a dense V7 row stand keeps it). */
 export const SOLID_MIN_COHERENCE = 0.25;
-export function coarseDensity(mask: Uint8Array, W: number, H: number, coarse: number, R: number): { d: Float32Array; mean: Float32Array; sat: Uint8Array; w: number; h: number; satShare: number } {
+export function coarseDensity(mask: Uint8Array, W: number, H: number, coarse: number, R: number, gate = true): { d: Float32Array; mean: Float32Array; sat: Uint8Array; w: number; h: number; satShare: number } {
   const w = Math.max(1, Math.floor(W / coarse)), h = Math.max(1, Math.floor(H / coarse));
   const d = new Float32Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let n = 0; for (let yy = 0; yy < coarse; yy++) for (let xx = 0; xx < coarse; xx++) n += mask[(y * coarse + yy) * W + x * coarse + xx]; d[y * w + x] = n / (coarse * coarse); }
@@ -210,7 +237,7 @@ export function coarseDensity(mask: Uint8Array, W: number, H: number, coarse: nu
     const x0 = Math.max(0, x - R), x1 = Math.min(w - 1, x + R), y0 = Math.max(0, y - R), y1 = Math.min(h - 1, y + R);
     const m = (S[(y1 + 1) * (w + 1) + x1 + 1] - S[y0 * (w + 1) + x1 + 1] - S[(y1 + 1) * (w + 1) + x0] + S[y0 * (w + 1) + x0]) / ((x1 - x0 + 1) * (y1 - y0 + 1));
     mean[y * w + x] = m;
-    if (m > SATURATED_SHARE) { sat[y * w + x] = 1; satN++; hp[y * w + x] = 0; } else hp[y * w + x] = d[y * w + x] - m;
+    if (gate && m > SATURATED_SHARE) { sat[y * w + x] = 1; satN++; hp[y * w + x] = 0; } else hp[y * w + x] = d[y * w + x] - m;
   }
   return { d: hp, mean, sat, w, h, satShare: satN / (w * h) };
 }
@@ -313,6 +340,34 @@ function boxSmooth(src: Float64Array, r: number): Float64Array {
   return out;
 }
 
+/**
+ * Mid stage: the alleys are the sharp feature (narrow soil troughs between broad canopy plateaus), so the rows are
+ * put midway between consecutive troughs a pitch apart. A trough must fall MID.troughDepthShare below the mean of
+ * the plateaus either side (the maxima within half a pitch), on ground the strip covers.
+ */
+function midRowPeaks(sm: Float64Array, counts: Int32Array, pitchPx: number, stripPx: number): StripPeak[] {
+  const n = sm.length, half = Math.max(2, Math.round(pitchPx / 2)), minSep = Math.max(2, 0.5 * pitchPx);
+  const troughs: number[] = [];
+  for (let i = 1; i + 1 < n; i++) {
+    if (counts[i] < 0.5 * stripPx || sm[i] > sm[i - 1] || sm[i] > sm[i + 1]) continue;
+    let left = 0, right = 0;
+    for (let d = 1; d <= half; d++) { if (i - d >= 0) left = Math.max(left, sm[i - d]); if (i + d < n) right = Math.max(right, sm[i + d]); }
+    const plateau = (left + right) / 2;
+    if (!(plateau > 0) || sm[i] > (1 - MID.troughDepthShare) * plateau) continue;
+    if (troughs.length && i - troughs[troughs.length - 1] < minSep) { if (sm[i] < sm[troughs[troughs.length - 1]]) troughs[troughs.length - 1] = i; continue; }
+    troughs.push(i);
+  }
+  const out: StripPeak[] = [];
+  for (let k = 0; k + 1 < troughs.length; k++) {
+    const d = troughs[k + 1] - troughs[k];
+    if (d < 0.6 * pitchPx || d > 1.4 * pitchPx) continue;
+    const a = (troughs[k] + troughs[k + 1]) / 2;
+    let mass = 0; for (let j = Math.round(a - pitchPx / 4); j <= Math.round(a + pitchPx / 4); j++) if (j >= 0 && j < n) mass += sm[j];
+    out.push({ a, mass });
+  }
+  return out;
+}
+
 /** Phase of a set of peaks against a lattice of pitch P: the mass-weighted circular mean of (a mod P). */
 function latticePhase(ps: StripPeak[], P: number): number {
   let sx = 0, sy = 0;
@@ -337,7 +392,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   const { W, H } = work;
   let gsdW = given ? given * f : NaN; // metres per work pixel; set from the pitch when the scale is assumed
   const empty = (gsdM: number, scaleBasis: RowCropRead["scaleBasis"], why: string, vegetationFraction: number): RowCropRead => ({
-    version: ROW_CROP_READ_VERSION, width: px.width, height: px.height, gsdM, scaleBasis, workFactor: f, directionDeg: null, pitchM: null, matchedSpacingM: null, rows: [], weeds: [], excluded: [],
+    version: ROW_CROP_READ_VERSION, stage: P.stage, width: px.width, height: px.height, gsdM, scaleBasis, workFactor: f, directionDeg: null, pitchM: null, matchedSpacingM: null, rows: [], weeds: [], excluded: [],
     summary: { rows: 0, rowsDropped: 0, totalRowLengthM: 0, medianBandHalfWidthM: null, medianRowGreenShare: null, weeds: 0, weedAreaM2: 0, betweenRowCover: null, cropComponents: 0, noRowsPatches: 0, leafTips: 0, specks: 0, gaps: 0, gapLengthM: 0, plants: null, coherence: null, vegetationFraction, ms: Date.now() - t0 },
     notes: [...notes, why], crop: P.crop,
   });
@@ -353,7 +408,8 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   // 2. Direction, on a coarse density raster (about 4 cm a cell when the scale is known), saturated green left out.
   const coarse = given ? Math.max(1, Math.round(0.04 / gsdW)) : Math.max(1, Math.round(Math.max(W, H) / 500));
   const satR = given ? Math.max(2, Math.round(0.75 / gsdW / coarse)) : Math.max(2, Math.round(Math.max(W, H) / coarse / 25));
-  const cd = coarseDensity(mask, W, H, coarse, satR);
+  const mid = P.stage === "mid";
+  const cd = coarseDensity(mask, W, H, coarse, satR, !mid);
   // Per work pixel: inside a saturated cell (left out of the direction and the pitch; re-judged below once the pitch is known).
   const skip = new Uint8Array(W * H);
   const skipFrom = (sat: Uint8Array) => { skip.fill(0); for (let y = 0; y < H; y++) { const cy = Math.min(cd.h - 1, Math.floor(y / coarse)); for (let x = 0; x < W; x++) if (sat[cy * cd.w + Math.min(cd.w - 1, Math.floor(x / coarse))]) skip[y * W + x] = 1; } };
@@ -400,13 +456,20 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   }
   const sat2 = new Uint8Array(cd.w * cd.h); let satN2 = 0;
   for (let cy = 0; cy < cd.h; cy++) for (let cx = 0; cx < cd.w; cx++) {
-    const m = cd.mean[cy * cd.w + cx]; if (m <= SATURATED_SHARE) continue;
+    const m = cd.mean[cy * cd.w + cx];
     const c = cohMap[Math.min(cohH - 1, Math.floor((cy * coarse) / cohWin)) * cohW + Math.min(cohW - 1, Math.floor((cx * coarse) / cohWin))];
+    if (mid) { if (c < MID.minCoherence) { sat2[cy * cd.w + cx] = 1; satN2++; } continue; } // mid: readable rows are periodic, whatever the green share
+    if (m <= SATURATED_SHARE) continue;
     if (m > SOLID_SHARE || c < SOLID_MIN_COHERENCE) { sat2[cy * cd.w + cx] = 1; satN2++; }
   }
   skipFrom(sat2);
   const satShare = satN2 / (cd.w * cd.h);
-  if (satShare > 0.02) notes.push(`${Math.round(satShare * 100)}% of the photo is solid green (a border, a lawn or a closed canopy) and is left out of the rows.`);
+  if (mid) {
+    const withGreen = cohMap.filter(c => c !== 1).length; // windows that had green (the rest kept the default 1)
+    let coherent = 0; for (const c of cohMap) if (c !== 1 && c >= MID.minCoherence) coherent++;
+    if (withGreen && coherent / withGreen < MID.minCoherentShare) return empty(gsdM, scaleBasis, `The rows are not readable: only ${Math.round((100 * coherent) / withGreen)}% of the photo shows a row pattern at the measured pitch (a closed canopy, or no rows). Nothing between the rows can be judged.`, vegetationFraction);
+    if (satShare > 0.02) notes.push(`${Math.round(satShare * 100)}% of the photo shows no row pattern (a verge, a lawn or closed canopy) and is not judged.`);
+  } else if (satShare > 0.02) notes.push(`${Math.round(satShare * 100)}% of the photo is solid green (a border, a lawn or a closed canopy) and is left out of the rows.`);
 
   // 4. Strips along the rows; the green peaks across each strip, settled on the strip's lattice, chained into rows.
   const cs = Math.cos(rowAngle), sn = Math.sin(rowAngle);
@@ -437,7 +500,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     const sm = boxSmooth(pr, smoothR);
     // A row's peak stands over its alleys: the mean a quarter to half a pitch either side. A lawn's peaks do not.
     const alley = (a: number) => { let m = 0, n = 0; for (const sgn of [-1, 1]) for (let d = Math.round(pitchPx / 4); d <= Math.round(pitchPx / 2); d++) { const j = a + sgn * d; if (j >= 0 && j < sm.length) { m += sm[j]; n++; } } return n ? m / n : 0; };
-    const ps = peaks(sm, minSep, minPeakMass).filter(p => p.mass >= PEAK_OVER_ALLEY * alley(p.a));
+    const ps = mid ? midRowPeaks(sm, stripCounts[s], pitchPx, stripPx) : peaks(sm, minSep, minPeakMass).filter(p => p.mass >= PEAK_OVER_ALLEY * alley(p.a));
     if (ps.length) {
       const phase = latticePhase(ps, pitchPx);
       // Local pitch from the accepted peaks' spacings (lens distortion and drift change it by a few percent).
@@ -569,7 +632,8 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
 
   // 6. Components of the green: on a band they are crop; clear of every band they are weed candidates.
   const labels = new Int32Array(W * H);
-  const minWeedPx = Math.max(2, Math.round((P.minWeedAreaCm2 / 1e4) / (gsdW * gsdW)));
+  const minWeedPx = Math.max(2, Math.round(((mid ? Math.max(P.minWeedAreaCm2, MID.minWeedAreaCm2) : P.minWeedAreaCm2) / 1e4) / (gsdW * gsdW)));
+  const leafTipMaxM2 = (mid ? MID.leafTipMaxCm2 : LEAF_TIP_MAX_CM2) / 1e4;
   const weeds: RowCropWeed[] = [];
   const excluded: RowCropExcluded[] = [];
   let cropComponents = 0, specks = 0, betweenGreen = 0, noRowsPatches = 0, noRowsAreaM2 = 0, leafTips = 0;
@@ -606,7 +670,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
       continue;
     }
     if (noRows < n && minD <= 0) { cropComponents++; continue; } // touches a row's band: crop
-    if (noRows < n && areaM2 <= LEAF_TIP_MAX_CM2 / 1e4 && minD <= LEAF_TIP_REACH_SHARE * minBand) {
+    if (noRows < n && areaM2 <= leafTipMaxM2 && minD <= LEAF_TIP_REACH_SHARE * minBand) {
       // A leaf tip cut off from its row by shadow or a pale midrib: small, close, elongated across the rows (toward the row).
       const cl = mL / n, ca = mA / n, vLL = mLL / n - cl * cl, vAA = mAA / n - ca * ca, vLA = mLA / n - cl * ca;
       const tr = vLL + vAA, det = vLL * vAA - vLA * vLA, disc = Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
@@ -713,7 +777,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   if (noRowsPatches) notes.push(`${noRowsPatches} green patch${noRowsPatches === 1 ? "" : "es"} (${noRowsAreaM2.toFixed(1)} m²) lie where no rows were read and are not judged.`);
   opts.onProgress?.(nStrips + 2, nStrips + 2);
   return {
-    version: ROW_CROP_READ_VERSION, width: px.width, height: px.height, gsdM, scaleBasis, workFactor: f,
+    version: ROW_CROP_READ_VERSION, stage: P.stage, width: px.width, height: px.height, gsdM, scaleBasis, workFactor: f,
     directionDeg: r3(((rowAngle * 180) / Math.PI + 180) % 180), pitchM: r3(pitchM), matchedSpacingM,
     rows, weeds, excluded,
     summary: {

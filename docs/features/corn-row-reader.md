@@ -75,6 +75,48 @@ real-field precision and recall are not numbers; the pictures are the evidence.
 - The field map (the orthomosaic) still goes through the pattern pass (`weedVision/patternRows.ts`); the reader
   works at any pixel size and is the obvious next step there, and for the Field Twin's corn rows.
 
+## Stage variants (2026-10-29, afternoon)
+
+Yunus: one algorithm cannot serve V3 corn and V10 corn; isolate the early-stage reader and add a mid-stage variant,
+and later detect the stage automatically. `RowCropParams.stage` picks the variant; the establishment path is
+unchanged and pinned by the tests.
+
+**Mid stage** (`stage: "mid"`, Photo Scout stage selector, bench `--stage mid`): no density gate before the direction
+and pitch (a dense stand is over the early variant's 45 % share, which was why the mid photographs read nothing);
+rows are placed midway between consecutive alley troughs, the sharp feature when the canopy nearly meets; readable
+ground is wherever 3 m windows are periodic at the pitch, whatever their green share, and the rest (verge, lawn,
+closed canopy) is not judged; a read is refused when under 15 % of the green ground is periodic; between the rows a
+patch under 20 cm² is a leaf flake and a leaf tip may be 150 cm². On the 40 mid-phase photographs (`directtestimagery/
+midphase`, V8 to V10, no EXIF) the direction and pitch now agree on 36 (the other four show no rows: a road, a
+verge); rows are traced through the dense stand with bands of 32 to 34 cm; between-row patches 15 to 336 a
+photograph, cover 0.1 to 4.4 %. Not verified against truth: the eye test is Yunus's.
+
+**What the rules cannot do at mid stage.** A weed under or among the corn leaves is the crop by position. USU-Corn-WeedDB
+(Utah forage corn at 10 m, 0.48 cm a pixel, 10,539 weed boxes over 800 tiles, CC BY 4.0; stitched back into 64
+sources by `scripts/rowCrop/usu_mosaic.py`, scored by `npm run bench:row-crop:usu`) makes that measurable: most of
+its pigweed and lambsquarters stand inside the rows. Recall of its boxes: establishment variant 9 % (foxtail 17 %,
+lambsquarters 9 %, pigweed 6 %), mid variant 3 %; of the reader's own patches 29 % and 47 % sit inside a box. That is
+the honest ceiling of position rules on a weedy mid-season field, and the reason a segmentation step is wanted.
+
+## The WeedsGalore model, tested (2026-10-29)
+
+Yunus asked for the GFZ model (github.com/GFZ/weedsgalore) as the segmentation step. Run as published
+(`scripts/rowCrop/weedsgalore_infer.py`, DeepLabv3+ ResNet-50, RGB six-class checkpoint `dlv3p_rgb_6.pth`, CPU):
+
+| Input | Result |
+|---|---|
+| Its own test scenes (16-bit P4M bands / 65535, 0.25 cm) | Works: maize IoU 0.63 and 0.75, amaranth 0.80, pixel accuracy 0.87 and 0.97 on two scenes. The weights load with no missing keys. |
+| Our mid-stage photographs, sRGB / 255, upsampled 2x to 0.25 cm | Calls corn leaves amaranth wholesale: 13 to 18 % of every crop pixel field "amaranth", in stripes along the rows (pictures in `directtestimagery/midphase/outputs/weedsgalore-model/`). |
+| Same, linearised (gamma 2.2) and per-band means matched to the training data | Calls nearly everything maize, including the real weeds on the alley floor; weed classes 3 to 4 %. |
+| Establishment and residue photographs | Same pattern: the corn is split between maize and amaranth, the between-row weeds the rules find are missed. |
+
+So the checkpoint does not transfer from one German field's multispectral camera at 0.25 cm to a consumer RGB camera
+at 0.5 cm, in either colour treatment. It is not usable as a weed finder here as published. What would make a
+segmentation step work: the same architecture (Apache-2.0 code) trained or fine-tuned on RGB drone imagery at our
+scale with weed labels, for which USU-Corn-WeedDB (boxes, 0.48 cm, CC BY) is the closest public material; the WeedsGalore
+masks could join it after resampling to 0.5 cm. The checkpoints' own licence is still unstated and would need the
+authors' word before anything ships. 27 s a 3200 x 2400 crop on this CPU.
+
 ## Pointed at by Yunus the same day
 
 WeedsGalore (GFZ, github.com/GFZ/weedsgalore): code Apache-2.0, data CC BY 4.0, DeepLabv3+ checkpoints offered for

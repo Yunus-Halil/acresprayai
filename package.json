@@ -31,6 +31,7 @@
     "profiles:check": "vite-node scripts/cropProfiles/build.ts -- --check",
     "bench:crop-profile": "vite-node scripts/cropProfiles/bench.ts --",
     "bench:row-crop": "vite-node scripts/rowCrop/bench.ts --",
+    "bench:row-crop:usu": "vite-node scripts/rowCrop/usuBench.ts --",
     "profiles:record": "vite-node scripts/cropProfiles/record.ts --",
     "bench:twin": "node scripts/directGeoref/twinBench.mjs",
     "shots:twin": "node scripts/directGeoref/twinShots.mjs"

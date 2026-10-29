@@ -1,5 +1,5 @@
 // The continuous-row reader over a folder of photographs, drawn and tabulated.
-//   npm run bench:row-crop -- --photos directtestimagery [--crop corn] [--tag directtest] [--gsd-cm 0.5] [--out dir]
+//   npm run bench:row-crop -- --photos directtestimagery [--crop corn] [--tag directtest] [--gsd-cm 0.5] [--out dir] [--stage establishment|mid]
 // Without --gsd-cm the photos' scale is assumed from the measured pitch and the profile's default spacing (no EXIF
 // on the test photos). Pictures: <photos>/outputs/row-crop/<tag>/<photo>.png; results beside them as <tag>.json/.md.
 import "../bench/nodeStorageShim";
@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { basename, extname, join } from "node:path";
 import { decodeImage, encodePng } from "../bench/images";
 import type { PhotoPixels } from "../../src/lib/photoScout/pattern";
-import { readRowCrop, rowCropOverlay, type RowCropRead } from "../../src/lib/rowCrop/readRowCrop";
+import { readRowCrop, rowCropOverlay, type RowCropRead, type RowCropStage } from "../../src/lib/rowCrop/readRowCrop";
 import { rowCropParamsFor } from "../../src/lib/rowCrop/params";
 import type { RuntimeCropProfile } from "../../src/lib/cropProfiles/runtime";
 import { runtimePath } from "../cropProfiles/fsProfiles";
@@ -19,6 +19,7 @@ const PHOTOS = arg("photos", "directtestimagery")!;
 const CROP = arg("crop", "corn")!;
 const TAG = arg("tag", basename(PHOTOS))!;
 const GSD = arg("gsd-cm") ? Number(arg("gsd-cm")) / 100 : null;
+const STAGE = arg("stage", "establishment") as RowCropStage;
 // Pictures go beside the photos (<photos>/outputs/row-crop/) so the person who gave them finds them; tables too.
 const OUT = arg("out", join(PHOTOS, "outputs", "row-crop"))!;
 const profile = JSON.parse(readFileSync(runtimePath(CROP), "utf8")) as RuntimeCropProfile;
@@ -56,7 +57,7 @@ async function main() {
     const raw = decodeImage(new Uint8Array(readFileSync(join(PHOTOS, f))));
     const px: PhotoPixels = { width: raw.width, height: raw.height, rgba: new Uint8ClampedArray(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength) };
     const dbg: string[] = [];
-    const read = readRowCrop(px, rowCropParamsFor(profile, GSD), { debug: l => dbg.push(l) });
+    const read = readRowCrop(px, rowCropParamsFor(profile, GSD, STAGE), { debug: l => dbg.push(l) });
     if (argv.includes("--debug")) for (const l of dbg) console.log("   ", l);
     draw(px, read, join(OUT, TAG, `${basename(f, extname(f))}.png`));
     const s = read.summary;
@@ -65,11 +66,11 @@ async function main() {
   }
   const today = new Date().toISOString().slice(0, 10);
   const fmt = (v: unknown) => (v == null ? "-" : String(v));
-  const md = [`# Continuous-row reader: ${TAG} (${CROP} profile ${profile.version})`, "", `Run ${today}, code ${revision}. ${files.length} photos from ${PHOTOS}. ${GSD ? `Pixel size given: ${GSD * 100} cm.` : "No pixel size: the scale is assumed from the measured pitch and the profile's default spacing, so every metre rests on that."} Rows are traced on the green (no brightness), the whole row is the crop, weeds are green patches clear of every row's band. The stand is an unverified estimate.`, "",
+  const md = [`# Continuous-row reader (${STAGE} stage): ${TAG} (${CROP} profile ${profile.version})`, "", `Run ${today}, code ${revision}. ${files.length} photos from ${PHOTOS}. ${GSD ? `Pixel size given: ${GSD * 100} cm.` : "No pixel size: the scale is assumed from the measured pitch and the profile's default spacing, so every metre rests on that."} Rows are traced on the green (no brightness), the whole row is the crop, weeds are green patches clear of every row's band. The stand is an unverified estimate.`, "",
     "| Image | Pitch (cm) | Rows | Dropped | Band ± (cm) | Row green | Coherence | Weeds | Weed m² | Between-row cover | Crop comps | Excluded | Gaps | Gap m | Plants | ms |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ...rows.map(r => `| ${String(r.image).slice(0, 16)} | ${fmt(r.pitchCm)} | ${fmt(r.rows)} | ${fmt(r.rowsDropped)} | ${fmt(r.bandCm)} | ${fmt(r.rowGreenShare)} | ${fmt(r.coherence)} | ${fmt(r.weeds)} | ${fmt(r.weedAreaM2)} | ${fmt(r.betweenRowCover)} | ${fmt(r.cropComponents)} | ${fmt(r.excluded)} | ${fmt(r.gaps)} | ${fmt(r.gapLengthM)} | ${fmt(r.plants)} | ${fmt(r.ms)} |`), ""].join("\n");
   mkdirSync(OUT, { recursive: true });
-  writeFileSync(join(OUT, `${TAG}.json`), JSON.stringify({ tag: TAG, crop: CROP, profileVersion: profile.version, photos: PHOTOS, date: today, codeRevision: revision, gsdM: GSD, rows }, null, 1) + "\n");
+  writeFileSync(join(OUT, `${TAG}.json`), JSON.stringify({ tag: TAG, stage: STAGE, crop: CROP, profileVersion: profile.version, photos: PHOTOS, date: today, codeRevision: revision, gsdM: GSD, rows }, null, 1) + "\n");
   writeFileSync(join(OUT, `${TAG}.md`), md);
   console.log(`wrote ${join(OUT, TAG)}.json and .md, pictures in ${join(OUT, TAG)}/`);
 }
