@@ -16,7 +16,7 @@ import { type BlobClass, DEFAULT_MIN_BLOB_AREA_CM2, DEFAULT_PHOTO_WINDOW_M, type
 import { patternPriorFor } from "@/lib/cropProfiles/engine";
 import { checkRowSpacing } from "@/lib/cropProfiles/checks";
 import { cropProfileById, listCropProfiles } from "@/lib/cropProfiles/registry";
-import { type RowCropRead, readRowCrop, rowCropOverlay } from "@/lib/rowCrop/readRowCrop";
+import { type RowCropRead, type RowCropStage, readRowCrop, rowCropOverlay } from "@/lib/rowCrop/readRowCrop";
 import { readsContinuousRows, rowCropParamsFor } from "@/lib/rowCrop/params";
 
 type Status = "new" | "decoding" | "running" | "done" | "error";
@@ -68,6 +68,8 @@ export default function PhotoScout() {
   const [rowSpacingCm, setRowSpacingCm] = useState(AUTO);
   /** The crop profile the read uses ("" for crop-neutral): its spacings, green gate and brightness check (src/lib/cropProfiles). */
   const [cropId, setCropId] = useState("");
+  /** The continuous-row reader's stage variant (early rows on soil, or a nearly closed mid-season canopy); detection of the stage is a later step. */
+  const [stage, setStage] = useState<RowCropStage>("establishment");
   const [heightM, setHeightM] = useState("");
   const [gsdCm, setGsdCm] = useState("");
   const [minBlobCm2, setMinBlobCm2] = useState(String(DEFAULT_MIN_BLOB_AREA_CM2));
@@ -119,7 +121,7 @@ export default function PhotoScout() {
         // Corn and its kind: rows traced on the green, the whole row is the crop. Without a pixel size the scale is
         // assumed from the measured pitch and the profile's default spacing, and the read says so.
         patch(p.id, { status: "running", progress: null, used: g.gsdM ? { gsdM: g.gsdM, basis: g.basis } : null });
-        const read = readRowCrop(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) });
+        const read = readRowCrop(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM, stage), { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) });
         patch(p.id, { rowCrop: read, pattern: null, status: "done", progress: null, used: { gsdM: read.gsdM, basis: read.scaleBasis === "given" ? g.basis : "assumed from the measured row pitch and the crop's default spacing" } });
         return;
       }
@@ -172,6 +174,15 @@ export default function PhotoScout() {
               </select>
               <div className="text-[10px] text-neutral-500">{readsContinuousRows(cropId) ? "rows are traced on the green and the whole row is the crop; only green clear of every row is reported, as patches between the rows" : cropId ? "the crop's planted spacings are searched beside the usual ones, and only green that passes the crop's gate counts" : "no crop profile: the read uses the crop-neutral settings"}</div>
             </Field>
+            {readsContinuousRows(cropId) && (
+              <Field label="Growth stage">
+                <select className={input} value={stage} onChange={e => setStage(e.target.value as RowCropStage)} data-testid="photo-scout-stage">
+                  <option value="establishment">early (V2 to V7: plants in a line, soil between the rows)</option>
+                  <option value="mid">mid (V8 to tasselling: the canopy nearly meets over narrow alleys)</option>
+                </select>
+                <div className="text-[10px] text-neutral-500">{stage === "mid" ? "rows are placed between the alley troughs; only green standing on the alley floor is reported; a weed among the corn leaves counts as corn" : "rows are traced on the green; weeds are green clear of every row's band"}</div>
+              </Field>
+            )}
             <Field label="Row spacing">
               <div className="flex gap-1">
                 <select className={input} value={rowSpacingCm === AUTO || ROW_SPACINGS.some(r => String(r.cm) === rowSpacingCm) ? rowSpacingCm : "custom"} onChange={e => setRowSpacingCm(e.target.value === "custom" ? "76.2" : e.target.value)}>
@@ -384,7 +395,7 @@ function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | 
   const s = read.summary;
   const cm = (m: number | null) => (m == null ? "–" : fmtLengthCm(m * 100, units).text);
   const rows: [string, string][] = [
-    ["Crop profile", read.crop ? `${read.crop.id} ${read.crop.version}: rows traced on the green, the whole row is the crop` : "none"],
+    ["Crop profile", read.crop ? `${read.crop.id} ${read.crop.version}, ${read.stage === "mid" ? "mid-stage variant: rows between the alley troughs, the whole canopy is the crop" : "early-stage variant: rows traced on the green, the whole row is the crop"}` : "none"],
     ["Scale", read.scaleBasis === "given" ? `${cm(read.gsdM)}/px` : `${cm(read.gsdM)}/px, ASSUMED from the measured pitch and the crop's default spacing`],
     ["Row direction", read.directionDeg == null ? "–" : `${read.directionDeg.toFixed(1)}° from the photo's x axis`],
     ["Row spacing measured", read.pitchM == null ? "–" : `${cm(read.pitchM)}${read.matchedSpacingM ? ` (a planted spacing: ${cm(read.matchedSpacingM)})` : " (matches no planted spacing; the measurement stands)"}`],
