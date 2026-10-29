@@ -338,7 +338,10 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
       }
       if (show.windows) { ctx.strokeStyle = "rgba(158,158,158,0.7)"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); for (const e of overlay.excluded) path(e, true); ctx.setLineDash([]); }
       if (show.blobs) {
-        ctx.fillStyle = "rgba(255,190,0,0.85)"; for (const [x, y] of overlay.seedlings) ctx.fillRect(x * s - 1.5, y * s - 1.5, 3, 3);
+        // Seedlings: a ring about 5 cm across (at least 4 screen pixels), so the plant inside stays visible.
+        const ringR = Math.max(4, (rowCrop ? 0.025 / rowCrop.gsdM : 10) * s);
+        ctx.strokeStyle = "rgba(255,190,0,0.95)"; ctx.lineWidth = 1.5;
+        for (const [x, y] of overlay.seedlings) { ctx.beginPath(); ctx.arc(x * s, y * s, ringR, 0, 2 * Math.PI); ctx.stroke(); }
         ctx.strokeStyle = "#EF5350"; ctx.lineWidth = 2; for (const w of overlay.weeds) path(w, true);
         ctx.strokeStyle = "#FF00C8"; ctx.lineWidth = 3; for (const w of overlay.escapes) path(w, true);
       }
@@ -408,7 +411,7 @@ function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | 
     ["Green on the rows", s.medianRowGreenShare == null ? "–" : `${Math.round(s.medianRowGreenShare * 100)}% of the band`],
     ["Row coherence", s.coherence == null ? "–" : s.coherence.toFixed(2)],
     ["Between the rows", `${s.weeds} patch${s.weeds === 1 ? "" : "es"}, ${s.weedAreaM2.toFixed(2)} m²${s.betweenRowCover == null ? "" : `, ${(s.betweenRowCover * 100).toFixed(1)}% of the ground between the bands`}${s.escapes != null ? `; ${s.escapes} escape${s.escapes === 1 ? "" : "s"} 15 cm or more across` : ""}`],
-    ...(read.seedlings ? [["Late seedlings", `${read.seedlings.count.toLocaleString()} on the alley floor, ${read.seedlings.cover == null ? "–" : (read.seedlings.cover * 100).toFixed(1) + "%"} of the ground between the rows; a layer, not findings`] as [string, string]] : []),
+    ...(read.seedlings ? [["Late seedlings", `${read.seedlings.count.toLocaleString()} small plants on the soil, ${read.seedlings.cover == null ? "–" : (read.seedlings.cover * 100).toFixed(2) + "%"} of the field ground read; a layer, not findings`] as [string, string]] : []),
     ["On the rows", `${s.cropComponents.toLocaleString()} green patches counted as the crop${s.leafTips ? `, ${s.leafTips} of them leaf tips just beyond a band` : ""}`],
     ["Gaps along the rows", s.gaps ? `${s.gaps}, ${s.gapLengthM.toFixed(1)} m in all` : "none over the minimum length"],
     ["Plants (estimate)", s.plants == null ? "not estimated at this pixel size" : `${s.plants.toLocaleString()} green peaks along the rows; unverified`],

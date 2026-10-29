@@ -43,7 +43,9 @@ function draw(img: PhotoPixels, read: RowCropRead, file: string) {
   for (const r of o.rows) poly(c, w, h, r, [0, 230, 255], t, false);
   for (const g of o.gaps) line(c, w, h, g.x1, g.y1, g.x2, g.y2, [255, 160, 0], t + 1);
   for (const e of o.excluded) poly(c, w, h, e, [160, 160, 160], t, true);
-  for (const [x, y] of o.seedlings) for (let dy = -t - 1; dy <= t + 1; dy++) for (let dx = -t - 1; dx <= t + 1; dx++) { const xx = Math.round(x + dx), yy = Math.round(y + dy); if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const q = (yy * w + xx) * 4; c[q] = 255; c[q + 1] = 190; c[q + 2] = 0; }
+  // Seedlings: an amber ring around each, about 5 cm across at 0.5 cm a pixel, so the plant inside stays visible.
+  const ringR = Math.max(6, Math.round(0.025 / read.gsdM));
+  for (const [x, y] of o.seedlings) for (let k = 0; k < 48; k++) { const a = (k / 48) * 2 * Math.PI, xx = x + ringR * Math.cos(a), yy = y + ringR * Math.sin(a), a2 = ((k + 1) / 48) * 2 * Math.PI; line(c, w, h, xx, yy, x + ringR * Math.cos(a2), y + ringR * Math.sin(a2), [255, 190, 0], Math.max(1, t - 1)); }
   for (const wd of o.weeds) poly(c, w, h, wd, [255, 40, 40], t, true);
   for (const wd of o.escapes) poly(c, w, h, wd, [255, 0, 200], t + 2, true);
   for (const [x, y] of o.plants) line(c, w, h, x, y, x, y, [60, 255, 90], t);

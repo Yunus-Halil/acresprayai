@@ -21,6 +21,7 @@
 // then rests on that assumption.
 import { type GreenOptions, GREEN_DEFAULTS, greenMaskWithExcess } from "../directGeoref/green";
 import type { PhotoPixels } from "../photoScout/pattern";
+import { FINE, fineSeedlings } from "./fineSeedlings";
 
 export const ROW_CROP_READ_VERSION = 2;
 
@@ -106,13 +107,12 @@ export const MID = {
   /** Under this share of coherent windows the canopy is closed or the rows unreadable: the read is refused. */
   minCoherentShare: 0.15,
   /**
-   * Late-flush seedlings: green on the alley floor between this area and the weed floor (minWeedAreaCm2), clear of
-   * every band, counted as a layer, never as individual findings. At V8 and after, weeds that emerge under the closing
+   * Late-flush seedlings: small plants on the soil, found at the photo's own pixel by fineSeedlings.ts (FINE holds its
+   * sizes), wherever the rows stand, counted as a layer, never as individual findings. At V8 and after, weeds that emerge under the closing
    * canopy matter for next year's seed, not this year's yield (docs/research/crops/corn/weed-ecology.md: "After V8 new
    * emergence matters for seed, not yield"; Steckel and Sprague 2004: waterhemp emerging after V8 did not reduce yield;
    * Iowa State: the later a weed emerges after the crop, the less it affects yield).
    */
-  seedlingMinCm2: 2,
   /** Seedlings kept as points for drawing, at most. */
   maxSeedlingPoints: 6000,
   /**
@@ -712,8 +712,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   const stack = new Int32Array(W * H);
   const smallPx = Math.round((SMALL_PATCH_CM2 / 1e4) / (gsdW * gsdW));
   let label = 0, faint = 0;
-  const seedlingMinPx = Math.max(2, Math.round((MID.seedlingMinCm2 / 1e4) / (gsdW * gsdW)));
-  let seedlingN = 0, seedlingPx = 0; const seedlingPts: [number, number][] = [];
+  const weedLabels = new Set<number>();
   const toPhoto = (x: number, y: number): [number, number] => [(x + 0.5) * f, (y + 0.5) * f];
   for (let i0 = 0; i0 < W * H; i0++) {
     if (!mask[i0] || labels[i0]) continue;
@@ -736,15 +735,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
       }
     }
     const n = pix.length;
-    if (n < minWeedPx) {
-      // Mid stage: a small green patch on the alley floor, clear of every band, standing above its soil, is a late-flush seedling.
-      if (mid && n >= seedlingMinPx && noRows === 0 && minD > 0 && satN === 0 && !touchesEdge && exc / n >= gopts.soilMargin + SMALL_PATCH_EXCESS && alleyGreenAt(pix[0] % W, Math.floor(pix[0] / W)) === 0) {
-        seedlingN++; seedlingPx += n;
-        if (seedlingPts.length < MID.maxSeedlingPoints) { let sx = 0, sy = 0; for (const i of pix) { const x = i % W; sx += x; sy += (i - x) / W; } const [px0, py0] = toPhoto(sx / n, sy / n); seedlingPts.push([r3(px0), r3(py0)]); }
-        continue;
-      }
-      specks++; continue;
-    }
+    if (n < minWeedPx) { specks++; continue; }
     if (n < smallPx && exc / n < gopts.soilMargin + SMALL_PATCH_EXCESS) { faint++; continue; }
     const areaM2 = n * gsdW * gsdW;
     if (satN > n / 2) { // solid green: a border, a lawn, a closed canopy
@@ -771,11 +762,27 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     if ((aHi - aLo) > BORDER_ACROSS_PITCHES * pitchPx) { excluded.push({ hull, areaM2: r3(areaM2), reason: "vegetation wider than the rows' spacing across them (a border or cover, not a plant between rows)" }); continue; }
     if (mid && touchesEdge) { edgeCut++; continue; } // cut by the frame: its row may be outside the photo
     if (mid && alleyGreenAt(sx / n, sy / n) === 1) { greenAlley++; continue; } // a verge or cover, not an alley
-    betweenGreen += n;
+    betweenGreen += n; weedLabels.add(label);
     const eqD = 2 * Math.sqrt(areaM2 / Math.PI);
     weeds.push({ ...(mid ? { sizeClass: eqD >= MID.escapeDiameterM ? "escape" as const : "small" as const } : {}), id: weeds.length + 1, x: r3(cx), y: r3(cy), areaM2: r3(areaM2), equivDiameterM: r3(2 * Math.sqrt(areaM2 / Math.PI)), hull, distToRowM: noRows === n ? null : r3((minD + minBand) * gsdW), bandHalfWidthM: noRows === n ? null : r3(minBand * gsdW), touchesEdge, status: noRows === n ? "no rows here" : "between rows" });
   }
   checkStop(opts);
+  // Mid stage: small plants on the soil, found at the photo's own pixel (fineSeedlings.ts), wherever the rows stand:
+  // between the plants of a row as well as in the alley. The work raster is too coarse for a grass seedling's blades.
+  let seedlingN = 0, seedlingM2 = 0, judgedPx = 0; const seedlingPts: [number, number][] = [];
+  let fineFound: { x: number; y: number; areaPx: number }[] = [];
+  if (mid) {
+    const judgeWork = (wx: number, wy: number): boolean => {
+      if (wx < 0 || wy < 0 || wx >= W || wy >= H) return false;
+      const i = wy * W + wx; if (skip[i]) return false;
+      const nr = nearestRow(pxStrip[i], pxA[i]); if (!nr || nr.d > pitchPx) return false;
+      return alleyGreenAt(wx, wy) === 0;
+    };
+    const fine = fineSeedlings(px, gsdM, (x, y) => { const wx = Math.floor(x / f), wy = Math.floor(y / f); return judgeWork(wx, wy) && !weedLabels.has(labels[wy * W + wx]); });
+    fineFound = fine.seedlings;
+    for (let wy = 0; wy < H; wy++) for (let wx = 0; wx < W; wx++) if (judgeWork(wx, wy)) judgedPx++;
+    checkStop(opts);
+  }
   opts.debug?.(`rows ${rowsW.length} (dropped ${rowsDropped}; k ${rowsW.map(r => r.k - kMin).join(",")}), band px ${band.map(b => b.toFixed(0)).join(",")}, components: crop ${cropComponents} (leaf tips ${leafTips}), weeds ${weeds.length}, specks ${specks}, faint ${faint}, excluded ${excluded.length}`);
 
   // 7. Along each row: green share inside the band, gaps, and (fine pixels only) the stand from the green peaks.
@@ -884,11 +891,24 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     rowsOut.forEach((r, k) => { r.id = k + 1; });
   }
   if (mid) ({ gapsN, gapLen, plantsTotal } = totalsOf(rowsOut));
+  if (mid) {
+    // Seedlings count only beside a drawn row (within three quarters of a pitch of one of its points): a row traced on
+    // into a lawn is not drawn there, and nothing there is judged.
+    const reach = 0.75 * pitchPx * f, cell = Math.max(1, Math.round(reach)), grid = new Map<number, [number, number][]>();
+    const key = (gx: number, gy: number) => gy * 100003 + gx;
+    for (const r of rowsOut) for (const [x, y] of r.points) { const k = key(Math.floor(x / cell), Math.floor(y / cell)); const l = grid.get(k); if (l) l.push([x, y]); else grid.set(k, [[x, y]]); }
+    const beside = (x: number, y: number) => { const gx = Math.floor(x / cell), gy = Math.floor(y / cell); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) for (const [px0, py0] of grid.get(key(gx + dx, gy + dy)) ?? []) if (Math.hypot(px0 - x, py0 - y) <= reach) return true; return false; };
+    for (const sd of fineFound) {
+      if (!beside(sd.x, sd.y)) continue;
+      seedlingN++; seedlingM2 += sd.areaPx * gsdM * gsdM;
+      if (seedlingPts.length < MID.maxSeedlingPoints) seedlingPts.push([r3(sd.x), r3(sd.y)]);
+    }
+  }
   const escapes = mid ? weeds.filter(w => w.sizeClass === "escape").length : 0;
-  const seedlings: RowCropSeedlings | null = mid ? { count: seedlingN, areaM2: r3(seedlingPx * gsdW * gsdW), cover: betweenArea ? r3(seedlingPx / betweenArea) : null, points: seedlingPts } : null;
+  const seedlings: RowCropSeedlings | null = mid ? { count: seedlingN, areaM2: r3(seedlingM2), cover: judgedPx ? r3(seedlingM2 / (judgedPx * gsdW * gsdW)) : null, points: seedlingPts } : null;
   if (mid && (greenAlley || edgeCut)) notes.push(`Not judged: ${greenAlley} patch${greenAlley === 1 ? "" : "es"} where the ground between the rows is mostly green (a verge or cover the rows run into), ${edgeCut} cut by the photo's edge.`);
   if (mid) {
-    notes.push(`Mid stage: ${seedlingN} late-flush seedling${seedlingN === 1 ? "" : "s"} on the alley floor (${seedlings!.cover == null ? "-" : (seedlings!.cover * 100).toFixed(1)}% of the ground between the rows), drawn as a layer, not as findings. Weeds that emerge after about V8 under a closing canopy rarely reduce this year's yield; they matter for next year's seed.`);
+    notes.push(`Mid stage: ${seedlingN} small plant${seedlingN === 1 ? "" : "s"} on the soil, standing alone clear of the corn (${(seedlings!.areaM2 * 1e4).toFixed(0)} cm², ${seedlings!.cover == null ? "-" : (seedlings!.cover * 100).toFixed(2)}% of the field ground read), a late flush of seedlings drawn as a layer, not as findings. Within about ${FINE.nearCornCm} cm of a corn leaf a seedling and a leaf piece look alike, so those are not counted. Weeds that emerge after about V8 under a closing canopy rarely reduce this year's yield; they matter for next year's seed.`);
     notes.push(escapes ? `${escapes} between-row plant${escapes === 1 ? "" : "s"} ${Math.round(MID.escapeDiameterM * 100)} cm or more across: escapes from earlier control, the plants worth a look.` : `No between-row plant ${Math.round(MID.escapeDiameterM * 100)} cm or more across: no escapes seen.`);
     notes.push("The broadcast post window on most corn labels closes at V8 or 30 in; after that, directed sprays and next season's plan are what remain. Check the label and your local guidance.");
   }

@@ -189,3 +189,37 @@ photographs looked at (11, 22, 88). Establishment reads are unchanged, number fo
 
 **Known limit.** One row direction per photograph: photo 16 holds two plantings at different directions and its lines
 cross the rows. Nothing is judged there (0 plants), but the lines are wrong.
+
+## Mid stage: seedlings found at the photo's own pixel (2026-10-29, late)
+
+Yunus, pointing at pale grass seedlings on the soil that carried no mark: "obviously the corn ones are thicker and the
+weeds are smaller". Two causes, both measured on the mid photographs:
+
+- **The bands had eaten the alley.** To keep leaf tips out of the weeds, each band reaches the leaves' tails: 32 cm
+  half-width at a 76 cm pitch, which leaves about 12 cm of judged alley. Every seedling between the plants of a row, or
+  under the reach of a leaf, was inside a band and never looked at.
+- **The work raster cannot see them.** A grass seedling's blades are 2 to 5 mm wide, a pixel or two at 0.5 cm. The
+  reader works at about 1.5 cm here. And the camera stores colour at about a quarter of the resolution of brightness
+  (chroma subsampling and in-camera smoothing): on the photographs a 1 cm blade keeps its brightness but most of its
+  green is smeared into the soil around it, so a green index alone misses it.
+
+So a second pass, `src/lib/rowCrop/fineSeedlings.ts`, runs at the photo's own pixel at mid stage only, following his
+rule literally:
+
+1. **Corn is thick.** A plant pixel whose 4 cm square is all plant is a corn leaf (a V8 leaf is 5 to 10 cm wide), and
+   everything joined to it is corn, including pale sunlit leaf and whitish midribs (bright over the soil and greener
+   than the soil's own tint; pale soil crust does not join, or the corn would run across the ground).
+2. **A seedling is small and stands alone.** A plant piece of 2 to 20 cm² that joins no corn, stands 1.5 cm clear of
+   it, sits on soil (at most 15 % plant in the ring 1 to 2 cm around it) and has a part brighter than its soil.
+3. **Two soil levels.** Corn is told from a local level over every pixel; a pale seedling is told from the tint of the
+   soil pixels alone (in a closing canopy the local level is corn's, and a pale seedling's green vanishes against it).
+4. **Judged only where the reader judges:** rows read there, the ground not a verge, no larger weed already holding the
+   spot, and within three quarters of a pitch of a drawn row (rows traced into a lawn are not drawn there).
+
+Seedlings are counted wherever the rows stand, between the plants of a row as well as in the alley, and drawn as amber
+rings about 5 cm across. On the 40 mid photographs: 1,500 to 4,300 per field photograph (they were 0 to 261), under
+1 % of the field ground, the lawns clean. Checked by eye on photographs 11 and 22: most rings sit on sprouts; some sit
+on a corn leaf's base or a pale leaf piece; seedlings within 1.5 cm of a leaf and clumps over 20 cm² are not counted.
+Accuracy is not measured (no labels). The read takes about 5 s a photograph instead of 1 s. Establishment reads are
+unchanged on all 15 photographs. `scripts/rowCrop/fineProbe.ts` draws the pass alone with its reasons for rejecting
+each piece (corn mask blue, near-corn zone purple).
