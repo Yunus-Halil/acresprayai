@@ -510,12 +510,15 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   for (let i = rowsW.length - 1; i > 0; i--) {
     const a = rowsW[i], b = rowsW[i - 1];
     if (a.k !== b.k) continue;
+    if (Math.max(a.s0, b.s0) - Math.min(a.s1, b.s1) > MAX_BRIDGE_STRIPS) continue; // too far apart along the row to be one
     const s0 = Math.min(a.s0, b.s0), s1 = Math.max(a.s1, b.s1), n = s1 - s0 + 1;
     const pos = new Float64Array(n), sup = new Uint8Array(n), has = new Uint8Array(n);
     for (const r of [b, a]) for (let j = 0; j < r.a.length; j++) { const t = r.s0 + j - s0; if (!has[t] || (r.support[j] && !sup[t])) { pos[t] = r.a[j]; sup[t] = r.support[j]; has[t] = 1; } }
     for (let t = 0; t < n; t++) if (!has[t]) { let lo = t - 1; while (lo >= 0 && !has[lo]) lo--; let hi = t + 1; while (hi < n && !has[hi]) hi++; pos[t] = lo >= 0 && hi < n ? pos[lo] + ((pos[hi] - pos[lo]) * (t - lo)) / (hi - lo) : lo >= 0 ? pos[lo] : pos[hi]; }
     rowsW.splice(i - 1, 2, { k: a.k, s0, s1, a: smoothRow(pos), support: sup });
   }
+  // Row ends are not trimmed by the periodicity around them: on the test photographs that cut real rows short where a
+  // lawn shares their 3 m window and left the verge extensions in place. A row may run a metre or two into a verge.
   const kMin = 0;
   if (!rowsW.length) return empty(gsdM, scaleBasis, "Rows were periodic across the photo but none could be traced along it.", vegetationFraction);
 
