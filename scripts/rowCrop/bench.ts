@@ -1,5 +1,5 @@
 // The continuous-row reader over a folder of photographs, drawn and tabulated.
-//   npm run bench:row-crop -- --photos directtestimagery [--crop corn] [--tag directtest] [--gsd-cm 0.5] [--out dir] [--stage establishment|mid]
+//   npm run bench:row-crop -- --photos directtestimagery [--crop corn] [--tag directtest] [--gsd-cm 0.5] [--out dir] [--stage emergence|establishment|mid]
 // Without --gsd-cm the photos' scale is assumed from the measured pitch and the profile's default spacing (no EXIF
 // on the test photos). Pictures: <photos>/outputs/row-crop/<tag>/<photo>.png; results beside them as <tag>.json/.md.
 import "../bench/nodeStorageShim";

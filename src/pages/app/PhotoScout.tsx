@@ -177,10 +177,11 @@ export default function PhotoScout() {
             {readsContinuousRows(cropId) && (
               <Field label="Growth stage">
                 <select className={input} value={stage} onChange={e => setStage(e.target.value as RowCropStage)} data-testid="photo-scout-stage">
+                  <option value="emergence">emergence (VE to V2: seedlings on bare soil, just planted)</option>
                   <option value="establishment">early (V2 to V7: plants in a line, soil between the rows)</option>
                   <option value="mid">mid (V8 to tasselling: the canopy nearly meets over narrow alleys)</option>
                 </select>
-                <div className="text-[10px] text-neutral-500">{stage === "mid" ? "rows are placed between the alley troughs; only green standing on the alley floor is reported; a weed among the corn leaves counts as corn" : "rows are traced on the green; weeds are green clear of every row's band"}</div>
+                <div className="text-[10px] text-neutral-500">{stage === "mid" ? "rows are placed between the alley troughs; only green standing on the alley floor is reported; a weed among the corn leaves counts as corn" : stage === "emergence" ? "each seedling is a point and a row is the straight line they stand on (the lens bend straightened); plants counted along each row; green off every row is a weed candidate" : "rows are traced on the green; weeds are green clear of every row's band"}</div>
               </Field>
             )}
             <Field label="Row spacing">
@@ -402,7 +403,7 @@ function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | 
   const s = read.summary;
   const cm = (m: number | null) => (m == null ? "–" : fmtLengthCm(m * 100, units).text);
   const rows: [string, string][] = [
-    ["Crop profile", read.crop ? `${read.crop.id} ${read.crop.version}, ${read.stage === "mid" ? "mid-stage variant: rows between the alley troughs, the whole canopy is the crop" : "early-stage variant: rows traced on the green, the whole row is the crop"}` : "none"],
+    ["Crop profile", read.crop ? `${read.crop.id} ${read.crop.version}, ${read.stage === "mid" ? "mid-stage variant: rows between the alley troughs, the whole canopy is the crop" : read.stage === "emergence" ? "emergence variant: seedlings as points, rows the lines they stand on" : "early-stage variant: rows traced on the green, the whole row is the crop"}` : "none"],
     ["Scale", read.scaleBasis === "given" ? `${cm(read.gsdM)}/px` : `${cm(read.gsdM)}/px, ASSUMED from the measured pitch and the crop's default spacing`],
     ["Row direction", read.directionDeg == null ? "–" : `${read.directionDeg.toFixed(1)}° from the photo's x axis`],
     ["Row spacing measured", read.pitchM == null ? "–" : `${cm(read.pitchM)}${read.matchedSpacingM ? ` (a planted spacing: ${cm(read.matchedSpacingM)})` : " (matches no planted spacing; the measurement stands)"}`],

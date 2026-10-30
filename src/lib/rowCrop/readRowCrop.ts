@@ -21,6 +21,7 @@
 // then rests on that assumption.
 import { type GreenOptions, GREEN_DEFAULTS, greenMaskWithExcess } from "../directGeoref/green";
 import type { PhotoPixels } from "../photoScout/pattern";
+import { readEmergence } from "./emergence";
 import { FINE, fineSeedlings } from "./fineSeedlings";
 
 export const ROW_CROP_READ_VERSION = 2;
@@ -28,13 +29,15 @@ export const ROW_CROP_READ_VERSION = 2;
 /**
  * The growth stage the reader is tuned for. Each stage is its own variant with its own rules, kept apart so that
  * tuning one never moves the other (Yunus, 2026-10-29):
+ * - "emergence": VE to about V2, bare soil and seedlings on the planter's line; each seedling a point, a row the line
+ *   the points stand on (emergence.ts), plants counted along it, green off every row a weed candidate.
  * - "establishment": V2 to about V7, plants in a line with soil between the rows; rows traced on the green peaks,
  *   weeds are green clear of every row's band.
  * - "mid": V8 to tasselling, the canopy nearly meeting over narrow alleys; rows traced from the alley troughs
  *   (the soil stripes), the band reaches the alley edge, weeds are green standing on the alley floor.
  * A closed canopy (late) is refused by both with the reason; automatic stage detection is a later step.
  */
-export type RowCropStage = "establishment" | "mid";
+export type RowCropStage = "emergence" | "establishment" | "mid";
 
 /** Target pixel size of the work raster, metres. Corn leaves are 2 cm and wider; finer buys nothing here. */
 export const WORK_GSD_M = 0.01;
@@ -429,6 +432,7 @@ export type RowCropOptions = { onProgress?: (done: number, total: number) => voi
 export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}, opts: RowCropOptions = {}): RowCropRead {
   const t0 = Date.now();
   const P: RowCropParams = { ...DEFAULT_ROW_CROP_PARAMS, ...params };
+  if (P.stage === "emergence") return readEmergence(px, P, opts);
   const notes: string[] = [];
   const given = P.gsdM != null && P.gsdM > 0 ? P.gsdM : null;
   const f = given ? Math.max(1, Math.round(WORK_GSD_M / given)) : Math.max(1, Math.ceil(Math.max(px.width, px.height) / 2048));
@@ -940,7 +944,7 @@ function smoothRow(a: Float64Array): Float64Array {
 
 function checkStop(opts: RowCropOptions) { if (opts.signal?.aborted) throw new Error("cancelled"); }
 
-function convexHull(pts: [number, number][]): [number, number][] {
+export function convexHull(pts: [number, number][]): [number, number][] {
   const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   if (p.length < 3) return p;
   const cross = (o: [number, number], a: [number, number], b: [number, number]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);

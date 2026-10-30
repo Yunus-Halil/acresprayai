@@ -223,3 +223,39 @@ on a corn leaf's base or a pale leaf piece; seedlings within 1.5 cm of a leaf an
 Accuracy is not measured (no labels). The read takes about 5 s a photograph instead of 1 s. Establishment reads are
 unchanged on all 15 photographs. `scripts/rowCrop/fineProbe.ts` draws the pass alone with its reasons for rejecting
 each piece (corn mask blue, near-corn zone purple).
+
+## Emergence stage: seedlings as points (2026-10-30)
+
+Yunus's very early photographs (`directtestimagery/veryearlystage`, 23 photographs, VE to V1, one field beside a
+grass verge, EXIF stripped): bare soil, a seedling every 15 cm or so on the planter's line, tyre tracks parallel to
+the rows. His brief: the lines are near perfect because the field was just planted; find the line and the plants on
+it and the rest is easy. The early variant read no rows on 11 of them and took the verge's texture for rows on the
+others (it shrinks the photograph to 1.5 cm pixels, where a 1 cm leaf is lost, and reads a green density, which a
+verge dominates).
+
+`RowCropStage` "emergence", `src/lib/rowCrop/emergence.ts` (constants in `EMERGENCE`, never read by the other
+variants):
+
+1. Soil-relative green at about 1 cm (the seedlings come out cleanly, the soil and the tyre tracks do not).
+2. Solid green (a cell over 15 % green: verge, lawn, hedge) left out with a cell's margin, drawn as rectangles.
+3. Every small green component standing on soil (its cell at most 8 % green) is a point.
+4. The lens: barrel distortion bends straight rows toward the frame's edges, the same way for every row. One radial
+   coefficient is chosen together with the direction where the points' projection is most concentrated (0.06 on
+   these photographs); rows are read in the straightened plane and drawn back through the lens. Without it a row at
+   the frame's edge drifted onto its neighbour and its seedlings were called weeds.
+5. Pitch from the projection's autocorrelation; phase from the points' circular mean; each line of the comb
+   collects its points and is refitted (a quadratic once long and well held), membership narrowed to the row's own
+   spread; two fits on one row keep the stronger.
+6. Seedling pieces within 3.5 cm along a row are one plant; a row is split at empty stretches over 1.5 m and short
+   runs dropped (specks on a road in a dark corner); gaps are stretches with no plant over twice the row's own plant
+   spacing (at least 30 cm).
+7. Green off every row (beyond the 6 cm band) is a weed candidate.
+
+On the 23 photographs: rows on all of them (19 to 38 a frame, coherence 0.87 to 0.92), 1,100 to 3,500 plants a
+frame, 23 to 124 green patches off the rows, about 0.3 s each; the verge and road left out; checked by eye at full
+resolution on 40 (right edge) and on 4 and 54 (`directtestimagery/veryearlystage/outputs/row-crop/emergence/`).
+Not measured against counted plants. Known limit: pale seedlings in the vignetted corners are missed, so gaps there
+run long; a gap is "no seedling seen", not a confirmed skip. Photo Scout offers the variant ("emergence"); bench:
+`npm run bench:row-crop -- --photos directtestimagery/veryearlystage --stage emergence`. Test:
+`src/test/rowCropEmergence.test.ts` (a rendered field through a barrel lens with a verge and weeds: every drawn row
+within 3 cm of a planted line, the stand within 10 %, every weed found; bare soil refused).
