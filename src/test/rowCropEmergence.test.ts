@@ -4,6 +4,7 @@
 // verge left out, the weeds found off the rows, and the stand counted close to what was planted.
 import { describe, expect, it } from "vitest";
 import { readRowCrop, rowCropOverlay } from "@/lib/rowCrop/readRowCrop";
+import { seedlingMask } from "@/lib/rowCrop/seedlingGreen";
 
 const W = 1600, H = 1200, GSD = 0.01, PITCH = 76, K1 = 0.06, ANGLE = (88 * Math.PI) / 180;
 const cx = (W - 1) / 2, cy = (H - 1) / 2, R = Math.max(W, H) / 2;
@@ -81,5 +82,19 @@ describe("corn at emergence: seedlings as points, rows the lines they stand on",
     const read = readRowCrop(render({ verge: false, seedlings: false }).px, { stage: "emergence", gsdM: GSD });
     expect(read.rows).toHaveLength(0);
     expect(read.notes.join(" ")).toMatch(/no seedlings|no rows of seedlings/);
+  });
+
+  it("finds a pale sunlit leaf, lighter than the soil and only a little greener, and nothing on bare soil", () => {
+    const w = 200, h = 120, rgba = new Uint8ClampedArray(w * h * 4);
+    let sd = 5; const rnd = () => ((sd = (Math.imul(sd, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff);
+    for (let i = 0; i < w * h; i++) { const n = (rnd() - 0.5) * 16; rgba[i * 4] = 140 + n; rgba[i * 4 + 1] = 122 + n; rgba[i * 4 + 2] = 104 + n; rgba[i * 4 + 3] = 255; }
+    // A pale leaf: much lighter than the soil, only a little greener (tint G - (R+B)/2 of about +22 against the soil's -0).
+    const leaf: number[] = [];
+    for (let y = 58; y <= 62; y++) for (let x = 60; x <= 90; x++) { const o = (y * w + x) * 4; rgba[o] = 178; rgba[o + 1] = 200; rgba[o + 2] = 150; leaf.push(y * w + x); }
+    const fresh = seedlingMask({ width: w, height: h, rgba });
+    const share = (m: Uint8Array) => leaf.filter(i => m[i]).length / leaf.length;
+    expect(share(fresh)).toBeGreaterThan(0.9);
+    let soil = 0; for (let i = 0; i < w * h; i++) if (fresh[i] && !leaf.includes(i)) soil++;
+    expect(soil / (w * h)).toBeLessThan(0.002);
   });
 });

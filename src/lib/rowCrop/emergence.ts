@@ -15,6 +15,7 @@
 // Never tuned for the other stages, and they never read EMERGENCE.
 import { GREEN_DEFAULTS, type GreenOptions, greenMaskWithExcess } from "../directGeoref/green";
 import type { PhotoPixels } from "../photoScout/pattern";
+import { seedlingMask, shrinkMask } from "./seedlingGreen";
 import { type RowCropExcluded, type RowCropGap, type RowCropOptions, type RowCropParams, type RowCropRead, type RowCropRow, type RowCropWeed, ROW_CROP_READ_VERSION, convexHull, downsample, pitchFromProfile } from "./readRowCrop";
 
 export const EMERGENCE = {
@@ -139,8 +140,11 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   const excludedShare = solidPx / (W * H);
   if (excludedShare > 0.01) notes.push(`${Math.round(excludedShare * 100)}% of the photo is solid green (a verge, a lawn, a hedge) and is left out of the rows.`);
 
-  // 3. Components; the small ones are the points the rows are read from.
-  const comps = components(mask, skip, W, H, 4000);
+  // 3. The seedlings themselves, pale leaves included (seedlingGreen.ts: tint against the soil beside each pixel, at
+  // the photo's own pixel, shrunk to the work raster by "any pixel in the block"); the components of that mask are
+  // the points the rows are read from. The fixed index above judges solid green and the soil only.
+  const seed = shrinkMask(seedlingMask(px), px.width, px.height, f);
+  const comps = components(seed, skip, W, H, 4000);
   const maxSide = Math.max(3, L * E.pointMaxSideShare);
   // A seedling stands on soil: in a cell over EMERGENCE.soilGreenMax green (thin grass, a weedy headland, the dark
   // corner of a verge) green specks line up along any line drawn through them, so they are no seedling points.

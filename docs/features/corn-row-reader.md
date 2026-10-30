@@ -259,3 +259,21 @@ run long; a gap is "no seedling seen", not a confirmed skip. Photo Scout offers 
 `npm run bench:row-crop -- --photos directtestimagery/veryearlystage --stage emergence`. Test:
 `src/test/rowCropEmergence.test.ts` (a rendered field through a barrel lens with a verge and weeds: every drawn row
 within 3 cm of a planted line, the stand within 10 %, every weed found; bare soil refused).
+
+### Emergence: pale seedlings (2026-10-30, later)
+
+Yunus, pointing at a seedling whose sunlit half carried no mark: the fixed index at 1 cm caught the darker half of a
+leaf and lost the pale half, and in the vignetted corners lost whole seedlings. `src/lib/rowCrop/seedlingGreen.ts`
+judges each pixel of the photograph itself against the soil beside it (block means of the least green pixels, a
+median over the blocks around), in tint (G - (R + B) / 2) and brightness, with hysteresis: tint over the soil's by
+16 is a leaf; by 10, or 28 lighter with a tint of 3, joins only where it touches a leaf pixel (the pale half); a
+wholly pale seedling is kept when part of it is 30 lighter with a tint of 8. The emergence reader's points come from
+this mask (shrunk by "any pixel in the block"); the fixed index still judges solid green and the soil around a point.
+Thresholds chosen by eye on crops of photographs 40, 54, 60, 4 and 3 (`npx vite-node
+scripts/rowCrop/seedlingMaskProbe.ts`, old beside new in `outputs/seedling-mask/`): at 14 / 6 / 22 the camera's colour
+smear joined neighbouring seedlings; at 16 / 10 / 28 they stay apart and the corner seedlings are still caught.
+
+On the 23 photographs: plants per frame up by a fifth to a third (54: 3,496 to 4,119), gaps about halved (54: 285 to
+175), rows unchanged or one more; about 1.2 to 1.5 s a photograph in Node. Photograph 100's right third is a later
+planting just emerging: its few seedlings per furrow form no rows and are listed as green off the rows (98 to 249
+there); not tuned for. Photo Scout's growth stage still starts at "early": the emergence variant must be chosen.
