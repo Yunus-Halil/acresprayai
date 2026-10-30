@@ -7,6 +7,7 @@ import { type BuildResult, type BuildRun, BuildAborted, startTwinBuild } from "@
 import type { BuildReport } from "@/lib/fieldTwin/build/pipeline";
 import { BUILD_STAGES, type BuildProgress, type BuildStage } from "@/lib/fieldTwin/build/types";
 import type { TwinBundle } from "@/lib/fieldTwin/types";
+import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fetchHealth } from "@/lib/weedVision/client";
 import { weedModelAvailable } from "@/lib/weedVision/flag";
 
@@ -17,7 +18,18 @@ type Props = {
   onClose: () => void;
   /** Development builds: publish the result on window.__twinBuild for the benchmark script. */
   expose?: boolean;
+  /** The reviewer accounts' test switches (lib/fieldTwin/reviewers.ts): photographs without GPS. */
+  testSwitches?: boolean;
 };
+
+/** Planted row spacings offered for the no-GPS scale, metres, with their usual names. */
+const ROW_SPACINGS: { m: number; imperial: string; metric: string }[] = [
+  { m: 0.762, imperial: "30 in", metric: "76 cm" },
+  { m: 0.914, imperial: "36 in", metric: "91 cm" },
+  { m: 0.508, imperial: "20 in", metric: "51 cm" },
+  { m: 0.381, imperial: "15 in", metric: "38 cm" },
+  { m: 0.75, imperial: "29.5 in", metric: "75 cm" },
+];
 declare global { interface Window { __twinBuild?: { report: BuildReport; twin: { trees: number; rows: number; weeds: number; verified: number; atlases: number; blockHa: number | null; rowList: { id: number; kept: boolean; trees: number; photos: number; straightnessSdM: number; reason: string | null }[]; field: TwinBundle["field"] }; atlasesDone: boolean; error?: string } } }
 
 const btn = "inline-flex items-center gap-1.5 rounded-sm border border-[#333] px-2.5 py-1 text-xs text-neutral-300 hover:bg-[#1f1f1f] disabled:opacity-40";
@@ -25,7 +37,10 @@ const primary = "inline-flex items-center gap-1.5 rounded-sm bg-[#f0a63a] px-3 p
 
 const fmtMs = (ms: number) => (ms >= 60_000 ? `${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`);
 
-export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props) {
+export default function TwinBuilder({ onBuilt, onClose, expose = false, testSwitches = false }: Props) {
+  const units = useUnitSystem();
+  const [noGps, setNoGps] = useState(false);
+  const [rowSpacingM, setRowSpacingM] = useState(0.762);
   const [files, setFiles] = useState<File[]>([]);
   const [name, setName] = useState("");
   const [modelState, setModelState] = useState<"checking" | "ready" | "missing" | "unavailable">(weedModelAvailable() ? "checking" : "unavailable");
@@ -61,7 +76,8 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
     let r: BuildRun;
     try {
       const helpers = Number(new URLSearchParams(window.location.search).get("helpers") ?? "") || undefined;
-      r = startTwinBuild(files, { name: fieldName, weeds, helpers }, {
+      const placement = testSwitches && noGps ? { kind: "matched" as const, rowSpacingM } : undefined;
+      r = startTwinBuild(files, { name: fieldName, weeds, helpers, placement }, {
         onProgress: p => { setProgress(prev => { if (prev && prev.stage !== p.stage) setDoneStages(d => (d.includes(prev.stage) ? d : [...d, prev.stage])); return p; }); },
         onLog: line => setLines(l => [...l.slice(-11), line]),
       });
@@ -109,12 +125,30 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
         ))}
       </fieldset>
 
+      {testSwitches && (
+        <fieldset className="rounded-sm border border-dashed border-[#6b5a2e] px-2 py-1.5 text-xs text-neutral-300" disabled={!!run}>
+          <legend className="px-1 text-[11px] text-amber-300">Test switches</legend>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" className="mt-0.5 accent-[#f0a63a]" checked={noGps} onChange={e => { setNoGps(e.target.checked); if (e.target.checked) setWeeds("none"); }} />
+            <span>Photographs without GPS<span className="block text-[10px] leading-snug text-neutral-500">Ignore what the files say about position: place the photographs by matching them to each other, and take the scale from the crop rows. The twin is not put on the map (no north, no place). Needs overlapping photographs of one flight over a row crop.</span></span>
+          </label>
+          {noGps && <p className="mt-1 pl-5 text-[10px] leading-snug text-amber-300/80">Weeds set to none: the twin does not read corn rows yet, so the colour rules would call every corn plant a weed. You can still switch them back on above.</p>}
+          {noGps && (
+            <label className="mt-1 block pl-5 text-[11px] text-neutral-400">Row spacing (the scale comes from it)
+              <select value={rowSpacingM} onChange={e => setRowSpacingM(Number(e.target.value))} className="mt-0.5 w-full rounded-sm border border-[#3a3f3a] bg-[#111311] px-1.5 py-1 text-xs text-neutral-100">
+                {ROW_SPACINGS.map(s => <option key={s.m} value={s.m}>{units === "metric" ? s.metric : s.imperial}</option>)}
+              </select>
+            </label>
+          )}
+        </fieldset>
+      )}
+
       {!run && !result && <button type="button" className={primary} onClick={start} disabled={!files.length}>Build the twin</button>}
 
       {(run || result || progress) && (
         <div className="rounded-md border border-[#2e322e] bg-[#111311] p-3">
           <ol className="space-y-1 text-xs">
-            {BUILD_STAGES.map((s, i) => {
+            {BUILD_STAGES.filter(s => s.id !== "matching" || (testSwitches && noGps)).map((s, i) => {
               const done = doneStages.includes(s.id) || !!result, active = !result && progress?.stage === s.id;
               return (
                 <li key={s.id} className={`flex items-start gap-2 ${done ? "text-neutral-400" : active ? "text-neutral-100" : "text-neutral-600"}`}>
@@ -136,6 +170,7 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
         <div className="rounded-md border border-[#2e322e] bg-[#111311] p-3 text-xs">
           <p className="font-semibold text-neutral-100">Built in {fmtMs(result.report.totalMs)}</p>
           <ul className="mt-1 space-y-0.5 text-neutral-300">
+            {result.report.matching && <li className="text-amber-200">No GPS: {result.report.matching.placed} of {result.report.matching.photographs} photographs placed by matching ({result.report.matching.pairsKept} overlapping pairs) in {fmtMs(result.report.matching.ms)}; scale {units === "metric" ? `${(result.report.matching.gsdM * 100).toFixed(2)} cm` : `${(result.report.matching.gsdM / 0.0254).toFixed(3)} in`} a pixel, agreed by {result.report.matching.scaleAgreedBy} of {result.report.matching.scaleReadBy} photographs</li>}
             <li>{result.report.photographs.read} of {result.report.photographs.given} photographs with a camera{result.report.photographs.refused.length ? ` (${result.report.photographs.refused.length} left out)` : ""}; soil ties agree to {typeof result.report.cameras.residualM === "number" && Number.isFinite(result.report.cameras.residualM) ? `${(result.report.cameras.residualM * 100).toFixed(0)} cm` : "n/a"}</li>
             <li>{result.twin.trees.length} trees on {result.twin.rows.filter(r => r.kept).length} rows{result.twin.field.rowSpacingM ? ` (${result.twin.field.rowSpacingM} m apart, plants ${result.twin.field.plantSpacingM} m)` : ""}</li>
             <li>{result.twin.weeds.length ? `${result.twin.weeds.filter(w => w.status === "verified").length} verified weed candidates of ${result.twin.weeds.length} objects (${result.report.weeds.detections} ${result.twin.stats.weedTier === "colour" ? "green patches, colour rules" : "detections"})` : "no weeds (no weed pass)"}</li>

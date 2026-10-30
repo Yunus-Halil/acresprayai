@@ -38,6 +38,8 @@ export type BundleInputs = {
   /** Helper workers and the photographs' files, for the crops. */
   pool?: Pool | null;
   files?: Map<string, Blob>;
+  /** "matched": the photographs had no position and were placed by matching (matchPlacement.ts). */
+  placement?: "header" | "matched";
 };
 
 export type AtlasFile = { file: string; bytes: Blob | Uint8Array; index: number; total: number };
@@ -207,7 +209,10 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
     builtAt: new Date().toISOString(),
     source: {
       photographs: frames.size, camera: `${first?.make ?? ""} ${first?.model ?? ""}`.trim(), capturedAt, groundPixelCm: r2(100 * quant([...frames.values()].map(f => groundSampleAt(f, f.intrinsics.cx, f.intrinsics.cy) ?? NaN), 0.5)),
-      method: "direct georeferencing from each photograph's header, cameras adjusted to soil-texture ties between overlapping photographs (no orthomosaic); objects reconciled across photographs; built in the app",
+      method: inp.placement === "matched"
+        ? "photographs with no position placed by matching them to each other (test), scale from the crop rows, cameras then adjusted to soil-texture ties between overlapping photographs (no orthomosaic); objects reconciled across photographs; built in the app; NOT on the earth: a stand-in place, north unknown"
+        : "direct georeferencing from each photograph's header, cameras adjusted to soil-texture ties between overlapping photographs (no orthomosaic); objects reconciled across photographs; built in the app",
+      placement: inp.placement ?? "header",
       weedModel: weedsRes.describe,
       treeModel: "planting layout (rows read per photograph, fitted, reconciled)",
     },

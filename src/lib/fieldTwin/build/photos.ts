@@ -30,15 +30,15 @@ export function greyRasterBytes(px: PhotoPixels, toOriginal: number): GreyRaster
 
 export type PhotoRefusal = { name: string; reason: string };
 
-/** Read every photograph: the ones whose header holds no camera are refused with the reason and left out. */
-export async function readPhotographs(photos: PhotoSource[], down: number, hooks: BuildHooks = {}, usePreview = true): Promise<{ reads: PhotoRead[]; refused: PhotoRefusal[] }> {
+/** Read every photograph: the ones whose header holds no camera are refused with the reason and left out. `metas` replaces the headers (photographs placed by matching). */
+export async function readPhotographs(photos: PhotoSource[], down: number, hooks: BuildHooks = {}, usePreview = true, metas?: Map<string, DjiPhotoMeta>): Promise<{ reads: PhotoRead[]; refused: PhotoRefusal[] }> {
   const reads: PhotoRead[] = [], refused: PhotoRefusal[] = [];
   const t0 = Date.now();
   for (const [i, p] of photos.entries()) {
     checkCancelled(hooks.signal);
     hooks.onProgress?.({ stage: "photographs", done: i, total: photos.length, message: p.name, elapsedMs: Date.now() - t0 });
     let meta: DjiPhotoMeta;
-    try { meta = parseDjiHeader(await p.header()); } catch (e) { refused.push({ name: p.name, reason: `header unreadable: ${(e as Error).message}` }); continue; }
+    try { meta = metas?.get(p.name) ?? parseDjiHeader(await p.header()); } catch (e) { refused.push({ name: p.name, reason: `header unreadable: ${(e as Error).message}` }); continue; }
     if (meta.lat == null || meta.lng == null) { refused.push({ name: p.name, reason: "no camera position in the file" }); continue; }
     if (meta.relativeAltitudeM == null) { refused.push({ name: p.name, reason: "no RelativeAltitude in the file" }); continue; }
     if (meta.gimbalYawDeg == null || meta.gimbalPitchDeg == null) { refused.push({ name: p.name, reason: "no gimbal yaw/pitch in the file" }); continue; }
