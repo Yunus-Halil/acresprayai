@@ -128,7 +128,6 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
   const refOption = referenceOptions.find(o => o.id === refId) ?? null;
   const reference = useMemo<ReferenceImagery | null>(() => (refOption ? { url: refOption.url, maxNativeZoom: refOption.maxNativeZoom, opacity: refOpacity, swipe: refSwipe } : null), [refOption, refOpacity, refSwipe]);
   const effectiveLayers = useMemo<TwinLayers>(() => ({ ...layers, ground: !reference }), [layers, reference]);
-  const offEarth = twin.source.placement === "matched";
 
   const zoomTo = useCallback((lat: number, lng: number, metresAcross: number) => {
     const h = handle.current;
@@ -203,12 +202,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
       <style>{`.twin-root .leaflet-top.leaflet-right, .twin-root .leaflet-bottom.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; } .twin-root .leaflet-control-scale-line { background: rgba(24,26,24,.85); color: #d9ddd6; border-color: #8a8f88; } .twin-root .leaflet-control-attribution { background: rgba(24,26,24,.85); color: #9aa09a; }`}</style>
       <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={setSelection} onDetail={setDetail} onStats={setStats}
         onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
-        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} offEarth={offEarth} />
-      {offEarth && (
-        <div className={`absolute left-1/2 top-3 z-[700] max-w-[420px] -translate-x-1/2 px-3 py-1.5 text-[11px] leading-snug text-amber-200 ${panel}`} role="note">
-          Test twin, no GPS: the photographs were placed by matching them to each other and scaled from the row spacing. It is not on the map: north and the place are unknown.
-        </div>
-      )}
+        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} />
 
       {/* Left column: the detail dial, Explore Findings, then the layers (Standard and Full). */}
       <div className="absolute left-3 top-3 z-[700] flex max-h-[calc(100%-120px)] flex-col gap-2 overflow-y-auto">
@@ -308,7 +302,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
               {toggle("vegetation", "Other vegetation", TWIN_COLOURS.vegetation, `${twin.vegetation.length} patches, unclassed`)}
               {toggle("uncertainty", "Uncertainty", "#8c949f", `${s.cellsSingleCoverage} cells one photograph saw`)}
               {toggle("coverage", "Photo coverage", TWIN_COLOURS.imageryEdge, "the ground the photographs looked at")}
-              {!offEarth && toggle("surroundings", "Surroundings", "#4a4f4a", "roads and places, OpenStreetMap data")}
+              {toggle("surroundings", "Surroundings", "#4a4f4a", "roads and places, OpenStreetMap data")}
               {full && <button type="button" className="mt-2 flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => setDiagOpen(o => !o)} aria-expanded={diagOpen}>
                 {diagOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}Diagnostics
               </button>}

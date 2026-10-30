@@ -6,7 +6,6 @@
 // and in Node (scripts/directGeoref/nodePhotos.ts: jpeg-js) for the scripts and the tests.
 import type { PhotoPixels } from "../../photoScout/pattern";
 import type { WeedVisionResult } from "../../weedVision/client";
-import type { RowCropStage } from "../../rowCrop/readRowCrop";
 import type { Pool } from "./pool";
 
 /** One original photograph, read on demand. Nothing is held decoded between calls unless the source caches it. */
@@ -39,9 +38,8 @@ export type WeedDetector = ((photo: PhotoSource, signal?: AbortSignal, tiles?: n
 /** The tile plan the detector will use, so the views can be chosen before it runs. */
 export type DetectPlan = { tile: number; overlap: number; scale: number };
 
-export type BuildStage = "matching" | "photographs" | "cameras" | "rows" | "weeds" | "vegetation" | "evidence" | "boundary" | "bundle";
+export type BuildStage = "photographs" | "cameras" | "rows" | "weeds" | "vegetation" | "evidence" | "boundary" | "bundle";
 export const BUILD_STAGES: { id: BuildStage; label: string }[] = [
-  { id: "matching", label: "Placing the photographs by matching them (no GPS, test)" },
   { id: "photographs", label: "Reading the photographs" },
   { id: "cameras", label: "Aligning the cameras on the soil" },
   { id: "rows", label: "Rows and trees in every photograph" },
@@ -90,11 +88,7 @@ export type BuildOptions = {
   atlases?: "now" | "later";
   /** Helper workers for the parallel stages (ties, the colour pass, the crops); without one everything runs inline. */
   pool?: Pool;
-  /** Test: photographs with no position in their headers, placed by matching them to each other (matchPlacement.ts), the scale from rows this far apart. */
-  placement?: MatchedPlacementOption;
 };
-
-export type MatchedPlacementOption = { kind: "matched"; rowSpacingM: number; stage?: RowCropStage };
 
 export class BuildCancelled extends Error { constructor() { super("cancelled"); } }
 

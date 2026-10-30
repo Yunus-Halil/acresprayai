@@ -55,8 +55,6 @@ type Props = {
   editing?: LatLngPair[] | null;
   /** The ring after each handle move, add or removal. */
   onBoundaryEdit?: (ring: LatLngPair[]) => void;
-  /** A twin placed by matching photographs with no position (test): not on the earth, so no surroundings, no mini-map, no north. */
-  offEarth?: boolean;
 };
 
 const bar = "background:rgba(20,22,20,.86);border:1px solid #333;color:#d9ddd6;";
@@ -83,7 +81,7 @@ const LocateControl = L.Control.extend({
   },
 });
 
-export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, offEarth = false }: Props) {
+export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const miniEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -105,7 +103,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   const updateContext = () => {
     const map = mapRef.current;
     if (!map) return;
-    const want = !offEarth && layersRef.current.surroundings && layersRef.current.ground ? (detailRef.current?.surroundings ?? 1) * SURROUNDINGS_OPACITY : 0;
+    const want = layersRef.current.surroundings && layersRef.current.ground ? (detailRef.current?.surroundings ?? 1) * SURROUNDINGS_OPACITY : 0;
     let tl = contextRef.current;
     if (want <= 0.02) { if (tl && map.hasLayer(tl)) map.removeLayer(tl); return; }
     if (!tl) { tl = L.tileLayer(SURROUNDINGS_URL, { pane: "twinContext", maxNativeZoom: SURROUNDINGS_MAX_NATIVE, maxZoom: 26, minZoom: 10, attribution: SURROUNDINGS_ATTRIBUTION, opacity: want }); contextRef.current = tl; }
@@ -149,12 +147,12 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
     layer.on("twindraw", () => onStatsRef.current?.(layer.stats));
     layer.on("boundaryedit", (e: L.LeafletEvent & { ring?: LatLngPair[] | null }) => { if (e.ring) onBoundaryEditRef.current?.(e.ring); });
     new LocateControl({ position: "topright", locate } as L.ControlOptions).addTo(map);
-    if (!offEarth) new NorthControl({ position: "bottomright" }).addTo(map);
+    new NorthControl({ position: "bottomright" }).addTo(map);
     locate();
 
     // The mini-map: the field in its surroundings at a fixed scale, with the main view drawn as a rectangle.
     let mini: L.Map | null = null;
-    if (miniEl.current && !offEarth) {
+    if (miniEl.current) {
       mini = L.map(miniEl.current, { preferCanvas: true, attributionControl: false, zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false, zoomAnimation: false });
       L.tileLayer(SURROUNDINGS_URL, { maxNativeZoom: SURROUNDINGS_MAX_NATIVE, maxZoom: 20, opacity: 0.3 }).addTo(mini);
       const hull: [number, number][] = [];
@@ -224,7 +222,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   return (
     <div className="relative h-full w-full" style={{ background: TWIN_COLOURS.outside }}>
       <div ref={el} className="h-full w-full" style={{ background: TWIN_COLOURS.outside }} aria-label="Field Twin map" role="application" />
-      {!offEarth && <div ref={miniEl} className="absolute bottom-[92px] z-[650] h-[110px] w-[170px] overflow-hidden rounded-sm border border-[#343834] bg-[#191d1a]" style={{ right: "calc(var(--twin-right, 0px) + 12px)", transition: "right .15s ease" }} aria-label="Mini-map: the field in its surroundings" role="img" />}
+      <div ref={miniEl} className="absolute bottom-[92px] z-[650] h-[110px] w-[170px] overflow-hidden rounded-sm border border-[#343834] bg-[#191d1a]" style={{ right: "calc(var(--twin-right, 0px) + 12px)", transition: "right .15s ease" }} aria-label="Mini-map: the field in its surroundings" role="img" />
       {reference && reference.swipe != null && (
         <div ref={dividerRef} role="separator" aria-label="Reference imagery swipe divider" aria-valuenow={Math.round(reference.swipe * 100)}
           className="absolute top-0 bottom-0 z-[600] w-5 -ml-2.5 cursor-col-resize touch-none" style={{ left: `${reference.swipe * 100}%` }}>

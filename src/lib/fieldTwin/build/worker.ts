@@ -6,9 +6,9 @@ import { browserCodec, groupPhotoFiles } from "./browserPhotos";
 import { detectionKey, indexedDbStore, sha256Hex } from "./detectionCache";
 import { workerPool } from "./pool";
 import { type BuildReport, buildFieldTwin } from "./pipeline";
-import { BuildCancelled, type BuildProgress, type MatchedPlacementOption } from "./types";
+import { BuildCancelled, type BuildProgress } from "./types";
 
-export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; /** The weed pass: the model through the local service, the colour rules, or none. */ weeds: "model" | "colour" | "none"; /** Model tier: nearest views per ground cell to run (0, the default: every tile; measured on the apricot flight, 1024 px tiles prune only 8 %). */ views?: number; /** Helper workers (default: cores - 1, at most 6; 1 = none). */ helpers?: number; detect?: DetectOptions; /** Test: no positions in the files, place by matching. */ placement?: MatchedPlacementOption } | { type: "cancel" };
+export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; /** The weed pass: the model through the local service, the colour rules, or none. */ weeds: "model" | "colour" | "none"; /** Model tier: nearest views per ground cell to run (0, the default: every tile; measured on the apricot flight, 1024 px tiles prune only 8 %). */ views?: number; /** Helper workers (default: cores - 1, at most 6; 1 = none). */ helpers?: number; detect?: DetectOptions } | { type: "cancel" };
 export type BuildWorkerMessage =
   | { type: "progress"; progress: BuildProgress }
   | { type: "log"; line: string }
@@ -52,7 +52,7 @@ self.onmessage = async (e: MessageEvent<BuildWorkerRequest>) => {
     const helpers = m.helpers ?? Math.max(1, Math.min(6, cores - 1));
     pool = helpers > 1 ? workerPool(helpers, () => new Worker(new URL("./helper.ts", import.meta.url), { type: "module" })) : null;
     if (pool) post({ type: "log", line: `${helpers} helper workers (${cores} cores)` });
-    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, detector, weedTier: m.weeds, weedViews: m.views ?? 0, detectPlan: { tile: detect.tile ?? 1024, overlap: detect.overlap ?? 128, scale: detect.scale }, atlases: "later", pool: pool ?? undefined, placement: m.placement }, browserCodec, {
+    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, detector, weedTier: m.weeds, weedViews: m.views ?? 0, detectPlan: { tile: detect.tile ?? 1024, overlap: detect.overlap ?? 128, scale: detect.scale }, atlases: "later", pool: pool ?? undefined }, browserCodec, {
       signal: abort.signal,
       onProgress: progress => post({ type: "progress", progress }),
       log: line => post({ type: "log", line }),

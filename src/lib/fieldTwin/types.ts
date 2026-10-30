@@ -90,8 +90,6 @@ export type TwinBundle = {
   source: {
     photographs: number; camera: string; capturedAt: string | null; groundPixelCm: number;
     method: string; weedModel: string; treeModel: string;
-    /** How the photographs were placed: from their headers (absent in older bundles), or matched to each other with no position in the files (test mode: a stand-in place, no north, scale from the rows). */
-    placement?: "header" | "matched";
   };
   origin: { lat: number; lng: number };
   bounds: [LatLngPair, LatLngPair];

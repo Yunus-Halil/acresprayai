@@ -2,7 +2,7 @@
 // Field Twin page runs in its worker, so the port can be checked against the milestone scripts' twin.
 //
 //   npx vite-node scripts/directGeoref/buildTwinApp.ts -- [--dir directtestimagery] [--out data/direct-georef/twin-app]
-//       [--name "Apricot orchard"] [--id apricot-app] [--weeds saved|colour|colour-preview|none] [--views 2] [--every 2] [--drop-every 2] [--limit N] [--no-preview] [--holdout 0.3] [--no-gps 0.762]
+//       [--name "Apricot orchard"] [--id apricot-app] [--weeds saved|colour|colour-preview|none] [--views 2] [--every 2] [--drop-every 2] [--limit N] [--no-preview] [--holdout 0.3]
 //
 // --weeds saved reads the service's saved answers in data/direct-georef/apricot/m1/rfdetr/<photo>.json (the GPU
 // service need not run); none builds without weeds. Writes <out>/<id>/{twin.json, atlas-N.jpg, report.json}.
@@ -26,8 +26,6 @@ const WEEDS = arg("weeds", "saved");
 const USE_PREVIEW = !argv.includes("--no-preview");
 const HOLDOUT = Number(arg("holdout", "0"));
 const CELL = Number(arg("cell", "0.08"));
-// --no-gps SPACING: test mode, the headers' positions ignored and the photographs placed by matching, the scale from rows SPACING metres apart.
-const NO_GPS = argv.includes("--no-gps") ? Number(arg("no-gps", "0.762")) : null;
 const SAVED = resolve(ROOT, "data/direct-georef/apricot/m1/rfdetr");
 
 let files = readdirSync(DIR).filter(f => /\.jpe?g$/i.test(f)).sort();
@@ -59,7 +57,7 @@ const colourPixels = WEEDS === "colour-preview" ? "preview" : "quarter";
 
 const t0 = Date.now();
 let lastStage = "";
-const out = await buildFieldTwin(photos, { name: NAME, id: ID, detector, weedTier, colourPixels, weedViews: VIEWS, detectPlan: { tile: 1024, overlap: 256, scale: 1 }, usePreview: USE_PREVIEW, holdOutShare: HOLDOUT, rowRasterCellM: CELL, placement: NO_GPS ? { kind: "matched", rowSpacingM: NO_GPS } : undefined }, nodeCodec, {
+const out = await buildFieldTwin(photos, { name: NAME, id: ID, detector, weedTier, colourPixels, weedViews: VIEWS, detectPlan: { tile: 1024, overlap: 256, scale: 1 }, usePreview: USE_PREVIEW, holdOutShare: HOLDOUT, rowRasterCellM: CELL }, nodeCodec, {
   onProgress: p => { if (p.stage !== lastStage) { lastStage = p.stage; console.log(`\n[${p.stage}]`); } if (p.total != null && p.done % 10 === 0) process.stdout.write(`  ${p.done}/${p.total} ${p.message} (${(p.elapsedMs / 1000).toFixed(0)} s)\n`); },
   log: line => console.log(`  ${line}`),
 });

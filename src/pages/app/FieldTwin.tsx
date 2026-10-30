@@ -184,7 +184,7 @@ export default function FieldTwin() {
           : <div className="grid h-full place-items-center text-sm text-neutral-500">{building ? "" : "Choose a twin to see the field, or build one from a flight's photographs."}</div>}
         {building && (
           <aside className="absolute right-3 top-3 bottom-3 z-[800] w-[420px] rounded-md border border-[#343834] bg-[#171a17]" aria-label="Twin builder">
-            <TwinBuilder onBuilt={b => void fromBuilder(b)} onClose={() => setBuilding(false)} testSwitches={reviewer} />
+            <TwinBuilder onBuilt={b => void fromBuilder(b)} onClose={() => setBuilding(false)} />
           </aside>
         )}
       </main>

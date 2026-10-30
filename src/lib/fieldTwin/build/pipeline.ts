@@ -7,12 +7,9 @@ import { alignCameras } from "./cameras";
 import { readPhotographs } from "./photos";
 import { rowsAndTrees } from "./rows";
 import { type BuildHooks, type BuildOptions, type BuildStage, type Codec, type PhotoSource, type StageTimings, checkCancelled } from "./types";
-import { type MatchPlacementResult, placeByMatching } from "./matchPlacement";
 import { findWeeds } from "./weeds";
 
 export type BuildReport = {
-  /** Test mode without GPS: how the photographs were matched and scaled; null on a flight with positions. */
-  matching: MatchPlacementResult["report"] | null;
   photographs: { given: number; read: number; refused: { name: string; reason: string }[]; previews: number };
   cameras: Record<string, unknown>;
   rows: Record<string, unknown> | null;
@@ -41,22 +38,15 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   const notes: string[] = [];
   const timed = async <T>(stage: BuildStage, fn: () => Promise<T>): Promise<T> => { const t = Date.now(); const v = await fn(); timings[stage] = Date.now() - t; return v; };
   if (!photos.length) throw new Error("no photographs");
-  const given = photos.length;
 
   const usePreview = options.usePreview ?? true;
-  // Test mode: no positions in the files, so the photographs are placed by matching them first; the ones that
-  // joined nothing are left out, and every later stage reads the made-up headers as if the camera had written them.
-  const matched = options.placement?.kind === "matched" ? await timed("matching", () => placeByMatching(photos, { rowSpacingM: options.placement!.rowSpacingM, stage: options.placement!.stage, decodeDown: down }, hooks)) : null;
-  if (matched) { notes.push(...matched.notes); for (const r of matched.refused) notes.push(`${r.name} left out: ${r.reason}`); photos = photos.filter(p => matched.metas.has(p.name)); }
-  const { reads, refused } = await timed("photographs", () => readPhotographs(photos, down, hooks, usePreview, matched?.metas));
+  const { reads, refused } = await timed("photographs", () => readPhotographs(photos, down, hooks, usePreview));
   for (const r of refused) notes.push(`${r.name} left out: ${r.reason}`);
   if (reads.length < 2) throw new Error(reads.length ? "only one photograph holds a camera: a twin needs overlapping photographs" : `no photograph holds a camera (${refused[0]?.reason ?? "unknown"})`);
   checkCancelled(hooks.signal);
 
   const pool = options.pool ?? null;
-  // Photographs placed by matching already agree with each other; the camera fit may refine them only where the
-  // soil ties reach a fifth of the photographs (a flight with GPS keeps the fit as before).
-  const cams = await timed("cameras", () => alignCameras(reads, hooks, 40, options.holdOutShare ?? 0, pool, matched ? Math.max(3, Math.ceil(0.2 * reads.length)) : 0));
+  const cams = await timed("cameras", () => alignCameras(reads, hooks, 40, options.holdOutShare ?? 0, pool));
   if (cams.report.note) notes.push(cams.report.note);
   const previews = reads.filter(r => r.source === "preview").length;
   if (usePreview && previews) notes.push(`${previews} of ${reads.length} photographs read from the camera's own ${reads.find(r => r.source === "preview")!.viewW} x ${reads.find(r => r.source === "preview")!.viewH} preview`);
@@ -77,7 +67,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   for (const f of weeds.photographsFailed) notes.push(`${f.name}: the weed model gave no answer (${f.reason})`);
 
   const later = options.atlases === "later";
-  const built = await timed("bundle", () => assembleBundle({ id: options.id, name: options.name, photos: kept, reads, frames: cams.frames, model: cams.model, rows, weeds, detector: options.detector, cameraReport: cams.report as unknown as Record<string, unknown>, codec, down, pool, files: photoFiles, placement: matched ? "matched" : "header" }, hooks, !later));
+  const built = await timed("bundle", () => assembleBundle({ id: options.id, name: options.name, photos: kept, reads, frames: cams.frames, model: cams.model, rows, weeds, detector: options.detector, cameraReport: cams.report as unknown as Record<string, unknown>, codec, down, pool, files: photoFiles }, hooks, !later));
   const ev = await timed("evidence", () => evidenceAndBoundary(built.twin, kept, cams.frames, cams.model, pixels, options.evidenceCellM ?? 0.25, hooks));
   if (ev.note) notes.push(ev.note);
   timings.boundary = ev.classifyMs; timings.evidence = ev.sampledMs;
@@ -89,8 +79,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   // Bytes, never a Blob: Node has Blob too, and the scripts write files. The worker wraps the bytes for the page.
   files.set("twin.json", new TextEncoder().encode(json));
   const report: BuildReport = {
-    matching: matched?.report ?? null,
-    photographs: { given: given, read: reads.length, refused, previews },
+    photographs: { given: photos.length, read: reads.length, refused, previews },
     cameras: cams.report as unknown as Record<string, unknown>,
     rows: rows?.report ?? null,
     weeds: { detections: weeds.detections, photographsRun: weeds.photographsRun, failed: weeds.photographsFailed, stats: weeds.stats },

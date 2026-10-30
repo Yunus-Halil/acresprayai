@@ -131,11 +131,9 @@ export const yieldToEvents = () => new Promise<void>(r => setTimeout(r, 0));
 
 /**
  * The adjusted cameras. With too few ties (a flight with little overlap, or no bare soil) the header-only cameras
- * are kept and the report says so; nothing is invented. `minTiePairs` also asks the ties to be spread over that
- * many photo pairs (a closed corn canopy leaves bare soil in a handful, and four flight-wide numbers fitted to
- * three pairs tilt every photograph).
+ * are kept and the report says so; nothing is invented.
  */
-export async function alignCameras(reads: PhotoRead[], hooks: BuildHooks = {}, minTies = 40, holdOutShare = 0, pool: Pool | null = null, minTiePairs = 0): Promise<CameraResult> {
+export async function alignCameras(reads: PhotoRead[], hooks: BuildHooks = {}, minTies = 40, holdOutShare = 0, pool: Pool | null = null): Promise<CameraResult> {
   const t0 = Date.now();
   const { bases } = baseFrames(reads);
   const byName = new Map(reads.map(r => [r.name, r]));
@@ -166,7 +164,6 @@ export async function alignCameras(reads: PhotoRead[], hooks: BuildHooks = {}, m
   const first = await findAllTies(bases.map(b => b.frame), byName, hooks, "ties, header cameras", t0, tieOpts, pool, placement);
   hooks.log?.(`${first.ties.length} ties in ${first.pairsWithTies} of ${first.pairs} pairs`);
   const trainOf = (ties: SoilTie[]) => ties.filter(t => !heldOut(t));
-  if (first.pairsWithTies < minTiePairs) return result(headerOnly, first.ties, first.ties.length, first.pairs, first.pairsWithTies, first.rejected, `soil ties in only ${first.pairsWithTies} photo pairs (${minTiePairs} needed): the cameras are kept as placed, not fitted`);
   if (trainOf(first.ties).length < minTies) return result(headerOnly, first.ties, first.ties.length, first.pairs, first.pairsWithTies, first.rejected, `only ${first.ties.length} soil ties (${minTies} needed): header-only placement, photographs may disagree by a metre or more`);
   checkCancelled(hooks.signal);
   hooks.onProgress?.({ stage: "cameras", done: 0, total: null, message: "fitting the four flight-wide numbers", elapsedMs: Date.now() - t0 });

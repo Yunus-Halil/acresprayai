@@ -88,46 +88,6 @@ The builder takes TIFFs beside JPEGs (`.tif`, `.tiff`; the folder picker takes b
 - Not tested on a real multispectral set: none is on this machine. The first real set decides the shift's sign
   and whether the per-band stretch gives the colour rules what they need.
 
-## Photographs without GPS (test switch, 2026-10-30)
-
-Yunus's corn photographs (`directtestimagery/midphase`) carry no position: the headers were stripped. They turned
-out to be one serpentine flight (1 to 16 up, 17 the turn, 18 to 28 back, 36/37/41/45 a third pass beside), so a
-twin can be built from the overlaps alone. Behind a test switch for the reviewer accounts
-(`lib/fieldTwin/reviewers.ts`): "Photographs without GPS" in the builder, with the row spacing that sets the scale.
-
-- `src/lib/fieldTwin/build/matchPlacement.ts`, a stage before everything else (`BuildOptions.placement`):
-  - every photograph shrunk to a 256-cell grey canvas, tapered at its own edges, and phase-correlated against every
-    other one at the four quarter turns (a quarter turn of the square canvas is a re-indexing of its spectrum, so
-    it costs one inverse transform), then at -3 to +3 degrees around the best turn with a parabola through the peak;
-  - a pair is kept at a peak of 0.06 or more and 20 % or more shared ground; the turns are solved over a spanning
-    tree of the strongest pairs and averaged, the places by least squares over every pair, the worst pair dropped
-    while one disagrees (3 degrees, 2 cells and 4 x the median), and the largest joined group is kept;
-  - the scale: the continuous-row reader (both stage variants) on up to ten placed photographs with the scale
-    unknown, each reading the row pitch in pixels; the reading most photographs agree on (within 5 %) times the
-    operator's row spacing is the pixel size;
-  - the camera assumed: straight down, a 24 mm-equivalent lens, no lens distortion; the height follows from the scale;
-  - each photograph gets a DJI-like header (position on a stand-in plane near 0, 0, height, gimbal yaw, pitch -90),
-    and the build runs on as on a flight with GPS: soil ties, the camera fit, rows, weeds, the bundle.
-- The twin says so: `source.placement = "matched"` and the method text; the viewer drops the surroundings, the
-  mini-map and the north arrow and shows a note that the twin is not on the map.
-- Checked: `src/test/matchPlacement.test.ts` (a synthetic serpentine flight cut from one textured ground with known
-  turns and places comes back within 1 degree and 2.5 cells, a photograph off on its own is left out; the made-up
-  headers project through the real camera model as the placement says; the JPEG size from the frame header).
-  `scripts/directGeoref/matchProbe.ts` places a folder and draws the mosaic through the camera model
-  (`<photos>/outputs/no-gps-match/`); `buildTwinApp.ts --no-gps 0.762` builds the whole twin in Node.
-- On the 40 mid photographs: 32 placed (68, 72, 75, 86 alone; 88 to 91 a separate strip), 116 overlapping pairs,
-  none dropped; the scale 0.50 cm a pixel, the mid variant agreeing on almost every photograph (the early variant
-  locks on half or double pitches, which is why it is the agreed reading and not a median).
-- The whole build in Node (`buildTwinApp.ts --no-gps 0.762 --weeds none`): 95 s, 32 photographs; the soil ties
-  found bare soil in only 3 of 489 pairs under the canopy, so the camera fit is skipped in this mode unless the ties
-  reach a fifth of the photographs (`alignCameras` `minTiePairs`; fitted on those 3 it tilted every photograph by
-  up to 3 degrees, about 2 m between the passes); the twin's row stage is the orchard reader and reads no corn
-  rows, so the twin holds the photo footprints and 11 vegetation patches, and the builder sets the weed pass to
-  none when the switch is on (the colour rules with no rows would call every corn plant a weed).
-- Limits: all pairs are tried (fine for a test flight of tens of photographs; hundreds would need the flight order
-  to prune them); one flight; a field with no rows has no scale and is refused; north and place unknown, so nothing
-  from such a twin can drive a sprayer.
-
 ## Limits
 
 - The weed model needs the local service (development builds, `VITE_WEED_VISION_PREVIEW`): on the live site the
