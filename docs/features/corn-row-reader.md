@@ -452,3 +452,63 @@ summary gains a "Second look along the rows" line and the gaps line says what th
 `src/test/rowCropEmergenceV2.test.ts` (a rendered field with pale seedlings, skips and a later planting: V1's rows kept,
 pale ones possible or plants, skips missing and never plants, the control quiet, the later planting set apart); two
 of its four tests fail with V2 switched off. `EMERGENCE.recover` and `EMERGENCE.extraPlantings` switch V2 off.
+
+## Emergence V2: the audit, and rows that run to the field's edge (2026-11-02, later)
+
+V2 was frozen (tag `emergence-v2-frozen`, 4a58281) and audited on all 23 photographs without changing it
+(`scripts/rowCrop/emergenceAudit.ts`, output in `outputs/emergence-audit/`), on three questions from a review.
+
+**Do the lines follow the seedlings or the soil furrows? The seedlings.** At 115 clear seedlings sampled across the 23
+photographs (centre, middle and rim of the frame), the seedling sits a median 1.1 cm from its drawn line (90th
+percentile 2.6 cm), the same at the rim as in the centre. Around each, across a window 1 m along the line, the green
+peaks 0.5 cm from the line and the darkest band (the soil furrow) 9.9 cm away; in 108 of the 115 the two part by 2 cm
+or more and the line is on the plants. The 108 crops cut for the eye (`seedlings-1.jpg`, `seedlings-2.jpg`, the line
+dotted, ticks every 2 cm) show the line through the plants in all but two or three; in several a dark soil streak runs
+beside the plants and the line stays on the plants. These seedlings come from the mask the rows were fitted to, so the
+distance measures the fit; the furrow offset and the crops are the part independent of it.
+
+**The red off-row patches.** 1,846 on the frozen version, a median 19 cm from a line. In a sample of 48 cut for the eye
+most rings sit on a green leaf; a few on dry residue, a pebble or bare soil. Whether a green one is a weed or a corn leaf
+reaching past the 6 cm band cannot be told from the crop alone; `off-row.jpg` now draws the nearest line.
+
+**The row ends: the failure.** Yunus's screenshot showed rows stopping a metre before the verge with seedlings
+continuing to the grass ("we should be able to tell it's corn because it is, and stop when the field and the non-corn
+stuff come"). Of 121 row ends in the bottom fifth of the frames, 61 had clear seedlings within 3 cm of the line's
+extension in the next metre, 176 seedlings in all, counted nowhere (not plants, not weeds). Two causes, found by
+instrumenting a scratch copy of the reader:
+
+1. **The verge's margin.** Solid green was left out in cells of about 55 cm grown by a whole cell: up to a metre of
+   seedlings before every verge was never looked at. Now the coarse zone's edge is refined at cells a quarter the size
+   (about 14 cm): a fine cell is grass when it is over 30 % green itself and its 3 x 3 neighbourhood over 15 %, grown
+   only into neighbouring cells over 12 % green (the grass's ragged fringe), so a cell with a seedling on soil stays in
+   the field. A seedling's "on soil" test falls back to the fine neighbourhood (42 cm under 8 % green) wherever the
+   coarse cell is crowded (grass or a clover patch beside the seedlings); it can only add points.
+2. **A row split by plants too big to be points.** A stretch over 1.5 m with no seedling point split a row and the short
+   tail beyond was dropped (photograph 35: two rows lost two metres). The stretch held seedlings over the point size
+   cap. Now a row is split only where the strict seedling mask has no green on the fitted line for 1.5 m, and green
+   inside solid-green ground does not count (the first version of this let four rows of photograph 3 run across the
+   verge to the road; caught by eye and fixed before commit).
+
+Near a verge, green that is part of the grass's fringe, or past the rows' ends on the headland's stubble strip, is not
+judged; only a patch on soil within the rows' length is a weed candidate there.
+
+| | Frozen | Now |
+|---|---|---|
+| Bottom row ends with seedlings past them | 61 of 121 | 27 of 135 |
+| Seedlings past those ends | 176 | 31 |
+| Rows | 639 | 659 |
+| Plants on the rows | 67,732 | 70,362 |
+| Line to seedling, median (90th pct) | 1.1 cm (2.6) | 1.1 cm (2.8) |
+| Line to the darkest soil band, median | 9.4 cm | 11.8 cm |
+| Off-row patches | 1,846 | 2,298 |
+| Gaps | 870, 395 m | 972, 455 m |
+| Time per photograph, median (max) | 1.36 s (1.60) | 1.58 s (1.88) |
+
+The extra off-row patches are on the strips beside verges that were never looked at before (3, 4, 35 and 36 carry
+most); the ones seen by eye on 3 and 35 are green on soil at the field's edge, clover-like, as in Yunus's screenshot.
+The extra gaps come with the longer rows. Rows on 3, 4, 21 and 35 now run to the field's edge without crossing the verge.
+
+**Still open.** 27 bottom ends still have a seedling or two past them (photograph 21 has 10: seedlings over the size cap
+with gaps between them, rows half a metre short of the grass). The size cap on seedling points is a share of the frame's
+long side, a fixed number a different camera or height would need re-set. Off-row patches are not yet sorted into weeds
+and corn leaves past the band. Everything here is one field: transfer to another field is untested.

@@ -27,6 +27,18 @@ export const EMERGENCE = {
   solidGreenShare: 0.15,
   /** A seedling point stands in a cell at most this share green (a seedling row is about 2 % green). */
   soilGreenMax: 0.08,
+  /**
+   * The verge's edge, at a finer cell (this share of the coarse cell, about 14 cm on these photographs; Yunus,
+   * 2026-11-02: "it is corn, so follow it, and stop when the non-corn stuff comes"). The coarse exclusion grown by a
+   * whole cell cut up to a metre of seedlings off every row ending at a verge. Inside the coarse zone a pixel is left
+   * out where its fine cell is solidly green itself and part of green ground; grass is continuous green, a fine cell with
+   * a seedling on soil is a few percent to a fifth. Grown only into neighbouring cells that are green themselves.
+   */
+  edgeCellShare: 0.25,
+  /** A fine cell is grass when it is this green itself (and its 3 x 3 neighbourhood over solidGreenShare) ... */
+  edgeOwnGreen: 0.3,
+  /** ... and the grass grows into a neighbouring fine cell this green (its ragged fringe), never into a seedling's cell on soil. */
+  edgeFringeGreen: 0.12,
   /** A component larger than this square (share of the long side) is not a seedling point for the direction and pitch. */
   pointMaxSideShare: 1 / 250,
   /** Fewest pixels in a point. */
@@ -155,7 +167,8 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   const veg = greenN / (W * H);
   if (veg < 0.0005) return empty("Almost no green in the photo: no seedlings to read.", r3(veg));
 
-  // 2. Solid green (a verge, a lawn): cells over EMERGENCE.solidGreenShare, grown by one cell, left out.
+  // 2. Solid green (a verge, a lawn): cells over EMERGENCE.solidGreenShare, grown by one cell, then its edge refined at
+  // a finer cell so the rows run up to the grass (EMERGENCE.edgeCellShare).
   const cell = Math.max(4, Math.round(L * E.solidCellShare)), cw = Math.ceil(W / cell), ch = Math.ceil(H / cell);
   const cg = new Float32Array(cw * ch), cn = new Float32Array(cw * ch);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const c = Math.floor(y / cell) * cw + Math.floor(x / cell); cn[c]++; cg[c] += mask[y * W + x]; }
@@ -166,9 +179,26 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     if (!solid[cy * cw + cx]) continue;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = cx + dx, yy = cy + dy; if (xx >= 0 && yy >= 0 && xx < cw && yy < ch) grown[yy * cw + xx] = 1; }
   }
+  // The edge refined: fine cells inside the coarse zone, solid where their 3 x 3 neighbourhood is, grown by one.
+  const fcell = Math.max(2, Math.round(cell * E.edgeCellShare)), fw = Math.ceil(W / fcell), fh = Math.ceil(H / fcell);
+  const fg = new Float32Array(fw * fh), fn = new Float32Array(fw * fh);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const c = Math.floor(y / fcell) * fw + Math.floor(x / fcell); fn[c]++; fg[c] += mask[y * W + x]; }
+  /** Green share of the 3 x 3 fine cells around fine cell (fx, fy). */
+  const fineNb = (fx: number, fy: number) => { let g = 0, n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = fx + dx, yy = fy + dy; if (xx < 0 || yy < 0 || xx >= fw || yy >= fh) continue; g += fg[yy * fw + xx]; n += fn[yy * fw + xx]; } return n ? g / n : 0; };
+  const inCoarse = (fx: number, fy: number) => grown[Math.min(ch - 1, Math.floor(((fy + 0.5) * fcell) / cell)) * cw + Math.min(cw - 1, Math.floor(((fx + 0.5) * fcell) / cell))] === 1;
+  const fsolid = new Uint8Array(fw * fh);
+  const own = (fx: number, fy: number) => { const c = fy * fw + fx; return fn[c] ? fg[c] / fn[c] : 0; };
+  for (let fy = 0; fy < fh; fy++) for (let fx = 0; fx < fw; fx++) if (inCoarse(fx, fy) && own(fx, fy) > E.edgeOwnGreen && fineNb(fx, fy) > E.solidGreenShare) fsolid[fy * fw + fx] = 1;
+  // Grown by one fine cell, but only into cells that are green themselves (the grass's ragged fringe); a cell holding
+  // a seedling or two on soil is under that and stays in the field.
+  const fgrown = new Uint8Array(fsolid);
+  for (let fy = 0; fy < fh; fy++) for (let fx = 0; fx < fw; fx++) {
+    if (!fsolid[fy * fw + fx]) continue;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = fx + dx, yy = fy + dy; if (xx >= 0 && yy >= 0 && xx < fw && yy < fh && own(xx, yy) > E.edgeFringeGreen) fgrown[yy * fw + xx] = 1; }
+  }
   const skip = new Uint8Array(W * H);
   let solidPx = 0;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (grown[Math.floor(y / cell) * cw + Math.floor(x / cell)]) { skip[y * W + x] = 1; solidPx++; }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (fgrown[Math.floor(y / fcell) * fw + Math.floor(x / fcell)]) { skip[y * W + x] = 1; solidPx++; }
   const excludedShare = solidPx / (W * H);
   if (excludedShare > 0.01) notes.push(`${Math.round(excludedShare * 100)}% of the photo is solid green (a verge, a lawn, a hedge) and is left out of the rows.`);
 
@@ -182,7 +212,9 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   const maxSide = Math.max(3, L * E.pointMaxSideShare);
   // A seedling stands on soil: in a cell over EMERGENCE.soilGreenMax green (thin grass, a weedy headland, the dark
   // corner of a verge) green specks line up along any line drawn through them, so they are no seedling points.
-  const onSoil = (c: Comp) => { const k = Math.floor(c.y / cell) * cw + Math.floor(c.x / cell); return cn[k] > 0 && cg[k] / cn[k] <= E.soilGreenMax; };
+  // A coarse cell can hold grass or a weed patch beside the seedlings (at a verge, beside a clover patch: photograph
+  // 35's rows lost 2 m of seedlings that way); there the fine neighbourhood decides (it can only add points).
+  const onSoil = (c: Comp) => { const k = Math.floor(c.y / cell) * cw + Math.floor(c.x / cell); if (cn[k] > 0 && cg[k] / cn[k] <= E.soilGreenMax) return true; const fx = Math.floor(c.x / fcell), fy = Math.floor(c.y / fcell); return !fgrown[fy * fw + fx] && fineNb(fx, fy) <= E.soilGreenMax; };
   const points = comps.filter(c => c.n >= E.pointMinPx && c.n <= maxSide * maxSide && onSoil(c));
   if (points.length < E.minPoints) return empty(`Only ${points.length} seedling-sized green points on the soil: no rows of seedlings to read (is the crop up, or is this a later stage?).`, r3(veg));
 
@@ -347,7 +379,7 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
       if (sHi - sLo < E.extraMinWidthPitches * pitchPx) continue;
       // Mostly soil there? (a verge beside the field is solid green and skipped)
       let soilCells = 0, cells = 0;
-      for (let cy = 0; cy < ch; cy++) for (let cx = 0; cx < cw; cx++) { const x = (cx + 0.5) * cell, y = (cy + 0.5) * cell; const sv0 = S(x, y); if (sv0 < sLo || sv0 > sHi) continue; cells++; if (!grown[cy * cw + cx]) soilCells++; }
+      for (let fy = 0; fy < fh; fy++) for (let fx = 0; fx < fw; fx++) { const x = (fx + 0.5) * fcell, y = (fy + 0.5) * fcell; const sv0 = S(x, y); if (sv0 < sLo || sv0 > sHi) continue; cells++; if (!fgrown[fy * fw + fx]) soilCells++; }
       if (!cells || soilCells < 0.5 * cells) continue;
       const maxPx = maxSide * maxSide * f * f;
       const specks = relaxedIn(ftLo, ftHi, sLo, sHi, maxPx);
@@ -428,8 +460,21 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     // The row is split at every empty stretch over EMERGENCE.endTrimM; runs with fewer than minRowPoints plants (and
     // under a tenth of the longest run) are dropped, wherever they are.
     const lone = E.endTrimM / gsdW;
+    // A stretch is empty only when the strict mask holds no green on the fitted line along it for EMERGENCE.endTrimM:
+    // a seedling over the point size cap is still a plant there (photograph 35 lost two metres of two rows to that).
+    const emptyFor = (ta: number, tb: number) => {
+      const step = 0.02 / gsdW, half = 0.01 / gsdW, across = 0.03 / gsdW;
+      let longest = 0, run = 0;
+      for (let t = ta + step; t < tb; t += step) {
+        const sE = evalPoly(fit.c, fit.t0, t), [xP, yP] = toPhoto(t, sE);
+        const wi = Math.min(H - 1, Math.max(0, Math.round((yP - (f - 1) / 2) / f))) * W + Math.min(W - 1, Math.max(0, Math.round((xP - (f - 1) / 2) / f)));
+        // Green inside solid-green ground (a verge, a lawn) is grass, never a plant holding the row together.
+        if (!skip[wi] && strictIn(t, sE, half, across)) run = 0; else { run += step; if (run > longest) longest = run; }
+      }
+      return longest;
+    };
     const runs: (typeof plants)[] = [[]];
-    for (const p of plants) { const run = runs[runs.length - 1]; if (run.length && p.t - run[run.length - 1].t > lone) runs.push([p]); else run.push(p); }
+    for (const p of plants) { const run = runs[runs.length - 1]; if (run.length && p.t - run[run.length - 1].t > lone && emptyFor(run[run.length - 1].t, p.t) > lone) runs.push([p]); else run.push(p); }
     const longest = Math.max(...runs.map(r => r.length));
     plants.splice(0, plants.length, ...runs.filter(r => r.length >= E.minRowPoints && r.length >= 0.1 * longest).flat());
     if (plants.length < E.minRowPoints) { rowsDropped++; continue; }
@@ -518,7 +563,7 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   };
   const compIndex = new Map(points.map((p, i) => [p, i]));
   const weeds: RowCropWeed[] = [];
-  let specks = 0, noRows = 0, weedArea = 0, cropComponents = 0, laterGreen = 0;
+  let specks = 0, noRows = 0, weedArea = 0, cropComponents = 0, laterGreen = 0, vergeGreen = 0;
   const minWeedPx = (E.minWeedCm2 / 1e4) / (gsdW * gsdW);
   for (const c of comps) {
     const pi = compIndex.get(c);
@@ -526,6 +571,9 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     const t = T(c.x, c.y), s = S(c.x, c.y), nr = nearestRow(t, s);
     if (nr.d * gsdW <= E.bandHalfM) { cropComponents++; continue; }
     if (laterGround.some(g => s >= g.sLo && s <= g.sHi)) { laterGreen++; continue; } // the later planting's ground
+    // Near a verge (the coarse zone the fine edge opened up): green that is part of the grass's fringe is not judged,
+    // nor anything past the rows' ends (the headland's stubble strip); only a patch on soil within the rows' length is.
+    if (grown[Math.floor(c.y / cell) * cw + Math.floor(c.x / cell)] && (fineNb(Math.floor(c.x / fcell), Math.floor(c.y / fcell)) > E.soilGreenMax || !(kept.some(k => t >= k.tLo - 0.1 / gsdW && t <= k.tHi + 0.1 / gsdW && Math.abs(s - evalPoly(k.c, k.t0, t)) < pitchPx)))) { vergeGreen++; continue; } // ... and past the rows' ends toward a verge is headland, not field
     if (c.n < minWeedPx) { specks++; continue; }
     const hullPts: [number, number][] = c.px.map(p => { const x = p % W, y = (p - x) / W; return [x * f + (f - 1) / 2, y * f + (f - 1) / 2] as [number, number]; });
     const areaM2 = c.n * gsdW * gsdW;
@@ -551,14 +599,14 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   }
   let open = new Map<string, { x0: number; x1: number; y0: number; y1: number }>();
   const close = (r: { x0: number; x1: number; y0: number; y1: number }) => {
-    const X0 = r.x0 * cell * f, X1 = Math.min(W, r.x1 * cell) * f, Y0 = r.y0 * cell * f, Y1 = Math.min(H, r.y1 * cell) * f;
+    const X0 = r.x0 * fcell * f, X1 = Math.min(W, r.x1 * fcell) * f, Y0 = r.y0 * fcell * f, Y1 = Math.min(H, r.y1 * fcell) * f;
     excluded.push({ hull: [[X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]], areaM2: r3(((X1 - X0) / f) * ((Y1 - Y0) / f) * gsdW * gsdW), reason: "solid green: a verge, a lawn or a hedge, not seedlings" });
   };
-  for (let cy = 0; cy <= ch; cy++) {
+  for (let cy = 0; cy <= fh; cy++) {
     const next = new Map<string, { x0: number; x1: number; y0: number; y1: number }>();
-    if (cy < ch) for (let cx = 0; cx < cw;) {
-      if (!grown[cy * cw + cx]) { cx++; continue; }
-      let ex = cx; while (ex < cw && grown[cy * cw + ex]) ex++;
+    if (cy < fh) for (let cx = 0; cx < fw;) {
+      if (!fgrown[cy * fw + cx]) { cx++; continue; }
+      let ex = cx; while (ex < fw && fgrown[cy * fw + ex]) ex++;
       const key = `${cx}:${ex}`, prev = open.get(key);
       if (prev) { prev.y1 = cy + 1; next.set(key, prev); open.delete(key); } else next.set(key, { x0: cx, x1: ex, y0: cy, y1: cy + 1 });
       cx = ex;
@@ -569,6 +617,7 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
 
   notes.push(`Emergence: every seedling is a point, a row is the line the points stand on; ${plantsTotal.toLocaleString()} plants on ${rowsOut.length} rows (seedling pieces within ${Math.round(E.plantMergeM * 100)} cm along a row counted as one plant). The count is from the photo and has not been checked against plants counted on the ground.`);
   if (gapsN) notes.push(`${gapsN} gap${gapsN === 1 ? "" : "s"} along the rows (${gapLen.toFixed(1)} m in all): stretches with no plant found longer than ${E.gapSpacings} x the row's own plant spacing (at least ${Math.round(E.gapMinM * 100)} cm). A gap is where no seedling was seen, not yet a confirmed skip: pale seedlings in the dim corners of the frame are missed, so gaps there run long.`);
+  if (vergeGreen) notes.push(`${vergeGreen} green patch${vergeGreen === 1 ? "" : "es"} at the edge of the verge (the grass's fringe, or past the rows' ends on the headland), not judged.`);
   if (weeds.length) notes.push(`${weeds.length} green patch${weeds.length === 1 ? "" : "es"} off the rows: on soil this young, anything green off the planter's line is a weed candidate or a volunteer.`);
   // Row spacing and direction, for the read's own consistency: the main rows' neighbouring spacings at their common middle.
   const mainRows = kept.filter(k => k.comb === 0);
