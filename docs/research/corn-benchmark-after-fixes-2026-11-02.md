@@ -83,9 +83,35 @@ stand's 90th-percentile seedling to be drawn red; smaller is counted apart in gr
 The trade is the one asked for: small green at the edge is no longer called a weed, real weeds there included (they
 stay counted, in grey). What now dominates the red marks is the corn seedling's own leaves within 13 cm of the row.
 
+## Straw is not green, and green touching the row is the crop (Yunus, the same night)
+
+On the pictures with the edge rule, Yunus: straw at the headland still drawn red ("it obviously looks like straw ...
+it's not even green") and patches touching the row line ("it is literally in the row ... it obviously is the crop").
+
+Why straw passed: the seedling test judges each pixel against the soil right beside it, and pale straw with a few
+grass blades is lighter and a little tinted against brown soil. Measured inside every audited off-row patch, the mean
+G - R of its pixels: every real weed over 70 cm² above 0, the straw and stubble red marks below it.
+
+Built (`EMERGENCE.minGreenOverRed` 0, `edgeMinGreenOverRed` 5, `edgeMinStrongShare` 0.6, `touchRowIsCrop`,
+`touchRowFactor` 3): a patch with no more green than red is not a plant and is not counted; at the field's edge a red
+mark must also be clearly green over most of its pixels; a patch any part of which lies within the row's 6 cm band is
+the crop's own leaf, unless clearly green and over three times the stand's large seedlings.
+
+| Measure (emergence, 23 photographs) | Edge rule only | With colour and row rules |
+|---|---|---|
+| Red weed candidates | 108 | 49 |
+| Grey small green | 2,165 | 623 |
+| Audited red marks, both samples, decided | 32 to 38 % weeds | 5 of 7 red marks are weeds |
+| Of the 17 decided real weeds | 6 red, 4 grey, rest red or grey by size | 5 red, 6 grey, 6 not counted (4 tiny and not green, 2 touching the row) |
+| Straw, stubble, soil marks (25 decided) | 1 red | 0 red |
+| Time a photograph, median (max) | 1.62 s | 1.73 s (2.01 s) |
+
+All 49 remaining red marks looked at on the photographs: about 40 are clearly leafy weeds in the middle of the alleys,
+about 9 are small, faint marks that cannot be told; none sits in the straw, none touches a row.
+
 ## What is left, weakest first
 
-1. Emergence red weed candidates: with the edge rule, 10 of 16 decided are still wrong, 9 of them the corn seedling's
-   own leaves within 13 cm of the row. Position along the row does not separate them (weeds stand beside corn too).
+1. Emergence: the price of the rules is recall. Weeds at the verge are grey, weeds touching the row are counted as the
+   crop. About 9 of the 49 red marks are too small and faint to judge.
 2. Emergence row ends: 3 of 13 still stop while seedlings go on.
 3. Establishment field ends at the frame's right edge on photographs 70 to 72: 3 of 16 declared where the row runs on.

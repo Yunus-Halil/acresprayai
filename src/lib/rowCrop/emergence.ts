@@ -126,6 +126,24 @@ export const EMERGENCE = {
    */
   edgeZoneM: 1.0,
   edgeFactor: 3,
+  /**
+   * Touching the row (Yunus, 2026-11-02: "it is literally in the row ... it obviously is the crop"). A patch any part of
+   * which lies within the row's band (bandHalfM of the fitted line) is the crop's own leaf, not a weed, unless it is
+   * clearly green and larger than touchRowFactor times the stand's 90th-percentile seedling. Off: only the patch's
+   * centre is tested, as before.
+   */
+  touchRowIsCrop: true,
+  touchRowFactor: 3,
+  /**
+   * Its own colour (Yunus: "it obviously looks like straw ... it's not even green"). The seedling test judges a pixel
+   * against the soil right beside it, so pale straw with a few grass blades through it passes. A plant's leaf reflects
+   * more green than red: a patch whose mask pixels average G - R at or under minGreenOverRed is straw, residue or soil,
+   * never a plant (every real weed in the validation sample was over 0, the red straw marks under it). At the field's
+   * edge a weed must also be mostly clearly green: edgeMinGreenOverRed and edgeMinStrongShare of its pixels.
+   */
+  minGreenOverRed: 0,
+  edgeMinGreenOverRed: 5,
+  edgeMinStrongShare: 0.6,
 };
 
 type Comp = { x: number; y: number; n: number; px: number[] };
@@ -630,7 +648,27 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   };
   const compIndex = new Map(points.map((p, i) => [p, i]));
   const weeds: RowCropWeed[] = [];
-  let specks = 0, noRows = 0, weedArea = 0, cropComponents = 0, laterGreen = 0, vergeGreen = 0, smallGreen = 0, edgeSmall = 0;
+  let specks = 0, noRows = 0, weedArea = 0, cropComponents = 0, laterGreen = 0, vergeGreen = 0, smallGreen = 0, edgeSmall = 0, touchRow = 0, notGreen = 0;
+  /** A component's colour over its mask pixels at the photo's own pixel: mean G - R and the share clearly green against its soil. */
+  const colourOf = (c: Comp) => {
+    let n = 0, gr = 0, strong = 0;
+    for (const p of c.px) {
+      const wx = p % W, wy = (p - wx) / W;
+      for (let yy = wy * f; yy < wy * f + f && yy < px.height; yy++) for (let xx = wx * f; xx < wx * f + f && xx < px.width; xx++) {
+        const i = yy * px.width + xx; if (!seedFull[i]) continue;
+        const o = i * 4, b = Math.floor(yy / levels.B) * levels.gw + Math.floor(xx / levels.B);
+        n++; gr += px.rgba[o + 1] - px.rgba[o];
+        if (px.rgba[o + 1] - (px.rgba[o] + px.rgba[o + 2]) / 2 - levels.soilT[b] > SEEDLING_GREEN.strongTint) strong++;
+      }
+    }
+    return { gr: n ? gr / n : 0, strong: n ? strong / n : 0 };
+  };
+  /** The nearest any pixel of a component comes to a kept row's line, work pixels. */
+  const minDistToRow = (c: Comp) => {
+    let best = Infinity;
+    for (const p of c.px) { const x = p % W, y = (p - x) / W, t = T(x, y), sv0 = S(x, y); for (const k of kept) { if (t < k.tLo - pitchPx || t > k.tHi + pitchPx) continue; best = Math.min(best, Math.abs(sv0 - evalPoly(k.c, k.t0, t))); } }
+    return best;
+  };
   // Distance to left-out solid green (verge, lawn), work pixels, by a two-pass chamfer; and the rows' ends inside the photo.
   const edgePx = E.edgeZoneM / gsdW;
   let vergeDist: Float32Array | null = null;
@@ -669,8 +707,14 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     // Where no row was read (past every row's end, out beyond the outermost row) nothing is judged, as at establishment:
     // the validation's wrong calls there were the frame rim's own corn.
     if (status === "no rows here") { noRows++; continue; }
+    const col = E.tierBySeedlings ? colourOf(c) : null;
+    // Not green in its own colour: straw, residue or soil, never a plant.
+    if (col && col.gr <= E.minGreenOverRed) { notGreen++; continue; }
+    // Touching the row's band: the crop's own leaf, unless clearly green and much larger than the crop's seedlings.
+    if (E.touchRowIsCrop && seedlingAreaCm2 && minDistToRow(c) * gsdW <= E.bandHalfM && !(areaM2 * 1e4 > E.touchRowFactor * seedlingAreaCm2.p90 && col && col.strong >= E.edgeMinStrongShare)) { cropComponents++; touchRow++; continue; }
     const edge = !!seedlingAreaCm2 && E.tierBySeedlings && atFieldEdge(c, t, s), need = seedlingAreaCm2 ? (edge ? E.edgeFactor : 1) * seedlingAreaCm2.p90 : 0;
-    const tier = E.tierBySeedlings && seedlingAreaCm2 ? (areaM2 * 1e4 > need ? "larger than the crop" as const : "small green" as const) : undefined;
+    const greenEnough = !edge || !col || (col.gr >= E.edgeMinGreenOverRed && col.strong >= E.edgeMinStrongShare);
+    const tier = E.tierBySeedlings && seedlingAreaCm2 ? (areaM2 * 1e4 > need && greenEnough ? "larger than the crop" as const : "small green" as const) : undefined;
     if (edge && tier === "small green" && areaM2 * 1e4 > seedlingAreaCm2!.p90) edgeSmall++;
     if (tier === "small green") smallGreen++; else weedArea += areaM2;
     weeds.push({ ...(tier ? { tier } : {}),
@@ -715,6 +759,8 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   if (seedlingAreaCm2 && E.tierBySeedlings) {
     if (bigN) notes.push(`${bigN} green patch${bigN === 1 ? "" : "es"} off the rows larger than nearly all the crop's own seedlings (over ${seedlingAreaCm2.p90.toFixed(0)} cm², their 90th percentile here): weed candidates, the plants already out-growing the corn.`);
     if (smallGreen) notes.push(`${smallGreen} smaller green patch${smallGreen === 1 ? "" : "es"} off the rows, counted apart and not called weeds: at this pixel a tiny weed, a seedling just off the line, a leaf piece or a green fleck in the stubble look alike.`);
+    if (notGreen) notes.push(`${notGreen} patch${notGreen === 1 ? "" : "es"} off the rows passed the seedling test against the soil beside ${notGreen === 1 ? "it" : "them"} but ${notGreen === 1 ? "is" : "are"} not green in ${notGreen === 1 ? "its" : "their"} own colour (no more green than red: straw, residue or soil) and ${notGreen === 1 ? "is" : "are"} not counted.`);
+    if (touchRow) notes.push(`${touchRow} patch${touchRow === 1 ? "" : "es"} touching a row's band counted as the crop's own leaves, not weeds.`);
     if (edgeSmall) notes.push(`${edgeSmall} of them within ${E.edgeZoneM} m of the field's edge (the verge or the headland), where a patch must be ${E.edgeFactor} times the crop's large seedlings to be called a weed: stubble and grass at the edge look like small weeds.`);
   } else if (weeds.length) notes.push(`${weeds.length} green patch${weeds.length === 1 ? "" : "es"} off the rows: on soil this young, anything green off the planter's line is a weed candidate or a volunteer.`);
   if (v2.endStrict + v2.endPossible) notes.push(`Rows followed on past their last clear seedling to the frame or the field's edge: ${v2.endStrict} more plants clear, ${v2.endPossible} possible (the frame's dim rim hides seedlings from the strict test).`);

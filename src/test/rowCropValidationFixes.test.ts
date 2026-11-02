@@ -19,7 +19,7 @@ function rng(seed: number) { let s = seed >>> 0 || 1; return () => { s = (s * 16
 
 /** Bare soil at 1 cm, vertical rows 76 cm apart, a seedling every 16 cm; below `faintFrom` (share of the height) the
  * seedlings are faint (a tint the strict test misses and the relaxed one sees), as in a vignetted rim. */
-function emergenceField(o: { faintFrom?: number; weeds?: [number, number, number][]; flecks?: [number, number][]; vergeFrom?: number }) {
+function emergenceField(o: { faintFrom?: number; weeds?: [number, number, number][]; flecks?: [number, number][]; vergeFrom?: number; straw?: [number, number, number][] }) {
   const W = 1200, H = 1000, r = rng(5), rgba = new Uint8ClampedArray(W * H * 4);
   for (let i = 0; i < W * H; i++) { const n = (r() - 0.5) * 20; rgba[i * 4] = 128 + n; rgba[i * 4 + 1] = 108 + n; rgba[i * 4 + 2] = 88 + n; rgba[i * 4 + 3] = 255; }
   const blob = (x: number, y: number, rx: number, ry: number, c: [number, number, number]) => {
@@ -36,6 +36,8 @@ function emergenceField(o: { faintFrom?: number; weeds?: [number, number, number
   // A grass verge across the bottom (solid green), when asked for.
   if (o.vergeFrom != null) for (let y = Math.round(o.vergeFrom * H); y < H; y++) for (let x = 0; x < W; x++) { const q = (y * W + x) * 4, n = (r() - 0.5) * 40; rgba[q] = 60 + n; rgba[q + 1] = 140 + n; rgba[q + 2] = 50 + n; }
   for (const [x, y, rad] of o.weeds ?? []) blob(x, y, rad, rad, [70, 150, 55]);
+  // Straw: pale and a little yellow, lighter and tinted against the soil, but with no more green than red.
+  for (const [x, y, rad] of o.straw ?? []) blob(x, y, rad, rad, [178, 172, 120]);
   for (const [x, y] of o.flecks ?? []) blob(x, y, 1.2, 1.2, [70, 150, 55]);
   return { width: W, height: H, rgba };
 }
@@ -180,5 +182,29 @@ describe("emergence: a higher bar for weeds at the field's edge (Yunus, 2026-11-
     EMERGENCE.edgeFactor = 1;
     const read = readRowCrop(px, { stage: "emergence", gsdM: 0.01 });
     for (const [x, y] of atEdge) expect(tierAt(read, x, y), `at edge ${x},${y}`).toBe("larger than the crop");
+  });
+});
+
+describe("emergence: straw is not green, and green touching the row is the crop (Yunus, 2026-11-02)", () => {
+  // Under the solid-green share of a verge cell, so only the colour decides.
+  const straw: [number, number, number][] = [[372, 300, 5], [828, 520, 5]];
+  // Just off the planter's line (7 cm from rows at x = 30 + 76k): touching the 6 cm band.
+  const onRow: [number, number, number][] = [[30 + 76 * 3 + 7, 404, 3], [30 + 76 * 9 + 7, 612, 3]];
+  const px = emergenceField({ straw, weeds: onRow });
+  const at = (read: ReturnType<typeof readRowCrop>, x: number, y: number) => read.weeds.find(w => Math.hypot(w.x - x, w.y - y) < 8);
+
+  it("does not count straw, and counts a patch touching the row as the crop", () => {
+    const read = readRowCrop(px, { stage: "emergence", gsdM: 0.01 });
+    for (const [x, y] of straw) expect(at(read, x, y), `straw at ${x},${y}`).toBeUndefined();
+    for (const [x, y] of onRow) expect(at(read, x, y), `on the row at ${x},${y}`).toBeUndefined();
+    expect(read.notes.some(n => /not green in/.test(n))).toBe(true);
+    expect(read.notes.some(n => /touching a row/.test(n))).toBe(true);
+  });
+
+  it("without the colour rule the straw is a weed candidate, without the row rule the patch is too", () => {
+    EMERGENCE.minGreenOverRed = -999; EMERGENCE.touchRowIsCrop = false;
+    const read = readRowCrop(px, { stage: "emergence", gsdM: 0.01 });
+    for (const [x, y] of straw) expect(at(read, x, y)?.tier, `straw at ${x},${y}`).toBe("larger than the crop");
+    for (const [x, y] of onRow) expect(at(read, x, y), `on the row at ${x},${y}`).toBeDefined();
   });
 });
