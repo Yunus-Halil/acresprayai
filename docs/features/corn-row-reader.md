@@ -512,3 +512,37 @@ The extra gaps come with the longer rows. Rows on 3, 4, 21 and 35 now run to the
 with gaps between them, rows half a metre short of the grass). The size cap on seedling points is a share of the frame's
 long side, a fixed number a different camera or height would need re-set. Off-row patches are not yet sorted into weeds
 and corn leaves past the band. Everything here is one field: transfer to another field is untested.
+
+## Validation and the fixes it led to (2026-11-02, night)
+
+A visual validation of all four readers (573 sampled observations judged by eye from the unannotated originals;
+`directtestimagery/validation-2026-11-02/VALIDATION-REPORT.md`, gitignored) found the readers right on the crop and
+wrong at the frame's dim rim, at the verge and off the rows. The fixes, each re-checked on a fresh sample (seed 777;
+`directtestimagery/validation-2026-11-02-after/AFTER-FIXES.md`):
+
+- **Squeezed rows** (establishment, mid; `readRowCrop.ts`): two strip peaks with bare soil between them are two rows
+  however close (a frame corner squeezes rows to two thirds of their spacing; photograph 72 lost its outer row and its
+  corn became weed candidates); traces are compared where they overlap, not by their mean position.
+- **Rows followed to the frame** (emergence, `EMERGENCE.extendEnds`): from each end, one plant spacing at a time along
+  the row's last stretch, strict test then the light-scaled relaxed one with both alleys quiet; stops at the frame, a
+  verge, the later planting, green alleys or two empty positions. Row ends judged right: 29 % to 77 %.
+- **Weed tiers** (emergence, `EMERGENCE.tierBySeedlings`): off-row green larger than the photograph's own 90th-percentile
+  seedling stays a weed candidate (red); smaller green is counted apart (grey, `tier: "small green"`), never called a
+  weed (96 % of decided grey marks were indeed not weeds). Green where no row was read is not judged. Red candidates
+  2,230 to 188 over the 23 photographs; their precision only 24 % to 32 %: verge stubble and the crop's own leaves
+  within 13 cm of the row remain. A lattice check (is the green at an empty planting position) was measured and does
+  not separate them: real weeds also stand beside a corn plant.
+- **Establishment**: patches cut by the frame not judged; no green in the lens's black corners; an empty stretch
+  running out to a field end is the headland, not a gap (`EDGE.headlandNotGap`), the row drawn to its last corn; a row
+  where both sides are grass stops unless its band is 1.5x greener (`EDGE.bothAlleysGreen`, `overGreenerAlley`). Weed
+  candidates 64 to 20 (48 % to 73 % right), gaps 99 to 56 (77 % to 89 %).
+- **Mid leaf pieces** (`FINE.leafPieces`): a seedling candidate the corn reaches through looser leaf is a leaf piece.
+  The layer halved (91,793 to 42,405) but is still mostly leaf pieces (4 of 27 decided right): not solved.
+- **Late reader** (stage `"late"`, `LATE`): rows from how green the canopy is against its surroundings, the mid row
+  logic, rows at least half the longest run; nothing between rows judged, no plant count. In Photo Scout as "late".
+  By eye the lines follow the leaf bands; no per-point check is possible under a closed canopy.
+
+Tests: `src/test/rowCropValidationFixes.test.ts` (each fix on a rendered scene, most shown to matter by switching it
+off; the headland test is a guard only). Probes: `scripts/rowCrop/{validateCorn,contextProbe,latticeProbe,rimProbe,
+rowEndsProbe,edgeRuleProbe,weedSizeProbe}.ts`, `validate_crops.py`, `validate_report.py`; the procedure is the
+`/validate-corn` skill.

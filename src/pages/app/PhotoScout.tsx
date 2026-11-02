@@ -180,8 +180,9 @@ export default function PhotoScout() {
                   <option value="emergence">emergence (VE to V2: seedlings on bare soil, just planted)</option>
                   <option value="establishment">early (V2 to V7: plants in a line, soil between the rows)</option>
                   <option value="mid">mid (V8 to tasselling: the canopy nearly meets over narrow alleys)</option>
+                  <option value="late">late (closed canopy, no soil to be seen between the rows)</option>
                 </select>
-                <div className="text-[10px] text-neutral-500">{stage === "mid" ? "rows are placed between the alley troughs; only green standing on the alley floor is reported; a weed among the corn leaves counts as corn" : stage === "emergence" ? "each seedling is a point and a row is the straight line they stand on (the lens bend straightened); plants counted along each row; green off every row is a weed candidate" : "rows are traced on the green; weeds are green clear of every row's band"}</div>
+                <div className="text-[10px] text-neutral-500">{stage === "late" ? "rows are read from how green the canopy is, ridges against the shaded alleys; nothing between the rows can be seen, so no weeds or seedlings are judged" : stage === "mid" ? "rows are placed between the alley troughs; only green standing on the alley floor is reported; a weed among the corn leaves counts as corn" : stage === "emergence" ? "each seedling is a point and a row is the straight line they stand on (the lens bend straightened); plants counted along each row; green off every row larger than nearly all the crop's own seedlings is a weed candidate (red); smaller green is counted apart in grey, never called a weed" : "rows are traced on the green; weeds are green clear of every row's band"}</div>
               </Field>
             )}
             <Field label="Row spacing">
@@ -264,7 +265,7 @@ function statusLine(p: Photo, units: "metric" | "imperial"): string {
   if (p.status === "running") return "fitting rows";
   if (p.rowCrop) {
     const s = p.rowCrop.summary;
-    return s.rows ? `${s.rows} rows, ${s.weeds} between rows, ${fmtLengthCm(p.rowCrop.gsdM * 100, units).text}/px` : "no rows read";
+    return s.rows ? `${s.rows} rows, ${p.rowCrop.stage === "late" ? "nothing between rows judged" : `${s.weeds} between rows`}, ${fmtLengthCm(p.rowCrop.gsdM * 100, units).text}/px` : "no rows read";
   }
   if (p.pattern) {
     const s = p.pattern.summary;
@@ -357,6 +358,7 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
         const ringR = Math.max(4, (rowCrop ? 0.025 / rowCrop.gsdM : 10) * s);
         ctx.strokeStyle = "rgba(255,190,0,0.95)"; ctx.lineWidth = 1.5;
         for (const [x, y] of overlay.seedlings) { ctx.beginPath(); ctx.arc(x * s, y * s, ringR, 0, 2 * Math.PI); ctx.stroke(); }
+        ctx.strokeStyle = "rgba(170,170,170,0.85)"; ctx.lineWidth = 1; for (const w of overlay.smallGreen) path(w, true);
         ctx.strokeStyle = "#EF5350"; ctx.lineWidth = 2; for (const w of overlay.weeds) path(w, true);
         ctx.strokeStyle = "#FF00C8"; ctx.lineWidth = 3; for (const w of overlay.escapes) path(w, true);
       }
@@ -417,7 +419,7 @@ function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | 
   const s = read.summary;
   const cm = (m: number | null) => (m == null ? "–" : fmtLengthCm(m * 100, units).text);
   const rows: [string, string][] = [
-    ["Crop profile", read.crop ? `${read.crop.id} ${read.crop.version}, ${read.stage === "mid" ? "mid-stage variant: rows between the alley troughs, the whole canopy is the crop" : read.stage === "emergence" ? "emergence variant: seedlings as points, rows the lines they stand on" : "early-stage variant: rows traced on the green, the whole row is the crop"}` : "none"],
+    ["Crop profile", read.crop ? `${read.crop.id} ${read.crop.version}, ${read.stage === "late" ? "late variant: rows read from the canopy's green, nothing between them judged" : read.stage === "mid" ? "mid-stage variant: rows between the alley troughs, the whole canopy is the crop" : read.stage === "emergence" ? "emergence variant: seedlings as points, rows the lines they stand on" : "early-stage variant: rows traced on the green, the whole row is the crop"}` : "none"],
     ["Scale", read.scaleBasis === "given" ? `${cm(read.gsdM)}/px` : `${cm(read.gsdM)}/px, ASSUMED from the measured pitch and the crop's default spacing`],
     ["Row direction", read.directionDeg == null ? "–" : `${read.directionDeg.toFixed(1)}° from the photo's x axis`],
     ["Row spacing measured", read.pitchM == null ? "–" : `${cm(read.pitchM)}${read.matchedSpacingM ? ` (a planted spacing: ${cm(read.matchedSpacingM)})` : " (matches no planted spacing; the measurement stands)"}`],
@@ -425,7 +427,7 @@ function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | 
     ["Crop band", s.medianBandHalfWidthM == null ? "–" : `${cm(s.medianBandHalfWidthM)} either side of the row (from the rows' own green)`],
     ["Green on the rows", s.medianRowGreenShare == null ? "–" : `${Math.round(s.medianRowGreenShare * 100)}% of the band`],
     ["Row coherence", s.coherence == null ? "–" : s.coherence.toFixed(2)],
-    ["Between the rows", `${s.weeds} patch${s.weeds === 1 ? "" : "es"}, ${s.weedAreaM2.toFixed(2)} m²${s.betweenRowCover == null ? "" : `, ${(s.betweenRowCover * 100).toFixed(1)}% of the ground between the bands`}${s.escapes != null ? `; ${s.escapes} escape${s.escapes === 1 ? "" : "s"} 15 cm or more across` : ""}`],
+    ["Between the rows", read.stage === "late" ? "not judged under a closed canopy" : `${s.weeds} ${read.emergence?.seedlingAreaCm2 ? "weed candidate" : "patch"}${s.weeds === 1 ? "" : read.emergence?.seedlingAreaCm2 ? "s" : "es"}${read.emergence?.seedlingAreaCm2 ? ` larger than the crop's seedlings (over ${read.emergence.seedlingAreaCm2.p90.toFixed(0)} cm², red), ${read.emergence.smallGreen} smaller green patches counted apart (grey, not weeds)` : ""}, ${s.weedAreaM2.toFixed(2)} m²${s.betweenRowCover == null ? "" : `, ${(s.betweenRowCover * 100).toFixed(1)}% of the ground between the bands`}${s.escapes != null ? `; ${s.escapes} escape${s.escapes === 1 ? "" : "s"} 15 cm or more across` : ""}`],
     ...(read.seedlings ? [["Late seedlings", `${read.seedlings.count.toLocaleString()} small plants on the soil, ${read.seedlings.cover == null ? "–" : (read.seedlings.cover * 100).toFixed(2) + "%"} of the field ground read; a layer, not findings`] as [string, string]] : []),
     ["On the rows", `${s.cropComponents.toLocaleString()} green patches counted as the crop${s.leafTips ? `, ${s.leafTips} of them leaf tips just beyond a band` : ""}`],
     ["Gaps along the rows", s.gaps ? `${s.gaps}, ${s.gapLengthM.toFixed(1)} m in all${read.emergence ? ` (before the second look: ${read.emergence.gapsBefore}, ${read.emergence.gapLengthBeforeM.toFixed(1)} m)` : ""}` : "none over the minimum length"],

@@ -98,6 +98,25 @@ export const EMERGENCE = {
   missingMinLight: 0.7,
   /** ... and the position stands inside this share of the frame's half-diagonal from its centre (no vignetted rim). */
   missingMaxRadius: 0.92,
+  /**
+   * Row ends (validation 2026-11-02: 12 of 17 audited row ends stopped while seedlings went on, every one in the frame's
+   * dim rim, and the seedlings beyond became weed candidates). From each end the row is followed on along its fitted
+   * line, one plant spacing at a time: the strict test first, then the relaxed light-scaled one with both alleys quiet.
+   * It stops at the frame, at solid green (a verge), at the later planting's ground, where the alleys beside are as
+   * green as the line (stubble, a weedy headland: not the row going on), and after this many expected positions in a
+   * row with nothing. Off: rows end at their last strict point, as before.
+   */
+  extendEnds: true,
+  extendMisses: 2,
+  /**
+   * Off the rows (validation 2026-11-02: 7 of 29 decided off-row candidates were weeds; every wrong one was smaller than
+   * the stand's median seedling, stubble at the verge, soil and residue, a seedling just off the line). A patch larger
+   * than nearly all the crop's own seedlings (their 90th percentile, measured on each photograph) is a weed candidate:
+   * at emergence a plant already bigger than the corn is the one that competes. Smaller green off the rows is counted
+   * apart as small green, never called a weed: a tiny weed, a displaced seedling, a leaf piece or a green fleck look
+   * alike at this pixel. Off: every off-row patch is a weed candidate, as before.
+   */
+  tierBySeedlings: true,
 };
 
 type Comp = { x: number; y: number; n: number; px: number[] };
@@ -430,7 +449,7 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
 
   // 8. Plants along each row, gaps, the drawn line; with V2 recovery, the expected positions in long stretches searched.
   const rowsOut: RowCropRow[] = [];
-  const v2 = { searched: 0, possible: 0, uncertain: 0, missing: 0, controlWindows: 0, controlHits: 0, confirmed: 0, strictFound: 0, gapsV1: 0, gapLenV1: 0 };
+  const v2 = { searched: 0, possible: 0, uncertain: 0, missing: 0, controlWindows: 0, controlHits: 0, confirmed: 0, strictFound: 0, gapsV1: 0, gapLenV1: 0, endStrict: 0, endPossible: 0 };
   /** Strict-mask pixels in a straightened window around (t, s) on a row: their mean position, or null. */
   const strictIn = (t: number, sC: number, halfT: number, halfS: number): { t: number; s: number } | null => {
     let n = 0, st = 0, ss = 0;
@@ -445,6 +464,7 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   const lightAt = (xP: number, yP: number) => { const c = Math.min(levels.gh - 1, Math.floor(yP / levels.B)) * levels.gw + Math.min(levels.gw - 1, Math.floor(xP / levels.B)); const l = levels.soilL[c]; return Number.isFinite(l) ? l / levels.globalL : 0; };
   const kept: (Fit & { tLo: number; tHi: number })[] = [];
   let plantsTotal = 0, gapsN = 0, gapLen = 0;
+  const plantPx: number[] = [];
   for (const [fi, fit] of fits.entries()) {
     const mine = fit.members.filter(i => owner[i] === fi).sort((a, b) => tv[a] - tv[b]);
     if (mine.length < E.minRowPoints) { rowsDropped++; continue; }
@@ -478,11 +498,44 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     const longest = Math.max(...runs.map(r => r.length));
     plants.splice(0, plants.length, ...runs.filter(r => r.length >= E.minRowPoints && r.length >= 0.1 * longest).flat());
     if (plants.length < E.minRowPoints) { rowsDropped++; continue; }
-    const tA = plants[0].t, tB = plants[plants.length - 1].t;
+    let tA = plants[0].t, tB = plants[plants.length - 1].t;
     const spacings = plants.slice(1).map((p, j) => p.t - plants[j].t);
     const medSp = median(spacings) ?? 0;
     const gapPx = Math.max(E.gapMinM / gsdW, E.gapSpacings * medSp);
     const gapsOf = (ps: { t: number }[]) => { const out: [number, number][] = []; for (let j = 1; j < ps.length; j++) if (ps[j].t - ps[j - 1].t > gapPx) out.push([ps[j - 1].t, ps[j].t]); return out; };
+    // Row ends followed on (EMERGENCE.extendEnds), before the gaps and the recovery, which then see the whole row.
+    const endStrict: { t: number; s: number }[] = [], endPossible: { t: number; s: number }[] = [];
+    if (E.extendEnds && medSp > 0) {
+      const spreadE = median(mine.map(i => Math.abs(sv[i] - evalPoly(fit.c, fit.t0, tv[i])))) ?? 0;
+      const corrE = Math.max(E.corridorM / gsdW, 2.5 * spreadE), along = E.recoverAlongShare * medSp;
+      const ctrlMaxPx = Math.round(0.004 / (gsdM * gsdM));
+      for (const dir of [1, -1] as const) {
+        // Followed from the row's last stretch, not the whole row's curve carried past its end: in a corner the lens
+        // bends the row away from that curve (photograph 54). The line through the last plants, re-centred on each find.
+        const tail = (dir === 1 ? plants.slice(-8) : plants.slice(0, 8));
+        const tl = fitPoly(tail.map(q => q.t), tail.map(q => q.s), tail[0].t, 1);
+        const slope = tl[1];
+        let last = dir === 1 ? tB : tA, lastS = evalPoly(tl, tail[0].t, last), k = 1;
+        const lineAt = (t: number) => lastS + slope * (t - last);
+        for (let guard = 0; guard < 400 && k <= E.extendMisses + 1; guard++) {
+          const t = last + dir * k * medSp, sE = lineAt(t), [xP, yP] = toPhoto(t, sE);
+          if (xP < 0 || yP < 0 || xP >= px.width || yP >= px.height) break; // the frame
+          const wi = Math.min(H - 1, Math.max(0, Math.round((yP - (f - 1) / 2) / f))) * W + Math.min(W - 1, Math.max(0, Math.round((xP - (f - 1) / 2) / f)));
+          if (skip[wi] || laterGround.some(g => sE >= g.sLo && sE <= g.sHi)) break; // a verge, the later planting
+          // Green on the alleys' lines beside the expected position: the ground is green all over, not the row going on.
+          if (strictIn(t, sE - pitchPx / 2, along, corrE) || strictIn(t, sE + pitchPx / 2, along, corrE)) { k++; continue; }
+          const sHit = strictIn(t, sE, along, corrE);
+          if (sHit) { endStrict.push(sHit); lastS = sHit.s; last = sHit.t; k = 1; continue; }
+          const hit = relaxedIn(t - along, t + along, sE - corrE - 2, sE + corrE + 2).filter(q => Math.abs(q.s - lineAt(q.t)) <= corrE).sort((u, w) => w.n - u.n)[0];
+          const ctrl = hit ? relaxedIn(t - along, t + along, sE - pitchPx / 2 - corrE, sE - pitchPx / 2 + corrE, ctrlMaxPx).length + relaxedIn(t - along, t + along, sE + pitchPx / 2 - corrE, sE + pitchPx / 2 + corrE, ctrlMaxPx).length : 0;
+          if (hit && !ctrl) { endPossible.push({ t: hit.t, s: hit.s }); lastS = hit.s; last = hit.t; k = 1; continue; }
+          k++;
+        }
+      }
+      const ends = [...endStrict, ...endPossible].map(q => q.t);
+      if (ends.length) { tA = Math.min(tA, ...ends); tB = Math.max(tB, ...ends); }
+      v2.endStrict += endStrict.length; v2.endPossible += endPossible.length;
+    }
     const v1Gaps = gapsOf(plants);
     v2.gapsV1 += v1Gaps.length; v2.gapLenV1 += v1Gaps.reduce((u, [a, b]) => u + (b - a) * gsdW, 0);
     // V2 recovery: in every stretch longer than EMERGENCE.recoverFromSpacings spacings, the expected positions
@@ -522,6 +575,7 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
       }
       v2.possible += possible.length; v2.uncertain += uncertain.length; v2.missing += missing.length;
     }
+    strictFound.push(...endStrict); possible.push(...endPossible); v2.possible += endPossible.length;
     v2.confirmed += plants.length + strictFound.length; v2.strictFound += strictFound.length;
     // Gaps over every plant the row now holds (confirmed and possible); each named by what its expected positions were.
     const holding = [...plants.map(p => ({ t: p.t })), ...strictFound.map(p => ({ t: p.t })), ...possible.map(p => ({ t: p.t }))].sort((u, w) => u.t - w.t);
@@ -538,7 +592,7 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     // Support: half-metre strips along the row with a plant of their own.
     const strips = Math.max(1, Math.ceil((tB - tA) / (0.5 / gsdW)));
     const held = new Set(plants.map(p => Math.min(strips - 1, Math.floor((p.t - tA) / (0.5 / gsdW)))));
-    let greenPx = 0; for (const i of mine) greenPx += points[i].n;
+    let greenPx = 0; for (const i of mine) { greenPx += points[i].n; plantPx.push(points[i].n); }
     const lengthM = (tB - tA) * gsdW;
     kept.push({ ...fit, tLo: tA, tHi: tB });
     plantsTotal += plants.length + strictFound.length; gapsN += gaps.length; gapLen += gaps.reduce((u, g) => u + g.lengthM, 0);
@@ -552,6 +606,10 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     });
   }
 
+  // The stand's own seedlings, for judging what is off the rows against them.
+  const plantSorted = [...plantPx].sort((a, b) => a - b), cm2 = (n: number) => r3(n * gsdW * gsdW * 1e4);
+  const seedlingAreaCm2 = plantSorted.length >= 20 ? { p50: cm2(plantSorted[plantSorted.length >> 1]), p90: cm2(plantSorted[Math.floor(0.9 * (plantSorted.length - 1))]) } : null;
+
   // 9. Green off every row: weed candidates between the rows, or where no row was read.
   const nearestRow = (t: number, s: number): { d: number; inside: boolean } => {
     let best = Infinity, inside = false;
@@ -563,7 +621,7 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   };
   const compIndex = new Map(points.map((p, i) => [p, i]));
   const weeds: RowCropWeed[] = [];
-  let specks = 0, noRows = 0, weedArea = 0, cropComponents = 0, laterGreen = 0, vergeGreen = 0;
+  let specks = 0, noRows = 0, weedArea = 0, cropComponents = 0, laterGreen = 0, vergeGreen = 0, smallGreen = 0;
   const minWeedPx = (E.minWeedCm2 / 1e4) / (gsdW * gsdW);
   for (const c of comps) {
     const pi = compIndex.get(c);
@@ -578,9 +636,12 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     const hullPts: [number, number][] = c.px.map(p => { const x = p % W, y = (p - x) / W; return [x * f + (f - 1) / 2, y * f + (f - 1) / 2] as [number, number]; });
     const areaM2 = c.n * gsdW * gsdW;
     const status = kept.length && nr.inside && nr.d < pitchPx ? "between rows" : "no rows here";
-    if (status === "no rows here") noRows++;
-    weedArea += areaM2;
-    weeds.push({
+    // Where no row was read (past every row's end, out beyond the outermost row) nothing is judged, as at establishment:
+    // the validation's wrong calls there were the frame rim's own corn.
+    if (status === "no rows here") { noRows++; continue; }
+    const tier = E.tierBySeedlings && seedlingAreaCm2 ? (areaM2 * 1e4 > seedlingAreaCm2.p90 ? "larger than the crop" as const : "small green" as const) : undefined;
+    if (tier === "small green") smallGreen++; else weedArea += areaM2;
+    weeds.push({ ...(tier ? { tier } : {}),
       id: weeds.length, x: r3(c.x * f), y: r3(c.y * f), areaM2: r3(areaM2), equivDiameterM: r3(2 * Math.sqrt(areaM2 / Math.PI)), hull: convexHull(hullPts),
       distToRowM: Number.isFinite(nr.d) ? r3(nr.d * gsdW) : null, bandHalfWidthM: E.bandHalfM,
       touchesEdge: c.px.some(p => { const x = p % W, y = (p - x) / W; return x === 0 || y === 0 || x === W - 1 || y === H - 1; }), status,
@@ -618,7 +679,12 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   notes.push(`Emergence: every seedling is a point, a row is the line the points stand on; ${plantsTotal.toLocaleString()} plants on ${rowsOut.length} rows (seedling pieces within ${Math.round(E.plantMergeM * 100)} cm along a row counted as one plant). The count is from the photo and has not been checked against plants counted on the ground.`);
   if (gapsN) notes.push(`${gapsN} gap${gapsN === 1 ? "" : "s"} along the rows (${gapLen.toFixed(1)} m in all): stretches with no plant found longer than ${E.gapSpacings} x the row's own plant spacing (at least ${Math.round(E.gapMinM * 100)} cm). A gap is where no seedling was seen, not yet a confirmed skip: pale seedlings in the dim corners of the frame are missed, so gaps there run long.`);
   if (vergeGreen) notes.push(`${vergeGreen} green patch${vergeGreen === 1 ? "" : "es"} at the edge of the verge (the grass's fringe, or past the rows' ends on the headland), not judged.`);
-  if (weeds.length) notes.push(`${weeds.length} green patch${weeds.length === 1 ? "" : "es"} off the rows: on soil this young, anything green off the planter's line is a weed candidate or a volunteer.`);
+  const bigN = weeds.length - smallGreen;
+  if (seedlingAreaCm2 && E.tierBySeedlings) {
+    if (bigN) notes.push(`${bigN} green patch${bigN === 1 ? "" : "es"} off the rows larger than nearly all the crop's own seedlings (over ${seedlingAreaCm2.p90.toFixed(0)} cm², their 90th percentile here): weed candidates, the plants already out-growing the corn.`);
+    if (smallGreen) notes.push(`${smallGreen} smaller green patch${smallGreen === 1 ? "" : "es"} off the rows, counted apart and not called weeds: at this pixel a tiny weed, a seedling just off the line, a leaf piece or a green fleck in the stubble look alike.`);
+  } else if (weeds.length) notes.push(`${weeds.length} green patch${weeds.length === 1 ? "" : "es"} off the rows: on soil this young, anything green off the planter's line is a weed candidate or a volunteer.`);
+  if (v2.endStrict + v2.endPossible) notes.push(`Rows followed on past their last clear seedling to the frame or the field's edge: ${v2.endStrict} more plants clear, ${v2.endPossible} possible (the frame's dim rim hides seedlings from the strict test).`);
   // Row spacing and direction, for the read's own consistency: the main rows' neighbouring spacings at their common middle.
   const mainRows = kept.filter(k => k.comb === 0);
   const tMid0 = median(mainRows.map(k => (k.tLo + k.tHi) / 2)) ?? 0;
@@ -630,7 +696,7 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     laterPlanting: laterGround.length ? { greenPatches: laterGreen } : null, confirmed: v2.confirmed, strictFound: v2.strictFound, possible: v2.possible, uncertain: v2.uncertain, missing: v2.missing, searched: v2.searched,
     controlRate: v2.controlWindows ? r3(v2.controlHits / v2.controlWindows) : null,
     gapsBefore: v2.gapsV1, gapLengthBeforeM: r3(v2.gapLenV1),
-    rowSpacingM: spacings.length ? r3(spMean * gsdW) : null, rowSpacingCv: spCv == null ? null : r3(spCv), lensK1: r3(k1),
+    rowSpacingM: spacings.length ? r3(spMean * gsdW) : null, rowSpacingCv: spCv == null ? null : r3(spCv), lensK1: r3(k1), seedlingAreaCm2, smallGreen, rowEndsFollowed: { strict: v2.endStrict, possible: v2.endPossible },
   };
   if (E.recover && v2.searched) notes.push(`Along the rows ${v2.searched.toLocaleString()} expected plant positions in the long stretches were looked at again more sensitively: ${v2.possible.toLocaleString()} possible seedlings (weak evidence on the planter's line), ${v2.missing.toLocaleString()} missing plants the photo supports (good light, a quiet alley beside, nothing there), ${v2.uncertain.toLocaleString()} uncertain (dim, at the rim, or soil that fools the test). A possible seedling is not a confirmed plant; a missing plant is what the photo shows, not yet a counted skip.`);
   opts.onProgress?.(1, 1);
@@ -641,7 +707,7 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     summary: {
       rows: rowsOut.length, rowsDropped, totalRowLengthM: r3(rowsOut.reduce((u, r) => u + r.lengthM, 0)),
       medianBandHalfWidthM: rowsOut.length ? E.bandHalfM : null, medianRowGreenShare: median(rowsOut.map(r => r.greenShare)),
-      weeds: weeds.length, weedAreaM2: r3(weedArea), betweenRowCover: null, cropComponents, noRowsPatches: noRows, leafTips: 0, specks,
+      weeds: weeds.length - smallGreen, weedAreaM2: r3(weedArea), betweenRowCover: null, cropComponents, noRowsPatches: noRows, leafTips: 0, specks,
       gaps: gapsN, gapLengthM: r3(gapLen), plants: plantsTotal, coherence: r3(coherence), vegetationFraction: r3(veg), ms: Date.now() - t0,
     },
     notes, crop: P.crop,

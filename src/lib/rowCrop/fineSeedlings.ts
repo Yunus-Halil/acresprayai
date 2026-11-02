@@ -38,6 +38,18 @@ export const FINE = {
   minPeakOverSoil: 25,
   /** At most this share of the ring around a seedling (1 to 4 pixels out) is plant: it sits on soil. */
   maxRingPlant: 0.15,
+  /**
+   * Leaf pieces (validation 2026-11-02: 4 of 28 decided seedling marks were seedlings, the rest corn leaf tips over the
+   * soil, cut off from their plant by a shadowed stretch of the same leaf). The corn is grown again through looser
+   * leaf: a little greener than the soil (looseTint over the soil's tint), or in shadow (darker than the soil) with a
+   * green share of the colour over looseGreenShare (a dark leaf; dark soil stays brown). A candidate the looser corn
+   * reaches is a leaf piece. A seedling on soil has soil around it and is never reached. Off: as before.
+   */
+  leafPieces: true,
+  looseTint: 5,
+  looseGreenShare: 0.4,
+  /** The looser corn crosses at most this much looser-only ground in one stretch, centimetres (a shadowed bit of leaf, not dark soil). */
+  looseBridgeCm: 3,
 };
 
 /** Development only: when `keep` is set, the last call leaves its per-pixel flags here (1 plant, 2 join, 4 corn, 32 near corn, 64 candidate). */
@@ -113,6 +125,33 @@ export function fineSeedlings(px: PhotoPixels, gsdM: number, judge: (x: number, 
   }
   let cornN = 0; for (let i = 0; i < N; i++) if (flag[i] & CORN) cornN++;
 
+  // 3b. The corn grown through looser leaf (FINE.leafPieces): a candidate it reaches is a piece of a corn leaf.
+  const leafy = FINE.leafPieces ? new Uint8Array(N) : null;
+  if (leafy) {
+    const loose = new Uint8Array(N);
+    for (let y = 0; y < H; y++) {
+      const gy = Math.min(gh - 1, Math.floor(y / B));
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x; if (flag[i] & (PLANT | JOIN | CAND)) { loose[i] = 1; continue; }
+        const c = gy * gw + Math.min(gw - 1, Math.floor(x / B)), o = i * 4, r0 = d[o], g0 = d[o + 1], b0 = d[o + 2], sum = r0 + g0 + b0;
+        if (g0 - (r0 + b0) / 2 - soilCa[c] > FINE.looseTint || (dL[i] < 0 && sum > 0 && g0 / sum > FINE.looseGreenShare)) loose[i] = 1;
+      }
+    }
+    // Grown from the corn; a path's run of looser-only pixels (not plant) is its depth, at most FINE.looseBridgeCm.
+    const maxGap = Math.max(1, Math.round(cm(FINE.looseBridgeCm))), depth = new Uint8Array(N).fill(255), st: number[] = [];
+    for (let i0 = 0; i0 < N; i0++) if (flag[i0] & CORN) { depth[i0] = 0; st.push(i0); }
+    while (st.length) {
+      const i = st.pop()!, x = i % W, y = (i - x) / W, di = depth[i];
+      for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
+        if (j < 0 || !loose[j]) continue;
+        const nd = flag[j] & (PLANT | JOIN | CAND) ? 0 : di + 1;
+        if (nd > maxGap || nd >= depth[j]) continue;
+        depth[j] = nd; st.push(j);
+      }
+    }
+    for (let i = 0; i < N; i++) if (depth[i] !== 255) leafy[i] = 1;
+  }
+
   // 4. Near the corn: any corn within r pixels (a square window), by running counts along rows then columns.
   const r = Math.max(1, Math.round(cm(FINE.nearCornCm)));
   for (let y = 0; y < H; y++) {
@@ -139,7 +178,7 @@ export function fineSeedlings(px: PhotoPixels, gsdM: number, judge: (x: number, 
   for (let i0 = 0; i0 < N; i0++) {
     if ((flag[i0] & (CAND | CORN | SEEN)) !== CAND) continue;
     // Flood the component; keep its first maxPx + 1 pixels (more means too large, but the rest is still marked).
-    let top = 0, n = 0, edge = false, near = false, peak = -128, sx = 0, sy = 0;
+    let top = 0, n = 0, edge = false, near = false, piece = false, peak = -128, sx = 0, sy = 0;
     let x0 = W, x1 = -1, y0 = H, y1 = -1;
     flag[i0] |= SEEN; stack[top++] = i0;
     let overflow: number[] | null = null;
@@ -151,6 +190,7 @@ export function fineSeedlings(px: PhotoPixels, gsdM: number, judge: (x: number, 
       sx += x; sy += y; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
       if (x === 0 || y === 0 || x === W - 1 || y === H - 1) edge = true;
       if (flag[i] & NEAR) near = true;
+      if (leafy && leafy[i]) piece = true;
       if (dL[i] > peak) peak = dL[i];
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
@@ -159,7 +199,7 @@ export function fineSeedlings(px: PhotoPixels, gsdM: number, judge: (x: number, 
         if (top < stack.length) stack[top++] = j; else (overflow ??= []).push(j);
       }
     }
-    const why = n < minPx ? "small" : n > maxPx ? "large" : edge ? "edge" : near ? "near corn" : peak < FINE.minPeakOverSoil ? "dark" : null;
+    const why = n < minPx ? "small" : n > maxPx ? "large" : edge ? "edge" : near ? "near corn" : piece ? "leaf piece" : peak < FINE.minPeakOverSoil ? "dark" : null;
     if (why) { if (rejected && n >= minPx) rejected.push({ x: sx / n, y: sy / n, why }); continue; }
     // On soil: the ring 2..4 pixels out holds little plant.
     let ringN = 0, ringP = 0;

@@ -37,7 +37,7 @@ export const ROW_CROP_READ_VERSION = 2;
  *   (the soil stripes), the band reaches the alley edge, weeds are green standing on the alley floor.
  * A closed canopy (late) is refused by both with the reason; automatic stage detection is a later step.
  */
-export type RowCropStage = "emergence" | "establishment" | "mid";
+export type RowCropStage = "emergence" | "establishment" | "mid" | "late";
 
 /** Target pixel size of the work raster, metres. Corn leaves are 2 cm and wider; finer buys nothing here. */
 export const WORK_GSD_M = 0.01;
@@ -97,6 +97,17 @@ export const EDGE = {
   bandOverAlleyBare: 1.5,
   /** Ground this green (band and alleys together) is grass or cover, never a gap in the field. */
   greenGround: 0.3,
+  /** On green ground a row does not stand where both its alleys are at least this green: the line has run into the
+   * verge, whose edge left one side part soil (photograph 34, 2026-11-02: a row kept two strips into the grass, its
+   * softer alley 24 %). A corn row along a verge keeps one soil alley and still stands. */
+  bothAlleysGreen: 0.2,
+  /** ... unless its band is this many times greener than the greener of the two: corn growing on into the verge's
+   * grass (photograph 42: band 77 to 87 % against 24 to 47 %), where grass alone reads as green as the band or less
+   * (photograph 34: 59 % against 60 %, 83 % against 96 %). */
+  overGreenerAlley: 1.5,
+  /** An empty stretch running out to a row's end at the field's edge is the headland, not a gap; the row is drawn to its
+   * last corn (validation 2026-11-02). Off: as before. */
+  headlandNotGap: true,
   /** A strip where the row does not stand is still the field when its ground is not green and this many of the rows
    * one and two pitches either side stand there (a gap in one row; a headland or a road stops every row together). */
   standingNeighbours: 2,
@@ -134,6 +145,28 @@ export const DEFAULT_ROW_CROP_PARAMS: RowCropParams = {
   gsdM: null, spacingsM: [0.381, 0.508, 0.70, 0.762, 0.914], defaultSpacingM: 0.762, pitchToleranceShare: 0.08,
   bandMinHalfWidthM: 0.08, seedSpacingM: 0.16, maxStandGsdCm: 1.5, minWeedAreaCm2: 4, crop: null, stage: "establishment",
 };
+
+/** Late-stage constants: the mask is a pixel greener than the canopy within this share of the long side (about two
+ * row spacings on these photographs). minLuma: no pixel darker than this is green, at any stage the reader reads
+ * (the lens's black corners). */
+/** A late row is drawn over a run of at least this share of the photo's longest (a corn field's rows cross the frame; lodged grass in a verge reads as short streaks: photographs 9, 10 and 21, 2026-11-02). */
+export const LATE = { windowShare: 1 / 40, minLuma: 20, cornerRadius: 0.8, margin: 0.005, minRowRunShare: 0.5 };
+
+/** Late stage: 1 where a work pixel is greener (ExGR excess) than the mean over a (2r+1)^2 window around it. */
+function localGreenMask(v: Float32Array, rgba: Uint8ClampedArray, W: number, H: number, r: number): Uint8Array {
+  const ok = new Uint8Array(W * H), I = new Float64Array((W + 1) * (H + 1)), C = new Float64Array((W + 1) * (H + 1));
+  for (let i = 0; i < W * H; i++) { const q = i * 4; ok[i] = 0.3 * rgba[q] + 0.59 * rgba[q + 1] + 0.11 * rgba[q + 2] >= LATE.minLuma && Number.isFinite(v[i]) ? 1 : 0; }
+  for (let y = 0; y < H; y++) { let s = 0, c = 0; for (let x = 0; x < W; x++) { const i = y * W + x; if (ok[i]) { s += v[i]; c++; } I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + s; C[(y + 1) * (W + 1) + x + 1] = C[y * (W + 1) + x + 1] + c; } }
+  const m = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x; if (!ok[i]) continue;
+    const x0 = Math.max(0, x - r), x1 = Math.min(W, x + r + 1), y0 = Math.max(0, y - r), y1 = Math.min(H, y + r + 1);
+    const n = C[y1 * (W + 1) + x1] - C[y0 * (W + 1) + x1] - C[y1 * (W + 1) + x0] + C[y0 * (W + 1) + x0];
+    const s = I[y1 * (W + 1) + x1] - I[y0 * (W + 1) + x1] - I[y1 * (W + 1) + x0] + I[y0 * (W + 1) + x0];
+    if (n && v[i] > s / n + LATE.margin) m[i] = 1;
+  }
+  return m;
+}
 
 /** Mid-stage constants (never read by the establishment variant). */
 export const MID = {
@@ -224,6 +257,9 @@ export type RowCropWeed = {
   bandHalfWidthM: number | null;
   touchesEdge: boolean;
   status: RowCropWeedStatus;
+  /** Emergence only: "larger than the crop" (over the stand's 90th-percentile seedling: a weed candidate) or "small green"
+   * (counted apart, never called a weed). Absent elsewhere, and at emergence when the stand is too small to measure. */
+  tier?: "larger than the crop" | "small green";
   /** Mid stage only: "escape" when the plant is MID.escapeDiameterM across or wider, else "small". Absent at establishment. */
   sizeClass?: "small" | "escape";
 };
@@ -258,6 +294,12 @@ export type EmergenceV2 = {
   rowSpacingM: number | null;
   rowSpacingCv: number | null;
   lensK1: number;
+  /** The stand's own seedlings (the green points on the rows), square centimetres at the read's scale: median and 90th percentile. */
+  seedlingAreaCm2: { p50: number; p90: number } | null;
+  /** Off-row green smaller than the stand's 90th-percentile seedling: counted apart, not weed candidates (in `weeds` with tier "small green"). */
+  smallGreen: number;
+  /** Plants found past the rows' last strict point when the ends were followed on (EMERGENCE.extendEnds). */
+  rowEndsFollowed: { strict: number; possible: number };
 };
 
 /** Establishment: a row's end inside the photo where the field stops, and what lies beyond it. */
@@ -525,15 +567,35 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   // 1. Green, relative to the soil around it (straw and red soil stay out; a yellowing leaf still counts if it stands above its soil).
   const soilTilePx = given ? Math.max(16, Math.min(256, Math.round(0.64 / gsdW))) : 64;
   const gopts: GreenOptions = { ...GREEN_DEFAULTS, index: "exgr-soil", soilTilePx, cellPx: 1, soilCapAboveGlobal: 0.05 };
-  const { mask, excess } = greenMaskWithExcess({ width: W, height: H, rgba: work.rgba }, gopts);
-  let greenN = 0; for (let i = 0; i < W * H; i++) greenN += mask[i];
+  const green0 = greenMaskWithExcess({ width: W, height: H, rgba: work.rgba }, gopts);
+  // The lens's black corners are never green (validation 2026-11-02: six of 23 sampled establishment weed candidates
+  // sat in them, the colour test reading noise in near-black pixels).
+  // Only toward the frame's corners (beyond LATE.cornerRadius of the half-diagonal): a leaf's shadow inside the frame is
+  // as dark, and taking it out of the mask split the mid canopy into hundreds of false between-row patches.
+  {
+    const cx = (W - 1) / 2, cy = (H - 1) / 2, R2 = (LATE.cornerRadius ** 2) * (cx * cx + cy * cy);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if ((x - cx) ** 2 + (y - cy) ** 2 < R2) continue;
+      const q = (y * W + x) * 4;
+      if (0.3 * work.rgba[q] + 0.59 * work.rgba[q + 1] + 0.11 * work.rgba[q + 2] < LATE.minLuma) green0.mask[y * W + x] = 0;
+    }
+  }
+  const late = P.stage === "late";
+  // Late (closed canopy, 2026-11-02): green is everywhere, but the rows still carry a strong periodic signal in how
+  // green the canopy is (the corn stage benchmark: autocorrelation 0.76 to 0.89 at the 76 cm pitch on all five late
+  // photographs probed). The mask becomes "greener than the canopy around it" (LATE.windowShare of the photo's long
+  // side): the ridges of the rows in, the shaded alleys out. A lawn or a verge read so is noise, not rows, and the mid
+  // variant's periodicity test leaves it out. Then the mid variant reads the rows; nothing between them is judged.
+  const mask = late ? localGreenMask(green0.excess, work.rgba, W, H, Math.max(4, Math.round(Math.max(W, H) * LATE.windowShare))) : green0.mask;
+  const excess = green0.excess;
+  let greenN = 0; for (let i = 0; i < W * H; i++) greenN += green0.mask[i];
   const vegetationFraction = greenN / (W * H);
   if (vegetationFraction < 0.002) return empty(given ?? NaN, given ? "given" : "assumed spacing", "Almost no green in the photo: no rows to read.", vegetationFraction);
 
   // 2. Direction, on a coarse density raster (about 4 cm a cell when the scale is known), saturated green left out.
   const coarse = given ? Math.max(1, Math.round(0.04 / gsdW)) : Math.max(1, Math.round(Math.max(W, H) / 500));
   const satR = given ? Math.max(2, Math.round(0.75 / gsdW / coarse)) : Math.max(2, Math.round(Math.max(W, H) / coarse / 25));
-  const mid = P.stage === "mid";
+  const mid = P.stage === "mid" || late; // the late variant reads its rows as the mid one does
   const cd = coarseDensity(mask, W, H, coarse, satR, !mid);
   // Per work pixel: inside a saturated cell (left out of the direction and the pitch; re-judged below once the pitch is known).
   const skip = new Uint8Array(W * H);
@@ -632,9 +694,31 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
       const sorted = [...ps].sort((u, v) => u.a - v.a);
       const onLattice = (p: StripPeak) => Math.abs(((p.a - phase) % pitchPx + pitchPx * 1.5) % pitchPx - pitchPx / 2) <= pitchPx / 4;
       const chained = (i: number) => [i - 1, i + 1].some(j => j >= 0 && j < sorted.length && Math.abs(Math.abs(sorted[j].a - sorted[i].a) - pitchPx) <= 0.2 * pitchPx);
-      const accRaw = sorted.filter((p, i) => onLattice(p) || chained(i));
+      // Two peaks with bare soil between them are two rows, however close: in a frame's corner the camera's tilt and the
+      // lens squeeze the rows to two thirds of their spacing (photograph 72's bottom-left), where the lattice and the
+      // spacing tests below lose the outer rows. One row's leaves can show two peaks too, but with green between them.
+      const soilBetween = (u: StripPeak, v: StripPeak) => {
+        if (mid || Math.abs(v.a - u.a) < 0.5 * pitchPx) return false;
+        let lo = Infinity; for (let b = Math.min(u.a, v.a) + 1; b < Math.max(u.a, v.a); b++) lo = Math.min(lo, sm[b]);
+        return lo < 0.3 * Math.min(u.mass, v.mass);
+      };
+      const ok = sorted.map((p, i) => onLattice(p) || chained(i));
+      // A squeezed row is taken from an accepted neighbour outward: 0.6 to 1.2 pitches away with soil between.
+      if (!mid) for (let pass = 0; pass < 4; pass++) {
+        let grew = false;
+        for (let i = 0; i < sorted.length; i++) {
+          if (ok[i]) continue;
+          for (const j of [i - 1, i + 1]) {
+            if (j < 0 || j >= sorted.length || !ok[j]) continue;
+            const d = Math.abs(sorted[j].a - sorted[i].a);
+            if (d >= 0.6 * pitchPx && d <= 1.2 * pitchPx && soilBetween(sorted[Math.min(i, j)], sorted[Math.max(i, j)])) { ok[i] = true; grew = true; break; }
+          }
+        }
+        if (!grew) break;
+      }
+      const accRaw = sorted.filter((_, i) => ok[i]);
       const acc: StripPeak[] = [];
-      for (const p of accRaw) { const last = acc[acc.length - 1]; if (last && p.a - last.a < 0.75 * pitchPx) { if (p.mass > last.mass) acc[acc.length - 1] = p; } else acc.push(p); }
+      for (const p of accRaw) { const last = acc[acc.length - 1]; if (last && p.a - last.a < 0.75 * pitchPx && !soilBetween(last, p)) { if (p.mass > last.mass) acc[acc.length - 1] = p; } else acc.push(p); }
       let Ps = pitchPx;
       if (acc.length >= 3) {
         const diffs: number[] = [];
@@ -686,13 +770,24 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   rowsW.sort((u, v) => u.k - v.k);
   // Indices in order of position: the next row's index steps by its distance in pitches, at least one unless the two
   // traces are the same row (overlapping in strips and within a third of a pitch, or one after the other within half).
+  // Two traces are compared where they are: over the strips they share, or end to end. Their mean positions are not
+  // comparable at a frame's corner, where the lens bends every row and squeezes them together (photograph 72: a corner
+  // row a third of a pitch from its neighbour's mean was joined to it, the joined line zig-zagged between the two, and
+  // the corner corn became weeds and the field "ended" there).
   const meanA = rowsW.map(r => r.k); // the mean across positions, before k becomes an index
+  const apart = (u: RowW, v: RowW): { d: number; overlap: boolean } => {
+    const lo = Math.max(u.s0, v.s0), hi = Math.min(u.s1, v.s1);
+    if (lo <= hi) { const ds: number[] = []; for (let s = lo; s <= hi; s++) ds.push(Math.abs(v.a[s - v.s0] - u.a[s - u.s0])); return { d: quantile(ds, 0.5) ?? 0, overlap: true }; }
+    const [first, second] = u.s1 < v.s0 ? [u, v] : [v, u];
+    return { d: Math.abs(second.a[0] - first.a[first.a.length - 1]), overlap: false };
+  };
   for (let i = 0; i < rowsW.length; i++) {
     if (i === 0) { rowsW[i].k = 0; continue; }
-    const prev = rowsW[i - 1], cur = rowsW[i], d = meanA[i] - meanA[i - 1], overlap = cur.s0 <= prev.s1 && prev.s0 <= cur.s1;
+    const prev = rowsW[i - 1], cur = rowsW[i], { d, overlap } = apart(prev, cur);
     const same = overlap ? d < pitchPx / 3 : d < pitchPx / 2;
     cur.k = same ? prev.k : prev.k + Math.max(1, Math.round(d / pitchPx));
   }
+  void meanA;
   // One row per lattice slot: two traces of the same row (lost and found again, or found twice) are joined, a supported
   // point winning over a bridged one where they overlap.
   for (let i = rowsW.length - 1; i > 0; i--) {
@@ -897,8 +992,11 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     if (beyond * 2 > n) { noRowsPatches++; noRowsAreaM2 += areaM2; continue; } // past a row's cut end: past the field
     if (noRows === n) { noRowsPatches++; noRowsAreaM2 += areaM2; if (areaM2 > LARGE_PATCH_M2) excluded.push({ hull: outlineOf(pix), areaM2: r3(areaM2), reason: "vegetation where no rows were read (a border, a headland, cover)" }); continue; }
     if ((aHi - aLo) > BORDER_ACROSS_PITCHES * pitchPx) { excluded.push({ hull: outlineOf(pix), areaM2: r3(areaM2), reason: "vegetation wider than the rows' spacing across them (a border or cover, not a plant between rows)" }); continue; }
-    if (mid && touchesEdge) { edgeCut++; continue; } // cut by the frame: its row may be outside the photo
+    // Cut by the frame: its row may be outside the photo. At establishment too since the 2026-11-02 validation: every
+    // candidate there it could not decide stood at the frame's rim, and most it could were corn of an untraced row.
+    if (touchesEdge) { edgeCut++; continue; }
     if (mid && alleyGreenAt(sx / n, sy / n) === 1) { greenAlley++; continue; } // a verge or cover, not an alley
+    if (late) continue; // under a closed canopy nothing between the rows can be seen, so nothing there is judged
     betweenGreen += n; weedLabels.add(label);
     const eqD = 2 * Math.sqrt(areaM2 / Math.PI);
     weeds.push({ ...(mid ? { sizeClass: eqD >= MID.escapeDiameterM ? "escape" as const : "small" as const } : {}), id: weeds.length + 1, x: r3(cx), y: r3(cy), areaM2: r3(areaM2), equivDiameterM: r3(2 * Math.sqrt(areaM2 / Math.PI)), hull, distToRowM: noRows === n ? null : r3((minD + minBand) * gsdW), bandHalfWidthM: noRows === n ? null : r3(minBand * gsdW), touchesEdge, status: noRows === n ? "no rows here" : "between rows" });
@@ -908,7 +1006,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   // between the plants of a row as well as in the alley. The work raster is too coarse for a grass seedling's blades.
   let seedlingN = 0, seedlingM2 = 0, judgedPx = 0; const seedlingPts: [number, number][] = [];
   let fineFound: { x: number; y: number; areaPx: number }[] = [];
-  if (mid) {
+  if (mid && !late) {
     const judgeWork = (wx: number, wy: number): boolean => {
       if (wx < 0 || wy < 0 || wx >= W || wy >= H) return false;
       const i = wy * W + wx; if (skip[i]) return false;
@@ -925,7 +1023,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   // 7. Along each row: green share inside the band, gaps, and (fine pixels only) the stand from the green peaks.
   const binPx = Math.max(1, Math.round(mPx(0.1)));
   const standBin = Math.max(1, Math.round(mPx(0.02)));
-  const standOk = P.seedSpacingM != null && gsdW * 100 <= P.maxStandGsdCm;
+  const standOk = !late && P.seedSpacingM != null && gsdW * 100 <= P.maxStandGsdCm;
   const rowGreen: number[][] = rowsW.map(r => new Array(Math.ceil(((r.s1 - r.s0 + 1) * stripPx) / binPx) + 1).fill(0));
   const rowBandPx: number[][] = rowsW.map(r => new Array(Math.ceil(((r.s1 - r.s0 + 1) * stripPx) / binPx) + 1).fill(0));
   const rowStand: Float64Array[] = rowsW.map(r => new Float64Array(Math.ceil(((r.s1 - r.s0 + 1) * stripPx) / standBin) + 1));
@@ -952,8 +1050,21 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     const gaps: RowCropGap[] = [];
     let run = -1;
     const lastBin = Math.floor((n * stripPx - 1) / binPx);
+    // A gap has corn on both sides. An empty stretch running out to a row's end where the field stops is the headland
+    // (validation 2026-11-02: five "gaps" on photographs 34, 63 and 64 were the stubble strip before the verge): it is
+    // no gap, and the row is drawn only as far as its corn.
+    // Corn is a tenth of a metre with at least half the row's median green (a fleck of stubble is not).
+    let keepFromL = -Infinity, keepToL = Infinity, firstCorn = Infinity, lastCorn = -1;
+    for (let b = 0; b <= lastBin; b++) if (bp[b] > 0.5 * band[ri] * 2 * binPx && g[b] / bp[b] >= 0.5 * med) { firstCorn = Math.min(firstCorn, b); lastCorn = b; }
     const endRun = (b: number) => {
-      if (run < 0) return; const len = b - run; if (len >= minGapBins) {
+      if (run < 0) return; const len = b - run;
+      // Open: no corn on its far side, or under one strip of anything before the field stops (the verge's own fringe).
+      const open0 = EDGE.headlandNotGap && !!r.edge0 && (firstCorn >= b || run * binPx <= stripPx), open1 = EDGE.headlandNotGap && !!r.edge1 && (lastCorn < run || (lastBin + 1 - b) * binPx <= stripPx);
+      if (open0 || open1) {
+        if (open0) keepFromL = Math.max(keepFromL, lMin + r.s0 * stripPx + b * binPx); else keepToL = Math.min(keepToL, lMin + r.s0 * stripPx + run * binPx);
+        run = -1; return;
+      }
+      if (len >= minGapBins) {
         const l1 = lMin + r.s0 * stripPx + run * binPx, l2 = lMin + r.s0 * stripPx + b * binPx;
         const aAt = (l: number) => { const s = Math.max(0, Math.min(n - 1, Math.floor((l - lMin) / stripPx) - r.s0)); return r.a[s] + aMin; };
         const p1 = toPhoto(l1 * cs - aAt(l1) * sn, l1 * sn + aAt(l1) * cs), p2 = toPhoto(l2 * cs - aAt(l2) * sn, l2 * sn + aAt(l2) * cs);
@@ -977,7 +1088,9 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     }
     let support = 0; for (let s = 0; s < n; s++) support += r.support[s];
     const bandArea = bp.reduce((u, v) => u + v, 0), greenIn = g.reduce((u, v) => u + v, 0);
-    return { id: ri + 1, k: r.k - kMin, points: pts.map(([x, y]) => [r3(x), r3(y)]), lengthM: r3(n * stripPx * gsdW), supportShare: r3(support / n), bandHalfWidthM: r3(band[ri] * gsdW), greenShare: r3(bandArea ? greenIn / bandArea : 0), gaps, plants, plantPoints };
+    const keptPts = pts.filter((_, s) => { const l = lMin + (r.s0 + s + 0.5) * stripPx; return l >= keepFromL - stripPx / 2 && l <= keepToL + stripPx / 2; });
+    const drawn = keptPts.length >= 2 ? keptPts : pts;
+    return { id: ri + 1, k: r.k - kMin, points: drawn.map(([x, y]) => [r3(x), r3(y)]), lengthM: r3(drawn.length * stripPx * gsdW), supportShare: r3(support / n), bandHalfWidthM: r3(band[ri] * gsdW), greenShare: r3(bandArea ? greenIn / bandArea : 0), gaps, plants, plantPoints };
   });
 
   // 8. Coherence: autocorrelation at the pitch of 3 m windows' across profiles, where there is green.
@@ -1017,7 +1130,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
       return best;
     });
     const longest = Math.max(0, ...runs.map(b => b[1] - b[0] + 1));
-    const minRun = Math.max(MIN_ROW_STRIPS, Math.ceil(MID.minRowRunM / STRIP_M), Math.ceil(MID.minRowRunShare * longest));
+    const minRun = Math.max(MIN_ROW_STRIPS, Math.ceil(MID.minRowRunM / STRIP_M), Math.ceil((late ? LATE.minRowRunShare : MID.minRowRunShare) * longest));
     for (let ri = 0; ri < rows.length; ri++) {
       const r = rows[ri], best = runs[ri];
       if (best[1] - best[0] + 1 < minRun) { rowsDropped++; continue; }
@@ -1042,9 +1155,11 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     }
   }
   const escapes = mid ? weeds.filter(w => w.sizeClass === "escape").length : 0;
-  const seedlings: RowCropSeedlings | null = mid ? { count: seedlingN, areaM2: r3(seedlingM2), cover: judgedPx ? r3(seedlingM2 / (judgedPx * gsdW * gsdW)) : null, points: seedlingPts } : null;
-  if (mid && (greenAlley || edgeCut)) notes.push(`Not judged: ${greenAlley} patch${greenAlley === 1 ? "" : "es"} where the ground between the rows is mostly green (a verge or cover the rows run into), ${edgeCut} cut by the photo's edge.`);
-  if (mid) {
+  const seedlings: RowCropSeedlings | null = mid && !late ? { count: seedlingN, areaM2: r3(seedlingM2), cover: judgedPx ? r3(seedlingM2 / (judgedPx * gsdW * gsdW)) : null, points: seedlingPts } : null;
+  if (!mid && edgeCut) notes.push(`Not judged: ${edgeCut} green patch${edgeCut === 1 ? "" : "es"} between the rows cut by the photo's edge (its row may lie outside the photo).`);
+  if (late) notes.push("Late stage (closed canopy): rows read from how green the canopy is, ridges against the shaded alleys. The ground cannot be seen, so nothing between the rows is judged: no weeds, no seedlings. A break in a row is a stretch where its canopy is thinner than its alleys (lodging, a missing stretch, a shadow), never a plant count.");
+  if (mid && !late && (greenAlley || edgeCut)) notes.push(`Not judged: ${greenAlley} patch${greenAlley === 1 ? "" : "es"} where the ground between the rows is mostly green (a verge or cover the rows run into), ${edgeCut} cut by the photo's edge.`);
+  if (mid && !late) {
     notes.push(`Mid stage: ${seedlingN} small plant${seedlingN === 1 ? "" : "s"} on the soil, standing alone clear of the corn (${(seedlings!.areaM2 * 1e4).toFixed(0)} cm², ${seedlings!.cover == null ? "-" : (seedlings!.cover * 100).toFixed(2)}% of the field ground read), a late flush of seedlings drawn as a layer, not as findings. Within about ${FINE.nearCornCm} cm of a corn leaf a seedling and a leaf piece look alike, so those are not counted. Weeds that emerge after about V8 under a closing canopy rarely reduce this year's yield; they matter for next year's seed.`);
     notes.push(escapes ? `${escapes} between-row plant${escapes === 1 ? "" : "s"} ${Math.round(MID.escapeDiameterM * 100)} cm or more across: escapes from earlier control, the plants worth a look.` : `No between-row plant ${Math.round(MID.escapeDiameterM * 100)} cm or more across: no escapes seen.`);
     notes.push("The broadcast post window on most corn labels closes at V8 or 30 in; after that, directed sprays and next season's plan are what remain. Check the label and your local guidance.");
@@ -1089,7 +1204,7 @@ export function convexHull(pts: [number, number][]): [number, number][] {
 }
 
 /** Everything to draw, in photo pixels: rows, each row's band edges, weeds, gaps, plants, excluded patches. */
-export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][]; bands: [number, number][][]; weeds: [number, number][][]; escapes: [number, number][][]; seedlings: [number, number][]; gaps: RowCropGap[]; plants: [number, number][]; excluded: [number, number][][]; fieldEdges: [number, number][][]; possible: [number, number][]; missing: [number, number][]; uncertain: [number, number][] } {
+export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][]; bands: [number, number][][]; weeds: [number, number][][]; smallGreen: [number, number][][]; escapes: [number, number][][]; seedlings: [number, number][]; gaps: RowCropGap[]; plants: [number, number][]; excluded: [number, number][][]; fieldEdges: [number, number][][]; possible: [number, number][]; missing: [number, number][]; uncertain: [number, number][] } {
   const bands: [number, number][][] = [];
   for (const r of read.rows) {
     const half = r.bandHalfWidthM / read.gsdM;
@@ -1102,7 +1217,7 @@ export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][];
     }
     bands.push(left, right);
   }
-  return { rows: read.rows.map(r => r.points), bands, weeds: read.weeds.filter(w => w.sizeClass !== "escape").map(w => w.hull), escapes: read.weeds.filter(w => w.sizeClass === "escape").map(w => w.hull), seedlings: read.seedlings?.points ?? [], gaps: read.rows.flatMap(r => r.gaps), plants: read.rows.flatMap(r => r.plantPoints ?? []), excluded: read.excluded.map(e => e.hull), fieldEdges: read.fieldEdge?.lines ?? [],
+  return { rows: read.rows.map(r => r.points), bands, weeds: read.weeds.filter(w => w.sizeClass !== "escape" && w.tier !== "small green").map(w => w.hull), smallGreen: read.weeds.filter(w => w.tier === "small green").map(w => w.hull), escapes: read.weeds.filter(w => w.sizeClass === "escape").map(w => w.hull), seedlings: read.seedlings?.points ?? [], gaps: read.rows.flatMap(r => r.gaps), plants: read.rows.flatMap(r => r.plantPoints ?? []), excluded: read.excluded.map(e => e.hull), fieldEdges: read.fieldEdge?.lines ?? [],
     possible: read.rows.flatMap(r => r.possiblePoints ?? []), missing: read.rows.flatMap(r => r.missingPoints ?? []), uncertain: read.rows.flatMap(r => r.uncertainPoints ?? []) };
 }
 
@@ -1169,7 +1284,8 @@ function fieldExtent(rows: FieldRow[], mask: Uint8Array, W: number, H: number, p
       gr[t] = (BG + LG + RG) / (BN + LN + RN) >= EDGE.greenGround ? 1 : 0;
       // A row fails where its band is empty (a road, a bare headland) or where it stands out from nothing around it:
       // a verge or a lawn (green all over), a dry-grass or weedy headland (as green in the band as beside it).
-      st[t] = band >= minBand && band >= (gr[t] ? EDGE.bandOverAlley : EDGE.bandOverAlleyBare) * alley ? 1 : 0;
+      const bothGreen = gr[t] && Number.isFinite(left) && Number.isFinite(right) && left >= EDGE.bothAlleysGreen && right >= EDGE.bothAlleysGreen && band < EDGE.overGreenerAlley * Math.max(left, right);
+      st[t] = !bothGreen && band >= minBand && band >= (gr[t] ? EDGE.bandOverAlley : EDGE.bandOverAlleyBare) * alley ? 1 : 0;
     }
     stand.push(st); green.push(gr); inside.push(ins);
     if (debug) {
