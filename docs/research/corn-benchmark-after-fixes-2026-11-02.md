@@ -64,9 +64,28 @@ More gaps after the fixes is expected: the rows now run on into the dim corners,
 | Establishment: gap has no corn | 77 % | 89 % (16 of 18) |
 | Establishment: field end is where the field ends | 80 % | 81 % (13 of 16) |
 
+## The field's edge: a higher bar (Yunus, the same night)
+
+Looking at the pictures, Yunus: "all of the false ones are near the edge of the field ... the threshold to be a weed
+is higher so little things like this do not get caught up". Built (`EMERGENCE.edgeZoneM` 1 m, `edgeFactor` 3): within a
+metre of left-out verge or lawn, or of a row's end inside the photo (the headland), a patch must be three times the
+stand's 90th-percentile seedling to be drawn red; smaller is counted apart in grey.
+
+| Measure (emergence, 23 photographs) | Without | With the edge rule |
+|---|---|---|
+| Red weed candidates | 191 | 108 |
+| Of the 11 decided verge or stubble red marks in the fresh sample | red | 10 grey, 1 red |
+| Of the 10 decided real weeds | red | 6 red, 4 grey (all four at the verge, 70 to 130 cm², the stubble's size) |
+| Of the 10 decided corn leaves near the row | red | 9 red, 1 grey |
+| Red marks that are weeds, decided | 32 % | 38 % (6 of 16) |
+| Time a photograph, median | 1.56 to 1.59 s | 1.62 s |
+
+The trade is the one asked for: small green at the edge is no longer called a weed, real weeds there included (they
+stay counted, in grey). What now dominates the red marks is the corn seedling's own leaves within 13 cm of the row.
+
 ## What is left, weakest first
 
-1. Emergence red weed candidates: 21 of 31 decided were wrong, 11 verge or headland stubble and 10 the corn seedling's
+1. Emergence red weed candidates: with the edge rule, 10 of 16 decided are still wrong, 9 of them the corn seedling's
    own leaves within 13 cm of the row. Position along the row does not separate them (weeds stand beside corn too).
 2. Emergence row ends: 3 of 13 still stop while seedlings go on.
 3. Establishment field ends at the frame's right edge on photographs 70 to 72: 3 of 16 declared where the row runs on.

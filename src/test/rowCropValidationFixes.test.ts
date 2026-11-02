@@ -19,7 +19,7 @@ function rng(seed: number) { let s = seed >>> 0 || 1; return () => { s = (s * 16
 
 /** Bare soil at 1 cm, vertical rows 76 cm apart, a seedling every 16 cm; below `faintFrom` (share of the height) the
  * seedlings are faint (a tint the strict test misses and the relaxed one sees), as in a vignetted rim. */
-function emergenceField(o: { faintFrom?: number; weeds?: [number, number, number][]; flecks?: [number, number][] }) {
+function emergenceField(o: { faintFrom?: number; weeds?: [number, number, number][]; flecks?: [number, number][]; vergeFrom?: number }) {
   const W = 1200, H = 1000, r = rng(5), rgba = new Uint8ClampedArray(W * H * 4);
   for (let i = 0; i < W * H; i++) { const n = (r() - 0.5) * 20; rgba[i * 4] = 128 + n; rgba[i * 4 + 1] = 108 + n; rgba[i * 4 + 2] = 88 + n; rgba[i * 4 + 3] = 255; }
   const blob = (x: number, y: number, rx: number, ry: number, c: [number, number, number]) => {
@@ -33,6 +33,8 @@ function emergenceField(o: { faintFrom?: number; weeds?: [number, number, number
     const jx = (r() - 0.5) * 2;
     blob(x + jx, y, 2.5, 1.5, y < faintY ? [70, 150, 55] : [125, 121, 90]);
   }
+  // A grass verge across the bottom (solid green), when asked for.
+  if (o.vergeFrom != null) for (let y = Math.round(o.vergeFrom * H); y < H; y++) for (let x = 0; x < W; x++) { const q = (y * W + x) * 4, n = (r() - 0.5) * 40; rgba[q] = 60 + n; rgba[q + 1] = 140 + n; rgba[q + 2] = 50 + n; }
   for (const [x, y, rad] of o.weeds ?? []) blob(x, y, rad, rad, [70, 150, 55]);
   for (const [x, y] of o.flecks ?? []) blob(x, y, 1.2, 1.2, [70, 150, 55]);
   return { width: W, height: H, rgba };
@@ -157,5 +159,26 @@ describe("mid: a leaf tip cut off by its own shadow is not a seedling", () => {
     FINE.leafPieces = false;
     const { seedlings } = fineSeedlings(px, 0.005, () => true);
     expect(near(seedlings, 131, 96)).toBe(true);
+  });
+});
+
+describe("emergence: a higher bar for weeds at the field's edge (Yunus, 2026-11-02)", () => {
+  // The same mid-sized patch (larger than the seedlings, under three times their large ones) in the field and 40 cm from the verge.
+  const inField: [number, number, number][] = [[68, 300, 3.5], [372, 450, 3.5]];
+  const atEdge: [number, number, number][] = [[220, 760, 3.5], [676, 770, 3.5]];
+  const px = emergenceField({ weeds: [...inField, ...atEdge], vergeFrom: 0.8 });
+  const tierAt = (read: ReturnType<typeof readRowCrop>, x: number, y: number) => read.weeds.find(w => Math.hypot(w.x - x, w.y - y) < 6)?.tier;
+
+  it("calls the patch a weed in the field and counts it apart at the edge", () => {
+    const read = readRowCrop(px, { stage: "emergence", gsdM: 0.01 });
+    for (const [x, y] of inField) expect(tierAt(read, x, y), `in field at ${x},${y}`).toBe("larger than the crop");
+    for (const [x, y] of atEdge) expect(tierAt(read, x, y), `at edge ${x},${y}`).toBe("small green");
+    expect(read.notes.some(n => /field's edge/.test(n))).toBe(true);
+  });
+
+  it("without the edge rule the patches at the edge are weeds too", () => {
+    EMERGENCE.edgeFactor = 1;
+    const read = readRowCrop(px, { stage: "emergence", gsdM: 0.01 });
+    for (const [x, y] of atEdge) expect(tierAt(read, x, y), `at edge ${x},${y}`).toBe("larger than the crop");
   });
 });

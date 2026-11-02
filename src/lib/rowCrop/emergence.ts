@@ -117,6 +117,15 @@ export const EMERGENCE = {
    * alike at this pixel. Off: every off-row patch is a weed candidate, as before.
    */
   tierBySeedlings: true,
+  /**
+   * The field's edge (Yunus, 2026-11-02, on the emergence pictures: "all of the false ones are near the edge of the
+   * field ... the threshold to be a weed is higher so little things do not get caught up"). Within edgeZoneM of the
+   * field's edge (verge or lawn left out as solid green, or a row's end inside the photo: the headland) a patch must be
+   * edgeFactor times the stand's 90th-percentile seedling to be a weed candidate; smaller is counted apart as small
+   * green. The validation's fresh sample: all 11 verge or stubble false candidates stood there.
+   */
+  edgeZoneM: 1.0,
+  edgeFactor: 3,
 };
 
 type Comp = { x: number; y: number; n: number; px: number[] };
@@ -621,7 +630,28 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   };
   const compIndex = new Map(points.map((p, i) => [p, i]));
   const weeds: RowCropWeed[] = [];
-  let specks = 0, noRows = 0, weedArea = 0, cropComponents = 0, laterGreen = 0, vergeGreen = 0, smallGreen = 0;
+  let specks = 0, noRows = 0, weedArea = 0, cropComponents = 0, laterGreen = 0, vergeGreen = 0, smallGreen = 0, edgeSmall = 0;
+  // Distance to left-out solid green (verge, lawn), work pixels, by a two-pass chamfer; and the rows' ends inside the photo.
+  const edgePx = E.edgeZoneM / gsdW;
+  let vergeDist: Float32Array | null = null;
+  if (E.tierBySeedlings && solidPx) {
+    vergeDist = new Float32Array(W * H).fill(1e9);
+    for (let i = 0; i < W * H; i++) if (skip[i]) vergeDist[i] = 0;
+    const D = Math.SQRT2;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; let v = vergeDist[i]; if (x) v = Math.min(v, vergeDist[i - 1] + 1); if (y) { v = Math.min(v, vergeDist[i - W] + 1); if (x) v = Math.min(v, vergeDist[i - W - 1] + D); if (x < W - 1) v = Math.min(v, vergeDist[i - W + 1] + D); } vergeDist[i] = v; }
+    for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) { const i = y * W + x; let v = vergeDist[i]; if (x < W - 1) v = Math.min(v, vergeDist[i + 1] + 1); if (y < H - 1) { v = Math.min(v, vergeDist[i + W] + 1); if (x < W - 1) v = Math.min(v, vergeDist[i + W + 1] + D); if (x) v = Math.min(v, vergeDist[i + W - 1] + D); } vergeDist[i] = v; }
+  }
+  const inFrame = (t: number, s: number) => { const [x, y] = toPhoto(t, s); return x > 0.03 * px.width && x < 0.97 * px.width && y > 0.03 * px.height && y < 0.97 * px.height; };
+  /** Within edgeZoneM of the field's edge: left-out solid green, or the end of a nearby row that stops inside the photo. */
+  const atFieldEdge = (c: Comp, t: number, s: number) => {
+    if (vergeDist && vergeDist[Math.min(H - 1, Math.round(c.y)) * W + Math.min(W - 1, Math.round(c.x))] <= edgePx) return true;
+    for (const k of kept) {
+      if (Math.abs(s - evalPoly(k.c, k.t0, t)) > pitchPx) continue;
+      if (t > k.tHi - edgePx && inFrame(k.tHi, evalPoly(k.c, k.t0, k.tHi))) return true;
+      if (t < k.tLo + edgePx && inFrame(k.tLo, evalPoly(k.c, k.t0, k.tLo))) return true;
+    }
+    return false;
+  };
   const minWeedPx = (E.minWeedCm2 / 1e4) / (gsdW * gsdW);
   for (const c of comps) {
     const pi = compIndex.get(c);
@@ -639,7 +669,9 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     // Where no row was read (past every row's end, out beyond the outermost row) nothing is judged, as at establishment:
     // the validation's wrong calls there were the frame rim's own corn.
     if (status === "no rows here") { noRows++; continue; }
-    const tier = E.tierBySeedlings && seedlingAreaCm2 ? (areaM2 * 1e4 > seedlingAreaCm2.p90 ? "larger than the crop" as const : "small green" as const) : undefined;
+    const edge = !!seedlingAreaCm2 && E.tierBySeedlings && atFieldEdge(c, t, s), need = seedlingAreaCm2 ? (edge ? E.edgeFactor : 1) * seedlingAreaCm2.p90 : 0;
+    const tier = E.tierBySeedlings && seedlingAreaCm2 ? (areaM2 * 1e4 > need ? "larger than the crop" as const : "small green" as const) : undefined;
+    if (edge && tier === "small green" && areaM2 * 1e4 > seedlingAreaCm2!.p90) edgeSmall++;
     if (tier === "small green") smallGreen++; else weedArea += areaM2;
     weeds.push({ ...(tier ? { tier } : {}),
       id: weeds.length, x: r3(c.x * f), y: r3(c.y * f), areaM2: r3(areaM2), equivDiameterM: r3(2 * Math.sqrt(areaM2 / Math.PI)), hull: convexHull(hullPts),
@@ -683,6 +715,7 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   if (seedlingAreaCm2 && E.tierBySeedlings) {
     if (bigN) notes.push(`${bigN} green patch${bigN === 1 ? "" : "es"} off the rows larger than nearly all the crop's own seedlings (over ${seedlingAreaCm2.p90.toFixed(0)} cm², their 90th percentile here): weed candidates, the plants already out-growing the corn.`);
     if (smallGreen) notes.push(`${smallGreen} smaller green patch${smallGreen === 1 ? "" : "es"} off the rows, counted apart and not called weeds: at this pixel a tiny weed, a seedling just off the line, a leaf piece or a green fleck in the stubble look alike.`);
+    if (edgeSmall) notes.push(`${edgeSmall} of them within ${E.edgeZoneM} m of the field's edge (the verge or the headland), where a patch must be ${E.edgeFactor} times the crop's large seedlings to be called a weed: stubble and grass at the edge look like small weeds.`);
   } else if (weeds.length) notes.push(`${weeds.length} green patch${weeds.length === 1 ? "" : "es"} off the rows: on soil this young, anything green off the planter's line is a weed candidate or a volunteer.`);
   if (v2.endStrict + v2.endPossible) notes.push(`Rows followed on past their last clear seedling to the frame or the field's edge: ${v2.endStrict} more plants clear, ${v2.endPossible} possible (the frame's dim rim hides seedlings from the strict test).`);
   // Row spacing and direction, for the read's own consistency: the main rows' neighbouring spacings at their common middle.
