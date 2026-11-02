@@ -173,7 +173,7 @@ metres per frame before and after; the picture shows hollow green marks where se
 reports its right third as a second planting; the b1102-emergence rows and plants change by under 2 % elsewhere.
 Effort: one day.
 
-## 6. Plan 4: establishment, rows that do not stop
+## 6. Plan 4: establishment, rows that do not stop (built 2026-11-02: corn-row-reader.md, "where the field ends")
 
 Weakest point: the rows run off the field. In 34 and 63 the cyan lines cross the headland lawn and the road, carrying
 orange gaps on the lawn and dropping rows, and the between-row cover figure includes that ground. The in-field read

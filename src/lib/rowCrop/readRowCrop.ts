@@ -72,6 +72,44 @@ export const LEAF_TIP_REACH_SHARE = 0.6;
 export const LEAF_TIP_ASPECT = 1.8;
 export const LEAF_TIP_ANGLE_DEG = 40;
 
+/**
+ * Establishment: where the field ends (Yunus, 2026-11-02: "it just doesn't know where the field ends"). Rows are
+ * traced on green peaks and a mown verge has green peaks too, so a trace ran on across the headland, the verge and the
+ * road. Each row is now judged strip by strip from the ground around it (his rule: look at the surroundings; grass on
+ * both sides of the line, or no green at all, is not the field).
+ */
+export const EDGE = {
+  /** The row's band for this test, as a share of the pitch either side of the centreline. */
+  bandShare: 0.2,
+  /** Its alleys: from this share of the pitch out to half the pitch, on each side. */
+  alleyFromShare: 0.3,
+  /** A row stands where its band holds at least this share of the field's typical row green (the median over every
+   * row's traced strips; a V2 row at 0.3 cm is 1 to 2 % green, a V6 row 30 to 50 %). Low on purpose: in a frame's dim,
+   * vignetted corner the same corn is a fraction as green, and the contrast with its alleys does the real work ... */
+  bandShareOfTypical: 0.1,
+  /** ... and never less than this green (a road, a bare headland: nothing). */
+  minBandGreen: 0.005,
+  /** ... and at least this many times greener than the softer of its two alleys where the ground is green all over
+   * (EDGE.greenGround: a verge, band and alleys alike) ... */
+  bandOverAlley: 2,
+  /** ... and this many times elsewhere (a dry-grass or weedy headland is as green in the band as beside it; a V2 stand
+   * under weeds larger than its plants still clears it, its weeds being scattered). */
+  bandOverAlleyBare: 1.5,
+  /** Ground this green (band and alleys together) is grass or cover, never a gap in the field. */
+  greenGround: 0.3,
+  /** A strip where the row does not stand is still the field when its ground is not green and this many of the rows
+   * one and two pitches either side stand there (a gap in one row; a headland or a road stops every row together). */
+  standingNeighbours: 2,
+  /** Strips (half a metre each) looked at beyond a row's traced ends, to see what lies there, and to see whether a
+   * row running on is alone (its neighbours' ground looked at as far). */
+  beyondStrips: 8,
+  /** A row's first or last run shorter than this many strips, cut off from the rest by ground that is not the field, is
+   * dropped (a one-strip "stand" at a verge's edge is not the row going on). */
+  minRunBeyondBridge: 4,
+  /** Row ends on one side join into one drawn field edge when their rows are neighbours and their ends this many strips apart at most. */
+  chainStrips: 4,
+};
+
 export type RowCropParams = {
   /** Metres per pixel of the photo, or null when unknown. */
   gsdM: number | null;
@@ -190,6 +228,9 @@ export type RowCropSeedlings = { count: number; areaM2: number; /** Seedling are
 
 export type RowCropExcluded = { hull: [number, number][]; areaM2: number; reason: string };
 
+/** Establishment: a row's end inside the photo where the field stops, and what lies beyond it. */
+export type RowCropFieldEnd = { row: number; x: number; y: number; beyond: "grass or cover" | "bare ground" };
+
 export type RowCropSummary = {
   rows: number;
   rowsDropped: number;
@@ -236,6 +277,8 @@ export type RowCropRead = {
   excluded: RowCropExcluded[];
   /** Mid stage only: the late-flush seedling layer; null at establishment. */
   seedlings: RowCropSeedlings | null;
+  /** Establishment only: the row ends where the field stops inside the photo, and those ends joined into edge lines (photo pixels). */
+  fieldEdge?: { ends: RowCropFieldEnd[]; lines: [number, number][][] };
   summary: RowCropSummary;
   notes: string[];
   crop: { id: string; version: string } | null;
@@ -590,7 +633,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   }
 
   // Rows: trimmed to their supported span, bridged inside it, dropped when too short or thin.
-  type RowW = { k: number; s0: number; s1: number; a: Float64Array; support: Uint8Array };
+  type RowW = FieldRow;
   const rowsW: RowW[] = [];
   let rowsDropped = 0;
   for (const t of tracks) {
@@ -629,9 +672,48 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     rowsW.splice(i - 1, 2, { k: a.k, s0, s1, a: smoothRow(pos), support: sup });
   }
   // Row ends are not trimmed by the periodicity around them: on the test photographs that cut real rows short where a
-  // lawn shares their 3 m window and left the verge extensions in place. A row may run a metre or two into a verge.
+  // lawn shares their 3 m window. At establishment they are cut by the ground around each row instead (EDGE).
   const kMin = 0;
   if (!rowsW.length) return empty(gsdM, scaleBasis, "Rows were periodic across the photo but none could be traced along it.", vegetationFraction);
+  const fieldEnds: RowCropFieldEnd[] = [];
+  const edgeLines: [number, number][][] = [];
+  if (!mid) {
+    const cut = fieldExtent(rowsW, mask, W, H, pxStrip, pxA, nStrips, pitchPx, opts.debug);
+    rowsDropped += cut.dropped;
+    rowsW.splice(0, rowsW.length, ...cut.rows);
+    if (!rowsW.length) return empty(gsdM, scaleBasis, "Rows were traced, but nowhere does a row stand on soil with its alleys clear: grass, cover or bare ground, not a field of corn rows.", vegetationFraction);
+    // The ends in photo pixels; one side's ends of neighbouring rows joined into the field's edge.
+    const cE = Math.cos(rowAngle), sE = Math.sin(rowAngle);
+    // Drawn where the field stops (the first strip past the row that is not the field), not at the row's last plant:
+    // rows end staggered on a headland, the ground they end against does not.
+    const endPoint = (e: { stopL: number; stopA: number }): [number, number] => {
+      const l = lMin + e.stopL * stripPx, a = e.stopA + aMin;
+      return [r3((l * cE - a * sE + 0.5) * f), r3((l * sE + a * cE + 0.5) * f)];
+    };
+    for (const side of [0, 1] as const) {
+      const ends = cut.ends.filter(e => e.side === side).sort((u, v) => u.row.k - v.row.k);
+      for (const e of ends) { const p = endPoint(e); fieldEnds.push({ row: e.row.k, x: p[0], y: p[1], beyond: e.beyond }); }
+      // Chains of neighbouring rows; each drawn point at the median stop of itself and its two neighbours, so one row
+      // whose ground reads differently does not spike the line.
+      const chains: (typeof ends)[] = [];
+      for (const e of ends) {
+        const c = chains[chains.length - 1], last = c?.[c.length - 1];
+        if (last && e.row.k - last.row.k === 1 && Math.abs(e.stopL - last.stopL) <= EDGE.chainStrips) c.push(e); else chains.push([e]);
+      }
+      for (const c of chains) {
+        if (c.length < 2) continue;
+        edgeLines.push(c.map((e, i) => {
+          const nb = c.slice(Math.max(0, i - 1), i + 2).map(q => q.stopL).sort((u, v) => u - v);
+          const stopL = c.length >= 3 ? nb[nb.length >> 1] : e.stopL;
+          return endPoint({ stopL, stopA: e.stopA }); // the row's line barely drifts over a strip or two
+        }));
+      }
+    }
+    if (fieldEnds.length) {
+      const g = fieldEnds.filter(e => e.beyond === "grass or cover").length;
+      notes.push(`The field ends inside the photo: ${fieldEnds.length} row end${fieldEnds.length === 1 ? "" : "s"}, ${g} against grass or cover and ${fieldEnds.length - g} against bare ground (a headland, a track or a road). Rows stop there and nothing beyond is judged.`);
+    }
+  }
 
   // Row position per strip, for nearest-row lookups.
   const rowsByStrip: { r: number; a: number }[][] = Array.from({ length: nStrips }, () => []);
@@ -640,11 +722,22 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     // Carried on past both ends along the row's own drift, for judging patches there (not drawn, not counted as length).
     const n = r.a.length, slope = n >= 4 ? (r.a[n - 1] - r.a[Math.max(0, n - 4)]) / Math.min(3, n - 1) : 0, slope0 = n >= 4 ? (r.a[Math.min(n - 1, 3)] - r.a[0]) / Math.min(3, n - 1) : 0;
     for (let e = 1; e <= END_EXTRAPOLATION_STRIPS; e++) {
-      if (r.s1 + e < nStrips) rowsByStrip[r.s1 + e].push({ r: ri, a: r.a[n - 1] + slope * e });
-      if (r.s0 - e >= 0) rowsByStrip[r.s0 - e].push({ r: ri, a: r.a[0] - slope0 * e });
+      if (!r.edge1 && r.s1 + e < nStrips) rowsByStrip[r.s1 + e].push({ r: ri, a: r.a[n - 1] + slope * e });
+      if (!r.edge0 && r.s0 - e >= 0) rowsByStrip[r.s0 - e].push({ r: ri, a: r.a[0] - slope0 * e });
     }
   });
   for (const lst of rowsByStrip) lst.sort((u, v) => u.a - v.a);
+  // Establishment: the ground past a row's cut end, along its line, is past the field: green there is not judged (a
+  // row cut in a dim corner by mistake must never turn its own plants into weeds of the rows beside it).
+  const beyondByStrip: [number, number][][] = Array.from({ length: nStrips }, () => []);
+  for (const r of rowsW) {
+    const n = r.a.length, slope = n >= 4 ? (r.a[n - 1] - r.a[n - 4]) / 3 : 0, slope0 = n >= 4 ? (r.a[3] - r.a[0]) / 3 : 0;
+    for (let e = 1; e <= EDGE.beyondStrips; e++) {
+      if (r.edge1 && r.s1 + e < nStrips) { const a = r.a[n - 1] + slope * e; beyondByStrip[r.s1 + e].push([a - pitchPx / 2, a + pitchPx / 2]); }
+      if (r.edge0 && r.s0 - e >= 0) { const a = r.a[0] - slope0 * e; beyondByStrip[r.s0 - e].push([a - pitchPx / 2, a + pitchPx / 2]); }
+    }
+  }
+  const beyondEdge = (s: number, b: number) => { for (const [lo, hi] of beyondByStrip[s]) if (b >= lo && b <= hi) return true; return false; };
   const nearestRow = (s: number, b: number): { r: number; d: number } | null => {
     const lst = rowsByStrip[s]; if (!lst.length) return null;
     if (b < lst[0].a - pitchPx / 2 || b > lst[lst.length - 1].a + pitchPx / 2) return null; // beyond the outermost rows
@@ -718,15 +811,19 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   let label = 0, faint = 0;
   const weedLabels = new Set<number>();
   const toPhoto = (x: number, y: number): [number, number] => [(x + 0.5) * f, (y + 0.5) * f];
+  // A large patch left out is drawn as its own outline on quarter-metre cells: a convex hull of an L-shaped verge ran
+  // straight across the crop.
+  const outlineCell = Math.max(2, Math.round(mPx(0.25)));
+  const outlineOf = (pix: number[]): [number, number][] => cellOutline(pix, W, outlineCell).map(([x, y]) => [r3(x * f), r3(y * f)] as [number, number]);
   for (let i0 = 0; i0 < W * H; i0++) {
     if (!mask[i0] || labels[i0]) continue;
     label++;
     let top = 0; stack[top++] = i0; labels[i0] = label;
     const pix: number[] = [];
-    let minD = Infinity, minBand = 0, noRows = 0, touchesEdge = false, aLo = Infinity, aHi = -Infinity, exc = 0, satN = 0;
+    let minD = Infinity, minBand = 0, noRows = 0, touchesEdge = false, aLo = Infinity, aHi = -Infinity, exc = 0, satN = 0, beyond = 0;
     let mL = 0, mA = 0, mLL = 0, mAA = 0, mLA = 0; // moments in the (along, across) frame for the leaf-tip test
     while (top) {
-      const i = stack[--top]; pix.push(i); exc += excess[i]; satN += skip[i];
+      const i = stack[--top]; pix.push(i); exc += excess[i]; satN += skip[i]; if (beyondEdge(pxStrip[i], pxA[i])) beyond++;
       const x = i % W, y = (i - x) / W;
       { const l = along(x, y), a = across(x, y); mL += l; mA += a; mLL += l * l; mAA += a * a; mLA += l * a; }
       if (x === 0 || y === 0 || x === W - 1 || y === H - 1) touchesEdge = true;
@@ -743,7 +840,8 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     if (n < smallPx && exc / n < gopts.soilMargin + SMALL_PATCH_EXCESS) { faint++; continue; }
     const areaM2 = n * gsdW * gsdW;
     if (satN > n / 2) { // solid green: a border, a lawn, a closed canopy
-      if (areaM2 >= LARGE_PATCH_M2) { const hp: [number, number][] = []; const st = Math.max(1, Math.floor(n / 400)); for (let q = 0; q < n; q += st) { const i = pix[q], x = i % W; hp.push(toPhoto(x, (i - x) / W)); } excluded.push({ hull: convexHull(hp), areaM2: r3(areaM2), reason: "solid green (a border, a lawn or a closed canopy), not plants between rows" }); }
+      // Outlined over its solid ground only: the corn rows that touch a lawn belong to its component, not to the lawn.
+      if (areaM2 >= LARGE_PATCH_M2) excluded.push({ hull: outlineOf(pix.filter(i => skip[i])), areaM2: r3(areaM2), reason: "solid green (a border, a lawn or a closed canopy), not plants between rows" });
       continue;
     }
     if (noRows < n && minD <= 0) { cropComponents++; continue; } // touches a row's band: crop
@@ -762,8 +860,9 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     const hull = convexHull(hullPts);
     let sx = 0, sy = 0; for (const i of pix) { const x = i % W; sx += x; sy += (i - x) / W; }
     const [cx, cy] = toPhoto(sx / n, sy / n);
-    if (noRows === n) { noRowsPatches++; noRowsAreaM2 += areaM2; if (areaM2 > LARGE_PATCH_M2) excluded.push({ hull, areaM2: r3(areaM2), reason: "vegetation where no rows were read (a border, a headland, cover)" }); continue; }
-    if ((aHi - aLo) > BORDER_ACROSS_PITCHES * pitchPx) { excluded.push({ hull, areaM2: r3(areaM2), reason: "vegetation wider than the rows' spacing across them (a border or cover, not a plant between rows)" }); continue; }
+    if (beyond * 2 > n) { noRowsPatches++; noRowsAreaM2 += areaM2; continue; } // past a row's cut end: past the field
+    if (noRows === n) { noRowsPatches++; noRowsAreaM2 += areaM2; if (areaM2 > LARGE_PATCH_M2) excluded.push({ hull: outlineOf(pix), areaM2: r3(areaM2), reason: "vegetation where no rows were read (a border, a headland, cover)" }); continue; }
+    if ((aHi - aLo) > BORDER_ACROSS_PITCHES * pitchPx) { excluded.push({ hull: outlineOf(pix), areaM2: r3(areaM2), reason: "vegetation wider than the rows' spacing across them (a border or cover, not a plant between rows)" }); continue; }
     if (mid && touchesEdge) { edgeCut++; continue; } // cut by the frame: its row may be outside the photo
     if (mid && alleyGreenAt(sx / n, sy / n) === 1) { greenAlley++; continue; } // a verge or cover, not an alley
     betweenGreen += n; weedLabels.add(label);
@@ -921,6 +1020,7 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     version: ROW_CROP_READ_VERSION, stage: P.stage, width: px.width, height: px.height, gsdM, scaleBasis, workFactor: f,
     directionDeg: r3(((rowAngle * 180) / Math.PI + 180) % 180), pitchM: r3(pitchM), matchedSpacingM,
     rows: rowsOut, weeds, excluded, seedlings,
+    ...(mid ? {} : { fieldEdge: { ends: fieldEnds, lines: edgeLines } }),
     summary: {
       rows: rowsOut.length, rowsDropped, totalRowLengthM: r3(rowsOut.reduce((u, r) => u + r.lengthM, 0)),
       medianBandHalfWidthM: quantile(rowsOut.map(r => r.bandHalfWidthM), 0.5), medianRowGreenShare: quantile(rowsOut.map(r => r.greenShare), 0.5),
@@ -955,7 +1055,7 @@ export function convexHull(pts: [number, number][]): [number, number][] {
 }
 
 /** Everything to draw, in photo pixels: rows, each row's band edges, weeds, gaps, plants, excluded patches. */
-export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][]; bands: [number, number][][]; weeds: [number, number][][]; escapes: [number, number][][]; seedlings: [number, number][]; gaps: RowCropGap[]; plants: [number, number][]; excluded: [number, number][][] } {
+export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][]; bands: [number, number][][]; weeds: [number, number][][]; escapes: [number, number][][]; seedlings: [number, number][]; gaps: RowCropGap[]; plants: [number, number][]; excluded: [number, number][][]; fieldEdges: [number, number][][] } {
   const bands: [number, number][][] = [];
   for (const r of read.rows) {
     const half = r.bandHalfWidthM / read.gsdM;
@@ -968,5 +1068,196 @@ export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][];
     }
     bands.push(left, right);
   }
-  return { rows: read.rows.map(r => r.points), bands, weeds: read.weeds.filter(w => w.sizeClass !== "escape").map(w => w.hull), escapes: read.weeds.filter(w => w.sizeClass === "escape").map(w => w.hull), seedlings: read.seedlings?.points ?? [], gaps: read.rows.flatMap(r => r.gaps), plants: read.rows.flatMap(r => r.plantPoints ?? []), excluded: read.excluded.map(e => e.hull) };
+  return { rows: read.rows.map(r => r.points), bands, weeds: read.weeds.filter(w => w.sizeClass !== "escape").map(w => w.hull), escapes: read.weeds.filter(w => w.sizeClass === "escape").map(w => w.hull), seedlings: read.seedlings?.points ?? [], gaps: read.rows.flatMap(r => r.gaps), plants: read.rows.flatMap(r => r.plantPoints ?? []), excluded: read.excluded.map(e => e.hull), fieldEdges: read.fieldEdge?.lines ?? [] };
+}
+
+/** A traced row in strips: its lattice index, its first and last strip, its across position per strip, which strips stood on green of their own. */
+type FieldRow = { k: number; s0: number; s1: number; a: Float64Array; support: Uint8Array; /** The start / end is the field's edge (not carried on past it). */ edge0?: boolean; edge1?: boolean };
+
+/**
+ * Establishment: each traced row cut to the field (EDGE). For every row, strip by strip over its trace and
+ * EDGE.beyondStrips past both ends, the green share of its band (EDGE.bandShare of the pitch either side) and of each
+ * alley (EDGE.alleyFromShare to half the pitch); the row stands where the band is green and clearly greener than the
+ * softer alley. A strip is the field where the row stands, or where the ground is not green and the neighbouring rows
+ * stand. Each row keeps its runs of field (stretches up to MAX_BRIDGE_STRIPS bridged, runs under MIN_ROW_STRIPS
+ * dropped); an end is the field's edge when the strip beyond it is inside the photo and not the field.
+ */
+type FieldEndW = { row: FieldRow; side: 0 | 1; beyond: RowCropFieldEnd["beyond"]; /** Where the field stops: the strip boundary and the row's line there (across, work bins). */ stopL: number; stopA: number };
+function fieldExtent(rows: FieldRow[], mask: Uint8Array, W: number, H: number, pxStrip: Int32Array, pxA: Int32Array, nStrips: number, pitchPx: number, debug?: (line: string) => void): { rows: FieldRow[]; dropped: number; ends: FieldEndW[] } {
+  const X = EDGE.beyondStrips;
+  const e0 = rows.map(r => Math.max(0, r.s0 - X)), e1 = rows.map(r => Math.min(nStrips - 1, r.s1 + X));
+  const off: number[] = []; let tot = 0;
+  rows.forEach((_, ri) => { off.push(tot); tot += e1[ri] - e0[ri] + 1; });
+  const bG = new Float64Array(tot), bN = new Float64Array(tot), lG = new Float64Array(tot), lN = new Float64Array(tot), rG = new Float64Array(tot), rN = new Float64Array(tot);
+  // Row positions per strip, carried straight on past the ends along the row's own drift.
+  const posAt = (r: FieldRow, s: number): number => {
+    const n = r.a.length;
+    if (s >= r.s0 && s <= r.s1) return r.a[s - r.s0];
+    if (s > r.s1) { const sl = n >= 4 ? (r.a[n - 1] - r.a[n - 4]) / 3 : 0; return r.a[n - 1] + sl * (s - r.s1); }
+    const sl = n >= 4 ? (r.a[3] - r.a[0]) / 3 : 0; return r.a[0] - sl * (r.s0 - s);
+  };
+  const cover: { ri: number; a: number }[][] = Array.from({ length: nStrips }, () => []);
+  rows.forEach((r, ri) => { for (let s = e0[ri]; s <= e1[ri]; s++) cover[s].push({ ri, a: posAt(r, s) }); });
+  const bandR = EDGE.bandShare * pitchPx, alleyIn = EDGE.alleyFromShare * pitchPx, alleyOut = 0.5 * pitchPx;
+  for (let i = 0; i < W * H; i++) {
+    const s = pxStrip[i], lst = cover[s]; if (!lst.length) continue;
+    const b = pxA[i];
+    let best = -1, bd = Infinity, sd = 0;
+    for (const c of lst) { const d = b - c.a, ad = Math.abs(d); if (ad < bd) { bd = ad; best = c.ri; sd = d; } }
+    if (bd > alleyOut) continue;
+    const j = off[best] + s - e0[best], g = mask[i];
+    if (bd <= bandR) { bN[j]++; bG[j] += g; }
+    else if (bd >= alleyIn) { if (sd < 0) { lN[j]++; lG[j] += g; } else { rN[j]++; rG[j] += g; } }
+  }
+  // The field's typical row green: the median band green over every row's traced strips.
+  const typical: number[] = [];
+  rows.forEach((r, ri) => { for (let s = r.s0; s <= r.s1; s++) { const j = off[ri] + s - e0[ri]; if (bN[j] > 0) typical.push(bG[j] / bN[j]); } });
+  typical.sort((u, v) => u - v);
+  const minBand = Math.max(EDGE.minBandGreen, EDGE.bandShareOfTypical * (typical[typical.length >> 1] ?? 0));
+  debug?.(`edge: typical row green ${((typical[typical.length >> 1] ?? 0) * 100).toFixed(1)} %, a row stands from ${(minBand * 100).toFixed(1)} %`);
+  // Per row and strip, each half metre on its own (averaged with its neighbours, a green verge leaked into the bare
+  // strip before it and carried rows across the headland): stands, green ground, inside the photo.
+  const stand: Uint8Array[] = [], green: Uint8Array[] = [], inside: Uint8Array[] = [];
+  rows.forEach((r, ri) => {
+    const n = e1[ri] - e0[ri] + 1, o = off[ri];
+    const st = new Uint8Array(n), gr = new Uint8Array(n), ins = new Uint8Array(n);
+    const own: number[] = []; for (let s = r.s0; s <= r.s1; s++) own.push(bN[o + s - e0[ri]]);
+    own.sort((u, v) => u - v);
+    const full = own[own.length >> 1] || 1;
+    for (let t = 0; t < n; t++) {
+      let BG = 0, BN = 0, LG = 0, LN = 0, RG = 0, RN = 0;
+      BG = bG[o + t]; BN = bN[o + t]; LG = lG[o + t]; LN = lN[o + t]; RG = rG[o + t]; RN = rN[o + t];
+      ins[t] = bN[o + t] >= 0.5 * full ? 1 : 0;
+      if (!BN) continue;
+      const band = BG / BN, left = LN ? LG / LN : NaN, right = RN ? RG / RN : NaN;
+      const alley = Number.isFinite(left) && Number.isFinite(right) ? Math.min(left, right) : Number.isFinite(left) ? left : Number.isFinite(right) ? right : 0;
+      gr[t] = (BG + LG + RG) / (BN + LN + RN) >= EDGE.greenGround ? 1 : 0;
+      // A row fails where its band is empty (a road, a bare headland) or where it stands out from nothing around it:
+      // a verge or a lawn (green all over), a dry-grass or weedy headland (as green in the band as beside it).
+      st[t] = band >= minBand && band >= (gr[t] ? EDGE.bandOverAlley : EDGE.bandOverAlleyBare) * alley ? 1 : 0;
+    }
+    stand.push(st); green.push(gr); inside.push(ins);
+    if (debug) {
+      const cell = (t: number) => { const j = o + t; const b = bN[j] ? bG[j] / bN[j] : NaN, l = lN[j] ? lG[j] / lN[j] : NaN, rr = rN[j] ? rG[j] / rN[j] : NaN; return `${(b * 100).toFixed(0)}/${(l * 100).toFixed(0)}/${(rr * 100).toFixed(0)}${st[t] ? "S" : ""}${gr[t] ? "G" : ""}${ins[t] ? "" : "x"}`; };
+      debug(`edge row k ${r.k} strips ${e0[ri]}..${e1[ri]} (trace ${r.s0}..${r.s1}): ${Array.from({ length: n }, (_, t) => cell(t)).join(" ")}`);
+    }
+  });
+  const byK = new Map<number, number[]>();
+  rows.forEach((r, ri) => (byK.get(r.k) ?? byK.set(r.k, []).get(r.k)!).push(ri));
+  const standsAt = (k: number, s: number) => (byK.get(k) ?? []).some(ri => s >= e0[ri] && s <= e1[ri] && stand[ri][s - e0[ri]] === 1);
+  /** A neighbour's ground was looked at in this strip (its band inside the photo). */
+  const seenAt = (k: number, s: number) => (byK.get(k) ?? []).some(ri => s >= e0[ri] && s <= e1[ri] && inside[ri][s - e0[ri]] === 1);
+  const fieldAt = (ri: number, s: number): boolean => {
+    if (s < e0[ri] || s > e1[ri]) return false;
+    const t = s - e0[ri];
+    // Half out of the frame: on its own trace the row keeps the strip (the frame cut it, not the field); beyond the
+    // trace there is no telling.
+    if (!inside[ri][t]) return s >= rows[ri].s0 && s <= rows[ri].s1;
+    const k = rows[ri].k;
+    let nb = 0, near = 0, looked = 0;
+    for (const dk of [-2, -1, 1, 2]) {
+      if (standsAt(k + dk, s)) nb++;
+      if (seenAt(k + dk, s)) looked++;
+      for (let q = -2; q <= 2; q++) if (standsAt(k + dk, s + q)) { near++; break; }
+    }
+    // A row standing where no neighbour looked at stands within a metre along is past the field (a trace across a
+    // verge on its own); a field's outermost row has neighbours on one side only, and they stand.
+    if (stand[ri][t]) return near > 0 || looked < 2;
+    if (green[ri][t]) return false;
+    return nb >= EDGE.standingNeighbours;
+  };
+  const out: FieldRow[] = [], ends: FieldEndW[] = [];
+  let dropped = 0;
+  const beyondOf = (ri: number, from: number, step: 1 | -1): RowCropFieldEnd["beyond"] => {
+    let g = 0, n = 0;
+    for (let q = 1; q <= 2; q++) { const s = from + step * q; if (s < e0[ri] || s > e1[ri]) continue; n++; g += green[ri][s - e0[ri]]; }
+    return n && g * 2 >= n ? "grass or cover" : "bare ground";
+  };
+  rows.forEach((r, ri) => {
+    const n = r.s1 - r.s0 + 1, fld = new Uint8Array(n);
+    for (let t = 0; t < n; t++) fld[t] = fieldAt(ri, r.s0 + t) ? 1 : 0;
+    // A short last run at either end, beyond a stretch that is not the field, is not the row going on (a one-strip
+    // "stand" at a verge's edge): dropped before bridging.
+    for (const dir of [1, -1] as const) {
+      const at = (i: number) => (dir === 1 ? n - 1 - i : i); // walk inward from the end (dir 1) or the start (dir -1)
+      let i = 0; while (i < n && !fld[at(i)]) i++;
+      let j = i; while (j < n && fld[at(j)]) j++;
+      let m = j; while (m < n && !fld[at(m)]) m++;
+      if (j - i < EDGE.minRunBeyondBridge && j > i && m > j && m < n) for (let q = i; q < j; q++) fld[at(q)] = 0;
+    }
+    // Bridge short stretches between two runs of field (a gap in the row, not where the field stops).
+    for (let t = 0; t < n;) {
+      if (fld[t]) { t++; continue; }
+      let u = t; while (u < n && !fld[u]) u++;
+      if (t > 0 && u < n && u - t <= MAX_BRIDGE_STRIPS) fld.fill(1, t, u);
+      t = u;
+    }
+    debug?.(`edge field k ${r.k} trace ${r.s0}..${r.s1}: ${Array.from(fld).join("")}`);
+    let kept = 0;
+    for (let t = 0; t < n;) {
+      if (!fld[t]) { t++; continue; }
+      let u = t; while (u + 1 < n && fld[u + 1]) u++;
+      if (u - t + 1 >= MIN_ROW_STRIPS) {
+        const s0 = r.s0 + t, s1 = r.s0 + u;
+        const piece: FieldRow = { k: r.k, s0, s1, a: r.a.slice(t, u + 1), support: r.support.slice(t, u + 1) };
+        // An end is the field's edge when ground that is not the field follows it within EDGE.beyondStrips, before the
+        // frame cuts the row off (a trace often stops at its last plant, a metre of bare headland before the verge).
+        const stopAt = (from: number, step: 1 | -1): number | null => {
+          for (let q = 1; q <= EDGE.beyondStrips; q++) {
+            const s = from + step * q;
+            if (s < e0[ri] || s > e1[ri] || !inside[ri][s - e0[ri]]) return null;
+            if (!fieldAt(ri, s)) return s;
+          }
+          return null;
+        };
+        const before = stopAt(s0, -1), after = stopAt(s1, 1);
+        if (before != null) { piece.edge0 = true; ends.push({ row: piece, side: 0, beyond: beyondOf(ri, before + 1, -1), stopL: before + 1, stopA: posAt(r, before + 1) }); }
+        if (after != null) { piece.edge1 = true; ends.push({ row: piece, side: 1, beyond: beyondOf(ri, after - 1, 1), stopL: after, stopA: posAt(r, after) }); }
+        out.push(piece); kept++;
+        debug?.(`edge piece k ${r.k} ${s0}..${s1} (trace ${r.s0}..${r.s1}): field stops ${before ?? "-"} before, ${after ?? "-"} after`);
+      }
+      t = u + 1;
+    }
+    if (!kept) dropped++;
+  });
+  return { rows: out, dropped, ends };
+}
+
+/**
+ * The outer outline of a set of work pixels on cells of `cell` pixels: the boundary of the cells they touch, traced as
+ * rings and the longest kept (a hole's edge is not the outline), straight runs merged. Work-pixel corners.
+ */
+export function cellOutline(pix: ArrayLike<number>, W: number, cell: number): [number, number][] {
+  if (!pix.length) return [];
+  let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+  for (let q = 0; q < pix.length; q++) { const i = pix[q], x = Math.floor((i % W) / cell), y = Math.floor(Math.floor(i / W) / cell); if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const gw = x1 - x0 + 3, gh = y1 - y0 + 3, g = new Uint8Array(gw * gh);
+  for (let q = 0; q < pix.length; q++) { const i = pix[q], x = Math.floor((i % W) / cell) - x0 + 1, y = Math.floor(Math.floor(i / W) / cell) - y0 + 1; g[y * gw + x] = 1; }
+  // Directed boundary edges, clockwise around filled cells (y down): corner to corner.
+  const next = new Map<number, number[]>();
+  const key = (x: number, y: number) => y * (gw + 1) + x;
+  const add = (ax: number, ay: number, bx: number, by: number) => { const k = key(ax, ay); (next.get(k) ?? next.set(k, []).get(k)!).push(key(bx, by)); };
+  for (let y = 1; y < gh - 1; y++) for (let x = 1; x < gw - 1; x++) {
+    if (!g[y * gw + x]) continue;
+    if (!g[(y - 1) * gw + x]) add(x, y, x + 1, y);
+    if (!g[y * gw + x + 1]) add(x + 1, y, x + 1, y + 1);
+    if (!g[(y + 1) * gw + x]) add(x + 1, y + 1, x, y + 1);
+    if (!g[y * gw + x - 1]) add(x, y + 1, x, y);
+  }
+  let best: number[] = [];
+  for (const start of [...next.keys()]) {
+    while ((next.get(start)?.length ?? 0) > 0) {
+      const ring: number[] = [start];
+      let cur = next.get(start)!.pop()!;
+      while (cur !== start) { ring.push(cur); const l = next.get(cur); if (!l || !l.length) break; cur = l.pop()!; }
+      if (ring.length > best.length) best = ring;
+    }
+  }
+  const pts = best.map(k => [k % (gw + 1), Math.floor(k / (gw + 1))] as [number, number]);
+  const kept: [number, number][] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[(i - 1 + pts.length) % pts.length], b = pts[i], c = pts[(i + 1) % pts.length];
+    if ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]) !== 0) kept.push(b);
+  }
+  return kept.map(([x, y]) => [(x + x0 - 1) * cell, (y + y0 - 1) * cell]);
 }

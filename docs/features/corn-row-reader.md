@@ -284,3 +284,82 @@ Every variant re-run at 32b32d2 on the four photo sets, compared with the record
 late stage (no variant) is the weakest, and the probe shows its rows still carry a periodic green signal. One
 concrete plan per stage, weakest first, in
 [docs/research/corn-stage-benchmark-2026-11-02.md](../research/corn-stage-benchmark-2026-11-02.md).
+
+## Establishment: where the field ends (2026-11-02)
+
+Yunus, on photograph 34: "very very very good detection, but it just doesn't know where the field ends", with the
+proposal to look at the surroundings: grass all around, or a clear edge, is where the field stops. The rows had run on
+across the headland, the verge and the road, carrying orange gaps and red "weeds" on the grass; and the grey outline of
+a left-out verge was its convex hull, a diagonal line straight across the crop.
+
+**The rule (`EDGE`, `fieldExtent` in readRowCrop.ts, establishment only).** Every traced row is judged strip by strip
+(half a metre) from the ground around it, over its trace and 4 m past both ends:
+
+- **It stands** where its band (a fifth of the pitch either side) holds green, at least a tenth of the field's typical
+  row green, and is clearly greener than the softer of its two alleys: twice as green where the ground is green all
+  over (a verge, a lawn), one and a half times elsewhere (a dry-grass or weedy headland). The bar is low on purpose:
+  in a frame's dim, vignetted corner the same corn is a fraction as green (photograph 89 cut its rows mid-crop at a
+  third of the typical green), and the contrast with soil alleys does the real work.
+- **A strip where it does not stand is still the field** when its ground is not green and two of the rows one or two
+  pitches either side stand there: a gap in one row. A headland, a road or a verge stops every row together.
+- **A row standing on its own**, where no neighbour looked at stands within a metre along, is past the field (a trace
+  across a verge by itself).
+- Each row keeps its field runs; stretches up to 3 m between two runs are bridged; a first or last run under 2 m, cut
+  off by ground that is not the field, is dropped (a one-strip "stand" at a verge's edge).
+- **An end is the field's edge** when ground that is not the field follows within 4 m before the frame cuts the row
+  off. The read says what lies beyond: grass or cover, or bare ground (a headland, a track, a road). Past an edge the
+  row is not carried on, and green on the line of a cut row beyond its end is not judged (never a weed of the rows
+  beside it).
+- The edge is drawn where the field stops (the first strip that is not the field), not at each row's last plant; one
+  side's ends of neighbouring rows are joined, each point at the median of itself and its two neighbours.
+- Left-out patches are drawn as their own outline on quarter-metre cells, over the solid-green ground only.
+
+**Where it shows.** Photo Scout draws the edge as a dashed white line with the rows and adds a "Field edge" line to the
+summary; the read carries `fieldEdge: { ends, lines }`; the bench draws it white.
+
+**Measured on the 15 establishment photographs** (`outputs/row-crop/field-edge/`, against `b1102-establishment`):
+
+| Photo | Edge in the photo | Row ends found (grass / bare) | Row length m | Gaps | Gap m | Weeds |
+|---|---|---|---|---|---|---|
+| 34 | verge and road, bottom | 31 (25 / 6) | 517 to 503 | 29 to 24 | 19.3 to 13.4 | 15 to 7 |
+| 63 | verge and road, diagonal | 34 (32 / 2) | 375 to 362 | 28 to 23 | 15.7 to 11.5 | 9 to 4 |
+| 64 | verge and road, bottom | 36 (35 / 1) | 494 to 486 | 22 to 14 | 10.4 to 6.5 | 7 to 3 |
+| 73, 104 | lawn, top | 33 and 33 | 625 to 618, 560 to 553 | 0 to 0, 4 to 3 | | unchanged |
+| 42 | grass, top corner | 17 (17 / 0) | unchanged | unchanged | | unchanged |
+| 89 | headland, top | 11 (6 / 5) | unchanged | unchanged | | unchanged |
+| 102, 99 | none | 0 | unchanged | unchanged | | unchanged |
+| 67, 70, 71, 72 | an unplanted tyre-tracked strip | 1 to 4, bare ground | within 1 % | | | up to 3 fewer |
+
+Rows stop at the headland on every edge photograph looked at (34, 63, 64, 73, 104); the gaps and weeds that went are
+the ones on the verge and the road. Every rendered development stand reads the same rows, length and on-crop share with
+the step on and off, except development-5 (the registered weak case: V2 under weeds larger than its plants), which
+loses a 2.5 m stub at the frame's edge (on-crop 0.78 to 0.76). The mid variant reads all 40 mid photographs number for
+number as before. Tests: `src/test/rowCropFieldEdge.test.ts` (a rendered stand with a verge and a road, ends said and
+drawn, bare-ground ends, a stand running off the frame without ends, the L-shaped outline); the end tests fail with the
+step switched off. `scripts/rowCrop/edgeProbe.ts` prints a photograph's per-strip band and alley green, and
+`edgeScenesProbe.ts` compares the rendered stands with the step on and off.
+
+**Known limits.** The field's edge is where every row stops, so a sprayer track or a drowned strip more than 3 m wide
+across the rows also reads as an edge (labelled bare ground). A headland planted across the rows reads as an edge too
+(no row of this direction stands there). The edge line still steps where neighbouring rows end a metre or more apart.
+
+## Establishment under other field conditions: a review (2026-11-02)
+
+Yunus asked for the reader to be checked for field conditions beyond these photographs. What the code does with each,
+where it is fragile, and the change each would need, most likely to matter first:
+
+| Condition | What the reader does now | Fragile where | Change it would need |
+|---|---|---|---|
+| Dim corners, vignetting | Soil-relative green per 64 px tile copes with slow brightness change; the edge bar is relative and low | Gaps along rows in the corners are often missed plants (share under 15 % of the row's median) | Flatten the frame's radial brightness fall on soil pixels before the mask (shared with the emergence work) |
+| Hard shadows (trees, poles, the drone) | Shadow is not green, so a shaded row reads as a gap | A shadow across several rows reads as gaps, or as a bare edge if over 3 m | A shadow mask (dark and unsaturated against the local soil) marked not judged, never a gap |
+| Row spacing without a pixel size | Scale assumed from the measured pitch and 76.2 cm | 38 or 51 cm rows read at the wrong scale: every metre off by the ratio | The header's altitude when present; otherwise the operator's spacing in Photo Scout |
+| Twin rows | One band covers both lines | A weed between the pair is hidden | A twin-aware band (two peaks inside one pitch) |
+| Curved or contour rows | One direction per photo; strips chain slow bends | Strong curvature: strip profiles blur, traces break | Direction per region (the same work as the mid stage's photo 16) |
+| Two plantings, a headland planted across | The second direction is not read | Its ground is now cut as an edge | Per-region direction, each region read as its own frame |
+| Sprayer or wheel tracks across the rows | Up to 3 m bridged as gaps | Wider tracks become edges | Tell a track (bare, straight, across, rows resume beyond) from a headland (rows do not resume) |
+| Weeds outgrowing V2 corn | Rows kept where the ground is under 30 % green | Above that, rows and verge look alike | Nothing by colour; the segmenter line of work |
+| Residue, straw, red or wet soil | Soil-relative green; rendered straw and red-soil stands pass | Heavy no-till residue on real photographs untested | A real residue flight |
+| Oblique photographs | Local pitch may vary 10 % per strip | Strong tilt: pitch varies across the frame beyond that | Refuse or rectify when the header's gimbal pitch is over 10 degrees off nadir |
+| Coarse pixels (2 to 3 cm) | Reads rows; no stand estimate | V2 rows of 1 cm leaves vanish | Say so: the stage needs 1 cm or finer at V2 |
+
+None of these is built; each is a separate piece of work with its own pictures to check.

@@ -336,6 +336,10 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
         for (const r of overlay.rows) path(r, false);
         ctx.strokeStyle = "rgba(255,160,0,0.95)"; ctx.lineWidth = 3;
         for (const g of overlay.gaps) { ctx.beginPath(); ctx.moveTo(g.x1 * s, g.y1 * s); ctx.lineTo(g.x2 * s, g.y2 * s); ctx.stroke(); }
+        // Where the field stops inside the photo (establishment): the rows end against grass or bare ground there.
+        ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 2; ctx.setLineDash([8, 5]);
+        for (const e of overlay.fieldEdges) path(e, false);
+        ctx.setLineDash([]);
       }
       if (show.windows) { ctx.strokeStyle = "rgba(158,158,158,0.7)"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); for (const e of overlay.excluded) path(e, true); ctx.setLineDash([]); }
       if (show.blobs) {
@@ -415,6 +419,7 @@ function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | 
     ...(read.seedlings ? [["Late seedlings", `${read.seedlings.count.toLocaleString()} small plants on the soil, ${read.seedlings.cover == null ? "–" : (read.seedlings.cover * 100).toFixed(2) + "%"} of the field ground read; a layer, not findings`] as [string, string]] : []),
     ["On the rows", `${s.cropComponents.toLocaleString()} green patches counted as the crop${s.leafTips ? `, ${s.leafTips} of them leaf tips just beyond a band` : ""}`],
     ["Gaps along the rows", s.gaps ? `${s.gaps}, ${s.gapLengthM.toFixed(1)} m in all` : "none over the minimum length"],
+    ...(read.fieldEdge ? [["Field edge", read.fieldEdge.ends.length ? `${read.fieldEdge.ends.length} row end${read.fieldEdge.ends.length === 1 ? "" : "s"} inside the photo: ${read.fieldEdge.ends.filter(e => e.beyond === "grass or cover").length} against grass or cover, ${read.fieldEdge.ends.filter(e => e.beyond === "bare ground").length} against bare ground (dashed white line); nothing beyond is judged` : "the rows run on to the photo's edges"] as [string, string]] : []),
     ["Plants (estimate)", s.plants == null ? "not estimated at this pixel size" : `${s.plants.toLocaleString()} green peaks along the rows; unverified`],
     ["Not judged", `${s.noRowsPatches} patches where no rows were read; ${read.excluded.length} borders or cover`],
     ["Vegetation", `${(s.vegetationFraction * 100).toFixed(1)}% of pixels; ${s.specks.toLocaleString()} specks dropped`],
