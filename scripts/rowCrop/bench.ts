@@ -47,6 +47,13 @@ function draw(img: PhotoPixels, read: RowCropRead, file: string) {
   // Seedlings: an amber ring around each, about 5 cm across at 0.5 cm a pixel, so the plant inside stays visible.
   const ringR = Math.max(6, Math.round(0.025 / read.gsdM));
   for (const [x, y] of o.seedlings) for (let k = 0; k < 48; k++) { const a = (k / 48) * 2 * Math.PI, xx = x + ringR * Math.cos(a), yy = y + ringR * Math.sin(a), a2 = ((k + 1) / 48) * 2 * Math.PI; line(c, w, h, xx, yy, x + ringR * Math.cos(a2), y + ringR * Math.sin(a2), [255, 190, 0], Math.max(1, t - 1)); }
+  // Emergence: possible seedlings blue, supported missing plants orange, uncertain grey (as in Photo Scout); off-row
+  // green smaller than the crop's seedlings as thin grey outlines (counted apart, not weeds).
+  const ring = (x: number, y: number, col: Rgb) => { for (let k = 0; k < 48; k++) { const a = (k / 48) * 2 * Math.PI, a2 = ((k + 1) / 48) * 2 * Math.PI; line(c, w, h, x + ringR * Math.cos(a), y + ringR * Math.sin(a), x + ringR * Math.cos(a2), y + ringR * Math.sin(a2), col, t); } };
+  for (const [x, y] of o.possible) ring(x, y, [60, 140, 255]);
+  for (const [x, y] of o.missing) ring(x, y, [255, 150, 0]);
+  for (const [x, y] of o.uncertain) ring(x, y, [170, 170, 170]);
+  for (const wd of o.smallGreen) poly(c, w, h, wd, [175, 175, 175], Math.max(0, t - 1), true);
   for (const wd of o.weeds) poly(c, w, h, wd, [255, 40, 40], t, true);
   for (const wd of o.escapes) poly(c, w, h, wd, [255, 0, 200], t + 2, true);
   for (const [x, y] of o.plants) line(c, w, h, x, y, x, y, [60, 255, 90], t);
