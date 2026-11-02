@@ -571,8 +571,10 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   // The lens's black corners are never green (validation 2026-11-02: six of 23 sampled establishment weed candidates
   // sat in them, the colour test reading noise in near-black pixels).
   // Only toward the frame's corners (beyond LATE.cornerRadius of the half-diagonal): a leaf's shadow inside the frame is
-  // as dark, and taking it out of the mask split the mid canopy into hundreds of false between-row patches.
-  {
+  // as dark, and taking it out of the mask split the mid canopy into hundreds of false between-row patches. Establishment
+  // only: on mid photograph 17 (rows on the diagonal) it took the corners' row signal and the pitch was lost (benchmark
+  // at 0562003); mid already leaves patches cut by the frame unjudged.
+  if (P.stage === "establishment") {
     const cx = (W - 1) / 2, cy = (H - 1) / 2, R2 = (LATE.cornerRadius ** 2) * (cx * cx + cy * cy);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       if ((x - cx) ** 2 + (y - cy) ** 2 < R2) continue;
