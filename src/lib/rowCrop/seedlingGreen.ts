@@ -34,6 +34,17 @@ export const SEEDLING_GREEN = {
 };
 export type SeedlingGreenOptions = typeof SEEDLING_GREEN;
 
+/**
+ * The second, more sensitive look (emergence V2, 2026-11-02), run only in narrow windows: along a reconstructed row
+ * where a plant is expected and none was found, and on ground no row reaches where a later planting may stand. Chosen
+ * on photograph 100's later planting, barely emerged: these thresholds line its specks up at the row pitch (0.55
+ * against 0.33 for SEEDLING_GREEN), looser ones line up soil texture at another lag. Never run over a whole frame.
+ */
+export const SEEDLING_RELAXED: SeedlingGreenOptions = { ...SEEDLING_GREEN, strongTint: 11, weakTint: 7, brightOverSoil: 22, sproutTint: 5, sproutBright: 22 };
+
+/** The soil beside every pixel, per block: brightness and tint of the least green pixels, a median over the blocks around. */
+export type SoilLevels = { W: number; H: number; B: number; gw: number; gh: number; soilL: Float32Array; soilT: Float32Array; /** Median soil brightness over the frame. */ globalL: number };
+
 function medianGrid(v: Float32Array, w: number, h: number, win: number): Float32Array {
   const out = new Float32Array(w * h), r = win >> 1, buf: number[] = [];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -45,8 +56,8 @@ function medianGrid(v: Float32Array, w: number, h: number, win: number): Float32
   return out;
 }
 
-/** The seedling mask at the photo's own pixel (1 = plant). */
-export function seedlingMask(px: PhotoPixels, o: SeedlingGreenOptions = SEEDLING_GREEN): Uint8Array {
+/** The soil levels of a photograph (once per frame; every window reads them). */
+export function soilLevels(px: PhotoPixels, o: SeedlingGreenOptions = SEEDLING_GREEN): SoilLevels {
   const W = px.width, H = px.height, N = W * H, d = px.rgba;
   // Soil tint cut from the image's tint histogram (sampled).
   const hist = new Int32Array(256);
@@ -67,18 +78,32 @@ export function seedlingMask(px: PhotoPixels, o: SeedlingGreenOptions = SEEDLING
   }
   for (let c = 0; c < gw * gh; c++) { const ok = bn[c] >= 0.2 * ba[c]; bl[c] = ok ? bl[c] / bn[c] : NaN; bt[c] = ok ? bt[c] / bn[c] : NaN; }
   const soilL = medianGrid(bl, gw, gh, o.soilWin), soilT = medianGrid(bt, gw, gh, o.soilWin);
+  const ls = Array.from(soilL).filter(Number.isFinite).sort((a, b) => a - b);
+  return { W, H, B, gw, gh, soilL, soilT, globalL: ls.length ? ls[ls.length >> 1] : 128 };
+}
 
+/**
+ * The seedling mask over a window [x0, x1) x [y0, y1) of the photograph (1 = plant), window-sized. With `lightScale`
+ * every threshold is scaled by the soil's brightness there over the frame's (at most 1, at least a half): a dim,
+ * vignetted corner shows the same seedling with proportionally less contrast.
+ */
+export function seedlingWindow(px: PhotoPixels, lv: SoilLevels, o: SeedlingGreenOptions, x0: number, y0: number, x1: number, y1: number, lightScale = false): Uint8Array {
+  const W = px.width, d = px.rgba, { B, gw } = lv;
+  x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(lv.W, Math.ceil(x1)); y1 = Math.min(lv.H, Math.ceil(y1));
+  const w = Math.max(0, x1 - x0), h = Math.max(0, y1 - y0), N = w * h;
   // Per pixel: 1 strong, 2 weak, 4 sprout part.
   const cls = new Uint8Array(N);
-  for (let y = 0; y < H; y++) {
+  for (let y = y0; y < y1; y++) {
     const row = Math.floor(y / B) * gw;
-    for (let x = 0; x < W; x++) {
-      const c = row + Math.floor(x / B), sL = soilL[c], sT = soilT[c];
+    for (let x = x0; x < x1; x++) {
+      const c = row + Math.floor(x / B), sL = lv.soilL[c], sT = lv.soilT[c];
       if (!Number.isFinite(sL) || !Number.isFinite(sT)) continue;
+      const k = lightScale ? Math.max(0.5, Math.min(1, sL / lv.globalL)) : 1;
       const i = y * W + x, q = i * 4, r = d[q], g = d[q + 1], b = d[q + 2];
       const dt = g - (r + b) / 2 - sT, dl = 0.3 * r + 0.59 * g + 0.11 * b - sL;
-      if (dt > o.strongTint) cls[i] = 1;
-      else if (dt > o.weakTint || (dl > o.brightOverSoil && dt > o.paleTint)) cls[i] = dl > o.sproutBright && dt > o.sproutTint ? 6 : 2;
+      const j = (y - y0) * w + (x - x0);
+      if (dt > k * o.strongTint) cls[j] = 1;
+      else if (dt > k * o.weakTint || (dl > k * o.brightOverSoil && dt > k * o.paleTint)) cls[j] = dl > k * o.sproutBright && dt > k * o.sproutTint ? 6 : 2;
     }
   }
   // Hysteresis: components of strong + weak; kept when they hold a strong pixel, or are a pale seedling.
@@ -90,15 +115,20 @@ export function seedlingMask(px: PhotoPixels, o: SeedlingGreenOptions = SEEDLING
     while (stack.length) {
       const p = stack.pop()!; comp.push(p);
       if (cls[p] & 1) strong = true; if (cls[p] & 4) sprout = true;
-      const x = p % W, y = (p - x) / W;
+      const x = p % w, y = (p - x) / w;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
-        const qn = yy * W + xx; if (cls[qn] && !seen[qn]) { seen[qn] = 1; stack.push(qn); }
+        const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+        const qn = yy * w + xx; if (cls[qn] && !seen[qn]) { seen[qn] = 1; stack.push(qn); }
       }
     }
     if (strong || (sprout && comp.length >= o.sproutMinPx)) for (const p of comp) mask[p] = 1;
   }
   return mask;
+}
+
+/** The seedling mask at the photo's own pixel (1 = plant), over the whole frame. */
+export function seedlingMask(px: PhotoPixels, o: SeedlingGreenOptions = SEEDLING_GREEN, lv: SoilLevels = soilLevels(px, o)): Uint8Array {
+  return seedlingWindow(px, lv, o, 0, 0, px.width, px.height);
 }
 
 /** A mask shrunk by f: a work pixel is plant when any of its f x f photo pixels is. */

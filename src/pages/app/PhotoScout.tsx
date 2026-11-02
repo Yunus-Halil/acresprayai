@@ -334,8 +334,18 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
         for (const b of overlay.bands) path(b, false);
         ctx.strokeStyle = "rgba(0,230,255,0.9)"; ctx.lineWidth = 2;
         for (const r of overlay.rows) path(r, false);
-        ctx.strokeStyle = "rgba(255,160,0,0.95)"; ctx.lineWidth = 3;
-        for (const g of overlay.gaps) { ctx.beginPath(); ctx.moveTo(g.x1 * s, g.y1 * s); ctx.lineTo(g.x2 * s, g.y2 * s); ctx.stroke(); }
+        // Gaps: orange where the photo supports a missing plant (or before V2 classed them), grey dashed where it cannot tell.
+        for (const g of overlay.gaps) {
+          ctx.strokeStyle = g.kind === "uncertain" ? "rgba(170,170,170,0.9)" : "rgba(255,160,0,0.95)"; ctx.lineWidth = 3; ctx.setLineDash(g.kind === "uncertain" ? [6, 4] : []);
+          ctx.beginPath(); ctx.moveTo(g.x1 * s, g.y1 * s); ctx.lineTo(g.x2 * s, g.y2 * s); ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        // Emergence V2 at expected plant positions: possible seedlings blue, supported missing plants orange, uncertain grey.
+        const mark = Math.max(3, (rowCrop ? 0.02 / rowCrop.gsdM : 8) * s);
+        for (const [pts, col] of [[overlay.possible, "rgba(70,150,255,0.95)"], [overlay.missing, "rgba(255,150,0,0.95)"], [overlay.uncertain, "rgba(170,170,170,0.9)"]] as const) {
+          ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+          for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(x * s, y * s, mark, 0, 2 * Math.PI); ctx.stroke(); }
+        }
         // Where the field stops inside the photo (establishment): the rows end against grass or bare ground there.
         ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 2; ctx.setLineDash([8, 5]);
         for (const e of overlay.fieldEdges) path(e, false);
@@ -418,7 +428,8 @@ function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | 
     ["Between the rows", `${s.weeds} patch${s.weeds === 1 ? "" : "es"}, ${s.weedAreaM2.toFixed(2)} m²${s.betweenRowCover == null ? "" : `, ${(s.betweenRowCover * 100).toFixed(1)}% of the ground between the bands`}${s.escapes != null ? `; ${s.escapes} escape${s.escapes === 1 ? "" : "s"} 15 cm or more across` : ""}`],
     ...(read.seedlings ? [["Late seedlings", `${read.seedlings.count.toLocaleString()} small plants on the soil, ${read.seedlings.cover == null ? "–" : (read.seedlings.cover * 100).toFixed(2) + "%"} of the field ground read; a layer, not findings`] as [string, string]] : []),
     ["On the rows", `${s.cropComponents.toLocaleString()} green patches counted as the crop${s.leafTips ? `, ${s.leafTips} of them leaf tips just beyond a band` : ""}`],
-    ["Gaps along the rows", s.gaps ? `${s.gaps}, ${s.gapLengthM.toFixed(1)} m in all` : "none over the minimum length"],
+    ["Gaps along the rows", s.gaps ? `${s.gaps}, ${s.gapLengthM.toFixed(1)} m in all${read.emergence ? ` (before the second look: ${read.emergence.gapsBefore}, ${read.emergence.gapLengthBeforeM.toFixed(1)} m)` : ""}` : "none over the minimum length"],
+    ...(read.emergence ? [["Second look along the rows", `${read.emergence.searched.toLocaleString()} expected positions: ${read.emergence.strictFound.toLocaleString()} plants the first pass had not counted, ${read.emergence.possible.toLocaleString()} possible seedlings (blue), ${read.emergence.missing.toLocaleString()} missing plants the photo supports (orange), ${read.emergence.uncertain.toLocaleString()} uncertain (grey)${read.emergence.laterPlanting ? `; a later planting set apart (${read.emergence.laterPlanting.greenPatches} green patches there, not weeds)` : ""}`] as [string, string]] : []),
     ...(read.fieldEdge ? [["Field edge", read.fieldEdge.ends.length ? `${read.fieldEdge.ends.length} row end${read.fieldEdge.ends.length === 1 ? "" : "s"} inside the photo: ${read.fieldEdge.ends.filter(e => e.beyond === "grass or cover").length} against grass or cover, ${read.fieldEdge.ends.filter(e => e.beyond === "bare ground").length} against bare ground (dashed white line); nothing beyond is judged` : "the rows run on to the photo's edges"] as [string, string]] : []),
     ["Plants (estimate)", s.plants == null ? "not estimated at this pixel size" : `${s.plants.toLocaleString()} green peaks along the rows; unverified`],
     ["Not judged", `${s.noRowsPatches} patches where no rows were read; ${read.excluded.length} borders or cover`],

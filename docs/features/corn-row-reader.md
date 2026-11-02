@@ -363,3 +363,92 @@ where it is fragile, and the change each would need, most likely to matter first
 | Coarse pixels (2 to 3 cm) | Reads rows; no stand estimate | V2 rows of 1 cm leaves vanish | Say so: the stage needs 1 cm or finer at V2 |
 
 None of these is built; each is a separate piece of work with its own pictures to check.
+
+## Emergence V2: rows first, then a second look along them (2026-11-02)
+
+Yunus's brief: reconstruct the planter rows from the existing seedling detections, then use them to recover pale
+seedlings, classify every apparent gap (confirmed, possible, uncertain, supported missing) and benchmark V1 against
+V2A (rows) and V2B (row-aware recovery) without breaking what works. Built in `emergence.ts`, `seedlingGreen.ts` and
+`readRowCrop.ts` (types), measured with `scripts/rowCrop/emergenceV2Bench.ts`.
+
+**Phase 1, the rows: already the reconstruction the brief asks for; kept as it is.** The reader did not connect
+neighbouring plants: it fits one lens coefficient with the direction where the points concentrate, takes the pitch
+from the projection's autocorrelation and the phase from a circular mean, then refits each line of the comb to its own
+points with a narrowing tolerance (a robust fit, RANSAC in effect), a quadratic once long, splits rows at empty
+stretches over 1.5 m and drops short runs. Its consistency on the 23 photographs: row spacing 75.8 to 76.6 cm at the
+assumed scale, coefficient of variation 1.5 to 2.3 % across neighbouring rows, direction 86.3 to 87.8 degrees, lens
+coefficient 0.068 to 0.084. Rows continue through stretches with no seedling (the line is fitted, not drawn plant to
+plant). So V2A changes one thing: the second planting.
+
+**The second planting (photograph 100).** The right third is a later planting in the same direction, barely emerged;
+V1 listed its specks as 249 weeds and ran one stray row into it. V2 looks at ground the main rows do not reach (at
+least three pitches wide, mostly soil) with a relaxed seedling test (`SEEDLING_RELAXED`, thresholds scaled down with
+the soil's brightness where it is dim). There its specks line up at 75 to 77 cm with coherence 0.48 to 0.61, so a
+planting is there. Its rows were then grown as a comb of their own, and **looked at by eye they were wrong**: one line
+sat on plain soil beside a furrow, others caught every second furrow. A line through ground that is not the crop is
+worse than none, so the rows are not drawn. The ground is set apart instead (an excluded outline: "a later planting
+just emerging, its rows are too faint to place"), its green counted on its own (172 patches), never as weeds,
+and the main comb's stray row inside it dropped. Weeds on 100: 249 to 90.
+
+**Phase 2, the second look.** In every stretch of a row longer than 1.6 times its own plant spacing, the expected
+positions (the row's spacing, evenly between the plants either side) are examined:
+
+1. **The strict test first, at the photo's own pixel.** Its mask is already computed for V1; a strict green pixel on
+   the line there is a plant V1 never made a point, because it was larger than the seedling-point cap or stood in a
+   crowded cell. This was the largest finding of the work: V1 drew gaps through 3,189 such plants on the 23
+   photographs. They are confirmed, not "recovered".
+2. **The relaxed test**, light-scaled, inside a corridor along the fitted line (3 cm, or 2.5 times the row's own
+   spread): a speck of 8 photo pixels or more near the expected position is a **possible seedling**.
+3. **A control**: the same search in the middle of both alleys beside the stretch. Where it fires a third of the time
+   or more the soil itself fools the test, and nothing there is called either way. Across the 23 photographs the
+   control fires 0.5 to 3 % of the time.
+4. **Supported missing plant**: nothing found, the soil at least 70 % as bright as the frame's, inside 92 % of the
+   frame's half-diagonal, not at the frame's edge, a quiet control. **Uncertain**: anything else with nothing found.
+5. Gaps are recomputed over everything the row now holds and named by what their positions were: orange (a missing
+   plant the photo supports) or grey dashed (uncertain). Positions outside the photo are not counted.
+
+The strict mask is not widened anywhere: the relaxed test runs only inside the corridors and the set-apart ground, and
+the possible seedlings are reported apart from the plants, never added to the stand. `seedlingGreen.ts` was split
+into `soilLevels` (once per frame) and `seedlingWindow`; the whole-frame mask is bit-identical to before (checked on
+three photographs) and costs the same.
+
+**Phase 4, measured on the 23 photographs** (`outputs/emergence-v2/`, pictures V1, V2A, V2B side by side per photo,
+`results.md`, sample sheets in `sheets/`). V1 mode reproduces the morning's reader on all 23 number for number; V2A
+reproduces V1's rows and plants on every photograph but 100.
+
+| | V1 | V2 |
+|---|---|---|
+| Plants counted on the rows | 64,553 | about 67,700 (+3,189 the strict test sees, previously drawn as gaps; 100 loses its stray row) |
+| Possible seedlings (reported apart) | none | 1,665 |
+| Supported missing plants | none | 2,729 |
+| Uncertain positions | none | 339 |
+| Gaps | 2,555, 1,311 m | 870, 395 m |
+| Green called weeds on 100 | 249 | 90 |
+| Time per photograph, median (max) | 1.33 s (1.52) | 1.36 s (1.60) |
+
+**Checked by eye, not against counted plants** (no reference counts exist; these are my readings of the 36-crop
+sample sheets at 5x, a 4 cm ring on the position):
+
+- **Possible seedlings:** about 23 of 36 show a pale leaf inside the ring, 3 are plainly soil, about 10 cannot be told.
+- **Supported missing plants:** none of 36 shows a plant in the ring (after the strict-first rule; before it, 6 of 36
+  did, which is how the 3,189 were found).
+- **Rows:** cyan lines lie on the planter lines on every photograph looked at (3, 40, 54, 100), through the gaps.
+
+So there is no recall or precision figure: what exists is the control rate (the relaxed test's false finds on alley
+soil, 0.5 to 3 %), the eye readings above, and the regression checks.
+
+**Remaining failure modes.**
+- The later planting on 100 is detected but not read; its rows are too faint for this camera at this stage. A second
+  flight a week later would read it as its own field.
+- A possible seedling is weaker evidence than a plant: roughly a third of the sampled ones could not be confirmed by
+  eye. They are drawn in their own colour and kept out of the stand on purpose.
+- Every metre rests on the assumed 76.2 cm row spacing (the photographs carry no EXIF).
+- The seedling-point size cap is a share of the frame's long side, so a small or cropped frame under-reads (found while
+  writing the tests: a 1,400 px frame has a 3 px cap).
+
+**Where it shows.** Photo Scout (emergence selected) draws possible seedlings blue, supported missing plants orange,
+uncertain positions grey, gaps orange or grey dashed, and the set-apart ground with the other left-out ground; the
+summary gains a "Second look along the rows" line and the gaps line says what they were before. Tests:
+`src/test/rowCropEmergenceV2.test.ts` (a rendered field with pale seedlings, skips and a later planting: V1's rows kept,
+pale ones possible or plants, skips missing and never plants, the control quiet, the later planting set apart); two
+of its four tests fail with V2 switched off. `EMERGENCE.recover` and `EMERGENCE.extraPlantings` switch V2 off.

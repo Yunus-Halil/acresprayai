@@ -145,7 +145,7 @@ precision-and-recall proxy that costs no labels. The same check serves the estab
 Acceptance: the overlap bench reports an agreement rate per class on the mid flight; after step 2, photo 16 shows
 rows on both plantings; after step 3, the b1102-mid table is identical except the ms column. Effort: two days.
 
-## 5. Plan 3: emergence, gaps that are misses
+## 5. Plan 3: emergence, gaps that are misses (built 2026-11-02 as emergence V2: corn-row-reader.md)
 
 Weakest point: the gaps. 67 to 181 gaps and 30 to 95 m of "no seedling" per frame, most of it in the vignetted
 corners and the sunlit rows where the seedling mask loses pale leaves, as the pictures of 54 show. A farmer reading

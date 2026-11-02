@@ -183,7 +183,7 @@ export const MID = {
   alleyCellM: 0.5,
 };
 
-export type RowCropGap = { x1: number; y1: number; x2: number; y2: number; lengthM: number };
+export type RowCropGap = { x1: number; y1: number; x2: number; y2: number; lengthM: number; /** Emergence V2: what the stretch's expected plant positions showed (a missing plant the photo supports, or uncertain). */ kind?: "supported missing" | "uncertain" };
 
 export type RowCropRow = {
   id: number;
@@ -201,6 +201,11 @@ export type RowCropRow = {
   /** Plants estimated from the green peaks along the row, or null when the pixel is too coarse. Unverified. */
   plants: number | null;
   plantPoints: [number, number][] | null;
+  /** Emergence V2, at expected positions in long stretches: weak evidence on the planter's line (possible seedlings), no
+   * evidence where the photo is good enough to say so (supported missing plants), and too dim or noisy to tell. */
+  possiblePoints?: [number, number][];
+  uncertainPoints?: [number, number][];
+  missingPoints?: [number, number][];
 };
 
 export type RowCropWeedStatus = "between rows" | "no rows here";
@@ -227,6 +232,33 @@ export type RowCropWeed = {
 export type RowCropSeedlings = { count: number; areaM2: number; /** Seedling area over the between-band area. */ cover: number | null; points: [number, number][] };
 
 export type RowCropExcluded = { hull: [number, number][]; areaM2: number; reason: string };
+
+/** Emergence V2: the plantings read, the observation classes, and the read's own consistency. */
+export type EmergenceV2 = {
+  /** A later planting beside the rows, barely emerged: its ground is set apart (an excluded outline) and its green counted here, not as weeds. */
+  laterPlanting: { greenPatches: number } | null;
+  /** Plants with strong direct evidence (the strict seedling test), including strictFound. */
+  confirmed: number;
+  /** Of those, plants the strict test sees on the line at an expected position that V1 never made a point (a large
+   * seedling over the point size, or one in a crowded cell): V1 drew gaps through them. */
+  strictFound: number;
+  /** Expected positions with weak evidence on the planter's line. */
+  possible: number;
+  /** Expected positions too dim, at the rim, or on soil that fools the test. */
+  uncertain: number;
+  /** Expected positions with good light, a quiet alley beside and nothing there. */
+  missing: number;
+  searched: number;
+  /** The relaxed test's hits per window in the alleys (the control): its false-find rate on this soil. */
+  controlRate: number | null;
+  /** The gaps before recovery (V1's), for the comparison. */
+  gapsBefore: number;
+  gapLengthBeforeM: number;
+  /** The main rows' neighbouring spacing at their common middle, and its coefficient of variation. */
+  rowSpacingM: number | null;
+  rowSpacingCv: number | null;
+  lensK1: number;
+};
 
 /** Establishment: a row's end inside the photo where the field stops, and what lies beyond it. */
 export type RowCropFieldEnd = { row: number; x: number; y: number; beyond: "grass or cover" | "bare ground" };
@@ -277,6 +309,8 @@ export type RowCropRead = {
   excluded: RowCropExcluded[];
   /** Mid stage only: the late-flush seedling layer; null at establishment. */
   seedlings: RowCropSeedlings | null;
+  /** Emergence only: V2's plantings, observation classes and consistency. */
+  emergence?: EmergenceV2;
   /** Establishment only: the row ends where the field stops inside the photo, and those ends joined into edge lines (photo pixels). */
   fieldEdge?: { ends: RowCropFieldEnd[]; lines: [number, number][][] };
   summary: RowCropSummary;
@@ -1055,7 +1089,7 @@ export function convexHull(pts: [number, number][]): [number, number][] {
 }
 
 /** Everything to draw, in photo pixels: rows, each row's band edges, weeds, gaps, plants, excluded patches. */
-export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][]; bands: [number, number][][]; weeds: [number, number][][]; escapes: [number, number][][]; seedlings: [number, number][]; gaps: RowCropGap[]; plants: [number, number][]; excluded: [number, number][][]; fieldEdges: [number, number][][] } {
+export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][]; bands: [number, number][][]; weeds: [number, number][][]; escapes: [number, number][][]; seedlings: [number, number][]; gaps: RowCropGap[]; plants: [number, number][]; excluded: [number, number][][]; fieldEdges: [number, number][][]; possible: [number, number][]; missing: [number, number][]; uncertain: [number, number][] } {
   const bands: [number, number][][] = [];
   for (const r of read.rows) {
     const half = r.bandHalfWidthM / read.gsdM;
@@ -1068,7 +1102,8 @@ export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][];
     }
     bands.push(left, right);
   }
-  return { rows: read.rows.map(r => r.points), bands, weeds: read.weeds.filter(w => w.sizeClass !== "escape").map(w => w.hull), escapes: read.weeds.filter(w => w.sizeClass === "escape").map(w => w.hull), seedlings: read.seedlings?.points ?? [], gaps: read.rows.flatMap(r => r.gaps), plants: read.rows.flatMap(r => r.plantPoints ?? []), excluded: read.excluded.map(e => e.hull), fieldEdges: read.fieldEdge?.lines ?? [] };
+  return { rows: read.rows.map(r => r.points), bands, weeds: read.weeds.filter(w => w.sizeClass !== "escape").map(w => w.hull), escapes: read.weeds.filter(w => w.sizeClass === "escape").map(w => w.hull), seedlings: read.seedlings?.points ?? [], gaps: read.rows.flatMap(r => r.gaps), plants: read.rows.flatMap(r => r.plantPoints ?? []), excluded: read.excluded.map(e => e.hull), fieldEdges: read.fieldEdge?.lines ?? [],
+    possible: read.rows.flatMap(r => r.possiblePoints ?? []), missing: read.rows.flatMap(r => r.missingPoints ?? []), uncertain: read.rows.flatMap(r => r.uncertainPoints ?? []) };
 }
 
 /** A traced row in strips: its lattice index, its first and last strip, its across position per strip, which strips stood on green of their own. */
