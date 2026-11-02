@@ -277,3 +277,10 @@ On the 23 photographs: plants per frame up by a fifth to a third (54: 3,496 to 4
 175), rows unchanged or one more; about 1.2 to 1.5 s a photograph in Node. Photograph 100's right third is a later
 planting just emerging: its few seedlings per furrow form no rows and are listed as green off the rows (98 to 249
 there); not tuned for. Photo Scout's growth stage still starts at "early": the emergence variant must be chosen.
+
+## Benchmark of all four stages and the plan per stage (2026-11-02)
+
+Every variant re-run at 32b32d2 on the four photo sets, compared with the recorded runs and looked at by eye; the
+late stage (no variant) is the weakest, and the probe shows its rows still carry a periodic green signal. One
+concrete plan per stage, weakest first, in
+[docs/research/corn-stage-benchmark-2026-11-02.md](../research/corn-stage-benchmark-2026-11-02.md).
