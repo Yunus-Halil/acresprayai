@@ -34,7 +34,9 @@
     "bench:row-crop:usu": "vite-node scripts/rowCrop/usuBench.ts --",
     "profiles:record": "vite-node scripts/cropProfiles/record.ts --",
     "bench:twin": "node scripts/directGeoref/twinBench.mjs",
-    "shots:twin": "node scripts/directGeoref/twinShots.mjs"
+    "shots:twin": "node scripts/directGeoref/twinShots.mjs",
+    "bench:assess": "vite-node scripts/rowCrop/assessBench.ts --",
+    "bench:adaptive": "vite-node scripts/rowCrop/adaptiveBench.ts --"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",

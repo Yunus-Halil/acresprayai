@@ -16,7 +16,7 @@
 import { GREEN_DEFAULTS, type GreenOptions, greenMaskWithExcess } from "../directGeoref/green";
 import type { PhotoPixels } from "../photoScout/pattern";
 import { SEEDLING_GREEN, SEEDLING_RELAXED, seedlingMask, seedlingWindow, shrinkMask, soilLevels } from "./seedlingGreen";
-import { type EmergenceV2, type RowCropExcluded, type RowCropGap, type RowCropOptions, type RowCropParams, type RowCropRead, type RowCropRow, type RowCropWeed, ROW_CROP_READ_VERSION, convexHull, downsample, pitchFromProfile } from "./readRowCrop";
+import { type EmergenceV2, type RowCropExcluded, type RowCropGap, type RowCropOptions, type RowCropParams, type RowCropRead, type RowCropRow, type RowCropWeed, ROW_CROP_READ_VERSION, GEOMETRY_DIRECTION_TOL_DEG, GEOMETRY_PITCH_TOL, convexHull, downsample, pitchFromProfile } from "./readRowCrop";
 
 export const EMERGENCE = {
   /** Work pixel, metres: a seedling's leaf is about a centimetre wide. */
@@ -282,8 +282,12 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
     let sc = 0; for (const v of h.values()) sc += v * v; return sc;
   };
   const raw: [number, number][] = points.map(p => [p.x, p.y]);
+  // A direction decided for the field (P.geometry) bounds the search to GEOMETRY_DIRECTION_TOL_DEG either side of it;
+  // the direction and the lens coefficient are still fitted together inside that window.
+  const G = P.geometry ?? null;
   let bestDeg = 0, bestV = -1;
-  for (let d = 0; d < 180; d += 1) { const v = concentration(raw, d); if (v > bestV) { bestV = v; bestDeg = d; } }
+  const d0 = G ? G.directionDeg - GEOMETRY_DIRECTION_TOL_DEG : 0, d1 = G ? G.directionDeg + GEOMETRY_DIRECTION_TOL_DEG : 179;
+  for (let d = d0; d <= d1 + 1e-9; d += G ? 0.5 : 1) { const v = concentration(raw, d); if (v > bestV) { bestV = v; bestDeg = d; } }
   for (let d = bestDeg - 1; d <= bestDeg + 1; d += 0.1) { const v = concentration(raw, d); if (v > bestV) { bestV = v; bestDeg = d; } }
   let k1 = 0;
   const tryLens = (kk: number, around: number, half: number, step: number) => {
@@ -342,9 +346,9 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   for (let i = 0; i < prof.length; i++) for (let k = -2; k <= 2; k++) { const j = i + k; if (j >= 0 && j < prof.length) sm[i] += prof[j] * [1, 4, 6, 4, 1][k + 2] / 16; }
   const minPitchM = 0.8 * Math.min(...P.spacingsM, P.defaultSpacingM), maxPitchM = 1.6 * Math.max(...P.spacingsM, P.defaultSpacingM);
   const gW = given ? given * f : null;
-  const pitchPx = pitchFromProfile(sm, gW ? minPitchM / gW : L / 80, gW ? maxPitchM / gW : L / 8, gW ? { lagsPx: P.spacingsM.map(m => m / gW), tolerance: P.pitchToleranceShare } : undefined);
+  const pitchPx = G ? pitchFromProfile(sm, (G.pitchPx / f) * (1 - GEOMETRY_PITCH_TOL), (G.pitchPx / f) * (1 + GEOMETRY_PITCH_TOL)) ?? G.pitchPx / f : pitchFromProfile(sm, gW ? minPitchM / gW : L / 80, gW ? maxPitchM / gW : L / 8, gW ? { lagsPx: P.spacingsM.map(m => m / gW), tolerance: P.pitchToleranceShare } : undefined);
   if (pitchPx == null) return empty("The seedlings do not line up at a row spacing: no rows read.", r3(veg));
-  const gsdW = gW ?? P.defaultSpacingM / pitchPx;
+  const gsdW = gW ?? (G?.gsdM ? G.gsdM * f : P.defaultSpacingM / pitchPx);
   const gsdM = gsdW / f;
   const pitchM = pitchPx * gsdW;
   const matched = P.spacingsM.find(m => Math.abs(pitchM / m - 1) <= P.pitchToleranceShare) ?? null;

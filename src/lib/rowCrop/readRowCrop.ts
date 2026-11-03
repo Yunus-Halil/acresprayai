@@ -139,7 +139,31 @@ export type RowCropParams = {
   minWeedAreaCm2: number;
   crop: { id: string; version: string } | null;
   stage: RowCropStage;
+  /**
+   * The row geometry decided before the reader runs (the adaptive reader, assess.ts: one direction for the field, a
+   * pitch per planting), photo pixels. With it the reader traces, bands and judges as before but measures neither; a
+   * region read with it cannot contradict its neighbours about where the rows run. Absent (every reader of its own): the
+   * reader measures both, as it always did.
+   */
+  geometry?: RowCropGeometry | null;
 };
+
+/**
+ * Row direction in degrees [0, 180) (image coordinates, y down) and the row pitch in photo pixels. The reader refines
+ * both near the given values (the direction within GEOMETRY_DIRECTION_TOL_DEG, the pitch within GEOMETRY_PITCH_TOL):
+ * the field's geometry is a prior that keeps a verge or a second planting from deciding it, not a value imposed to the
+ * pixel (a degree off over a 4,000-pixel row is a third of a pitch).
+ */
+export type RowCropGeometry = {
+  directionDeg: number; pitchPx: number;
+  /** Without a pixel size: the field's assumed scale, metres per photo pixel (a second planting at another spacing is
+   * measured in the main planting's metres, not assumed to be the default spacing itself). Absent: assumed from the pitch. */
+  gsdM?: number | null;
+};
+/** With a geometry given, the reader's own direction is searched within this many degrees of the given one. */
+export const GEOMETRY_DIRECTION_TOL_DEG = 3;
+/** With a geometry given, the reader's own pitch is measured within this share of the given one. */
+export const GEOMETRY_PITCH_TOL = 0.12;
 
 export const DEFAULT_ROW_CROP_PARAMS: RowCropParams = {
   gsdM: null, spacingsM: [0.381, 0.508, 0.70, 0.762, 0.914], defaultSpacingM: 0.762, pitchToleranceShare: 0.08,
@@ -153,7 +177,7 @@ export const DEFAULT_ROW_CROP_PARAMS: RowCropParams = {
 export const LATE = { windowShare: 1 / 40, minLuma: 20, cornerRadius: 0.8, margin: 0.005, minRowRunShare: 0.5 };
 
 /** Late stage: 1 where a work pixel is greener (ExGR excess) than the mean over a (2r+1)^2 window around it. */
-function localGreenMask(v: Float32Array, rgba: Uint8ClampedArray, W: number, H: number, r: number): Uint8Array {
+export function localGreenMask(v: Float32Array, rgba: Uint8ClampedArray, W: number, H: number, r: number): Uint8Array {
   const ok = new Uint8Array(W * H), I = new Float64Array((W + 1) * (H + 1)), C = new Float64Array((W + 1) * (H + 1));
   for (let i = 0; i < W * H; i++) { const q = i * 4; ok[i] = 0.3 * rgba[q] + 0.59 * rgba[q + 1] + 0.11 * rgba[q + 2] >= LATE.minLuma && Number.isFinite(v[i]) ? 1 : 0; }
   for (let y = 0; y < H; y++) { let s = 0, c = 0; for (let x = 0; x < W; x++) { const i = y * W + x; if (ok[i]) { s += v[i]; c++; } I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + s; C[(y + 1) * (W + 1) + x + 1] = C[y * (W + 1) + x + 1] + c; } }
@@ -427,17 +451,22 @@ function periodicity(d: Float32Array, W: number, H: number, alpha: number, minLa
 }
 
 /** The row direction: the axis whose projection of the density is most periodic is across the rows. Lags in cells. Returns the row angle, radians. */
-export function rowDirection(d: Float32Array, w: number, h: number, minLag: number, maxLag: number): number {
+export function rowDirection(d: Float32Array, w: number, h: number, minLag: number, maxLag: number, around?: { rowDeg: number; halfDeg: number }, coarse?: { stepDeg: number; fineStepDeg: number }): number {
   let best = 0, bv = -1;
-  for (let deg = 0; deg < 180; deg += 1) { const v = periodicity(d, w, h, (deg * Math.PI) / 180, minLag, maxLag); if (v > bv) { bv = v; best = deg; } }
+  // With `around` (a row direction decided for the field) only the axes within halfDeg of it are tried. With `coarse`
+  // (the field assessment, which needs a direction to a degree or so, not to a tenth) the search steps are wider.
+  const step = coarse?.stepDeg ?? 1, fineStep = coarse?.fineStepDeg ?? 0.1;
+  const axis0 = around ? around.rowDeg - 90 - around.halfDeg : 0, axis1 = around ? around.rowDeg - 90 + around.halfDeg : 180 - step;
+  for (let deg = Math.round(axis0); deg <= axis1; deg += step) { const v = periodicity(d, w, h, (deg * Math.PI) / 180, minLag, maxLag); if (v > bv) { bv = v; best = deg; } }
   let fine = best;
-  for (let t = best - 1.5; t <= best + 1.5; t += 0.1) { const v = periodicity(d, w, h, (t * Math.PI) / 180, minLag, maxLag); if (v > bv) { bv = v; fine = t; } }
+  const half = Math.max(1.5, step / 2);
+  for (let t = best - half; t <= best + half; t += fineStep) { const v = periodicity(d, w, h, (t * Math.PI) / 180, minLag, maxLag); if (v > bv) { bv = v; fine = t; } }
   // The projection axis is across the rows; the rows run perpendicular to it.
   return ((((fine + 90) % 180) + 180) % 180) * (Math.PI / 180);
 }
 
 /** Across-row profile of the mask at the row angle, one bin per pixel, without the saturated pixels, detrended over `trendR` bins. */
-function acrossProfile(mask: Uint8Array, skip: Uint8Array, W: number, H: number, rowAngle: number, trendR: number): { profile: Float64Array; aMin: number } {
+export function acrossProfile(mask: Uint8Array, skip: Uint8Array, W: number, H: number, rowAngle: number, trendR: number): { profile: Float64Array; aMin: number } {
   const sn = -Math.sin(rowAngle), cs = Math.cos(rowAngle);
   const corners = [[0, 0], [W, 0], [0, H], [W, H]].map(([x, y]) => x * sn + y * cs);
   const aMin = Math.floor(Math.min(...corners)), aMax = Math.ceil(Math.max(...corners));
@@ -604,14 +633,17 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
   const skipFrom = (sat: Uint8Array) => { skip.fill(0); for (let y = 0; y < H; y++) { const cy = Math.min(cd.h - 1, Math.floor(y / coarse)); for (let x = 0; x < W; x++) if (sat[cy * cd.w + Math.min(cd.w - 1, Math.floor(x / coarse))]) skip[y * W + x] = 1; } };
   skipFrom(cd.sat);
   const minPitchM = 0.8 * Math.min(...P.spacingsM, P.defaultSpacingM);
-  const rowAngle = rowDirection(cd.d, cd.w, cd.h, given ? minPitchM / gsdW / coarse : 2, given ? 2.0 / gsdW / coarse : Math.max(cd.w, cd.h) / 6);
+  const G = P.geometry ?? null;
+  const rowAngle = rowDirection(cd.d, cd.w, cd.h, given ? minPitchM / gsdW / coarse : 2, given ? 2.0 / gsdW / coarse : Math.max(cd.w, cd.h) / 6, G ? { rowDeg: G.directionDeg, halfDeg: GEOMETRY_DIRECTION_TOL_DEG } : undefined);
   checkStop(opts);
 
-  // 3. Pitch from the across profile's autocorrelation.
+  // 3. Pitch from the across profile's autocorrelation (or the one decided for the region, in work pixels).
   const minLag = given ? minPitchM / gsdW : 8, maxLagRaw = given ? 2.0 / gsdW : Math.max(W, H) / 3;
   const { profile, aMin } = acrossProfile(mask, skip, W, H, rowAngle, Math.round(maxLagRaw));
   const maxLag = Math.min(profile.length / 3, maxLagRaw);
-  const pitchPx = pitchFromProfile(profile, minLag, maxLag, given ? { lagsPx: P.spacingsM.map(m => m / gsdW), tolerance: P.pitchToleranceShare } : undefined);
+  // A given pitch names the planting; the exact value is the reader's own measurement near it (the assessment measures
+  // on the frame as the lens bends it, a few percent off the lattice a reader straightens or traces).
+  const pitchPx = G ? pitchFromProfile(profile, (G.pitchPx / f) * (1 - GEOMETRY_PITCH_TOL), (G.pitchPx / f) * (1 + GEOMETRY_PITCH_TOL)) ?? G.pitchPx / f : pitchFromProfile(profile, minLag, maxLag, given ? { lagsPx: P.spacingsM.map(m => m / gsdW), tolerance: P.pitchToleranceShare } : undefined);
   opts.debug?.(`direction ${((rowAngle * 180) / Math.PI).toFixed(1)} deg, pitch ${pitchPx == null ? "none" : pitchPx.toFixed(1)} work px, saturated by density ${(cd.satShare * 100).toFixed(1)}%`);
   if (pitchPx == null) return empty(given ?? NaN, given ? "given" : "assumed spacing", "No periodic rows across the green: the field may be bare, closed, or the photo may not show rows.", vegetationFraction);
   let matchedSpacingM: number | null = null;
@@ -622,9 +654,9 @@ export function readRowCrop(px: PhotoPixels, params: Partial<RowCropParams> = {}
     matchedSpacingM = near[0] ?? null;
     if (!matchedSpacingM) notes.push(`The measured row pitch, ${(pitchM * 100).toFixed(1)} cm, matches no planted spacing of the crop; the measurement stands.`);
   } else {
-    gsdW = P.defaultSpacingM / pitchPx;
+    gsdW = G?.gsdM ? G.gsdM * f : P.defaultSpacingM / pitchPx;
     scaleBasis = "assumed spacing";
-    notes.push(`No pixel size: the scale assumes a ${(P.defaultSpacingM * 100).toFixed(1)} cm row spacing, so every metre here rests on that.`);
+    notes.push(G?.gsdM ? `No pixel size: the scale is the field's main planting's, which assumes a ${(P.defaultSpacingM * 100).toFixed(1)} cm row spacing there; these rows measure ${(pitchPx * gsdW * 100).toFixed(0)} cm at that scale.` : `No pixel size: the scale assumes a ${(P.defaultSpacingM * 100).toFixed(1)} cm row spacing, so every metre here rests on that.`);
   }
   const gsdM = gsdW / f;
   const pitchM = pitchPx * gsdW;

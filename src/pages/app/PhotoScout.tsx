@@ -17,6 +17,7 @@ import { patternPriorFor } from "@/lib/cropProfiles/engine";
 import { checkRowSpacing } from "@/lib/cropProfiles/checks";
 import { cropProfileById, listCropProfiles } from "@/lib/cropProfiles/registry";
 import { type RowCropRead, type RowCropStage, readRowCrop, rowCropOverlay } from "@/lib/rowCrop/readRowCrop";
+import { adaptiveAsRead, readCornAdaptive } from "@/lib/rowCrop/adaptive";
 import { readsContinuousRows, rowCropParamsFor } from "@/lib/rowCrop/params";
 
 type Status = "new" | "decoding" | "running" | "done" | "error";
@@ -68,8 +69,9 @@ export default function PhotoScout() {
   const [rowSpacingCm, setRowSpacingCm] = useState(AUTO);
   /** The crop profile the read uses ("" for crop-neutral): its spacings, green gate and brightness check (src/lib/cropProfiles). */
   const [cropId, setCropId] = useState("");
-  /** The continuous-row reader's stage variant (early rows on soil, or a nearly closed mid-season canopy); detection of the stage is a later step. */
-  const [stage, setStage] = useState<RowCropStage>("establishment");
+  /** "auto" (the default): the photo is assessed region by region and each region read by the stage reader its
+   * structure calls for (src/lib/rowCrop/adaptive.ts); or one stage reader forced for the whole photo. */
+  const [stage, setStage] = useState<RowCropStage | "auto">("auto");
   const [heightM, setHeightM] = useState("");
   const [gsdCm, setGsdCm] = useState("");
   const [minBlobCm2, setMinBlobCm2] = useState(String(DEFAULT_MIN_BLOB_AREA_CM2));
@@ -121,7 +123,9 @@ export default function PhotoScout() {
         // Corn and its kind: rows traced on the green, the whole row is the crop. Without a pixel size the scale is
         // assumed from the measured pitch and the profile's default spacing, and the read says so.
         patch(p.id, { status: "running", progress: null, used: g.gsdM ? { gsdM: g.gsdM, basis: g.basis } : null });
-        const read = readRowCrop(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM, stage), { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) });
+        const read = stage === "auto"
+          ? adaptiveAsRead(readCornAdaptive(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) }))
+          : readRowCrop(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM, stage), { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) });
         patch(p.id, { rowCrop: read, pattern: null, status: "done", progress: null, used: { gsdM: read.gsdM, basis: read.scaleBasis === "given" ? g.basis : "assumed from the measured row pitch and the crop's default spacing" } });
         return;
       }
@@ -176,13 +180,14 @@ export default function PhotoScout() {
             </Field>
             {readsContinuousRows(cropId) && (
               <Field label="Growth stage">
-                <select className={input} value={stage} onChange={e => setStage(e.target.value as RowCropStage)} data-testid="photo-scout-stage">
+                <select className={input} value={stage} onChange={e => setStage(e.target.value as RowCropStage | "auto")} data-testid="photo-scout-stage">
+                  <option value="auto">auto (read from the photo: each part by what it shows)</option>
                   <option value="emergence">emergence (VE to V2: seedlings on bare soil, just planted)</option>
                   <option value="establishment">early (V2 to V7: plants in a line, soil between the rows)</option>
                   <option value="mid">mid (V8 to tasselling: the canopy nearly meets over narrow alleys)</option>
                   <option value="late">late (closed canopy, no soil to be seen between the rows)</option>
                 </select>
-                <div className="text-[10px] text-neutral-500">{stage === "late" ? "rows are read from how green the canopy is, ridges against the shaded alleys; nothing between the rows can be seen, so no weeds or seedlings are judged" : stage === "mid" ? "rows are placed between the alley troughs; only green standing on the alley floor is reported; a weed among the corn leaves counts as corn" : stage === "emergence" ? "each seedling is a point and a row is the straight line they stand on (the lens bend straightened); plants counted along each row; green off every row larger than nearly all the crop's own seedlings is a weed candidate (red); smaller green is counted apart in grey, never called a weed" : "rows are traced on the green; weeds are green clear of every row's band"}</div>
+                <div className="text-[10px] text-neutral-500">{stage === "auto" ? "the photo is judged region by region (seedlings, rows on soil, a canopy nearly meeting, a closed canopy, cover, or uncertain) with one row direction for the field and a spacing per planting; each region is read by the matching reader; uncertain ground and corn on a row the reader did not hold are drawn grey, never as weeds" : stage === "late" ? "rows are read from how green the canopy is, ridges against the shaded alleys; nothing between the rows can be seen, so no weeds or seedlings are judged" : stage === "mid" ? "rows are placed between the alley troughs; only green standing on the alley floor is reported; a weed among the corn leaves counts as corn" : stage === "emergence" ? "each seedling is a point and a row is the straight line they stand on (the lens bend straightened); plants counted along each row; green off every row larger than nearly all the crop's own seedlings is a weed candidate (red); smaller green is counted apart in grey, never called a weed" : "rows are traced on the green; weeds are green clear of every row's band"}</div>
               </Field>
             )}
             <Field label="Row spacing">
