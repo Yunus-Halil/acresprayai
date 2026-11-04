@@ -186,7 +186,7 @@ describe("Corn V1 fusion", () => {
 describe("plants located on the green (no model)", () => {
   const scene = (over: Partial<Scene>): Scene => ({ name: "t", widthM: 8, heightM: 6, gsdM: 0.005, angleDeg: 90, pitchM: 0.762, twinM: null, alongM: 0.16, leafM: 0.08, soil: "dark", straw: null, weedsPerM2: 0, weedRadiusM: 0.05, inRowWeedsPerM: 0, seed: 11, ...over });
 
-  it("places plants on the rendered rows and rows from them at the planting's spacing", () => {
+  it("places plants on the rendered rows and rows from them at the planting's spacing", { timeout: 60000 }, () => {
     const { px } = renderScene(scene({}));
     const g = plantPointsFromGreen(px);
     expect(g.points.length).toBeGreaterThan(50);

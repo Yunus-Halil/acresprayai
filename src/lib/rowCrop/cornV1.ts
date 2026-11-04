@@ -48,8 +48,9 @@ export const CORN_V1 = {
   agreeShare: 0.5,
   /** A green row piece kept beside the plant rows is at least this many row spacings long. */
   minPiecePitches: 1.5,
-  /** A green row alone is high confidence at establishment or mid with at least this share of its strips on green ... */
-  bandSupport: 0.8,
+  /** A green row alone is high confidence at establishment or mid with at least this share of its strips on green
+   * (labelled maize, MatchPlant + MSDD: at 0.7 and over right 67 times in 77, 0.6-0.7 right 9 in 14, under 0.6 3 in 14) ... */
+  bandSupport: 0.7,
   /** ... and on a late canopy (no plants located in the photo) with at least this share; ... */
   canopySupport: 0.5,
   /** ... in both cases at least this many row spacings long, ... */
@@ -153,7 +154,9 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
   // Spacing check: only with a known pixel size (an assumed scale is the spacing itself).
   const entered = o.enteredCrop ?? null;
   const gsd = ad.scaleBasis === "given" ? ad.gsdM : null;
-  const mainPitchPx = B.rows.length ? B.pitchPx : pr;
+  // The main planting's spacing: the green read's (measured over the whole field's periodicity) before the plant
+  // read's (a few plant rows can show twice the spacing: on a Utah frame three plant rows gave 216 cm for 76 cm rows).
+  const mainPitchPx = pr && ad.rows.length ? pr : B.rows.length ? B.pitchPx : null;
   const spacingM = gsd && mainPitchPx ? mainPitchPx * gsd : null;
   const spacingFits = spacingM != null ? params.spacingsM.some(sp => Math.abs(spacingM - sp) <= Math.max(params.pitchToleranceShare, CORN_V1.minSpacingTol) * sp) : null;
   // Only a spacing corn is never planted at rules corn out: the pixel size from a flight height is rarely better than
@@ -207,7 +210,7 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
     // Alone, a green row stands as high confidence only where the green read is the right instrument and holds it well
     // (measured on labelled maize, 2026-11-04, green rows no plant row confirms): rows grown into bands (establishment,
     // mid: the plants touch and cannot be located one by one) on green over CORN_V1.bandSupport of their strips, right
-    // 47 times in 51; a late canopy only where no plants could be located in the photo at all (late reads beside located
+    // 67 times in 77; a late canopy only where no plants could be located in the photo at all (late reads beside located
     // plants were 0 right in 11: seedling frames misjudged as canopy). Never an emergence row alone: there the plants
     // are what the read is about, and its lines on other people's seedling frames were right 47 times in 211.
     // And never a short piece, nor one across the rows the plants show: the French plots' false green rows were short

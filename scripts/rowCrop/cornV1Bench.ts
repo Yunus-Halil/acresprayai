@@ -59,9 +59,13 @@ for (const f of files) {
     const l = JSON.parse(readFileSync(join(LABELS, `${stem}.json`), "utf8")); group = l.group ?? group;
     // Malformed boxes (a few label files hold boxes spanning the whole plot) are dropped and counted: inside one, every
     // weed candidate would count as crop called weed.
-    const all = l.boxes as Box[], side = median(all.map(b => Math.max(b[2] - b[0], b[3] - b[1])));
-    gt = all.filter(b => Math.max(b[2] - b[0], b[3] - b[1]) <= 10 * side);
-    add(group, "malformedBoxes", all.length - gt.length);
+    // A box over 15 % of the photo's long side is no plant: two UAVmulticrop maize files hold mostly such boxes (their
+    // plots unscoreable, skipped and counted); elsewhere a stray one is dropped and counted.
+    const all = l.boxes as Box[], big = (b: Box) => Math.max(b[2] - b[0], b[3] - b[1]) > 0.15 * Math.max(px.width, px.height);
+    const nBig = all.filter(big).length;
+    if (nBig > 0.2 * all.length) { add(group, "brokenLabelImages", 1); console.log(`${stem}: ${nBig} of ${all.length} label boxes span the photo: not scored`); continue; }
+    gt = all.filter(b => !big(b));
+    add(group, "malformedBoxes", nBig);
   }
   if (USU) { const meta = JSON.parse(readFileSync(join(USU, `${stem}.json`), "utf8")); weedsGt = (meta.boxes as { x: number; y: number; w: number; h: number }[]).map(b => [b.x - b.w / 2, b.y - b.h / 2, b.x + b.w / 2, b.y + b.h / 2]); }
   const gsd = USU ? 0.0048 : GSD;
@@ -132,7 +136,7 @@ R("rows drawn (corn rows)", g => MODES.map(m => `${T(g, `rows:${m}`)} (${T(g, `c
 R("weed candidates reported", g => each(m => `weeds:${m}`, g));
 R("stand gaps reported", g => each(m => `gaps:${m}`, g));
 if (LABELS) {
-  R("labelled plants (malformed boxes dropped)", g => `${T(g, "plants").toLocaleString()} (${T(g, "malformedBoxes")})`);
+  R("labelled plants (stray boxes dropped; photos with broken label files not scored)", g => `${T(g, "plants").toLocaleString()} (${T(g, "malformedBoxes")}; ${T(g, "brokenLabelImages")})`);
   R("**labelled plants on a row**", g => each(m => `plantsOn:${m}`, g, v => pct(v, T(g, "plants"))));
   R("labelled plants on a corn row", g => each(m => `plantsOnCorn:${m}`, g, v => pct(v, T(g, "plants"))));
   R("false share of rows drawn", g => each(m => `trueRows:${m}`, g, (v, m) => pct(T(g, `rows:${m}`) - v, T(g, `rows:${m}`))));
