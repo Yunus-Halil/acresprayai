@@ -21,6 +21,8 @@ IMG = re.compile(r"\.(png|jpe?g)$", re.I)
 SKIP = {"seg-weak", "crops", "viewer", "hub", "masks", "tiles"}
 PREVIEW_MAX, THUMB_W = 2640, 360
 
+ROWREF_SETS = {"msdd": "MSDD 2022 test (Missouri)", "matchplant": "MatchPlant maize (every plant labelled)", "uav-maize": "UAVmulticrop maize (France)",
+               "uav-sugarbeet": "UAVmulticrop sugar beet (NOT corn)", "uav-sunflower": "UAVmulticrop sunflower (NOT corn)"}
 SET_LABELS = {
     "veryearlystage": "Emergence photos",
     "estabilishmentphase": "Establishment photos",
@@ -34,6 +36,11 @@ BENCH_SET = {**STAGE_SET, "corn2": "2024corn2/emergence"}  # a bench's set name 
 # Plain-language notes for runs whose folder name only meant something during the work:
 # (pattern on the run's relative path, reader override or None, note). First match wins.
 NOTES = [
+    (r"^benchmark-plantrows-v1/evidence$", "sheets", "plant-row eye checks: MSDD dark seedlings, reader (left) vs detector-led (right); sugar beet rows drawn as corn rows; emergence candidates D takes off the weed list, cut from the originals"),
+    (r"^benchmark-plantrows-v1/.*/geometry$", None, "A, geometry only: the adaptive reader as it is (white boxes = labelled plants where the set has them)"),
+    (r"^benchmark-plantrows-v1/.*/detector$", None, "B, rows from MaSC's plants alone: lime = row, grey = a plant line rejected (no neighbouring row)"),
+    (r"^benchmark-plantrows-v1/.*/hybrid$", None, "C, hybrid, reader first: cyan reader rows kept; lime recovered, bright green corrected corn rows; pink dashes = reader rows dropped; amber dashes = planted row, crop NOT confirmed"),
+    (r"^benchmark-plantrows-v1/.*/detector-led$", None, "D, detector-led: lime = MaSC rows in the reader's corn ground; amber dashes = crop NOT confirmed; cyan = reader rows kept only where MaSC holds no rows"),
     (r"^benchmark-masc-v1/evidence$", "sheets", "MaSC eye checks, cut from the originals (magenta ring = the spot): candidates it calls corn are corn; its plants off our rows are corn at frame edges and row ends, but at mid mostly a soybean planting it also boxes"),
     (r"^benchmark-masc-v1/", None, "MaSC (Missouri seedling detector, never trained on our photos) beside the reader: thin blue = a corn plant it boxes on our rows, orange = one off every row, thick magenta = a weed candidate inside its corn box"),
     (r"^benchmark-cornCheck-v1/evidence$", "sheets", "16 random patches corn-check v1 ADDED as weeds on our establishment photos, cut from the originals: all are corn rows, so adding is switched off on new fields"),
@@ -70,7 +77,7 @@ NOTES = [
     (r"^validation-2026-11-02-after/", "sheets", "validation after the fixes: a fresh sample, judged by eye"),
     (r"^validation-2026-11-02/", "sheets", "first validation: a sample judged by eye"),
 ]
-READER_NAME = {"masc": "MaSC corn detector (Missouri model)", "cornCheck": "Corn check (trained model)", "auto": "Adaptive reader (auto)", "emergence": "Emergence reader", "establishment": "Establishment reader",
+READER_NAME = {"plantRows": "Plant rows (MaSC-assisted geometry)", "masc": "MaSC corn detector (Missouri model)", "cornCheck": "Corn check (trained model)", "auto": "Adaptive reader (auto)", "emergence": "Emergence reader", "establishment": "Establishment reader",
                "mid": "Mid reader", "late": "Late reader", "assess": "Field assessment", "model": "Model trial",
                "probe": "Probe", "sheets": "Sample sheets"}
 
@@ -114,6 +121,8 @@ def meta_for(root, rel, sets):
             reader = "cornCheck"
         elif first.startswith("# MaSC"):
             reader = "masc"
+        elif first.startswith("# Plant rows"):
+            reader = "plantRows"
         elif first.startswith("# Field assessment"):
             reader = "assess"
         elif first.startswith("# Continuous-row reader"):
@@ -122,6 +131,11 @@ def meta_for(root, rel, sets):
         code = m and m.group(1)
         m = re.search(r"photos from directtestimagery/(\S+?)\.(\s|$)", text)
         setdir = m and m.group(1)
+        m2 = re.search(r"datasets/rowref/([\w-]+)/images", text)
+        if not setdir and m2:
+            setdir = ROWREF_SETS.get(m2.group(1), m2.group(1))
+        elif not setdir and "usu-corn-weeddb" in text and first.startswith("# Plant rows"):
+            setdir = "USU fields (Utah, weed boxes)"
         if not setdir and "datasets/msdd" in text:
             setdir = "MSDD 2022 test (Missouri)"
         elif not setdir and "usu-corn-weeddb" in text:
@@ -165,6 +179,8 @@ def meta_for(root, rel, sets):
 
 def photo_of(stem):
     if re.match(r"^\d\d_\d\d_\d\d_\d+_Frame", stem):  # an MSDD tile: its own name
+        return stem
+    if re.match(r"^DJI_\d+_\d+$", stem) or "__plot_" in stem or re.match(r"^\d+m_cache_\d+$", stem):  # MatchPlant, UAVmulticrop, USU
         return stem
     m = re.match(r"^(\d+(?:young)?)(?!\d)", stem)
     return m.group(1) if m else None

@@ -105,3 +105,7 @@ for path in photos():
             for x1, y1, x2, y2, c, k in d: dr.rectangle([x1, y1, x2, y2], outline=(0, 200, 255) if k == 0 else (255, 200, 0), width=lw)
             im.save(os.path.join(args.out, f"{stem}.f{f:g}.jpg"), quality=82)
         print(f"{stem} factor {f:g}: {len(d)} boxes, {rec['ms']} ms", flush=True)
+try:
+    import psutil; mi = psutil.Process().memory_info()
+    print(f"peak memory {getattr(mi, 'peak_wset', mi.rss) / 2**20:.0f} MB, {torch.get_num_threads()} CPU threads", flush=True)
+except ImportError: pass
