@@ -2,7 +2,8 @@
 //   corn (1)      green inside the band of a row the reader holds strongly (support >= MIN_SUPPORT, >= MIN_ROW_M long)
 //   not corn (2)  green of a small weed candidate in the middle of an alley between two held rows (>= ALLEY_SHARE of
 //                 the pitch from each) at the emergence / establishment stages (later on, alley green may be corn
-//                 leaves), and green on ground the assessment calls cover without rows of the field's direction
+//                 leaves); with --cover also green on ground the assessment calls cover without rows of the field's
+//                 direction (off by default: corn canopy passes as cover, see COVER)
 //   soil (0)      not green, within a pitch of a held row
 //   ignore (255)  everything else: thin or bridged rows, leaf tips between band and alley middle, unsupported rows,
 //                 uncertain and excluded ground, ground far from any row
@@ -28,6 +29,10 @@ const DIRS = argv.flatMap((a, i) => (a === "--photos" ? [argv[i + 1]] : []));
 const STAGE = arg("stage", "establishment")!;
 const OUT = arg("out")!;
 const EVERY = Number(arg("every", "10")), PER_FRAME = Number(arg("tiles", "10"));
+/** Cover as a not-corn source is OFF unless asked for: checked by eye 2026-11-04 on 2024 UAV3DCrop, mid and late
+ * corn canopy with no visible periodicity passes as cover (not aligned, not one band, mostly green), so the rule
+ * labelled corn canopy as not corn; only true lawns were right. */
+const COVER = argv.includes("--cover");
 const TILE = 448, MIN_SUPPORT = 0.6, MIN_ROW_M = 1.5, ALLEY_SHARE = 0.3, MAX_WEED_M = 0.2, BAND_BINS = 4, ROW_BAND_SHARE = 0.7, COVER_MIN_GREEN = 0.5;
 const profile = cropProfileFor("corn")!;
 if (!OUT || !DIRS.length) { console.error("need --photos and --out"); process.exit(1); }
@@ -119,7 +124,7 @@ for (const path of photos) {
   let coverCells = 0, rowLikeCover = 0;
   for (const c of ad.assessment.cells) {
     // A cover cell with rows of the field's direction is a stand the reader did not read, not a verge.
-    if (c.state !== "cover" || c.aligned) continue;
+    if (!COVER || c.state !== "cover" || c.aligned) continue;
     const x0 = Math.floor(c.x0 / fac), y0 = Math.floor(c.y0 / fac), x1 = Math.min(W, Math.ceil(c.x1 / fac)), y1 = Math.min(H, Math.ceil(c.y1 / fac));
     const bin = Math.max(1, pitchW / 10), hist = new Map<number, number>(); let g = 0;
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (green[y * W + x]) { const b = Math.floor((x * nx + y * ny) / bin); hist.set(b, (hist.get(b) ?? 0) + 1); g++; }
