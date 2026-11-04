@@ -126,6 +126,8 @@ export type CornFieldResult = {
   rowAgreementM: number | null;
   summary: {
     photographs: number; cornRows: number; probableRows: number; cornRowLengthM: number;
+    /** Unconfirmed rows between corn rows off their spacing, left out. */
+    offLatticeDropped: number;
     weeds: number; weedsWithheld: number; cropOnRow: number;
     gaps: number; gapLengthM: number; gapsWithheld: number;
     /** What the single photographs said, for comparison. */
@@ -218,6 +220,26 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
       }
     }
   }
+  // Off the lattice between corn rows: a row the photographs do not confirm, lying between confirmed corn rows (one each
+  // side within one and a half spacings, overlapping it along) but off their spacing, is no row of this planting: at mid
+  // stage the plants located on the green line up the leaves reaching across the alley (UAV3DCrop Day045, 2026-11-04).
+  // A row on the lattice there (a row the photographs missed) is kept, still not confirmed.
+  let offLattice = 0;
+  if (pitchM) {
+    const cOf = (r: FieldRow) => median(r.lineEN.map(([e, n]) => toAC(e, n)[1]));
+    const spanOf = (r: FieldRow) => { const as = r.lineEN.map(([e, n]) => toAC(e, n)[0]); return [Math.min(...as), Math.max(...as)] as [number, number]; };
+    const corn = rows.filter(r => r.identity === "corn").map(r => ({ c: cOf(r), a: spanOf(r) }));
+    const keep = rows.filter(r => {
+      if (r.identity === "corn") return true;
+      const c = cOf(r), [a0, a1] = spanOf(r), near = corn.filter(k => k.a[1] > a0 && k.a[0] < a1 && Math.abs(k.c - c) <= 1.5 * pitchM);
+      if (!near.some(k => k.c < c) || !near.some(k => k.c > c)) return true;
+      const off = Math.min(...near.map(k => { const x = Math.abs(c - k.c) / pitchM; return Math.abs(x - Math.round(x)); }));
+      if (off <= o.sameRowShare) return true;
+      offLattice++;
+      return false;
+    });
+    if (offLattice) { rows.length = 0; keep.forEach((r, i) => rows.push({ ...r, id: i + 1 })); notes.push(`${offLattice} unconfirmed row(s) between corn rows, off their spacing, left out: no row of this planting runs there.`); }
+  }
   const fieldRowAt = (e: number, n: number): FieldRow | null => {
     if (!pitchM) return null;
     const [a, c] = toAC(e, n);
@@ -301,7 +323,7 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
     version: CORN_FIELD_VERSION, origin, directionDeg, pitchM: pitchM ? Math.round(pitchM * 1000) / 1000 : null, rows, weeds, gaps,
     rowAgreementM: agreement.length ? Math.round(median(agreement) * 1000) / 1000 : null,
     summary: {
-      photographs: used.length, cornRows: cornRows.length, probableRows: rows.length - cornRows.length, cornRowLengthM: Math.round(cornRows.reduce((s, r) => s + r.lengthM, 0) * 10) / 10,
+      photographs: used.length, cornRows: cornRows.length, probableRows: rows.length - cornRows.length, offLatticeDropped: offLattice, cornRowLengthM: Math.round(cornRows.reduce((s, r) => s + r.lengthM, 0) * 10) / 10,
       weeds: weeds.filter(w => w.verdict === "weed candidate").length, weedsWithheld: weeds.filter(w => w.verdict === "unknown vegetation").length, cropOnRow: weeds.filter(w => w.verdict === "crop on a row").length,
       gaps: keptGaps.length, gapLengthM: Math.round(keptGaps.reduce((s, g) => s + g.lengthM, 0) * 100) / 100, gapsWithheld: gaps.length - keptGaps.length,
       perPhoto: { weedCandidates: used.reduce((s, r) => s + r.patches.filter(p => p.verdict === "weed candidate").length, 0), standGaps: used.reduce((s, r) => s + r.gaps.filter(g => g.verdict === "stand gap").length, 0), rows: used.reduce((s, r) => s + r.rows.length, 0) },

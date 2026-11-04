@@ -94,6 +94,18 @@ describe("Corn V1 over a field", () => {
     expect(extra.identity).toBe("probable crop");
   });
 
+  it("leaves out an unconfirmed row between corn rows off their spacing, keeps one on the lattice", () => {
+    // Photo C draws a row half a spacing off (between rows 1 and 2) and photo B one exactly on row 3's line but
+    // calls it not confirmed... both seen once while three photographs cover them.
+    const line = (f: GeorefFrame, e: number) => { const pts: [number, number][] = []; for (let n = 0; n <= 8; n += 0.5) { const q = px(f, e, n); if (q) pts.push(q); } return pts; };
+    const half = { points: line(C, 1.5 * PITCH), identity: "probable crop" as const, evidence: "plant read only", confidence: "medium" as const };
+    const r2 = [reads[0], reads[1], { ...reads[2], rows: [...reads[2].rows, half] }];
+    const g = cornField(r2, frames);
+    expect(g.summary.offLatticeDropped).toBe(1);
+    expect(g.rows.some(r => Math.abs(r.lineEN[0][0] - 1.5 * PITCH) < 0.1)).toBe(false);
+    expect(g.rows.length).toBe(ROWS.length);
+  });
+
   it("reports in latitude and longitude as well as local metres", () => {
     const r = f.rows[0], [lat, lng] = r.line[0], back = toEnu({ lat, lng, altM: 0 }, f.origin);
     expect(Math.hypot(back[0] - r.lineEN[0][0], back[1] - r.lineEN[0][1])).toBeLessThan(1e-3);

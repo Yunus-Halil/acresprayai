@@ -227,9 +227,7 @@ results hub, reader "Corn V1 (production)" (`npm run hub:results`).
 
 ## Toward Swardus Direct / Field Twin
 
-Corn V1 is per photograph and returns rows, identities and findings in photo pixels with their evidence, which is what
-the twin builder needs to project per frame. The next steps, in order: share the seedling mask between the emergence
-reader and the plant read (both compute it: ~2 s per photo saved); run readCornV1 per source frame in the twin worker
-and project corn rows, weed candidates and gaps to field coordinates, merging overlapping frames (a finding in two
-frames is one finding; a row is identity "corn" only where its frames agree); MaSC as an ONNX server tier once the
-exported graph's licence is reviewed. Corn photos through Direct still need EXIF (the test photos have none).
+Built 2026-11-04: Corn V1 over a whole field, every photograph's read projected through Direct's camera frames and the
+evidence of overlapping photographs combined; measured on three real overlapping corn flights. See
+[corn-v1-field.md](corn-v1-field.md). Still to build: the corn stage in the Field Twin builder, the twin bundle's corn
+section and the viewer layers; our own corn flights need camera headers first.
