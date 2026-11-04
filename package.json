@@ -37,6 +37,7 @@
     "shots:twin": "node scripts/directGeoref/twinShots.mjs",
     "bench:assess": "vite-node scripts/rowCrop/assessBench.ts --",
     "bench:adaptive": "vite-node scripts/rowCrop/adaptiveBench.ts --",
+    "bench:msdd": "vite-node scripts/rowCrop/msddBench.ts --",
     "hub:results": "python -I scripts/rowCrop/resultsHub/build.py"
   },
   "dependencies": {

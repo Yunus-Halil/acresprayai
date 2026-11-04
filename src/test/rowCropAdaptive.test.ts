@@ -133,4 +133,14 @@ describe("field assessment and adaptive reader on rendered stands", () => {
     expect(asWeeds).toBe(0);
     expect(ad.summary.weeds).toBeLessThanOrEqual(1);
   });
+
+  it("reads a small frame spanning only a few rows (cells sized from its own spacing)", () => {
+    // A 1920 px tile at 0.4 cm: 7.7 m wide, about 8 rows at 91 cm (MSDD's nursery), no pixel size given. With cells
+    // a twelfth of the frame the window held two rows and nothing was read (73 % of MSDD's nadir tiles, 2026-11-04).
+    const tile = renderScene(scene({ widthM: 7.68, heightM: 7.68, gsdM: 0.004, pitchM: 0.91, seed: 21 })).px;
+    const ad = readCornAdaptive(tile, rowCropParamsFor(profile, null));
+    expect(ad.assessment.notes.some(n => n.includes("cells sized from its own row spacing"))).toBe(true);
+    expect(ad.rows.length).toBeGreaterThanOrEqual(6);
+    expect(ad.summary.weeds).toBe(0);
+  });
 });

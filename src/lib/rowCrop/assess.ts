@@ -30,6 +30,17 @@ export const ASSESS = {
   /** The pitch is searched between these shares of the frame's long side (33 cm to 3.3 m on a 26 m frame). */
   minPitchShare: 1 / 80,
   maxPitchShare: 1 / 8,
+  /**
+   * A frame spanning fewer rows than this across its long side (a low flight, a tile cut from a video frame: MSDD's
+   * 1920 px squares hold about 8 rows) has cells and a pitch search sized from its own row spacing instead of the
+   * frame shares above, which assume a frame of 30 rows or more: the window then holds windowPitches rows, and the
+   * search reaches past the spacing. Measured 2026-11-04 on MSDD's 2022 test set: with the frame shares, 73 % of its
+   * nadir tiles read no rows (the window held two rows; the pitch found was the search's floor).
+   */
+  fewPitches: 12,
+  windowPitches: 4.5,
+  /** The frame's own spacing is searched up to this share of its long side. */
+  frameMaxPitchShare: 1 / 4,
   /** Coarse density cell for the direction search, work pixels. */
   coarse: 4,
   /** The direction search per window: every this many degrees, then refined at fineStepDeg (a cell's direction only has
@@ -181,13 +192,27 @@ export function assessField(px: PhotoPixels, params: Pick<RowCropParams, "gsdM" 
 
   const tComp = Date.now() - t0 - tGreen;
   // 3. Cells and their windows.
-  const cellPx = Math.max(16, Math.round(L / A.cellsAlong));
+  // 3a. The frame's own row spacing: a frame spanning few rows gets cells and a pitch search sized from it.
+  let cellPx = Math.max(16, Math.round(L / A.cellsAlong));
+  let minLag = L * A.minPitchShare, maxLag = L * A.maxPitchShare;
+  {
+    const wide = L * A.frameMaxPitchShare;
+    const cd = coarseDensity(mask, W, H, A.coarse, Math.max(2, Math.round(wide / A.coarse / 2)), false);
+    const ang = rowDirection(cd.d, cd.w, cd.h, minLag / A.coarse, wide / A.coarse, undefined, { stepDeg: A.dirStepDeg, fineStepDeg: A.dirFineStepDeg });
+    const { profile } = acrossProfile(mask, new Uint8Array(W * H), W, H, ang, Math.round(wide));
+    const p = pitchFromProfile(profile, minLag, Math.min(profile.length / 3, wide));
+    if (p != null && L / p < A.fewPitches && autocorrAt(profile, Math.round(p)) >= A.minCoherence) {
+      cellPx = Math.max(cellPx, Math.round((A.windowPitches * p) / 3));
+      maxLag = Math.max(maxLag, 1.6 * p);
+      notes.push(`The frame spans about ${Math.round(L / p)} rows: cells sized from its own row spacing.`);
+      opts.debug?.(`assess: few rows (${(L / p).toFixed(1)} pitches of ${Math.round(p * f)} px): cell ${cellPx * f} px`);
+    }
+  }
   const cols = Math.ceil(W / cellPx), rows = Math.ceil(H / cellPx);
   const cellGreen = new Float64Array(cols * rows), cellN = new Float64Array(cols * rows);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const c = Math.floor(y / cellPx) * cols + Math.floor(x / cellPx); cellN[c]++; cellGreen[c] += mask[y * W + x]; }
   const cellComps: number[][] = Array.from({ length: cols * rows }, () => []);
   for (let k = 0; k < compN.length; k++) { if (compN[k] < 3) continue; const c = Math.min(rows - 1, Math.floor(compY[k] / cellPx)) * cols + Math.min(cols - 1, Math.floor(compX[k] / cellPx)); cellComps[c].push(compN[k]); }
-  const minLag = L * A.minPitchShare, maxLag = L * A.maxPitchShare;
   const cells: AssessCell[] = [];
   let noSkip = new Uint8Array(0);
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
