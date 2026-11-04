@@ -34,6 +34,8 @@ BENCH_SET = {**STAGE_SET, "corn2": "2024corn2/emergence"}  # a bench's set name 
 # Plain-language notes for runs whose folder name only meant something during the work:
 # (pattern on the run's relative path, reader override or None, note). First match wins.
 NOTES = [
+    (r"^benchmark-masc-v1/evidence$", "sheets", "MaSC eye checks, cut from the originals (magenta ring = the spot): candidates it calls corn are corn; its plants off our rows are corn at frame edges and row ends, but at mid mostly a soybean planting it also boxes"),
+    (r"^benchmark-masc-v1/", None, "MaSC (Missouri seedling detector, never trained on our photos) beside the reader: thin blue = a corn plant it boxes on our rows, orange = one off every row, thick magenta = a weed candidate inside its corn box"),
     (r"^benchmark-cornCheck-v1/evidence$", "sheets", "16 random patches corn-check v1 ADDED as weeds on our establishment photos, cut from the originals: all are corn rows, so adding is switched off on new fields"),
     (r"^benchmark-cornCheck-v1/usu-heldout$", None, "held-out Utah fields (same flight as its USU training tiles): orange = in-row weeds the model adds, cyan = candidates it clears"),
     (r"^benchmark-cornCheck-v1/", None, "corn-check v1, clearing only: thick cyan = a weed candidate the model calls corn leaf (adding is off: on new fields it marked corn)"),
@@ -68,7 +70,7 @@ NOTES = [
     (r"^validation-2026-11-02-after/", "sheets", "validation after the fixes: a fresh sample, judged by eye"),
     (r"^validation-2026-11-02/", "sheets", "first validation: a sample judged by eye"),
 ]
-READER_NAME = {"cornCheck": "Corn check (trained model)", "auto": "Adaptive reader (auto)", "emergence": "Emergence reader", "establishment": "Establishment reader",
+READER_NAME = {"masc": "MaSC corn detector (Missouri model)", "cornCheck": "Corn check (trained model)", "auto": "Adaptive reader (auto)", "emergence": "Emergence reader", "establishment": "Establishment reader",
                "mid": "Mid reader", "late": "Late reader", "assess": "Field assessment", "model": "Model trial",
                "probe": "Probe", "sheets": "Sample sheets"}
 
@@ -110,6 +112,8 @@ def meta_for(root, rel, sets):
             reader = "auto"
         elif first.startswith("# Corn check"):
             reader = "cornCheck"
+        elif first.startswith("# MaSC"):
+            reader = "masc"
         elif first.startswith("# Field assessment"):
             reader = "assess"
         elif first.startswith("# Continuous-row reader"):

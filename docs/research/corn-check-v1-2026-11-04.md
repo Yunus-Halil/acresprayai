@@ -64,15 +64,44 @@ pixels it calls corn, and it **adds** patches it calls weed that no candidate co
 - So v1 is not ready for the app. The pictures are in the results hub (reader "Corn check"), with adding switched off
   except on the Utah fields, and the evidence sheet of additions on corn.
 
+## MaSC run (same day, once Yunus allowed it)
+
+`masc_detect.py` (checkpoint loaded with an allow-list, weights_only) reproduces MSDD's own test labels exactly on three
+tiles (5/5, 1/1, 67/67 boxes), so it is loaded right. Run at factor 3 (3 photo pixels per model pixel, chosen by eye
+from a 1-4 sweep), NMS IoU 0.3, confidence >= 0.3; `scripts/rowCrop/mascCompare.ts` sets it beside the adaptive reader.
+MaSC never saw our photos or Utah.
+
+| Set | MaSC plants | on a read row | weed candidates inside a MaSC box | by eye |
+|---|---|---|---|---|
+| Emergence (veryearlystage) | 74,686 | 98.1 % | 117 of 664 | ~15/16 sampled are corn seedlings (blurred frame edges); off-row plants are corn at frame edges and the later planting of photo 100 |
+| Corn2 emergence | 59,494 | 98.9 % | 20 of 88 | ~14/16 plainly corn (lodged plants), 2 dark corners unjudged |
+| Establishment | 40,811 | 99.6 % | 0 of 20 | off-row plants: ~12/16 corn at row ends past the field-edge cut, 4 verge or bare soil |
+| Mid | 4,367 | 31 % | 5 of 705 | off-row plants are mostly a **broadleaf (soybean) planting** beside the corn: MaSC boxes it as corn |
+| Late | 0 | - | 0 | past V10: MaSC sees nothing |
+| USU, all 53 fields (Utah, never seen) | 5,975 | - | clears 318 of 2,802 | 2.2 % of its plants centred on a labelled weed; 13 of 374 candidates on real weeds wrongly cleared (3.5 %) |
+
+Against the corn check v1 on the same candidates (both / v1 only / MaSC only): emergence 29 / 144 / 88, Corn2
+17 / 20 / 3, mid 2 / 208 / 3. They are different signals: v1 clears leaf fragments at mid, MaSC clears whole seedlings at
+emergence.
+
+**Verdict.** MaSC is the best "is this a corn-row seedling" signal we have from V2 to V10: it puts 98-99.6 % of its
+plants on our rows, the candidates it calls corn are corn, and it finds rows our colour reader misses (frame edges, row
+ends, a dark later planting). It is **not** a crop-identity check: it boxes soybean seedlings in rows as corn, so it
+cannot tell a corn field from a soybean one. Licence: weights CC BY 4.0; the YOLOv9 code is GPL-3.0, so in a product it
+would need its own runtime (ONNX export of the weights) rather than the YOLOv9 repository. Not in the app.
+
 ## Next
 
 1. Use the corn map to **find the rows** (Yunus's plan: confirm where the corn is, then draw the lines), not only to
    check candidates: the colour mask misses dark seedlings (75 % of MSDD V2-V4 tiles read no rows).
 2. Weed diversity: weed labels from more than one flight (CS19 dates, DIWEED once its licence is confirmed, our own
    alley weeds across 2023-2024), then retest additions on MSDD and our photos.
-3. MaSC as a second, independent "this is a corn plant" signal, once running it is allowed.
+3. MaSC: run (see above). Its boxes are the natural input to item 1 (row-planted seedlings, dark ones included); crop
+   identity (corn vs soybean) still needs its own check.
 4. A seedling-stage corn check from the CS19 VE-V2 frames.
 
 Benches: `npm run bench:msdd -- --corn-prob <dir> [--add-grid p:cm,...]`, `npm run bench:usu-check -- --heldout-only
 --min-tiles 6 --corn-prob <dir>`; probability maps from `seg_train.py predict --save-prob`; pictures from
-`scripts/rowCrop/cornCheckDraw.ts`; hub with `npm run hub:results`.
+`scripts/rowCrop/cornCheckDraw.ts`; hub with `npm run hub:results`. MaSC: `masc_detect.py --factors 3 --iou 0.3 --draw`
+(venv D:/swardus-research/yolov9-venv), then `mascCompare.ts --photos --masc --out [--prob]`, and `bench:usu-check --
+--min-tiles 6 --masc <dir>`.

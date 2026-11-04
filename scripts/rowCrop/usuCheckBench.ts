@@ -23,6 +23,9 @@ const revision = (() => { try { return execSync("git rev-parse --short HEAD").to
 const MOSAICS = arg("mosaics", "D:/swardus-research/datasets/usu-corn-weeddb/mosaics")!;
 const MIN_TILES = Number(arg("min-tiles", "20"));
 const CORN_PROB = arg("corn-prob"), CORN_T = Number(arg("corn-threshold", "0.5"));
+/** MaSC boxes (masc_detect.py output, <name>.f<factor>.json): clear a candidate whose centre lies inside a MaSC corn box,
+ * and count the labelled weeds MaSC boxes as corn. Used instead of --corn-prob. */
+const MASC = arg("masc"), MASC_F = arg("masc-factor", "3")!, MASC_CONF = Number(arg("masc-conf", "0.3"));
 /** Model weeds smaller than this equivalent diameter are not added (cm). */
 const MIN_WEED_CM = Number(arg("min-weed-cm", "3"));
 /** Extra add settings scored in the same pass, "prob:cm,prob:cm". */
@@ -44,7 +47,7 @@ const hits = (w: AdaptiveWeed, b: Box) => inBox(b, w.x, w.y) || (w.hull.length >
 const files = readdirSync(MOSAICS).filter(f => f.endsWith(".json") && f !== "index.json").sort();
 mkdirSync(OUT, { recursive: true });
 const per: Record<string, unknown>[] = [];
-const T = { sources: 0, boxes: 0, found: 0, foundAfter: 0, cand: 0, onWeed: 0, cleared: 0, clearedOnWeed: 0, noProb: 0, added: 0, addedOnWeed: 0, foundWithAdded: 0 };
+const T = { mascPlants: 0, mascOnWeed: 0, weedsInMasc: 0, sources: 0, boxes: 0, found: 0, foundAfter: 0, cand: 0, onWeed: 0, cleared: 0, clearedOnWeed: 0, noProb: 0, added: 0, addedOnWeed: 0, foundWithAdded: 0 };
 for (const f of files) {
   const meta = JSON.parse(readFileSync(join(MOSAICS, f), "utf8")) as Meta;
   if (meta.tiles < MIN_TILES) continue;
@@ -57,6 +60,18 @@ for (const f of files) {
   let prob: { data: Uint8Array; width: number; height: number } | null = null;
   if (CORN_PROB) { const pf = join(CORN_PROB, `${name}-prob.png`); if (existsSync(pf)) prob = decodeImage(new Uint8Array(readFileSync(pf))); else T.noProb++; }
   const clearedSet = new Set<AdaptiveWeed>();
+  if (MASC) {
+    const mf = join(MASC, `${name}.f${MASC_F}.json`);
+    if (!existsSync(mf)) T.noProb++;
+    else {
+      const mb = (JSON.parse(readFileSync(mf, "utf8")).boxes as number[][]).filter(b => b[4] >= MASC_CONF);
+      const inM = (x: number, y: number) => mb.some(([x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
+      for (const w of cand) if (inM(w.x, w.y)) clearedSet.add(w);
+      T.mascPlants += mb.length;
+      T.mascOnWeed += mb.filter(([x0, y0, x1, y1]) => meta.boxes.some(b => inBox(b, (x0 + x1) / 2, (y0 + y1) / 2))).length;
+      T.weedsInMasc += meta.boxes.filter(b => inM(b.x, b.y)).length;
+    }
+  }
   if (prob) for (const w of cand) { const m = cornShareInHull(prob, w.hull); if (m != null && m >= CORN_T) clearedSet.add(w); }
   const kept = cand.filter(w => !clearedSet.has(w));
   const minAreaPx = Math.PI * (MIN_WEED_CM / 200 / (meta.gsdCm / 100)) ** 2;
@@ -74,16 +89,24 @@ for (const f of files) {
   const clearedOnWeed = [...clearedSet].filter(w => meta.boxes.some(b => inBox(b, w.x, w.y))).length;
   T.sources++; T.boxes += meta.boxes.length; T.found += found; T.foundAfter += foundAfter; T.cand += cand.length; T.onWeed += onWeed; T.cleared += clearedSet.size; T.clearedOnWeed += clearedOnWeed; T.added += added.length; T.addedOnWeed += addedOnWeed; T.foundWithAdded += foundWithAdded;
   per.push({ source: name, boxes: meta.boxes.length, found, foundAfter, candidates: cand.length, onWeed, cleared: clearedSet.size, clearedOnWeed, added: added.length, addedOnWeed, foundWithAdded, rows: ad.rows.length, plans: ad.plans.filter(p => p.read).map(p => p.stage).join("+") || "none" });
-  console.log(`${name}: boxes ${meta.boxes.length} found ${found}${prob ? ` -> ${foundAfter}` : ""} | candidates ${cand.length}, on a weed ${onWeed}${prob ? ` | cleared ${clearedSet.size}, of them on a weed ${clearedOnWeed} | model added ${added.length}, on a weed ${addedOnWeed}; found with added ${foundWithAdded}` : ""} | rows ${ad.rows.length}`);
+  console.log(`${name}: boxes ${meta.boxes.length} found ${found}${prob ? ` -> ${foundAfter}` : ""} | candidates ${cand.length}, on a weed ${onWeed}${prob || MASC ? ` | cleared ${clearedSet.size}, of them on a weed ${clearedOnWeed} | model added ${added.length}, on a weed ${addedOnWeed}; found with added ${foundWithAdded}` : ""} | rows ${ad.rows.length}`);
 }
 const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 1000) / 10} %` : "-");
 const md = [`# Adaptive corn reader against USU-Corn-WeedDB's weed boxes`, "",
-  `Code ${revision}, run ${new Date().toISOString().slice(0, 16)}. ${T.sources} stitched sources (>= ${MIN_TILES} labelled tiles) from ${MOSAICS}; pixel size given (0.48 cm).${HELDOUT ? " Held-out sources only (number ending in 0 or 5)." : ""}${CORN_PROB ? ` Corn check: ${CORN_PROB}, threshold ${CORN_T}.` : ""}`, "",
+  `Code ${revision}, run ${new Date().toISOString().slice(0, 16)}. ${T.sources} stitched sources (>= ${MIN_TILES} labelled tiles) from ${MOSAICS}; pixel size given (0.48 cm).${HELDOUT ? " Held-out sources only (number ending in 0 or 5)." : ""}${CORN_PROB ? ` Corn check: ${CORN_PROB}, threshold ${CORN_T}.` : ""}${MASC ? ` MaSC boxes: ${MASC} (factor ${MASC_F}, confidence >= ${MASC_CONF}); a candidate is cleared when its centre lies in a MaSC corn box.` : ""}`, "",
   "| Measure | Value |", "|---|---|",
   `| labelled weeds | ${T.boxes} |`,
   `| labelled weeds found (a weed candidate on them) | ${T.found} (${pct(T.found, T.boxes)}) |`,
   `| weed candidates | ${T.cand} |`,
   `| weed candidates on a labelled weed | ${T.onWeed} (${pct(T.onWeed, T.cand)}) |`];
+if (MASC) md.push(
+  `| sources with no MaSC boxes | ${T.noProb} |`,
+  `| MaSC corn plants | ${T.mascPlants} |`,
+  `| ... centred on a labelled WEED (MaSC calls a weed corn) | ${T.mascOnWeed} (${pct(T.mascOnWeed, T.mascPlants)}) |`,
+  `| labelled weeds inside a MaSC corn box | ${T.weedsInMasc} (${pct(T.weedsInMasc, T.boxes)}) |`,
+  `| weed candidates MaSC clears | ${T.cleared} |`,
+  `| ... of them on a labelled weed (WRONG to clear) | ${T.clearedOnWeed} (${pct(T.clearedOnWeed, T.onWeed)} of the candidates on weeds) |`,
+  `| labelled weeds still found after MaSC clearing | ${T.foundAfter} (${pct(T.foundAfter, T.boxes)}) |`);
 if (CORN_PROB) md.push(
   `| sources with no probability map | ${T.noProb} |`,
   `| weed candidates the corn check clears | ${T.cleared} |`,
