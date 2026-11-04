@@ -34,6 +34,9 @@ BENCH_SET = {**STAGE_SET, "corn2": "2024corn2/emergence"}  # a bench's set name 
 # Plain-language notes for runs whose folder name only meant something during the work:
 # (pattern on the run's relative path, reader override or None, note). First match wins.
 NOTES = [
+    (r"^benchmark-cornCheck-v1/evidence$", "sheets", "16 random patches corn-check v1 ADDED as weeds on our establishment photos, cut from the originals: all are corn rows, so adding is switched off on new fields"),
+    (r"^benchmark-cornCheck-v1/usu-heldout$", None, "held-out Utah fields (same flight as its USU training tiles): orange = in-row weeds the model adds, cyan = candidates it clears"),
+    (r"^benchmark-cornCheck-v1/", None, "corn-check v1, clearing only: thick cyan = a weed candidate the model calls corn leaf (adding is off: on new fields it marked corn)"),
     (r"^benchmark-msdd-4f24440/", None, "MSDD's hand-checked corn boxes (cyan), Missouri 2022, never seen: before the small-frame fix, 73 % of tiles read no rows"),
     (r"^benchmark-msdd-cd54c7e/", None, "MSDD's hand-checked corn boxes (cyan), Missouri 2022, never seen: after the small-frame fix (code e68fb95); magenta = a weed candidate on real corn"),
     (r"^benchmark-msdd-", None, "MSDD's hand-checked corn boxes (cyan); magenta = a weed candidate on real corn"),
