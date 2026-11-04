@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Corn results hub</title>
+<!-- Built by scripts/rowCrop/resultsHub/build.py (npm run hub:results); data in data.js beside this page. -->
+<style>
+:root{--bg:#0b0b0b;--panel:#151515;--panel2:#1d1d1d;--line:#2a2a2a;--text:#e8e8e8;--muted:#9a9a9a;--accent:#00e6ff}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+button,select,input{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:5px 10px;font:inherit}
+button{cursor:pointer}button:hover{border-color:#555}button.on{border-color:var(--accent);color:var(--accent)}
+button:disabled{opacity:.4;cursor:default}
+#page{max-width:1500px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 2px}h2{font-size:16px;margin:0 0 4px}
+.sub,.meta{color:var(--muted)}.meta{font-size:12px}
+.filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 0}
+.filters .lab{color:var(--muted);min-width:56px}
+.day{margin:22px 0 6px;font-size:13px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line);padding:6px 0 4px;position:sticky;top:0;background:var(--bg);z-index:2}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin:8px 0;cursor:pointer;display:block;color:inherit}
+.card:hover{border-color:#4a4a4a;text-decoration:none}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.time{color:var(--muted);font-variant-numeric:tabular-nums}
+.badge{border-radius:3px;padding:1px 7px;font-size:11px;font-weight:700;color:#000;white-space:nowrap}
+.latest{border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:0 6px;font-size:11px}
+.title{font-size:14px;margin:5px 0 1px}
+.strip{display:flex;gap:4px;margin-top:8px;overflow:hidden;height:74px}
+.strip img{height:74px;border-radius:3px;background:#222;flex:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-top:12px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;cursor:pointer;color:inherit;display:block}
+.tile:hover{border-color:#555;text-decoration:none}
+.tile img{width:100%;display:block;aspect-ratio:4/3;object-fit:contain;background:#111}
+.tile .cap{padding:6px 8px;font-size:12px}.tile .cap .meta{font-size:11px}
+.empty{color:var(--muted);padding:30px 0}
+.back{display:inline-block;margin-bottom:10px}
+/* viewer, as in viewer/index.html */
+#viewer{position:fixed;inset:0;background:var(--bg);z-index:10;overflow:hidden}
+#vbar{position:fixed;top:0;left:0;right:0;display:flex;gap:6px;align-items:center;padding:7px 10px;background:rgba(14,14,14,.93);border-bottom:1px solid var(--line);z-index:13;flex-wrap:wrap}
+#vbar select{max-width:min(520px,60vw)}
+#vinfo{margin-left:auto;color:var(--muted);text-align:right}
+#vinfo b{color:var(--text);font-weight:600}
+#stage{position:fixed;inset:0;cursor:grab;z-index:11}#stage.drag{cursor:grabbing}
+#img{position:absolute;left:0;top:0;transform-origin:0 0;user-select:none;-webkit-user-drag:none}
+#legend{position:fixed;left:12px;bottom:12px;background:rgba(14,14,14,.92);border:1px solid var(--line);border-radius:6px;padding:8px 10px;z-index:13;max-width:min(580px,calc(100vw - 24px))}
+#legend div{display:flex;gap:8px;align-items:center;margin:2px 0}
+#legend i{display:inline-block;width:18px;height:3px;flex:none}
+#legend i.ring{width:10px;height:10px;border-radius:50%;background:none!important;border:2px solid}
+#legend i.box{width:12px;height:12px;opacity:.75}
+#legend i.dash{background:none!important;border-top:3px dashed;height:0}
+#help{position:fixed;right:12px;bottom:12px;color:var(--muted);background:rgba(14,14,14,.92);border:1px solid var(--line);border-radius:6px;padding:8px 10px;z-index:13;max-width:calc(100vw - 24px)}
+#load{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--muted);z-index:12}
+.hide{display:none!important}
+</style></head><body>
+<div id="page"></div>
+<div id="viewer" class="hide">
+  <div id="vbar">
+    <button id="vclose" title="Back (Esc)">&#10005;</button>
+    <button id="vprev" title="Previous photo (&#8592;)">&#8592;</button><button id="vnext" title="Next photo (&#8594;)">&#8594;</button>
+    <select id="vcmp" title="The same photo in other runs (&#8593; &#8595;)"></select>
+    <a id="vall" href="#">every run of this photo</a>
+    <a id="vfull" href="#" target="_blank">full resolution</a>
+    <button id="vleg" title="Legend (L)">Legend</button><button id="vfs" title="Fullscreen (F)">Fullscreen</button>
+    <span id="vinfo"></span>
+  </div>
+  <div id="stage"><img id="img" alt=""></div><div id="load">loading…</div>
+  <div id="legend"></div>
+  <div id="help">&#8592; &#8594; photo · &#8593; &#8595; same photo, other run · scroll zoom · drag pan · double-click fit / 1:1 · Esc back · F fullscreen · L legend · H hide</div>
+</div>
+<script src="data.js"></script>
+<script>
+"use strict";
+const H = window.HUB;
+const $ = id => document.getElementById(id), page = $("page");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : "";
+const store = { get(k, d) { try { const v = localStorage.getItem("hub:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+                set(k, v) { try { localStorage.setItem("hub:" + k, JSON.stringify(v)); } catch {} } };
+if (!H) { page.innerHTML = `<h1>Corn results hub</h1><p class="sub">data.js is missing. Build it from the repository root with <code>npm run hub:results</code>.</p>`; throw new Error("no data"); }
+
+const COL = { auto: "#00e6ff", emergence: "#3c8cff", establishment: "#00e678", mid: "#e6c800", late: "#ff7800", assess: "#c864c8",
+              model: "#ff6fae", probe: "#8a8a8a", sheets: "#8a8a8a", original: "#d0d0d0" };
+const READERS = [["auto", "Adaptive (auto)"], ["emergence", "Emergence"], ["establishment", "Establishment"], ["mid", "Mid"], ["late", "Late"],
+                 ["assess", "Field assessment"], ["model", "Model trials"], ["probe", "Probes"], ["sheets", "Sample sheets"]];
+const setId = k => k.replace(/\//g, "__");
+const RUNS = H.runs, BY = {};
+for (const r of RUNS) BY[r.id] = r;
+const ORIG = {};
+for (const [k, o] of Object.entries(H.originals)) {
+  const id = "orig:" + setId(k);
+  BY[id] = ORIG[k] = { id, path: k, set: k, setLabel: o.label, reader: "original", readerName: "Original photo", items: o.items, when: null,
+                      note: "the photo as flown, nothing drawn", code: null };
+}
+const SETS = Object.entries(H.originals).map(([k, o]) => [k, o.label]);
+const badge = r => `<span class="badge" style="background:${COL[r.reader] || "#888"}">${esc(r.readerName)}</span>`;
+const day = iso => new Date(iso).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const hm = iso => iso ? iso.slice(11, 16) : "";
+const when = r => r.when ? `${new Date(r.when).toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${hm(r.when)}` : "";
+const runLine = r => r.note ? cap(r.note) : (r.benchTitle || r.path);
+
+/* ---------- pages ---------- */
+let filt = { set: store.get("set", "all"), reader: store.get("reader", "all") };
+function chips(list, cur, key) {
+  return [["all", "All"], ...list].map(([v, l]) => `<button data-${key}="${esc(v)}" class="${cur === v ? "on" : ""}">${esc(l)}</button>`).join("");
+}
+function renderHome() {
+  const shown = RUNS.filter(r => (filt.set === "all" || r.set === filt.set) && (filt.reader === "all" || r.reader === filt.reader));
+  let html = `<h1>Corn results hub</h1>
+  <div class="sub">Every result picture under directtestimagery, newest run first. ${RUNS.length} runs, ${RUNS.reduce((n, r) => n + r.items.length, 0)} pictures. Built ${esc(H.generated.replace("T", " "))}; rebuild with <code>npm run hub:results</code>. <a href="../viewer/index.html">Older before/after viewer</a></div>
+  <div class="filters"><span class="lab">Photos</span>${chips(SETS, filt.set, "set")}</div>
+  <div class="filters"><span class="lab">Reader</span>${chips(READERS, filt.reader, "reader")}</div>
+  <div class="filters"><span class="lab">Find</span>
+    <select id="fset">${SETS.map(([k, l]) => `<option value="${esc(k)}" ${k === (filt.set === "all" ? "2024corn2/emergence" : filt.set) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+    <input id="fphoto" placeholder="photo, e.g. 9" size="10"><button id="fgo">Every run of this photo</button></div>`;
+  if (!shown.length) html += `<div class="empty">No run matches these filters.</div>`;
+  let lastDay = "";
+  for (const r of shown) {
+    const d = day(r.when);
+    if (d !== lastDay) { html += `<div class="day">${esc(d)}</div>`; lastDay = d; }
+    html += `<a class="card" href="#/run/${encodeURIComponent(r.id)}">
+      <div class="row"><span class="time">${hm(r.when)}</span>${badge(r)}<span>${esc(r.setLabel)}</span>${r.latest ? `<span class="latest" title="The newest run of this reader on these photos">latest</span>` : ""}</div>
+      <div class="title">${esc(runLine(r))}</div>
+      <div class="meta">${r.items.length} picture${r.items.length === 1 ? "" : "s"}${r.code ? ` · code ${esc(r.code)}` : ""} · ${esc(r.path)}</div>
+      <div class="strip">${r.items.slice(0, 10).map(i => `<img loading="lazy" src="${esc(i.thumb)}" alt="">`).join("")}</div></a>`;
+  }
+  page.innerHTML = html;
+  page.querySelectorAll("[data-set]").forEach(b => b.onclick = () => { filt.set = b.dataset.set; store.set("set", filt.set); renderHome(); });
+  page.querySelectorAll("[data-reader]").forEach(b => b.onclick = () => { filt.reader = b.dataset.reader; store.set("reader", filt.reader); renderHome(); });
+  const go = () => { const p = $("fphoto").value.trim(); if (p) location.hash = `#/photo/${encodeURIComponent(setId($("fset").value))}/${encodeURIComponent(p)}`; };
+  $("fgo").onclick = go; $("fphoto").onkeydown = e => { if (e.key === "Enter") go(); };
+}
+function renderRun(id) {
+  const r = BY[id];
+  if (!r) { page.innerHTML = `<a class="back" href="#/">&#8592; All runs</a><div class="empty">That run is not in this build.</div>`; return; }
+  page.innerHTML = `<a class="back" href="#/">&#8592; All runs</a>
+  <div class="row">${badge(r)}<span>${esc(r.setLabel)}</span>${r.latest ? `<span class="latest">latest</span>` : ""}</div>
+  <h2 style="margin-top:6px">${esc(runLine(r))}</h2>
+  <div class="meta">${r.when ? esc(day(r.when)) + " " + hm(r.when) + " · " : ""}${r.items.length} pictures${r.code ? ` · code ${esc(r.code)}` : ""} · folder <a href="../${esc(r.path)}/">${esc(r.path)}</a>${r.noteFile ? ` · <a href="../${esc(r.noteFile)}">the run's notes</a>` : ""}</div>
+  ${r.benchTitle ? `<div class="meta">${esc(r.benchTitle)}</div>` : ""}
+  <div class="grid">${r.items.map((i, k) => `<a class="tile" href="#/view/${encodeURIComponent(r.id)}/${k}"><img loading="lazy" src="${esc(i.thumb)}" alt=""><div class="cap">${esc(i.photo ? "photo " + i.photo : i.name)}${i.photo && i.name !== i.photo ? `<div class="meta">${esc(i.name)}</div>` : ""}</div></a>`).join("")}</div>`;
+}
+function runsWith(set, photo) {
+  const out = [];
+  if (ORIG[set] && ORIG[set].items.some(i => i.photo === photo)) out.push(ORIG[set]);
+  for (const r of RUNS) if (r.set === set && r.items.some(i => i.photo === photo)) out.push(r);
+  return out;
+}
+function renderPhoto(sid, photo) {
+  const set = SETS.map(s => s[0]).find(k => setId(k) === sid);
+  const list = set ? runsWith(set, photo) : [];
+  page.innerHTML = `<a class="back" href="#/">&#8592; All runs</a><h2>Photo ${esc(photo)} · ${esc(set ? H.originals[set].label : sid)}</h2>
+  <div class="meta">${list.length ? `The original and every run that drew this photo, newest first. Open one and use &#8593; &#8595; to flip between them at the same zoom.` : ""}</div>
+  ${list.length ? `<div class="grid">${list.map(r => { const k = r.items.findIndex(i => i.photo === photo); const i = r.items[k];
+    return `<a class="tile" href="#/view/${encodeURIComponent(r.id)}/${k}"><img loading="lazy" src="${esc(i.thumb)}" alt=""><div class="cap">${badge(r)} <span class="meta">${esc(when(r))}${r.code ? " · " + esc(r.code) : ""}</span><div class="meta">${esc(runLine(r))}</div></div></a>`; }).join("")}</div>`
+  : `<div class="empty">No picture of photo ${esc(photo)} in this set.</div>`}`;
+}
+
+/* ---------- viewer ---------- */
+const LEG = {
+  rows: [["#00e6ff", "Row line (the crop)"], ["#3cff5a", "Plant counted on a row (dots)"], ["#ff2828", "Weed candidate (red outline)"], ["#ffa000", "Gap along a row"], ["#a0a0a0", "Left out: verge, lawn, later planting (grey outline)"], ["#ffffff", "Where the field ends (white line)"], ["#ff00c8", "Escape: weed 15 cm or more across (magenta)"]],
+  emergence: [["#ffbe00", "Seedling point", "ring"], ["#3c8cff", "Possible seedling (weak evidence on the row)", "ring"], ["#ff9600", "Missing plant the photo supports", "ring"], ["#aaaaaa", "Uncertain position", "ring"], ["#afafaf", "Small green off the rows, counted apart, not a weed (thin grey outline)"]],
+  auto: [["#3c8cff", "Outline of the part read by the emergence reader", "box"], ["#00e678", "… by the establishment reader", "box"], ["#e6c800", "… by the mid reader", "box"], ["#ff7800", "… by the late reader", "box"], ["#9a9a9a", "Hatched grey: no readable rows, nothing judged", "box"], ["#ffbe00", "Corn on a row the reader did not hold (amber outline), never a weed"], ["#ffbe00", "That row's line (amber dashes)", "dash"], ["#c8c8c8", "Green on uncertain ground (light grey outline), not a weed"]],
+  assess: [["#3c8cff", "Seedlings", "box"], ["#00e678", "Rows on soil", "box"], ["#e6c800", "Canopy nearly meeting", "box"], ["#ff7800", "Closed canopy", "box"], ["#c83cc8", "Cover (lawn, verge, weeds)", "box"], ["#5a4632", "Bare", "box"], ["#a0a0a0", "Unknown", "box"], ["#ffffff", "Cell's row direction agrees with the field (white tick)"], ["#ff3c3c", "… disagrees (red tick)"]],
+};
+function legendFor(r) {
+  if (r.reader === "original") return { head: "The original photo, nothing drawn.", rows: [] };
+  if (r.reader === "assess") return { head: "Field assessment: each cell tinted by its state.", rows: LEG.assess };
+  if (["model", "probe", "sheets"].includes(r.reader)) return { head: "Drawn by this trial's own script; the shared legend does not apply.", rows: [] };
+  const rows = [...LEG.rows];
+  if (r.reader === "emergence" || r.reader === "auto") rows.push(...LEG.emergence);
+  if (r.reader === "auto") rows.push(...LEG.auto);
+  return { head: `${r.readerName}${r.note ? ": " + r.note : ""}`, rows };
+}
+let V = null, s = 1, tx = 0, ty = 0, nat = { w: 1, h: 1 }, backTo = "#/";
+const img = $("img"), stage = $("stage");
+function openViewer(id, k) {
+  const r = BY[id];
+  if (!r || !r.items.length) { location.hash = "#/"; return; }
+  k = Math.max(0, Math.min(r.items.length - 1, k | 0));
+  const keep = V && V.r.items[V.k] && V.r.items[V.k].photo && V.r.items[V.k].photo === r.items[k].photo && V.r.set === r.set;
+  V = { r, k };
+  $("viewer").classList.remove("hide"); document.body.style.overflow = "hidden";
+  const it = r.items[k];
+  const others = it.photo ? runsWith(r.set, it.photo) : [r];
+  if (!others.includes(r)) others.unshift(r);
+  V.others = others;
+  $("vcmp").innerHTML = others.map((o, n) => `<option value="${n}" ${o === r ? "selected" : ""}>${esc(o.readerName)}${o.when ? " · " + esc(when(o)) : ""}${o.code ? " · " + esc(o.code) : ""}: ${esc(runLine(o)).slice(0, 90)}</option>`).join("");
+  $("vcmp").disabled = others.length < 2;
+  $("vall").classList.toggle("hide", !it.photo);
+  if (it.photo) $("vall").href = `#/photo/${encodeURIComponent(setId(r.set || ""))}/${encodeURIComponent(it.photo)}`;
+  $("vfull").href = it.full;
+  $("vinfo").innerHTML = `${badge(r)} <b>${esc(it.photo ? "photo " + it.photo : it.name)}</b> · ${k + 1} / ${r.items.length} · ${esc(r.setLabel)}${r.when ? " · " + esc(when(r)) : ""}`;
+  const L = legendFor(r);
+  $("legend").innerHTML = `<div style="color:var(--muted);margin-bottom:4px">${esc(L.head)}</div>` + L.rows.map(([c, t, kind]) => `<div><i class="${kind || ""}" style="background:${c};border-color:${c}"></i>${esc(t)}</div>`).join("");
+  $("load").classList.remove("hide");
+  const v = { s, tx, ty };
+  img.onload = () => {
+    $("load").classList.add("hide");
+    const same = nat.w === img.naturalWidth && nat.h === img.naturalHeight;
+    nat = { w: img.naturalWidth, h: img.naturalHeight };
+    if (keep && same) { s = v.s; tx = v.tx; ty = v.ty; apply(); } else fit();
+  };
+  img.onerror = () => { $("load").textContent = "picture not built: run npm run hub:results"; };
+  img.src = it.img;
+  const nx = r.items[(k + 1) % r.items.length]; new Image().src = nx.img;
+}
+function closeViewer() { if (!V) return; V = null; $("viewer").classList.add("hide"); document.body.style.overflow = ""; img.removeAttribute("src"); }
+function setView(id, k) { history.replaceState(null, "", `#/view/${encodeURIComponent(id)}/${k}`); openViewer(id, k); }
+function step(d) { if (!V) return; const n = V.r.items.length; setView(V.r.id, (V.k + d + n) % n); }
+function cmp(d) {
+  if (!V || V.others.length < 2) return;
+  const n = V.others.length, cur = V.others.indexOf(V.r), o = V.others[(cur + d + n) % n];
+  setView(o.id, o.items.findIndex(i => i.photo === V.r.items[V.k].photo));
+}
+function fit() { const W = innerWidth, Hh = innerHeight - 44; s = Math.min(W / nat.w, Hh / nat.h); tx = (W - nat.w * s) / 2; ty = 44 + (Hh - nat.h * s) / 2; apply(); }
+function apply() { img.style.transform = `translate(${tx}px,${ty}px) scale(${s})`; }
+$("vclose").onclick = () => { location.hash = backTo; };
+$("vprev").onclick = () => step(-1); $("vnext").onclick = () => step(1);
+$("vcmp").onchange = e => { const o = V.others[+e.target.value]; setView(o.id, o.items.findIndex(i => i.photo === V.r.items[V.k].photo)); };
+$("vfs").onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+$("vleg").onclick = () => store.set("legendHidden", $("legend").classList.toggle("hide"));
+if (store.get("legendHidden", false)) $("legend").classList.add("hide");
+addEventListener("keydown", e => {
+  if (!V || e.target.tagName === "INPUT" || (e.target.tagName === "SELECT" && e.key.startsWith("Arrow"))) return;
+  if (e.key === "ArrowRight") step(1); else if (e.key === "ArrowLeft") step(-1);
+  else if (e.key === "ArrowUp") { e.preventDefault(); cmp(-1); } else if (e.key === "ArrowDown") { e.preventDefault(); cmp(1); }
+  else if (e.key === "Escape") $("vclose").onclick();
+  else if (e.key === "f" || e.key === "F") $("vfs").onclick(); else if (e.key === "l" || e.key === "L") $("vleg").onclick();
+  else if (e.key === "h" || e.key === "H") $("help").classList.toggle("hide"); else if (e.key === "0") fit();
+});
+stage.addEventListener("wheel", e => { e.preventDefault(); const k = Math.exp(-e.deltaY * 0.0015), ns = Math.min(8, Math.max(0.02, s * k)); tx = e.clientX - (e.clientX - tx) * ns / s; ty = e.clientY - (e.clientY - ty) * ns / s; s = ns; apply(); }, { passive: false });
+let drag = null;
+stage.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, tx, ty }; stage.classList.add("drag"); stage.setPointerCapture(e.pointerId); });
+stage.addEventListener("pointermove", e => { if (!drag) return; tx = drag.tx + e.clientX - drag.x; ty = drag.ty + e.clientY - drag.y; apply(); });
+stage.addEventListener("pointerup", () => { drag = null; stage.classList.remove("drag"); });
+stage.addEventListener("dblclick", e => { const fs = Math.min(innerWidth / nat.w, (innerHeight - 44) / nat.h); if (Math.abs(s - fs) < 1e-3) { const ns = 1; tx = e.clientX - (e.clientX - tx) * ns / s; ty = e.clientY - (e.clientY - ty) * ns / s; s = ns; apply(); } else fit(); });
+addEventListener("resize", () => { if (V) fit(); });
+
+/* ---------- routing ---------- */
+let scrollHome = 0;
+function route() {
+  const p = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+  if (p[0] === "view") { openViewer(p[1], +p[2] || 0); return; }
+  closeViewer();
+  if (p[0] === "run") { renderRun(p[1]); backTo = location.hash; scrollTo(0, 0); }
+  else if (p[0] === "photo") { renderPhoto(p[1], p[2]); backTo = location.hash; scrollTo(0, 0); }
+  else { renderHome(); backTo = "#/"; scrollTo(0, scrollHome); }
+}
+addEventListener("scroll", () => { if (!V && backTo === "#/") scrollHome = scrollY; });
+addEventListener("hashchange", route);
+route();
+</script></body></html>
