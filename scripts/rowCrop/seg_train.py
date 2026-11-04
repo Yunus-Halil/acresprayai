@@ -21,7 +21,7 @@ ap.add_argument("--epochs", type=int, default=20)
 ap.add_argument("--weed-weight", type=float, default=3.0)
 ap.add_argument("--photos", nargs="*", default=[])
 ap.add_argument("--photo-dir", default=None, help="predict: every jpg/png in this folder (as well as --photos)")
-ap.add_argument("--save-prob", action="store_true", help="predict: also save <name>-corn.png, the crop probability 0-255")
+ap.add_argument("--save-prob", action="store_true", help="predict: also save <name>-prob.png, the class probabilities 0-255 (R crop, G weed, B background)")
 ap.add_argument("--no-overlay", action="store_true", help="predict: skip the -seg.jpg picture")
 ap.add_argument("--scale", type=float, default=1.0)
 ap.add_argument("--backbone", default="facebook/dinov2-small")
@@ -130,7 +130,7 @@ elif args.mode == "predict":
     photos = list(args.photos)
     if args.photo_dir: photos += sorted(os.path.join(args.photo_dir, f) for f in os.listdir(args.photo_dir) if f.lower().endswith((".jpg", ".jpeg", ".png")))
     for p in photos:
-        if args.save_prob and os.path.exists(f"{args.out}/{os.path.splitext(os.path.basename(p))[0]}-corn.png"): continue
+        if args.save_prob and os.path.exists(f"{args.out}/{os.path.splitext(os.path.basename(p))[0]}-prob.png"): continue
         im = Image.open(p).convert("RGB")
         if args.scale != 1: im = im.resize((int(im.width * args.scale), int(im.height * args.scale)), Image.BICUBIC)
         rgb = np.array(im); H, W = rgb.shape[:2]
@@ -152,6 +152,6 @@ elif args.mode == "predict":
             for k, c in PAL.items(): ov[pred == k] = c
             base.alpha_composite(Image.fromarray(ov)); base.convert("RGB").save(f"{args.out}/{name}-seg.jpg", quality=88)
         Image.fromarray(pred).save(f"{args.out}/{name}-mask.png")
-        if args.save_prob: Image.fromarray(np.clip(prob[1] * 255 + 0.5, 0, 255).astype(np.uint8)).save(f"{args.out}/{name}-corn.png")
+        if args.save_prob: Image.fromarray(np.clip(np.stack([prob[1], prob[2], prob[0]], -1) * 255 + 0.5, 0, 255).astype(np.uint8)).save(f"{args.out}/{name}-prob.png")
         shares = {c: round(float((pred == k).mean()), 4) for k, c in enumerate(("background", "crop", "weed"))}
         print(name, shares, f"{time.time() - t0:.1f}s", flush=True)

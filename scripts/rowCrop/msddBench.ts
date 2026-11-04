@@ -18,6 +18,7 @@ import type { RowCropRead } from "../../src/lib/rowCrop/readRowCrop";
 import { rowCropParamsFor } from "../../src/lib/rowCrop/params";
 import { cropProfileFor } from "../../src/lib/cropProfiles/registry";
 import { canvasOf, drawRead, line, poly, type Rgb } from "./draw";
+import { cornShareInHull, coveredBy, modelWeeds } from "./cornCheck";
 
 const argv = process.argv.slice(2);
 const arg = (k: string, d?: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
@@ -26,9 +27,12 @@ const DIR = arg("dir", "D:/swardus-research/datasets/msdd/test")!;
 const OUT = arg("out", `directtestimagery/benchmark-msdd-${revision}`)!;
 const LIMIT = Number(arg("limit", "0")), EVERY = Number(arg("every", "1"));
 const DRAW = argv.includes("--draw");
-/** Optional: a folder of <tile>-corn.png corn probability maps (seg_train.py predict --save-prob); a weed candidate
- * whose green the model calls corn (mean probability >= --corn-threshold) is cleared as a corn leaf. */
+/** Optional: a folder of <tile>-prob.png class probabilities (seg_train.py predict --save-prob: R corn, G weed, B
+ * background); a weed candidate is cleared as a corn leaf when, over the hull's plant pixels (corn + weed >= half),
+ * corn / (corn + weed) averages at least --corn-threshold. */
 const CORN_PROB = arg("corn-prob"), CORN_T = Number(arg("corn-threshold", "0.5"));
+/** Model weeds smaller than this equivalent diameter (at the read's own scale) are not added (cm). */
+const MIN_WEED_CM = Number(arg("min-weed-cm", "3"));
 const profile = cropProfileFor("corn")!;
 
 /** Paper Table III: video id -> stage group, null for oblique video. */
@@ -81,18 +85,8 @@ function draw(img: PhotoPixels, ad: AdaptiveRead, bx: Box[], wrong: Set<number>,
 const csv = (rows: Record<string, unknown>[]) => { const keys = [...new Set(rows.flatMap(r => Object.keys(r)))]; return [keys.join(","), ...rows.map(r => keys.map(k => { const s = String(r[k] ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(","))].join("\n") + "\n"; };
 const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 1000) / 10} %` : "-");
 
-type T = { tiles: number; noRows: number; boxes: number; boxesOnRows: number; points: number; pointsInBox: number; boxesWithPoint: number; weeds: number; weedsOnCorn: number; boxesHitByWeed: number; cleared: number; clearedOnCorn: number; ms: number };
-const T0 = (): T => ({ tiles: 0, noRows: 0, boxes: 0, boxesOnRows: 0, points: 0, pointsInBox: 0, boxesWithPoint: 0, weeds: 0, weedsOnCorn: 0, boxesHitByWeed: 0, cleared: 0, clearedOnCorn: 0, ms: 0 });
-/** Mean of a probability map (0-255) over a hull's pixels, sampled on a grid inside the hull. */
-function meanInHull(prob: Uint8Array, W: number, H: number, hull: [number, number][]): number | null {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const [x, y] of hull) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-  const step = Math.max(1, Math.floor(Math.min(x1 - x0, y1 - y0) / 8)); let s = 0, n = 0;
-  const inside = (px: number, py: number) => { let c = false; for (let i = 0, j = hull.length - 1; i < hull.length; j = i++) { const [xi, yi] = hull[i], [xj, yj] = hull[j]; if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) c = !c; } return c; };
-  for (let y = Math.max(0, Math.floor(y0)); y <= Math.min(H - 1, y1); y += step) for (let x = Math.max(0, Math.floor(x0)); x <= Math.min(W - 1, x1); x += step) if (hull.length < 3 || inside(x, y)) { s += prob[Math.floor(y) * W + Math.floor(x)]; n++; }
-  return n ? s / n / 255 : null;
-}
-
+type T = { tiles: number; noRows: number; boxes: number; boxesOnRows: number; points: number; pointsInBox: number; boxesWithPoint: number; weeds: number; weedsOnCorn: number; boxesHitByWeed: number; cleared: number; clearedOnCorn: number; added: number; addedOnCorn: number; ms: number };
+const T0 = (): T => ({ tiles: 0, noRows: 0, boxes: 0, boxesOnRows: 0, points: 0, pointsInBox: 0, boxesWithPoint: 0, weeds: 0, weedsOnCorn: 0, boxesHitByWeed: 0, cleared: 0, clearedOnCorn: 0, added: 0, addedOnCorn: 0, ms: 0 });
 async function main() {
   let files = readdirSync(join(DIR, "images")).filter(f => /\.(png|jpe?g)$/i.test(f)).sort().filter(f => groupOf(f) !== null);
   if (EVERY > 1) files = files.filter((_, i) => i % EVERY === 0);
@@ -100,6 +94,7 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   const per: Record<string, unknown>[] = [];
   const tot = new Map<string, T>();
+  let missingProb = 0;
   for (const f of files) {
     const g = groupOf(f)!, name = basename(f, extname(f));
     const raw = decodeImage(new Uint8Array(readFileSync(join(DIR, "images", f))));
@@ -123,17 +118,20 @@ async function main() {
       const cand = ad.weeds.map((w, i) => ({ w, i })).filter(({ w }) => w.verdict === "weed candidate");
       const wrong = new Set(cand.filter(({ w }) => bx.some(b => inBox(b, w.x, w.y, 0.1))).map(({ i }) => i));
       const hit = bx.filter(b => cand.some(({ w }) => inBox(b, w.x, w.y, 0.1))).length;
-      let cleared = 0, clearedOnCorn = 0;
+      let cleared = 0, clearedOnCorn = 0, added = 0, addedOnCorn = 0;
       if (CORN_PROB) {
-        const pf = join(CORN_PROB, `${name}-corn.png`);
+        const pf = join(CORN_PROB, `${name}-prob.png`);
         if (existsSync(pf)) {
-          const pm = decodeImage(new Uint8Array(readFileSync(pf))), prob = new Uint8Array(pm.width * pm.height);
-          for (let i = 0; i < prob.length; i++) prob[i] = pm.data[i * 4];
-          for (const { w, i } of cand) { const m = meanInHull(prob, pm.width, pm.height, w.hull); if (m != null && m >= CORN_T) { cleared++; if (wrong.has(i)) clearedOnCorn++; } }
-        }
+          const pm = decodeImage(new Uint8Array(readFileSync(pf)));
+          const keptHulls: [number, number][][] = [];
+          for (const { w, i } of cand) { const m = cornShareInHull(pm, w.hull); if (m != null && m >= CORN_T) { cleared++; if (wrong.has(i)) clearedOnCorn++; } else keptHulls.push(w.hull); }
+          const gsd = Number.isFinite(ad.gsdM ?? NaN) && ad.gsdM ? ad.gsdM : 0.004;
+          const add = modelWeeds(pm, Math.PI * (MIN_WEED_CM / 200 / gsd) ** 2).filter(m => !coveredBy(m, keptHulls));
+          added = add.length; addedOnCorn = add.filter(m => bx.some(b => inBox(b, m.x, m.y, 0.1))).length;
+        } else missingProb++;
       }
-      Object.assign(row, { plans: ad.plans.filter(p => p.read).map(p => p.stage).join("+") || "none", rows: ad.rows.length, boxesOnRows: onRows, points: pts.length, pointsInBox: pIn, boxesWithPoint: bHas, weeds: cand.length, weedsOnCorn: wrong.size, boxesHitByWeed: hit, cleared, clearedOnCorn });
-      for (const s of [S, A]) { if (!ad.rows.length) s.noRows++; s.boxesOnRows += onRows; s.points += pts.length; s.pointsInBox += pIn; s.boxesWithPoint += bHas; s.weeds += cand.length; s.weedsOnCorn += wrong.size; s.boxesHitByWeed += hit; s.cleared += cleared; s.clearedOnCorn += clearedOnCorn; }
+      Object.assign(row, { plans: ad.plans.filter(p => p.read).map(p => p.stage).join("+") || "none", rows: ad.rows.length, boxesOnRows: onRows, points: pts.length, pointsInBox: pIn, boxesWithPoint: bHas, weeds: cand.length, weedsOnCorn: wrong.size, boxesHitByWeed: hit, cleared, clearedOnCorn, added, addedOnCorn });
+      for (const s of [S, A]) { if (!ad.rows.length) s.noRows++; s.boxesOnRows += onRows; s.points += pts.length; s.pointsInBox += pIn; s.boxesWithPoint += bHas; s.weeds += cand.length; s.weedsOnCorn += wrong.size; s.boxesHitByWeed += hit; s.cleared += cleared; s.clearedOnCorn += clearedOnCorn; s.added += added; s.addedOnCorn += addedOnCorn; }
       if (DRAW) draw(px, ad, bx, wrong, join(OUT, g, `${name}.jpg`));
     } else for (const s of [S, A]) s.noRows++;
     per.push(row);
@@ -155,10 +153,13 @@ async function main() {
   rowOf("weed candidates ON a corn plant (wrong)", t => `${t.weedsOnCorn} (${pct(t.weedsOnCorn, t.weeds)})`);
   rowOf("corn plants marked as a weed", t => `${t.boxesHitByWeed} (${pct(t.boxesHitByWeed, t.boxes)})`);
   if (CORN_PROB) {
+    if (missingProb) md.push(`| tiles with no probability map (not checked) | ${missingProb} |`);
     rowOf(`weed candidates the corn check clears (p >= ${CORN_T})`, t => String(t.cleared));
     rowOf("... of them ON a corn plant (right to clear)", t => `${t.clearedOnCorn} of ${t.weedsOnCorn}`);
     rowOf("... of them away from every box (unjudged: weed or missed plant)", t => String(t.cleared - t.clearedOnCorn));
     rowOf("weed candidates ON a corn plant after the check", t => `${t.weedsOnCorn - t.clearedOnCorn} (${pct(t.weedsOnCorn - t.clearedOnCorn, t.weeds - t.cleared)})`);
+    rowOf(`weed patches the model adds (>= ${MIN_WEED_CM} cm)`, t => String(t.added));
+    rowOf("... of them ON a corn plant (wrong)", t => `${t.addedOnCorn} (${pct(t.addedOnCorn, t.added)})`);
   }
   rowOf("mean ms per tile", t => String(Math.round(t.ms / Math.max(1, t.tiles))));
   md.push("", "Pictures (with --draw): our read as in the bench pictures, MSDD's corn boxes in cyan, weed candidates on a corn box outlined thick magenta.");
