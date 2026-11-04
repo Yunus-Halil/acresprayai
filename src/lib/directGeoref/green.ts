@@ -30,6 +30,9 @@ export type GreenOptions = {
   soilTilePx: number;
   /** exgr-soil: the threshold never falls below this (yellowing cover and straw stay out). */
   soilFloor: number;
+  /** exgr-soil: a tile's soil level is capped at the photo's own soil level (its 25th percentile) plus this, so a tile
+   * that is all lawn or canopy does not call its green "soil"; undefined leaves tiles independent (the orchard tier). */
+  soilCapAboveGlobal?: number;
   /** Metres per raster pixel (for splitM2 and the peak separation); 0 disables the split. */
   pixelM: number;
   /** A patch over this ground area is split at its distance-transform peaks; 0 never splits. */
@@ -92,6 +95,15 @@ export function greenMaskWithExcess(px: PhotoPixels, o: GreenOptions): { mask: U
     let acc = 0, bin = 0;
     for (; bin < 256; bin++) { acc += hist[bin]; if (acc >= 0.25 * n) break; }
     soil[ty * TW + tx] = bin / 256 - 0.5;
+  }
+  if (o.soilCapAboveGlobal != null) {
+    hist.fill(0);
+    let n = 0;
+    for (let i = 0; i < N; i += 4) { const v = idx[i]; if (Number.isNaN(v)) continue; hist[Math.max(0, Math.min(255, Math.floor((v + 0.5) * 256)))]++; n++; }
+    let acc = 0, bin = 0;
+    for (; bin < 256; bin++) { acc += hist[bin]; if (acc >= 0.25 * n) break; }
+    const cap = bin / 256 - 0.5 + o.soilCapAboveGlobal;
+    for (let i = 0; i < soil.length; i++) if (!Number.isNaN(soil[i]) && soil[i] > cap) soil[i] = cap;
   }
   const smooth = new Float32Array(TW * TH);
   for (let ty = 0; ty < TH; ty++) for (let tx = 0; tx < TW; tx++) {

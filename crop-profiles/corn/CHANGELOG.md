@@ -1,5 +1,21 @@
 # Corn profile changelog
 
+## 1.2.0 (2026-10-29)
+
+- **Photographs read by the continuous-row reader.** `src/lib/rowCrop/readRowCrop.ts` replaces the lattice pattern
+  pass for this crop's photographs (Photo Scout): rows are traced strip by strip on the soil-relative green, never on
+  brightness, so never on the straw; the whole row is the crop; each row's crop band comes from its own green
+  (`rowReader.bandHalfWidthM` is its floor); a green patch is a weed candidate only when it stands clear of every
+  band; gaps along each row are reported; the stand is estimated from the green peaks along the row at 1.5 cm and
+  finer, marked unverified. Lawns, verges and closed canopy are left out as solid green.
+- **Measured.** 15 real top-down photographs of one V5 to V7 field (`directtestimagery`, no EXIF: the scale is assumed
+  from the pitch and the default spacing, and the read says so): every visible row traced on the crop, 1 to 14 patches
+  between rows per photograph, about half a second a photograph. Three residue photographs: rows on the corn, weeds
+  outlined between the rows. Rendered development stands: rows on the crop on 23 of 24; the exception is a V2 stand
+  under weeds larger than its plants (failure case registered as the known weak case).
+- **Known limits.** Row ends can run a metre or two into a mown verge; a weed touching the crop's leaves is the
+  crop; twin rows share one band. The field map still goes through the pattern pass (`weedVision/patternRows.ts`).
+
 ## 1.1.0 (2026-10-23)
 
 - **Grade and hotspots on corn rows.** The weed-pressure grade and the hotspots move from unsupported to experimental.
