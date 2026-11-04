@@ -34,6 +34,9 @@ BENCH_SET = {**STAGE_SET, "corn2": "2024corn2/emergence"}  # a bench's set name 
 # Plain-language notes for runs whose folder name only meant something during the work:
 # (pattern on the run's relative path, reader override or None, note). First match wins.
 NOTES = [
+    (r"^benchmark-msdd-4f24440/", None, "MSDD's hand-checked corn boxes (cyan), Missouri 2022, never seen: before the small-frame fix, 73 % of tiles read no rows"),
+    (r"^benchmark-msdd-cd54c7e/", None, "MSDD's hand-checked corn boxes (cyan), Missouri 2022, never seen: after the small-frame fix (code e68fb95); magenta = a weed candidate on real corn"),
+    (r"^benchmark-msdd-", None, "MSDD's hand-checked corn boxes (cyan); magenta = a weed candidate on real corn"),
     (r"^benchmark-adaptive-holdout-8fcec20/", None, "48 photos no part of the work had seen, run once on the committed code (8fcec20)"),
     (r"^benchmark-adaptive-v4b/", None, "last development run before the commit: both plantings read, Corn2 weeds 723 to 88"),
     (r"^benchmark-adaptive-v[234]/", None, "development run of the adaptive reader (whole-frame plans)"),
@@ -118,7 +121,9 @@ def meta_for(root, rel, sets):
         if len(parts) > 1:
             m = re.search(r"^## " + re.escape(parts[1]) + r": \d+ photographs from directtestimagery/(\S+)", s, re.M)
             setdir = (m and m.group(1)) or BENCH_SET.get(parts[1])
-        reader = "auto" if "adaptive" in parts[0] else None
+        reader = "auto" if "adaptive" in parts[0] or "msdd" in parts[0] else None
+        if "msdd" in parts[0] and len(parts) > 1:
+            setdir = f"MSDD 2022 test, {parts[1]}"
     elif len(parts) > 1 and (root / "/".join(parts[:-1]) / "results.md").is_file():
         md = root / "/".join(parts[:-1]) / "results.md"
         m = re.search(r"code (\w+)", read(md))
@@ -146,6 +151,8 @@ def meta_for(root, rel, sets):
 
 
 def photo_of(stem):
+    if re.match(r"^\d\d_\d\d_\d\d_\d+_Frame", stem):  # an MSDD tile: its own name
+        return stem
     m = re.match(r"^(\d+(?:young)?)(?!\d)", stem)
     return m.group(1) if m else None
 
