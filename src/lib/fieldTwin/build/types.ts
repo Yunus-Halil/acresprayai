@@ -38,11 +38,12 @@ export type WeedDetector = ((photo: PhotoSource, signal?: AbortSignal, tiles?: n
 /** The tile plan the detector will use, so the views can be chosen before it runs. */
 export type DetectPlan = { tile: number; overlap: number; scale: number };
 
-export type BuildStage = "photographs" | "cameras" | "rows" | "weeds" | "vegetation" | "evidence" | "boundary" | "bundle";
+export type BuildStage = "photographs" | "cameras" | "rows" | "corn" | "weeds" | "vegetation" | "evidence" | "boundary" | "bundle";
 export const BUILD_STAGES: { id: BuildStage; label: string }[] = [
   { id: "photographs", label: "Reading the photographs" },
   { id: "cameras", label: "Aligning the cameras on the soil" },
   { id: "rows", label: "Rows and trees in every photograph" },
+  { id: "corn", label: "Corn rows, weeds and gaps in every photograph (Corn V1), combined over the field" },
   { id: "weeds", label: "Weeds in every photograph" },
   { id: "vegetation", label: "Other vegetation" },
   { id: "evidence", label: "What the photographs show at the edges" },
@@ -58,7 +59,17 @@ export type BuildHooks = {
   signal?: AbortSignal;
 };
 
+/** What the flight is of: an orchard (trees on rows, the weed passes) or corn (Corn V1 on every photograph). */
+export type BuildCrop = "orchard" | "corn";
+/** The stages a build of this crop runs, in order (the page lists only these). */
+export function stagesFor(crop: BuildCrop): { id: BuildStage; label: string }[] {
+  return BUILD_STAGES.filter(s => (crop === "corn" ? s.id !== "rows" && s.id !== "weeds" : s.id !== "corn"));
+}
+
 export type BuildOptions = {
+  /** The crop the operator entered (default orchard). Corn: the corn stage replaces the rows-and-trees and weed
+   * passes, and the twin carries a corn section; the crop's identity rests on this entry. */
+  crop?: BuildCrop;
   /** The twin's name as the operator typed it; the id is derived from it and the capture date. */
   name: string;
   id?: string;

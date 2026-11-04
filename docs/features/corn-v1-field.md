@@ -89,12 +89,57 @@ No labels exist for these plots, so the measures are the photographs' agreement,
 - **Coverage, not just accuracy:** a row or weed seen by one photograph of several is withheld, so patchy single-photo
   reads lose findings at the field's edges, where fewer photographs overlap.
 
+## The Corn Field Twin (in the app, 2026-11-04)
+
+Whole-field corn is part of the Field Twin build and viewer. The pieces:
+
+- **Build** (`src/lib/fieldTwin/build`): the builder's Crop choice, Orchard or **Corn**. A corn build runs the same stages
+  as an orchard one (the photographs' headers, the cameras, the bundle, the evidence crops) with one change: in place
+  of the orchard's rows-and-trees and weed passes, the **corn stage** (`build/corn.ts`) reads every placed photograph
+  with the frozen Corn V1 at its full size (in helper workers, three at a time, each with the aligned camera's pixel
+  size) and combines them with `cornField`. The colour weed rules are not run on corn: they would call the corn weeds.
+- **Stored twin** (`src/lib/fieldTwin/types.ts`): an optional `corn` section (version 1) beside the orchard fields:
+  rows (corn / unconfirmed), every patch some photograph called a weed candidate (confirmed / unconfirmed / contested,
+  with each photograph's vote), every reported stand gap (confirmed / withheld, with the photographs that reported it,
+  held a corn row without a gap there, or located a plant inside it), each finding with crops from the photographs
+  behind it, and the counts. Older twins (no `corn`, no `source.placement`) load and draw exactly as before;
+  `parseTwin` refuses a malformed corn section with the reason. The corn rows are also written as the twin's rows.
+- **Placement** (`source.placement`): `georeferenced` when the positions are the drone's own headers; `local` when a
+  file says otherwise (`swardus:Placement` in its XMP: the UAV3DCrop test flights, whose positions are a scene
+  reconstruction scaled from the corn rows). A local twin says so in the corn panel and the key, and the map's
+  surroundings (OpenStreetMap) are switched off for it: its coordinates are not a place.
+- **Viewer** (`FieldTwinView`, `TwinCanvasLayer`, `CornPanels.tsx`): the corn layer draws corn rows cyan, rows not
+  confirmed amber dashes, confirmed weed candidates red, unconfirmed grey dashes, contested violet dashes, stand gaps
+  orange and withheld gaps grey dashes, all in the twin's one canvas (picking and the selection ring included). The
+  left column's **Corn** panel gives the counts, two switches (what the photographs confirm; observations not
+  confirmed) and a review list (weeds, unconfirmed, gaps, withheld, rows) that selects and zooms to each. The
+  inspector shows a selected row, weed or gap: its state and why, its measurements, what each photograph said, and
+  crops from them. Every panel says it: review-only, not a treatment decision; the crop is the operator's entry.
+
+### How to open one
+
+1. `npm run dev`, sign in as the Field Twin reviewer, open **Field Twin** (`/app/field-twin`).
+2. Built on this computer: the three test-flight twins are in `data/direct-georef/twin/` (`corn-day015-corn1-test`,
+   `corn-day023-corn1-test`, `corn-day045-corn1-test`) and appear in the page's list of twins built here. Open one.
+3. Build one in the app: **Build a twin** > **Pick a folder** > `D:\swardus-research\cornflight\Day023_Corn1-n40` (the 40
+   photographs with their headers written) > Crop **Corn** > **Build the twin** (about 2-4 minutes on this computer with
+   helper workers) > **Open and save to my account**.
+4. In the twin: the **Corn** panel on the left; click a row, a weed or a gap on the map or in the review list.
+
+Without signing in (development build only): `http://localhost:8080/dev/field-twin?id=corn-day023-corn1-test` opens a
+twin built here; `http://localhost:8080/dev/field-twin?build=1` opens the builder.
+
+Rebuild a test twin in Node: `npx vite-node scripts/directGeoref/buildTwinApp.ts --dir <flight folder> --out
+data/direct-georef/twin --name "..." --id <id> --crop corn --weeds none --no-preview`. Write a test flight from a
+UAV3DCrop scene: `npx vite-node scripts/rowCrop/uav3dcropFlight.ts --scene <scene> --out <dir> --reads <cornFieldBench
+reads dir>`.
+
 ## Integration status
 
 - Done: the library (`cornField`, `compactCornRead`), its tests (three overlapping cameras with single-photograph
   errors planted: the shared weed kept, the made-up weed withheld, a weed one photo calls crop withheld, a gap another
   photo sees plants in withheld, a row one of three holds not corn), the real-flight bench.
-- Next (not built): a corn stage in the Field Twin builder (`src/lib/fieldTwin/build/pipeline.ts`, after `alignCameras`,
-  which already produces the `GeorefFrame`s: read each photograph with Corn V1 in the worker pool, send
-  `compactCornRead`, call `cornField`), a `corn` section in the twin bundle, and viewer layers (corn rows, planted rows,
-  weed candidates, stand gaps, each with its photographs). Our own corn flights need camera headers first.
+- Done 2026-11-04: the corn stage in the builder, the twin's corn section, the viewer's corn layer, panel and
+  inspector (above), tests of each (src/test/fieldTwinCorn.test.ts, fieldTwinCornUi.test.tsx).
+- Not done: a cultivated block for corn (the boundary inference reads orchard trees); soil ties on the low test
+  flights (0 found: the placement there is the headers'); our own corn flights still need camera headers.

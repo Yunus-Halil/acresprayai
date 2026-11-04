@@ -48,6 +48,11 @@ export type TwinLayers = {
   ground: boolean;
   /** The field's surroundings: a muted basemap of OpenStreetMap data, seen when zoomed out. */
   surroundings: boolean;
+  /** Corn twins: the corn rows, weed candidates and stand gaps the photographs confirm. */
+  corn: boolean;
+  /** Corn twins: also the observations the photographs do not confirm (unconfirmed rows and weeds, contested weeds,
+   * withheld gaps), drawn apart: kept for review, never findings. */
+  cornUncertain: boolean;
 };
 
 export type TwinMarkers = "emphasised" | "summary" | "all";
@@ -57,7 +62,7 @@ export type TwinDetail = "simple" | "standard" | "full" | "custom";
 export type TwinDetailStop = Exclude<TwinDetail, "custom">;
 
 const DIAGNOSTICS = { inferred: true, droppedRows: false, singleView: false, onTree: false, uncertainty: false, footprints: false, evidence: false };
-const GROUND = { pressure: true, beyondBoundary: false, boundary: true, heatScale: "field" as HeatScaleMode, zones: true, coverage: true, ground: true, surroundings: true };
+const GROUND = { pressure: true, beyondBoundary: false, boundary: true, heatScale: "field" as HeatScaleMode, zones: true, coverage: true, ground: true, surroundings: true, corn: true, cornUncertain: true };
 
 /**
  * What each stop of the dial draws. Simple answers "where are the problems": the heatmap, the rows as orientation,
@@ -141,6 +146,15 @@ export const TWIN_COLOURS = {
   labelOnField: "#171a18",
   hover: "rgba(255, 255, 255, 0.5)",
   selection: "#ffffff",
+  /** Corn (the Photo Scout colours): corn rows cyan, rows not confirmed amber dashes, confirmed weed candidates red,
+   * unconfirmed grey dashes, contested violet dashes, stand gaps orange, withheld gaps grey dashes. */
+  cornRow: "#00e6ff",
+  cornRowUnconfirmed: "#ffbe00",
+  cornWeed: "#ef5350",
+  cornWeedUnconfirmed: "#a0a6ad",
+  cornWeedContested: "#c08cf0",
+  cornGap: "#ffa000",
+  cornGapWithheld: "#a0a6ad",
 };
 
 export const WEED_COLOUR = { betweenRows: TWIN_COLOURS.weed, onRow: TWIN_COLOURS.weedOnRow, single: TWIN_COLOURS.weedSingle, onTree: TWIN_COLOURS.weedOnTree };

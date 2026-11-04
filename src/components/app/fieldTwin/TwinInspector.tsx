@@ -11,6 +11,7 @@ import type { TwinBundle, TwinEvidence, TwinTree, TwinWeed } from "@/lib/fieldTw
 import { TREE_COLOUR, TWIN_COLOURS, weedColour } from "@/lib/fieldTwin/style";
 import { distanceToRowM } from "@/lib/fieldTwin/view";
 import EvidenceCrop from "./EvidenceCrop";
+import { CornInspector } from "./CornPanels";
 import type { TwinPick } from "./TwinCanvasLayer";
 
 type Props = { twin: TwinBundle; scene: Scene; selection: TwinPick; atlasUrl: (index: number) => Promise<string>; onClose: () => void; onZoomTo?: (lat: number, lng: number, metresAcross: number) => void; findings?: FindingsResult | null; onSelectWeed?: (id: number) => void };
@@ -177,6 +178,7 @@ function FindingPanel({ f, rank, emphasised, units, onClose, onZoomTo, onSelectW
 export default function TwinInspector({ twin, scene, selection, atlasUrl, onClose, onZoomTo, findings = null, onSelectWeed }: Props) {
   const units = useUnitSystem();
   if (!selection) return null;
+  if (selection.kind === "cornRow" || selection.kind === "cornWeed" || selection.kind === "cornGap") return <CornInspector twin={twin} selection={selection} atlasUrl={atlasUrl} onClose={onClose} />;
   if (selection.kind === "weed") {
     const w = twin.weeds.find(x => x.id === selection.id);
     return w ? <WeedPanel w={w} twin={twin} atlasUrl={atlasUrl} onClose={onClose} units={units} /> : <p className="text-xs text-neutral-500">That weed is not in this twin.</p>;

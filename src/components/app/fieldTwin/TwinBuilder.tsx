@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { type BuildResult, type BuildRun, BuildAborted, startTwinBuild } from "@/lib/fieldTwin/build/runBuild";
 import type { BuildReport } from "@/lib/fieldTwin/build/pipeline";
-import { BUILD_STAGES, type BuildProgress, type BuildStage } from "@/lib/fieldTwin/build/types";
+import { type BuildCrop, type BuildProgress, type BuildStage, stagesFor } from "@/lib/fieldTwin/build/types";
 import type { TwinBundle } from "@/lib/fieldTwin/types";
 import { fetchHealth } from "@/lib/weedVision/client";
 import { weedModelAvailable } from "@/lib/weedVision/flag";
@@ -30,6 +30,9 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
   const [name, setName] = useState("");
   const [modelState, setModelState] = useState<"checking" | "ready" | "missing" | "unavailable">(weedModelAvailable() ? "checking" : "unavailable");
   const [weeds, setWeeds] = useState<"model" | "colour" | "none">("colour");
+  /** The crop the operator enters: corn reads every photograph with Corn V1 in place of the orchard passes. */
+  const [crop, setCrop] = useState<BuildCrop>("orchard");
+  const stages = stagesFor(crop);
   const [run, setRun] = useState<BuildRun | null>(null);
   const [progress, setProgress] = useState<BuildProgress | null>(null);
   const [doneStages, setDoneStages] = useState<BuildStage[]>([]);
@@ -61,7 +64,7 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
     let r: BuildRun;
     try {
       const helpers = Number(new URLSearchParams(window.location.search).get("helpers") ?? "") || undefined;
-      r = startTwinBuild(files, { name: fieldName, weeds, helpers }, {
+      r = startTwinBuild(files, { name: fieldName, weeds: crop === "corn" ? "none" : weeds, helpers, crop }, {
         onProgress: p => { setProgress(prev => { if (prev && prev.stage !== p.stage) setDoneStages(d => (d.includes(prev.stage) ? d : [...d, prev.stage])); return p; }); },
         onLog: line => setLines(l => [...l.slice(-11), line]),
       });
@@ -69,12 +72,12 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
     setRun(r);
     const summary = (out: BuildResult, atlasesDone: boolean) => ({ report: out.report, twin: { trees: out.twin.trees.length, rows: out.twin.rows.filter(x => x.kept).length, weeds: out.twin.weeds.length, verified: out.twin.weeds.filter(w => w.status === "verified").length, atlases: out.twin.atlases.length, blockHa: out.twin.boundary ? out.twin.boundary.cultivated.areaM2 / 10_000 : null, rowList: out.twin.rows.map(r => ({ id: r.id, kept: r.kept, trees: r.trees, photos: r.photos, straightnessSdM: r.straightnessSdM, reason: r.reason })), field: out.twin.field }, atlasesDone });
     r.done.then(out => {
-      setResult(out); setDoneStages(BUILD_STAGES.filter(s => s.id !== "bundle").map(s => s.id)); setRun(null);
+      setResult(out); setDoneStages(stages.filter(s => s.id !== "bundle").map(s => s.id)); setRun(null);
       if (expose) window.__twinBuild = summary(out, false);
-      out.atlases.then(() => { setDoneStages(BUILD_STAGES.map(s => s.id)); if (expose) window.__twinBuild = summary(out, true); }).catch(() => undefined);
+      out.atlases.then(() => { setDoneStages(stages.map(s => s.id)); if (expose) window.__twinBuild = summary(out, true); }).catch(() => undefined);
     }).catch(e => { const msg = e instanceof BuildAborted ? "Build cancelled." : (e as Error).message; setError(msg); setRun(null); if (expose) window.__twinBuild = { report: null as unknown as BuildReport, twin: { trees: 0, rows: 0, weeds: 0, verified: 0, atlases: 0, blockHa: null, rowList: [], field: { rowDirectionDeg: 0, rowSpacingM: 0, plantSpacingM: 0 } }, atlasesDone: false, error: msg }; });
   };
-  const stageIndex = progress ? BUILD_STAGES.findIndex(s => s.id === progress.stage) : -1;
+  const stageIndex = progress ? stages.findIndex(s => s.id === progress.stage) : -1;
   const size = files.reduce((s, f) => s + f.size, 0);
 
   return (
@@ -96,6 +99,18 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Apricot orchard, north block" disabled={!!run} className="mt-0.5 w-full rounded-sm border border-[#3a3f3a] bg-[#111311] px-2 py-1 text-sm text-neutral-100" />
       </label>
       <fieldset className="text-xs text-neutral-300" disabled={!!run}>
+        <legend className="text-[11px] text-neutral-400">Crop</legend>
+        {([
+          ["orchard", "Orchard (trees on rows)", "Rows and trees from the planting layout; the weed pass chosen below."],
+          ["corn", "Corn", "Every photograph read by Corn V1 at its full size (3 to 7 s each), combined over the field: corn rows, weed candidates and stand gaps, each with the photographs behind it. Review-only. The crop is your entry: nothing here tells corn from another row crop by its look."],
+        ] as const).map(([v, label, hint]) => (
+          <label key={v} className="flex items-start gap-2 py-0.5">
+            <input type="radio" name="twin-crop" className="mt-0.5 accent-[#f0a63a]" value={v} checked={crop === v} onChange={() => setCrop(v)} />
+            <span>{label}<span className="block text-[10px] leading-snug text-neutral-500">{hint}</span></span>
+          </label>
+        ))}
+      </fieldset>
+      {crop === "orchard" && <fieldset className="text-xs text-neutral-300" disabled={!!run}>
         <legend className="text-[11px] text-neutral-400">Weeds</legend>
         {([
           ["colour", "Colour rules, no model (seconds on any computer)", "Green patches over bare soil, between the rows and off the crowns, from the photographs' own pixels. Misses the small, the dark and the yellowing; on the apricot flight it found about three quarters of what the model finds."],
@@ -107,14 +122,14 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
             <span>{label}<span className="block text-[10px] leading-snug text-neutral-500">{hint}</span></span>
           </label>
         ))}
-      </fieldset>
+      </fieldset>}
 
       {!run && !result && <button type="button" className={primary} onClick={start} disabled={!files.length}>Build the twin</button>}
 
       {(run || result || progress) && (
         <div className="rounded-md border border-[#2e322e] bg-[#111311] p-3">
           <ol className="space-y-1 text-xs">
-            {BUILD_STAGES.map((s, i) => {
+            {stages.map((s, i) => {
               const done = doneStages.includes(s.id) || !!result, active = !result && progress?.stage === s.id;
               return (
                 <li key={s.id} className={`flex items-start gap-2 ${done ? "text-neutral-400" : active ? "text-neutral-100" : "text-neutral-600"}`}>
@@ -137,8 +152,13 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
           <p className="font-semibold text-neutral-100">Built in {fmtMs(result.report.totalMs)}</p>
           <ul className="mt-1 space-y-0.5 text-neutral-300">
             <li>{result.report.photographs.read} of {result.report.photographs.given} photographs with a camera{result.report.photographs.refused.length ? ` (${result.report.photographs.refused.length} left out)` : ""}; soil ties agree to {typeof result.report.cameras.residualM === "number" && Number.isFinite(result.report.cameras.residualM) ? `${(result.report.cameras.residualM * 100).toFixed(0)} cm` : "n/a"}</li>
-            <li>{result.twin.trees.length} trees on {result.twin.rows.filter(r => r.kept).length} rows{result.twin.field.rowSpacingM ? ` (${result.twin.field.rowSpacingM} m apart, plants ${result.twin.field.plantSpacingM} m)` : ""}</li>
-            <li>{result.twin.weeds.length ? `${result.twin.weeds.filter(w => w.status === "verified").length} verified weed candidates of ${result.twin.weeds.length} objects (${result.report.weeds.detections} ${result.twin.stats.weedTier === "colour" ? "green patches, colour rules" : "detections"})` : "no weeds (no weed pass)"}</li>
+            {result.twin.corn ? <>
+              <li>{result.twin.corn.summary.cornRows} corn rows ({result.twin.corn.summary.cornRowLengthM} m) and {result.twin.corn.summary.unconfirmedRows} planted rows not confirmed{result.twin.corn.rowSpacingM ? `, ${result.twin.corn.rowSpacingM} m apart` : ""}; the photographs agree on the rows to {result.twin.corn.rowAgreementM != null ? `${(result.twin.corn.rowAgreementM * 100).toFixed(0)} cm` : "n/a"}</li>
+              <li>weed candidates: {result.twin.corn.summary.weeds.confirmed} confirmed by two or more photographs, {result.twin.corn.summary.weeds.unconfirmed} not repeated, {result.twin.corn.summary.weeds.contested} contested (from {result.twin.corn.summary.perPhoto.weedCandidates} single-photograph reports)</li>
+              <li>stand gaps: {result.twin.corn.summary.gaps.confirmed} confirmed, {result.twin.corn.summary.gaps.withheld} withheld (from {result.twin.corn.summary.perPhoto.standGaps} single-photograph reports)</li>
+              <li>{result.report.corn ? `Corn V1 ${(result.report.corn.msPerPhoto / 1000).toFixed(1)} s per photograph, ${result.report.corn.withRows} of ${result.report.corn.photographsRead} with rows` : ""}</li>
+            </> : <li>{result.twin.trees.length} trees on {result.twin.rows.filter(r => r.kept).length} rows{result.twin.field.rowSpacingM ? ` (${result.twin.field.rowSpacingM} m apart, plants ${result.twin.field.plantSpacingM} m)` : ""}</li>}
+            {!result.twin.corn && <li>{result.twin.weeds.length ? `${result.twin.weeds.filter(w => w.status === "verified").length} verified weed candidates of ${result.twin.weeds.length} objects (${result.report.weeds.detections} ${result.twin.stats.weedTier === "colour" ? "green patches, colour rules" : "detections"})` : "no weeds (no weed pass)"}</li>}
             <li>{result.report.boundary ? `cultivated block ${(result.report.boundary.areaM2 / 10_000).toFixed(2)} ha, ${Math.round(100 * result.report.boundary.supportPhotographs)} % of the edges seen in the photographs` : "no cultivated block"}</li>
             <li>{result.report.crops} evidence crops in {result.twin.atlases.length} atlases{result.progress.done < result.progress.total ? " (being cut in the background; the twin opens without waiting)" : ""}</li>
           </ul>

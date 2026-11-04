@@ -13,7 +13,7 @@ import L from "leaflet";
 import { type Finding, type FindingsResult } from "@/lib/fieldTwin/findings";
 import { type HeatLevels, type HeatRaster, buildHeatLevels, pickHeatLevel } from "@/lib/fieldTwin/heatmap";
 import { EV, type EvidenceRaster } from "@/lib/fieldTwin/boundaryEvidence";
-import { type Detail, GridIndex, PRESSURE_INDEX, ROW_STATUS, SUPPORT_ORDER, type Scene, WEED_STATUS, detailFor, metresPerPixel, toWorld } from "@/lib/fieldTwin/scene";
+import { CORN_STATUS, type Detail, GridIndex, PRESSURE_INDEX, ROW_STATUS, SUPPORT_ORDER, type Scene, WEED_STATUS, detailFor, metresPerPixel, toWorld } from "@/lib/fieldTwin/scene";
 import { type TwinLayers, TWIN_COLOURS as C, badgesAllowed } from "@/lib/fieldTwin/style";
 import type { LatLngPair } from "@/lib/fieldTwin/types";
 
@@ -28,6 +28,8 @@ export type TwinPick =
   | { kind: "finding"; index: number }
   /** Several findings summarised in one marker at this zoom: the map zooms in on it. */
   | { kind: "group"; lat: number; lng: number; count: number }
+  /** Corn twins: a field corn row, a weed observation, a stand gap. */
+  | { kind: "cornRow"; id: number } | { kind: "cornWeed"; id: number } | { kind: "cornGap"; id: number }
   | null;
 
 export type DrawStats = { lastDrawMs: number; drawn: Record<string, number>; level: Detail["level"]; detail: Detail | null; draws: number; labels: { placed: number; emphasized: number; qualifying: number; binLevel: number | null } };
@@ -263,7 +265,8 @@ export class TwinCanvasLayer extends L.Canvas {
   requestRedraw() {
     const me = this as unknown as Internals;
     if (!me._map || me._redrawRequest) return;
-    me._redrawRequest = L.Util.requestAnimFrame(() => { me._redrawRequest = null; if (me._map?._animatingZoom) { this.requestRedraw(); return; } me._redraw(); }, this);
+    // The frame can fire after the layer was removed (the page closed the twin): nothing to draw on then.
+    me._redrawRequest = L.Util.requestAnimFrame(() => { me._redrawRequest = null; if (!me._map || !me._ctx) return; if (me._map._animatingZoom) { this.requestRedraw(); return; } me._redraw(); }, this);
   }
 
   /** The bin level for a zoom, with hysteresis: it changes only once the zoom has clearly left the level's range. */
@@ -456,6 +459,10 @@ export class TwinCanvasLayer extends L.Canvas {
       drawn.rows = n;
     }
 
+    // 6b. Corn (corn twins): the field's corn rows, stand gaps and weed observations, by state. Confirmed ones firm;
+    //     the observations the photographs do not confirm dashed and grey or amber (kept for review, never findings).
+    if (scene.corn && L_.corn) this.drawCorn(ctx, scene, X, Y, pxPerM, vx0, vy0, vx1, vy1, drawn);
+
     // 7. Trees: crowns at their measured radius, or points; inferred positions dashed. All crowns in one path.
     //    With the crowns layer off they still come in at the plant level, where they are the measurement.
     if (L_.structure && (L_.crowns || d.outlines >= 0.5)) {
@@ -591,6 +598,45 @@ export class TwinCanvasLayer extends L.Canvas {
     if (this.firstDraw) { this.firstDraw = false; try { performance.measure("twin:first-draw", { start: t0, end: performance.now() }); performance.mark("twin:first-draw"); } catch { /* older browsers */ } }
     if (!this.lastDetail || this.lastDetail.level !== d.level || Math.abs(this.lastDetail.mpp - d.mpp) > 1e-9) { this.lastDetail = d; this.onDetailChange?.(d); }
     this.fire("twindraw");
+  }
+
+  private drawCorn(ctx: Ctx, scene: Scene, X: (u: number) => number, Y: (u: number) => number, pxPerM: number, vx0: number, vy0: number, vx1: number, vy1: number, drawn: Record<string, number>) {
+    const K = scene.corn!, S = CORN_STATUS, unc = this.layers.cornUncertain, sel = this.selection;
+    // Rows: a line per field row (its measured course), selected one under a white halo.
+    const rowW = Math.max(1.5, Math.min(6, 0.06 * pxPerM));
+    const strokeRow = (k: number) => { ctx.beginPath(); packed(ctx, K.rows.lines, k, X, Y); ctx.stroke(); };
+    if (sel?.kind === "cornRow") { const k = indexOfId(K.rows.id, sel.id); if (k >= 0) { ctx.strokeStyle = C.selection; ctx.lineWidth = rowW + 4; ctx.setLineDash([]); strokeRow(k); } }
+    let nr = 0;
+    for (const [st, colour, dash] of [[S.row.corn, C.cornRow, []], [S.row.unconfirmed, C.cornRowUnconfirmed, [7, 5]]] as const) {
+      if (st === S.row.unconfirmed && !unc) continue;
+      ctx.strokeStyle = colour; ctx.lineWidth = st === S.row.corn ? rowW : Math.max(1, rowW * 0.8); ctx.setLineDash([...dash]); ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      for (let k = 0; k < K.rows.n; k++) if (K.rows.status[k] === st) { packed(ctx, K.rows.lines, k, X, Y); nr++; }
+      ctx.stroke();
+    }
+    // Gaps: thick along the row, confirmed orange, withheld grey dashes.
+    let ng = 0;
+    for (const [st, colour, dash] of [[S.gap.withheld, C.cornGapWithheld, [4, 4]], [S.gap.confirmed, C.cornGap, []]] as const) {
+      if (st === S.gap.withheld && !unc) continue;
+      ctx.beginPath();
+      for (let k = 0; k < K.gaps.n; k++) if (K.gaps.status[k] === st) { ctx.moveTo(X(K.gaps.x1[k]), Y(K.gaps.y1[k])); ctx.lineTo(X(K.gaps.x2[k]), Y(K.gaps.y2[k])); ng++; }
+      ctx.strokeStyle = colour; ctx.lineWidth = st === S.gap.confirmed ? rowW + 3 : rowW + 1; ctx.setLineDash([...dash]); ctx.globalAlpha = 1; ctx.stroke();
+    }
+    if (sel?.kind === "cornGap") { const k = indexOfId(K.gaps.id, sel.id); if (k >= 0) { ctx.beginPath(); ctx.moveTo(X(K.gaps.x1[k]), Y(K.gaps.y1[k])); ctx.lineTo(X(K.gaps.x2[k]), Y(K.gaps.y2[k])); ctx.strokeStyle = C.selection; ctx.lineWidth = 2; ctx.setLineDash([]); ctx.stroke(); } }
+    // Weed observations: a disc of their ground cover, at least a few pixels across so they read at the field level.
+    const idx = K.weeds.index.query(vx0, vy0, vx1, vy1, K.weeds.maxRM / scene.mpu);
+    let nw = 0;
+    for (const [st, colour, dash, fill] of [[S.weed.unconfirmed, C.cornWeedUnconfirmed, [3, 3], 0.08], [S.weed.contested, C.cornWeedContested, [3, 3], 0.08], [S.weed.confirmed, C.cornWeed, [], 0.35]] as const) {
+      if (st !== S.weed.confirmed && !unc) continue;
+      ctx.beginPath();
+      let any = false;
+      for (const k of idx) { if (K.weeds.status[k] !== st) continue; const r = Math.max(st === S.weed.confirmed ? 4 : 3, K.weeds.rM[k] * pxPerM), x = X(K.weeds.x[k]), y = Y(K.weeds.y[k]); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 2 * Math.PI); any = true; nw++; }
+      if (!any) continue;
+      ctx.fillStyle = colour; ctx.globalAlpha = fill; ctx.fill();
+      ctx.strokeStyle = colour; ctx.lineWidth = st === S.weed.confirmed ? 2 : 1.4; ctx.setLineDash([...dash]); ctx.globalAlpha = 1; ctx.stroke();
+    }
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    drawn.cornRows = nr; drawn.cornGaps = ng; drawn.cornWeeds = nw;
   }
 
   private heatCanvasFor(raster: HeatRaster): HTMLCanvasElement | null {
@@ -732,6 +778,7 @@ export class TwinCanvasLayer extends L.Canvas {
     if (p.kind === "weed") { const k = indexOfId(s.weeds.id, p.id); return k < 0 ? null : [s.weeds.x[k], s.weeds.y[k], s.weeds.rM[k], reach(s.weeds.rings, k, s.weeds.x[k], s.weeds.y[k])]; }
     if (p.kind === "vegetation") { const k = indexOfId(s.vegetation.id, p.id); return k < 0 ? null : [s.vegetation.x[k], s.vegetation.y[k], s.vegetation.rM[k], reach(s.vegetation.rings, k, s.vegetation.x[k], s.vegetation.y[k])]; }
     if (p.kind === "cluster") return [s.clusters.x[p.index], s.clusters.y[p.index], s.clusters.rM[p.index], 0];
+    if (p.kind === "cornWeed" && s.corn) { const k = indexOfId(s.corn.weeds.id, p.id); return k < 0 ? null : [s.corn.weeds.x[k], s.corn.weeds.y[k], s.corn.weeds.rM[k], 0]; }
     return null;
   }
 
@@ -769,6 +816,29 @@ export class TwinCanvasLayer extends L.Canvas {
         const f = F.result.findings[best];
         return f.kind === "weed" ? { kind: "weed", id: f.id } : { kind: "finding", index: best };
       }
+    }
+    // Corn twins: weed observations (the nearest disc), stand gaps, then the corn rows, within the click tolerance.
+    if (s.corn && L_.corn) {
+      const K = s.corn, S = CORN_STATUS, unc = L_.cornUncertain;
+      const idx = K.weeds.index.query(x - tolU, y - tolU, x + tolU, y + tolU, K.weeds.maxRM / s.mpu);
+      let best = -1, bd = Infinity;
+      for (const k of idx) {
+        if (K.weeds.status[k] !== S.weed.confirmed && !unc) continue;
+        const rU = Math.max(K.weeds.rM[k] / s.mpu, 4 / scale), dd = Math.hypot(K.weeds.x[k] - x, K.weeds.y[k] - y);
+        if (dd <= rU + tolU && dd < bd) { bd = dd; best = k; }
+      }
+      if (best >= 0) return { kind: "cornWeed", id: K.weeds.id[best] };
+      const segD = (ax: number, ay: number, bx: number, by: number) => { const vx = bx - ax, vy = by - ay, L2 = vx * vx + vy * vy || 1e-18, t = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / L2)); return Math.hypot(ax + t * vx - x, ay + t * vy - y); };
+      let gBest = -1, gd = Infinity;
+      for (let k = 0; k < K.gaps.n; k++) { if (K.gaps.status[k] !== S.gap.confirmed && !unc) continue; const dd = segD(K.gaps.x1[k], K.gaps.y1[k], K.gaps.x2[k], K.gaps.y2[k]); if (dd <= tolU && dd < gd) { gd = dd; gBest = k; } }
+      if (gBest >= 0) return { kind: "cornGap", id: K.gaps.id[gBest] };
+      let rBest = -1, rd = Infinity;
+      for (let k = 0; k < K.rows.n; k++) {
+        if (K.rows.status[k] !== S.row.corn && !unc) continue;
+        const o = K.rows.lines.off[k], e = K.rows.lines.off[k + 1], xy = K.rows.lines.xy;
+        for (let i = o; i + 3 < e; i += 2) { const dd = segD(xy[i], xy[i + 1], xy[i + 2], xy[i + 3]); if (dd <= tolU && dd < rd) { rd = dd; rBest = k; } }
+      }
+      if (rBest >= 0) return { kind: "cornRow", id: K.rows.id[rBest] };
     }
     if (L_.weeds && d.outlines >= 0.5) {
       const idx = s.weeds.index.query(x - tolU, y - tolU, x + tolU, y + tolU, s.weeds.maxRM / s.mpu);

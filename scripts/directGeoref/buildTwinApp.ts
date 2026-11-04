@@ -2,7 +2,7 @@
 // Field Twin page runs in its worker, so the port can be checked against the milestone scripts' twin.
 //
 //   npx vite-node scripts/directGeoref/buildTwinApp.ts -- [--dir directtestimagery] [--out data/direct-georef/twin-app]
-//       [--name "Apricot orchard"] [--id apricot-app] [--weeds saved|colour|colour-preview|none] [--views 2] [--every 2] [--drop-every 2] [--limit N] [--no-preview] [--holdout 0.3]
+//       [--name "Apricot orchard"] [--id apricot-app] [--crop orchard|corn] [--weeds saved|colour|colour-preview|none] [--views 2] [--every 2] [--drop-every 2] [--limit N] [--no-preview] [--holdout 0.3]
 //
 // --weeds saved reads the service's saved answers in data/direct-georef/apricot/m1/rfdetr/<photo>.json (the GPU
 // service need not run); none builds without weeds. Writes <out>/<id>/{twin.json, atlas-N.jpg, report.json}.
@@ -57,7 +57,9 @@ const colourPixels = WEEDS === "colour-preview" ? "preview" : "quarter";
 
 const t0 = Date.now();
 let lastStage = "";
-const out = await buildFieldTwin(photos, { name: NAME, id: ID, detector, weedTier, colourPixels, weedViews: VIEWS, detectPlan: { tile: 1024, overlap: 256, scale: 1 }, usePreview: USE_PREVIEW, holdOutShare: HOLDOUT, rowRasterCellM: CELL }, nodeCodec, {
+const CROP = arg("crop", "orchard") === "corn" ? "corn" : "orchard";
+const memPeak = { rss: 0 }; const memTimer = setInterval(() => { memPeak.rss = Math.max(memPeak.rss, process.memoryUsage().rss); }, 500);
+const out = await buildFieldTwin(photos, { name: NAME, id: ID, crop: CROP, detector, weedTier, colourPixels, weedViews: VIEWS, detectPlan: { tile: 1024, overlap: 256, scale: 1 }, usePreview: USE_PREVIEW, holdOutShare: HOLDOUT, rowRasterCellM: CELL }, nodeCodec, {
   onProgress: p => { if (p.stage !== lastStage) { lastStage = p.stage; console.log(`\n[${p.stage}]`); } if (p.total != null && p.done % 10 === 0) process.stdout.write(`  ${p.done}/${p.total} ${p.message} (${(p.elapsedMs / 1000).toFixed(0)} s)\n`); },
   log: line => console.log(`  ${line}`),
 });
@@ -70,4 +72,8 @@ console.log(`\ntwin ${t.id}: ${t.trees.length} trees, ${t.rows.filter(r => r.kep
 console.log("timings", out.report.timings);
 console.log("cameras", JSON.stringify({ ...out.report.cameras, globals: undefined, rejected: undefined }), "rejected", JSON.stringify(out.report.cameras.rejected));
 for (const n of out.report.notes) console.log(`note: ${n}`);
+clearInterval(memTimer);
+console.log(`peak resident memory ${(memPeak.rss / 1e9).toFixed(2)} GB`);
+writeFileSync(join(dir, "report.json"), JSON.stringify({ ...out.report, peakRssGB: +(memPeak.rss / 1e9).toFixed(2), wallS: Math.round((Date.now() - t0) / 1000) }, null, 1));
+if (out.twin.corn) { const c = out.twin.corn; console.log(`corn: ${c.summary.cornRows} corn rows (${c.summary.cornRowLengthM} m), ${c.summary.unconfirmedRows} unconfirmed; weeds ${JSON.stringify(c.summary.weeds)}; gaps ${JSON.stringify(c.summary.gaps)}; rows agree ${c.rowAgreementM} m; spacing ${c.rowSpacingM} m; placement ${out.twin.source.placement?.kind}`); }
 if (out.twin.stats.weedViews) console.log("views", JSON.stringify(out.twin.stats.weedViews));

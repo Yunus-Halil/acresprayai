@@ -98,6 +98,8 @@ export type FieldWeed = {
   votes: Record<FieldWeedVerdict, number>;
   seenBy: number; coveredBy: number;
   photos: string[];
+  /** Each photograph's sighting: where in it (original-frame pixels), its outline there, and what Corn V1 said. */
+  sightings: { photo: string; u: number; v: number; poly: [number, number][]; verdict: FieldWeedVerdict }[];
   why: string;
 };
 export type FieldGap = {
@@ -111,6 +113,8 @@ export type FieldGap = {
   notReportedBy: string[];
   /** Photographs that located a plant inside it. */
   plantSeenBy: string[];
+  /** Where the gap lies in each photograph that reported it (original-frame pixels, its two ends). */
+  sightings: { photo: string; u1: number; v1: number; u2: number; v2: number }[];
   why: string;
 };
 export type CornFieldResult = {
@@ -269,11 +273,12 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
     if (votes["crop on a row"] > 0 && votes["crop on a row"] >= votes["weed candidate"]) { verdict = "crop on a row"; why = `${votes["crop on a row"]} photograph(s) place it on a planted row's line`; }
     else if (votes["weed candidate"] >= needVotes && votes["weed candidate"] > votes["unknown vegetation"] + votes["crop on a row"] && ob.seenBy >= o.weedMinSeenShare * ob.coveredBy) { verdict = "weed candidate"; why = `a weed candidate in ${votes["weed candidate"]} of the ${ob.coveredBy} photographs covering it`; }
     else { verdict = "unknown vegetation"; why = votes["weed candidate"] ? `a weed candidate in only ${votes["weed candidate"]} of the ${ob.coveredBy} photographs covering it (${ob.seenBy} saw it at all)` : "no photograph calls it a weed candidate"; }
-    return { id: i + 1, lat: ob.lat, lng: ob.lng, e, n, areaM2: Math.round(ob.areaM2 * 10000) / 10000, verdict, votes, seenBy: ob.seenBy, coveredBy: ob.coveredBy, photos, why };
+    const sightings = ob.members.map(m => ({ photo: m.frame, u: m.u, v: m.v, poly: ((m.data?.poly as [number, number][]) ?? []), verdict: ((m.data?.verdict as FieldWeedVerdict) ?? "unknown vegetation") }));
+    return { id: i + 1, lat: ob.lat, lng: ob.lng, e, n, areaM2: Math.round(ob.areaM2 * 10000) / 10000, verdict, votes, seenBy: ob.seenBy, coveredBy: ob.coveredBy, photos, sightings, why };
   });
 
   // Gaps: reported stand gaps on their field rows, joined along, then checked in every photograph covering them.
-  type G = { photo: string; row: FieldRow; a0: number; a1: number; c: number };
+  type G = { photo: string; row: FieldRow; a0: number; a1: number; c: number; px: [number, number, number, number] };
   const reported: G[] = [];
   for (const r of used) {
     const f = frames.get(r.name)!;
@@ -284,7 +289,7 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
       const row = fieldRowAt((p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
       if (!row) continue;
       const A = toAC(p[0], p[1]), B = toAC(q[0], q[1]);
-      reported.push({ photo: r.name, row, a0: Math.min(A[0], B[0]), a1: Math.max(A[0], B[0]), c: (A[1] + B[1]) / 2 });
+      reported.push({ photo: r.name, row, a0: Math.min(A[0], B[0]), a1: Math.max(A[0], B[0]), c: (A[1] + B[1]) / 2, px: [g.x1 * r.scale, g.y1 * r.scale, g.x2 * r.scale, g.y2 * r.scale] });
     }
   }
   const groups: G[][] = [];
@@ -314,7 +319,8 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
     if (plantSeenBy.length) { verdict = "withheld"; why = `a plant located inside it in ${plantSeenBy.length} photograph(s)`; }
     else if (reportedBy.length < 0.5 * cornHolders.length) { verdict = "withheld"; why = `reported by only ${reportedBy.length} of the ${cornHolders.length} photographs holding a corn row over it`; }
     else if (gr[0].row.identity !== "corn") { verdict = "withheld"; why = "on a field row whose crop is not confirmed"; }
-    return { id: i + 1, row: gr[0].row.id, aEN, bEN, a: ll(aEN[0], aEN[1]), b: ll(bEN[0], bEN[1]), lengthM: Math.round((a1 - a0) * 100) / 100, verdict, reportedBy, notReportedBy, plantSeenBy, why };
+    const sightings = gr.map(g => ({ photo: g.photo, u1: g.px[0], v1: g.px[1], u2: g.px[2], v2: g.px[3] }));
+    return { id: i + 1, row: gr[0].row.id, aEN, bEN, a: ll(aEN[0], aEN[1]), b: ll(bEN[0], bEN[1]), lengthM: Math.round((a1 - a0) * 100) / 100, verdict, reportedBy, notReportedBy, plantSeenBy, sightings, why };
   });
 
   const cornRows = rows.filter(r => r.identity === "corn"), keptGaps = gaps.filter(g => g.verdict === "stand gap");
