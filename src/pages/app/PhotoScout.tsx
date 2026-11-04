@@ -69,7 +69,7 @@ export default function PhotoScout() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rowSpacingCm, setRowSpacingCm] = useState(AUTO);
   /** The crop profile the read uses ("" for crop-neutral): its spacings, green gate and brightness check (src/lib/cropProfiles). */
-  const [cropId, setCropId] = useState("");
+  const [cropId, setCropId] = useState("corn");
   /** "auto" (the default): the photo is assessed region by region and each region read by the stage reader its
    * structure calls for (src/lib/rowCrop/adaptive.ts); or one stage reader forced for the whole photo. */
   const [stage, setStage] = useState<RowCropStage | "auto">("auto");
@@ -92,9 +92,11 @@ export default function PhotoScout() {
     }));
     setPhotos(ps => [...ps, ...fresh]);
     setSelectedId(s => s ?? fresh[0].id);
+    // Each photo is read as soon as it is added, one after another: drop the photos and the drawings appear.
     for (const p of fresh) {
       const exif = await readPhotoExif(p.file);
       patch(p.id, { exif });
+      await run({ ...p, exif });
     }
   };
 
@@ -116,7 +118,9 @@ export default function PhotoScout() {
       let decoded = p.decoded;
       if (!decoded) {
         patch(p.id, { status: "decoding", error: null });
-        decoded = await decodePhoto(p.file);
+        // Corn is read at the photo's full size (as the benches read it: seedlings are a centimetre wide); other crops at
+        // the pattern pass's 4,096-pixel budget.
+        decoded = await decodePhoto(p.file, readsContinuousRows(cropId) ? 8192 : undefined);
         patch(p.id, { decoded });
       }
       const g = gsdFor(p, decoded);
@@ -124,6 +128,7 @@ export default function PhotoScout() {
         // Corn and its kind: rows traced on the green, the whole row is the crop. Without a pixel size the scale is
         // assumed from the measured pitch and the profile's default spacing, and the read says so.
         patch(p.id, { status: "running", progress: null, used: g.gsdM ? { gsdM: g.gsdM, basis: g.basis } : null });
+        await new Promise(r => setTimeout(r, 30));
         // Corn V1 (cornV1.ts) for corn on auto: the green read and the plant read fused, findings only from rows both
         // support. Other continuous-row crops on auto keep the adaptive read; a forced stage runs that reader alone.
         const onProgress = (done: number, total: number) => patch(p.id, { progress: { done, total } });
@@ -157,9 +162,9 @@ export default function PhotoScout() {
       <header className="space-y-2">
         <h1 className="font-display text-3xl inline-flex items-center gap-2"><Camera className="h-7 w-7 text-primary" /> Photo Scout</h1>
         <p className="text-muted-foreground max-w-3xl">
-          The planting pattern in one drone photo, with no orthomosaic. The photo is read in this browser and
-          never uploaded. It finds the crop rows, then the spacing of plants along each row, and shows the green
-          blobs that sit at no expected place. Blobs, never verdicts; nothing is saved.
+          Drop corn drone photos: each is read as soon as it is added, in this browser (nothing is uploaded or
+          saved). Cyan = corn rows, amber dashes = planted rows whose crop is not confirmed, red = weed candidates
+          between the rows, orange = gaps, grey = not sure (never reported).
         </p>
       </header>
 
@@ -175,8 +180,8 @@ export default function PhotoScout() {
             <input type="file" accept=".jpg,.jpeg,image/jpeg" multiple className="hidden" onChange={e => { if (e.target.files) void add(e.target.files); e.target.value = ""; }} />
           </label>
 
-          <section className="rounded-sm border border-[#222] p-3 space-y-2" style={{ background: "#161616" }}>
-            <div className="text-xs font-semibold">Settings</div>
+          <details className="rounded-sm border border-[#222] p-3 space-y-2" style={{ background: "#161616" }}>
+            <summary className="text-xs font-semibold cursor-pointer select-none">More options <span className="font-normal text-neutral-500">(not needed: corn is read automatically)</span></summary>
             <Field label="Crop">
               <select className={input} value={cropId} onChange={e => setCropId(e.target.value)} data-testid="photo-scout-crop">
                 <option value="">not set (crop-neutral)</option>
@@ -219,7 +224,7 @@ export default function PhotoScout() {
             <Field label="Row-fit window, m">
               <input className={input} value={windowM} onChange={e => setWindowM(e.target.value)} />
             </Field>
-          </section>
+          </details>
 
           <section className="rounded-sm border border-[#222] divide-y divide-[#222]" style={{ background: "#161616" }}>
             {photos.length === 0 && <div className="p-3 text-xs text-neutral-500">No photos yet.</div>}
