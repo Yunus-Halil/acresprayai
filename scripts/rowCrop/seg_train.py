@@ -19,6 +19,7 @@ ap.add_argument("--out", default="D:/swardus-research/checkpoints/corn-seg-dinov
 ap.add_argument("--model", default="D:/swardus-research/checkpoints/corn-seg-dinov2")
 ap.add_argument("--epochs", type=int, default=20)
 ap.add_argument("--weed-weight", type=float, default=3.0)
+ap.add_argument("--loss-size", type=int, default=448, help="train: the loss is taken on logits and masks at this size (448 / n; 112 is 16x cheaper, the head sees 32 x 32 patches)")
 ap.add_argument("--photos", nargs="*", default=[])
 ap.add_argument("--photo-dir", default=None, help="predict: every jpg/png in this folder (as well as --photos)")
 ap.add_argument("--save-prob", action="store_true", help="predict: also save <name>-prob.png, the class probabilities 0-255 (R crop, G weed, B background)")
@@ -82,11 +83,14 @@ elif args.mode == "train":
     if missing: print(f"{len(missing)} train tiles have no cached features yet and are left out")
     items = [it for it in items if os.path.exists(f"{args.cache}/{it['key']}.npy")]
     dw = {k: float(v) for k, v in (p.split(":") for p in args.domain_weights.split(","))}
-    X, Y, Wd = [], [], []
-    for it in items:
-        X.append(np.load(f"{args.cache}/{it['key']}.npy").astype(np.float32))
-        m = np.array(Image.open(it["maskPath"]).convert("L")); Y.append(m); Wd.append(dw.get(it["domain"], 1.0))
-    X = torch.from_numpy(np.stack(X)); Y = torch.from_numpy(np.stack(Y)).long(); Wd = torch.tensor(Wd)
+    # Features in half precision and masks as bytes, filled in place (about 0.8 + 0.2 MB a tile); each batch is
+    # widened to float32 / int64 when used. Stacking float32 features and int64 masks needed ~3 MB a tile.
+    f0 = np.load(f"{args.cache}/{items[0]['key']}.npy")
+    X = np.empty((len(items),) + f0.shape, dtype=np.float16); Y = np.empty((len(items), T, T), dtype=np.uint8); Wd = []
+    for i, it in enumerate(items):
+        X[i] = np.load(f"{args.cache}/{it['key']}.npy")
+        Y[i] = np.array(Image.open(it["maskPath"]).convert("L")); Wd.append(dw.get(it["domain"], 1.0))
+    X = torch.from_numpy(X); Y = torch.from_numpy(Y); Wd = torch.tensor(Wd)
     print("train tiles", len(items), "by domain", {d: sum(1 for it in items if it["domain"] == d) for d in dw})
     head = Head(X.shape[1]); opt = torch.optim.AdamW(head.parameters(), lr=2e-3, weight_decay=1e-4)
     cw = torch.tensor([1.0, 1.0, args.weed_weight])
@@ -95,13 +99,15 @@ elif args.mode == "train":
         head.train(); perm = torch.randperm(n); tot = 0.0
         for i in range(0, n, bs):
             idx = perm[i:i + bs]
-            logits = F.interpolate(head(X[idx]), size=(T, T), mode="bilinear", align_corners=False)
-            loss = F.cross_entropy(logits, Y[idx], weight=cw, ignore_index=255, reduction="none").mean(dim=(1, 2))
+            L = args.loss_size; k = T // L
+            logits = F.interpolate(head(X[idx].float()), size=(L, L), mode="bilinear", align_corners=False)
+            target = Y[idx][:, k // 2::k, k // 2::k].long() if k > 1 else Y[idx].long()   # nearest: one mask pixel per loss pixel
+            loss = F.cross_entropy(logits, target, weight=cw, ignore_index=255, reduction="none").mean(dim=(1, 2))
             loss = (loss * Wd[idx]).mean()
             opt.zero_grad(); loss.backward(); opt.step(); tot += loss.item() * len(idx)
         print(f"epoch {ep + 1}/{args.epochs} loss {tot / n:.4f} {time.time() - t0:.0f} s", flush=True)
     torch.save({"head": head.state_dict(), "c_in": X.shape[1], "backbone": args.backbone, "classes": ["background", "crop", "weed"]}, f"{args.out}/head.pt")
-    json.dump({"trainTiles": len(items), "epochs": args.epochs, "weedWeight": args.weed_weight, "domainWeights": dw, "backbone": args.backbone, "sets": args.sets}, open(f"{args.out}/train.json", "w"), indent=1)
+    json.dump({"trainTiles": len(items), "epochs": args.epochs, "weedWeight": args.weed_weight, "lossSize": args.loss_size, "domainWeights": dw, "backbone": args.backbone, "sets": args.sets}, open(f"{args.out}/train.json", "w"), indent=1)
     print("saved", f"{args.out}/head.pt")
 
 elif args.mode == "eval":
