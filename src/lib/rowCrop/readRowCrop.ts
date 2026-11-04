@@ -263,6 +263,9 @@ export type RowCropRow = {
   possiblePoints?: [number, number][];
   uncertainPoints?: [number, number][];
   missingPoints?: [number, number][];
+  /** Corn V1 (cornV1.ts): what the row is (corn, or a planted row whose crop is not confirmed) and the reads behind it. */
+  identity?: "corn" | "probable crop";
+  evidence?: "both reads agree" | "plant read only" | "green read only";
 };
 
 export type RowCropWeedStatus = "between rows" | "no rows here";
@@ -382,6 +385,22 @@ export type RowCropRead = {
   summary: RowCropSummary;
   notes: string[];
   crop: { id: string; version: string } | null;
+  /** Corn V1 (cornV1.ts): the fused read's own counts; absent on a stage or adaptive read. */
+  cornV1?: CornV1Summary;
+};
+
+/** Corn V1's counts and withheld findings, carried on the RowCropRead Photo Scout draws. */
+export type CornV1Summary = {
+  version: number;
+  plantSource: "green" | "detector";
+  plants: number;
+  cornRows: number; probableRows: number; agreedRows: number; plantOnlyRows: number; greenOnlyRows: number; greenRowsDropped: number;
+  cropOnRow: number; unknownVegetation: number; gapsWithheld: number;
+  withheldGaps: RowCropGap[];
+  spacingFits: boolean | null;
+  /** A spacing corn is never planted at (no row called corn). */
+  spacingImpossible: boolean;
+  entered: string | null;
 };
 
 type Work = { W: number; H: number; rgba: Uint8ClampedArray };
@@ -1238,10 +1257,11 @@ export function convexHull(pts: [number, number][]): [number, number][] {
 }
 
 /** Everything to draw, in photo pixels: rows, each row's band edges, weeds, gaps, plants, excluded patches. */
-export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][]; bands: [number, number][][]; weeds: [number, number][][]; smallGreen: [number, number][][]; escapes: [number, number][][]; seedlings: [number, number][]; gaps: RowCropGap[]; plants: [number, number][]; excluded: [number, number][][]; fieldEdges: [number, number][][]; possible: [number, number][]; missing: [number, number][]; uncertain: [number, number][] } {
+export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][]; /** Corn V1: planted rows whose crop is not confirmed (drawn apart from corn rows). */ probableRows: [number, number][][]; bands: [number, number][][]; weeds: [number, number][][]; smallGreen: [number, number][][]; escapes: [number, number][][]; seedlings: [number, number][]; gaps: RowCropGap[]; plants: [number, number][]; excluded: [number, number][][]; fieldEdges: [number, number][][]; possible: [number, number][]; missing: [number, number][]; uncertain: [number, number][] } {
   const bands: [number, number][][] = [];
   for (const r of read.rows) {
     const half = r.bandHalfWidthM / read.gsdM;
+    if (!(half > 0)) continue;
     const left: [number, number][] = [], right: [number, number][] = [];
     for (let i = 0; i < r.points.length; i++) {
       const [x, y] = r.points[i];
@@ -1251,7 +1271,7 @@ export function rowCropOverlay(read: RowCropRead): { rows: [number, number][][];
     }
     bands.push(left, right);
   }
-  return { rows: read.rows.map(r => r.points), bands, weeds: read.weeds.filter(w => w.sizeClass !== "escape" && w.tier !== "small green").map(w => w.hull), smallGreen: read.weeds.filter(w => w.tier === "small green").map(w => w.hull), escapes: read.weeds.filter(w => w.sizeClass === "escape").map(w => w.hull), seedlings: read.seedlings?.points ?? [], gaps: read.rows.flatMap(r => r.gaps), plants: read.rows.flatMap(r => r.plantPoints ?? []), excluded: read.excluded.map(e => e.hull), fieldEdges: read.fieldEdge?.lines ?? [],
+  return { rows: read.rows.filter(r => r.identity !== "probable crop").map(r => r.points), probableRows: read.rows.filter(r => r.identity === "probable crop").map(r => r.points), bands, weeds: read.weeds.filter(w => w.sizeClass !== "escape" && w.tier !== "small green").map(w => w.hull), smallGreen: read.weeds.filter(w => w.tier === "small green").map(w => w.hull), escapes: read.weeds.filter(w => w.sizeClass === "escape").map(w => w.hull), seedlings: read.seedlings?.points ?? [], gaps: read.rows.flatMap(r => r.gaps), plants: read.rows.flatMap(r => r.plantPoints ?? []), excluded: read.excluded.map(e => e.hull), fieldEdges: read.fieldEdge?.lines ?? [],
     possible: read.rows.flatMap(r => r.possiblePoints ?? []), missing: read.rows.flatMap(r => r.missingPoints ?? []), uncertain: read.rows.flatMap(r => r.uncertainPoints ?? []) };
 }
 

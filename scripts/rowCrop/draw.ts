@@ -49,6 +49,7 @@ export function drawRead(cv: Canvas, read: RowCropRead, weedFilter?: (hull: [num
   const o = rowCropOverlay(read), t = Math.max(1, Math.round(w / 1800));
   for (const b of o.bands) poly(cv, b, [120, 200, 255], 0, false);
   for (const r of o.rows) poly(cv, r, [0, 230, 255], t, false);
+  for (const r of o.probableRows) for (let i = 0; i + 1 < r.length; i++) dashed(cv, r[i][0], r[i][1], r[i + 1][0], r[i + 1][1], [255, 190, 0], t + 1, 10 * t);
   for (const g of o.gaps) line(cv, g.x1, g.y1, g.x2, g.y2, [255, 160, 0], t + 1);
   for (const e of o.excluded) poly(cv, e, [160, 160, 160], t, true);
   for (const e of o.fieldEdges) poly(cv, e, [255, 255, 255], t + 1, false);

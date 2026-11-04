@@ -18,6 +18,7 @@ import { checkRowSpacing } from "@/lib/cropProfiles/checks";
 import { cropProfileById, listCropProfiles } from "@/lib/cropProfiles/registry";
 import { type RowCropRead, type RowCropStage, readRowCrop, rowCropOverlay } from "@/lib/rowCrop/readRowCrop";
 import { adaptiveAsRead, readCornAdaptive } from "@/lib/rowCrop/adaptive";
+import { cornV1AsRead, readCornV1 } from "@/lib/rowCrop/cornV1";
 import { readsContinuousRows, rowCropParamsFor } from "@/lib/rowCrop/params";
 
 type Status = "new" | "decoding" | "running" | "done" | "error";
@@ -123,8 +124,13 @@ export default function PhotoScout() {
         // Corn and its kind: rows traced on the green, the whole row is the crop. Without a pixel size the scale is
         // assumed from the measured pitch and the profile's default spacing, and the read says so.
         patch(p.id, { status: "running", progress: null, used: g.gsdM ? { gsdM: g.gsdM, basis: g.basis } : null });
+        // Corn V1 (cornV1.ts) for corn on auto: the green read and the plant read fused, findings only from rows both
+        // support. Other continuous-row crops on auto keep the adaptive read; a forced stage runs that reader alone.
+        const onProgress = (done: number, total: number) => patch(p.id, { progress: { done, total } });
         const read = stage === "auto"
-          ? adaptiveAsRead(readCornAdaptive(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) }))
+          ? cropId === "corn"
+            ? cornV1AsRead(readCornV1(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress, enteredCrop: cropId }))
+            : adaptiveAsRead(readCornAdaptive(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM), { onProgress }))
           : readRowCrop(decoded.pixels, rowCropParamsFor(cropProfileById(cropId), g.gsdM, stage), { onProgress: (done, total) => patch(p.id, { progress: { done, total } }) });
         patch(p.id, { rowCrop: read, pattern: null, status: "done", progress: null, used: { gsdM: read.gsdM, basis: read.scaleBasis === "given" ? g.basis : "assumed from the measured row pitch and the crop's default spacing" } });
         return;
@@ -181,13 +187,13 @@ export default function PhotoScout() {
             {readsContinuousRows(cropId) && (
               <Field label="Growth stage">
                 <select className={input} value={stage} onChange={e => setStage(e.target.value as RowCropStage | "auto")} data-testid="photo-scout-stage">
-                  <option value="auto">auto (read from the photo: each part by what it shows)</option>
+                  <option value="auto">{cropId === "corn" ? "auto: Corn V1 (each part by what it shows, rows checked by the plants)" : "auto (read from the photo: each part by what it shows)"}</option>
                   <option value="emergence">emergence (VE to V2: seedlings on bare soil, just planted)</option>
                   <option value="establishment">early (V2 to V7: plants in a line, soil between the rows)</option>
                   <option value="mid">mid (V8 to tasselling: the canopy nearly meets over narrow alleys)</option>
                   <option value="late">late (closed canopy, no soil to be seen between the rows)</option>
                 </select>
-                <div className="text-[10px] text-neutral-500">{stage === "auto" ? "the photo is judged region by region (seedlings, rows on soil, a canopy nearly meeting, a closed canopy, cover, or uncertain) with one row direction for the field and a spacing per planting; each region is read by the matching reader; uncertain ground and corn on a row the reader did not hold are drawn grey, never as weeds" : stage === "late" ? "rows are read from how green the canopy is, ridges against the shaded alleys; nothing between the rows can be seen, so no weeds or seedlings are judged" : stage === "mid" ? "rows are placed between the alley troughs; only green standing on the alley floor is reported; a weed among the corn leaves counts as corn" : stage === "emergence" ? "each seedling is a point and a row is the straight line they stand on (the lens bend straightened); plants counted along each row; green off every row larger than nearly all the crop's own seedlings is a weed candidate (red); smaller green is counted apart in grey, never called a weed" : "rows are traced on the green; weeds are green clear of every row's band"}</div>
+                <div className="text-[10px] text-neutral-500">{stage === "auto" && cropId === "corn" ? "Corn V1: the photo is read twice, once for its green (region by region, each region by the stage reader it calls for) and once for its plants (each plant located on the soil; rows only where many line up at a repeated spacing). Where the plants line up the rows are theirs; where they cannot be told apart (a canopy) the green's rows stand. A row is corn only where the field is entered as corn and both reads support it; other rows are planted rows with the crop not confirmed (amber dashes). Weed candidates and gaps come only from corn rows; everything else is drawn grey, never as a finding" : stage === "auto" ? "the photo is judged region by region (seedlings, rows on soil, a canopy nearly meeting, a closed canopy, cover, or uncertain) with one row direction for the field and a spacing per planting; each region is read by the matching reader; uncertain ground and corn on a row the reader did not hold are drawn grey, never as weeds" : stage === "late" ? "rows are read from how green the canopy is, ridges against the shaded alleys; nothing between the rows can be seen, so no weeds or seedlings are judged" : stage === "mid" ? "rows are placed between the alley troughs; only green standing on the alley floor is reported; a weed among the corn leaves counts as corn" : stage === "emergence" ? "each seedling is a point and a row is the straight line they stand on (the lens bend straightened); plants counted along each row; green off every row larger than nearly all the crop's own seedlings is a weed candidate (red); smaller green is counted apart in grey, never called a weed" : "rows are traced on the green; weeds are green clear of every row's band"}</div>
               </Field>
             )}
             <Field label="Row spacing">
@@ -247,7 +253,7 @@ export default function PhotoScout() {
                 ))}
                 <span className="text-[10px] text-neutral-500 ml-auto inline-flex gap-3">
                   {selected.rowCrop
-                    ? ([["#00E6FF", "row (the crop)"], ["#78C8FF", "crop band"], ["#EF5350", "between rows"], ...(selected.rowCrop.seedlings ? [["#FFBE00", "late seedling"], ["#FF00C8", "escape (15 cm+)"]] as const : []), ["#FFA000", "gap in the row"], ["#3CFF5A", "plant (estimate)"], ["#9E9E9E", "not judged"]] as const).map(([c, l]) => <span key={l} className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: c }} />{l}</span>)
+                    ? ([["#00E6FF", selected.rowCrop.cornV1 ? "corn row" : "row (the crop)"], ...(selected.rowCrop.cornV1 ? [["#FFBE00", "planted row, crop not confirmed (dashed)"]] as const : []), ["#78C8FF", "crop band"], ["#EF5350", "between rows"], ...(selected.rowCrop.seedlings ? [["#FFBE00", "late seedling"], ["#FF00C8", "escape (15 cm+)"]] as const : []), ["#FFA000", "gap in the row"], ["#3CFF5A", "plant (estimate)"], ["#9E9E9E", selected.rowCrop.cornV1 ? "withheld or not judged" : "not judged"]] as const).map(([c, l]) => <span key={l} className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: c }} />{l}</span>)
                     : CLASS_ORDER.map(c => <span key={c} className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full" style={{ background: CLASS_COLOUR[c] }} />{c}</span>)}
                 </span>
               </div>
@@ -340,11 +346,19 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
         for (const b of overlay.bands) path(b, false);
         ctx.strokeStyle = "rgba(0,230,255,0.9)"; ctx.lineWidth = 2;
         for (const r of overlay.rows) path(r, false);
+        // Corn V1: planted rows whose crop is not confirmed, amber dashes.
+        ctx.strokeStyle = "rgba(255,190,0,0.95)"; ctx.setLineDash([8, 5]);
+        for (const r of overlay.probableRows) path(r, false);
+        ctx.setLineDash([]);
         // Gaps: orange where the photo supports a missing plant (or before V2 classed them), grey dashed where it cannot tell.
         for (const g of overlay.gaps) {
           ctx.strokeStyle = g.kind === "uncertain" ? "rgba(170,170,170,0.9)" : "rgba(255,160,0,0.95)"; ctx.lineWidth = 3; ctx.setLineDash(g.kind === "uncertain" ? [6, 4] : []);
           ctx.beginPath(); ctx.moveTo(g.x1 * s, g.y1 * s); ctx.lineTo(g.x2 * s, g.y2 * s); ctx.stroke();
         }
+        ctx.setLineDash([]);
+        // Corn V1: gaps not reported (the row not confirmed by both reads, a plant inside, or the photo cannot tell), thin grey dashes.
+        ctx.strokeStyle = "rgba(170,170,170,0.8)"; ctx.lineWidth = 1.5; ctx.setLineDash([3, 4]);
+        for (const g of rowCrop?.cornV1?.withheldGaps ?? []) { ctx.beginPath(); ctx.moveTo(g.x1 * s, g.y1 * s); ctx.lineTo(g.x2 * s, g.y2 * s); ctx.stroke(); }
         ctx.setLineDash([]);
         // Emergence V2 at expected plant positions: possible seedlings blue, supported missing plants orange, uncertain grey.
         const mark = Math.max(3, (rowCrop ? 0.02 / rowCrop.gsdM : 8) * s);
@@ -411,7 +425,7 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
         ctx.stroke();
       }
     }
-  }, [decoded, pattern, overlay, segments, show, width]);
+  }, [decoded, pattern, overlay, rowCrop, segments, show, width]);
 
   return (
     <div ref={holder} className="w-full rounded-sm border border-[#222] overflow-hidden" style={{ background: "#0f0f0f" }}>
@@ -423,7 +437,13 @@ function PhotoCanvas({ photo, show }: { photo: Photo; show: { rows: boolean; blo
 function RowCropSummary({ read, units }: { read: RowCropRead; units: "metric" | "imperial" }) {
   const s = read.summary;
   const cm = (m: number | null) => (m == null ? "–" : fmtLengthCm(m * 100, units).text);
+  const v = read.cornV1;
   const rows: [string, string][] = [
+    ...(v ? [
+      ["Corn V1", `${v.cornRows} corn row${v.cornRows === 1 ? "" : "s"} (cyan), ${v.probableRows} planted row${v.probableRows === 1 ? "" : "s"} with the crop not confirmed (amber dashes)${v.entered !== "corn" ? "; the field is not entered as corn, so no row is called corn" : ""}${v.spacingImpossible ? "; the measured spacing is one corn is never planted at" : v.spacingFits === false ? "; the measured spacing is not one of corn's usual ones (check the flight height)" : ""}`],
+      ["Behind the rows", `${v.agreedRows} where the plants and the green agree, ${v.plantOnlyRows} from the plants alone, ${v.greenOnlyRows} from the green alone; ${v.greenRowsDropped} green row${v.greenRowsDropped === 1 ? "" : "s"} dropped where the plants stand beside it; ${v.plants.toLocaleString()} plants located (${v.plantSource === "green" ? "on the soil, no model" : "by a detector"})`],
+      ["Withheld", `${v.cropOnRow} green patch${v.cropOnRow === 1 ? "" : "es"} on a planted row (the crop, not weeds); ${v.unknownVegetation} unknown vegetation (no corn row beside it); ${v.gapsWithheld} gap${v.gapsWithheld === 1 ? "" : "s"} not reported (the row not confirmed by both reads, a plant inside it, or the photo cannot tell); all drawn grey`],
+    ] as [string, string][] : []),
     ["Crop profile", read.crop ? `${read.crop.id} ${read.crop.version}, ${read.stage === "late" ? "late variant: rows read from the canopy's green, nothing between them judged" : read.stage === "mid" ? "mid-stage variant: rows between the alley troughs, the whole canopy is the crop" : read.stage === "emergence" ? "emergence variant: seedlings as points, rows the lines they stand on" : "early-stage variant: rows traced on the green, the whole row is the crop"}` : "none"],
     ["Scale", read.scaleBasis === "given" ? `${cm(read.gsdM)}/px` : `${cm(read.gsdM)}/px, ASSUMED from the measured pitch and the crop's default spacing`],
     ["Row direction", read.directionDeg == null ? "–" : `${read.directionDeg.toFixed(1)}° from the photo's x axis`],
