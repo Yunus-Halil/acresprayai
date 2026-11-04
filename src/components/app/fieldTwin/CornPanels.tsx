@@ -10,6 +10,7 @@ import type { UnitSystem } from "@/lib/units";
 import { TWIN_COLOURS, type TwinLayers } from "@/lib/fieldTwin/style";
 import type { TwinBundle, TwinCorn, TwinCornGap, TwinCornRow, TwinCornWeed, TwinEvidence } from "@/lib/fieldTwin/types";
 import { localFrame } from "@/lib/fieldTwin/intelligence";
+import { CORN_WEED_LABEL, cornGapColour, cornRowColour, cornWeedColour, isLocalTwin } from "@/lib/fieldTwin/cornView";
 import EvidenceCrop from "./EvidenceCrop";
 import type { TwinPick } from "./TwinCanvasLayer";
 
@@ -17,13 +18,7 @@ const panel = "rounded-md border border-[#343834] bg-[#171a17]";
 const cm = (m: number, u: UnitSystem) => fmtLengthCm(m * 100, u).text;
 type Line = { label: string; value: string };
 
-export const CORN_WEED_LABEL: Record<TwinCornWeed["status"], string> = { confirmed: "Weed candidate, confirmed", unconfirmed: "Weed candidate, not confirmed", contested: "Contested: crop or weed" };
-export const cornWeedColour = (s: TwinCornWeed["status"]) => (s === "confirmed" ? TWIN_COLOURS.cornWeed : s === "contested" ? TWIN_COLOURS.cornWeedContested : TWIN_COLOURS.cornWeedUnconfirmed);
-const gapColour = (s: TwinCornGap["status"]) => (s === "confirmed" ? TWIN_COLOURS.cornGap : TWIN_COLOURS.cornGapWithheld);
-const rowColour = (s: TwinCornRow["status"]) => (s === "corn" ? TWIN_COLOURS.cornRow : TWIN_COLOURS.cornRowUnconfirmed);
-
-/** Is this twin's placement local (a test flight's estimated scale), not a place on the map? */
-export const isLocalTwin = (twin: TwinBundle) => twin.source.placement?.kind === "local";
+const gapColour = cornGapColour, rowColour = cornRowColour;
 
 const middle = (line: [number, number][]) => line[line.length >> 1];
 

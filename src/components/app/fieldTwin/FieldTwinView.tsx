@@ -16,7 +16,8 @@ import type { LatLngPair, TwinBundle } from "@/lib/fieldTwin/types";
 import { FindingsControl, FindingsPanel } from "./FindingsPanel";
 import type { DrawStats, TwinPick } from "./TwinCanvasLayer";
 import TwinInspector from "./TwinInspector";
-import { CornFieldPanel, isLocalTwin } from "./CornPanels";
+import { CornFieldPanel } from "./CornPanels";
+import { isLocalTwin } from "@/lib/fieldTwin/cornView";
 import TwinMap, { type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
 
 export type ReferenceOption = { id: string; label: string; url: string; maxNativeZoom: number; note: string };

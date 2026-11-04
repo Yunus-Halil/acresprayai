@@ -56,6 +56,8 @@ function withXmp(jpeg: Buffer, xmp: string): Buffer {
   return Buffer.concat([jpeg.subarray(0, 2), head, ns, body, jpeg.subarray(2)]);
 }
 
+/** The XMP packet's byte-order mark (written as a code so no invisible character sits in the source). */
+const BOM = String.fromCharCode(0xfeff);
 const placement = `test flight: positions from the UAV3DCrop scene reconstruction (${sceneKey}) about a made-up origin, scale estimated from the corn rows taken as 76.2 cm (${scale.toFixed(4)} m per reconstruction unit); not the drone's GPS, not a place on the map`;
 const rows: string[] = [];
 let worst = 0;
@@ -66,7 +68,7 @@ for (const name of chosen) {
   const groundBelow = f.ground.kind === "surface" ? f.ground.altAt(f.pose.lat, f.pose.lng) ?? 0 : f.ground.altM;
   const rel = c[2] - groundBelow;
   const dewarp = `2024-01-01;${t.fl_x.toFixed(4)},${t.fl_y.toFixed(4)},${(t.cx - t.w / 2).toFixed(4)},${(t.cy - t.h / 2).toFixed(4)},${t.k1},${t.k2},${t.p1},${t.p2},${t.k3 ?? 0}`;
-  const xmp = `<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:drone-dji="http://www.dji.com/drone-dji/1.0/" xmlns:swardus="https://swardus.com/ns/1.0/"
+  const xmp = `<?xpacket begin="${BOM}" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:drone-dji="http://www.dji.com/drone-dji/1.0/" xmlns:swardus="https://swardus.com/ns/1.0/"
  drone-dji:GpsLatitude="${f.pose.lat.toFixed(9)}" drone-dji:GpsLongtitude="${f.pose.lng.toFixed(9)}" drone-dji:AbsoluteAltitude="${(100 + c[2]).toFixed(3)}" drone-dji:RelativeAltitude="${rel.toFixed(3)}"
  drone-dji:GimbalYawDegree="${g.yaw.toFixed(3)}" drone-dji:GimbalPitchDegree="${g.pitch.toFixed(3)}" drone-dji:GimbalRollDegree="${g.roll.toFixed(3)}" drone-dji:FlightYawDegree="${g.yaw.toFixed(3)}"
  drone-dji:DewarpFlag="0" drone-dji:DewarpData="${dewarp}" swardus:Placement="${placement}"/></rdf:RDF></x:xmpmeta><?xpacket end="w"?>`;
