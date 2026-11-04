@@ -64,7 +64,8 @@ describe("Corn V1 fusion", () => {
     const g = fuseCornV1(ad, plants([0, 1, 2, 3]), P, { enteredCrop: "corn", source: "green" });
     expect(g.summary.greenRowsDropped).toBe(3);
     expect(g.summary.cornRows).toBe(0);
-    expect(g.weedVerdicts[0].verdict).toBe("crop on a row");
+    // On a row only one read holds, the green on its line is unknown vegetation (never a weed).
+    expect(g.weedVerdicts[0].verdict).toBe("unknown vegetation");
   });
 
   it("reports a gap only where both reads see nothing", () => {
@@ -113,6 +114,15 @@ describe("Corn V1 fusion", () => {
     // A weakly held band row is not.
     const weak = fuseCornV1(greenRead([0, 1, 2].map(k => ({ k, support: 0.5 }))), [], P, { enteredCrop: "corn" });
     expect(weak.summary.cornRows).toBe(0);
+  });
+
+  it("does not let plants that agree with no green row veto the green rows' direction (weeds lined up across the corn)", () => {
+    // Green rows vertical (establishment bands); the plant read's rows horizontal (weeds), agreeing with none of them.
+    const ad = greenRead([0, 1, 2, 3].map(k => ({ k, support: 0.9 })), [], { stage: "establishment" });
+    const across: PlantPoint[] = [];
+    for (const yy of [0, 1, 2, 3]) for (let x = 3000; x <= 4500; x += 30) across.push({ x, y: 1200 + yy * 150 });
+    const v = fuseCornV1(ad, across, P, { enteredCrop: "corn" });
+    expect(v.rows.filter(r => r.evidence === "green read only" && r.identity === "corn").length).toBe(4);
   });
 
   it("does not trust a short green piece, nor one across the rows the plants line up in (French plots)", () => {

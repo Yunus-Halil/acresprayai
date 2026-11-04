@@ -205,7 +205,11 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
     const high = gi != null || (main && o.source === "detector");
     rows.push({ points: r.points, evidence: gi != null ? "both reads agree" : "plant read only", confidence: high ? "high" : "medium", identity: "probable crop", why: "", greenRow: gi, plants: r.members.length, stage, mainPlanting: gi != null ? greenRows[gi].plan === mainPlan : main, latticeCandidate: !high && main && lengthOf(r.points) >= CORN_V1.greenAloneMinPitches * (pr ?? p ?? 0) });
   });
-  // Green rows: pieces where no plant row lies closer than a neighbouring row would (CORN_V1.contradictShare of the spacing).
+  // Green rows: pieces where no plant row lies closer than a neighbouring row would (CORN_V1.contradictShare of the
+  // spacing). Only a parallel plant row contradicts, and only when the plant read runs the way the green read does (or
+  // comes from a detector): on a weedy Utah frame plants located on the green lined weeds up across the corn and cut
+  // every true green row where they crossed it.
+  const plantsTrustedEarly = o.source === "detector" || (B.directionDeg != null && ad.directionDeg != null && angleOff(B.directionDeg, ad.directionDeg) <= CORN_V1.maxDirectionOffDeg);
   let dropped = 0;
   greenRows.forEach((g, gi) => {
     if (g.points.length < 2) return;
@@ -215,7 +219,9 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
     else {
       const d = densify(g.points, p / 2); let run: [number, number][] = [];
       const flush = () => { if (run.length >= 2 && lengthOf(run) >= CORN_V1.minPiecePitches * (pr ?? p)) pieces.push(run); run = []; };
-      for (const q of d) { if (B.rows.some(r => distToLine(r.points, q[0], q[1]) <= CORN_V1.contradictShare * p)) flush(); else run.push(q); }
+      const gDir = dirOf(g.points);
+      const cutting = plantsTrustedEarly ? B.rows.filter(r => angleOff(dirOf(r.points), gDir) <= CORN_V1.maxDirectionOffDeg) : [];
+      for (const q of d) { if (cutting.some(r => distToLine(r.points, q[0], q[1]) <= CORN_V1.contradictShare * p)) flush(); else run.push(q); }
       flush();
     }
     if (!pieces.length) { dropped++; return; }
@@ -229,31 +235,41 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
     // diagonal pieces across rows the plants ran along (2026-11-04).
     const stage = planStage(g.plan);
     const longEnough = lengthOf(g.points) >= CORN_V1.greenAloneMinPitches * (pr ?? p ?? 0);
-    const alongPlants = B.directionDeg == null || !B.rows.length || angleOff(dirOf(g.points), B.directionDeg) <= CORN_V1.maxDirectionOffDeg;
+    // The plants' direction overrules the green only where the plant read has shown itself right in this photo (a row
+    // both reads agree on, or a detector): on a weedy Utah frame plants located on the green lined weeds up across the
+    // corn rows and would have vetoed every true green row.
+    const plantsTrusted = plantsTrustedEarly;
+    const alongPlants = !plantsTrusted || B.directionDeg == null || !B.rows.length || angleOff(dirOf(g.points), B.directionDeg) <= CORN_V1.maxDirectionOffDeg;
     const held = ((stage === "establishment" || stage === "mid") && g.supportShare >= CORN_V1.bandSupport) || (stage === "late" && g.supportShare >= CORN_V1.canopySupport);
     const high = held && longEnough && alongPlants;
     for (const piece of pieces) rows.push({ points: piece, evidence: "green read only", confidence: high ? "high" : "medium", identity: "probable crop", why: alongPlants ? "" : "it runs across the rows the plants line up in", greenRow: gi, plants: 0, stage, mainPlanting: g.plan === mainPlan, latticeCandidate: !high && alongPlants && longEnough && g.supportShare >= CORN_V1.bandSupport });
   });
   // On the planting's lattice: a green row the plants missed (fainter seedlings, a tyre track along it), or a plant row
-  // the green read missed, that lies where the rows both reads agree on say the next row runs (one or two spacings from
-  // one, parallel), long and held, is that row (Yunus's photos 20, 21, 35, 45, 2026-11-04). Spread row by row from the agreed ones. The green read's false rows
-  // on other people's frames lay half a spacing off the plants: off this lattice.
+  // the green read missed, lying one spacing from rows both reads agree on, on each side of it (parallel, long and
+  // held), is that row (Yunus's photos 20, 21, 35, 45, 2026-11-04).
   const lp = pr ?? p;
-  if (lp) for (let changed = true, pass = 0; changed && pass < 50; pass++) {
-    changed = false;
-    const anchors = rows.filter(r => r.confidence === "high" && (r.evidence === "both reads agree" || r.onLattice));
+  if (lp) {
+    // Agreed rows only (no chain: on MatchPlant promoted rows spreading from a wrong agreed row were false 18 times in
+    // 24), and one on each side, a spacing away: the row the plants or the green missed between two they agree on.
+    const anchors = rows.filter(r => r.evidence === "both reads agree");
     for (const r of rows) {
       if (!r.latticeCandidate || r.confidence === "high") continue;
       const plan = r.greenRow != null ? greenRows[r.greenRow].plan : mainPlan;
-      const ok = anchors.some(a => {
-        if (a.greenRow == null || greenRows[a.greenRow].plan !== plan) return false;
-        if (angleOff(dirOf(a.points), dirOf(r.points)) > CORN_V1.latticeAngleDeg) return false;
-        const o = acrossOffset(r.points, a.points), k = Math.round(o / lp);
-        return k >= 1 && k <= 2 && Math.abs(o / lp - k) <= CORN_V1.latticeTol;
-      });
-      if (ok) { r.confidence = "high"; r.onLattice = true; changed = true; }
+      const mid = r.points[r.points.length >> 1];
+      const sides = new Set<number>();
+      for (const a of anchors) {
+        if (a.greenRow == null || greenRows[a.greenRow].plan !== plan) continue;
+        if (angleOff(dirOf(a.points), dirOf(r.points)) > CORN_V1.latticeAngleDeg) continue;
+        const o = acrossOffset(r.points, a.points);
+        if (Math.abs(o / lp - 1) > CORN_V1.latticeTol) continue;
+        // Which side: the sign of the anchor's middle across the candidate's direction.
+        const t = (dirOf(r.points) * Math.PI) / 180, am = a.points[a.points.length >> 1];
+        sides.add(Math.sign(-(am[0] - mid[0]) * Math.sin(t) + (am[1] - mid[1]) * Math.cos(t)));
+      }
+      if (sides.has(1) && sides.has(-1)) { r.confidence = "high"; r.onLattice = true; }
     }
   }
+
 
   // Identity.
   for (const r of rows) {
@@ -272,7 +288,9 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
     if (w.verdict !== "weed candidate") return;
     if (w.tier === "small green") { weedVerdicts.push({ index: i, verdict: "unknown vegetation", why: "smaller than nearly all the crop's own seedlings" }); return; }
     const tolOn = p ? CORN_V1.onRowShare * p : 0;
-    if (p && rows.some(r => distToLine(r.points, w.x, w.y) <= tolOn)) { weedVerdicts.push({ index: i, verdict: "crop on a row", why: "on a planted row's line" }); return; }
+    // Only a row held with confidence makes green on its line the crop: plants located on the green also line weeds up.
+    if (p && rows.some(r => r.confidence === "high" && distToLine(r.points, w.x, w.y) <= tolOn)) { weedVerdicts.push({ index: i, verdict: "crop on a row", why: "on a planted row's line" }); return; }
+    if (p && rows.some(r => distToLine(r.points, w.x, w.y) <= tolOn)) { weedVerdicts.push({ index: i, verdict: "unknown vegetation", why: "on the line of a row held by one read only" }); return; }
     const pp = p ?? pr ?? 0, reach = pp * CORN_V1.weedRowReachPitches;
     const dCorn = cornRows.length ? Math.min(...cornRows.map(r => distToLine(r.points, w.x, w.y))) : Infinity;
     if (reach && dCorn <= reach) {
