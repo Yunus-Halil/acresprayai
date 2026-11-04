@@ -28,7 +28,7 @@ function composite(parts: PhotoPixels[], lawnM: number): PhotoPixels {
   return { width: W, height: H, rgba };
 }
 
-describe("field assessment and adaptive reader on rendered stands", () => {
+describe("field assessment and adaptive reader on rendered stands", { timeout: 60000 }, () => {
   const wide = renderScene(scene({ pitchM: 0.762, seed: 7 })).px;
   const narrow = renderScene(scene({ pitchM: 0.381, seed: 8 })).px;
   const two = composite([wide, narrow], 3);

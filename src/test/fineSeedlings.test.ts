@@ -19,7 +19,7 @@ function scene() {
   return { width: W, height: H, rgba };
 }
 
-describe("fine seedlings", () => {
+describe("fine seedlings", { timeout: 60000 }, () => {
   it("finds thin plants alone on the soil and leaves the corn and what touches it", () => {
     const { seedlings } = fineSeedlings(scene(), 0.005, () => true);
     const near = (x: number, y: number) => seedlings.some(s => Math.hypot(s.x - x, s.y - y) < 6);

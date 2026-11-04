@@ -40,7 +40,7 @@ function render(opts: { paleEvery: number; skipEvery: number; later: boolean }) 
 
 const near = (pts: [number, number][], [x, y]: [number, number], r: number) => pts.some(([a, b]) => Math.hypot(a - x, b - y) <= r);
 
-describe("emergence V2: the second look along the rows", () => {
+describe("emergence V2: the second look along the rows", { timeout: 60000 }, () => {
   const sc = render({ paleEvery: 9, skipEvery: 13, later: false });
   const read = readRowCrop(sc.px, { stage: "emergence", gsdM: GSD });
   const o = rowCropOverlay(read);

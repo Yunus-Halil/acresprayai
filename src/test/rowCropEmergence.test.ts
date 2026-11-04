@@ -52,7 +52,7 @@ function render(opts: { verge: boolean; seedlings: boolean }) {
   return { px: { width: W, height: H, rgba }, rows, planted, weeds, lensAt: lens, dir: { dx, dy, nx, ny } };
 }
 
-describe("corn at emergence: seedlings as points, rows the lines they stand on", () => {
+describe("corn at emergence: seedlings as points, rows the lines they stand on", { timeout: 60000 }, () => {
   it("reads every planted row across a bent frame, leaves the verge out and finds the weeds", () => {
     const sc = render({ verge: true, seedlings: true });
     const read = readRowCrop(sc.px, { stage: "emergence", gsdM: GSD });

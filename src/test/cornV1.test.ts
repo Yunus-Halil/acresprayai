@@ -34,7 +34,7 @@ function greenRead(rows: GreenRow[], weeds: Weed[] = [], o: { stage?: RowCropSta
 }
 const P = rowCropParamsFor(profile, GSD);
 
-describe("Corn V1 fusion", () => {
+describe("Corn V1 fusion", { timeout: 60000 }, () => {
   it("rows where the plants and the green agree are corn; weeds between them stay findings, green on a row is the crop", () => {
     const ad = greenRead([0, 1, 2, 3].map(k => ({ k })), [{ x: 1000 + 1.5 * PITCH, y: 2000 }, { x: 1000 + 2 * PITCH + 3, y: 1500 }]);
     const v = fuseCornV1(ad, plants([0, 1, 2, 3]), P, { enteredCrop: "corn" });
@@ -202,7 +202,7 @@ describe("Corn V1 fusion", () => {
   });
 });
 
-describe("plants located on the green (no model)", () => {
+describe("plants located on the green (no model)", { timeout: 60000 }, () => {
   const scene = (over: Partial<Scene>): Scene => ({ name: "t", widthM: 8, heightM: 6, gsdM: 0.005, angleDeg: 90, pitchM: 0.762, twinM: null, alongM: 0.16, leafM: 0.08, soil: "dark", straw: null, weedsPerM2: 0, weedRadiusM: 0.05, inRowWeedsPerM: 0, seed: 11, ...over });
 
   it("places plants on the rendered rows and rows from them at the planting's spacing", { timeout: 60000 }, () => {

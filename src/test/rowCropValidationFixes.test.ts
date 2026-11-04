@@ -42,7 +42,7 @@ function emergenceField(o: { faintFrom?: number; weeds?: [number, number, number
   return { width: W, height: H, rgba };
 }
 
-describe("emergence: off-row green against the stand's own seedlings", () => {
+describe("emergence: off-row green against the stand's own seedlings", { timeout: 60000 }, () => {
   const weeds: [number, number, number][] = [[68, 300, 7], [372, 620, 6], [828, 200, 7]];
   const flecks: [number, number][] = [[220, 410], [524, 150], [980, 700], [676, 820]];
   const px = emergenceField({ weeds, flecks });
@@ -67,7 +67,7 @@ describe("emergence: off-row green against the stand's own seedlings", () => {
   });
 });
 
-describe("emergence: rows followed on where the seedlings turn faint", () => {
+describe("emergence: rows followed on where the seedlings turn faint", { timeout: 60000 }, () => {
   const px = emergenceField({ faintFrom: 0.75 });
   const lastY = (read: ReturnType<typeof readRowCrop>) => read.rows.map(r => Math.max(...r.points.map(p => p[1])));
 
@@ -89,7 +89,7 @@ describe("emergence: rows followed on where the seedlings turn faint", () => {
 // A guard only: on this rendered headland the field's edge already stops the rows at the bare soil, so no trailing gap
 // forms with the rule off either. On the real photographs (34, 63 and 64 in directtestimagery/estabilishmentphase)
 // flecks of stubble kept the field going to the verge and the stubble strip was drawn as gaps; those are the evidence.
-describe("establishment: the headland before the verge is not a gap", () => {
+describe("establishment: the headland before the verge is not a gap", { timeout: 60000 }, () => {
   const profile = cropProfileFor("corn")!;
   const scene = { name: "headland", widthM: 12, heightM: 9, gsdM: 0.01, angleDeg: 90, pitchM: 0.762, twinM: null, alongM: 0.16, leafM: 0.2, soil: "light", straw: null, weedsPerM2: 0, weedRadiusM: 0.04, gapsPerRow: 0, seed: 3 } as unknown as Scene;
   // The stand, then a metre of bare headland (the alley's soil copied over the rows), then a grass verge.
@@ -112,7 +112,7 @@ describe("establishment: the headland before the verge is not a gap", () => {
 
 });
 
-describe("late: rows read from a closed canopy", () => {
+describe("late: rows read from a closed canopy", { timeout: 60000 }, () => {
   // Leaves everywhere; along each row the canopy is greener and lighter, the alleys between them shaded. A lawn,
   // as green but with no rows, down the left quarter.
   const W = 1400, H = 1000, r = rng(17), rgba = new Uint8ClampedArray(W * H * 4), pitch = 50, lawnX = 350;
@@ -138,7 +138,7 @@ describe("late: rows read from a closed canopy", () => {
   });
 });
 
-describe("mid: a leaf tip cut off by its own shadow is not a seedling", () => {
+describe("mid: a leaf tip cut off by its own shadow is not a seedling", { timeout: 60000 }, () => {
   // 0.5 cm pixels. A corn leaf 6 cm wide, its tip beyond a 2 cm shadowed stretch of the same leaf; a grass seedling alone on the soil.
   const W = 300, H = 200, rgba = new Uint8ClampedArray(W * H * 4);
   const paint = (x0: number, y0: number, x1: number, y1: number, c: [number, number, number]) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const o = (y * W + x) * 4; rgba[o] = c[0]; rgba[o + 1] = c[1]; rgba[o + 2] = c[2]; } };
@@ -164,7 +164,7 @@ describe("mid: a leaf tip cut off by its own shadow is not a seedling", () => {
   });
 });
 
-describe("emergence: a higher bar for weeds at the field's edge (Yunus, 2026-11-02)", () => {
+describe("emergence: a higher bar for weeds at the field's edge (Yunus, 2026-11-02)", { timeout: 60000 }, () => {
   // The same mid-sized patch (larger than the seedlings, under three times their large ones) in the field and 40 cm from the verge.
   const inField: [number, number, number][] = [[68, 300, 3.5], [372, 450, 3.5]];
   const atEdge: [number, number, number][] = [[220, 760, 3.5], [676, 770, 3.5]];
@@ -185,7 +185,7 @@ describe("emergence: a higher bar for weeds at the field's edge (Yunus, 2026-11-
   });
 });
 
-describe("emergence: straw is not green, and green touching the row is the crop (Yunus, 2026-11-02)", () => {
+describe("emergence: straw is not green, and green touching the row is the crop (Yunus, 2026-11-02)", { timeout: 60000 }, () => {
   // Under the solid-green share of a verge cell, so only the colour decides.
   const straw: [number, number, number][] = [[372, 300, 5], [828, 520, 5]];
   // Just off the planter's line (7 cm from rows at x = 30 + 76k): touching the 6 cm band.

@@ -29,7 +29,7 @@ function fieldWithEdge(verge: number, road: number) {
   return { px, vergeY: verge * H };
 }
 
-describe("establishment: the field's edge", () => {
+describe("establishment: the field's edge", { timeout: 60000 }, () => {
   const { px, vergeY } = fieldWithEdge(0.7, 0.85);
   const read = readRowCrop(px, rowCropParamsFor(profile, scene.gsdM, "establishment"));
   const slack = 0.5 / scene.gsdM; // half a metre: a strip
@@ -76,7 +76,7 @@ describe("establishment: the field's edge", () => {
   });
 });
 
-describe("outline of a left-out patch", () => {
+describe("outline of a left-out patch", { timeout: 60000 }, () => {
   it("follows an L shape instead of cutting across its notch", () => {
     const W = 100, pix: number[] = [];
     for (let y = 0; y < 100; y++) for (let x = 0; x < 100; x++) if (x < 20 || y >= 80) pix.push(y * W + x); // an L

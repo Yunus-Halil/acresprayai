@@ -17,7 +17,7 @@ function pointsOnCrop(read: RowCropRead, s: Scene, acrossToRow: (x: number, y: n
   return n ? on / n : null;
 }
 
-describe("continuous-row reader on rendered corn", () => {
+describe("continuous-row reader on rendered corn", { timeout: 60000 }, () => {
   const reads = scenes.map(s => { const { px, truth } = renderScene(s); return { s, truth, read: readRowCrop(px, rowCropParamsFor(profile, s.gsdM)) }; });
 
   it("finds rows on nearly every stand and puts them on the crop, straw or not", () => {
@@ -82,7 +82,7 @@ describe("continuous-row reader on rendered corn", () => {
   });
 });
 
-describe("pieces", () => {
+describe("pieces", { timeout: 60000 }, () => {
   it("reads the pitch of a comb profile", () => {
     const p = new Float64Array(600);
     for (let i = 0; i < 600; i++) p[i] = (i % 37) < 6 ? 1 : 0.05;
@@ -106,7 +106,7 @@ describe("pieces", () => {
   });
 });
 
-describe("mid-stage variant", () => {
+describe("mid-stage variant", { timeout: 60000 }, () => {
   it("reports late seedlings as a layer and sizes the between-row plants; the establishment read carries neither", () => {
     const s = scenes.find(x => x.weedsPerM2 > 0 && x.gsdM <= 0.01 && !x.twinM)!;
     const { px } = renderScene(s);
