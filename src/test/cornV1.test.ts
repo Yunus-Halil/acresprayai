@@ -127,10 +127,9 @@ describe("Corn V1 fusion", () => {
     expect(diag.why).toContain("across the rows");
   });
 
-  it("does not trust a late read beside located seedlings", () => {
-    const ad = greenRead([5, 6, 7].map(k => ({ k, support: 0.9 })), [], { stage: "late" });
-    expect(fuseCornV1(ad, plants([0, 1, 2]), P, { enteredCrop: "corn" }).rows.filter(r => r.evidence === "green read only").every(r => r.identity === "probable crop")).toBe(true);
-    expect(fuseCornV1(ad, [], P, { enteredCrop: "corn" }).summary.cornRows).toBe(3);
+  it("trusts a late read only where its rows stand on green almost all along (seedling frames misjudged as canopy do not)", () => {
+    expect(fuseCornV1(greenRead([5, 6, 7].map(k => ({ k, support: 0.95 })), [], { stage: "late" }), [], P, { enteredCrop: "corn" }).summary.cornRows).toBe(3);
+    expect(fuseCornV1(greenRead([5, 6, 7].map(k => ({ k, support: 0.5 })), [], { stage: "late" }), [], P, { enteredCrop: "corn" }).summary.cornRows).toBe(0);
   });
 
   it("never says corn for a field not entered as corn, and reports nothing then", () => {

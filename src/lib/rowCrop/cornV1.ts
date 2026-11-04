@@ -51,8 +51,9 @@ export const CORN_V1 = {
   /** A green row alone is high confidence at establishment or mid with at least this share of its strips on green
    * (labelled maize, MatchPlant + MSDD: at 0.7 and over right 67 times in 77, 0.6-0.7 right 9 in 14, under 0.6 3 in 14) ... */
   bandSupport: 0.7,
-  /** ... and on a late canopy (no plants located in the photo) with at least this share; ... */
-  canopySupport: 0.5,
+  /** ... and on a late canopy with at least this share (our closed-canopy rows: 0.90 at the 10th percentile; MSDD's
+   * dark seedling tiles misjudged as canopy: 0.5, false 66 times in 67); ... */
+  canopySupport: 0.85,
   /** ... in both cases at least this many row spacings long, ... */
   greenAloneMinPitches: 4,
   /** ... and, where the plants line up in rows, within this many degrees of their direction. */
@@ -210,15 +211,15 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
     // Alone, a green row stands as high confidence only where the green read is the right instrument and holds it well
     // (measured on labelled maize, 2026-11-04, green rows no plant row confirms): rows grown into bands (establishment,
     // mid: the plants touch and cannot be located one by one) on green over CORN_V1.bandSupport of their strips, right
-    // 67 times in 77; a late canopy only where no plants could be located in the photo at all (late reads beside located
-    // plants were 0 right in 11: seedling frames misjudged as canopy). Never an emergence row alone: there the plants
+    // 67 times in 77; a late canopy only where its rows stand on green almost all along (seedling frames misjudged as
+    // canopy hold their rows on half their length). Never an emergence row alone: there the plants
     // are what the read is about, and its lines on other people's seedling frames were right 47 times in 211.
     // And never a short piece, nor one across the rows the plants show: the French plots' false green rows were short
     // diagonal pieces across rows the plants ran along (2026-11-04).
     const stage = planStage(g.plan);
     const longEnough = lengthOf(g.points) >= CORN_V1.greenAloneMinPitches * (pr ?? p ?? 0);
     const alongPlants = B.directionDeg == null || !B.rows.length || angleOff(dirOf(g.points), B.directionDeg) <= CORN_V1.maxDirectionOffDeg;
-    const held = ((stage === "establishment" || stage === "mid") && g.supportShare >= CORN_V1.bandSupport) || (stage === "late" && !B.rows.length && g.supportShare >= CORN_V1.canopySupport);
+    const held = ((stage === "establishment" || stage === "mid") && g.supportShare >= CORN_V1.bandSupport) || (stage === "late" && g.supportShare >= CORN_V1.canopySupport);
     const high = held && longEnough && alongPlants;
     for (const piece of pieces) rows.push({ points: piece, evidence: "green read only", confidence: high ? "high" : "medium", identity: "probable crop", why: alongPlants ? "" : "it runs across the rows the plants line up in", greenRow: gi, plants: 0, stage, mainPlanting: g.plan === mainPlan });
   });
