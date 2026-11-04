@@ -19,6 +19,7 @@
 // Scale. With a known pixel size the pitch is measured and compared with the planted spacings. Without one (no EXIF)
 // the pitch in pixels gives the scale from the profile's default spacing, and the result says so: every metre in it
 // then rests on that assumption.
+import type { SeedlingCache } from "./seedlingGreen";
 import { type GreenOptions, GREEN_DEFAULTS, greenMaskWithExcess } from "../directGeoref/green";
 import type { PhotoPixels } from "../photoScout/pattern";
 import { readEmergence } from "./emergence";
@@ -590,7 +591,7 @@ function latticePhase(ps: StripPeak[], P: number): number {
   return (((t / (2 * Math.PI)) * P) % P + P) % P;
 }
 
-export type RowCropOptions = { onProgress?: (done: number, total: number) => void; signal?: AbortSignal; /** Diagnostic lines (the bench prints them). */ debug?: (line: string) => void };
+export type RowCropOptions = { onProgress?: (done: number, total: number) => void; signal?: AbortSignal; /** Diagnostic lines (the bench prints them). */ debug?: (line: string) => void; /** This photograph's shared soil levels and seedling mask (seedlingGreen.ts), computed once for every reader of it. */ seedlings?: SeedlingCache };
 
 /**
  * Read one photograph of a continuous-row crop. Coordinates in the result are photo pixels; metres rest on `gsdM`

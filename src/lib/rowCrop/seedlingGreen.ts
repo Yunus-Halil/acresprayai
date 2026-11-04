@@ -142,3 +142,29 @@ export function shrinkMask(mask: Uint8Array, W: number, H: number, f: number): U
   }
   return out;
 }
+
+/**
+ * One photograph's soil levels and seedling mask at SEEDLING_GREEN, computed once and shared by every reader of that
+ * photograph. The emergence reader and Corn V1's plant read (greenPoints.ts) compute exactly the same two things from
+ * the same pixels; Corn V1 used to compute them twice (2026-11-05: about 1 s of a 3.5-4 s seedling photograph).
+ * The cache answers only for its own photograph (the same pixels object) and the shared options; anything else is
+ * computed afresh, so a reader handed a cache can never get another photograph's or another setting's mask.
+ * Read-only: the arrays are shared, and no reader writes into them.
+ */
+export type SeedlingCache = { readonly px: PhotoPixels; levels?: SoilLevels; mask?: Uint8Array };
+
+export function seedlingCache(px: PhotoPixels): SeedlingCache {
+  return { px };
+}
+
+/** The soil levels at SEEDLING_GREEN: from the cache when it is this photograph's, else computed. */
+export function sharedSoilLevels(cache: SeedlingCache | null | undefined, px: PhotoPixels): SoilLevels {
+  if (!cache || cache.px !== px) return soilLevels(px, SEEDLING_GREEN);
+  return (cache.levels ??= soilLevels(px, SEEDLING_GREEN));
+}
+
+/** The whole-frame seedling mask at SEEDLING_GREEN: from the cache when it is this photograph's, else computed. */
+export function sharedSeedlingMask(cache: SeedlingCache | null | undefined, px: PhotoPixels): Uint8Array {
+  if (!cache || cache.px !== px) return seedlingMask(px, SEEDLING_GREEN);
+  return (cache.mask ??= seedlingMask(px, SEEDLING_GREEN, sharedSoilLevels(cache, px)));
+}

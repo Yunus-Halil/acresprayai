@@ -134,6 +134,42 @@ data/direct-georef/twin --name "..." --id <id> --crop corn --weeds none --no-pre
 UAV3DCrop scene: `npx vite-node scripts/rowCrop/uav3dcropFlight.ts --scene <scene> --out <dir> --reads <cornFieldBench
 reads dir>`.
 
+## Speed (2026-11-05)
+
+**In the browser** (the app's own build: `node scripts/directGeoref/twinBuildBench.mjs --dir <flight> --crop corn
+--base http://localhost:8080`, headless Chrome on this laptop, 12 logical cores, 6 helper workers of which the corn
+stage uses 3; peak memory = the working sets of the benchmark's own Chrome processes, sampled every 2 s):
+
+| 40-photo Day023 flight | corn-v1.0 (frozen) | shared seedling mask |
+|---|---|---|
+| Twin ready | 76.2 s | 73.1 s |
+| Corn stage | 69.3 s (5.0 s per photograph per worker) | 66.7 s (4.9 s) |
+| Peak memory, all of the benchmark's Chrome / its largest process | 2.69 / 2.18 GB | 2.64 / 2.12 GB |
+| Result | 11 corn rows, 5 unconfirmed; 3 confirmed weeds, 9 withheld | identical |
+
+The in-browser build is about four times faster than the Node script (286 s) because the corn stage runs in three
+workers and the cameras use the pool.
+
+**The shared seedling mask.** The emergence reader and the plant read both computed the whole-frame seedling mask
+(soil levels + mask, about 1 s per 20 MP photograph). Corn V1 now computes it once per photograph and hands the same
+arrays to both (`seedlingGreen.ts SeedlingCache`, passed through `RowCropOptions.seedlings`; it answers only for its own
+photograph and settings, read-only). Checked against corn-v1.0 on the same decoded pixels
+(`scripts/rowCrop/cornV1Equivalence.ts`, every photograph read both ways in one process): **274 of 274 photographs
+byte-for-byte identical** (every set: our emergence, Corn2, establishment, mid, late; the three test flights).
+Time: **42 % less on seedling-stage photographs** (our emergence set: 165.7 to 96.1 s over 23), unchanged (within
+3 %, noise) wherever the emergence reader does not run, which includes all three UAV3DCrop test flights (establishment,
+mid, late) and Corn2. So the in-browser test-flight build above barely moves; an emergence-stage flight would.
+
+**Browser and Node see slightly different pixels.** The same JPEG decoded by Chrome and by Node's jpeg-js differs by
+0.65 levels on average (up to 10), Chrome 0.36 % brighter overall; a borderline patch can tip, so an in-app build and a
+Node benchmark of the same flight can differ at the margin (Day023: 3 confirmed weeds in the browser, 2 in Node, 34 vs
+33 single-photograph reports, same rows). Corn V1's benchmarked numbers are Node's.
+
+Where the remaining time goes, per photograph (Node): the adaptive green read 1-6 s (the mid reader is the heaviest:
+5.4-5.8 s on mid-stage frames), the plant read 1.0-1.35 s, of which the soil levels (a 9 x 9 median over 16-pixel blocks,
+done with a full sort) 0.6-1.1 s. Not changed here: half-resolution reading and photograph thinning (both would need
+the loss of detections and multi-photograph evidence measured first).
+
 ## Integration status
 
 - Done: the library (`cornField`, `compactCornRead`), its tests (three overlapping cameras with single-photograph
