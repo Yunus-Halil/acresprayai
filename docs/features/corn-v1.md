@@ -74,6 +74,52 @@ Three classes, never more than the evidence holds:
 A sugar beet or sunflower field wrongly entered as corn is read as corn rows (measured below): no visual evidence we
 have separates them. The operator's crop entry is the identity; the read only ever withholds it.
 
+## Operating envelope (what V1 is for)
+
+V1 is **review-only decision support**: it draws what it read for a person to check. Crop identity is the operator's
+entry; no weed candidate or stand gap becomes a treatment, a prescription or a grade on its own, and nothing outside
+Photo Scout (developer mode) uses it.
+
+| | In the envelope | Outside it (V1 says little or nothing, by design) |
+|---|---|---|
+| Camera | Nadir (straight down) drone photographs, a mapping flight | Oblique photographs; handheld close-ups |
+| Height / pixel | Mapping height, about 0.3-1.5 cm per pixel, 10+ rows in the frame | Close-ups (a few rows in the frame, under ~0.1 cm per pixel); coarser than ~2 cm per pixel (seedlings vanish) |
+| Crop and stage | Corn in rows, entered as corn by the operator, emergence to about V10 on soil; mid and late canopy rows | Another row crop entered as corn (read as corn: the entry is the identity); broadcast or drilled cereals |
+| Scene | A field with bare soil between the rows | Severely obscured canopy, standing water, heavy residue over the rows, solid weed cover |
+| Light | Ordinary daylight, the lens's dim rim included | Night, deep shadow across the frame |
+
+## Major remaining limitations (measured at 507bc30)
+
+**Plants withheld from confirmed corn rows.** Findings only come from rows called corn; the rest are drawn as planted
+rows with the crop not confirmed, and nothing is reported on them. Share of the hand-labelled plants:
+
+| Set | on any row V1 draws | on a CONFIRMED corn row | withheld (on a row, not confirmed) | on no row at all |
+|---|---|---|---|---|
+| MatchPlant (maize, 27 frames) | 78.3 % | 25.7 % | 52.6 % (67 % of the plants on rows) | 21.7 % |
+| French maize (49 plots) | 60.0 % | 35.6 % | 24.4 % (41 %) | 40.0 % |
+| MSDD Missouri (696 tiles) | 74.5 % | 41.3 % | 33.2 % (45 %) | 25.5 % |
+| (the reader before V1, for comparison) | 71 / 40 / 49 % | the same: it called every row corn, about half of them wrongly | 0 % | |
+
+So on fields it has never seen, V1 confirms the rows under a quarter to two-fifths of the plants and withholds the rest;
+with MaSC's plants (server tier, not shipped) it confirms 54-79 %. On our own flights almost every row is confirmed
+(emergence 636 of 676, establishment 517 of 532).
+
+**Genuine weed detections lost.** The reader before V1 reported every off-row green patch beside any row, right or
+wrong; V1 reports only those beside confirmed corn rows and off the planting's lattice:
+
+| Set | real weeds the reader hit | of them V1 still reports | lost | candidates reported A / V1 | share that are real weeds A / V1 |
+|---|---|---|---|---|---|
+| USU Utah (labelled weeds, weed-heavy V5-V7) | 302 | 94 | **69 %** | 3,261 / 551 | 9 % / 17 % |
+| (V1 with MaSC's plants) | 302 | 133 | 56 % | 3,261 / 799 | 9 % / 17 % |
+
+Without weed labels on our own flights, the counts: emergence 49 -> 44, establishment 20 -> 20, mid 705 -> 577,
+Corn2 88 -> 27 (not checked by eye). Where the loss comes from: weeds growing along the rows are lined up by the plant
+read like crop, and weeds beside rows V1 cannot confirm are withheld as unknown vegetation. The withheld candidates are
+still drawn (grey); none is deleted.
+
+**Also:** crop identity cannot be told from the pixels (a beet or sunflower field entered as corn reads as corn rows);
+false stand gaps remain 12-16 % on Missouri and MatchPlant; accuracy on our own flights is not measured (no labels).
+
 ## Results
 
 Final run at code 507bc30 (`D:\swardus-research\cornv1-run.sh`; pictures in the results hub, reader "Corn V1 (production)").

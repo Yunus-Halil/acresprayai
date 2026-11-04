@@ -194,7 +194,8 @@ export function assessField(px: PhotoPixels, params: Pick<RowCropParams, "gsdM" 
   // 3. Cells and their windows.
   // 3a. The frame's own row spacing: a frame spanning few rows gets cells and a pitch search sized from it.
   let cellPx = Math.max(16, Math.round(L / A.cellsAlong));
-  let minLag = L * A.minPitchShare, maxLag = L * A.maxPitchShare;
+  const minLag = L * A.minPitchShare;
+  let maxLag = L * A.maxPitchShare;
   {
     const wide = L * A.frameMaxPitchShare;
     const cd = coarseDensity(mask, W, H, A.coarse, Math.max(2, Math.round(wide / A.coarse / 2)), false);
