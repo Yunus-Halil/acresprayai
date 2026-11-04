@@ -15,7 +15,7 @@
 // Never tuned for the other stages, and they never read EMERGENCE.
 import { GREEN_DEFAULTS, type GreenOptions, greenMaskWithExcess } from "../directGeoref/green";
 import type { PhotoPixels } from "../photoScout/pattern";
-import { SEEDLING_GREEN, SEEDLING_RELAXED, seedlingMask, seedlingWindow, shrinkMask, soilLevels } from "./seedlingGreen";
+import { SEEDLING_GREEN, SEEDLING_RELAXED, seedlingWindow, sharedSeedlingMask, sharedSoilLevels, shrinkMask } from "./seedlingGreen";
 import { type EmergenceV2, type RowCropExcluded, type RowCropGap, type RowCropOptions, type RowCropParams, type RowCropRead, type RowCropRow, type RowCropWeed, ROW_CROP_READ_VERSION, GEOMETRY_DIRECTION_TOL_DEG, GEOMETRY_PITCH_TOL, convexHull, downsample, pitchFromProfile } from "./readRowCrop";
 
 export const EMERGENCE = {
@@ -251,8 +251,9 @@ export function readEmergence(px: PhotoPixels, P: RowCropParams, opts: RowCropOp
   // 3. The seedlings themselves, pale leaves included (seedlingGreen.ts: tint against the soil beside each pixel, at
   // the photo's own pixel, shrunk to the work raster by "any pixel in the block"); the components of that mask are
   // the points the rows are read from. The fixed index above judges solid green and the soil only.
-  const levels = soilLevels(px, SEEDLING_GREEN);
-  const seedFull = seedlingMask(px, SEEDLING_GREEN, levels);
+  // Shared with every other reader of this photograph when the caller passes a cache (Corn V1 does): the same arrays.
+  const levels = sharedSoilLevels(opts.seedlings, px);
+  const seedFull = sharedSeedlingMask(opts.seedlings, px);
   const seed = shrinkMask(seedFull, px.width, px.height, f);
   const comps = components(seed, skip, W, H, 4000);
   const maxSide = Math.max(3, L * E.pointMaxSideShare);

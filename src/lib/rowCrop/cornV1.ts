@@ -35,7 +35,8 @@
 // Decision support only: nothing here decides a treatment.
 import type { PhotoPixels } from "../photoScout/pattern";
 import { adaptiveAsRead, readCornAdaptive, type AdaptiveRead, type AdaptiveRow } from "./adaptive";
-import { plantPointsFromGreen } from "./greenPoints";
+import { GREEN_POINTS, plantPointsFromGreen } from "./greenPoints";
+import { seedlingCache } from "./seedlingGreen";
 import { distToLine, rowsFromPoints, type PlantPoint, type PlantRowsResult } from "./plantRows";
 import type { RowCropGap, RowCropOptions, RowCropParams, RowCropRead, RowCropRow, RowCropStage, RowCropWeed } from "./readRowCrop";
 
@@ -347,9 +348,11 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
 /** Corn V1 over one photograph. */
 export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1Options = {}): CornV1Read {
   const t0 = Date.now();
-  const ad = readCornAdaptive(px, params, opts);
+  // One seedling mask per photograph, shared by the green read's emergence reader and the plant read.
+  const seedlings = seedlingCache(px);
+  const ad = readCornAdaptive(px, params, { ...opts, seedlings });
   const t1 = Date.now();
-  const points = opts.detectorPoints ?? plantPointsFromGreen(px).points;
+  const points = opts.detectorPoints ?? plantPointsFromGreen(px, GREEN_POINTS, seedlings).points;
   const t2 = Date.now();
   return fuseCornV1(ad, points, params, { enteredCrop: opts.enteredCrop ?? params.crop?.id ?? null, source: opts.detectorPoints ? "detector" : "green", greenMs: t1 - t0, plantsMs: t2 - t1 });
 }

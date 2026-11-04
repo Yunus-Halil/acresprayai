@@ -9,7 +9,7 @@
 import type { PhotoPixels } from "../photoScout/pattern";
 import type { PlantPoint } from "./plantRows";
 import { convexHull } from "./readRowCrop";
-import { SEEDLING_GREEN, seedlingMask } from "./seedlingGreen";
+import { type SeedlingCache, sharedSeedlingMask } from "./seedlingGreen";
 
 export const GREEN_POINTS = {
   /** The mask is judged at the photo's pixel and read at this long side (pieces and points). */
@@ -62,9 +62,10 @@ export type GreenPoints = {
 };
 
 /** Plant positions over a whole photograph, photo pixels. */
-export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS): GreenPoints {
+export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedlings?: SeedlingCache): GreenPoints {
   const W = px.width, H = px.height, f = Math.max(1, Math.round(Math.max(W, H) / o.workLongSide));
-  const full = seedlingMask(px, SEEDLING_GREEN);
+  // The mask the emergence reader also reads: from the photograph's shared cache when there is one.
+  const full = sharedSeedlingMask(seedlings, px);
   const w = Math.floor(W / f), h = Math.floor(H / f), mask = new Uint8Array(w * h), need = Math.max(1, Math.ceil(f * f * o.shrinkShare));
   let green = 0;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
