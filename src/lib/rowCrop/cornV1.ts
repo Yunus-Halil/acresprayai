@@ -28,8 +28,8 @@
 //   - probable crop: any other planted row (one read only, a second planting, a spacing corn is not planted at);
 //   - unknown vegetation: green on no row that is not a confident weed candidate.
 // Findings never come from a questionable row:
-//   - a weed candidate is reported only off every row's line and beside a corn row; on a row's line it is the crop,
-//     elsewhere it is unknown vegetation;
+//   - a weed candidate is reported only between the rows beside a corn row: on a row's line it is the crop, on the line
+//     where the planting's next row runs (a row neither read held) or anywhere else it is unknown vegetation;
 //   - a stand gap is reported only where both reads see nothing: a gap in a green row the plant read agrees with (or a
 //     corn row the green holds alone), with no plant position on the row's line inside it; every other gap is withheld.
 // Decision support only: nothing here decides a treatment.
@@ -50,12 +50,19 @@ export const CORN_V1 = {
   minPiecePitches: 1.5,
   /** A green row alone is high confidence at establishment or mid with at least this share of its strips on green ... */
   bandSupport: 0.8,
-  /** ... and on a late canopy (no plants located in the photo) with at least this share. */
+  /** ... and on a late canopy (no plants located in the photo) with at least this share; ... */
   canopySupport: 0.5,
+  /** ... in both cases at least this many row spacings long, ... */
+  greenAloneMinPitches: 4,
+  /** ... and, where the plants line up in rows, within this many degrees of their direction. */
+  maxDirectionOffDeg: 12,
   /** A weed candidate within this share of the spacing of a row's line stands on the row: the crop. */
   onRowShare: 0.2,
-  /** A weed candidate is a finding only with a corn row within this many row spacings. */
+  /** A weed candidate is a finding only with a corn row within this many row spacings, ... */
   weedRowReachPitches: 1.5,
+  /** ... and not within this share of the spacing of where the planting's next row runs (a row not read: on the
+   * French plots 130 of 179 such candidates were maize, 2026-11-04). */
+  slotShare: 0.2,
   /** A gap is withheld when a plant position lies within this share of the spacing of the row's line inside it (its
    * first and last tenth left out: the plants that bound it). */
   gapPlantShare: 0.15,
@@ -122,6 +129,9 @@ const densify = (l: [number, number][], step: number): [number, number][] => {
   for (let i = 1; i < l.length; i++) { const [ax, ay] = l[i - 1], [bx, by] = l[i], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step)); for (let k = 1; k <= n; k++) out.push([ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n]); }
   return out;
 };
+/** A polyline's direction from its ends, degrees [0, 180) (photo coordinates, y down). */
+const dirOf = (l: [number, number][]) => { const [ax, ay] = l[0], [bx, by] = l[l.length - 1]; return ((Math.atan2(by - ay, bx - ax) * 180) / Math.PI + 180) % 180; };
+const angleOff = (a: number, b: number) => { const d = Math.abs(a - b) % 180; return Math.min(d, 180 - d); };
 const lengthOf = (l: [number, number][]) => { let s = 0; for (let i = 1; i < l.length; i++) s += Math.hypot(l[i][0] - l[i - 1][0], l[i][1] - l[i - 1][1]); return s; };
 
 /** The green read's main row spacing, photo pixels: its largest plan's measured pitch, else the plan's prior. */
@@ -200,16 +210,21 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
     // 47 times in 51; a late canopy only where no plants could be located in the photo at all (late reads beside located
     // plants were 0 right in 11: seedling frames misjudged as canopy). Never an emergence row alone: there the plants
     // are what the read is about, and its lines on other people's seedling frames were right 47 times in 211.
+    // And never a short piece, nor one across the rows the plants show: the French plots' false green rows were short
+    // diagonal pieces across rows the plants ran along (2026-11-04).
     const stage = planStage(g.plan);
-    const high = ((stage === "establishment" || stage === "mid") && g.supportShare >= CORN_V1.bandSupport) || (stage === "late" && !B.rows.length && g.supportShare >= CORN_V1.canopySupport);
-    for (const piece of pieces) rows.push({ points: piece, evidence: "green read only", confidence: high ? "high" : "medium", identity: "probable crop", why: "", greenRow: gi, plants: 0, stage, mainPlanting: g.plan === mainPlan });
+    const longEnough = lengthOf(g.points) >= CORN_V1.greenAloneMinPitches * (pr ?? p ?? 0);
+    const alongPlants = B.directionDeg == null || !B.rows.length || angleOff(dirOf(g.points), B.directionDeg) <= CORN_V1.maxDirectionOffDeg;
+    const held = ((stage === "establishment" || stage === "mid") && g.supportShare >= CORN_V1.bandSupport) || (stage === "late" && !B.rows.length && g.supportShare >= CORN_V1.canopySupport);
+    const high = held && longEnough && alongPlants;
+    for (const piece of pieces) rows.push({ points: piece, evidence: "green read only", confidence: high ? "high" : "medium", identity: "probable crop", why: alongPlants ? "" : "it runs across the rows the plants line up in", greenRow: gi, plants: 0, stage, mainPlanting: g.plan === mainPlan });
   });
 
   // Identity.
   for (const r of rows) {
     if (entered !== "corn") { r.why = entered ? `the field is entered as ${entered}` : "no crop entered for the field"; continue; }
     if (!r.mainPlanting) { r.why = "a second planting beside the main one: its crop is not confirmed"; continue; }
-    if (r.confidence !== "high") { r.why = r.evidence === "plant read only" ? (o.source === "detector" ? "plants line up here but not at the planting's spacing" : "plants located on the green line up here, but the green read holds no row on them") : "the green read alone, where it is not the right instrument (seedlings) or holds the row weakly"; continue; }
+    if (r.confidence !== "high") { if (r.why) continue; r.why = r.evidence === "plant read only" ? (o.source === "detector" ? "plants line up here but not at the planting's spacing" : "plants located on the green line up here, but the green read holds no row on them") : "the green read alone, where it is not the right instrument (seedlings) or holds the row weakly"; continue; }
     if (spacingImpossible) { r.why = `the row spacing (${Math.round(spacingM! * 100)} cm) is not one corn is ever planted at`; continue; }
     r.identity = "corn";
     r.why = r.evidence === "both reads agree" ? "entered as corn; the plants and the green agree on the row" : r.evidence === "plant read only" ? "entered as corn; the plants line up at the planting's spacing (the green read missed the row)" : "entered as corn; the green holds the row well and nothing contradicts it";
@@ -223,8 +238,14 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
     if (w.tier === "small green") { weedVerdicts.push({ index: i, verdict: "unknown vegetation", why: "smaller than nearly all the crop's own seedlings" }); return; }
     const tolOn = p ? CORN_V1.onRowShare * p : 0;
     if (p && rows.some(r => distToLine(r.points, w.x, w.y) <= tolOn)) { weedVerdicts.push({ index: i, verdict: "crop on a row", why: "on a planted row's line" }); return; }
-    const reach = (pr ?? p ?? 0) * CORN_V1.weedRowReachPitches;
-    if (reach && cornRows.some(r => distToLine(r.points, w.x, w.y) <= reach)) { weedVerdicts.push({ index: i, verdict: "weed candidate", why: "off every row, beside a corn row" }); return; }
+    const pp = p ?? pr ?? 0, reach = pp * CORN_V1.weedRowReachPitches;
+    const dCorn = cornRows.length ? Math.min(...cornRows.map(r => distToLine(r.points, w.x, w.y))) : Infinity;
+    if (reach && dCorn <= reach) {
+      // On the line where the planting's next row runs (a row neither read held): the crop as likely as a weed.
+      const k = Math.round(dCorn / pp);
+      if (k >= 1 && Math.abs(dCorn - k * pp) <= CORN_V1.slotShare * pp) { weedVerdicts.push({ index: i, verdict: "unknown vegetation", why: "on the line where a row of the planting runs, a row not read: crop as likely as weed" }); return; }
+      weedVerdicts.push({ index: i, verdict: "weed candidate", why: "between the rows, beside a corn row" }); return;
+    }
     weedVerdicts.push({ index: i, verdict: "unknown vegetation", why: rows.some(r => distToLine(r.points, w.x, w.y) <= reach) ? "beside rows whose crop or line is not confirmed" : "no row in reach" });
   });
 

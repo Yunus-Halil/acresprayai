@@ -55,7 +55,14 @@ for (const f of files) {
   const raw = decodeImage(new Uint8Array(readFileSync(join(IMAGES, f))));
   const px: PhotoPixels = { width: raw.width, height: raw.height, rgba: new Uint8ClampedArray(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength) };
   let gt: Box[] | null = null, group = "all-images", weedsGt: Box[] | null = null;
-  if (LABELS && existsSync(join(LABELS, `${stem}.json`))) { const l = JSON.parse(readFileSync(join(LABELS, `${stem}.json`), "utf8")); gt = l.boxes; group = l.group ?? group; }
+  if (LABELS && existsSync(join(LABELS, `${stem}.json`))) {
+    const l = JSON.parse(readFileSync(join(LABELS, `${stem}.json`), "utf8")); group = l.group ?? group;
+    // Malformed boxes (a few label files hold boxes spanning the whole plot) are dropped and counted: inside one, every
+    // weed candidate would count as crop called weed.
+    const all = l.boxes as Box[], side = median(all.map(b => Math.max(b[2] - b[0], b[3] - b[1])));
+    gt = all.filter(b => Math.max(b[2] - b[0], b[3] - b[1]) <= 10 * side);
+    add(group, "malformedBoxes", all.length - gt.length);
+  }
   if (USU) { const meta = JSON.parse(readFileSync(join(USU, `${stem}.json`), "utf8")); weedsGt = (meta.boxes as { x: number; y: number; w: number; h: number }[]).map(b => [b.x - b.w / 2, b.y - b.h / 2, b.x + b.w / 2, b.y + b.h / 2]); }
   const gsd = USU ? 0.0048 : GSD;
   const params = rowCropParamsFor(profile, gsd);
@@ -125,7 +132,7 @@ R("rows drawn (corn rows)", g => MODES.map(m => `${T(g, `rows:${m}`)} (${T(g, `c
 R("weed candidates reported", g => each(m => `weeds:${m}`, g));
 R("stand gaps reported", g => each(m => `gaps:${m}`, g));
 if (LABELS) {
-  R("labelled plants", g => T(g, "plants").toLocaleString());
+  R("labelled plants (malformed boxes dropped)", g => `${T(g, "plants").toLocaleString()} (${T(g, "malformedBoxes")})`);
   R("**labelled plants on a row**", g => each(m => `plantsOn:${m}`, g, v => pct(v, T(g, "plants"))));
   R("labelled plants on a corn row", g => each(m => `plantsOnCorn:${m}`, g, v => pct(v, T(g, "plants"))));
   R("false share of rows drawn", g => each(m => `trueRows:${m}`, g, (v, m) => pct(T(g, `rows:${m}`) - v, T(g, `rows:${m}`))));
@@ -142,5 +149,12 @@ R("mean ms per image: green read / plant points / fusion / MaSC inference", g =>
 const head = [`# Corn V1 bench: ${NAME}`, "", `Run ${new Date().toISOString().slice(0, 16)}, code ${revision}. ${T("all", "images")} photos from ${IMAGES.replace(/\\/g, "/")}${MASC ? `; MaSC boxes ${MASC.replace(/\\/g, "/")}` : ""}. Crop entered: ${CROP}.`, "",
   "Pictures: A = the adaptive reader as the app drew it; V1 = Corn V1: cyan = corn row, amber dashes = planted row whose crop is not confirmed, red = weed candidate, grey outlines = withheld (crop on a row, unknown vegetation, not judged), orange = stand gap.", ""];
 writeFileSync(join(OUT, "README.md"), [...head, ...md, ""].join("\n"));
+// One note per picture folder (the results hub reads <folder>.md beside each folder).
+const legendOf: Record<Mode, string> = {
+  A: "The adaptive reader as the app drew it until Corn V1: cyan rows, red weed candidates, orange gaps, grey not judged.",
+  V1: "Corn V1 with plants located on the green (no model, what the app runs): cyan = corn row (the field entered as corn and both reads support it), amber dashes = planted row whose crop is not confirmed, red = weed candidate (only beside corn rows), orange = stand gap (only where both reads see nothing), grey outlines = withheld (the crop on a row, unknown vegetation, not judged).",
+  V1M: "Corn V1 with MaSC's plants in place of the plants located on the green (the server tier, NOT shipped): same colours as V1.",
+};
+for (const m of MODES) writeFileSync(join(OUT, `${m}.md`), [`# Corn V1: ${LABEL[m]} (${NAME})`, "", `Run ${new Date().toISOString().slice(0, 16)}, code ${revision}. ${T("all", "images")} photos from ${IMAGES.replace(/\\/g, "/")}.${MASC ? ` MaSC boxes ${MASC.replace(/\\/g, "/")}.` : ""} Crop entered: ${CROP}.`, "", legendOf[m], "", ...md, ""].join("\n"));
 writeFileSync(join(OUT, "results.json"), JSON.stringify({ revision, name: NAME, modes: MODES, totals: Object.fromEntries(tot), per }, null, 1));
 console.log(md.join("\n"));

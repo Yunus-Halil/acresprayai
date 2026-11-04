@@ -43,6 +43,13 @@ describe("Corn V1 fusion", () => {
     expect(v.weedVerdicts.map(w => w.verdict)).toEqual(["weed candidate", "crop on a row"]);
   });
 
+  it("green where the planting's next row runs, on a row neither read held, is unknown vegetation, not a weed", () => {
+    // Rows 0-2 read; row 3 (x = 1000 + 3 pitches) not read by either; green on its line and green between rows 1 and 2.
+    const ad = greenRead([0, 1, 2].map(k => ({ k })), [{ x: 1000 + 3 * PITCH + 5, y: 2000 }, { x: 1000 + 1.5 * PITCH, y: 2000 }]);
+    const v = fuseCornV1(ad, plants([0, 1, 2]), P, { enteredCrop: "corn" });
+    expect(v.weedVerdicts.map(w => w.verdict)).toEqual(["unknown vegetation", "weed candidate"]);
+  });
+
   it("drops green rows drawn on the soil between the plant rows; the plants' rows stand and the crop on them is not a weed", () => {
     // The green read's rows half a row off the plants (other people's frames, measured 2026-11-04).
     const ad = greenRead([0.5, 1.5, 2.5].map(k => ({ k, gaps: [{ y1: 1500, y2: 1800 }] })), [{ x: 1000 + 1 * PITCH, y: 2200 }]);
@@ -106,6 +113,18 @@ describe("Corn V1 fusion", () => {
     // A weakly held band row is not.
     const weak = fuseCornV1(greenRead([0, 1, 2].map(k => ({ k, support: 0.5 }))), [], P, { enteredCrop: "corn" });
     expect(weak.summary.cornRows).toBe(0);
+  });
+
+  it("does not trust a short green piece, nor one across the rows the plants line up in (French plots)", () => {
+    const short = fuseCornV1(greenRead([0, 1, 2].map(k => ({ k, support: 0.9, y0: 1000, y1: 1400 })), [], { stage: "establishment" }), [], P, { enteredCrop: "corn" });
+    expect(short.summary.cornRows).toBe(0);
+    // Plant rows run vertically on the left; a diagonal green piece on the right is contradicted.
+    const ad = greenRead([{ k: 0 }, { k: 1 }, { k: 2 }], [], { stage: "establishment" });
+    (ad.rows as { points: [number, number][] }[]).push({ ...ad.rows[0], plan: 0, points: [[3000, 1000], [3800, 2400]] } as never);
+    const v = fuseCornV1(ad, plants([0, 1, 2]), P, { enteredCrop: "corn" });
+    const diag = v.rows.find(r => r.evidence === "green read only")!;
+    expect(diag.identity).toBe("probable crop");
+    expect(diag.why).toContain("across the rows");
   });
 
   it("does not trust a late read beside located seedlings", () => {

@@ -36,6 +36,9 @@ BENCH_SET = {**STAGE_SET, "corn2": "2024corn2/emergence"}  # a bench's set name 
 # Plain-language notes for runs whose folder name only meant something during the work:
 # (pattern on the run's relative path, reader override or None, note). First match wins.
 NOTES = [
+    (r"^benchmark-cornv1/.*/A$", None, "before Corn V1: the adaptive reader as the app drew it (white boxes = labelled plants where the set has them)"),
+    (r"^benchmark-cornv1/.*/V1$", None, "Corn V1 as the app runs it: cyan = corn row, amber dashes = planted row, crop not confirmed; red weeds only beside corn rows; orange gaps only where both reads see nothing; grey = withheld"),
+    (r"^benchmark-cornv1/.*/V1M$", None, "Corn V1 with MaSC's plants (server tier, not shipped): same colours"),
     (r"^benchmark-plantrows-v1/evidence$", "sheets", "plant-row eye checks: MSDD dark seedlings, reader (left) vs detector-led (right); sugar beet rows drawn as corn rows; emergence candidates D takes off the weed list, cut from the originals"),
     (r"^benchmark-plantrows-v1/.*/geometry$", None, "A, geometry only: the adaptive reader as it is (white boxes = labelled plants where the set has them)"),
     (r"^benchmark-plantrows-v1/.*/detector$", None, "B, rows from MaSC's plants alone: lime = row, grey = a plant line rejected (no neighbouring row)"),
@@ -77,7 +80,7 @@ NOTES = [
     (r"^validation-2026-11-02-after/", "sheets", "validation after the fixes: a fresh sample, judged by eye"),
     (r"^validation-2026-11-02/", "sheets", "first validation: a sample judged by eye"),
 ]
-READER_NAME = {"plantRows": "Plant rows (MaSC-assisted geometry)", "masc": "MaSC corn detector (Missouri model)", "cornCheck": "Corn check (trained model)", "auto": "Adaptive reader (auto)", "emergence": "Emergence reader", "establishment": "Establishment reader",
+READER_NAME = {"cornV1": "Corn V1 (production)", "plantRows": "Plant rows (MaSC-assisted geometry)", "masc": "MaSC corn detector (Missouri model)", "cornCheck": "Corn check (trained model)", "auto": "Adaptive reader (auto)", "emergence": "Emergence reader", "establishment": "Establishment reader",
                "mid": "Mid reader", "late": "Late reader", "assess": "Field assessment", "model": "Model trial",
                "probe": "Probe", "sheets": "Sample sheets"}
 
@@ -123,6 +126,8 @@ def meta_for(root, rel, sets):
             reader = "masc"
         elif first.startswith("# Plant rows"):
             reader = "plantRows"
+        elif first.startswith("# Corn V1"):
+            reader = "cornV1"
         elif first.startswith("# Field assessment"):
             reader = "assess"
         elif first.startswith("# Continuous-row reader"):
@@ -134,7 +139,7 @@ def meta_for(root, rel, sets):
         m2 = re.search(r"datasets/rowref/([\w-]+)/images", text)
         if not setdir and m2:
             setdir = ROWREF_SETS.get(m2.group(1), m2.group(1))
-        elif not setdir and "usu-corn-weeddb" in text and first.startswith("# Plant rows"):
+        elif not setdir and "usu-corn-weeddb" in text and (first.startswith("# Plant rows") or first.startswith("# Corn V1")):
             setdir = "USU fields (Utah, weed boxes)"
         if not setdir and "datasets/msdd" in text:
             setdir = "MSDD 2022 test (Missouri)"
