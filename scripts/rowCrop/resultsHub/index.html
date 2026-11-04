@@ -76,9 +76,9 @@ const store = { get(k, d) { try { const v = localStorage.getItem("hub:" + k); re
                 set(k, v) { try { localStorage.setItem("hub:" + k, JSON.stringify(v)); } catch {} } };
 if (!H) { page.innerHTML = `<h1>Corn results hub</h1><p class="sub">data.js is missing. Build it from the repository root with <code>npm run hub:results</code>.</p>`; throw new Error("no data"); }
 
-const COL = { auto: "#00e6ff", emergence: "#3c8cff", establishment: "#00e678", mid: "#e6c800", late: "#ff7800", assess: "#c864c8",
+const COL = { cornCheck: "#ff8c00", auto: "#00e6ff", emergence: "#3c8cff", establishment: "#00e678", mid: "#e6c800", late: "#ff7800", assess: "#c864c8",
               model: "#ff6fae", probe: "#8a8a8a", sheets: "#8a8a8a", original: "#d0d0d0" };
-const READERS = [["auto", "Adaptive (auto)"], ["emergence", "Emergence"], ["establishment", "Establishment"], ["mid", "Mid"], ["late", "Late"],
+const READERS = [["cornCheck", "Corn check (model)"], ["auto", "Adaptive (auto)"], ["emergence", "Emergence"], ["establishment", "Establishment"], ["mid", "Mid"], ["late", "Late"],
                  ["assess", "Field assessment"], ["model", "Model trials"], ["probe", "Probes"], ["sheets", "Sample sheets"]];
 const setId = k => k.replace(/\//g, "__");
 const RUNS = H.runs, BY = {};
@@ -158,6 +158,7 @@ const LEG = {
   rows: [["#00e6ff", "Row line (the crop)"], ["#3cff5a", "Plant counted on a row (dots)"], ["#ff2828", "Weed candidate (red outline)"], ["#ffa000", "Gap along a row"], ["#a0a0a0", "Left out: verge, lawn, later planting (grey outline)"], ["#ffffff", "Where the field ends (white line)"], ["#ff00c8", "Escape: weed 15 cm or more across (magenta)"]],
   emergence: [["#ffbe00", "Seedling point", "ring"], ["#3c8cff", "Possible seedling (weak evidence on the row)", "ring"], ["#ff9600", "Missing plant the photo supports", "ring"], ["#aaaaaa", "Uncertain position", "ring"], ["#afafaf", "Small green off the rows, counted apart, not a weed (thin grey outline)"]],
   auto: [["#3c8cff", "Outline of the part read by the emergence reader", "box"], ["#00e678", "… by the establishment reader", "box"], ["#e6c800", "… by the mid reader", "box"], ["#ff7800", "… by the late reader", "box"], ["#9a9a9a", "Hatched grey: no readable rows, nothing judged", "box"], ["#ffbe00", "Corn on a row the reader did not hold (amber outline), never a weed"], ["#ffbe00", "That row's line (amber dashes)", "dash"], ["#c8c8c8", "Green on uncertain ground (light grey outline), not a weed"]],
+  cornCheck: [["#00ffff", "Weed candidate the corn model clears as corn leaf (thick cyan outline)"], ["#ff8c00", "Weed the corn model adds: a patch it calls weed that no candidate covered, often inside the row (orange box)", "box"]],
   assess: [["#3c8cff", "Seedlings", "box"], ["#00e678", "Rows on soil", "box"], ["#e6c800", "Canopy nearly meeting", "box"], ["#ff7800", "Closed canopy", "box"], ["#c83cc8", "Cover (lawn, verge, weeds)", "box"], ["#5a4632", "Bare", "box"], ["#a0a0a0", "Unknown", "box"], ["#ffffff", "Cell's row direction agrees with the field (white tick)"], ["#ff3c3c", "… disagrees (red tick)"]],
 };
 function legendFor(r) {
@@ -165,8 +166,9 @@ function legendFor(r) {
   if (r.reader === "assess") return { head: "Field assessment: each cell tinted by its state.", rows: LEG.assess };
   if (["model", "probe", "sheets"].includes(r.reader)) return { head: "Drawn by this trial's own script; the shared legend does not apply.", rows: [] };
   const rows = [...LEG.rows];
-  if (r.reader === "emergence" || r.reader === "auto") rows.push(...LEG.emergence);
+  if (r.reader === "emergence" || r.reader === "auto" || r.reader === "cornCheck") rows.push(...LEG.emergence);
   if (r.reader === "auto") rows.push(...LEG.auto);
+  if (r.reader === "cornCheck") rows.unshift(...LEG.cornCheck);
   return { head: `${r.readerName}${r.note ? ": " + r.note : ""}`, rows };
 }
 let V = null, s = 1, tx = 0, ty = 0, nat = { w: 1, h: 1 }, backTo = "#/";

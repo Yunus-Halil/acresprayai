@@ -25,6 +25,9 @@ const MIN_TILES = Number(arg("min-tiles", "20"));
 const CORN_PROB = arg("corn-prob"), CORN_T = Number(arg("corn-threshold", "0.5"));
 /** Model weeds smaller than this equivalent diameter are not added (cm). */
 const MIN_WEED_CM = Number(arg("min-weed-cm", "3"));
+/** Extra add settings scored in the same pass, "prob:cm,prob:cm". */
+const ADD_GRID = (arg("add-grid", "") ?? "").split(",").filter(Boolean).map(g => { const [pr, cm] = g.split(":").map(Number); return { pr, cm }; });
+const gridTot = new Map<string, { added: number; onWeed: number; found: number }>();
 /** Only the sources seg_prepare.py held out of training (number ending in 0 or 5): required when the corn check was
  * trained on USU tiles. */
 const HELDOUT = argv.includes("--heldout-only");
@@ -60,6 +63,12 @@ for (const f of files) {
   const added = prob ? modelWeeds(prob, minAreaPx).filter(m => !coveredBy(m, kept.map(w => w.hull))) : [];
   const addedOnWeed = added.filter(m => meta.boxes.some(b => inBox(b, m.x, m.y))).length;
   const foundWithAdded = meta.boxes.filter(b => kept.some(w => hits(w, b)) || added.some(m => inBox(b, m.x, m.y))).length;
+  if (prob) for (const { pr, cm } of ADD_GRID) {
+    const a = modelWeeds(prob, Math.PI * (cm / 200 / (meta.gsdCm / 100)) ** 2, pr).filter(m => !coveredBy(m, kept.map(w => w.hull)));
+    const t = gridTot.get(`${pr}:${cm}`) ?? { added: 0, onWeed: 0, found: 0 };
+    t.added += a.length; t.onWeed += a.filter(m => meta.boxes.some(b => inBox(b, m.x, m.y))).length; t.found += meta.boxes.filter(b => kept.some(w => hits(w, b)) || a.some(m => inBox(b, m.x, m.y))).length;
+    gridTot.set(`${pr}:${cm}`, t);
+  }
   const found = meta.boxes.filter(b => cand.some(w => hits(w, b))).length, foundAfter = meta.boxes.filter(b => kept.some(w => hits(w, b))).length;
   const onWeed = cand.filter(w => meta.boxes.some(b => inBox(b, w.x, w.y))).length;
   const clearedOnWeed = [...clearedSet].filter(w => meta.boxes.some(b => inBox(b, w.x, w.y))).length;
@@ -83,6 +92,7 @@ if (CORN_PROB) md.push(
   `| weed patches the model adds (>= ${MIN_WEED_CM} cm, not under a kept candidate) | ${T.added} |`,
   `| ... of them on a labelled weed | ${T.addedOnWeed} (${pct(T.addedOnWeed, T.added)}) |`,
   `| labelled weeds found with the kept candidates and the model's additions | ${T.foundWithAdded} (${pct(T.foundWithAdded, T.boxes)}) |`);
+for (const { pr, cm } of ADD_GRID) { const t = gridTot.get(`${pr}:${cm}`) ?? { added: 0, onWeed: 0, found: 0 }; md.push(`| added at weed p >= ${pr}, >= ${cm} cm: patches / on a weed / weeds found | ${t.added} / ${t.onWeed} (${pct(t.onWeed, t.added)}) / ${t.found} (${pct(t.found, T.boxes)}) |`); }
 writeFileSync(join(OUT, "summary.md"), md.join("\n") + "\n");
 writeFileSync(join(OUT, "per-source.json"), JSON.stringify(per, null, 1));
 console.log(md.join("\n"));

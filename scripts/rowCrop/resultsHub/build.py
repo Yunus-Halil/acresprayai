@@ -65,7 +65,7 @@ NOTES = [
     (r"^validation-2026-11-02-after/", "sheets", "validation after the fixes: a fresh sample, judged by eye"),
     (r"^validation-2026-11-02/", "sheets", "first validation: a sample judged by eye"),
 ]
-READER_NAME = {"auto": "Adaptive reader (auto)", "emergence": "Emergence reader", "establishment": "Establishment reader",
+READER_NAME = {"cornCheck": "Corn check (trained model)", "auto": "Adaptive reader (auto)", "emergence": "Emergence reader", "establishment": "Establishment reader",
                "mid": "Mid reader", "late": "Late reader", "assess": "Field assessment", "model": "Model trial",
                "probe": "Probe", "sheets": "Sample sheets"}
 
@@ -105,6 +105,8 @@ def meta_for(root, rel, sets):
             reader = m.group(1)
         elif first.startswith("# Adaptive"):
             reader = "auto"
+        elif first.startswith("# Corn check"):
+            reader = "cornCheck"
         elif first.startswith("# Field assessment"):
             reader = "assess"
         elif first.startswith("# Continuous-row reader"):
@@ -113,6 +115,10 @@ def meta_for(root, rel, sets):
         code = m and m.group(1)
         m = re.search(r"photos from directtestimagery/(\S+?)\.(\s|$)", text)
         setdir = m and m.group(1)
+        if not setdir and "datasets/msdd" in text:
+            setdir = "MSDD 2022 test (Missouri)"
+        elif not setdir and "usu-corn-weeddb" in text:
+            setdir = "USU held-out fields (Utah)"
     elif parts[0].startswith("benchmark-") and (root / parts[0] / "summary.md").is_file():
         md = root / parts[0] / "summary.md"
         s = read(md)

@@ -33,6 +33,9 @@ const DRAW = argv.includes("--draw");
 const CORN_PROB = arg("corn-prob"), CORN_T = Number(arg("corn-threshold", "0.5"));
 /** Model weeds smaller than this equivalent diameter (at the read's own scale) are not added (cm). */
 const MIN_WEED_CM = Number(arg("min-weed-cm", "3"));
+/** Extra add settings scored in the same pass, "prob:cm,prob:cm" (e.g. 0.7:3,0.85:5): the model weed probability and size an added patch needs. */
+const ADD_GRID = (arg("add-grid", "") ?? "").split(",").filter(Boolean).map(g => { const [pr, cm] = g.split(":").map(Number); return { pr, cm }; });
+const gridTot = new Map<string, { added: number; onCorn: number }>();
 const profile = cropProfileFor("corn")!;
 
 /** Paper Table III: video id -> stage group, null for oblique video. */
@@ -128,6 +131,10 @@ async function main() {
           const gsd = Number.isFinite(ad.gsdM ?? NaN) && ad.gsdM ? ad.gsdM : 0.004;
           const add = modelWeeds(pm, Math.PI * (MIN_WEED_CM / 200 / gsd) ** 2).filter(m => !coveredBy(m, keptHulls));
           added = add.length; addedOnCorn = add.filter(m => bx.some(b => inBox(b, m.x, m.y, 0.1))).length;
+          for (const { pr, cm } of ADD_GRID) {
+            const a = modelWeeds(pm, Math.PI * (cm / 200 / gsd) ** 2, pr).filter(m => !coveredBy(m, keptHulls));
+            for (const key of [`${g} ${pr}:${cm}`, `all ${pr}:${cm}`]) { const t = gridTot.get(key) ?? { added: 0, onCorn: 0 }; t.added += a.length; t.onCorn += a.filter(m => bx.some(b => inBox(b, m.x, m.y, 0.1))).length; gridTot.set(key, t); }
+          }
         } else missingProb++;
       }
       Object.assign(row, { plans: ad.plans.filter(p => p.read).map(p => p.stage).join("+") || "none", rows: ad.rows.length, boxesOnRows: onRows, points: pts.length, pointsInBox: pIn, boxesWithPoint: bHas, weeds: cand.length, weedsOnCorn: wrong.size, boxesHitByWeed: hit, cleared, clearedOnCorn, added, addedOnCorn });
@@ -161,6 +168,7 @@ async function main() {
     rowOf(`weed patches the model adds (>= ${MIN_WEED_CM} cm)`, t => String(t.added));
     rowOf("... of them ON a corn plant (wrong)", t => `${t.addedOnCorn} (${pct(t.addedOnCorn, t.added)})`);
   }
+  for (const { pr, cm } of ADD_GRID) rowOf(`added at weed p >= ${pr}, >= ${cm} cm: patches / ON corn`, t => { const g = [...tot.entries()].find(([, v]) => v === t)![0]; const x = gridTot.get(`${g} ${pr}:${cm}`) ?? { added: 0, onCorn: 0 }; return `${x.added} / ${x.onCorn} (${pct(x.onCorn, x.added)})`; });
   rowOf("mean ms per tile", t => String(Math.round(t.ms / Math.max(1, t.tiles))));
   md.push("", "Pictures (with --draw): our read as in the bench pictures, MSDD's corn boxes in cyan, weed candidates on a corn box outlined thick magenta.");
   writeFileSync(join(OUT, "summary.md"), md.join("\n") + "\n");
