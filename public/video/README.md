@@ -8,8 +8,8 @@ dress up an old one.
 |---|---|---|
 | `cockpit-sim.mp4` / `.webm` | The flight planner running a mission simulation at 32× | Nothing, since 2026-10-08: the cockpit section was cut while the product is in closed testing. Kept for when it comes back. |
 | `cockpit-sim-poster.jpg` | Frame 11s in — tank dynamics, transport and full telemetry all visible | Poster for the above |
-| `hero.mp4` / `hero-1280.mp4` | The hero film: real flights, the field, the route and the map, with the Field Twin's largest-weed demo spliced in 1 s from the start at 1.2x; 23 s, muted (cut 2026-10-28) | The hero, behind the headline; the 1280 cut for screens under 900 px |
-| `hero-poster.jpg` | Frame 2.5 s in, the drone lifting off the rig over the beans | Poster for the above, and all that anyone on reduced motion or a slow connection sees |
+| `hero.mp4` / `hero-1280.mp4` | The hero film: the Field Twin's largest-weed demo first, at 1.5x (2.7 s), crossfading into the flight cut (real flights, the field, the route and the map); 22.3 s, muted (cut 2026-10-29) | The hero, behind the headline; the 1280 cut for screens under 900 px |
+| `hero-poster.jpg` | The demo's first frame, scaled and cropped as in the film, so the still and the film's first second agree | Poster for the above, and all that anyone on reduced motion or a slow connection sees |
 
 ## The hero film
 
@@ -19,29 +19,20 @@ Two masters, both gitignored for the same reason as the capture masters below:
 recording of the Field Twin's "Largest individual weeds" filter, 2026-10-28). WebM was tried and came
 out larger than the MP4 on this footage, so only MP4 is served.
 
-The served film is the flight cut with the demo spliced in 1 s from the start: the first second, a
-0.4 s crossfade, the demo at 1.2x (3.3 s, scaled to the full width and cropped top and bottom so it
-fills the 16:9 frame without bars), a 0.4 s crossfade, then the rest of the flight cut from its
-second 1. 23 s in all. The poster is still the master's frame at 2.5 s (the lift-off), which now
-plays about 5.8 s in.
+The served film (2026-10-29) opens on the demo at 1.5x (2.67 s, scaled to the full width and cropped top
+and bottom so it fills the 16:9 frame without bars), a 0.4 s crossfade, then the whole flight cut from
+its start. 22.3 s in all. The poster is the demo's first frame treated the same way. The earlier cut
+(2026-10-28) had the demo spliced in 1 s from the start at 1.2x.
 
 ```sh
 SRC="herovideo/Timeline 1.mov"; DEMO="additionalherosectionvideo/swarduslargestweeddemo.mp4"
-enc() { W=$1; H=$2; OUT=$3; ffmpeg -y -i "$SRC" -i "$DEMO" -filter_complex \
-  "[0:v]trim=0:1.4,setpts=PTS-STARTPTS,scale=$W:$H,fps=30,format=yuv420p[a];\
-   [1:v]setpts=PTS/1.2,fps=30,scale=$W:-2,crop=$W:$H,format=yuv420p[d];\
-   [0:v]trim=1:20.0333,setpts=PTS-STARTPTS,scale=$W:$H,fps=30,format=yuv420p[b];\
-   [a][d]xfade=transition=fade:duration=0.4:offset=1[ad];\
-   [ad][b]xfade=transition=fade:duration=0.4:offset=3.933[v]" \
-  -map "[v]" -an -c:v libx264 -profile:v high -crf 30 -preset slow -movflags +faststart -pix_fmt yuv420p "$OUT"; }
-enc 1920 1080 public/video/hero.mp4        # ~6.1 MB
-enc 1280 720 public/video/hero-1280.mp4    # ~3.1 MB
-ffmpeg -y -ss 2.5 -i "$SRC" -vframes 1 -vf "scale=1920:-2" -q:v 4 public/video/hero-poster.jpg
+enc() { W=$1; H=$2; OUT=$3; ffmpeg -y -i "$SRC" -i "$DEMO" -filter_complex   "[1:v]setpts=PTS/1.5,fps=30,scale=$W:-2,crop=$W:$H,format=yuv420p[d];   [0:v]trim=0:20.0333,setpts=PTS-STARTPTS,scale=$W:$H,fps=30,format=yuv420p[b];   [d][b]xfade=transition=fade:duration=0.4:offset=2.267[v]"   -map "[v]" -an -c:v libx264 -profile:v high -crf 30 -preset slow -movflags +faststart -pix_fmt yuv420p "$OUT"; }
+enc 1920 1080 public/video/hero.mp4        # ~5.8 MB
+enc 1280 720 public/video/hero-1280.mp4    # ~3.0 MB
+ffmpeg -y -i "$DEMO" -vf "scale=1920:-2,crop=1920:1080" -vframes 1 -q:v 4 public/video/hero-poster.jpg
 ```
 
-To move the demo, change the first trim's end (start + 0.4), the second trim's start, and both
-offsets (first = start; second = start + 0.4 + demo seconds − 0.8). To change its speed, change
-`PTS/1.2` and the second offset.
+To change the demo's speed, change `PTS/1.5` and the offset (demo seconds at that speed − 0.4).
 
 ## The master is not in git
 
