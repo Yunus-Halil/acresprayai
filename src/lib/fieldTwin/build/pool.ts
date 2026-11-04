@@ -8,6 +8,8 @@
 // (about a tenth to a quarter of the flight each), never the whole flight.
 import { type GeorefFrame, type GreenOptions, type GreyRaster, type Observation, type SoilTieOptions, type SoilTie, findSoilTies, windowCacheFor } from "../../directGeoref";
 import type { CrownRef } from "./weeds";
+import { cornPhotoRead } from "./corn";
+import type { CornPhotoRead } from "../cornField";
 
 export type PoolTask =
   /** Keep a photograph's grey raster for later tie tasks. */
@@ -17,13 +19,16 @@ export type PoolTask =
   /** The colour weed pass on one photograph: green patches at a decode, as observations. */
   | { kind: "colour"; name: string; file: Blob; frame: GeorefFrame; down: number; minM2: number; crowns: CrownRef[]; green: Partial<GreenOptions> }
   /** Crops of one photograph for the atlases. */
-  | { kind: "crops"; name: string; file: Blob; reqs: { x0: number; y0: number; size: number; out: number }[] };
+  | { kind: "crops"; name: string; file: Blob; reqs: { x0: number; y0: number; size: number; out: number }[] }
+  /** Corn V1 on one photograph at its full size (`gsdM`: metres per original pixel at the frame's centre). */
+  | { kind: "corn"; name: string; file: Blob; gsdM: number | null };
 
 export type PoolResult =
   | { kind: "raster" }
   | { kind: "ties"; ties: SoilTie[]; rejected: Record<string, number>; pairsWithTies: number }
   | { kind: "colour"; name: string; observations: Observation[] }
-  | { kind: "crops"; name: string; cells: Uint8ClampedArray[] };
+  | { kind: "crops"; name: string; cells: Uint8ClampedArray[] }
+  | { kind: "corn"; name: string; read: CornPhotoRead; ms: number };
 
 export type Pool = {
   /** Helpers in the pool (1 for the inline pool). */
@@ -69,6 +74,11 @@ export async function handleTask(task: PoolTask, ctx: TaskContext): Promise<{ re
     case "colour": {
       const px = await ctx.photo(task.file, task.name).decode(task.down);
       return { result: { kind: "colour", name: task.name, observations: ctx.colour(task.name, task.frame, px, task.minM2, task.crowns, task.green) }, transfer: [] };
+    }
+    case "corn": {
+      const t = Date.now();
+      const px = await ctx.photo(task.file, task.name).decode(1);
+      return { result: { kind: "corn", name: task.name, read: cornPhotoRead(task.name, px, task.gsdM), ms: Date.now() - t }, transfer: [] };
     }
     case "crops": {
       const cells = await ctx.photo(task.file, task.name).crops(task.reqs);

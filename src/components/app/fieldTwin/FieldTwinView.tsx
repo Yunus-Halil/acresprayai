@@ -16,6 +16,7 @@ import type { LatLngPair, TwinBundle } from "@/lib/fieldTwin/types";
 import { FindingsControl, FindingsPanel } from "./FindingsPanel";
 import type { DrawStats, TwinPick } from "./TwinCanvasLayer";
 import TwinInspector from "./TwinInspector";
+import { CornFieldPanel, isLocalTwin } from "./CornPanels";
 import TwinMap, { type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
 
 export type ReferenceOption = { id: string; label: string; url: string; maxNativeZoom: number; note: string };
@@ -127,7 +128,10 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
 
   const refOption = referenceOptions.find(o => o.id === refId) ?? null;
   const reference = useMemo<ReferenceImagery | null>(() => (refOption ? { url: refOption.url, maxNativeZoom: refOption.maxNativeZoom, opacity: refOpacity, swipe: refSwipe } : null), [refOption, refOpacity, refSwipe]);
-  const effectiveLayers = useMemo<TwinLayers>(() => ({ ...layers, ground: !reference }), [layers, reference]);
+  const local = isLocalTwin(twin);
+  const corn = !!twin.corn;
+  // A corn twin has no orchard weed pass: no pressure heatmap or findings regions (they would read 0 % everywhere).
+  const effectiveLayers = useMemo<TwinLayers>(() => ({ ...layers, ground: !reference, surroundings: layers.surroundings && !local, ...(corn ? { pressure: false, zones: false, beyondBoundary: false } : {}) }), [layers, reference, local, corn]);
 
   const zoomTo = useCallback((lat: number, lng: number, metresAcross: number) => {
     const h = handle.current;
@@ -219,7 +223,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
           </div>
           <p className="mt-1 text-[10px] leading-snug text-neutral-500">{DETAIL_HINT[detailStop]}</p>
         </div>
-        <FindingsControl query={query} onChange={q => { setQuery(q); setSelection(null); }} result={result} open={findOpen} onToggle={() => setFindOpen(o => !o)} compact={simple} />
+        {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} onSelect={(p, lat, lng, across) => { setSelection(p); zoomTo(lat, lng, across); }} />}
+        {!twin.corn && <FindingsControl query={query} onChange={q => { setQuery(q); setSelection(null); }} result={result} open={findOpen} onToggle={() => setFindOpen(o => !o)} compact={simple} />}
         {/* The field boundary: inferred from the rows and the photographs, correctable, never an operational limit until accepted. */}
         <div className={`w-[272px] px-3 py-2 text-xs ${panel}`} role="group" aria-label="Field boundary">
           <div className="flex items-center justify-between">
@@ -256,12 +261,14 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
                 </button>
               )}
               {inferred && notesOpen && <ul className="mt-1 space-y-1 border-l border-[#2e322e] pl-2 text-[10px] leading-snug text-neutral-400">{inferred.failures.map(f => <li key={f}>{f}</li>)}</ul>}
-              {operationalRing ? (
+              {local ? (
+                <p className="mt-1 text-[10px] leading-snug text-amber-300/90">A locally aligned test flight: its boundary is in a made-up frame and cannot be accepted for operations.</p>
+              ) : operationalRing ? (
                 <p className="mt-1 text-[10px] leading-snug text-emerald-300/90">{boundary.operational.source === "corrected" ? "Corrected and accepted" : "Accepted"} by you{boundary.operational.at ? ` on ${new Date(boundary.operational.at).toLocaleDateString()}` : ""} as the operational boundary.</p>
               ) : (
                 <p className="mt-1 text-[10px] leading-snug text-neutral-500">Not an operational limit: an inferred boundary is never used to limit an operation until you accept it.</p>
               )}
-              {currentRing && (
+              {currentRing && !local && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={startEditing}>Adjust</button>
                   {operationalRing ? <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={withdrawBoundary}>Withdraw acceptance</button>
@@ -278,6 +285,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
           </button>
           {panelOpen && (
             <div className="border-t border-[#2e322e] px-3 py-2">
+              {!corn && <>
               {toggle("pressure", "Weed pressure", swatch(HEAT_STOPS[2].rgb, HEAT_STOPS[2].alpha), `verified cover, % of observable ground, per ${intel.grid.cellM} m`)}
               <label className="mb-1 block text-[11px] text-neutral-400">Pressure colours
                 <select value={layers.heatScale} onChange={e => setLayers(l => ({ ...l, heatScale: e.target.value as TwinLayers["heatScale"] }))} className="mt-0.5 w-full rounded-sm border border-[#3a3f3a] bg-[#111311] px-1.5 py-1 text-xs text-neutral-100" aria-label="Pressure colours">
@@ -299,19 +307,22 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
                   <option value="all">Every qualifying finding, counts everywhere</option>
                 </select>
               </label>
+              </>}
               {toggle("vegetation", "Other vegetation", TWIN_COLOURS.vegetation, `${twin.vegetation.length} patches, unclassed`)}
               {toggle("uncertainty", "Uncertainty", "#8c949f", `${s.cellsSingleCoverage} cells one photograph saw`)}
               {toggle("coverage", "Photo coverage", TWIN_COLOURS.imageryEdge, "the ground the photographs looked at")}
-              {toggle("surroundings", "Surroundings", "#4a4f4a", "roads and places, OpenStreetMap data")}
+              {!local && toggle("surroundings", "Surroundings", "#4a4f4a", "roads and places, OpenStreetMap data")}
               {full && <button type="button" className="mt-2 flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => setDiagOpen(o => !o)} aria-expanded={diagOpen}>
                 {diagOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}Diagnostics
               </button>}
               {full && diagOpen && (
                 <div className="mt-1 border-l border-[#2e322e] pl-2">
+                  {!corn && <>
                   {toggle("singleView", "Single-sighting candidates", TWIN_COLOURS.weedSingle, `${counts.single.toLocaleString()}, dashed`)}
                   {toggle("onTree", "Detections on tree crowns", TWIN_COLOURS.weedOnTree, `${counts.onTree.toLocaleString()}, kept apart from weeds`)}
                   {toggle("inferred", "Inferred tree positions", TWIN_COLOURS.tree, `${twin.inferredTrees.length}, dashed, from the planting pattern`)}
                   {toggle("droppedRows", "Row candidates not kept", TWIN_COLOURS.rowDropped, `${twin.rows.length - counts.rows}`)}
+                  </>}
                   {toggle("footprints", "Photo footprints", TWIN_COLOURS.footprint, `${twin.footprints.length}`)}
                   {scene.evidence && toggle("evidence", "Boundary evidence", TWIN_COLOURS.evidence.cover, `what the photographs showed per ${scene.evidence.cellM} m: soil brown, canopy green, cover yellow, road grey, trees off the rows purple`)}
                   {referenceOptions.length > 0 && (
@@ -351,10 +362,11 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
           <p className="text-xs"><span className="font-semibold text-neutral-100">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · {twin.name}</span></p>
           <button type="button" className="-mr-1 -mt-0.5 rounded-sm px-1 text-[13px] leading-none text-neutral-500 hover:bg-[#262a26] hover:text-neutral-200" onClick={() => setKeyOpen(false)} aria-label="Close the key" title="Close the key">×</button>
         </div>
-        <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>
+        <p className="mt-0.5 text-neutral-400">{twin.corn ? "Corn rows cyan, rows not confirmed amber dashes; weed candidates red, not confirmed grey, contested violet; stand gaps orange, withheld grey. Click one to inspect it." : detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>
+        {local && <p className="mt-0.5 text-amber-300/90">Locally aligned test flight: positions relative to each other, scale estimated from the corn rows. Not on the map.</p>}
         {twin.stats.weedTier === "colour" && <p className="mt-0.5 text-amber-300/90">Weeds by colour rules, not a model: green against the soil around it, crowns left out, strips split at their plants. Yellowing plants and plants under 4 cm are missed; a green shoot at a crown's edge can be counted.</p>}
-        {twin.stats.weedTier === "none" && <p className="mt-0.5 text-neutral-500">No weed pass ran on this twin.</p>}
-        {layers.pressure && (
+        {twin.stats.weedTier === "none" && !twin.corn && <p className="mt-0.5 text-neutral-500">No weed pass ran on this twin.</p>}
+        {layers.pressure && !corn && (
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-neutral-400" aria-label="Weed pressure legend">
             <span className="text-neutral-500">Cover of observable ground:</span>
             {HEAT_STOPS.map((st, i) => <span key={st.pct} className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: swatch(st.rgb, st.alpha) }} />{pctText(heatScale.stops[i])} %{i === HEAT_STOPS.length - 1 ? "+" : ""}</span>)}
@@ -363,8 +375,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
             <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />not observed</span>
           </div>
         )}
-        {detail?.level === "field" && !simple && <p className="mt-0.5 text-neutral-500">{s.blockHa != null ? `Cultivated block ${fmtArea(s.blockHa * 10_000, units).text} (${intel.blockSource === "corrected" ? "corrected by you" : intel.blockSource === "inferred" ? "inferred from the photographs" : "from the rows"}); ` : ""}{intel.zones.length} regions at 1.5 % cover or more, {result.query.mode === "overview" ? `${result.prominence.count} emphasised` : `${result.findings.length} findings listed`}.</p>}
-        {full && <p className="mt-0.5 text-neutral-500 tabular-nums">Centre {(centre ?? twin.origin).lat.toFixed(6)}, {(centre ?? twin.origin).lng.toFixed(6)} · north up</p>}
+        {detail?.level === "field" && !simple && !corn && <p className="mt-0.5 text-neutral-500">{s.blockHa != null ? `Cultivated block ${fmtArea(s.blockHa * 10_000, units).text} (${intel.blockSource === "corrected" ? "corrected by you" : intel.blockSource === "inferred" ? "inferred from the photographs" : "from the rows"}); ` : ""}{intel.zones.length} regions at 1.5 % cover or more, {result.query.mode === "overview" ? `${result.prominence.count} emphasised` : `${result.findings.length} findings listed`}.</p>}
+        {full && !local && <p className="mt-0.5 text-neutral-500 tabular-nums">Centre {(centre ?? twin.origin).lat.toFixed(6)}, {(centre ?? twin.origin).lng.toFixed(6)} · north up</p>}
         {reference && <p className="mt-0.5 text-amber-300/90">Reference imagery on (diagnostics): display only, it never moves the twin's objects.</p>}
       </div>}
 

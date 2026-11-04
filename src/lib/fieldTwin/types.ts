@@ -80,6 +80,73 @@ export type TwinWeed = {
   evidence: TwinEvidence[];
 };
 
+/**
+ * Corn intelligence over the whole field (Corn V1 on every photograph, combined by src/lib/fieldTwin/cornField.ts),
+ * written by a corn build. Review-only: rows, identities and candidate findings with the photographs behind each.
+ * Nothing in it is a treatment, a prescription or a grade. Every observation some photograph made is kept with its
+ * state; an unrepeated one is "unconfirmed", never dropped.
+ */
+export type TwinCornRowStatus = "corn" | "unconfirmed";
+export type TwinCornWeedStatus = "confirmed" | "unconfirmed" | "contested";
+export type TwinCornGapStatus = "confirmed" | "withheld";
+export type TwinCornRow = {
+  id: number;
+  /** corn: the photographs holding it mostly call it corn and at least half of those covering it hold it (the crop
+   * is the operator's entry); unconfirmed: a planted row the photographs do not confirm. */
+  status: TwinCornRowStatus;
+  line: LatLngPair[];
+  lengthM: number;
+  seenBy: number; cornBy: number; coveredBy: number;
+  why: string;
+};
+export type TwinCornWeed = {
+  id: number;
+  /** confirmed: a weed candidate in two or more photographs, the weed votes leading; unconfirmed: called a weed
+   * candidate by some photograph but not repeated by the others covering it; contested: a photograph places it on a
+   * planted row's line (the crop) at least as often as one calls it a weed. */
+  status: TwinCornWeedStatus;
+  lat: number; lng: number; areaM2: number;
+  votes: { weed: number; crop: number; unknown: number };
+  seenBy: number; coveredBy: number;
+  photos: string[];
+  why: string;
+  evidence: TwinEvidence[];
+};
+export type TwinCornGap = {
+  id: number;
+  /** confirmed: no photograph covering it located a plant inside, and at least half of those holding a corn row over
+   * it reported it; withheld: kept for review with the reason. */
+  status: TwinCornGapStatus;
+  rowId: number;
+  a: LatLngPair; b: LatLngPair;
+  lengthM: number;
+  reportedBy: string[]; notReportedBy: string[]; plantSeenBy: string[];
+  why: string;
+  evidence: TwinEvidence[];
+};
+export type TwinCorn = {
+  version: 1;
+  /** What made it, in words (the per-photograph engine and the combination). */
+  engine: string;
+  /** The crop the operator entered: the identity rests on it. */
+  enteredCrop: "corn";
+  rowSpacingM: number | null;
+  rowDirectionDeg: number | null;
+  /** Row pieces' across scatter about their field row (median), metres: how well the photographs agree. */
+  rowAgreementM: number | null;
+  photographs: { read: number; withRows: number; failed: { name: string; reason: string }[] };
+  rows: TwinCornRow[];
+  weeds: TwinCornWeed[];
+  gaps: TwinCornGap[];
+  summary: {
+    cornRows: number; unconfirmedRows: number; cornRowLengthM: number; offLatticeDropped: number;
+    weeds: { confirmed: number; unconfirmed: number; contested: number };
+    gaps: { confirmed: number; withheld: number; confirmedLengthM: number };
+    perPhoto: { weedCandidates: number; standGaps: number; rows: number };
+  };
+  notes: string[];
+};
+
 export type TwinVegetation = { id: number; lat: number; lng: number; areaM2: number; seenBy: number; ring: LatLngPair[] };
 
 export type TwinBundle = {
@@ -90,6 +157,10 @@ export type TwinBundle = {
   source: {
     photographs: number; camera: string; capturedAt: string | null; groundPixelCm: number;
     method: string; weedModel: string; treeModel: string;
+    /** Where the positions come from: the drone's own GPS headers (georeferenced: on the map), or a local alignment
+     * whose scale was estimated (a test flight: positions relative to each other, not a place on the map). Absent in
+     * older bundles, which are all georeferenced. */
+    placement?: { kind: "georeferenced" | "local"; note: string };
   };
   origin: { lat: number; lng: number };
   bounds: [LatLngPair, LatLngPair];
@@ -107,6 +178,8 @@ export type TwinBundle = {
    * Never an operational boundary: that is the operator's, kept by the app.
    */
   boundary?: TwinBoundary | null;
+  /** Corn intelligence (a corn build only); absent on orchard twins and in older bundles. */
+  corn?: TwinCorn | null;
 };
 
 export type ParseResult = { ok: true; twin: TwinBundle } | { ok: false; reason: string };
@@ -120,6 +193,32 @@ function checkEvidence(e: unknown, atlases: number): string | null {
   const x = e as Partial<TwinEvidence>;
   if (typeof x.photo !== "string" || !isNum(x.atlas) || !isNum(x.x) || !isNum(x.y) || !isNum(x.size) || !isArr(x.poly)) return "evidence entry is missing fields";
   if (x.atlas < 0 || x.atlas >= atlases) return `evidence points at atlas ${x.atlas}, the bundle has ${atlases}`;
+  return null;
+}
+
+function checkCorn(c: unknown, atlases: number): string | null {
+  if (!c || typeof c !== "object") return "not an object";
+  const k = c as Partial<TwinCorn>;
+  if (k.version !== 1) return `version ${JSON.stringify(k.version)}, expected 1`;
+  if (k.enteredCrop !== "corn") return "the entered crop is not corn";
+  if (!isArr(k.rows) || !isArr(k.weeds) || !isArr(k.gaps) || !isArr(k.notes) || !k.summary || !k.photographs) return "rows, weeds, gaps, notes, summary or photographs missing";
+  for (const r of k.rows) {
+    if (r.status !== "corn" && r.status !== "unconfirmed") return `row ${r.id} has an unknown status`;
+    if (!isArr(r.line) || r.line.length < 2 || !r.line.every(isLatLng)) return `row ${r.id} has no line`;
+    if (!isNum(r.lengthM) || !isNum(r.seenBy) || !isNum(r.cornBy) || !isNum(r.coveredBy) || typeof r.why !== "string") return `row ${r.id} has no length, coverage or reason`;
+  }
+  for (const w of k.weeds) {
+    if (!["confirmed", "unconfirmed", "contested"].includes(w.status as string)) return `weed ${w.id} has an unknown status`;
+    if (!isNum(w.lat) || !isNum(w.lng) || !isNum(w.areaM2) || !w.votes || !isArr(w.photos)) return `weed ${w.id} has no position, size, votes or photographs`;
+    if (!isNum(w.votes.weed) || !isNum(w.votes.crop) || !isNum(w.votes.unknown) || !isNum(w.seenBy) || !isNum(w.coveredBy) || typeof w.why !== "string" || !isArr(w.evidence)) return `weed ${w.id} has no votes, coverage, reason or evidence list`;
+    for (const e of w.evidence) { const why = checkEvidence(e, atlases); if (why) return `weed ${w.id}: ${why}`; }
+  }
+  for (const g of k.gaps) {
+    if (g.status !== "confirmed" && g.status !== "withheld") return `gap ${g.id} has an unknown status`;
+    if (!isLatLng(g.a) || !isLatLng(g.b) || !isNum(g.lengthM) || !isArr(g.reportedBy)) return `gap ${g.id} has no ends, length or reports`;
+    if (!isArr(g.notReportedBy) || !isArr(g.plantSeenBy) || typeof g.why !== "string" || !isArr(g.evidence) || !isNum(g.rowId)) return `gap ${g.id} has no row, reason, photograph lists or evidence list`;
+    for (const e of g.evidence) { const why = checkEvidence(e, atlases); if (why) return `gap ${g.id}: ${why}`; }
+  }
   return null;
 }
 
@@ -146,6 +245,7 @@ export function parseTwin(json: unknown): ParseResult {
     if (!isArr(w.ring) || !w.ring.every(isLatLng)) return { ok: false, reason: `weed ${w.id} has a broken outline` };
     for (const e of w.evidence ?? []) { const why = checkEvidence(e, nAtlas); if (why) return { ok: false, reason: `weed ${w.id}: ${why}` }; }
   }
+  if (t.corn != null) { const why = checkCorn(t.corn, nAtlas); if (why) return { ok: false, reason: `corn: ${why}` }; }
   if (t.boundary != null) {
     const b = t.boundary as Partial<TwinBoundary>;
     if (b.version !== 1 || !b.cultivated || !isArr(b.cultivated.ring) || b.cultivated.ring.length < 3 || !b.cultivated.ring.every(isLatLng)) return { ok: false, reason: "boundary is not a version 1 record with a ring of latitude/longitude pairs" };

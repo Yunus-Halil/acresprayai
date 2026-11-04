@@ -67,6 +67,9 @@ export type DjiPhotoMeta = {
   rtkStdLonM: number | null;
   rtkStdLatM: number | null;
   rtkStdHgtM: number | null;
+  /** A placement note Swardus writes into a test flight's headers (swardus:Placement): the positions are not the
+   * drone's own GPS (a reconstruction's poses, a scale estimated from the crop). Null on a drone's own file. */
+  placementNote?: string | null;
 };
 
 const xmpField = (xmp: string, name: string): string | null => {
@@ -134,5 +137,6 @@ export function parseDjiHeader(bytes: Uint8Array): DjiPhotoMeta {
     rtkStdLonM: xmpNumber(x, "RtkStdLon"),
     rtkStdLatM: xmpNumber(x, "RtkStdLat"),
     rtkStdHgtM: xmpNumber(x, "RtkStdHgt"),
+    placementNote: /swardus:Placement="([^"]*)"/.exec(x)?.[1] ?? null,
   };
 }

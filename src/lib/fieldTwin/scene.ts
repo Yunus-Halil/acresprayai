@@ -91,6 +91,13 @@ function pack(rings: LatLngPair[][]): PackedRings {
 }
 
 export const WEED_STATUS = { verified: 0, single: 1, onTree: 2 } as const;
+/** Corn twins: row 1 corn / 2 unconfirmed; weed 1 confirmed / 2 unconfirmed / 3 contested; gap 1 confirmed / 2 withheld. */
+export const CORN_STATUS = { row: { corn: 1, unconfirmed: 2 }, weed: { confirmed: 1, unconfirmed: 2, contested: 3 }, gap: { confirmed: 1, withheld: 2 } } as const;
+export type CornScene = {
+  rows: { n: number; lines: PackedRings; status: Uint8Array; id: Int32Array };
+  weeds: { n: number; x: Float64Array; y: Float64Array; rM: Float32Array; status: Uint8Array; id: Int32Array; index: GridIndex; maxRM: number };
+  gaps: { n: number; x1: Float64Array; y1: Float64Array; x2: Float64Array; y2: Float64Array; status: Uint8Array; id: Int32Array };
+};
 export const ROW_STATUS = { between: 0, onRow: 1, none: 2 } as const;
 export const PRESSURE_INDEX: Record<PressureClass, number> = { none: 0, trace: 1, low: 2, moderate: 3, high: 4 };
 
@@ -115,6 +122,8 @@ export type Scene = {
   evidence: EvidenceRaster | null;
   imagery: Float64Array;
   footprints: PackedRings;
+  /** Corn twins only: the field's corn rows, weed candidates and stand gaps. */
+  corn: CornScene | null;
   /** Bounding box of everything, zoom-0 units. */
   bbox: [number, number, number, number];
 };
@@ -151,7 +160,8 @@ export function buildScene(twin: TwinBundle, intel: FieldIntelligence = fieldInt
   V.forEach((v, i) => { const [x, y] = ll(v.lat, v.lng); vegetation.x[i] = x; vegetation.y[i] = y; const r = Math.sqrt(v.areaM2 / Math.PI) * 1.5; vegetation.rM[i] = r; vegetation.id[i] = v.id; vegetation.maxRM = Math.max(vegetation.maxRM, r); });
   vegetation.index = new GridIndex(vegetation.x, vegetation.y, cell);
 
-  const R = twin.rows, nr = R.length;
+  // A corn twin's rows are drawn by the corn layer (its own lines and states), not as orchard rows.
+  const R = twin.corn ? [] : twin.rows, nr = R.length;
   const rows = { n: nr, x1: new Float64Array(nr), y1: new Float64Array(nr), x2: new Float64Array(nr), y2: new Float64Array(nr), kept: new Uint8Array(nr), id: new Int32Array(nr) };
   // A row is drawn from its first observed tree to its last: the bundle's line reaches half a plant spacing beyond
   // them (that margin belongs to the block), and a line running past the trees read as a row leaving the field.
@@ -193,7 +203,18 @@ export function buildScene(twin: TwinBundle, intel: FieldIntelligence = fieldInt
   const footprints = pack(twin.footprints.map(f => f.ring));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (let i = 0; i < imagery.length; i += 2) { x0 = Math.min(x0, imagery[i]); x1 = Math.max(x1, imagery[i]); y0 = Math.min(y0, imagery[i + 1]); y1 = Math.max(y1, imagery[i + 1]); }
-  return { twin, intel, mpu, weeds, trees, inferred, vegetation, rows, cells, zones, clusters, block, boundary, evidence, imagery, footprints, bbox: [x0, y0, x1, y1] };
+  let corn: CornScene | null = null;
+  if (twin.corn) {
+    const K = twin.corn, S = CORN_STATUS;
+    const cw = K.weeds, cg = K.gaps, nw2 = cw.length, ng = cg.length;
+    const weeds2 = { n: nw2, x: new Float64Array(nw2), y: new Float64Array(nw2), rM: new Float32Array(nw2), status: new Uint8Array(nw2), id: new Int32Array(nw2), index: null as unknown as GridIndex, maxRM: 0 };
+    cw.forEach((w, i) => { const [x, y] = ll(w.lat, w.lng); weeds2.x[i] = x; weeds2.y[i] = y; const r = Math.sqrt(Math.max(w.areaM2, 1e-6) / Math.PI); weeds2.rM[i] = r; weeds2.maxRM = Math.max(weeds2.maxRM, r); weeds2.id[i] = w.id; weeds2.status[i] = S.weed[w.status]; });
+    weeds2.index = new GridIndex(weeds2.x, weeds2.y, cell);
+    const gaps2 = { n: ng, x1: new Float64Array(ng), y1: new Float64Array(ng), x2: new Float64Array(ng), y2: new Float64Array(ng), status: new Uint8Array(ng), id: new Int32Array(ng) };
+    cg.forEach((g, i) => { const a = ll(...g.a), b = ll(...g.b); gaps2.x1[i] = a[0]; gaps2.y1[i] = a[1]; gaps2.x2[i] = b[0]; gaps2.y2[i] = b[1]; gaps2.status[i] = S.gap[g.status]; gaps2.id[i] = g.id; });
+    corn = { rows: { n: K.rows.length, lines: pack(K.rows.map(r => r.line)), status: Uint8Array.from(K.rows.map(r => S.row[r.status])), id: Int32Array.from(K.rows.map(r => r.id)) }, weeds: weeds2, gaps: gaps2 };
+  }
+  return { twin, intel, mpu, weeds, trees, inferred, vegetation, rows, cells, zones, clusters, block, boundary, evidence, imagery, footprints, corn, bbox: [x0, y0, x1, y1] };
 }
 
 // ------------------------------------------------------------------------------------------------------------------

@@ -8,7 +8,8 @@ import { COVER_EXGR } from "../../weedVision/fieldRows";
 import { type BoundaryResult, inferBoundaryFromMeasures, toTwinBoundary } from "../boundary";
 import { type EvidenceMeasures, downsampleEvidence, encodeEvidence } from "../boundaryEvidence";
 import { localFrame, pointInRing } from "../intelligence";
-import { FIELD_TWIN_FORMAT, type TwinBundle, type TwinEvidence } from "../types";
+import { FIELD_TWIN_FORMAT, type TwinBundle, type TwinCorn, type TwinCornGap, type TwinCornWeed, type TwinEvidence, type TwinRow } from "../types";
+import type { CornStageResult } from "./corn";
 import { yieldToEvents } from "./cameras";
 import type { PhotoRead } from "./photos";
 import type { RowsResult } from "./rows";
@@ -31,6 +32,8 @@ export type BundleInputs = {
   model: AdjustModel;
   rows: RowsResult | null;
   weeds: WeedsResult;
+  /** A corn build's corn stage (null otherwise). */
+  corn?: CornStageResult | null;
   detector: WeedDetector;
   cameraReport: Record<string, unknown>;
   codec: Codec;
@@ -136,6 +139,54 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
     return { id: v.id, lat: +v.lat.toFixed(8), lng: +v.lng.toFixed(8), areaM2: fix(v.areaM2, 3)!, seenBy: v.seenBy, ring };
   });
 
+  // Corn: the field's rows, weed observations and gaps, each finding with crops from the photographs behind it.
+  // Every patch some photograph called a weed candidate is kept with its state (unrepeated ones "unconfirmed", never
+  // dropped); a confirmed one gets two crops, the others one; every gap one crop from a photograph that reported it.
+  const cornRes = inp.corn ?? null;
+  let twinCorn: TwinCorn | null = null, cornRows: TwinRow[] = [];
+  if (cornRes) {
+    const F = cornRes.field;
+    const llOf = (lat: number, lng: number): [number, number] => [+lat.toFixed(8), +lng.toFixed(8)];
+    cornRows = F.rows.map(r => ({ id: r.id, kept: r.identity === "corn", reason: r.identity === "corn" ? null : r.why, line: r.line.map(([a, b]) => llOf(a, b)), trees: 0, inferred: 0, photos: r.seenBy, lengthM: r.lengthM, straightnessSdM: 0 }));
+    const weeds: TwinCornWeed[] = F.weeds.filter(w => w.votes["weed candidate"] > 0).map((w, i) => {
+      const status: TwinCornWeed["status"] = w.verdict === "weed candidate" ? "confirmed" : w.verdict === "crop on a row" ? "contested" : "unconfirmed";
+      const evidence: TwinEvidence[] = [];
+      const diameter = 2 * Math.sqrt(Math.max(w.areaM2, 1e-6) / Math.PI);
+      const best = [...w.sightings].filter(m => frames.has(m.photo)).sort((a, b) => (a.verdict === "weed candidate" ? 0 : 1) - (b.verdict === "weed candidate" ? 0 : 1) || centreDist(a.photo, a.u, a.v) - centreDist(b.photo, b.u, b.v));
+      for (const m of best.slice(0, status === "confirmed" ? 2 : 1)) request(m.photo, m.u, m.v, Math.max(0.6, 2.4 * diameter), m.poly, evidence);
+      const [lat, lng] = llOf(w.lat, w.lng);
+      return { id: i + 1, status, lat, lng, areaM2: fix(w.areaM2, 4)!, votes: { weed: w.votes["weed candidate"], crop: w.votes["crop on a row"], unknown: w.votes["unknown vegetation"] }, seenBy: w.seenBy, coveredBy: w.coveredBy, photos: w.photos, why: w.why, evidence };
+    });
+    const gaps: TwinCornGap[] = F.gaps.map(g => {
+      const evidence: TwinEvidence[] = [];
+      const best = [...g.sightings].filter(m => frames.has(m.photo)).sort((a, b) => centreDist(a.photo, (a.u1 + a.u2) / 2, (a.v1 + a.v2) / 2) - centreDist(b.photo, (b.u1 + b.u2) / 2, (b.v1 + b.v2) / 2))[0];
+      if (best) {
+        const u = (best.u1 + best.u2) / 2, v = (best.v1 + best.v2) / 2, L = Math.hypot(best.u2 - best.u1, best.v2 - best.v1) || 1;
+        const nx = (-(best.v2 - best.v1) / L) * 6, ny = ((best.u2 - best.u1) / L) * 6;
+        request(best.photo, u, v, g.lengthM + 0.8, [[best.u1 + nx, best.v1 + ny], [best.u2 + nx, best.v2 + ny], [best.u2 - nx, best.v2 - ny], [best.u1 - nx, best.v1 - ny]], evidence);
+      }
+      const status: TwinCornGap["status"] = g.verdict === "stand gap" ? "confirmed" : "withheld";
+      return { id: g.id, status, rowId: g.row, a: llOf(g.a[0], g.a[1]), b: llOf(g.b[0], g.b[1]), lengthM: g.lengthM, reportedBy: g.reportedBy, notReportedBy: g.notReportedBy, plantSeenBy: g.plantSeenBy, why: g.why, evidence };
+    });
+    const conf = weeds.filter(w => w.status === "confirmed").length, cont = weeds.filter(w => w.status === "contested").length, keptGaps = gaps.filter(g => g.status === "confirmed");
+    twinCorn = {
+      version: 1,
+      engine: "Corn V1 (tag corn-v1.0) on every photograph at its full size, with the aligned camera's pixel size; combined over the field by cornField v1 (rows on the field's lattice, weed sightings reconciled across photographs, gaps checked in every photograph covering them)",
+      enteredCrop: "corn",
+      rowSpacingM: F.pitchM, rowDirectionDeg: F.directionDeg != null ? r2(F.directionDeg) : null, rowAgreementM: F.rowAgreementM,
+      photographs: { read: cornRes.reads.length, withRows: cornRes.withRows, failed: cornRes.failed },
+      rows: F.rows.map(r => ({ id: r.id, status: r.identity === "corn" ? ("corn" as const) : ("unconfirmed" as const), line: r.line.map(([a, b]) => llOf(a, b)), lengthM: r.lengthM, seenBy: r.seenBy, cornBy: r.cornBy, coveredBy: r.coveredBy, why: r.why })),
+      weeds, gaps,
+      summary: {
+        cornRows: F.summary.cornRows, unconfirmedRows: F.summary.probableRows, cornRowLengthM: F.summary.cornRowLengthM, offLatticeDropped: F.summary.offLatticeDropped,
+        weeds: { confirmed: conf, unconfirmed: weeds.length - conf - cont, contested: cont },
+        gaps: { confirmed: keptGaps.length, withheld: gaps.length - keptGaps.length, confirmedLengthM: r2(keptGaps.reduce((t, g) => t + g.lengthM, 0)) },
+        perPhoto: F.summary.perPhoto,
+      },
+      notes: [...F.notes],
+    };
+  }
+
   // Stage 8, the plan: photographs in order, atlases filled in order, every crop's cell decided now.
   reqs.sort((a, b) => (a.photo < b.photo ? -1 : a.photo > b.photo ? 1 : 0));
   const nAtlas = Math.ceil(reqs.length / PER_ATLAS);
@@ -208,14 +259,21 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
     source: {
       photographs: frames.size, camera: `${first?.make ?? ""} ${first?.model ?? ""}`.trim(), capturedAt, groundPixelCm: r2(100 * quant([...frames.values()].map(f => groundSampleAt(f, f.intrinsics.cx, f.intrinsics.cy) ?? NaN), 0.5)),
       method: "direct georeferencing from each photograph's header, cameras adjusted to soil-texture ties between overlapping photographs (no orthomosaic); objects reconciled across photographs; built in the app",
-      weedModel: weedsRes.describe,
-      treeModel: "planting layout (rows read per photograph, fitted, reconciled)",
+      placement: (() => {
+        const local = reads.find(r => r.meta.placementNote);
+        if (local) return { kind: "local" as const, note: local.meta.placementNote! };
+        const rtk = reads.filter(r => r.meta.rtkFlag === 50).length;
+        return { kind: "georeferenced" as const, note: `camera positions from the drone's own headers${rtk ? ` (${rtk} of ${reads.length} with an RTK fixed solution)` : " (GNSS without RTK: metre-level on the map, centimetres between the photographs after the soil ties)"}` };
+      })(),
+      weedModel: twinCorn ? "Corn V1 weed candidates (beside confirmed corn rows, per photograph), reconciled across the photographs: review-only" : weedsRes.describe,
+      treeModel: twinCorn ? "Corn V1 rows per photograph, combined on the field's lattice (crop entered: corn)" : "planting layout (rows read per photograph, fitted, reconciled)",
     },
     origin: { lat: +origin.lat.toFixed(8), lng: +origin.lng.toFixed(8) },
     bounds: allPts.length ? [[Math.min(...allPts.map(p => p[0])), Math.min(...allPts.map(p => p[1]))], [Math.max(...allPts.map(p => p[0])), Math.max(...allPts.map(p => p[1]))]] : [[origin.lat, origin.lng], [origin.lat, origin.lng]],
-    field: rows ? { rowDirectionDeg: r2(rows.field.directionRefinedDeg), rowSpacingM: r2(rows.field.rowSpacingM), plantSpacingM: r2(rows.field.plantSpacingM) } : { rowDirectionDeg: 0, rowSpacingM: 0, plantSpacingM: 0 },
+    field: rows ? { rowDirectionDeg: r2(rows.field.directionRefinedDeg), rowSpacingM: r2(rows.field.rowSpacingM), plantSpacingM: r2(rows.field.plantSpacingM) }
+      : twinCorn ? { rowDirectionDeg: twinCorn.rowDirectionDeg ?? 0, rowSpacingM: twinCorn.rowSpacingM != null ? r2(twinCorn.rowSpacingM) : 0, plantSpacingM: 0 } : { rowDirectionDeg: 0, rowSpacingM: 0, plantSpacingM: 0 },
     footprints,
-    rows: (rows?.rows ?? []).map(r => ({ id: r.id, kept: r.kept, reason: r.reason, line: r.line, trees: r.trees, inferred: r.inferred, photos: r.photos, lengthM: r.lengthM, straightnessSdM: r.straightnessSdM })),
+    rows: twinCorn ? cornRows : (rows?.rows ?? []).map(r => ({ id: r.id, kept: r.kept, reason: r.reason, line: r.line, trees: r.trees, inferred: r.inferred, photos: r.photos, lengthM: r.lengthM, straightnessSdM: r.straightnessSdM })),
     trees: twinTrees,
     inferredTrees: (rows?.inferred ?? []).map(x => ({ row: x.row, lat: +x.lat.toFixed(8), lng: +x.lng.toFixed(8) })),
     weeds: twinWeeds,
@@ -229,7 +287,9 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
       weedTier: weedsRes.tier, weedSettings: weedsRes.settings, weedViews: weedsRes.views, weedStats: weedsRes.stats, photographsWithoutWeedAnswer: weedsRes.photographsFailed,
       trees: twinTrees.length, treePositionSpreadM: r3(quant(twinTrees.map(t => t.viewSpreadM), 0.5)), keptRows: (rows?.rows ?? []).filter(r => r.kept).length,
       vegetationPatches: twinVeg.length,
+      ...(twinCorn ? { crop: "corn", cornRows: twinCorn.summary.cornRows, cornWeedsConfirmed: twinCorn.summary.weeds.confirmed, cornGapsConfirmed: twinCorn.summary.gaps.confirmed } : {}),
     },
+    ...(twinCorn ? { corn: twinCorn } : {}),
   };
   if (cutNow) for await (const _ of cutAtlases()) void _;
   return { twin: bundle, atlases: atlasFiles, crops: reqs.length, cutAtlases };

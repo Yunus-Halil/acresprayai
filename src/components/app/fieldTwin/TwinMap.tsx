@@ -154,7 +154,9 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
     let mini: L.Map | null = null;
     if (miniEl.current) {
       mini = L.map(miniEl.current, { preferCanvas: true, attributionControl: false, zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false, zoomAnimation: false });
-      L.tileLayer(SURROUNDINGS_URL, { maxNativeZoom: SURROUNDINGS_MAX_NATIVE, maxZoom: 20, opacity: 0.3 }).addTo(mini);
+      // A locally aligned twin (a test flight's estimated placement) is not a place: the inset shows the field and the
+      // view only, never real map tiles under made-up coordinates.
+      if (scene.twin.source.placement?.kind !== "local") L.tileLayer(SURROUNDINGS_URL, { maxNativeZoom: SURROUNDINGS_MAX_NATIVE, maxZoom: 20, opacity: 0.3 }).addTo(mini);
       const hull: [number, number][] = [];
       for (let i = 0; i < scene.imagery.length; i += 2) { const ll = map.unproject(L.point(scene.imagery[i], scene.imagery[i + 1]), 0); hull.push([ll.lat, ll.lng]); }
       L.polygon(hull, { color: TWIN_COLOURS.blockEdge, weight: 1, fillColor: TWIN_COLOURS.soil, fillOpacity: 0.7, interactive: false }).addTo(mini);

@@ -4,6 +4,7 @@
 import { parseTwin, type TwinBundle } from "../types";
 import { type AtlasFile, assembleBundle, evidenceAndBoundary } from "./bundle";
 import { alignCameras } from "./cameras";
+import { type CornStageResult, cornStage } from "./corn";
 import { readPhotographs } from "./photos";
 import { rowsAndTrees } from "./rows";
 import { type BuildHooks, type BuildOptions, type BuildStage, type Codec, type PhotoSource, type StageTimings, checkCancelled } from "./types";
@@ -14,6 +15,8 @@ export type BuildReport = {
   cameras: Record<string, unknown>;
   rows: Record<string, unknown> | null;
   weeds: { detections: number; photographsRun: number; failed: { name: string; reason: string }[]; stats: Record<string, unknown> };
+  /** A corn build: what the corn stage did. */
+  corn: { photographsRead: number; withRows: number; failed: { name: string; reason: string }[]; msPerPhoto: number; ms: number; summary: CornStageResult["field"]["summary"]; rowAgreementM: number | null; rowSpacingM: number | null } | null;
   boundary: { areaM2: number; uncertaintyM2: number; supportPhotographs: number; failures: string[] } | null;
   crops: number;
   timings: StageTimings;
@@ -53,21 +56,32 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   const sources = new Map(photos.map(p => [p.name, p]));
   const readBy = new Map(reads.map(r => [r.name, r]));
   const pixels = async (name: string) => { const src = sources.get(name)!; if (readBy.get(name)?.source === "preview") { const p = await src.preview(); if (p) return p; } return src.decode(down); };
-  const rows = await timed("rows", () => rowsAndTrees(cams.frames, cams.model, pixels, hooks, options.rowRasterCellM ?? 0.08));
-  if (!rows) notes.push("no rows were read in any photograph: the twin has no crop rows, no trees and no cultivated block");
+  const crop = options.crop ?? "orchard";
+  const kept = photos.filter(p => cams.frames.has(p.name));
+  const photoFiles = pool ? new Map(await Promise.all(kept.map(async p => { const b = await p.bytes(); return [p.name, b instanceof Blob ? b : new Blob([b as BlobPart])] as [string, Blob]; }))) : undefined;
+  // Corn: Corn V1 on every photograph, combined over the field, in place of the orchard's rows and trees and its
+  // weed passes (the colour rules would call the corn itself weeds).
+  let corn: CornStageResult | null = null, rows: Awaited<ReturnType<typeof rowsAndTrees>> = null;
+  if (crop === "corn") {
+    corn = await timed("corn", () => cornStage(kept, cams.frames, hooks, pool, photoFiles));
+    if (corn.failed.length) for (const f of corn.failed) notes.push(`${f.name}: Corn V1 could not read it (${f.reason})`);
+    if (!corn.field.rows.length) notes.push("no corn rows were read in any photograph: the twin has no corn rows, findings or cultivated block");
+    else if (!corn.field.summary.cornRows) notes.push("no row is confirmed corn across the photographs: every row is a planted row, crop not confirmed, and no weed candidate or gap is confirmed");
+  } else {
+    rows = await timed("rows", () => rowsAndTrees(cams.frames, cams.model, pixels, hooks, options.rowRasterCellM ?? 0.08));
+    if (!rows) notes.push("no rows were read in any photograph: the twin has no crop rows, no trees and no cultivated block");
+  }
   checkCancelled(hooks.signal);
 
-  const kept = photos.filter(p => cams.frames.has(p.name));
-  const tier = options.weedTier ?? (options.detector ? "model" : "none");
+  const tier = crop === "corn" ? "none" : options.weedTier ?? (options.detector ? "model" : "none");
   const colourPixels = options.colourPixels === "preview" ? pixels : (name: string) => sources.get(name)!.decode(down);
-  const photoFiles = pool ? new Map(await Promise.all(kept.map(async p => { const b = await p.bytes(); return [p.name, b instanceof Blob ? b : new Blob([b as BlobPart])] as [string, Blob]; }))) : undefined;
   const weeds = await timed("weeds", () => findWeeds(kept, cams.frames, cams.model, rows, options.detector, hooks, { tier, colourPixels, colourDown: down, views: options.weedViews ?? 0, plan: options.detectPlan, pool: options.colourPixels === "preview" ? null : pool, files: photoFiles }));
-  if (weeds.tier === "none") notes.push("built without a weed pass: no weed candidates");
+  if (weeds.tier === "none" && crop !== "corn") notes.push("built without a weed pass: no weed candidates");
   else if (weeds.tier === "colour") notes.push("weeds by the colour rules, not the model: green against the soil around it, crowns cut out, strips split at their plants; yellowing plants and plants under 4 cm are missed, and a crown's shoots beyond its core can be counted");
   for (const f of weeds.photographsFailed) notes.push(`${f.name}: the weed model gave no answer (${f.reason})`);
 
   const later = options.atlases === "later";
-  const built = await timed("bundle", () => assembleBundle({ id: options.id, name: options.name, photos: kept, reads, frames: cams.frames, model: cams.model, rows, weeds, detector: options.detector, cameraReport: cams.report as unknown as Record<string, unknown>, codec, down, pool, files: photoFiles }, hooks, !later));
+  const built = await timed("bundle", () => assembleBundle({ id: options.id, name: options.name, photos: kept, reads, frames: cams.frames, model: cams.model, rows, weeds, corn, detector: options.detector, cameraReport: cams.report as unknown as Record<string, unknown>, codec, down, pool, files: photoFiles }, hooks, !later));
   const ev = await timed("evidence", () => evidenceAndBoundary(built.twin, kept, cams.frames, cams.model, pixels, options.evidenceCellM ?? 0.25, hooks));
   if (ev.note) notes.push(ev.note);
   timings.boundary = ev.classifyMs; timings.evidence = ev.sampledMs;
@@ -83,6 +97,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
     cameras: cams.report as unknown as Record<string, unknown>,
     rows: rows?.report ?? null,
     weeds: { detections: weeds.detections, photographsRun: weeds.photographsRun, failed: weeds.photographsFailed, stats: weeds.stats },
+    corn: corn ? { photographsRead: corn.reads.length, withRows: corn.withRows, failed: corn.failed, msPerPhoto: corn.msPerPhoto, ms: corn.ms, summary: corn.field.summary, rowAgreementM: corn.field.rowAgreementM, rowSpacingM: corn.field.pitchM } : null,
     boundary: ev.boundary ? { areaM2: ev.boundary.areaM2, uncertaintyM2: ev.boundary.uncertaintyM2, supportPhotographs: ev.boundary.stats.support.photographs, failures: ev.boundary.failures } : null,
     crops: built.crops, timings, totalMs: Date.now() - T0, notes,
   };
