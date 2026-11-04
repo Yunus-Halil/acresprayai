@@ -132,6 +132,16 @@ describe("Corn V1 fusion", () => {
     expect(fuseCornV1(greenRead([5, 6, 7].map(k => ({ k, support: 0.5 })), [], { stage: "late" }), [], P, { enteredCrop: "corn" }).summary.cornRows).toBe(0);
   });
 
+  it("a seedling green row the plants missed, on the lattice of agreed corn rows, is corn; half a row off it is not", () => {
+    // Plants on rows 0-2 and 4; the green read holds rows 0-4. Row 3 (plants missed) sits one spacing from rows 2 and 4.
+    const ad = greenRead([0, 1, 2, 3, 4].map(k => ({ k, support: 0.95 })), [], { stage: "emergence" });
+    const v = fuseCornV1(ad, plants([0, 1, 2, 4]), P, { enteredCrop: "corn" });
+    expect(v.summary.cornRows).toBe(5);
+    expect(v.rows.find(r => r.onLattice)!.why).toContain("next row runs");
+    const off = fuseCornV1(greenRead([...[0, 1, 2].map(k => ({ k })), { k: 5.5, support: 0.95 }], [], { stage: "emergence" }), plants([0, 1, 2]), P, { enteredCrop: "corn" });
+    expect(off.rows.filter(r => r.evidence === "green read only").every(r => r.identity === "probable crop")).toBe(true);
+  });
+
   it("never says corn for a field not entered as corn, and reports nothing then", () => {
     const ad = greenRead([0, 1, 2].map(k => ({ k, gaps: [{ y1: 1500, y2: 1900 }] })), [{ x: 1000 + 0.5 * PITCH, y: 2000 }]);
     const v = fuseCornV1(ad, plants([0, 1, 2], { skip: [[1500, 1900]] }), P, { enteredCrop: null });

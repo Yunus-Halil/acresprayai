@@ -22,6 +22,11 @@ export const GREEN_POINTS = {
   wholeUpTo: 4,
   /** A piece over this share of the frame does not size the typical plant. */
   maxPlantShare: 0.002,
+  /** A piece sizes the typical plant only when the ground around it (its own size on every side) is at most this share
+   * green: a plant on soil, not a bit of sward ... */
+  aloneGreenShare: 0.15,
+  /** ... given at least this many such pieces (else every piece sizes it). */
+  minSizingPieces: 20,
   /** Pieces under this share of the typical plant are specks. */
   speckShare: 0.15,
   /** A larger piece filling more than this share of its box and wider than coverPlants typical plants both ways is
@@ -88,7 +93,15 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS): GreenPo
   // texture, however many, do not set it. Pieces under a share of it are specks.
   // Pieces over maxPlantShare of the frame (a lawn, a canopy, rows grown together) say nothing of a plant's size.
   const kept = area.map((a, id) => id).filter(id => area[id] >= o.minPiecePx).sort((p, q) => area[p] - area[q]);
-  const sizing = kept.filter(id => area[id] <= o.maxPlantShare * w * h);
+  // Only pieces standing alone on soil size the plant: inside grass or a verge (green all around) the pieces are bits of
+  // a sward, and they once set the typical plant so large that a whole frame's seedlings fell under the speck cut
+  // (Yunus's emergence photo 4: 61 plants located, 2026-11-04).
+  const integ = new Float64Array((w + 1) * (h + 1));
+  for (let y = 0; y < h; y++) { let row = 0; for (let x = 0; x < w; x++) { row += mask[y * w + x]; integ[(y + 1) * (w + 1) + x + 1] = integ[y * (w + 1) + x + 1] + row; } }
+  const greenIn = (x0: number, y0: number, x1: number, y1: number) => { x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(w, x1); y1 = Math.min(h, y1); return { g: integ[y1 * (w + 1) + x1] - integ[y0 * (w + 1) + x1] - integ[y1 * (w + 1) + x0] + integ[y0 * (w + 1) + x0], n: Math.max(1, (x1 - x0) * (y1 - y0)) }; };
+  const alone = (id: number) => { const bw = bx1[id] - bx0[id] + 1, bh = by1[id] - by0[id] + 1, m = Math.max(bw, bh); const r = greenIn(bx0[id] - m, by0[id] - m, bx1[id] + 1 + m, by1[id] + 1 + m); return (r.g - area[id]) / Math.max(1, r.n - bw * bh) <= o.aloneGreenShare; };
+  const small = kept.filter(id => area[id] <= o.maxPlantShare * w * h), isolated = small.filter(alone);
+  const sizing = isolated.length >= o.minSizingPieces ? isolated : small;
   const total = sizing.reduce((s, id) => s + area[id], 0);
   let typical = o.minPiecePx;
   for (let acc = 0, i = 0; i < sizing.length; i++) { acc += area[sizing[i]]; if (acc >= total / 2) { typical = area[sizing[i]]; break; } }
