@@ -1,5 +1,7 @@
 # MaSC-assisted corn row reconstruction (2026-11-04)
 
+> **Outcome (same day): Corn V1** ([docs/features/corn-v1.md](../features/corn-v1.md)) ships the detector-led fusion with plants located on the green (no model); MaSC stays an unshipped server tier.
+
 Question (Yunus, 2026-11-04): can MaSC's plant positions recover planting rows the green-mask reader misses (dark
 seedlings, low contrast, thin stands), as independent evidence beside the reader, without replacing it and without
 treating a MaSC box as proof of maize? Nothing here is wired into the app; Photo Scout and the Field Twin do not import

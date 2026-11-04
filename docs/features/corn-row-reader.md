@@ -1,5 +1,7 @@
 # Corn: the continuous-row reader (2026-10-29)
 
+> **2026-11-04: Corn V1** ([corn-v1.md](corn-v1.md)) is the production corn read in Photo Scout (auto on corn): these stage readers are its green read, fused with a plant read; findings come only from rows both support.
+
 **What changed.** Photographs of corn (and of any crop whose profile says `rowReader.strategy: continuous-row`) are no
 longer read by the planting-pattern pass. They go through `src/lib/rowCrop/readRowCrop.ts`, which treats the whole
 row as the crop and reports only what stands between the rows.
