@@ -11,7 +11,7 @@ import "../bench/nodeStorageShim";
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { decodeImage, encodeJpeg } from "../bench/images";
+import { NODE_DECODER, decodeImage, encodeJpeg } from "../bench/images";
 import type { PhotoPixels } from "../../src/lib/photoScout/pattern";
 import { readCornV1 } from "../../src/lib/rowCrop/cornV1";
 import { rowCropParamsFor } from "../../src/lib/rowCrop/params";
@@ -70,7 +70,7 @@ for (const name of chosen) {
   console.log(`${name}: ${v.summary.cornRows} corn + ${v.summary.probableRows} planted rows, ${v.summary.weeds} weed candidates, ${v.summary.gaps} gaps, ${Date.now() - t} ms`);
 }
 const field = cornField(reads, frames);
-writeFileSync(join(OUT, "field.json"), JSON.stringify({ revision, scene: sceneKey, photographs: chosen, field }, null, 1));
+writeFileSync(join(OUT, "field.json"), JSON.stringify({ revision, ...NODE_DECODER, scene: sceneKey, photographs: chosen, field }, null, 1));
 
 // Measures.
 const s = field.summary;
@@ -78,7 +78,7 @@ const hist = (xs: number[]) => { const h = new Map<number, number>(); for (const
 const weedCands = field.weeds.filter(w => w.votes["weed candidate"] > 0);
 const singleCands = weedCands.filter(w => w.votes["weed candidate"] === 1);
 const md = [
-  `# Corn V1 over a field: ${sceneKey}`, "",
+  `# Corn V1 over a field: ${sceneKey}`, "", `Pixels: ${NODE_DECODER.decoder}, ${NODE_DECODER.environment}.`, "",
   `Run ${new Date().toISOString().slice(0, 16)}, code ${revision}. ${chosen.length} nadir photographs nearest the flight's middle (UAV3DCrop, stage "${stageIndex[sceneKey]?.stage}"), each read by Corn V1 (crop entered: corn) and placed through Swardus Direct camera frames built from the scene's own poses and point cloud (scripts/rowCrop/uav3dcrop.ts). No labels: the measures are the photographs' agreement. Scale: ${metresPerUnit.toFixed(4)} m per reconstruction unit, fixed by photograph ${SCALE_PHOTO}'s corn rows taken as 76.2 cm (the scenes carry no GPS); so the row spacing below checks the other photographs against that one, not the absolute scale.`, "",
   "| Measure | Value |", "|---|---|",
   `| Row spacing measured across the photographs (0.76 m expected) | ${field.pitchM} m |`,
