@@ -11,7 +11,7 @@ import "../bench/nodeStorageShim";
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
-import { decodeImage, encodeJpeg } from "../bench/images";
+import { NODE_DECODER, decodeImage, encodeJpeg } from "../bench/images";
 import type { PhotoPixels } from "../../src/lib/photoScout/pattern";
 import { adaptiveAsRead, readCornAdaptive } from "../../src/lib/rowCrop/adaptive";
 import { cornV1AsRead, fuseCornV1 } from "../../src/lib/rowCrop/cornV1";
@@ -150,7 +150,7 @@ if (USU) {
   R("**reported weed candidates on a labelled weed** (real weeds kept)", g => each(m => `weedsOnWeed:${m}`, g));
 }
 R("mean ms per image: green read / plant points / fusion / MaSC inference", g => ["msGreen", "msPoints", "msFusion", "msMasc"].map(k => Math.round(T(g, k) / Math.max(1, T(g, "images")))).join(" / "));
-const head = [`# Corn V1 bench: ${NAME}`, "", `Run ${new Date().toISOString().slice(0, 16)}, code ${revision}. ${T("all", "images")} photos from ${IMAGES.replace(/\\/g, "/")}${MASC ? `; MaSC boxes ${MASC.replace(/\\/g, "/")}` : ""}. Crop entered: ${CROP}.`, "",
+const head = [`# Corn V1 bench: ${NAME}`, "", `Run ${new Date().toISOString().slice(0, 16)}, code ${revision}. ${T("all", "images")} photos from ${IMAGES.replace(/\\/g, "/")}${MASC ? `; MaSC boxes ${MASC.replace(/\\/g, "/")}` : ""}. Crop entered: ${CROP}. Pixels: ${NODE_DECODER.decoder}, ${NODE_DECODER.environment}.`, "",
   "Pictures: A = the adaptive reader as the app drew it; V1 = Corn V1: cyan = corn row, amber dashes = planted row whose crop is not confirmed, red = weed candidate, grey outlines = withheld (crop on a row, unknown vegetation, not judged), orange = stand gap.", ""];
 writeFileSync(join(OUT, "README.md"), [...head, ...md, ""].join("\n"));
 // One note per picture folder (the results hub reads <folder>.md beside each folder).
@@ -160,5 +160,5 @@ const legendOf: Record<Mode, string> = {
   V1M: "Corn V1 with MaSC's plants in place of the plants located on the green (the server tier, NOT shipped): same colours as V1.",
 };
 for (const m of MODES) writeFileSync(join(OUT, `${m}.md`), [`# Corn V1: ${LABEL[m]} (${NAME})`, "", `Run ${new Date().toISOString().slice(0, 16)}, code ${revision}. ${T("all", "images")} photos from ${IMAGES.replace(/\\/g, "/")}.${MASC ? ` MaSC boxes ${MASC.replace(/\\/g, "/")}.` : ""} Crop entered: ${CROP}.`, "", legendOf[m], "", ...md, ""].join("\n"));
-writeFileSync(join(OUT, "results.json"), JSON.stringify({ revision, name: NAME, modes: MODES, totals: Object.fromEntries(tot), per }, null, 1));
+writeFileSync(join(OUT, "results.json"), JSON.stringify({ revision, ...NODE_DECODER, name: NAME, modes: MODES, totals: Object.fromEntries(tot), per }, null, 1));
 console.log(md.join("\n"));

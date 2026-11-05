@@ -134,18 +134,19 @@ data/direct-georef/twin --name "..." --id <id> --crop corn --weeds none --no-pre
 UAV3DCrop scene: `npx vite-node scripts/rowCrop/uav3dcropFlight.ts --scene <scene> --out <dir> --reads <cornFieldBench
 reads dir>`.
 
-## Speed (2026-11-05)
+## Speed (2026-11-05; performance work frozen after this)
 
 **In the browser** (the app's own build: `node scripts/directGeoref/twinBuildBench.mjs --dir <flight> --crop corn
---base http://localhost:8080`, headless Chrome on this laptop, 12 logical cores, 6 helper workers of which the corn
-stage uses 3; peak memory = the working sets of the benchmark's own Chrome processes, sampled every 2 s):
+--base http://localhost:8080`; Chrome 156.0.8078.80 headless through Playwright on this laptop, 12 logical cores, 6 helper
+workers of which the corn stage uses 3; pixels from Chrome's createImageBitmap, the app's decode; peak memory = the
+working sets of the benchmark's own Chrome processes, sampled every 2 s):
 
-| 40-photo Day023 flight | corn-v1.0 (frozen) | shared seedling mask |
-|---|---|---|
-| Twin ready | 76.2 s | 73.1 s |
-| Corn stage | 69.3 s (5.0 s per photograph per worker) | 66.7 s (4.9 s) |
-| Peak memory, all of the benchmark's Chrome / its largest process | 2.69 / 2.18 GB | 2.64 / 2.12 GB |
-| Result | 11 corn rows, 5 unconfirmed; 3 confirmed weeds, 9 withheld | identical |
+| 40-photo Day023 flight | corn-v1.0 (frozen) | shared seedling mask | + exact selection median |
+|---|---|---|---|
+| Twin ready | 76.2 s | 73.1 s | **64.2 s** |
+| Corn stage | 69.3 s (5.0 s per photograph per worker) | 66.7 s (4.9 s) | 57.1 s (4.1 s) |
+| Peak memory, all of the benchmark's Chrome / its largest process | 2.69 / 2.18 GB | 2.64 / 2.12 GB | 2.68 / 2.17 GB |
+| Result | 11 corn rows, 5 unconfirmed; 3 confirmed weeds, 9 withheld; 34 single-photograph weed reports, 455 rows | identical | identical |
 
 The in-browser build is about four times faster than the Node script (286 s) because the corn stage runs in three
 workers and the cameras use the pool.
@@ -155,20 +156,49 @@ workers and the cameras use the pool.
 arrays to both (`seedlingGreen.ts SeedlingCache`, passed through `RowCropOptions.seedlings`; it answers only for its own
 photograph and settings, read-only). Checked against corn-v1.0 on the same decoded pixels
 (`scripts/rowCrop/cornV1Equivalence.ts`, every photograph read both ways in one process): **274 of 274 photographs
-byte-for-byte identical** (every set: our emergence, Corn2, establishment, mid, late; the three test flights).
-Time: **42 % less on seedling-stage photographs** (our emergence set: 165.7 to 96.1 s over 23), unchanged (within
-3 %, noise) wherever the emergence reader does not run, which includes all three UAV3DCrop test flights (establishment,
-mid, late) and Corn2. So the in-browser test-flight build above barely moves; an emergence-stage flight would.
+byte-for-byte identical**. Time: 42 % less on seedling-stage photographs, unchanged wherever the emergence reader does
+not run (all three UAV3DCrop test flights and Corn2).
 
-**Browser and Node see slightly different pixels.** The same JPEG decoded by Chrome and by Node's jpeg-js differs by
-0.65 levels on average (up to 10), Chrome 0.36 % brighter overall; a borderline patch can tip, so an in-app build and a
-Node benchmark of the same flight can differ at the margin (Day023: 3 confirmed weeds in the browser, 2 in Node, 34 vs
-33 single-photograph reports, same rows). Corn V1's benchmarked numbers are Node's.
+**The exact selection median.** The soil levels take a 9 x 9 median over 16-pixel blocks, twice per photograph;
+corn-v1.0 sorted every window (measured: 83 % of the soil levels' time, about 530 of 650 ms per 20 MP photograph). The
+median is now a k-th-element selection that returns the very element the sort put in the middle (`seedlingGreen.ts
+kthSmallest`), so it is exact, not approximate. Checked three ways: the soil-level arrays bit for bit against a verbatim
+copy of the old code on **274 of 274 photographs** (`scripts/rowCrop/soilLevelsEquivalence.ts`, all eight sets; soil
+levels 251.9 -> 72.9 s over them, about 640 -> 190 ms per photograph); the whole Corn V1 read of every Day023 and
+very-early-stage photograph (63) byte for byte against a checkout of 9cf472d, whose row-crop code is corn-v1.0's
+(`scripts/rowCrop/cornV1Dump.ts` in both trees); and the browser build above (identical result). Unit test:
+`src/test/soilMedian.test.ts`.
+
+**Browser and Node see slightly different pixels, and the plant read's spacing choice can tip on them.** Every
+benchmark now records its decoder and environment (`NODE_DECODER` in `scripts/bench/images.ts`: jpeg-js 0.4.4 / pngjs
+7.0.0 on Node; the browser benchmark records Chrome's version). Traced on Day023 with
+`scripts/rowCrop/cornDecoderTrace.ts` (every photograph read with the same code on Chrome's pixels, in the page, and on
+jpeg-js's, then combined over the field with the same camera frames):
+
+- The pixels: Chrome is brighter by 0.36-0.39 levels in red and blue and 0.47-0.53 in green on average; mean absolute
+  difference 0.77-0.94 levels, up to 16-27 at edges. Different JPEG decoders, not a bug in either.
+- The field result on Chrome's pixels with Node's frames is exactly the in-app build's (3 confirmed weeds, 9 withheld,
+  34 reports, 455 rows), so the whole difference is the single-photograph reads, not the cameras or the worker order.
+- The weed that changes, at (-0.54, 6.72) m, is covered by only two photographs (728 and 729), so it needs both to call
+  it a weed. On Chrome's pixels both do; on jpeg-js's 728 says "unknown vegetation".
+- Why 728 changed: its **plant read** found no rows on jpeg-js pixels. The plant read takes the row spacing from the
+  most frequent spacing between neighbouring lines of plants. On jpeg-js pixels a spurious 34 px (about 6 cm) spacing,
+  made from two pairs of plant lines inside wide corn rows, beat the true 432-449 px (76 cm). With a 6 cm spacing no
+  row stood, so every row in 728 was "green read only" and the patch beside it lost its corn-row neighbour. On Chrome's
+  pixels the small group did not form and 9 plant rows stood.
+- Across the flight the plant read flips between rows and no rows on **7 of 40 photographs** (5 gain rows on Chrome,
+  2 lose them; 4 of them show the same 31-60 px false spacing on one decoder). Located plants differ by only 1 % in
+  total. The field's corn rows are the same either way (11); the weeds seen by several photographs mostly agree.
+
+No threshold was changed for this. It is a fragility in Corn V1's plant read: any small pixel change can tip it (another
+decoder, a JPEG re-save, sensor noise), not just Chrome against Node. A candidate fix exists but is NOT built: refuse
+spacing modes physically impossible for the entered crop (corn rows are 38-91 cm apart; 6 cm is not a row spacing).
+That would change Corn V1's output, so it needs the full benchmark again and a decision. Corn V1's benchmarked numbers
+are Node's; the app's are Chrome's.
 
 Where the remaining time goes, per photograph (Node): the adaptive green read 1-6 s (the mid reader is the heaviest:
-5.4-5.8 s on mid-stage frames), the plant read 1.0-1.35 s, of which the soil levels (a 9 x 9 median over 16-pixel blocks,
-done with a full sort) 0.6-1.1 s. Not changed here: half-resolution reading and photograph thinning (both would need
-the loss of detections and multi-photograph evidence measured first).
+5.4-5.8 s on mid-stage frames; not touched), the plant read now about 0.6-0.9 s. Not changed: half-resolution reading and
+photograph thinning (both would need the loss of detections and multi-photograph evidence measured first).
 
 ## Integration status
 

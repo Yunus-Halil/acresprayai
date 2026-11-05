@@ -6,6 +6,7 @@
 // findings can afford. The crop is cut from the decoded original exactly;
 // nothing is resampled on the way to the model.
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import jpeg from "jpeg-js";
 import { PNG } from "pngjs";
 import type { AreaWindow } from "@/lib/sourceFrames/crop";
@@ -20,6 +21,14 @@ export function sniffImage(bytes: Uint8Array): ImageKind | null {
   if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "png";
   return null;
 }
+
+const pkg = (name: string): string => { try { return (createRequire(import.meta.url)(`${name}/package.json`) as { version: string }).version; } catch { return "?"; } };
+/**
+ * Which decoder made the pixels and where (2026-11-05): the same JPEG decoded by jpeg-js here and by Chrome's
+ * createImageBitmap in the app differs by under a level on average, enough to tip a borderline patch, so every
+ * benchmark records it beside its numbers.
+ */
+export const NODE_DECODER = { decoder: `jpeg-js ${pkg("jpeg-js")} (JPEG) / pngjs ${pkg("pngjs")} (PNG)`, environment: `Node ${process.version} ${process.platform}-${process.arch}` } as const;
 
 /** Decode a JPEG or PNG to RGBA. Throws on anything else or on a broken file. */
 export function decodeImage(bytes: Uint8Array): Rgba {

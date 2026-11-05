@@ -7,7 +7,7 @@
 import "../bench/nodeStorageShim";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
-import { decodeImage } from "../bench/images";
+import { NODE_DECODER, decodeImage } from "../bench/images";
 import type { PhotoPixels } from "../../src/lib/photoScout/pattern";
 import { readCornAdaptive } from "../../src/lib/rowCrop/adaptive";
 import { fuseCornV1, readCornV1 } from "../../src/lib/rowCrop/cornV1";
@@ -38,7 +38,7 @@ for (const f of files) {
   per.push(row); tf += a.ms; ts += b.ms;
   console.log(`${name}: ${row.plans} | output ${row.identical ? "identical" : "DIFFERENT"}, summary ${row.summaryIdentical ? "identical" : "DIFFERENT"} | ${a.ms} -> ${b.ms} ms`);
 }
-const out = { images: IMAGES, photographs: per.length, identical: per.filter(p => p.identical && p.summaryIdentical).length, frozenMs: tf, sharedMs: ts, speedup: +(tf / Math.max(1, ts)).toFixed(3), per };
+const out = { images: IMAGES, ...NODE_DECODER, photographs: per.length, identical: per.filter(p => p.identical && p.summaryIdentical).length, frozenMs: tf, sharedMs: ts, speedup: +(tf / Math.max(1, ts)).toFixed(3), per };
 console.log(`\n${out.identical} of ${out.photographs} identical; Corn V1 ${tf} -> ${ts} ms (${((1 - ts / tf) * 100).toFixed(1)} % less)`);
 if (OUT) writeFileSync(OUT, JSON.stringify(out, null, 1));
 if (out.identical !== out.photographs) process.exit(1);

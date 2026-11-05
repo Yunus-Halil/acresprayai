@@ -13,6 +13,7 @@ import type { WeedDetector } from "../../src/lib/fieldTwin/build/types";
 import type { WeedVisionResult } from "../../src/lib/weedVision/client";
 import { planTiles, tilesAt } from "../../src/lib/fieldTwin/build/views";
 import { nodeCodec, nodePhoto } from "./nodePhotos";
+import { NODE_DECODER } from "../bench/images";
 
 const argv = process.argv.slice(2);
 const arg = (k: string, d: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
@@ -73,7 +74,7 @@ console.log("timings", out.report.timings);
 console.log("cameras", JSON.stringify({ ...out.report.cameras, globals: undefined, rejected: undefined }), "rejected", JSON.stringify(out.report.cameras.rejected));
 for (const n of out.report.notes) console.log(`note: ${n}`);
 clearInterval(memTimer);
-console.log(`peak resident memory ${(memPeak.rss / 1e9).toFixed(2)} GB`);
-writeFileSync(join(dir, "report.json"), JSON.stringify({ ...out.report, peakRssGB: +(memPeak.rss / 1e9).toFixed(2), wallS: Math.round((Date.now() - t0) / 1000) }, null, 1));
+console.log(`peak resident memory ${(memPeak.rss / 1e9).toFixed(2)} GB; pixels: ${NODE_DECODER.decoder}, ${NODE_DECODER.environment}`);
+writeFileSync(join(dir, "report.json"), JSON.stringify({ ...out.report, ...NODE_DECODER, peakRssGB: +(memPeak.rss / 1e9).toFixed(2), wallS: Math.round((Date.now() - t0) / 1000) }, null, 1));
 if (out.twin.corn) { const c = out.twin.corn; console.log(`corn: ${c.summary.cornRows} corn rows (${c.summary.cornRowLengthM} m), ${c.summary.unconfirmedRows} unconfirmed; weeds ${JSON.stringify(c.summary.weeds)}; gaps ${JSON.stringify(c.summary.gaps)}; rows agree ${c.rowAgreementM} m; spacing ${c.rowSpacingM} m; placement ${out.twin.source.placement?.kind}`); }
 if (out.twin.stats.weedViews) console.log("views", JSON.stringify(out.twin.stats.weedViews));

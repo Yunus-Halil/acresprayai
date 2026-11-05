@@ -45,13 +45,37 @@ export const SEEDLING_RELAXED: SeedlingGreenOptions = { ...SEEDLING_GREEN, stron
 /** The soil beside every pixel, per block: brightness and tint of the least green pixels, a median over the blocks around. */
 export type SoilLevels = { W: number; H: number; B: number; gw: number; gh: number; soilL: Float32Array; soilT: Float32Array; /** Median soil brightness over the frame. */ globalL: number };
 
-function medianGrid(v: Float32Array, w: number, h: number, win: number): Float32Array {
-  const out = new Float32Array(w * h), r = win >> 1, buf: number[] = [];
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    buf.length = 0;
-    for (let yy = Math.max(0, y - r); yy <= Math.min(h - 1, y + r); yy++) for (let xx = Math.max(0, x - r); xx <= Math.min(w - 1, x + r); xx++) { const q = v[yy * w + xx]; if (Number.isFinite(q)) buf.push(q); }
-    if (!buf.length) { out[y * w + x] = NaN; continue; }
-    buf.sort((a, b) => a - b); out[y * w + x] = buf[buf.length >> 1];
+/**
+ * The k-th smallest of a[0..n) (0-based), by selection rather than a full sort: the same element a sort would put at
+ * k, so the result is exact (2026-11-05; corn-v1.0 sorted every window, 83 % of the soil levels' time). Reorders a.
+ */
+function kthSmallest(a: Float64Array, n: number, k: number): number {
+  let lo = 0, hi = n - 1;
+  while (hi > lo) {
+    const p = a[(lo + hi) >> 1];
+    let i = lo, j = hi;
+    while (i <= j) {
+      while (a[i] < p) i++;
+      while (a[j] > p) j--;
+      if (i <= j) { const t = a[i]; a[i] = a[j]; a[j] = t; i++; j--; }
+    }
+    // [lo, j] <= p <= [i, hi], and everything strictly between j and i equals p.
+    if (k <= j) hi = j; else if (k >= i) lo = i; else return a[k];
+  }
+  return a[k];
+}
+
+/** The median of every win x win window over a grid (NaN = no value; a window with none gives NaN). Exact. */
+export function medianGrid(v: Float32Array, w: number, h: number, win: number): Float32Array {
+  const out = new Float32Array(w * h), r = win >> 1, buf = new Float64Array(win * win);
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - r), x1 = Math.min(w - 1, x + r);
+      let n = 0;
+      for (let yy = y0; yy <= y1; yy++) for (let i = yy * w + x0, e = yy * w + x1; i <= e; i++) { const q = v[i]; if (Number.isFinite(q)) buf[n++] = q; }
+      out[y * w + x] = n ? kthSmallest(buf, n, n >> 1) : NaN;
+    }
   }
   return out;
 }
