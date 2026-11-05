@@ -102,5 +102,12 @@ describe.skipIf(!haveFlight)("the real build on the UAV3DCrop corn test flight",
     expect(out.twin.source.placement?.kind).toBe("local");
     expect(out.twin.weeds.length).toBe(0);
     expect(out.report.corn!.photographsRead).toBe(pick.length);
+    // Green inside the planting is the corn layer's to judge: no "other vegetation" within half a spacing of a row
+    // (before 2026-11-05 the orchard's vegetation step drew the corn plants themselves there).
+    const pitch = out.twin.corn!.rowSpacingM ?? 0.76, o = out.twin.origin;
+    const en = (lat: number, lng: number) => [(lng - o.lng) * (Math.PI / 180) * 6378137 * Math.cos((o.lat * Math.PI) / 180), (lat - o.lat) * (Math.PI / 180) * 6378137];
+    const lines = out.twin.corn!.rows.map(r => r.line.map(([a, b]) => en(a, b)));
+    const seg = (p: number[], a: number[], b: number[]) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy, t = L ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L)) : 0; return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); };
+    for (const v of out.twin.vegetation) { const p = en(v.lat, v.lng); expect(Math.min(...lines.flatMap(l => l.slice(1).map((q, i) => seg(p, l[i], q))))).toBeGreaterThan(0.5 * pitch - 0.01); }
   });
 });

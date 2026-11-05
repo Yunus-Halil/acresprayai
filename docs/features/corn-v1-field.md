@@ -22,8 +22,10 @@ whole field:     cornField(reads, frames)
                           confirmed, between corn rows and off their spacing, is left out (no row of the planting runs there).
                    weeds  every patch Corn V1 judged is a sighting with its verdict ─► Direct's reconcile joins one patch's
                           sightings (outline overlap, one per photograph) ─► a field WEED CANDIDATE needs at least two weed
-                          votes (fewer only where fewer photographs covered it), the weed votes leading, a third of the
-                          covering photographs to have seen it, and never more "crop on a row" votes than weed votes.
+                          votes (fewer only where fewer photographs covered it), more weed votes than all others, never
+                          more "crop on a row" votes than weed votes, AND a place between the field's rows: not within
+                          0.2 spacings of any planted row's line, and within 0.8 spacings of a corn row (since 2026-11-05;
+                          a covering photograph that reports nothing is not a vote against).
                    gaps   every reported stand gap placed on its field row ─► joined along ─► checked in EVERY photograph
                           covering it: a plant located inside it (any photograph) withholds it; so does a report from fewer
                           than half of the photographs holding a corn row there, or a field row whose crop is not confirmed.
@@ -75,6 +77,43 @@ What this shows:
   `D:\swardus-research\cornfield\<scene>-n40`.
 
 No labels exist for these plots, so the measures are the photographs' agreement, not accuracy against truth.
+
+## The field rules, checked by eye on all three flights (2026-11-05)
+
+Yunus looked at the Day023 twin: the "other vegetation" polygons were corn, and the "not confirmed" weeds looked like
+weeds. Both checked photograph by photograph (`scripts/rowCrop/cornFieldWeedSheets.ts --dir <flight> --out <dir>`: for
+every field weed, a crop of every covering photograph around it, red = voted weed, amber = saw it otherwise, grey =
+silent), on Day015 (early), Day023 (establishment) and Day045 (mid), so the rules are not fitted to one twin:
+
+- **Other vegetation on a corn twin was the corn.** The orchard build's vegetation step (green patches of 0.1 m2 or
+  more seen by two photographs, not a tree or a weed) knows nothing of corn rows: on Day023 all 19 patches were corn
+  plants or their leaves (18 centred within 18 cm of a corn row; the 19th was leaves of both neighbouring rows meeting).
+  Now, on a corn build, green within half a spacing of a planted row is left to the corn layer, which judges it (weed,
+  crop on a row, unknown vegetation); only green outside the planting is drawn as other vegetation (Day015 41 and
+  Day023 19 patches left to corn, none outside).
+- **Silence is not a vote against.** corn-v1.0's field rule also wanted a third of the covering photographs to have
+  seen a weed. On Day023 that withheld 5 weeds that 3-6 photographs called weeds with no photograph saying otherwise;
+  in the 31 silent photographs of the strongest one the weed is visible, under an overhanging corn leaf or merged with
+  one from that angle. That rule is gone.
+- **But dropping it alone was wrong on the other flights**: it also confirmed two whole corn plants on Day015 and corn
+  leaves on Day045. What separates them is where they stand against the field's rows (held by up to 40 photographs,
+  agreeing within 5-8 cm): every real weed at 0.22-0.49 spacings from a corn row; the Day015 corn plants beyond the
+  outer corn row at 1.27-1.34 spacings (beside rows whose crop is not confirmed), the Day045 leaves 0.11 spacings from a
+  planted row's line. So the field now applies Corn V1's own per-photograph place rule with the field's rows: on a
+  planted row's line (0.2 spacings, Corn V1's onRowShare) it is that row's crop or unknown; it must lie in an inter-row
+  a corn row bounds (0.8 spacings: one spacing less Corn V1's slotShare). One photograph's reach stays 1.5 spacings
+  because its own rows can be a row off.
+
+| Flight | Field weeds confirmed, corn-v1.0 rule | confirmed now | of those real by eye | multi-vote calls withheld now (by eye) |
+|---|---|---|---|---|
+| Day015 | 1 | 2 | 2 of 2 | 2 (both corn plants) |
+| Day023 | 2 | 7 | 7 of 7 | 0 |
+| Day045 | 0 | 0 | - | 1 (corn leaves) |
+
+Single-photograph weed calls stay "not confirmed" (shown for review): sampled by eye they are mixed (Day023: 0 of 4 are
+weeds; Day015 corn in shade; Day045 one a real weed the other photographs see only canopy over). Measured on three
+flights of one research plot (the only overlapping corn flights with cameras we have): the numbers are spacings, the
+rule is Corn V1's, but a different planting or stage may still show something these do not.
 
 ## Limits
 
