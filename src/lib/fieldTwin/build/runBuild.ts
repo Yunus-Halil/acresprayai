@@ -24,6 +24,26 @@ export type BuildRun = {
 
 export class BuildAborted extends Error { constructor() { super("The build was cancelled."); this.name = "Aborted"; } }
 
+export const STALE_PAGE_MESSAGE = "Swardus was updated after this page was opened, so the build could not start. Reload the page (Ctrl+Shift+R), pick the photographs again and build.";
+
+/** Why a worker that never loaded failed (the browser gives no message for a module worker that cannot load). After a
+ *  deploy, a page opened earlier still names the previous build's worker file, which the new deployment does not have:
+ *  the host answers that path with the app's HTML, which a module worker cannot run. The page's own entry scripts
+ *  missing from the site's current index tells that case apart (2026-11-05). */
+export async function workerLoadFailure(message: string | undefined, pageScripts: string[] = currentEntryScripts(), fetcher: typeof fetch = fetch): Promise<string> {
+  if (message) return message;
+  try {
+    const html = await (await fetcher("/", { cache: "no-store" })).text();
+    if (pageScripts.length && pageScripts.some(src => !html.includes(src))) return STALE_PAGE_MESSAGE;
+  } catch { /* offline or blocked: say only what is known */ }
+  return "The build worker failed to start.";
+}
+
+function currentEntryScripts(): string[] {
+  if (typeof document === "undefined") return [];
+  return [...document.querySelectorAll<HTMLScriptElement>("script[type=module][src]")].map(s => new URL(s.src).pathname);
+}
+
 export function startTwinBuild(files: File[], options: { name: string; id?: string; weeds: "model" | "colour" | "none"; helpers?: number; crop?: "orchard" | "corn" }, hooks: { onProgress?: (p: BuildProgress) => void; onLog?: (line: string) => void } = {}): BuildRun {
   if (typeof Worker === "undefined") throw new Error("this browser cannot run the build off the main thread (no Worker)");
   const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
@@ -55,7 +75,7 @@ export function startTwinBuild(files: File[], options: { name: string; id?: stri
       else if (m.type === "cancelled") fail(new BuildAborted());
       else if (m.type === "error") fail(new Error(m.message));
     };
-    worker.onerror = e => fail(new Error(e.message || "The build worker failed to start."));
+    worker.onerror = e => { void workerLoadFailure(e.message).then(m => fail(new Error(m))); };
   });
   const req: BuildWorkerRequest = { type: "build", files, name: options.name, id: options.id, weeds: options.weeds, helpers: options.helpers, crop: options.crop };
   worker.postMessage(req);
