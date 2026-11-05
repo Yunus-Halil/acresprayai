@@ -12,8 +12,9 @@
 //             (a row one photo of four draws is one photo's opinion, not the field's).
 //   weeds     every green patch Corn V1 judged (weed candidate, crop on a row, unknown vegetation) is a sighting; the
 //             sightings of one patch in overlapping photographs are joined by Direct's reconcile (outline overlap,
-//             one sighting per photograph); a field weed candidate needs the weed votes to lead, and never a photo
-//             saying it is the crop on a row; a patch most covering photographs did not see at all is withheld.
+//             one sighting per photograph); a field weed candidate needs two weed votes leading all the others, never
+//             a photo saying it is the crop on a row, and a place between the FIELD's rows beside a corn row (not on
+//             any planted row's line). A covering photograph that reports nothing there is not a vote against.
 //   gaps      every reported stand gap projected to its field row; a field gap stands only when no photograph that
 //             covers it located a plant inside it, and at least half the photographs holding a corn row over it
 //             reported it. The plant check is the strongest evidence a second photograph adds: a plant one frame
@@ -26,7 +27,7 @@ import { frameFootprint, groundSampleAt, groundToPixel, pixelToGround, type Geor
 import { reconcile, type Observation } from "../directGeoref/reconcile";
 import type { CornV1Read } from "../rowCrop/cornV1";
 
-export const CORN_FIELD_VERSION = 1;
+export const CORN_FIELD_VERSION = 2;
 
 export const FIELD = {
   /** Row pieces within this share of the field's row spacing across are the same field row. */
@@ -43,10 +44,30 @@ export const FIELD = {
   sampleM: 0.25,
   /** Weed sightings: patches further apart than this are never one patch, metres. */
   weedSearchM: 0.6,
-  /** A field weed candidate: weed votes at least this many (fewer only when fewer photographs covered it) ... */
+  /**
+   * A field weed candidate: weed votes at least this many (fewer only when fewer photographs covered it), more than
+   * all other votes together, and never against a crop-on-row vote. A photograph that covers the spot but reports no
+   * patch there is NOT a vote against: checked by eye on Day023 (2026-11-05), the silent photographs mostly show the
+   * weed, under an overhanging corn leaf or merged with one from that angle, so the read could not single it out.
+   * (corn-v1.0's field rule also wanted a third of the covering photographs to see it: it withheld 5 real weeds of 5
+   * seen by 3-6 photographs with no vote against, while single-vote calls, the ones that were not weeds, stay out.)
+   */
   minWeedVotes: 2,
-  /** ... and at least this share of the covering photographs saw the patch at all. */
-  weedMinSeenShare: 0.34,
+  /**
+   * Where a field weed may stand, Corn V1's own per-photograph rule applied with the field's rows (held by up to 40
+   * photographs, agreeing within 5-8 cm, where one photograph's rows can be a row off): within this share of the row
+   * spacing of a planted row's line it is that row's crop (corn row) or as likely crop as weed (row not confirmed);
+   * Corn V1's onRowShare.
+   */
+  weedOnRowShare: 0.2,
+  /**
+   * ... and it must lie in an inter-row a corn row bounds: the nearest corn row within this share of the spacing (one
+   * spacing less Corn V1's slotShare, short of where the next row runs). One photograph's reach is 1.5 spacings
+   * because its rows can be misplaced; the field's are not. Checked by eye on three UAV3DCrop flights (2026-11-05):
+   * every real weed at 0.22-0.49 spacings from a corn row; the corn plants a photograph called weeds beyond the outer
+   * corn row at 1.27-1.34, and corn leaves on an unconfirmed row's line at 0.11.
+   */
+  weedBesideCornShare: 0.8,
   /** Gaps: a plant located within this distance of a gap's line inside it (its first and last tenth left out) refutes it, metres. */
   gapPlantTolM: 0.06,
   /** Gaps from different photographs overlapping along the row by this share of the shorter are one gap. */
@@ -252,6 +273,22 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
     return best && bd <= o.sameRowShare * pitchM ? best : null;
   };
 
+  // Where a field weed stands against the field's rows (null: no spacing measured, the photographs' own rule stands).
+  const segDist = (e: number, n: number, [ax, ay]: [number, number], [bx, by]: [number, number]) => {
+    const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy, t = L ? Math.max(0, Math.min(1, ((e - ax) * dx + (n - ay) * dy) / L)) : 0;
+    return Math.hypot(e - ax - t * dx, n - ay - t * dy);
+  };
+  const rowDist = (r: FieldRow, e: number, n: number) => { let m = Infinity; for (let i = 1; i < r.lineEN.length; i++) m = Math.min(m, segDist(e, n, r.lineEN[i - 1], r.lineEN[i])); return m; };
+  const weedPlace = (e: number, n: number): { verdict: FieldWeedVerdict; why: string } | null => {
+    if (!pitchM || !rows.length) return null;
+    let on: FieldRow | null = null, dOn = Infinity, dCorn = Infinity;
+    for (const r of rows) { const d = rowDist(r, e, n); if (d < dOn) { dOn = d; on = r; } if (r.identity === "corn") dCorn = Math.min(dCorn, d); }
+    const cm = (m: number) => `${Math.round(m * 100)} cm`;
+    if (on && dOn <= o.weedOnRowShare * pitchM) return on.identity === "corn" ? { verdict: "crop on a row", why: `on corn row ${on.id}'s line (${cm(dOn)} from it): the crop` } : { verdict: "unknown vegetation", why: `on the line of row ${on.id}, a planted row whose crop is not confirmed (${cm(dOn)} from it): crop as likely as weed` };
+    if (dCorn > o.weedBesideCornShare * pitchM) return { verdict: "unknown vegetation", why: Number.isFinite(dCorn) ? `not between the rows beside a corn row (the nearest corn row ${cm(dCorn)} away, the spacing ${cm(pitchM)})` : "no corn row in this field" };
+    return null;
+  };
+
   // Weeds: every judged green patch is a sighting; Direct's reconcile joins the sightings of one patch.
   const obs: Observation[] = [];
   for (const r of used) {
@@ -271,8 +308,9 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
     const needVotes = Math.min(o.minWeedVotes, ob.coveredBy);
     let verdict: FieldWeedVerdict, why: string;
     if (votes["crop on a row"] > 0 && votes["crop on a row"] >= votes["weed candidate"]) { verdict = "crop on a row"; why = `${votes["crop on a row"]} photograph(s) place it on a planted row's line`; }
-    else if (votes["weed candidate"] >= needVotes && votes["weed candidate"] > votes["unknown vegetation"] + votes["crop on a row"] && ob.seenBy >= o.weedMinSeenShare * ob.coveredBy) { verdict = "weed candidate"; why = `a weed candidate in ${votes["weed candidate"]} of the ${ob.coveredBy} photographs covering it`; }
-    else { verdict = "unknown vegetation"; why = votes["weed candidate"] ? `a weed candidate in only ${votes["weed candidate"]} of the ${ob.coveredBy} photographs covering it (${ob.seenBy} saw it at all)` : "no photograph calls it a weed candidate"; }
+    else if (votes["weed candidate"] >= needVotes && votes["weed candidate"] > votes["unknown vegetation"] + votes["crop on a row"]) { verdict = "weed candidate"; why = `a weed candidate in ${votes["weed candidate"]} of the ${ob.seenBy} photographs that saw it (${ob.coveredBy} cover it)`; }
+    else { verdict = "unknown vegetation"; why = votes["weed candidate"] ? `a weed candidate in only ${votes["weed candidate"]} of the ${ob.seenBy} photographs that saw it (${ob.coveredBy} cover it)` : "no photograph calls it a weed candidate"; }
+    if (verdict === "weed candidate") { const pl = weedPlace(e, n); if (pl) { verdict = pl.verdict; why = `${pl.why}; a weed candidate in ${votes["weed candidate"]} of the ${ob.seenBy} photographs that saw it`; } }
     const sightings = ob.members.map(m => ({ photo: m.frame, u: m.u, v: m.v, poly: ((m.data?.poly as [number, number][]) ?? []), verdict: ((m.data?.verdict as FieldWeedVerdict) ?? "unknown vegetation") }));
     return { id: i + 1, lat: ob.lat, lng: ob.lng, e, n, areaM2: Math.round(ob.areaM2 * 10000) / 10000, verdict, votes, seenBy: ob.seenBy, coveredBy: ob.coveredBy, photos, sightings, why };
   });

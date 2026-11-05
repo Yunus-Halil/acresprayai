@@ -106,6 +106,31 @@ describe("Corn V1 over a field", () => {
     expect(g.rows.length).toBe(ROWS.length);
   });
 
+  // 2026-11-05, checked by eye on three UAV3DCrop flights: a covering photograph that reports nothing is not a vote
+  // against (the weed is there, under a leaf from that angle); where a weed stands is judged on the field's rows.
+  it("confirms a weed two photographs report though four covering it are silent; withholds one on a row's line or beyond the outer corn row", () => {
+    const cams = ["P", "Q", "R", "S", "T", "U"].map((name, i) => camera(name, 0, -1 + 0.8 * i));
+    const fr = new Map(cams.map(c => [c.name, c]));
+    // Corn rows k <= 2; rows 3 to 6 a planted row whose crop no photograph confirms.
+    const quiet = { e: -1.5 * PITCH, n: 1.2 }, onLine = { e: -3 * PITCH + 0.05, n: 1.4 }, beyond = { e: 3.5 * PITCH, n: 1.3 };
+    const rd = cams.map((c, i) => {
+      const base = readOf(c);
+      // readOf builds one row per entry of ROWS, in order (every camera here sees all of them).
+      const ided = base.rows.map((r, j) => (ROWS[j] >= 3 ? { ...r, identity: "probable crop" as const, confidence: "medium" as const, evidence: "green read only" } : r));
+      const patches = i < 2 ? [patch(c, quiet.e, quiet.n, "weed candidate"), patch(c, onLine.e, onLine.n, "weed candidate"), patch(c, beyond.e, beyond.n, "weed candidate")] : [];
+      return { ...base, rows: ided, patches };
+    });
+    const g = cornField(rd, fr);
+    const at = (p: { e: number; n: number }) => g.weeds.find(w => { const q = toEnu({ lat: w.lat, lng: w.lng, altM: 0 }, ORIGIN); return Math.hypot(q[0] - p.e, q[1] - p.n) < 0.2; })!;
+    expect(g.rows.filter(r => r.identity === "corn").length).toBe(9);
+    expect(at(quiet).coveredBy).toBe(6);
+    expect(at(quiet).seenBy).toBe(2);
+    expect(at(quiet).verdict).toBe("weed candidate");
+    expect(at(onLine).verdict).toBe("crop on a row");
+    expect(at(beyond).verdict).toBe("unknown vegetation");
+    expect(at(beyond).why).toMatch(/not between the rows beside a corn row/);
+  });
+
   it("reports in latitude and longitude as well as local metres", () => {
     const r = f.rows[0], [lat, lng] = r.line[0], back = toEnu({ lat, lng, altM: 0 }, f.origin);
     expect(Math.hypot(back[0] - r.lineEN[0][0], back[1] - r.lineEN[0][1])).toBeLessThan(1e-3);

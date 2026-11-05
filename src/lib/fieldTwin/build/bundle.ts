@@ -89,14 +89,27 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
   }
   const treeEn = trees.map(t => ({ t, p: enOf(t.lat, t.lng) }));
   const weedEn = weeds.map(w => ({ w, p: enOf(w.lat, w.lng) }));
+  // A corn build: green inside the planting (within half a row spacing of a planted row, corn or unconfirmed) is the
+  // corn layer's to judge (its weeds, crop on a row, unknown vegetation). Drawn here as "other vegetation" it was the
+  // corn itself: on the Day023 test flight all 19 patches were corn plants or their leaves (checked by eye, 2026-11-05).
+  const cornField = inp.corn?.field ?? null;
+  const plantedEn = (cornField?.rows ?? []).map(r => r.line.map(([a, b]) => enOf(a, b)));
+  const plantingHalfM = 0.5 * (cornField?.pitchM ?? 0.76);
+  const segDist = (p: [number, number], a: [number, number], b: [number, number]) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy, s = L ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L)) : 0;
+    return Math.hypot(p[0] - a[0] - s * dx, p[1] - a[1] - s * dy);
+  };
+  const insidePlanting = (p: [number, number]) => plantedEn.some(l => l.some((q, i) => i > 0 && segDist(p, l[i - 1], q) <= plantingHalfM));
+  let leftToCorn = 0;
   const vegetation = reconcile(vegObs, frames, { maxHeightM: 6 }).filter(v => {
     if (v.seenBy < 2) return false;
     const p = enOf(v.lat, v.lng);
+    if (plantedEn.length && insidePlanting(p)) { leftToCorn++; return false; }
     if (treeEn.some(({ t, p: q }) => Math.hypot(p[0] - q[0], p[1] - q[1]) <= t.crownRadiusM + 0.2)) return false;
     if (weedEn.some(({ w, p: q }) => Math.hypot(p[0] - q[0], p[1] - q[1]) <= Math.max(0.3, w.diameterM / 2 + 0.1))) return false;
     return true;
   });
-  hooks.log?.(`${vegetation.length} other vegetation patches`);
+  hooks.log?.(`${vegetation.length} other vegetation patches${leftToCorn ? ` (${leftToCorn} inside the planting left to the corn layer)` : ""}`);
   checkCancelled(hooks.signal);
 
   // Evidence crops: requests first, then one pass over the photographs.
@@ -171,7 +184,7 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
     const conf = weeds.filter(w => w.status === "confirmed").length, cont = weeds.filter(w => w.status === "contested").length, keptGaps = gaps.filter(g => g.status === "confirmed");
     twinCorn = {
       version: 1,
-      engine: "Corn V1 (tag corn-v1.0) on every photograph at its full size, with the aligned camera's pixel size; combined over the field by cornField v1 (rows on the field's lattice, weed sightings reconciled across photographs, gaps checked in every photograph covering them)",
+      engine: "Corn V1 (tag corn-v1.0) on every photograph at its full size, with the aligned camera's pixel size; combined over the field by cornField v2 (rows on the field's lattice, weed sightings reconciled across photographs (a weed needs 2+ weed votes and more than all other votes; silence is not a vote), gaps checked in every photograph covering them)",
       enteredCrop: "corn",
       rowSpacingM: F.pitchM, rowDirectionDeg: F.directionDeg != null ? r2(F.directionDeg) : null, rowAgreementM: F.rowAgreementM,
       photographs: { read: cornRes.reads.length, withRows: cornRes.withRows, failed: cornRes.failed },
