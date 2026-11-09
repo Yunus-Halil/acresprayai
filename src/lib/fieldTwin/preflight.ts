@@ -188,6 +188,32 @@ export function assessPhotographs(inputs: CheckInput[], crop: CheckCrop | null, 
 }
 
 const HEADER_BYTES = 1 << 20;
+const DEEP_BYTES = 16 << 20;
+
+/**
+ * The pixel size from a JPEG's frame header (SOF), for photographs whose EXIF carries no image size. The build does
+ * the same by decoding (build/photos.ts), so the check must not refuse what the build accepts.
+ * Returns null when the bytes end before the frame header, or the file is not a baseline/progressive JPEG.
+ */
+export function jpegPixelSize(b: Uint8Array): { width: number; height: number } | null {
+  if (b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return null;
+  let i = 2;
+  while (i + 3 < b.length) {
+    if (b[i] !== 0xff) return null;
+    const m = b[i + 1];
+    if (m === 0xff) { i++; continue; }
+    if (m === 0x01 || (m >= 0xd0 && m <= 0xd8)) { i += 2; continue; }
+    if (m === 0xda || m === 0xd9) return null;
+    const sof = m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc;
+    if (sof) {
+      if (i + 8 >= b.length) return null;
+      const height = (b[i + 5] << 8) | b[i + 6], width = (b[i + 7] << 8) | b[i + 8];
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    i += 2 + ((b[i + 2] << 8) | b[i + 3]);
+  }
+  return null;
+}
 
 /** Read the headers of a picked set (the browser side of the check). Files that are not photographs are counted. */
 export async function readForCheck(files: File[], onProgress?: (done: number, total: number) => void, signal?: AbortSignal): Promise<{ inputs: CheckInput[]; otherFiles: number }> {
@@ -198,7 +224,12 @@ export async function readForCheck(files: File[], onProgress?: (done: number, to
     const f = photos[k];
     const path = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
     try {
-      const meta = parseDjiHeader(new Uint8Array(await f.slice(0, HEADER_BYTES).arrayBuffer()));
+      const head = new Uint8Array(await f.slice(0, HEADER_BYTES).arrayBuffer());
+      const meta = parseDjiHeader(head);
+      if (!meta.width || !meta.height) {
+        const px = jpegPixelSize(head) ?? (f.size > HEADER_BYTES ? jpegPixelSize(new Uint8Array(await f.slice(0, DEEP_BYTES).arrayBuffer())) : null);
+        if (px) { meta.width = px.width; meta.height = px.height; }
+      }
       inputs.push({ name: f.name, path, size: f.size, meta });
     } catch (e) {
       inputs.push({ name: f.name, path, size: f.size, meta: null, error: `header unreadable: ${(e as Error).message}` });

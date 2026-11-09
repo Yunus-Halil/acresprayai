@@ -1,8 +1,10 @@
+// @vitest-environment node
 // The photograph check: every photograph left out is counted with a plain reason, the build gets only the ones
 // that pass, and a pick that cannot make a twin is stopped before anything runs.
 import { describe, expect, it } from "vitest";
 import type { DjiPhotoMeta } from "@/lib/directGeoref/metadata";
-import { type CheckInput, PILOT_LIMITS, assessPhotographs, readForCheck } from "@/lib/fieldTwin/preflight";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { type CheckInput, PILOT_LIMITS, assessPhotographs, jpegPixelSize, readForCheck } from "@/lib/fieldTwin/preflight";
 
 /** A Phantom 4 RTK frame at 36 m, straight down: about 1 cm of ground per pixel. */
 function meta(over: Partial<DjiPhotoMeta> = {}): DjiPhotoMeta {
@@ -125,4 +127,22 @@ describe("photograph check", () => {
     expect(c.canBuild).toBe(false);
     expect(c.findings.map(f => f.text).join(" ")).toMatch(/left out/);
   });
+
+  it("reads the pixel size from the JPEG frame header when EXIF has none", () => {
+    // SOI, an APP1 segment of 6 bytes, then SOF0: precision 8, height 3000, width 4000.
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x06, 1, 2, 3, 4, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x0b, 0xb8, 0x0f, 0xa0, 0x03]);
+    expect(jpegPixelSize(jpeg)).toEqual({ width: 4000, height: 3000 });
+    expect(jpegPixelSize(new Uint8Array([0xff, 0xd8, 0xff, 0xda, 0, 2]))).toBeNull();
+    expect(jpegPixelSize(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+
+  const FLIGHT = "D:/swardus-research/cornflight/Day023_Corn1-n40";
+  it.skipIf(!existsSync(FLIGHT))("accepts the corn test flight, whose headers carry no EXIF image size", async () => {
+    const names = readdirSync(FLIGHT).filter(n => /\.jpe?g$/i.test(n));
+    const files = names.map(n => new File([readFileSync(`${FLIGHT}/${n}`)], n));
+    const r = await readForCheck(files);
+    const c = assessPhotographs(r.inputs, "corn", "participant", r.otherFiles);
+    expect(c.findings.map(f => f.text).join(" ")).not.toMatch(/image size/);
+    expect(c.usable.length).toBe(names.length);
+  }, 60_000);
 });
