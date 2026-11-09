@@ -9,6 +9,7 @@
 // Results are memoised per warm instance so a viewport full of tiles costs one
 // auth round-trip and one ownership lookup rather than several hundred.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { pilotRole } from "./access.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -20,6 +21,7 @@ const USER_TTL_MS = 5 * 60_000;
 const TASK_TTL_MS = 10 * 60_000;
 
 const userCache = new Map<string, { userId: string | null; expires: number }>();
+const founderCache = new Map<string, { founder: boolean; expires: number }>();
 const taskCache = new Map<string, { userId: string; expires: number } | null>();
 
 /** Pull the bearer token from either the Authorization header or `?token=`. */
@@ -78,6 +80,19 @@ export async function ownerOfOdmUuid(odmUuid: string): Promise<string | null> {
   const userId = (data?.user_id as string | undefined) ?? null;
   taskCache.set(odmUuid, userId ? { userId, expires: now + TASK_TTL_MS } : null);
   return userId;
+}
+
+/**
+ * Whether this user is the pilot's founder, memoised like the token. The tile endpoints serve the orthomosaic
+ * workflow, which is founder-only during the pilot (see _shared/access.ts).
+ */
+export async function isFounder(userId: string): Promise<boolean> {
+  const now = Date.now();
+  const hit = founderCache.get(userId);
+  if (hit && hit.expires > now) return hit.founder;
+  const founder = (await pilotRole(admin, userId)) === "founder";
+  founderCache.set(userId, { founder, expires: now + USER_TTL_MS });
+  return founder;
 }
 
 export { admin };

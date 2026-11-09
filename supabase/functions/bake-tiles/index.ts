@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { fetchResilient, jsonSafe } from "../_shared/net.ts";
 import { type RenderPlan, renderTileQuery, resolveRenderPlan } from "../_shared/renderPlan.ts";
 import type { BandAnalysis } from "../_shared/bands.ts";
+import { NOT_IN_PILOT, inOwnFolder, isOdmUuid, pilotRole } from "../_shared/access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -133,11 +134,14 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    if ((await pilotRole(admin, ud.user.id)) !== "founder") return json(NOT_IN_PILOT, 403);
 
     const { data: task } = await admin.from("odm_tasks")
       .select("id, user_id, odm_uuid, ortho_path, band_mapping, tiles_baked, tiles_done, tiles_total, tiles_failed, tiles_min_zoom, tiles_max_zoom, tiles_plan_locked")
       .eq("id", taskId).maybeSingle();
     if (!task || task.user_id !== ud.user.id) return json({ error: "Not found" }, 404);
+    // Tiles are written under the uuid and the orthophoto is signed from its path: both must be the caller's own.
+    if ((task.odm_uuid != null && !isOdmUuid(task.odm_uuid)) || (task.ortho_path != null && !inOwnFolder(ud.user.id, task.ortho_path))) return json({ error: "Not found" }, 404);
     if (!task.odm_uuid || !task.ortho_path) return json({ error: "Orthomosaic not ready" }, 409);
 
     if (rebake) {

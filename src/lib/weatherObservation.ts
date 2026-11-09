@@ -7,6 +7,7 @@
 // string and the dialog behaves exactly as if the feature did not exist —
 // logging a flight never waits on a weather call.
 import { FN_BASE } from "@/components/app/workspace/constants";
+import { supabase } from "@/integrations/supabase/client";
 
 export type ObservationSuggestion = {
   provider: string;
@@ -75,9 +76,12 @@ export async function fetchObservation(
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
+    // The weather function needs the signed-in session (it is founder-only and spends a provider quota).
+    const { data: s } = await supabase.auth.getSession();
+    const token = s.session?.access_token;
     const r = await fetch(
       `${FN_BASE}/weather?mode=observation&lat=${lat}&lon=${lon}&time=${encodeURIComponent(instant.toISOString())}`,
-      { signal: ctrl.signal },
+      { signal: ctrl.signal, headers: token ? { Authorization: `Bearer ${token}` } : {} },
     );
     const j = await r.json().catch(() => null);
     if (!j || typeof j !== "object") return { kind: "failed", reason: "unavailable" };

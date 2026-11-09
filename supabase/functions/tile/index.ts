@@ -1,4 +1,5 @@
-import { admin, ownerOfOdmUuid, readToken, userIdFromToken } from "../_shared/tileAuth.ts";
+import { admin, isFounder, ownerOfOdmUuid, readToken, userIdFromToken } from "../_shared/tileAuth.ts";
+import { NOT_IN_PILOT } from "../_shared/access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -38,6 +39,7 @@ Deno.serve(async (req) => {
 
     const userId = await userIdFromToken(readToken(req, url));
     if (!userId) return deny(401, "Unauthorized");
+    if (!(await isFounder(userId))) return deny(403, NOT_IN_PILOT.error);
 
     const owner = await ownerOfOdmUuid(odmUuid);
     // Same response whether the scan is missing or belongs to someone else, so

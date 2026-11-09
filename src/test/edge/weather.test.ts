@@ -8,7 +8,8 @@
 // (whose free tier is non-commercial) and the User-Agent must not leak a
 // personal email by default.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { installDenoGlobal, jsonResponse, loadFunction, mockFetch } from "./harness";
+import { AUTH, installDenoGlobal, jsonResponse, loadFunction, makeSupabase, mockFetch } from "./harness";
+import { __setMockClient } from "./supabaseClientMock";
 
 const FN = "../../../supabase/functions/weather/index.ts";
 
@@ -17,7 +18,7 @@ const RECENT = new Date(Date.now() - 30 * 3600_000).toISOString();
 const OLD = new Date(Date.now() - 21 * 86400_000).toISOString();
 
 const obsReq = (time: string) =>
-  new Request(`https://fn/weather?mode=observation&lat=45.01&lon=-93.46&time=${encodeURIComponent(time)}`);
+  new Request(`https://fn/weather?mode=observation&lat=45.01&lon=-93.46&time=${encodeURIComponent(time)}`, { headers: AUTH });
 
 function nwsRoutes() {
   return [
@@ -62,7 +63,8 @@ function nwsRoutes() {
   ];
 }
 
-beforeEach(() => { installDenoGlobal(); });
+// The function is founder-only (the harness's default caller is the founder).
+beforeEach(() => { installDenoGlobal(); __setMockClient(makeSupabase().client); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("weather · observation mode", () => {
@@ -187,7 +189,7 @@ describe("weather · provider policy", () => {
       },
     ]);
 
-    const res = await handler(new Request("https://fn/weather?lat=45.01&lon=-93.46"));
+    const res = await handler(new Request("https://fn/weather?lat=45.01&lon=-93.46", { headers: AUTH }));
     const body = await res.json();
 
     expect(body.source).toBe("noaa-nws");

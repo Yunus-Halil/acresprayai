@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { fetchResilient, jsonSafe } from "../_shared/net.ts";
+import { NOT_IN_PILOT, isOdmUuid, pilotRole } from "../_shared/access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,6 +45,9 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    // The paid processing node is the founder's tool during the pilot; participants build Field Twins in their
+    // own browser and never spend ODM capacity.
+    if ((await pilotRole(admin, user.id)) !== "founder") return json(NOT_IN_PILOT, 403);
 
     const action = req.headers.get("x-action") ?? "";
 
@@ -90,7 +94,7 @@ Deno.serve(async (req) => {
       fd.append("name", `swathwise-${Date.now()}`);
       const initRes = await fetch(odmUrl("/task/new/init"), { method: "POST", body: fd });
       const initJson = await initRes.json();
-      if (!initRes.ok || !initJson.uuid) {
+      if (!initRes.ok || !isOdmUuid(initJson.uuid)) {
         return json({ error: "ODM init failed", detail: initJson }, 502);
       }
 
@@ -111,7 +115,7 @@ Deno.serve(async (req) => {
     // ---- UPLOAD (one image per request, streamed) ----
     if (action === "upload") {
       const odmUuid = req.headers.get("x-odm-uuid");
-      if (!odmUuid) return json({ error: "Missing x-odm-uuid" }, 400);
+      if (!isOdmUuid(odmUuid)) return json({ error: "Missing or malformed x-odm-uuid" }, 400);
 
       // Verify the task belongs to this user
       const { data: task } = await admin.from("odm_tasks")
@@ -146,7 +150,7 @@ Deno.serve(async (req) => {
     // ---- COMMIT (start processing) ----
     if (action === "commit") {
       const { odm_uuid, options } = await req.json();
-      if (!odm_uuid) return json({ error: "Missing odm_uuid" }, 400);
+      if (!isOdmUuid(odm_uuid)) return json({ error: "Missing or malformed odm_uuid" }, 400);
 
       const { data: task } = await admin.from("odm_tasks")
         .select("id, user_id").eq("odm_uuid", odm_uuid).maybeSingle();

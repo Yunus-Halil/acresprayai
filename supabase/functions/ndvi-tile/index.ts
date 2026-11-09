@@ -1,4 +1,5 @@
-import { admin, readToken, taskById, userIdFromToken } from "../_shared/tileAuth.ts";
+import { admin, isFounder, readToken, taskById, userIdFromToken } from "../_shared/tileAuth.ts";
+import { NOT_IN_PILOT, inOwnFolder } from "../_shared/access.ts";
 import { type BandAnalysis, type VegetationIndex, analyseBands, expressionFor } from "../_shared/bands.ts";
 
 const corsHeaders = {
@@ -42,6 +43,10 @@ async function resolveTaskCog(
   const task = await taskById(taskId);
   // Identical response for "no such scan" and "not yours" - no existence probe.
   if (!task || task.userId !== userId) {
+    return { error: "Scan not found", status: 404, reason: "denied" };
+  }
+  // The orthophoto is signed from the row's path: it must be in the caller's own folder.
+  if (task.orthoPath != null && !inOwnFolder(userId, task.orthoPath)) {
     return { error: "Scan not found", status: 404, reason: "denied" };
   }
 
@@ -89,6 +94,7 @@ Deno.serve(async (req) => {
     // arrive as ?token=. Either way it is verified before anything is served.
     const userId = await userIdFromToken(readToken(req, url));
     if (!userId) return json({ error: "Unauthorized" }, 401);
+    if (!(await isFounder(userId))) return json(NOT_IN_PILOT, 403);
 
     // ---- INFO endpoint -----------------------------------------------------
     // GET /ndvi-tile/info?task_id=...

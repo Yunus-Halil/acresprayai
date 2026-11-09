@@ -145,15 +145,25 @@ export type SupabaseMock = {
    * row ownership, such as `pilot-applications`.
    */
   setUser: (id: string | null, email?: string) => void;
+  /** auth.users as the admin API sees it (listUsers / generateLink). */
+  authUsers: { id: string; email: string; created_at?: string; last_sign_in_at?: string | null }[];
+  /** Every link auth.admin.generateLink was asked for. */
+  links: { type: string; email: string; redirectTo?: string }[];
 };
 
 export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
   const tables: Record<string, Row[]> = JSON.parse(JSON.stringify(seed));
+  // The default caller ("user-1") is the pilot's founder unless a test seeds pilot_members itself: most functions
+  // under test are founder-only (supabase/functions/_shared/access.ts), and their own behaviour is what those tests
+  // are about. The access tests seed members explicitly.
+  if (!("pilot_members" in tables)) tables.pilot_members = [{ user_id: "user-1", role: "founder", status: "active" }];
   const objects = new Map<string, unknown>();
   const calls: StorageCall[] = [];
   const failUploads = new Set<string>();
   let userId: string | null = "user-1";
   let userEmail: string | undefined;
+  const authUsers: SupabaseMock["authUsers"] = [];
+  const links: SupabaseMock["links"] = [];
 
   const matchRow = (row: Row, eqs: [string, unknown][], orFilter: string | null) => {
     for (const [k, v] of eqs) if (row[k] !== v) return false;
@@ -214,6 +224,17 @@ export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
         data: { user: userId ? { id: userId, email: userEmail } : null },
         error: null,
       }),
+      admin: {
+        listUsers: ({ page, perPage }: { page: number; perPage: number }) =>
+          Promise.resolve({ data: { users: authUsers.slice((page - 1) * perPage, page * perPage) }, error: null }),
+        generateLink: ({ type, email, options }: { type: string; email: string; options?: { redirectTo?: string } }) => {
+          links.push({ type, email, redirectTo: options?.redirectTo });
+          let user = authUsers.find(u => u.email === email);
+          if (!user && type === "invite") { user = { id: `invited-${authUsers.length + 1}`, email }; authUsers.push(user); }
+          if (!user) return Promise.resolve({ data: null, error: { message: "User not found" } });
+          return Promise.resolve({ data: { user, properties: { action_link: `https://test.supabase.co/auth/v1/verify?type=${type}&token=t-${links.length}` } }, error: null });
+        },
+      },
     },
     storage: {
       from(bucket: string) {
@@ -259,6 +280,8 @@ export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
     tables,
     storage: { objects, calls, failUploads },
     setUser: (id, email) => { userId = id; userEmail = email; },
+    authUsers,
+    links,
   };
 }
 

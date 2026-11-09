@@ -17,6 +17,7 @@
 //   -> ModelResult (200), or { status: "API_ERROR", error } with 400 / 401 / 413 / 503
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
+import { NOT_IN_PILOT, pilotRole } from "../_shared/access.ts";
 import {
   DEFAULT_ROBOFLOW_MODEL, type ModelResult, callRoboflow, checkRoboflowKey, explainRefusal,
 } from "../_shared/roboflow.ts";
@@ -45,6 +46,9 @@ Deno.serve(async (req) => {
   );
   const { data: ud } = await supabase.auth.getUser();
   if (!ud?.user) return refuse("Unauthorized", 401);
+  // A founder tool: each call spends Roboflow credit on the server's key.
+  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  if ((await pilotRole(admin, ud.user.id)) !== "founder") return refuse(NOT_IN_PILOT.error, 403);
 
   let body: { image?: unknown; mime?: unknown; model?: unknown; confidence?: unknown };
   try { body = await req.json(); } catch { return refuse("Body must be JSON", 400); }

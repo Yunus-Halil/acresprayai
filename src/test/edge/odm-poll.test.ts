@@ -15,7 +15,7 @@ function seedTask(over: Record<string, unknown> = {}) {
   return {
     id: "task-1",
     user_id: "user-1",
-    odm_uuid: "uuid-1",
+    odm_uuid: "0d0d0d0d-1111-4222-8333-444455556661",
     status: "processing",
     progress: 42,
     output_path: null,
@@ -112,8 +112,8 @@ describe("odm-poll · mirror lease", () => {
     await flushBackground();
 
     expect(task().status).toBe("completed");
-    expect(task().output_path).toBe("user-1/odm/uuid-1/all.zip");
-    expect(task().ortho_path).toBe("user-1/uuid-1.tif");
+    expect(task().output_path).toBe("user-1/odm/0d0d0d0d-1111-4222-8333-444455556661/all.zip");
+    expect(task().ortho_path).toBe("user-1/0d0d0d0d-1111-4222-8333-444455556661.tif");
     // Lease released, counters reset.
     expect(task().mirror_started_at).toBeNull();
     expect(task().mirror_attempts).toBe(0);
@@ -151,7 +151,7 @@ describe("odm-poll · mirror lease", () => {
   });
 
   it("does not re-download an archive already mirrored", async () => {
-    const handler = await boot(seedTask({ output_path: "user-1/odm/uuid-1/all.zip" }));
+    const handler = await boot(seedTask({ output_path: "user-1/odm/0d0d0d0d-1111-4222-8333-444455556661/all.zip" }));
     const fetchMock = mockFetch(mirrorRoutes);
 
     await handler(postJson("https://fn/odm-poll", { task_id: "task-1" }));
@@ -267,7 +267,7 @@ describe("odm-poll · cross-tenant isolation", () => {
 
     // Every ODM URL must name this scan's own uuid, and no task listing is fetched.
     const urls = fetchMock.mock.calls.map(c => String(c[0]));
-    for (const u of urls) expect(u).toContain("uuid-1");
+    for (const u of urls) expect(u).toContain("0d0d0d0d-1111-4222-8333-444455556661");
     expect(urls.some(u => /\/tasks\b|\/task\/list/.test(u))).toBe(false);
 
     // Missing orthophoto is not fatal — ortho-url back-fills later.

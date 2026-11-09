@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
 
   // Notify after the row is safely down, and never let a mail failure turn a
   // saved application into an error the applicant sees.
-  const to = Deno.env.get("PILOT_NOTIFY_TO") ?? "yunus@swathwise.com";
+  const to = Deno.env.get("PILOT_NOTIFY_TO") ?? "yunus@swardus.com";
   const result = await sendEmail({
     to,
     subject: `Access request: ${row.farm_name} (${row.location})`,

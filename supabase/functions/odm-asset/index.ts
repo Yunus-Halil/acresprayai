@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { NOT_IN_PILOT, isOdmUuid, isPlainAssetName, pilotRole } from "../_shared/access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,7 +36,8 @@ Deno.serve(async (req) => {
     const asset = url.searchParams.get("asset"); // raw asset path
     const info = url.searchParams.get("info"); // "task" | "ortho"
 
-    if (!uuid) {
+    // The uuid is interpolated into the node's URL below, so anything that is not an ODM uuid stops here.
+    if (!isOdmUuid(uuid)) {
       return new Response(JSON.stringify({ error: "Missing uuid" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -58,6 +60,15 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+    // Founder-only during the pilot: this proxies the shared, paid processing node.
+    {
+      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      if ((await pilotRole(admin, ud.user.id)) !== "founder") {
+        return new Response(JSON.stringify(NOT_IN_PILOT), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
     // Same 404 whether the scan is missing or someone else's - no existence oracle.
     if (!(await verifyTaskBelongsToUser(uuid, ud.user.id))) {
@@ -116,20 +127,30 @@ Deno.serve(async (req) => {
       const r = await fetch(odmUrl(`/task/${uuid}/orthophoto/tiles/${z}/${x}/${y}.png`));
       if (!r.ok) return new Response("tile not found", { status: r.status, headers: corsHeaders });
       return new Response(r.body, {
-        headers: { ...corsHeaders, "Content-Type": "image/png", "Cache-Control": "public, max-age=3600" },
+        headers: { ...corsHeaders, "Content-Type": "image/png", "Cache-Control": "private, max-age=3600" },
       });
     }
 
     // Raw ODM assets can be huge; never proxy orthophotos or files over 10MB to the browser.
     if (asset) {
+      // One plain file name, never a path: "../" (decoded or not) would walk out of this task's assets to other node
+      // endpoints with the server's ODM token, such as the list of every task on the node.
+      if (!isPlainAssetName(asset)) {
+        return new Response(JSON.stringify({ error: "Unknown asset" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       if (/orthophoto|orthomosaic|\.tiff?$/i.test(asset)) {
         return new Response(JSON.stringify({ error: "Raw orthomosaic downloads are disabled. Use tiled viewing." }), {
           status: 413,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const r = await fetch(odmUrl(`/task/${uuid}/assets/${asset}`));
-      const len = Number(r.headers.get("Content-Length") ?? 0);
+      const r = await fetch(odmUrl(`/task/${uuid}/assets/${encodeURIComponent(asset)}`));
+      // A response that does not say how big it is is treated as too big: the limit cannot be enforced otherwise.
+      const lenHeader = r.headers.get("Content-Length");
+      const len = lenHeader != null && /^\d+$/.test(lenHeader) ? Number(lenHeader) : Infinity;
       if (len > 10_000_000) {
         await r.body?.cancel();
         return new Response(JSON.stringify({ error: "Asset is too large for direct browser download. Use tiled viewing." }), {

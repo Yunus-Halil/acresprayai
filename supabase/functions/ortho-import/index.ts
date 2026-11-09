@@ -27,6 +27,7 @@
 // writes exactly the row those paths already expect, nothing more.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { type BandRole, type BandRoles, operatorBandAnalysis } from "../_shared/bands.ts";
+import { NOT_IN_PILOT, pilotRole } from "../_shared/access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -72,6 +73,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    if ((await pilotRole(admin, user.id)) !== "founder") return json(NOT_IN_PILOT, 403);
 
     const url = new URL(req.url);
     const action = url.searchParams.get("action") ?? "";

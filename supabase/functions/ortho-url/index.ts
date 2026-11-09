@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { Unzip, UnzipInflate } from "https://esm.sh/fflate@0.8.2";
+import { NOT_IN_PILOT, inOwnFolder, isOdmUuid, pilotRole } from "../_shared/access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -151,10 +152,18 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    if ((await pilotRole(admin, ud.user.id)) !== "founder") return json(NOT_IN_PILOT, 403);
     const { data: task } = await admin.from("odm_tasks")
       .select("id, user_id, odm_uuid, ortho_path, output_path, status, progress, field_id").eq("id", taskId).maybeSingle();
     // Never disclose whether the row exists for someone else - same 404 either way.
     if (!task || task.user_id !== ud.user.id) {
+      return json({ error: "Scan not found." }, 404);
+    }
+    // Every path this function signs or reads comes from the row. It must sit in the caller's own folder, and the
+    // node id must be an ODM uuid, or the request is treated as a missing scan (no detail, no oracle).
+    if ((task.odm_uuid != null && !isOdmUuid(task.odm_uuid))
+      || (task.ortho_path != null && !inOwnFolder(ud.user.id, task.ortho_path))
+      || (task.output_path != null && !inOwnFolder(ud.user.id, task.output_path))) {
       return json({ error: "Scan not found." }, 404);
     }
 

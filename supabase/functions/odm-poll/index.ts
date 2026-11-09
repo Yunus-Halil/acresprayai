@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { fetchResilient, fetchStream, isTransient, jsonSafe } from "../_shared/net.ts";
+import { NOT_IN_PILOT, isOdmUuid, pilotRole } from "../_shared/access.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -73,6 +74,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    if ((await pilotRole(admin, user.id)) !== "founder") return json(NOT_IN_PILOT, 403);
 
     const body = await req.json().catch(() => ({}));
     const { task_id, retry } = body as { task_id?: string; retry?: boolean };
@@ -84,6 +86,8 @@ Deno.serve(async (req) => {
     // Returning 404 for one and 403 for the other made this an existence oracle:
     // a caller could enumerate which scan ids exist by watching the status code.
     if (tErr || !task || task.user_id !== user.id) return json({ error: "Scan not found" }, 404);
+    // The node is addressed by this id; a value that is not an ODM uuid never reaches a URL.
+    if (task.odm_uuid != null && !isOdmUuid(task.odm_uuid)) return json({ error: "Scan not found" }, 404);
 
     // Explicit user-driven retry: clear the failure and let the flow below
     // re-evaluate from whatever ODM currently reports.

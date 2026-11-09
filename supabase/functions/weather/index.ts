@@ -24,6 +24,9 @@
 //
 // NOAA asks API users to identify themselves via User-Agent. Set the
 // WEATHER_CONTACT secret to a contact email/URL; the default names the app.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { NOT_IN_PILOT, pilotRole } from "../_shared/access.ts";
+
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -47,6 +50,16 @@ function json(body: unknown, status = 200) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  // Signed-in founder only. The platform's JWT gate accepts the public anon key, so without this check anyone could
+  // spend the OpenWeather quota; and spray conditions are part of the orthomosaic workflow, which is founder-only
+  // during the pilot (see _shared/access.ts).
+  const auth = req.headers.get("Authorization") ?? "";
+  if (!auth.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
+  const caller = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } } });
+  const { data: ud } = await caller.auth.getUser();
+  if (!ud?.user) return json({ error: "Unauthorized" }, 401);
+  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  if ((await pilotRole(admin, ud.user.id)) !== "founder") return json(NOT_IN_PILOT, 403);
   const url = new URL(req.url);
   const lat = parseFloat(url.searchParams.get("lat") ?? "");
   const lon = parseFloat(url.searchParams.get("lon") ?? "");

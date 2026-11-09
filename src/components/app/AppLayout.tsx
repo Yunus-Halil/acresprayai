@@ -9,7 +9,7 @@ import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays, Sprout, C
 import { isFieldTwinReviewer } from "@/lib/fieldTwin/reviewers";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import RequireAuth from "@/components/RequireAuth";
+import PilotRoute from "@/components/pilot/PilotRoute";
 import { useDeveloperMode } from "@/hooks/useDeveloperMode";
 // WEED-VISION-PREVIEW (temporary research integration; remove with the branch)
 import { isWeedVisionPreviewEnabled } from "@/lib/weedVision/flag";
@@ -39,13 +39,13 @@ const devNav = [
 
 export default function AppLayout() {
   return (
-    <RequireAuth>
+    <PilotRoute>
       {/* Signed-in surfaces carry farmer data and have no business in a
           search index. robots.txt disallows them too; this covers the case
           of a crawler that reached the URL from a link anyway. */}
       <Seo title="Swardus" noindex />
       <AppShell />
-    </RequireAuth>
+    </PilotRoute>
   );
 }
 

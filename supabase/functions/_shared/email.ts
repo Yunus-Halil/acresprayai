@@ -13,7 +13,7 @@ import { fetchResilient } from "./net.ts";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
-export type Email = { to: string; subject: string; text: string };
+export type Email = { to: string; subject: string; text: string; /** Where replies go (the founder, for pilot mail). */ replyTo?: string };
 
 export type SendResult =
   | { sent: true }
@@ -26,7 +26,7 @@ export type SendResult =
  * so a deployment without the secret still records applications and leaves a
  * trace in the function logs rather than failing silently.
  */
-export async function sendEmail({ to, subject, text }: Email): Promise<SendResult> {
+export async function sendEmail({ to, subject, text, replyTo }: Email): Promise<SendResult> {
   const key = Deno.env.get("RESEND_API_KEY");
   if (!key) {
     console.warn(`[email] RESEND_API_KEY not set; would have sent to ${to}: ${subject}`);
@@ -42,7 +42,7 @@ export async function sendEmail({ to, subject, text }: Email): Promise<SendResul
     const res = await fetchResilient(RESEND_ENDPOINT, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to, subject, text }),
+      body: JSON.stringify({ from, to, subject, text, ...(replyTo ? { reply_to: replyTo } : {}) }),
       label: "resend",
       attempts: 3,
       timeoutMs: 10_000,

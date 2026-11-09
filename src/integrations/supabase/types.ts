@@ -778,6 +778,51 @@ export type Database = {
         }
         Relationships: []
       }
+      pilot_members: {
+        Row: {
+          application_id: string | null
+          created_at: string
+          display_name: string | null
+          email: string | null
+          invited_at: string | null
+          invited_by: string | null
+          notes: string | null
+          organisation: string | null
+          role: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          application_id?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          invited_at?: string | null
+          invited_by?: string | null
+          notes?: string | null
+          organisation?: string | null
+          role: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          application_id?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          invited_at?: string | null
+          invited_by?: string | null
+          notes?: string | null
+          organisation?: string | null
+          role?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       pilot_signups: {
         Row: {
           created_at: string

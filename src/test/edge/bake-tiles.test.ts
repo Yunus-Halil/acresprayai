@@ -19,8 +19,8 @@ function seedTask(over: Record<string, unknown> = {}) {
   return {
     id: "task-1",
     user_id: "user-1",
-    odm_uuid: "uuid-1",
-    ortho_path: "user-1/uuid-1.tif",
+    odm_uuid: "0d0d0d0d-1111-4222-8333-444455556661",
+    ortho_path: "user-1/0d0d0d0d-1111-4222-8333-444455556661.tif",
     tiles_baked: false,
     tiles_done: 0,
     tiles_total: 0,
@@ -79,7 +79,7 @@ describe("bake-tiles · happy path", () => {
     expect(uploads.length).toBe(body.total);
     for (const u of uploads) {
       expect(u.bucket).toBe("tiles");
-      expect(u.path).toMatch(/^user-1\/uuid-1\/\d+\/\d+\/\d+\.png$/);
+      expect(u.path).toMatch(/^user-1\/0d0d0d0d-1111-4222-8333-444455556661\/\d+\/\d+\/\d+\.png$/);
     }
   });
 
@@ -161,7 +161,7 @@ describe("bake-tiles · cursor integrity", () => {
     ]);
     // Fail the very first upload: a storage blip used to be counted as complete,
     // baking a permanent hole and latching tiles_baked over the top of it.
-    db.storage.failUploads.add("user-1/uuid-1/10/245/365.png");
+    db.storage.failUploads.add("user-1/0d0d0d0d-1111-4222-8333-444455556661/10/245/365.png");
     const firstPath = () => db.storage.calls.find(c => c.op === "upload")?.path;
 
     const body = await (await handler(req())).json();
