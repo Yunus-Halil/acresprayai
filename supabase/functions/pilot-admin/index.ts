@@ -13,6 +13,8 @@
 // POST { action: "invite", email, name?, organisation?, application_id?, origin } -> { link, kind, emailed, member }
 // POST { action: "set-status", user_id, status }               -> { member }
 // POST { action: "applications" }                              -> { applications: [...] }
+// POST { action: "activity" }                                  -> { people, builds, checks, errors, reviews, feedback } (no imagery, no paths)
+// POST { action: "feedback-status", id, status }               -> { ok }
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import { pilotRole } from "../_shared/access.ts";
@@ -164,6 +166,78 @@ Deno.serve(async (req) => {
         const { data, error } = await admin.from("pilot_members").update({ status }).eq("user_id", userId).select().maybeSingle();
         if (error || !data) return json({ error: "No such member" }, 404);
         return json({ member: data });
+      }
+
+      case "activity": {
+        // The founder's view of how the pilot goes. Operational facts only: names, counts, durations, outcomes, error
+        // text, review verdicts and notes, feedback. No storage paths, no signed URLs, no boundaries or coordinates.
+        const since = Date.now() - 90 * 86_400_000;
+        const [ev, tw, rv, fb, mem] = await Promise.all([
+          admin.from("app_events").select("user_id, name, at, duration_ms, outcome, error, counts, detail, twin_id").order("at", { ascending: false }).limit(5000),
+          admin.from("field_twins").select("id, user_id, name, crop, status, photographs, created_at").order("created_at", { ascending: false }).limit(2000),
+          admin.from("twin_reviews").select("user_id, twin_id, finding_kind, verdict, algorithm_status, note, updated_at").order("updated_at", { ascending: false }).limit(5000),
+          admin.from("pilot_feedback").select("id, user_id, created_at, kind, message, route, twin_id, context, status").order("created_at", { ascending: false }).limit(200),
+          admin.from("pilot_members").select("user_id, role, status, display_name, organisation, email"),
+        ]);
+        type Ev = { user_id: string; name: string; at: string; duration_ms: number | null; outcome: string | null; error: string | null; counts: Record<string, number> | null; detail: Record<string, unknown> | null; twin_id: string | null };
+        const events = ((ev.data ?? []) as Ev[]).filter(e => Date.parse(e.at) >= since);
+        const twins = (tw.data ?? []) as { id: string; user_id: string; name: string; crop: string | null; status: string; photographs: number | null; created_at: string }[];
+        const reviews = (rv.data ?? []) as { user_id: string; twin_id: string; finding_kind: string; verdict: string; algorithm_status: string | null; note: string | null; updated_at: string }[];
+        const members = (mem.data ?? []) as { user_id: string; role: string; status: string; display_name: string | null; organisation: string | null; email: string | null }[];
+        const users = new Map((await allUsers(api)).map(u => [u.id, u]));
+        const twinName = new Map(twins.map(t => [t.id, t.name]));
+        const nameOf = (id: string) => { const m = members.find(x => x.user_id === id); return m?.display_name || m?.email || users.get(id)?.email || id; };
+        const median = (xs: number[]) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b); return s[s.length >> 1]; };
+
+        const people = members.map(m => {
+          const mine = events.filter(e => e.user_id === m.user_id);
+          const finished = mine.filter(e => e.name === "twin_build_finished");
+          return {
+            user_id: m.user_id, name: nameOf(m.user_id), organisation: m.organisation, role: m.role, status: m.status,
+            last_sign_in_at: users.get(m.user_id)?.last_sign_in_at ?? null,
+            last_active_at: mine[0]?.at ?? null,
+            sessions: new Set(mine.filter(e => e.name === "session_start").map(e => e.at.slice(0, 10))).size,
+            twins: twins.filter(t => t.user_id === m.user_id && t.status === "ready").length,
+            twins_incomplete: twins.filter(t => t.user_id === m.user_id && t.status !== "ready").length,
+            builds_ok: finished.length,
+            builds_failed: mine.filter(e => e.name === "twin_build_failed").length,
+            builds_cancelled: mine.filter(e => e.name === "twin_build_cancelled").length,
+            saves_failed: mine.filter(e => e.name === "twin_save_failed").length,
+            median_build_ms: median(finished.map(e => e.duration_ms ?? 0).filter(x => x > 0)),
+            reviews: reviews.filter(r => r.user_id === m.user_id).length,
+            errors: mine.filter(e => e.name === "client_error").length,
+          };
+        });
+
+        const builds = events.filter(e => e.name.startsWith("twin_build_") && e.name !== "twin_build_started").slice(0, 100).map(e => ({
+          at: e.at, who: nameOf(e.user_id), outcome: e.name.replace("twin_build_", ""), duration_ms: e.duration_ms,
+          photographs: e.counts?.photographs ?? null, used: e.counts?.used ?? null, refused: e.counts?.refused ?? null,
+          crop: (e.detail?.crop as string | undefined) ?? null, camera: (e.detail?.camera as string | undefined) ?? null,
+          stage: (e.detail?.stage as string | undefined) ?? null, error: e.error,
+        }));
+        const checks = events.filter(e => e.name === "twin_check_done").slice(0, 100).map(e => ({ at: e.at, who: nameOf(e.user_id), ...e.counts, camera: (e.detail?.camera as string | undefined) ?? null }));
+        const errors = events.filter(e => e.name === "client_error" || e.name === "twin_open_failed" || e.name === "twin_save_failed").slice(0, 50).map(e => ({ at: e.at, who: nameOf(e.user_id), name: e.name, error: e.error }));
+
+        // Reviews: by kind, verdict against what Swardus said.
+        const byKind: Record<string, Record<string, number>> = {};
+        for (const r of reviews) {
+          const k = `${r.finding_kind}${r.algorithm_status ? ` (${r.algorithm_status})` : ""}`;
+          byKind[k] ??= { correct: 0, unsure: 0, wrong: 0 };
+          byKind[k][r.verdict] = (byKind[k][r.verdict] ?? 0) + 1;
+        }
+        const notes = reviews.filter(r => r.note).slice(0, 100).map(r => ({ at: r.updated_at, who: nameOf(r.user_id), twin: twinName.get(r.twin_id) ?? r.twin_id, kind: r.finding_kind, status: r.algorithm_status, verdict: r.verdict, note: r.note }));
+
+        const feedback = ((fb.data ?? []) as Record<string, unknown>[]).map(f => ({ ...f, who: nameOf(String(f.user_id)), twin: f.twin_id ? twinName.get(String(f.twin_id)) ?? null : null }));
+        return json({ people, builds, checks, errors, reviews: { byKind, notes, total: reviews.length }, feedback });
+      }
+
+      case "feedback-status": {
+        const id = typeof body.id === "string" ? body.id : "";
+        const status = typeof body.status === "string" ? body.status : "";
+        if (!/^[0-9a-f-]{36}$/i.test(id) || !["new", "seen", "done"].includes(status)) return json({ error: "id and a status (new, seen, done) are required" }, 400);
+        const { error } = await admin.from("pilot_feedback").update({ status }).eq("id", id);
+        if (error) return json({ error: "Not changed" }, 500);
+        return json({ ok: true });
       }
 
       case "applications": {

@@ -119,3 +119,54 @@ describe("pilot-admin · members and status", () => {
     expect(body.applications).toEqual([{ id: "a1", email: "dale@farm.test" }]);
   });
 });
+
+describe("pilot-admin · activity", () => {
+  async function seeded(members: Record<string, unknown>[] = [...FOUNDER, { user_id: "p1", role: "participant", status: "active", display_name: "Ryan", organisation: "Crop Compass" }]) {
+    installDenoGlobal();
+    const now = new Date().toISOString();
+    db = makeSupabase({
+      pilot_members: members,
+      app_events: [
+        { user_id: "p1", name: "twin_build_finished", at: now, duration_ms: 64000, outcome: "ok", error: null, counts: { photographs: 40, used: 38, refused: 2 }, detail: { crop: "corn", camera: "DJI FC6310R" }, twin_id: null },
+        { user_id: "p1", name: "twin_build_failed", at: now, duration_ms: 9000, outcome: "error", error: "RangeError: allocation failed", counts: { photographs: 600 }, detail: { crop: "corn", stage: "corn" }, twin_id: null },
+        { user_id: "p1", name: "session_start", at: now, duration_ms: null, outcome: null, error: null, counts: null, detail: null, twin_id: null },
+      ],
+      field_twins: [{ id: "t1", user_id: "p1", name: "North", crop: "corn", status: "ready", photographs: 38, created_at: now }],
+      twin_reviews: [
+        { user_id: "p1", twin_id: "t1", finding_kind: "corn_weed", verdict: "wrong", algorithm_status: "confirmed", note: "volunteer corn", updated_at: now, payload: { ring: [[1, 2]] } },
+        { user_id: "p1", twin_id: "t1", finding_kind: "corn_weed", verdict: "correct", algorithm_status: "confirmed", note: null, updated_at: now },
+      ],
+      pilot_feedback: [{ id: "f0f0f0f0-1111-4222-8333-444455556666", user_id: "p1", created_at: now, kind: "problem", message: "It froze", route: "/app/twins/new", twin_id: null, context: null, status: "new" }],
+    });
+    db.authUsers.push({ id: "p1", email: "ryan@cropcompass.test", last_sign_in_at: now });
+    __setMockClient(db.client);
+    return loadFunction(FN);
+  }
+
+  it("summarises each participant, the builds, the reviews against what Swardus said, and the feedback", async () => {
+    const handler = await seeded();
+    const body = await (await handler(postJson(URL, { action: "activity" }))).json();
+    const ryan = body.people.find((p: { user_id: string }) => p.user_id === "p1");
+    expect(ryan).toMatchObject({ name: "Ryan", builds_ok: 1, builds_failed: 1, median_build_ms: 64000, twins: 1, reviews: 2, sessions: 1 });
+    expect(body.builds.map((b: { outcome: string }) => b.outcome).sort()).toEqual(["failed", "finished"]);
+    expect(body.builds.find((b: { outcome: string }) => b.outcome === "failed")).toMatchObject({ error: "RangeError: allocation failed", stage: "corn", photographs: 600 });
+    expect(body.reviews.byKind["corn_weed (confirmed)"]).toEqual({ correct: 1, unsure: 0, wrong: 1 });
+    expect(body.reviews.notes[0]).toMatchObject({ who: "Ryan", twin: "North", note: "volunteer corn" });
+    expect(body.feedback[0]).toMatchObject({ who: "Ryan", message: "It froze" });
+  });
+
+  it("returns no imagery, no storage paths and no boundary outlines", async () => {
+    const handler = await seeded();
+    const text = await (await handler(postJson(URL, { action: "activity" }))).text();
+    expect(db.storage.calls).toHaveLength(0);
+    expect(text).not.toMatch(/ring|signed|storage_key|orthos/);
+  });
+
+  it("is the founder's only, and the founder marks feedback seen", async () => {
+    const participantOnly = await seeded([{ user_id: "user-1", role: "participant", status: "active" }]);
+    expect((await participantOnly(postJson(URL, { action: "activity" }))).status).toBe(403);
+    const handler = await seeded();
+    expect((await handler(postJson(URL, { action: "feedback-status", id: "f0f0f0f0-1111-4222-8333-444455556666", status: "seen" }))).status).toBe(200);
+    expect(db.tables.pilot_feedback[0].status).toBe("seen");
+  });
+});

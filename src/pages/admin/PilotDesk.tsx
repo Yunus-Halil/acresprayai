@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type InviteResult, type Outsider, type PilotMember, pilotAdmin } from "@/lib/pilot/adminClient";
 import type { Application } from "./PilotApplications";
+import PilotActivity from "@/components/pilot/PilotActivity";
 
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "never");
 
@@ -128,6 +129,8 @@ export default function PilotDesk() {
         <Section title="Invite someone" hint="Creates their account (or a sign-in link if the address already has one), makes them a participant, and emails them the link.">
           <InviteForm draft={draft} setDraft={setDraft} onInvited={() => void load()} />
         </Section>
+
+        <PilotActivity />
 
         <Section title="People in the pilot">
           {members == null ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : (
