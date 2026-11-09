@@ -3,7 +3,7 @@
 // a browser worker (worker.ts) or Node (scripts/directGeoref/buildTwinApp.ts).
 import { parseTwin, type TwinBundle } from "../types";
 import { type AtlasFile, assembleBundle, evidenceAndBoundary } from "./bundle";
-import { alignCameras } from "./cameras";
+import { alignCameras, baseFrames } from "./cameras";
 import { type CornStageResult, cornStage } from "./corn";
 import { readPhotographs } from "./photos";
 import { rowsAndTrees } from "./rows";
@@ -43,7 +43,15 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   if (!photos.length) throw new Error("no photographs");
 
   const usePreview = options.usePreview ?? true;
-  const { reads, refused } = await timed("photographs", () => readPhotographs(photos, down, hooks, usePreview));
+  const read = await timed("photographs", () => readPhotographs(photos, down, hooks, usePreview));
+  const refused = read.refused;
+  // A photograph whose header has a position but no usable camera (no focal length, no gimbal angles) used to be
+  // dropped silently inside the camera fit and still counted as read. It is refused here, with its reason, like
+  // every other photograph left out.
+  const unframed = baseFrames(read.reads).refused;
+  const dropped = new Set(unframed.map(r => r.name));
+  const reads = dropped.size ? read.reads.filter(r => !dropped.has(r.name)) : read.reads;
+  refused.push(...unframed);
   for (const r of refused) notes.push(`${r.name} left out: ${r.reason}`);
   if (reads.length < 2) throw new Error(reads.length ? "only one photograph holds a camera: a twin needs overlapping photographs" : `no photograph holds a camera (${refused[0]?.reason ?? "unknown"})`);
   checkCancelled(hooks.signal);

@@ -3,6 +3,10 @@ import { registerSW } from "virtual:pwa-register";
 import App from "./App.tsx";
 import "./index.css";
 import { migrateLegacyStorage } from "@/lib/storage";
+import { installErrorCapture } from "@/lib/pilot/errorCapture";
+
+// Uncaught errors and rejected promises are recorded (scrubbed) for the pilot, never shown raw.
+installErrorCapture();
 
 // Carry any state saved under the old product name across before render.
 migrateLegacyStorage();

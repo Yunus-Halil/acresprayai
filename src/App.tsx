@@ -16,6 +16,8 @@ import AppLayout from "./components/app/AppLayout.tsx";
 import { usePilotRole } from "./lib/pilot/access";
 import { isWeedVisionPreviewEnabled } from "./lib/weedVision/flag";
 import { AuthProvider } from "./lib/auth";
+import AppErrorBoundary from "./components/pilot/AppErrorBoundary";
+import PilotTerms from "./pages/PilotTerms.tsx";
 
 // Every page inside the app is its own chunk, fetched when it is opened. The landing page and the sign-in pages no
 // longer download the whole application (it was one 3.7 MB script), and a pilot participant never downloads the
@@ -31,6 +33,10 @@ const WeedLibrary = lazy(() => import("./pages/app/WeedLibrary.tsx"));
 const PhotoScout = lazy(() => import("./pages/app/PhotoScout.tsx"));
 const PilotDesk = lazy(() => import("./pages/admin/PilotDesk.tsx"));
 const Help = lazy(() => import("./pages/app/Help.tsx"));
+const TwinsHome = lazy(() => import("./pages/app/TwinsHome.tsx"));
+const TwinNew = lazy(() => import("./pages/app/TwinNew.tsx"));
+const TwinOpen = lazy(() => import("./pages/app/TwinOpen.tsx"));
+const ConsentPage = lazy(() => import("./components/pilot/ConsentScreen.tsx"));
 // The Field Twin page as it was before the pilot: the founder's workbench (twins built on this computer, twins from
 // files, the reference orthomosaic). Participants use the Field Twins pages instead.
 const FieldTwin = lazy(() => import("./pages/app/FieldTwin.tsx"));
@@ -62,11 +68,13 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <AppErrorBoundary>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/auth/welcome" element={<AuthWelcome />} />
             <Route path="/apply" element={<PilotApply />} />
+            <Route path="/pilot-terms" element={<PilotTerms />} />
             {FieldTwinDevPreview && <Route path="/dev/field-twin" element={<Suspense fallback={null}><FieldTwinDevPreview /></Suspense>} />}
             {/* The founder's pilot desk (invitations, members, applications). Founder-only here and in pilot-admin. */}
             <Route path="/admin/pilot" element={<PilotRoute>{founder(<PilotDesk />)}</PilotRoute>} />
@@ -74,8 +82,11 @@ const App = () => (
             <Route path="/app" element={<AppLayout />}>
               <Route index element={<AppHome />} />
               {/* The pilot: everyone in it. */}
-              <Route path="twins" element={page(<FieldTwin />)} />
+              <Route path="twins" element={page(<TwinsHome />)} />
+              <Route path="twins/new" element={page(<TwinNew />)} />
+              <Route path="twins/:id" element={page(<TwinOpen />)} />
               <Route path="help" element={page(<Help />)} />
+              <Route path="consent" element={page(<ConsentPage />)} />
               {/* The founder's tools. Kept whole; a participant who opens one by its address is sent home, and the
                   server refuses their functions regardless (supabase/functions/_shared/access.ts). */}
               <Route path="fields" element={founder(<Fields />)} />
@@ -92,6 +103,7 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </AppErrorBoundary>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

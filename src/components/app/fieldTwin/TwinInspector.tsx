@@ -1,6 +1,6 @@
 // The Field Twin inspector: identity and state first, then the measurements, the confidence behind them, the
 // photographs that show the object, and the technical record folded away. Opaque, sectioned, beside the map.
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtArea, fmtAreaCm2, fmtDistance, fmtLengthCm } from "@/lib/units";
@@ -14,7 +14,7 @@ import EvidenceCrop from "./EvidenceCrop";
 import { CornInspector } from "./CornPanels";
 import type { TwinPick } from "./TwinCanvasLayer";
 
-type Props = { twin: TwinBundle; scene: Scene; selection: TwinPick; atlasUrl: (index: number) => Promise<string>; onClose: () => void; onZoomTo?: (lat: number, lng: number, metresAcross: number) => void; findings?: FindingsResult | null; onSelectWeed?: (id: number) => void };
+type Props = { /** The technical record (ids, coordinates, atlas positions): the founder's, not a participant's. */ technical?: boolean; twin: TwinBundle; scene: Scene; selection: TwinPick; atlasUrl: (index: number) => Promise<string>; onClose: () => void; onZoomTo?: (lat: number, lng: number, metresAcross: number) => void; findings?: FindingsResult | null; onSelectWeed?: (id: number) => void };
 
 type Line = { label: string; value: string };
 const cm = (m: number, u: UnitSystem) => fmtLengthCm(m * 100, u).text;
@@ -62,8 +62,11 @@ function Evidence({ evidence, atlasUrl, colour, units }: { evidence: TwinEvidenc
   );
 }
 
+/** Whether the technical record is shown (the founder's view). */
+const TechnicalCtx = createContext(true);
 function Diagnostics({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  if (!useContext(TechnicalCtx)) return null;
   return (
     <section className="border-t border-[#2e322e] pt-2 mt-3">
       <button type="button" className="flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => setOpen(o => !o)} aria-expanded={open}>
@@ -76,7 +79,7 @@ function Diagnostics({ children }: { children: React.ReactNode }) {
 
 function WeedPanel({ w, twin, atlasUrl, onClose, units }: { w: TwinWeed; twin: TwinBundle; atlasUrl: Props["atlasUrl"]; onClose: () => void; units: UnitSystem }) {
   const colour = weedColour(w);
-  const state = w.status === "on a tree" ? "Model detection on a tree crown" : w.status === "verified" ? "Weed candidate" : "Weed candidate, unverified";
+  const state = w.status === "on a tree" ? "Detection on a tree crown" : w.status === "verified" ? "Weed candidate, seen in 2+ photographs" : "Weed candidate, seen in one photograph";
   const near = distanceToRowM(twin, w.lat, w.lng);
   const measurements: Line[] = [
     { label: "Size across", value: cm(w.diameterM, units) },
@@ -96,7 +99,7 @@ function WeedPanel({ w, twin, atlasUrl, onClose, units }: { w: TwinWeed; twin: T
     <div>
       <Header kind={state} title={`Weed ${w.id}`} colour={colour} onClose={onClose} />
       <p className="mt-2 text-xs text-neutral-300">
-        {w.status === "verified" ? "The detector found this plant in more than one photograph and the sightings agree on where it stands. That says the detection repeats; it does not identify the species." : w.status === "single view" ? "Only one photograph's detector saw this, though more covered the spot. Treat it as a lead, not a finding." : "The detector called part of a tree crown a weed. Kept apart from the weed candidates."}
+        {w.status === "verified" ? "Found in more than one photograph, and the photographs agree on where it stands. That says it repeats; it does not say what plant it is." : w.status === "single view" ? "Only one photograph showed this, though others covered the spot. Treat it as a lead to check, not a finding." : "Part of a tree crown was taken for a weed. Kept apart from the weed candidates."}
       </p>
       <Section title="Measurements"><Rows lines={measurements} /></Section>
       <Section title="Confidence"><Rows lines={confidence} /></Section>
@@ -175,7 +178,11 @@ function FindingPanel({ f, rank, emphasised, units, onClose, onZoomTo, onSelectW
   );
 }
 
-export default function TwinInspector({ twin, scene, selection, atlasUrl, onClose, onZoomTo, findings = null, onSelectWeed }: Props) {
+export default function TwinInspector({ technical = true, ...props }: Props) {
+  return <TechnicalCtx.Provider value={technical}><InspectorBody {...props} /></TechnicalCtx.Provider>;
+}
+
+function InspectorBody({ twin, scene, selection, atlasUrl, onClose, onZoomTo, findings = null, onSelectWeed }: Omit<Props, "technical">) {
   const units = useUnitSystem();
   if (!selection) return null;
   if (selection.kind === "cornRow" || selection.kind === "cornWeed" || selection.kind === "cornGap") return <CornInspector twin={twin} selection={selection} atlasUrl={atlasUrl} onClose={onClose} />;

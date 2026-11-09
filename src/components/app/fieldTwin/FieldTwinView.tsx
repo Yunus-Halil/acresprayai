@@ -19,6 +19,19 @@ import TwinInspector from "./TwinInspector";
 import { CornFieldPanel } from "./CornPanels";
 import { isLocalTwin } from "@/lib/fieldTwin/cornView";
 import TwinMap, { type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
+import ReviewBar, { reviewTargetOf } from "./ReviewBar";
+import { reviewKey, useTwinReviews } from "@/lib/fieldTwin/reviews";
+import { FeedbackButton } from "@/components/pilot/FeedbackDialog";
+
+/** Where the twin sits on the map, in words, from the placement the build recorded. */
+export function placementText(twin: TwinBundle): string {
+  const p = twin.source.placement;
+  if (p?.kind === "local") return "A test flight placed by estimate: positions are relative to each other, not a place on the map.";
+  if (p && /RTK fixed/i.test(p.note) && !/without RTK/i.test(p.note)) return "Positions from RTK: the twin should sit within a few centimetres of its true place.";
+  return "Positions from the drone's GPS, without RTK: the whole twin may sit a metre or a few off satellite imagery. Distances within the field are much closer.";
+}
+
+const BOUNDARY_REVIEW = { kind: "boundary" as const, id: "cultivated" };
 
 export type ReferenceOption = { id: string; label: string; url: string; maxNativeZoom: number; note: string };
 
@@ -49,6 +62,12 @@ type Props = {
    * preview and the benchmark scripts see the full viewer.
    */
   audience?: "founder" | "participant";
+  /**
+   * Reviews: the twin's record id in the account (its findings can then be marked correct, not sure or wrong, and
+   * the boundary decision is kept with them on the server), or null with the reason reviews are not possible yet.
+   * Absent: no reviews (the founder's workbench and the dev preview), and the boundary stays in this browser.
+   */
+  review?: { twinId: string | null; disabledReason?: string | null };
 };
 
 const DETAIL_KEY = "swathwise:twin-detail";
@@ -100,7 +119,7 @@ function measured<T>(name: string, fn: () => T): T {
   return v;
 }
 
-export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], expose = false, detail: detailProp, audience = "founder" }: Props) {
+export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], expose = false, detail: detailProp, audience = "founder", review }: Props) {
   const units = useUnitSystem();
   const founderView = audience === "founder";
   const stops = founderView ? DETAIL_STOPS : PARTICIPANT_STOPS;
@@ -108,7 +127,21 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const [boundary, setBoundaryState] = useState<BoundaryState>(() => rememberedBoundary(twin.id));
   const [editing, setEditing] = useState<LatLngPair[] | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
-  const setBoundary = useCallback((next: BoundaryState) => { setBoundaryState(next); try { localStorage.setItem(BOUNDARY_KEY(twin.id), JSON.stringify(next)); } catch { /* storage blocked */ } }, [twin.id]);
+  const reviewing = !!review;
+  const { reviews, save: saveReview, clear: clearReview } = useTwinReviews(review?.twinId ?? null);
+  const boundaryReview = reviews?.get(reviewKey(BOUNDARY_REVIEW.kind, BOUNDARY_REVIEW.id)) ?? null;
+  // With reviews, the operator's boundary correction lives on the server with the review (it follows them to
+  // another device); without, in this browser as before.
+  useEffect(() => {
+    if (!reviewing || !reviews) return;
+    const ring = (boundaryReview?.payload as { ring?: unknown } | null)?.ring;
+    setBoundaryState({ corrected: validRing(ring) ? (ring as LatLngPair[]) : null, operational: NO_OPERATIONAL_BOUNDARY });
+  }, [reviewing, reviews, boundaryReview]);
+  const setBoundary = useCallback((next: BoundaryState) => {
+    setBoundaryState(next);
+    if (reviewing) return;
+    try { localStorage.setItem(BOUNDARY_KEY(twin.id), JSON.stringify(next)); } catch { /* storage blocked */ }
+  }, [twin.id, reviewing]);
   const intel = useMemo(() => measured("twin:intelligence", () => fieldIntelligence(twin, 4, boundary.corrected)), [twin, boundary.corrected]);
   const scene = useMemo(() => measured("twin:scene", () => buildScene(twin, intel)), [twin, intel]);
   const engine = useMemo(() => new FindingsEngine(twin, intel), [twin, intel]);
@@ -188,8 +221,21 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   }, [boundary.corrected, twin.boundary, intel]);
   const operationalRing = operationalBoundary(boundary.operational);
   const startEditing = () => { setSelection(null); setEditing(currentRing); };
-  const finishEditing = () => { if (editing) setBoundary({ corrected: editing, operational: boundary.operational.ring ? { ...boundary.operational, ring: editing, source: "corrected", at: new Date().toISOString() } : boundary.operational }); setEditing(null); };
-  const resetBoundary = () => { setEditing(null); setBoundary({ corrected: null, operational: NO_OPERATIONAL_BOUNDARY }); };
+  const [boundaryNote, setBoundaryNote] = useState<string | null>(null);
+  const finishEditing = () => {
+    if (editing) {
+      setBoundary({ corrected: editing, operational: boundary.operational.ring ? { ...boundary.operational, ring: editing, source: "corrected", at: new Date().toISOString() } : boundary.operational });
+      if (reviewing) saveReview({ ...BOUNDARY_REVIEW, verdict: "wrong", algorithmStatus: twin.boundary?.cultivated.confidence?.level ?? "rows", payload: { ring: editing } }).then(() => setBoundaryNote(null), e => setBoundaryNote(`Your correction was not saved: ${(e as Error).message}`));
+    }
+    setEditing(null);
+  };
+  const resetBoundary = () => {
+    setEditing(null); setBoundary({ corrected: null, operational: NO_OPERATIONAL_BOUNDARY });
+    if (reviewing) clearReview(BOUNDARY_REVIEW.kind, BOUNDARY_REVIEW.id).catch(e => setBoundaryNote(`Not reset: ${(e as Error).message}`));
+  };
+  const boundaryLooksRight = () => {
+    saveReview({ ...BOUNDARY_REVIEW, verdict: "correct", algorithmStatus: twin.boundary?.cultivated.confidence?.level ?? "rows" }).then(() => setBoundaryNote(null), e => setBoundaryNote(`Not saved: ${(e as Error).message}`));
+  };
   const acceptBoundary = () => { if (currentRing) setBoundary({ ...boundary, operational: { ring: currentRing, source: boundary.corrected ? "corrected" : "accepted", at: new Date().toISOString() } }); };
   const withdrawBoundary = () => setBoundary({ ...boundary, operational: NO_OPERATIONAL_BOUNDARY });
   const inferred = twin.boundary?.cultivated ?? null;
@@ -280,6 +326,10 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
               {inferred && notesOpen && <ul className="mt-1 space-y-1 border-l border-[#2e322e] pl-2 text-[10px] leading-snug text-neutral-400">{inferred.failures.map(f => <li key={f}>{f}</li>)}</ul>}
               {local ? (
                 <p className="mt-1 text-[10px] leading-snug text-amber-300/90">A locally aligned test flight: its boundary is in a made-up frame and cannot be accepted for operations.</p>
+              ) : reviewing ? (
+                <p className="mt-1 text-[10px] leading-snug text-neutral-400">
+                  {boundaryReview?.verdict === "correct" ? "You said this boundary looks right." : boundaryReview?.verdict === "wrong" ? `You corrected this boundary${boundaryReview.updated_at ? ` on ${new Date(boundaryReview.updated_at).toLocaleDateString()}` : ""}.` : "Does this boundary match the field? Say so, or adjust its corners."}
+                </p>
               ) : !founderView ? null : operationalRing ? (
                 <p className="mt-1 text-[10px] leading-snug text-emerald-300/90">{boundary.operational.source === "corrected" ? "Corrected and accepted" : "Accepted"} by you{boundary.operational.at ? ` on ${new Date(boundary.operational.at).toLocaleDateString()}` : ""} as the operational boundary.</p>
               ) : (
@@ -288,11 +338,13 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
               {currentRing && !local && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={startEditing}>Adjust</button>
-                  {founderView && (operationalRing ? <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={withdrawBoundary}>Withdraw acceptance</button>
+                  {reviewing && !boundary.corrected && boundaryReview?.verdict !== "correct" && <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26] disabled:opacity-50" onClick={boundaryLooksRight} disabled={!review?.twinId || !reviews}>Looks right</button>}
+                  {!reviewing && founderView && (operationalRing ? <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={withdrawBoundary}>Withdraw acceptance</button>
                     : <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={acceptBoundary}>Accept for operations</button>)}
-                  {(boundary.corrected || operationalRing) && <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-400 hover:bg-[#262a26]" onClick={resetBoundary}>Reset to inferred</button>}
+                  {(boundary.corrected || operationalRing || boundaryReview) && <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-400 hover:bg-[#262a26]" onClick={resetBoundary}>{reviewing ? "Undo my answer" : "Reset to inferred"}</button>}
                 </div>
               )}
+              {boundaryNote && <p role="alert" className="mt-1 text-[10px] text-red-300">{boundaryNote}</p>}
             </>
           )}
         </div>
@@ -379,6 +431,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
           <p className="text-xs"><span className="font-semibold text-neutral-100">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · {twin.name}</span></p>
           <button type="button" className="-mr-1 -mt-0.5 rounded-sm px-1 text-[13px] leading-none text-neutral-500 hover:bg-[#262a26] hover:text-neutral-200" onClick={() => setKeyOpen(false)} aria-label="Close the key" title="Close the key">×</button>
         </div>
+        <p className="mt-0.5 text-neutral-300">Review-only: these are observations for you to check, not treatment decisions.</p>
+        {!local && <p className="mt-0.5 text-neutral-400">{placementText(twin)}</p>}
         <p className="mt-0.5 text-neutral-400">{twin.corn ? "Corn rows cyan, rows not confirmed amber dashes; weed candidates red, not confirmed grey, contested violet; stand gaps orange, withheld grey. Click one to inspect it." : detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>
         {local && <p className="mt-0.5 text-amber-300/90">Locally aligned test flight: positions relative to each other, scale estimated from the corn rows. Not on the map.</p>}
         {twin.stats.weedTier === "colour" && <p className="mt-0.5 text-amber-300/90">Weeds by colour rules, not a model: green against the soil around it, crowns left out, strips split at their plants. Yellowing plants and plants under 4 cm are missed; a green shoot at a crown's edge can be counted.</p>}
@@ -401,7 +455,13 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
       {selection ? (
         <aside className={`absolute right-3 top-3 bottom-3 z-[700] w-[356px] overflow-y-auto p-3.5 text-sm ${panel}`} aria-label="Inspector">
           {resultsOpen && <button type="button" className="mb-2 text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => setSelection(null)}>← Back to the {result.findings.length.toLocaleString()} results</button>}
-          <TwinInspector twin={twin} scene={scene} selection={selection} atlasUrl={atlasUrl} onClose={() => setSelection(null)} onZoomTo={zoomTo} findings={result} onSelectWeed={id => { const w = twin.weeds.find(x => x.id === id); if (w) { setSelection({ kind: "weed", id }); zoomTo(w.lat, w.lng, Math.max(2, w.diameterM * 8)); } }} />
+          {reviewing && (() => {
+            const target = reviewTargetOf(selection, twin, result);
+            return target ? <ReviewBar target={target} reviews={reviews} disabledReason={review?.disabledReason ?? (review?.twinId ? null : "Reviews open once the twin is saved to your account.")}
+              onSave={r => saveReview({ kind: r.kind, id: r.id, verdict: r.verdict, note: r.note, algorithmStatus: r.algorithmStatus })} onClear={(k, id) => clearReview(k, id)} /> : null;
+          })()}
+          <TwinInspector technical={founderView} twin={twin} scene={scene} selection={selection} atlasUrl={atlasUrl} onClose={() => setSelection(null)} onZoomTo={zoomTo} findings={result} onSelectWeed={id => { const w = twin.weeds.find(x => x.id === id); if (w) { setSelection({ kind: "weed", id }); zoomTo(w.lat, w.lng, Math.max(2, w.diameterM * 8)); } }} />
+          {reviewing && <div className="mt-4 border-t border-[#2e322e] pt-3"><FeedbackButton kind="finding" twinId={review?.twinId ?? null} context={{ selection: selection.kind, ...("id" in selection ? { id: selection.id } : {}) }} label="Tell us more about this" variant="ghost" /></div>}
         </aside>
       ) : resultsOpen ? (
         <aside className={`absolute right-3 top-3 bottom-3 z-[700] w-[356px] p-3.5 text-sm ${panel}`} aria-label="Findings results">

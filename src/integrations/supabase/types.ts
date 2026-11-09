@@ -131,6 +131,60 @@ export type Database = {
           },
         ]
       }
+      app_events: {
+        Row: {
+          app_version: string | null
+          at: string
+          counts: Json | null
+          detail: Json | null
+          duration_ms: number | null
+          error: string | null
+          id: number
+          name: string
+          outcome: string | null
+          received_at: string
+          route: string | null
+          session_id: string | null
+          stages: Json | null
+          twin_id: string | null
+          user_id: string
+        }
+        Insert: {
+          app_version?: string | null
+          at?: string
+          counts?: Json | null
+          detail?: Json | null
+          duration_ms?: number | null
+          error?: string | null
+          id?: number
+          name: string
+          outcome?: string | null
+          received_at?: string
+          route?: string | null
+          session_id?: string | null
+          stages?: Json | null
+          twin_id?: string | null
+          user_id?: string
+        }
+        Update: {
+          app_version?: string | null
+          at?: string
+          counts?: Json | null
+          detail?: Json | null
+          duration_ms?: number | null
+          error?: string | null
+          id?: number
+          name?: string
+          outcome?: string | null
+          received_at?: string
+          route?: string | null
+          session_id?: string | null
+          stages?: Json | null
+          twin_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       crop_zones: {
         Row: {
           area_ha: number | null
@@ -289,6 +343,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      field_twins: {
+        Row: {
+          area_ha: number | null
+          build_ms: number | null
+          camera: string | null
+          captured_at: string | null
+          created_at: string
+          crop: string | null
+          error: string | null
+          format: string | null
+          id: string
+          name: string
+          photographs: number | null
+          placement: string | null
+          status: string
+          storage_key: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          area_ha?: number | null
+          build_ms?: number | null
+          camera?: string | null
+          captured_at?: string | null
+          created_at?: string
+          crop?: string | null
+          error?: string | null
+          format?: string | null
+          id?: string
+          name: string
+          photographs?: number | null
+          placement?: string | null
+          status?: string
+          storage_key: string
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          area_ha?: number | null
+          build_ms?: number | null
+          camera?: string | null
+          captured_at?: string | null
+          created_at?: string
+          crop?: string | null
+          error?: string | null
+          format?: string | null
+          id?: string
+          name?: string
+          photographs?: number | null
+          placement?: string | null
+          status?: string
+          storage_key?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       fields: {
         Row: {
@@ -775,6 +886,72 @@ export type Database = {
           phone?: string | null
           referral_source?: string | null
           role?: string
+        }
+        Relationships: []
+      }
+      pilot_consents: {
+        Row: {
+          created_at: string
+          id: string
+          research_use: boolean
+          terms_version: string
+          troubleshooting_access: boolean
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          research_use?: boolean
+          terms_version: string
+          troubleshooting_access?: boolean
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          research_use?: boolean
+          terms_version?: string
+          troubleshooting_access?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
+      pilot_feedback: {
+        Row: {
+          context: Json | null
+          created_at: string
+          id: string
+          kind: string
+          message: string
+          notified_at: string | null
+          route: string | null
+          status: string
+          twin_id: string | null
+          user_id: string
+        }
+        Insert: {
+          context?: Json | null
+          created_at?: string
+          id?: string
+          kind: string
+          message: string
+          notified_at?: string | null
+          route?: string | null
+          status?: string
+          twin_id?: string | null
+          user_id?: string
+        }
+        Update: {
+          context?: Json | null
+          created_at?: string
+          id?: string
+          kind?: string
+          message?: string
+          notified_at?: string | null
+          route?: string | null
+          status?: string
+          twin_id?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -1352,6 +1529,48 @@ export type Database = {
             referencedColumns: ["catalog_id"]
           },
         ]
+      }
+      twin_reviews: {
+        Row: {
+          algorithm_status: string | null
+          created_at: string
+          finding_id: string
+          finding_kind: string
+          id: string
+          note: string | null
+          payload: Json | null
+          twin_id: string
+          updated_at: string
+          user_id: string
+          verdict: string
+        }
+        Insert: {
+          algorithm_status?: string | null
+          created_at?: string
+          finding_id: string
+          finding_kind: string
+          id?: string
+          note?: string | null
+          payload?: Json | null
+          twin_id: string
+          updated_at?: string
+          user_id?: string
+          verdict: string
+        }
+        Update: {
+          algorithm_status?: string | null
+          created_at?: string
+          finding_id?: string
+          finding_kind?: string
+          id?: string
+          note?: string | null
+          payload?: Json | null
+          twin_id?: string
+          updated_at?: string
+          user_id?: string
+          verdict?: string
+        }
+        Relationships: []
       }
       user_annotations: {
         Row: {

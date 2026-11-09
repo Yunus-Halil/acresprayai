@@ -5,7 +5,7 @@ import { setUnitSystem, useUnitSystem } from "@/hooks/useUnitSystem";
 import { loadUnitPreference, saveUnitPreference } from "@/lib/unitPreference";
 import { UnitsPrompt } from "@/components/app/UnitsPrompt";
 import type { UnitSystem } from "@/lib/units";
-import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays, Sprout, Camera, FlaskConical, Shapes, CircleHelp, Menu, X, Users, Eye, Wrench, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays, Sprout, Camera, FlaskConical, Shapes, CircleHelp, Plus, MessageSquare, Menu, X, Users, Eye, Wrench, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import PilotRoute from "@/components/pilot/PilotRoute";
@@ -14,12 +14,17 @@ import { usePilot, usePilotRole } from "@/lib/pilot/access";
 import { isWeedVisionPreviewEnabled } from "@/lib/weedVision/flag";
 import logo from "@/assets/brand/lockup-white.png";
 import Seo from "@/components/Seo";
+import { FeedbackHost, openFeedback } from "@/components/pilot/FeedbackDialog";
+import AppErrorBoundary from "@/components/pilot/AppErrorBoundary";
+import { sessionBusy, useBuildSession } from "@/lib/fieldTwin/buildSession";
+import { track } from "@/lib/pilot/telemetry";
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean };
 
 // The pilot: what every member sees. Field Twins is the workspace; everything they make lives there.
 const pilotNav: NavItem[] = [
   { to: "/app/twins", label: "Field Twins", icon: Shapes, end: true },
+  { to: "/app/twins/new", label: "New Field Twin", icon: Plus, end: true },
   { to: "/app/help", label: "Help", icon: CircleHelp, end: true },
 ];
 
@@ -124,8 +129,12 @@ function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
-  // The Field Twin pages are full-height map workspaces; every other page scrolls as a document.
-  const fullHeight = location.pathname.startsWith("/app/twins") || location.pathname === "/app/field-twin";
+  useEffect(() => { track("session_start", { detail: { role: role ?? "none" } }); }, [role]);
+  const session = useBuildSession();
+  // A twin open is a full-height map workspace; every other page scrolls as a document.
+  const fullHeight = /^\/app\/twins\/(?!new$)[^/]+$/.test(location.pathname) || location.pathname === "/app/field-twin";
+  // While a build or save runs, every other page says so (the build lives in this tab).
+  const showBuildBanner = session.status !== "idle" && sessionBusy(session) && !location.pathname.startsWith("/app/twins/new") && !(session.record && location.pathname === `/app/twins/${session.record.id}`);
 
   const sidebar = (
     <>
@@ -136,6 +145,9 @@ function AppShell() {
       <nav className="p-3 flex-1 space-y-1 overflow-y-auto" aria-label="Main">
         <div className="px-3 pb-1 text-[10px] uppercase tracking-wider opacity-60">Founding pilot</div>
         <NavList items={pilotNav} onNavigate={() => setMenuOpen(false)} />
+        <button type="button" onClick={() => { setMenuOpen(false); openFeedback("problem"); }} className="flex w-full items-center gap-3 rounded px-3 py-2 text-left text-sm transition-colors hover:bg-white/5">
+          <MessageSquare className="h-4 w-4 shrink-0" /> Feedback & Support
+        </button>
         {role === "founder" && (
           <>
             <div className="px-3 pt-4 pb-1 text-[10px] uppercase tracking-wider opacity-60">Founder tools</div>
@@ -197,9 +209,16 @@ function AppShell() {
             <button type="button" className="font-semibold underline underline-offset-2" onClick={() => setPreview(false)}>Stop previewing</button>
           </div>
         )}
+        {session.status !== "idle" && showBuildBanner && (
+          <div role="status" className="flex items-center justify-between gap-3 border-b bg-amber-50 px-4 py-1.5 text-xs text-amber-950">
+            <span>{session.status === "save-failed" ? `"${session.name}" was built but did not save.` : `${session.status === "saving" ? "Saving" : "Building"} "${session.name}". Keep this tab open.`}</span>
+            <NavLink to="/app/twins/new" className="font-semibold underline underline-offset-2">See progress</NavLink>
+          </div>
+        )}
         <main className={cn("flex-1 overflow-x-hidden", fullHeight && "min-h-0")}>
-          <Outlet />
+          <AppErrorBoundary key={location.pathname} withFeedback><Outlet /></AppErrorBoundary>
         </main>
+        <FeedbackHost />
       </div>
     </div>
   );

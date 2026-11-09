@@ -59,12 +59,18 @@ export default function Help() {
         </ul>
       </Block>
 
+      <Block title="Telling us a finding is wrong">
+        <p>Click any finding on the map. Above its photographs you can answer <span className="text-foreground">Correct</span>, <span className="text-foreground">Not sure</span> or <span className="text-foreground">Wrong</span>, and add a note. Your answers are saved with the Field Twin, kept apart from what Swardus measured, and they are the most useful thing you can give us: they show where Swardus reads fields well and where it does not.</p>
+        <p>The field boundary works the same way: say it looks right, or drag its corners to correct it.</p>
+      </Block>
+
       <Block title="Your data">
         <p>Your photographs stay on your computer: they are read here and are not uploaded. Swardus saves the Field Twin itself, meaning the map and small crops of your photographs around each finding, privately in your account. Only your account can open it in the app.</p>
+        <p>The <Link to="/pilot-terms" className="text-foreground underline underline-offset-4">pilot terms and privacy notice</Link> say what is recorded and who can see it. <Link to="/app/consent" className="text-foreground underline underline-offset-4">Change your data choices</Link>.</p>
       </Block>
 
       <Block title="Something not right?">
-        <p>Write to <a className="text-foreground underline underline-offset-4" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. Say which Field Twin, and what you expected to see.</p>
+        <p>Use <span className="text-foreground">Feedback & Support</span> in the menu: it reaches Yunus with the page you were on. Or write to <a className="text-foreground underline underline-offset-4" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>, saying which Field Twin and what you expected to see.</p>
         <p><Link to="/app/twins" className="text-foreground underline underline-offset-4">Back to your Field Twins</Link></p>
       </Block>
     </div>

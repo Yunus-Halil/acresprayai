@@ -22,8 +22,11 @@ Every other existing account keeps its data but sees "This account is not in the
 ## 2. Apply the migrations
 
 ```
-supabase/migrations/20261109120000_pilot_access.sql   membership, the gate on every table and on storage, the odm_tasks column lock
-supabase/migrations/20261109120100_odm_uuid_unique.sql one scan per ODM task id (skips itself, with a notice, if duplicates exist)
+supabase/migrations/20261109120000_pilot_access.sql              membership, the gate on every table and on storage, the odm_tasks column lock
+supabase/migrations/20261109120100_odm_uuid_unique.sql            one scan per ODM task id (skips itself, with a notice, if duplicates exist)
+supabase/migrations/20261109130000_field_twins.sql                the saved-twin registry
+supabase/migrations/20261109140000_app_events.sql                 pilot telemetry (insert-only for participants)
+supabase/migrations/20261109150000_reviews_feedback_consent.sql   finding reviews, feedback, consent
 ```
 
 With the CLI: `supabase db push`. Without it: paste each file into the SQL editor, in this order.
@@ -45,12 +48,12 @@ select id, 'founder', 'active', email from auth.users where email = 'YOUR ADDRES
 
 ## 3. Deploy the edge functions
 
-All of these changed. Deploy every one, plus the new `pilot-admin`:
+All of these changed. Deploy every one, plus the new `pilot-admin` and `pilot-notify`:
 
-`odm-submit` `odm-poll` `odm-asset` `ortho-import` `ortho-url` `bake-tiles` `tile` `ndvi-tile` `bench-detect` `weather` `pilot-applications` `pilot-apply` `pilot-admin`
+`odm-submit` `odm-poll` `odm-asset` `ortho-import` `ortho-url` `bake-tiles` `tile` `ndvi-tile` `bench-detect` `weather` `pilot-applications` `pilot-apply` `pilot-admin` `pilot-notify`
 
 ```
-supabase functions deploy odm-submit odm-poll odm-asset ortho-import ortho-url bake-tiles tile ndvi-tile bench-detect weather pilot-applications pilot-apply pilot-admin
+supabase functions deploy odm-submit odm-poll odm-asset ortho-import ortho-url bake-tiles tile ndvi-tile bench-detect weather pilot-applications pilot-apply pilot-admin pilot-notify
 ```
 
 **Secrets** (Edge Functions → Secrets):
@@ -95,6 +98,25 @@ These steps are written for the founder to run, and none has been run on the liv
 4. As the participant, open `/app/fields` by typing it: you are sent home. Open a scan or tile URL from the founder's account: 403 or 404.
 5. Pause the participant on the pilot desk, then reload their window: "This account is not in the pilot".
 
+## 8. Before the first invitation: the pilot terms
+
+`src/pages/PilotTerms.tsx` (served at `/pilot-terms`) is a plain-language draft: what the pilot is, what is saved and what stays on the participant's computer, what is recorded, the two optional choices (troubleshooting access, research use), the processors (Supabase, Vercel, Resend), ending. **Read it, change what is wrong, ideally have a lawyer look, then set `TERMS_APPROVED = true` in `src/lib/pilot/consent.ts`.** Until then the page says it is a draft. Participants accept it once (and again whenever `TERMS_VERSION` changes); the founder is not asked.
+
 ## Removing a participant's data on request
 
-This is a manual procedure for the pilot. It is filled in as the twin, review and feedback tables arrive; see the deletion section of `docs/operations/pilot-data.md` when it exists.
+A participant can delete any Field Twin themselves (the list's bin icon removes its files, its record and its reviews). To remove everything for one person, in the SQL editor, with their user id:
+
+```sql
+-- 1. What there is
+select 'twins' t, count(*) from public.field_twins where user_id = :'uid'
+union all select 'reviews', count(*) from public.twin_reviews where user_id = :'uid'
+union all select 'feedback', count(*) from public.pilot_feedback where user_id = :'uid'
+union all select 'events', count(*) from public.app_events where user_id = :'uid'
+union all select 'files', count(*) from storage.objects where (storage.foldername(name))[1] = :'uid';
+```
+
+2. Delete their files in the dashboard (Storage: every bucket, the folder named after their user id). Storage objects must be removed through the Storage API or dashboard, not by deleting rows.
+3. Delete the account (Authentication, Users, the user, Delete). Every pilot table references `auth.users` with ON DELETE CASCADE, so their memberships, twins, reviews, feedback, consents and events go with it.
+4. Run the query in step 1 again: every count is 0.
+
+The older orthomosaic tables (`odm_tasks`, `user_annotations` and others) have no foreign key to `auth.users`; for a founder-tool account, delete those rows by `user_id` as well.

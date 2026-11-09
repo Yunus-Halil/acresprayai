@@ -172,3 +172,103 @@ describe("one scan per ODM task id", () => {
     expect((await db.query("SELECT count(*)::int AS n FROM public.odm_tasks")).rows).toEqual([{ n: 2 }]);
   });
 });
+
+describe("field_twins: the saved-twin registry", () => {
+  const TWINS = "20261109130000_field_twins.sql";
+  async function registry(): Promise<Db> {
+    const d = await freshDb([ACCESS, TWINS], USERS);
+    db = d;
+    await d.query("INSERT INTO public.pilot_members (user_id, role) VALUES ($1, 'participant'), ($2, 'participant')", [ALICE, BOB]);
+    return d;
+  }
+
+  it("a member registers, reads, updates and deletes their own twins; user_id defaults to the caller", async () => {
+    const d = await registry();
+    await d.as(ALICE, "INSERT INTO public.field_twins (storage_key, name, crop) VALUES ('3f2a9c1e-0000-4000-8000-000000000001', 'North block', 'corn')");
+    expect(await d.as(ALICE, "SELECT name, status, user_id FROM public.field_twins")).toEqual([{ name: "North block", status: "saving", user_id: ALICE }]);
+    await d.as(ALICE, "UPDATE public.field_twins SET status = 'ready'");
+    await d.as(ALICE, "DELETE FROM public.field_twins");
+    expect((await d.query("SELECT count(*)::int AS n FROM public.field_twins")).rows).toEqual([{ n: 0 }]);
+  });
+
+  it("nobody sees or writes another person's twins, and nobody outside the pilot sees their own", async () => {
+    const d = await registry();
+    await d.query("INSERT INTO public.field_twins (user_id, storage_key, name) VALUES ($1, 'a1', 'Alice'), ($2, 'b1', 'Bob')", [ALICE, BOB]);
+    expect((await d.as<{ name: string }>(ALICE, "SELECT name FROM public.field_twins")).map(r => r.name)).toEqual(["Alice"]);
+    await denied(d.as(ALICE, "INSERT INTO public.field_twins (user_id, storage_key, name) VALUES ($1, 'x', 'forged')", [BOB]));
+    await d.as(ALICE, "UPDATE public.field_twins SET name = 'hijacked' WHERE user_id = $1", [BOB]);
+    await d.as(ALICE, "DELETE FROM public.field_twins WHERE user_id = $1", [BOB]);
+    expect((await d.query("SELECT name FROM public.field_twins WHERE user_id = $1", [BOB])).rows).toEqual([{ name: "Bob" }]);
+    await d.query("INSERT INTO public.field_twins (user_id, storage_key, name) VALUES ($1, 's1', 'Stranger')", [STRANGER]);
+    expect(await d.as(STRANGER, "SELECT name FROM public.field_twins")).toEqual([]);
+  });
+
+  it("one record per folder, and the folder name cannot be a path", async () => {
+    const d = await registry();
+    await d.as(ALICE, "INSERT INTO public.field_twins (storage_key, name) VALUES ('north-2026-06-01', 'North')");
+    await expect(d.as(ALICE, "INSERT INTO public.field_twins (storage_key, name) VALUES ('north-2026-06-01', 'North again')")).rejects.toThrow(/duplicate key/);
+    for (const bad of ["../bob", "a/b", "", "UPPER"]) {
+      await expect(d.as(ALICE, "INSERT INTO public.field_twins (storage_key, name) VALUES ($1, 'x')", [bad])).rejects.toThrow(/check constraint/);
+    }
+  });
+});
+
+describe("reviews, feedback, consent and events", () => {
+  const ALL = [ACCESS, "20261109130000_field_twins.sql", "20261109140000_app_events.sql", "20261109150000_reviews_feedback_consent.sql"];
+  const A_TWIN = "aaaaaaaa-1111-4000-8000-000000000001", B_TWIN = "bbbbbbbb-1111-4000-8000-000000000002";
+  async function full(): Promise<Db> {
+    const d = await freshDb(ALL, USERS);
+    db = d;
+    await d.query("INSERT INTO public.pilot_members (user_id, role) VALUES ($1, 'participant'), ($2, 'participant')", [ALICE, BOB]);
+    await d.query("INSERT INTO public.field_twins (id, user_id, storage_key, name, status) VALUES ($1, $2, 'a', 'Alice north', 'ready'), ($3, $4, 'b', 'Bob south', 'ready')", [A_TWIN, ALICE, B_TWIN, BOB]);
+    return d;
+  }
+
+  it("a participant reviews findings of their own twin, and the review goes with the twin when it is deleted", async () => {
+    const d = await full();
+    await d.as(ALICE, "INSERT INTO public.twin_reviews (twin_id, finding_kind, finding_id, verdict, algorithm_status) VALUES ($1, 'weed', '12', 'wrong', 'verified')", [A_TWIN]);
+    await d.as(ALICE, "INSERT INTO public.twin_reviews (twin_id, finding_kind, finding_id, verdict) VALUES ($1, 'weed', '12', 'correct') ON CONFLICT (user_id, twin_id, finding_kind, finding_id) DO UPDATE SET verdict = excluded.verdict", [A_TWIN]);
+    expect(await d.as(ALICE, "SELECT verdict, algorithm_status FROM public.twin_reviews")).toEqual([{ verdict: "correct", algorithm_status: "verified" }]);
+    await d.as(ALICE, "DELETE FROM public.field_twins WHERE id = $1", [A_TWIN]);
+    expect((await d.query("SELECT count(*)::int AS n FROM public.twin_reviews")).rows).toEqual([{ n: 0 }]);
+  });
+
+  it("nobody can review someone else's twin, or read their reviews", async () => {
+    const d = await full();
+    await denied(d.as(ALICE, "INSERT INTO public.twin_reviews (twin_id, finding_kind, finding_id, verdict) VALUES ($1, 'weed', '1', 'wrong')", [B_TWIN]));
+    await d.as(BOB, "INSERT INTO public.twin_reviews (twin_id, finding_kind, finding_id, verdict, note) VALUES ($1, 'weed', '1', 'wrong', 'volunteer corn')", [B_TWIN]);
+    expect(await d.as(ALICE, "SELECT note FROM public.twin_reviews")).toEqual([]);
+    await expect(d.as(ALICE, "INSERT INTO public.twin_reviews (twin_id, finding_kind, finding_id, verdict) VALUES ($1, 'weed', '1', 'maybe')", [A_TWIN])).rejects.toThrow(/check constraint/);
+  });
+
+  it("feedback: sent as yourself, read back only by yourself, and the founder's bookkeeping cannot be set", async () => {
+    const d = await full();
+    await d.as(ALICE, "INSERT INTO public.pilot_feedback (kind, message, twin_id) VALUES ('finding', 'the red ones by the gate are stones', $1)", [A_TWIN]);
+    await denied(d.as(ALICE, "INSERT INTO public.pilot_feedback (kind, message, status) VALUES ('idea', 'x', 'done')"));
+    await denied(d.as(ALICE, "INSERT INTO public.pilot_feedback (kind, message, twin_id) VALUES ('idea', 'x', $1)", [B_TWIN]));
+    await denied(d.as(ALICE, "INSERT INTO public.pilot_feedback (user_id, kind, message) VALUES ($1, 'idea', 'forged')", [BOB]));
+    expect(await d.as(ALICE, "SELECT message FROM public.pilot_feedback")).toEqual([{ message: "the red ones by the gate are stones" }]);
+    expect(await d.as(BOB, "SELECT message FROM public.pilot_feedback")).toEqual([]);
+    await denied(d.as(ALICE, "UPDATE public.pilot_feedback SET status = 'done'"));
+  });
+
+  it("consent: each change is a new row; nothing can be rewritten after the fact", async () => {
+    const d = await full();
+    await d.as(ALICE, "INSERT INTO public.pilot_consents (terms_version, troubleshooting_access) VALUES ('pilot-2026-11-v1', true)");
+    await d.as(ALICE, "INSERT INTO public.pilot_consents (terms_version, troubleshooting_access) VALUES ('pilot-2026-11-v1', false)");
+    expect((await d.as(ALICE, "SELECT troubleshooting_access FROM public.pilot_consents ORDER BY created_at, id")).length).toBe(2);
+    await denied(d.as(ALICE, "UPDATE public.pilot_consents SET research_use = true"));
+    await denied(d.as(ALICE, "DELETE FROM public.pilot_consents"));
+    expect(await d.as(BOB, "SELECT * FROM public.pilot_consents")).toEqual([]);
+  });
+
+  it("events: a participant records their own and can read none back; nobody outside the pilot records any", async () => {
+    const d = await full();
+    await d.as(ALICE, "INSERT INTO public.app_events (name, duration_ms, outcome) VALUES ('twin_build_finished', 64000, 'ok')");
+    await denied(d.as(ALICE, "SELECT * FROM public.app_events"));
+    await denied(d.as(ALICE, "INSERT INTO public.app_events (user_id, name) VALUES ($1, 'session_start')", [BOB]));
+    await denied(d.as(STRANGER, "INSERT INTO public.app_events (name) VALUES ('session_start')"));
+    await expect(d.as(ALICE, "INSERT INTO public.app_events (name) VALUES ('DROP TABLE')")).rejects.toThrow(/check constraint/);
+    expect((await d.query("SELECT user_id, name FROM public.app_events")).rows).toEqual([{ user_id: ALICE, name: "twin_build_finished" }]);
+  });
+});
