@@ -20,7 +20,7 @@ CREATE ROLE service_role NOLOGIN BYPASSRLS;
 CREATE SCHEMA auth;
 CREATE SCHEMA storage;
 GRANT USAGE ON SCHEMA public, auth, storage TO anon, authenticated, service_role;
-CREATE TABLE auth.users (id uuid PRIMARY KEY, email text);
+CREATE TABLE auth.users (id uuid PRIMARY KEY, email text, email_confirmed_at timestamptz);
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$
   SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
@@ -70,10 +70,10 @@ export type Db = PGlite & {
 };
 
 /** A fresh database with the Supabase slice, the given users, and the named migrations applied in order. */
-export async function freshDb(migrations: string[], users: { id: string; email: string }[] = []): Promise<Db> {
+export async function freshDb(migrations: string[], users: { id: string; email: string; confirmed?: boolean }[] = []): Promise<Db> {
   const db = new PGlite() as Db;
   await db.exec(BASE);
-  for (const u of users) await db.query("INSERT INTO auth.users (id, email) VALUES ($1, $2)", [u.id, u.email]);
+  for (const u of users) await db.query("INSERT INTO auth.users (id, email, email_confirmed_at) VALUES ($1, $2, $3)", [u.id, u.email, u.confirmed === false ? null : new Date().toISOString()]);
   for (const m of migrations) await db.exec(migration(m));
   db.as = async <T,>(uid: string | null, sql: string, params: unknown[] = [], role = "authenticated") => {
     await db.exec(`SET ROLE ${role}`);

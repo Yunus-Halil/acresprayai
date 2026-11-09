@@ -272,3 +272,82 @@ describe("reviews, feedback, consent and events", () => {
     expect((await d.query("SELECT user_id, name FROM public.app_events")).rows).toEqual([{ user_id: ALICE, name: "twin_build_finished" }]);
   });
 });
+
+describe("admin_access_log: openings of a participant's twin", () => {
+  it("a participant sees the openings of their own twins, nobody else's, and nobody can write or erase one through the API", async () => {
+    const d = await freshDb([ACCESS, "20261109130000_field_twins.sql", "20261109160000_admin_access_log.sql"], USERS);
+    db = d;
+    await d.query("INSERT INTO public.pilot_members (user_id, role) VALUES ($1, 'participant'), ($2, 'participant')", [ALICE, BOB]);
+    await d.query("INSERT INTO public.admin_access_log (founder_id, participant_id, action, reason) VALUES ($1, $2, 'open_twin', 'weeds by the gate'), ($1, $3, 'open_twin', 'bob')", [FOUNDER, ALICE, BOB]);
+    expect(await d.as(ALICE, "SELECT reason FROM public.admin_access_log")).toEqual([{ reason: "weeds by the gate" }]);
+    await denied(d.as(ALICE, "INSERT INTO public.admin_access_log (founder_id, participant_id, action) VALUES ($1, $1, 'open_twin')", [ALICE]));
+    await denied(d.as(ALICE, "DELETE FROM public.admin_access_log"));
+    await denied(d.as(ALICE, "UPDATE public.admin_access_log SET reason = 'x'"));
+    expect(await d.as(STRANGER, "SELECT reason FROM public.admin_access_log")).toEqual([]);
+  });
+});
+
+describe("the security review's attacks, replayed", () => {
+  const ALL = [ACCESS, "20261109130000_field_twins.sql", "20261109140000_app_events.sql", "20261109150000_reviews_feedback_consent.sql", "20261109160000_admin_access_log.sql", "20261109170000_founder_tools_only.sql"];
+  const A_TWIN = "aaaaaaaa-1111-4000-8000-000000000001";
+  async function full(users = USERS): Promise<Db> {
+    const d = await freshDb(ALL, users);
+    db = d;
+    await d.query("INSERT INTO public.pilot_members (user_id, role) VALUES ($1, 'participant') ON CONFLICT DO NOTHING", [ALICE]);
+    await d.query("INSERT INTO public.field_twins (id, user_id, storage_key, name, status) VALUES ($1, $2, 'a', 'Alice north', 'ready')", [A_TWIN, ALICE]);
+    return d;
+  }
+
+  it("M1: an unconfirmed account holding the founder's address is not made founder", async () => {
+    const d = await freshDb([ACCESS], [{ id: FOUNDER, email: "yunus@swathwise.com", confirmed: false }]);
+    db = d;
+    expect((await d.query("SELECT count(*)::int AS n FROM public.pilot_members")).rows).toEqual([{ n: 0 }]);
+  });
+
+  it("M2: events cannot be dated, nested, or flooded", async () => {
+    const d = await full();
+    await denied(d.as(ALICE, "INSERT INTO public.app_events (name, at) VALUES ('session_start', '2099-01-01')"));
+    await expect(d.as(ALICE, "INSERT INTO public.app_events (name, detail) VALUES ('twin_build_finished', '{\"camera\":{\"x\":1}}')")).rejects.toThrow(/check constraint/);
+    await expect(d.as(ALICE, "INSERT INTO public.app_events (name, counts) VALUES ('twin_build_finished', '{\"photographs\":{}}')")).rejects.toThrow(/check constraint/);
+    await d.as(ALICE, "INSERT INTO public.app_events (name, counts, detail) VALUES ('twin_build_finished', '{\"photographs\":40}', '{\"camera\":\"FC6310R\",\"ok\":true}')");
+    await expect(d.as(ALICE, "INSERT INTO public.app_events (name) SELECT 'session_start' FROM generate_series(1, 200)")).rejects.toThrow(/too many events/);
+    expect((await d.query("SELECT count(*)::int AS n FROM public.app_events")).rows).toEqual([{ n: 1 }]);
+    const at = (await d.query<{ at: string }>("SELECT at FROM public.app_events")).rows[0].at;
+    expect(Math.abs(Date.parse(at) - Date.now())).toBeLessThan(60_000);
+  });
+
+  it("L1: consent and feedback are dated by the server, and feedback is capped", async () => {
+    const d = await full();
+    await denied(d.as(ALICE, "INSERT INTO public.pilot_consents (terms_version, troubleshooting_access, created_at) VALUES ('v', true, '2099-01-01')"));
+    await denied(d.as(ALICE, "INSERT INTO public.pilot_feedback (kind, message, created_at) VALUES ('idea', 'x', '2099-01-01')"));
+    await expect(d.as(ALICE, "INSERT INTO public.pilot_feedback (kind, message) SELECT 'idea', 'spam ' || g FROM generate_series(1, 25) g")).rejects.toThrow(/too many messages/);
+  });
+
+  it("L2: only the boundary review carries a payload, and reviews cannot be dated", async () => {
+    const d = await full();
+    await expect(d.as(ALICE, "INSERT INTO public.twin_reviews (twin_id, finding_kind, finding_id, verdict, payload) VALUES ($1, 'weed', '1', 'wrong', '{\"x\":1}')", [A_TWIN])).rejects.toThrow(/check constraint/);
+    await d.as(ALICE, "INSERT INTO public.twin_reviews (twin_id, finding_kind, finding_id, verdict, payload) VALUES ($1, 'boundary', 'cultivated', 'wrong', '{\"ring\":[[1,2],[3,4],[5,6]]}')", [A_TWIN]);
+    await denied(d.as(ALICE, "INSERT INTO public.twin_reviews (twin_id, finding_kind, finding_id, verdict, updated_at) VALUES ($1, 'weed', '2', 'wrong', '2099-01-01')", [A_TWIN]));
+    // The app's own upsert still works under the column grants.
+    await d.as(ALICE, "INSERT INTO public.twin_reviews (twin_id, finding_kind, finding_id, verdict, note, algorithm_status, payload) VALUES ($1, 'weed', '3', 'wrong', null, 'verified', null) ON CONFLICT (user_id, twin_id, finding_kind, finding_id) DO UPDATE SET twin_id = excluded.twin_id, finding_kind = excluded.finding_kind, finding_id = excluded.finding_id, verdict = excluded.verdict, note = excluded.note, algorithm_status = excluded.algorithm_status, payload = excluded.payload", [A_TWIN]);
+    await d.as(ALICE, "INSERT INTO public.twin_reviews (twin_id, finding_kind, finding_id, verdict, note, algorithm_status, payload) VALUES ($1, 'weed', '3', 'correct', null, 'verified', null) ON CONFLICT (user_id, twin_id, finding_kind, finding_id) DO UPDATE SET twin_id = excluded.twin_id, finding_kind = excluded.finding_kind, finding_id = excluded.finding_id, verdict = excluded.verdict, note = excluded.note, algorithm_status = excluded.algorithm_status, payload = excluded.payload", [A_TWIN]);
+    expect(await d.as(ALICE, "SELECT verdict FROM public.twin_reviews WHERE finding_id = '3'")).toEqual([{ verdict: "correct" }]);
+  });
+
+  it("field_twins: the owner and timestamps are the server's", async () => {
+    const d = await full();
+    await denied(d.as(ALICE, "INSERT INTO public.field_twins (storage_key, name, created_at) VALUES ('x', 'x', '2099-01-01')"));
+    await denied(d.as(ALICE, "UPDATE public.field_twins SET user_id = $1", [BOB]));
+    await d.as(ALICE, "UPDATE public.field_twins SET name = 'renamed', status = 'ready'");
+  });
+
+  it("L4: a participant cannot use the founder's tables or put files outside their Field Twin folder", async () => {
+    const d = await full();
+    await denied(d.as(ALICE, "INSERT INTO public.fields (user_id, name) VALUES ($1, 'sneak')", [ALICE]));
+    expect(await d.as(ALICE, "SELECT * FROM public.fields")).toEqual([]);
+    await denied(d.as(ALICE, "INSERT INTO storage.objects (bucket_id, name) VALUES ('orthos', $1)", [`${ALICE}/big.tif`]));
+    await d.as(ALICE, "INSERT INTO storage.objects (bucket_id, name) VALUES ('orthos', $1)", [`${ALICE}/field-twins/${A_TWIN}/atlas-0.jpg`]);
+    await d.as(FOUNDER, "INSERT INTO public.fields (user_id, name) VALUES ($1, 'founder field')", [FOUNDER]);
+    await d.as(FOUNDER, "INSERT INTO storage.objects (bucket_id, name) VALUES ('orthos', $1)", [`${FOUNDER}/x.tif`]);
+  });
+});

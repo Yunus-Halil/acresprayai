@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, urlSessionRefused } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,7 +49,17 @@ export default function AuthWelcome() {
   };
 
   let body: React.ReactNode;
-  if (loading) {
+  if (urlSessionRefused() && session) {
+    // The link carried a sign-in, but this browser was already signed in: it was not used (a link must never swap
+    // the account someone is working in).
+    body = (
+      <div className="space-y-3 text-sm text-muted-foreground">
+        <p role="alert">You are already signed in as <span className="font-medium text-foreground">{session.user.email}</span>, so this link was not used.</p>
+        <p>If the link is for another account, sign out, then open the link again.</p>
+        <div className="flex gap-2"><Button onClick={() => void supabase.auth.signOut()}>Sign out</Button><Button asChild variant="outline"><Link to="/app">Continue as {session.user.email}</Link></Button></div>
+      </div>
+    );
+  } else if (loading) {
     body = <div className="flex justify-center py-6"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label="Loading" /></div>;
   } else if (!session) {
     body = (

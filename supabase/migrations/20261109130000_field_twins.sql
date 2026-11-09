@@ -33,8 +33,12 @@ CREATE TABLE IF NOT EXISTS public.field_twins (
 CREATE INDEX IF NOT EXISTS field_twins_user_created ON public.field_twins (user_id, created_at DESC);
 
 ALTER TABLE public.field_twins ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.field_twins FROM anon;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.field_twins TO authenticated;
+REVOKE ALL ON public.field_twins FROM anon, authenticated;
+-- Column grants: the owner and the timestamps are the server's (user_id defaults to the caller; created_at and
+-- updated_at are now() and the trigger), so a record cannot be back- or forward-dated or moved to another owner.
+GRANT SELECT, DELETE ON public.field_twins TO authenticated;
+GRANT INSERT (id, storage_key, name, crop, captured_at, photographs, camera, placement, area_ha, format, status, error, build_ms) ON public.field_twins TO authenticated;
+GRANT UPDATE (name, crop, captured_at, photographs, camera, placement, area_ha, format, status, error, build_ms) ON public.field_twins TO authenticated;
 GRANT ALL ON public.field_twins TO service_role;
 
 DROP POLICY IF EXISTS "own field twins" ON public.field_twins;

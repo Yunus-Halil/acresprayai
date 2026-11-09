@@ -39,7 +39,7 @@ const founderNav: NavItem[] = [
   { to: "/app/weeds", label: "Weed Library", icon: Sprout },
   { to: "/app/photo", label: "Photo Scout", icon: Camera },
   { to: "/app/field-twin", label: "Field Twin workbench", icon: Wrench },
-  { to: "/admin/pilot", label: "Pilot desk", icon: Users },
+  { to: "/admin/pilot", label: "Pilot admin", icon: Users },
   ...(isWeedVisionPreviewEnabled() ? [{ to: "/app/weed-vision", label: "Weed Vision Preview", icon: FlaskConical }] : []),
 ];
 

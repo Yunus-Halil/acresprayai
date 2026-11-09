@@ -140,10 +140,13 @@ GRANT UPDATE (ai_analysis, ai_analysis_at) ON public.odm_tasks TO authenticated;
 REVOKE ALL ON public.odm_tasks FROM anon;
 
 -- ---------------------------------------------------------------------------
--- 5. The founder, so the gate does not shut the founder out
+-- 5. The founder, so the gate does not shut the founder out. Only an account whose address is CONFIRMED: an
+--    unconfirmed account holding one of these addresses may have been registered by someone else, and would
+--    otherwise become the founder. Check the three addresses in auth.users before applying.
 -- ---------------------------------------------------------------------------
 INSERT INTO public.pilot_members (user_id, role, status, email, notes)
 SELECT u.id, 'founder', 'active', u.email, 'seeded by 20261109120000_pilot_access'
 FROM auth.users u
 WHERE lower(u.email) IN ('yunushalilerdogan5@gmail.com', 'yunus@swardus.com', 'yunus@swathwise.com')
+  AND u.email_confirmed_at IS NOT NULL
 ON CONFLICT (user_id) DO UPDATE SET role = 'founder', status = 'active';

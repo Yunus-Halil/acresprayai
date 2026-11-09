@@ -23,7 +23,7 @@ const renderShell = () => render(
   </MemoryRouter>,
 );
 
-const FOUNDER_TOOLS = ["Operations dashboard", "Fields (orthomosaic)", "Drone Fleet", "Spray Conditions", "Schedule", "Weed Library", "Photo Scout", "Pilot desk"];
+const FOUNDER_TOOLS = ["Operations dashboard", "Fields (orthomosaic)", "Drone Fleet", "Spray Conditions", "Schedule", "Weed Library", "Photo Scout", "Pilot admin"];
 
 beforeEach(() => { pilot.role = "participant"; pilot.serverRole = "participant"; pilot.preview = false; });
 

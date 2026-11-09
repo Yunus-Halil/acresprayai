@@ -72,7 +72,7 @@ Use a real flight, ideally a DJI corn flight with its own GPS headers. **That va
 
 ## 5. What the founder should see
 
-Open `/admin/pilot`, section **How the pilot is going**:
+Open `/admin/pilot` (the pilot admin panel). Start with **System health**: every red line is something to fix in Supabase or Resend. Then **Overview**, and the participant's own page under **People**:
 - The participant appears with last sign-in, days used, Field Twins, builds finished or failed, typical build time and reviews.
 - **Builds** lists your build with its time, photographs used and left out, and camera.
 - **What participants said about the findings** shows your Wrong answer next to what Swardus said (for example "corn_weed (confirmed)"), with your note.

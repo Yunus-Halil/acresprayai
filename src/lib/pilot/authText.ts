@@ -13,7 +13,8 @@ export function returnedAuthError(search: string, hash: string): string | null {
   if (/expired|otp_expired|invalid/i.test(`${code} ${description}`)) {
     return "That link has expired or was already used. Ask for a new one below.";
   }
-  return description || "Sign-in did not complete. Try again.";
+  // Never the address bar's own words: anyone can put text there and send the link (a fake "call this number").
+  return "Sign-in did not complete. Try again.";
 }
 
 export const MIN_PASSWORD = 8;

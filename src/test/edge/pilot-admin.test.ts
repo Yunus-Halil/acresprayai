@@ -48,7 +48,8 @@ describe("pilot-admin · invite", () => {
     expect(body.kind).toBe("invite");
     expect(body.link).toMatch(/^https:\/\/test\.supabase\.co\/auth\/v1\/verify/);
     expect(body.emailed).toBe(true);
-    expect(db.links).toEqual([{ type: "invite", email: "ryan@cropcompass.test", redirectTo: "http://localhost:8080/auth/welcome" }]);
+    // localhost is no longer a default return address: the first allowed origin is used instead.
+    expect(db.links).toEqual([{ type: "invite", email: "ryan@cropcompass.test", redirectTo: "https://swathwise.com/auth/welcome" }]);
     const row = db.tables.pilot_members.find(m => m.email === "ryan@cropcompass.test")!;
     expect(row).toMatchObject({ role: "participant", status: "active", display_name: "Ryan", organisation: "Crop Compass", invited_by: "user-1" });
     const mail = JSON.parse(String(((resend.mock.calls[0] as unknown[])[1] as RequestInit).body));
@@ -56,14 +57,23 @@ describe("pilot-admin · invite", () => {
     expect(mail.text).toContain(body.link);
   });
 
-  it("an address that already has an account gets a sign-in link, not a second account", async () => {
+  it("H1: an existing account that was never in the pilot is not adopted (it may have been registered by someone else)", async () => {
     const { handler } = await boot(FOUNDER);
+    db.authUsers.push({ id: "existing-9", email: "alex@umd.test" });
+    const res = await handler(postJson(URL, { action: "invite", email: "alex@umd.test" }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("existing_outsider");
+    expect(db.links).toHaveLength(0);
+    expect(db.tables.pilot_members.find(m => m.user_id === "existing-9")).toBeUndefined();
+  });
+
+  it("someone already in the pilot gets a fresh sign-in link, not a second account", async () => {
+    const { handler } = await boot([...FOUNDER, { user_id: "existing-9", role: "participant", status: "active" }]);
     db.authUsers.push({ id: "existing-9", email: "alex@umd.test" });
     const body = await (await handler(postJson(URL, { action: "invite", email: "alex@umd.test" }))).json();
     expect(body.kind).toBe("sign-in");
     expect(db.links[0].type).toBe("magiclink");
     expect(db.authUsers.filter(u => u.email === "alex@umd.test")).toHaveLength(1);
-    expect(db.tables.pilot_members.find(m => m.user_id === "existing-9")).toMatchObject({ role: "participant", status: "active" });
   });
 
   it("re-inviting someone reactivates them and never demotes a founder", async () => {
@@ -168,5 +178,82 @@ describe("pilot-admin · activity", () => {
     const handler = await seeded();
     expect((await handler(postJson(URL, { action: "feedback-status", id: "f0f0f0f0-1111-4222-8333-444455556666", status: "seen" }))).status).toBe(200);
     expect(db.tables.pilot_feedback[0].status).toBe("seen");
+  });
+});
+
+describe("pilot-admin · the admin panel's data", () => {
+  const T1 = "aaaaaaaa-1111-4000-8000-000000000001";
+  async function boot2(over: { consents?: Record<string, unknown>[]; members?: Record<string, unknown>[]; env?: Record<string, string>; settings?: Record<string, unknown> } = {}) {
+    installDenoGlobal({ RESEND_API_KEY: "re_test", ...over.env });
+    const now = new Date().toISOString();
+    db = makeSupabase({
+      pilot_members: over.members ?? [...FOUNDER, { user_id: "p1", role: "participant", status: "active", display_name: "Ryan" }],
+      field_twins: [
+        { id: T1, user_id: "p1", storage_key: "north-2026", name: "North", crop: "corn", status: "ready", updated_at: now, created_at: now },
+        { id: "bbbbbbbb-1111-4000-8000-000000000002", user_id: "p1", storage_key: "south", name: "South", status: "saving", updated_at: "2026-01-01T00:00:00Z", created_at: now },
+      ],
+      twin_reviews: [{ user_id: "p1", twin_id: T1, finding_kind: "boundary", finding_id: "cultivated", verdict: "wrong", payload: { ring: [[38.9, -76.9]] }, updated_at: now }],
+      app_events: [{ id: 1, user_id: "p1", at: now, name: "session_start" }, { id: 2, user_id: "p1", at: "2025-01-01T00:00:00Z", name: "session_start" }],
+      pilot_feedback: [{ id: "f1", user_id: "p1", status: "new", notified_at: null, created_at: now }],
+      pilot_consents: over.consents ?? [],
+      pilot_applications: [], admin_access_log: [],
+    });
+    db.authUsers.push({ id: "p1", email: "ryan@cc.test", last_sign_in_at: now }, { id: "stray", email: "stray@gmail.test" });
+    db.storage.objects.set(`orthos/p1/field-twins/north-2026/twin.json.gz`, new Uint8Array([1]));
+    db.storage.objects.set(`orthos/p1/field-twins/north-2026/atlas-0.jpg`, new Uint8Array([1]));
+    db.storage.objects.set(`orthos/p1/field-twins/north-2026/notes.txt`, new Uint8Array([1]));
+    __setMockClient(db.client);
+    mockFetch([
+      { match: "/auth/v1/settings", respond: () => jsonResponse(over.settings ?? { disable_signup: false, mailer_autoconfirm: true, external: { google: true } }) },
+      { match: "api.resend.com", respond: () => jsonResponse({ id: "e" }) },
+    ]);
+    return loadFunction(FN);
+  }
+
+  it("snapshot: everything the panel needs, the last 90 days of events, and never a boundary outline or a storage path", async () => {
+    const handler = await boot2();
+    const res = await handler(postJson(URL, { action: "snapshot" }));
+    const text = await res.text();
+    const body = JSON.parse(text);
+    expect(body.members).toHaveLength(2);
+    expect(body.twins.map((t: { name: string }) => t.name)).toEqual(["North", "South"]);
+    expect(body.events).toHaveLength(1);
+    expect(body.users.find((u: { id: string }) => u.id === "stray")).toBeTruthy();
+    expect(text).not.toMatch(/ring|storage_key|north-2026|38\.9/);
+    expect(db.storage.calls).toHaveLength(0);
+  });
+
+  it("health: says what to fix, from what can be read here", async () => {
+    const handler = await boot2();
+    const { checks } = await (await handler(postJson(URL, { action: "health" }))).json();
+    const by = Object.fromEntries(checks.map((c: { id: string; status: string }) => [c.id, c.status]));
+    expect(by).toMatchObject({ signups: "fail", confirm: "warn", resend: "ok", from: "warn", tables: "ok", outsiders: "warn", saves: "warn", feedback: "warn" });
+    const ok = await boot2({ settings: { disable_signup: true, mailer_autoconfirm: false }, env: { PILOT_NOTIFY_FROM: "pilot@swardus.com", PILOT_NOTIFY_TO: "yunus@swardus.com" } });
+    const good = Object.fromEntries((await (await ok(postJson(URL, { action: "health" }))).json()).checks.map((c: { id: string; status: string }) => [c.id, c.status]));
+    expect(good).toMatchObject({ signups: "ok", confirm: "ok", from: "ok", to: "ok" });
+  });
+
+  it("twin-open: refused without the participant's troubleshooting consent, and nothing is signed", async () => {
+    const handler = await boot2({ consents: [{ user_id: "p1", troubleshooting_access: false, created_at: "2026-11-09" }] });
+    const res = await handler(postJson(URL, { action: "twin-open", twin_id: T1 }));
+    expect(res.status).toBe(403);
+    expect(db.storage.calls.filter(c => c.op === "sign")).toHaveLength(0);
+    expect(db.tables.admin_access_log).toHaveLength(0);
+  });
+
+  it("twin-open: with consent, logged first, then only the twin's own files are signed", async () => {
+    const handler = await boot2({ consents: [{ user_id: "p1", troubleshooting_access: true, created_at: "2026-11-09" }] });
+    const body = await (await handler(postJson(URL, { action: "twin-open", twin_id: T1, reason: "build looked wrong" }))).json();
+    expect(Object.keys(body.files).sort()).toEqual(["atlas-0.jpg", "twin.json.gz"]);
+    expect(db.tables.admin_access_log).toEqual([expect.objectContaining({ founder_id: "user-1", participant_id: "p1", twin_id: T1, action: "open_twin", reason: "build looked wrong" })]);
+    expect(db.storage.calls.filter(c => c.op === "sign").every(c => c.path.startsWith("p1/field-twins/north-2026/"))).toBe(true);
+  });
+
+  it("twin-open and snapshot are the founder's only", async () => {
+    const handler = await boot2({ members: [{ user_id: "user-1", role: "participant", status: "active" }], consents: [{ user_id: "p1", troubleshooting_access: true }] });
+    expect((await handler(postJson(URL, { action: "twin-open", twin_id: T1 }))).status).toBe(403);
+    expect((await handler(postJson(URL, { action: "snapshot" }))).status).toBe(403);
+    expect((await handler(postJson(URL, { action: "health" }))).status).toBe(403);
+    expect(db.storage.calls).toHaveLength(0);
   });
 });

@@ -6,6 +6,25 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { type Consent, TERMS_VERSION, loadConsent, saveConsent } from "@/lib/pilot/consent";
+import { supabase } from "@/integrations/supabase/client";
+
+/** Every time Swardus opened one of this person's Field Twins to troubleshoot (they can read their own rows). */
+function AccessHistory() {
+  const [rows, setRows] = useState<{ at: string; reason: string | null }[] | null>(null);
+  useEffect(() => {
+    supabase.from("admin_access_log" as never).select("at, reason").order("at", { ascending: false }).limit(100)
+      .then(({ data }) => setRows((data ?? []) as { at: string; reason: string | null }[]), () => setRows([]));
+  }, []);
+  if (!rows) return null;
+  return (
+    <div className="space-y-2">
+      <h2 className="font-display text-xl">When Swardus opened your Field Twins</h2>
+      {rows.length === 0 ? <p className="text-sm text-muted-foreground">Never.</p> : (
+        <ul className="space-y-1 text-sm">{rows.map((r, i) => <li key={i}>{new Date(r.at).toLocaleString()}{r.reason ? `: ${r.reason}` : ""}</li>)}</ul>
+      )}
+    </div>
+  );
+}
 
 export function ConsentForm({ current, onDone, change = false }: { current: Consent | null; onDone: () => void; change?: boolean }) {
   const [troubleshooting, setTroubleshooting] = useState(current?.troubleshooting_access ?? false);
@@ -76,6 +95,7 @@ export default function ConsentPage() {
     <div className="mx-auto max-w-2xl space-y-4 p-6 sm:p-10">
       <h1 className="font-display text-3xl">Your data choices</h1>
       {current === undefined ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : <ConsentForm current={current} change onDone={() => toast.success("Your choices are saved")} />}
+      <AccessHistory />
     </div>
   );
 }

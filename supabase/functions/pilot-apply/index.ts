@@ -85,6 +85,15 @@ Deno.serve(async (req) => {
 
   const row = normalise(payload);
 
+  // Limits on the mail this public form sends (it emails whatever address is typed): the same address within a day
+  // gets no second confirmation, and above 30 applications an hour everything is still stored but nothing is
+  // emailed. A real applicant is never refused; a script cannot use Swardus to send mail.
+  const dayAgo = Date.now() - 86_400_000, hourAgo = Date.now() - 3_600_000;
+  const { data: recentRows } = await admin.from("pilot_applications").select("email, created_at").order("created_at", { ascending: false }).limit(200);
+  const recent = ((recentRows ?? []) as { email: string | null; created_at: string }[]);
+  const repeat = !!row.email && recent.some(r => (r.email ?? "").toLowerCase() === String(row.email).toLowerCase() && Date.parse(r.created_at) > dayAgo);
+  const flooded = recent.filter(r => Date.parse(r.created_at) > hourAgo).length >= 30;
+
   const { data, error } = await admin
     .from("pilot_applications")
     .insert(row)
@@ -98,6 +107,10 @@ Deno.serve(async (req) => {
 
   // Notify after the row is safely down, and never let a mail failure turn a
   // saved application into an error the applicant sees.
+  if (flooded) {
+    console.error(`[pilot-apply] saved ${data?.id}; over 30 applications this hour, no email sent`);
+    return json({ ok: true, id: data?.id, notified: false });
+  }
   const to = Deno.env.get("PILOT_NOTIFY_TO") ?? "yunus@swardus.com";
   const result = await sendEmail({
     to,
@@ -111,7 +124,7 @@ Deno.serve(async (req) => {
   // The applicant hears back at once, so "we will be in touch" on the form is
   // backed by something in their inbox. Best-effort like the notification: a
   // failed confirmation never fails the saved application.
-  if (row.email) {
+  if (row.email && !repeat) {
     const ack = await sendEmail({
       to: row.email,
       subject: "Swardus: we have your access request",

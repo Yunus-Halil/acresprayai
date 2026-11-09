@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS public.twin_reviews (
   verdict text NOT NULL CHECK (verdict IN ('correct', 'unsure', 'wrong')),
   note text CHECK (length(note) <= 2000),
   algorithm_status text CHECK (length(algorithm_status) <= 64),
-  payload jsonb CHECK (payload IS NULL OR pg_column_size(payload) <= 65536),
+  -- Only the boundary carries a payload (the corrected outline), and a modest one.
+  payload jsonb CHECK (payload IS NULL OR (finding_kind = 'boundary' AND pg_column_size(payload) <= 16384)),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (user_id, twin_id, finding_kind, finding_id)
@@ -28,8 +29,11 @@ CREATE TABLE IF NOT EXISTS public.twin_reviews (
 CREATE INDEX IF NOT EXISTS twin_reviews_twin ON public.twin_reviews (twin_id);
 
 ALTER TABLE public.twin_reviews ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.twin_reviews FROM anon;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.twin_reviews TO authenticated;
+REVOKE ALL ON public.twin_reviews FROM anon, authenticated;
+-- Not user_id or the timestamps: the server's (default auth.uid(), now(), the trigger).
+GRANT SELECT, DELETE ON public.twin_reviews TO authenticated;
+GRANT INSERT (twin_id, finding_kind, finding_id, verdict, note, algorithm_status, payload) ON public.twin_reviews TO authenticated;
+GRANT UPDATE (twin_id, finding_kind, finding_id, verdict, note, algorithm_status, payload) ON public.twin_reviews TO authenticated;
 GRANT ALL ON public.twin_reviews TO service_role;
 
 DROP POLICY IF EXISTS "own reviews" ON public.twin_reviews;
@@ -51,6 +55,26 @@ END $$;
 DROP TRIGGER IF EXISTS twin_reviews_touch ON public.twin_reviews;
 CREATE TRIGGER twin_reviews_touch BEFORE UPDATE ON public.twin_reviews FOR EACH ROW EXECUTE FUNCTION public.twin_reviews_touch();
 
+-- Per-person limits a real participant never meets, so a script cannot fill the tables: 300 reviews a minute,
+-- 20 feedback messages an hour.
+CREATE OR REPLACE FUNCTION public.pilot_rate_limits()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'twin_reviews' THEN
+    IF (SELECT count(*) FROM public.twin_reviews WHERE user_id = NEW.user_id AND updated_at > now() - interval '1 minute') >= 300 THEN
+      RAISE EXCEPTION 'too many reviews at once' USING ERRCODE = 'P0001';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'pilot_feedback' THEN
+    IF (SELECT count(*) FROM public.pilot_feedback WHERE user_id = NEW.user_id AND created_at > now() - interval '1 hour') >= 20 THEN
+      RAISE EXCEPTION 'too many messages: write to the founder directly' USING ERRCODE = 'P0001';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION public.pilot_rate_limits() FROM PUBLIC;
+DROP TRIGGER IF EXISTS twin_reviews_rate ON public.twin_reviews;
+CREATE TRIGGER twin_reviews_rate BEFORE INSERT ON public.twin_reviews FOR EACH ROW EXECUTE FUNCTION public.pilot_rate_limits();
+
 CREATE TABLE IF NOT EXISTS public.pilot_feedback (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -68,8 +92,13 @@ CREATE INDEX IF NOT EXISTS pilot_feedback_created ON public.pilot_feedback (crea
 
 ALTER TABLE public.pilot_feedback ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.pilot_feedback FROM anon, authenticated;
-GRANT SELECT, INSERT ON public.pilot_feedback TO authenticated;
+-- Not user_id, created_at, status or notified_at: the server's.
+GRANT SELECT ON public.pilot_feedback TO authenticated;
+GRANT INSERT (kind, message, route, twin_id, context) ON public.pilot_feedback TO authenticated;
 GRANT ALL ON public.pilot_feedback TO service_role;
+
+DROP TRIGGER IF EXISTS pilot_feedback_rate ON public.pilot_feedback;
+CREATE TRIGGER pilot_feedback_rate BEFORE INSERT ON public.pilot_feedback FOR EACH ROW EXECUTE FUNCTION public.pilot_rate_limits();
 
 DROP POLICY IF EXISTS "send feedback" ON public.pilot_feedback;
 CREATE POLICY "send feedback" ON public.pilot_feedback FOR INSERT TO authenticated
@@ -95,7 +124,10 @@ CREATE INDEX IF NOT EXISTS pilot_consents_user ON public.pilot_consents (user_id
 ALTER TABLE public.pilot_consents ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.pilot_consents FROM anon, authenticated;
 -- Insert and read only: a change of mind is a new row, so the history of what was agreed stays intact.
-GRANT SELECT, INSERT ON public.pilot_consents TO authenticated;
+-- Not user_id or created_at: a consent row is dated by the server, so "the newest is in force" cannot be gamed by
+-- dating a row into the future.
+GRANT SELECT ON public.pilot_consents TO authenticated;
+GRANT INSERT (terms_version, troubleshooting_access, research_use) ON public.pilot_consents TO authenticated;
 GRANT ALL ON public.pilot_consents TO service_role;
 
 DROP POLICY IF EXISTS "own consents read" ON public.pilot_consents;

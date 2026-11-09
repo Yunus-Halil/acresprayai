@@ -32,6 +32,10 @@ Deno.serve(async (req) => {
   const fb = row as { id: string; user_id: string; kind: string; message: string; route: string | null; twin_id: string | null; context: Record<string, unknown> | null; created_at: string; notified_at: string | null } | null;
   if (!fb || fb.user_id !== ud.user.id) return json({ error: "Not found" }, 404);
   if (fb.notified_at) return json({ notified: true });
+  // At most 10 alerts an hour per participant: the messages are all stored and on the admin panel either way.
+  const { data: sentRows } = await admin.from("pilot_feedback").select("notified_at").eq("user_id", ud.user.id);
+  const sentLastHour = ((sentRows ?? []) as { notified_at: string | null }[]).filter(r => r.notified_at && Date.parse(r.notified_at) > Date.now() - 3_600_000).length;
+  if (sentLastHour >= 10) return json({ notified: false, reason: "alert limit" });
 
   const { data: member } = await admin.from("pilot_members").select("display_name, organisation, email").eq("user_id", ud.user.id).maybeSingle();
   const m = member as { display_name: string | null; organisation: string | null; email: string | null } | null;

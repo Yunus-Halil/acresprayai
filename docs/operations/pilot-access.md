@@ -27,7 +27,11 @@ supabase/migrations/20261109120100_odm_uuid_unique.sql            one scan per O
 supabase/migrations/20261109130000_field_twins.sql                the saved-twin registry
 supabase/migrations/20261109140000_app_events.sql                 pilot telemetry (insert-only for participants)
 supabase/migrations/20261109150000_reviews_feedback_consent.sql   finding reviews, feedback, consent
+supabase/migrations/20261109160000_admin_access_log.sql           every time the founder opens a participant's twin
+supabase/migrations/20261109170000_founder_tools_only.sql         the founder's tables founder-only; participants' files only in their Field Twin folder
 ```
+
+The founder is seeded only from a **confirmed** address (an unconfirmed account holding one of the founder's addresses could have been registered by someone else). If yours is unconfirmed, confirm it or add the row by hand as below.
 
 With the CLI: `supabase db push`. Without it: paste each file into the SQL editor, in this order.
 
@@ -80,6 +84,12 @@ Only after steps 2 to 4. The branch must not be merged to `main` before you have
 
 ## 6. Inviting someone
 
+The pilot admin panel is `/admin/pilot`. Its **System health** tab reads the live settings (sign-ups, email confirmation, email sending, the database, stray accounts) and says what to fix.
+
+An invitation never adopts an account it did not create. If the address already has an account that was never in the pilot, the panel refuses and asks you to delete that account in Supabase first: with sign-ups open, anyone could have registered the address with a password of their own. Someone already in the pilot (active, paused or ended) gets a fresh sign-in link instead.
+
+If your site is not on swathwise.com or swardus.com, set `PILOT_SITE_ORIGINS`: invitation links return only to the listed origins (localhost is not a default).
+
 1. Open `/admin/pilot` as the founder.
 2. Type the address, name and organisation, or press Invite beside an application.
 3. The page says whether the email went out, and always shows the link with a Copy button.
@@ -120,3 +130,11 @@ union all select 'files', count(*) from storage.objects where (storage.foldernam
 4. Run the query in step 1 again: every count is 0.
 
 The older orthomosaic tables (`odm_tasks`, `user_annotations` and others) have no foreign key to `auth.users`; for a founder-tool account, delete those rows by `user_id` as well.
+
+## Security limits worth knowing
+
+- **Rate limits in the database.** Events are capped at 120 a minute per person, reviews at 300 a minute, feedback at 20 an hour. Feedback email alerts are capped at 10 an hour per person. The application form stops emailing above 30 applications an hour, and sends one confirmation per address per day.
+- **Server-dated records.** Events, consents, feedback, reviews and Field Twin records are dated by the database, and a participant cannot set their dates.
+- **Links cannot switch accounts.** A sign-in carried in a link is taken only on the sign-in pages, and never over an existing sign-in. Someone cannot send a link that signs the reader into the sender's account.
+- **Founder powers.** An invitation to someone already in the pilot returns a working sign-in link to the founder's screen, which is how links can be re-sent by hand. Treat the founder account accordingly: use a strong password and two-factor sign-in on the Google account.
+- **A paused founder** keeps tile access for up to 5 minutes (a per-instance cache in the tile functions).

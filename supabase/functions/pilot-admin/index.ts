@@ -15,10 +15,14 @@
 // POST { action: "applications" }                              -> { applications: [...] }
 // POST { action: "activity" }                                  -> { people, builds, checks, errors, reviews, feedback } (no imagery, no paths)
 // POST { action: "feedback-status", id, status }               -> { ok }
+// POST { action: "snapshot" }                                  -> everything the admin panel shows (no imagery)
+// POST { action: "health" }                                    -> { checks: [...] }
+// POST { action: "twin-open", twin_id, reason? }               -> { twin, files } signed for 10 min; consented, logged
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import { pilotRole } from "../_shared/access.ts";
 import { sendEmail } from "../_shared/email.ts";
+import { cleanEvent, health, openTwin, snapshot } from "./monitor.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -36,7 +40,7 @@ const STATUSES = new Set(["active", "paused", "ended"]);
 /** Where an invitation may send people back to: the app's own origins. Anything else falls back to the first. */
 function allowedOrigins(): string[] {
   const configured = (Deno.env.get("PILOT_SITE_ORIGINS") ?? "").split(",").map(s => s.trim().replace(/\/$/, "")).filter(Boolean);
-  return configured.length ? configured : ["https://swathwise.com", "https://www.swathwise.com", "https://swardus.com", "https://www.swardus.com", "http://localhost:8080"];
+  return configured.length ? configured : ["https://swathwise.com", "https://www.swathwise.com", "https://swardus.com", "https://www.swardus.com"];
 }
 function siteOrigin(requested: unknown): string {
   const list = allowedOrigins();
@@ -125,6 +129,19 @@ Deno.serve(async (req) => {
         const redirectTo = `${siteOrigin(body.origin)}/auth/welcome`;
 
         const existing = (await allUsers(api)).find(u => (u.email ?? "").toLowerCase() === email) ?? null;
+        // An account that already holds this address but was never in the pilot is not adopted: Swardus cannot tell
+        // who created it (with sign-ups open, anyone could have registered the invitee's address with a password of
+        // their own and would then share the invitee's account). Only someone already in the pilot (active, paused
+        // or ended) gets a fresh sign-in link; anyone else's stray account must be deleted first, then invited anew.
+        if (existing) {
+          const { data: wasMember } = await admin.from("pilot_members").select("user_id").eq("user_id", existing.id).maybeSingle();
+          if (!wasMember) {
+            return json({
+              error: "An account with this address already exists but was never invited to the pilot, so Swardus cannot tell who created it. Delete it in Supabase (Authentication, Users), then invite again: they will get a fresh invitation.",
+              code: "existing_outsider",
+            }, 409);
+          }
+        }
         const kind: "invite" | "sign-in" = existing ? "sign-in" : "invite";
         const { data: link, error: linkErr } = await api.generateLink(existing
           ? { type: "magiclink", email, options: { redirectTo } }
@@ -173,14 +190,14 @@ Deno.serve(async (req) => {
         // text, review verdicts and notes, feedback. No storage paths, no signed URLs, no boundaries or coordinates.
         const since = Date.now() - 90 * 86_400_000;
         const [ev, tw, rv, fb, mem] = await Promise.all([
-          admin.from("app_events").select("user_id, name, at, duration_ms, outcome, error, counts, detail, twin_id").order("at", { ascending: false }).limit(5000),
+          admin.from("app_events").select("user_id, name, at, duration_ms, outcome, error, counts, detail, twin_id").order("received_at", { ascending: false }).limit(5000),
           admin.from("field_twins").select("id, user_id, name, crop, status, photographs, created_at").order("created_at", { ascending: false }).limit(2000),
           admin.from("twin_reviews").select("user_id, twin_id, finding_kind, verdict, algorithm_status, note, updated_at").order("updated_at", { ascending: false }).limit(5000),
           admin.from("pilot_feedback").select("id, user_id, created_at, kind, message, route, twin_id, context, status").order("created_at", { ascending: false }).limit(200),
           admin.from("pilot_members").select("user_id, role, status, display_name, organisation, email"),
         ]);
         type Ev = { user_id: string; name: string; at: string; duration_ms: number | null; outcome: string | null; error: string | null; counts: Record<string, number> | null; detail: Record<string, unknown> | null; twin_id: string | null };
-        const events = ((ev.data ?? []) as Ev[]).filter(e => Date.parse(e.at) >= since);
+        const events = ((ev.data ?? []) as Ev[]).map(e => cleanEvent(e as unknown as Record<string, unknown>) as unknown as Ev).filter(e => Date.parse(e.at) >= since);
         const twins = (tw.data ?? []) as { id: string; user_id: string; name: string; crop: string | null; status: string; photographs: number | null; created_at: string }[];
         const reviews = (rv.data ?? []) as { user_id: string; twin_id: string; finding_kind: string; verdict: string; algorithm_status: string | null; note: string | null; updated_at: string }[];
         const members = (mem.data ?? []) as { user_id: string; role: string; status: string; display_name: string | null; organisation: string | null; email: string | null }[];
@@ -215,7 +232,7 @@ Deno.serve(async (req) => {
           crop: (e.detail?.crop as string | undefined) ?? null, camera: (e.detail?.camera as string | undefined) ?? null,
           stage: (e.detail?.stage as string | undefined) ?? null, error: e.error,
         }));
-        const checks = events.filter(e => e.name === "twin_check_done").slice(0, 100).map(e => ({ at: e.at, who: nameOf(e.user_id), ...e.counts, camera: (e.detail?.camera as string | undefined) ?? null }));
+        const checks = events.filter(e => e.name === "twin_check_done").slice(0, 100).map(e => ({ ...e.counts, at: e.at, who: nameOf(e.user_id), camera: (e.detail?.camera as string | undefined) ?? null }));
         const errors = events.filter(e => e.name === "client_error" || e.name === "twin_open_failed" || e.name === "twin_save_failed").slice(0, 50).map(e => ({ at: e.at, who: nameOf(e.user_id), name: e.name, error: e.error }));
 
         // Reviews: by kind, verdict against what Swardus said.
@@ -229,6 +246,19 @@ Deno.serve(async (req) => {
 
         const feedback = ((fb.data ?? []) as Record<string, unknown>[]).map(f => ({ ...f, who: nameOf(String(f.user_id)), twin: f.twin_id ? twinName.get(String(f.twin_id)) ?? null : null }));
         return json({ people, builds, checks, errors, reviews: { byKind, notes, total: reviews.length }, feedback });
+      }
+
+      case "snapshot":
+        return json(await snapshot(admin as never, await allUsers(api)));
+
+      case "health":
+        return json({ checks: await health(admin as never, await allUsers(api), k => Deno.env.get(k)) });
+
+      case "twin-open": {
+        const twinId = typeof body.twin_id === "string" && /^[0-9a-f-]{36}$/i.test(body.twin_id) ? body.twin_id : "";
+        if (!twinId) return json({ error: "twin_id required" }, 400);
+        const r = await openTwin(admin as never, me.id, twinId, typeof body.reason === "string" ? body.reason : null);
+        return json(r.body, r.status);
       }
 
       case "feedback-status": {

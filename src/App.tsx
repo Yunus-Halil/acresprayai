@@ -31,7 +31,8 @@ const FieldDetail = lazy(() => import("./pages/app/FieldDetail.tsx"));
 const OrthomosaicViewer = lazy(() => import("./pages/app/OrthomosaicViewer.tsx"));
 const WeedLibrary = lazy(() => import("./pages/app/WeedLibrary.tsx"));
 const PhotoScout = lazy(() => import("./pages/app/PhotoScout.tsx"));
-const PilotDesk = lazy(() => import("./pages/admin/PilotDesk.tsx"));
+const PilotAdmin = lazy(() => import("./pages/admin/PilotAdmin.tsx"));
+const AdminTwinViewer = lazy(() => import("./pages/admin/AdminTwinViewer.tsx"));
 const Help = lazy(() => import("./pages/app/Help.tsx"));
 const TwinsHome = lazy(() => import("./pages/app/TwinsHome.tsx"));
 const TwinNew = lazy(() => import("./pages/app/TwinNew.tsx"));
@@ -76,8 +77,10 @@ const App = () => (
             <Route path="/apply" element={<PilotApply />} />
             <Route path="/pilot-terms" element={<PilotTerms />} />
             {FieldTwinDevPreview && <Route path="/dev/field-twin" element={<Suspense fallback={null}><FieldTwinDevPreview /></Suspense>} />}
-            {/* The founder's pilot desk (invitations, members, applications). Founder-only here and in pilot-admin. */}
-            <Route path="/admin/pilot" element={<PilotRoute>{founder(<PilotDesk />)}</PilotRoute>} />
+            {/* The founder's pilot admin panel. Founder-only here and in pilot-admin. */}
+            <Route path="/admin/pilot" element={<PilotRoute>{founder(<PilotAdmin />)}</PilotRoute>} />
+            <Route path="/admin/pilot/people/:id" element={<PilotRoute>{founder(<PilotAdmin />)}</PilotRoute>} />
+            <Route path="/admin/pilot/twins/:id" element={<PilotRoute>{founder(<AdminTwinViewer />)}</PilotRoute>} />
             <Route path="/admin/pilot-applications" element={<Navigate to="/admin/pilot" replace />} />
             <Route path="/app" element={<AppLayout />}>
               <Route index element={<AppHome />} />

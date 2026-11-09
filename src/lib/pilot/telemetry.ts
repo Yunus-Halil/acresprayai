@@ -31,7 +31,7 @@ export type EventFields = {
 };
 
 type Row = {
-  name: EventName; at: string; session_id: string; route: string | null; twin_id: string | null;
+  name: EventName; session_id: string; route: string | null; twin_id: string | null;
   duration_ms: number | null; outcome: string | null; error: string | null;
   counts: Record<string, number> | null; stages: Record<string, number> | null; detail: Record<string, unknown> | null;
   app_version: string;
@@ -49,16 +49,24 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function scrub(text: string | null | undefined, max = 500): string | null {
   if (!text) return null;
   return String(text)
-    .replace(/-?\d{1,3}\.\d{4,}/g, "<num>")
-    .replace(/[\w-]+\.(jpe?g|tiff?|dng|png|json|gz)\b/gi, "<file>")
-    .replace(/(\/[\w.-]+){2,}/g, "<path>")
+    // Paths first (Windows and Unix), then file names (spaces allowed, any common extension), then anything that can
+    // be a coordinate: degrees-minutes-seconds, decimals of two places or more (dot or comma), long digit runs (UTM).
+    .replace(/[A-Za-z]:\\[^\s]*|(?:\/[^\s/]+){2,}/g, "<path>")
+    .replace(/(?:[\w-]+ ){0,3}[\w-]+\.(?:jpe?g|tiff?|dng|heic|heif|png|webp|raw|json|gz|zip|mp4|mov|csv|kmz|kml|shp)\b/gi, "<file>")
+    .replace(/\d{1,3}\s*°\s*\d{1,2}\s*['′]\s*\d{1,2}(?:[.,]\d+)?\s*["″]?\s*[NSEW]?/g, "<num>")
+    .replace(/-?\d{1,3}[.,]\d{2,}/g, "<num>")
+    .replace(/\d{5,}/g, "<num>")
     .slice(0, max);
 }
 
 function cleanDetail(d: EventFields["detail"]): Record<string, unknown> | null {
   if (!d) return null;
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(d).slice(0, 12)) out[k.slice(0, 40)] = typeof v === "string" ? scrub(v, 120) : v;
+  // Plain values only (the database refuses anything nested).
+  for (const [k, v] of Object.entries(d).slice(0, 12)) {
+    if (typeof v === "string") out[k.slice(0, 40)] = scrub(v, 120);
+    else if (v === null || typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v))) out[k.slice(0, 40)] = v;
+  }
   return out;
 }
 
@@ -86,7 +94,8 @@ export function track(name: EventName, f: EventFields = {}): void {
   if (!enabled) return;
   try {
     queue.push({
-      name, at: new Date().toISOString(), session_id: SESSION,
+      // No timestamp: the database dates every event when it arrives (a client cannot date one).
+      name, session_id: SESSION,
       route: typeof location !== "undefined" ? location.pathname.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, ":id").slice(0, 120) : null,
       twin_id: f.twinId && UUID.test(f.twinId) ? f.twinId : null,
       duration_ms: f.durationMs != null && Number.isFinite(f.durationMs) ? Math.round(f.durationMs) : null,
