@@ -55,6 +55,19 @@ describe("pilot-admin · invite", () => {
     const mail = JSON.parse(String(((resend.mock.calls[0] as unknown[])[1] as RequestInit).body));
     expect(mail.to).toBe("ryan@cropcompass.test");
     expect(mail.text).toContain(body.link);
+    // The formatted version hides the link behind a button with words; the address is never shown as text.
+    const href = body.link.replace(/&/g, "&amp;");
+    expect(mail.html).toContain(`href="${href}"`);
+    expect(mail.html).toContain(">Set up my account</a>");
+    expect(mail.html.replace(`href="${href}"`, "")).not.toContain("/auth/v1/verify");
+  });
+
+  it("escapes the name in the formatted invitation", async () => {
+    const { handler, resend } = await boot(FOUNDER, { RESEND_API_KEY: "re_test" });
+    await handler(postJson(URL, { action: "invite", email: "x@umd.test", name: "<b>Ryan</b>" }));
+    const mail = JSON.parse(String(((resend.mock.calls[0] as unknown[])[1] as RequestInit).body));
+    expect(mail.html).toContain("Hello &lt;b&gt;Ryan&lt;/b&gt;,");
+    expect(mail.html).not.toContain("<b>Ryan");
   });
 
   it("H1: an existing account that was never in the pilot is not adopted (it may have been registered by someone else)", async () => {

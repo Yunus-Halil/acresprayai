@@ -86,6 +86,30 @@ function invitationText(name: string | null, link: string, kind: "invite" | "sig
   ].join("\n");
 }
 
+const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+/** The same message as invitationText, with the link behind a button: a long sign-in address looks like phishing. */
+export function invitationHtml(name: string | null, link: string, kind: "invite" | "sign-in"): string {
+  const hello = `Hello${name ? ` ${escapeHtml(name)}` : ""},`;
+  const intro = kind === "invite"
+    ? "You are invited to the Swardus founding pilot. Press the button to set up your account."
+    : "Your Swardus account is ready for the founding pilot. Press the button to sign in.";
+  const label = kind === "invite" ? "Set up my account" : "Sign in to Swardus";
+  const p = 'style="margin:0 0 16px;font-size:15px;line-height:1.5;color:#1f2a1f"';
+  return `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f6f2;font-family:Arial,Helvetica,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border:1px solid #e3e3dc;border-radius:8px"><tr><td style="padding:28px">
+<p ${p}>${hello}</p>
+<p ${p}>${intro}</p>
+<p style="margin:24px 0"><a href="${escapeHtml(link)}" style="display:inline-block;background:#1f3a24;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:12px 22px;border-radius:6px">${label}</a></p>
+<p ${p}>The button works once. If it has expired, reply to this email and I will send a new one.</p>
+<p ${p}>What to have ready: the original photographs from one drone flight, straight from the drone's memory card (a DJI drone, camera pointing straight down), over a corn field or an orchard.</p>
+<p style="margin:24px 0 0;font-size:13px;color:#6b706b">Yunus, Swardus</p>
+</td></tr></table>
+</td></tr></table>
+</body></html>`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -169,6 +193,7 @@ Deno.serve(async (req) => {
           to: email,
           subject: kind === "invite" ? "Your invitation to the Swardus founding pilot" : "Your Swardus pilot sign-in link",
           text: invitationText(name, actionLink, kind),
+          html: invitationHtml(name, actionLink, kind),
           replyTo: Deno.env.get("PILOT_NOTIFY_TO") ?? undefined,
         });
         return json({ link: actionLink, kind, emailed: sent.sent, email_problem: sent.sent ? null : sent.reason, member: write.data });
