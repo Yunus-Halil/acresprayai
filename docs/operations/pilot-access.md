@@ -81,7 +81,7 @@ supabase functions deploy odm-submit odm-poll odm-asset ortho-import ortho-url b
 | Secret | Value | Why |
 |---|---|---|
 | `RESEND_API_KEY` | already set? | invitations and notifications |
-| `PILOT_NOTIFY_FROM` | e.g. `Swardus <pilot@swardus.com>`, a sender on a domain verified in Resend | Without a verified domain, Resend delivers only to its account owner, so invitations to participants do not arrive. The pilot desk then shows the link to send by hand. |
+| `PILOT_NOTIFY_FROM` | `Swardus <yunus@swardus.com>`, a sender on a domain verified in Resend | Without a verified domain, Resend delivers only to its account owner, so invitations to participants do not arrive. The pilot desk then shows the link to send by hand. |
 | `PILOT_NOTIFY_TO` | yunus@swardus.com | Where application notifications go, and the reply-to on invitations. The default is now this address. |
 | `PILOT_SITE_ORIGINS` | optional, e.g. `https://swathwise.com,https://www.swathwise.com` | Where invitation links may send people back to. The default list covers both domains and localhost:8080. |
 | `PILOT_ADMIN_EMAILS` | unset it once the founder row exists | It no longer defaults to an address. The founder role decides now. |
