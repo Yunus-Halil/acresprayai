@@ -23,6 +23,19 @@ import ReviewBar, { reviewTargetOf } from "./ReviewBar";
 import { reviewKey, useTwinReviews } from "@/lib/fieldTwin/reviews";
 import { FeedbackButton } from "@/components/pilot/FeedbackDialog";
 
+const NARROW_PX = 820;
+const narrowNow = () => typeof window !== "undefined" && window.innerWidth < NARROW_PX;
+/** True below about a landscape tablet's width: the panels fold away and the inspector becomes a bottom sheet. */
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(narrowNow);
+  useEffect(() => {
+    const on = () => setNarrow(narrowNow());
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  return narrow;
+}
+
 /** Where the twin sits on the map, in words, from the placement the build recorded. */
 export function placementText(twin: TwinBundle): string {
   const p = twin.source.placement;
@@ -255,18 +268,29 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const heatScale = useMemo(() => heatScaleFor(intel, layers.heatScale), [intel, layers.heatScale]);
   const pctText = (v: number) => (v === 0 ? "0" : Number.isInteger(v) ? String(v) : v.toFixed(1));
   const dockOpen = !!selection || resultsOpen;
+  // Narrow screens (a tablet held upright, a phone): the panels fold away behind a button and the inspector rises
+  // from the bottom, so the map stays visible. Wide screens keep both columns open.
+  const narrow = useNarrow();
+  const [panelsOpen, setPanelsOpen] = useState(() => !narrowNow());
+  useEffect(() => { if (narrow && selection) setPanelsOpen(false); }, [narrow, selection]);
   const full = founderView && (detailStop === "full" || detailStop === "custom"), simple = detailStop === "simple";
   const swatch = (rgb: [number, number, number], a: number) => `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.min(1, a + 0.15)})`;
 
   return (
-    <div className="twin-root relative h-full w-full min-h-0 overflow-hidden" style={{ background: TWIN_COLOURS.outside, ["--twin-right" as string]: dockOpen ? "368px" : "0px" }}>
+    <div className="twin-root relative h-full w-full min-h-0 overflow-hidden" style={{ background: TWIN_COLOURS.outside, ["--twin-right" as string]: dockOpen && !narrow ? "368px" : "0px" }}>
       <style>{`.twin-root .leaflet-top.leaflet-right, .twin-root .leaflet-bottom.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; } .twin-root .leaflet-control-scale-line { background: rgba(24,26,24,.85); color: #d9ddd6; border-color: #8a8f88; } .twin-root .leaflet-control-attribution { background: rgba(24,26,24,.85); color: #9aa09a; }`}</style>
       <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={setSelection} onDetail={setDetail} onStats={setStats}
         onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
         operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} />
 
+      {narrow && (
+        <button type="button" onClick={() => setPanelsOpen(o => !o)} aria-expanded={panelsOpen}
+          className={`absolute left-3 top-3 z-[710] flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-neutral-100 ${panel}`}>
+          <Layers className="h-3.5 w-3.5" />{panelsOpen ? "Hide panels" : "Findings and layers"}
+        </button>
+      )}
       {/* Left column: the detail dial, Explore Findings, then the layers (Standard and Full). */}
-      <div className="absolute left-3 top-3 z-[700] flex max-h-[calc(100%-120px)] flex-col gap-2 overflow-y-auto">
+      <div className={`absolute left-3 z-[700] flex flex-col gap-2 overflow-y-auto ${narrow ? "top-14 max-h-[calc(100%-72px)]" : "top-3 max-h-[calc(100%-120px)]"} ${narrow && !panelsOpen ? "hidden" : ""}`}>
         <div className={`w-[272px] px-3 py-2 ${panel}`} role="group" aria-label="Detail">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-neutral-100">Detail</span>
@@ -426,7 +450,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
           <span className="font-semibold">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · key</span>
         </button>
       )}
-      {keyOpen && <div className={`absolute bottom-3 left-3 z-[700] max-w-[420px] px-3 py-2 text-[11px] text-neutral-300 ${panel}`}>
+      {keyOpen && !(narrow && (dockOpen || panelsOpen)) && <div className={`absolute bottom-3 left-3 right-3 z-[700] max-w-[420px] px-3 py-2 text-[11px] text-neutral-300 sm:right-auto ${panel}`}>
         <div className="flex items-start justify-between gap-3">
           <p className="text-xs"><span className="font-semibold text-neutral-100">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · {twin.name}</span></p>
           <button type="button" className="-mr-1 -mt-0.5 rounded-sm px-1 text-[13px] leading-none text-neutral-500 hover:bg-[#262a26] hover:text-neutral-200" onClick={() => setKeyOpen(false)} aria-label="Close the key" title="Close the key">×</button>
@@ -453,7 +477,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
 
       {/* Right dock: the inspector for a selected object, else the results panel for an active filter. */}
       {selection ? (
-        <aside className={`absolute right-3 top-3 bottom-3 z-[700] w-[356px] overflow-y-auto p-3.5 text-sm ${panel}`} aria-label="Inspector">
+        <aside className={`absolute z-[720] overflow-y-auto p-3.5 text-sm ${narrow ? "inset-x-2 bottom-2 max-h-[62%]" : "right-3 top-3 bottom-3 w-[356px]"} ${panel}`} aria-label="Inspector">
           {resultsOpen && <button type="button" className="mb-2 text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => setSelection(null)}>← Back to the {result.findings.length.toLocaleString()} results</button>}
           {reviewing && (() => {
             const target = reviewTargetOf(selection, twin, result);
@@ -464,7 +488,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
           {reviewing && <div className="mt-4 border-t border-[#2e322e] pt-3"><FeedbackButton kind="finding" twinId={review?.twinId ?? null} context={{ selection: selection.kind, ...("id" in selection ? { id: selection.id } : {}) }} label="Tell us more about this" variant="ghost" /></div>}
         </aside>
       ) : resultsOpen ? (
-        <aside className={`absolute right-3 top-3 bottom-3 z-[700] w-[356px] p-3.5 text-sm ${panel}`} aria-label="Findings results">
+        <aside className={`absolute z-[720] p-3.5 text-sm ${narrow ? "inset-x-2 bottom-2 max-h-[62%] overflow-y-auto" : "right-3 top-3 bottom-3 w-[356px]"} ${panel}`} aria-label="Findings results">
           <FindingsPanel result={result} units={units} selectedIndex={selectedIndex} onSelect={selectFinding} onClose={() => setQuery(OVERVIEW)} labels={stats ? { placed: stats.labels.placed, emphasized: stats.labels.emphasized } : null} />
         </aside>
       ) : null}

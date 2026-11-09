@@ -148,3 +148,24 @@ describe("Field Twin page", () => {
     expect(screen.getByRole("combobox", { name: "Finding markers" })).toHaveValue("summary");
   });
 });
+
+describe("Field Twin on a tablet held upright", () => {
+  afterEach(() => { Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 }); pilot.role = "founder"; });
+
+  it("folds the panels behind one button and opens the inspector as a bottom sheet over the map", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 768 });
+    pilot.role = "participant";
+    state.twin = synthetic;
+    const { default: FieldTwin } = await import("@/pages/app/FieldTwin");
+    render(<MemoryRouter><FieldTwin /></MemoryRouter>);
+    const select = await screen.findByRole("combobox", { name: "Saved twins" });
+    await waitFor(() => expect(screen.getByRole("option", { name: state.twin.id })).toBeInTheDocument());
+    await act(async () => { fireEvent.change(select, { target: { value: state.twin.id } }); });
+    const toggle = await screen.findByRole("button", { name: "Findings and layers" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("group", { name: "Detail" }).closest("div.absolute")).toHaveClass("hidden");
+    await act(async () => { fireEvent.click(toggle); });
+    expect(screen.getByRole("group", { name: "Detail" }).closest("div.absolute")).not.toHaveClass("hidden");
+    expect(screen.getByRole("button", { name: "Hide panels" })).toBeInTheDocument();
+  });
+});

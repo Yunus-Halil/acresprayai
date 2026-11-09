@@ -20,6 +20,8 @@ export default function FieldTwinDevPreview() {
   const synthetic = Number(params.get("synthetic") ?? 0);
   // ?detail=simple|standard|full: the dial's stop to open at (the screenshot script), else the remembered one.
   const detailParam = params.get("detail");
+  // ?audience=participant shows the pilot participant's viewer (no Full stop, no diagnostics, the review bar).
+  const audience = params.get("audience") === "participant" ? "participant" : "founder";
   const detail = detailParam === "simple" || detailParam === "standard" || detailParam === "full" ? detailParam : undefined;
   useEffect(() => {
     if (build) return;
@@ -58,7 +60,7 @@ export default function FieldTwinDevPreview() {
     : async (i: number) => `/__field-twin/${twin.id}/${twin.atlases[i].file}`;
   return (
     <div className="h-screen w-screen bg-[#1a1c1a]">
-      <FieldTwinView twin={twin} atlasUrl={atlasUrl} expose detail={detail} />
+      <FieldTwinView twin={twin} atlasUrl={atlasUrl} expose detail={detail} audience={audience} review={audience === "participant" ? { twinId: null, disabledReason: "Preview: reviews are saved only for a twin in an account." } : undefined} />
     </div>
   );
 }
