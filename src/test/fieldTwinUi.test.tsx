@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FIELD_TWIN_FORMAT, type TwinBundle } from "@/lib/fieldTwin/types";
 import TwinInspector from "@/components/app/fieldTwin/TwinInspector";
 import { buildScene } from "@/lib/fieldTwin/scene";
@@ -56,6 +56,9 @@ const state: { twin: TwinBundle } = { twin: synthetic };
 
 const reviewerUser = { id: "user-1", email: "yunushalilerdogan5@gmail.com" };
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: reviewerUser, signOut: () => undefined }) }));
+// The founder's view unless a test says otherwise: the pilot role decides which detail stops and tools there are.
+const pilot: { role: "founder" | "participant" } = { role: "founder" };
+vi.mock("@/lib/pilot/access", () => ({ usePilotRole: () => pilot.role }));
 vi.mock("@/lib/fieldTwin/store", async importOriginal => ({
   ...(await importOriginal<typeof import("@/lib/fieldTwin/store")>()),
   listTwins: vi.fn(async () => [{ id: state.twin.id, updatedAt: null }]),
@@ -74,6 +77,23 @@ async function openPage() {
 const dial = (stop: string) => act(async () => { fireEvent.click(screen.getByRole("button", { name: stop })); });
 
 describe("Field Twin page", () => {
+  afterEach(() => { pilot.role = "founder"; });
+
+  it("a pilot participant gets Simple and Standard, no Full stop, no diagnostics, no boundary acceptance", async () => {
+    pilot.role = "participant";
+    state.twin = synthetic;
+    localStorage.setItem("swathwise:twin-detail", "full");
+    await openPage();
+    expect(screen.getByRole("button", { name: "Simple" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Standard" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Full" })).toBeNull();
+    await dial("Standard");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Layers/ })); });
+    expect(screen.queryByRole("button", { name: /Diagnostics/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Accept for operations" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Add a twin from files/ })).toBeNull();
+  });
+
   it("lists the account's twin, opens it, and every layer switches on and off without errors", async () => {
     state.twin = synthetic;
     await openPage();

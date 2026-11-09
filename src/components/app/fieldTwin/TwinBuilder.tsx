@@ -17,6 +17,8 @@ type Props = {
   onClose: () => void;
   /** Development builds: publish the result on window.__twinBuild for the benchmark script. */
   expose?: boolean;
+  /** A pilot participant gets no weed-pass choice (colour rules for orchards) and no build log; the founder gets both. */
+  audience?: "founder" | "participant";
 };
 declare global { interface Window { __twinBuild?: { report: BuildReport; twin: { trees: number; rows: number; weeds: number; verified: number; atlases: number; blockHa: number | null; rowList: { id: number; kept: boolean; trees: number; photos: number; straightnessSdM: number; reason: string | null }[]; field: TwinBundle["field"] }; atlasesDone: boolean; error?: string } } }
 
@@ -25,7 +27,8 @@ const primary = "inline-flex items-center gap-1.5 rounded-sm bg-[#f0a63a] px-3 p
 
 const fmtMs = (ms: number) => (ms >= 60_000 ? `${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`);
 
-export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props) {
+export default function TwinBuilder({ onBuilt, onClose, expose = false, audience = "founder" }: Props) {
+  const founderView = audience === "founder";
   const [files, setFiles] = useState<File[]>([]);
   const [name, setName] = useState("");
   const [modelState, setModelState] = useState<"checking" | "ready" | "missing" | "unavailable">(weedModelAvailable() ? "checking" : "unavailable");
@@ -110,7 +113,7 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
           </label>
         ))}
       </fieldset>
-      {crop === "orchard" && <fieldset className="text-xs text-neutral-300" disabled={!!run}>
+      {crop === "orchard" && founderView && <fieldset className="text-xs text-neutral-300" disabled={!!run}>
         <legend className="text-[11px] text-neutral-400">Weeds</legend>
         {([
           ["colour", "Colour rules, no model (seconds on any computer)", "Green patches over bare soil, between the rows and off the crowns, from the photographs' own pixels. Misses the small, the dark and the yellowing; on the apricot flight it found about three quarters of what the model finds."],
@@ -139,7 +142,7 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
               );
             })}
           </ol>
-          {lines.length > 0 && <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap border-t border-[#2e322e] pt-2 text-[10px] leading-snug text-neutral-500">{lines.join("\n")}</pre>}
+          {founderView && lines.length > 0 && <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap border-t border-[#2e322e] pt-2 text-[10px] leading-snug text-neutral-500">{lines.join("\n")}</pre>}
           {run && <button type="button" className={`${btn} mt-2`} onClick={() => run.cancel()}>Cancel</button>}
           {stageIndex < 0 && run && <p className="mt-1 text-[10px] text-neutral-500">Starting…</p>}
         </div>
@@ -162,7 +165,7 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false }: Props)
             <li>{result.report.boundary ? `cultivated block ${(result.report.boundary.areaM2 / 10_000).toFixed(2)} ha, ${Math.round(100 * result.report.boundary.supportPhotographs)} % of the edges seen in the photographs` : "no cultivated block"}</li>
             <li>{result.report.crops} evidence crops in {result.twin.atlases.length} atlases{result.progress.done < result.progress.total ? " (being cut in the background; the twin opens without waiting)" : ""}</li>
           </ul>
-          {result.report.notes.length > 0 && <ul className="mt-1.5 space-y-0.5 border-t border-[#2e322e] pt-1.5 text-[10px] leading-snug text-neutral-500">{result.report.notes.map(n => <li key={n}>{n}</li>)}</ul>}
+          {founderView && result.report.notes.length > 0 && <ul className="mt-1.5 space-y-0.5 border-t border-[#2e322e] pt-1.5 text-[10px] leading-snug text-neutral-500">{result.report.notes.map(n => <li key={n}>{n}</li>)}</ul>}
           <div className="mt-2 flex flex-wrap gap-1.5">
             <button type="button" className={primary} onClick={() => onBuilt(result)}>Open and save to my account</button>
             <button type="button" className={btn} onClick={() => { setResult(null); setProgress(null); setDoneStages([]); }}>Build another</button>

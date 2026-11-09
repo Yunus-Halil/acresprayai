@@ -43,6 +43,12 @@ type Props = {
   expose?: boolean;
   /** The detail stop to open at, instead of the remembered one (the dev preview's ?detail=). */
   detail?: TwinDetailStop;
+  /**
+   * Who is looking. A pilot participant gets the Simple and Standard views without the diagnostics, the reference
+   * imagery or the boundary's technical notes; the founder gets everything. Defaults to the founder so the dev
+   * preview and the benchmark scripts see the full viewer.
+   */
+  audience?: "founder" | "participant";
 };
 
 const DETAIL_KEY = "swathwise:twin-detail";
@@ -70,10 +76,11 @@ const DETAIL_HINT: Record<TwinDetail, string> = {
   custom: "Layers set by hand. Pick a stop to reset them.",
 };
 
-function rememberedDetail(): TwinDetailStop {
-  try { const v = localStorage.getItem(DETAIL_KEY); if (v && (DETAIL_STOPS as string[]).includes(v)) return v as TwinDetailStop; } catch { /* private window, blocked storage */ }
+function rememberedDetail(stops: TwinDetailStop[]): TwinDetailStop {
+  try { const v = localStorage.getItem(DETAIL_KEY); if (v && (stops as string[]).includes(v)) return v as TwinDetailStop; } catch { /* private window, blocked storage */ }
   return "simple";
 }
+const PARTICIPANT_STOPS: TwinDetailStop[] = ["simple", "standard"];
 
 const LEVEL_TEXT: Record<Detail["level"], string> = {
   field: "Weed pressure over the observable ground, the regions that matter most, the rows. Zoom in for trees and weed patches.",
@@ -93,8 +100,11 @@ function measured<T>(name: string, fn: () => T): T {
   return v;
 }
 
-export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], expose = false, detail: detailProp }: Props) {
+export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], expose = false, detail: detailProp, audience = "founder" }: Props) {
   const units = useUnitSystem();
+  const founderView = audience === "founder";
+  const stops = founderView ? DETAIL_STOPS : PARTICIPANT_STOPS;
+  const referenceOptions = founderView ? referenceProp : [];
   const [boundary, setBoundaryState] = useState<BoundaryState>(() => rememberedBoundary(twin.id));
   const [editing, setEditing] = useState<LatLngPair[] | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -102,7 +112,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
   const intel = useMemo(() => measured("twin:intelligence", () => fieldIntelligence(twin, 4, boundary.corrected)), [twin, boundary.corrected]);
   const scene = useMemo(() => measured("twin:scene", () => buildScene(twin, intel)), [twin, intel]);
   const engine = useMemo(() => new FindingsEngine(twin, intel), [twin, intel]);
-  const [layers, setLayers] = useState<TwinLayers>(() => DETAIL_PRESETS[detailProp ?? rememberedDetail()] ?? DEFAULT_LAYERS);
+  const [layers, setLayers] = useState<TwinLayers>(() => DETAIL_PRESETS[detailProp && stops.includes(detailProp) ? detailProp : rememberedDetail(stops)] ?? DEFAULT_LAYERS);
   const detailStop = detailOf(layers);
   /** A stop on the dial: the preset's layers, remembered for next time. */
   const chooseDetail = useCallback((stop: TwinDetailStop) => { setLayers(DETAIL_PRESETS[stop]); setPanelOpen(stop === "full"); try { localStorage.setItem(DETAIL_KEY, stop); } catch { /* storage blocked */ } }, []);
@@ -199,7 +209,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
   const heatScale = useMemo(() => heatScaleFor(intel, layers.heatScale), [intel, layers.heatScale]);
   const pctText = (v: number) => (v === 0 ? "0" : Number.isInteger(v) ? String(v) : v.toFixed(1));
   const dockOpen = !!selection || resultsOpen;
-  const full = detailStop === "full" || detailStop === "custom", simple = detailStop === "simple";
+  const full = founderView && (detailStop === "full" || detailStop === "custom"), simple = detailStop === "simple";
   const swatch = (rgb: [number, number, number], a: number) => `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.min(1, a + 0.15)})`;
 
   return (
@@ -216,8 +226,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
             <span className="text-xs font-semibold text-neutral-100">Detail</span>
             {detailStop === "custom" && <span className="text-[10px] text-neutral-400">{DETAIL_LABEL.custom}</span>}
           </div>
-          <div className="mt-1.5 grid grid-cols-3 gap-0.5 rounded-sm border border-[#3a3f3a] bg-[#111311] p-0.5">
-            {DETAIL_STOPS.map(stop => (
+          <div className={`mt-1.5 grid ${stops.length === 3 ? "grid-cols-3" : "grid-cols-2"} gap-0.5 rounded-sm border border-[#3a3f3a] bg-[#111311] p-0.5`}>
+            {stops.map(stop => (
               <button key={stop} type="button" onClick={() => chooseDetail(stop)} aria-pressed={detailStop === stop}
                 className={`rounded-[2px] px-1 py-1 text-[11px] ${detailStop === stop ? "bg-[#f0a63a] font-semibold text-[#171a18]" : "text-neutral-300 hover:bg-[#262a26] hover:text-neutral-100"}`}>{DETAIL_LABEL[stop]}</button>
             ))}
@@ -242,11 +252,17 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
             </>
           ) : (
             <>
-              <p className="mt-1 text-[10px] leading-snug text-neutral-400">
+              {!founderView ? (
+                <p className="mt-1 text-[10px] leading-snug text-neutral-400">
+                  {boundary.corrected ? "Corrected by you. " : ""}
+                  {inferred ? `Drawn from the crop rows and the photographs; about ${Math.round(100 * inferred.stats.support.photographs)} % of its edge was seen in a photograph.`
+                    : intel.blockSource === "rows" ? "Drawn from the crop rows alone." : "No boundary could be drawn for this field."}
+                </p>
+              ) : <p className="mt-1 text-[10px] leading-snug text-neutral-400">
                 {boundary.corrected ? "Corrected by you. " : ""}
                 {inferred ? `Inferred from ${inferred.rowsUsed.length} rows and the photographs${inferred.uncertaintyM2 ? `, plausible range ${fmtArea(Math.max(0, inferred.areaM2 - inferred.uncertaintyM2), units).text} to ${fmtArea(inferred.areaM2 + inferred.uncertaintyM2, units).text}` : ""}. Edges: ${Math.round(100 * inferred.stats.support.photographs)} % seen in the photographs${inferred.stats.support.bridged ? `, ${Math.round(100 * inferred.stats.support.bridged)} % bridged between seen pieces` : ""}${inferred.stats.support.cap ? `, ${Math.round(100 * inferred.stats.support.cap)} % at the cap` : ""}${inferred.stats.support.coverage ? `, ${Math.round(100 * inferred.stats.support.coverage)} % at the end of the photographs` : ""}.`
                   : intel.blockSource === "rows" ? "From the rows' own geometry, half a spacing beyond them. No photographs were read for the edges." : "No boundary: the twin has no reliable row."}
-              </p>
+              </p>}
               {inferred?.confidence && !boundary.corrected && (
                 <p className={`mt-1 text-[10px] leading-snug ${inferred.confidence.level === "high" ? "text-neutral-400" : "text-amber-300/90"}`}>
                   {inferred.confidence.level === "high"
@@ -256,7 +272,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
                       : `Confidence ${Math.round(100 * inferred.confidence.overall)} %: low. Check the edges against the photographs before relying on this block; Adjust moves a corner.`}
                 </p>
               )}
-              {inferred && inferred.failures.length > 0 && (
+              {founderView && inferred && inferred.failures.length > 0 && (
                 <button type="button" className="mt-1 flex items-center gap-1 text-[10px] text-neutral-400 hover:text-neutral-200" onClick={() => setNotesOpen(o => !o)} aria-expanded={notesOpen}>
                   {notesOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}{inferred.failures.length} note{inferred.failures.length > 1 ? "s" : ""} on what could not be settled
                 </button>
@@ -264,7 +280,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
               {inferred && notesOpen && <ul className="mt-1 space-y-1 border-l border-[#2e322e] pl-2 text-[10px] leading-snug text-neutral-400">{inferred.failures.map(f => <li key={f}>{f}</li>)}</ul>}
               {local ? (
                 <p className="mt-1 text-[10px] leading-snug text-amber-300/90">A locally aligned test flight: its boundary is in a made-up frame and cannot be accepted for operations.</p>
-              ) : operationalRing ? (
+              ) : !founderView ? null : operationalRing ? (
                 <p className="mt-1 text-[10px] leading-snug text-emerald-300/90">{boundary.operational.source === "corrected" ? "Corrected and accepted" : "Accepted"} by you{boundary.operational.at ? ` on ${new Date(boundary.operational.at).toLocaleDateString()}` : ""} as the operational boundary.</p>
               ) : (
                 <p className="mt-1 text-[10px] leading-snug text-neutral-500">Not an operational limit: an inferred boundary is never used to limit an operation until you accept it.</p>
@@ -272,8 +288,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions = [], e
               {currentRing && !local && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={startEditing}>Adjust</button>
-                  {operationalRing ? <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={withdrawBoundary}>Withdraw acceptance</button>
-                    : <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={acceptBoundary}>Accept for operations</button>}
+                  {founderView && (operationalRing ? <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={withdrawBoundary}>Withdraw acceptance</button>
+                    : <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-200 hover:bg-[#262a26]" onClick={acceptBoundary}>Accept for operations</button>)}
                   {(boundary.corrected || operationalRing) && <button type="button" className="rounded-sm border border-[#3a3f3a] px-2 py-1 text-[11px] text-neutral-400 hover:bg-[#262a26]" onClick={resetBoundary}>Reset to inferred</button>}
                 </div>
               )}

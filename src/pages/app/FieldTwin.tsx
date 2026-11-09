@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { nativeZoomFor } from "@/lib/bakedZoom";
 import { type ComparableScan, isComparable, rgbTileUrl } from "@/lib/scanLayers";
-import { isFieldTwinReviewer } from "@/lib/fieldTwin/reviewers";
+import { usePilotRole } from "@/lib/pilot/access";
 import { type SavedTwin, listTwins, loadAtlas, loadTwin, missingFiles, saveTwin } from "@/lib/fieldTwin/store";
 import { type TwinBundle, parseTwin } from "@/lib/fieldTwin/types";
 import FieldTwinView, { type ReferenceOption } from "@/components/app/fieldTwin/FieldTwinView";
@@ -23,7 +23,9 @@ type ScanRow = ComparableScan & { image_count: number | null; tiles_max_zoom: nu
 
 export default function FieldTwin() {
   const { user, session } = useAuth();
-  const reviewer = isFieldTwinReviewer(user?.email);
+  // Every pilot member reaches this page (the route is behind the pilot gate). The founder additionally gets the
+  // workbench tools: twins built on this computer, twins added from files, and the account's scans as reference.
+  const founder = usePilotRole() === "founder";
   const userId = user?.id ?? null;
   const token = session?.access_token ?? null;
   const [saved, setSaved] = useState<SavedTwin[] | null>(null);
@@ -41,20 +43,20 @@ export default function FieldTwin() {
     if (!userId) return;
     try { setSaved(await listTwins(userId)); } catch (e) { setError(`Could not list saved twins: ${(e as Error).message}`); setSaved([]); }
   }, [userId]);
-  useEffect(() => { if (reviewer) void refresh(); }, [reviewer, refresh]);
+  useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
-    if (!reviewer || !import.meta.env.DEV) return;
+    if (!founder || !import.meta.env.DEV) return;
     fetch("/__field-twin/").then(r => (r.ok ? r.json() : [])).then(ids => setDevTwins(Array.isArray(ids) ? ids : [])).catch(() => setDevTwins([]));
-  }, [reviewer]);
+  }, [founder]);
   // The account's scans with baked tiles: candidates for the reference layer. Which one is this twin's flight is
   // for the reviewer to judge by its date and photo count; the page cannot know.
   useEffect(() => {
-    if (!reviewer || !userId) return;
+    if (!founder || !userId) return;
     let live = true;
     supabase.from("odm_tasks").select("id, odm_uuid, status, created_at, image_count, tiles_baked, tiles_max_zoom, field_id").order("created_at", { ascending: false }).limit(50)
       .then(({ data }) => { if (live) setScans(((data as ScanRow[] | null) ?? []).filter(isComparable)); });
     return () => { live = false; };
-  }, [reviewer, userId]);
+  }, [founder, userId]);
 
   const open = (t: TwinBundle, s: Source) => {
     for (const p of urls.current.values()) void p.then(u => { if (u.startsWith("blob:")) URL.revokeObjectURL(u); }).catch(() => undefined);
@@ -140,25 +142,16 @@ export default function FieldTwin() {
     } catch (e) { setError((e as Error).message); } finally { setBusy(null); if (fileInput.current) fileInput.current.value = ""; }
   };
 
-  if (!reviewer) {
-    return (
-      <div className="p-8 max-w-xl text-sm text-neutral-300">
-        <h1 className="font-display text-2xl mb-2">Field Twin</h1>
-        <p>The Field Twin is a prototype under review and is not open on this account yet.</p>
-      </div>
-    );
-  }
-
-  const referenceOptions: ReferenceOption[] = token ? scans.map(s => {
+  const referenceOptions: ReferenceOption[] = founder && token ? scans.map(s => {
     const url = rgbTileUrl(s, token);
     const when = new Date(s.created_at).toLocaleDateString();
     return url ? { id: s.id, label: `Scan of ${when}, ${s.image_count ?? "?"} photographs`, url, maxNativeZoom: nativeZoomFor(s.tiles_max_zoom, null), note: `Source: this account's ODM orthomosaic from the scan of ${when} (${s.image_count ?? "?"} photographs). Its positional accuracy is unverified. Built from the same flight, it is a consistency check, not independent ground truth. Display only: it never moves the twin's objects.` } : null;
   }).filter((x): x is ReferenceOption => !!x) : [];
 
   return (
-    <div className="flex h-screen min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col bg-[#0f0f0f] text-neutral-200">
       <header className="flex flex-wrap items-center gap-2 border-b border-[#262626] bg-[#121212] px-3 py-1.5 text-sm">
-        <h1 className="font-display text-base mr-2">Field Twin</h1>
+        <h1 className="font-display text-base mr-2">Field Twins</h1>
         <label className="text-xs text-neutral-400">Twin
           <select className="ml-1.5 rounded-sm border border-[#333] bg-[#0f0f0f] px-1.5 py-1 text-xs text-neutral-200" value={twin && source?.kind === "account" ? twin.id : ""} onChange={e => e.target.value && void openSaved(e.target.value)} disabled={!!busy} aria-label="Saved twins">
             <option value="">{saved == null ? "Loading…" : saved.length ? "Choose a saved twin" : "None saved to this account yet"}</option>
@@ -173,18 +166,18 @@ export default function FieldTwin() {
           </span>
         ))}
         <input ref={fileInput} type="file" multiple accept=".json,.jpg,image/jpeg,application/json" className="hidden" onChange={e => void fromFiles(e.target.files)} />
-        <button className={btn} onClick={() => fileInput.current?.click()} disabled={!!busy}><Upload className="h-3 w-3" />Add a twin from files</button>
+        {founder && <button className={btn} onClick={() => fileInput.current?.click()} disabled={!!busy}><Upload className="h-3 w-3" />Add a twin from files</button>}
         <button className={btn} onClick={() => setBuilding(b => !b)} disabled={!!busy} aria-pressed={building}>Build a twin from photographs</button>
         {busy && <span className="flex items-center gap-1.5 text-xs text-neutral-300"><Loader2 className="h-3.5 w-3.5 animate-spin" />{busy}</span>}
         {error && <span className="flex items-center gap-1.5 text-xs text-red-400"><AlertTriangle className="h-3.5 w-3.5 shrink-0" />{error}</span>}
-        {twin && <span className="ml-auto text-[11px] text-neutral-500">{twin.source.photographs} photographs · {twin.source.camera} · built {new Date(twin.builtAt).toLocaleDateString()} · no orthomosaic</span>}
+        {twin && <span className="ml-auto text-[11px] text-neutral-500">{twin.source.photographs} photographs · {twin.source.camera} · built {new Date(twin.builtAt).toLocaleDateString()}</span>}
       </header>
       <main className="relative min-h-0 flex-1">
-        {twin ? <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={referenceOptions} expose={import.meta.env.DEV} />
+        {twin ? <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={referenceOptions} expose={import.meta.env.DEV} audience={founder ? "founder" : "participant"} />
           : <div className="grid h-full place-items-center text-sm text-neutral-500">{building ? "" : "Choose a twin to see the field, or build one from a flight's photographs."}</div>}
         {building && (
           <aside className="absolute right-3 top-3 bottom-3 z-[800] w-[420px] rounded-md border border-[#343834] bg-[#171a17]" aria-label="Twin builder">
-            <TwinBuilder onBuilt={b => void fromBuilder(b)} onClose={() => setBuilding(false)} />
+            <TwinBuilder onBuilt={b => void fromBuilder(b)} onClose={() => setBuilding(false)} audience={founder ? "founder" : "participant"} />
           </aside>
         )}
       </main>
