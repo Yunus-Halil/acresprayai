@@ -1,4 +1,4 @@
-# swathwise.com
+# www.swardus.com
 #
 # Public marketing pages are open to everything. The signed-in surfaces are not:
 # the SPA rewrite means /app/* and /admin/* return 200 with the app shell rather
@@ -12,4 +12,4 @@ Disallow: /app/
 Disallow: /admin/
 Disallow: /auth
 
-Sitemap: https://swathwise.com/sitemap.xml
+Sitemap: https://www.swardus.com/sitemap.xml

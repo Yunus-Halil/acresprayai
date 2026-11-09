@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
-const SITE = "https://swathwise.com";
+/** The one public origin. swardus.com and both swathwise.com hosts redirect here (Vercel domain settings). */
+export const SITE = "https://www.swardus.com";
 
 type SeoProps = {
   /** Full <title>. Keep under ~60 characters or Google truncates it. */
