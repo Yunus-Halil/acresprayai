@@ -2,6 +2,22 @@
 
 The founding-pilot branch (`pilot/field-twin`) makes pilot membership a server-side fact. The code is in the repository; the steps below are the parts only the founder can do, in the Supabase dashboard, the Resend dashboard and the deploy. Nothing here has been run by the branch.
 
+## Status on the live project (2026-11-09)
+
+Done from the CLI:
+- Sections 1 and 2: the only accounts were the founder's two, both confirmed. All seven migrations are applied. Both founder rows exist, there are no duplicate jobs, and the unique index exists.
+- Section 3: all fourteen functions are deployed. Unsigned calls to pilot-admin, pilot-notify and weather return 401.
+- Section 4.1: sign-ups are off. Email confirmation stays on.
+- Section 4.2: the redirect list keeps its entries. `https://www.swardus.com**` became `https://www.swardus.com/**`, because the old pattern also matched look-alike domains. `http://localhost:8080/**` was added.
+- Section 4.3: the email link lifetime is 24 hours.
+
+Still open:
+- `PILOT_NOTIFY_FROM`, which needs a domain verified in Resend.
+- Unsetting `PILOT_ADMIN_EMAILS`.
+- Custom SMTP (4.4) and leaked-password protection (4.5).
+- The terms (section 8).
+- The web app deploy (section 5).
+
 Order matters. **Database first, then the edge functions, then the web app.** A web app deployed before the database shows every account "Swardus is being updated". Edge functions deployed before the database refuse everyone, the founder included, because they read `pilot_members`.
 
 ## 1. Before applying anything: who has an account today
