@@ -139,8 +139,11 @@ describe("the review bar on a corn finding", () => {
     render(<ReviewBar target={weedTarget} reviews={review({ finding_kind: "corn_weed", finding_id: "1", verdict: "wrong" })} onSave={vi.fn()} onClear={vi.fn()} canSay />);
     const group = screen.getByRole("group", { name: "What is it?" });
     expect(group.querySelector("div.flex")).toHaveClass("flex-wrap");
-    // The same height as the Correct / Not sure / Wrong buttons above them.
-    for (const b of within(group).getAllByRole("button")) expect(b.className).toContain("py-1.5");
+    // A full finger tall (44 CSS pixels), like the Correct / Not sure / Wrong buttons above them on a corn finding,
+    // and spaced so two are not pressed at once.
+    for (const b of within(group).getAllByRole("button")) expect(b.className).toContain("min-h-[44px]");
+    for (const v of ["Correct", "Not sure", "Wrong"]) expect(screen.getByRole("button", { name: v }).className).toContain("min-h-[44px]");
+    expect(group.querySelector("div.flex")).toHaveClass("gap-2");
   });
 });
 
@@ -158,6 +161,9 @@ describe("orchard findings are reviewed exactly as before", () => {
       const second = render(<ReviewBar target={target} reviews={wrong} onSave={onSave} onClear={vi.fn()} canSay />);
       expect(screen.queryByRole("group", { name: /What is/ })).toBeNull();
       expect(screen.queryByLabelText("What Swardus measured and what you said")).toBeNull();
+      // The orchard buttons keep the size and spacing they had.
+      for (const v of ["Correct", "Not sure", "Wrong"]) expect(screen.getByRole("button", { name: v }).className).not.toContain("min-h-");
+      expect(screen.getByRole("button", { name: "Wrong" }).parentElement).toHaveClass("gap-1");
       second.unmount();
     }
     expect(Object.keys(SAYS_OPTIONS).sort()).toEqual(["corn_gap", "corn_row", "corn_weed"]);

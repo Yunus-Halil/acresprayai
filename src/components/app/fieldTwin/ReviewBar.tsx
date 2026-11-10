@@ -83,12 +83,15 @@ export default function ReviewBar({ target, reviews, onSave, onClear, disabledRe
     catch (e) { setFailed((e as Error).message); } finally { setSaving(null); }
   };
 
+  // Corn findings are reviewed in the field, on a tablet: their buttons are a full finger tall (44 CSS pixels). The
+  // other kinds keep the size they had.
+  const touch = says ? "min-h-[44px]" : "";
   const btn = (v: Verdict) => {
     const on = existing?.verdict === v;
     const tone = v === "correct" ? "bg-emerald-500 text-[#0f140f]" : v === "wrong" ? "bg-red-400 text-[#140f0f]" : "bg-neutral-300 text-[#141414]";
     return (
       <button key={v} type="button" onClick={() => void choose(v)} disabled={!!saving || !!disabledReason || !reviews} aria-pressed={on}
-        className={`flex-1 rounded-sm border px-2 py-1.5 text-xs font-semibold disabled:opacity-50 ${on ? `${tone} border-transparent` : "border-[#3a3f3a] text-neutral-200 hover:bg-[#262a26]"}`}>
+        className={`flex-1 rounded-sm border px-2 py-1.5 text-xs font-semibold disabled:opacity-50 ${touch} ${on ? `${tone} border-transparent` : "border-[#3a3f3a] text-neutral-200 hover:bg-[#262a26]"}`}>
         {saving === v ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : VERDICT_LABEL[v]}
       </button>
     );
@@ -101,16 +104,16 @@ export default function ReviewBar({ target, reviews, onSave, onClear, disabledRe
         {existing && <span className="flex items-center gap-1 text-[10px] text-emerald-300"><Check className="h-3 w-3" />Saved</span>}
       </div>
       <p className="mt-0.5 text-[11px] text-neutral-400">{target.question}</p>
-      <div className="mt-1.5 flex gap-1">{(["correct", "unsure", "wrong"] as Verdict[]).map(btn)}</div>
+      <div className={`mt-1.5 flex ${says ? "gap-2" : "gap-1"}`}>{(["correct", "unsure", "wrong"] as Verdict[]).map(btn)}</div>
       {says && existing?.verdict === "wrong" && !disabledReason && (canSay || said) && (
         <div className="mt-2" role="group" aria-label={says.ask}>
           <p className="text-[11px] text-neutral-400">{says.ask} <span className="text-neutral-500">Optional.</span></p>
-          <div className="mt-1 flex flex-wrap gap-1">
+          <div className="mt-1 flex flex-wrap gap-2">
             {says.options.map(o => {
               const on = existing.says === o.value;
               return (
                 <button key={o.value} type="button" onClick={() => void chooseSays(o.value)} disabled={!!saving || !canSay} aria-pressed={on}
-                  className={`rounded-sm border px-2 py-1.5 text-xs disabled:opacity-50 ${on ? "border-transparent bg-sky-300 font-semibold text-[#0f1214]" : "border-[#3a3f3a] text-neutral-200 hover:bg-[#262a26]"}`}>
+                  className={`min-h-[44px] rounded-sm border px-3 py-1.5 text-xs disabled:opacity-50 ${on ? "border-transparent bg-sky-300 font-semibold text-[#0f1214]" : "border-[#3a3f3a] text-neutral-200 hover:bg-[#262a26]"}`}>
                   {o.label}
                 </button>
               );
