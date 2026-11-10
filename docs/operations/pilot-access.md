@@ -47,6 +47,14 @@ supabase/migrations/20261109160000_admin_access_log.sql           every time the
 supabase/migrations/20261109170000_founder_tools_only.sql         the founder's tables founder-only; participants' files only in their Field Twin folder
 ```
 
+Not applied yet (2026-11-10, branch `feature/corn-review-says`, awaiting the founder's go):
+
+```
+supabase/migrations/20261110120000_twin_review_says.sql           twin_reviews.says: on a corn finding marked wrong, what the reviewer says is there (one nullable column, a check, a trigger)
+```
+
+The app works either way. Until it is applied, reviews load and save as before and the "what is it" answers are not offered; once it is applied they appear on the next page load. Order does not matter: the app can be deployed before or after. Rolling back the app needs no database change (an older page ignores the column). The founder desk does not show the answers yet: `pilot-admin` selects a fixed list of review columns and is unchanged.
+
 The founder is seeded only from a **confirmed** address (an unconfirmed account holding one of the founder's addresses could have been registered by someone else). If yours is unconfirmed, confirm it or add the row by hand as below.
 
 With the CLI: `supabase db push`. Without it: paste each file into the SQL editor, in this order.
