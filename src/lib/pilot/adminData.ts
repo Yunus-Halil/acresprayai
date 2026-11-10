@@ -5,7 +5,9 @@ export type SnapUser = { id: string; email: string | null; created_at: string | 
 export type SnapMember = { user_id: string; role: "founder" | "participant"; status: "active" | "paused" | "ended"; email: string | null; display_name: string | null; organisation: string | null; application_id: string | null; invited_at: string | null; created_at: string; notes: string | null };
 export type SnapEvent = { id: number; user_id: string; at: string; name: string; session_id: string | null; route: string | null; twin_id: string | null; duration_ms: number | null; outcome: string | null; error: string | null; counts: Record<string, number> | null; stages: Record<string, number> | null; detail: Record<string, unknown> | null; app_version: string | null };
 export type SnapTwin = { id: string; user_id: string; name: string; crop: string | null; captured_at: string | null; photographs: number | null; camera: string | null; placement: string | null; area_ha: number | null; status: string; error: string | null; build_ms: number | null; created_at: string; updated_at: string };
-export type SnapReview = { user_id: string; twin_id: string; finding_kind: string; finding_id: string; verdict: "correct" | "unsure" | "wrong"; note: string | null; algorithm_status: string | null; created_at: string; updated_at: string };
+export type SnapReview = { user_id: string; twin_id: string; finding_kind: string; finding_id: string; verdict: "correct" | "unsure" | "wrong"; note: string | null; algorithm_status: string | null; created_at: string; updated_at: string;
+  /** What the reviewer says is there, on a corn finding marked wrong; absent from a pilot-admin deployed before it knew the column. */
+  says?: string | null };
 export type SnapFeedback = { id: string; user_id: string; created_at: string; kind: string; message: string; route: string | null; twin_id: string | null; context: Record<string, unknown> | null; status: "new" | "seen" | "done"; notified_at: string | null };
 export type SnapConsent = { user_id: string; created_at: string; terms_version: string; troubleshooting_access: boolean; research_use: boolean };
 export type SnapAccess = { at: string; founder_id: string; participant_id: string; twin_id: string | null; action: string; reason: string | null };
@@ -151,6 +153,22 @@ export function reviewMatrix(s: Snapshot, userId?: string): { kind: string; stat
     m.set(key, row);
   }
   return [...m.values()].sort((a, b) => b.total - a.total);
+}
+
+/**
+ * Corn findings marked wrong, by what Swardus called them and what the reviewer says is there instead ("" when they
+ * gave no answer), most frequent first. The reviewer's word, counted; nothing here is a verified label.
+ */
+export function wrongAnswers(s: Snapshot, userId?: string): { kind: string; status: string; says: string; count: number; people: number }[] {
+  const m = new Map<string, { kind: string; status: string; says: string; count: number; users: Set<string> }>();
+  for (const r of s.reviews) {
+    if (r.verdict !== "wrong" || !r.finding_kind.startsWith("corn_") || (userId && r.user_id !== userId)) continue;
+    const key = `${r.finding_kind}|${r.algorithm_status ?? ""}|${r.says ?? ""}`;
+    const row = m.get(key) ?? { kind: r.finding_kind, status: r.algorithm_status ?? "", says: r.says ?? "", count: 0, users: new Set<string>() };
+    row.count++; row.users.add(r.user_id);
+    m.set(key, row);
+  }
+  return [...m.values()].map(({ users, ...r }) => ({ ...r, people: users.size })).sort((a, b) => b.count - a.count || Number(!a.says) - Number(!b.says) || a.kind.localeCompare(b.kind) || a.says.localeCompare(b.says));
 }
 
 /** Errors grouped by message (numbers and ids folded), most frequent first. */

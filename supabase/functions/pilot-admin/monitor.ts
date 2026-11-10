@@ -50,13 +50,28 @@ const COLS = {
   access: "at, founder_id, participant_id, twin_id, action, reason",
 };
 
+/**
+ * The reviews, with the reviewer's answer on a corn finding marked wrong (twin_reviews.says, migration 20261110120000)
+ * when the database has that column. This function may be deployed before or after the migration: without the
+ * column the reviews come back exactly as before, each with no answer.
+ */
+const REVIEWS_WITH_SAYS = `${COLS.reviews}, says`;
+async function reviewRows(admin: Admin): Promise<{ rows: Record<string, unknown>[]; missing: boolean }> {
+  const q = (cols: string) => admin.from("twin_reviews").select(cols).order("updated_at", { ascending: false }).limit(20000);
+  const first = await q(REVIEWS_WITH_SAYS);
+  if (first.error && /\bsays\b/.test(first.error.message)) return rows<Record<string, unknown>>(q(COLS.reviews));
+  const got = await rows<Record<string, unknown>>(Promise.resolve(first));
+  // A short word from the migration's own list, or nothing: never free text.
+  return { ...got, rows: got.rows.map(r => ({ ...r, says: typeof r.says === "string" && /^[a-z_]{1,40}$/.test(r.says) ? r.says : null })) };
+}
+
 export async function snapshot(admin: Admin, users: AuthUser[]) {
   const since = Date.now() - 90 * DAY;
   const [members, events, twins, reviews, feedback, consents, applications, access] = await Promise.all([
     rows<Record<string, unknown>>(admin.from("pilot_members").select(COLS.members)),
     rows<Record<string, unknown>>(admin.from("app_events").select(COLS.events).order("received_at", { ascending: false }).limit(20000)),
     rows<Record<string, unknown>>(admin.from("field_twins").select(COLS.twins).order("created_at", { ascending: false }).limit(5000)),
-    rows<Record<string, unknown>>(admin.from("twin_reviews").select(COLS.reviews).order("updated_at", { ascending: false }).limit(20000)),
+    reviewRows(admin),
     rows<Record<string, unknown>>(admin.from("pilot_feedback").select(COLS.feedback).order("created_at", { ascending: false }).limit(2000)),
     rows<Record<string, unknown>>(admin.from("pilot_consents").select(COLS.consents).order("created_at", { ascending: false }).limit(5000)),
     rows<Record<string, unknown>>(admin.from("pilot_applications").select("*").order("created_at", { ascending: false }).limit(1000)),
@@ -67,7 +82,7 @@ export async function snapshot(admin: Admin, users: AuthUser[]) {
     users: users.map(u => ({ id: u.id, email: u.email ?? null, created_at: u.created_at ?? null, last_sign_in_at: u.last_sign_in_at ?? null, confirmed: !!u.email_confirmed_at, provider: u.app_metadata?.provider ?? null })),
     members: pick(members.rows, COLS.members),
     events: pick(events.rows, COLS.events).map(cleanEvent).filter(e => Date.parse(String(e.at)) >= since && Date.parse(String(e.at)) <= Date.now() + 60_000),
-    twins: pick(twins.rows, COLS.twins), reviews: pick(reviews.rows, COLS.reviews), feedback: pick(feedback.rows, COLS.feedback),
+    twins: pick(twins.rows, COLS.twins), reviews: pick(reviews.rows, REVIEWS_WITH_SAYS), feedback: pick(feedback.rows, COLS.feedback),
     consents: pick(consents.rows, COLS.consents), applications: applications.rows, access: pick(access.rows, COLS.access),
     missing: { members: members.missing, events: events.missing, twins: twins.missing, reviews: reviews.missing, feedback: feedback.missing, consents: consents.missing, access: access.missing },
   };

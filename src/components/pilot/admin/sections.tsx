@@ -3,7 +3,8 @@
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { type Snapshot, buildRows, checkSummary, daily, errorGroups, nameOf, overview, personStats, reviewMatrix, stageTimes } from "@/lib/pilot/adminData";
+import { type Snapshot, buildRows, checkSummary, daily, errorGroups, nameOf, overview, personStats, reviewMatrix, stageTimes, wrongAnswers } from "@/lib/pilot/adminData";
+import { type FindingKind, saysLabel } from "@/lib/fieldTwin/reviews";
 import { pilotAdmin } from "@/lib/pilot/adminClient";
 import { Badge, DayBars, Section, Stat, Table, ago, day, dur, when } from "./ui";
 
@@ -112,7 +113,9 @@ export function TwinsSection({ snap, userId }: { snap: Snapshot; userId?: string
 
 export function ReviewsSection({ snap, userId }: { snap: Snapshot; userId?: string }) {
   const matrix = reviewMatrix(snap, userId);
-  const notes = snap.reviews.filter(r => r.note && (!userId || r.user_id === userId)).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const said = (r: { finding_kind: string; verdict: string; says?: string | null }) => (r.verdict === "wrong" ? saysLabel(r.finding_kind as FindingKind, r.says) : null);
+  const answers = wrongAnswers(snap, userId);
+  const notes = snap.reviews.filter(r => (r.note || said(r)) && (!userId || r.user_id === userId)).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const twinName = (id: string) => snap.twins.find(t => t.id === id)?.name ?? "a deleted twin";
   return (
     <div className="space-y-8">
@@ -127,13 +130,26 @@ export function ReviewsSection({ snap, userId }: { snap: Snapshot; userId?: stri
           ))}
         </Table>
       </Section>
-      <Section title="Their notes">
+      {answers.length > 0 && (
+        <Section title="Corn findings marked wrong: what they said was there" hint="The participant's own answer beside what Swardus called the finding. Their word, counted; not a verified label, and nothing here changes a Field Twin.">
+          <Table head={["Finding", "What Swardus said", "What the participant said", "Reviews", "People"]} min={640}>
+            {answers.map(a => (
+              <tr key={`${a.kind}|${a.status}|${a.says}`}>
+                <td>{a.kind.replace("_", " ")}</td><td>{a.status || ""}</td>
+                <td>{a.says ? saysLabel(a.kind as FindingKind, a.says) ?? a.says : <span className="text-muted-foreground">No answer given</span>}</td>
+                <td className="tabular-nums">{a.count}</td><td className="tabular-nums">{a.people}</td>
+              </tr>
+            ))}
+          </Table>
+        </Section>
+      )}
+      <Section title="Their notes and answers">
         <Table head={["When", ...(userId ? [] : ["Who"]), "Field Twin", "Finding", "Answer", "Note"]} min={800} empty={notes.length ? false : "No notes yet."}>
           {notes.map((r, i) => (
             <tr key={i}>
               <td>{when(r.updated_at)}</td>{!userId && <td>{nameOf(snap, r.user_id)}</td>}<td>{twinName(r.twin_id)}</td>
               <td>{r.finding_kind.replace("_", " ")} {r.finding_id}{r.algorithm_status ? <span className="text-muted-foreground"> ({r.algorithm_status})</span> : null}</td>
-              <td><Badge tone={r.verdict === "correct" ? "ok" : r.verdict === "wrong" ? "bad" : "plain"}>{VERDICT[r.verdict]}</Badge></td>
+              <td><Badge tone={r.verdict === "correct" ? "ok" : r.verdict === "wrong" ? "bad" : "plain"}>{VERDICT[r.verdict]}</Badge>{said(r) ? <div className="mt-0.5 text-xs">{said(r)}</div> : null}</td>
               <td className="whitespace-pre-wrap">{r.note}</td>
             </tr>
           ))}
