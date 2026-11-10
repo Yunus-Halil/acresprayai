@@ -14,6 +14,8 @@ export type BuildResult = {
   /** How many atlases are in, of how many; `onAtlas` is called on each. */
   progress: { done: number; total: number };
   onAtlas: (cb: (done: number, total: number) => void) => void;
+  /** The analysis record (JSON; ../analysis.ts) of a corn build that was asked for one, else null. Not one of the twin's files. */
+  analysis: Blob | null;
 };
 
 export type BuildRun = {
@@ -44,7 +46,7 @@ function currentEntryScripts(): string[] {
   return [...document.querySelectorAll<HTMLScriptElement>("script[type=module][src]")].map(s => new URL(s.src).pathname);
 }
 
-export function startTwinBuild(files: File[], options: { name: string; id?: string; weeds: "model" | "colour" | "none"; helpers?: number; crop?: "orchard" | "corn" }, hooks: { onProgress?: (p: BuildProgress) => void; onLog?: (line: string) => void } = {}): BuildRun {
+export function startTwinBuild(files: File[], options: { name: string; id?: string; weeds: "model" | "colour" | "none"; helpers?: number; crop?: "orchard" | "corn"; analysis?: boolean }, hooks: { onProgress?: (p: BuildProgress) => void; onLog?: (line: string) => void } = {}): BuildRun {
   if (typeof Worker === "undefined") throw new Error("this browser cannot run the build off the main thread (no Worker)");
   const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
   let settled = false;
@@ -66,7 +68,7 @@ export function startTwinBuild(files: File[], options: { name: string; id?: stri
         if ("reason" in parsed) { fail(new Error(parsed.reason)); return; }
         for (const [k, v] of m.files) bundleFiles.set(k, v);
         progress.total = parsed.twin.atlases.length;
-        resolve({ twin: parsed.twin, files: bundleFiles, report: m.report, atlases, progress, onAtlas: cb => { listeners.push(cb); } });
+        resolve({ twin: parsed.twin, files: bundleFiles, report: m.report, atlases, progress, onAtlas: cb => { listeners.push(cb); }, analysis: m.analysis ?? null });
         if (!progress.total) { finish(); atlasesResolve(bundleFiles); }
       } else if (m.type === "atlas") {
         bundleFiles.set(m.file, m.blob); progress.done = m.index + 1; progress.total = m.total;
@@ -77,7 +79,7 @@ export function startTwinBuild(files: File[], options: { name: string; id?: stri
     };
     worker.onerror = e => { void workerLoadFailure(e.message).then(m => fail(new Error(m))); };
   });
-  const req: BuildWorkerRequest = { type: "build", files, name: options.name, id: options.id, weeds: options.weeds, helpers: options.helpers, crop: options.crop };
+  const req: BuildWorkerRequest = { type: "build", files, name: options.name, id: options.id, weeds: options.weeds, helpers: options.helpers, crop: options.crop, ...(options.analysis ? { analysis: true } : {}) };
   worker.postMessage(req);
   return { done, cancel: () => { if (!settled) { const c: BuildWorkerRequest = { type: "cancel" }; worker.postMessage(c); } } };
 }

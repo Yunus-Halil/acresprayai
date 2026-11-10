@@ -66,8 +66,12 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
     setError(null); setResult(null); setLines([]); setDoneStages([]); setProgress(null); started.current = Date.now();
     let r: BuildRun;
     try {
-      const helpers = Number(new URLSearchParams(window.location.search).get("helpers") ?? "") || undefined;
-      r = startTwinBuild(files, { name: fieldName, weeds: crop === "corn" ? "none" : weeds, helpers, crop }, {
+      const params = new URLSearchParams(window.location.search);
+      const helpers = Number(params.get("helpers") ?? "") || undefined;
+      // The benchmark script only (a development build, ?analysis=1): ask a corn build for its analysis record, to
+      // measure it. Nothing is saved from this panel either way.
+      const analysis = expose && crop === "corn" && params.get("analysis") === "1";
+      r = startTwinBuild(files, { name: fieldName, weeds: crop === "corn" ? "none" : weeds, helpers, crop, ...(analysis ? { analysis: true } : {}) }, {
         onProgress: p => { setProgress(prev => { if (prev && prev.stage !== p.stage) setDoneStages(d => (d.includes(prev.stage) ? d : [...d, prev.stage])); return p; }); },
         onLog: line => setLines(l => [...l.slice(-11), line]),
       });
@@ -77,6 +81,7 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
     r.done.then(out => {
       setResult(out); setDoneStages(stages.filter(s => s.id !== "bundle").map(s => s.id)); setRun(null);
       if (expose) window.__twinBuild = summary(out, false);
+      if (expose) (window as unknown as { __twinAnalysis?: Blob | null }).__twinAnalysis = out.analysis;
       out.atlases.then(() => { setDoneStages(stages.map(s => s.id)); if (expose) window.__twinBuild = summary(out, true); }).catch(() => undefined);
     }).catch(e => { const msg = e instanceof BuildAborted ? "Build cancelled." : (e as Error).message; setError(msg); setRun(null); if (expose) window.__twinBuild = { report: null as unknown as BuildReport, twin: { trees: 0, rows: 0, weeds: 0, verified: 0, atlases: 0, blockHa: null, rowList: [], field: { rowDirectionDeg: 0, rowSpacingM: 0, plantSpacingM: 0 } }, atlasesDone: false, error: msg }; });
   };

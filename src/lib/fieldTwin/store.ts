@@ -4,6 +4,7 @@
 // first path segment is the user's id. A bundle is added once (from files, or in a development build from the twin
 // built on that computer) and read back on every visit.
 import { supabase } from "@/integrations/supabase/client";
+import { TWIN_ANALYSIS_FILE, TWIN_ANALYSIS_MAX_BYTES } from "./analysisConfig";
 import { parseTwin, type TwinBundle } from "./types";
 
 export const TWIN_BUCKET = "orthos";
@@ -70,6 +71,29 @@ export async function loadAtlas(userId: string, twinId: string, file: string): P
   const { data, error } = await supabase.storage.from(TWIN_BUCKET).download(twinPath(userId, twinId, file));
   if (error || !data) throw new Error(error?.message ?? `no ${file}`);
   return URL.createObjectURL(data);
+}
+
+/**
+ * Save a corn twin's analysis record (analysis.ts) beside the twin: one more private file in the same folder, gzipped.
+ * Apart from the twin on purpose: it is not one of the bundle's files (bundleFileNames, missingFiles and saveTwin do
+ * not know it), the viewer never asks for it, and whether it is there says nothing about the twin. The caller treats
+ * a failure as "no record for this twin" (buildSession.ts); the twin is already saved by then. Returns the stored size.
+ */
+export async function saveTwinAnalysis(userId: string, twinId: string, json: Blob): Promise<number> {
+  const blob = await gzipBlob(json);
+  if (blob.size > TWIN_ANALYSIS_MAX_BYTES) throw new Error(`the analysis record is ${(blob.size / 1048576).toFixed(1)} MB, over the ${(TWIN_ANALYSIS_MAX_BYTES / 1048576).toFixed(0)} MB kept per twin`);
+  const { error } = await supabase.storage.from(TWIN_BUCKET).upload(twinPath(userId, twinId, TWIN_ANALYSIS_FILE), blob, { upsert: true, contentType: "application/gzip" });
+  if (error) throw new Error(error.message);
+  return blob.size;
+}
+
+/** A twin's analysis record as parsed JSON, or null when the twin has none (every twin saved without one). The caller validates it (parseTwinAnalysis). */
+export async function loadTwinAnalysisJson(userId: string, twinId: string): Promise<unknown | null> {
+  const { data, error } = await supabase.storage.from(TWIN_BUCKET).download(twinPath(userId, twinId, TWIN_ANALYSIS_FILE));
+  if (error || !data) return null;
+  // Stored gzipped; a browser without CompressionStream stored it plain.
+  const head = new Uint8Array(await data.slice(0, 2).arrayBuffer());
+  return JSON.parse(head[0] === 0x1f && head[1] === 0x8b ? await gunzipText(data) : await data.text());
 }
 
 /** Save a bundle's files to the account. `files` maps file name to its bytes. */

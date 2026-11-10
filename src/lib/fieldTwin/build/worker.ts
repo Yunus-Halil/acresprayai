@@ -8,11 +8,11 @@ import { workerPool } from "./pool";
 import { type BuildReport, buildFieldTwin } from "./pipeline";
 import { BuildCancelled, type BuildProgress } from "./types";
 
-export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; /** The crop the operator entered (default orchard). */ crop?: "orchard" | "corn"; /** The weed pass: the model through the local service, the colour rules, or none. */ weeds: "model" | "colour" | "none"; /** Model tier: nearest views per ground cell to run (0, the default: every tile; measured on the apricot flight, 1024 px tiles prune only 8 %). */ views?: number; /** Helper workers (default: cores - 1, at most 6; 1 = none). */ helpers?: number; detect?: DetectOptions } | { type: "cancel" };
+export type BuildWorkerRequest = { type: "build"; files: File[]; name: string; id?: string; /** The crop the operator entered (default orchard). */ crop?: "orchard" | "corn"; /** The weed pass: the model through the local service, the colour rules, or none. */ weeds: "model" | "colour" | "none"; /** Model tier: nearest views per ground cell to run (0, the default: every tile; measured on the apricot flight, 1024 px tiles prune only 8 %). */ views?: number; /** Helper workers (default: cores - 1, at most 6; 1 = none). */ helpers?: number; detect?: DetectOptions; /** A corn build: also post the analysis record (../analysis.ts). */ analysis?: boolean } | { type: "cancel" };
 export type BuildWorkerMessage =
   | { type: "progress"; progress: BuildProgress }
   | { type: "log"; line: string }
-  | { type: "result"; twinJson: string; files: [string, Blob][]; report: BuildReport }
+  | { type: "result"; twinJson: string; files: [string, Blob][]; report: BuildReport; /** The analysis record (JSON), when the build was asked for one. Not one of the twin's files. */ analysis?: Blob | null }
   /** An atlas cut after the result: the page opens the twin while these arrive. */
   | { type: "atlas"; file: string; blob: Blob; index: number; total: number }
   | { type: "atlases-done" }
@@ -52,14 +52,14 @@ self.onmessage = async (e: MessageEvent<BuildWorkerRequest>) => {
     const helpers = m.helpers ?? Math.max(1, Math.min(6, cores - 1));
     pool = helpers > 1 ? workerPool(helpers, () => new Worker(new URL("./helper.ts", import.meta.url), { type: "module" })) : null;
     if (pool) post({ type: "log", line: `${helpers} helper workers (${cores} cores)` });
-    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, crop: m.crop ?? "orchard", detector, weedTier: m.weeds, weedViews: m.views ?? 0, detectPlan: { tile: detect.tile ?? 1024, overlap: detect.overlap ?? 128, scale: detect.scale }, atlases: "later", pool: pool ?? undefined }, browserCodec, {
+    const out = await buildFieldTwin(photos, { name: m.name, id: m.id, crop: m.crop ?? "orchard", detector, weedTier: m.weeds, weedViews: m.views ?? 0, detectPlan: { tile: detect.tile ?? 1024, overlap: detect.overlap ?? 128, scale: detect.scale }, atlases: "later", pool: pool ?? undefined, analysis: m.analysis === true }, browserCodec, {
       signal: abort.signal,
       onProgress: progress => post({ type: "progress", progress }),
       log: line => post({ type: "log", line }),
     });
     const files: [string, Blob][] = [];
     for (const [k, v] of out.files) files.push([k, v instanceof Blob ? v : new Blob([v])]);
-    post({ type: "result", twinJson: JSON.stringify(out.twin), files, report: out.report });
+    post({ type: "result", twinJson: JSON.stringify(out.twin), files, report: out.report, analysis: out.analysis ? new Blob([out.analysis as BlobPart], { type: "application/json" }) : null });
     if (out.cutAtlases) for await (const a of out.cutAtlases()) post({ type: "atlas", file: a.file, blob: a.bytes instanceof Blob ? a.bytes : new Blob([a.bytes]), index: a.index, total: a.total });
     post({ type: "atlases-done" });
   } catch (err) {

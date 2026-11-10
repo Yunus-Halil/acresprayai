@@ -9,7 +9,9 @@
 import { useSyncExternalStore } from "react";
 import { type BuildResult, type BuildRun, BuildAborted, startTwinBuild } from "./build/runBuild";
 import type { BuildCrop, BuildProgress, BuildStage } from "./build/types";
+import { TWIN_ANALYSIS_ENABLED } from "./analysisConfig";
 import { type TwinRecord, beginSave, saveBuiltTwin } from "./registry";
+import { saveTwinAnalysis } from "./store";
 import type { TwinBundle } from "./types";
 import { track } from "@/lib/pilot/telemetry";
 
@@ -66,7 +68,7 @@ export function startBuildSession(files: File[], o: StartOptions): void {
   set({ status: "building", id, name: o.name, crop: o.crop, photographs: files.length, startedAt, progress: null, stagesDone: [], result: null, record: null, save: null, error: null, buildMs: null });
   track("twin_build_started", { twinId: id, counts: { photographs: files.length }, detail: { crop: o.crop } });
   try {
-    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop }, {
+    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop, ...(analysisWanted(o.crop) ? { analysis: true } : {}) }, {
       onProgress: p => {
         if (state.status !== "building") return;
         const prev = state.progress;
@@ -119,11 +121,32 @@ async function save(result: BuildResult) {
     if (stale(id)) return;
     patch({ status: "saved", record: saved, save: null });
     track("twin_saved", { twinId: saved.id, durationMs: Date.now() - state.startedAt, outcome: "ok", counts: { files: result.twin.atlases.length + 1 } });
+    // Only now, with the twin saved and the session no longer busy: the analysis record, on its own.
+    if (result.analysis && analysisWanted(state.crop)) void saveAnalysisApart(userId, saved, result.analysis);
   } catch (e) {
     if (stale(id)) return;
     const message = (e as Error).message;
     patch({ status: "save-failed", error: message });
     track("twin_save_failed", { twinId: id, outcome: "error", error: message });
+  }
+}
+
+/** Whether a build of this crop is asked for its analysis record (analysis.ts): corn only, and only when switched on. */
+let analysisOverride: boolean | null = null;
+const analysisWanted = (crop: BuildCrop) => crop === "corn" && (analysisOverride ?? TWIN_ANALYSIS_ENABLED);
+
+/**
+ * The analysis record's own save, after the twin's and apart from it. It never touches the session's state: the twin
+ * is "saved" before this starts and stays so whatever happens here, the tab is free to close (the record is then
+ * simply not there), and a failure is recorded and nothing else. Never throws.
+ */
+async function saveAnalysisApart(user: string, record: Pick<TwinRecord, "id" | "storage_key">, json: Blob): Promise<void> {
+  const t0 = Date.now();
+  try {
+    const bytes = await saveTwinAnalysis(user, record.storage_key, json);
+    track("twin_analysis_saved", { twinId: record.id, durationMs: Date.now() - t0, outcome: "ok", counts: { bytes, jsonBytes: json.size } });
+  } catch (e) {
+    try { track("twin_analysis_failed", { twinId: record.id, durationMs: Date.now() - t0, outcome: "error", error: (e as Error)?.message ?? String(e) }); } catch { /* never in the way */ }
   }
 }
 
@@ -152,4 +175,6 @@ export function sessionTwin(id: string): { twin: TwinBundle; files: Map<string, 
 }
 
 /** Tests only. */
-export function __resetBuildSession() { run = null; userId = null; set({ status: "idle" }); }
+export function __resetBuildSession() { run = null; userId = null; analysisOverride = null; set({ status: "idle" }); }
+/** Tests only: build as if the analysis record were switched on (or off); null returns to the shipped setting. */
+export function __setAnalysisForTests(on: boolean | null) { analysisOverride = on; }
