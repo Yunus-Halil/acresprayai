@@ -120,7 +120,7 @@ describe("the admin panel", () => {
     ["people", ["Ryan", "Reviewing findings", "Not signed in yet", "troubleshooting"]],
     ["builds", ["Finished", "Failed", "RangeError", "Corn reading"]],
     ["twins", ["North block", "Not saved completely", "GPS"]],
-    ["reviews", ["corn weed", "volunteer corn", "50 %"]],
+    ["reviews", ["Ryan", "North block", "volunteer corn", "View Field Twin"]],
     ["feedback", ["The red ones by the gate are stones.", "email alert not sent", "Reply"]],
     ["errors", ["TypeError: x is undefined at n", "Build failed"]],
     ["access", ["Allowed", "weeds by the gate", "Not accepted yet"]],

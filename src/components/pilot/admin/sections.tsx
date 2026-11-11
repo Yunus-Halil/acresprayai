@@ -1,15 +1,13 @@
-// The admin panel's sections that read the snapshot: overview, builds, Field Twins, reviews, feedback, errors, data
-// access. Each one is the founder's question answered from first-party records; none shows imagery.
+// The admin panel's sections that read the snapshot: overview, builds, Field Twins, feedback, errors, data access
+// (the reviews are in Reviews.tsx). Each one is the founder's question answered from first-party records; none shows imagery.
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { type Snapshot, buildRows, checkSummary, daily, errorGroups, nameOf, overview, personStats, reviewMatrix, stageTimes, wrongAnswers } from "@/lib/pilot/adminData";
-import { type FindingKind, saysLabel } from "@/lib/fieldTwin/reviews";
+import { type Snapshot, buildRows, checkSummary, daily, errorGroups, nameOf, overview, personStats, stageTimes } from "@/lib/pilot/adminData";
 import { pilotAdmin } from "@/lib/pilot/adminClient";
 import { Badge, DayBars, Section, Stat, Table, ago, day, dur, when } from "./ui";
 
 const STAGE_WORDS: Record<string, string> = { photographs: "Reading photographs", cameras: "Placing photographs", rows: "Rows and trees", corn: "Corn reading", weeds: "Weeds", vegetation: "Other green", evidence: "Field edges", boundary: "Boundary", bundle: "Putting it together" };
-const VERDICT = { correct: "Correct", unsure: "Not sure", wrong: "Wrong" } as const;
 
 export function OverviewSection({ snap, onOpenTab }: { snap: Snapshot; onOpenTab: (tab: string) => void }) {
   const o = overview(snap);
@@ -108,54 +106,6 @@ export function TwinsSection({ snap, userId }: { snap: Snapshot; userId?: string
         })}
       </Table>
     </Section>
-  );
-}
-
-export function ReviewsSection({ snap, userId }: { snap: Snapshot; userId?: string }) {
-  const matrix = reviewMatrix(snap, userId);
-  const said = (r: { finding_kind: string; verdict: string; says?: string | null }) => (r.verdict === "wrong" ? saysLabel(r.finding_kind as FindingKind, r.says) : null);
-  const answers = wrongAnswers(snap, userId);
-  const notes = snap.reviews.filter(r => (r.note || said(r)) && (!userId || r.user_id === userId)).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-  const twinName = (id: string) => snap.twins.find(t => t.id === id)?.name ?? "a deleted twin";
-  return (
-    <div className="space-y-8">
-      <Section title="What participants said about the findings" hint="Each row is a kind of finding and what Swardus called it; the columns are the participants' answers.">
-        <Table head={["Finding", "What Swardus said", "Correct", "Not sure", "Wrong", "Wrong share"]} min={640} empty={matrix.length ? false : "No reviews yet."}>
-          {matrix.map(m => (
-            <tr key={`${m.kind}|${m.status}`}>
-              <td>{m.kind.replace("_", " ")}</td><td>{m.status || ""}</td>
-              <td className="tabular-nums">{m.correct}</td><td className="tabular-nums">{m.unsure}</td><td className="tabular-nums">{m.wrong}</td>
-              <td className="tabular-nums">{Math.round((100 * m.wrong) / m.total)} %</td>
-            </tr>
-          ))}
-        </Table>
-      </Section>
-      {answers.length > 0 && (
-        <Section title="Corn findings marked wrong: what they said was there" hint="The participant's own answer beside what Swardus called the finding. Their word, counted; not a verified label, and nothing here changes a Field Twin.">
-          <Table head={["Finding", "What Swardus said", "What the participant said", "Reviews", "People"]} min={640}>
-            {answers.map(a => (
-              <tr key={`${a.kind}|${a.status}|${a.says}`}>
-                <td>{a.kind.replace("_", " ")}</td><td>{a.status || ""}</td>
-                <td>{a.says ? saysLabel(a.kind as FindingKind, a.says) ?? a.says : <span className="text-muted-foreground">No answer given</span>}</td>
-                <td className="tabular-nums">{a.count}</td><td className="tabular-nums">{a.people}</td>
-              </tr>
-            ))}
-          </Table>
-        </Section>
-      )}
-      <Section title="Their notes and answers">
-        <Table head={["When", ...(userId ? [] : ["Who"]), "Field Twin", "Finding", "Answer", "Note"]} min={800} empty={notes.length ? false : "No notes yet."}>
-          {notes.map((r, i) => (
-            <tr key={i}>
-              <td>{when(r.updated_at)}</td>{!userId && <td>{nameOf(snap, r.user_id)}</td>}<td>{twinName(r.twin_id)}</td>
-              <td>{r.finding_kind.replace("_", " ")} {r.finding_id}{r.algorithm_status ? <span className="text-muted-foreground"> ({r.algorithm_status})</span> : null}</td>
-              <td><Badge tone={r.verdict === "correct" ? "ok" : r.verdict === "wrong" ? "bad" : "plain"}>{VERDICT[r.verdict]}</Badge>{said(r) ? <div className="mt-0.5 text-xs">{said(r)}</div> : null}</td>
-              <td className="whitespace-pre-wrap">{r.note}</td>
-            </tr>
-          ))}
-        </Table>
-      </Section>
-    </div>
   );
 }
 

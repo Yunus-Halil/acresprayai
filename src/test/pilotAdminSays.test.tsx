@@ -3,12 +3,13 @@
 // The founder's desk shows what a participant said was there on a corn finding they marked wrong (twin_reviews.says),
 // beside what Swardus called it. pilot-admin may be deployed before or after the column exists, and the panel may
 // meet a pilot-admin that does not send it yet: every combination shows the reviews it always showed.
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AUTH, type SupabaseMock, installDenoGlobal, jsonResponse, loadFunction, makeSupabase, mockFetch, postJson } from "./edge/harness";
 import { __setMockClient } from "./edge/supabaseClientMock";
 import { type SnapReview, type Snapshot, reviewMatrix, wrongAnswers } from "@/lib/pilot/adminData";
-import { ReviewsSection } from "@/components/pilot/admin/sections";
+import { ReviewsSection } from "@/components/pilot/admin/Reviews";
 
 const FN = "../../../supabase/functions/pilot-admin/index.ts";
 const URL = "https://fn/pilot-admin";
@@ -122,40 +123,45 @@ describe("the panel's numbers", () => {
 });
 
 describe("the reviews tab", () => {
-  it("shows the participant's answer beside what Swardus said, and in the list with their notes", () => {
-    render(<ReviewsSection snap={WITH_ANSWERS} />);
-    const table = screen.getByRole("heading", { name: /Corn findings marked wrong/ }).closest("section")!;
-    const rows = within(table).getAllByRole("row").slice(1).map(r => within(r).getAllByRole("cell").map(c => c.textContent));
-    expect(rows).toEqual([
-      ["corn weed", "confirmed", "Corn, in the row", "2", "2"],
-      ["corn gap", "confirmed", "Corn plants are there", "1", "1"],
-      ["corn weed", "confirmed", "Soil or residue", "1", "1"],
-      ["corn weed", "unconfirmed", "No answer given", "1", "1"],
-    ]);
-    expect(within(table).getByText(/not a verified label/)).toBeInTheDocument();
-    const list = screen.getByRole("heading", { name: "Their notes and answers" }).closest("section")!;
-    // A review with an answer and no note is listed too; one with neither is not.
-    expect(within(list).getAllByRole("row")).toHaveLength(1 + 5);
-    const clod = within(list).getByText("a clod").closest("tr")!;
-    expect(clod).toHaveTextContent("corn weed 7 (confirmed)");
-    expect(clod).toHaveTextContent("WrongSoil or residue");
-    expect(within(list).getByText("a stone").closest("tr")).toHaveTextContent(/weed 12 \(verified\)Wronga stone/);
+  const tab = (s: Snapshot) => render(<MemoryRouter><ReviewsSection snap={s} /></MemoryRouter>);
+  const rowOf = (text: string) => screen.getByText(text).closest("tr")!;
+  const cells = (tr: HTMLElement) => within(tr).getAllByRole("cell").map(c => c.textContent);
+
+  it("shows the participant's answer beside what Swardus said, on the review itself", () => {
+    tab(WITH_ANSWERS);
+    // Ryan's reviews (the one Field Twin of the fixture is open; Alex's sits under their own name).
+    fireEvent.click(screen.getByRole("button", { name: /Ryan/ }));
+    expect(cells(rowOf("a clod")).slice(0, 5)).toEqual(["Weed candidate 7", "Weed candidate, confirmed", "Wrong", "Soil or residue", "a clod"]);
+    expect(cells(rowOf("Stand gap 1")).slice(0, 4)).toEqual(["Stand gap 1", "Stand gap, confirmed", "Wrong", "Corn plants are there"]);
+    // Marked wrong with no answer: said so. An orchard finding is never asked, so it has no answer and no gap either.
+    expect(cells(rowOf("Weed candidate 8")).slice(0, 4)).toEqual(["Weed candidate 8", "Weed candidate, not confirmed", "Wrong", "No answer given"]);
+    expect(cells(rowOf("a stone")).slice(0, 5)).toEqual(["Weed candidate 12", "Weed candidate, seen in 2+ photographs", "Wrong", "", "a stone"]);
+    expect(cells(rowOf("Weed candidate 5")).slice(0, 4)).toEqual(["Weed candidate 5", "Weed candidate, confirmed", "Correct", ""]);
+    expect(screen.queryByRole("alert")).toBeNull();
+    // The counts by kind keep the answers, as counts, and say whose word they are.
+    fireEvent.click(screen.getByRole("button", { name: "Counts by kind of finding" }));
+    const counts = screen.getByRole("columnheader", { name: /Said instead/ }).closest("table")!;
+    expect(within(counts).getByRole("columnheader", { name: /not a verified label/ })).toBeInTheDocument();
+    expect(cells(within(counts).getAllByRole("row")[1])).toEqual(["Weed candidate", "Weed candidate, confirmed", "1", "0", "3", "75 %", "Corn, in the row 2, Soil or residue 1"]);
   });
 
-  it("from a pilot-admin that does not send answers yet: the tab is as it was, the corn table only says none were given", () => {
+  it("from a pilot-admin that does not send answers yet: the reviews are all there, and it says the answers are not loaded, never that none were given", () => {
     const old = snap(WITH_ANSWERS.reviews.map(({ says: _s, ...r }) => r));
-    render(<ReviewsSection snap={old} />);
+    tab(old);
+    fireEvent.click(screen.getByRole("button", { name: /Ryan/ }));
     expect(screen.getByText("a clod")).toBeInTheDocument();
     expect(screen.getByText("a stone")).toBeInTheDocument();
-    const list = screen.getByRole("heading", { name: "Their notes and answers" }).closest("section")!;
-    expect(within(list).getAllByRole("row")).toHaveLength(1 + 2);
-    expect(screen.getAllByText("No answer given").length).toBeGreaterThan(0);
+    expect(screen.getByRole("alert")).toHaveTextContent(/pilot-admin function running on the server predates them/);
+    expect(cells(rowOf("a clod"))[3]).toBe("Not loaded");
+    expect(screen.queryByText("No answer given")).toBeNull();
     expect(screen.queryByText("Corn, in the row")).toBeNull();
   });
 
-  it("with no corn finding marked wrong, nothing new is on the tab", () => {
-    render(<ReviewsSection snap={snap([review({ finding_kind: "weed", finding_id: "12", verdict: "wrong", algorithm_status: "verified", note: "a stone" }), review({ finding_kind: "corn_weed", finding_id: "5", verdict: "correct" })])} />);
-    expect(screen.queryByRole("heading", { name: /Corn findings marked wrong/ })).toBeNull();
-    expect(screen.getByText("a stone")).toBeInTheDocument();
+  it("older reviews without an answer beside new ones with one: each says what it has", () => {
+    tab(snap([review({ finding_kind: "corn_weed", finding_id: "4", verdict: "wrong", says: null }), review({ finding_kind: "corn_weed", finding_id: "9", verdict: "wrong", says: "soil_or_residue" }), review({ finding_kind: "weed", finding_id: "12", verdict: "wrong", algorithm_status: "verified", note: "a stone", says: null })]));
+    expect(cells(rowOf("Weed candidate 4"))[3]).toBe("No answer given");
+    expect(cells(rowOf("Weed candidate 9"))[3]).toBe("Soil or residue");
+    expect(cells(rowOf("a stone"))[3]).toBe("");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

@@ -49,6 +49,37 @@ export const SAYS_OPTIONS: Partial<Record<FindingKind, { ask: string; options: S
 export const saysLabel = (kind: FindingKind, says: string | null | undefined): string | null =>
   (says && SAYS_OPTIONS[kind]?.options.find(o => o.value === says)?.label) || null;
 
+/** A finding's kind in words, as the reviewer and the founder read it. */
+export const KIND_LABEL: Record<FindingKind, string> = {
+  weed: "Weed candidate", tree: "Tree", vegetation: "Green growth", patch: "Weed patch", region: "Weed pressure region", zone: "Scouting zone",
+  corn_row: "Corn row", corn_weed: "Weed candidate", corn_gap: "Stand gap", boundary: "Field boundary",
+};
+const KINDS = Object.keys(KIND_LABEL) as FindingKind[];
+export const isFindingKind = (v: unknown): v is FindingKind => typeof v === "string" && (KINDS as string[]).includes(v);
+
+/** "Weed candidate 12": the kind and the finding's own number (the boundary has none). */
+export const findingLabel = (kind: string, id: string | number): string =>
+  (isFindingKind(kind) ? (kind === "boundary" ? KIND_LABEL.boundary : `${KIND_LABEL[kind]} ${id}`) : `${kind.replace(/_/g, " ")} ${id}`);
+
+/**
+ * What Swardus called a finding when it was reviewed, in words: the twin's own states (twin_reviews.algorithm_status),
+ * unchanged. The machine's reading, kept beside the reviewer's; neither replaces the other.
+ */
+export function machineSaid(kind: string, status: string | null | undefined): string {
+  if (kind === "corn_weed") return status === "confirmed" ? "Weed candidate, confirmed" : status === "contested" ? "Weed candidate, contested" : "Weed candidate, not confirmed";
+  if (kind === "corn_row") return status === "corn" ? "Corn row" : "Row, crop not confirmed";
+  if (kind === "corn_gap") return status === "confirmed" ? "Stand gap, confirmed" : "Stand gap, withheld";
+  if (!status) return "Not recorded";
+  // The same words the twin's inspector uses for these states.
+  if (kind === "weed") return status === "verified" ? "Weed candidate, seen in 2+ photographs" : status === "single view" ? "Weed candidate, seen in one photograph" : status === "on a tree" ? "Detection on a tree crown" : `Weed candidate, ${status}`;
+  if (kind === "tree") return "Crop tree";
+  if (kind === "vegetation") return "Green growth, not classed";
+  if (kind === "patch") return "Patch of weed candidates";
+  if (kind === "region" || kind === "zone") return "Weed pressure";
+  if (kind === "boundary") return status === "rows" ? "Boundary from the crop rows" : `Inferred boundary, confidence ${status}`;
+  return status;
+}
+
 export const reviewKey = (kind: FindingKind, id: string | number) => `${kind}:${id}`;
 const BASE_COLUMNS = "finding_kind, finding_id, verdict, note, algorithm_status, payload, updated_at";
 const COLUMNS = `${BASE_COLUMNS}, says`;
