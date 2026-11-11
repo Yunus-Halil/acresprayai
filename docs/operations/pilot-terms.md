@@ -1,6 +1,6 @@
 # The pilot terms: what they rest on, and what is still to decide
 
-The terms participants see are `src/pages/PilotTerms.tsx` (served at `/pilot-terms`), version `pilot-2026-11-v2`. The agreement screen is `src/components/pilot/ConsentScreen.tsx`. **The wording is a draft until the founder approves it** (`TERMS_APPROVED` in `src/lib/pilot/consent.ts`); it was written to describe what the code does, not reviewed by a lawyer.
+The terms participants see are `src/pages/PilotTerms.tsx` (served at `/pilot-terms`), version `pilot-2026-11-v2`. The agreement screen is `src/components/pilot/ConsentScreen.tsx`. **The founder approved this wording on 2026-11-11** (`TERMS_APPROVED` in `src/lib/pilot/consent.ts`). It was written to describe what the code does; it has not been reviewed by a lawyer, and the points for one are listed below.
 
 ## What changed from v1
 

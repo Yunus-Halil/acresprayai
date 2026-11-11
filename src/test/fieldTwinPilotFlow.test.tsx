@@ -8,6 +8,8 @@ type Deferred<T> = { promise: Promise<T>; resolve: (v: T) => void; reject: (e: E
 const deferred = <T,>(): Deferred<T> => { let resolve!: (v: T) => void, reject!: (e: Error) => void; const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; }); promise.catch(() => undefined); return { promise, resolve, reject }; };
 let build: { done: Deferred<unknown>; atlases: Deferred<Map<string, Blob>>; cancel: ReturnType<typeof vi.fn> };
 const startTwinBuild = vi.fn((_files: File[], _opts: unknown) => ({ done: build.done.promise, cancel: build.cancel }));
+// The agreement is never read from the live project in a test.
+vi.mock("@/lib/pilot/consent", async orig => ({ ...(await orig<typeof import("@/lib/pilot/consent")>()), loadConsent: async () => null }));
 vi.mock("@/lib/fieldTwin/build/runBuild", async orig => ({ ...(await orig<typeof import("@/lib/fieldTwin/build/runBuild")>()), startTwinBuild: (f: File[], o: unknown) => startTwinBuild(f, o) }));
 
 const beginSave = vi.fn(async (twin: { id: string }, _ms?: number | null) => ({ id: twin.id, storage_key: twin.id, name: "North", status: "saving" }));

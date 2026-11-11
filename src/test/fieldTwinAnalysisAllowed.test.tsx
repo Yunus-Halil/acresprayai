@@ -32,17 +32,20 @@ beforeEach(() => { access = { status: "loading" }; busy = false; loadConsent.moc
 afterEach(() => { vi.useRealTimers(); });
 
 describe("as shipped", () => {
-  it("the record is switched on, the terms in force describe it, and they open it to participants only once they are approved", () => {
+  it("the record is switched on, and the approved terms in force open it to the participants who agreed to them", () => {
     expect(TWIN_ANALYSIS_ENABLED).toBe(true);
     expect(TERMS_DISCLOSING_ANALYSIS).toEqual(["pilot-2026-11-v2"]);
     expect(TERMS_DISCLOSING_ANALYSIS).toContain(TERMS_VERSION);
     expect(analysisAllowed({ serverRole: "founder", agreedTerms: null })).toBe(true);
-    // Until the founder approves the wording, a participant gets none, whatever they agreed to.
-    expect(TERMS_APPROVED).toBe(false);
-    expect(openToParticipants()).toBe(false);
-    expect(analysisAllowed({ serverRole: "participant", agreedTerms: TERMS_VERSION })).toBe(false);
-    // Approved: a participant who agreed to these terms gets one; one who agreed only to the earlier terms, or whose
-    // agreement could not be read, does not.
+    expect(TERMS_APPROVED).toBe(true);
+    expect(openToParticipants()).toBe(true);
+    // As shipped: a participant who agreed to these terms gets one; one who agreed only to the earlier terms, or
+    // whose agreement could not be read, does not.
+    expect(analysisAllowed({ serverRole: "participant", agreedTerms: TERMS_VERSION })).toBe(true);
+    expect(analysisAllowed({ serverRole: "participant", agreedTerms: "pilot-2026-11-v1" })).toBe(false);
+    expect(analysisAllowed({ serverRole: "participant", agreedTerms: null })).toBe(false);
+    // Were the wording not approved, nobody but the founder would, whatever they agreed to.
+    expect(analysisAllowed({ serverRole: "participant", agreedTerms: TERMS_VERSION }, { version: TERMS_VERSION, approved: false, disclosing: TERMS_DISCLOSING_ANALYSIS })).toBe(false);
     const approved = { version: TERMS_VERSION, approved: true, disclosing: TERMS_DISCLOSING_ANALYSIS };
     expect(analysisAllowed({ serverRole: "participant", agreedTerms: TERMS_VERSION }, approved)).toBe(true);
     expect(analysisAllowed({ serverRole: "participant", agreedTerms: "pilot-2026-11-v1" }, approved)).toBe(false);
@@ -94,9 +97,23 @@ describe("for the signed-in account", () => {
     expect(loadConsent).not.toHaveBeenCalled();
   });
 
-  it("a participant today: no, and their choices are not even read for it", async () => {
+  it("a participant, as shipped: yes once their agreement to the terms in force has been read; no if they agreed only to the earlier terms", async () => {
     access = member("participant");
-    const h = renderHook(() => useAnalysisAllowed());
+    loadConsent.mockResolvedValue({ terms_version: TERMS_VERSION, troubleshooting_access: true, research_use: false, created_at: "2026-11-11T00:00:00Z" });
+    const agreed = renderHook(() => useAnalysisAllowed());
+    expect(agreed.result.current).toBe(false);
+    await settle();
+    expect(agreed.result.current).toBe(true);
+    agreed.unmount();
+    loadConsent.mockResolvedValue({ terms_version: "pilot-2026-11-v1", troubleshooting_access: true, research_use: true, created_at: "2026-11-09T00:00:00Z" });
+    const earlier = renderHook(() => useAnalysisAllowed());
+    await settle();
+    expect(earlier.result.current).toBe(false);
+  });
+
+  it("under terms that do not describe the record, a participant's choices are not even read for it", async () => {
+    access = member("participant");
+    const h = renderHook(() => useAnalysisAllowed({ version: "pilot-v9", approved: true, disclosing: ["pilot-2026-11-v2"] }));
     await settle();
     expect(h.result.current).toBe(false);
     expect(loadConsent).not.toHaveBeenCalled();
@@ -169,7 +186,7 @@ describe("sending what waits on the device", () => {
     expect(authListeners.size).toBe(0);
   });
 
-  it("never for a participant today, and never before the membership is known", () => {
+  it("never for a participant whose agreement to the terms in force has not been read, and never before the membership is known", () => {
     vi.useFakeTimers();
     access = member("participant");
     renderHook(() => useAnalysisOutbox("p1"));

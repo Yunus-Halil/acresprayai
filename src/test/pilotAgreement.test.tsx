@@ -44,6 +44,7 @@ const toastError = vi.fn();
 vi.mock("sonner", () => ({ toast: { error: (...a: unknown[]) => toastError(...a), success: vi.fn() } }));
 
 import ConsentPage, { ConsentGate } from "@/components/pilot/ConsentScreen";
+import PilotTerms from "@/pages/PilotTerms";
 import { TERMS_APPROVED, TERMS_VERSION, agreedToCurrent, researchChoice } from "@/lib/pilot/consent";
 
 const V1 = (over: Partial<Row> = {}): Row => ({ terms_version: "pilot-2026-11-v1", troubleshooting_access: false, research_use: false, created_at: "2026-11-09T10:00:00Z", ...over });
@@ -57,10 +58,15 @@ beforeEach(() => { rows = []; readFails = null; insertFails = null; inserted.len
 afterEach(() => { cleanup(); });
 
 describe("the terms in force", () => {
-  it("are version 2, and are not marked approved by the code alone", () => {
+  it("are version 2, approved by the founder, and the page carries no draft notice", () => {
     expect(TERMS_VERSION).toBe("pilot-2026-11-v2");
-    // The founder's decision, made by changing this constant; this test is changed with it.
-    expect(TERMS_APPROVED).toBe(false);
+    // The founder's decision (2026-11-11), made by changing this constant; a new version starts unapproved.
+    expect(TERMS_APPROVED).toBe(true);
+    render(<MemoryRouter><PilotTerms /></MemoryRouter>);
+    expect(screen.getByRole("heading", { name: "Founding pilot: terms and privacy" })).toBeInTheDocument();
+    expect(screen.getByText(`Version ${TERMS_VERSION}`)).toBeInTheDocument();
+    expect(screen.queryByText(/Draft wording/)).toBeNull();
+    expect(screen.queryByRole("note")).toBeNull();
   });
 });
 

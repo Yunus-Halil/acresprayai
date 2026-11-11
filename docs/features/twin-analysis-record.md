@@ -1,6 +1,6 @@
 # The analysis record of a corn Field Twin
 
-Status, 2026-11-11: **on for the founder's own account**; for a participant, on once the pilot terms that describe it (`pilot-2026-11-v2`) are approved and that participant has agreed to them.
+Status, 2026-11-11: **on** for the founder's own account and for every participant who has agreed to the pilot terms that describe it (`pilot-2026-11-v2`, approved by the founder on 2026-11-11).
 
 ## Why
 
@@ -34,11 +34,11 @@ Not in it: pixels, and any digest of the original files (to be added with the re
 
 - `TWIN_ANALYSIS_ENABLED` (`analysisConfig.ts`) is the one switch. False: no build makes a record, nothing is saved, nothing waiting is sent.
 - The founder's own account: yes (also while previewing the participant experience: it is still the founder's account and data).
-- A participant: only when the pilot terms in force are approved (`TERMS_APPROVED`), are listed in `TERMS_DISCLOSING_ANALYSIS` (`pilot-2026-11-v2` is), and are the version this participant agreed to. Until the founder approves the wording no participant's build makes one, and their choices are not read for it. A participant who agreed only to the earlier terms gets none.
+- A participant: only when the pilot terms in force are approved (`TERMS_APPROVED`), are listed in `TERMS_DISCLOSING_ANALYSIS` (`pilot-2026-11-v2` is), and are the version this participant agreed to. A participant who agreed only to the earlier terms gets none.
 
 This decides what the app does. It guards a disclosure, not the data: the record only ever goes to the signed-in account's own folder, which the storage rules enforce.
 
-To open it to participants: approve the terms (`TERMS_APPROVED = true`). Every participant is asked to agree to the new version on their next visit; from then on their corn builds keep the record.
+Every participant is asked to agree to the new version on their next visit; from then on their corn builds keep the record.
 
 ## Getting it to the account
 

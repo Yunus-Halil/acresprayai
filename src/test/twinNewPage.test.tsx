@@ -7,6 +7,9 @@ import type { DjiPhotoMeta } from "@/lib/directGeoref/metadata";
 
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { id: "u1", email: "ryan@farm.test" } }) }));
 let who: "founder" | "participant" = "participant";
+// The participant's newest agreement, as the page reads it (never the live project).
+let agreedTo: string | null = "pilot-2026-11-v1";
+vi.mock("@/lib/pilot/consent", async orig => ({ ...(await orig<typeof import("@/lib/pilot/consent")>()), loadConsent: async () => (agreedTo ? { terms_version: agreedTo, troubleshooting_access: true, research_use: false, created_at: "2026-11-11T00:00:00Z" } : null) }));
 vi.mock("@/lib/pilot/access", () => ({ usePilotRole: () => who, usePilot: () => ({ access: { status: "member", serverRole: who, role: who, displayName: null } }) }));
 vi.mock("@/lib/pilot/telemetry", () => ({ track: () => undefined }));
 const startBuildSession = vi.fn();
@@ -41,7 +44,7 @@ const pickFiles = async (names: string[]) => {
 };
 
 beforeEach(() => {
-  who = "participant";
+  who = "participant"; agreedTo = "pilot-2026-11-v1";
   startBuildSession.mockClear();
   headers = {};
   for (let k = 1; k <= 12; k++) headers[`DJI_${String(k).padStart(4, "0")}.JPG`] = meta({ lat: 38.9 + k * 0.0001, lng: -76.9 + (k % 4) * 0.0002 });
@@ -76,8 +79,18 @@ describe("New Field Twin", () => {
     const [given, opts] = startBuildSession.mock.calls[0] as [File[], Record<string, unknown>];
     expect(given.map(f => f.name)).toEqual(list.slice(0, 12).map(f => f.name));
     expect(opts).toMatchObject({ name: "North block", crop: "corn", weeds: "colour", userId: "u1" });
-    // A participant's build keeps no analysis record: no approved terms tell them of one.
+    // This participant agreed only to the earlier terms, which do not describe the analysis record: none is kept.
     expect(opts.analysis).toBe(false);
+  });
+
+  it("a participant who agreed to the terms in force has their corn build started with its analysis record", async () => {
+    agreedTo = "pilot-2026-11-v2";
+    render(<MemoryRouter><TwinNew /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("radio", { name: /Corn/ }));
+    await pickFiles(Object.keys(headers));
+    await screen.findByLabelText("Photograph check");
+    fireEvent.click(screen.getByRole("button", { name: "Build the Field Twin" }));
+    expect((startBuildSession.mock.calls[0] as [File[], Record<string, unknown>])[1]).toMatchObject({ crop: "corn", analysis: true });
   });
 
   it("the founder's own build is started with its analysis record", async () => {

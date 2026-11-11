@@ -7,6 +7,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 const pilot = { role: "participant" as "founder" | "participant", serverRole: "participant" as "founder" | "participant", preview: false };
 const setPreview = vi.fn();
 
+// The agreement is never read from the live project in a test.
+vi.mock("@/lib/pilot/consent", async orig => ({ ...(await orig<typeof import("@/lib/pilot/consent")>()), loadConsent: async () => null }));
 vi.mock("@/components/pilot/PilotRoute", () => ({ default: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { id: "u1", email: "ryan@farm.test" }, signOut: vi.fn() }) }));
 vi.mock("@/lib/unitPreference", () => ({ loadUnitPreference: async () => "imperial", saveUnitPreference: async () => undefined }));

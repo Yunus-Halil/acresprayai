@@ -17,8 +17,11 @@ import { supabase } from "@/integrations/supabase/client";
 
 /** Bump when the terms change in substance; participants are asked again. */
 export const TERMS_VERSION = "pilot-2026-11-v2";
-/** False until the founder has approved the wording (docs/operations/pilot-access.md): the terms page says it is a draft. */
-export const TERMS_APPROVED = false;
+/**
+ * The founder approved this version's wording on 2026-11-11. While false, the terms page says it is a draft and no
+ * participant's build keeps an analysis record. A new version starts unapproved: set this to false with the bump.
+ */
+export const TERMS_APPROVED = true;
 
 export type Consent = { terms_version: string; troubleshooting_access: boolean; research_use: boolean; created_at: string };
 

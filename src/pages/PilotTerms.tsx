@@ -1,6 +1,6 @@
 // The founding pilot's terms and privacy notice, in plain words. Public, so it can be read before accepting an
-// invitation. WORDING NEEDS THE FOUNDER'S APPROVAL (and ideally a lawyer's): until TERMS_APPROVED is true the page
-// says it is a draft.
+// invitation. This version's wording was approved by the founder on 2026-11-11 (TERMS_APPROVED); a later version
+// says it is a draft until it is approved in its turn.
 //
 // Every statement about what is saved, who sees it and what is deleted is a description of what the code does; when
 // either changes, the other must (what each sentence rests on is listed in docs/operations/pilot-terms.md).

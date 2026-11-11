@@ -142,7 +142,7 @@ These steps are written for the founder to run, and none has been run on the liv
 
 ## 8. Before the first invitation: the pilot terms
 
-`src/pages/PilotTerms.tsx` (served at `/pilot-terms`) is the plain-language terms and privacy notice, version `pilot-2026-11-v2`; `docs/operations/pilot-terms.md` lists what each statement rests on and what is still to decide. **Read it, change what is wrong, ideally have a lawyer look, then set `TERMS_APPROVED = true` in `src/lib/pilot/consent.ts`.** Until then the page says it is a draft, and no participant's corn build keeps an analysis record. Participants agree on one screen, once (and again whenever `TERMS_VERSION` changes); the founder is not asked. Agreeing to v2 is what lets the founder open that participant's Field Twins from the desk, each opening logged; a participant who has only agreed to v1 keeps what they chose there.
+`src/pages/PilotTerms.tsx` (served at `/pilot-terms`) is the plain-language terms and privacy notice, version `pilot-2026-11-v2`; `docs/operations/pilot-terms.md` lists what each statement rests on and what is still to decide. The founder approved this wording on 2026-11-11 (`TERMS_APPROVED = true` in `src/lib/pilot/consent.ts`); a later version starts unapproved, says so on the page, and keeps no analysis record for participants until it is approved. Participants agree on one screen, once (and again whenever `TERMS_VERSION` changes); the founder is not asked. Agreeing to v2 is what lets the founder open that participant's Field Twins from the desk, each opening logged; a participant who has only agreed to v1 keeps what they chose there.
 
 ## Removing a participant's data on request
 
