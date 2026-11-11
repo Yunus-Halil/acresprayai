@@ -7,6 +7,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 type Row = { terms_version: string; troubleshooting_access: boolean; research_use: boolean; created_at: string };
 // The account's agreement rows, newest last, as the database holds them.
@@ -59,6 +61,37 @@ describe("the terms in force", () => {
     expect(TERMS_VERSION).toBe("pilot-2026-11-v2");
     // The founder's decision, made by changing this constant; this test is changed with it.
     expect(TERMS_APPROVED).toBe(false);
+  });
+});
+
+describe("the terms page says what the system does, no more", () => {
+  const page = readFileSync(resolve(process.cwd(), "src/pages/PilotTerms.tsx"), "utf8");
+  it("photographs: the full originals are not uploaded, and it says the crops are saved", () => {
+    expect(page).toContain("Your full original drone photographs are not uploaded.");
+    expect(page).toContain("Small evidence crops cut from them are saved, as described below.");
+    expect(page).not.toContain("They are not uploaded.");
+  });
+  it("the analysis record: kept to reproduce and evaluate the original analysis, without promising an exact result; and what happens to one whose twin is deleted", () => {
+    expect(page).toContain("to preserve the intermediate observations needed to reproduce and evaluate the original analysis of your field");
+    expect(page).not.toMatch(/reproduced later exactly/);
+    expect(page).toContain("No record is kept for a Field Twin you have deleted");
+    expect(page).toContain("at the latest the next time you open your list of Field Twins");
+    expect(page).not.toMatch(/never sent for a Field Twin/);
+  });
+  it("research use: one stated purpose, and anything materially different needs agreement again", () => {
+    expect(page).toContain("to measure where its findings are right and wrong, and to tune or train the methods that make them");
+    expect(page).toContain("The permission covers that purpose and no other.");
+    expect(page).toContain("would need your agreement again first");
+  });
+  it("rights: the participant keeps theirs in what they supply, gets access to what is built, gains none in Swardus's software, and answers for imagery that is someone else's", () => {
+    expect(page).toContain("You keep every right you have in the photographs and field information you supply, and in your reviews.");
+    expect(page).toContain("nothing here gives you rights in them");
+    expect(page).toContain("does not give permission on their behalf");
+    expect(page).not.toMatch(/your Field Twins and your reviews remain yours/);
+  });
+  it("a security incident: investigate, contain, notify as the law requires; no unconditional promise", () => {
+    expect(page).toContain("notify you as the law that applies requires");
+    expect(page).not.toMatch(/we will tell you/);
   });
 });
 

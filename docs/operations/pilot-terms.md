@@ -27,6 +27,8 @@ A participant who agreed to v1 keeps exactly what they chose there until they ag
 | Research use is off unless ticked | `saveConsent` writes what is ticked; the box starts unticked and an earlier version's answer is not shown (tested) |
 | Activity record without names or places | `src/lib/pilot/telemetry.ts`: counts, timings, crop, camera model, error text passed through a pattern filter |
 | Deleting a Field Twin | `deleteTwin`: every file in the folder, the list entry, the reviews (cascade), the waiting record (tested) |
+| No record is kept for a deleted Field Twin | A waiting copy is not sent once the twin is found gone; one in the air is removed when it lands, on whichever device deleted the twin; a folder left with only a record is removed the next time the account's twins are listed (`analysisOutbox.ts`, `registry.ts`; each case tested) |
+| Your full original photographs are not uploaded; crops are | Storage rules allow a participant only their Field Twin folder; the build writes there only the twin, its crop atlases and the analysis record |
 | Deleting everything on request | By hand: "Removing a participant's data on request" in `pilot-access.md` |
 
 Two limits on these, which the wording respects: the founder's access through the app is logged, but the database's administrator can also reach any file through the provider's console, which is not; and the error filter removes what looks like a path, file name or coordinate, it cannot prove nothing slips through.
@@ -37,13 +39,15 @@ Two limits on these, which the wording respects: the founder's access through th
 
 - Who "Swardus" is as a legal entity, and the governing law and venue. The terms name neither.
 - The no-warranty sentence and any limit of liability for a free pilot. The terms say only that findings are not promised to be complete or correct.
-- "What is yours": the permission to store and process, and the use of feedback and ideas.
+- "Your data and Swardus's software": the permission to store and process, the use of feedback and ideas, and whether a participant's own agreement is enough where the imagery is controlled by an employer or institution (the terms put that permission on the participant).
+- Which notification duties apply to a security incident, and to whom (the terms promise what the law requires; `incident-response.md` is the procedure).
 - Whether a privacy statute applies. The comprehensive state privacy laws most likely do not reach a pilot this size (Virginia's applies from 100,000 consumers a year, or 25,000 with over half of revenue from selling personal data; Maryland's from 35,000, or 10,000 with over a fifth of revenue from selling it), and both are written for people acting as individuals, not in a commercial or employment role. What does apply regardless is that the terms must be true, which is why every statement above is tied to the code. Breach-notification duties depend on what is held and where the person lives.
 - A participant employed by a university or agency may have rules of their own about agreeing to terms or sharing field data; the terms do not address an employer.
 
 **For the founder:**
 
-- "We will tell you if your data was exposed" and "as soon as we reasonably can" for deletion are promises: keep them only if they will be kept.
+- "As soon as we reasonably can" for deletion is a promise: keep it only if it will be kept.
+- Research use is limited to examples used inside Swardus to measure and to tune or train its methods; anything materially different needs the participant's agreement again. Decide what "inside Swardus" covers before the first use (contractors, cloud training services).
 - What happens to a participant's data when their place ends and they do not ask: today it is kept, unopened, and the terms say so.
 - How long the activity record and feedback emails are kept: today, indefinitely.
 - Whether sign-in emails go through Resend or the provider's own mail (a dashboard setting); the terms name both.

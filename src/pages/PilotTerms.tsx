@@ -34,7 +34,7 @@ export default function PilotTerms() {
         </Part>
 
         <Part title="Your photographs">
-          <p>Your drone photographs are read in your browser, on your own device. <Strong>They are not uploaded.</Strong></p>
+          <p>Your drone photographs are read in your browser, on your own device. <Strong>Your full original drone photographs are not uploaded.</Strong> Small evidence crops cut from them are saved, as described below.</p>
         </Part>
 
         <Part title="What a saved Field Twin contains">
@@ -55,9 +55,9 @@ export default function PilotTerms() {
             <li>where each finding on the map lies in each photograph that showed it, and which part of which photograph each crop was cut from.</li>
           </List>
           <p><Strong>It holds no photographs and no image data.</Strong></p>
-          <p>We keep it so that the analysis of your field can be reproduced later exactly as it was made, for example to take your corrections into account in your own Field Twin. Today nothing does that yet; the record is only stored.</p>
+          <p>We keep it to preserve the intermediate observations needed to reproduce and evaluate the original analysis of your field, for example to take your corrections into account in your own Field Twin. Today nothing does that yet; the record is only stored.</p>
           <p>The record is private to your account. It is not shown in the app, including to Swardus's founder when a Field Twin is opened (below). It is not used to train a shared model, it is not exported, and it is not shared with other participants. It is deleted when you delete the Field Twin.</p>
-          <p>It is saved a moment after the Field Twin itself. If that is interrupted (the tab is closed, or the connection drops), a copy waits in your browser's storage on that device and is sent the next time you open Swardus there while signed in. The waiting copy is removed once it has been saved, when you sign out on that device, when you delete the Field Twin there, or after 7 days, whichever comes first; it is never sent for a Field Twin that has been deleted. A Field Twin whose record never arrives is complete without it.</p>
+          <p>It is saved a moment after the Field Twin itself. If that is interrupted (the tab is closed, or the connection drops), a copy waits in your browser's storage on that device and is sent the next time you open Swardus there while signed in. The waiting copy is removed once it has been saved, when you sign out on that device, when you delete the Field Twin there, or after 7 days, whichever comes first. No record is kept for a Field Twin you have deleted: a waiting copy is not sent once the deletion is known, and one that arrives in the same moment is removed again, at the latest the next time you open your list of Field Twins. A Field Twin whose record never arrives is complete without it.</p>
         </Part>
 
         <Part title="Your reviews">
@@ -88,20 +88,23 @@ export default function PilotTerms() {
 
         <Part title="Research use of your imagery: your choice">
           <p>This is optional, it starts switched off, and the pilot works the same either way.</p>
-          <p>If you allow it, the crops of your photographs, together with your reviews of them, may be used as examples to test and improve how Swardus reads fields. Without it, your crops are used only to show your Field Twin, to you and to the founder as described above.</p>
+          <p>If you allow it, the crops of your photographs, together with your reviews of them, may be used inside Swardus as examples: to measure where its findings are right and wrong, and to tune or train the methods that make them. Without it, your crops are used only to show your Field Twin, to you and to the founder as described above.</p>
+          <p>The permission covers that purpose and no other. Using your imagery for anything materially different, for example publishing it or sharing it outside Swardus, would need your agreement again first.</p>
           <p>Today Swardus has no export of participants' imagery and trains no shared model on it; this choice records your permission for when it does. You can change it at any time under Help, Your data choices, and a change applies from then on.</p>
           <p>Your Field Twins and reviews are not sold, and are not shared outside Swardus without asking you first, other than with the services named below that store and deliver them for us.</p>
         </Part>
 
-        <Part title="What is yours">
-          <p>Your photographs, your Field Twins and your reviews remain yours. By taking part you allow Swardus to store and process them in order to provide the pilot to you and to run it as these terms describe, and for nothing else unless you allow research use above.</p>
-          <p>Swardus's software, methods and designs remain Swardus's. If you send us feedback or ideas, we may use them to improve Swardus.</p>
+        <Part title="Your data and Swardus's software">
+          <p>You keep every right you have in the photographs and field information you supply, and in your reviews. Swardus does not claim them. While your place in the pilot is active you can open the Field Twins built from them, and you can delete them.</p>
+          <p>By taking part you allow Swardus to store and process what you supply, and the Field Twins built from it, in order to provide the pilot to you and to run it as these terms describe, and for nothing else unless you allow research use above.</p>
+          <p>If the photographs or the field belong to someone else, such as an employer, a university, a client or a landowner, having their permission to use them here is your responsibility. Your agreement to these terms is yours alone and does not give permission on their behalf.</p>
+          <p>Swardus's software, methods and designs remain Swardus's, and nothing here gives you rights in them. If you send us feedback or ideas, we may use them to improve Swardus.</p>
         </Part>
 
         <Part title="Who handles the data">
           <p>Swardus runs on Supabase (accounts, database and file storage, in the United States) and Vercel (the website). Email is delivered by Resend (invitations to you, and your feedback to the founder) and by Supabase or Resend for sign-in messages. They process data on our behalf to run the service.</p>
           <p>Pages load their fonts from Google, and map surroundings come from OpenStreetMap; like any website you visit, these services see your device's internet address. If you sign in with Google, Google handles that sign-in. A few display settings are remembered in your browser only.</p>
-          <p>Each account's Field Twins are private to that account by the rules of the database and the file storage, and connections to Swardus are encrypted. No service can promise perfect security; if we learn that your data was exposed, we will tell you.</p>
+          <p>Each account's Field Twins are private to that account by the rules of the database and the file storage, and connections to Swardus are encrypted. No service can promise perfect security. If we learn of a security incident that affects your data, we will investigate it, act to contain it, and notify you as the law that applies requires.</p>
         </Part>
 
         <Part title="Deleting, keeping and backups">
