@@ -177,7 +177,7 @@ export function checkSummary(s: Snapshot): { checks: number; stopped: number; fi
 export function timeline(s: Snapshot, userId: string): { at: string; text: string; tone: "ok" | "bad" | "plain" }[] {
   const words: Record<string, string> = {
     session_start: "Opened Swardus", twin_check_done: "Checked photographs", twin_build_started: "Started a build", twin_build_finished: "Build finished",
-    twin_build_failed: "Build failed", twin_build_cancelled: "Build cancelled", twin_saved: "Field Twin saved", twin_save_failed: "Save failed",
+    twin_build_failed: "Build failed", twin_build_cancelled: "Build cancelled", twin_saved: "Field Twin saved", twin_save_failed: "Save failed", twin_analysis_saved: "Analysis record saved", twin_analysis_failed: "Analysis record not saved",
     twin_opened: "Opened a Field Twin", twin_open_failed: "Could not open a Field Twin", twin_deleted: "Deleted a Field Twin",
     finding_reviewed: "Reviewed a finding", feedback_sent: "Sent feedback", client_error: "Error in the app",
   };
