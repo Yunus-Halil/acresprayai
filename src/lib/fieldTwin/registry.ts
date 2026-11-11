@@ -6,6 +6,7 @@
 // atlases go up, twin.json goes up last, and only then is the record 'ready'. A save that fails, or a tab closed
 // half way, leaves 'saving' or 'incomplete', which the list shows as such (with Delete), never as a twin to open.
 import { supabase } from "@/integrations/supabase/client";
+import { forgetPendingAnalysis } from "./analysisOutbox";
 import type { TwinBundle } from "./types";
 import { TWIN_BUCKET, TWIN_JSON_GZ, listTwins, saveTwin, twinFolder } from "./store";
 
@@ -148,4 +149,6 @@ export async function deleteTwin(userId: string, record: Pick<TwinRecord, "id" |
   }
   const { error } = await supabase.from("field_twins").delete().eq("id", record.id);
   if (error) throw new Error(error.message);
+  // A corn twin's analysis record still waiting on this device (analysisOutbox.ts) goes with it.
+  await forgetPendingAnalysis(userId, record.storage_key);
 }

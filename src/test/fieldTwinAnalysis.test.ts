@@ -77,8 +77,8 @@ const stripMs = (f: CornFieldResult) => ({ ...f, summary: { ...f.summary, ms: 0 
 const stored = (bytes: Uint8Array) => JSON.parse(gunzipSync(gzipSync(bytes)).toString("utf8"));
 
 describe("the analysis record of a corn twin", () => {
-  it("is off as shipped, and is not one of the twin's files", () => {
-    expect(TWIN_ANALYSIS_ENABLED).toBe(false);
+  it("is switched on, and is not one of the twin's files", () => {
+    expect(TWIN_ANALYSIS_ENABLED).toBe(true);
     expect(TWIN_ANALYSIS_FILE).toBe("analysis.json.gz");
     expect(bundleFileNames(CORN_TWIN)).toEqual(["twin.json", "atlas-0.jpg"]);
     // A twin with its own files is complete whether or not a record lies beside it.

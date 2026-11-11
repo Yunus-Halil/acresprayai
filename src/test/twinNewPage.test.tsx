@@ -6,7 +6,8 @@ import { MemoryRouter } from "react-router-dom";
 import type { DjiPhotoMeta } from "@/lib/directGeoref/metadata";
 
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { id: "u1", email: "ryan@farm.test" } }) }));
-vi.mock("@/lib/pilot/access", () => ({ usePilotRole: () => "participant" }));
+let who: "founder" | "participant" = "participant";
+vi.mock("@/lib/pilot/access", () => ({ usePilotRole: () => who, usePilot: () => ({ access: { status: "member", serverRole: who, role: who, displayName: null } }) }));
 vi.mock("@/lib/pilot/telemetry", () => ({ track: () => undefined }));
 const startBuildSession = vi.fn();
 vi.mock("@/lib/fieldTwin/buildSession", async orig => ({ ...(await orig<typeof import("@/lib/fieldTwin/buildSession")>()), startBuildSession: (...a: unknown[]) => startBuildSession(...a) }));
@@ -40,6 +41,7 @@ const pickFiles = async (names: string[]) => {
 };
 
 beforeEach(() => {
+  who = "participant";
   startBuildSession.mockClear();
   headers = {};
   for (let k = 1; k <= 12; k++) headers[`DJI_${String(k).padStart(4, "0")}.JPG`] = meta({ lat: 38.9 + k * 0.0001, lng: -76.9 + (k % 4) * 0.0002 });
@@ -74,6 +76,19 @@ describe("New Field Twin", () => {
     const [given, opts] = startBuildSession.mock.calls[0] as [File[], Record<string, unknown>];
     expect(given.map(f => f.name)).toEqual(list.slice(0, 12).map(f => f.name));
     expect(opts).toMatchObject({ name: "North block", crop: "corn", weeds: "colour", userId: "u1" });
+    // A participant's build keeps no analysis record: no approved terms tell them of one.
+    expect(opts.analysis).toBe(false);
+  });
+
+  it("the founder's own build is started with its analysis record", async () => {
+    who = "founder";
+    render(<MemoryRouter><TwinNew /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("radio", { name: /Corn/ }));
+    await pickFiles(Object.keys(headers));
+    await screen.findByLabelText("Photograph check");
+    fireEvent.click(screen.getByRole("button", { name: "Build the Field Twin" }));
+    expect(startBuildSession).toHaveBeenCalledOnce();
+    expect((startBuildSession.mock.calls[0] as [File[], Record<string, unknown>])[1]).toMatchObject({ crop: "corn", userId: "u1", analysis: true });
   });
 
   it("a set that cannot make a twin is stopped, with the reason", async () => {

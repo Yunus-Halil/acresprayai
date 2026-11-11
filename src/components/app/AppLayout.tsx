@@ -17,6 +17,7 @@ import Seo from "@/components/Seo";
 import { FeedbackHost, openFeedback } from "@/components/pilot/FeedbackDialog";
 import AppErrorBoundary from "@/components/pilot/AppErrorBoundary";
 import { sessionBusy, useBuildSession } from "@/lib/fieldTwin/buildSession";
+import { useAnalysisOutbox } from "@/lib/fieldTwin/analysisAccess";
 import { track } from "@/lib/pilot/telemetry";
 
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean };
@@ -130,6 +131,8 @@ function AppShell() {
   const location = useLocation();
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
   useEffect(() => { track("session_start", { detail: { role: role ?? "none" } }); }, [role]);
+  // Corn twins' analysis records still waiting on this device are sent now (analysisOutbox.ts).
+  useAnalysisOutbox(user!.id);
   const session = useBuildSession();
   // A twin open is a full-height map workspace; every other page scrolls as a document.
   const fullHeight = /^\/app\/twins\/(?!new$)[^/]+$/.test(location.pathname) || location.pathname === "/app/field-twin";

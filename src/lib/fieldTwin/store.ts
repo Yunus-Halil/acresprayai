@@ -80,12 +80,31 @@ export async function loadAtlas(userId: string, twinId: string, file: string): P
  * a failure as "no record for this twin" (buildSession.ts); the twin is already saved by then. Returns the stored size.
  */
 export async function saveTwinAnalysis(userId: string, twinId: string, json: Blob): Promise<number> {
+  return uploadTwinAnalysis(userId, twinId, await packTwinAnalysis(json));
+}
+
+/** The record as it is stored: gzipped, and refused when over the size kept per twin. */
+export async function packTwinAnalysis(json: Blob): Promise<Blob> {
   const blob = await gzipBlob(json);
   if (blob.size > TWIN_ANALYSIS_MAX_BYTES) throw new Error(`the analysis record is ${(blob.size / 1048576).toFixed(1)} MB, over the ${(TWIN_ANALYSIS_MAX_BYTES / 1048576).toFixed(0)} MB kept per twin`);
-  const { error } = await supabase.storage.from(TWIN_BUCKET).upload(twinPath(userId, twinId, TWIN_ANALYSIS_FILE), blob, { upsert: true, contentType: "application/gzip" });
-  if (error) throw new Error(error.message);
-  return blob.size;
+  return blob;
 }
+
+/** Put a packed record (packTwinAnalysis) beside its twin. Sending the same record again replaces it with itself. */
+export async function uploadTwinAnalysis(userId: string, twinId: string, packed: Blob): Promise<number> {
+  const { error } = await supabase.storage.from(TWIN_BUCKET).upload(twinPath(userId, twinId, TWIN_ANALYSIS_FILE), packed, { upsert: true, contentType: "application/gzip" });
+  if (error) throw new Error(error.message);
+  return packed.size;
+}
+
+/** Remove a twin's record from the account (a record that arrived after its twin was deleted). */
+export async function removeTwinAnalysis(userId: string, twinId: string): Promise<void> {
+  const { error } = await supabase.storage.from(TWIN_BUCKET).remove([twinPath(userId, twinId, TWIN_ANALYSIS_FILE)]);
+  if (error) throw new Error(error.message);
+}
+
+/** A blob's bytes, for keeping on the device. */
+export const blobBytes = (blob: Blob): Promise<Uint8Array> => bytesOf(blob);
 
 /** A twin's analysis record as parsed JSON, or null when the twin has none (every twin saved without one). The caller validates it (parseTwinAnalysis). */
 export async function loadTwinAnalysisJson(userId: string, twinId: string): Promise<unknown | null> {
