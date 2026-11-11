@@ -1,11 +1,12 @@
 // People in the pilot: everyone at a glance, and each person's own page (their activity, Field Twins, builds,
 // reviews, feedback, what they allowed, and their access controls).
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Star } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { type PersonStats, type Snapshot, personStats, timeline } from "@/lib/pilot/adminData";
 import { pilotAdmin } from "@/lib/pilot/adminClient";
+import { useStarredPeople } from "@/lib/pilot/starred";
 import { Badge, Section, Stat, Table, ago, day, dur, when } from "./ui";
 import { BuildsSection, FeedbackSection, TwinsSection } from "./sections";
 import { ReviewsSection } from "./Reviews";
@@ -18,14 +19,38 @@ const STAGE: Record<PersonStats["stage"], { label: string; tone: "ok" | "warn" |
   quiet: { label: "Quiet for 2 weeks", tone: "warn" },
 };
 
-export function PeopleSection({ snap }: { snap: Snapshot }) {
-  const people = personStats(snap).sort((a, b) => (a.member.role === b.member.role ? (b.lastActive ?? "").localeCompare(a.lastActive ?? "") : a.member.role === "founder" ? 1 : -1));
-  const nav = useNavigate();
+/** The star beside a person: the founder's own mark, kept in this browser. Never opens the row it sits in. */
+function StarButton({ name, on, onToggle }: { name: string; on: boolean; onToggle: () => void }) {
   return (
-    <Section title="People" hint="Everyone with access, participants first. Click a row for their page.">
-      <Table head={["Who", "Where they are", "Access", "Last signed in", "Last active", "Days used", "Field Twins", "Builds ok / failed", "Reviews (wrong)", "Feedback", "Allowed"]} min={1100} empty={people.length ? false : "Nobody yet. Invite someone under Invites."}>
+    <button type="button" aria-pressed={on} aria-label={on ? `Remove the star from ${name}` : `Star ${name}`} title={on ? "Starred" : "Star"}
+      onClick={e => { e.stopPropagation(); onToggle(); }}
+      className="-m-1.5 inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
+      <Star className={`h-4 w-4 ${on ? "fill-amber-400 text-amber-500" : ""}`} aria-hidden="true" />
+    </button>
+  );
+}
+
+export function PeopleSection({ snap }: { snap: Snapshot }) {
+  const everyone = personStats(snap).sort((a, b) => (a.member.role === b.member.role ? (b.lastActive ?? "").localeCompare(a.lastActive ?? "") : a.member.role === "founder" ? 1 : -1));
+  const { starred, toggle, view, setView } = useStarredPeople();
+  // Stars of people who are no longer listed are not counted.
+  const starredHere = everyone.filter(p => starred.has(p.member.user_id));
+  const people = view === "starred" ? starredHere : everyone;
+  const nav = useNavigate();
+  const chip = (v: "everyone" | "starred", label: string, n: number) => (
+    <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
+      className={`inline-flex min-h-[32px] items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${view === v ? "border-foreground bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}>
+      {v === "starred" && <Star className="h-3 w-3" aria-hidden="true" />}{label} <span className="tabular-nums opacity-70">{n}</span>
+    </button>
+  );
+  return (
+    <Section title="People" hint="Everyone with access, participants first. Click a row for their page. Star the people you want to keep an eye on."
+      actions={<div className="flex gap-1.5" role="group" aria-label="Which people to show">{chip("everyone", "Everyone", everyone.length)}{chip("starred", "Starred", starredHere.length)}</div>}>
+      <Table head={[<span key="star" className="sr-only">Starred</span>, "Who", "Where they are", "Access", "Last signed in", "Last active", "Days used", "Field Twins", "Builds ok / failed", "Reviews (wrong)", "Feedback", "Allowed"]} min={1140}
+        empty={people.length ? false : !everyone.length ? "Nobody yet. Invite someone under Invites." : "Nobody is starred yet. Show everyone, and press the star beside a name."}>
         {people.map(p => (
           <tr key={p.member.user_id} className="cursor-pointer hover:bg-muted/40" onClick={() => nav(`/admin/pilot/people/${p.member.user_id}`)}>
+            <td className="w-8"><StarButton name={p.name} on={starred.has(p.member.user_id)} onToggle={() => toggle(p.member.user_id)} /></td>
             <td><Link to={`/admin/pilot/people/${p.member.user_id}`} className="font-medium hover:underline" onClick={e => e.stopPropagation()}>{p.name}</Link><div className="text-xs text-muted-foreground">{p.member.organisation ?? ""}{p.member.role === "founder" ? " · founder" : ""}</div></td>
             <td>{p.member.role === "participant" ? <Badge tone={STAGE[p.stage].tone}>{STAGE[p.stage].label}</Badge> : null}</td>
             <td><Badge tone={p.member.status === "active" ? "ok" : "bad"}>{p.member.status === "active" ? "Active" : p.member.status === "paused" ? "Paused" : "Ended"}</Badge></td>
@@ -43,6 +68,7 @@ export function PeopleSection({ snap }: { snap: Snapshot }) {
 }
 
 export function PersonDetail({ snap, userId, onChanged }: { snap: Snapshot; userId: string; onChanged: () => void }) {
+  const { starred, toggle } = useStarredPeople();
   const p = personStats(snap).find(x => x.member.user_id === userId);
   if (!p) return <div className="space-y-3"><Link to="/admin/pilot?tab=people" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"><ArrowLeft className="h-4 w-4" />People</Link><p>This person is not in the pilot.</p></div>;
   const user = snap.users.find(u => u.id === userId);
@@ -67,7 +93,7 @@ export function PersonDetail({ snap, userId, onChanged }: { snap: Snapshot; user
         <Link to="/admin/pilot?tab=people" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"><ArrowLeft className="h-4 w-4" />People</Link>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="font-display text-2xl">{p.name}</h2>
+            <h2 className="flex items-center gap-2 font-display text-2xl">{p.name}<StarButton name={p.name} on={starred.has(userId)} onToggle={() => toggle(userId)} /></h2>
             <p className="text-sm text-muted-foreground">{[user?.email ?? p.member.email, p.member.organisation, p.member.role === "founder" ? "founder" : "participant", user?.provider ? `signs in with ${user.provider}` : null, user && !user.confirmed ? "address not proven yet" : null].filter(Boolean).join(" · ")}</p>
             <p className="text-sm text-muted-foreground">Invited {day(p.member.invited_at ?? p.member.created_at)} · last signed in {ago(p.lastSignIn)} · last active {ago(p.lastActive)}</p>
           </div>
