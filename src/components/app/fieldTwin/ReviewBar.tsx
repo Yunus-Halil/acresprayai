@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import type { FindingsResult } from "@/lib/fieldTwin/findings";
 import type { TwinBundle } from "@/lib/fieldTwin/types";
-import { type FindingKind, type Review, SAYS_OPTIONS, VERDICT_LABEL, type Verdict, reviewKey, saysLabel } from "@/lib/fieldTwin/reviews";
+import { type FindingKind, type Review, SAYS_OPTIONS, VERDICT_LABEL, type Verdict, machineSaid, reviewKey, saysLabel } from "@/lib/fieldTwin/reviews";
 import type { TwinPick } from "./TwinCanvasLayer";
 
 export type ReviewTarget = { kind: FindingKind; id: string; status: string; question: string };
@@ -30,12 +30,7 @@ export function reviewTargetOf(selection: TwinPick, twin: TwinBundle, findings: 
 }
 
 /** The algorithm's label on a corn finding, in words (the twin's own states, unchanged). */
-function swardusSaid(t: ReviewTarget): string {
-  if (t.kind === "corn_weed") return t.status === "confirmed" ? "Weed candidate, confirmed" : t.status === "contested" ? "Weed candidate, contested" : "Weed candidate, not confirmed";
-  if (t.kind === "corn_row") return t.status === "corn" ? "Corn row" : "Row, crop not confirmed";
-  if (t.kind === "corn_gap") return t.status === "confirmed" ? "Stand gap, confirmed" : "Stand gap, withheld";
-  return t.status;
-}
+const swardusSaid = (t: ReviewTarget): string => machineSaid(t.kind, t.status);
 
 type Props = {
   target: ReviewTarget;

@@ -20,6 +20,7 @@ import { CornFieldPanel } from "./CornPanels";
 import { isLocalTwin } from "@/lib/fieldTwin/cornView";
 import TwinMap, { type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
 import ReviewBar, { reviewTargetOf } from "./ReviewBar";
+import { type ReviewFocus, locateReviewed } from "./reviewFocus";
 import { reviewKey, useTwinReviews } from "@/lib/fieldTwin/reviews";
 import { FeedbackButton } from "@/components/pilot/FeedbackDialog";
 
@@ -81,6 +82,13 @@ type Props = {
    * Absent: no reviews (the founder's workbench and the dev preview), and the boundary stays in this browser.
    */
   review?: { twinId: string | null; disabledReason?: string | null };
+  /**
+   * A finding to open on: selected and brought into view once, when the map is ready (the founder's viewer, opened
+   * from a review). Only a finding the saved twin holds under exactly this kind and id is selected (reviewFocus.ts);
+   * otherwise nothing is, and `onFocus` is told so.
+   */
+  focus?: ReviewFocus | null;
+  onFocus?: (found: { status: string } | null) => void;
 };
 
 const DETAIL_KEY = "swathwise:twin-detail";
@@ -132,7 +140,7 @@ function measured<T>(name: string, fn: () => T): T {
   return v;
 }
 
-export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], expose = false, detail: detailProp, audience = "founder", review }: Props) {
+export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus }: Props) {
   const units = useUnitSystem();
   const founderView = audience === "founder";
   const stops = founderView ? DETAIL_STOPS : PARTICIPANT_STOPS;
@@ -211,6 +219,20 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
     if (selection.kind === "weed") return result.findings.findIndex(f => f.kind === "weed" && f.id === selection.id);
     return -1;
   }, [selection, result]);
+
+  // Opened on a finding: select it and show it, once per finding. Never a neighbour, never a guess.
+  const focusedOn = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focus || !handle.current) return;
+    const key = `${twin.id}|${focus.kind}:${focus.id}`;
+    if (focusedOn.current === key) return;
+    focusedOn.current = key;
+    const at = locateReviewed(focus, twin);
+    onFocus?.(at ? { status: at.status } : null);
+    if (!at) return;
+    setSelection(at.pick);
+    zoomTo(at.lat, at.lng, at.metresAcross);
+  }, [focus, twin, zoomTo, onFocus]);
 
   useEffect(() => {
     if (!expose) return;

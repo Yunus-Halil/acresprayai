@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { type PersonStats, type Snapshot, personStats, timeline } from "@/lib/pilot/adminData";
 import { pilotAdmin } from "@/lib/pilot/adminClient";
 import { Badge, Section, Stat, Table, ago, day, dur, when } from "./ui";
-import { BuildsSection, FeedbackSection, ReviewsSection, TwinsSection } from "./sections";
+import { BuildsSection, FeedbackSection, TwinsSection } from "./sections";
+import { ReviewsSection } from "./Reviews";
 
 const STAGE: Record<PersonStats["stage"], { label: string; tone: "ok" | "warn" | "bad" | "plain" | "info" }> = {
   new: { label: "Not signed in yet", tone: "warn" },

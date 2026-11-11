@@ -171,6 +171,64 @@ export function wrongAnswers(s: Snapshot, userId?: string): { kind: string; stat
   return [...m.values()].map(({ users, ...r }) => ({ ...r, people: users.size })).sort((a, b) => b.count - a.count || Number(!a.says) - Number(!b.says) || a.kind.localeCompare(b.kind) || a.says.localeCompare(b.says));
 }
 
+export type VerdictCounts = { total: number; correct: number; unsure: number; wrong: number };
+const countVerdicts = (reviews: SnapReview[]): VerdictCounts => reviews.reduce<VerdictCounts>((c, r) => { c.total++; c[r.verdict]++; return c; }, { total: 0, correct: 0, unsure: 0, wrong: 0 });
+const newest = (reviews: SnapReview[]): string => reviews.reduce((a, r) => (r.updated_at > a ? r.updated_at : a), "");
+
+/** Whether the founder's viewer can be asked for this twin, and if not, why not (the server decides again on opening). */
+export type TwinAccess = { open: boolean; why: "gone" | "unsaved" | "no-answer" | "not-allowed" | null };
+
+/** One saved Field Twin's reviews, newest first. `twin` is null when the record is no longer in the snapshot. */
+export type TwinReviews = { twinId: string; twin: SnapTwin | null; counts: VerdictCounts; latest: string; reviews: SnapReview[]; access: TwinAccess };
+/** One person's reviews, grouped by Field Twin (the twin reviewed last first). */
+export type PersonReviews = { userId: string; name: string; displayName: string | null; email: string | null; role: SnapMember["role"] | null; counts: VerdictCounts; latest: string; twins: TwinReviews[] };
+
+/**
+ * Opening a participant's twin needs their newest consent to allow troubleshooting access; a founder's own twins need
+ * none. This only decides what the panel offers: pilot-admin checks the consent again, and logs, when a twin is opened.
+ */
+export function twinAccess(s: Pick<Snapshot, "members" | "consents">, twin: SnapTwin | null): TwinAccess {
+  if (!twin) return { open: false, why: "gone" };
+  if (twin.status !== "ready") return { open: false, why: "unsaved" };
+  // A founder's twin: their own opens without a consent row; the server answers for anyone else's.
+  if (s.members.find(m => m.user_id === twin.user_id)?.role === "founder") return { open: true, why: null };
+  const c = latestConsent(s, twin.user_id);
+  if (!c) return { open: false, why: "no-answer" };
+  return c.troubleshooting_access ? { open: true, why: null } : { open: false, why: "not-allowed" };
+}
+
+/**
+ * Every review once, as participant, then Field Twin, then the reviews themselves: the person whose latest review is
+ * newest first, their twins likewise, and each twin's reviews newest first. `verdict` keeps only reviews with that
+ * answer (people and twins left with none drop out); the counts are of what is kept.
+ */
+export function reviewGroups(s: Snapshot, o: { userId?: string; verdict?: SnapReview["verdict"] } = {}): PersonReviews[] {
+  const byUser = new Map<string, Map<string, SnapReview[]>>();
+  for (const r of s.reviews) {
+    if ((o.userId && r.user_id !== o.userId) || (o.verdict && r.verdict !== o.verdict)) continue;
+    const twins = byUser.get(r.user_id) ?? new Map<string, SnapReview[]>();
+    twins.set(r.twin_id, [...(twins.get(r.twin_id) ?? []), r]);
+    byUser.set(r.user_id, twins);
+  }
+  const order = (a: SnapReview, b: SnapReview) => b.updated_at.localeCompare(a.updated_at) || a.finding_kind.localeCompare(b.finding_kind) || a.finding_id.localeCompare(b.finding_id, undefined, { numeric: true });
+  return [...byUser.entries()].map(([userId, twins]) => {
+    const member = s.members.find(m => m.user_id === userId) ?? null;
+    const groups = [...twins.entries()].map(([twinId, reviews]): TwinReviews => {
+      const twin = s.twins.find(t => t.id === twinId) ?? null;
+      return { twinId, twin, counts: countVerdicts(reviews), latest: newest(reviews), reviews: [...reviews].sort(order), access: twinAccess(s, twin) };
+    }).sort((a, b) => b.latest.localeCompare(a.latest) || a.twinId.localeCompare(b.twinId));
+    const all = groups.flatMap(g => g.reviews);
+    return {
+      userId, name: nameOf(s, userId), displayName: member?.display_name ?? null,
+      email: s.users.find(u => u.id === userId)?.email ?? member?.email ?? null, role: member?.role ?? null,
+      counts: countVerdicts(all), latest: newest(all), twins: groups,
+    };
+  }).sort((a, b) => b.latest.localeCompare(a.latest) || a.userId.localeCompare(b.userId));
+}
+
+/** Whether the server sent the reviewers' answers at all: a pilot-admin deployed before the `says` column sends none, which is not the same as no answer having been given. */
+export const answersLoaded = (s: Pick<Snapshot, "reviews">): boolean => s.reviews.length === 0 || s.reviews.some(r => "says" in r);
+
 /** Errors grouped by message (numbers and ids folded), most frequent first. */
 export function errorGroups(s: Snapshot): { message: string; kind: string; count: number; people: number; last: string }[] {
   const g = new Map<string, { message: string; kind: string; count: number; users: Set<string>; last: string }>();
