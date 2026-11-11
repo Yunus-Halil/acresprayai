@@ -6,6 +6,7 @@
 // atlases go up, twin.json goes up last, and only then is the record 'ready'. A save that fails, or a tab closed
 // half way, leaves 'saving' or 'incomplete', which the list shows as such (with Delete), never as a twin to open.
 import { supabase } from "@/integrations/supabase/client";
+import { TWIN_ANALYSIS_FILE } from "./analysisConfig";
 import { forgetPendingAnalysis } from "./analysisOutbox";
 import type { TwinBundle } from "./types";
 import { TWIN_BUCKET, TWIN_JSON_GZ, listTwins, saveTwin, twinFolder } from "./store";
@@ -60,10 +61,21 @@ function isoOrNull(s: string): string | null {
   return Number.isFinite(v) ? new Date(v).toISOString() : null;
 }
 
-/** Whether a folder holds its twin.json (the file written last, so a folder with it is complete). */
-async function folderComplete(userId: string, key: string): Promise<boolean> {
-  const { data } = await supabase.storage.from(TWIN_BUCKET).list(twinFolder(userId, key), { limit: 1000 });
-  return (data ?? []).some(o => o.name === TWIN_JSON_GZ || o.name === "twin.json");
+/**
+ * What a folder without a record holds: a whole twin (its twin.json is there, the file written last), part of one, or
+ * only an analysis record whose twin was deleted while the record was on its way from another device. That last kind
+ * is not a twin: the leftover file is removed here, the first time the account's list is read, and nothing is listed.
+ */
+async function folderState(userId: string, key: string): Promise<"ready" | "incomplete" | "leftover"> {
+  const folder = twinFolder(userId, key);
+  const { data, error } = await supabase.storage.from(TWIN_BUCKET).list(folder, { limit: 1000 });
+  const names = (data ?? []).filter(o => o.id !== null).map(o => o.name);
+  if (names.some(n => n === TWIN_JSON_GZ || n === "twin.json")) return "ready";
+  if (!error && names.length === 1 && names[0] === TWIN_ANALYSIS_FILE) {
+    const { error: gone } = await supabase.storage.from(TWIN_BUCKET).remove([`${folder}/${TWIN_ANALYSIS_FILE}`]);
+    if (!gone) return "leftover";
+  }
+  return "incomplete";
 }
 
 /**
@@ -79,12 +91,9 @@ export async function listTwinRecords(userId: string): Promise<TwinRecord[]> {
   const known = new Set(records.map(r => r.storage_key));
   const orphans = folders.filter(f => !known.has(f.id) && /^[a-z0-9][a-z0-9-]{0,63}$/.test(f.id));
   if (!orphans.length) return records;
-  const rows = await Promise.all(orphans.map(async f => ({
-    storage_key: f.id,
-    name: f.id,
-    status: (await folderComplete(userId, f.id)) ? "ready" : "incomplete",
-    error: null,
-  })));
+  const found = await Promise.all(orphans.map(async f => ({ f, state: await folderState(userId, f.id) })));
+  const rows = found.filter(x => x.state !== "leftover").map(({ f, state }) => ({ storage_key: f.id, name: f.id, status: state, error: null }));
+  if (!rows.length) return records;
   const { data: added } = await supabase.from("field_twins").insert(rows).select(COLUMNS);
   return [...records, ...((added ?? []) as TwinRecord[])].sort((a, b) => b.created_at.localeCompare(a.created_at));
 }

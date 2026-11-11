@@ -112,6 +112,16 @@ const quietly = async (run: () => Promise<unknown>) => { try { await run(); } ca
 // ---- sending -------------------------------------------------------------------------------------------------------
 /** Not a refusal by the account's storage: the record is not this session's to send right now. */
 class NotNow extends Error {}
+/** The twin no longer exists: the record was taken out again and nothing waits for it. */
+class TwinDeleted extends Error { constructor() { super("the Field Twin was deleted"); } }
+
+/** True only when the account's list clearly has no such twin (asked as the signed-in account). An unanswered question is not a yes. */
+async function twinGone(twinId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.from("field_twins").select("id").eq("id", twinId).maybeSingle();
+    return !error && !data;
+  } catch { return false; }
+}
 
 /** Put a record beside its twin, as the account it belongs to and no other. Returns the stored size. */
 async function send(entry: PendingAnalysis): Promise<number> {
@@ -120,8 +130,12 @@ async function send(entry: PendingAnalysis): Promise<number> {
   onTheirWay.add(entry.key);
   try {
     const size = await uploadTwinAnalysis(entry.userId, entry.storageKey, new Blob([entry.bytes as BlobPart], { type: "application/gzip" }));
-    // The twin was deleted in this tab while the record was on its way: its folder is to stay empty.
-    if (deletedHere.has(entry.key)) await quietly(() => removeTwinAnalysis(entry.userId, entry.storageKey));
+    // The twin was deleted while the record was on its way (in this tab, or on another device): its folder is to
+    // stay empty. Looked up again now that the record has landed; only a clear "no such twin" takes it out.
+    if (deletedHere.has(entry.key) || await twinGone(entry.twinId)) {
+      await quietly(() => removeTwinAnalysis(entry.userId, entry.storageKey));
+      throw new TwinDeleted();
+    }
     return size;
   } finally { onTheirWay.delete(entry.key); }
 }
@@ -145,8 +159,11 @@ export async function saveAnalysisRecord(userId: string, twin: { id: string; sto
     track("twin_analysis_saved", { twinId: twin.id, durationMs: Date.now() - t0, outcome: "ok", counts: { bytes, jsonBytes: json.size } });
     return "saved";
   } catch (e) {
-    // The twin was deleted meanwhile: nothing waits for it.
-    if (entry && deletedHere.has(entry.key)) kept = false;
+    // The twin was deleted meanwhile: nothing waits for it, and nothing failed.
+    if (e instanceof TwinDeleted || (entry && deletedHere.has(entry.key))) {
+      if (entry) await quietly(async () => { await pendingStore()?.remove(entry!.key); });
+      return "lost";
+    }
     // Free to be tried on the next visit; a refusal by the storage counts as one.
     if (kept && entry) { const waiting = { ...entry, attempts: e instanceof NotNow ? 0 : 1, lastTriedAt: 0 }; await quietly(() => pendingStore()!.put(waiting)); }
     try { track("twin_analysis_failed", { twinId: twin.id, durationMs: Date.now() - t0, outcome: "error", error: (e as Error)?.message ?? String(e), detail: { waiting: kept } }); } catch { /* never in the way */ }
@@ -187,6 +204,7 @@ async function flush(userId: string, now: number): Promise<FlushResult> {
         await store.remove(e.key); out.sent++;
         track("twin_analysis_saved", { twinId: e.twinId, durationMs: Date.now() - t0, outcome: "ok", counts: { bytes, attempts: e.attempts + 1 }, detail: { later: true } });
       } catch (err) {
+        if (err instanceof TwinDeleted) { await store.remove(e.key); out.dropped++; continue; }
         if (err instanceof NotNow) { await store.put({ ...e, lastTriedAt: 0 }); out.kept++; continue; }
         const attempts = e.attempts + 1, giveUp = attempts >= ANALYSIS_PENDING_MAX_ATTEMPTS;
         if (giveUp) { await store.remove(e.key); out.dropped++; } else { await store.put({ ...e, attempts, lastTriedAt: 0 }); out.kept++; }

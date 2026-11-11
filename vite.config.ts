@@ -109,8 +109,10 @@ export default defineConfig(({ mode }) => ({
           {
             // Supabase REST reads: fields (boundary + settings carry the grid
             // and flight plan), scans, flight logs, report rows. Network
-            // first, cache as the offline fallback.
-            urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.co\/rest\/v1\//,
+            // first, cache as the offline fallback. NOT the pilot's account tables (membership, agreement, Field Twin
+            // list, reviews, access history, events): those must always be the server's present answer for the
+            // signed-in account, never a kept copy, so they are left to the network alone.
+            urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.co\/rest\/v1\/(?!pilot_|field_twins|twin_reviews|admin_access_log|app_events)/,
             method: "GET",
             handler: "NetworkFirst",
             options: {

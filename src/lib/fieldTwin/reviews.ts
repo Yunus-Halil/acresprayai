@@ -2,7 +2,7 @@
 // migration 20261109150000). Kept apart from what Swardus measured: a review never changes a finding's status in the
 // twin, and the twin never overwrites a review. The algorithm's label at the time of the review is stored beside
 // it, so "seen in 2 photographs, reviewer says wrong" can be counted later.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { track } from "@/lib/pilot/telemetry";
 
@@ -128,14 +128,25 @@ export async function deleteReview(twinId: string, kind: FindingKind, id: string
 export function useTwinReviews(twinId: string | null) {
   const [reviews, setReviews] = useState<Map<string, Review> | null>(twinId ? null : new Map());
   const [error, setError] = useState<string | null>(null);
+  const failed = useRef(false);
   useEffect(() => {
     if (!twinId) { setReviews(new Map()); return; }
     let live = true;
-    loadReviews(twinId).then(m => { if (live) setReviews(m); }).catch(e => { if (live) { setError((e as Error).message); setReviews(new Map()); } });
+    failed.current = false;
+    loadReviews(twinId).then(m => { if (live) setReviews(m); }).catch(e => { if (live) { failed.current = true; setError((e as Error).message); setReviews(new Map()); } });
     return () => { live = false; };
   }, [twinId]);
   const save = useCallback(async (r: Parameters<typeof saveReview>[1]) => {
     if (!twinId) throw new Error("This Field Twin is not saved to your account yet, so it cannot be reviewed.");
+    // The earlier reviews never arrived: read them before writing over one of them (a saved boundary correction
+    // would otherwise be replaced by an answer given without seeing it).
+    if (failed.current) {
+      let earlier: Map<string, Review>;
+      try { earlier = await loadReviews(twinId); }
+      catch { throw new Error("Your earlier reviews could not be loaded, so this one was not saved. Check your connection and try again"); }
+      failed.current = false; setError(null); setReviews(earlier);
+      if (earlier.has(reviewKey(r.kind, r.id))) throw new Error("You had already reviewed this finding; your earlier answer is now shown. Change it if you still want to");
+    }
     const saved = await saveReview(twinId, r);
     setReviews(m => new Map(m ?? []).set(reviewKey(r.kind, r.id), saved));
     return saved;

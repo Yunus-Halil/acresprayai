@@ -16,7 +16,7 @@ import logo from "@/assets/brand/lockup-white.png";
 import Seo from "@/components/Seo";
 import { FeedbackHost, openFeedback } from "@/components/pilot/FeedbackDialog";
 import AppErrorBoundary from "@/components/pilot/AppErrorBoundary";
-import { sessionBusy, useBuildSession } from "@/lib/fieldTwin/buildSession";
+import { releaseSessionOfOtherAccount, sessionBusy, useBuildSession } from "@/lib/fieldTwin/buildSession";
 import { useAnalysisOutbox } from "@/lib/fieldTwin/analysisAccess";
 import { track } from "@/lib/pilot/telemetry";
 
@@ -131,6 +131,8 @@ function AppShell() {
   const location = useLocation();
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
   useEffect(() => { track("session_start", { detail: { role: role ?? "none" } }); }, [role]);
+  // A build this tab still holds for another account (someone else signed in here) is not this account's.
+  useEffect(() => { releaseSessionOfOtherAccount(user!.id); }, [user]);
   // Corn twins' analysis records still waiting on this device are sent now (analysisOutbox.ts).
   useAnalysisOutbox(user!.id);
   const session = useBuildSession();

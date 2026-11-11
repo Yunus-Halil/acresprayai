@@ -271,13 +271,56 @@ describe("deleting a twin", () => {
     let open!: () => void;
     uploadGate = new Promise<void>(r => { open = r; });
     const saving = saveAnalysisRecord("alice", t, json());
-    await new Promise(r => setTimeout(r, 5));
-    expect(uploads()).toHaveLength(1);
+    await vi.waitFor(() => expect(uploads()).toHaveLength(1));
     await deleteTwin("alice", t);
     open();
-    expect(await saving).toBe("saved");
+    // Nothing was saved and nothing failed: the twin is gone, and so is its record.
+    expect(await saving).toBe("lost");
     expect([...objects.keys()]).toEqual([]);
     expect(device.map.size).toBe(0);
+    expect(tracked).toEqual([]);
+  });
+
+  it("deleted on ANOTHER device while the record was in the air: looked up again once it lands, and taken out", async () => {
+    const t = twin(T1);
+    let open!: () => void;
+    uploadGate = new Promise<void>(r => { open = r; });
+    const saving = saveAnalysisRecord("alice", t, json());
+    await vi.waitFor(() => expect(uploads()).toHaveLength(1));
+    // The other device removed the twin's files and its list entry; this tab was told nothing.
+    twins.delete(T1);
+    open();
+    expect(await saving).toBe("lost");
+    expect(objects.has(pathOf("alice", T1))).toBe(false);
+    expect(calls).toContain(`remove alice/field-twins/${T1}/${TWIN_ANALYSIS_FILE}`);
+    expect(device.map.size).toBe(0);
+    expect(tracked).toEqual([]);
+  });
+
+  it("the same on a later visit: a twin deleted between the look-up and the upload leaves no record behind", async () => {
+    twin(T1);
+    device.map.set(`alice/${T1}`, entry());
+    let open!: () => void;
+    uploadGate = new Promise<void>(r => { open = r; });
+    const flushing = flushAnalysisOutbox("alice");
+    await vi.waitFor(() => expect(uploads()).toHaveLength(1));
+    twins.delete(T1);
+    open();
+    expect(await flushing).toEqual({ sent: 0, kept: 0, dropped: 1 });
+    expect(objects.size).toBe(0);
+    expect(device.map.size).toBe(0);
+  });
+
+  it("a twin that could not be looked up afterwards (the connection dropped) keeps its record: only a clear 'no such twin' removes one", async () => {
+    const t = twin(T1);
+    let open!: () => void;
+    uploadGate = new Promise<void>(r => { open = r; });
+    const saving = saveAnalysisRecord("alice", t, json());
+    await vi.waitFor(() => expect(uploads()).toHaveLength(1));
+    listFails = true;
+    open();
+    expect(await saving).toBe("saved");
+    expect(objects.has(pathOf("alice", T1))).toBe(true);
   });
 
   it("forgetting a twin that has nothing waiting touches nothing in the account", async () => {

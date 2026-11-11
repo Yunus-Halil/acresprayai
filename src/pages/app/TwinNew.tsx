@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
 import { usePilotRole } from "@/lib/pilot/access";
 import { type CheckCrop, type CheckFinding, type PhotoCheck, assessPhotographs, readForCheck } from "@/lib/fieldTwin/preflight";
-import { type BuildSessionState, cancelBuild, clearBuildSession, retrySave, sessionBusy, startBuildSession, useBuildSession } from "@/lib/fieldTwin/buildSession";
+import { type BuildSessionState, cancelBuild, clearBuildSession, discardBuildSession, retrySave, sessionBusy, startBuildSession, useBuildSession } from "@/lib/fieldTwin/buildSession";
 import { type BuildStage, stagesFor } from "@/lib/fieldTwin/build/types";
 import { useAnalysisAllowed } from "@/lib/fieldTwin/analysisAccess";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
@@ -112,11 +112,18 @@ function Progress({ s, founder }: { s: Exclude<BuildSessionState, { status: "idl
       <p className="text-xs text-muted-foreground">{s.status === "building" || s.status === "saving" ? `Running for ${fmtMs(now - s.startedAt)}.` : s.buildMs != null ? `Built in ${fmtMs(s.buildMs)}.` : null}</p>
 
       {s.status === "building" && <Button variant="outline" onClick={cancelBuild}>Cancel the build</Button>}
-      {(s.status === "saving" || s.status === "saved") && s.record && <Button onClick={() => nav(`/app/twins/${s.record!.id}`)}>Open the Field Twin</Button>}
+      {(s.status === "saving" || s.status === "saved") && s.record && (
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => nav(`/app/twins/${s.record!.id}`)}>Open the Field Twin</Button>
+          {s.status === "saved" && <Button variant="outline" onClick={clearBuildSession}>Build another Field Twin</Button>}
+        </div>
+      )}
       {s.status === "save-failed" && (
         <div role="alert" className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
           <p>The twin was built, but saving it to your account failed: {s.error}. It is still held in this tab.</p>
           <div className="flex flex-wrap gap-2"><Button onClick={retrySave}>Try saving again</Button><FeedbackButton kind="problem" twinId={s.record?.id ?? null} context={{ stage: "save", error: s.error ?? "" }} label="Report this problem" /></div>
+          {/* The way out when saving keeps failing: the photographs are still on this device, so nothing is lost but the build's time. */}
+          <p className="text-xs text-muted-foreground">If it keeps failing you can <button type="button" className="underline underline-offset-4" onClick={discardBuildSession}>give up on this build</button> and build it again from the photographs. It will be listed as not saved, with Delete.</p>
         </div>
       )}
       {(s.status === "failed" || s.status === "cancelled") && (
@@ -247,7 +254,7 @@ export default function TwinNew() {
           </div>
           <input ref={fileInput} type="file" multiple accept=".jpg,.jpeg,.tif,.tiff,image/jpeg,image/tiff" className="hidden" onChange={e => void pick(e.target.files)} />
           <input ref={folderInput} type="file" className="hidden" {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={e => void pick(e.target.files)} />
-          <p className="mt-3 text-xs text-muted-foreground">The photographs stay on this computer. Only the finished twin is saved to your account.</p>
+          <p className="mt-3 text-xs text-muted-foreground">The photographs stay on this device. Only the finished twin is saved to your account.</p>
         </div>
         {reading && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Checking the photographs: {reading.done.toLocaleString()} of {reading.total.toLocaleString()}</p>}
 

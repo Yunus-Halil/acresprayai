@@ -51,7 +51,11 @@ export default function TwinOpen() {
     (async () => {
       // This tab's own build: open it from memory while it saves.
       const mine = sessionTwin(id);
-      const record = await getTwinRecord(id).catch(() => null);
+      // A list that cannot be reached is not a twin that does not exist: this tab's own build still opens from memory,
+      // anything else says the connection failed and offers to try again.
+      let record: TwinRecord | null = null;
+      try { record = await getTwinRecord(id); }
+      catch (e) { if (!mine) throw new Error(`Failed to fetch the Field Twin's entry (${(e as Error).message})`); }
       if (mine) { if (live) setState({ status: "open", twin: mine.twin, record, source: { kind: "tab", files: mine.files, pending: mine.pending } }); return; }
       if (!record) { if (live) setState({ status: "missing" }); return; }
       if (effectiveStatus(record) !== "ready") { if (live) setState({ status: "incomplete", record }); return; }

@@ -37,6 +37,8 @@ const set = (next: BuildSessionState) => { state = next; for (const l of listene
 const patch = (p: Partial<Exclude<BuildSessionState, { status: "idle" }>>) => { if (state.status !== "idle") set({ ...state, ...p }); };
 
 export const getBuildSession = () => state;
+/** Hear every change of the session (outside React). Returns the way to stop hearing. */
+export function onBuildSessionChange(cb: () => void): () => void { listeners.add(cb); return () => { listeners.delete(cb); }; }
 export function useBuildSession(): BuildSessionState {
   return useSyncExternalStore(cb => { listeners.add(cb); return () => listeners.delete(cb); }, getBuildSession, getBuildSession);
 }
@@ -157,6 +159,28 @@ export function cancelBuild(): void {
 export function clearBuildSession(): void {
   if (sessionBusy()) return;
   run = null;
+  set({ status: "idle" });
+}
+
+/**
+ * Give up on a build whose save keeps failing. Its record in the account is already marked not saved (registry.ts),
+ * and is listed as such with Delete; the photographs are untouched on the device.
+ */
+export function discardBuildSession(): void {
+  if (state.status !== "save-failed") return;
+  track("twin_build_cancelled", { twinId: state.id, outcome: "cancelled", detail: { crop: state.crop, stage: "save" } });
+  run = null;
+  set({ status: "idle" });
+}
+
+/**
+ * The app is now open as `currentUser`. A build this tab holds for another account is not theirs: it is stopped and
+ * forgotten, so nothing of it can be shown or saved under the wrong account. The same account: nothing happens.
+ */
+export function releaseSessionOfOtherAccount(currentUser: string | null): void {
+  if (state.status === "idle" || userId === null || userId === currentUser) return;
+  try { if (state.status === "building") run?.cancel(); } catch { /* already gone */ }
+  run = null; userId = null; analysisAsked = false;
   set({ status: "idle" });
 }
 
