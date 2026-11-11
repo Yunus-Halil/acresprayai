@@ -69,26 +69,27 @@ describe("a newly invited participant", () => {
     // Nothing of the app before the agreement.
     expect(screen.queryByText(APP)).toBeNull();
     const text = document.body.textContent ?? "";
-    expect(text).toMatch(/free and experimental/);
+    expect(text).toMatch(/Free and experimental/);
     expect(text).toMatch(/observations to check, not advice/);
-    expect(text).toMatch(/Your photographs stay on your device/);
-    expect(text).toMatch(/camera positions and what was read in each photograph, no images/);
-    expect(text).toMatch(/founder sees your reviews, your feedback and how the app performed for you, and may open your saved Field Twins/);
-    expect(text).toMatch(/Every opening is recorded/);
+    expect(text).toMatch(/Your photos stay on your device/);
+    expect(text).toMatch(/for corn, the build's working data \(positions, no images\)/);
+    expect(text).toMatch(/founder sees your reviews and feedback, and can open your Field Twins to check results/);
+    expect(text).toMatch(/Every opening is logged for you to see/);
+    // Short enough to read at a glance: everything before the button is about 110 words (it was 190).
+    expect(text.split("Agree & Continue")[0].trim().split(/\s+/).length).toBeLessThan(125);
     // One primary action, one optional control, a link to the whole text. No second step, no other question.
     expect(screen.getAllByRole("button")).toHaveLength(1);
     expect(screen.getAllByRole("checkbox")).toHaveLength(1);
     expect(screen.getByRole("link", { name: "pilot terms and privacy notice" })).toHaveAttribute("href", "/pilot-terms");
-    expect(text).toContain(`version ${TERMS_VERSION}`);
   });
 
-  it("the research choice starts unticked, says it is optional, and is not needed to continue", async () => {
+  it("the research choice starts unticked, says what it allows, and is not needed to continue", async () => {
     gate();
     await agreeButton();
     expect(research().checked).toBe(false);
     expect(research().required).toBe(false);
-    expect(research().closest("label")).toHaveTextContent(/^Optional\. Crops of my photographs, with my reviews of them, may also be used as examples/);
-    expect(research().closest("label")).toHaveTextContent(/Not needed to take part/);
+    expect(research().closest("label")).toHaveTextContent(/^Help improve Swardus\. Let crops of my photos and my reviews be used as examples\./);
+    expect(research().closest("label")).toHaveTextContent(/You can change this any time in Help/);
     fireEvent.click(await agreeButton());
     expect(await screen.findByText(APP)).toBeInTheDocument();
     // One row: these terms, the founder's access that the terms state, and no research use.
@@ -176,7 +177,7 @@ describe("a participant who agreed to the earlier terms", () => {
     gate();
     expect(await screen.findByRole("heading", { name: "The pilot terms have changed" })).toBeInTheDocument();
     expect(screen.queryByText(APP)).toBeNull();
-    expect(document.body.textContent).toMatch(/Swardus's founder may open your saved Field Twins to evaluate the pilot, with every opening recorded; corn Field Twins keep the build's working data; and research use of imagery is asked again below/);
+    expect(document.body.textContent).toMatch(/What is new: the founder can open your saved Field Twins \(every opening is logged\), corn Field Twins keep the build's working data, and the research choice is asked again\./);
     expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 
@@ -224,7 +225,7 @@ describe("Your data choices, later", () => {
     page();
     await waitFor(() => expect(research().checked).toBe(true));
     expect(screen.getAllByRole("checkbox")).toHaveLength(1);
-    expect(document.body.textContent).toMatch(/Swardus's founder may open your saved Field Twins to evaluate the pilot and look into problems\. Every opening is listed below\. To end that, write to us or leave the pilot\./);
+    expect(document.body.textContent).toMatch(/Swardus's founder can open your saved Field Twins to check results\. Every opening is listed below\. To end that, write to us or leave the pilot\./);
     expect(screen.getByRole("button", { name: /Access history/ })).toHaveAttribute("aria-expanded", "false");
     // Nothing to save until something changes.
     expect(screen.getByRole("button", { name: "Save my choice" })).toBeDisabled();

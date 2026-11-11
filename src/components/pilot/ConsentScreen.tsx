@@ -51,16 +51,17 @@ function AccessHistory() {
   );
 }
 
-const RESEARCH_LABEL = "Crops of my photographs, with my reviews of them, may also be used as examples to improve how Swardus reads fields.";
-
-/** The optional research choice. Its own control, never part of the agreement itself. */
-function ResearchChoice({ checked, onChange }: { checked: boolean; onChange: (on: boolean) => void }) {
+/**
+ * The research choice. Its own control, never part of the agreement itself: it starts unticked, and the button
+ * works the same either way. Worded as an invitation, and it says exactly what is being allowed.
+ */
+function ResearchChoice({ checked, onChange, hint = true }: { checked: boolean; onChange: (on: boolean) => void; hint?: boolean }) {
   return (
-    <label className="flex min-h-[44px] items-start gap-3 rounded-md border p-3">
+    <label className="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-md border p-3">
       <input type="checkbox" className="mt-1 h-4 w-4 shrink-0" checked={checked} onChange={e => onChange(e.target.checked)} />
       <span>
-        <span className="font-medium">Optional. </span>{RESEARCH_LABEL}
-        <span className="block text-muted-foreground">Not needed to take part. Nothing is used this way today, and you can change this at any time under Help.</span>
+        <span className="font-medium">Help improve Swardus.</span> Let crops of my photos and my reviews be used as examples.
+        {hint && <span className="block text-xs text-muted-foreground">You can change this any time in Help.</span>}
       </span>
     </label>
   );
@@ -80,15 +81,15 @@ export function AgreementForm({ current, onDone, save = saveConsent }: { current
   return (
     <div className="space-y-4 text-sm">
       <p className="text-muted-foreground">{current
-        ? "The terms now say three things they did not say before: Swardus's founder may open your saved Field Twins to evaluate the pilot, with every opening recorded; corn Field Twins keep the build's working data; and research use of imagery is asked again below."
-        : "The pilot is free and experimental. You build Field Twins from your own drone photographs, check what Swardus found, and tell us where it was wrong. That is how it improves."}</p>
+        ? "What is new: the founder can open your saved Field Twins (every opening is logged), corn Field Twins keep the build's working data, and the research choice is asked again."
+        : "Free and experimental. Build Field Twins from your drone photos, check the findings, and tell us what's wrong."}</p>
       <ul className="list-disc space-y-1.5 pl-5 text-muted-foreground">
-        <li>What Swardus shows are observations to check, not advice. It does not recommend treatments, products or rates, and decisions about your field remain yours.</li>
-        <li>Your photographs stay on your device. What is saved to your account is the Field Twin: the map with its positions, small crops of your photographs around the findings and, for corn, the build's working data (camera positions and what was read in each photograph, no images). You can delete a Field Twin at any time.</li>
-        <li>To run the pilot, Swardus's founder sees your reviews, your feedback and how the app performed for you, and may open your saved Field Twins to evaluate results and look into problems. Every opening is recorded, and you can see the list under Help.</li>
+        <li>Findings are observations to check, not advice. Decisions stay yours.</li>
+        <li>Your photos stay on your device. Only the Field Twin is saved: the map, small photo crops and, for corn, the build's working data (positions, no images).</li>
+        <li>Swardus's founder sees your reviews and feedback, and can open your Field Twins to check results. Every opening is logged for you to see.</li>
       </ul>
       <ResearchChoice checked={research} onChange={setResearch} />
-      <p className="text-xs text-muted-foreground">By continuing you agree to the <Link to="/pilot-terms" target="_blank" className="underline underline-offset-4">pilot terms and privacy notice</Link> (version {TERMS_VERSION}).</p>
+      <p className="text-xs text-muted-foreground">By continuing you agree to the <Link to="/pilot-terms" target="_blank" className="underline underline-offset-4">pilot terms and privacy notice</Link>.</p>
       <Button size="lg" className="min-h-[44px] w-full sm:w-auto" onClick={() => void agree()} disabled={saving}>{saving && <Loader2 className="h-4 w-4 animate-spin" />}Agree &amp; Continue</Button>
     </div>
   );
@@ -156,9 +157,9 @@ export default function ConsentPage() {
         : read.status === "unread" ? <div className="space-y-3 text-sm"><p className="text-muted-foreground">Your choices could not be read just now. Check your connection and try again.</p><Button variant="outline" onClick={load}>Try again</Button></div>
         : current ? (
           <div className="space-y-4 text-sm">
-            <ResearchChoice checked={research} onChange={setResearch} />
+            <ResearchChoice checked={research} onChange={setResearch} hint={false} />
             <Button className="min-h-[44px]" onClick={() => void save()} disabled={saving || research === current.research_use}>{saving && <Loader2 className="h-4 w-4 animate-spin" />}Save my choice</Button>
-            <p className="text-muted-foreground">Under the <Link to="/pilot-terms" target="_blank" className="underline underline-offset-4">pilot terms</Link> you agreed to (version {current.terms_version}), Swardus's founder may open your saved Field Twins to evaluate the pilot and look into problems. Every opening is listed below. To end that, write to us or leave the pilot.</p>
+            <p className="text-muted-foreground">Under the <Link to="/pilot-terms" target="_blank" className="underline underline-offset-4">pilot terms</Link> you agreed to (version {current.terms_version}), Swardus's founder can open your saved Field Twins to check results. Every opening is listed below. To end that, write to us or leave the pilot.</p>
           </div>
         ) : <p className="text-sm text-muted-foreground">There is nothing to choose for this account.</p>}
       <AccessHistory />

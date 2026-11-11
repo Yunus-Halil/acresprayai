@@ -127,7 +127,7 @@ describe("Your data choices: access history", () => {
   it("the participant's one choice is still there above it", async () => {
     page();
     await section();
-    expect(await screen.findByRole("checkbox", { name: /Crops of my photographs, with my reviews of them, may also be used as examples/ })).not.toBeChecked();
+    expect(await screen.findByRole("checkbox", { name: /Help improve Swardus\. Let crops of my photos and my reviews be used as examples/ })).not.toBeChecked();
     expect(screen.getAllByRole("checkbox")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Save my choice" })).toBeInTheDocument();
   });
