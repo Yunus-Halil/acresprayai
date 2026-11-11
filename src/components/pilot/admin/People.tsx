@@ -32,7 +32,7 @@ function StarButton({ name, on, onToggle }: { name: string; on: boolean; onToggl
 
 export function PeopleSection({ snap }: { snap: Snapshot }) {
   const everyone = personStats(snap).sort((a, b) => (a.member.role === b.member.role ? (b.lastActive ?? "").localeCompare(a.lastActive ?? "") : a.member.role === "founder" ? 1 : -1));
-  const { starred, toggle, view, setView } = useStarredPeople();
+  const { starred, toggle, view, setView } = useStarredPeople(snap);
   // Stars of people who are no longer listed are not counted.
   const starredHere = everyone.filter(p => starred.has(p.member.user_id));
   const people = view === "starred" ? starredHere : everyone;
@@ -68,7 +68,7 @@ export function PeopleSection({ snap }: { snap: Snapshot }) {
 }
 
 export function PersonDetail({ snap, userId, onChanged }: { snap: Snapshot; userId: string; onChanged: () => void }) {
-  const { starred, toggle } = useStarredPeople();
+  const { starred, toggle } = useStarredPeople(snap);
   const p = personStats(snap).find(x => x.member.user_id === userId);
   if (!p) return <div className="space-y-3"><Link to="/admin/pilot?tab=people" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"><ArrowLeft className="h-4 w-4" />People</Link><p>This person is not in the pilot.</p></div>;
   const user = snap.users.find(u => u.id === userId);

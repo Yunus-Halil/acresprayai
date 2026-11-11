@@ -153,6 +153,28 @@ describe("the application tables take nothing from the browser (20261111120000)"
   });
 });
 
+describe("the founder's stars are the desk's alone (20261111140000)", () => {
+  const STARS = "20261111140000_pilot_desk_stars.sql";
+  it("no participant, signed-in account or visitor can read, write or remove a star, their own included; the desk's function can", async () => {
+    const d = await freshDb(PILOT, USERS);
+    db = d;
+    await d.exec(migration(STARS));
+    await d.exec(migration(STARS)); // twice is harmless
+    await d.query("INSERT INTO public.pilot_members (user_id, role) VALUES ($1, 'participant'), ($2, 'participant')", [ALICE, BOB]);
+    await d.as(null, "INSERT INTO public.pilot_desk_stars (user_id, starred_by) VALUES ($1, $2)", [ALICE, FOUNDER], "service_role");
+    for (const [uid, role] of [[ALICE, "authenticated"], [BOB, "authenticated"], [FOUNDER, "authenticated"], [null, "anon"]] as const) {
+      await refused(d.as(uid, "SELECT user_id FROM public.pilot_desk_stars", [], role));
+      await refused(d.as(uid, "INSERT INTO public.pilot_desk_stars (user_id) VALUES ($1)", [BOB], role));
+      await refused(d.as(uid, "DELETE FROM public.pilot_desk_stars", [], role));
+      await refused(d.as(uid, "UPDATE public.pilot_desk_stars SET starred_by = NULL", [], role));
+    }
+    expect((await d.as<{ user_id: string }>(null, "SELECT user_id FROM public.pilot_desk_stars", [], "service_role")).map(r => r.user_id)).toEqual([ALICE]);
+    // A person removed from the pilot altogether takes their star with them.
+    await d.query("DELETE FROM auth.users WHERE id = $1", [ALICE]);
+    expect((await d.query("SELECT 1 FROM public.pilot_desk_stars")).rows).toEqual([]);
+  });
+});
+
 /** One allowed value for each column the table restricts to a list, as `'v' AS column, ...` (read from the table's own checks). */
 async function firstOptions(d: Db): Promise<string> {
   const defs = (await d.query<{ def: string }>("SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'public.pilot_applications'::regclass AND contype = 'c'")).rows.map(r => r.def);

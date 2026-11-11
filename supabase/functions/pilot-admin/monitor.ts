@@ -67,7 +67,7 @@ async function reviewRows(admin: Admin): Promise<{ rows: Record<string, unknown>
 
 export async function snapshot(admin: Admin, users: AuthUser[]) {
   const since = Date.now() - 90 * DAY;
-  const [members, events, twins, reviews, feedback, consents, applications, access] = await Promise.all([
+  const [members, events, twins, reviews, feedback, consents, applications, access, stars] = await Promise.all([
     rows<Record<string, unknown>>(admin.from("pilot_members").select(COLS.members)),
     rows<Record<string, unknown>>(admin.from("app_events").select(COLS.events).order("received_at", { ascending: false }).limit(20000)),
     rows<Record<string, unknown>>(admin.from("field_twins").select(COLS.twins).order("created_at", { ascending: false }).limit(5000)),
@@ -76,6 +76,7 @@ export async function snapshot(admin: Admin, users: AuthUser[]) {
     rows<Record<string, unknown>>(admin.from("pilot_consents").select(COLS.consents).order("created_at", { ascending: false }).limit(5000)),
     rows<Record<string, unknown>>(admin.from("pilot_applications").select("*").order("created_at", { ascending: false }).limit(1000)),
     rows<Record<string, unknown>>(admin.from("admin_access_log").select(COLS.access).order("at", { ascending: false }).limit(1000)),
+    rows<Record<string, unknown>>(admin.from("pilot_desk_stars").select("user_id").limit(2000)),
   ]);
   return {
     generated_at: new Date().toISOString(),
@@ -84,6 +85,9 @@ export async function snapshot(admin: Admin, users: AuthUser[]) {
     events: pick(events.rows, COLS.events).map(cleanEvent).filter(e => Date.parse(String(e.at)) >= since && Date.parse(String(e.at)) <= Date.now() + 60_000),
     twins: pick(twins.rows, COLS.twins), reviews: pick(reviews.rows, REVIEWS_WITH_SAYS), feedback: pick(feedback.rows, COLS.feedback),
     consents: pick(consents.rows, COLS.consents), applications: applications.rows, access: pick(access.rows, COLS.access),
+    // The founder's starred people (migration 20261111140000). null when the database has no such table yet: the
+    // desk then keeps stars in the browser, as it did before.
+    stars: stars.missing ? null : stars.rows.map(r => String(r.user_id)),
     missing: { members: members.missing, events: events.missing, twins: twins.missing, reviews: reviews.missing, feedback: feedback.missing, consents: consents.missing, access: access.missing },
   };
 }

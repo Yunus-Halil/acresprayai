@@ -309,6 +309,40 @@ describe("pilot-admin · the admin panel's data", () => {
     expect(db.storage.calls.filter(c => c.op === "sign")).toHaveLength(0);
   });
 
+  it("star: the founder's own mark on a person, kept on the server, one row a person, and carried by the snapshot", async () => {
+    const handler = await boot2();
+    const star = (body: Record<string, unknown>) => handler(postJson(URL, { action: "star", ...body }));
+    const stars = async () => (await (await handler(postJson(URL, { action: "snapshot" }))).json()).stars;
+    expect(await stars()).toEqual([]);
+
+    expect(await (await star({ user_id: "p1", starred: true })).json()).toEqual({ ok: true, starred: true });
+    expect(db.tables.pilot_desk_stars).toEqual([expect.objectContaining({ user_id: "p1", starred_by: "user-1" })]);
+    expect(await stars()).toEqual(["p1"]);
+    // Starring again leaves one row.
+    await star({ user_id: "p1", starred: true });
+    expect(db.tables.pilot_desk_stars).toHaveLength(1);
+    // Removing it, twice, leaves none and is no error.
+    expect((await star({ user_id: "p1", starred: false })).status).toBe(200);
+    expect((await star({ user_id: "p1", starred: false })).status).toBe(200);
+    expect(await stars()).toEqual([]);
+
+    // Only people in the pilot can be starred, and the request has to say which way.
+    expect((await star({ user_id: "stray", starred: true })).status).toBe(404);
+    expect((await star({ user_id: "p1" })).status).toBe(400);
+    expect((await star({ starred: true })).status).toBe(400);
+    expect(db.tables.pilot_desk_stars ?? []).toHaveLength(0);
+    // Nothing about the person changed, and nothing was opened or logged.
+    expect(db.tables.pilot_members.find(m => m.user_id === "p1")).toMatchObject({ role: "participant", status: "active" });
+    expect(db.tables.admin_access_log).toHaveLength(0);
+    expect(db.storage.calls).toHaveLength(0);
+  });
+
+  it("star is the founder's only: a participant cannot star anyone, or learn who is starred", async () => {
+    const handler = await boot2({ members: [{ user_id: "user-1", role: "participant", status: "active" }, { user_id: "p1", role: "participant", status: "active" }] });
+    expect((await handler(postJson(URL, { action: "star", user_id: "p1", starred: true }))).status).toBe(403);
+    expect(db.tables.pilot_desk_stars ?? []).toHaveLength(0);
+  });
+
   it("twin-open and snapshot are the founder's only", async () => {
     const handler = await boot2({ members: [{ user_id: "user-1", role: "participant", status: "active" }], consents: [{ user_id: "p1", troubleshooting_access: true }] });
     expect((await handler(postJson(URL, { action: "twin-open", twin_id: T1 }))).status).toBe(403);

@@ -174,7 +174,7 @@ export function makeSupabase(seed: Record<string, Row[]> = {}, o: { /** Tables w
   function queryBuilder(table: string) {
     const eqs: [string, unknown][] = [];
     let orFilter: string | null = null;
-    let mode: "select" | "update" | "insert" = "select";
+    let mode: "select" | "update" | "insert" | "delete" = "select";
     let payload: Row | null = null;
     let inserted: Row[] = [];
     const orders: [string, boolean][] = [];
@@ -185,6 +185,12 @@ export function makeSupabase(seed: Record<string, Row[]> = {}, o: { /** Tables w
 
     const apply = () => {
       if (mode === "insert") return inserted;
+      if (mode === "delete") {
+        // Applied when the request is awaited, with whatever filters were added before or after delete().
+        const gone = rows().filter(r => matchRow(r, eqs, orFilter));
+        tables[table] = rows().filter(r => !gone.includes(r));
+        return gone;
+      }
       const within = (r: Row) => ranges.every(([k, op, v]) => { const x = r[k] as never, y = v as never; return x != null && (op === "gte" ? x >= y : op === "lte" ? x <= y : op === "gt" ? x > y : x < y); });
       let hits = rows().filter(r => matchRow(r, eqs, orFilter) && within(r));
       if (mode === "update" && payload) for (const r of hits) Object.assign(r, payload);
@@ -223,13 +229,7 @@ export function makeSupabase(seed: Record<string, Row[]> = {}, o: { /** Tables w
         rows().push(...inserted);
         return builder;
       },
-      delete() {
-        mode = "update";
-        payload = null;
-        const hits = rows().filter(r => matchRow(r, eqs, orFilter));
-        tables[table] = rows().filter(r => !hits.includes(r));
-        return Promise.resolve({ data: hits, error: null });
-      },
+      delete() { mode = "delete"; return builder; },
       maybeSingle() { const h = apply(); return Promise.resolve({ data: h[0] ?? null, error: null }); },
       single() { const h = apply(); return Promise.resolve({ data: h[0] ?? null, error: h[0] ? null : { message: "no rows" } }); },
       then(res: (v: { data: Row[]; error: null }) => unknown) { return Promise.resolve({ data: apply(), error: null }).then(res); },

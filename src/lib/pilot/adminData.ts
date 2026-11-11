@@ -15,6 +15,8 @@ export type Snapshot = {
   generated_at: string; users: SnapUser[]; members: SnapMember[]; events: SnapEvent[]; twins: SnapTwin[]; reviews: SnapReview[];
   feedback: SnapFeedback[]; consents: SnapConsent[]; applications: Record<string, unknown>[]; access: SnapAccess[];
   missing: Record<string, boolean>;
+  /** The founder's starred people, by account id. null or absent: the server does not keep them yet (the desk keeps them in the browser). */
+  stars?: string[] | null;
 };
 
 const DAY = 86_400_000;

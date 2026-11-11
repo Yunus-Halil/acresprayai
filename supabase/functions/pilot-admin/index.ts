@@ -12,6 +12,7 @@
 // POST { action: "members" }                                   -> { members: [...] }
 // POST { action: "invite", email, name?, organisation?, application_id?, origin } -> { link, kind, emailed, member }
 // POST { action: "set-status", user_id, status }               -> { member }
+// POST { action: "star", user_id, starred }                     -> { ok, starred } the founder's own mark on a person
 // POST { action: "applications" }                              -> { applications: [...] }
 // POST { action: "activity" }                                  -> { people, builds, checks, errors, reviews, feedback } (no imagery, no paths)
 // POST { action: "feedback-status", id, status }               -> { ok }
@@ -208,6 +209,22 @@ Deno.serve(async (req) => {
         const { data, error } = await admin.from("pilot_members").update({ status }).eq("user_id", userId).select().maybeSingle();
         if (error || !data) return json({ error: "No such member" }, 404);
         return json({ member: data });
+      }
+
+      case "star": {
+        // The founder's own mark on a person in the pilot (the desk's "Starred" view). Says nothing to that person.
+        const userId = typeof body.user_id === "string" ? body.user_id : "";
+        if (!userId || typeof body.starred !== "boolean") return json({ error: "user_id and starred (true or false) are required" }, 400);
+        const { data: member } = await admin.from("pilot_members").select("user_id").eq("user_id", userId).maybeSingle();
+        if (!member) return json({ error: "No such member" }, 404);
+        // Removed first either way, so starring twice leaves one row.
+        const gone = await admin.from("pilot_desk_stars").delete().eq("user_id", userId);
+        if (gone.error) return json({ error: "The star could not be saved. The database may not have been updated yet." }, 500);
+        if (body.starred) {
+          const { error } = await admin.from("pilot_desk_stars").insert({ user_id: userId, starred_by: me.id });
+          if (error) return json({ error: "The star could not be saved." }, 500);
+        }
+        return json({ ok: true, starred: body.starred });
       }
 
       case "activity": {
