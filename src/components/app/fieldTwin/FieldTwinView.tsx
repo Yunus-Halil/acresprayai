@@ -141,7 +141,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const [editing, setEditing] = useState<LatLngPair[] | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
   const reviewing = !!review;
-  const { reviews, save: saveReview, clear: clearReview } = useTwinReviews(review?.twinId ?? null);
+  const { reviews, save: saveReview, clear: clearReview, canSay } = useTwinReviews(review?.twinId ?? null);
   const boundaryReview = reviews?.get(reviewKey(BOUNDARY_REVIEW.kind, BOUNDARY_REVIEW.id)) ?? null;
   // With reviews, the operator's boundary correction lives on the server with the review (it follows them to
   // another device); without, in this browser as before.
@@ -481,8 +481,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
           {resultsOpen && <button type="button" className="mb-2 text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => setSelection(null)}>← Back to the {result.findings.length.toLocaleString()} results</button>}
           {reviewing && (() => {
             const target = reviewTargetOf(selection, twin, result);
-            return target ? <ReviewBar target={target} reviews={reviews} disabledReason={review?.disabledReason ?? (review?.twinId ? null : "Reviews open once the twin is saved to your account.")}
-              onSave={r => saveReview({ kind: r.kind, id: r.id, verdict: r.verdict, note: r.note, algorithmStatus: r.algorithmStatus })} onClear={(k, id) => clearReview(k, id)} /> : null;
+            return target ? <ReviewBar target={target} reviews={reviews} canSay={canSay} disabledReason={review?.disabledReason ?? (review?.twinId ? null : "Reviews open once the twin is saved to your account.")}
+              onSave={r => saveReview({ kind: r.kind, id: r.id, verdict: r.verdict, note: r.note, algorithmStatus: r.algorithmStatus, says: r.says })} onClear={(k, id) => clearReview(k, id)} /> : null;
           })()}
           <TwinInspector technical={founderView} twin={twin} scene={scene} selection={selection} atlasUrl={atlasUrl} onClose={() => setSelection(null)} onZoomTo={zoomTo} findings={result} onSelectWeed={id => { const w = twin.weeds.find(x => x.id === id); if (w) { setSelection({ kind: "weed", id }); zoomTo(w.lat, w.lng, Math.max(2, w.diameterM * 8)); } }} />
           {reviewing && <div className="mt-4 border-t border-[#2e322e] pt-3"><FeedbackButton kind="finding" twinId={review?.twinId ?? null} context={{ selection: selection.kind, ...("id" in selection ? { id: selection.id } : {}) }} label="Tell us more about this" variant="ghost" /></div>}

@@ -47,6 +47,22 @@ supabase/migrations/20261109160000_admin_access_log.sql           every time the
 supabase/migrations/20261109170000_founder_tools_only.sql         the founder's tables founder-only; participants' files only in their Field Twin folder
 ```
 
+Not applied yet (2026-11-10, branch `feature/corn-review-says`, awaiting the founder's go):
+
+```
+supabase/migrations/20261110120000_twin_review_says.sql           twin_reviews.says: on a corn finding marked wrong, what the reviewer says is there (one nullable column, a check, a trigger)
+```
+
+`supabase db push --dry-run --linked` from this branch (2026-11-10) lists this one file and nothing else: the live project has every earlier migration recorded.
+
+Every piece works with or without the others, so no order can break the pilot; this order shows the answers soonest:
+
+1. The migration (`supabase db push`). Nothing visible changes: the deployed app does not know the column.
+2. `pilot-admin` (`supabase functions deploy pilot-admin`). It asks for the answer with each review and, if the column is not there, asks again without it.
+3. The app. Participants are offered "what is it" on a corn finding they mark wrong; the founder desk's Reviews tab shows the answers beside what Swardus said.
+
+Until the migration is applied, reviews load and save as before and the answers are not offered. An app deployed before `pilot-admin` shows the desk as it was. Rolling back the app or the function needs no database change (an older page ignores the column, and the database clears an answer when a review stops being "wrong"). To remove the column itself: `DROP TRIGGER twin_reviews_says ON public.twin_reviews; DROP FUNCTION public.twin_reviews_says(); ALTER TABLE public.twin_reviews DROP COLUMN says;` (the answers are lost; verdicts, notes and everything else stay).
+
 The founder is seeded only from a **confirmed** address (an unconfirmed account holding one of the founder's addresses could have been registered by someone else). If yours is unconfirmed, confirm it or add the row by hand as below.
 
 With the CLI: `supabase db push`. Without it: paste each file into the SQL editor, in this order.

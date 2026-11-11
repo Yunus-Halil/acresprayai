@@ -1539,6 +1539,7 @@ export type Database = {
           id: string
           note: string | null
           payload: Json | null
+          says: string | null
           twin_id: string
           updated_at: string
           user_id: string
@@ -1552,6 +1553,7 @@ export type Database = {
           id?: string
           note?: string | null
           payload?: Json | null
+          says?: string | null
           twin_id: string
           updated_at?: string
           user_id?: string
@@ -1565,6 +1567,7 @@ export type Database = {
           id?: string
           note?: string | null
           payload?: Json | null
+          says?: string | null
           twin_id?: string
           updated_at?: string
           user_id?: string
