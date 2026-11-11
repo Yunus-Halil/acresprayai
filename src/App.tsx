@@ -46,6 +46,8 @@ const FieldTwin = lazy(() => import("./pages/app/FieldTwin.tsx"));
 const WeedVisionPreview = isWeedVisionPreviewEnabled() ? lazy(() => import("./pages/app/WeedVisionPreview.tsx")) : null;
 // Development only: the viewer over a twin built on this computer, no sign-in (for the screenshot/benchmark script).
 const FieldTwinDevPreview = import.meta.env.DEV ? lazy(() => import("./pages/app/FieldTwinDevPreview.tsx")) : null;
+// Development only: the pilot agreement screen as a new or a returning participant sees it; nothing is recorded.
+const AgreementDevPreview = import.meta.env.DEV ? lazy(() => import("./pages/app/AgreementDevPreview.tsx")) : null;
 
 const queryClient = new QueryClient();
 
@@ -77,6 +79,7 @@ const App = () => (
             <Route path="/apply" element={<PilotApply />} />
             <Route path="/pilot-terms" element={<PilotTerms />} />
             {FieldTwinDevPreview && <Route path="/dev/field-twin" element={<Suspense fallback={null}><FieldTwinDevPreview /></Suspense>} />}
+            {AgreementDevPreview && <Route path="/dev/agreement" element={<Suspense fallback={null}><AgreementDevPreview /></Suspense>} />}
             {/* The founder's pilot admin panel. Founder-only here and in pilot-admin. */}
             <Route path="/admin/pilot" element={<PilotRoute>{founder(<PilotAdmin />)}</PilotRoute>} />
             <Route path="/admin/pilot/people/:id" element={<PilotRoute>{founder(<PilotAdmin />)}</PilotRoute>} />

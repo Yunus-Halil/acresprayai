@@ -67,13 +67,13 @@ function ResearchChoice({ checked, onChange }: { checked: boolean; onChange: (on
 }
 
 /** The agreement: a short account of the pilot, the optional choice, and the one button. */
-export function AgreementForm({ current, onDone }: { current: Consent | null; onDone: () => void }) {
+export function AgreementForm({ current, onDone, save = saveConsent }: { current: Consent | null; onDone: () => void; /** Where the agreement is recorded (the development preview records nothing). */ save?: typeof saveConsent }) {
   // Off unless ticked here: an answer given under earlier terms is not carried over.
   const [research, setResearch] = useState(false);
   const [saving, setSaving] = useState(false);
   const agree = async () => {
     setSaving(true);
-    try { await saveConsent({ research_use: research }); onDone(); }
+    try { await save({ research_use: research }); onDone(); }
     catch (e) { toast.error("Not saved", { description: `${(e as Error).message}. Check your connection and try again.` }); }
     finally { setSaving(false); }
   };
@@ -94,7 +94,7 @@ export function AgreementForm({ current, onDone }: { current: Consent | null; on
   );
 }
 
-function Screen({ title, children }: { title: string; children: React.ReactNode }) {
+export function Screen({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
       <div className="w-full max-w-lg space-y-4 rounded-lg border bg-card p-6 shadow-sm sm:p-8">
