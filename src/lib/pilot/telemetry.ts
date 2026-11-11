@@ -12,6 +12,7 @@ export type EventName =
   | "twin_check_done"
   | "twin_build_started" | "twin_build_finished" | "twin_build_failed" | "twin_build_cancelled"
   | "twin_saved" | "twin_save_failed"
+  | "twin_analysis_saved" | "twin_analysis_failed"
   | "twin_opened" | "twin_open_failed" | "twin_deleted"
   | "finding_reviewed"
   | "feedback_sent"

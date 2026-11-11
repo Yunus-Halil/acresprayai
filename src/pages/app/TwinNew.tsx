@@ -13,6 +13,7 @@ import { usePilotRole } from "@/lib/pilot/access";
 import { type CheckCrop, type CheckFinding, type PhotoCheck, assessPhotographs, readForCheck } from "@/lib/fieldTwin/preflight";
 import { type BuildSessionState, cancelBuild, clearBuildSession, retrySave, sessionBusy, startBuildSession, useBuildSession } from "@/lib/fieldTwin/buildSession";
 import { type BuildStage, stagesFor } from "@/lib/fieldTwin/build/types";
+import { useAnalysisAllowed } from "@/lib/fieldTwin/analysisAccess";
 import { useUnitSystem } from "@/hooks/useUnitSystem";
 import { fmtArea } from "@/lib/units";
 import { track } from "@/lib/pilot/telemetry";
@@ -134,6 +135,7 @@ function Progress({ s, founder }: { s: Exclude<BuildSessionState, { status: "idl
 export default function TwinNew() {
   const { user } = useAuth();
   const founder = usePilotRole() === "founder";
+  const analysisAllowed = useAnalysisAllowed();
   const units = useUnitSystem();
   const session = useBuildSession();
   const nav = useNavigate();
@@ -186,7 +188,7 @@ export default function TwinNew() {
     if (!check || !user || !crop) return;
     const keep = new Set(check.usable);
     const usable = files.filter(f => keep.has(f.name));
-    startBuildSession(usable, { name: name.trim() || "Field", crop, weeds: founder ? weeds : "colour", userId: user.id });
+    startBuildSession(usable, { name: name.trim() || "Field", crop, weeds: founder ? weeds : "colour", userId: user.id, analysis: analysisAllowed });
   };
 
   if (session.status !== "idle") {

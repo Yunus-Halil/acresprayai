@@ -51,6 +51,8 @@ export type BundleOutput = {
   crops: number;
   /** Cuts the evidence crops into their atlases, one file at a time, in the order the twin's evidence entries name them. Runs once. */
   cutAtlases: () => AsyncGenerator<AtlasFile>;
+  /** Where each crop was cut from: its atlas cell (as its evidence entry names it) and its square of the original photograph. Not in the twin. */
+  cropSources: { atlas: number; x: number; y: number; photo: string; x0: number; y0: number; size: number }[];
 };
 
 const CELL = 112, PER_ROW = 18, PER_ATLAS = PER_ROW * PER_ROW, ATLAS = CELL * PER_ROW;
@@ -305,7 +307,8 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
     ...(twinCorn ? { corn: twinCorn } : {}),
   };
   if (cutNow) for await (const _ of cutAtlases()) void _;
-  return { twin: bundle, atlases: atlasFiles, crops: reqs.length, cutAtlases };
+  const cropSources = reqs.map((r, idx) => { const c = idx % PER_ATLAS; return { atlas: Math.floor(idx / PER_ATLAS), x: (c % PER_ROW) * CELL, y: Math.floor(c / PER_ROW) * CELL, photo: r.photo, x0: r.x0, y0: r.y0, size: r.size }; });
+  return { twin: bundle, atlases: atlasFiles, crops: reqs.length, cutAtlases, cropSources };
 }
 
 export type EvidenceOutput = { boundary: BoundaryResult | null; cells: number; sampledMs: number; classifyMs: number; note: string | null };

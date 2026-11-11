@@ -1,6 +1,7 @@
 // The whole build, photographs in, twin out: the stages in order with their timings, a progress line for the
 // operator, and the report the page shows. Runs wherever the two abstractions (PhotoSource, Codec) are provided:
 // a browser worker (worker.ts) or Node (scripts/directGeoref/buildTwinApp.ts).
+import { analysisBytes, buildTwinAnalysis } from "../analysis";
 import { parseTwin, type TwinBundle } from "../types";
 import { type AtlasFile, assembleBundle, evidenceAndBoundary } from "./bundle";
 import { alignCameras, baseFrames } from "./cameras";
@@ -31,6 +32,8 @@ export type BuildOutput = {
   report: BuildReport;
   /** With `atlases: "later"`: cuts the atlases after the twin has opened, one file at a time. */
   cutAtlases: (() => AsyncGenerator<AtlasFile>) | null;
+  /** The analysis record as JSON bytes (../analysis.ts): a corn build asked for one with `analysis`, else null. Never part of `files`. */
+  analysis: Uint8Array | null;
 };
 
 /** Build a Field Twin from photographs. Throws BuildCancelled on cancel, an Error with the reason when nothing can be built. */
@@ -109,5 +112,18 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
     boundary: ev.boundary ? { areaM2: ev.boundary.areaM2, uncertaintyM2: ev.boundary.uncertaintyM2, supportPhotographs: ev.boundary.stats.support.photographs, failures: ev.boundary.failures } : null,
     crops: built.crops, timings, totalMs: Date.now() - T0, notes,
   };
-  return { twin: built.twin, files, report, cutAtlases: later ? built.cutAtlases : null };
+  // The analysis record, when asked for: made after the twin and its report are complete, from what the build already
+  // holds, and never the build's concern if it cannot be made.
+  let analysis: Uint8Array | null = null;
+  if (options.analysis && corn) {
+    try {
+      const meta = new Map(reads.map(r => [r.name, { bytes: photoFiles?.get(r.name)?.size ?? null, capturedAt: r.meta.capturedAt ?? null }]));
+      const record = buildTwinAnalysis({ twin: built.twin, reads: corn.reads, field: corn.field, frames: cams.frames, crops: built.cropSources, photographs: meta });
+      analysis = record ? analysisBytes(record) : null;
+      hooks.log?.(record ? `analysis record: ${record.reads.length} photographs, ${(analysis!.length / 1024).toFixed(0)} KB before compression` : "analysis record: not made (the cameras' ground is not a flat plane)");
+    } catch (e) {
+      hooks.log?.(`analysis record: not made (${(e as Error)?.message ?? String(e)})`);
+    }
+  }
+  return { twin: built.twin, files, report, cutAtlases: later ? built.cutAtlases : null, analysis };
 }

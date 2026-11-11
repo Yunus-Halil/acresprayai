@@ -9,6 +9,8 @@
 import { useSyncExternalStore } from "react";
 import { type BuildResult, type BuildRun, BuildAborted, startTwinBuild } from "./build/runBuild";
 import type { BuildCrop, BuildProgress, BuildStage } from "./build/types";
+import { TWIN_ANALYSIS_ENABLED } from "./analysisConfig";
+import { saveAnalysisRecord } from "./analysisOutbox";
 import { type TwinRecord, beginSave, saveBuiltTwin } from "./registry";
 import type { TwinBundle } from "./types";
 import { track } from "@/lib/pilot/telemetry";
@@ -28,6 +30,8 @@ export type BuildSessionState =
 let state: BuildSessionState = { status: "idle" };
 let run: BuildRun | null = null;
 let userId: string | null = null;
+/** Whether the account that started this build gets an analysis record (analysisAccess.ts). */
+let analysisAsked = false;
 const listeners = new Set<() => void>();
 const set = (next: BuildSessionState) => { state = next; for (const l of listeners) l(); syncUnloadGuard(); };
 const patch = (p: Partial<Exclude<BuildSessionState, { status: "idle" }>>) => { if (state.status !== "idle") set({ ...state, ...p }); };
@@ -55,18 +59,19 @@ function syncUnloadGuard() {
 
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`);
 
-export type StartOptions = { name: string; crop: BuildCrop; weeds: "model" | "colour" | "none"; helpers?: number; userId: string };
+export type StartOptions = { name: string; crop: BuildCrop; weeds: "model" | "colour" | "none"; helpers?: number; userId: string; /** This account's corn builds make and save their analysis record (analysisAccess.ts). Default: none. */ analysis?: boolean };
 
 /** Start a build of `files`. Only one at a time: a running build must finish, fail or be cancelled first. */
 export function startBuildSession(files: File[], o: StartOptions): void {
   if (sessionBusy()) throw new Error("A Field Twin is already being built in this tab.");
   const id = newId();
   userId = o.userId;
+  analysisAsked = o.analysis === true;
   const startedAt = Date.now();
   set({ status: "building", id, name: o.name, crop: o.crop, photographs: files.length, startedAt, progress: null, stagesDone: [], result: null, record: null, save: null, error: null, buildMs: null });
   track("twin_build_started", { twinId: id, counts: { photographs: files.length }, detail: { crop: o.crop } });
   try {
-    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop }, {
+    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop, ...(analysisWanted(o.crop) ? { analysis: true } : {}) }, {
       onProgress: p => {
         if (state.status !== "building") return;
         const prev = state.progress;
@@ -119,6 +124,10 @@ async function save(result: BuildResult) {
     if (stale(id)) return;
     patch({ status: "saved", record: saved, save: null });
     track("twin_saved", { twinId: saved.id, durationMs: Date.now() - state.startedAt, outcome: "ok", counts: { files: result.twin.atlases.length + 1 } });
+    // Only now, with the twin saved and the session no longer busy: the analysis record, on its own (onto the device,
+    // then to the account; analysisOutbox.ts). It never touches this session: the twin is "saved" before it starts
+    // and stays so whatever happens to it, and the tab is free to close.
+    if (result.analysis && analysisWanted(state.crop)) void saveAnalysisRecord(userId, saved, result.analysis);
   } catch (e) {
     if (stale(id)) return;
     const message = (e as Error).message;
@@ -126,6 +135,12 @@ async function save(result: BuildResult) {
     track("twin_save_failed", { twinId: id, outcome: "error", error: message });
   }
 }
+
+/**
+ * Whether a build of this crop is asked for its analysis record (analysis.ts): corn only, only while the record is
+ * switched on, and only for an account that gets one (the page that starts the build says so).
+ */
+const analysisWanted = (crop: BuildCrop) => crop === "corn" && TWIN_ANALYSIS_ENABLED && analysisAsked;
 
 /** Try the save again (the files are still in this tab). */
 export function retrySave(): void {
@@ -152,4 +167,4 @@ export function sessionTwin(id: string): { twin: TwinBundle; files: Map<string, 
 }
 
 /** Tests only. */
-export function __resetBuildSession() { run = null; userId = null; set({ status: "idle" }); }
+export function __resetBuildSession() { run = null; userId = null; analysisAsked = false; set({ status: "idle" }); }

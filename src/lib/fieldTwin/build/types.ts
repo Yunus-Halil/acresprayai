@@ -99,6 +99,8 @@ export type BuildOptions = {
   atlases?: "now" | "later";
   /** Helper workers for the parallel stages (ties, the colour pass, the crops); without one everything runs inline. */
   pool?: Pool;
+  /** A corn build: also hand back the analysis record (../analysis.ts). Default false; the twin is the same either way. */
+  analysis?: boolean;
 };
 
 export class BuildCancelled extends Error { constructor() { super("cancelled"); } }
