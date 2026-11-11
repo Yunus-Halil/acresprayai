@@ -2,27 +2,47 @@
 // Also the page where those choices are changed later (/app/consent).
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { type Consent, TERMS_VERSION, loadConsent, saveConsent } from "@/lib/pilot/consent";
 import { supabase } from "@/integrations/supabase/client";
 
-/** Every time Swardus opened one of this person's Field Twins to troubleshoot (they can read their own rows). */
+type AccessRow = { at: string; reason: string | null };
+
+/**
+ * Every time Swardus opened one of this person's Field Twins to troubleshoot. They can read their own rows and only
+ * their own (the admin_access_log policy). A quiet, secondary part of the page: closed until the person opens it,
+ * and read from the database only then. Nothing announces an opening; the list is there for whoever looks.
+ * A read that fails says so: it must never be shown as "not opened".
+ */
 function AccessHistory() {
-  const [rows, setRows] = useState<{ at: string; reason: string | null }[] | null>(null);
-  useEffect(() => {
+  const [open, setOpen] = useState(false);
+  // null: not read yet (or being read). "unread": the read failed.
+  const [rows, setRows] = useState<AccessRow[] | "unread" | null>(null);
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (!next || Array.isArray(rows)) return;
+    setRows(null);
     supabase.from("admin_access_log" as never).select("at, reason").order("at", { ascending: false }).limit(100)
-      .then(({ data }) => setRows((data ?? []) as { at: string; reason: string | null }[]), () => setRows([]));
-  }, []);
-  if (!rows) return null;
+      .then(({ data, error }) => setRows(error || !data ? "unread" : (data as AccessRow[])), () => setRows("unread"));
+  };
   return (
-    <div className="space-y-2">
-      <h2 className="font-display text-xl">When Swardus opened your Field Twins</h2>
-      {rows.length === 0 ? <p className="text-sm text-muted-foreground">Never.</p> : (
-        <ul className="space-y-1 text-sm">{rows.map((r, i) => <li key={i}>{new Date(r.at).toLocaleString()}{r.reason ? `: ${r.reason}` : ""}</li>)}</ul>
+    <section className="border-t pt-1">
+      <button type="button" onClick={toggle} aria-expanded={open} aria-controls="access-history" className="flex min-h-[44px] w-full items-start gap-2 py-2 text-left text-sm">
+        <ChevronRight className={`mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} aria-hidden="true" />
+        <span><span className="font-medium">Access history</span><span className="block text-muted-foreground">See when your Field Twins were opened for troubleshooting.</span></span>
+      </button>
+      {open && (
+        <div id="access-history" className="pb-2 pl-6 text-sm">
+          {rows === null ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Loading" />
+            : rows === "unread" ? <p className="text-muted-foreground">The history could not be read just now. Close this section and open it again to retry.</p>
+            : rows.length === 0 ? <p className="text-muted-foreground">Your Field Twins have not been opened.</p>
+            : <ul className="space-y-1">{rows.map((r, i) => <li key={i}>{new Date(r.at).toLocaleString()}{r.reason ? `: ${r.reason}` : ""}</li>)}</ul>}
+        </div>
       )}
-    </div>
+    </section>
   );
 }
 
