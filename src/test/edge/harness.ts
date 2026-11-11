@@ -151,7 +151,7 @@ export type SupabaseMock = {
   links: { type: string; email: string; redirectTo?: string }[];
 };
 
-export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
+export function makeSupabase(seed: Record<string, Row[]> = {}, o: { /** Tables whose new rows the database dates itself (created_at DEFAULT now()). */ dated?: string[] } = {}): SupabaseMock {
   const tables: Record<string, Row[]> = JSON.parse(JSON.stringify(seed));
   // The default caller ("user-1") is the pilot's founder unless a test seeds pilot_members itself: most functions
   // under test are founder-only (supabase/functions/_shared/access.ts), and their own behaviour is what those tests
@@ -178,13 +178,15 @@ export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
     let payload: Row | null = null;
     let inserted: Row[] = [];
     const orders: [string, boolean][] = [];
+    const ranges: [string, "gte" | "lte" | "gt" | "lt", unknown][] = [];
     let limitTo: number | null = null;
 
     const rows = () => (tables[table] ??= []);
 
     const apply = () => {
       if (mode === "insert") return inserted;
-      let hits = rows().filter(r => matchRow(r, eqs, orFilter));
+      const within = (r: Row) => ranges.every(([k, op, v]) => { const x = r[k] as never, y = v as never; return x != null && (op === "gte" ? x >= y : op === "lte" ? x <= y : op === "gt" ? x > y : x < y); });
+      let hits = rows().filter(r => matchRow(r, eqs, orFilter) && within(r));
       if (mode === "update" && payload) for (const r of hits) Object.assign(r, payload);
       // A read is ordered and cut as it was asked to be (rows without the column keep their place).
       if (mode === "select" && orders.length) {
@@ -206,6 +208,10 @@ export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
       eq(k: string, v: unknown) { eqs.push([k, v]); return builder; },
       in(k: string, list: unknown[]) { eqs.push([k, list[0]]); return builder; },
       or(f: string) { orFilter = f; return builder; },
+      gte(k: string, v: unknown) { ranges.push([k, "gte", v]); return builder; },
+      lte(k: string, v: unknown) { ranges.push([k, "lte", v]); return builder; },
+      gt(k: string, v: unknown) { ranges.push([k, "gt", v]); return builder; },
+      lt(k: string, v: unknown) { ranges.push([k, "lt", v]); return builder; },
       order(col: string, o?: { ascending?: boolean }) { orders.push([col, o?.ascending !== false]); return builder; },
       limit(n: number) { limitTo = n; return builder; },
       range() { return builder; },
@@ -213,7 +219,7 @@ export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
       insert(p: Row | Row[]) {
         mode = "insert";
         const list = Array.isArray(p) ? p : [p];
-        inserted = list.map(r => ({ id: `row-${rows().length + 1}`, ...r }));
+        inserted = list.map((r, k) => ({ id: `row-${rows().length + 1 + k}`, ...(o.dated?.includes(table) ? { created_at: new Date().toISOString() } : {}), ...r }));
         rows().push(...inserted);
         return builder;
       },

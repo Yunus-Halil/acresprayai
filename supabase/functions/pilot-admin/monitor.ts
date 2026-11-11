@@ -159,6 +159,11 @@ export async function openTwin(admin: Admin, founderId: string, twinId: string, 
   if (!twin) return { status: 404, body: { error: "No such Field Twin" } };
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(twin.storage_key)) return { status: 404, body: { error: "No such Field Twin" } };
   if (twin.user_id !== founderId) {
+    // A place that is paused or has ended: what the participant saved is kept, and is not opened while it is.
+    const { data: m } = await admin.from("pilot_members").select("status").eq("user_id", twin.user_id).maybeSingle();
+    if ((m as { status?: string } | null)?.status !== "active") {
+      return { status: 403, body: { error: "This participant's place in the pilot is paused or has ended. Their Field Twins are kept, and are not opened while it is. Restore the place to open them." } };
+    }
     const { data: c } = await admin.from("pilot_consents").select("troubleshooting_access, created_at").eq("user_id", twin.user_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (!(c as { troubleshooting_access?: boolean } | null)?.troubleshooting_access) {
       return { status: 403, body: { error: "This participant has not agreed to pilot terms that let Swardus open their Field Twins, so it cannot be opened here. It opens once they have agreed to the current terms, which they are asked to do the next time they sign in." } };

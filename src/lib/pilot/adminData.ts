@@ -176,7 +176,7 @@ const countVerdicts = (reviews: SnapReview[]): VerdictCounts => reviews.reduce<V
 const newest = (reviews: SnapReview[]): string => reviews.reduce((a, r) => (r.updated_at > a ? r.updated_at : a), "");
 
 /** Whether the founder's viewer can be asked for this twin, and if not, why not (the server decides again on opening). */
-export type TwinAccess = { open: boolean; why: "gone" | "unsaved" | "no-answer" | "not-allowed" | null };
+export type TwinAccess = { open: boolean; why: "gone" | "unsaved" | "inactive" | "no-answer" | "not-allowed" | null };
 
 /** One saved Field Twin's reviews, newest first. `twin` is null when the record is no longer in the snapshot. */
 export type TwinReviews = { twinId: string; twin: SnapTwin | null; counts: VerdictCounts; latest: string; reviews: SnapReview[]; access: TwinAccess };
@@ -191,7 +191,10 @@ export function twinAccess(s: Pick<Snapshot, "members" | "consents">, twin: Snap
   if (!twin) return { open: false, why: "gone" };
   if (twin.status !== "ready") return { open: false, why: "unsaved" };
   // A founder's twin: their own opens without a consent row; the server answers for anyone else's.
-  if (s.members.find(m => m.user_id === twin.user_id)?.role === "founder") return { open: true, why: null };
+  const owner = s.members.find(m => m.user_id === twin.user_id);
+  if (owner?.role === "founder") return { open: true, why: null };
+  // A place that is paused or has ended (or an account never in the pilot): kept, not opened.
+  if (owner?.status !== "active") return { open: false, why: "inactive" };
   const c = latestConsent(s, twin.user_id);
   if (!c) return { open: false, why: "no-answer" };
   return c.troubleshooting_access ? { open: true, why: null } : { open: false, why: "not-allowed" };

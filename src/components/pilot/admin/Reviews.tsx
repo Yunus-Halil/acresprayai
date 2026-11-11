@@ -63,6 +63,7 @@ function Unavailable({ person, group }: { person: PersonReviews; group: TwinRevi
       <span>
         {why === "gone" ? "This Field Twin is no longer in their list."
           : why === "unsaved" ? "Not saved completely, so it cannot be opened."
+          : why === "inactive" ? `Cannot be opened: ${person.name}'s place in the pilot is paused or has ended. Their Field Twins are kept.`
           : why === "no-answer" ? `Cannot be opened: ${person.name} has not agreed to the pilot terms yet.`
           : `Cannot be opened: ${person.name} has not agreed to terms that allow it.`}
       </span>

@@ -23,6 +23,7 @@ A participant who agreed to v1 keeps exactly what they chose there until they ag
 | A waiting copy for at most 7 days, removed on sign-out | `src/lib/fieldTwin/analysisOutbox.ts`, tested |
 | The founder may open Field Twins, every opening recorded | `openTwin`: the participant's newest agreement, the log written first, nothing opened if the log cannot be written (tested); the participant reads their own log rows |
 | No other participant sees anything | Row-level and storage rules, tested as SQL |
+| A paused or ended place: the participant cannot open their Field Twins, and the founder does not | The database refuses every request of an account whose place is not active (tested as SQL over the place's whole life, with nothing deleted); `openTwin` refuses a twin whose owner's place is not active (tested) |
 | Research use is off unless ticked | `saveConsent` writes what is ticked; the box starts unticked and an earlier version's answer is not shown (tested) |
 | Activity record without names or places | `src/lib/pilot/telemetry.ts`: counts, timings, crop, camera model, error text passed through a pattern filter |
 | Deleting a Field Twin | `deleteTwin`: every file in the folder, the list entry, the reviews (cascade), the waiting record (tested) |
@@ -43,7 +44,7 @@ Two limits on these, which the wording respects: the founder's access through th
 **For the founder:**
 
 - "We will tell you if your data was exposed" and "as soon as we reasonably can" for deletion are promises: keep them only if they will be kept.
-- What happens to a participant's data when their place ends and they do not ask: today it is kept, and the terms say so.
+- What happens to a participant's data when their place ends and they do not ask: today it is kept, unopened, and the terms say so.
 - How long the activity record and feedback emails are kept: today, indefinitely.
 - Whether sign-in emails go through Resend or the provider's own mail (a dashboard setting); the terms name both.
 - Whether a participant should be able to withdraw the founder's access to their Field Twins while staying in the pilot. Today the way out is to write or to leave.

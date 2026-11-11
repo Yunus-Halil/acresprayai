@@ -168,6 +168,8 @@ The older orthomosaic tables (`odm_tasks`, `user_annotations` and others) have n
 
 ## Security limits worth knowing
 
+- **A paused or ended place.** The participant's own requests are refused by the database from that moment, whatever sign-in their browser still holds, and the founder's desk does not open their Field Twins while the place is not active. Nothing is deleted; Restore brings everything back. A link the desk issued to the founder for an open twin lasts ten minutes.
+- **The application form.** Applications are written only by the `pilot-apply` function (`20261111120000_applications_through_the_form_only.sql`): it validates the answers, the database dates the row, the address on the form gets one fixed message a day that carries nothing the sender typed, nothing is emailed above 30 applications an hour, and the form takes no more than 200 in a day.
 - **Rate limits in the database.** Events are capped at 120 a minute per person, reviews at 300 a minute, feedback at 20 an hour. Feedback email alerts are capped at 10 an hour per person. The application form stops emailing above 30 applications an hour, and sends one confirmation per address per day.
 - **Server-dated records.** Events, consents, feedback, reviews and Field Twin records are dated by the database, and a participant cannot set their dates.
 - **Links cannot switch accounts.** A sign-in carried in a link is taken only on the sign-in pages, and never over an existing sign-in. Someone cannot send a link that signs the reader into the sender's account.

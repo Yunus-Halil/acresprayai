@@ -281,6 +281,34 @@ describe("pilot-admin · the admin panel's data", () => {
     expect(db.storage.calls.filter(c => c.op === "sign")).toHaveLength(0);
   });
 
+  it("twin-open over a place's life: opened while active, not opened while paused or ended (nothing logged, nothing signed), opened again once restored", async () => {
+    const agreed = [{ user_id: "p1", terms_version: "pilot-2026-11-v2", troubleshooting_access: true, created_at: "2026-11-11" }];
+    const place = (status: string) => [...FOUNDER, { user_id: "p1", role: "participant", status, display_name: "Ryan" }];
+    const open = async (status: string) => { const handler = await boot2({ consents: agreed, members: place(status) }); return handler(postJson(URL, { action: "twin-open", twin_id: T1, reason: "Pilot evaluation" })); };
+
+    expect((await open("active")).status).toBe(200);
+    expect(db.tables.admin_access_log).toHaveLength(1);
+
+    for (const status of ["paused", "ended"]) {
+      const res = await open(status);
+      expect(res.status, status).toBe(403);
+      expect((await res.json()).error).toMatch(/place in the pilot is paused or has ended\. Their Field Twins are kept, and are not opened while it is/);
+      // Their agreement is still on file and still says yes; it is the place that decides.
+      expect(db.tables.pilot_consents).toHaveLength(1);
+      expect(db.tables.admin_access_log).toHaveLength(0);
+      expect(db.storage.calls.filter(c => c.op === "sign")).toHaveLength(0);
+      // Nothing of theirs was removed by the refusal.
+      expect(db.tables.field_twins).toHaveLength(2);
+      expect(db.storage.objects.has("orthos/p1/field-twins/north-2026/twin.json.gz")).toBe(true);
+    }
+
+    expect((await open("active")).status).toBe(200);
+    // An account that was never (or is no longer) listed in the pilot at all: the same.
+    const gone = await boot2({ consents: agreed, members: [...FOUNDER] });
+    expect((await gone(postJson(URL, { action: "twin-open", twin_id: T1 }))).status).toBe(403);
+    expect(db.storage.calls.filter(c => c.op === "sign")).toHaveLength(0);
+  });
+
   it("twin-open and snapshot are the founder's only", async () => {
     const handler = await boot2({ members: [{ user_id: "user-1", role: "participant", status: "active" }], consents: [{ user_id: "p1", troubleshooting_access: true }] });
     expect((await handler(postJson(URL, { action: "twin-open", twin_id: T1 }))).status).toBe(403);

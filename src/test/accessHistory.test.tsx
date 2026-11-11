@@ -149,7 +149,7 @@ describe("pilot-admin openTwin: the audit entry comes first", () => {
     const table = (t: string) => {
       const q: Record<string, unknown> = {
         select: () => q, eq: () => q, order: () => q, limit: () => q,
-        maybeSingle: async () => ({ data: t === "field_twins" ? TWIN : t === "pilot_consents" ? { troubleshooting_access: o.allowed, created_at: "2026-11-09" } : null, error: null }),
+        maybeSingle: async () => ({ data: t === "field_twins" ? TWIN : t === "pilot_consents" ? { troubleshooting_access: o.allowed, created_at: "2026-11-09" } : t === "pilot_members" ? { status: "active" } : null, error: null }),
         insert: (row: unknown) => {
           order.push("log");
           if (o.logFails) return Promise.resolve({ error: { message: "insert failed" } });

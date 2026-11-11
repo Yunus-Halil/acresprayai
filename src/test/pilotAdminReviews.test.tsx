@@ -235,6 +235,24 @@ describe("from a review to the Field Twin", () => {
     expect(within(orchard).getByRole("link", { name: "Open Home orchard for Field boundary" })).toHaveAttribute("href", `/admin/pilot/twins/${T.orchard}`);
   });
 
+  it("a place that is paused or has ended: their reviews stay readable, their Field Twins are not offered for opening, whatever they had agreed to", () => {
+    const s = desk();
+    // Ryan agreed and could be opened; his place is then paused.
+    s.members = s.members.map(m => (m.user_id === "ryan" ? { ...m, status: "paused" as const } : m));
+    expect(twinAccess(s, s.twins.find(t => t.id === T.north)!)).toEqual({ open: false, why: "inactive" });
+    renderDesk(s);
+    fireEvent.click(person(/Ryan Miller/));
+    const north = twinRow("North block");
+    expect(north).toHaveTextContent("Cannot be opened: Ryan Miller's place in the pilot is paused or has ended. Their Field Twins are kept.");
+    expect(within(north).queryByRole("link", { name: "View Field Twin" })).toBeNull();
+    expect(within(north).queryByRole("link", { name: /Open/ })).toBeNull();
+    // There is nothing to ask them for: no email is offered.
+    expect(within(north).queryByRole("link", { name: "Write to them" })).toBeNull();
+    // Restored, it is offered again.
+    s.members = s.members.map(m => (m.user_id === "ryan" ? { ...m, status: "active" as const } : m));
+    expect(twinAccess(s, s.twins.find(t => t.id === T.north)!)).toEqual({ open: true, why: null });
+  });
+
   it("without the participant's agreement there is nothing to click: the row says why and offers an email to them", () => {
     renderDesk(desk());
     fireEvent.click(person(/Dana Ortiz/));

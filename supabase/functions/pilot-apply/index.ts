@@ -7,8 +7,9 @@
 // in the repository rather than in dashboard webhook configuration.
 //
 // verify_jwt = false in supabase/config.toml: applicants are not signed in.
-// The RLS insert policy on pilot_applications still constrains what can land in
-// the table, so a direct PostgREST insert is a valid but unnotified path.
+// This function is the only way an application is written: the table takes no
+// insert from the browser (migration 20261111120000), so every row was
+// validated here, is dated by the database, and counts towards the limits below.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import { sendEmail } from "../_shared/email.ts";
@@ -50,21 +51,31 @@ function notification(row: Record<string, string | null>): string {
   );
 }
 
-/** What the applicant gets. Plain text, no promises beyond a reply. */
-function confirmation(row: Record<string, string | null>): string {
-  const name = row.full_name?.split(" ")[0] || "there";
-  return (
-    `Hi ${name},\n\n` +
-    `We have your request for access to Swardus closed testing` +
-    (row.farm_name ? ` for ${row.farm_name}` : "") +
-    `.\n\n` +
-    `Testing is with a small number of farms and places open as they come up. ` +
-    `We read every request and will be in touch when there is a place, or sooner if we ` +
-    `have a question.\n\n` +
-    `If anything changes on your side, reply to this email.\n\n` +
-    `Swardus\n` +
-    `swathwise.com`
-  );
+/**
+ * What the address on the form gets. The same words for everyone: nothing the form's sender typed is in it, because
+ * the address is whatever they typed and may be someone else's. No name, no farm, no link beyond Swardus's own.
+ */
+export const CONFIRMATION_SUBJECT = "Swardus: we have your access request";
+export const CONFIRMATION_TEXT =
+  `Hello,\n\n` +
+  `We received a request for a place in the Swardus founding pilot that gave this email address.\n\n` +
+  `The pilot is with a small number of invited people and places open as they come up. ` +
+  `We read every request and will be in touch when there is a place, or sooner if we have a question.\n\n` +
+  `If you did not make this request, you can ignore this message: nothing else will be sent to you.\n\n` +
+  `Swardus\n` +
+  `https://www.swardus.com`;
+
+/** Above this many applications in an hour, they are still stored but nothing is emailed. */
+export const HOURLY_EMAIL_LIMIT = 30;
+/** Above this many in a day, the form takes no more until the day has passed (a real pilot sees a handful). */
+export const DAILY_APPLICATION_LIMIT = 200;
+
+/** How many applications arrived since `sinceMs` (and not after now: a row cannot count from the future), optionally from one address. */
+async function arrivedSince(sinceMs: number, email?: string): Promise<number> {
+  let q = admin.from("pilot_applications").select("id").gte("created_at", new Date(sinceMs).toISOString()).lte("created_at", new Date(Date.now() + 60_000).toISOString());
+  if (email) q = q.eq("email", email);
+  const { data } = await q.limit(DAILY_APPLICATION_LIMIT + 50);
+  return (data ?? []).length;
 }
 
 Deno.serve(async (req) => {
@@ -85,14 +96,13 @@ Deno.serve(async (req) => {
 
   const row = normalise(payload);
 
-  // Limits on the mail this public form sends (it emails whatever address is typed): the same address within a day
-  // gets no second confirmation, and above 30 applications an hour everything is still stored but nothing is
-  // emailed. A real applicant is never refused; a script cannot use Swardus to send mail.
+  // The form is public and writes a row for whoever fills it in, so there is a ceiling on a day's rows: a script
+  // cannot bury the real applications under thousands of its own.
   const dayAgo = Date.now() - 86_400_000, hourAgo = Date.now() - 3_600_000;
-  const { data: recentRows } = await admin.from("pilot_applications").select("email, created_at").order("created_at", { ascending: false }).limit(200);
-  const recent = ((recentRows ?? []) as { email: string | null; created_at: string }[]);
-  const repeat = !!row.email && recent.some(r => (r.email ?? "").toLowerCase() === String(row.email).toLowerCase() && Date.parse(r.created_at) > dayAgo);
-  const flooded = recent.filter(r => Date.parse(r.created_at) > hourAgo).length >= 30;
+  if (await arrivedSince(dayAgo) >= DAILY_APPLICATION_LIMIT) {
+    console.error(`[pilot-apply] over ${DAILY_APPLICATION_LIMIT} applications in a day; refused`);
+    return json({ error: "We cannot take more requests right now. Please try again tomorrow, or write to yunus@swardus.com." }, 429);
+  }
 
   const { data, error } = await admin
     .from("pilot_applications")
@@ -105,16 +115,23 @@ Deno.serve(async (req) => {
     return json({ error: "Could not save your application. Please try again." }, 500);
   }
 
+  // Limits on the mail this public form sends, counted AFTER this row is down so that requests arriving together
+  // count each other: above 30 applications an hour everything is still stored and nothing is emailed, and an
+  // address gets one confirmation a day. A real applicant is never refused over mail; a script cannot use Swardus
+  // to send it.
+  const flooded = await arrivedSince(hourAgo) > HOURLY_EMAIL_LIMIT;
+  const repeat = !!row.email && await arrivedSince(dayAgo, String(row.email)) > 1;
+
   // Notify after the row is safely down, and never let a mail failure turn a
   // saved application into an error the applicant sees.
   if (flooded) {
-    console.error(`[pilot-apply] saved ${data?.id}; over 30 applications this hour, no email sent`);
+    console.error(`[pilot-apply] saved ${data?.id}; over ${HOURLY_EMAIL_LIMIT} applications this hour, no email sent`);
     return json({ ok: true, id: data?.id, notified: false });
   }
   const to = Deno.env.get("PILOT_NOTIFY_TO") ?? "yunus@swardus.com";
   const result = await sendEmail({
     to,
-    subject: `Access request: ${row.farm_name} (${row.location})`,
+    subject: `Access request: ${row.farm_name} (${row.location})`.replace(/[\r\n]+/g, " ").slice(0, 200),
     text: notification(row),
   });
   if (!result.sent) {
@@ -127,8 +144,8 @@ Deno.serve(async (req) => {
   if (row.email && !repeat) {
     const ack = await sendEmail({
       to: row.email,
-      subject: "Swardus: we have your access request",
-      text: confirmation(row),
+      subject: CONFIRMATION_SUBJECT,
+      text: CONFIRMATION_TEXT,
     });
     if (!ack.sent) {
       console.error(`[pilot-apply] saved ${data?.id} but confirmation not sent: ${ack.reason}`);

@@ -111,7 +111,7 @@ export default function PilotTerms() {
         </Part>
 
         <Part title="Ending">
-          <p>You can leave the pilot at any time, and we may end the pilot or your place in it. When a place ends you can no longer sign in to your Field Twins. What you saved stays under these terms until you ask us to delete it.</p>
+          <p>You can leave the pilot at any time, and we may end the pilot or your place in it. While a place is paused or once it has ended, you can no longer open your Field Twins, and Swardus's founder does not open them either. What you saved is kept, unopened, until you ask us to delete it.</p>
         </Part>
 
         <Part title="Changes to these terms">
