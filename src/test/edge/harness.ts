@@ -177,13 +177,27 @@ export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
     let mode: "select" | "update" | "insert" = "select";
     let payload: Row | null = null;
     let inserted: Row[] = [];
+    const orders: [string, boolean][] = [];
+    let limitTo: number | null = null;
 
     const rows = () => (tables[table] ??= []);
 
     const apply = () => {
       if (mode === "insert") return inserted;
-      const hits = rows().filter(r => matchRow(r, eqs, orFilter));
+      let hits = rows().filter(r => matchRow(r, eqs, orFilter));
       if (mode === "update" && payload) for (const r of hits) Object.assign(r, payload);
+      // A read is ordered and cut as it was asked to be (rows without the column keep their place).
+      if (mode === "select" && orders.length) {
+        hits = [...hits].sort((a, b) => {
+          for (const [col, asc] of orders) {
+            const x = a[col], y = b[col];
+            if (x == null || y == null || x === y) continue;
+            return (x < y ? -1 : 1) * (asc ? 1 : -1);
+          }
+          return 0;
+        });
+      }
+      if (mode === "select" && limitTo != null) hits = hits.slice(0, limitTo);
       return hits;
     };
 
@@ -192,8 +206,8 @@ export function makeSupabase(seed: Record<string, Row[]> = {}): SupabaseMock {
       eq(k: string, v: unknown) { eqs.push([k, v]); return builder; },
       in(k: string, list: unknown[]) { eqs.push([k, list[0]]); return builder; },
       or(f: string) { orFilter = f; return builder; },
-      order() { return builder; },
-      limit() { return builder; },
+      order(col: string, o?: { ascending?: boolean }) { orders.push([col, o?.ascending !== false]); return builder; },
+      limit(n: number) { limitTo = n; return builder; },
       range() { return builder; },
       update(p: Row) { mode = "update"; payload = p; return builder; },
       insert(p: Row | Row[]) {

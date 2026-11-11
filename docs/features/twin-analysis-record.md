@@ -1,6 +1,6 @@
 # The analysis record of a corn Field Twin
 
-Status, 2026-11-10: **on for the founder's own account**, off for every participant until the pilot terms that describe it are approved and agreed to. On `feature/corn-twin-sidecar`; not merged, not deployed.
+Status, 2026-11-11: **on for the founder's own account**; for a participant, on once the pilot terms that describe it (`pilot-2026-11-v2`) are approved and that participant has agreed to them.
 
 ## Why
 
@@ -34,11 +34,11 @@ Not in it: pixels, and any digest of the original files (to be added with the re
 
 - `TWIN_ANALYSIS_ENABLED` (`analysisConfig.ts`) is the one switch. False: no build makes a record, nothing is saved, nothing waiting is sent.
 - The founder's own account: yes (also while previewing the participant experience: it is still the founder's account and data).
-- A participant: only when the pilot terms in force are approved (`TERMS_APPROVED`), are listed in `TERMS_DISCLOSING_ANALYSIS`, and are the version this participant agreed to. That list is **empty**: no approved version of the terms describes the record yet, so no participant's build makes one, and their choices are not read for it.
+- A participant: only when the pilot terms in force are approved (`TERMS_APPROVED`), are listed in `TERMS_DISCLOSING_ANALYSIS` (`pilot-2026-11-v2` is), and are the version this participant agreed to. Until the founder approves the wording no participant's build makes one, and their choices are not read for it. A participant who agreed only to the earlier terms gets none.
 
 This decides what the app does. It guards a disclosure, not the data: the record only ever goes to the signed-in account's own folder, which the storage rules enforce.
 
-To open it to participants: approve terms that carry the record's section (`docs/operations/pilot-terms-v2-draft.md`), put them in `src/pages/PilotTerms.tsx` under a new `TERMS_VERSION`, add that version to `TERMS_DISCLOSING_ANALYSIS`, set `TERMS_APPROVED`. Every participant is asked to agree again; from then on their corn builds keep the record.
+To open it to participants: approve the terms (`TERMS_APPROVED = true`). Every participant is asked to agree to the new version on their next visit; from then on their corn builds keep the record.
 
 ## Getting it to the account
 
@@ -55,7 +55,7 @@ If the tab closes, the device sleeps or the connection drops between 2 and 4, th
 |---|---|
 | Only as the account it belongs to | Each waiting record carries its account. Another account on the device does not send, read or remove it; the session is checked again at the moment of sending; the storage rules refuse any other folder regardless |
 | Never stale | Before sending, the twin is looked up as the signed-in account. Gone (deleted, on any device): the record is dropped unsent. Not ready: it waits |
-| Deleting a twin | `deleteTwin` removes the folder's files, the list entry, and the waiting record. A record still in the air when its twin is deleted in the same tab is taken out when it lands |
+| Deleting a twin | `deleteTwin` removes the folder's files, the list entry, and the waiting record. A record still in the air when its twin is deleted is taken out when it lands: the twin is looked up again after every upload, on whichever device deleted it. A folder left with only a record (the sending tab closed in that instant) is removed the next time the account's twins are listed, and is never listed as a twin |
 | Expiry | Dropped after 7 days, or after the account's storage has refused it 8 times |
 | Sign-out | What waits for that account on the device is removed |
 | Storage limit | At most 5 waiting records and 20 MB on a device; the oldest make room. A single record over 8 MB gzipped is not saved at all |
@@ -102,7 +102,6 @@ From the earlier measurements on three flights (cached reads): 104 to 264 KB per
 ## Limits known
 
 - Not measured: a commercial DJI corn flight, Safari, a tablet, a real upload over a slow connection.
-- A twin deleted on one device while its record is being sent from another can leave the record's file in an otherwise empty folder. The twin list then shows that folder as an incomplete twin, with Delete.
 - A waiting record is plain data in the browser's storage on that device until it is sent or removed.
 
 ## Switching off

@@ -20,7 +20,9 @@ vi.mock("@/lib/fieldTwin/buildSession", () => ({ sessionBusy: () => busy }));
 
 import { analysisAllowed, openToParticipants, useAnalysisAllowed, useAnalysisOutbox } from "@/lib/fieldTwin/analysisAccess";
 import { TERMS_DISCLOSING_ANALYSIS, TWIN_ANALYSIS_ENABLED } from "@/lib/fieldTwin/analysisConfig";
-import { TERMS_VERSION } from "@/lib/pilot/consent";
+import { TERMS_APPROVED, TERMS_VERSION } from "@/lib/pilot/consent";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const member = (serverRole: "founder" | "participant", role: "founder" | "participant" = serverRole) => ({ status: "member" as const, serverRole, role, displayName: null });
 const V2 = { version: "pilot-v2", approved: true, disclosing: ["pilot-v2"] };
@@ -30,13 +32,30 @@ beforeEach(() => { access = { status: "loading" }; busy = false; loadConsent.moc
 afterEach(() => { vi.useRealTimers(); });
 
 describe("as shipped", () => {
-  it("the record is switched on, and no version of the pilot terms opens it to participants", () => {
+  it("the record is switched on, the terms in force describe it, and they open it to participants only once they are approved", () => {
     expect(TWIN_ANALYSIS_ENABLED).toBe(true);
-    expect(TERMS_DISCLOSING_ANALYSIS).toEqual([]);
-    expect(openToParticipants()).toBe(false);
+    expect(TERMS_DISCLOSING_ANALYSIS).toEqual(["pilot-2026-11-v2"]);
+    expect(TERMS_DISCLOSING_ANALYSIS).toContain(TERMS_VERSION);
     expect(analysisAllowed({ serverRole: "founder", agreedTerms: null })).toBe(true);
-    // A participant who agreed to the terms in force still gets none: those terms do not mention it.
+    // Until the founder approves the wording, a participant gets none, whatever they agreed to.
+    expect(TERMS_APPROVED).toBe(false);
+    expect(openToParticipants()).toBe(false);
     expect(analysisAllowed({ serverRole: "participant", agreedTerms: TERMS_VERSION })).toBe(false);
+    // Approved: a participant who agreed to these terms gets one; one who agreed only to the earlier terms, or whose
+    // agreement could not be read, does not.
+    const approved = { version: TERMS_VERSION, approved: true, disclosing: TERMS_DISCLOSING_ANALYSIS };
+    expect(analysisAllowed({ serverRole: "participant", agreedTerms: TERMS_VERSION }, approved)).toBe(true);
+    expect(analysisAllowed({ serverRole: "participant", agreedTerms: "pilot-2026-11-v1" }, approved)).toBe(false);
+    expect(analysisAllowed({ serverRole: "participant", agreedTerms: null }, approved)).toBe(false);
+  });
+
+  it("the terms page carries the record's section under that version: what it holds, that it holds no images, where a copy may wait", () => {
+    const page = readFileSync(resolve(process.cwd(), "src/pages/PilotTerms.tsx"), "utf8");
+    expect(page).toContain("The analysis record of a corn Field Twin");
+    expect(page).toContain("It holds no photographs and no image data.");
+    expect(page).toMatch(/where the camera was at that moment \(latitude, longitude and height\)/);
+    expect(page).toMatch(/a copy waits in your browser's storage on that device/);
+    expect(page).toMatch(/after 7 days/);
   });
 });
 

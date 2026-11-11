@@ -100,7 +100,7 @@ export function FeedbackHost() {
             <Textarea id="feedback-message" rows={6} value={message} onChange={e => setMessage(e.target.value)} maxLength={5000} required
               placeholder={kind === "finding" ? "Which finding, and what is it really? (For example: the three red patches by the gate are volunteer corn, not weeds.)" : kind === "problem" ? "What were you doing, and what happened?" : ""} />
           </div>
-          <p className="text-xs text-muted-foreground">Sent with it: the page, the app version{req?.twinId ? ", the Field Twin's id" : ""} and your browser. Not your photographs.</p>
+          <p className="text-xs text-muted-foreground">Sent with it: the page, the app version{req?.twinId ? ", the Field Twin's id" : ""}, your browser and window size, and the last error the app met, if any. Not your photographs.</p>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setRequest(null)} disabled={sending}>Cancel</Button>
             <Button type="submit" disabled={sending || !message.trim()}>{sending && <Loader2 className="h-4 w-4 animate-spin" />}Send</Button>

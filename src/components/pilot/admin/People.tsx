@@ -34,7 +34,7 @@ export function PeopleSection({ snap }: { snap: Snapshot }) {
             <td className="tabular-nums">{p.buildsOk} / <span className={p.buildsFailed ? "text-destructive" : ""}>{p.buildsFailed}</span></td>
             <td className="tabular-nums">{p.reviews}{p.wrong ? ` (${p.wrong})` : ""}</td>
             <td className="tabular-nums">{p.feedback}</td>
-            <td className="text-xs">{p.member.role === "founder" ? "" : !p.consent ? "terms not accepted" : [p.consent.troubleshooting_access && "troubleshooting", p.consent.research_use && "research"].filter(Boolean).join(", ") || "neither"}</td>
+            <td className="text-xs">{p.member.role === "founder" ? "" : !p.consent ? "terms not accepted" : [p.consent.troubleshooting_access && "twins can be opened", p.consent.research_use && "research"].filter(Boolean).join(", ") || "neither"}</td>
           </tr>
         ))}
       </Table>
@@ -86,7 +86,7 @@ export function PersonDetail({ snap, userId, onChanged }: { snap: Snapshot; user
         <Stat label="Field Twins" value={p.twinsReady} sub={p.twinsIncomplete ? `${p.twinsIncomplete} not saved completely` : undefined} />
         <Stat label="Builds" value={`${p.buildsOk} / ${p.buildsOk + p.buildsFailed + p.buildsCancelled}`} sub={p.medianBuildMs ? `typical ${dur(p.medianBuildMs)}` : "finished / all"} tone={p.buildsFailed ? "warn" : "plain"} />
         <Stat label="Reviews" value={p.reviews} sub={p.reviews ? `${p.wrong} marked wrong` : undefined} />
-        <Stat label="Allowed" value={p.consent ? (p.consent.troubleshooting_access ? "Troubleshooting" : "Nothing extra") : "No answer"} sub={p.consent ? `${p.consent.research_use ? "research use allowed · " : ""}${day(p.consent.created_at)}` : "terms not accepted yet"} />
+        <Stat label="Allowed" value={p.consent ? (p.consent.troubleshooting_access ? "Twins can be opened" : "Twins cannot be opened") : "No answer"} sub={p.consent ? `${p.consent.research_use ? "research use allowed · " : ""}${day(p.consent.created_at)}` : "terms not accepted yet"} />
       </div>
       <TwinsSection snap={snap} userId={userId} />
       <BuildsSection snap={snap} userId={userId} />

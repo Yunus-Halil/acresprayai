@@ -235,15 +235,15 @@ describe("from a review to the Field Twin", () => {
     expect(within(orchard).getByRole("link", { name: "Open Home orchard for Field boundary" })).toHaveAttribute("href", `/admin/pilot/twins/${T.orchard}`);
   });
 
-  it("without the participant's permission there is nothing to click: the row says why and offers an email to ask", () => {
+  it("without the participant's agreement there is nothing to click: the row says why and offers an email to them", () => {
     renderDesk(desk());
     fireEvent.click(person(/Dana Ortiz/));
     const creek = twinRow("Creek field");
-    expect(creek).toHaveTextContent("Cannot be opened: Dana Ortiz has not allowed troubleshooting access.");
+    expect(creek).toHaveTextContent("Cannot be opened: Dana Ortiz has not agreed to terms that allow it.");
     expect(within(creek).queryByRole("link", { name: "View Field Twin" })).toBeNull();
-    const ask = within(creek).getByRole("link", { name: "Ask for permission" });
+    const ask = within(creek).getByRole("link", { name: "Write to them" });
     expect(ask.getAttribute("href")).toMatch(/^mailto:dana@farm\.test\?subject=/);
-    expect(decodeURIComponent(ask.getAttribute("href")!)).toMatch(/Creek field[\s\S]*Change your data choices[\s\S]*Let Swardus open my Field Twins to troubleshoot/);
+    expect(decodeURIComponent(ask.getAttribute("href")!)).toMatch(/Creek field[\s\S]*once you have agreed to the current pilot terms[\s\S]*every opening is recorded for you to see/);
     // Her review is still readable (the founder reads reviews either way); it only cannot be opened on the map.
     expect(cells(within(creek).getAllByRole("row")[1]).slice(0, 4)).toEqual(["Weed candidate 3", "Weed candidate, confirmed", "Wrong", "Corn, in the row"]);
     expect(within(creek).queryByRole("link", { name: /Open/ })).toBeNull();
@@ -298,12 +298,12 @@ describe("from a review to the Field Twin", () => {
   });
 
   it("the server's refusal is the last word: a typed address to a twin whose owner did not allow it opens nothing", async () => {
-    refuse = "This participant has not allowed troubleshooting access, so their Field Twin cannot be opened here.";
+    refuse = "This participant has not agreed to pilot terms that let Swardus open their Field Twins, so it cannot be opened here.";
     renderDesk(desk(), `/admin/pilot/twins/${T.closed}?finding=corn_weed:3`);
     expect(calls).toEqual([]);
     fireEvent.change(screen.getByLabelText(/Why are you opening it/), { target: { value: "checking" } });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open read-only" })); });
-    expect(await screen.findByRole("alert")).toHaveTextContent(/has not allowed troubleshooting access/);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/has not agreed to pilot terms that let Swardus open their Field Twins/);
     expect(screen.queryByTestId("twin-viewer")).toBeNull();
     expect(viewerProps).toEqual([]);
     expect(fetch).not.toHaveBeenCalled();

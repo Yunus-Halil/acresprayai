@@ -11,10 +11,11 @@ export const TWIN_ANALYSIS_MAX_BYTES = 8 * 1024 * 1024;
 
 /**
  * The versions of the pilot terms that tell a participant about the record (what it holds, that it is saved beside
- * the twin, that a copy may wait on their device). EMPTY: no approved version says so yet, so no participant's build
- * makes one. A version is added here only once the founder has approved terms that carry that wording.
+ * the twin, that a copy may wait on their device): src/pages/PilotTerms.tsx, "The analysis record of a corn Field
+ * Twin". A participant's build makes one only when the terms in force are listed here, are approved (TERMS_APPROVED),
+ * and are the version that participant agreed to. A later version must carry the section to be listed.
  */
-export const TERMS_DISCLOSING_ANALYSIS: readonly string[] = [];
+export const TERMS_DISCLOSING_ANALYSIS: readonly string[] = ["pilot-2026-11-v2"];
 
 // ---- the records waiting on the device (analysisOutbox.ts) -------------------------------------------------------
 /** A record that has not reached the account after this long is dropped from the device. */

@@ -262,6 +262,25 @@ describe("pilot-admin · the admin panel's data", () => {
     expect(db.storage.calls.filter(c => c.op === "sign").every(c => c.path.startsWith("p1/field-twins/north-2026/"))).toBe(true);
   });
 
+  it("twin-open under the current terms: agreeing to them is what allows it, and each participant stands on their own newest agreement", async () => {
+    // p1 agreed to the current terms (which state the founder's access). Their twin opens, and the opening is logged.
+    let handler = await boot2({ consents: [{ user_id: "p1", terms_version: "pilot-2026-11-v1", troubleshooting_access: false, created_at: "2026-11-09" }, { user_id: "p1", terms_version: "pilot-2026-11-v2", troubleshooting_access: true, created_at: "2026-11-11" }] });
+    expect((await handler(postJson(URL, { action: "twin-open", twin_id: T1, reason: "Pilot evaluation" }))).status).toBe(200);
+    expect(db.tables.admin_access_log).toEqual([expect.objectContaining({ participant_id: "p1", twin_id: T1, reason: "Pilot evaluation" })]);
+    // A participant who has only ever agreed to the earlier terms, and did not tick access there, is NOT moved to the
+    // new access by the app having new terms: refused, nothing logged, nothing signed, and the refusal says why.
+    handler = await boot2({ consents: [{ user_id: "p1", terms_version: "pilot-2026-11-v1", troubleshooting_access: false, created_at: "2026-11-09" }] });
+    const refused = await handler(postJson(URL, { action: "twin-open", twin_id: T1, reason: "Pilot evaluation" }));
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).error).toMatch(/has not agreed to pilot terms that let Swardus open their Field Twins/);
+    expect(db.tables.admin_access_log).toHaveLength(0);
+    expect(db.storage.calls.filter(c => c.op === "sign")).toHaveLength(0);
+    // Nor is a participant who has agreed to nothing at all.
+    handler = await boot2({ consents: [] });
+    expect((await handler(postJson(URL, { action: "twin-open", twin_id: T1 }))).status).toBe(403);
+    expect(db.storage.calls.filter(c => c.op === "sign")).toHaveLength(0);
+  });
+
   it("twin-open and snapshot are the founder's only", async () => {
     const handler = await boot2({ members: [{ user_id: "user-1", role: "participant", status: "active" }], consents: [{ user_id: "p1", troubleshooting_access: true }] });
     expect((await handler(postJson(URL, { action: "twin-open", twin_id: T1 }))).status).toBe(403);

@@ -58,7 +58,7 @@ export default function AdminTwinViewer() {
   const location = useLocation();
   const focus = parseFocus(params.get("finding"));
   const { from, review } = readState(location.state, focus ? `${focus.kind}:${focus.id}` : null);
-  const [reason, setReason] = useState(() => (review ? `Looking at your review of ${findingLabel(review.kind, review.id).toLowerCase()} (marked ${VERDICT_LABEL[review.verdict].toLowerCase()})` : ""));
+  const [reason, setReason] = useState(() => (review ? `Looking at your review of ${findingLabel(review.kind, review.id).toLowerCase()} (marked ${VERDICT_LABEL[review.verdict].toLowerCase()})` : "Pilot evaluation"));
   const [state, setState] = useState<{ status: "ask" } | { status: "opening" } | { status: "error"; message: string } | { status: "open"; twin: TwinBundle; name: string; files: Record<string, string> }>({ status: "ask" });
   // What became of the finding asked for, once the twin is open: its label in the saved twin, or not there.
   const [found, setFound] = useState<{ status: string } | "missing" | null>(null);
@@ -101,7 +101,7 @@ export default function AdminTwinViewer() {
         <Seo title="Open a participant's Field Twin, Swardus" noindex />
         <Link to={backTo} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"><ArrowLeft className="h-4 w-4" />{backLabel}</Link>
         <h1 className="font-display text-2xl">Open a participant's Field Twin</h1>
-        <p className="text-sm text-muted-foreground">This shows their field and crops of their photographs. It works only if they allowed troubleshooting access, and the opening is logged where they can see it, with your reason.</p>
+        <p className="text-sm text-muted-foreground">This shows their field and crops of their photographs. It works only if they agreed to pilot terms that allow it, and the opening is logged where they can see it, with your reason.</p>
         {review && (
           <div className="rounded-md border bg-card p-3">
             <p className="mb-1.5 text-xs font-medium">The review you came from{focus ? ": this finding is selected when the twin opens" : ""}</p>

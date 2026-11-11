@@ -49,8 +49,8 @@ function Correction({ r, loaded }: { r: SnapReview; loaded: boolean }) {
 function askForPermission(person: PersonReviews, twinName: string): string | null {
   if (!person.email) return null;
   const hello = person.displayName ? `Hello ${person.displayName},` : "Hello,";
-  const body = `${hello}\n\nI would like to look at your Field Twin "${twinName}" to check the findings you reviewed. I can only open it if you allow it.\n\nTo allow it: in Swardus, open Help, choose "Change your data choices", and tick "Let Swardus open my Field Twins to troubleshoot". You can untick it again at any time, and every time I open one is listed there for you.\n\nThank you,\nYunus`;
-  return `mailto:${person.email}?subject=${encodeURIComponent("Swardus: may I open your Field Twin?")}&body=${encodeURIComponent(body)}`;
+  const body = `${hello}\n\nI would like to look at your Field Twin "${twinName}" to check the findings you reviewed. I can only open it once you have agreed to the current pilot terms, which say that I may and that every opening is recorded for you to see.\n\nThe next time you sign in to Swardus you will be shown them on one screen. They are also at https://www.swardus.com/pilot-terms.\n\nThank you,\nYunus`;
+  return `mailto:${person.email}?subject=${encodeURIComponent("Swardus: the updated pilot terms")}&body=${encodeURIComponent(body)}`;
 }
 
 /** Why a twin is not offered for opening, in words. */
@@ -63,10 +63,10 @@ function Unavailable({ person, group }: { person: PersonReviews; group: TwinRevi
       <span>
         {why === "gone" ? "This Field Twin is no longer in their list."
           : why === "unsaved" ? "Not saved completely, so it cannot be opened."
-          : why === "no-answer" ? `Cannot be opened: ${person.name} has not answered the data choices yet.`
-          : `Cannot be opened: ${person.name} has not allowed troubleshooting access.`}
+          : why === "no-answer" ? `Cannot be opened: ${person.name} has not agreed to the pilot terms yet.`
+          : `Cannot be opened: ${person.name} has not agreed to terms that allow it.`}
       </span>
-      {mail && <Button size="sm" variant="outline" asChild><a href={mail}>Ask for permission</a></Button>}
+      {mail && <Button size="sm" variant="outline" asChild><a href={mail}>Write to them</a></Button>}
     </span>
   );
 }

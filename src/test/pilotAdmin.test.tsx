@@ -85,7 +85,7 @@ vi.mock("@/lib/pilot/adminClient", () => ({
     calls.push({ action, body });
     if (action === "snapshot") return snap;
     if (action === "health") return { checks: [{ id: "signups", label: "New sign-ups", status: "fail", detail: "Open: anyone can create an account." }, { id: "resend", label: "Email sending", status: "ok", detail: "RESEND_API_KEY is set." }] };
-    if (action === "twin-open") throw new Error("This participant has not allowed troubleshooting access, so their Field Twin cannot be opened here.");
+    if (action === "twin-open") throw new Error("This participant has not agreed to pilot terms that let Swardus open their Field Twins, so it cannot be opened here.");
     return { ok: true };
   },
 }));
@@ -117,7 +117,7 @@ describe("the admin panel", () => {
   });
 
   it.each([
-    ["people", ["Ryan", "Reviewing findings", "Not signed in yet", "troubleshooting"]],
+    ["people", ["Ryan", "Reviewing findings", "Not signed in yet", "twins can be opened"]],
     ["builds", ["Finished", "Failed", "RangeError", "Corn reading"]],
     ["twins", ["North block", "Not saved completely", "GPS"]],
     ["reviews", ["Ryan", "North block", "volunteer corn", "View Field Twin"]],
@@ -154,13 +154,20 @@ describe("the admin panel", () => {
     expect(items[0]).toHaveTextContent("Fix");
   });
 
-  it("opening a participant's twin asks why, and shows the server's refusal when they did not allow it", async () => {
+  it("opening a participant's twin gives a reason (ready to send, and required), and shows the server's refusal when their terms do not allow it", async () => {
     renderAt("/admin/pilot/twins/t1");
     const open = screen.getByRole("button", { name: "Open read-only" });
+    // Ordinary pilot evaluation is one click: the reason is filled in, and is what the participant will read.
+    expect(screen.getByLabelText(/Why are you opening it/)).toHaveValue("Pilot evaluation");
+    expect(open).toBeEnabled();
+    // Nothing has been asked of the server by arriving here.
+    expect(calls.find(c => c.action === "twin-open")).toBeUndefined();
+    // No reason, no opening.
+    fireEvent.change(screen.getByLabelText(/Why are you opening it/), { target: { value: "  " } });
     expect(open).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/Why are you opening it/), { target: { value: "checking the gate weeds" } });
     await act(async () => { fireEvent.click(open); });
-    expect(await screen.findByRole("alert")).toHaveTextContent(/not allowed troubleshooting access/);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/has not agreed to pilot terms that let Swardus open their Field Twins/);
     expect(calls.find(c => c.action === "twin-open")?.body).toEqual({ twin_id: "t1", reason: "checking the gate weeds" });
   });
 });

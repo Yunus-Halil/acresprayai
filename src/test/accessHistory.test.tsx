@@ -1,5 +1,5 @@
-// The participant's access history (Help, Your data choices): every time Swardus opened one of their Field Twins to
-// troubleshoot. It is a quiet, secondary section: closed until the participant opens it, read only then, with no
+// The participant's access history (Help, Your data choices): every time Swardus opened one of their Field Twins,
+// with the reason given. It is a quiet, secondary section: closed until the participant opens it, read only then, with no
 // alert, banner or badge. It stays reviewable, and a read that fails is never shown as "not opened".
 //
 // The rules it rests on are unchanged and tested where they live: a participant reads only their own rows
@@ -27,13 +27,14 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
-const consent = { terms_version: "pilot-2026-11-v1", troubleshooting_access: true, research_use: false, created_at: "2026-11-09T10:00:00Z" };
+const consent = { terms_version: "pilot-2026-11-v2", troubleshooting_access: true, research_use: false, created_at: "2026-11-11T10:00:00Z" };
 let loaded: typeof consent | null = consent;
 vi.mock("@/lib/pilot/consent", async orig => ({
   ...(await orig<typeof import("@/lib/pilot/consent")>()),
-  loadConsent: async () => loaded,
+  readConsent: async () => (loaded ? { status: "agreed", consent: loaded } : { status: "none" }),
   saveConsent: vi.fn(async () => undefined),
 }));
+vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { id: "p1" } }) }));
 
 import ConsentPage, { ConsentGate } from "@/components/pilot/ConsentScreen";
 import { openTwin } from "../../supabase/functions/pilot-admin/monitor";
@@ -54,8 +55,8 @@ describe("Your data choices: access history", () => {
     page();
     const button = await section();
     expect(button).toHaveAttribute("aria-expanded", "false");
-    expect(button).toHaveTextContent("See when your Field Twins were opened for troubleshooting.");
-    // The two choices still lead the page; the history is not a heading of its own any more.
+    expect(button).toHaveTextContent("See when Swardus opened your Field Twins.");
+    // The choice still leads the page; the history is not a heading of its own any more.
     expect(screen.getByRole("heading", { name: "Your data choices" })).toBeInTheDocument();
     expect(screen.queryByText("When Swardus opened your Field Twins")).toBeNull();
     expect(screen.queryByRole("heading", { name: /Access history/ })).toBeNull();
@@ -123,18 +124,18 @@ describe("Your data choices: access history", () => {
     expect(logReads()).toHaveLength(3);
   });
 
-  it("the two choices are still there and unchanged above it", async () => {
+  it("the participant's one choice is still there above it", async () => {
     page();
     await section();
-    expect(screen.getByRole("checkbox", { name: /Let Swardus open my Field Twins to troubleshoot/ })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: /Let my photograph crops and reviews help improve Swardus/ })).not.toBeChecked();
-    expect(screen.getByRole("button", { name: "Save my choices" })).toBeInTheDocument();
+    expect(await screen.findByRole("checkbox", { name: /Crops of my photographs, with my reviews of them, may also be used as examples/ })).not.toBeChecked();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Save my choice" })).toBeInTheDocument();
   });
 
   it("the first-visit terms screen has no access history on it", async () => {
     loaded = null;
     render(<MemoryRouter><ConsentGate required><p>the app</p></ConsentGate></MemoryRouter>);
-    expect(await screen.findByRole("button", { name: "I agree, continue" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Agree & Continue" })).toBeInTheDocument();
     expect(screen.queryByText(/Access history/)).toBeNull();
     await waitFor(() => expect(logReads()).toHaveLength(0));
   });

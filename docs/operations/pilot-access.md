@@ -47,7 +47,7 @@ supabase/migrations/20261109160000_admin_access_log.sql           every time the
 supabase/migrations/20261109170000_founder_tools_only.sql         the founder's tables founder-only; participants' files only in their Field Twin folder
 ```
 
-Not applied yet (2026-11-10, branch `feature/corn-review-says`, awaiting the founder's go):
+Applied to the live project on 2026-11-10 (the `pilot-admin` function that shows the answers on the desk is deployed separately):
 
 ```
 supabase/migrations/20261110120000_twin_review_says.sql           twin_reviews.says: on a corn finding marked wrong, what the reviewer says is there (one nullable column, a check, a trigger)
@@ -142,7 +142,7 @@ These steps are written for the founder to run, and none has been run on the liv
 
 ## 8. Before the first invitation: the pilot terms
 
-`src/pages/PilotTerms.tsx` (served at `/pilot-terms`) is a plain-language draft: what the pilot is, what is saved and what stays on the participant's computer, what is recorded, the two optional choices (troubleshooting access, research use), the processors (Supabase, Vercel, Resend), ending. **Read it, change what is wrong, ideally have a lawyer look, then set `TERMS_APPROVED = true` in `src/lib/pilot/consent.ts`.** Until then the page says it is a draft. Participants accept it once (and again whenever `TERMS_VERSION` changes); the founder is not asked.
+`src/pages/PilotTerms.tsx` (served at `/pilot-terms`) is the plain-language terms and privacy notice, version `pilot-2026-11-v2`; `docs/operations/pilot-terms.md` lists what each statement rests on and what is still to decide. **Read it, change what is wrong, ideally have a lawyer look, then set `TERMS_APPROVED = true` in `src/lib/pilot/consent.ts`.** Until then the page says it is a draft, and no participant's corn build keeps an analysis record. Participants agree on one screen, once (and again whenever `TERMS_VERSION` changes); the founder is not asked. Agreeing to v2 is what lets the founder open that participant's Field Twins from the desk, each opening logged; a participant who has only agreed to v1 keeps what they chose there.
 
 ## Removing a participant's data on request
 
@@ -159,7 +159,10 @@ union all select 'files', count(*) from storage.objects where (storage.foldernam
 
 2. Delete their files in the dashboard (Storage: every bucket, the folder named after their user id). Storage objects must be removed through the Storage API or dashboard, not by deleting rows.
 3. Delete the account (Authentication, Users, the user, Delete). Every pilot table references `auth.users` with ON DELETE CASCADE, so their memberships, twins, reviews, feedback, consents and events go with it.
-4. Run the query in step 1 again: every count is 0.
+4. Delete their application to the pilot, which is kept by email address and not tied to the account: `delete from public.pilot_applications where lower(email) = lower(:'email');` (and the same for `public.pilot_signups` if they used the older form).
+5. Run the query in step 1 again: every count is 0.
+
+Not reached by these steps: emails already delivered (their feedback in the founder's mailbox, the invitation in theirs) and the providers' backups, which expire on the providers' schedules. A corn Field Twin's analysis record is one of the files in its folder and goes with step 2; a copy still waiting in their own browser is removed when they sign out there, or after 7 days.
 
 The older orthomosaic tables (`odm_tasks`, `user_annotations` and others) have no foreign key to `auth.users`; for a founder-tool account, delete those rows by `user_id` as well.
 

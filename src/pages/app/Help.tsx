@@ -65,7 +65,7 @@ export default function Help() {
       </Block>
 
       <Block title="Your data">
-        <p>Your photographs stay on your computer: they are read here and are not uploaded. Swardus saves the Field Twin itself, meaning the map and small crops of your photographs around each finding, privately in your account. Only your account can open it in the app.</p>
+        <p>Your photographs stay on your device: they are read here and are not uploaded. Swardus saves the Field Twin itself, meaning the map and small crops of your photographs around each finding, privately in your account. No other participant can see it. Under the pilot terms Swardus's founder may open it to evaluate the pilot, and every opening is recorded for you to see.</p>
         <p>The <Link to="/pilot-terms" className="text-foreground underline underline-offset-4">pilot terms and privacy notice</Link> say what is recorded and who can see it. <Link to="/app/consent" className="text-foreground underline underline-offset-4">Change your data choices</Link>.</p>
       </Block>
 

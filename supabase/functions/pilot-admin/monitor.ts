@@ -161,7 +161,7 @@ export async function openTwin(admin: Admin, founderId: string, twinId: string, 
   if (twin.user_id !== founderId) {
     const { data: c } = await admin.from("pilot_consents").select("troubleshooting_access, created_at").eq("user_id", twin.user_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (!(c as { troubleshooting_access?: boolean } | null)?.troubleshooting_access) {
-      return { status: 403, body: { error: "This participant has not allowed troubleshooting access, so their Field Twin cannot be opened here. Ask them to allow it under Help, Your data choices, or to send what you need through Feedback." } };
+      return { status: 403, body: { error: "This participant has not agreed to pilot terms that let Swardus open their Field Twins, so it cannot be opened here. It opens once they have agreed to the current terms, which they are asked to do the next time they sign in." } };
     }
     const { error: logErr } = await admin.from("admin_access_log").insert({ founder_id: founderId, participant_id: twin.user_id, twin_id: twin.id, action: "open_twin", reason: reason?.slice(0, 500) ?? null }) as unknown as { error: { message: string } | null };
     if (logErr) return { status: 500, body: { error: "The access could not be logged, so the twin was not opened." } };

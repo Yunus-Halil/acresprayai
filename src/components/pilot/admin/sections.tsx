@@ -8,6 +8,8 @@ import { pilotAdmin } from "@/lib/pilot/adminClient";
 import { Badge, DayBars, Section, Stat, Table, ago, day, dur, when } from "./ui";
 
 const STAGE_WORDS: Record<string, string> = { photographs: "Reading photographs", cameras: "Placing photographs", rows: "Rows and trees", corn: "Corn reading", weeds: "Weeds", vegetation: "Other green", evidence: "Field edges", boundary: "Boundary", bundle: "Putting it together" };
+/** A stage in words. Stage names arrive in participants' events: only the table's own entries count, and anything else is shown as plain text. */
+const stageWord = (stage: unknown): string => { const k = typeof stage === "string" ? stage : ""; return Object.prototype.hasOwnProperty.call(STAGE_WORDS, k) ? STAGE_WORDS[k] : k.slice(0, 60); };
 
 export function OverviewSection({ snap, onOpenTab }: { snap: Snapshot; onOpenTab: (tab: string) => void }) {
   const o = overview(snap);
@@ -68,7 +70,7 @@ export function BuildsSection({ snap, userId }: { snap: Snapshot; userId?: strin
               <td className="tabular-nums">{dur(b.durationMs)}</td>
               <td className="tabular-nums">{b.photographs ?? ""}{b.used != null ? ` (${b.used} / ${b.refused ?? 0})` : ""}</td>
               <td>{b.crop ?? ""}</td><td>{b.camera ?? ""}</td>
-              <td>{b.outcome === "failed" ? <><div>{STAGE_WORDS[b.stage ?? ""] ?? b.stage ?? ""}</div><div className="text-xs text-muted-foreground">{b.error}</div></> : ""}</td>
+              <td>{b.outcome === "failed" ? <><div>{stageWord(b.stage)}</div><div className="text-xs text-muted-foreground">{b.error}</div></> : ""}</td>
             </tr>
           ))}
         </Table>
@@ -76,7 +78,7 @@ export function BuildsSection({ snap, userId }: { snap: Snapshot; userId?: strin
       {!userId && stages.length > 0 && (
         <Section title="Where the time goes" hint="Median time per stage over finished builds.">
           <Table head={["Stage", "Median", "Builds"]} min={360}>
-            {stages.map(s => <tr key={s.stage}><td>{STAGE_WORDS[s.stage] ?? s.stage}</td><td className="tabular-nums">{dur(s.medianMs)}</td><td className="tabular-nums">{s.builds}</td></tr>)}
+            {stages.map(s => <tr key={s.stage}><td>{stageWord(s.stage)}</td><td className="tabular-nums">{dur(s.medianMs)}</td><td className="tabular-nums">{s.builds}</td></tr>)}
           </Table>
         </Section>
       )}
@@ -170,8 +172,8 @@ export function AccessSection({ snap }: { snap: Snapshot }) {
   });
   return (
     <div className="space-y-8">
-      <Section title="What each participant allowed" hint="Their newest answer. Troubleshooting access is what lets you open their Field Twins here.">
-        <Table head={["Who", "Terms", "Troubleshooting access", "Research use", "Answered"]} min={640} empty={consentRows.length ? false : "No participants yet."}>
+      <Section title="What each participant agreed to" hint="Their newest answer. From version v2 the terms themselves let you open their Field Twins here; under v1 it was their own choice. Research use is always their own choice.">
+        <Table head={["Who", "Terms", "Opening their Field Twins", "Research use", "Answered"]} min={640} empty={consentRows.length ? false : "No participants yet."}>
           {consentRows.map(({ m, c }) => (
             <tr key={m.user_id}>
               <td>{nameOf(snap, m.user_id)}</td>
