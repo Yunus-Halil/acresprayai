@@ -9,6 +9,11 @@ No new model, no new reading of pixels: the per-photograph outputs, placed and c
 Review-only like V1: rows, identities and candidate findings with the photographs behind each; crop identity is the
 operator's entry; nothing decides a treatment.
 
+Since 2026-11-12 the combination is v3: before the rows are grouped, the located plants say where the planting is
+(rows over a headland's scattered weeds, rows across the planting and scraps apart from it are left out), and stand
+gaps are not reported on a flight whose reads are incomplete. See [corn-dark-seedlings.md](corn-dark-seedlings.md).
+What follows describes v2 (`FIELD_V2`), which v3 keeps underneath.
+
 ## What it does
 
 ```

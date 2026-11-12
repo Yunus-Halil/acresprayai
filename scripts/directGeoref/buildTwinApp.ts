@@ -3,6 +3,10 @@
 //
 //   npx vite-node scripts/directGeoref/buildTwinApp.ts -- [--dir directtestimagery] [--out data/direct-georef/twin-app]
 //       [--name "Apricot orchard"] [--id apricot-app] [--crop orchard|corn] [--weeds saved|colour|colour-preview|none] [--views 2] [--every 2] [--drop-every 2] [--limit N] [--no-preview] [--holdout 0.3]
+//       [--corn-variant corn-v1.0|dark-only] [--analysis]
+//
+// --corn-variant builds a corn twin as shipped at corn-v1.0, or with the dark-leaf rule alone, to open beside the
+// present one. --analysis also writes the analysis record (every photograph's read, every camera) as analysis.json.
 //
 // --weeds saved reads the service's saved answers in data/direct-georef/apricot/m1/rfdetr/<photo>.json (the GPU
 // service need not run); none builds without weeds. Writes <out>/<id>/{twin.json, atlas-N.jpg, report.json}.
@@ -60,7 +64,9 @@ const t0 = Date.now();
 let lastStage = "";
 const CROP = arg("crop", "orchard") === "corn" ? "corn" : "orchard";
 const memPeak = { rss: 0 }; const memTimer = setInterval(() => { memPeak.rss = Math.max(memPeak.rss, process.memoryUsage().rss); }, 500);
-const out = await buildFieldTwin(photos, { name: NAME, id: ID, crop: CROP, detector, weedTier, colourPixels, weedViews: VIEWS, detectPlan: { tile: 1024, overlap: 256, scale: 1 }, usePreview: USE_PREVIEW, holdOutShare: HOLDOUT, rowRasterCellM: CELL }, nodeCodec, {
+const VARIANT = arg("corn-variant", "");
+if (VARIANT && VARIANT !== "corn-v1.0" && VARIANT !== "dark-only") throw new Error(`--corn-variant ${VARIANT}: corn-v1.0 or dark-only`);
+const out = await buildFieldTwin(photos, { name: NAME, id: ID, crop: CROP, detector, weedTier, colourPixels, weedViews: VIEWS, detectPlan: { tile: 1024, overlap: 256, scale: 1 }, usePreview: USE_PREVIEW, holdOutShare: HOLDOUT, rowRasterCellM: CELL, analysis: argv.includes("--analysis"), ...(VARIANT ? { cornVariant: VARIANT as "corn-v1.0" | "dark-only" } : {}) }, nodeCodec, {
   onProgress: p => { if (p.stage !== lastStage) { lastStage = p.stage; console.log(`\n[${p.stage}]`); } if (p.total != null && p.done % 10 === 0) process.stdout.write(`  ${p.done}/${p.total} ${p.message} (${(p.elapsedMs / 1000).toFixed(0)} s)\n`); },
   log: line => console.log(`  ${line}`),
 });
@@ -68,6 +74,7 @@ const dir = join(OUT, out.twin.id);
 mkdirSync(dir, { recursive: true });
 for (const [name, bytes] of out.files) writeFileSync(join(dir, name), bytes instanceof Uint8Array ? bytes : new Uint8Array(await (bytes as Blob).arrayBuffer()));
 writeFileSync(join(dir, "report.json"), JSON.stringify(out.report, null, 1));
+if (out.analysis) writeFileSync(join(dir, "analysis.json"), out.analysis);
 const t = out.twin;
 console.log(`\ntwin ${t.id}: ${t.trees.length} trees, ${t.rows.filter(r => r.kept).length} rows kept of ${t.rows.length}, ${t.weeds.length} weed objects (${t.weeds.filter(w => w.status === "verified").length} verified), ${t.vegetation.length} vegetation patches, boundary ${t.boundary ? `${(t.boundary.cultivated.areaM2 / 10_000).toFixed(3)} ha` : "none"}; ${((Date.now() - t0) / 1000).toFixed(0)} s -> ${dir}`);
 console.log("timings", out.report.timings);

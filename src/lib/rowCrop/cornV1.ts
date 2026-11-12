@@ -36,7 +36,7 @@
 import type { PhotoPixels } from "../photoScout/pattern";
 import { adaptiveAsRead, readCornAdaptive, type AdaptiveRead, type AdaptiveRow } from "./adaptive";
 import { GREEN_POINTS, plantPointsFromGreen } from "./greenPoints";
-import { seedlingCache } from "./seedlingGreen";
+import { SEEDLING_GREEN, SEEDLING_V1, type SeedlingCache, seedlingCache } from "./seedlingGreen";
 import { distToLine, rowsFromPoints, type PlantPoint, type PlantRowsResult } from "./plantRows";
 import type { RowCropGap, RowCropOptions, RowCropParams, RowCropRead, RowCropRow, RowCropStage, RowCropWeed } from "./readRowCrop";
 
@@ -84,6 +84,10 @@ export const CORN_V1 = {
   /** ... and below the first share of the narrowest or above the second of the widest it is a spacing corn is never
    * planted at: no row is corn (drilled soybean, cereals). Weak evidence by nature: corn is planted at 38 to 91 cm. */
   spacingOutside: [0.75, 1.25] as [number, number],
+  /** A photograph is read as bands or a canopy when establishment, mid and late plans own at least this share of it
+   * (see cornV1PlantPoints: the dark-leaf rule is kept from its plant read). One photograph of the first flight judged
+   * held an establishment plan over 3 % of a frame of dark seedlings. */
+  bandedShare: 0.2,
 };
 
 export type CornIdentity = "corn" | "probable crop";
@@ -134,6 +138,8 @@ export type CornV1Options = RowCropOptions & {
   enteredCrop?: string | null;
   /** Plant positions from a detector (photo pixels) in place of the plants read from the green. */
   detectorPoints?: PlantPoint[] | null;
+  /** The shipped corn-v1.0 seedling mask (no rule for leaves darker than their soil): only to compare against it. */
+  baselineSeedlings?: boolean;
 };
 
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : null; };
@@ -345,14 +351,34 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
   };
 }
 
+/**
+ * The plant read's positions for a photograph whose green read has been made (`seedlings`: the cache that read used).
+ * The rule for leaves darker than their soil (seedlingGreen.ts) is for small plants on bare soil that the shipped
+ * mask cannot see. Where the green read itself reads the photograph as bands or a canopy (establishment, mid or late
+ * plans over CORN_V1.bandedShare of the frame) and finds no seedling stand, the shipped mask is seeing the plants, and
+ * the dark green there is leaf in shade: the plant read keeps corn-v1.0's mask and the photograph reads exactly as
+ * corn-v1.0 read it. Measured 2026-11-12 on the three test flights checked by eye: with the rule on those frames a
+ * shaded corn leaf gained its second weed vote on the mid-stage flight, and one of seven real weeds lost its
+ * confirmation on the day-23 flight. Everywhere else the rule applies: on a seedling stand, and on a frame the green
+ * read took for bare soil, which is where dark seedlings go unseen (15 of the 123 photographs of the first flight
+ * judged held no plan at all).
+ */
+export function cornV1PlantPoints(px: PhotoPixels, ad: AdaptiveRead, seedlings: SeedlingCache): PlantPoint[] {
+  const seedlingStand = ad.plans.some(p => p.stage === "emergence");
+  const banded = ad.plans.reduce((s, p) => s + (p.stage === "establishment" || p.stage === "mid" || p.stage === "late" ? p.ownedShare : 0), 0) >= CORN_V1.bandedShare;
+  const dark = (seedlings.options ?? SEEDLING_GREEN).dark != null;
+  const cache = dark && banded && !seedlingStand ? { ...seedlingCache(px, SEEDLING_V1), levels: seedlings.levels } : seedlings;
+  return plantPointsFromGreen(px, GREEN_POINTS, cache).points;
+}
+
 /** Corn V1 over one photograph. */
 export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1Options = {}): CornV1Read {
   const t0 = Date.now();
   // One seedling mask per photograph, shared by the green read's emergence reader and the plant read.
-  const seedlings = seedlingCache(px);
+  const seedlings = seedlingCache(px, opts.baselineSeedlings ? SEEDLING_V1 : SEEDLING_GREEN);
   const ad = readCornAdaptive(px, params, { ...opts, seedlings });
   const t1 = Date.now();
-  const points = opts.detectorPoints ?? plantPointsFromGreen(px, GREEN_POINTS, seedlings).points;
+  const points = opts.detectorPoints ?? cornV1PlantPoints(px, ad, seedlings);
   const t2 = Date.now();
   return fuseCornV1(ad, points, params, { enteredCrop: opts.enteredCrop ?? params.crop?.id ?? null, source: opts.detectorPoints ? "detector" : "green", greenMs: t1 - t0, plantsMs: t2 - t1 });
 }

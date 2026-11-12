@@ -10,6 +10,18 @@
 //             lattice line, cut where no photograph holds it for FIELD.rowBreakM). A field row is corn only where the
 //             photographs that hold it mostly call it corn AND enough of the photographs covering it hold it at all
 //             (a row one photo of four draws is one photo's opinion, not the field's).
+//   planting  (v3, 2026-11-12) before the rows are grouped, the located plants say where the planting is. Projected to
+//             the ground, the plants of a planting repeat across the rows at the row spacing; weeds on a headland or
+//             a verge are scattered. Per square of ground (FIELD.planted) the concentration of the plants' across
+//             positions on the spacing is measured: where there are plenty of plants and no concentration, over a
+//             connected area, the ground holds scattered plants, and a line a photograph strung through them is no
+//             row of the planting. Row pieces are cut there. It is evidence from every located plant, not from the
+//             rows, and it only ever removes: ground with few plants, or a flight whose plants show the pattern
+//             nowhere (a canopy), is left as it was. Row pieces running across the planting's direction are left out.
+//   blocks    (v3) the field's rows are grouped into blocks as the cultivated-block inference groups an orchard's
+//             (boundary.ts: a gap of more than 2.5 spacings separates two blocks). A block that is a scrap beside the
+//             largest (under FIELD.block.minShare of its row length; a fifth of that when it holds a corn row) is left
+//             out: a few metres of line far from the planting are not a planting.
 //   weeds     every green patch Corn V1 judged (weed candidate, crop on a row, unknown vegetation) is a sighting; the
 //             sightings of one patch in overlapping photographs are joined by Direct's reconcile (outline overlap,
 //             one sighting per photograph); a field weed candidate needs two weed votes leading all the others, never
@@ -18,7 +30,10 @@
 //   gaps      every reported stand gap projected to its field row; a field gap stands only when no photograph that
 //             covers it located a plant inside it, and at least half the photographs holding a corn row over it
 //             reported it. The plant check is the strongest evidence a second photograph adds: a plant one frame
-//             missed (dim corner, motion blur) is a plant another frame sees.
+//             missed (dim corner, motion blur) is a plant another frame sees. And (v3) only on a flight whose reads
+//             are complete enough: where the photographs hold too little of the row length the planted ground they
+//             cover must carry, a photograph that sees no plant is the usual case, not a finding: no gap is
+//             reported, confirmed or withheld, and the field says so once.
 //
 // Everything is review-only decision support: the outputs are rows, identities and candidate findings with the
 // photographs behind each; nothing decides a treatment.
@@ -27,7 +42,7 @@ import { frameFootprint, groundSampleAt, groundToPixel, pixelToGround, type Geor
 import { reconcile, type Observation } from "../directGeoref/reconcile";
 import type { CornV1Read } from "../rowCrop/cornV1";
 
-export const CORN_FIELD_VERSION = 2;
+export const CORN_FIELD_VERSION = 3;
 
 export const FIELD = {
   /** Row pieces within this share of the field's row spacing across are the same field row. */
@@ -74,7 +89,53 @@ export const FIELD = {
   gapOverlapShare: 0.3,
   /** Plausible row spacings for the field, metres. */
   pitchRangeM: [0.2, 1.6] as [number, number],
+  /**
+   * Planted ground from the located plants (null: not judged, cornField v2's behaviour). Squares of cellAlongM along
+   * the rows by one row spacing across; each is judged on the plants in the windowCells x windowCells squares around
+   * it (3 m by 3 spacings). With at least minSightings plant sightings there: concentration (the resultant length of
+   * the plants' across positions taken as phases of the spacing, 0 scattered to 1 all on the lines) under
+   * scatteredBelow is scattered ground, from plantedFrom on is planted; between them, or with fewer plants, unknown.
+   * On the first flight judged (very early corn beside a weedy headland, 2026-11-12) the squares fell in two heaps:
+   * 429 at 0.8 and over, 319 under 0.3, 133 between. Scattered ground counts only as a connected area of at least
+   * minRegionM2 (the size boundaryEvidence asks of a patch of cover). The spacing the plants repeat at is searched
+   * within spacingScan of the rows' own (the rows' estimate is pulled off by the lines strung through weeds: 0.873 m
+   * against the plants' 0.912 m on 36-inch rows). The whole judgement is used only when at least minPlantedShare of
+   * the judged squares are planted: a flight whose plants show the planting nowhere is not judged by them.
+   * A row piece cut by scattered ground keeps its parts of at least minKeptM. Where the plants' spacing and the
+   * rows' differ by more than spacingDisagree, the spacing the field REPORTS is the plants': the rows' is a median
+   * of neighbouring rows' distances and is pulled off when rows are missing or false, the plants' is measured on
+   * every plant (a test flight of 76.2 cm rows: rows 0.791 m, plants 0.758 m). The rows are still grouped on the
+   * rows' own figure, as in v2.
+   */
+  planted: { cellAlongM: 1, windowCells: 3, minSightings: 30, scatteredBelow: 0.3, plantedFrom: 0.5, minRegionM2: 40, spacingScan: [0.85, 1.15], spacingStep: 0.005, minPlantedShare: 0.25, minKeptM: 1, spacingDisagree: 0.02 } as PlantedOptions | null,
+  /**
+   * A photograph's row piece further than this off the field's row direction is no row of this planting (null: kept,
+   * v2). On the lattice such a piece was drawn as a zigzag across the rows: all of it at the verge and the headland
+   * on the first flight judged. Corn V1's own limit within a photograph is 12 degrees; the cameras add a degree or two.
+   */
+  maxOffDirectionDeg: 15 as number | null,
+  /**
+   * Blocks of rows (null: every row kept, v2). Field rows closer than gapPitches spacings, across and along, are one
+   * block (boundary.ts's componentGapPitches). A block without a corn row whose row length is under minShare of the
+   * largest block's is left out; one that holds a corn row, under minShareCorn (at the edge of a flight one
+   * photograph covers the ground and its opinion alone makes a row corn: three such rows of about 4 m each stood in
+   * the headland of the first flight judged, against 4,400 m in the planting).
+   */
+  block: { gapPitches: 2.5, minShare: 0.05, minShareCorn: 0.01 } as { gapPitches: number; minShare: number; minShareCorn: number } | null,
+  /**
+   * Stand gaps are reported only when the photographs' reads are complete enough (0: always, v2): over the ground
+   * the plants show as planted, the row length the photographs hold, as a share of the row length that ground must
+   * carry at the row spacing in every photograph covering it. Under this share most photographs miss rows and
+   * plants that are there, and "no plant seen" is what a photograph usually says of a plant that is there: the
+   * field then carries no gaps at all (the first flight judged had 12,782 reported by single photographs at a read
+   * share of 0.58; three test flights of well-read corn stand at 0.9 and over). Only judged where the planted
+   * ground is (FIELD.planted).
+   */
+  gapMinReadShare: 0.75,
 };
+export type PlantedOptions = { cellAlongM: number; windowCells: number; minSightings: number; scatteredBelow: number; plantedFrom: number; minRegionM2: number; spacingScan: [number, number]; spacingStep: number; minPlantedShare: number; minKeptM: number; spacingDisagree: number };
+/** cornField v2's rules exactly (the field rules shipped with corn-v1.0): kept so the shipped result can be run beside the present one. */
+export const FIELD_V2: typeof FIELD = { ...FIELD, planted: null, maxOffDirectionDeg: null, block: null, gapMinReadShare: 0 };
 
 /** What the field needs from one photograph's Corn V1 read: small enough to send from a worker or cache to disk. */
 export type CornPhotoRead = {
@@ -149,6 +210,22 @@ export type CornFieldResult = {
   gaps: FieldGap[];
   /** Row pieces' across scatter about their field row, metres (median absolute): how well the photographs agree. */
   rowAgreementM: number | null;
+  /** What the located plants said of the ground, and what was left out for it (v3). */
+  planting: {
+    /** Whether the plants' pattern judged the ground on this flight, and why not. */
+    judged: boolean; why: string | null;
+    /** The spacing the plants themselves repeat at, metres. */
+    plantSpacingM: number | null;
+    plantedM2: number; scatteredM2: number;
+    /** Row length the photographs drew over scattered ground, and across the planting's direction, summed over the photographs, metres. */
+    scatteredRowM: number; crossDirectionRowM: number;
+    /** Rows left out as scraps apart from the planting (blocks with no corn row), and their length, metres. */
+    scrapRows: number; scrapRowM: number;
+    /** Over planted ground: the row length the photographs hold, of what that ground must carry in every photograph covering it (null: not judged). */
+    readShare: number | null;
+    /** Stretches the photographs reported as gaps, not carried into the field because the reads are incomplete on this flight. */
+    gapsNotReported: number;
+  };
   summary: {
     photographs: number; cornRows: number; probableRows: number; cornRowLengthM: number;
     /** Unconfirmed rows between corn rows off their spacing, left out. */
@@ -169,6 +246,75 @@ const inRing = (ring: [number, number][], e: number, n: number) => {
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i], [xj, yj] = ring[j]; if ((yi > n) !== (yj > n) && e < ((xj - xi) * (n - yi)) / (yj - yi) + xi) hit = !hit; }
   return hit;
 };
+
+/** The ground judged by the plants on it, in the field's row frame (along, across). */
+export type PlantedGround = {
+  /** False: the plants show the planting on too little of the ground to judge any of it. */
+  valid: boolean;
+  spacingM: number;
+  a0: number; c0: number; cellA: number; cellC: number; w: number; h: number;
+  /** Per square: 0 unknown, 1 planted, 2 scattered. */
+  state: Uint8Array;
+  /** Per square: the concentration (NaN where too few plants). */
+  concentration: Float32Array;
+  judged: number; planted: number; scattered: number;
+  at: (along: number, across: number) => 0 | 1 | 2;
+};
+
+/**
+ * Where the planting is, from the located plants alone (see FIELD.planted). `plants` are plant sightings in the row
+ * frame (along, across), every photograph's together; `pitch0` the rows' spacing. Null: too few plants to say anything.
+ */
+export function plantedGround(plants: [number, number][], pitch0: number, o: PlantedOptions): PlantedGround | null {
+  if (plants.length < 10 * o.minSightings || !(pitch0 > 0)) return null;
+  let aMin = Infinity, aMax = -Infinity, cMin = Infinity, cMax = -Infinity;
+  for (const [a, c] of plants) { if (a < aMin) aMin = a; if (a > aMax) aMax = a; if (c < cMin) cMin = c; if (c > cMax) cMax = c; }
+  // The spacing the plants repeat at: over coarse squares, the sum of n R^2 (the plants on the lines, squared).
+  const K = o.windowCells, ca = K * o.cellAlongM, cc = K * pitch0, gw = Math.floor((aMax - aMin) / ca) + 1, gh = Math.floor((cMax - cMin) / cc) + 1;
+  const cellOf = new Int32Array(plants.length), cnt = new Float64Array(gw * gh);
+  plants.forEach(([a, c], i) => { const k = Math.floor((a - aMin) / ca) + gw * Math.floor((c - cMin) / cc); cellOf[i] = k; cnt[k]++; });
+  let spacingM = pitch0, best = -1;
+  const C = new Float64Array(gw * gh), S = new Float64Array(gw * gh);
+  for (let f = o.spacingScan[0]; f <= o.spacingScan[1] + 1e-9; f += o.spacingStep) {
+    const pitch = pitch0 * f, k2 = (2 * Math.PI) / pitch;
+    C.fill(0); S.fill(0);
+    for (let i = 0; i < plants.length; i++) { const ph = plants[i][1] * k2; C[cellOf[i]] += Math.cos(ph); S[cellOf[i]] += Math.sin(ph); }
+    let sc = 0; for (let k = 0; k < C.length; k++) if (cnt[k]) sc += (C[k] * C[k] + S[k] * S[k]) / cnt[k];
+    if (sc > best) { best = sc; spacingM = pitch; }
+  }
+  // ... and once more, finely, about the best.
+  const score = (pitch: number) => { const k2 = (2 * Math.PI) / pitch; C.fill(0); S.fill(0); for (let i = 0; i < plants.length; i++) { const ph = plants[i][1] * k2; C[cellOf[i]] += Math.cos(ph); S[cellOf[i]] += Math.sin(ph); } let sc = 0; for (let k = 0; k < C.length; k++) if (cnt[k]) sc += (C[k] * C[k] + S[k] * S[k]) / cnt[k]; return sc; };
+  { const coarse = spacingM; for (let d = -4; d <= 4; d++) { const pitch = coarse + (d / 5) * o.spacingStep * pitch0, sc = score(pitch); if (sc > best) { best = sc; spacingM = pitch; } } }
+  // Squares of cellAlongM by one spacing; each judged on the window around it.
+  const cellA = o.cellAlongM, cellC = spacingM, w = Math.floor((aMax - aMin) / cellA) + 1, h = Math.floor((cMax - cMin) / cellC) + 1, k2 = (2 * Math.PI) / spacingM;
+  const fc = new Float64Array(w * h), fs = new Float64Array(w * h), fn = new Float64Array(w * h);
+  for (const [a, c] of plants) { const k = Math.floor((a - aMin) / cellA) + w * Math.floor((c - cMin) / cellC), ph = c * k2; fc[k] += Math.cos(ph); fs[k] += Math.sin(ph); fn[k]++; }
+  const state = new Uint8Array(w * h), concentration = new Float32Array(w * h).fill(NaN), r = K >> 1;
+  let judged = 0, planted = 0;
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    let sc = 0, ss = 0, n = 0;
+    for (let jj = Math.max(0, j - r); jj <= Math.min(h - 1, j + r); jj++) for (let ii = Math.max(0, i - r); ii <= Math.min(w - 1, i + r); ii++) { const k = jj * w + ii; sc += fc[k]; ss += fs[k]; n += fn[k]; }
+    if (n < o.minSightings) continue;
+    const R = Math.hypot(sc, ss) / n, k = j * w + i;
+    concentration[k] = R; judged++;
+    if (R >= o.plantedFrom) { state[k] = 1; planted++; } else if (R < o.scatteredBelow) state[k] = 2;
+  }
+  // Scattered ground counts as a connected area of some size: one square without the pattern inside a planting
+  // (a wheel track, a patch of weeds) leaves its rows alone.
+  const seen = new Uint8Array(w * h), stack: number[] = [], comp: number[] = [];
+  let scattered = 0;
+  for (let k0 = 0; k0 < w * h; k0++) {
+    if (state[k0] !== 2 || seen[k0]) continue;
+    comp.length = 0; seen[k0] = 1; stack.push(k0);
+    while (stack.length) {
+      const k = stack.pop()!, i = k % w, j = (k - i) / w; comp.push(k);
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= w || jj >= h) continue; const q = jj * w + ii; if (state[q] === 2 && !seen[q]) { seen[q] = 1; stack.push(q); } }
+    }
+    if (comp.length * cellA * cellC < o.minRegionM2) for (const k of comp) state[k] = 0; else scattered += comp.length;
+  }
+  const at = (along: number, across: number): 0 | 1 | 2 => { const i = Math.floor((along - aMin) / cellA), j = Math.floor((across - cMin) / cellC); return i < 0 || j < 0 || i >= w || j >= h ? 0 : (state[j * w + i] as 0 | 1 | 2); };
+  return { valid: judged > 0 && planted >= o.minPlantedShare * judged, spacingM, a0: aMin, c0: cMin, cellA, cellC, w, h, state, concentration, judged, planted, scattered, at };
+}
 
 /** Corn V1's per-photograph reads combined over a field, in Swardus Direct's ground coordinates. */
 export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, o = FIELD): CornFieldResult {
@@ -198,19 +344,83 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
       if (pts.length >= 2) projected.push({ photo: r.name, identity: row.identity, pts });
     }
   }
-  // The field's row direction: the length-weighted mean of the segments' doubled angles (rows have no head or tail).
-  let sx = 0, sy = 0;
-  for (const p of projected) for (let i = 1; i < p.pts.length; i++) { const de = p.pts[i][0] - p.pts[i - 1][0], dn = p.pts[i][1] - p.pts[i - 1][1], L = Math.hypot(de, dn), t = Math.atan2(dn, de); sx += L * Math.cos(2 * t); sy += L * Math.sin(2 * t); }
-  const theta = projected.length ? Math.atan2(sy, sx) / 2 : 0;
-  const directionDeg = projected.length ? ((theta * 180) / Math.PI + 180) % 180 : null;
-  const ct = Math.cos(theta), st = Math.sin(theta);
-  const toAC = (e: number, n: number): [number, number] => [e * ct + n * st, -e * st + n * ct];
-  const fromAC = (a: number, c: number): [number, number] => [a * ct - c * st, a * st + c * ct];
-  const pieces: Piece[] = projected.map(p => { const ac = p.pts.map(([e, n]) => toAC(e, n)); return { photo: p.photo, identity: p.identity, ac, c: median(ac.map(q => q[1])), a0: Math.min(...ac.map(q => q[0])), a1: Math.max(...ac.map(q => q[0])) }; });
-  // The field's row spacing: neighbouring rows' across distances within each photograph.
-  const diffs: number[] = [];
-  for (const r of used) { const cs = pieces.filter(p => p.photo === r.name).map(p => p.c).sort((a, b) => a - b); for (let i = 1; i < cs.length; i++) { const d = cs[i] - cs[i - 1]; if (d >= o.pitchRangeM[0] && d <= o.pitchRangeM[1]) diffs.push(d); } }
-  const pitchM = diffs.length ? median(diffs) : null;
+  // The row frame of a set of projected rows: made once, and again when rows are left out.
+  type Projected = (typeof projected)[number];
+  const frameOf = (ps: Projected[]) => {
+    // The field's row direction: the length-weighted mean of the segments' doubled angles (rows have no head or tail).
+    let sx = 0, sy = 0;
+    for (const p of ps) for (let i = 1; i < p.pts.length; i++) { const de = p.pts[i][0] - p.pts[i - 1][0], dn = p.pts[i][1] - p.pts[i - 1][1], L = Math.hypot(de, dn), t = Math.atan2(dn, de); sx += L * Math.cos(2 * t); sy += L * Math.sin(2 * t); }
+    const theta = ps.length ? Math.atan2(sy, sx) / 2 : 0, ct = Math.cos(theta), st = Math.sin(theta);
+    const toAC = (e: number, n: number): [number, number] => [e * ct + n * st, -e * st + n * ct];
+    const fromAC = (a: number, c: number): [number, number] => [a * ct - c * st, a * st + c * ct];
+    const pieces: Piece[] = ps.map(p => { const ac = p.pts.map(([e, n]) => toAC(e, n)); return { photo: p.photo, identity: p.identity, ac, c: median(ac.map(q => q[1])), a0: Math.min(...ac.map(q => q[0])), a1: Math.max(...ac.map(q => q[0])) }; });
+    // The field's row spacing: neighbouring rows' across distances within each photograph.
+    const diffs: number[] = [];
+    for (const r of used) { const cs = pieces.filter(p => p.photo === r.name).map(p => p.c).sort((a, b) => a - b); for (let i = 1; i < cs.length; i++) { const d = cs[i] - cs[i - 1]; if (d >= o.pitchRangeM[0] && d <= o.pitchRangeM[1]) diffs.push(d); } }
+    return { theta, toAC, fromAC, pieces, pitchM: diffs.length ? median(diffs) : null };
+  };
+  let frame = frameOf(projected);
+  // The planting, from the located plants (v3): rows over scattered ground and rows across the planting are left out
+  // before the field's rows are made, and the row frame is measured again from what stays.
+  const planting: CornFieldResult["planting"] = { judged: false, why: o.planted ? null : "not asked for", plantSpacingM: null, plantedM2: 0, scatteredM2: 0, scatteredRowM: 0, crossDirectionRowM: 0, scrapRows: 0, scrapRowM: 0, readShare: null, gapsNotReported: 0 };
+  const lenOfPts = (pts: [number, number][]) => { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; };
+  if (projected.length && (o.planted || o.maxOffDirectionDeg != null)) {
+    let kept: Projected[] = projected;
+    if (o.planted && frame.pitchM) {
+      const sightings: [number, number][] = [];
+      for (const r of used) { const f = frames.get(r.name)!; for (const [x, y] of r.plants) { const g = ground(f, x * r.scale, y * r.scale); if (g) sightings.push(frame.toAC(g[0], g[1])); } }
+      const pg = plantedGround(sightings, frame.pitchM, o.planted);
+      if (!pg) planting.why = "too few plants located to say where the planting is";
+      else {
+        planting.plantSpacingM = Math.round(pg.spacingM * 1000) / 1000;
+        planting.plantedM2 = Math.round(pg.planted * pg.cellA * pg.cellC); planting.scatteredM2 = Math.round(pg.scattered * pg.cellA * pg.cellC);
+        if (!pg.valid) planting.why = `the located plants repeat at the row spacing on only ${pg.planted} of ${pg.judged} squares of ground: not enough to judge the rest by them`;
+        else {
+          planting.judged = true;
+          const first = frame, cut: Projected[] = [];
+          let anyCut = false;
+          for (const p of kept) {
+            // A piece that touches no scattered ground stays as it is, whatever its length.
+            const on = p.pts.map(q => { const [a, c] = first.toAC(q[0], q[1]); return pg.at(a, c) === 2; });
+            if (!on.includes(true)) { cut.push(p); continue; }
+            anyCut = true;
+            let run: [number, number][] = [];
+            const flush = () => { if (run.length >= 2 && lenOfPts(run) >= o.planted!.minKeptM) cut.push({ photo: p.photo, identity: p.identity, pts: run }); run = []; };
+            p.pts.forEach((q, i) => { if (on[i]) flush(); else run.push(q); });
+            flush();
+          }
+          planting.scatteredRowM = Math.round(kept.reduce((t, p) => t + lenOfPts(p.pts), 0) - cut.reduce((t, p) => t + lenOfPts(p.pts), 0));
+          if (anyCut) kept = cut;
+          // How completely the photographs read the planting: row length held over planted ground, of the length
+          // that ground carries at the spacing, in every photograph covering it.
+          let heldM = 0, owedM = 0;
+          for (const p of kept) for (let i = 1; i < p.pts.length; i++) { const [a, c] = first.toAC((p.pts[i][0] + p.pts[i - 1][0]) / 2, (p.pts[i][1] + p.pts[i - 1][1]) / 2); if (pg.at(a, c) === 1) heldM += Math.hypot(p.pts[i][0] - p.pts[i - 1][0], p.pts[i][1] - p.pts[i - 1][1]); }
+          for (let j = 0; j < pg.h; j++) for (let i = 0; i < pg.w; i++) { if (pg.state[j * pg.w + i] !== 1) continue; const [e, n] = first.fromAC(pg.a0 + (i + 0.5) * pg.cellA, pg.c0 + (j + 0.5) * pg.cellC); owedM += covering(e, n).length * pg.cellA * (pg.cellC / pg.spacingM); }
+          planting.readShare = owedM > 0 ? Math.round(Math.min(1, heldM / owedM) * 100) / 100 : null;
+        }
+      }
+    }
+    if (o.maxOffDirectionDeg != null && kept.length) {
+      // Against the direction of the rows that stayed (the lines through a headland's weeds pull the first estimate).
+      const th = kept === projected ? frame.theta : frameOf(kept).theta;
+      const along = kept.filter(p => { const a = p.pts[0], b = p.pts[p.pts.length - 1], d = Math.abs(((Math.atan2(b[1] - a[1], b[0] - a[0]) - th) * 180) / Math.PI) % 180; return Math.min(d, 180 - d) <= o.maxOffDirectionDeg!; });
+      planting.crossDirectionRowM = Math.round(kept.reduce((t, p) => t + lenOfPts(p.pts), 0) - along.reduce((t, p) => t + lenOfPts(p.pts), 0));
+      if (along.length !== kept.length) kept = along;
+    }
+    if (kept !== projected) frame = frameOf(kept);
+    if (planting.scatteredRowM > 0) notes.push(`Rows the photographs drew over ground where the plants are scattered, with no row spacing in them (a headland, a verge: ${planting.scatteredM2} m²), are left out: ${planting.scatteredRowM} m of row, counted in every photograph that drew it.`);
+    if (planting.crossDirectionRowM > 0) notes.push(`${planting.crossDirectionRowM} m of row the photographs drew across the planting's direction is left out (counted in every photograph that drew it).`);
+  }
+  const { theta, toAC, fromAC, pieces } = frame;
+  const directionDeg = pieces.length ? ((theta * 180) / Math.PI + 180) % 180 : null;
+  // The rows are grouped and judged on the spacing the rows themselves give, as in v2 (its shares are wide: a few per
+  // cent of spacing moves no row). The spacing REPORTED is the plants' where the two disagree.
+  const pitchM = frame.pitchM;
+  let reportedPitchM = pitchM;
+  if (pitchM && planting.judged && planting.plantSpacingM && o.planted && Math.abs(planting.plantSpacingM / pitchM - 1) > o.planted.spacingDisagree) {
+    notes.push(`Row spacing ${planting.plantSpacingM} m, measured on the located plants; the distances between neighbouring rows in the photographs gave ${Math.round(pitchM * 1000) / 1000} m.`);
+    reportedPitchM = planting.plantSpacingM;
+  }
   if (!pitchM) notes.push("No row spacing could be measured across the photographs: rows are kept per photograph only.");
 
   // Field rows: pieces grouped across on the lattice, then cut along where nothing holds them.
@@ -264,6 +474,20 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
       return false;
     });
     if (offLattice) { rows.length = 0; keep.forEach((r, i) => rows.push({ ...r, id: i + 1 })); notes.push(`${offLattice} unconfirmed row(s) between corn rows, off their spacing, left out: no row of this planting runs there.`); }
+  }
+  // Blocks (v3): rows within reach of each other are one block; a block with no corn row that is a scrap beside the
+  // largest is left out.
+  if (pitchM && o.block && rows.length > 1) {
+    const reach = o.block.gapPitches * pitchM;
+    const box = rows.map(r => { const ac = r.lineEN.map(([e, n]) => toAC(e, n)); return { a0: Math.min(...ac.map(q => q[0])), a1: Math.max(...ac.map(q => q[0])), c: median(ac.map(q => q[1])) }; });
+    const parent = rows.map((_, i) => i), find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) if (Math.abs(box[i].c - box[j].c) <= reach && box[i].a0 <= box[j].a1 + reach && box[j].a0 <= box[i].a1 + reach) parent[find(i)] = find(j);
+    const len = new Map<number, number>(), hasCorn = new Set<number>();
+    rows.forEach((r, i) => { const k = find(i); len.set(k, (len.get(k) ?? 0) + r.lengthM); if (r.identity === "corn") hasCorn.add(k); });
+    const largest = Math.max(...len.values());
+    const keep = rows.filter((r, i) => { const k = find(i); if (len.get(k)! >= (hasCorn.has(k) ? o.block!.minShareCorn : o.block!.minShare) * largest) return true; planting.scrapRows++; planting.scrapRowM += r.lengthM; return false; });
+    planting.scrapRowM = Math.round(planting.scrapRowM);
+    if (planting.scrapRows) { rows.length = 0; keep.forEach((r, i) => rows.push({ ...r, id: i + 1 })); notes.push(`${planting.scrapRows} short row(s), ${planting.scrapRowM} m in all, standing apart from the planting (more than ${o.block.gapPitches} row spacings from it) are left out.`); }
   }
   const fieldRowAt = (e: number, n: number): FieldRow | null => {
     if (!pitchM) return null;
@@ -330,12 +554,15 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
       reported.push({ photo: r.name, row, a0: Math.min(A[0], B[0]), a1: Math.max(A[0], B[0]), c: (A[1] + B[1]) / 2, px: [g.x1 * r.scale, g.y1 * r.scale, g.x2 * r.scale, g.y2 * r.scale] });
     }
   }
+  // Gaps are findings only on a flight whose photographs read the planting completely enough.
+  const incomplete = planting.readShare != null && planting.readShare < o.gapMinReadShare;
   const groups: G[][] = [];
   for (const g of reported.sort((x, y) => x.row.id - y.row.id || x.a0 - y.a0)) {
     const hit = groups.find(gr => gr[0].row === g.row && gr.some(h => Math.min(h.a1, g.a1) - Math.max(h.a0, g.a0) >= o.gapOverlapShare * Math.min(h.a1 - h.a0, g.a1 - g.a0)));
     if (hit && !hit.some(h => h.photo === g.photo)) hit.push(g); else if (!hit) groups.push([g]);
   }
-  const gaps: FieldGap[] = groups.map((gr, i) => {
+  if (incomplete) planting.gapsNotReported = groups.length;
+  const gaps: FieldGap[] = (incomplete ? [] : groups).map((gr, i) => {
     const a0 = median(gr.map(g => g.a0)), a1 = median(gr.map(g => g.a1)), c = median(gr.map(g => g.c));
     const aEN = fromAC(a0, c), bEN = fromAC(a1, c);
     const reportedBy = [...new Set(gr.map(g => g.photo))];
@@ -362,10 +589,12 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
   });
 
   const cornRows = rows.filter(r => r.identity === "corn"), keptGaps = gaps.filter(g => g.verdict === "stand gap");
+  if (incomplete) notes.push(`Stand gaps are not reported on this flight: over the planted ground the photographs hold ${Math.round(100 * planting.readShare!)} % of the row length it carries, so they miss rows and plants that are there, and a stretch with no plant seen is not evidence of a gap${planting.gapsNotReported ? ` (${planting.gapsNotReported} such stretches left out)` : ""}.`);
   notes.push("Review-only: rows, identities and candidate findings with the photographs behind each; nothing here decides a treatment.");
   return {
-    version: CORN_FIELD_VERSION, origin, directionDeg, pitchM: pitchM ? Math.round(pitchM * 1000) / 1000 : null, rows, weeds, gaps,
+    version: CORN_FIELD_VERSION, origin, directionDeg, pitchM: reportedPitchM ? Math.round(reportedPitchM * 1000) / 1000 : null, rows, weeds, gaps,
     rowAgreementM: agreement.length ? Math.round(median(agreement) * 1000) / 1000 : null,
+    planting,
     summary: {
       photographs: used.length, cornRows: cornRows.length, probableRows: rows.length - cornRows.length, offLatticeDropped: offLattice, cornRowLengthM: Math.round(cornRows.reduce((s, r) => s + r.lengthM, 0) * 10) / 10,
       weeds: weeds.filter(w => w.verdict === "weed candidate").length, weedsWithheld: weeds.filter(w => w.verdict === "unknown vegetation").length, cropOnRow: weeds.filter(w => w.verdict === "crop on a row").length,

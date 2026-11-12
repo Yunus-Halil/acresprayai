@@ -27,6 +27,8 @@ const weedVisionProxy = (mode: string) =>
 // Field Twin (dev server only): serve the twins scripts/directGeoref/buildTwin.ts wrote to
 // data/direct-georef/twin/<id>/, so the Field Twin page can save one to the signed-in account. Only twin ids and
 // the bundle's own file names are answered; nothing else under data/ is reachable. Never part of a build.
+// Also the flight's photographs as map tiles (scripts/directGeoref/twinReferenceTiles.ts wrote them there), for the
+// developer preview's reference-imagery pane: reference.json and tiles/<z>/<x>/<y>.jpg.
 const fieldTwinDevFiles = (): Plugin => ({
   name: "field-twin-dev-files",
   apply: "serve",
@@ -40,10 +42,14 @@ const fieldTwinDevFiles = (): Plugin => ({
         res.end(JSON.stringify(ids));
         return;
       }
-      const m = /^\/([a-z0-9][a-z0-9-]{0,63})\/(twin\.json|atlas-\d+\.jpg)$/.exec(url);
+      const m = /^\/([a-z0-9][a-z0-9-]{0,63})\/(twin\.json|reference\.json|atlas-\d+\.jpg|tiles\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg)$/.exec(url);
       if (!m) return next();
       const file = path.join(root, m[1], m[2]);
-      if (!fs.existsSync(file)) { res.statusCode = 404; res.end(); return; }
+      if (!fs.existsSync(file)) {
+        // Beyond the photographs there is no tile: an empty picture, so the map stays quiet about it.
+        if (m[2].startsWith("tiles/")) { res.setHeader("Content-Type", "image/gif"); res.end(Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64")); return; }
+        res.statusCode = 404; res.end(); return;
+      }
       res.setHeader("Content-Type", m[2].endsWith(".json") ? "application/json" : "image/jpeg");
       fs.createReadStream(file).pipe(res);
     });

@@ -66,6 +66,8 @@ type Props = {
   atlasUrl: (index: number) => Promise<string>;
   /** Scans the account holds whose tiles can be shown as reference imagery (developer diagnostics only). */
   referenceOptions?: ReferenceOption[];
+  /** The reference imagery to open with, by id, once it is among the options (the dev preview's local photographs). The viewer's own control switches it off. */
+  initialReference?: string | null;
   /** Expose the map to window.__fieldTwin (development builds, for the screenshot and benchmark script). */
   expose?: boolean;
   /** The detail stop to open at, instead of the remembered one (the dev preview's ?detail=). */
@@ -140,7 +142,7 @@ function measured<T>(name: string, fn: () => T): T {
   return v;
 }
 
-export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus }: Props) {
+export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus }: Props) {
   const units = useUnitSystem();
   const founderView = audience === "founder";
   const stops = founderView ? DETAIL_STOPS : PARTICIPANT_STOPS;
@@ -181,6 +183,9 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const setKeyOpen = (open: boolean) => { setKeyOpenState(open); try { localStorage.setItem(KEY_OPEN_KEY, open ? "open" : "closed"); } catch { /* storage blocked */ } };
   const [query, setQuery] = useState<FindingsQuery>(OVERVIEW);
   const [refId, setRefId] = useState<string>("");
+  // Opened with a reference once, when it arrives; after that the choice is the viewer's.
+  const openedWith = useRef(false);
+  useEffect(() => { if (!openedWith.current && founderView && initialReference && referenceProp.some(o => o.id === initialReference)) { openedWith.current = true; setRefId(initialReference); } }, [initialReference, referenceProp, founderView]);
   const [refOpacity, setRefOpacity] = useState(0.7);
   const [refSwipe, setRefSwipe] = useState<number | null>(null);
   const [centre, setCentre] = useState<{ lat: number; lng: number } | null>(null);
@@ -442,7 +447,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
                   {scene.evidence && toggle("evidence", "Boundary evidence", TWIN_COLOURS.evidence.cover, `what the photographs showed per ${scene.evidence.cellM} m: soil brown, canopy green, cover yellow, road grey, trees off the rows purple`)}
                   {referenceOptions.length > 0 && (
                     <div className="mt-2 text-xs text-neutral-200">
-                      <label className="block text-[11px] text-neutral-400" htmlFor="twin-ref">Reference Orthomosaic</label>
+                      <label className="block text-[11px] text-neutral-400" htmlFor="twin-ref">Reference imagery</label>
                       <select id="twin-ref" value={refId} onChange={e => setRefId(e.target.value)} className="mt-0.5 w-full rounded-sm border border-[#3a3f3a] bg-[#111311] px-1.5 py-1 text-xs text-neutral-100">
                         <option value="">Off</option>
                         {referenceOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}

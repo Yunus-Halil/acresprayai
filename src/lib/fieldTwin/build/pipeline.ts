@@ -17,7 +17,7 @@ export type BuildReport = {
   rows: Record<string, unknown> | null;
   weeds: { detections: number; photographsRun: number; failed: { name: string; reason: string }[]; stats: Record<string, unknown> };
   /** A corn build: what the corn stage did. */
-  corn: { photographsRead: number; withRows: number; failed: { name: string; reason: string }[]; msPerPhoto: number; ms: number; summary: CornStageResult["field"]["summary"]; rowAgreementM: number | null; rowSpacingM: number | null } | null;
+  corn: { photographsRead: number; withRows: number; failed: { name: string; reason: string }[]; msPerPhoto: number; ms: number; summary: CornStageResult["field"]["summary"]; planting: CornStageResult["field"]["planting"]; variant: string | null; rowAgreementM: number | null; rowSpacingM: number | null } | null;
   boundary: { areaM2: number; uncertaintyM2: number; supportPhotographs: number; failures: string[] } | null;
   crops: number;
   timings: StageTimings;
@@ -74,7 +74,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   // weed passes (the colour rules would call the corn itself weeds).
   let corn: CornStageResult | null = null, rows: Awaited<ReturnType<typeof rowsAndTrees>> = null;
   if (crop === "corn") {
-    corn = await timed("corn", () => cornStage(kept, cams.frames, hooks, pool, photoFiles));
+    corn = await timed("corn", () => cornStage(kept, cams.frames, hooks, pool, photoFiles, options.cornVariant));
     if (corn.failed.length) for (const f of corn.failed) notes.push(`${f.name}: Corn V1 could not read it (${f.reason})`);
     if (!corn.field.rows.length) notes.push("no corn rows were read in any photograph: the twin has no corn rows, findings or cultivated block");
     else if (!corn.field.summary.cornRows) notes.push("no row is confirmed corn across the photographs: every row is a planted row, crop not confirmed, and no weed candidate or gap is confirmed");
@@ -108,7 +108,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
     cameras: cams.report as unknown as Record<string, unknown>,
     rows: rows?.report ?? null,
     weeds: { detections: weeds.detections, photographsRun: weeds.photographsRun, failed: weeds.photographsFailed, stats: weeds.stats },
-    corn: corn ? { photographsRead: corn.reads.length, withRows: corn.withRows, failed: corn.failed, msPerPhoto: corn.msPerPhoto, ms: corn.ms, summary: corn.field.summary, rowAgreementM: corn.field.rowAgreementM, rowSpacingM: corn.field.pitchM } : null,
+    corn: corn ? { photographsRead: corn.reads.length, withRows: corn.withRows, failed: corn.failed, msPerPhoto: corn.msPerPhoto, ms: corn.ms, summary: corn.field.summary, planting: corn.field.planting, variant: corn.variant ?? null, rowAgreementM: corn.field.rowAgreementM, rowSpacingM: corn.field.pitchM } : null,
     boundary: ev.boundary ? { areaM2: ev.boundary.areaM2, uncertaintyM2: ev.boundary.uncertaintyM2, supportPhotographs: ev.boundary.stats.support.photographs, failures: ev.boundary.failures } : null,
     crops: built.crops, timings, totalMs: Date.now() - T0, notes,
   };

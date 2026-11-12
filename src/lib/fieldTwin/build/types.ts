@@ -101,7 +101,14 @@ export type BuildOptions = {
   pool?: Pool;
   /** A corn build: also hand back the analysis record (../analysis.ts). Default false; the twin is the same either way. */
   analysis?: boolean;
+  /**
+   * A corn build, for comparison only (the benches, a twin beside a twin): "corn-v1.0" reads every photograph with the
+   * shipped seedling mask and combines them by cornField v2, the result corn-v1.0 gave; "dark-only" reads with the
+   * present mask (leaves darker than their soil) and still combines by v2. Default: the present reader and field rules.
+   */
+  cornVariant?: CornVariant;
 };
+export type CornVariant = "corn-v1.0" | "dark-only";
 
 export class BuildCancelled extends Error { constructor() { super("cancelled"); } }
 

@@ -14,8 +14,8 @@ import { basename, extname, join } from "node:path";
 import { NODE_DECODER, decodeImage, encodeJpeg } from "../bench/images";
 import type { PhotoPixels } from "../../src/lib/photoScout/pattern";
 import { adaptiveAsRead, readCornAdaptive } from "../../src/lib/rowCrop/adaptive";
-import { cornV1AsRead, fuseCornV1 } from "../../src/lib/rowCrop/cornV1";
-import { plantPointsFromGreen } from "../../src/lib/rowCrop/greenPoints";
+import { cornV1AsRead, cornV1PlantPoints, fuseCornV1 } from "../../src/lib/rowCrop/cornV1";
+import { seedlingCache } from "../../src/lib/rowCrop/seedlingGreen";
 import { rowCropParamsFor } from "../../src/lib/rowCrop/params";
 import { distToLine, rowsFromPoints, type PlantPoint } from "../../src/lib/rowCrop/plantRows";
 import type { RowCropRead } from "../../src/lib/rowCrop/readRowCrop";
@@ -71,11 +71,14 @@ for (const f of files) {
   const gsd = USU ? 0.0048 : GSD;
   const params = rowCropParamsFor(profile, gsd);
 
-  const t0 = Date.now(); const ad = readCornAdaptive(px, params); const msGreen = Date.now() - t0;
+  // As readCornV1 reads a photograph: one seedling mask shared by the green read and the plant read, and the plant
+  // read's mask chosen by what the green read found (cornV1PlantPoints).
+  const seedlings = seedlingCache(px);
+  const t0 = Date.now(); const ad = readCornAdaptive(px, params, { seedlings }); const msGreen = Date.now() - t0;
   let gpts: PlantPoint[], msPts: number;
   const pf = POINTS ? join(POINTS, `${stem}.f3.json`) : null;
   if (pf && existsSync(pf)) { const j = JSON.parse(readFileSync(pf, "utf8")); gpts = (j.boxes as number[][]).map(b => ({ x: (b[0] + b[2]) / 2, y: (b[1] + b[3]) / 2 })); msPts = j.ms; }
-  else { const t1 = Date.now(); gpts = plantPointsFromGreen(px).points; msPts = Date.now() - t1; }
+  else { const t1 = Date.now(); gpts = cornV1PlantPoints(px, ad, seedlings); msPts = Date.now() - t1; }
   const reads: Partial<Record<Mode, RowCropRead>> = { A: adaptiveAsRead(ad) };
   const v1 = fuseCornV1(ad, gpts, params, { enteredCrop: CROP, source: "green", greenMs: msGreen, plantsMs: msPts });
   reads.V1 = cornV1AsRead(v1);

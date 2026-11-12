@@ -21,7 +21,7 @@ export type PoolTask =
   /** Crops of one photograph for the atlases. */
   | { kind: "crops"; name: string; file: Blob; reqs: { x0: number; y0: number; size: number; out: number }[] }
   /** Corn V1 on one photograph at its full size (`gsdM`: metres per original pixel at the frame's centre). */
-  | { kind: "corn"; name: string; file: Blob; gsdM: number | null };
+  | { kind: "corn"; name: string; file: Blob; gsdM: number | null; /** The shipped corn-v1.0 seedling mask (a comparison build). */ baseline?: boolean };
 
 export type PoolResult =
   | { kind: "raster" }
@@ -78,7 +78,7 @@ export async function handleTask(task: PoolTask, ctx: TaskContext): Promise<{ re
     case "corn": {
       const t = Date.now();
       const px = await ctx.photo(task.file, task.name).decode(1);
-      return { result: { kind: "corn", name: task.name, read: cornPhotoRead(task.name, px, task.gsdM), ms: Date.now() - t }, transfer: [] };
+      return { result: { kind: "corn", name: task.name, read: cornPhotoRead(task.name, px, task.gsdM, task.baseline ?? false), ms: Date.now() - t }, transfer: [] };
     }
     case "crops": {
       const cells = await ctx.photo(task.file, task.name).crops(task.reqs);

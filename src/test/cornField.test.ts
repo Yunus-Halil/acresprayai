@@ -2,7 +2,7 @@
 // field, each photograph's "read" made from the truth through Direct's own camera model, with single-photograph errors
 // planted, to check that the field keeps what the photographs agree on and withholds what one of them made up.
 import { describe, expect, it } from "vitest";
-import { cornField, type CornPhotoRead } from "@/lib/fieldTwin/cornField";
+import { FIELD, FIELD_V2, cornField, type CornPhotoRead } from "@/lib/fieldTwin/cornField";
 import { IDENTITY, enuFromCamera, groundToPixel, mulM, type GeorefFrame, type M3 } from "@/lib/directGeoref/projection";
 import { fromEnu, toEnu } from "@/lib/sourceFrames/odm";
 
@@ -134,5 +134,94 @@ describe("Corn V1 over a field", () => {
   it("reports in latitude and longitude as well as local metres", () => {
     const r = f.rows[0], [lat, lng] = r.line[0], back = toEnu({ lat, lng, altM: 0 }, f.origin);
     expect(Math.hypot(back[0] - r.lineEN[0][0], back[1] - r.lineEN[0][1])).toBeLessThan(1e-3);
+  });
+});
+
+// cornField v3 (2026-11-12): the located plants say where the planting is. The first flight of someone else's field
+// (very early corn beside a weedy headland) had 2,100 m of "rows" strung through the headland's weeds.
+describe("Corn V1 over a field: the planting, from the located plants", () => {
+  const A = camera("A", 0, -2), B = camera("B", 0, 2), C = camera("C", 0, 6);
+  const frames = new Map([A, B, C].map(f => [f.name, f]));
+  const eOf = (r: { lineEN: [number, number][] }, g: { origin: { lat: number; lng: number } }) => { const m = r.lineEN[r.lineEN.length >> 1], p = fromEnu([m[0], m[1], 0], { ...g.origin, altM: 0 }); return toEnu({ lat: p.lat, lng: p.lng, altM: 0 }, ORIGIN)[0]; };
+  const line = (f: GeorefFrame, e0: number, n0: number, e1: number, n1: number) => { const pts: [number, number][] = []; for (let t = 0; t <= 1.0001; t += 0.05) { const q = px(f, e0 + (e1 - e0) * t, n0 + (n1 - n0) * t); if (q) pts.push(q); } return pts; };
+  const unconfirmed = (points: [number, number][]) => ({ points, identity: "probable crop" as const, evidence: "plant read only", confidence: "medium" as const });
+  // A headland east of the last row (east 4.6 m): weeds scattered at six a square metre, and each photograph
+  // stringing three "rows" through them along the planting.
+  let s = 7; const rnd = () => ((s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff);
+  const weeds: [number, number][] = []; for (let i = 0; i < 6 * 5 * 30; i++) weeds.push([5.2 + 4.6 * rnd(), -12 + 30 * rnd()]);
+  const withHeadland = (f: GeorefFrame): CornPhotoRead => {
+    const base = readOf(f);
+    return { ...base, plants: [...base.plants, ...weeds.map(([e, n]) => px(f, e, n)).filter((q): q is [number, number] => !!q)], rows: [...base.rows, ...[6.6, 7.5, 8.7].map(e => unconfirmed(line(f, e, -8, e + 0.1, 12))).filter(r => r.points.length >= 2)] };
+  };
+
+  it("leaves out the rows strung through a headland's scattered weeds, and keeps every row of the planting to its edge", () => {
+    const reads = [A, B, C].map(withHeadland);
+    const old = cornField(reads, frames, FIELD_V2), g = cornField(reads, frames);
+    expect(old.rows.filter(r => eOf(r, old) > 6).length).toBeGreaterThanOrEqual(3);
+    expect(g.planting.judged).toBe(true);
+    expect(g.planting.scatteredM2).toBeGreaterThan(40);
+    expect(g.planting.scatteredRowM).toBeGreaterThan(50);
+    expect(g.rows.filter(r => eOf(r, g) > 5.4).length).toBe(0);
+    const corn = g.rows.filter(r => r.identity === "corn");
+    expect(corn.length).toBe(ROWS.length);
+    expect(Math.max(...corn.map(r => eOf(r, g)))).toBeCloseTo(6 * PITCH, 1);
+    expect(Math.abs(g.planting.plantSpacingM! - PITCH)).toBeLessThan(0.01);
+    expect(g.notes.join(" ")).toMatch(/plants are scattered/);
+  });
+
+  it("leaves out a piece a photograph drew across the planting", () => {
+    // On the bare soil west of the planting, so that nothing else could remove it (blocks off: it is also a scrap).
+    const reads = [readOf(A), { ...readOf(B), rows: [...readOf(B).rows, unconfirmed(line(B, -9, 0, -6, 5))] }, readOf(C)];
+    const old = cornField(reads, frames, FIELD_V2), g = cornField(reads, frames, { ...FIELD, block: null });
+    expect(old.rows.length).toBe(ROWS.length + 1);
+    expect(g.rows.length).toBe(ROWS.length);
+    expect(g.planting.crossDirectionRowM).toBeGreaterThan(5);
+    expect(g.planting.scatteredRowM).toBe(0);
+  });
+
+  it("leaves out a scrap of unconfirmed row standing apart from the planting, and keeps a confirmed one unless it is a few metres", () => {
+    // West of the planting the soil is bare (no plants: the ground is not judged there). A 2 m line 4 m from the outer row.
+    const scrap = (f: GeorefFrame, identity: "corn" | "probable crop") => ({ points: line(f, -8.6, 1, -8.6, 3), identity, evidence: "plant read only", confidence: "medium" as const });
+    const one = cornField([{ ...readOf(A), rows: [...readOf(A).rows, scrap(A, "probable crop")] }, readOf(B), readOf(C)], frames);
+    expect(one.planting.scrapRows).toBe(1);
+    expect(one.rows.length).toBe(ROWS.length);
+    // The planting here holds about 300 m of row: a confirmed 2 m is under a hundredth of it, a confirmed 5 m is not.
+    const all = cornField([A, B, C].map(f => ({ ...readOf(f), rows: [...readOf(f).rows, scrap(f, "corn")] })), frames);
+    expect(all.planting.scrapRows).toBe(1);
+    expect(all.rows.length).toBe(ROWS.length);
+    const longer = (f: GeorefFrame) => ({ points: line(f, -8.6, 0, -8.6, 5), identity: "corn" as const, evidence: "both reads agree", confidence: "high" as const });
+    const five = cornField([A, B, C].map(f => ({ ...readOf(f), rows: [...readOf(f).rows, longer(f)] })), frames);
+    expect(five.planting.scrapRows).toBe(0);
+    expect(five.rows.length).toBe(ROWS.length + 1);
+  });
+
+  it("reports no stand gap on a flight whose photographs each miss a third of the rows", () => {
+    // Every row is held by two of the three photographs covering it: enough to be corn, not enough for "no plant seen"
+    // to mean a gap. The true gap on row 2 (no plant in it in any photograph) is reported by both photographs holding it.
+    const missing = (f: GeorefFrame, m: number, gaps: CornPhotoRead["gaps"]) => { const base = readOf(f); return { ...base, rows: base.rows.filter((_, j) => (((ROWS[j] % 3) + 3) % 3) !== m), gaps }; };
+    const reads = [missing(A, 0, [gap(A, 2, 1.0, 2.0)]), missing(B, 1, [gap(B, 2, 1.0, 2.0)]), missing(C, 2, [])];
+    const old = cornField(reads, frames, FIELD_V2), g = cornField(reads, frames);
+    expect(old.gaps.some(q => q.verdict === "stand gap")).toBe(true);
+    expect(g.rows.filter(r => r.identity === "corn").length).toBe(ROWS.length);
+    expect(g.planting.readShare!).toBeGreaterThan(0.6);
+    expect(g.planting.readShare!).toBeLessThan(0.75);
+    expect(g.gaps.length).toBe(0);
+    expect(g.planting.gapsNotReported).toBe(1);
+    expect(g.notes.join(" ")).toMatch(/Stand gaps are not reported on this flight/);
+    // The well-read field of the tests above keeps its gap: every photograph holds every row.
+    expect(cornField([A, B, C].map(f => readOf(f, { gaps: [gap(f, 2, 1.0, 2.0)] })), frames).planting.readShare!).toBeGreaterThan(0.9);
+  });
+
+  it("judges nothing by the plants where none are located (a canopy), and then changes no row", () => {
+    const reads = [A, B, C].map(f => ({ ...withHeadland(f), plants: [] }));
+    const old = cornField(reads, frames, FIELD_V2), g = cornField(reads, frames, { ...FIELD, block: null });
+    expect(g.planting.judged).toBe(false);
+    expect(g.planting.why).toMatch(/too few plants/);
+    expect(g.rows).toEqual(old.rows);
+  });
+
+  it("gives cornField v2's result when asked for it", () => {
+    const g = cornField([A, B, C].map(withHeadland), frames, FIELD_V2);
+    expect(g.planting).toMatchObject({ judged: false, scatteredRowM: 0, crossDirectionRowM: 0, scrapRows: 0, readShare: null });
   });
 });

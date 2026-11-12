@@ -1,9 +1,11 @@
 // Development only: the Field Twin viewer over a twin built on this computer, served by the dev server's
 // /__field-twin route, with no sign-in. Exists so the screenshot and benchmark script (scripts/directGeoref/
 // twinShots.mjs) can open the real apricot twin, and ?synthetic=N builds a generated field of N observations. Never part of a production build (App.tsx mounts it under
-// import.meta.env.DEV only), and it never shows reference imagery (that needs the account's session).
+// import.meta.env.DEV only). It never shows an account's reference imagery (that needs the account's session); it
+// does offer the flight's own photographs as reference imagery when they were cut into tiles on this computer
+// (scripts/directGeoref/twinReferenceTiles.ts wrote a reference.json beside the twin).
 import { useEffect, useState } from "react";
-import FieldTwinView from "@/components/app/fieldTwin/FieldTwinView";
+import FieldTwinView, { type ReferenceOption } from "@/components/app/fieldTwin/FieldTwinView";
 import TwinBuilder, { type BuiltTwin } from "@/components/app/fieldTwin/TwinBuilder";
 import { syntheticTwin } from "@/lib/fieldTwin/synthetic";
 import { type TwinBundle, parseTwin } from "@/lib/fieldTwin/types";
@@ -12,6 +14,7 @@ export default function FieldTwinDevPreview() {
   const [twin, setTwin] = useState<TwinBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [built, setBuilt] = useState<BuiltTwin | null>(null);
+  const [reference, setReference] = useState<ReferenceOption[]>([]);
   const params = new URLSearchParams(window.location.search);
   const id = params.get("id") ?? "";
   // ?build=1: the builder panel instead of a twin from disk (the build benchmark script, and a look without a sign-in).
@@ -23,6 +26,8 @@ export default function FieldTwinDevPreview() {
   // ?audience=participant shows the pilot participant's viewer (no Full stop, no diagnostics, the review bar).
   const audience = params.get("audience") === "participant" ? "participant" : "founder";
   const detail = detailParam === "simple" || detailParam === "standard" || detailParam === "full" ? detailParam : undefined;
+  // ?photos=0 opens without the flight's photographs under the twin (they are on when this computer holds them).
+  const photos = params.get("photos") !== "0";
   useEffect(() => {
     if (build) return;
     (async () => {
@@ -41,6 +46,12 @@ export default function FieldTwinDevPreview() {
         performance.mark("twin:parse:end"); performance.measure("twin:parse", "twin:json:end", "twin:parse:end");
         if ("reason" in parsed) throw new Error(parsed.reason);
         setTwin(parsed.twin);
+        // The flight's photographs as tiles, when this computer holds them for this twin.
+        try {
+          const r = await fetch(`/__field-twin/${pick}/reference.json`);
+          const j = r.ok ? ((await r.json()) as { set?: string; label?: string; note?: string; maxNativeZoom?: number }) : null;
+          if (j && typeof j.set === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(j.set)) setReference([{ id: j.set, label: j.label ?? "The flight's photographs", url: `/__field-twin/${j.set}/tiles/{z}/{x}/{y}.jpg`, maxNativeZoom: j.maxNativeZoom ?? 22, note: j.note ?? "The flight's photographs, placed by the twin's cameras. Display only." }]);
+        } catch { /* no reference imagery for this twin */ }
       } catch (e) { setError((e as Error).message); }
     })();
   }, [id, synthetic, build]);
@@ -60,7 +71,7 @@ export default function FieldTwinDevPreview() {
     : async (i: number) => `/__field-twin/${twin.id}/${twin.atlases[i].file}`;
   return (
     <div className="h-screen w-screen bg-[#1a1c1a]">
-      <FieldTwinView twin={twin} atlasUrl={atlasUrl} expose detail={detail} audience={audience} review={audience === "participant" ? { twinId: null, disabledReason: "Preview: reviews are saved only for a twin in an account." } : undefined} />
+      <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={reference} initialReference={photos ? reference[0]?.id ?? null : null} expose detail={detail} audience={audience} review={audience === "participant" ? { twinId: null, disabledReason: "Preview: reviews are saved only for a twin in an account." } : undefined} />
     </div>
   );
 }

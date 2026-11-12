@@ -64,6 +64,8 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units 
           <dt className="text-neutral-400">Row spacing</dt><dd className="text-right tabular-nums text-neutral-100">{corn.rowSpacingM != null ? cm(corn.rowSpacingM, units) : "–"}{isLocalTwin(twin) ? " (scale estimated)" : ""}</dd>
           <dt className="text-neutral-400">Photographs agree on rows</dt><dd className="text-right tabular-nums text-neutral-100">{corn.rowAgreementM != null ? `within ${cm(corn.rowAgreementM, units)}` : "–"}</dd>
         </dl>
+        {/* What the field combination left out or withheld on this flight, in its own words (the last note is the review-only line above). */}
+        {corn.notes.length > 1 && <ul className="mt-1.5 space-y-1 border-l border-[#2e322e] pl-2 text-[10px] leading-snug text-neutral-400" aria-label="Notes on this flight">{corn.notes.slice(0, -1).map(n => <li key={n}>{n}</li>)}</ul>}
         <div className="mt-1.5 border-t border-[#2e322e] pt-1">
           {check("corn", "Corn rows, weeds and gaps", "what the photographs confirm")}
           {check("cornUncertain", "Observations not confirmed", "rows, weeds and gaps the photographs do not agree on: dashed, kept for review")}

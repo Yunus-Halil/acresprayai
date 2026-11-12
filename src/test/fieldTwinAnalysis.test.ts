@@ -93,7 +93,7 @@ describe("the analysis record of a corn twin", () => {
   it("holds the reads, the cameras, each finding's place in each photograph and each crop's source, under the twin's own ids", () => {
     const a = buildTwinAnalysis(inputs())!;
     expect(a).toMatchObject({ format: TWIN_ANALYSIS_FORMAT, twinId: twin.id, builtAt: twin.builtAt, crop: "corn", notes: [] });
-    expect(a.engine).toEqual({ cornV1: 1, cornField: 2, twinEngine: twin.corn!.engine });
+    expect(a.engine).toEqual({ cornV1: 1, cornField: 3, twinEngine: twin.corn!.engine });
     expect(a.reads).toEqual(reads);
     expect(a.frames.map(f => f.name)).toEqual(["A", "B", "C"]);
     expect(a.frames[0].ground).toEqual({ altM: 0, datum: "test", basis: "test" });

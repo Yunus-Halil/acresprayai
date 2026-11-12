@@ -10,6 +10,13 @@
 //   the mask only where it touches a strong pixel (the pale half of a leaf);
 // - a pale seedling with no strong pixel at all is kept when it is big enough and part of it is brighter than its
 //   soil with sproutTint of tint over the soil's.
+// - darker than its soil (2026-11-12): tint is a difference of grey levels, so it shrinks with brightness, and a leaf
+//   half as bright as the soil beside it shows half the tint for the same colour. On the first flight of someone
+//   else's field (olive V1-V2 seedlings on pale sand, 98 % of leaf pixels darker than their soil by about 66 grey
+//   levels) 0.04 % of leaf pixels passed strongTint. So for a pixel darker than its soil the tint is also compared at
+//   the soil's brightness (scaled up by soil / pixel brightness, at most dark.maxGain times): strong at dark.strongTint
+//   over the soil's tint, weak at dark.weakTint. Added to the rules above, never in place of them: every pixel they
+//   keep is kept. Measured on the labelled sets before it was built in: docs/features/corn-dark-seedlings.md.
 // The local soil level: block means of the least green pixels (tint under the image's 10th percentile plus a spread),
 // then a median over the blocks around, so a row of seedlings never raises its own soil level.
 import type { PhotoPixels } from "../photoScout/pattern";
@@ -31,16 +38,28 @@ export const SEEDLING_GREEN = {
   /** ... with a part this much brighter than the soil and greener than it by sproutTint. */
   sproutBright: 30,
   sproutTint: 8,
+  /**
+   * Leaves darker than their soil: the tint scaled to the soil's brightness (at most maxGain times, and only for
+   * pixels brighter than minL: below it the tint is sensor noise) against the soil's tint. Strong 24 was the best of
+   * 12 / 16 / 20 / 24 / 28 tried (at 20 a quarter of the field's row length ran across the planting and labelled
+   * maize was called weed 7 times against 1); weak is 0.625 of strong, as weakTint is of strongTint. null: the rule
+   * is off (corn-v1.0's mask).
+   */
+  dark: { strongTint: 24, weakTint: 15, maxGain: 2.5, minL: 40 } as { strongTint: number; weakTint: number; maxGain: number; minL: number } | null,
 };
 export type SeedlingGreenOptions = typeof SEEDLING_GREEN;
+
+/** corn-v1.0's mask exactly: no rule for leaves darker than their soil. Kept so the shipped read can be run beside the present one. */
+export const SEEDLING_V1: SeedlingGreenOptions = { ...SEEDLING_GREEN, dark: null };
 
 /**
  * The second, more sensitive look (emergence V2, 2026-11-02), run only in narrow windows: along a reconstructed row
  * where a plant is expected and none was found, and on ground no row reaches where a later planting may stand. Chosen
  * on photograph 100's later planting, barely emerged: these thresholds line its specks up at the row pitch (0.55
  * against 0.33 for SEEDLING_GREEN), looser ones line up soil texture at another lag. Never run over a whole frame.
+ * Without the dark-leaf rule: these windows were chosen and measured without it, and it has not been tried in them.
  */
-export const SEEDLING_RELAXED: SeedlingGreenOptions = { ...SEEDLING_GREEN, strongTint: 11, weakTint: 7, brightOverSoil: 22, sproutTint: 5, sproutBright: 22 };
+export const SEEDLING_RELAXED: SeedlingGreenOptions = { ...SEEDLING_GREEN, dark: null, strongTint: 11, weakTint: 7, brightOverSoil: 22, sproutTint: 5, sproutBright: 22 };
 
 /** The soil beside every pixel, per block: brightness and tint of the least green pixels, a median over the blocks around. */
 export type SoilLevels = { W: number; H: number; B: number; gw: number; gh: number; soilL: Float32Array; soilT: Float32Array; /** Median soil brightness over the frame. */ globalL: number };
@@ -114,7 +133,7 @@ export function soilLevels(px: PhotoPixels, o: SeedlingGreenOptions = SEEDLING_G
 export function seedlingWindow(px: PhotoPixels, lv: SoilLevels, o: SeedlingGreenOptions, x0: number, y0: number, x1: number, y1: number, lightScale = false): Uint8Array {
   const W = px.width, d = px.rgba, { B, gw } = lv;
   x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(lv.W, Math.ceil(x1)); y1 = Math.min(lv.H, Math.ceil(y1));
-  const w = Math.max(0, x1 - x0), h = Math.max(0, y1 - y0), N = w * h;
+  const w = Math.max(0, x1 - x0), h = Math.max(0, y1 - y0), N = w * h, dark = o.dark;
   // Per pixel: 1 strong, 2 weak, 4 sprout part.
   const cls = new Uint8Array(N);
   for (let y = y0; y < y1; y++) {
@@ -124,10 +143,18 @@ export function seedlingWindow(px: PhotoPixels, lv: SoilLevels, o: SeedlingGreen
       if (!Number.isFinite(sL) || !Number.isFinite(sT)) continue;
       const k = lightScale ? Math.max(0.5, Math.min(1, sL / lv.globalL)) : 1;
       const i = y * W + x, q = i * 4, r = d[q], g = d[q + 1], b = d[q + 2];
-      const dt = g - (r + b) / 2 - sT, dl = 0.3 * r + 0.59 * g + 0.11 * b - sL;
+      const t = g - (r + b) / 2, L = 0.3 * r + 0.59 * g + 0.11 * b, dt = t - sT, dl = L - sL;
       const j = (y - y0) * w + (x - x0);
-      if (dt > k * o.strongTint) cls[j] = 1;
-      else if (dt > k * o.weakTint || (dl > k * o.brightOverSoil && dt > k * o.paleTint)) cls[j] = dl > k * o.sproutBright && dt > k * o.sproutTint ? 6 : 2;
+      let cl = 0;
+      if (dt > k * o.strongTint) cl = 1;
+      else if (dt > k * o.weakTint || (dl > k * o.brightOverSoil && dt > k * o.paleTint)) cl = dl > k * o.sproutBright && dt > k * o.sproutTint ? 6 : 2;
+      // Darker than its soil: the tint at the soil's brightness. Only ever adds (a weak pixel may become strong, an
+      // unclassed one weak or strong).
+      if (dark && cl !== 1 && dl < 0 && L > dark.minL) {
+        const dtn = t * Math.min(dark.maxGain, sL / L) - sT;
+        if (dtn > k * dark.strongTint) cl = 1; else if (!cl && dtn > k * dark.weakTint) cl = 2;
+      }
+      cls[j] = cl;
     }
   }
   // Hysteresis: components of strong + weak; kept when they hold a strong pixel, or are a pale seedling.
@@ -168,17 +195,18 @@ export function shrinkMask(mask: Uint8Array, W: number, H: number, f: number): U
 }
 
 /**
- * One photograph's soil levels and seedling mask at SEEDLING_GREEN, computed once and shared by every reader of that
+ * One photograph's soil levels and seedling mask (at SEEDLING_GREEN unless the cache was made for another mask,
+ * SEEDLING_V1 for the shipped baseline), computed once and shared by every reader of that
  * photograph. The emergence reader and Corn V1's plant read (greenPoints.ts) compute exactly the same two things from
  * the same pixels; Corn V1 used to compute them twice (2026-11-05: about 1 s of a 3.5-4 s seedling photograph).
  * The cache answers only for its own photograph (the same pixels object) and the shared options; anything else is
  * computed afresh, so a reader handed a cache can never get another photograph's or another setting's mask.
  * Read-only: the arrays are shared, and no reader writes into them.
  */
-export type SeedlingCache = { readonly px: PhotoPixels; levels?: SoilLevels; mask?: Uint8Array };
+export type SeedlingCache = { readonly px: PhotoPixels; /** The whole-frame mask's rules (default SEEDLING_GREEN). */ readonly options?: SeedlingGreenOptions; levels?: SoilLevels; mask?: Uint8Array };
 
-export function seedlingCache(px: PhotoPixels): SeedlingCache {
-  return { px };
+export function seedlingCache(px: PhotoPixels, options: SeedlingGreenOptions = SEEDLING_GREEN): SeedlingCache {
+  return { px, options };
 }
 
 /** The soil levels at SEEDLING_GREEN: from the cache when it is this photograph's, else computed. */
@@ -187,8 +215,8 @@ export function sharedSoilLevels(cache: SeedlingCache | null | undefined, px: Ph
   return (cache.levels ??= soilLevels(px, SEEDLING_GREEN));
 }
 
-/** The whole-frame seedling mask at SEEDLING_GREEN: from the cache when it is this photograph's, else computed. */
+/** The whole-frame seedling mask (the cache's rules, else SEEDLING_GREEN): from the cache when it is this photograph's, else computed. */
 export function sharedSeedlingMask(cache: SeedlingCache | null | undefined, px: PhotoPixels): Uint8Array {
   if (!cache || cache.px !== px) return seedlingMask(px, SEEDLING_GREEN);
-  return (cache.mask ??= seedlingMask(px, SEEDLING_GREEN, sharedSoilLevels(cache, px)));
+  return (cache.mask ??= seedlingMask(px, cache.options ?? SEEDLING_GREEN, sharedSoilLevels(cache, px)));
 }

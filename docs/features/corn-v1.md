@@ -4,6 +4,10 @@ The production corn read in Swardus: one drone photograph in; rows, what each ro
 evidence behind it. Code `src/lib/rowCrop/cornV1.ts` (+ `greenPoints.ts`); in the app through Photo Scout (crop corn,
 growth stage "auto"). Decision support only: nothing here decides a treatment.
 
+Since 2026-11-12 the seedling mask also sees leaves darker than their soil, on photographs the green read does not
+already read as bands or a canopy: [corn-dark-seedlings.md](corn-dark-seedlings.md). The tag `corn-v1.0` and
+everything measured below are the read without it (`baselineSeedlings`).
+
 ## The architecture and why it won
 
 Two independent reads of where the rows run, fused so that the one fit for the ground decides, and findings drawn

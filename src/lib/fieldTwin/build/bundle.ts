@@ -186,7 +186,9 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
     const conf = weeds.filter(w => w.status === "confirmed").length, cont = weeds.filter(w => w.status === "contested").length, keptGaps = gaps.filter(g => g.status === "confirmed");
     twinCorn = {
       version: 1,
-      engine: "Corn V1 (tag corn-v1.0) on every photograph at its full size, with the aligned camera's pixel size; combined over the field by cornField v2 (rows on the field's lattice, weed sightings reconciled across photographs (a weed needs 2+ weed votes and more than all other votes; silence is not a vote), gaps checked in every photograph covering them)",
+      engine: cornRes.variant
+        ? `Corn V1 ${cornRes.variant === "corn-v1.0" ? "(tag corn-v1.0)" : "with the dark-leaf seedling rule"} on every photograph at its full size, with the aligned camera's pixel size; combined over the field by cornField v2 (rows on the field's lattice, weed sightings reconciled across photographs (a weed needs 2+ weed votes and more than all other votes; silence is not a vote), gaps checked in every photograph covering them). A comparison build: not the present reader and field rules.`
+        : "Corn V1 with the dark-leaf seedling rule on every photograph at its full size, with the aligned camera's pixel size; combined over the field by cornField v3 (rows over ground where the located plants are scattered, and rows across the planting, left out; rows on the field's lattice; weed sightings reconciled across photographs (a weed needs 2+ weed votes and more than all other votes; silence is not a vote); gaps checked in every photograph covering them, and withheld on a flight whose reads are incomplete)",
       enteredCrop: "corn",
       rowSpacingM: F.pitchM, rowDirectionDeg: F.directionDeg != null ? r2(F.directionDeg) : null, rowAgreementM: F.rowAgreementM,
       photographs: { read: cornRes.reads.length, withRows: cornRes.withRows, failed: cornRes.failed },
