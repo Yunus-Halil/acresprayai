@@ -66,15 +66,40 @@ export function orchardBlock(twin: TwinBundle, frame: LocalFrame = localFrame(tw
     const alongs = ends.map(p => p[0]), across = ends.reduce((s, p) => s + p[1], 0) / ends.length;
     return { a0: Math.min(...alongs) - halfAlong, a1: Math.max(...alongs) + halfAlong, across };
   }).sort((p, q) => p.across - q.across);
+  // Pieces of one row are one row. A corn twin draws a row in pieces (cut where no photograph holds it), and an
+  // outline stepping round every piece folded over itself: on a field of about 50 rows in 167 pieces it had some 670
+  // corners and enclosed a sixth of the planting (2026-11-12). Orchard rows stand a whole spacing apart and are never
+  // joined here.
+  const lines: { a0: number; a1: number; across: number; n: number }[] = [];
+  for (const s of segs) {
+    const last = lines[lines.length - 1];
+    if (last && s.across - last.across <= halfAcross) { last.a0 = Math.min(last.a0, s.a0); last.a1 = Math.max(last.a1, s.a1); last.across = (last.across * last.n + s.across) / (last.n + 1); last.n++; }
+    else lines.push({ ...s, n: 1 });
+  }
   // Left side top to bottom, right side bottom to top: a polygon that steps with each row's own ends.
   const left: [number, number][] = [], right: [number, number][] = [];
-  segs.forEach((s, i) => {
-    const lo = i === 0 ? s.across - halfAcross : (s.across + segs[i - 1].across) / 2;
-    const hi = i === segs.length - 1 ? s.across + halfAcross : (s.across + segs[i + 1].across) / 2;
+  lines.forEach((s, i) => {
+    const lo = i === 0 ? s.across - halfAcross : (s.across + lines[i - 1].across) / 2;
+    const hi = i === lines.length - 1 ? s.across + halfAcross : (s.across + lines[i + 1].across) / 2;
     left.push([s.a0, lo], [s.a0, hi]);
     right.push([s.a1, lo], [s.a1, hi]);
   });
-  return [...left, ...right.reverse()].map(([al, ac]) => frame.fromField(al, ac));
+  let ring: [number, number][] = [...left, ...right.reverse()];
+  // Where rows were joined from pieces their ends are ragged by the pieces, not by the planting: corners that move
+  // the outline by less than a row spacing are dropped, so the outline (and its handles, when adjusted) follows the
+  // field and not each row's last piece.
+  if (lines.length < segs.length) {
+    const tol = 2 * halfAcross;
+    for (let changed = true; changed && ring.length > 4;) {
+      changed = false;
+      for (let i = 0; i < ring.length && ring.length > 4; i++) {
+        const [ax, ay] = ring[(i + ring.length - 1) % ring.length], [px, py] = ring[i], [bx, by] = ring[(i + 1) % ring.length];
+        const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy, t = L ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L)) : 0;
+        if (Math.hypot(px - ax - t * dx, py - ay - t * dy) < tol) { ring.splice(i, 1); i--; changed = true; }
+      }
+    }
+  }
+  return ring.map(([al, ac]) => frame.fromField(al, ac));
 }
 
 /**
