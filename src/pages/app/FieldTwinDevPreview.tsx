@@ -15,7 +15,7 @@ export default function FieldTwinDevPreview() {
   const [error, setError] = useState<string | null>(null);
   const [built, setBuilt] = useState<BuiltTwin | null>(null);
   const [reference, setReference] = useState<ReferenceOption[]>([]);
-  const [plants, setPlants] = useState<{ points: LatLngPair[]; note: string } | null>(null);
+  const [plants, setPlants] = useState<{ points: LatLngPair[]; note: string; certainty?: number[] | null } | null>(null);
   const params = new URLSearchParams(window.location.search);
   const id = params.get("id") ?? "";
   // ?build=1: the builder panel instead of a twin from disk (the build benchmark script, and a look without a sign-in).
@@ -56,8 +56,10 @@ export default function FieldTwinDevPreview() {
         // Plants located along the rows (scripts/rowCrop/exportPlantMarks.ts), when this computer holds them for this twin.
         try {
           const r = await fetch(`/__field-twin/${pick}/plants.json`);
-          const j = r.ok ? ((await r.json()) as { points?: unknown; note?: string }) : null;
-          if (j && Array.isArray(j.points)) setPlants({ points: (j.points as unknown[]).filter((p): p is LatLngPair => Array.isArray(p) && p.length === 2 && p.every(v => typeof v === "number" && Number.isFinite(v))), note: typeof j.note === "string" ? j.note : "Plants the photographs located." });
+          const j = r.ok ? ((await r.json()) as { points?: unknown; note?: string; certainty?: unknown }) : null;
+          const ok = (p: unknown): p is LatLngPair => Array.isArray(p) && p.length === 2 && p.every(v => typeof v === "number" && Number.isFinite(v));
+          // Kept whole (the certainty lines up with the points by index); a malformed file is not drawn.
+          if (j && Array.isArray(j.points) && j.points.every(ok)) setPlants({ points: j.points as LatLngPair[], note: typeof j.note === "string" ? j.note : "Plants the photographs located.", certainty: Array.isArray(j.certainty) && j.certainty.length === j.points.length ? (j.certainty as number[]) : null });
         } catch { /* no plants for this twin */ }
       } catch (e) { setError((e as Error).message); }
     })();

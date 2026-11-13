@@ -94,7 +94,7 @@ type Props = {
   focus?: ReviewFocus | null;
   onFocus?: (found: { status: string } | null) => void;
   /** Corn twins: plants the photographs located (the dev preview's plants.json), drawn up close and snapped to by the row editor. */
-  plants?: { points: LatLngPair[]; note: string } | null;
+  plants?: { points: LatLngPair[]; note: string; certainty?: number[] | null } | null;
 };
 
 const DETAIL_KEY = "swathwise:twin-detail";
@@ -223,7 +223,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const selectedRowKey = selection?.kind === "cornRow" ? selection.id : selection?.kind === "addedRow" ? selection.uid : null;
   const rowHandles = useMemo(() => (rowEditing && rowModelNow && selectedRowKey != null ? rowEndsNow(rowModelNow, selectedRowKey) : null), [rowEditing, rowModelNow, selectedRowKey]);
   const rowEditsProp = useMemo(() => (twin.corn ? { edits: rowEdits, active: rowEditing, hideRows, hover: rowEditing ? rowHover : null, overrides: rowOverrides, handles: rowHandles } : null), [twin.corn, rowEdits, rowEditing, hideRows, rowHover, rowOverrides, rowHandles]);
-  const plantsProp = useMemo(() => (plants ? { points: plants.points, show: showPlants } : null), [plants, showPlants]);
+  const plantsProp = useMemo(() => (plants ? { points: plants.points, show: showPlants, certainty: plants.certainty ?? null } : null), [plants, showPlants]);
 
   // The findings for the current query: computed once per query, cached by the engine where it can.
   const result = useMemo<FindingsResult>(() => engine.run(query), [engine, query]);

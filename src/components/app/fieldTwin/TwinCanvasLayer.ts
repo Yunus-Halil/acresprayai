@@ -106,7 +106,7 @@ export class TwinCanvasLayer extends L.Canvas {
   /** A click that ends a handle drag is not a tap on the ground. */
   private swallowClick = false;
   /** Plants located by the photographs (zoom-0 units), drawn at the plant level as small neutral dots; null for none. */
-  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex } | null = null;
+  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex; certainty: Uint8Array | null } | null = null;
   private showPlants = true;
 
   constructor(layers: TwinLayers, options: L.RendererOptions = {}) {
@@ -285,11 +285,12 @@ export class TwinCanvasLayer extends L.Canvas {
     if (me._map) { if (active) me._map.doubleClickZoom.disable(); else if (!this.editing) me._map.doubleClickZoom.enable(); }
     this.requestRedraw();
   }
-  setPlants(points: LatLngPair[] | null, show: boolean) {
+  /** `certainty` per plant: 0 certain, 1 probable (the certain rows' geometry supports it), 2 uncertain; absent: all certain. */
+  setPlants(points: LatLngPair[] | null, show: boolean, certainty: number[] | null = null) {
     if (points) {
       const n = points.length, x = new Float64Array(n), y = new Float64Array(n);
       points.forEach(([lat, lng], i) => { const [wx, wy] = toWorld(lat, lng); x[i] = wx; y[i] = wy; });
-      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7) };
+      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null };
     } else this.plants = null;
     this.showPlants = show;
     this.requestRedraw();
@@ -686,10 +687,19 @@ export class TwinCanvasLayer extends L.Canvas {
     const K = scene.corn!, S = CORN_STATUS, unc = this.layers.cornUncertain, sel = this.selection, RE = this.rowEdit, V = RE.verdicts;
     // Plants the photographs located: small neutral dots, never coloured as corn (nothing tells corn by its look).
     if (this.plants && this.showPlants && pxPerM >= 12) {
-      const P = this.plants, r = Math.max(1.4, Math.min(4, 0.025 * pxPerM));
-      ctx.beginPath(); let np = 0;
-      for (const k of P.index.query(vx0, vy0, vx1, vy1, 0)) { const x = X(P.x[k]), y = Y(P.y[k]); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 2 * Math.PI); np++; }
-      ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.85; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); ctx.globalAlpha = 1;
+      // Certain: filled; probable (the certain rows support it): a ring; uncertain: a small grey dot.
+      const P = this.plants, r = Math.max(1.4, Math.min(4, 0.025 * pxPerM)), idx = P.index.query(vx0, vy0, vx1, vy1, 0);
+      let np = 0;
+      for (const kind of [2, 1, 0]) {
+        ctx.beginPath(); let any = false;
+        const rr = kind === 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
+        for (const k of idx) { if ((P.certainty ? P.certainty[k] : 0) !== kind) continue; const x = X(P.x[k]), y = Y(P.y[k]); ctx.moveTo(x + rr, y); ctx.arc(x, y, rr, 0, 2 * Math.PI); any = true; np++; }
+        if (!any) continue;
+        if (kind === 0) { ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); }
+        else if (kind === 1) { ctx.lineWidth = 1.6; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.95; ctx.stroke(); }
+        else { ctx.fillStyle = "#8c929a"; ctx.globalAlpha = 0.8; ctx.fill(); }
+        ctx.globalAlpha = 1;
+      }
       drawn.plants = np;
     }
     // Rows: a line per field row (its measured course), selected one under a white halo.

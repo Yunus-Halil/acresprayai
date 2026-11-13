@@ -62,7 +62,7 @@ type Props = {
   /** The row editor: an end handle let go at (lat, lng) (0 the first of the handles). */
   onRowEnd?: (which: 0 | 1, lat: number, lng: number) => void;
   /** Plants the photographs located, drawn at the plant level, and whether they are shown. */
-  plants?: { points: LatLngPair[]; show: boolean } | null;
+  plants?: { points: LatLngPair[]; show: boolean; certainty?: number[] | null } | null;
 };
 
 const bar = "background:rgba(20,22,20,.86);border:1px solid #333;color:#d9ddd6;";
@@ -198,7 +198,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   useEffect(() => { layerRef.current?.setOperational(operational); }, [operational, scene]);
   useEffect(() => { layerRef.current?.setEditing(editing); }, [editing, scene]);
   useEffect(() => { layerRef.current?.setRowEdits(rowEdits?.edits ?? NO_ROW_EDITS, !!rowEdits?.active, !!rowEdits?.hideRows, rowEdits?.hover ?? null, rowEdits?.overrides ?? [], rowEdits?.handles ?? null); }, [rowEdits, scene]);
-  useEffect(() => { layerRef.current?.setPlants(plants?.points ?? null, plants?.show ?? false); }, [plants, scene]);
+  useEffect(() => { layerRef.current?.setPlants(plants?.points ?? null, plants?.show ?? false, plants?.certainty ?? null); }, [plants, scene]);
 
   // The scale bar follows the account's units.
   useEffect(() => {
