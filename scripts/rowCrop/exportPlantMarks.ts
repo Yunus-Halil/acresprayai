@@ -19,7 +19,7 @@ const field = JSON.parse(readFileSync(arg("field"), "utf8")) as { marks: [number
 // Each plant where the photographs that saw it put it, each through its own camera, averaged: the way the twin's rows
 // and the photographs under it are placed. The reading's own position is pinned to its row lattice (each photograph
 // is slid onto the lattice to find the plants), so where the lattice sits a few centimetres off the rows the twin
-// draws, every plant there would sit off with it (seen on the Levi twin, 2026-11-13).
+// draws, every plant there would sit off with it (seen on the first independent corn flight's twin, 2026-11-13).
 let fromViews = 0;
 const points = field.marks.map(([e, n], k) => {
   const seen = (field.markViews?.[k] ?? []).map(([photo, u, v]) => { const f = frames.get(photo); return f ? pixelToGround(f, u, v) : null; }).filter((g): g is NonNullable<typeof g> => !!g);

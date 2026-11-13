@@ -430,9 +430,10 @@ export type Reconstruction = {
   a: Float64Array; c: Float64Array;
 };
 
-export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: number, spacingGuessM: number, o: PlantsFirstOptions = PLANTS_FIRST, q = SEQUENCE): Reconstruction {
+/** `notCertain`: dots that may be probable at most (the second look's plants: they confirm a stretch, never start a row). */
+export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: number, spacingGuessM: number, o: PlantsFirstOptions = PLANTS_FIRST, q = SEQUENCE, notCertain: Uint8Array | null = null): Reconstruction {
   const n = dots.length, certainty = new Uint8Array(n).fill(2);
-  for (let i = 0; i < n; i++) if (dots[i].photos >= q.certainViews && covered[i] > 0 && dots[i].photos / covered[i] >= q.certainShare) certainty[i] = 0;
+  for (let i = 0; i < n; i++) if (!notCertain?.[i] && dots[i].photos >= q.certainViews && covered[i] > 0 && dots[i].photos / covered[i] >= q.certainShare) certainty[i] = 0;
   // 1-2. The certain plants, and the rows they make.
   const cIdx: number[] = []; for (let i = 0; i < n; i++) if (certainty[i] === 0) cIdx.push(i);
   const R1 = rowsFromDots(cIdx.map(i => dots[i]), directionDeg, spacingGuessM, o);

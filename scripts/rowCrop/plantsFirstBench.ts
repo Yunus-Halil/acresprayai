@@ -77,9 +77,17 @@ const plantsOut = { version: 3, source: "plants first (development)", note: "One
 writeFileSync(join(OUT, "plants.json"), JSON.stringify(plantsOut));
 const rowsOut = rec.rows.map(r => {
   const th = (G.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th);
-  const seg = (g: { a0: number; a1: number; confirmed: boolean }) => { const pts = r.line.filter(([e, n]) => { const a = e * ct + n * st; return a >= g.a0 - 1e-6 && a <= g.a1 + 1e-6; }); return { confirmed: g.confirmed, line: pts.map(([e, n]) => ll(e, n)) }; };
+  const seg = (g: { a0: number; a1: number; confirmed: boolean }) => ({ confirmed: g.confirmed, line: stretchLine(r.line, g.a0, g.a1, ct, st).map(([e, n]) => ll(e, n)) });
   return { id: r.id, kind: r.kind, line: r.line.map(([e, n]) => ll(e, n)), lengthM: r.lengthM, perM: r.perM, plants: r.dots.length, certain: r.dots.filter(i => rec.certainty[i] === 0).length, segments: r.segments.map(seg) };
 });
 writeFileSync(join(OUT, "rows.json"), JSON.stringify({ geometry: G, rows: rowsOut }));
 writeFileSync(join(OUT, "shifts.json"), JSON.stringify({ photos, shifts: reg.shifts }));
 if (arg("twin")) { writeFileSync(join(arg("twin"), "plants.json"), JSON.stringify(plantsOut)); console.log(`plants.json -> ${arg("twin")}`); }
+
+/** A stretch of a row's course from exactly `a0` to exactly `a1` along (the course is stored a metre apart: its own points inside, the ends interpolated). */
+function stretchLine(line: [number, number][], a0: number, a1: number, ct: number, st: number): [number, number][] {
+  const ac = line.map(([e, n]) => [e * ct + n * st, -e * st + n * ct] as [number, number]).sort((x, y) => x[0] - y[0]);
+  const cAt = (a: number) => { if (a <= ac[0][0]) return ac[0][1]; if (a >= ac[ac.length - 1][0]) return ac[ac.length - 1][1]; for (let k = 0; k + 1 < ac.length; k++) if (a >= ac[k][0] && a <= ac[k + 1][0]) return ac[k][1] + ((a - ac[k][0]) / (ac[k + 1][0] - ac[k][0] || 1)) * (ac[k + 1][1] - ac[k][1]); return ac[0][1]; };
+  const pts: [number, number][] = [[a0, cAt(a0)], ...ac.filter(([a]) => a > a0 + 1e-6 && a < a1 - 1e-6), [a1, cAt(a1)]];
+  return pts.map(([a, c]) => [a * ct - c * st, a * st + c * ct]);
+}

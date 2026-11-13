@@ -64,6 +64,9 @@ export const ROW_GUIDED = {
   controlPerM: 0.3,
   /** Pixels the sensor cannot speak for: nearly black, or clipped. Counted as not seen, never as empty. */
   darkSum: 45, clipLevel: 250,
+  /** Darkness against the soil counts as plant evidence too, weighted this much against the tint (0: tint only, the
+   * row-guided reading as frozen; the plants-first second look sets it). */
+  darkWeight: 0,
   /** A candidate's green must reach this share of the strong plants' on this flight (cropStrength): on smooth clay the
    * soil's own colour noise is so small that the green fringe of a crack along the seed slot scores many soil spreads,
    * and the control strips, mid-alley, never see a seed slot (2026-11-12). Judged against the field's own plants, so
@@ -268,6 +271,23 @@ export function searchPhoto(name: string, px: PhotoPixels, frame: GeorefFrame, r
       s.sort(); const spread = Math.max(0.05, 1.4826 * s[m >> 1]);
       spreads.push(spread); spreadA.fill(spread, i0, i1);
       for (let st = 0; st < 3; st++) for (let q = i0 * wp; q < i1 * wp; q++) if (ok[st][q]) g[st][q] = (g[st][q] - med) / spread;
+      // Darker than the soil, as well as greener (`darkWeight` > 0, the plants-first second look, 2026-11-13): seedlings
+      // stressed brown, purple or curled are barely green but still darker than the soil they stand on. The darkness is
+      // smoothed like the tint and judged in units of the block's own brightness spread; the score is the larger of the
+      // two. Cracks and clod shadows are dark too: the control strips between the rows set each photograph's bar.
+      if (o.darkWeight > 0) {
+        const sL = soilLumA[i0];
+        const dz: Float32Array[] = [0, 1, 2].map(() => new Float32Array(0));
+        let md = 0; const dev: number[] = [];
+        for (let st = 0; st < 3; st++) {
+          const good = ok[st], L = lum[st], out = new Float32Array((i1 - i0) * wp);
+          for (let i = i0; i < i1; i++) for (let j = 0; j < wp; j++) { let s2 = 0, c = 0; for (let di = -sm; di <= sm; di++) for (let dj = -sm; dj <= sm; dj++) { const ii = i + di, jj = j + dj; if (ii < i0 || jj < 0 || ii >= i1 || jj >= wp) continue; const qq = ii * wp + jj; if (good[qq]) { s2 += L[qq]; c++; } } out[(i - i0) * wp + j] = c ? sL - s2 / c : 0; }
+          dz[st] = out;
+          for (let q = i0 * wp; q < i1 * wp; q++) if (good[q]) dev.push(Math.abs(out[q - i0 * wp]));
+        }
+        dev.sort((x, y) => x - y); md = Math.max(1, 1.4826 * (dev[dev.length >> 1] ?? 1));
+        for (let st = 0; st < 3; st++) for (let q = i0 * wp; q < i1 * wp; q++) if (ok[st][q]) { const z = (o.darkWeight * dz[st][q - i0 * wp]) / md; if (z > g[st][q]) g[st][q] = z; }
+      }
     }
     rowM += (k1 - k0) * row.stepM;
     covered.push({ row: row.id, a0: row.a0 + k0 * row.stepM, a1: row.a0 + k1 * row.stepM });

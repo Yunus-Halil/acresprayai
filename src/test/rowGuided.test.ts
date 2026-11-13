@@ -104,6 +104,20 @@ describe("reading along the rows", { timeout: 60_000 }, () => {
   });
 });
 
+describe("seedlings that are dark but barely green", { timeout: 60_000 }, () => {
+  it("are found along the rows when darkness against the soil counts, and missed on greenness alone", () => {
+    // The same field with every plant stressed brown: no greener than the soil, but well darker than it.
+    const t = truth(), brown = (() => { const r = render(0, 0, { plants: [], weeds: [] }); return r; })();
+    // Draw brown seedlings onto the bare render (the render draws green ones; here the plants are brown).
+    for (const [e, n] of t.plants) { const u = W / 2 + e / GSD, v = H / 2 - n / GSD, rr = 0.012 / GSD; for (let y = Math.floor(v - rr); y <= v + rr; y++) for (let x = Math.floor(u - rr); x <= u + rr; x++) { if (x < 0 || y < 0 || x >= W || y >= H || Math.hypot(x - u, y - v) > rr) continue; const o = (y * W + x) * 4; brown.rgba[o] = 96; brown.rgba[o + 1] = 84; brown.rgba[o + 2] = 70; } }
+    const tintOnly = searchPhoto("G", brown, camera("G", 0, 0), rows, ORIGIN, PITCH, 0.06);
+    const withDark = searchPhoto("G", brown, camera("G", 0, 0), rows, ORIGIN, PITCH, 0.06, { ...ROW_GUIDED, darkWeight: 1 });
+    expect(perM(withDark, 0)).toBeGreaterThan(4);
+    expect(perM(withDark, 0)).toBeGreaterThan(5 * Math.max(perM(withDark, 1), perM(withDark, 2), 0.05));
+    expect(perM(tintOnly, 0)).toBeLessThan(0.3 * perM(withDark, 0));
+  });
+});
+
 describe("what the marks say along a row", () => {
   it("measures the seed spacing though plants are missing, within what corn is sown at", () => {
     let s = 5; const rnd = () => ((s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff);
