@@ -56,19 +56,24 @@ console.log(`second look: certain ${cnt[0]}, probable ${cnt[1]}, uncertain ${cnt
 console.log(`${((Date.now() - t0) / 1000).toFixed(1)} s (plants ${(tPlants / 1000).toFixed(1)} s)`);
 
 const ll = (e: number, n: number) => { const p = fromEnu([e, n, 0], F.origin); return [Math.round(p.lat * 1e8) / 1e8, Math.round(p.lng * 1e8) / 1e8]; };
+// What each dot is drawn as: 0 a certain plant on a row, 1 a probable one (the certain rows' geometry supports it),
+// 2 seen but on no row (headland, weeds, anything the rows do not explain), 3 between two rows: not the crop.
+const shown = dots.map((_, i) => (rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : rec.between[i] ? 3 : 2));
+const shownN = [0, 0, 0, 0]; for (const v of shown) shownN[v]++;
+const whyN = [0, 0, 0, 0, 0]; for (const v of rec.why) whyN[v]++;
+const certainOff = [0, 0, 0, 0, 0]; rec.why.forEach((v, i) => { if (rec.certainty[i] === 0) certainOff[v]++; });
+console.log(`why on no row (all dots): no row reaches ${whyN[1]}, double ${whyN[2]}, off the plant spacing ${whyN[3]}, between rows ${whyN[4]}; certain plants: on a row ${certainOff[0]}, no row ${certainOff[1]}, double ${certainOff[2]}, off spacing ${certainOff[3]}, between ${certainOff[4]}`);
+console.log(`gaps: rows ${Math.round(100 * rec.gaps.filled)} % full, so up to ${(100 * rec.gaps.gapM).toFixed(0)} cm without a plant is still confirmed; ${rec.gaps.bridged} such gaps bridged, ${rec.gaps.notConfirmedStretches} stretches not confirmed, ${rec.gaps.cutOverMaxBridge} rows cut at a gap over the bridge limit (${Math.round(rec.gaps.cutLengthM)} m)`);
+console.log(`drawn: plants on rows ${shownN[0]} certain + ${shownN[1]} probable; on no row ${shownN[2]}; between rows (not the crop) ${shownN[3]}`);
 const summary = {
   analysis: arg("analysis"), photographs: photos.length, sightings: sights.length, at: new Date().toISOString(), settings: { PLANTS_FIRST, SEQUENCE },
   plants: { dots: dots.length, gateM, repeatM: reg.repeatM, photographsPerDotMedian: ph[ph.length >> 1], spreadCmMedian: 100 * spread[spread.length >> 1], spreadCmP90: 100 * spread[Math.floor(0.9 * spread.length)], halves: { odd: odd.length, even: even.length, both, agreement }, correctionCmMedian: 100 * mags[mags.length >> 1], correctionCmP90: 100 * mags[Math.floor(0.9 * mags.length)], certain: cnt[0], probable: cnt[1], uncertain: cnt[2] },
   geometry: G,
   rows: { count: rec.rows.length, certain: certainRowsN, fromGeometry: geomRowsN, lengthM: rowM, notConfirmedM, dotsOnRow: Array.from(rec.rowOf).filter(r => r >= 0).length },
+  diagnostics: { whyOnNoRow: { noRowReaches: whyN[1], double: whyN[2], offPlantSpacing: whyN[3], betweenRows: whyN[4] }, certainPlants: { onRow: certainOff[0], noRowReaches: certainOff[1], double: certainOff[2], offPlantSpacing: certainOff[3], betweenRows: certainOff[4] }, gaps: rec.gaps },
 };
 writeFileSync(join(OUT, "summary.json"), JSON.stringify(summary, null, 1));
-// What each dot is drawn as: 0 a certain plant on a row, 1 a probable one (the certain rows' geometry supports it),
-// 2 seen but on no row (headland, weeds, anything the rows do not explain), 3 between two rows: not the crop.
-const shown = dots.map((_, i) => (rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : rec.between[i] ? 3 : 2));
-const shownN = [0, 0, 0, 0]; for (const v of shown) shownN[v]++;
-console.log(`drawn: plants on rows ${shownN[0]} certain + ${shownN[1]} probable; on no row ${shownN[2]}; between rows (not the crop) ${shownN[3]}`);
-const plantsOut = { version: 3, source: "plants first (development)", note: "One dot per plant two or more photographs located, placed where they saw it. Filled: a certain plant on a row. Ring: probable (on a row, at the field's plant spacing). Grey: seen, on no row. Grey cross: between two rows, not the crop. Not identified as corn by its look; development output, not a count.", points: dots.map(d => ll(d.e, d.n)), certainty: shown, photos: dots.map(d => d.photos), covered: Array.from(covered) };
+const plantsOut = { version: 3, source: "plants first (development)", note: "One dot per plant two or more photographs located, placed where they saw it. Filled: a certain plant on a row. Ring: probable (on a row, at the field's plant spacing). Grey: seen, on no row. Grey cross: between two rows, not the crop. Not identified as corn by its look; development output, not a count.", points: dots.map(d => ll(d.e, d.n)), certainty: shown, why: Array.from(rec.why), photos: dots.map(d => d.photos), covered: Array.from(covered) };
 writeFileSync(join(OUT, "plants.json"), JSON.stringify(plantsOut));
 const rowsOut = rec.rows.map(r => {
   const th = (G.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th);

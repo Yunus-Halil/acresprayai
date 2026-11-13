@@ -399,6 +399,9 @@ export function rowNumbers(A: Float64Array, C: Float64Array, certain: Uint8Array
  */
 export const SEQUENCE = {
   certainViews: 3, certainShare: 0.3, minCertainRowM: 3, probableTol: 0.3, slotTol: 0.15, minRowDensityShare: 0.4, gapSeeds: 2.5, maxGapSeeds: 4,
+  /** A gap is still "plants confirmed" while a run of missed plants that long is likelier than `gapRisk` given how
+   * full the certain rows are (half the positions found: up to 5 plant spacings at 0.05). */
+  gapRisk: 0.05,
   /** A row's line: plants within this share of a spacing are fitted; pieces joined when they agree within `joinTol`. */
   fitTol: 0.1, joinTol: 0.12,
   /** A row's course is straight over this far either way of any point on it (metres), following the slow drift of the
@@ -418,6 +421,10 @@ export type Reconstruction = {
   rowOf: Int32Array;
   /** Per dot: 1 when it is on no row and has a row on either side of it within a spacing: between the rows, not the crop. */
   between: Uint8Array;
+  /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows. */
+  why: Uint8Array;
+  /** The gap rule as measured, and what it did: gaps bridged as confirmed, stretches not confirmed, rows cut. */
+  gaps: { filled: number; gapM: number; bridged: number; notConfirmedStretches: number; cutOverMaxBridge: number; cutLengthM: number };
   geometry: { spacingM: number; directionDeg: number; seedM: number | null; rowLengthMedianM: number; perMMedian: number; certainDots: number; certainRows: number };
   /** Along / across of every dot in the rows' frame, metres. */
   a: Float64Array; c: Float64Array;
@@ -488,17 +495,20 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   // 4-5. Every other dot again, strongest first: on a certain row's line (within its reach past the ends), at a whole
   // number of plant spacings from the nearest plant on it, it is probable; between the rows it is not the crop.
   const onRow = o.onRowShare * S, reach = q.maxGapSeeds * seed;
+  // Why a dot is on no row (diagnostics): 0 on a row, 1 no row reaches it, 2 as close to a plant on the row as a
+  // double, 3 not a whole number of plant spacings from the row's plants, 4 between two rows (set at the end).
+  const why = new Uint8Array(n);
   const nearestRow = (i: number, list: Line[]) => { let best = -1, bd = onRow; list.forEach((r, ri) => { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) return; const d = Math.abs(C[i] - at(r, A[i])); if (d <= bd) { bd = d; best = ri; } }); return best; };
   const along = lines.map(r => r.dots.map(i => A[i]));
   const extra = lines.map(() => [] as number[]);
   const onCertain = new Uint8Array(n); for (const r of lines) for (const i of r.dots) onCertain[i] = 1;
   const order = Array.from({ length: n }, (_, i) => i).filter(i => !onCertain[i]).sort((x, y) => dots[y].photos - dots[x].photos);
   for (const i of order) {
-    const ri = nearestRow(i, lines); if (ri < 0) continue;
+    const ri = nearestRow(i, lines); if (ri < 0) { why[i] = 1; continue; }
     let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
-    if (nearest < 0.5 * seed) continue; // as close as a double, or the same plant twice: not taken on geometry
+    if (nearest < 0.5 * seed) { why[i] = 2; continue; } // as close as a double, or the same plant twice: not taken on geometry
     const k = Math.round(nearest / seed);
-    if (k < 1 || k > q.maxGapSeeds || Math.abs(nearest - k * seed) > q.probableTol * seed) continue;
+    if (k < 1 || k > q.maxGapSeeds || Math.abs(nearest - k * seed) > q.probableTol * seed) { why[i] = 3; continue; }
     if (certainty[i] === 2) certainty[i] = 1;
     along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1;
   }
@@ -516,19 +526,23 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     if (L.dots.length / Math.max(1e-6, L.a1 - L.a0) < q.minRowDensityShare * geometry.perMMedian) continue;
     geomLines.push(L);
   }
-  // Rows with their stretches: plants confirmed, or a gap of over `gapSeeds` plant spacings ("the row probably
+  // How full the certain rows are, and so how long a run of missed plants is still ordinary there.
+  const filled = Math.min(0.95, Math.max(0.15, geometry.perMMedian * seed));
+  const gapK = Math.max(q.gapSeeds, Math.ceil(Math.log(q.gapRisk) / Math.log(1 - filled))), gapM = gapK * seed;
+  const breaks = { bridged: 0, notConfirmedStretches: 0, cutOverMaxBridge: 0, cutLengthM: 0 };
+  // Rows with their stretches: plants confirmed, or a gap of over `gapM` ("the row probably
   // continues here; plants not confirmed").
   const rows: SeqRow[] = [], rowOf = new Int32Array(n).fill(-1);
   const build = (kind: SeqRow["kind"], ds: number[], L: Line) => {
     const all = [...new Set(ds)].sort((x, y) => A[x] - A[y]);
     // Cut where no plant stands for over maxBridgeM; each piece with 3 or more plants is a row of its own.
-    for (let s0 = 0; s0 < all.length;) { let e0 = s0; while (e0 + 1 < all.length && A[all[e0 + 1]] - A[all[e0]] <= q.maxBridgeM) e0++; if (e0 - s0 + 1 >= 3) piece(kind, all.slice(s0, e0 + 1), L); s0 = e0 + 1; }
+    for (let s0 = 0; s0 < all.length;) { let e0 = s0; while (e0 + 1 < all.length && A[all[e0 + 1]] - A[all[e0]] <= q.maxBridgeM) e0++; if (e0 - s0 + 1 >= 3) piece(kind, all.slice(s0, e0 + 1), L); if (e0 + 1 < all.length) { breaks.cutOverMaxBridge++; breaks.cutLengthM += A[all[e0 + 1]] - A[all[e0]]; } s0 = e0 + 1; }
   };
   const piece = (kind: SeqRow["kind"], sorted: number[], L: Line) => {
     if (sorted.length < 2) return;
     const a0 = A[sorted[0]], a1 = A[sorted[sorted.length - 1]], segs: RowSegment[] = [];
     let s0 = a0;
-    for (let k = 1; k < sorted.length; k++) { const g0 = A[sorted[k - 1]], g1 = A[sorted[k]]; if (g1 - g0 > q.gapSeeds * seed) { if (g0 > s0) segs.push({ a0: s0, a1: g0, confirmed: true }); segs.push({ a0: g0, a1: g1, confirmed: false }); s0 = g1; } }
+    for (let k = 1; k < sorted.length; k++) { const g0 = A[sorted[k - 1]], g1 = A[sorted[k]]; if (g1 - g0 > gapM) { if (g0 > s0) segs.push({ a0: s0, a1: g0, confirmed: true }); segs.push({ a0: g0, a1: g1, confirmed: false }); s0 = g1; breaks.notConfirmedStretches++; } else if (g1 - g0 > 1.5 * seed) breaks.bridged++; }
     if (a1 > s0) segs.push({ a0: s0, a1, confirmed: true });
     // The drawn course: refitted through all its plants (the certain ones and those the second look added).
     const k = course(sorted, a0, a1), LL: Line = { ...k, a0, a1, dots: sorted };
@@ -547,7 +561,8 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     if (rowOf[i] >= 0) continue;
     let below = false, above = false;
     for (const r of all) { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) continue; const d = C[i] - at(r, A[i]); if (d > 0 && d < 1.2 * S) below = true; if (d < 0 && d > -1.2 * S) above = true; }
-    if (below && above) between[i] = 1;
+    if (below && above) { between[i] = 1; why[i] = 4; }
   }
-  return { certainty, rows, rowOf, between, geometry, a: A, c: C };
+  for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
+  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, geometry, a: A, c: C };
 }
