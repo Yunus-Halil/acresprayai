@@ -138,6 +138,9 @@ export type TwinCorn = {
   rows: TwinCornRow[];
   weeds: TwinCornWeed[];
   gaps: TwinCornGap[];
+  /** The plants the photographs located, one dot per plant two or more of them agree on (built 2026-11-13 on; absent in
+   * older twins). The rows above are then stretches through these plants. */
+  plants?: TwinCornPlants;
   summary: {
     cornRows: number; unconfirmedRows: number; cornRowLengthM: number; offLatticeDropped: number;
     weeds: { confirmed: number; unconfirmed: number; contested: number };
@@ -145,6 +148,17 @@ export type TwinCorn = {
     perPhoto: { weedCandidates: number; standGaps: number; rows: number };
   };
   notes: string[];
+};
+
+export type TwinCornPlants = {
+  /** Per plant: latitude, longitude. */
+  points: LatLngPair[];
+  /** Per plant: 0 a certain plant on a row, 1 a probable one, 2 seen on no row, 3 between two rows (not the crop). */
+  certainty: number[];
+  /** Per plant: photographs that located it. */
+  photos: number[];
+  note: string;
+  summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; confirmedM: number; notConfirmedM: number };
 };
 
 export type TwinVegetation = { id: number; lat: number; lng: number; areaM2: number; seenBy: number; ring: LatLngPair[] };

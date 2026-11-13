@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { nodeCodec, nodePhoto } from "../../scripts/directGeoref/nodePhotos";
-import { TWIN_ANALYSIS_ENABLED, TWIN_ANALYSIS_FILE, TWIN_ANALYSIS_FORMAT, type AnalysisInputs, analysisBytes, buildTwinAnalysis, framesFromAnalysis, parseTwinAnalysis, reproduceCornField } from "@/lib/fieldTwin/analysis";
+import { TWIN_ANALYSIS_ENABLED, TWIN_ANALYSIS_FILE, TWIN_ANALYSIS_FORMAT, type AnalysisInputs, analysisBytes, buildTwinAnalysis, framesFromAnalysis, parseTwinAnalysis, reproduceCornField, reproduceCornPlants } from "@/lib/fieldTwin/analysis";
 import { buildFieldTwin } from "@/lib/fieldTwin/build/pipeline";
 import { type CornFieldResult, type CornPhotoRead, cornField } from "@/lib/fieldTwin/cornField";
 import { bundleFileNames, missingFiles } from "@/lib/fieldTwin/store";
@@ -216,11 +216,20 @@ describe.skipIf(!haveFlight)("the real build on the UAV3DCrop corn test flight, 
     for (const e of evidence) expect(cells.has(`${e.atlas}:${e.x}:${e.y}`)).toBe(true);
     for (const c of a.crops) { const f = a.frames.find(x => x.name === c.photo)!; expect(c.x0 >= 0 && c.y0 >= 0 && c.x0 + c.size <= f.intrinsics.width && c.y0 + c.size <= f.intrinsics.height).toBe(true); }
     // The field combined again from the record is the twin's corn section: rows, weed observations and gaps.
-    const again = reproduceCornField(a), ll = (v: number) => +v.toFixed(8);
-    expect(again.rows.map(r => r.line.map(([p, q]) => [ll(p), ll(q)]))).toEqual(corn.rows.map(r => r.line));
-    expect(again.rows.map(r => (r.identity === "corn" ? "corn" : "unconfirmed"))).toEqual(corn.rows.map(r => r.status));
+    const again = reproduceCornField(a), plantsAgain = reproduceCornPlants(a), ll = (v: number) => +v.toFixed(8);
+    // The rows: the plants-first stretches when the plants made a row (the twin then holds its plants), else the field's.
+    expect(!!plantsAgain).toBe(!!corn.plants);
+    if (plantsAgain) {
+      expect(plantsAgain.stretches.map(g => g.line.map(([p, q]) => [ll(p), ll(q)]))).toEqual(corn.rows.map(r => r.line));
+      expect(plantsAgain.stretches.map(g => (g.confirmed ? "corn" : "unconfirmed"))).toEqual(corn.rows.map(r => r.status));
+      expect(plantsAgain.points).toEqual(corn.plants!.points);
+      expect(plantsAgain.shown).toEqual(corn.plants!.certainty);
+    } else {
+      expect(again.rows.map(r => r.line.map(([p, q]) => [ll(p), ll(q)]))).toEqual(corn.rows.map(r => r.line));
+      expect(again.rows.map(r => (r.identity === "corn" ? "corn" : "unconfirmed"))).toEqual(corn.rows.map(r => r.status));
+    }
     expect(again.weeds.filter(w => w.votes["weed candidate"] > 0).map(w => [ll(w.lat), ll(w.lng), w.verdict === "weed candidate" ? "confirmed" : w.verdict === "crop on a row" ? "contested" : "unconfirmed"])).toEqual(corn.weeds.map(w => [w.lat, w.lng, w.status]));
-    expect(again.gaps.map(g => [g.id, g.row, g.lengthM, g.verdict === "stand gap" ? "confirmed" : "withheld"])).toEqual(corn.gaps.map(g => [g.id, g.rowId, g.lengthM, g.status]));
+    expect((plantsAgain ? [] : again.gaps).map(g => [g.id, g.row, g.lengthM, g.verdict === "stand gap" ? "confirmed" : "withheld"])).toEqual(corn.gaps.map(g => [g.id, g.rowId, g.lengthM, g.status]));
     expect(a.sightings.weeds.map(w => w.id)).toEqual(corn.weeds.map(w => w.id));
   });
 });

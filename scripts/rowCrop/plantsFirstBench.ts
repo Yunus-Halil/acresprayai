@@ -10,6 +10,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { framesFromAnalysis, parseTwinAnalysis } from "../../src/lib/fieldTwin/analysis";
 import { type CornPhotoRead, cornField } from "../../src/lib/fieldTwin/cornField";
+import { stretchLine } from "../../src/lib/fieldTwin/cornPlants";
 import { PLANTS_FIRST, type Read, SEQUENCE, coverage, mergeDots, projectSightings, reconstruct, registerPhotos } from "../../src/lib/fieldTwin/plantsFirst";
 import { fromEnu } from "../../src/lib/sourceFrames/odm";
 
@@ -84,10 +85,3 @@ writeFileSync(join(OUT, "rows.json"), JSON.stringify({ geometry: G, rows: rowsOu
 writeFileSync(join(OUT, "shifts.json"), JSON.stringify({ photos, shifts: reg.shifts }));
 if (arg("twin")) { writeFileSync(join(arg("twin"), "plants.json"), JSON.stringify(plantsOut)); console.log(`plants.json -> ${arg("twin")}`); }
 
-/** A stretch of a row's course from exactly `a0` to exactly `a1` along (the course is stored a metre apart: its own points inside, the ends interpolated). */
-function stretchLine(line: [number, number][], a0: number, a1: number, ct: number, st: number): [number, number][] {
-  const ac = line.map(([e, n]) => [e * ct + n * st, -e * st + n * ct] as [number, number]).sort((x, y) => x[0] - y[0]);
-  const cAt = (a: number) => { if (a <= ac[0][0]) return ac[0][1]; if (a >= ac[ac.length - 1][0]) return ac[ac.length - 1][1]; for (let k = 0; k + 1 < ac.length; k++) if (a >= ac[k][0] && a <= ac[k + 1][0]) return ac[k][1] + ((a - ac[k][0]) / (ac[k + 1][0] - ac[k][0] || 1)) * (ac[k + 1][1] - ac[k][1]); return ac[0][1]; };
-  const pts: [number, number][] = [[a0, cAt(a0)], ...ac.filter(([a]) => a > a0 + 1e-6 && a < a1 - 1e-6), [a1, cAt(a1)]];
-  return pts.map(([a, c]) => [a * ct - c * st, a * st + c * ct]);
-}

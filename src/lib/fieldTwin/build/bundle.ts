@@ -8,7 +8,7 @@ import { COVER_EXGR } from "../../weedVision/fieldRows";
 import { type BoundaryResult, inferBoundaryFromMeasures, toTwinBoundary } from "../boundary";
 import { type EvidenceMeasures, downsampleEvidence, encodeEvidence } from "../boundaryEvidence";
 import { localFrame, pointInRing } from "../intelligence";
-import { FIELD_TWIN_FORMAT, type TwinBundle, type TwinCorn, type TwinCornGap, type TwinCornWeed, type TwinEvidence, type TwinRow } from "../types";
+import { FIELD_TWIN_FORMAT, type TwinBundle, type TwinCorn, type TwinCornGap, type TwinCornRow, type TwinCornWeed, type TwinEvidence, type TwinRow } from "../types";
 import type { CornStageResult } from "./corn";
 import { yieldToEvents } from "./cameras";
 import type { PhotoRead } from "./photos";
@@ -160,9 +160,15 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
   const cornRes = inp.corn ?? null;
   let twinCorn: TwinCorn | null = null, cornRows: TwinRow[] = [];
   if (cornRes) {
-    const F = cornRes.field;
+    const F = cornRes.field, P = cornRes.plants ?? null;
     const llOf = (lat: number, lng: number): [number, number] => [+lat.toFixed(8), +lng.toFixed(8)];
-    cornRows = F.rows.map(r => ({ id: r.id, kept: r.identity === "corn", reason: r.identity === "corn" ? null : r.why, line: r.line.map(([a, b]) => llOf(a, b)), trees: 0, inferred: 0, photos: r.seenBy, lengthM: r.lengthM, straightnessSdM: 0 }));
+    // The plants first (cornPlants.ts), when they made a row: the rows are stretches through the located plants, corn
+    // where plants were seen along them, unconfirmed where the row probably continues. The field's gaps were judged
+    // along its own lattice rows, which are then not drawn: "not confirmed" stretches say it on the rows themselves.
+    const fieldRows: TwinCornRow[] = P
+      ? P.stretches.map((g, i) => ({ id: i + 1, status: g.confirmed ? ("corn" as const) : ("unconfirmed" as const), line: g.line.map(([a, b]) => llOf(a, b)), lengthM: g.lengthM, seenBy: 0, cornBy: 0, coveredBy: 0, why: g.why }))
+      : F.rows.map(r => ({ id: r.id, status: r.identity === "corn" ? ("corn" as const) : ("unconfirmed" as const), line: r.line.map(([a, b]) => llOf(a, b)), lengthM: r.lengthM, seenBy: r.seenBy, cornBy: r.cornBy, coveredBy: r.coveredBy, why: r.why }));
+    cornRows = fieldRows.map(r => ({ id: r.id, kept: r.status === "corn", reason: r.status === "corn" ? null : r.why, line: r.line, trees: 0, inferred: 0, photos: r.seenBy, lengthM: r.lengthM, straightnessSdM: 0 }));
     const weeds: TwinCornWeed[] = F.weeds.filter(w => w.votes["weed candidate"] > 0).map((w, i) => {
       const status: TwinCornWeed["status"] = w.verdict === "weed candidate" ? "confirmed" : w.verdict === "crop on a row" ? "contested" : "unconfirmed";
       const evidence: TwinEvidence[] = [];
@@ -172,7 +178,7 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
       const [lat, lng] = llOf(w.lat, w.lng);
       return { id: i + 1, status, lat, lng, areaM2: fix(w.areaM2, 4)!, votes: { weed: w.votes["weed candidate"], crop: w.votes["crop on a row"], unknown: w.votes["unknown vegetation"] }, seenBy: w.seenBy, coveredBy: w.coveredBy, photos: w.photos, why: w.why, evidence };
     });
-    const gaps: TwinCornGap[] = F.gaps.map(g => {
+    const gaps: TwinCornGap[] = (P ? [] : F.gaps).map(g => {
       const evidence: TwinEvidence[] = [];
       const best = [...g.sightings].filter(m => frames.has(m.photo)).sort((a, b) => centreDist(a.photo, (a.u1 + a.u2) / 2, (a.v1 + a.v2) / 2) - centreDist(b.photo, (b.u1 + b.u2) / 2, (b.v1 + b.v2) / 2))[0];
       if (best) {
@@ -188,19 +194,27 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
       version: 1,
       engine: cornRes.variant
         ? `Corn V1 ${cornRes.variant === "corn-v1.0" ? "(tag corn-v1.0)" : "with the dark-leaf seedling rule"} on every photograph at its full size, with the aligned camera's pixel size; combined over the field by cornField v2 (rows on the field's lattice, weed sightings reconciled across photographs (a weed needs 2+ weed votes and more than all other votes; silence is not a vote), gaps checked in every photograph covering them). A comparison build: not the present reader and field rules.`
-        : "Corn V1 with the dark-leaf seedling rule on every photograph at its full size, with the aligned camera's pixel size; combined over the field by cornField v3 (rows over ground where the located plants are scattered, and rows across the planting, left out; rows on the field's lattice; weed sightings reconciled across photographs (a weed needs 2+ weed votes and more than all other votes; silence is not a vote); gaps checked in every photograph covering them, and withheld on a flight whose reads are incomplete)",
+        : cornRes.plants
+          ? "Corn V1 with the dark-leaf seedling rule on every photograph at its full size, with the aligned camera's pixel size; the plants first: each photograph's located plants registered against the others', one dot per plant two or more photographs agree on, rows through the plants most photographs saw, then the field's spacing, each row running from its first plant to its last; weeds combined over the field by cornField v3 (a weed needs 2+ weed votes and more than all other votes; silence is not a vote)"
+          : "Corn V1 with the dark-leaf seedling rule on every photograph at its full size, with the aligned camera's pixel size; combined over the field by cornField v3 (rows over ground where the located plants are scattered, and rows across the planting, left out; rows on the field's lattice; weed sightings reconciled across photographs (a weed needs 2+ weed votes and more than all other votes; silence is not a vote); gaps checked in every photograph covering them, and withheld on a flight whose reads are incomplete)",
       enteredCrop: "corn",
-      rowSpacingM: F.pitchM, rowDirectionDeg: F.directionDeg != null ? r2(F.directionDeg) : null, rowAgreementM: F.rowAgreementM,
+      rowSpacingM: P ? fix(P.geometry.spacingM, 3) : F.pitchM, rowDirectionDeg: P ? r2(P.geometry.directionDeg) : F.directionDeg != null ? r2(F.directionDeg) : null, rowAgreementM: F.rowAgreementM,
       photographs: { read: cornRes.reads.length, withRows: cornRes.withRows, failed: cornRes.failed },
-      rows: F.rows.map(r => ({ id: r.id, status: r.identity === "corn" ? ("corn" as const) : ("unconfirmed" as const), line: r.line.map(([a, b]) => llOf(a, b)), lengthM: r.lengthM, seenBy: r.seenBy, cornBy: r.cornBy, coveredBy: r.coveredBy, why: r.why })),
+      rows: fieldRows,
       weeds, gaps,
+      ...(P ? { plants: {
+        points: P.points, certainty: P.shown, photos: P.photos,
+        note: "One dot per plant two or more photographs located, placed where they saw it. Filled: a plant on a row, seen by most photographs over it. Ring: probable (on a row, at the field's plant spacing). Grey: seen, on no row. Grey cross: between two rows, not the crop. Located by the photographs, not identified as corn by its look; not a stand count.",
+        summary: { plants: P.summary.plants, certain: P.summary.certain, probable: P.summary.probable, onNoRow: P.summary.onNoRow, betweenRows: P.summary.betweenRows, confirmedM: P.summary.confirmedM, notConfirmedM: P.summary.notConfirmedM },
+      } } : {}),
       summary: {
-        cornRows: F.summary.cornRows, unconfirmedRows: F.summary.probableRows, cornRowLengthM: F.summary.cornRowLengthM, offLatticeDropped: F.summary.offLatticeDropped,
+        cornRows: fieldRows.filter(r => r.status === "corn").length, unconfirmedRows: fieldRows.filter(r => r.status !== "corn").length,
+        cornRowLengthM: P ? P.summary.confirmedM : F.summary.cornRowLengthM, offLatticeDropped: F.summary.offLatticeDropped,
         weeds: { confirmed: conf, unconfirmed: weeds.length - conf - cont, contested: cont },
         gaps: { confirmed: keptGaps.length, withheld: gaps.length - keptGaps.length, confirmedLengthM: r2(keptGaps.reduce((t, g) => t + g.lengthM, 0)) },
         perPhoto: F.summary.perPhoto,
       },
-      notes: [...F.notes],
+      notes: P ? [...F.notes, `Rows from the plants first: ${P.summary.plants.toLocaleString("en-US")} plants located by two or more photographs, ${P.geometry.certainRows} rows from the plants most photographs over them saw, then the field's spacing; ${Math.round(P.summary.confirmedM)} m of row with plants seen along it, ${Math.round(P.summary.notConfirmedM)} m where the row probably continues but no plant was confirmed. Stand gaps are not reported from these rows yet.`] : [...F.notes],
     };
   }
 

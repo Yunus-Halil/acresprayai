@@ -93,7 +93,7 @@ type Props = {
    */
   focus?: ReviewFocus | null;
   onFocus?: (found: { status: string } | null) => void;
-  /** Corn twins: plants the photographs located (the dev preview's plants.json), drawn up close and snapped to by the row editor. */
+  /** Corn twins: plants the photographs located, drawn up close and snapped to by the row editor. Defaults to the twin's own (twin.corn.plants); the dev preview passes its plants.json. */
   plants?: { points: LatLngPair[]; note: string; certainty?: number[] | null } | null;
 };
 
@@ -146,8 +146,10 @@ function measured<T>(name: string, fn: () => T): T {
   return v;
 }
 
-export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants = null }: Props) {
+export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants: plantsOverride = null }: Props) {
   const units = useUnitSystem();
+  // A corn twin built with the plants first carries its plants; the dev preview can lay its own plants.json over them.
+  const plants = useMemo(() => plantsOverride ?? (twin.corn?.plants ? { points: twin.corn.plants.points, note: twin.corn.plants.note, certainty: twin.corn.plants.certainty } : null), [plantsOverride, twin.corn?.plants]);
   const founderView = audience === "founder";
   const stops = founderView ? DETAIL_STOPS : PARTICIPANT_STOPS;
   const referenceOptions = founderView ? referenceProp : [];

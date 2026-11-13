@@ -12,6 +12,7 @@ import { cropProfileFor } from "../../cropProfiles/registry";
 import { groundSampleAt, type GeorefFrame } from "../../directGeoref/projection";
 import type { PhotoPixels } from "../../photoScout/pattern";
 import { FIELD, FIELD_V2, compactCornRead, cornField, type CornFieldResult, type CornPhotoRead } from "../cornField";
+import { type CornPlants, cornPlantsFirst } from "../cornPlants";
 import type { Pool } from "./pool";
 import { type BuildHooks, type CornVariant, type PhotoSource, checkCancelled } from "./types";
 
@@ -30,6 +31,9 @@ export type CornStageResult = {
   /** The comparison variant the stage ran as (undefined: the present reader and field rules). */
   variant?: CornVariant;
   field: CornFieldResult;
+  /** The plants first, and the rows through them (cornPlants.ts): the twin's rows when present; null when the plants
+   * made no certain row (the twin keeps the field's rows) or on a comparison build. */
+  plants?: CornPlants | null;
   reads: CornPhotoRead[];
   failed: { name: string; reason: string }[];
   /** Photographs whose read holds any row. */
@@ -78,5 +82,14 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
   const field = cornField(reads, frames, variant ? FIELD_V2 : FIELD);
   hooks.log?.(`corn over the field: ${field.summary.cornRows} corn rows, ${field.summary.probableRows} unconfirmed, ${field.summary.weeds} confirmed weed candidates, ${field.summary.gaps} stand gaps; rows agree within ${field.rowAgreementM != null ? (field.rowAgreementM * 100).toFixed(1) : "?"} cm`);
   for (const n of field.notes.slice(0, -1)) hooks.log?.(`  ${n}`);
-  return { variant, field, reads, failed, withRows: reads.filter(r => r.rows.length).length, msPerPhoto: reads.length ? Math.round(readMs / reads.length) : 0, ms: Date.now() - t0 };
+  let plants: CornPlants | null = null;
+  if (!variant) {
+    hooks.onProgress?.({ stage: "corn", done: list.length, total: list.length, message: "placing the plants, then the rows through them", elapsedMs: Date.now() - t0 });
+    const tp = Date.now();
+    try { plants = cornPlantsFirst(reads, frames, field); }
+    catch (e) { hooks.log?.(`plants first failed (${(e as Error)?.message ?? e}): the field's rows are kept`); }
+    if (plants) hooks.log?.(`plants first: ${plants.summary.plants} plants (${plants.summary.certain} certain, ${plants.summary.probable} probable on a row), ${plants.summary.rows} rows, ${Math.round(plants.summary.confirmedM)} m with plants seen, ${Math.round(plants.summary.notConfirmedM)} m not confirmed (${((Date.now() - tp) / 1000).toFixed(1)} s)`);
+    else hooks.log?.("plants first: no certain row from the plants, the field's rows are kept");
+  }
+  return { variant, field, plants, reads, failed, withRows: reads.filter(r => r.rows.length).length, msPerPhoto: reads.length ? Math.round(readMs / reads.length) : 0, ms: Date.now() - t0 };
 }

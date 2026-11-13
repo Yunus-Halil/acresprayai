@@ -22,6 +22,7 @@
 import type { GeorefFrame, Intrinsics, CameraPose } from "../directGeoref/projection";
 import { CORN_V1_VERSION } from "../rowCrop/cornV1";
 import { CORN_FIELD_VERSION, FIELD, type CornFieldResult, type CornPhotoRead, type FieldGap, type FieldWeed, cornField } from "./cornField";
+import { type CornPlants, cornPlantsFirst } from "./cornPlants";
 import type { TwinBundle } from "./types";
 
 export { TWIN_ANALYSIS_ENABLED, TWIN_ANALYSIS_FILE, TWIN_ANALYSIS_MAX_BYTES } from "./analysisConfig";
@@ -143,4 +144,10 @@ export function framesFromAnalysis(a: TwinAnalysis): Map<string, GeorefFrame> {
  */
 export function reproduceCornField(a: TwinAnalysis): CornFieldResult {
   return cornField(a.reads, framesFromAnalysis(a), a.fieldOptions);
+}
+
+/** The plants first again (cornPlants.ts), from the record alone: the twin's plants and row stretches. */
+export function reproduceCornPlants(a: TwinAnalysis): CornPlants | null {
+  const frames = framesFromAnalysis(a);
+  return cornPlantsFirst(a.reads, frames, cornField(a.reads, frames, a.fieldOptions));
 }
