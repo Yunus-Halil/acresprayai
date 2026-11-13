@@ -257,6 +257,11 @@ export type PlantedGround = {
   state: Uint8Array;
   /** Per square: the concentration (NaN where too few plants). */
   concentration: Float32Array;
+  /**
+   * Per square: where across the spacing the rows sit, as the across position (modulo the spacing, in [0, spacing))
+   * of the rows through it; NaN where too few plants. The angle of the same sum whose length is the concentration.
+   */
+  rowOffset: Float32Array;
   judged: number; planted: number; scattered: number;
   at: (along: number, across: number) => 0 | 1 | 2;
 };
@@ -289,7 +294,7 @@ export function plantedGround(plants: [number, number][], pitch0: number, o: Pla
   const cellA = o.cellAlongM, cellC = spacingM, w = Math.floor((aMax - aMin) / cellA) + 1, h = Math.floor((cMax - cMin) / cellC) + 1, k2 = (2 * Math.PI) / spacingM;
   const fc = new Float64Array(w * h), fs = new Float64Array(w * h), fn = new Float64Array(w * h);
   for (const [a, c] of plants) { const k = Math.floor((a - aMin) / cellA) + w * Math.floor((c - cMin) / cellC), ph = c * k2; fc[k] += Math.cos(ph); fs[k] += Math.sin(ph); fn[k]++; }
-  const state = new Uint8Array(w * h), concentration = new Float32Array(w * h).fill(NaN), r = K >> 1;
+  const state = new Uint8Array(w * h), concentration = new Float32Array(w * h).fill(NaN), rowOffset = new Float32Array(w * h).fill(NaN), r = K >> 1;
   let judged = 0, planted = 0;
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
     let sc = 0, ss = 0, n = 0;
@@ -297,6 +302,7 @@ export function plantedGround(plants: [number, number][], pitch0: number, o: Pla
     if (n < o.minSightings) continue;
     const R = Math.hypot(sc, ss) / n, k = j * w + i;
     concentration[k] = R; judged++;
+    rowOffset[k] = ((((Math.atan2(ss, sc) / (2 * Math.PI)) % 1) + 1) % 1) * spacingM;
     if (R >= o.plantedFrom) { state[k] = 1; planted++; } else if (R < o.scatteredBelow) state[k] = 2;
   }
   // Scattered ground counts as a connected area of some size: one square without the pattern inside a planting
@@ -313,7 +319,7 @@ export function plantedGround(plants: [number, number][], pitch0: number, o: Pla
     if (comp.length * cellA * cellC < o.minRegionM2) for (const k of comp) state[k] = 0; else scattered += comp.length;
   }
   const at = (along: number, across: number): 0 | 1 | 2 => { const i = Math.floor((along - aMin) / cellA), j = Math.floor((across - cMin) / cellC); return i < 0 || j < 0 || i >= w || j >= h ? 0 : (state[j * w + i] as 0 | 1 | 2); };
-  return { valid: judged > 0 && planted >= o.minPlantedShare * judged, spacingM, a0: aMin, c0: cMin, cellA, cellC, w, h, state, concentration, judged, planted, scattered, at };
+  return { valid: judged > 0 && planted >= o.minPlantedShare * judged, spacingM, a0: aMin, c0: cMin, cellA, cellC, w, h, state, concentration, rowOffset, judged, planted, scattered, at };
 }
 
 /** Corn V1's per-photograph reads combined over a field, in Swardus Direct's ground coordinates. */

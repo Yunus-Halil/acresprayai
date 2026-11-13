@@ -91,3 +91,25 @@ real gaps).
 Marks found by looking along the rows lie on the rows by construction. They are never fed back into the test of where
 the planting is, or into the fit of the rows, as if they were independent evidence. Only the first pass's sightings
 fit the rows; only the band against its control strips verifies them.
+
+## Frozen for the first held-out run (2026-11-12)
+
+Built: `src/lib/fieldTwin/rowGuided.ts` (lattice from the planted ground, two-pass search with re-centring, control
+strips, per-photograph bar, log-odds merge, verified stretches, row ends, seed spacing, applicability),
+`src/lib/fieldTwin/fieldLook.ts` (the per-field visual model), `scripts/rowCrop/rowGuidedBench.ts`. Settings are
+`ROW_GUIDED` and `LOOK` as committed with the tag `row-guided-freeze-1`; the band and the merge gate are derived from
+the flight (twice and 1.3 times the photographs' row agreement).
+
+On the development flight (123 photographs, one to two leaves, about 0.6 cm): applies on 123 of 123 photographs;
+verified row length over planted ground 0.965 (the first pass held 0.57); marks on control strips over marks on rows
+0.040; odd and even builds agree on 0.858 of marks; 25,100 marks; seed spacing 13.3 cm (about 82,000 plants a
+hectare); recall of visible plants bracketed at roughly 0.80 (filled seed positions) to 0.96 (repeat between halves).
+The visual model: AUC 0.881 out of fold on its row-derived labels, 0.615 on candidates it was never labelled on.
+
+Merge-level settings swept either side (controlPerM, merge gate, minViews, minBand, alpha): verified share 0.960 to
+0.970, control ratio 0.028 to 0.043 throughout. The plant count moves with the merge gate (23,300 to 29,600 between
+0.75 and 1.33 of it): whether two near candidates are one plant or two decides a count, which is why no count is
+shown yet. Not swept: the settings inside the photograph search (band, control position, weak score, smoothing).
+
+On the three test flights (V3 and later) the method declares itself not applicable (no photograph shows the band
+clearly above its controls, or the plants show no planting), so their results are unchanged.
