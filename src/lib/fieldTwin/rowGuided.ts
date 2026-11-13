@@ -33,9 +33,9 @@ export const ROW_GUIDED = {
   /** Lattice: squares of neighbouring columns belong to one row within this share of the spacing (cornField's sameRowShare). */
   sameRowShare: 0.25,
   /** ... a row is carried along over ground the plants do not judge (wheel tracks, thin stand) for at most this far, metres ... */
-  bridgeM: 6,
+  bridgeM: 20,
   /** ... and is looked for this far past its last planted square, where the verification decides, metres. */
-  extendM: 3,
+  extendM: 10,
   /** A lattice row shorter than this is no row, metres. */
   minRowM: 3,
   /** Control strips are centred this share of the spacing either side of the row: mid-alley, the ground farthest from
@@ -62,6 +62,11 @@ export const ROW_GUIDED = {
   controlPerM: 0.3,
   /** Pixels the sensor cannot speak for: nearly black, or clipped. Counted as not seen, never as empty. */
   darkSum: 45, clipLevel: 250,
+  /** A candidate's green must reach this share of the strong plants' on this flight (cropStrength): on smooth clay the
+   * soil's own colour noise is so small that the green fringe of a crack along the seed slot scores many soil spreads,
+   * and the control strips, mid-alley, never see a seed slot (2026-11-12). Judged against the field's own plants, so
+   * dark seedlings on pale sand and bright ones on clay are each measured against their own kind. */
+  minCropShare: 0.3,
   /** A mark needs this many photographs ... */
   minViews: 2,
   /** ... and a stretch of row this long is verified when its band holds at least minBand marks and beats its controls at alpha. */
@@ -131,7 +136,9 @@ export type Strip = 0 | 1 | 2;
 export type Candidate = { row: number; strip: Strip; /** Along the row, metres (the row frame's along). */ a: number; /** Across from the row line, metres. */ off: number; areaCm2: number; /** Its strongest pixel, in soil spreads. */ z: number; /** Its centre in the photograph, pixels of the decoded image. */ u: number; v: number;
   /** What it looks like, with no position in it (for the per-field visual model): mean score in soil spreads; length of
    * its long axis, cm; long over short axis; brightness against its soil (0 the same, -0.3 a third darker). */
-  zMean: number; lengthCm: number; elong: number; dLum: number };
+  zMean: number; lengthCm: number; elong: number; dLum: number;
+  /** Its strongest pixel's tint beyond the soil's, grey levels (the score before it is divided by the soil's spread). */
+  excess: number };
 export type PhotoSearch = {
   name: string;
   /** Every candidate whose strongest pixel reaches the lowest strict score of the ladder. */
@@ -220,7 +227,7 @@ export function searchPhoto(name: string, px: PhotoPixels, frame: GeorefFrame, r
     // block's soil is one number: the median of tint over brightness, over everything sampled there (plants are a few
     // per cent of it). A pixel's excess is its tint beyond what that soil shows at the pixel's own brightness; the
     // excess is smoothed, and judged in units of its own spread over the block.
-    const block = Math.max(8, Math.round(o.soilBlockM * pxPerM)), buf = new Float32Array(block * wp * 3), tmp = new Float32Array(n * wp), sm = o.smoothPx, soilLumA = new Float32Array(n);
+    const block = Math.max(8, Math.round(o.soilBlockM * pxPerM)), buf = new Float32Array(block * wp * 3), tmp = new Float32Array(n * wp), sm = o.smoothPx, soilLumA = new Float32Array(n), spreadA = new Float32Array(n).fill(1);
     for (let i0 = 0; i0 < n; i0 += block) {
       const i1 = Math.min(n, i0 + block); let m = 0;
       for (let st = 0; st < 3; st++) for (let q = i0 * wp; q < i1 * wp; q++) if (ok[st][q]) buf[m++] = g[st][q] / lum[st][q];
@@ -242,7 +249,7 @@ export function searchPhoto(name: string, px: PhotoPixels, frame: GeorefFrame, r
       const s = buf.subarray(0, m).slice().sort(), med = s[m >> 1];
       for (let q = 0; q < m; q++) s[q] = Math.abs(s[q] - med);
       s.sort(); const spread = Math.max(0.05, 1.4826 * s[m >> 1]);
-      spreads.push(spread);
+      spreads.push(spread); spreadA.fill(spread, i0, i1);
       for (let st = 0; st < 3; st++) for (let q = i0 * wp; q < i1 * wp; q++) if (ok[st][q]) g[st][q] = (g[st][q] - med) / spread;
     }
     rowM += (k1 - k0) * row.stepM;
@@ -265,7 +272,7 @@ export function searchPhoto(name: string, px: PhotoPixels, frame: GeorefFrame, r
         const vi = sii / area - ci * ci + 1 / 12, vj = sjj / area - cj * cj + 1 / 12, cij = sij / area - ci * cj, tr = vi + vj, det = Math.sqrt(Math.max(0, ((vi - vj) / 2) ** 2 + cij * cij));
         const l1 = tr / 2 + det, l2 = Math.max(1 / 12, tr / 2 - det), cmPerPx = 100 / pxPerM;
         candidates.push({ u: Math.round(cxA[i0] - dyA[i0] * offPx), v: Math.round(cyA[i0] + dxA[i0] * offPx), row: row.id, strip: st as Strip, a: alongM[i0] + f * ((alongM[Math.min(n - 1, i0 + 1)] ?? alongM[i0]) - alongM[i0]), off: centres[st] + (cj - half) / pxPerM, areaCm2: Math.round(area * cm2 * 10) / 10, z: Math.round(zmax * 10) / 10,
-          zMean: Math.round((sz / area) * 10) / 10, lengthCm: Math.round(4 * Math.sqrt(l1) * cmPerPx * 10) / 10, elong: Math.round(Math.sqrt(l1 / l2) * 100) / 100, dLum: Math.round((sl / Math.max(1, sSoil) - 1) * 1000) / 1000 });
+          excess: Math.round(zmax * spreadA[i0] * 10) / 10, zMean: Math.round((sz / area) * 10) / 10, lengthCm: Math.round(4 * Math.sqrt(l1) * cmPerPx * 10) / 10, elong: Math.round(Math.sqrt(l1 / l2) * 100) / 100, dLum: Math.round((sl / Math.max(1, sSoil) - 1) * 1000) / 1000 });
       }
     }
   }
@@ -404,7 +411,8 @@ export function mergeAlongRows(searches: PhotoSearch[], rows: RowLine[], gateM: 
   const list = searches.filter((_, i) => use(i)), levels = list.map(s => chooseLevel(s, o));
   type C = Candidate & { photo: number };
   const groups = new Map<string, C[]>();
-  list.forEach((s, pi) => { const bar = o.ladder[levels[pi].level]; for (const c of s.candidates) { if (c.z < bar) continue; const k = `${c.row}:${c.strip}`; (groups.get(k) ?? groups.set(k, []).get(k)!).push({ ...c, photo: pi }); } });
+  const strength = cropStrength(list, levels.map(l => o.ladder[l.level])), floor = strength != null ? o.minCropShare * strength : 0;
+  list.forEach((s, pi) => { const bar = o.ladder[levels[pi].level]; for (const c of s.candidates) { if (c.z < bar || (c.excess ?? Infinity) < floor) continue; const k = `${c.row}:${c.strip}`; (groups.get(k) ?? groups.set(k, []).get(k)!).push({ ...c, photo: pi }); } });
   const cov = new Map<number, { a0: number; a1: number }[]>();
   list.forEach(s => { for (const c of s.covered) (cov.get(c.row) ?? cov.set(c.row, []).get(c.row)!).push(c); });
   const coveredAt = (row: number, a: number) => (cov.get(row) ?? []).filter(c => a >= c.a0 && a <= c.a1).length;
@@ -553,4 +561,69 @@ export function applicability(searches: PhotoSearch[], o: RowGuidedOptions = ROW
   }).length;
   const applies = read.length > 0 && ok >= share * read.length;
   return { applies, photographs: read.length, applying: ok, why: applies ? `${ok} of ${read.length} photographs show the rows' band clearly above the strips between them` : `only ${ok} of ${read.length} photographs show the rows' band clearly above the strips between them (leaves across the rows, or nothing to find): not read along rows, the first pass stands` };
+}
+
+/**
+ * Each photograph's placement along the rows (2026-11-12). registerAcross puts a photograph's rows where its plants
+ * are; along the rows a camera can be as far off, and then one plant seen by two photographs lies a few to 30 cm apart
+ * in their readings and is merged into two marks or more. Plants repeat along a row, so the offset is read from the
+ * sharpest agreement, not the nearest neighbour: every pair of candidates on the same row, one from this photograph
+ * and one from any other, within `reachM`, votes for its difference, in centimetre bins. The same plant seen twice
+ * gives a narrow peak at the offset; neighbouring plants give broad, lower peaks a seed spacing either side, because a
+ * planter never drops seeds at exactly one distance. The peak is taken where the votes, less their own broad
+ * background (a moving average over a seed spacing), are highest. Five rounds, each photograph moving half its measured
+ * offset in each, so all of them settle together. Returns
+ * the shift to add to each search's along positions (metres; 0 where nothing clear).
+ */
+export function registerAlong(searches: PhotoSearch[], bars: number[], seedM: number, reachM = 0.45, rounds = 5): number[] {
+  const nb = Math.round((2 * reachM) / 0.01) + 1, shift = new Array(searches.length).fill(0);
+  const byRow = new Map<number, { p: number; a: number }[]>();
+  searches.forEach((s, p) => { for (const c of s.candidates) if (c.strip === 0 && c.z >= bars[p]) (byRow.get(c.row) ?? byRow.set(c.row, []).get(c.row)!).push({ p, a: c.a }); });
+  for (const list of byRow.values()) list.sort((x, y) => x.a - y.a);
+  const win = Math.max(3, Math.round(seedM / 0.01));
+  for (let round = 0; round < rounds; round++) {
+    const hist = searches.map(() => new Float64Array(nb));
+    for (const list of byRow.values()) {
+      for (let i = 0; i < list.length; i++) {
+        const x = list[i], ax = x.a + shift[x.p];
+        for (let j = i + 1; j < list.length && list[j].a - x.a <= reachM + 0.5; j++) {
+          const y = list[j]; if (y.p === x.p) continue;
+          const d = y.a + shift[y.p] - ax; if (Math.abs(d) > reachM) continue;
+          const b = Math.round((d + reachM) / 0.01), b2 = Math.round((-d + reachM) / 0.01);
+          hist[x.p][b]++; hist[y.p][b2]++;
+        }
+      }
+    }
+    const next = shift.map((s0, p) => {
+      const h = hist[p], tot = h.reduce((t, v) => t + v, 0); if (tot < 50) return s0;
+      const sm = Array.from(h, (_, i) => (h[i - 1] ?? 0) * 0.25 + h[i] * 0.5 + (h[i + 1] ?? 0) * 0.25);
+      const bg = Array.from(sm, (_, i) => { let s = 0, n = 0; for (let k = i - win; k <= i + win; k++) if (k >= 0 && k < nb) { s += sm[k]; n++; } return s / n; });
+      let bi = -1, best = 0; for (let i = 0; i < nb; i++) { const ex = sm[i] - bg[i]; if (ex > best) { best = ex; bi = i; } }
+      if (bi < 0 || best < 3 * Math.sqrt(Math.max(1, bg[bi]))) return s0;
+      // The other photographs' candidates sit at +d from this one's. Each moves half way per round: every photograph
+      // moves at once, and two that each moved the whole way would swap their error instead of removing it.
+      return s0 + 0.5 * (bi * 0.01 - reachM);
+    });
+    for (let p = 0; p < shift.length; p++) shift[p] = next[p];
+    // Keep the flight's mean where it was: only the photographs' disagreement is removed.
+    const mean = shift.reduce((t, v) => t + v, 0) / shift.length; for (let p = 0; p < shift.length; p++) shift[p] -= mean;
+  }
+  return shift.map(v => Math.round(v * 1000) / 1000);
+}
+
+/**
+ * How green the crop's plants are on this flight, in grey levels: the median strength of the strongest third of each
+ * photograph's band candidates at its bar. Null without enough of them.
+ */
+export function cropStrength(searches: PhotoSearch[], bars: number[]): number | null {
+  const xs: number[] = [];
+  searches.forEach((s, p) => { const b = s.candidates.filter(c => c.strip === 0 && c.z >= bars[p]).map(c => c.excess).sort((x, y) => x - y); xs.push(...b.slice(Math.floor((b.length * 2) / 3))); });
+  if (xs.length < 100) return null;
+  xs.sort((a, b) => a - b);
+  return xs[xs.length >> 1];
+}
+
+/** Searches with their along positions moved by registerAlong's shifts. */
+export function shiftAlong(searches: PhotoSearch[], shift: number[]): PhotoSearch[] {
+  return searches.map((s, p) => (shift[p] ? { ...s, candidates: s.candidates.map(c => ({ ...c, a: c.a + shift[p] })), covered: s.covered.map(c => ({ ...c, a0: c.a0 + shift[p], a1: c.a1 + shift[p] })) } : s));
 }

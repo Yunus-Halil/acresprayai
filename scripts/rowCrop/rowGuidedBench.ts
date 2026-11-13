@@ -13,7 +13,7 @@ import { basename, join } from "node:path";
 import { NODE_DECODER, decodeImage } from "../bench/images";
 import { framesFromAnalysis, parseTwinAnalysis } from "../../src/lib/fieldTwin/analysis";
 import { FIELD, type CornPhotoRead, cornField, plantedGround } from "../../src/lib/fieldTwin/cornField";
-import { ROW_GUIDED, type PhotoSearch, type RowLine, chooseLevel, latticeRows, mergeAlongRows, applicability, recentreRows, rowExtents, searchPhoto, seedSpacing } from "../../src/lib/fieldTwin/rowGuided";
+import { ROW_GUIDED, type PhotoSearch, type RowLine, chooseLevel, latticeRows, mergeAlongRows, applicability, recentreRows, registerAlong, rowExtents, searchPhoto, seedSpacing, shiftAlong } from "../../src/lib/fieldTwin/rowGuided";
 import { frameFootprint, pixelToGround } from "../../src/lib/directGeoref/projection";
 import { FEATURE_NAMES, LOOK, auc, fitLook, lookLogit } from "../../src/lib/fieldTwin/fieldLook";
 import { toEnu } from "../../src/lib/sourceFrames/odm";
@@ -79,7 +79,13 @@ if (!app.applies) { writeFileSync(join(OUT, "summary.json"), JSON.stringify({ fl
 const re = recentreRows(lattice, mergeAlongRows(pass1, rows, gateM).marks, pg.cellA);
 console.log(`re-centred: ${re.shiftedM} m of row moved more than 2 cm, median shift ${(re.medianShiftM * 100).toFixed(1)} cm`);
 lattice = re.rows; rows = lines(lattice);
-const searches = searchAll("search2");
+const searched = searchAll("search2");
+// Each photograph's placement along the rows, from where the same plants appear in the others.
+const seedGuess = seedSpacing(mergeAlongRows(searched, rows, gateM).marks, pg.spacingM).spacingM ?? 0.15;
+const alongShift = argv.includes("--no-along") ? searched.map(() => 0) : registerAlong(searched, searched.map(s => ROW_GUIDED.ladder[chooseLevel(s).level]), seedGuess);
+const absShift = alongShift.map(Math.abs).sort((x, y) => x - y);
+console.log(`along: median |shift| ${(100 * absShift[absShift.length >> 1]).toFixed(1)} cm, 90th ${(100 * absShift[Math.floor(absShift.length * 0.9)]).toFixed(1)} cm, unmoved ${alongShift.filter(v => v === 0).length}`);
+const searches = shiftAlong(searched, alongShift);
 const M0 = mergeAlongRows(searches, rows, gateM);
 // Control strips are narrower than the band: their counts scaled to the band's width.
 const cS = searches.reduce((t, s) => t + (s.controlScale ?? 1), 0) / Math.max(1, searches.length);
@@ -132,6 +138,7 @@ const summary = {
   firstPass: { cornRows: F.summary.cornRows, unconfirmedRows: F.summary.probableRows, cornRowLengthM: F.summary.cornRowLengthM, readShare: F.planting.readShare, spacingM: F.pitchM },
   derived: { spacingM: r3(pg.spacingM), bandHalfM: r3(bandHalfM), gateM: r3(gateM), rowAgreementM: F.rowAgreementM },
   applicability: app,
+  along: { medianAbsM: absShift[absShift.length >> 1], p90AbsM: absShift[Math.floor(absShift.length * 0.9)], unmoved: alongShift.filter(v => v === 0).length },
   recentre: { shiftedM: re.shiftedM, medianShiftM: re.medianShiftM },
   lattice: { rows: lattice.length, lengthM: R(latticeM), overPlantedSquaresM: R(plantedM) },
   search: { rowMetresRead: R(searches.reduce((t, s) => t + s.rowM, 0)), msPerPhoto: R(searches.reduce((t, s) => t + s.ms, 0) / Math.max(1, searches.length)), bars: Object.fromEntries(ROW_GUIDED.ladder.map((z, i) => [z, levels.filter(l => l.level === i).length])), photographsWhoseControlsNeverQuiet: levels.filter(l => !l.quiet).length, medianSoilSpread: r3(searches.map(s => s.soilSpread).sort((x, y) => x - y)[searches.length >> 1]), medianUnreadablePct: r2(100 * searches.map(s => s.unreadableShare).sort((x, y) => x - y)[searches.length >> 1]) },
