@@ -38,8 +38,15 @@ export const ROW_GUIDED = {
   extendM: 3,
   /** A lattice row shorter than this is no row, metres. */
   minRowM: 3,
-  /** Control strips are centred this share of the spacing either side of the row (clear of the leaves, clear of the next row). */
-  controlShare: 0.35,
+  /** Control strips are centred this share of the spacing either side of the row: mid-alley, the ground farthest from
+   * both neighbouring rows. (Frozen at 0.35 with the band's width for the first held-out run: where the photographs
+   * agreed less closely the band widened, the strips' inner edge came within 12 cm of the row, inside a two-leaf
+   * seedling's reach (measured 18 to 22 cm on two fields), and the crop's own leaves filled them; 2026-11-12.) */
+  controlShare: 0.5,
+  /** ... and reach this share of the spacing either way (never wider than the band); their counts are scaled to the band's width. */
+  controlHalfShare: 0.15,
+  /** Each photograph's rows are looked for this share of the spacing either side of where the field puts them (registerAcross). */
+  registerShare: 0.5,
   /** The soil's centre and spread are taken per this length of row, metres (about a row spacing: it always holds alley soil). */
   soilBlockM: 1,
   /** Strict scores tried, in soil spreads: a candidate needs a pixel at the strict score ... */
@@ -136,6 +143,10 @@ export type PhotoSearch = {
   unreadableShare: number;
   /** The soil's spread of the score's quantity (grey levels of tint), median over the blocks: how noisy this photograph's soil is. */
   soilSpread: number;
+  /** The band's width over one control strip's: a control count times this is a count over the band's area. */
+  controlScale: number;
+  /** This photograph's own placement across the rows: the shift applied (metres, 0 when not clear) and how clear the peak was. */
+  registration: Registration;
   ms: number;
 };
 
@@ -145,8 +156,8 @@ export function searchPhoto(name: string, px: PhotoPixels, frame: GeorefFrame, r
   const sx = W / frame.intrinsics.width, sy = H / frame.intrinsics.height;
   const alt = frame.ground.kind === "flat" ? frame.ground.altM : frame.pose.altM, margin = 0.02 * Math.min(W, H);
   const candidates: Candidate[] = [], covered: PhotoSearch["covered"] = [];
-  const centres = [0, o.controlShare * spacingM, -o.controlShare * spacingM];
-  let rowM = 0, seenPx = 0, badPx = 0; const spreads: number[] = [];
+  const runs: { row: RowLine; k0: number; k1: number; uv: [number, number][] }[] = [];
+  let rowM = 0, seenPx = 0, badPx = 0, scaleW = 0; const spreads: number[] = [];
   for (const row of rows) {
     // The row's vertices in this photograph; runs of consecutive vertices inside the frame.
     // A point is in the photograph only if the pixel it lands on looks back at it: far outside the field of view the
@@ -161,18 +172,28 @@ export function searchPhoto(name: string, px: PhotoPixels, frame: GeorefFrame, r
     for (let k0 = 0; k0 < uv.length;) {
       if (!uv[k0]) { k0++; continue; }
       let k1 = k0; while (k1 + 1 < uv.length && uv[k1 + 1]) k1++;
-      if (k1 > k0) run(row, k0, k1, uv as [number, number][]);
+      if (k1 > k0) runs.push({ row, k0, k1, uv: uv as [number, number][] });
       k0 = k1 + 1;
     }
   }
+  // This photograph's own placement across the rows. The cameras of a flight without RTK disagree by a few to 40 cm
+  // (0.06 m on one flight, 0.21 m on another, 2026-11-12): projected into a photograph that is off by half a spacing,
+  // the field's rows fall between its plants. The photograph's own green, profiled across the projected rows within
+  // half a spacing either way, peaks where its rows are; that shift is applied when the peak is clear.
+  const reg = registerAcross(runs, d, W, H, spacingM, o);
+  const shiftAt = (u: number, v: number) => (reg.applied ? reg.a + reg.b * (u - W / 2) + reg.c * (v - H / 2) : 0);
+  for (const r of runs) run(r.row, r.k0, r.k1, r.uv);
   function run(row: RowLine, k0: number, k1: number, uv: [number, number][]) {
+    const centres = [0, o.controlShare * spacingM, -o.controlShare * spacingM];
     // Straightened strips: along at one photograph pixel a sample, across at one pixel a sample.
     const segLen: number[] = []; let L = 0;
     for (let k = k0; k < k1; k++) { const l = Math.hypot(uv[k + 1][0] - uv[k][0], uv[k + 1][1] - uv[k][1]); segLen.push(l); L += l; }
     const n = Math.max(2, Math.round(L)), pxPerM = L / ((k1 - k0) * row.stepM), half = Math.max(1, Math.round(bandHalfM * pxPerM)), wp = 2 * half + 1;
+    const halfC = Math.max(1, Math.min(half, Math.round(o.controlHalfShare * spacingM * pxPerM)));
+    scaleW += ((k1 - k0) * row.stepM * wp) / (2 * halfC + 1);
     const cm2 = (100 / pxPerM) ** 2, minPx = Math.max(1, Math.round(o.minAreaCm2 / cm2));
     const g = [new Float32Array(n * wp), new Float32Array(n * wp), new Float32Array(n * wp)], lum = [new Float32Array(n * wp), new Float32Array(n * wp), new Float32Array(n * wp)], ok = [new Uint8Array(n * wp), new Uint8Array(n * wp), new Uint8Array(n * wp)];
-    const alongM = new Float32Array(n), cxA = new Float32Array(n), cyA = new Float32Array(n), dxA = new Float32Array(n), dyA = new Float32Array(n);
+    const alongM = new Float32Array(n), cxA = new Float32Array(n), cyA = new Float32Array(n), dxA = new Float32Array(n), dyA = new Float32Array(n), shA = new Float32Array(n);
     let seg = 0, acc = 0;
     for (let i = 0; i < n; i++) {
       const s = (i / (n - 1)) * L;
@@ -180,10 +201,12 @@ export function searchPhoto(name: string, px: PhotoPixels, frame: GeorefFrame, r
       const k = k0 + seg, t = segLen[seg] > 0 ? Math.min(1, (s - acc) / segLen[seg]) : 0;
       const dx = (uv[k + 1][0] - uv[k][0]) / (segLen[seg] || 1), dy = (uv[k + 1][1] - uv[k][1]) / (segLen[seg] || 1);
       const cx = uv[k][0] + t * (uv[k + 1][0] - uv[k][0]), cy = uv[k][1] + t * (uv[k + 1][1] - uv[k][1]);
-      alongM[i] = row.a0 + (seg + k0 + t) * row.stepM; cxA[i] = cx; cyA[i] = cy; dxA[i] = dx; dyA[i] = dy;
+      const sh = shiftAt(cx, cy);
+      alongM[i] = row.a0 + (seg + k0 + t) * row.stepM; cxA[i] = cx; cyA[i] = cy; dxA[i] = dx; dyA[i] = dy; shA[i] = sh;
       for (let st = 0; st < 3; st++) {
-        const oc = centres[st] * pxPerM;
+        const oc = (centres[st] + sh) * pxPerM;
         for (let j = 0; j < wp; j++) {
+          if (st > 0 && Math.abs(j - half) > halfC) continue;
           const off = oc + (j - half), x = Math.round(cx - dy * off), y = Math.round(cy + dx * off), q = i * wp + j;
           if (x < 0 || y < 0 || x >= W || y >= H) continue;
           const p = (y * W + x) * 4, r = d[p], gg = d[p + 1], b = d[p + 2], sum = r + gg + b;
@@ -237,7 +260,7 @@ export function searchPhoto(name: string, px: PhotoPixels, frame: GeorefFrame, r
           for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= n || jj >= wp) continue; const qq = ii * wp + jj; if (good[qq] && !seen[qq] && z[qq] >= o.weakZ) { seen[qq] = 1; stack.push(qq); } }
         }
         if (area < minPx) continue;
-        const ci = si / area, cj = sj / area, i0 = Math.floor(ci), f = ci - i0, offPx = centres[st] * pxPerM + (cj - half);
+        const ci = si / area, cj = sj / area, i0 = Math.floor(ci), f = ci - i0, offPx = (centres[st] + shA[i0]) * pxPerM + (cj - half);
         // Second moments (pixels; the strips are straightened at one pixel a sample): the axes of the candidate.
         const vi = sii / area - ci * ci + 1 / 12, vj = sjj / area - cj * cj + 1 / 12, cij = sij / area - ci * cj, tr = vi + vj, det = Math.sqrt(Math.max(0, ((vi - vj) / 2) ** 2 + cij * cij));
         const l1 = tr / 2 + det, l2 = Math.max(1 / 12, tr / 2 - det), cmPerPx = 100 / pxPerM;
@@ -246,12 +269,116 @@ export function searchPhoto(name: string, px: PhotoPixels, frame: GeorefFrame, r
       }
     }
   }
-  return { name, candidates, covered, rowM, unreadableShare: seenPx ? badPx / seenPx : 0, soilSpread: spreads.length ? median(spreads) : NaN, ms: Date.now() - t0 };
+  return { name, candidates, covered, rowM, unreadableShare: seenPx ? badPx / seenPx : 0, soilSpread: spreads.length ? median(spreads) : NaN, controlScale: rowM > 0 ? scaleW / rowM : 1, registration: reg, ms: Date.now() - t0 };
+}
+
+/**
+ * How far this photograph's rows sit across from where the field puts them (see searchPhoto). A flight's cameras are
+ * aligned to a few to 40 cm, and the error inside one photograph is mostly a shift and a slight rotation (on one flight
+ * 2026-11-12: 37 cm off at one end of a frame, 0 at the other), so the offset is fitted as a + b u + c v over the
+ * frame's pixels. Every run of row is cut into stretches of `segM`; in each, the tint beyond the soil's at each pixel's
+ * own brightness is sampled across from half a spacing one side to half the other, every few pixels along, and the
+ * pixels well above their soil are counted per centimetre across. A stretch whose profile peaks clearly is a
+ * measurement; the measurements are unwrapped by whole spacings onto the model and fitted by weighted least squares,
+ * three times, dropping those further than a fifth of a spacing from the fit. With fewer than `minSegs` measurements,
+ * one shift (their weighted median); with none, nothing moves.
+ */
+export type Registration = { a: number; b: number; c: number; segments: number; used: number; applied: boolean; shiftM: number; points?: { u: number; v: number; s: number; w: number }[] };
+export function registerAcross(runs: { row: RowLine; k0: number; k1: number; uv: [number, number][] }[], d: Uint8ClampedArray, W: number, H: number, spacingM: number, o: RowGuidedOptions = ROW_GUIDED, minPeak = 1.6, segM = 4, minSegs = 6): Registration {
+  const halfM = o.registerShare * spacingM, nb = Math.max(3, Math.round((2 * halfM) / 0.01));
+  const meas: { u: number; v: number; s: number; w: number }[] = [];
+  for (const r of runs) {
+    const { row, k0, k1, uv } = r, per = Math.max(1, Math.round(segM / row.stepM));
+    for (let s0 = k0; s0 < k1; s0 += per) {
+      const s1 = Math.min(k1, s0 + per);
+      let L = 0; for (let k = s0; k < s1; k++) L += Math.hypot(uv[k + 1][0] - uv[k][0], uv[k + 1][1] - uv[k][1]);
+      if (L <= 0) continue;
+      const pxPerM = L / ((s1 - s0) * row.stepM), hp = Math.round(halfM * pxPerM);
+      if (hp < 3) continue;
+      const ts: number[] = [], ls: number[] = [], js: number[] = [];
+      for (let k = s0; k < s1; k++) {
+        const [ax, ay] = uv[k], [bx, by] = uv[k + 1], len = Math.hypot(bx - ax, by - ay) || 1, dx = (bx - ax) / len, dy = (by - ay) / len;
+        for (let t = 0; t < len; t += 3) {
+          const cx = ax + dx * t, cy = ay + dy * t;
+          for (let j = -hp; j <= hp; j++) {
+            const x = Math.round(cx - dy * j), y = Math.round(cy + dx * j); if (x < 0 || y < 0 || x >= W || y >= H) continue;
+            const p = (y * W + x) * 4, rr = d[p], g = d[p + 1], b = d[p + 2], sum = rr + g + b; if (sum < o.darkSum) continue;
+            ts.push(g - (rr + b) / 2); ls.push(sum / 3); js.push(j / pxPerM);
+          }
+        }
+      }
+      if (ts.length < 200) continue;
+      const ratio = ts.map((t, i) => t / ls[i]).sort((a, b) => a - b), kk = ratio[ratio.length >> 1];
+      const e = ts.map((t, i) => t - kk * ls[i]), es = [...e].sort((a, b) => a - b), med = es[es.length >> 1];
+      const dev = es.map(v => Math.abs(v - med)).sort((a, b) => a - b), mad = 1.4826 * dev[dev.length >> 1] || 1;
+      const c = new Float64Array(nb); let tot = 0;
+      for (let i = 0; i < e.length; i++) if (e[i] > med + 4 * mad) { const bi = Math.floor((js[i] + halfM) / 0.01); if (bi >= 0 && bi < nb) { c[bi]++; tot++; } }
+      if (tot < 20) continue;
+      // Smoothed circularly: the profile is one period of the rows.
+      const sm = Array.from(c, (_, i) => { let q = 0; for (let k = -2; k <= 2; k++) q += c[(i + k + nb) % nb]; return q / 5; });
+      const mean = sm.reduce((a, b) => a + b, 0) / nb; let bi = 0; for (let i = 1; i < nb; i++) if (sm[i] > sm[bi]) bi = i;
+      if (mean <= 0 || sm[bi] / mean < minPeak) continue;
+      const [cu, cv] = uv[Math.min(k1, (s0 + s1) >> 1)];
+      meas.push({ u: cu, v: cv, s: (bi + 0.5) * 0.01 - halfM, w: tot });
+    }
+  }
+  const none: Registration = { a: 0, b: 0, c: 0, segments: meas.length, used: 0, applied: false, shiftM: 0 };
+  if (!meas.length) return none;
+  const wrap = (s: number, pred: number) => s + Math.round((pred - s) / spacingM) * spacingM;
+  const u0 = W / 2, v0 = H / 2;
+  // A start the measurements agree on: their circular means over a 4 x 3 grid of the frame, joined up neighbour to
+  // neighbour from the most consistent cell (each cell's mean taken within half a spacing of its neighbour's), then a
+  // plane through them. Rows repeat every spacing, so a measurement alone says its offset only up to whole spacings.
+  const GX = 4, GY = 3, cells: { u: number; v: number; s: number; w: number; done: boolean }[] = [];
+  for (let gy = 0; gy < GY; gy++) for (let gx = 0; gx < GX; gx++) {
+    const sel = meas.filter(m => Math.min(GX - 1, Math.floor((m.u / W) * GX)) === gx && Math.min(GY - 1, Math.floor((m.v / H) * GY)) === gy);
+    if (sel.length < 3) continue;
+    let cx = 0, cy = 0, w = 0; for (const m of sel) { const t = (2 * Math.PI * m.s) / spacingM; cx += m.w * Math.cos(t); cy += m.w * Math.sin(t); w += m.w; }
+    const R = Math.hypot(cx, cy) / w; if (R < 0.5) continue;
+    cells.push({ u: sel.reduce((t, m) => t + m.u, 0) / sel.length, v: sel.reduce((t, m) => t + m.v, 0) / sel.length, s: (Math.atan2(cy, cx) / (2 * Math.PI)) * spacingM, w: w * R, done: false });
+  }
+  let a = 0, b = 0, c = 0, used = 0;
+  if (cells.length) {
+    cells.sort((p, q) => q.w - p.w); cells[0].done = true;
+    for (let k = 1; k < cells.length; k++) {
+      // The next cell to place: the nearest to any placed one; unwrapped onto it.
+      let bi = -1, bj = -1, bd = Infinity;
+      for (let i = 0; i < cells.length; i++) if (!cells[i].done) for (const q of cells) if (q.done) { const dd = Math.hypot(cells[i].u - q.u, cells[i].v - q.v); if (dd < bd) { bd = dd; bi = i; bj = cells.indexOf(q); } }
+      if (bi < 0) break;
+      cells[bi].s = wrap(cells[bi].s, cells[bj].s); cells[bi].done = true;
+    }
+    if (cells.length >= 3) {
+      const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], y = [0, 0, 0];
+      for (const m of cells) { const x = [1, m.u - u0, m.v - v0]; for (let i = 0; i < 3; i++) { y[i] += m.w * x[i] * m.s; for (let j = 0; j < 3; j++) A[i][j] += m.w * x[i] * x[j]; } }
+      const sol = solve3(A, y); if (sol) [a, b, c] = sol; else a = cells[0].s;
+    } else a = cells[0].s;
+  } else {
+    let sx = 0, sy = 0; for (const m of meas) { const t = (2 * Math.PI * m.s) / spacingM; sx += m.w * Math.cos(t); sy += m.w * Math.sin(t); }
+    a = (Math.atan2(sy, sx) / (2 * Math.PI)) * spacingM;
+  }
+  // Refined on every measurement, unwrapped onto the plane, those a fifth of a spacing off it left out.
+  if (meas.length >= minSegs) for (let it = 0; it < 3; it++) {
+    const pred = (m: { u: number; v: number }) => a + b * (m.u - u0) + c * (m.v - v0);
+    const pts = meas.map(m => ({ ...m, s: wrap(m.s, pred(m)) })).filter(m => Math.abs(m.s - pred(m)) <= 0.2 * spacingM);
+    if (pts.length < minSegs) break;
+    const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], y = [0, 0, 0];
+    for (const m of pts) { const x = [1, m.u - u0, m.v - v0]; for (let i = 0; i < 3; i++) { y[i] += m.w * x[i] * m.s; for (let j = 0; j < 3; j++) A[i][j] += m.w * x[i] * x[j]; } }
+    const sol = solve3(A, y); if (!sol) break;
+    [a, b, c] = sol; used = pts.length;
+  }
+  return { a, b, c, segments: meas.length, used, applied: true, shiftM: Math.round(a * 1000) / 1000, points: meas };
+}
+
+function solve3(A: number[][], y: number[]): [number, number, number] | null {
+  const det = (m: number[][]) => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+  const D = det(A); if (!Number.isFinite(D) || Math.abs(D) < 1e-12) return null;
+  const col = (k: number) => A.map((r, i) => r.map((v, j) => (j === k ? y[i] : v)));
+  return [det(col(0)) / D, det(col(1)) / D, det(col(2)) / D];
 }
 
 /** The bar one photograph is read at: the lowest strict score whose first control strip stays quiet, and the false alarms a metre the second control strip still shows there. */
 export function chooseLevel(s: PhotoSearch, o: RowGuidedOptions = ROW_GUIDED): { level: number; falsePerM: number; quiet: boolean } {
-  const perM = (lv: number, strip: Strip) => (s.rowM > 0 ? s.candidates.filter(c => c.strip === strip && c.z >= o.ladder[lv]).length / s.rowM : 0);
+  const perM = (lv: number, strip: Strip) => (s.rowM > 0 ? (s.candidates.filter(c => c.strip === strip && c.z >= o.ladder[lv]).length / s.rowM) * (strip === 0 ? 1 : s.controlScale ?? 1) : 0);
   for (let lv = 0; lv < o.ladder.length; lv++) if (perM(lv, 1) <= o.controlPerM) return { level: lv, falsePerM: perM(lv, 2), quiet: true };
   const lv = o.ladder.length - 1;
   return { level: lv, falsePerM: perM(lv, 2), quiet: false };
@@ -306,11 +433,11 @@ export function mergeAlongRows(searches: PhotoSearch[], rows: RowLine[], gateM: 
   const marks = accepted.filter(m => m.strip === 0), controlMarks = accepted.filter(m => m.strip !== 0);
   // Stretches of row: verified where the band holds clearly more than its two control strips together would by chance.
   const tail = (k: number, n: number) => { let s = 0, term = Math.pow(2 / 3, n); for (let i = 0; i <= n; i++) { if (i >= k) s += term; term = (term * (n - i)) / (i + 1) / 2; } return s; };
-  const stretches: RowStretch[] = [];
+  const stretches: RowStretch[] = [], cScale = list.length ? list.reduce((t, s) => t + (s.controlScale ?? 1), 0) / list.length : 1;
   for (const row of rows) {
     const a0 = row.a0, a1 = row.a0 + (row.en.length - 1) * row.stepM, mine = marks.filter(m => m.row === row.id), ctl = controlMarks.filter(m => m.row === row.id);
     for (let s = a0; s < a1 - 1e-6; s += o.stretchM) {
-      const e = Math.min(a1, s + o.stretchM), band = mine.filter(m => m.a >= s && m.a < e).length, control = ctl.filter(m => m.a >= s && m.a < e).length;
+      const e = Math.min(a1, s + o.stretchM), band = mine.filter(m => m.a >= s && m.a < e).length, control = Math.round(ctl.filter(m => m.a >= s && m.a < e).length * cScale);
       const seen = coveredAt(row.id, (s + e) / 2);
       stretches.push({ row: row.id, a0: s, a1: e, band, control, state: seen < Math.min(o.minViews, list.length) ? "not covered" : band >= o.minBand * ((e - s) / o.stretchM) && tail(band, band + control) < o.alpha ? "verified" : "not verified" });
     }
@@ -421,7 +548,7 @@ export function applicability(searches: PhotoSearch[], o: RowGuidedOptions = ROW
   const read = searches.filter(s => s.rowM >= 5);
   const ok = read.filter(s => {
     const lv = chooseLevel(s, o); if (!lv.quiet) return false;
-    const bar = o.ladder[lv.level], band = s.candidates.filter(c => c.strip === 0 && c.z >= bar).length / s.rowM, ctl = s.candidates.filter(c => c.strip !== 0 && c.z >= bar).length / (2 * s.rowM);
+    const bar = o.ladder[lv.level], band = s.candidates.filter(c => c.strip === 0 && c.z >= bar).length / s.rowM, ctl = (s.candidates.filter(c => c.strip !== 0 && c.z >= bar).length / (2 * s.rowM)) * (s.controlScale ?? 1);
     return band >= contrast * Math.max(ctl, 0.02);
   }).length;
   const applies = read.length > 0 && ok >= share * read.length;

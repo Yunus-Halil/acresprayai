@@ -66,7 +66,7 @@ for (const f of files) {
   writeFileSync(cache, JSON.stringify(s));
   searches.push(s);
   const lv = chooseLevel(s);
-  const at = s.candidates.filter(c => c.z >= ROW_GUIDED.ladder[lv.level]), per = (strip: number) => (at.filter(c => c.strip === strip).length / Math.max(1, s.rowM)).toFixed(2);
+  const at = s.candidates.filter(c => c.z >= ROW_GUIDED.ladder[lv.level]), per = (strip: number) => ((at.filter(c => c.strip === strip).length / Math.max(1, s.rowM)) * (strip === 0 ? 1 : s.controlScale)).toFixed(2);
   if (n % 10 === 0 || n === files.length) console.log(`${pass} ${n}/${files.length} ${stem}: ${Math.round(s.rowM)} m of row, bar ${ROW_GUIDED.ladder[lv.level]}${lv.quiet ? "" : " (controls never quiet)"}, per metre: band ${per(0)}, controls ${per(1)} / ${per(2)}; by bar ${ROW_GUIDED.ladder.map(z => `${z}: ${(s.candidates.filter(c => c.strip === 0 && c.z >= z).length / Math.max(1, s.rowM)).toFixed(1)}|${(s.candidates.filter(c => c.strip !== 0 && c.z >= z).length / Math.max(1, 2 * s.rowM)).toFixed(2)}`).join("  ")}; soil spread ${s.soilSpread.toFixed(2)}, ${s.ms} ms`);
 }
 return searches;
@@ -81,6 +81,8 @@ console.log(`re-centred: ${re.shiftedM} m of row moved more than 2 cm, median sh
 lattice = re.rows; rows = lines(lattice);
 const searches = searchAll("search2");
 const M0 = mergeAlongRows(searches, rows, gateM);
+// Control strips are narrower than the band: their counts scaled to the band's width.
+const cS = searches.reduce((t, s) => t + (s.controlScale ?? 1), 0) / Math.max(1, searches.length);
 // The look, fitted on this field from labels the rows give: candidates behind marks on verified stretches are crop,
 // candidates on the control strips at their photograph's bar are not.
 const verified0 = M0.stretches.filter(s => s.state === "verified");
@@ -140,7 +142,7 @@ const summary = {
   rows: { verifiedM: R(verifiedM), coveredM: R(coveredM), notCoveredM: R(notCovered.reduce((t, s) => t + len(s), 0)), verifiedShareOfCovered: r3(verifiedM / Math.max(1, coveredM)), verifiedShareOverPlantedSquares: r3(plantedVerified / Math.max(1, plantedAll)), overPlantedSquaresM: R(plantedAll) },
   seedSpacing: seedSpacing(onVerified, pg.spacingM),
   offsets: (() => { const o = M.marks.map(m => m.off).sort((x, y) => x - y), ab = o.map(Math.abs).sort((x, y) => x - y); const per = new Map<string, number[]>(); for (const m of M.marks) { const k = `${m.row}:${Math.floor(m.a / 5)}`; (per.get(k) ?? per.set(k, []).get(k)!).push(m.off); } const meds = [...per.values()].filter(v => v.length >= 10).map(v => Math.abs(v.sort((x, y) => x - y)[v.length >> 1])).sort((x, y) => x - y); return { medianOffM: r3(o[o.length >> 1]), medianAbsOffM: r3(ab[ab.length >> 1]), stretchMedianAbsOffM: { p50: r3(meds[meds.length >> 1]), p90: r3(meds[Math.floor(meds.length * 0.9)]) } }; })(),
-  marks: { perMetreOnVerifiedRows: r2(onVerified.length / Math.max(1, verifiedM)), perMetreOnControlStrips: r3(M.controlMarks.length / Math.max(1, 2 * coveredM)), controlOverRow: r3((M.controlMarks.length / Math.max(1, 2 * coveredM)) / Math.max(1e-9, M.marks.length / Math.max(1, coveredM))), medianGapM: r3(seedM), medianViews: M.marks.map(m => m.views).sort((x, y) => x - y)[M.marks.length >> 1] ?? null, medianCovered: M.marks.map(m => m.covered).sort((x, y) => x - y)[M.marks.length >> 1] ?? null },
+  marks: { perMetreOnVerifiedRows: r2(onVerified.length / Math.max(1, verifiedM)), perMetreOnControlStrips: r3((cS * M.controlMarks.length) / Math.max(1, 2 * coveredM)), controlOverRow: r3(((cS * M.controlMarks.length) / Math.max(1, 2 * coveredM)) / Math.max(1e-9, M.marks.length / Math.max(1, coveredM))), medianGapM: r3(seedM), medianViews: M.marks.map(m => m.views).sort((x, y) => x - y)[M.marks.length >> 1] ?? null, medianCovered: M.marks.map(m => m.covered).sort((x, y) => x - y)[M.marks.length >> 1] ?? null },
   repeat: { oddMarks: odd.marks.length, evenMarks: even.marks.length, both, agreement: r3(both / Math.max(1, (odd.marks.length + even.marks.length) / 2)), toleranceM: r3(tol), plantsEstimatedFromRepeat: lincoln ? R(lincoln) : null, marksOverEstimate: lincoln ? r3(M.marks.length / lincoln) : null },
   settings: ROW_GUIDED,
 };
@@ -153,7 +155,7 @@ if (argv.includes("--sweep")) {
     const st = Mx.stretches.flatMap(s => { const e = ext.get(s.row); if (!e) return []; const a0 = Math.max(s.a0, e[0]), a1 = Math.min(s.a1, e[1]); return a1 - a0 >= 0.5 ? [{ ...s, a0, a1 }] : []; });
     let pv = 0, pa = 0; for (const s of st) for (let a = s.a0 + pg.cellA / 2; a < s.a1; a += pg.cellA) if (plantedAt(s.row, a)) { pa += pg.cellA; if (s.state === "verified") pv += pg.cellA; }
     const cov = st.filter(s => s.state !== "not covered").reduce((t, s) => t + s.a1 - s.a0, 0);
-    console.log(`sweep ${label.padEnd(26)} marks ${String(mk.length).padStart(6)}  verified over planted ${(pv / Math.max(1, pa)).toFixed(3)}  control/row ${((ck.length / Math.max(1, 2 * cov)) / Math.max(1e-9, mk.length / Math.max(1, cov))).toFixed(3)}`);
+    console.log(`sweep ${label.padEnd(26)} marks ${String(mk.length).padStart(6)}  verified over planted ${(pv / Math.max(1, pa)).toFixed(3)}  control/row ${(((cS * ck.length) / Math.max(1, 2 * cov)) / Math.max(1e-9, mk.length / Math.max(1, cov))).toFixed(3)}`);
   };
   run("as set", ROW_GUIDED, gateM);
   for (const k of [0.67, 1.5]) run(`controlPerM x${k}`, { ...ROW_GUIDED, controlPerM: ROW_GUIDED.controlPerM * k }, gateM);
@@ -167,6 +169,9 @@ writeFileSync(join(OUT, "field.json"), JSON.stringify({
   directionDeg: F.directionDeg, pitchM: pg.spacingM,
   rows: M.stretches.filter(s => s.state !== "not covered").map(s => ({ identity: s.state === "verified" ? "corn" : "probable crop", lineEN: [rowEN(s.row, s.a0), rowEN(s.row, s.a1)] })),
   marks: M.marks.map(m => rowEN(m.row, m.a, m.off)), controlMarks: M.controlMarks.map(m => rowEN(m.row, m.a, m.off)),
+  // Where each photograph itself saw each mark (photo name, pixel u, v): lets a check drawn in one photograph correct that photograph's own placement.
+  markViews: M.marks.map(m => m.members.map(c => [searches[c.photo].name, c.u, c.v])),
+  lattice: lattice.map(L => ({ id: L.id, lineEN: L.ac.map(([a, c]) => fromAC(a, c)) })),
   firstPassRows: F.rows.map(r => ({ identity: r.identity, lineEN: r.lineEN })),
 }));
 console.log(JSON.stringify({ ...summary, settings: undefined }, null, 1));
