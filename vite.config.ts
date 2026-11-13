@@ -42,7 +42,7 @@ const fieldTwinDevFiles = (): Plugin => ({
         res.end(JSON.stringify(ids));
         return;
       }
-      const m = /^\/([a-z0-9][a-z0-9-]{0,63})\/(twin\.json|reference\.json|atlas-\d+\.jpg|tiles\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg)$/.exec(url);
+      const m = /^\/([a-z0-9][a-z0-9-]{0,63})\/(twin\.json|reference\.json|plants\.json|atlas-\d+\.jpg|tiles\/\d{1,2}\/\d{1,9}\/\d{1,9}\.jpg)$/.exec(url);
       if (!m) return next();
       const file = path.join(root, m[1], m[2]);
       if (!fs.existsSync(file)) {

@@ -8,13 +8,14 @@ import { useEffect, useState } from "react";
 import FieldTwinView, { type ReferenceOption } from "@/components/app/fieldTwin/FieldTwinView";
 import TwinBuilder, { type BuiltTwin } from "@/components/app/fieldTwin/TwinBuilder";
 import { syntheticTwin } from "@/lib/fieldTwin/synthetic";
-import { type TwinBundle, parseTwin } from "@/lib/fieldTwin/types";
+import { type LatLngPair, type TwinBundle, parseTwin } from "@/lib/fieldTwin/types";
 
 export default function FieldTwinDevPreview() {
   const [twin, setTwin] = useState<TwinBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [built, setBuilt] = useState<BuiltTwin | null>(null);
   const [reference, setReference] = useState<ReferenceOption[]>([]);
+  const [plants, setPlants] = useState<{ points: LatLngPair[]; note: string } | null>(null);
   const params = new URLSearchParams(window.location.search);
   const id = params.get("id") ?? "";
   // ?build=1: the builder panel instead of a twin from disk (the build benchmark script, and a look without a sign-in).
@@ -52,6 +53,12 @@ export default function FieldTwinDevPreview() {
           const j = r.ok ? ((await r.json()) as { set?: string; label?: string; note?: string; maxNativeZoom?: number }) : null;
           if (j && typeof j.set === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(j.set)) setReference([{ id: j.set, label: j.label ?? "The flight's photographs", url: `/__field-twin/${j.set}/tiles/{z}/{x}/{y}.jpg`, maxNativeZoom: j.maxNativeZoom ?? 22, note: j.note ?? "The flight's photographs, placed by the twin's cameras. Display only." }]);
         } catch { /* no reference imagery for this twin */ }
+        // Plants located along the rows (scripts/rowCrop/exportPlantMarks.ts), when this computer holds them for this twin.
+        try {
+          const r = await fetch(`/__field-twin/${pick}/plants.json`);
+          const j = r.ok ? ((await r.json()) as { points?: unknown; note?: string }) : null;
+          if (j && Array.isArray(j.points)) setPlants({ points: (j.points as unknown[]).filter((p): p is LatLngPair => Array.isArray(p) && p.length === 2 && p.every(v => typeof v === "number" && Number.isFinite(v))), note: typeof j.note === "string" ? j.note : "Plants the photographs located." });
+        } catch { /* no plants for this twin */ }
       } catch (e) { setError((e as Error).message); }
     })();
   }, [id, synthetic, build]);
@@ -71,7 +78,7 @@ export default function FieldTwinDevPreview() {
     : async (i: number) => `/__field-twin/${twin.id}/${twin.atlases[i].file}`;
   return (
     <div className="h-screen w-screen bg-[#1a1c1a]">
-      <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={reference} initialReference={photos ? reference[0]?.id ?? null : null} expose detail={detail} audience={audience} review={audience === "participant" ? { twinId: null, disabledReason: "Preview: reviews are saved only for a twin in an account." } : undefined} />
+      <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={reference} initialReference={photos ? reference[0]?.id ?? null : null} plants={plants} expose detail={detail} audience={audience} review={audience === "participant" ? { twinId: null, disabledReason: "Preview: reviews are saved only for a twin in an account." } : undefined} />
     </div>
   );
 }

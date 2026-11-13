@@ -16,9 +16,15 @@ import { EV, type EvidenceRaster } from "@/lib/fieldTwin/boundaryEvidence";
 import { CORN_STATUS, type Detail, GridIndex, PRESSURE_INDEX, ROW_STATUS, SUPPORT_ORDER, type Scene, WEED_STATUS, detailFor, metresPerPixel, toWorld } from "@/lib/fieldTwin/scene";
 import { type TwinLayers, TWIN_COLOURS as C, badgesAllowed } from "@/lib/fieldTwin/style";
 import type { LatLngPair } from "@/lib/fieldTwin/types";
+import type { RowEdits } from "@/lib/fieldTwin/rowEdits";
 
 /** How far (screen pixels) a pointer may be from a boundary handle to take it. */
 const HANDLE_PX = 9;
+/**
+ * Editing rows: a row within this many CSS pixels of a tap is the row tapped (the nearest one). A finger's contact is
+ * about this wide; the ordinary 6 px tolerance is a 2 mm target on an iPad (reports/Corn row correction design.md).
+ */
+const ROW_TAP_PX = 22;
 
 export type TwinPick =
   | { kind: "tree"; id: number } | { kind: "weed"; id: number } | { kind: "vegetation"; id: number }
@@ -30,6 +36,8 @@ export type TwinPick =
   | { kind: "group"; lat: number; lng: number; count: number }
   /** Corn twins: a field corn row, a weed observation, a stand gap. */
   | { kind: "cornRow"; id: number } | { kind: "cornWeed"; id: number } | { kind: "cornGap"; id: number }
+  /** Editing rows: a row the operator added (by its uid), or a tap on ground with no row near (where to add one). */
+  | { kind: "addedRow"; uid: string } | { kind: "ground"; lat: number; lng: number }
   | null;
 
 export type DrawStats = { lastDrawMs: number; drawn: Record<string, number>; level: Detail["level"]; detail: Detail | null; draws: number; labels: { placed: number; emphasized: number; qualifying: number; binLevel: number | null } };
@@ -91,6 +99,15 @@ export class TwinCanvasLayer extends L.Canvas {
   private editing: number[] | null = null;
   private drag: { index: number; moved: boolean } | null = null;
   private evidenceCanvas: HTMLCanvasElement | null = null;
+  /** The operator's row corrections (zoom-0 units), drawn over the machine's rows; `active` while the row editor is open. */
+  private rowEdit: { active: boolean; hideRows: boolean; verdicts: Record<string, "keep" | "remove">; added: { uid: string; xy: Float64Array }[]; preview: Float64Array | null; hover: ((lat: number, lng: number) => LatLngPair[] | null) | null; overrides: Map<number, Float64Array>; handles: [number, number, number, number] | null } = { active: false, hideRows: false, verdicts: {}, added: [], preview: null, hover: null, overrides: new Map(), handles: null };
+  /** An end handle being dragged: which one, and where along the row it is now (zoom-0 units). */
+  private rowDrag: { which: 0 | 1; x: number; y: number; moved: boolean } | null = null;
+  /** A click that ends a handle drag is not a tap on the ground. */
+  private swallowClick = false;
+  /** Plants located by the photographs (zoom-0 units), drawn at the plant level as small neutral dots; null for none. */
+  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex } | null = null;
+  private showPlants = true;
 
   constructor(layers: TwinLayers, options: L.RendererOptions = {}) {
     super({ padding: 0.25, tolerance: 6, ...options });
@@ -164,6 +181,21 @@ export class TwinCanvasLayer extends L.Canvas {
     return best;
   }
   private onPointerDown(e: PointerEvent) {
+    if (this.rowEdit.active && this.rowEdit.handles && (e.button === 0 || e.pointerType !== "mouse")) {
+      const w = this.pointerWorld(e), H = this.rowEdit.handles;
+      if (!w) return;
+      const d0 = Math.hypot(H[0] - w.x, H[1] - w.y) * w.scale, d1 = Math.hypot(H[2] - w.x, H[3] - w.y) * w.scale;
+      if (Math.min(d0, d1) > ROW_TAP_PX) return;
+      L.DomEvent.stop(e);
+      const me = this as unknown as Internals;
+      me._map.dragging.disable();
+      const which: 0 | 1 = d0 <= d1 ? 0 : 1;
+      this.rowDrag = { which, x: which === 0 ? H[0] : H[2], y: which === 0 ? H[1] : H[3], moved: false };
+      document.addEventListener("pointermove", this.onRowDragMove);
+      document.addEventListener("pointerup", this.onRowDragUp);
+      this.requestRedraw();
+      return;
+    }
     if (!this.editing || e.button !== 0) return;
     const w = this.pointerWorld(e);
     if (!w) return;
@@ -190,6 +222,33 @@ export class TwinCanvasLayer extends L.Canvas {
     this.endDrag();
     if (moved) this.fire("boundaryedit", { ring: this.editingRing() });
   };
+  /** Dragging a row's end: the pointer projected onto the row's axis (the line through its two ends). */
+  private onRowDragMove = (e: PointerEvent) => {
+    const H = this.rowEdit.handles, D = this.rowDrag;
+    if (!H || !D) return;
+    const w = this.pointerWorld(e);
+    if (!w) return;
+    const vx = H[2] - H[0], vy = H[3] - H[1], L2 = vx * vx + vy * vy || 1e-18, t = ((w.x - H[0]) * vx + (w.y - H[1]) * vy) / L2;
+    D.x = H[0] + t * vx; D.y = H[1] + t * vy; D.moved = true;
+    this.requestRedraw();
+  };
+  private onRowDragUp = () => {
+    const D = this.rowDrag, me = this as unknown as Internals;
+    this.endRowDrag();
+    if (D?.moved && me._map) {
+      this.swallowClick = true;
+      setTimeout(() => { this.swallowClick = false; }, 400);
+      const ll = me._map.unproject(L.point(D.x, D.y), 0);
+      this.fire("rowend", { which: D.which, lat: ll.lat, lng: ll.lng });
+    }
+  };
+  private endRowDrag() {
+    const me = this as unknown as Internals;
+    if (this.rowDrag && me._map) me._map.dragging.enable();
+    this.rowDrag = null;
+    document.removeEventListener("pointermove", this.onRowDragMove);
+    document.removeEventListener("pointerup", this.onRowDragUp);
+  }
   private endDrag() {
     const me = this as unknown as Internals;
     if (this.drag && me._map) me._map.dragging.enable();
@@ -212,6 +271,29 @@ export class TwinCanvasLayer extends L.Canvas {
     } catch { return null; }
   }
   setSelection(p: TwinPick) { this.selection = p; this.requestRedraw(); }
+  /**
+   * The operator's row corrections and whether the row editor is open. `hover`, while open, gives the row a click
+   * here would add (drawn as a preview under a mouse; a finger has no hover). `hideRows` hides every row line so the
+   * ground under them can be judged.
+   */
+  setRowEdits(edits: RowEdits, active: boolean, hideRows: boolean, hover: ((lat: number, lng: number) => LatLngPair[] | null) | null, overrides: { id: number; line: LatLngPair[] }[] = [], handles: [LatLngPair, LatLngPair] | null = null) {
+    const flat = (line: LatLngPair[]) => new Float64Array(line.flatMap(([lat, lng]) => toWorld(lat, lng)));
+    const h = active && handles ? [...toWorld(handles[0][0], handles[0][1]), ...toWorld(handles[1][0], handles[1][1])] as [number, number, number, number] : null;
+    this.rowEdit = { active, hideRows, verdicts: edits.verdicts, added: edits.added.map(a => ({ uid: a.uid, xy: flat(a.line) })), preview: active ? this.rowEdit.preview : null, hover: active ? hover : null, overrides: new Map(overrides.map(o => [o.id, flat(o.line)])), handles: h };
+    if (!h) this.endRowDrag();
+    const me = this as unknown as Internals;
+    if (me._map) { if (active) me._map.doubleClickZoom.disable(); else if (!this.editing) me._map.doubleClickZoom.enable(); }
+    this.requestRedraw();
+  }
+  setPlants(points: LatLngPair[] | null, show: boolean) {
+    if (points) {
+      const n = points.length, x = new Float64Array(n), y = new Float64Array(n);
+      points.forEach(([lat, lng], i) => { const [wx, wy] = toWorld(lat, lng); x[i] = wx; y[i] = wy; });
+      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7) };
+    } else this.plants = null;
+    this.showPlants = show;
+    this.requestRedraw();
+  }
   watchDetail(cb: ((d: Detail) => void) | null) { this.onDetailChange = cb; }
 
   /** The findings to draw (markers, boundaries, labels), or none. Projection and bins are built here, once. */
@@ -601,19 +683,85 @@ export class TwinCanvasLayer extends L.Canvas {
   }
 
   private drawCorn(ctx: Ctx, scene: Scene, X: (u: number) => number, Y: (u: number) => number, pxPerM: number, vx0: number, vy0: number, vx1: number, vy1: number, drawn: Record<string, number>) {
-    const K = scene.corn!, S = CORN_STATUS, unc = this.layers.cornUncertain, sel = this.selection;
+    const K = scene.corn!, S = CORN_STATUS, unc = this.layers.cornUncertain, sel = this.selection, RE = this.rowEdit, V = RE.verdicts;
+    // Plants the photographs located: small neutral dots, never coloured as corn (nothing tells corn by its look).
+    if (this.plants && this.showPlants && pxPerM >= 12) {
+      const P = this.plants, r = Math.max(1.4, Math.min(4, 0.025 * pxPerM));
+      ctx.beginPath(); let np = 0;
+      for (const k of P.index.query(vx0, vy0, vx1, vy1, 0)) { const x = X(P.x[k]), y = Y(P.y[k]); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 2 * Math.PI); np++; }
+      ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.85; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); ctx.globalAlpha = 1;
+      drawn.plants = np;
+    }
     // Rows: a line per field row (its measured course), selected one under a white halo.
     const rowW = Math.max(1.5, Math.min(6, 0.06 * pxPerM));
     const strokeRow = (k: number) => { ctx.beginPath(); packed(ctx, K.rows.lines, k, X, Y); ctx.stroke(); };
-    if (sel?.kind === "cornRow") { const k = indexOfId(K.rows.id, sel.id); if (k >= 0) { ctx.strokeStyle = C.selection; ctx.lineWidth = rowW + 4; ctx.setLineDash([]); strokeRow(k); } }
+    const flatLine = (xy: Float64Array) => { for (let i = 0; i < xy.length; i += 2) { if (i === 0) ctx.moveTo(X(xy[0]), Y(xy[1])); else ctx.lineTo(X(xy[i]), Y(xy[i + 1])); } };
+    const OV = RE.overrides;
+    const rowPath = (k: number) => { const ov = OV.get(K.rows.id[k]); if (ov) flatLine(ov); else packed(ctx, K.rows.lines, k, X, Y); };
     let nr = 0;
-    for (const [st, colour, dash] of [[S.row.corn, C.cornRow, []], [S.row.unconfirmed, C.cornRowUnconfirmed, [7, 5]]] as const) {
-      if (st === S.row.unconfirmed && !unc) continue;
-      ctx.strokeStyle = colour; ctx.lineWidth = st === S.row.corn ? rowW : Math.max(1, rowW * 0.8); ctx.setLineDash([...dash]); ctx.globalAlpha = 0.9;
-      ctx.beginPath();
-      for (let k = 0; k < K.rows.n; k++) if (K.rows.status[k] === st) { packed(ctx, K.rows.lines, k, X, Y); nr++; }
-      ctx.stroke();
+    if (!RE.hideRows) {
+      if (sel?.kind === "cornRow") { const k = indexOfId(K.rows.id, sel.id); if (k >= 0) { ctx.strokeStyle = C.selection; ctx.lineWidth = rowW + 6; ctx.globalAlpha = 0.55; ctx.setLineDash([]); ctx.beginPath(); rowPath(k); ctx.stroke(); ctx.globalAlpha = 1; } }
+      if (sel?.kind === "addedRow") { const a = RE.added.find(x => x.uid === sel.uid); if (a) { ctx.beginPath(); flatLine(a.xy); ctx.strokeStyle = C.selection; ctx.lineWidth = rowW + 8; ctx.globalAlpha = 0.45; ctx.setLineDash([]); ctx.stroke(); ctx.globalAlpha = 1; } }
+      // The machine's rows by state; a row the operator kept is drawn solid in its machine colour, one they removed
+      // thin grey dots with cross ticks (still there, still selectable: their word, not a deletion).
+      for (const [st, colour, dash] of [[S.row.corn, C.cornRow, []], [S.row.unconfirmed, C.cornRowUnconfirmed, [7, 5]]] as const) {
+        if (st === S.row.unconfirmed && !unc) continue;
+        for (const kept of [false, true]) {
+          ctx.strokeStyle = colour; ctx.lineWidth = st === S.row.corn || kept ? rowW : Math.max(1, rowW * 0.8); ctx.setLineDash(kept ? [] : [...dash]); ctx.globalAlpha = 0.9;
+          ctx.beginPath();
+          for (let k = 0; k < K.rows.n; k++) { if (K.rows.status[k] !== st) continue; const v = V[String(K.rows.id[k])]; if (v === "remove" || (v === "keep") !== kept) continue; rowPath(k); nr++; }
+          ctx.stroke();
+        }
+      }
+      ctx.beginPath(); let anyRemoved = false;
+      for (let k = 0; k < K.rows.n; k++) if (V[String(K.rows.id[k])] === "remove") { packed(ctx, K.rows.lines, k, X, Y); anyRemoved = true; }
+      if (anyRemoved) {
+        ctx.strokeStyle = C.rowRemoved; ctx.lineWidth = Math.max(1, rowW * 0.6); ctx.setLineDash([2, 5]); ctx.globalAlpha = 0.9; ctx.stroke(); ctx.setLineDash([]);
+        // Cross ticks every 40 px along each removed row.
+        ctx.beginPath();
+        for (let k = 0; k < K.rows.n; k++) {
+          if (V[String(K.rows.id[k])] !== "remove") continue;
+          const o = K.rows.lines.off[k], e = K.rows.lines.off[k + 1], xy = K.rows.lines.xy; let carry = 20;
+          for (let i = o; i + 3 < e; i += 2) {
+            const x0 = X(xy[i]), y0 = Y(xy[i + 1]), x1 = X(xy[i + 2]), y1 = Y(xy[i + 3]), L0 = Math.hypot(x1 - x0, y1 - y0); if (L0 <= 0) continue;
+            const ux = (x1 - x0) / L0, uy = (y1 - y0) / L0, t = 4 + rowW;
+            for (let d = carry; d < L0; d += 40) { const cx = x0 + ux * d, cy = y0 + uy * d; ctx.moveTo(cx - uy * t - ux * 3, cy + ux * t - uy * 3); ctx.lineTo(cx + uy * t + ux * 3, cy - ux * t + uy * 3); }
+            carry = (carry - L0) % 40; if (carry < 0) carry += 40;
+          }
+        }
+        ctx.lineWidth = 1.5; ctx.stroke();
+      }
+      // Kept rows: a white dot at each end (the operator's word).
+      ctx.beginPath(); let anyKept = false;
+      for (let k = 0; k < K.rows.n; k++) {
+        if (V[String(K.rows.id[k])] !== "keep") continue;
+        const ov = OV.get(K.rows.id[k]), xy = ov ?? K.rows.lines.xy, o = ov ? 0 : K.rows.lines.off[k], e = ov ? ov.length : K.rows.lines.off[k + 1], r = Math.max(3, rowW);
+        for (const i of [o, e - 2]) { const x = X(xy[i]), y = Y(xy[i + 1]); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 2 * Math.PI); }
+        anyKept = true;
+      }
+      if (anyKept) { ctx.fillStyle = C.selection; ctx.globalAlpha = 1; ctx.fill(); }
+      // Rows the operator added: white over a dark casing.
+      if (RE.added.length) {
+        ctx.beginPath(); for (const a of RE.added) flatLine(a.xy);
+        ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.strokeStyle = "rgba(10,12,10,0.85)"; ctx.lineWidth = rowW + 3; ctx.stroke();
+        ctx.strokeStyle = C.selection; ctx.lineWidth = rowW; ctx.stroke();
+        nr += RE.added.length;
+      }
     }
+    // The row a click would add, under the mouse (the row editor; a finger commits at once and gets Undo instead).
+    // The selected row's end handles; while one is dragged, the row's new extent from the other end.
+    if (RE.active && RE.handles) {
+      const H = RE.handles, D = this.rowDrag;
+      if (D?.moved) {
+        const fx = D.which === 0 ? H[2] : H[0], fy = D.which === 0 ? H[3] : H[1];
+        ctx.beginPath(); ctx.moveTo(X(fx), Y(fy)); ctx.lineTo(X(D.x), Y(D.y));
+        ctx.strokeStyle = C.selection; ctx.lineWidth = rowW + 2; ctx.setLineDash([8, 5]); ctx.globalAlpha = 0.9; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+      const pts: [number, number][] = [[H[0], H[1]], [H[2], H[3]]];
+      if (D?.moved) pts[D.which] = [D.x, D.y];
+      for (const [hx, hy] of pts) { ctx.beginPath(); ctx.arc(X(hx), Y(hy), 9, 0, 2 * Math.PI); ctx.fillStyle = C.selection; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = "rgba(10,12,10,0.9)"; ctx.stroke(); }
+    }
+    if (RE.active && RE.preview) { ctx.beginPath(); flatLine(RE.preview); ctx.strokeStyle = C.selection; ctx.lineWidth = rowW; ctx.setLineDash([10, 6]); ctx.globalAlpha = 0.75; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
     // Gaps: thick along the row, confirmed orange, withheld grey dashes.
     let ng = 0;
     for (const [st, colour, dash] of [[S.gap.withheld, C.cornGapWithheld, [4, 4]], [S.gap.confirmed, C.cornGap, []]] as const) {
@@ -794,6 +942,7 @@ export class TwinCanvasLayer extends L.Canvas {
     const zoom = map.getZoom(), scale = 2 ** zoom, origin = map.getPixelOrigin();
     const x = (point.x + origin.x) / scale, y = (point.y + origin.y) / scale;
     const tol = (this.options as { tolerance?: number }).tolerance ?? 6, tolU = tol / scale, L_ = this.layers;
+    if (this.rowEdit.active && s.corn) return this.pickRowAt(x, y, scale) ?? (() => { const ll = map.unproject(L.point(x * scale, y * scale), zoom); return { kind: "ground" as const, lat: ll.lat, lng: ll.lng }; })();
     const within = (cx: number, cy: number, rM: number) => Math.hypot(cx - x, cy - y) <= rM / s.mpu + tolU;
     // Findings markers first: they are what the user asked to see.
     const F = this.findings;
@@ -874,11 +1023,27 @@ export class TwinCanvasLayer extends L.Canvas {
     return null;
   }
 
+  /** Editing rows: the nearest row (the machine's, removed ones included, or an added one) within a finger of (x, y), zoom-0 units. */
+  private pickRowAt(x: number, y: number, scale: number): TwinPick {
+    const K = this.scene?.corn; if (!K) return null;
+    const tolU = ROW_TAP_PX / scale;
+    const segD = (ax: number, ay: number, bx: number, by: number) => { const vx = bx - ax, vy = by - ay, L2 = vx * vx + vy * vy || 1e-18, t = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / L2)); return Math.hypot(ax + t * vx - x, ay + t * vy - y); };
+    let best: TwinPick = null, bd = tolU;
+    for (let k = 0; k < K.rows.n; k++) {
+      if (K.rows.status[k] !== CORN_STATUS.row.corn && !this.layers.cornUncertain) continue;
+      const ov = this.rowEdit.overrides.get(K.rows.id[k]), xy = ov ?? K.rows.lines.xy, o = ov ? 0 : K.rows.lines.off[k], e = ov ? ov.length : K.rows.lines.off[k + 1];
+      for (let i = o; i + 3 < e; i += 2) { const dd = segD(xy[i], xy[i + 1], xy[i + 2], xy[i + 3]); if (dd < bd) { bd = dd; best = { kind: "cornRow", id: K.rows.id[k] }; } }
+    }
+    for (const a of this.rowEdit.added) for (let i = 0; i + 3 < a.xy.length; i += 2) { const dd = segD(a.xy[i], a.xy[i + 1], a.xy[i + 2], a.xy[i + 3]); if (dd < bd) { bd = dd; best = { kind: "addedRow", uid: a.uid }; } }
+    return best;
+  }
+
   // Leaflet's canvas event hooks, pointed at the scene instead of the (empty) path list.
   _onClick(e: MouseEvent) {
     const me = this as unknown as Internals;
     if (!me._map) return;
     if (e.type === "click" && me._map._draggableMoved(this)) return;
+    if (this.swallowClick || this.rowDrag) { this.swallowClick = false; L.DomEvent.stop(e); return; }
     if (this.editing) {
       // Double-click on a vertex removes it (a triangle keeps its three).
       if (e.type === "dblclick") {
@@ -904,6 +1069,14 @@ export class TwinCanvasLayer extends L.Canvas {
       this.hoverPending = false;
       if (!me._map || !me._container) return;
       const pick = this.pickAt(me._map.mouseEventToLayerPoint(e));
+      // The row editor: the row a click here would add, drawn as a preview (none over an existing row).
+      if (this.rowEdit.active && this.rowEdit.hover) {
+        const line = pick?.kind === "ground" ? this.rowEdit.hover(pick.lat, pick.lng) : null;
+        const next = line ? new Float64Array(line.flatMap(([la, ln]) => toWorld(la, ln))) : null;
+        if (next || this.rowEdit.preview) { this.rowEdit.preview = next; this.requestRedraw(); }
+        me._container.style.cursor = pick?.kind === "ground" ? "crosshair" : pick ? "pointer" : "";
+        return;
+      }
       const was = !!this.hover;
       this.hover = pick;
       if (!!pick !== was) { me._container.style.cursor = pick ? "pointer" : ""; this.fire("twinhover", { pick }); }

@@ -11,6 +11,7 @@ import type { FindingsResult } from "@/lib/fieldTwin/findings";
 import { type Detail, type Scene, zoomForSize } from "@/lib/fieldTwin/scene";
 import { TWIN_COLOURS, type TwinLayers } from "@/lib/fieldTwin/style";
 import type { LatLngPair } from "@/lib/fieldTwin/types";
+import { NO_ROW_EDITS, type RowEdits } from "@/lib/fieldTwin/rowEdits";
 import type { UnitSystem } from "@/lib/units";
 import { type DrawStats, TwinCanvasLayer, type TwinPick } from "./TwinCanvasLayer";
 
@@ -40,7 +41,8 @@ type Props = {
   layers: TwinLayers;
   selection: TwinPick;
   units: UnitSystem;
-  onPick: (p: TwinPick) => void;
+  /** A click's pick, and how the pointer was held for it (touch, pen or mouse, from the last pointerdown: a touch's click event can report "mouse" in Safari). */
+  onPick: (p: TwinPick, pointer: string) => void;
   onDetail?: (d: Detail) => void;
   onStats?: (s: DrawStats) => void;
   onMove?: (centre: { lat: number; lng: number }, zoom: number) => void;
@@ -55,6 +57,12 @@ type Props = {
   editing?: LatLngPair[] | null;
   /** The ring after each handle move, add or removal. */
   onBoundaryEdit?: (ring: LatLngPair[]) => void;
+  /** Corn twins: the operator's row corrections, whether the row editor is open, every row line hidden, and the row a click would add (the preview under a mouse). */
+  rowEdits?: { edits: RowEdits; active: boolean; hideRows: boolean; hover: ((lat: number, lng: number) => LatLngPair[] | null) | null; overrides: { id: number; line: LatLngPair[] }[]; handles: [LatLngPair, LatLngPair] | null } | null;
+  /** The row editor: an end handle let go at (lat, lng) (0 the first of the handles). */
+  onRowEnd?: (which: 0 | 1, lat: number, lng: number) => void;
+  /** Plants the photographs located, drawn at the plant level, and whether they are shown. */
+  plants?: { points: LatLngPair[]; show: boolean } | null;
 };
 
 const bar = "background:rgba(20,22,20,.86);border:1px solid #333;color:#d9ddd6;";
@@ -81,7 +89,7 @@ const LocateControl = L.Control.extend({
   },
 });
 
-export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit }: Props) {
+export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, rowEdits = null, plants = null, onRowEnd }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const miniEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -97,6 +105,8 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   const onSwipeRef = useRef(onSwipe); onSwipeRef.current = onSwipe;
   const onBoundaryEditRef = useRef(onBoundaryEdit); onBoundaryEditRef.current = onBoundaryEdit;
   const layersRef = useRef(layers); layersRef.current = layers;
+  const pointerRef = useRef("mouse");
+  const onRowEndRef = useRef(onRowEnd); onRowEndRef.current = onRowEnd;
   const detailRef = useRef<Detail | null>(null);
 
   /** The surroundings tiles fade with the detail and are removed outright when invisible (no tile requests then). */
@@ -139,12 +149,15 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
         map.flyTo([p.lat, p.lng], Math.min(26, map.getZoom() + 2), { duration: 0.5 });
         return;
       }
-      onPickRef.current(p);
+      onPickRef.current(p, pointerRef.current);
     });
+    const onDown = (ev: PointerEvent) => { pointerRef.current = ev.pointerType || "mouse"; };
+    el.current.addEventListener("pointerdown", onDown, { capture: true });
     layer.watchDetail(d => { detailRef.current = d; updateContext(); onDetailRef.current?.(d); });
     map.on("moveend zoomend", () => { const c = map.getCenter(); onMoveRef.current?.({ lat: c.lat, lng: c.lng }, map.getZoom()); });
     // Draws happen on move end, zoom end and state changes, not per dragged frame, so one state update each is cheap.
     layer.on("twindraw", () => onStatsRef.current?.(layer.stats));
+    layer.on("rowend", (e: L.LeafletEvent & { which?: 0 | 1; lat?: number; lng?: number }) => { if (e.which != null && e.lat != null && e.lng != null) onRowEndRef.current?.(e.which, e.lat, e.lng); });
     layer.on("boundaryedit", (e: L.LeafletEvent & { ring?: LatLngPair[] | null }) => { if (e.ring) onBoundaryEditRef.current?.(e.ring); });
     new LocateControl({ position: "topright", locate } as L.ControlOptions).addTo(map);
     new NorthControl({ position: "bottomright" }).addTo(map);
@@ -173,7 +186,8 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
     }
     layer.setFindings(findings);
     onReady?.({ map, layer, locate });
-    return () => { mini?.remove(); map.remove(); mapRef.current = null; layerRef.current = null; refLayerRef.current = null; scaleRef.current = null; contextRef.current = null; };
+    const host = el.current;
+    return () => { host.removeEventListener("pointerdown", onDown, { capture: true }); mini?.remove(); map.remove(); mapRef.current = null; layerRef.current = null; refLayerRef.current = null; scaleRef.current = null; contextRef.current = null; };
     // The scene is the identity of the map; everything else is pushed through the refs and effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene]);
@@ -183,6 +197,8 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   useEffect(() => { layerRef.current?.setFindings(findings); }, [findings, scene]);
   useEffect(() => { layerRef.current?.setOperational(operational); }, [operational, scene]);
   useEffect(() => { layerRef.current?.setEditing(editing); }, [editing, scene]);
+  useEffect(() => { layerRef.current?.setRowEdits(rowEdits?.edits ?? NO_ROW_EDITS, !!rowEdits?.active, !!rowEdits?.hideRows, rowEdits?.hover ?? null, rowEdits?.overrides ?? [], rowEdits?.handles ?? null); }, [rowEdits, scene]);
+  useEffect(() => { layerRef.current?.setPlants(plants?.points ?? null, plants?.show ?? false); }, [plants, scene]);
 
   // The scale bar follows the account's units.
   useEffect(() => {

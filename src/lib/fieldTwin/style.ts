@@ -155,6 +155,10 @@ export const TWIN_COLOURS = {
   cornWeedContested: "#c08cf0",
   cornGap: "#ffa000",
   cornGapWithheld: "#a0a6ad",
+  /** The operator's row corrections: a removed row thin grey dots with cross ticks (added and kept rows are white,
+   * the operator's colour); plants the photographs located, pale dots that are not any finding's colour. */
+  rowRemoved: "#8c929a",
+  plantLocated: "#efe6ff",
 };
 
 export const WEED_COLOUR = { betweenRows: TWIN_COLOURS.weed, onRow: TWIN_COLOURS.weedOnRow, single: TWIN_COLOURS.weedSingle, onTree: TWIN_COLOURS.weedOnTree };

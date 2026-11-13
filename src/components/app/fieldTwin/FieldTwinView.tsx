@@ -23,6 +23,8 @@ import ReviewBar, { reviewTargetOf } from "./ReviewBar";
 import { type ReviewFocus, locateReviewed } from "./reviewFocus";
 import { reviewKey, useTwinReviews } from "@/lib/fieldTwin/reviews";
 import { FeedbackButton } from "@/components/pilot/FeedbackDialog";
+import { type RowEdits, NO_ROW_EDITS, loadRowEdits, moveRowEnd, newUid, plantIndex, rowEndsNow, rowLineNow, rowModel, saveRowEdits, snapRow } from "@/lib/fieldTwin/rowEdits";
+import { RowActionCard, RowEditPanel, RowUndoBar } from "./RowEditor";
 
 const NARROW_PX = 820;
 const narrowNow = () => typeof window !== "undefined" && window.innerWidth < NARROW_PX;
@@ -91,6 +93,8 @@ type Props = {
    */
   focus?: ReviewFocus | null;
   onFocus?: (found: { status: string } | null) => void;
+  /** Corn twins: plants the photographs located (the dev preview's plants.json), drawn up close and snapped to by the row editor. */
+  plants?: { points: LatLngPair[]; note: string } | null;
 };
 
 const DETAIL_KEY = "swathwise:twin-detail";
@@ -142,7 +146,7 @@ function measured<T>(name: string, fn: () => T): T {
   return v;
 }
 
-export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus }: Props) {
+export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants = null }: Props) {
   const units = useUnitSystem();
   const founderView = audience === "founder";
   const stops = founderView ? DETAIL_STOPS : PARTICIPANT_STOPS;
@@ -191,6 +195,36 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const [centre, setCentre] = useState<{ lat: number; lng: number } | null>(null);
   const handle = useRef<TwinMapHandle | null>(null);
 
+  // The row editor (corn twins, founder for now): the operator's corrections, folded over the saved twin, on this device.
+  const [rowEdits, setRowEditsState] = useState<RowEdits>(() => loadRowEdits(twin.id));
+  useEffect(() => { setRowEditsState(loadRowEdits(twin.id)); }, [twin.id]);
+  const [rowEditing, setRowEditing] = useState(false);
+  const [hideRows, setHideRows] = useState(false);
+  const [showPlants, setShowPlants] = useState(true);
+  const [rowUndo, setRowUndo] = useState<{ edits: RowEdits; label: string }[]>([]);
+  const [rowLast, setRowLast] = useState<string | null>(null);
+  const [rowNote, setRowNote] = useState<string | null>(null);
+  const commitRows = useCallback((next: RowEdits, label: string) => {
+    setRowUndo(st => [...st, { edits: rowEdits, label }].slice(-100));
+    setRowEditsState(next); setRowLast(label);
+    setRowNote(saveRowEdits(twin.id, next) ? null : "Not saved: this browser blocks storage. The correction is on screen only.");
+  }, [rowEdits, twin.id]);
+  const undoRows = useCallback(() => {
+    const top = rowUndo[rowUndo.length - 1];
+    if (!top) return;
+    setRowUndo(st => st.slice(0, -1)); setRowEditsState(top.edits); saveRowEdits(twin.id, top.edits);
+    setRowLast(`Undone: ${top.label.toLowerCase()}`); setRowNote(null); setSelection(null);
+  }, [rowUndo, twin.id]);
+  const rowModelNow = useMemo(() => rowModel(twin, rowEdits), [twin, rowEdits]);
+  const plantIdx = useMemo(() => (rowModelNow && plants ? plantIndex(rowModelNow, plants.points) : null), [rowModelNow, plants]);
+  const rowHover = useMemo(() => (rowModelNow ? (lat: number, lng: number) => { const sn = snapRow(rowModelNow, lat, lng, plantIdx); return sn.kind === "new" ? sn.line : null; } : null), [rowModelNow, plantIdx]);
+  // Twin rows whose ends the operator moved, drawn along their new course; the selected row's two end handles.
+  const rowOverrides = useMemo(() => (rowModelNow ? Object.keys(rowEdits.ends).map(Number).filter(id => rowEdits.verdicts[String(id)] !== "remove").flatMap(id => { const line = rowLineNow(rowModelNow, id); return line ? [{ id, line }] : []; }) : []), [rowModelNow, rowEdits]);
+  const selectedRowKey = selection?.kind === "cornRow" ? selection.id : selection?.kind === "addedRow" ? selection.uid : null;
+  const rowHandles = useMemo(() => (rowEditing && rowModelNow && selectedRowKey != null ? rowEndsNow(rowModelNow, selectedRowKey) : null), [rowEditing, rowModelNow, selectedRowKey]);
+  const rowEditsProp = useMemo(() => (twin.corn ? { edits: rowEdits, active: rowEditing, hideRows, hover: rowEditing ? rowHover : null, overrides: rowOverrides, handles: rowHandles } : null), [twin.corn, rowEdits, rowEditing, hideRows, rowHover, rowOverrides, rowHandles]);
+  const plantsProp = useMemo(() => (plants ? { points: plants.points, show: showPlants } : null), [plants, showPlants]);
+
   // The findings for the current query: computed once per query, cached by the engine where it can.
   const result = useMemo<FindingsResult>(() => engine.run(query), [engine, query]);
   const findings = layers.zones ? result : null;
@@ -202,6 +236,38 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const corn = !!twin.corn;
   // A corn twin has no orchard weed pass: no pressure heatmap or findings regions (they would read 0 % everywhere).
   const effectiveLayers = useMemo<TwinLayers>(() => ({ ...layers, ground: !reference, surroundings: layers.surroundings && !local, ...(corn ? { pressure: false, zones: false, beyondBoundary: false } : {}) }), [layers, reference, local, corn]);
+
+  const onMapPick = (p: TwinPick, pointer: string) => {
+    if (!rowEditing) { setSelection(p); return; }
+    setRowNote(null);
+    if (p?.kind !== "ground") { setSelection(p); return; }
+    if (!rowModelNow) { setRowNote("This twin has no row direction to snap to."); return; }
+    const sn = snapRow(rowModelNow, p.lat, p.lng, plantIdx);
+    if (sn.kind === "row") { setSelection(typeof sn.key === "number" ? { kind: "cornRow", id: sn.key } : { kind: "addedRow", uid: sn.key }); return; }
+    if (sn.kind === "none") { setRowNote(sn.why); setSelection(null); return; }
+    const uid = newUid();
+    const onScreen = [reference ? "photographs" : null, plants && showPlants ? "located plants" : null, hideRows ? null : "rows"].filter(Boolean).join(", ") || "nothing";
+    commitRows({ ...rowEdits, added: [...rowEdits.added, { uid, line: sn.line, at: new Date().toISOString(), snap: sn.snap, onScreen, pointer }] }, "Row added");
+    setSelection(null);
+  };
+  const setVerdict = (id: number, v: "keep" | "remove" | null) => {
+    const verdicts = { ...rowEdits.verdicts };
+    if (v) verdicts[String(id)] = v; else delete verdicts[String(id)];
+    const ends = { ...rowEdits.ends }; if (!v) delete ends[String(id)];
+    commitRows({ ...rowEdits, verdicts, ends }, v === "keep" ? `Row ${id} kept` : v === "remove" ? `Row ${id} removed` : `Answer on row ${id} taken back`);
+    setSelection(null);
+  };
+  /** An end handle let go: the selected row cut or carried on to there. */
+  const onRowEnd = (which: 0 | 1, lat: number, lng: number) => {
+    if (!rowModelNow || selectedRowKey == null) return;
+    const moved = moveRowEnd(rowModelNow, selectedRowKey, which, lat, lng);
+    if (!moved) { setRowNote("A row can't be shorter than a metre. To take it away, choose No row here."); return; }
+    if (typeof selectedRowKey === "string") commitRows({ ...rowEdits, added: rowEdits.added.map(a => (a.uid === selectedRowKey ? { ...a, line: moved.line } : a)) }, "Row end moved");
+    else commitRows({ ...rowEdits, ends: { ...rowEdits.ends, [String(selectedRowKey)]: moved.ends } }, `Row ${selectedRowKey}: end moved`);
+  };
+  const deleteAdded = (uid: string) => { commitRows({ ...rowEdits, added: rowEdits.added.filter(a => a.uid !== uid) }, "Added row deleted"); setSelection(null); };
+  const startRowEditing = () => { setEditing(null); setSelection(null); setRowEditing(true); setRowLast(null); setRowNote(null); };
+  const finishRowEditing = () => { setRowEditing(false); setSelection(null); setHideRows(false); setRowLast(null); setRowNote(null); };
 
   const zoomTo = useCallback((lat: number, lng: number, metresAcross: number) => {
     const h = handle.current;
@@ -294,7 +360,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const canopyCells = useMemo(() => intel.grid.cells.filter(c => c.canopy).length, [intel]);
   const heatScale = useMemo(() => heatScaleFor(intel, layers.heatScale), [intel, layers.heatScale]);
   const pctText = (v: number) => (v === 0 ? "0" : Number.isInteger(v) ? String(v) : v.toFixed(1));
-  const dockOpen = !!selection || resultsOpen;
+  const dockOpen = (!!selection && !rowEditing) || resultsOpen;
   // Narrow screens (a tablet held upright, a phone): the panels fold away behind a button and the inspector rises
   // from the bottom, so the map stays visible. Wide screens keep both columns open.
   const narrow = useNarrow();
@@ -306,9 +372,17 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   return (
     <div className="twin-root relative h-full w-full min-h-0 overflow-hidden" style={{ background: TWIN_COLOURS.outside, ["--twin-right" as string]: dockOpen && !narrow ? "368px" : "0px" }}>
       <style>{`.twin-root .leaflet-top.leaflet-right, .twin-root .leaflet-bottom.leaflet-right { right: var(--twin-right, 0); transition: right .15s ease; } .twin-root .leaflet-control-scale-line { background: rgba(24,26,24,.85); color: #d9ddd6; border-color: #8a8f88; } .twin-root .leaflet-control-attribution { background: rgba(24,26,24,.85); color: #9aa09a; }`}</style>
-      <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={setSelection} onDetail={setDetail} onStats={setStats}
+      <TwinMap scene={scene} layers={effectiveLayers} selection={selection} units={units} onPick={onMapPick} onDetail={setDetail} onStats={setStats}
         onMove={c => setCentre(c)} onReady={h => { handle.current = h; setStats(h.layer.stats); }} reference={reference} onSwipe={setRefSwipe} findings={findings}
-        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} />
+        operational={operationalRing} editing={editing} onBoundaryEdit={setEditing} rowEdits={rowEditsProp} plants={plantsProp} onRowEnd={onRowEnd} />
+
+      {/* The row editor's card for a tapped row and its Undo bar, bottom centre over the map. */}
+      {rowEditing && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-[730] flex flex-col items-center gap-2 px-3">
+          <div className="pointer-events-auto w-full max-w-[420px]"><RowActionCard selection={selection} twin={twin} edits={rowEdits} onKeep={id => setVerdict(id, "keep")} onRemove={id => setVerdict(id, "remove")} onClear={id => setVerdict(id, null)} onDeleteAdded={deleteAdded} onClose={() => setSelection(null)} /></div>
+          <div className="pointer-events-auto"><RowUndoBar last={rowLast} canUndo={rowUndo.length > 0} onUndo={undoRows} note={rowNote} /></div>
+        </div>
+      )}
 
       {narrow && (
         <button type="button" onClick={() => setPanelsOpen(o => !o)} aria-expanded={panelsOpen}
@@ -332,6 +406,9 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
           <p className="mt-1 text-[10px] leading-snug text-neutral-500">{DETAIL_HINT[detailStop]}</p>
         </div>
         {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} onSelect={(p, lat, lng, across) => { setSelection(p); zoomTo(lat, lng, across); }} />}
+        {twin.corn && founderView && <RowEditPanel edits={rowEdits} editing={rowEditing} onStart={startRowEditing} onDone={finishRowEditing}
+          onClearAll={() => { commitRows(NO_ROW_EDITS, "All corrections cleared"); }} hideRows={hideRows} setHideRows={setHideRows}
+          plants={plants ? { count: plants.points.length, note: plants.note } : null} showPlants={showPlants} setShowPlants={setShowPlants} photographsOn={!!reference} />}
         {!twin.corn && <FindingsControl query={query} onChange={q => { setQuery(q); setSelection(null); }} result={result} open={findOpen} onToggle={() => setFindOpen(o => !o)} compact={simple} />}
         {/* The field boundary: inferred from the rows and the photographs, correctable, never an operational limit until accepted. */}
         <div className={`w-[272px] px-3 py-2 text-xs ${panel}`} role="group" aria-label="Field boundary">
@@ -477,7 +554,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
           <span className="font-semibold">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · key</span>
         </button>
       )}
-      {keyOpen && !(narrow && (dockOpen || panelsOpen)) && <div className={`absolute bottom-3 left-3 right-3 z-[700] max-w-[420px] px-3 py-2 text-[11px] text-neutral-300 sm:right-auto ${panel}`}>
+      {keyOpen && !rowEditing && !(narrow && (dockOpen || panelsOpen)) && <div className={`absolute bottom-3 left-3 right-3 z-[700] max-w-[420px] px-3 py-2 text-[11px] text-neutral-300 sm:right-auto ${panel}`}>
         <div className="flex items-start justify-between gap-3">
           <p className="text-xs"><span className="font-semibold text-neutral-100">{detail ? LEVEL_NAME[detail.level] : "Field Twin"}</span><span className="text-neutral-500"> · {twin.name}</span></p>
           <button type="button" className="-mr-1 -mt-0.5 rounded-sm px-1 text-[13px] leading-none text-neutral-500 hover:bg-[#262a26] hover:text-neutral-200" onClick={() => setKeyOpen(false)} aria-label="Close the key" title="Close the key">×</button>
@@ -503,7 +580,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
       </div>}
 
       {/* Right dock: the inspector for a selected object, else the results panel for an active filter. */}
-      {selection ? (
+      {selection && !rowEditing ? (
         <aside className={`absolute z-[720] overflow-y-auto p-3.5 text-sm ${narrow ? "inset-x-2 bottom-2 max-h-[62%]" : "right-3 top-3 bottom-3 w-[356px]"} ${panel}`} aria-label="Inspector">
           {resultsOpen && <button type="button" className="mb-2 text-[11px] text-neutral-400 hover:text-neutral-200" onClick={() => setSelection(null)}>← Back to the {result.findings.length.toLocaleString()} results</button>}
           {reviewing && (() => {
