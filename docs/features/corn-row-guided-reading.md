@@ -113,3 +113,34 @@ shown yet. Not swept: the settings inside the photograph search (band, control p
 
 On the three test flights (V3 and later) the method declares itself not applicable (no photograph shows the band
 clearly above its controls, or the plants show no planting), so their results are unchanged.
+
+## After the first held-out run (2026-11-12 night)
+
+The frozen version was run once on a held-out early-corn flight (a public dataset, 150 photographs, about 0.7 cm) and
+did not pass: it declared itself applicable on 79 of 150 photographs. The causes, found afterwards on that flight (from
+then on a development flight, not held-out): control strips catching the crop's own leaf tips, and photographs placed a
+few to 40 cm off across the rows. Fixed since: control strips mid-alley, each photograph registered across the rows as a
+shift plus a slope over its frame (`registerAcross`), along the rows too (`registerAlong`), a per-field floor on a
+candidate's strength, and the lattice carried beyond the planted ground.
+
+Three changes the same night, each measured on that flight:
+
+- **Along the rows, an offset that varies over the frame.** A camera turned a fraction of a degree, or a percent off in
+  height, moves plants at one edge of its frame along the rows and those at the other the opposite way (median 0.14
+  degrees and 1 % over the 150 photographs; at 10 m from the centre, 2 to 40 cm against seeds 19 cm apart). Each
+  photograph's offset is now measured on every 4 m of each row it covers and fitted as a plane. On the same searches:
+  odd and even halves agree on 0.874 of marks (0.795 with one offset a photograph), a photograph finds 0.522 of the
+  plants it covers (0.456), 23,401 marks (27,838: the difference was one plant marked twice), verified share unchanged
+  (0.938). A rendered test turns one camera 2 degrees.
+- **The bar set over planted ground.** Rows carried beyond the planted ground run over scattered weeds, thin stands and
+  headland, where the control strips can be as busy as the band; judged together with the planted rows they raised a
+  whole photograph's bar. A photograph's bar and its applicability are now judged on its rows over planted ground when
+  it holds 20 m of them (`judgedOn`, `markPlanted`). The method then applies on 145 of 150 photographs (131).
+- **The lattice carried into unjudged ground** up to 40 m from planted ground, never into or across ground judged
+  scattered (`fillM`). Rows there are looked for like any other and drawn only where they verify.
+
+Eye audit (30 windows counted by eye before any output was seen, 819 seedlings): with the plane registration, the
+windows the method had over-counted now match (33 counted / 34 marked, 28 / 30, 30 / 32, 33 / 34); over the windows
+the lattice reached, 651 marks against 649 counted. Still open: six windows with no lattice under them (the fill run
+decides), one window of tiny dark seedlings on cracked clay where marks fall between the visible plants (36 marked, 22
+counted: unresolved whether they are plants), and one row the lattice misses at a window's edge.

@@ -13,7 +13,7 @@ import { basename, join } from "node:path";
 import { NODE_DECODER, decodeImage } from "../bench/images";
 import { framesFromAnalysis, parseTwinAnalysis } from "../../src/lib/fieldTwin/analysis";
 import { FIELD, type CornPhotoRead, cornField, plantedGround } from "../../src/lib/fieldTwin/cornField";
-import { ROW_GUIDED, type PhotoSearch, type RowLine, chooseLevel, latticeRows, mergeAlongRows, applicability, recentreRows, registerAlong, rowExtents, searchPhoto, seedSpacing, shiftAlong } from "../../src/lib/fieldTwin/rowGuided";
+import { ROW_GUIDED, type PhotoSearch, type RowLine, chooseLevel, latticeRows, markPlanted, mergeAlongRows, applicability, recentreRows, registerAlong, rowExtents, searchPhoto, seedSpacing, shiftAlong } from "../../src/lib/fieldTwin/rowGuided";
 import { frameFootprint, pixelToGround } from "../../src/lib/directGeoref/projection";
 import { FEATURE_NAMES, LOOK, auc, fitLook, lookLogit } from "../../src/lib/fieldTwin/fieldLook";
 import { toEnu } from "../../src/lib/sourceFrames/odm";
@@ -37,8 +37,9 @@ const sightings: [number, number][] = [];
 for (const r of reads) { const f = frames.get(r.name)!; for (const [x, y] of r.plants) { const g = pixelToGround(f, x * r.scale, y * r.scale); if (g) sightings.push(toAC(...en(g.lat, g.lng))); } }
 const pg = plantedGround(sightings, F.pitchM, FIELD.planted);
 if (!pg || !pg.valid) { const why = "the located plants do not show the planting on this flight: not read along rows, the first pass stands"; console.log(why); writeFileSync(join(OUT, "summary.json"), JSON.stringify({ flight: basename(DIR), applies: false, applicability: { why } }, null, 1)); process.exit(0); }
-let lattice = latticeRows(pg);
-const lines = (L: typeof lattice): RowLine[] => L.map(r => ({ id: r.id, a0: r.ac[0][0], stepM: pg.cellA, en: r.ac.map(([a, c]) => fromAC(a, c)) }));
+// --fill <m>: how far the row pattern is carried beyond planted ground (0: not at all, as before 2026-11-12 night).
+let lattice = latticeRows(pg, { ...ROW_GUIDED, fillM: Number(arg("fill", String(ROW_GUIDED.fillM))) });
+const lines = (L: typeof lattice): RowLine[] => L.map(r => ({ id: r.id, a0: r.ac[0][0], stepM: pg.cellA, en: r.ac.map(([a, c]) => fromAC(a, c)), planted: r.planted }));
 let rows: RowLine[] = lines(lattice);
 const latticeM = lattice.reduce((s, r) => s + (r.ac.length - 1) * pg.cellA, 0), plantedM = lattice.reduce((s, r) => s + r.planted.filter(Boolean).length * pg.cellA, 0);
 // Derived from the flight, not chosen: the band is twice the scatter of the photographs' rows about the field's, the
@@ -56,14 +57,16 @@ let n = 0;
 for (const f of files) {
   const stem = basename(f).replace(/\.[^.]+$/, ""), cache = join(OUT, pass, `${stem}.json`);
   n++;
-  if (existsSync(cache)) { searches.push(JSON.parse(readFileSync(cache, "utf8"))); continue; }
+  // Candidates over planted ground marked after the search (the cache holds the search alone).
+  if (existsSync(cache)) { searches.push(markPlanted([JSON.parse(readFileSync(cache, "utf8"))], rows)[0]); continue; }
   const frame = frames.get(stem)!, fp = frameFootprint(frame);
   const box = fp ? fp.map(g => en(g.lat, g.lng)) : [];
   const [e0, e1, n0, n1] = [Math.min(...box.map(p => p[0])), Math.max(...box.map(p => p[0])), Math.min(...box.map(p => p[1])), Math.max(...box.map(p => p[1]))];
   const near = rows.filter(r => r.en.some(([e, nn]) => e >= e0 && e <= e1 && nn >= n0 && nn <= n1));
   const raw = decodeImage(new Uint8Array(readFileSync(join(DIR, f))));
-  const s = searchPhoto(stem, { width: raw.width, height: raw.height, rgba: new Uint8ClampedArray(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength) }, frame, near, F.origin, pg.spacingM, bandHalfM);
-  writeFileSync(cache, JSON.stringify(s));
+  const s0 = searchPhoto(stem, { width: raw.width, height: raw.height, rgba: new Uint8ClampedArray(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength) }, frame, near, F.origin, pg.spacingM, bandHalfM);
+  writeFileSync(cache, JSON.stringify(s0));
+  const s = markPlanted([s0], rows)[0];
   searches.push(s);
   const lv = chooseLevel(s);
   const at = s.candidates.filter(c => c.z >= ROW_GUIDED.ladder[lv.level]), per = (strip: number) => ((at.filter(c => c.strip === strip).length / Math.max(1, s.rowM)) * (strip === 0 ? 1 : s.controlScale)).toFixed(2);
@@ -82,9 +85,11 @@ lattice = re.rows; rows = lines(lattice);
 const searched = searchAll("search2");
 // Each photograph's placement along the rows, from where the same plants appear in the others.
 const seedGuess = seedSpacing(mergeAlongRows(searched, rows, gateM).marks, pg.spacingM).spacingM ?? 0.15;
-const alongShift = argv.includes("--no-along") ? searched.map(() => 0) : registerAlong(searched, searched.map(s => ROW_GUIDED.ladder[chooseLevel(s).level]), seedGuess);
-const absShift = alongShift.map(Math.abs).sort((x, y) => x - y);
-console.log(`along: median |shift| ${(100 * absShift[absShift.length >> 1]).toFixed(1)} cm, 90th ${(100 * absShift[Math.floor(absShift.length * 0.9)]).toFixed(1)} cm, unmoved ${alongShift.filter(v => v === 0).length}`);
+// --along-single: one offset a photograph (the 2026-11-12 first version), for comparison.
+const alongShift = argv.includes("--no-along") ? searched.map(() => 0) : registerAlong(searched, searched.map(s => ROW_GUIDED.ladder[chooseLevel(s).level]), seedGuess, 0.45, 5, !argv.includes("--along-single"));
+const mids = alongShift.map(s => (typeof s === "number" ? s : s.a)), absShift = mids.map(Math.abs).sort((x, y) => x - y);
+const planes = alongShift.filter(s => typeof s !== "number" && s.cells > 0).length;
+console.log(`along: median |shift| ${(100 * absShift[absShift.length >> 1]).toFixed(1)} cm, 90th ${(100 * absShift[Math.floor(absShift.length * 0.9)]).toFixed(1)} cm, unmoved ${mids.filter(v => v === 0).length}, fitted as a plane ${planes}`);
 const searches = shiftAlong(searched, alongShift);
 const M0 = mergeAlongRows(searches, rows, gateM);
 // Control strips are narrower than the band: their counts scaled to the band's width.
@@ -138,7 +143,7 @@ const summary = {
   firstPass: { cornRows: F.summary.cornRows, unconfirmedRows: F.summary.probableRows, cornRowLengthM: F.summary.cornRowLengthM, readShare: F.planting.readShare, spacingM: F.pitchM },
   derived: { spacingM: r3(pg.spacingM), bandHalfM: r3(bandHalfM), gateM: r3(gateM), rowAgreementM: F.rowAgreementM },
   applicability: app,
-  along: { medianAbsM: absShift[absShift.length >> 1], p90AbsM: absShift[Math.floor(absShift.length * 0.9)], unmoved: alongShift.filter(v => v === 0).length },
+  along: { medianAbsM: absShift[absShift.length >> 1], p90AbsM: absShift[Math.floor(absShift.length * 0.9)], unmoved: mids.filter(v => v === 0).length, plane: !argv.includes("--along-single"), fittedAsPlane: planes },
   recentre: { shiftedM: re.shiftedM, medianShiftM: re.medianShiftM },
   lattice: { rows: lattice.length, lengthM: R(latticeM), overPlantedSquaresM: R(plantedM) },
   search: { rowMetresRead: R(searches.reduce((t, s) => t + s.rowM, 0)), msPerPhoto: R(searches.reduce((t, s) => t + s.ms, 0) / Math.max(1, searches.length)), bars: Object.fromEntries(ROW_GUIDED.ladder.map((z, i) => [z, levels.filter(l => l.level === i).length])), photographsWhoseControlsNeverQuiet: levels.filter(l => !l.quiet).length, medianSoilSpread: r3(searches.map(s => s.soilSpread).sort((x, y) => x - y)[searches.length >> 1]), medianUnreadablePct: r2(100 * searches.map(s => s.unreadableShare).sort((x, y) => x - y)[searches.length >> 1]) },

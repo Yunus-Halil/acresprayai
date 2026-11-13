@@ -69,7 +69,7 @@ describe("reading along the rows", { timeout: 60_000 }, () => {
     const c = searchPhoto("C", render(0, 0, t), camera("C", 0, 0), rows, ORIGIN, PITCH, 0.06);
     const d = searchPhoto("D", render(0, 0.12, t), camera("D", 0, 0), rows, ORIGIN, PITCH, 0.06);
     const bars = [c, d].map(s => ROW_GUIDED.ladder[chooseLevel(s).level]);
-    const shift = registerAlong([c, d], bars, 0.15);
+    const shift = registerAlong([c, d], bars, 0.15).map(s => s.a);
     expect(Math.abs(Math.abs(shift[0] - shift[1]) - 0.12)).toBeLessThan(0.03);
     // How far a two-view mark lies from the nearest true plant: unregistered, a plant and its neighbour 3 cm off pair up
     // and the mark falls between them.
@@ -85,6 +85,22 @@ describe("reading along the rows", { timeout: 60_000 }, () => {
     // Most plants both photographs cover are one mark of two views (the frames see north -2 to 2 m, less the 12 cm).
     const covered = t.plants.filter(([, n]) => n > -1.75 && n < 1.75).length;
     expect(mergeAlongRows(reg, rows, 0.04).marks.filter(m => m.views === 2).length).toBeGreaterThan(0.75 * covered);
+  });
+
+  it("registers a photograph whose camera is turned 2 degrees: plants at its edges are off along the rows in opposite directions", () => {
+    // Photograph F sees the field turned 2 degrees about its centre: a plant on the outer row (2.3 m out) lies 8 cm
+    // along from where its camera puts it, the opposite way on the other side. One offset for the frame cannot fix both.
+    const th = (2 * Math.PI) / 180, turned = { plants: t.plants.map(([e, n]) => [e * Math.cos(th) - n * Math.sin(th), e * Math.sin(th) + n * Math.cos(th)] as [number, number]), weeds: t.weeds };
+    const e = searchPhoto("E", render(0, 0, t), camera("E", 0, 0), rows, ORIGIN, PITCH, 0.06);
+    const f = searchPhoto("F", render(0, 0, turned), camera("F", 0, 0), rows, ORIGIN, PITCH, 0.06);
+    const bars = [e, f].map(s => ROW_GUIDED.ladder[chooseLevel(s).level]);
+    const twoView = (shift: Parameters<typeof shiftAlong>[1]) => mergeAlongRows(shiftAlong([e, f], shift), rows, 0.04).marks.filter(m => m.views === 2).length;
+    const plane = registerAlong([e, f], bars, 0.15), single = registerAlong([e, f], bars, 0.15, 0.45, 5, false);
+    expect(plane[1].cells).toBeGreaterThanOrEqual(4);
+    // Registered as a plane, most plants both photographs see merge; as one offset, the outer rows' do not.
+    const covered = t.plants.filter(([, n]) => n > -1.9 && n < 1.9).length;
+    expect(twoView(plane)).toBeGreaterThan(0.75 * covered);
+    expect(twoView(plane)).toBeGreaterThan(1.2 * twoView(single));
   });
 });
 
