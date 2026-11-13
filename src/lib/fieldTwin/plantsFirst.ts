@@ -337,6 +337,55 @@ export function rowsFromDots(dots: Dot[], directionDeg: number, spacingGuessM: n
 }
 
 /**
+ * Every dot's row number, from where the certain plants put the rows (the planter's pattern: straight, parallel, one
+ * spacing apart). The field is cut into cells (`cellAlongM` x `cellAcrossM`); in each cell holding enough certain
+ * plants, the rows' offset across is the circular mean of their across positions over one spacing. Cells are joined
+ * outward from the best-held one, each cell's offset taken within half a spacing of its neighbour's (so row numbers
+ * stay the same row from cell to cell); cells with too few certain plants take the offset of the nearest held cell.
+ * A dot's row number is its across position less its cell's offset, in spacings, rounded; its residual is how far
+ * from that row's line it lies.
+ */
+export function rowNumbers(A: Float64Array, C: Float64Array, certain: Uint8Array, S: number, cellAlongM = 10, cellAcrossM = 6, minPlants = 12): { j: Int32Array; resid: Float64Array; cells: number } {
+  const n = A.length;
+  let aMin = Infinity, cMin = Infinity, aMax = -Infinity, cMax = -Infinity;
+  for (let i = 0; i < n; i++) { aMin = Math.min(aMin, A[i]); aMax = Math.max(aMax, A[i]); cMin = Math.min(cMin, C[i]); cMax = Math.max(cMax, C[i]); }
+  const W = Math.max(1, Math.ceil((aMax - aMin) / cellAlongM)), H = Math.max(1, Math.ceil((cMax - cMin) / cellAcrossM));
+  const cellOf = (i: number) => Math.min(W - 1, Math.floor((A[i] - aMin) / cellAlongM)) * H + Math.min(H - 1, Math.floor((C[i] - cMin) / cellAcrossM));
+  const sx = new Float64Array(W * H), sy = new Float64Array(W * H), cnt = new Int32Array(W * H);
+  for (let i = 0; i < n; i++) if (certain[i]) { const k = cellOf(i), t = (2 * Math.PI * C[i]) / S; sx[k] += Math.cos(t); sy[k] += Math.sin(t); cnt[k]++; }
+  const phase = new Float64Array(W * H).fill(NaN), strength = new Float64Array(W * H);
+  for (let k = 0; k < W * H; k++) if (cnt[k] >= minPlants) { strength[k] = Math.hypot(sx[k], sy[k]) / cnt[k]; if (strength[k] >= 0.3) phase[k] = ((Math.atan2(sy[k], sx[k]) / (2 * Math.PI)) * S); }
+  // Joined outward from the best-held cell: each offset unwrapped to within half a spacing of the neighbour it was reached from.
+  const done = new Uint8Array(W * H), order: number[] = [];
+  const held = Array.from({ length: W * H }, (_, k) => k).filter(k => Number.isFinite(phase[k])).sort((x, y) => cnt[y] * strength[y] - cnt[x] * strength[x]);
+  for (const start of held) {
+    if (done[start]) continue;
+    done[start] = 1; const queue = [start];
+    while (queue.length) {
+      const k = queue.shift()!; order.push(k);
+      const ai = Math.floor(k / H), ci = k % H;
+      for (const [da, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const a2 = ai + da, c2 = ci + dc; if (a2 < 0 || c2 < 0 || a2 >= W || c2 >= H) continue;
+        const k2 = a2 * H + c2; if (done[k2] || !Number.isFinite(phase[k2])) continue;
+        phase[k2] += Math.round((phase[k] - phase[k2]) / S) * S;
+        done[k2] = 1; queue.push(k2);
+      }
+    }
+  }
+  // Cells with too few certain plants: the nearest held cell's offset.
+  const heldCells = order;
+  for (let k = 0; k < W * H; k++) {
+    if (Number.isFinite(phase[k]) || !heldCells.length) continue;
+    const ai = Math.floor(k / H), ci = k % H; let best = heldCells[0], bd = Infinity;
+    for (const h of heldCells) { const d = Math.hypot((Math.floor(h / H) - ai) * cellAlongM, ((h % H) - ci) * cellAcrossM); if (d < bd) { bd = d; best = h; } }
+    phase[k] = phase[best];
+  }
+  const j = new Int32Array(n), resid = new Float64Array(n);
+  for (let i = 0; i < n; i++) { const ph = phase[cellOf(i)]; const x = (C[i] - (Number.isFinite(ph) ? ph : 0)) / S; j[i] = Math.round(x); resid[i] = (x - j[i]) * S; }
+  return { j, resid, cells: heldCells.length };
+}
+
+/**
  * The order a person reads a field in (2026-11-13, Yunus's sequence): the certain plants first, the rows they make,
  * the field's own geometry measured on those certain rows (row spacing, plant spacing, row length, plants a metre),
  * and only then a second look at everything uncertain, against that geometry. Geometry supports a plant; it never
@@ -348,7 +397,17 @@ export function rowsFromDots(dots: Dot[], directionDeg: number, spacingGuessM: n
  * New rows on the second look stand only in a slot the certain rows leave (a whole number of row spacings from one),
  * holding at least `minRowDensityShare` of the certain rows' plants a metre.
  */
-export const SEQUENCE = { certainViews: 3, certainShare: 0.3, minCertainRowM: 3, probableTol: 0.3, slotTol: 0.15, minRowDensityShare: 0.4, gapSeeds: 2.5, maxGapSeeds: 4 };
+export const SEQUENCE = {
+  certainViews: 3, certainShare: 0.3, minCertainRowM: 3, probableTol: 0.3, slotTol: 0.15, minRowDensityShare: 0.4, gapSeeds: 2.5, maxGapSeeds: 4,
+  /** A row's line: plants within this share of a spacing are fitted; pieces joined when they agree within `joinTol`. */
+  fitTol: 0.1, joinTol: 0.12,
+  /** A row's course is straight over this far either way of any point on it (metres), following the slow drift of the
+   * placed ground beyond. */
+  localM: 8,
+  /** A stretch with no plant longer than this (metres) is not bridged: the row stops and, past it, starts again.
+   * "The row probably continues" is said over a missed plant or a short failed stretch, never across a headland. */
+  maxBridgeM: 8,
+};
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
 export type SeqRow = { id: number; kind: "certain" | "geometry"; line: [number, number][]; dots: number[]; a0: number; a1: number; lengthM: number; perM: number; segments: RowSegment[] };
 export type Reconstruction = {
@@ -357,6 +416,8 @@ export type Reconstruction = {
   rows: SeqRow[];
   /** Per dot: the index of the row it is on, or -1. */
   rowOf: Int32Array;
+  /** Per dot: 1 when it is on no row and has a row on either side of it within a spacing: between the rows, not the crop. */
+  between: Uint8Array;
   geometry: { spacingM: number; directionDeg: number; seedM: number | null; rowLengthMedianM: number; perMMedian: number; certainDots: number; certainRows: number };
   /** Along / across of every dot in the rows' frame, metres. */
   a: Float64Array; c: Float64Array;
@@ -371,58 +432,122 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   const th = (R1.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th), S = R1.spacingM;
   const A = new Float64Array(n), C = new Float64Array(n);
   for (let i = 0; i < n; i++) { A[i] = dots[i].e * ct + dots[i].n * st; C[i] = -dots[i].e * st + dots[i].n * ct; }
-  type Course = { a: number[]; c: number[] };
-  const courseAt = (k: Course, a: number) => { const X = k.a, Y = k.c; if (a <= X[0]) return Y[0]; if (a >= X[X.length - 1]) return Y[Y.length - 1]; let lo = 0, hi = X.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (X[m] <= a) lo = m; else hi = m; } const t = (a - X[lo]) / (X[hi] - X[lo] || 1); return Y[lo] + t * (Y[hi] - Y[lo]); };
-  const toCourse = (line: [number, number][]): Course => { const p = line.map(([e, nn]) => [e * ct + nn * st, -e * st + nn * ct]).sort((x, y) => x[0] - y[0]); return { a: p.map(v => v[0]), c: p.map(v => v[1]) }; };
-  const certainRows = R1.rows.filter(r => r.lengthM >= q.minCertainRowM).map(r => ({ dots: r.dots.map(k => cIdx[k]), course: toCourse(r.line), a0: r.a0, a1: r.a1 }));
+  // A planter drives straight, but the ground the photographs are placed on is not rigid over a whole flight (cameras
+  // without RTK drift by tens of centimetres over a hundred metres): a row is straight over a stretch and follows that
+  // slow drift. Its course is a line fitted locally (tricube weights within `localM` either way), every 2 m along it,
+  // robustly: plants further than `fitTol` of a spacing from the course are dropped and it is fitted again.
+  type Line = { ka: Float64Array; kc: Float64Array; a0: number; a1: number; dots: number[] };
+  const at = (L: Line, a: number) => { const X = L.ka, Y = L.kc; if (a <= X[0]) return Y[0]; if (a >= X[X.length - 1]) return Y[Y.length - 1]; let lo = 0, hi = X.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (X[m] <= a) lo = m; else hi = m; } const t = (a - X[lo]) / (X[hi] - X[lo] || 1); return Y[lo] + t * (Y[hi] - Y[lo]); };
+  const course = (use: number[], a0: number, a1: number): { ka: Float64Array; kc: Float64Array } => {
+    const sorted = [...use].sort((x, y) => A[x] - A[y]), ka: number[] = [], kc: number[] = [], h = q.localM;
+    for (let a = a0; ; a = Math.min(a1, a + 2)) {
+      let sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+      for (const i of sorted) { const d = A[i] - a; if (d < -h) continue; if (d > h) break; const w = (1 - Math.abs(d / h) ** 3) ** 3; sw += w; sx += w * d; sy += w * C[i]; sxx += w * d * d; sxy += w * d * C[i]; }
+      if (sw > 0) { const det = sw * sxx - sx * sx; const c = Math.abs(det) > 1e-9 && sw >= 3 ? (sy * sxx - sx * sxy) / det : sy / sw; ka.push(a); kc.push(c); }
+      if (a >= a1) break;
+    }
+    return { ka: Float64Array.from(ka), kc: Float64Array.from(kc) };
+  };
+  const fit = (idx: number[]): Line | null => {
+    if (idx.length < 2) return null;
+    let use = idx, L: Line | null = null;
+    for (let it = 0; it < 4; it++) {
+      const a0 = Math.min(...use.map(i => A[i])), a1 = Math.max(...use.map(i => A[i]));
+      const k = course(use, a0, a1); if (k.ka.length < 1) break;
+      L = { ...k, a0, a1, dots: use };
+      const keep = idx.filter(i => Math.abs(C[i] - at(L!, A[i])) <= q.fitTol * S);
+      if (keep.length === use.length || keep.length < 2) break;
+      use = keep;
+    }
+    return L;
+  };
+  // Each certain plant's row number from the planter's pattern (rowNumbers), and one straight line per row number.
+  const isCertain = new Uint8Array(n); for (const i of cIdx) isCertain[i] = 1;
+  const RN = rowNumbers(A, C, isCertain, S);
+  const byJ = new Map<number, number[]>();
+  for (const i of cIdx) if (Math.abs(RN.resid[i]) <= 0.2 * S) (byJ.get(RN.j[i]) ?? byJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
+  let lines = [...byJ.values()].filter(g => g.length >= 5).map(fit).filter((L): L is Line => !!L && L.a1 - L.a0 >= q.minCertainRowM);
+  // Pieces of one row joined: two lines that agree (within `joinTol` of a spacing) where one ends and the other begins.
+  for (let changed = true; changed;) {
+    changed = false;
+    lines.sort((x, y) => x.a0 - y.a0);
+    outer: for (let i = 0; i < lines.length; i++) for (let j = i + 1; j < lines.length; j++) {
+      const a = lines[i], b = lines[j], mid = (Math.min(a.a1, b.a1) + Math.max(a.a0, b.a0)) / 2;
+      if (Math.abs(at(a, mid) - at(b, mid)) > q.joinTol * S) continue;
+      // Not two neighbouring rows overlapping: where both hold plants, they must be the same line all along.
+      const ov0 = Math.max(a.a0, b.a0), ov1 = Math.min(a.a1, b.a1);
+      if (ov1 > ov0 && (Math.abs(at(a, ov0) - at(b, ov0)) > q.joinTol * S || Math.abs(at(a, ov1) - at(b, ov1)) > q.joinTol * S)) continue;
+      const m = fit([...a.dots, ...b.dots]); if (!m) continue;
+      lines = lines.filter((_, k) => k !== i && k !== j); lines.push(m); changed = true; break outer;
+    }
+  }
   // 3. The field's own geometry, from the certain rows.
   const med = (xs: number[]) => { const t = [...xs].sort((x, y) => x - y); return t.length ? t[t.length >> 1] : NaN; };
   const seedM = R1.seedM, seed = seedM ?? 0.18;
-  const geometry = { spacingM: S, directionDeg: R1.directionDeg, seedM, rowLengthMedianM: med(certainRows.map(r => r.a1 - r.a0)), perMMedian: med(certainRows.map(r => r.dots.length / Math.max(1e-6, r.a1 - r.a0))), certainDots: cIdx.length, certainRows: certainRows.length };
-  // 4-5. The uncertain dots again, strongest first: on a certain row's course, at a whole number of plant spacings.
+  const geometry = { spacingM: S, directionDeg: R1.directionDeg, seedM, rowLengthMedianM: med(lines.map(r => r.a1 - r.a0)), perMMedian: med(lines.map(r => r.dots.length / Math.max(1e-6, r.a1 - r.a0))), certainDots: cIdx.length, certainRows: lines.length };
+  // 4-5. Every other dot again, strongest first: on a certain row's line (within its reach past the ends), at a whole
+  // number of plant spacings from the nearest plant on it, it is probable; between the rows it is not the crop.
   const onRow = o.onRowShare * S, reach = q.maxGapSeeds * seed;
-  const nearestRow = (i: number) => { let best = -1, bd = onRow; certainRows.forEach((r, ri) => { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) return; const d = Math.abs(C[i] - courseAt(r.course, A[i])); if (d <= bd) { bd = d; best = ri; } }); return best; };
-  const along = certainRows.map(r => r.dots.map(i => A[i]));
-  const extra = certainRows.map(() => [] as number[]);
-  const order = Array.from({ length: n }, (_, i) => i).filter(i => certainty[i] !== 0).sort((x, y) => dots[y].photos - dots[x].photos);
-  const onCertain = new Uint8Array(n); for (const r of certainRows) for (const i of r.dots) onCertain[i] = 1;
+  const nearestRow = (i: number, list: Line[]) => { let best = -1, bd = onRow; list.forEach((r, ri) => { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) return; const d = Math.abs(C[i] - at(r, A[i])); if (d <= bd) { bd = d; best = ri; } }); return best; };
+  const along = lines.map(r => r.dots.map(i => A[i]));
+  const extra = lines.map(() => [] as number[]);
+  const onCertain = new Uint8Array(n); for (const r of lines) for (const i of r.dots) onCertain[i] = 1;
+  const order = Array.from({ length: n }, (_, i) => i).filter(i => !onCertain[i]).sort((x, y) => dots[y].photos - dots[x].photos);
   for (const i of order) {
-    const ri = nearestRow(i); if (ri < 0) continue;
+    const ri = nearestRow(i, lines); if (ri < 0) continue;
     let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
     if (nearest < 0.5 * seed) continue; // as close as a double, or the same plant twice: not taken on geometry
     const k = Math.round(nearest / seed);
     if (k < 1 || k > q.maxGapSeeds || Math.abs(nearest - k * seed) > q.probableTol * seed) continue;
-    certainty[i] = 1; along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1;
+    if (certainty[i] === 2) certainty[i] = 1;
+    along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1;
   }
-  // New rows from what is left, only in a slot the certain rows leave, as dense as the certain rows are.
-  const restIdx: number[] = []; for (let i = 0; i < n; i++) if (!onCertain[i]) restIdx.push(i);
-  const R2 = rowsFromDots(restIdx.map(i => dots[i]), R1.directionDeg, S, o, 0, 0);
-  const geomRows: { dots: number[]; course: Course }[] = [];
-  for (const r of R2.rows) {
-    const mine = r.dots.map(k => restIdx[k]), co = toCourse(r.line), mid = (r.a0 + r.a1) / 2, cm = courseAt(co, mid);
-    let off = Infinity; for (const cr of certainRows) { if (mid < cr.a0 - 10 || mid > cr.a1 + 10) continue; const d = cm - courseAt(cr.course, mid); if (Math.abs(d) < Math.abs(off)) off = d; }
-    if (!Number.isFinite(off)) continue;
-    const k = Math.round(off / S);
-    if (k === 0 || Math.abs(off - k * S) > q.slotTol * S) continue;
-    if (r.perM < q.minRowDensityShare * geometry.perMMedian) continue;
-    geomRows.push({ dots: mine, course: co });
+  // New rows from what is left, only in a row slot of the planter's pattern that no certain row holds there, as dense
+  // as the certain rows are, straight.
+  const restByJ = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) if (!onCertain[i] && Math.abs(RN.resid[i]) <= onRow) (restByJ.get(RN.j[i]) ?? restByJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
+  const geomLines: Line[] = [];
+  for (const g of restByJ.values()) {
+    if (g.length < 5) continue;
+    const L = fit(g); if (!L || L.a1 - L.a0 < q.minCertainRowM) continue;
+    // Not where a certain row already runs: the slot must be free over this stretch.
+    const mid = (L.a0 + L.a1) / 2;
+    if (lines.some(cr => mid >= cr.a0 - 2 && mid <= cr.a1 + 2 && Math.abs(at(cr, mid) - at(L, mid)) < 0.5 * S)) continue;
+    if (L.dots.length / Math.max(1e-6, L.a1 - L.a0) < q.minRowDensityShare * geometry.perMMedian) continue;
+    geomLines.push(L);
   }
   // Rows with their stretches: plants confirmed, or a gap of over `gapSeeds` plant spacings ("the row probably
   // continues here; plants not confirmed").
   const rows: SeqRow[] = [], rowOf = new Int32Array(n).fill(-1);
-  const build = (kind: SeqRow["kind"], ds: number[], co: Course) => {
-    const sorted = [...ds].sort((x, y) => A[x] - A[y]); if (sorted.length < 2) return;
+  const build = (kind: SeqRow["kind"], ds: number[], L: Line) => {
+    const all = [...new Set(ds)].sort((x, y) => A[x] - A[y]);
+    // Cut where no plant stands for over maxBridgeM; each piece with 3 or more plants is a row of its own.
+    for (let s0 = 0; s0 < all.length;) { let e0 = s0; while (e0 + 1 < all.length && A[all[e0 + 1]] - A[all[e0]] <= q.maxBridgeM) e0++; if (e0 - s0 + 1 >= 3) piece(kind, all.slice(s0, e0 + 1), L); s0 = e0 + 1; }
+  };
+  const piece = (kind: SeqRow["kind"], sorted: number[], L: Line) => {
+    if (sorted.length < 2) return;
     const a0 = A[sorted[0]], a1 = A[sorted[sorted.length - 1]], segs: RowSegment[] = [];
     let s0 = a0;
     for (let k = 1; k < sorted.length; k++) { const g0 = A[sorted[k - 1]], g1 = A[sorted[k]]; if (g1 - g0 > q.gapSeeds * seed) { if (g0 > s0) segs.push({ a0: s0, a1: g0, confirmed: true }); segs.push({ a0: g0, a1: g1, confirmed: false }); s0 = g1; } }
     if (a1 > s0) segs.push({ a0: s0, a1, confirmed: true });
-    const line: [number, number][] = []; for (let a = a0; ; a = Math.min(a1, a + 1)) { const c = courseAt(co, a); line.push([a * ct - c * st, a * st + c * ct]); if (a >= a1) break; }
+    // The drawn course: refitted through all its plants (the certain ones and those the second look added).
+    const k = course(sorted, a0, a1), LL: Line = { ...k, a0, a1, dots: sorted };
+    const line: [number, number][] = []; for (let a = a0; ; a = Math.min(a1, a + 1)) { const c = at(k.ka.length ? LL : L, a); line.push([a * ct - c * st, a * st + c * ct]); if (a >= a1) break; }
     for (const i of sorted) rowOf[i] = rows.length;
     rows.push({ id: rows.length + 1, kind, line, dots: sorted, a0, a1, lengthM: a1 - a0, perM: sorted.length / Math.max(1e-6, a1 - a0), segments: segs });
   };
-  certainRows.forEach((r, ri) => build("certain", [...r.dots, ...extra[ri]], r.course));
-  for (const g of geomRows) { for (const i of g.dots) if (certainty[i] === 2) certainty[i] = 1; build("geometry", g.dots, g.course); }
+  lines.forEach((L, ri) => build("certain", [...L.dots, ...extra[ri]], L));
+  for (const L of geomLines) { for (const i of L.dots) if (certainty[i] === 2) certainty[i] = 1; build("geometry", L.dots, L); }
   // A probable dot that ended on no row is uncertain again.
   for (let i = 0; i < n; i++) if (certainty[i] === 1 && rowOf[i] < 0) certainty[i] = 2;
-  return { certainty, rows, rowOf, geometry, a: A, c: C };
+  // Between the rows: a dot on no row, with a row on either side of it within a spacing, is not the crop.
+  const between = new Uint8Array(n);
+  const all = [...lines, ...geomLines];
+  for (let i = 0; i < n; i++) {
+    if (rowOf[i] >= 0) continue;
+    let below = false, above = false;
+    for (const r of all) { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) continue; const d = C[i] - at(r, A[i]); if (d > 0 && d < 1.2 * S) below = true; if (d < 0 && d > -1.2 * S) above = true; }
+    if (below && above) between[i] = 1;
+  }
+  return { certainty, rows, rowOf, between, geometry, a: A, c: C };
 }

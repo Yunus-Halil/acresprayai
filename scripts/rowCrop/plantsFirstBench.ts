@@ -63,7 +63,12 @@ const summary = {
   rows: { count: rec.rows.length, certain: certainRowsN, fromGeometry: geomRowsN, lengthM: rowM, notConfirmedM, dotsOnRow: Array.from(rec.rowOf).filter(r => r >= 0).length },
 };
 writeFileSync(join(OUT, "summary.json"), JSON.stringify(summary, null, 1));
-const plantsOut = { version: 2, source: "plants first (development)", note: "One dot per plant two or more photographs located, placed where they saw it. Filled: certain. Ring: probable (the certain rows' spacing supports it). Small grey: uncertain. Not identified as corn by its look; development output, not a count.", points: dots.map(d => ll(d.e, d.n)), certainty: Array.from(rec.certainty), photos: dots.map(d => d.photos), covered: Array.from(covered) };
+// What each dot is drawn as: 0 a certain plant on a row, 1 a probable one (the certain rows' geometry supports it),
+// 2 seen but on no row (headland, weeds, anything the rows do not explain), 3 between two rows: not the crop.
+const shown = dots.map((_, i) => (rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : rec.between[i] ? 3 : 2));
+const shownN = [0, 0, 0, 0]; for (const v of shown) shownN[v]++;
+console.log(`drawn: plants on rows ${shownN[0]} certain + ${shownN[1]} probable; on no row ${shownN[2]}; between rows (not the crop) ${shownN[3]}`);
+const plantsOut = { version: 3, source: "plants first (development)", note: "One dot per plant two or more photographs located, placed where they saw it. Filled: a certain plant on a row. Ring: probable (on a row, at the field's plant spacing). Grey: seen, on no row. Grey cross: between two rows, not the crop. Not identified as corn by its look; development output, not a count.", points: dots.map(d => ll(d.e, d.n)), certainty: shown, photos: dots.map(d => d.photos), covered: Array.from(covered) };
 writeFileSync(join(OUT, "plants.json"), JSON.stringify(plantsOut));
 const rowsOut = rec.rows.map(r => {
   const th = (G.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th);

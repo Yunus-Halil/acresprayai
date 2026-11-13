@@ -285,7 +285,7 @@ export class TwinCanvasLayer extends L.Canvas {
     if (me._map) { if (active) me._map.doubleClickZoom.disable(); else if (!this.editing) me._map.doubleClickZoom.enable(); }
     this.requestRedraw();
   }
-  /** `certainty` per plant: 0 certain, 1 probable (the certain rows' geometry supports it), 2 uncertain; absent: all certain. */
+  /** What each plant is drawn as: 0 certain on a row, 1 probable, 2 on no row, 3 between rows (not the crop); absent: all 0. */
   setPlants(points: LatLngPair[] | null, show: boolean, certainty: number[] | null = null) {
     if (points) {
       const n = points.length, x = new Float64Array(n), y = new Float64Array(n);
@@ -690,11 +690,19 @@ export class TwinCanvasLayer extends L.Canvas {
       // Certain: filled; probable (the certain rows support it): a ring; uncertain: a small grey dot.
       const P = this.plants, r = Math.max(1.4, Math.min(4, 0.025 * pxPerM)), idx = P.index.query(vx0, vy0, vx1, vy1, 0);
       let np = 0;
-      for (const kind of [2, 1, 0]) {
+      for (const kind of [3, 2, 1, 0]) {
         ctx.beginPath(); let any = false;
-        const rr = kind === 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
-        for (const k of idx) { if ((P.certainty ? P.certainty[k] : 0) !== kind) continue; const x = X(P.x[k]), y = Y(P.y[k]); ctx.moveTo(x + rr, y); ctx.arc(x, y, rr, 0, 2 * Math.PI); any = true; np++; }
+        const rr = kind >= 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
+        for (const k of idx) {
+          if ((P.certainty ? P.certainty[k] : 0) !== kind) continue;
+          const x = X(P.x[k]), y = Y(P.y[k]);
+          // Between two rows: a small cross, not a plant mark.
+          if (kind === 3) { const h = rr + 0.5; ctx.moveTo(x - h, y - h); ctx.lineTo(x + h, y + h); ctx.moveTo(x - h, y + h); ctx.lineTo(x + h, y - h); }
+          else { ctx.moveTo(x + rr, y); ctx.arc(x, y, rr, 0, 2 * Math.PI); }
+          any = true; np++;
+        }
         if (!any) continue;
+        if (kind === 3) { ctx.lineWidth = 1; ctx.strokeStyle = "#8c929a"; ctx.globalAlpha = 0.6; ctx.stroke(); ctx.globalAlpha = 1; continue; }
         if (kind === 0) { ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); }
         else if (kind === 1) { ctx.lineWidth = 1.6; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.95; ctx.stroke(); }
         else { ctx.fillStyle = "#8c929a"; ctx.globalAlpha = 0.8; ctx.fill(); }
