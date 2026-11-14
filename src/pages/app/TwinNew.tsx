@@ -221,13 +221,12 @@ export default function TwinNew() {
 
       <fieldset className="space-y-2">
         <legend className="text-base font-medium">2. Crop</legend>
-        {([["corn", "Corn", "Corn in rows: the rows, weed candidates between them, and gaps in the stand."], ["orchard", "Orchard", "Trees in rows: the trees, the rows, and weed candidates on the ground between them."]] as const).map(([v, label, hint]) => (
-          <label key={v} className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${crop === v ? "border-foreground bg-muted/40" : ""}`}>
-            <input type="radio" name="crop" className="mt-1" checked={crop === v} onChange={() => setCrop(v)} />
-            <span><span className="font-medium">{label}</span><span className="block text-sm text-muted-foreground">{hint}</span></span>
+        {([["corn", "Corn"], ["orchard", "Orchard"]] as const).map(([v, label]) => (
+          <label key={v} className={`flex cursor-pointer items-center gap-3 rounded-md border p-3 ${crop === v ? "border-foreground bg-muted/40" : ""}`}>
+            <input type="radio" name="crop" checked={crop === v} onChange={() => setCrop(v)} />
+            <span className="font-medium">{label}</span>
           </label>
         ))}
-        <p className="text-xs text-muted-foreground">Other crops are not supported yet. Swardus cannot tell corn from another row crop by looking, so choose what the field really is.</p>
         {founder && crop === "orchard" && (
           <label className="block text-sm">Weed pass (founder)
             <select className="ml-2 rounded border px-2 py-1 text-sm" value={weeds} onChange={e => setWeeds(e.target.value as typeof weeds)}>
