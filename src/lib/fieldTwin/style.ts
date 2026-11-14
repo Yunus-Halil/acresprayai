@@ -50,8 +50,9 @@ export type TwinLayers = {
   surroundings: boolean;
   /** Corn twins: the corn rows, weed candidates and stand gaps the photographs confirm. */
   corn: boolean;
-  /** Corn twins: also the observations the photographs do not confirm (unconfirmed rows and weeds, contested weeds,
-   * withheld gaps), drawn apart: kept for review, never findings. */
+  /** Corn twins: also the observations the photographs do not confirm (unconfirmed and contested weed candidates,
+   * withheld gaps, plants seen on no row or between the rows), drawn apart: kept for review, never findings. Rows are
+   * always drawn: where plants or the crop are not confirmed, as the row's course (a thin grey line), never as corn. */
   cornUncertain: boolean;
 };
 
@@ -62,7 +63,7 @@ export type TwinDetail = "simple" | "standard" | "full" | "custom";
 export type TwinDetailStop = Exclude<TwinDetail, "custom">;
 
 const DIAGNOSTICS = { inferred: true, droppedRows: false, singleView: false, onTree: false, uncertainty: false, footprints: false, evidence: false };
-const GROUND = { pressure: true, beyondBoundary: false, boundary: true, heatScale: "field" as HeatScaleMode, zones: true, coverage: true, ground: true, surroundings: true, corn: true, cornUncertain: true };
+const GROUND = { pressure: true, beyondBoundary: false, boundary: true, heatScale: "field" as HeatScaleMode, zones: true, coverage: true, ground: true, surroundings: true, corn: true };
 
 /**
  * What each stop of the dial draws. Simple answers "where are the problems": the heatmap, the rows as orientation,
@@ -70,9 +71,12 @@ const GROUND = { pressure: true, beyondBoundary: false, boundary: true, heatScal
  * structure and the row-level weed discs. Full is everything, with a marker for every qualifying finding.
  */
 export const DETAIL_PRESETS: Record<TwinDetailStop, TwinLayers> = {
-  simple: { ...GROUND, ...DIAGNOSTICS, structure: true, crowns: false, weeds: true, clusters: false, vegetation: false, markers: "emphasised" },
-  standard: { ...GROUND, ...DIAGNOSTICS, structure: true, crowns: true, weeds: true, clusters: true, vegetation: true, markers: "summary" },
-  full: { ...GROUND, ...DIAGNOSTICS, structure: true, crowns: true, weeds: true, clusters: true, vegetation: true, markers: "all" },
+  // Corn observations the photographs do not confirm (unconfirmed and contested weed candidates, withheld gaps, plants
+  // on no row or between rows) are review material: off at Simple and Standard (the panel counts them, one tick shows
+  // them), on at Full. A row's unconfirmed stretches are not among them: they are drawn as the row's course, always.
+  simple: { ...GROUND, ...DIAGNOSTICS, cornUncertain: false, structure: true, crowns: false, weeds: true, clusters: false, vegetation: false, markers: "emphasised" },
+  standard: { ...GROUND, ...DIAGNOSTICS, cornUncertain: false, structure: true, crowns: true, weeds: true, clusters: true, vegetation: true, markers: "summary" },
+  full: { ...GROUND, ...DIAGNOSTICS, cornUncertain: true, structure: true, crowns: true, weeds: true, clusters: true, vegetation: true, markers: "all" },
 };
 
 export const DEFAULT_LAYERS: TwinLayers = DETAIL_PRESETS.simple;
@@ -150,6 +154,8 @@ export const TWIN_COLOURS = {
    * unconfirmed grey dashes, contested violet dashes, stand gaps orange, withheld gaps grey dashes. */
   cornRow: "#00e6ff",
   cornRowUnconfirmed: "#ffbe00",
+  /** A row's course where no plant (plants-first) or not the crop (lattice) is confirmed: thin, neutral, never cyan. */
+  cornRowCourse: "#b8bfb8",
   cornWeed: "#ef5350",
   cornWeedUnconfirmed: "#a0a6ad",
   cornWeedContested: "#c08cf0",

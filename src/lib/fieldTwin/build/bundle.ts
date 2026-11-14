@@ -166,7 +166,7 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
     // where plants were seen along them, unconfirmed where the row probably continues. The field's gaps were judged
     // along its own lattice rows, which are then not drawn: "not confirmed" stretches say it on the rows themselves.
     const fieldRows: TwinCornRow[] = P
-      ? P.stretches.map((g, i) => ({ id: i + 1, status: g.confirmed ? ("corn" as const) : ("unconfirmed" as const), line: g.line.map(([a, b]) => llOf(a, b)), lengthM: g.lengthM, seenBy: 0, cornBy: 0, coveredBy: 0, why: g.why }))
+      ? P.stretches.map((g, i) => ({ id: i + 1, status: g.confirmed ? ("corn" as const) : ("unconfirmed" as const), line: g.line.map(([a, b]) => llOf(a, b)), lengthM: g.lengthM, seenBy: 0, cornBy: 0, coveredBy: 0, why: g.why, row: g.row, plants: g.plants }))
       : F.rows.map(r => ({ id: r.id, status: r.identity === "corn" ? ("corn" as const) : ("unconfirmed" as const), line: r.line.map(([a, b]) => llOf(a, b)), lengthM: r.lengthM, seenBy: r.seenBy, cornBy: r.cornBy, coveredBy: r.coveredBy, why: r.why }));
     cornRows = fieldRows.map(r => ({ id: r.id, kept: r.status === "corn", reason: r.status === "corn" ? null : r.why, line: r.line, trees: 0, inferred: 0, photos: r.seenBy, lengthM: r.lengthM, straightnessSdM: 0 }));
     const weeds: TwinCornWeed[] = F.weeds.filter(w => w.votes["weed candidate"] > 0).map((w, i) => {
@@ -202,6 +202,7 @@ export async function assembleBundle(inp: BundleInputs, hooks: BuildHooks = {}, 
       photographs: { read: cornRes.reads.length, withRows: cornRes.withRows, failed: cornRes.failed },
       rows: fieldRows,
       weeds, gaps,
+      ...(P ? { fieldRows: P.rows.map(r => ({ ...r })) } : {}),
       ...(P ? { plants: {
         points: P.points, certainty: P.shown, photos: P.photos,
         note: "One dot per plant two or more photographs located, placed where they saw it. Filled: a plant on a row, seen by most photographs over it. Ring: probable (on a row, at the field's plant spacing). Grey: seen, on no row. Grey cross: between two rows, not the crop. Located by the photographs, not identified as corn by its look; not a stand count.",

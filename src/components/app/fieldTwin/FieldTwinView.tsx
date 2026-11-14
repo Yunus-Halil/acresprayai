@@ -16,7 +16,7 @@ import type { LatLngPair, TwinBundle } from "@/lib/fieldTwin/types";
 import { FindingsControl, FindingsPanel } from "./FindingsPanel";
 import type { DrawStats, TwinPick } from "./TwinCanvasLayer";
 import TwinInspector from "./TwinInspector";
-import { CornFieldPanel } from "./CornPanels";
+import { CornFieldPanel, CornLegend } from "./CornPanels";
 import { isLocalTwin } from "@/lib/fieldTwin/cornView";
 import TwinMap, { type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
 import ReviewBar, { reviewTargetOf } from "./ReviewBar";
@@ -179,6 +179,14 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   /** A stop on the dial: the preset's layers, remembered for next time. */
   const chooseDetail = useCallback((stop: TwinDetailStop) => { setLayers(DETAIL_PRESETS[stop]); setPanelOpen(stop === "full"); try { localStorage.setItem(DETAIL_KEY, stop); } catch { /* storage blocked */ } }, []);
   const [selection, setSelection] = useState<TwinPick>(null);
+  // A selected corn observation the photographs do not confirm (from a list, a review link or Full) is drawn: the layer
+  // that holds them, hidden by default, comes on, so what the inspector describes is on the map.
+  useEffect(() => {
+    const K = twin.corn;
+    if (!K || !selection) return;
+    const hidden = (selection.kind === "cornWeed" && K.weeds.find(w => w.id === selection.id)?.status !== "confirmed") || (selection.kind === "cornGap" && K.gaps.find(g => g.id === selection.id)?.status === "withheld");
+    if (hidden) setLayers(l => (l.cornUncertain ? l : { ...l, cornUncertain: true }));
+  }, [selection, twin.corn]);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [stats, setStats] = useState<DrawStats | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
@@ -407,7 +415,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
           </div>
           <p className="mt-1 text-[10px] leading-snug text-neutral-500">{DETAIL_HINT[detailStop]}</p>
         </div>
-        {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} onSelect={(p, lat, lng, across) => { setSelection(p); zoomTo(lat, lng, across); }} />}
+        {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} showPlants={showPlants} setShowPlants={setShowPlants} plantCount={plants?.points.length ?? null} onSelect={(p, lat, lng, across) => { setSelection(p); zoomTo(lat, lng, across); }} />}
         {twin.corn && founderView && <RowEditPanel edits={rowEdits} editing={rowEditing} onStart={startRowEditing} onDone={finishRowEditing}
           onClearAll={() => { commitRows(NO_ROW_EDITS, "All corrections cleared"); }} hideRows={hideRows} setHideRows={setHideRows}
           plants={plants ? { count: plants.points.length, note: plants.note } : null} showPlants={showPlants} setShowPlants={setShowPlants} photographsOn={!!reference} />}
@@ -563,7 +571,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
         </div>
         <p className="mt-0.5 text-neutral-300">Review-only: these are observations for you to check, not treatment decisions.</p>
         {!local && <p className="mt-0.5 text-neutral-400">{placementText(twin)}</p>}
-        <p className="mt-0.5 text-neutral-400">{twin.corn ? "Corn rows cyan, rows not confirmed amber dashes; weed candidates red, not confirmed grey, contested violet; stand gaps orange, withheld grey. Click one to inspect it." : detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>
+        {twin.corn ? <><p className="mt-0.5 text-neutral-400">Click a row, weed or gap to inspect it.{layers.cornUncertain ? "" : " Observations the photographs do not confirm are hidden: the Corn panel counts them and shows them."}</p><CornLegend corn={twin.corn} showPlants={!!plants && showPlants} uncertain={layers.cornUncertain} /></> : <p className="mt-0.5 text-neutral-400">{detail ? LEVEL_TEXT[detail.level] : "Built from the original photographs, no orthomosaic."}</p>}
         {local && <p className="mt-0.5 text-amber-300/90">Locally aligned test flight: positions relative to each other, scale estimated from the corn rows. Not on the map.</p>}
         {twin.stats.weedTier === "colour" && <p className="mt-0.5 text-amber-300/90">Weeds by colour rules, not a model: green against the soil around it, crowns left out, strips split at their plants. Yellowing plants and plants under 4 cm are missed; a green shoot at a crown's edge can be counted.</p>}
         {twin.stats.weedTier === "none" && !twin.corn && <p className="mt-0.5 text-neutral-500">No weed pass ran on this twin.</p>}
@@ -573,7 +581,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
             {HEAT_STOPS.map((st, i) => <span key={st.pct} className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: swatch(st.rgb, st.alpha) }} />{pctText(heatScale.stops[i])} %{i === HEAT_STOPS.length - 1 ? "+" : ""}</span>)}
             {heatScale.stretched && <span className="text-neutral-500" title="This field's cover runs above the fixed bands, so the colours are spread over its own range: the median of the block's observed ground is the first raised stop, its worst 1 % the last. The numbers are real cover.">bands set by this field</span>}
             <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: "rgba(96,122,98,0.6)" }} />under canopy{canopyCells ? ` (${canopyCells} cells)` : ""}</span>
-            <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />not observed</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3.5 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />not photographed</span>
           </div>
         )}
         {detail?.level === "field" && !simple && !corn && <p className="mt-0.5 text-neutral-500">{s.blockHa != null ? `Cultivated block ${fmtArea(s.blockHa * 10_000, units).text} (${intel.blockSource === "corrected" ? "corrected by you" : intel.blockSource === "inferred" ? "inferred from the photographs" : "from the rows"}); ` : ""}{intel.zones.length} regions at 1.5 % cover or more, {result.query.mode === "overview" ? `${result.prominence.count} emphasised` : `${result.findings.length} findings listed`}.</p>}

@@ -413,6 +413,12 @@ export class TwinCanvasLayer extends L.Canvas {
         ctx.beginPath(); ring(ctx, scene.imagery, X, Y); ctx.fillStyle = C.imagery; ctx.fill();
         if (!this.hatch) this.hatch = makeHatch(ctx);
         if (this.hatch) { ctx.save(); ctx.beginPath(); ring(ctx, scene.imagery, X, Y); ctx.clip(); ctx.fillStyle = this.hatch; ctx.fillRect(Math.max(bx0, X(scene.bbox[0])), Math.max(by0, Y(scene.bbox[1])), Math.min(bx1, X(scene.bbox[2])) - Math.max(bx0, X(scene.bbox[0])), Math.min(by1, Y(scene.bbox[3])) - Math.max(by0, Y(scene.bbox[1]))); ctx.restore(); }
+        // The photographed ground over it: every photograph's footprint in the observed fill, so the hatch stays only
+        // where no photograph reached (the hull is convex; coverage is not). Each footprint filled on its own, so the
+        // rings' winding never cancels where two overlap.
+        const F = scene.footprints;
+        ctx.fillStyle = C.imagery;
+        for (let k = 0; k + 1 < F.off.length; k++) { ctx.beginPath(); packed(ctx, F, k, X, Y); ctx.fill(); }
       }
       if (scene.block) { ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.fillStyle = C.soil; ctx.fill(); }
     }
@@ -690,7 +696,9 @@ export class TwinCanvasLayer extends L.Canvas {
       // Certain: filled; probable (the certain rows support it): a ring; uncertain: a small grey dot.
       const P = this.plants, r = Math.max(1.4, Math.min(4, 0.025 * pxPerM)), idx = P.index.query(vx0, vy0, vx1, vy1, 0);
       let np = 0;
-      for (const kind of [3, 2, 1, 0]) {
+      // Seen on no row and between the rows (not the crop) are review material: drawn only with the observations
+      // the photographs do not confirm.
+      for (const kind of unc ? [3, 2, 1, 0] : [1, 0]) {
         ctx.beginPath(); let any = false;
         const rr = kind >= 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
         for (const k of idx) {
@@ -710,27 +718,32 @@ export class TwinCanvasLayer extends L.Canvas {
       }
       drawn.plants = np;
     }
-    // Rows: a line per field row (its measured course), selected one under a white halo.
-    const rowW = Math.max(1.5, Math.min(6, 0.06 * pxPerM));
+    // Rows: one field row is one object. Its stretches with plants seen along them (or a lattice row the photographs
+    // call corn) cyan at full width; where the row's course continues but no plant (or not the crop) is confirmed, a
+    // thin neutral line: the course is drawn, never as corn. Only rows in view are walked; the selected row (all its
+    // stretches) under a white halo.
+    const rowW = Math.max(1.5, Math.min(6, 0.06 * pxPerM)), courseW = Math.max(1, rowW * 0.4);
+    const inView = (k: number) => { const b = K.rows.box; return !(b[4 * k + 2] < vx0 || b[4 * k] > vx1 || b[4 * k + 3] < vy0 || b[4 * k + 1] > vy1); };
     const strokeRow = (k: number) => { ctx.beginPath(); packed(ctx, K.rows.lines, k, X, Y); ctx.stroke(); };
     const flatLine = (xy: Float64Array) => { for (let i = 0; i < xy.length; i += 2) { if (i === 0) ctx.moveTo(X(xy[0]), Y(xy[1])); else ctx.lineTo(X(xy[i]), Y(xy[i + 1])); } };
     const OV = RE.overrides;
     const rowPath = (k: number) => { const ov = OV.get(K.rows.id[k]); if (ov) flatLine(ov); else packed(ctx, K.rows.lines, k, X, Y); };
     let nr = 0;
     if (!RE.hideRows) {
-      if (sel?.kind === "cornRow") { const k = indexOfId(K.rows.id, sel.id); if (k >= 0) { ctx.strokeStyle = C.selection; ctx.lineWidth = rowW + 6; ctx.globalAlpha = 0.55; ctx.setLineDash([]); ctx.beginPath(); rowPath(k); ctx.stroke(); ctx.globalAlpha = 1; } }
+      if (sel?.kind === "cornRow") { const k = indexOfId(K.rows.id, sel.id); if (k >= 0) { const g = K.rows.group[k]; ctx.strokeStyle = C.selection; ctx.lineWidth = rowW + 6; ctx.globalAlpha = 0.55; ctx.setLineDash([]); ctx.beginPath(); for (let j = 0; j < K.rows.n; j++) if (j === k || (g >= 0 && K.rows.group[j] === g)) rowPath(j); ctx.stroke(); ctx.globalAlpha = 1; } }
       if (sel?.kind === "addedRow") { const a = RE.added.find(x => x.uid === sel.uid); if (a) { ctx.beginPath(); flatLine(a.xy); ctx.strokeStyle = C.selection; ctx.lineWidth = rowW + 8; ctx.globalAlpha = 0.45; ctx.setLineDash([]); ctx.stroke(); ctx.globalAlpha = 1; } }
       // The machine's rows by state; a row the operator kept is drawn solid in its machine colour, one they removed
       // thin grey dots with cross ticks (still there, still selectable: their word, not a deletion).
-      for (const [st, colour, dash] of [[S.row.corn, C.cornRow, []], [S.row.unconfirmed, C.cornRowUnconfirmed, [7, 5]]] as const) {
-        if (st === S.row.unconfirmed && !unc) continue;
+      ctx.setLineDash([]);
+      for (const [st, colour] of [[S.row.unconfirmed, C.cornRowCourse], [S.row.corn, C.cornRow]] as const) {
         for (const kept of [false, true]) {
-          ctx.strokeStyle = colour; ctx.lineWidth = st === S.row.corn || kept ? rowW : Math.max(1, rowW * 0.8); ctx.setLineDash(kept ? [] : [...dash]); ctx.globalAlpha = 0.9;
+          ctx.strokeStyle = colour; ctx.lineWidth = st === S.row.corn || kept ? rowW : courseW; ctx.globalAlpha = st === S.row.corn ? 0.9 : 0.7;
           ctx.beginPath();
-          for (let k = 0; k < K.rows.n; k++) { if (K.rows.status[k] !== st) continue; const v = V[String(K.rows.id[k])]; if (v === "remove" || (v === "keep") !== kept) continue; rowPath(k); nr++; }
+          for (let k = 0; k < K.rows.n; k++) { if (K.rows.status[k] !== st || !inView(k)) continue; const v = V[String(K.rows.id[k])]; if (v === "remove" || (v === "keep") !== kept) continue; rowPath(k); nr++; }
           ctx.stroke();
         }
       }
+      ctx.globalAlpha = 1;
       ctx.beginPath(); let anyRemoved = false;
       for (let k = 0; k < K.rows.n; k++) if (V[String(K.rows.id[k])] === "remove") { packed(ctx, K.rows.lines, k, X, Y); anyRemoved = true; }
       if (anyRemoved) {
@@ -1001,7 +1014,6 @@ export class TwinCanvasLayer extends L.Canvas {
       if (gBest >= 0) return { kind: "cornGap", id: K.gaps.id[gBest] };
       let rBest = -1, rd = Infinity;
       for (let k = 0; k < K.rows.n; k++) {
-        if (K.rows.status[k] !== S.row.corn && !unc) continue;
         const o = K.rows.lines.off[k], e = K.rows.lines.off[k + 1], xy = K.rows.lines.xy;
         for (let i = o; i + 3 < e; i += 2) { const dd = segD(xy[i], xy[i + 1], xy[i + 2], xy[i + 3]); if (dd <= tolU && dd < rd) { rd = dd; rBest = k; } }
       }
@@ -1048,7 +1060,6 @@ export class TwinCanvasLayer extends L.Canvas {
     const segD = (ax: number, ay: number, bx: number, by: number) => { const vx = bx - ax, vy = by - ay, L2 = vx * vx + vy * vy || 1e-18, t = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / L2)); return Math.hypot(ax + t * vx - x, ay + t * vy - y); };
     let best: TwinPick = null, bd = tolU;
     for (let k = 0; k < K.rows.n; k++) {
-      if (K.rows.status[k] !== CORN_STATUS.row.corn && !this.layers.cornUncertain) continue;
       const ov = this.rowEdit.overrides.get(K.rows.id[k]), xy = ov ?? K.rows.lines.xy, o = ov ? 0 : K.rows.lines.off[k], e = ov ? ov.length : K.rows.lines.off[k + 1];
       for (let i = o; i + 3 < e; i += 2) { const dd = segD(xy[i], xy[i + 1], xy[i + 2], xy[i + 3]); if (dd < bd) { bd = dd; best = { kind: "cornRow", id: K.rows.id[k] }; } }
     }

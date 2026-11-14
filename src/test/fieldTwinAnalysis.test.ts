@@ -224,6 +224,10 @@ describe.skipIf(!haveFlight)("the real build on the UAV3DCrop corn test flight, 
       expect(plantsAgain.stretches.map(g => (g.confirmed ? "corn" : "unconfirmed"))).toEqual(corn.rows.map(r => r.status));
       expect(plantsAgain.points).toEqual(corn.plants!.points);
       expect(plantsAgain.shown).toEqual(corn.plants!.certainty);
+      // Each stretch knows its field row and its plants; every stretch's row is one of the field rows.
+      expect(plantsAgain.stretches.map(g => [g.row, g.plants])).toEqual(corn.rows.map(r => [r.row, r.plants]));
+      expect(corn.rows.every(r => corn.fieldRows!.some(f => f.id === r.row))).toBe(true);
+      expect(corn.rows.filter(r => r.status === "unconfirmed").every(r => r.plants === 0)).toBe(true);
     } else {
       expect(again.rows.map(r => r.line.map(([p, q]) => [ll(p), ll(q)]))).toEqual(corn.rows.map(r => r.line));
       expect(again.rows.map(r => (r.identity === "corn" ? "corn" : "unconfirmed"))).toEqual(corn.rows.map(r => r.status));

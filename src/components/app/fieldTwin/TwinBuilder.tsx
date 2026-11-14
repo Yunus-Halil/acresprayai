@@ -6,7 +6,8 @@ import { AlertTriangle, Loader2, X } from "lucide-react";
 import { type BuildResult, type BuildRun, BuildAborted, startTwinBuild } from "@/lib/fieldTwin/build/runBuild";
 import type { BuildReport } from "@/lib/fieldTwin/build/pipeline";
 import { type BuildCrop, type BuildProgress, type BuildStage, stagesFor } from "@/lib/fieldTwin/build/types";
-import type { TwinBundle } from "@/lib/fieldTwin/types";
+import type { TwinBundle, TwinCorn } from "@/lib/fieldTwin/types";
+import { cornFieldRows } from "@/lib/fieldTwin/cornView";
 import { fetchHealth } from "@/lib/weedVision/client";
 import { weedModelAvailable } from "@/lib/weedVision/flag";
 
@@ -161,7 +162,7 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
           <ul className="mt-1 space-y-0.5 text-neutral-300">
             <li>{result.report.photographs.read} of {result.report.photographs.given} photographs with a camera{result.report.photographs.refused.length ? ` (${result.report.photographs.refused.length} left out)` : ""}; soil ties agree to {typeof result.report.cameras.residualM === "number" && Number.isFinite(result.report.cameras.residualM) ? `${(result.report.cameras.residualM * 100).toFixed(0)} cm` : "n/a"}</li>
             {result.twin.corn ? <>
-              <li>{result.twin.corn.summary.cornRows} corn rows ({result.twin.corn.summary.cornRowLengthM} m) and {result.twin.corn.summary.unconfirmedRows} planted rows not confirmed{result.twin.corn.rowSpacingM ? `, ${result.twin.corn.rowSpacingM} m apart` : ""}; the photographs agree on the rows to {result.twin.corn.rowAgreementM != null ? `${(result.twin.corn.rowAgreementM * 100).toFixed(0)} cm` : "n/a"}</li>
+              <li>{cornRowsLine(result.twin.corn)}{result.twin.corn.rowSpacingM ? `, ${result.twin.corn.rowSpacingM} m apart` : ""}; the photographs agree on the rows to {result.twin.corn.rowAgreementM != null ? `${(result.twin.corn.rowAgreementM * 100).toFixed(0)} cm` : "n/a"}</li>
               <li>weed candidates: {result.twin.corn.summary.weeds.confirmed} confirmed by two or more photographs, {result.twin.corn.summary.weeds.unconfirmed} not repeated, {result.twin.corn.summary.weeds.contested} contested (from {result.twin.corn.summary.perPhoto.weedCandidates} single-photograph reports)</li>
               <li>stand gaps: {result.twin.corn.summary.gaps.confirmed} confirmed, {result.twin.corn.summary.gaps.withheld} withheld (from {result.twin.corn.summary.perPhoto.standGaps} single-photograph reports)</li>
               <li>{result.report.corn ? `Corn V1 ${(result.report.corn.msPerPhoto / 1000).toFixed(1)} s per photograph, ${result.report.corn.withRows} of ${result.report.corn.photographsRead} with rows` : ""}</li>
@@ -179,4 +180,12 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
       )}
     </div>
   );
+}
+
+/** The build summary's row line: field rows (a plants-first twin stores each row as stretches), never stretch counts. */
+function cornRowsLine(corn: TwinCorn): string {
+  const rows = cornFieldRows(corn);
+  const seenM = rows.reduce((t, r) => t + r.confirmedM, 0), notM = rows.reduce((t, r) => t + r.notConfirmedM, 0);
+  if (rows.some(r => r.plantsFirst)) return `${rows.length} rows through the located plants: plants seen along ${seenM.toFixed(1)} m, no plant confirmed along ${notM.toFixed(1)} m`;
+  return `${rows.filter(r => r.confirmed).length} corn rows (${seenM.toFixed(1)} m) and ${rows.filter(r => !r.confirmed).length} planted rows not confirmed`;
 }

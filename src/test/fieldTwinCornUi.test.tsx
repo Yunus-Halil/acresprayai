@@ -67,11 +67,15 @@ describe("the corn panel on the open twin", () => {
     // The unconfirmed list holds the observation the other photographs did not repeat.
     fireEvent.click(within(panel).getByRole("button", { name: /^Unconfirmed 1/ }));
     expect(within(panel).getByText("Unconfirmed 2")).toBeInTheDocument();
-    // The layer for observations not confirmed can be switched off.
-    const box = within(panel).getByRole("checkbox", { name: /Observations not confirmed/ });
-    expect(box).toBeChecked();
-    fireEvent.click(box);
+    // Observations the photographs do not confirm are hidden by default (the panel counts them: 1 weed, 1 withheld
+    // gap) and one tick shows them; the legend lists them only while they are drawn.
+    const box = within(panel).getByRole("checkbox", { name: /Observations not confirmed \(2\)/ });
     expect(box).not.toBeChecked();
+    expect(screen.queryByText("Gap withheld")).toBeNull();
+    fireEvent.click(box);
+    expect(box).toBeChecked();
+    expect(screen.getByText("Gap withheld")).toBeInTheDocument();
+    expect(screen.getByText("Not photographed")).toBeInTheDocument();
     // Let the map's pending frames run while it is mounted, then close it.
     await new Promise(r => setTimeout(r, 100));
     view.unmount();

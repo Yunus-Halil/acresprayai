@@ -10,7 +10,7 @@ import type { UnitSystem } from "@/lib/units";
 import { TWIN_COLOURS, type TwinLayers } from "@/lib/fieldTwin/style";
 import type { TwinBundle, TwinCorn, TwinCornGap, TwinCornRow, TwinCornWeed, TwinEvidence } from "@/lib/fieldTwin/types";
 import { localFrame } from "@/lib/fieldTwin/intelligence";
-import { CORN_WEED_LABEL, cornGapColour, cornRowColour, cornWeedColour, isLocalTwin } from "@/lib/fieldTwin/cornView";
+import { CORN_WEED_LABEL, type CornFieldRowView, cornFieldRows, cornGapColour, cornRowColour, cornWeedColour, fieldRowOf, isLocalTwin } from "@/lib/fieldTwin/cornView";
 import EvidenceCrop from "./EvidenceCrop";
 import type { TwinPick } from "./TwinCanvasLayer";
 
@@ -25,8 +25,13 @@ const middle = (line: [number, number][]) => line[line.length >> 1];
 type ListKey = "confirmedWeeds" | "otherWeeds" | "gaps" | "withheldGaps" | "rows";
 
 /** The left-column panel for a corn twin. */
-export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units }: { twin: TwinBundle; corn: TwinCorn; layers: TwinLayers; setLayers: (f: (l: TwinLayers) => TwinLayers) => void; onSelect: (p: TwinPick, lat: number, lng: number, metresAcross: number) => void; units: UnitSystem }) {
+export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units, showPlants, setShowPlants, plantCount = null }: { twin: TwinBundle; corn: TwinCorn; layers: TwinLayers; setLayers: (f: (l: TwinLayers) => TwinLayers) => void; onSelect: (p: TwinPick, lat: number, lng: number, metresAcross: number) => void; units: UnitSystem; showPlants: boolean; setShowPlants: (v: boolean) => void; plantCount?: number | null }) {
   const s = corn.summary;
+  const fieldRows = useMemo(() => cornFieldRows(corn), [corn]);
+  const plantsFirst = fieldRows.some(r => r.plantsFirst);
+  const R = useMemo(() => ({ n: fieldRows.length, confirmedM: fieldRows.reduce((t, r) => t + r.confirmedM, 0), notConfirmedM: fieldRows.reduce((t, r) => t + r.notConfirmedM, 0), courseOnly: fieldRows.filter(r => r.confirmed === 0).length }), [fieldRows]);
+  const P = corn.plants?.summary ?? null;
+  const hidden = s.weeds.unconfirmed + s.weeds.contested + s.gaps.withheld + (P ? P.onNoRow + P.betweenRows : 0);
   const [list, setList] = useState<ListKey>("confirmedWeeds");
   const [open, setOpen] = useState(true);
   const items = useMemo(() => {
@@ -34,8 +39,12 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units 
     if (list === "confirmedWeeds") return corn.weeds.filter(w => w.status === "confirmed").sort(byArea).map(w => ({ key: `w${w.id}`, colour: cornWeedColour(w.status), title: `Weed ${w.id}`, detail: `${fmtAreaCm2(w.areaM2 * 10_000, units).text}, a weed in ${w.votes.weed} of the ${w.seenBy} photographs that saw it`, pick: { kind: "cornWeed", id: w.id } as TwinPick, lat: w.lat, lng: w.lng, across: 2 }));
     if (list === "otherWeeds") return corn.weeds.filter(w => w.status !== "confirmed").sort(byArea).map(w => ({ key: `w${w.id}`, colour: cornWeedColour(w.status), title: `${w.status === "contested" ? "Contested" : "Unconfirmed"} ${w.id}`, detail: `${fmtAreaCm2(w.areaM2 * 10_000, units).text}, weed in ${w.votes.weed}, crop in ${w.votes.crop} of the ${w.seenBy} that saw it`, pick: { kind: "cornWeed", id: w.id } as TwinPick, lat: w.lat, lng: w.lng, across: 2 }));
     if (list === "gaps" || list === "withheldGaps") return corn.gaps.filter(g => (list === "gaps" ? g.status === "confirmed" : g.status === "withheld")).sort((a, b) => b.lengthM - a.lengthM).map(g => ({ key: `g${g.id}`, colour: gapColour(g.status), title: `Gap ${g.id}, row ${g.rowId}`, detail: `${cm(g.lengthM, units)}, reported by ${g.reportedBy.length}`, pick: { kind: "cornGap", id: g.id } as TwinPick, lat: (g.a[0] + g.b[0]) / 2, lng: (g.a[1] + g.b[1]) / 2, across: Math.max(3, g.lengthM * 2.5) }));
-    return corn.rows.map(r => ({ key: `r${r.id}`, colour: rowColour(r.status), title: `Row ${r.id}${r.status === "corn" ? "" : ", not confirmed"}`, detail: `${fmtDistance(r.lengthM, units).text}, held by ${r.seenBy} of ${r.coveredBy}`, pick: { kind: "cornRow", id: r.id } as TwinPick, lat: middle(r.line)[0], lng: middle(r.line)[1], across: Math.max(6, r.lengthM * 1.1) }));
-  }, [list, corn, units]);
+    // One entry per field row (its stretches are one object), longest first.
+    return [...fieldRows].sort((a, b) => b.lengthM - a.lengthM).map(v => {
+      const first = corn.rows[v.stretches.find(i => corn.rows[i].status === "corn") ?? v.stretches[0]], line = corn.rows[v.stretches[v.stretches.length >> 1]].line;
+      return { key: `r${v.id}`, colour: v.confirmed ? TWIN_COLOURS.cornRow : TWIN_COLOURS.cornRowCourse, title: `Row ${v.id}${v.confirmed ? "" : v.plantsFirst ? ", no plant confirmed" : ", crop not confirmed"}`, detail: rowListDetail(v, units), pick: { kind: "cornRow", id: first.id } as TwinPick, lat: middle(line)[0], lng: middle(line)[1], across: Math.max(6, v.lengthM * 1.1) };
+    });
+  }, [list, corn, units, fieldRows]);
   const tab = (k: ListKey, label: string, n: number) => (
     <button key={k} type="button" onClick={() => setList(k)} aria-pressed={list === k} className={`rounded-[2px] px-1.5 py-0.5 text-[10px] ${list === k ? "bg-[#f0a63a] font-semibold text-[#171a18]" : "text-neutral-300 hover:bg-[#262a26]"}`}>{label} {n}</button>
   );
@@ -49,14 +58,16 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units 
     <div className={`w-[272px] px-3 py-2 text-xs ${panel}`} role="group" aria-label="Corn">
       <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => setOpen(o => !o)} aria-expanded={open}>
         <span className="font-semibold text-neutral-100">Corn</span>
-        <span className="text-[10px] text-neutral-400">{s.cornRows} rows · {s.weeds.confirmed} weeds · {s.gaps.confirmed} gaps</span>
+        <span className="text-[10px] text-neutral-400">{R.n} rows · {s.weeds.confirmed} weeds · {s.gaps.confirmed} gaps</span>
       </button>
       {open && <>
         <p className="mt-1 text-[10px] leading-snug text-neutral-400">Every photograph read by Corn V1, combined over the field ({corn.photographs.read} photographs). The crop is your entry. Review-only: a finding is something to look at, not a treatment decision.</p>
         {isLocalTwin(twin) && <p className="mt-1 text-[10px] leading-snug text-amber-300/90">Test flight, locally aligned: positions are relative to each other and the scale is estimated from the corn rows. Not a place on the map.</p>}
         <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
-          <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornRow }} />Corn rows</dt><dd className="text-right tabular-nums text-neutral-100">{s.cornRows} ({fmtDistance(s.cornRowLengthM, units).text})</dd>
-          <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornRowUnconfirmed }} />Rows not confirmed</dt><dd className="text-right tabular-nums text-neutral-100">{s.unconfirmedRows}</dd>
+          <dt className="text-neutral-400">Rows</dt><dd className="text-right tabular-nums text-neutral-100">{R.n}{R.courseOnly ? ` (${R.courseOnly} ${plantsFirst ? "with no plant confirmed" : "crop not confirmed"})` : ""}</dd>
+          <dt className="text-neutral-400"><span className="mr-1 inline-block h-0.5 w-3 align-middle" style={{ background: TWIN_COLOURS.cornRow }} />{plantsFirst ? "Plants seen along" : "Corn rows"}</dt><dd className="text-right tabular-nums text-neutral-100">{fmtDistance(R.confirmedM, units).text}</dd>
+          <dt className="text-neutral-400"><span className="mr-1 inline-block h-px w-3 align-middle" style={{ background: TWIN_COLOURS.cornRowCourse }} />{plantsFirst ? "No plant confirmed" : "Crop not confirmed"}</dt><dd className="text-right tabular-nums text-neutral-100">{fmtDistance(R.notConfirmedM, units).text}</dd>
+          {P && <><dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full border border-black/60" style={{ background: TWIN_COLOURS.plantLocated }} />Plants located on rows</dt><dd className="text-right tabular-nums text-neutral-100">{(P.certain + P.probable).toLocaleString()}</dd></>}
           <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornWeed }} />Weeds, confirmed</dt><dd className="text-right tabular-nums text-neutral-100">{s.weeds.confirmed}</dd>
           <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornWeedUnconfirmed }} />Not confirmed / contested</dt><dd className="text-right tabular-nums text-neutral-100">{s.weeds.unconfirmed} / {s.weeds.contested}</dd>
           <dt className="text-neutral-400"><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: TWIN_COLOURS.cornGap }} />Stand gaps</dt><dd className="text-right tabular-nums text-neutral-100">{s.gaps.confirmed} ({cm(s.gaps.confirmedLengthM, units)})</dd>
@@ -67,8 +78,9 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units 
         {/* What the field combination left out or withheld on this flight, in its own words (the last note is the review-only line above). */}
         {corn.notes.length > 1 && <ul className="mt-1.5 space-y-1 border-l border-[#2e322e] pl-2 text-[10px] leading-snug text-neutral-400" aria-label="Notes on this flight">{corn.notes.slice(0, -1).map(n => <li key={n}>{n}</li>)}</ul>}
         <div className="mt-1.5 border-t border-[#2e322e] pt-1">
-          {check("corn", "Corn rows, weeds and gaps", "what the photographs confirm")}
-          {check("cornUncertain", "Observations not confirmed", "rows, weeds and gaps the photographs do not agree on: dashed, kept for review")}
+          {check("corn", "Corn rows, weeds and gaps", "what the photographs confirm; a row's course where they do not, thin grey")}
+          {(corn.plants || plantCount) && <label className="flex items-start gap-2 py-0.5 text-[11px] text-neutral-200"><input type="checkbox" className="mt-0.5 accent-[#f0a63a]" checked={showPlants} onChange={e => setShowPlants(e.target.checked)} /><span>Located plants, up close<span className="block text-[10px] leading-snug text-neutral-500">one dot per plant two or more photographs located; not a stand count</span></span></label>}
+          {check("cornUncertain", `Observations not confirmed${hidden ? ` (${hidden.toLocaleString()})` : ""}`, `weed candidates not repeated or contested, gaps withheld${P ? ", plants seen on no row or between the rows" : ""}: kept for review, never findings`)}
         </div>
         <div className="mt-1.5 border-t border-[#2e322e] pt-1.5">
           <div className="flex flex-wrap gap-0.5">
@@ -76,7 +88,7 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units 
             {tab("otherWeeds", "Unconfirmed", s.weeds.unconfirmed + s.weeds.contested)}
             {tab("gaps", "Gaps", s.gaps.confirmed)}
             {tab("withheldGaps", "Withheld", s.gaps.withheld)}
-            {tab("rows", "Rows", corn.rows.length)}
+            {tab("rows", "Rows", fieldRows.length)}
           </div>
           <ul className="mt-1 max-h-48 overflow-y-auto" aria-label="Corn findings to review">
             {items.length === 0 && <li className="py-1 text-[10px] text-neutral-500">None.</li>}
@@ -91,6 +103,37 @@ export function CornFieldPanel({ twin, corn, layers, setLayers, onSelect, units 
       </>}
     </div>
   );
+}
+
+/** The list line for a field row: its length, and what the photographs hold along it. */
+function rowListDetail(v: CornFieldRowView, units: UnitSystem): string {
+  const L = fmtDistance(v.lengthM, units).text;
+  if (!v.plantsFirst) return v.confirmed ? L : `${L}, crop not confirmed`;
+  const seen = v.confirmed ? `plants seen along ${fmtDistance(v.confirmedM, units).text}` : "no plant confirmed";
+  return `${L}, ${seen}${v.plants != null ? `, ${v.plants} plants` : ""}`;
+}
+
+/** What each mark on a corn twin means, for everyone (the key): only what is drawn now. */
+export function CornLegend({ corn, showPlants, uncertain }: { corn: TwinCorn; showPlants: boolean; uncertain: boolean }) {
+  const plantsFirst = useMemo(() => cornFieldRows(corn).some(r => r.plantsFirst), [corn]);
+  const item = (key: string, swatch: React.ReactNode, text: string) => <span key={key} className="flex items-center gap-1.5">{swatch}{text}</span>;
+  const line = (colour: string, h: number, dash = false) => <span className="inline-block w-4 shrink-0" style={{ height: h, background: dash ? `repeating-linear-gradient(90deg, ${colour} 0 3px, transparent 3px 6px)` : colour }} />;
+  const dot = (fill: string | null, stroke: string) => <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: fill ?? "transparent", border: `1.5px solid ${stroke}` }} />;
+  const items = [
+    item("row", line(TWIN_COLOURS.cornRow, 3), plantsFirst ? "Row, plants seen along it" : "Corn row"),
+    item("course", line(TWIN_COLOURS.cornRowCourse, 1), plantsFirst ? "Row continues, no plant confirmed" : "Row, crop not confirmed"),
+    showPlants && item("p0", dot(TWIN_COLOURS.plantLocated, "#141614"), "Plant, seen by most photographs over it"),
+    showPlants && item("p1", dot(null, TWIN_COLOURS.plantLocated), "Plant, probable (on a row, at the spacing)"),
+    showPlants && uncertain && item("p2", dot("#8c929a", "#8c929a"), "Plant seen on no row"),
+    showPlants && uncertain && item("p3", <span className="inline-block w-2 shrink-0 text-center leading-none text-[#8c929a]">×</span>, "Green between two rows, not the crop"),
+    item("w1", dot("rgba(239,83,80,0.35)", TWIN_COLOURS.cornWeed), "Weed candidate, confirmed"),
+    uncertain && item("w2", dot(null, TWIN_COLOURS.cornWeedUnconfirmed), "Weed candidate, not confirmed"),
+    uncertain && item("w3", dot(null, TWIN_COLOURS.cornWeedContested), "Contested: crop or weed"),
+    item("g1", line(TWIN_COLOURS.cornGap, 4), "Stand gap, confirmed"),
+    uncertain && item("g2", line(TWIN_COLOURS.cornGapWithheld, 2, true), "Gap withheld"),
+    item("unseen", <span className="inline-block h-2.5 w-3.5 shrink-0 rounded-sm border border-[#3a3f3a]" style={{ background: `repeating-linear-gradient(135deg, ${TWIN_COLOURS.hatch} 0 1px, ${TWIN_COLOURS.imagery} 1px 4px)` }} />, "Not photographed"),
+  ];
+  return <div className="mt-1.5 grid grid-cols-1 gap-y-0.5 text-[10px] text-neutral-400 sm:grid-cols-2 sm:gap-x-3" aria-label="Corn legend">{items.filter(Boolean)}</div>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -194,6 +237,33 @@ export function CornInspector({ twin, selection, atlasUrl, onClose }: { twin: Tw
   if (selection.kind === "cornRow") {
     const r = corn.rows.find(x => x.id === selection.id);
     if (!r) return <p className="text-xs text-neutral-500">That row is not in this twin.</p>;
+    const fr = fieldRowOf(corn, r);
+    if (fr != null) {
+      // A plants-first row: one object made of its stretches. What it rests on is the plants located along it; the
+      // photograph counts per stretch were not measured, so none are shown.
+      const v = cornFieldRows(corn).find(x => x.plantsFirst && x.id === fr);
+      if (!v) return <p className="text-xs text-neutral-500">That row is not in this twin.</p>;
+      const perM = v.perM == null ? "–" : units === "imperial" ? `${(v.perM * 0.3048).toFixed(1)} a foot` : `${v.perM.toFixed(1)} a metre`;
+      return (
+        <div>
+          <Header kind="Corn field" title={`Row ${v.id}`} colour={v.confirmed ? TWIN_COLOURS.cornRow : TWIN_COLOURS.cornRowCourse} onClose={onClose} />
+          <p className="mt-2 text-xs text-neutral-300">{v.confirmed ? "A row through the plants the photographs located: cyan where plants were seen along it, a thin grey line where its course continues but no plant was confirmed (the photographs missed the plants there, or there are none: the twin cannot tell which)." : "A row's course with no plant confirmed along it."}</p>
+          <Section title="Along the row"><Rows lines={[
+            { label: "Length, first plant to last", value: fmtDistance(v.lengthM, units).text },
+            { label: "Plants seen along", value: `${fmtDistance(v.confirmedM, units).text} (${v.confirmed} stretch${v.confirmed === 1 ? "" : "es"})` },
+            { label: "No plant confirmed", value: `${fmtDistance(v.notConfirmedM, units).text} (${v.notConfirmed} stretch${v.notConfirmed === 1 ? "" : "es"})` },
+            ...(v.plants != null ? [{ label: "Plants located on it", value: v.plants.toLocaleString() }, { label: "Seen by most photographs over them", value: (v.certain ?? 0).toLocaleString() }, { label: "Plants located per length", value: perM }] : []),
+            ...(v.kind === "geometry" ? [{ label: "Found", value: "in a slot the certain rows leave" }] : []),
+          ]} /></Section>
+          <Section title="This stretch"><Rows lines={[
+            { label: "State", value: r.status === "corn" ? "plants seen along it" : "no plant confirmed" },
+            { label: "Length", value: fmtDistance(r.lengthM, units).text },
+            ...(r.plants != null ? [{ label: "Plants located on it", value: r.plants.toLocaleString() }] : []),
+          ]} /><p className="mt-1.5 text-[10px] text-neutral-500">Plants are located, not identified as corn by their look; this is not a stand count.</p></Section>
+          <ReviewOnly />
+        </div>
+      );
+    }
     const gaps = corn.gaps.filter(g => g.rowId === r.id);
     return (
       <div>
@@ -201,7 +271,7 @@ export function CornInspector({ twin, selection, atlasUrl, onClose }: { twin: Tw
         <p className="mt-2 text-xs text-neutral-300">{sentence(r.why)}</p>
         <Section title="Measurements"><Rows lines={[
           { label: "Length", value: fmtDistance(r.lengthM, units).text },
-          { label: "Held by", value: `${r.seenBy} of the ${r.coveredBy} photographs covering it` },
+          { label: "Held by", value: r.coveredBy > 0 ? `${r.seenBy} of the ${r.coveredBy} photographs covering it` : "not recorded" },
           { label: "Called corn by", value: `${r.cornBy}` },
           { label: "Stand gaps on it", value: `${gaps.filter(g => g.status === "confirmed").length} confirmed, ${gaps.filter(g => g.status === "withheld").length} withheld` },
         ]} /></Section>

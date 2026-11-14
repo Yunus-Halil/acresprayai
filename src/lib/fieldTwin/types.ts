@@ -98,6 +98,22 @@ export type TwinCornRow = {
   lengthM: number;
   seenBy: number; cornBy: number; coveredBy: number;
   why: string;
+  /** Plants-first twins (2026-11-14 on): the field row this stretch belongs to (`TwinCorn.fieldRows`), and the plants
+   * located along it (0 on a stretch where the row's course continues but no plant was confirmed). A row is ONE
+   * object made of its stretches; older plants-first twins carry the row only in `why` (cornView.ts reads it there).
+   * On these stretches seenBy / cornBy / coveredBy are not measured (written as 0): say nothing from them. */
+  row?: number;
+  plants?: number;
+};
+/** A field row of a plants-first twin: one row through the plants, cut only where no plant stands for over 8 m. */
+export type TwinCornFieldRow = {
+  id: number;
+  /** Plants located on it, and how many of them most of the photographs over them saw. */
+  plants: number; certain: number;
+  /** Plants located per metre, first plant to last. */
+  perM: number;
+  /** certain: drawn through plants most photographs saw; geometry: found in a slot the certain rows leave. */
+  kind: "certain" | "geometry";
 };
 export type TwinCornWeed = {
   id: number;
@@ -141,6 +157,8 @@ export type TwinCorn = {
   /** The plants the photographs located, one dot per plant two or more of them agree on (built 2026-11-13 on; absent in
    * older twins). The rows above are then stretches through these plants. */
   plants?: TwinCornPlants;
+  /** Plants-first twins (2026-11-14 on): the field rows the stretches in `rows` belong to. */
+  fieldRows?: TwinCornFieldRow[];
   summary: {
     cornRows: number; unconfirmedRows: number; cornRowLengthM: number; offLatticeDropped: number;
     weeds: { confirmed: number; unconfirmed: number; contested: number };
@@ -220,6 +238,11 @@ function checkCorn(c: unknown, atlases: number): string | null {
     if (r.status !== "corn" && r.status !== "unconfirmed") return `row ${r.id} has an unknown status`;
     if (!isArr(r.line) || r.line.length < 2 || !r.line.every(isLatLng)) return `row ${r.id} has no line`;
     if (!isNum(r.lengthM) || !isNum(r.seenBy) || !isNum(r.cornBy) || !isNum(r.coveredBy) || typeof r.why !== "string") return `row ${r.id} has no length, coverage or reason`;
+    if ((r.row != null && !isNum(r.row)) || (r.plants != null && !isNum(r.plants))) return `row ${r.id} has a broken field row or plant count`;
+  }
+  if (k.fieldRows != null) {
+    if (!isArr(k.fieldRows)) return "field rows are not a list";
+    for (const f of k.fieldRows) if (!isNum(f.id) || !isNum(f.plants) || !isNum(f.certain) || !isNum(f.perM) || (f.kind !== "certain" && f.kind !== "geometry")) return `field row ${f.id} is incomplete`;
   }
   for (const w of k.weeds) {
     if (!["confirmed", "unconfirmed", "contested"].includes(w.status as string)) return `weed ${w.id} has an unknown status`;

@@ -24,8 +24,8 @@ describe("detail dial", () => {
   it("a layer toggled by hand turns the dial to Custom", () => {
     expect(detailOf({ ...DETAIL_PRESETS.simple, crowns: true })).toBe("custom");
     expect(detailOf({ ...DETAIL_PRESETS.full, clusters: false })).toBe("custom");
-    // Full with summary markers is exactly Standard: the dial says so.
-    expect(detailOf({ ...DETAIL_PRESETS.full, markers: "summary" })).toBe("standard");
+    // Full with summary markers and the unconfirmed corn observations hidden is exactly Standard: the dial says so.
+    expect(detailOf({ ...DETAIL_PRESETS.full, markers: "summary", cornUncertain: false })).toBe("standard");
   });
   it("count badges only where the findings are not drawn as themselves; Full always, Simple never", () => {
     expect(badgesAllowed("summary", false)).toBe(true);

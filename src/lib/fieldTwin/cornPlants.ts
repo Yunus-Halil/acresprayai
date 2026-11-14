@@ -18,7 +18,12 @@ export type CornStretch = {
   /** Metres east/north of the field origin, and the same in latitude/longitude. */
   lineEN: [number, number][]; line: [number, number][];
   lengthM: number; why: string;
+  /** Plants located along it (0 where the row probably continues but no plant was confirmed). */
+  plants: number;
 };
+
+/** A field row: its plants, how many of them most photographs over them saw, plants per metre, and how it was found. */
+export type CornFieldRow = { id: number; plants: number; certain: number; perM: number; kind: "certain" | "geometry" };
 
 export type CornPlants = {
   /** Per plant: latitude, longitude. */
@@ -28,6 +33,8 @@ export type CornPlants = {
   /** Per plant: photographs that located it. */
   photos: number[];
   stretches: CornStretch[];
+  /** The field rows the stretches belong to (`CornStretch.row`). */
+  rows: CornFieldRow[];
   geometry: { spacingM: number; directionDeg: number; seedM: number | null; certainRows: number; certainDots: number };
   summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; rows: number; confirmedM: number; notConfirmedM: number };
 };
@@ -50,7 +57,7 @@ export function cornPlantsFirst(reads: CornPhotoRead[], frames: Map<string, Geor
 
   const ll = (e: number, n: number): [number, number] => { const p = fromEnu([e, n, 0], F.origin); return [Math.round(p.lat * 1e8) / 1e8, Math.round(p.lng * 1e8) / 1e8]; };
   const th = (G.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th);
-  const stretches: CornStretch[] = [];
+  const stretches: CornStretch[] = [], fieldRows: CornFieldRow[] = [];
   for (const r of rec.rows) {
     const certain = r.dots.filter(i => rec.certainty[i] === 0).length;
     for (const g of r.segments) {
@@ -58,20 +65,23 @@ export function cornPlantsFirst(reads: CornPhotoRead[], frames: Map<string, Geor
       if (lineEN.length < 2) continue;
       const lengthM = lineEN.slice(1).reduce((t, p, i) => t + Math.hypot(p[0] - lineEN[i][0], p[1] - lineEN[i][1]), 0);
       if (lengthM < MIN_STRETCH_M) continue;
-      stretches.push({
+      // Confirmed stretches share no plant (an unconfirmed one runs between their end plants and holds none).
+      const plants = g.confirmed ? r.dots.filter(i => rec.a[i] >= g.a0 - 1e-9 && rec.a[i] <= g.a1 + 1e-9).length : 0;
+      stretches.push({ plants,
         row: r.id, confirmed: g.confirmed, lineEN, line: lineEN.map(([e, n]) => ll(e, n)), lengthM: Math.round(lengthM * 100) / 100,
         why: g.confirmed
           ? `Plants seen along it (row ${r.id}: ${r.dots.length} plants, ${certain} seen by most photographs over them, ${r.perM.toFixed(1)} a metre${r.kind === "geometry" ? "; found in a slot the certain rows leave" : ""}).`
           : `The row probably continues here (row ${r.id}), but no plant was confirmed on this stretch.`,
       });
     }
+    if (stretches.some(s => s.row === r.id)) fieldRows.push({ id: r.id, plants: r.dots.length, certain, perM: Math.round(r.perM * 100) / 100, kind: r.kind });
   }
   if (!stretches.some(s => s.confirmed)) return null;
   const shown = dots.map((_, i) => (rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : rec.between[i] ? 3 : 2));
   const cnt = [0, 0, 0, 0]; for (const v of shown) cnt[v]++;
   const sumM = (ok: boolean) => Math.round(stretches.filter(s => s.confirmed === ok).reduce((t, s) => t + s.lengthM, 0) * 10) / 10;
   return {
-    points: dots.map(d => ll(d.e, d.n)), shown, photos: dots.map(d => d.photos), stretches,
+    points: dots.map(d => ll(d.e, d.n)), shown, photos: dots.map(d => d.photos), stretches, rows: fieldRows,
     geometry: { spacingM: G.spacingM, directionDeg: G.directionDeg, seedM: G.seedM, certainRows: G.certainRows, certainDots: G.certainDots },
     summary: { plants: dots.length, certain: cnt[0], probable: cnt[1], onNoRow: cnt[2], betweenRows: cnt[3], rows: rec.rows.length, confirmedM: sumM(true), notConfirmedM: sumM(false) },
   };

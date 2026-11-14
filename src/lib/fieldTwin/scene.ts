@@ -11,6 +11,7 @@ import type { BoundarySupport } from "./boundary";
 import { type EvidenceRaster, decodeEvidence } from "./boundaryEvidence";
 import { type FieldIntelligence, type PressureClass, fieldIntelligence } from "./intelligence";
 import type { LatLngPair, TwinBundle } from "./types";
+import { cornFieldRows, fieldRowIndex } from "./cornView";
 
 export const SUPPORT_INDEX: Record<BoundarySupport, number> = { photographs: 0, bridged: 1, cap: 2, coverage: 3, default: 4 };
 export const SUPPORT_ORDER: BoundarySupport[] = ["photographs", "bridged", "cap", "coverage", "default"];
@@ -94,7 +95,9 @@ export const WEED_STATUS = { verified: 0, single: 1, onTree: 2 } as const;
 /** Corn twins: row 1 corn / 2 unconfirmed; weed 1 confirmed / 2 unconfirmed / 3 contested; gap 1 confirmed / 2 withheld. */
 export const CORN_STATUS = { row: { corn: 1, unconfirmed: 2 }, weed: { confirmed: 1, unconfirmed: 2, contested: 3 }, gap: { confirmed: 1, withheld: 2 } } as const;
 export type CornScene = {
-  rows: { n: number; lines: PackedRings; status: Uint8Array; id: Int32Array };
+  /** Stored rows (plants-first: stretches); `group` is each one's field row (cornFieldRows index), drawn and picked as one;
+   * `box` its extent [x0, y0, x1, y1] per row, for drawing only what is in view. */
+  rows: { n: number; lines: PackedRings; status: Uint8Array; id: Int32Array; group: Int32Array; box: Float64Array };
   weeds: { n: number; x: Float64Array; y: Float64Array; rM: Float32Array; status: Uint8Array; id: Int32Array; index: GridIndex; maxRM: number };
   gaps: { n: number; x1: Float64Array; y1: Float64Array; x2: Float64Array; y2: Float64Array; status: Uint8Array; id: Int32Array };
 };
@@ -212,7 +215,13 @@ export function buildScene(twin: TwinBundle, intel: FieldIntelligence = fieldInt
     weeds2.index = new GridIndex(weeds2.x, weeds2.y, cell);
     const gaps2 = { n: ng, x1: new Float64Array(ng), y1: new Float64Array(ng), x2: new Float64Array(ng), y2: new Float64Array(ng), status: new Uint8Array(ng), id: new Int32Array(ng) };
     cg.forEach((g, i) => { const a = ll(...g.a), b = ll(...g.b); gaps2.x1[i] = a[0]; gaps2.y1[i] = a[1]; gaps2.x2[i] = b[0]; gaps2.y2[i] = b[1]; gaps2.status[i] = S.gap[g.status]; gaps2.id[i] = g.id; });
-    corn = { rows: { n: K.rows.length, lines: pack(K.rows.map(r => r.line)), status: Uint8Array.from(K.rows.map(r => S.row[r.status])), id: Int32Array.from(K.rows.map(r => r.id)) }, weeds: weeds2, gaps: gaps2 };
+    const lines = pack(K.rows.map(r => r.line)), box = new Float64Array(4 * K.rows.length);
+    for (let k = 0; k < K.rows.length; k++) {
+      let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+      for (let i = lines.off[k]; i < lines.off[k + 1]; i += 2) { a = Math.min(a, lines.xy[i]); c = Math.max(c, lines.xy[i]); b = Math.min(b, lines.xy[i + 1]); d = Math.max(d, lines.xy[i + 1]); }
+      box.set([a, b, c, d], 4 * k);
+    }
+    corn = { rows: { n: K.rows.length, lines, status: Uint8Array.from(K.rows.map(r => S.row[r.status])), id: Int32Array.from(K.rows.map(r => r.id)), group: fieldRowIndex(cornFieldRows(K), K.rows.length), box }, weeds: weeds2, gaps: gaps2 };
   }
   return { twin, intel, mpu, weeds, trees, inferred, vegetation, rows, cells, zones, clusters, block, boundary, evidence, imagery, footprints, corn, bbox: [x0, y0, x1, y1] };
 }
