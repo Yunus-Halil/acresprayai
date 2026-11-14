@@ -30,6 +30,34 @@ export type ReferenceImagery = {
 
 export type TwinMapHandle = { map: L.Map; layer: TwinCanvasLayer; locate: () => void };
 
+/** Photo ground under the twin (photoGround.ts): the overview's tiles from a resolver (memory, the dev server, or later
+ * storage), the detail tiles cut on demand for the view (by "z/x/y"), and their zooms. */
+export type PhotoGroundLayer = {
+  overview: (z: number, x: number, y: number) => Promise<string | null>;
+  overviewZoom: number;
+  detail: Map<string, string>;
+  detailZoom: number;
+  detailMinZoom: number;
+};
+
+/** An XYZ layer whose tile addresses come from a function (a blob URL, a dev file, a signed URL); a tile it has not
+ * becomes transparent. maxNativeZoom works as for any tile layer: deeper zooms scale the native tile up. */
+class ResolvedTileLayer extends L.TileLayer {
+  constructor(private resolve: (z: number, x: number, y: number) => Promise<string | null>, options: L.TileLayerOptions) { super("", options); }
+  createTile(coords: L.Coords, done: L.DoneCallback): HTMLElement {
+    const img = document.createElement("img");
+    img.alt = ""; img.setAttribute("role", "presentation");
+    const z = (this as unknown as { _getZoomForUrl: () => number })._getZoomForUrl();
+    this.resolve(z, coords.x, coords.y).then(url => {
+      if (!url) { img.style.visibility = "hidden"; done(undefined, img); return; }
+      img.onload = () => done(undefined, img);
+      img.onerror = () => { img.style.visibility = "hidden"; done(undefined, img); };
+      img.src = url;
+    }).catch(() => { img.style.visibility = "hidden"; done(undefined, img); });
+    return img;
+  }
+}
+
 /**
  * The surroundings: OpenStreetMap's own tiles (roads, water, buildings, names; no photography), shown dim over the
  * charcoal ground. Dimmed by opacity alone: a CSS filter on the tile pane re-rasterised during every zoom and drag.
@@ -66,6 +94,8 @@ type Props = {
   onRowEnd?: (which: 0 | 1, lat: number, lng: number) => void;
   /** Plants the photographs located, drawn at the plant level, and whether they are shown. */
   plants?: { points: LatLngPair[]; show: boolean; certainty?: number[] | null } | null;
+  /** Photo ground under the twin (behind its flag), or null. */
+  photoGround?: PhotoGroundLayer | null;
 };
 
 const bar = "background:rgba(20,22,20,.86);border:1px solid #333;color:#d9ddd6;";
@@ -92,7 +122,7 @@ const LocateControl = L.Control.extend({
   },
 });
 
-export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, rowEdits = null, plants = null, onRowEnd }: Props) {
+export default function TwinMap({ scene, layers, selection, units, onPick, onDetail, onStats, onMove, onReady, reference, onSwipe, findings = null, operational = null, editing = null, onBoundaryEdit, rowEdits = null, plants = null, onRowEnd, photoGround = null }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const miniEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -100,6 +130,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   const scaleRef = useRef<L.Control.Scale | null>(null);
   const refLayerRef = useRef<L.TileLayer | null>(null);
   const underRef = useRef<L.TileLayer | null>(null);
+  const groundRef = useRef<{ src: PhotoGroundLayer; overview: L.TileLayer; detail: L.TileLayer } | null>(null);
   const contextRef = useRef<L.TileLayer | null>(null);
   const dividerRef = useRef<HTMLDivElement>(null);
   const onPickRef = useRef(onPick); onPickRef.current = onPick;
@@ -234,6 +265,28 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
     tl.setOpacity(reference.opacity);
     if (pane) pane.style.clipPath = reference.swipe == null ? "" : `inset(0 ${Math.round((1 - reference.swipe) * 1000) / 10}% 0 0)`;
   }, [reference, scene]);
+
+  // Photo ground in its own pane under the canvas: the overview always, the detail tiles over it from their zoom on.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!map.getPane("twinGround")) map.createPane("twinGround").style.zIndex = "240";
+    const cur = groundRef.current;
+    if (!photoGround) { if (cur) { cur.overview.remove(); cur.detail.remove(); groundRef.current = null; } return; }
+    if (cur && cur.src.overview === photoGround.overview) {
+      cur.src = photoGround;
+      cur.detail.redraw();
+      return;
+    }
+    if (cur) { cur.overview.remove(); cur.detail.remove(); }
+    const src = photoGround;
+    const overview = new ResolvedTileLayer((z, x, y) => src.overview(z, x, y), { pane: "twinGround", maxNativeZoom: src.overviewZoom, maxZoom: 26, minZoom: 12, tileSize: 256, zIndex: 1 });
+    const holder = { src, overview, detail: null as unknown as L.TileLayer };
+    const detail = new ResolvedTileLayer(async (z, x, y) => holder.src.detail.get(`${z}/${x}/${y}`) ?? null, { pane: "twinGround", maxNativeZoom: src.detailZoom, minZoom: src.detailMinZoom, maxZoom: 26, tileSize: 256, zIndex: 2 });
+    holder.detail = detail;
+    overview.addTo(map); detail.addTo(map);
+    groundRef.current = holder;
+  }, [photoGround, scene]);
 
   // The swipe divider: a handle the user drags; the pane's clip follows.
   useEffect(() => {

@@ -11,6 +11,7 @@ import { type BuildResult, type BuildRun, BuildAborted, startTwinBuild } from ".
 import type { BuildCrop, BuildProgress, BuildStage } from "./build/types";
 import { TWIN_ANALYSIS_ENABLED } from "./analysisConfig";
 import { saveAnalysisRecord } from "./analysisOutbox";
+import { photoGroundEnabled } from "./photoGroundFlag";
 import { type TwinRecord, beginSave, saveBuiltTwin } from "./registry";
 import type { TwinBundle } from "./types";
 import { track } from "@/lib/pilot/telemetry";
@@ -32,6 +33,8 @@ let run: BuildRun | null = null;
 let userId: string | null = null;
 /** Whether the account that started this build gets an analysis record (analysisAccess.ts). */
 let analysisAsked = false;
+/** The photographs this tab is building from (photo ground: detail and evidence read them here; never uploaded). */
+let sessionFiles: File[] | null = null;
 const listeners = new Set<() => void>();
 const set = (next: BuildSessionState) => { state = next; for (const l of listeners) l(); syncUnloadGuard(); };
 const patch = (p: Partial<Exclude<BuildSessionState, { status: "idle" }>>) => { if (state.status !== "idle") set({ ...state, ...p }); };
@@ -69,11 +72,12 @@ export function startBuildSession(files: File[], o: StartOptions): void {
   const id = newId();
   userId = o.userId;
   analysisAsked = o.analysis === true;
+  sessionFiles = photoGroundEnabled() ? files : null;
   const startedAt = Date.now();
   set({ status: "building", id, name: o.name, crop: o.crop, photographs: files.length, startedAt, progress: null, stagesDone: [], result: null, record: null, save: null, error: null, buildMs: null });
   track("twin_build_started", { twinId: id, counts: { photographs: files.length }, detail: { crop: o.crop } });
   try {
-    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop, ...(analysisWanted(o.crop) ? { analysis: true } : {}) }, {
+    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop, ...(analysisWanted(o.crop) ? { analysis: true } : {}), ...(photoGroundEnabled() ? { photoGround: true } : {}) }, {
       onProgress: p => {
         if (state.status !== "building") return;
         const prev = state.progress;
@@ -185,10 +189,10 @@ export function releaseSessionOfOtherAccount(currentUser: string | null): void {
 }
 
 /** The in-memory twin and files of this tab's build, when it is the twin `id` (the viewer opens it before the save ends). */
-export function sessionTwin(id: string): { twin: TwinBundle; files: Map<string, Blob>; pending: Promise<Map<string, Blob>> } | null {
+export function sessionTwin(id: string): { twin: TwinBundle; files: Map<string, Blob>; pending: Promise<Map<string, Blob>>; ground: BuildResult["ground"]; photos: File[] | null } | null {
   if (state.status === "idle" || !state.result || state.result.twin.id !== id) return null;
-  return { twin: state.result.twin, files: state.result.files, pending: state.result.atlases };
+  return { twin: state.result.twin, files: state.result.files, pending: state.result.atlases, ground: state.result.ground ?? Promise.resolve(null), photos: sessionFiles };
 }
 
 /** Tests only. */
-export function __resetBuildSession() { run = null; userId = null; analysisAsked = false; set({ status: "idle" }); }
+export function __resetBuildSession() { run = null; userId = null; analysisAsked = false; sessionFiles = null; set({ status: "idle" }); }

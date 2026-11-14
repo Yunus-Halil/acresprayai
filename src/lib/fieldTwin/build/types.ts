@@ -107,6 +107,12 @@ export type BuildOptions = {
    * present mask (leaves darker than their soil) and still combines by v2. Default: the present reader and field rules.
    */
   cornVariant?: CornVariant;
+  /**
+   * Photo ground (behind its flag, photoGroundFlag.ts): hand back a generator for the overview of the flight's
+   * photographs laid on the ground (../photoGround.ts), cut from the previews after the twin and its atlases. Default
+   * false. The twin, its files and every stage before are the same either way; the overview is never one of `files`.
+   */
+  photoGround?: boolean;
 };
 export type CornVariant = "corn-v1.0" | "dark-only";
 

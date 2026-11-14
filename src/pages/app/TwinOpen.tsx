@@ -13,6 +13,7 @@ import type { TwinBundle } from "@/lib/fieldTwin/types";
 import { retrySave, sessionTwin, useBuildSession } from "@/lib/fieldTwin/buildSession";
 import { track } from "@/lib/pilot/telemetry";
 import FieldTwinView from "@/components/app/fieldTwin/FieldTwinView";
+import { parseGroundManifest, type GroundManifest } from "@/lib/fieldTwin/photoGround";
 import { FeedbackButton } from "@/components/pilot/FeedbackDialog";
 
 type Source = { kind: "account"; key: string } | { kind: "tab"; files: Map<string, Blob>; pending: Promise<Map<string, Blob>> };
@@ -41,6 +42,9 @@ export default function TwinOpen() {
   const [state, setState] = useState<State>({ status: "loading" });
   const [nonce, setNonce] = useState(0);
   const urls = useRef(new Map<string, Promise<string>>());
+  // Photo ground (behind its flag): this tab's own build's overview, kept in memory only, and the photographs it was built from.
+  const [ground, setGround] = useState<{ manifest: GroundManifest; overview: (z: number, x: number, y: number) => Promise<string | null> } | null>(null);
+  const [photoFiles, setPhotoFiles] = useState<File[] | null>(null);
   const userId = user?.id ?? null;
 
   useEffect(() => {
@@ -56,7 +60,17 @@ export default function TwinOpen() {
       let record: TwinRecord | null = null;
       try { record = await getTwinRecord(id); }
       catch (e) { if (!mine) throw new Error(`Failed to fetch the Field Twin's entry (${(e as Error).message})`); }
-      if (mine) { if (live) setState({ status: "open", twin: mine.twin, record, source: { kind: "tab", files: mine.files, pending: mine.pending } }); return; }
+      if (mine) {
+        if (live) { setState({ status: "open", twin: mine.twin, record, source: { kind: "tab", files: mine.files, pending: mine.pending } }); setPhotoFiles(mine.photos); }
+        void mine.ground.then(async g => {
+          const m = g?.files.get("ground/ground.json");
+          const manifest = m ? parseGroundManifest(JSON.parse(await m.text())) : null;
+          if (!live || !g || !manifest) return;
+          const made = new Map<string, string>();
+          setGround({ manifest, overview: async (z, x, y) => { const k = `ground/${z}/${x}/${y}.jpg`; const b = g.files.get(k); if (!b) return null; let u = made.get(k); if (!u) { u = URL.createObjectURL(b); made.set(k, u); } return u; } });
+        });
+        return;
+      }
       if (!record) { if (live) setState({ status: "missing" }); return; }
       if (effectiveStatus(record) !== "ready") { if (live) setState({ status: "incomplete", record }); return; }
       const twin = await loadTwin(userId, record.storage_key);
@@ -138,7 +152,7 @@ export default function TwinOpen() {
         {!saving && <span className="ml-auto"><FeedbackButton kind="other" twinId={record?.id ?? null} label="Feedback" variant="ghost" /></span>}
       </header>
       <main className="relative min-h-0 flex-1">
-        <FieldTwinView twin={twin} atlasUrl={atlasUrl} audience={founder ? "founder" : "participant"} expose={import.meta.env.DEV}
+        <FieldTwinView twin={twin} atlasUrl={atlasUrl} audience={founder ? "founder" : "participant"} expose={import.meta.env.DEV} ground={ground} photoFiles={photoFiles}
           review={{ twinId: record?.id ?? null }} />
       </main>
     </div>

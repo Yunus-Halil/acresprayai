@@ -9,13 +9,17 @@ import FieldTwinView, { type ReferenceOption } from "@/components/app/fieldTwin/
 import TwinBuilder, { type BuiltTwin } from "@/components/app/fieldTwin/TwinBuilder";
 import { syntheticTwin } from "@/lib/fieldTwin/synthetic";
 import { type LatLngPair, type TwinBundle, parseTwin } from "@/lib/fieldTwin/types";
+import { type GroundManifest, parseGroundManifest } from "@/lib/fieldTwin/photoGround";
+import { photoGroundEnabled } from "@/lib/fieldTwin/photoGroundFlag";
 
 export default function FieldTwinDevPreview() {
   const [twin, setTwin] = useState<TwinBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [built, setBuilt] = useState<BuiltTwin | null>(null);
   const [reference, setReference] = useState<ReferenceOption[]>([]);
-  const [plants, setPlants] = useState<{ points: LatLngPair[]; note: string; certainty?: number[] | null } | null>(null);
+  // Photo ground the build's own code wrote for this twin (scripts/directGeoref/photoGround.ts --overview), when this computer holds it.
+  const [ground, setGround] = useState<{ manifest: GroundManifest; overview: (z: number, x: number, y: number) => Promise<string | null> } | null>(null);
+  const [plants, setPlants] = useState<{ points: LatLngPair[]; note: string; certainty?: number[] | null; photos?: number[] | null } | null>(null);
   const params = new URLSearchParams(window.location.search);
   const id = params.get("id") ?? "";
   // ?build=1: the builder panel instead of a twin from disk (the build benchmark script, and a look without a sign-in).
@@ -47,14 +51,12 @@ export default function FieldTwinDevPreview() {
         performance.mark("twin:parse:end"); performance.measure("twin:parse", "twin:json:end", "twin:parse:end");
         if ("reason" in parsed) throw new Error(parsed.reason);
         setTwin(parsed.twin);
-        // EXPERIMENT (experiment/photo-ground): the photographs on the ground in two tiers (scripts/directGeoref/photoGround.ts),
-        // offered first when this computer holds them: the whole-field overview underneath, the detail tiles from their zoom.
-        const options: ReferenceOption[] = [];
-        try {
-          const r = await fetch(`/__field-twin/${pick}/pg/ground.json`);
-          const g = r.ok ? ((await r.json()) as { overview?: { zoom: number }; detail?: { zoom: number; minZoom: number } }) : null;
-          if (g?.overview) options.push({ id: `pg-${pick}`, label: "Photographs on the ground (experiment)", url: g.detail ? `/__field-twin/${pick}/pg/detail/{z}/{x}/{y}.jpg` : `/__field-twin/${pick}/pg/overview/{z}/{x}/{y}.jpg`, maxNativeZoom: g.detail?.zoom ?? g.overview.zoom, minZoom: g.detail?.minZoom, underlay: g.detail ? { url: `/__field-twin/${pick}/pg/overview/{z}/{x}/{y}.jpg`, maxNativeZoom: g.overview.zoom } : null, note: "Experiment: the flight's photographs projected onto the twin's flat ground through its cameras, nearest photograph per point, seams feathered, colour balanced. An orthophoto on a flat plane: standing plants lean. Display only; local files." });
+        if (photoGroundEnabled()) try {
+          const r = await fetch(`/__field-twin/${pick}/ground/ground.json`);
+          const m = r.ok ? parseGroundManifest(await r.json()) : null;
+          if (m) setGround({ manifest: m, overview: async (z, x, y) => `/__field-twin/${pick}/ground/${z}/${x}/${y}.jpg` });
         } catch { /* no photo ground for this twin */ }
+        const options: ReferenceOption[] = [];
         setReference(options);
         // The flight's photographs as tiles, when this computer holds them for this twin.
         try {
@@ -65,10 +67,10 @@ export default function FieldTwinDevPreview() {
         // Plants located along the rows (scripts/rowCrop/exportPlantMarks.ts), when this computer holds them for this twin.
         try {
           const r = await fetch(`/__field-twin/${pick}/plants.json`);
-          const j = r.ok ? ((await r.json()) as { points?: unknown; note?: string; certainty?: unknown }) : null;
+          const j = r.ok ? ((await r.json()) as { points?: unknown; note?: string; certainty?: unknown; photos?: unknown }) : null;
           const ok = (p: unknown): p is LatLngPair => Array.isArray(p) && p.length === 2 && p.every(v => typeof v === "number" && Number.isFinite(v));
           // Kept whole (the certainty lines up with the points by index); a malformed file is not drawn.
-          if (j && Array.isArray(j.points) && j.points.every(ok)) setPlants({ points: j.points as LatLngPair[], note: typeof j.note === "string" ? j.note : "Plants the photographs located.", certainty: Array.isArray(j.certainty) && j.certainty.length === j.points.length ? (j.certainty as number[]) : null });
+          if (j && Array.isArray(j.points) && j.points.every(ok)) setPlants({ points: j.points as LatLngPair[], note: typeof j.note === "string" ? j.note : "Plants the photographs located.", certainty: Array.isArray(j.certainty) && j.certainty.length === j.points.length ? (j.certainty as number[]) : null, photos: Array.isArray(j.photos) && j.photos.length === j.points.length ? (j.photos as number[]) : null });
         } catch { /* no plants for this twin */ }
       } catch (e) { setError((e as Error).message); }
     })();
@@ -89,7 +91,7 @@ export default function FieldTwinDevPreview() {
     : async (i: number) => `/__field-twin/${twin.id}/${twin.atlases[i].file}`;
   return (
     <div className="h-screen w-screen bg-[#1a1c1a]">
-      <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={reference} initialReference={photos ? reference[0]?.id ?? null : null} plants={plants} expose detail={detail} audience={audience} review={audience === "participant" ? { twinId: null, disabledReason: "Preview: reviews are saved only for a twin in an account." } : undefined} />
+      <FieldTwinView twin={twin} atlasUrl={atlasUrl} referenceOptions={reference} initialReference={photos && !ground ? reference[0]?.id ?? null : null} plants={plants} ground={ground} expose detail={detail} audience={audience} review={audience === "participant" ? { twinId: null, disabledReason: "Preview: reviews are saved only for a twin in an account." } : undefined} />
     </div>
   );
 }

@@ -36,6 +36,8 @@ export type TwinPick =
   | { kind: "group"; lat: number; lng: number; count: number }
   /** Corn twins: a field corn row, a weed observation, a stand gap. */
   | { kind: "cornRow"; id: number } | { kind: "cornWeed"; id: number } | { kind: "cornGap"; id: number }
+  /** Corn twins: a plant the photographs located (its index in the twin's plants), where it is. */
+  | { kind: "plant"; index: number; lat: number; lng: number }
   /** Editing rows: a row the operator added (by its uid), or a tap on ground with no row near (where to add one). */
   | { kind: "addedRow"; uid: string } | { kind: "ground"; lat: number; lng: number }
   | null;
@@ -106,7 +108,7 @@ export class TwinCanvasLayer extends L.Canvas {
   /** A click that ends a handle drag is not a tap on the ground. */
   private swallowClick = false;
   /** Plants located by the photographs (zoom-0 units), drawn at the plant level as small neutral dots; null for none. */
-  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex; certainty: Uint8Array | null } | null = null;
+  private plants: { n: number; x: Float64Array; y: Float64Array; index: GridIndex; certainty: Uint8Array | null; points: LatLngPair[] } | null = null;
   private showPlants = true;
 
   constructor(layers: TwinLayers, options: L.RendererOptions = {}) {
@@ -290,7 +292,7 @@ export class TwinCanvasLayer extends L.Canvas {
     if (points) {
       const n = points.length, x = new Float64Array(n), y = new Float64Array(n);
       points.forEach(([lat, lng], i) => { const [wx, wy] = toWorld(lat, lng); x[i] = wx; y[i] = wy; });
-      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null };
+      this.plants = { n, x, y, index: new GridIndex(x, y, this.scene ? 2 / this.scene.mpu : 1e-7), certainty: certainty && certainty.length === n ? Uint8Array.from(certainty) : null, points };
     } else this.plants = null;
     this.showPlants = show;
     this.requestRedraw();
@@ -714,7 +716,8 @@ export class TwinCanvasLayer extends L.Canvas {
         }
         if (!any) continue;
         if (kind === 3) { ctx.lineWidth = 1; ctx.strokeStyle = "#8c929a"; ctx.globalAlpha = 0.6; ctx.stroke(); ctx.globalAlpha = 1; continue; }
-        if (kind === 0 && overPhotos) { ctx.lineWidth = 1.6; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.stroke(); }
+        if (kind === 0 && overPhotos) { ctx.lineWidth = 2; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 1; ctx.stroke(); }
+        else if (kind === 1 && overPhotos) { ctx.lineWidth = 1; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.6; ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]); }
         else if (kind === 0) { ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); }
         else if (kind === 1) { ctx.lineWidth = 1.6; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.95; ctx.stroke(); }
         else { ctx.fillStyle = "#8c929a"; ctx.globalAlpha = 0.8; ctx.fill(); }
@@ -1016,6 +1019,18 @@ export class TwinCanvasLayer extends L.Canvas {
       let gBest = -1, gd = Infinity;
       for (let k = 0; k < K.gaps.n; k++) { if (K.gaps.status[k] !== S.gap.confirmed && !unc) continue; const dd = segD(K.gaps.x1[k], K.gaps.y1[k], K.gaps.x2[k], K.gaps.y2[k]); if (dd <= tolU && dd < gd) { gd = dd; gBest = k; } }
       if (gBest >= 0) return { kind: "cornGap", id: K.gaps.id[gBest] };
+      // A plant, where plants are drawn (as close as they are drawn, never the classes hidden).
+      const P = this.plants;
+      if (P && this.showPlants && scale / s.mpu >= 12) {
+        let pb = -1, pd = Infinity;
+        for (const k of P.index.query(x - tolU, y - tolU, x + tolU, y + tolU, 0)) {
+          const c = P.certainty ? P.certainty[k] : 0;
+          if (c >= 2 && !unc) continue;
+          const dd = Math.hypot(P.x[k] - x, P.y[k] - y);
+          if (dd <= tolU && dd < pd) { pd = dd; pb = k; }
+        }
+        if (pb >= 0) return { kind: "plant", index: pb, lat: P.points[pb][0], lng: P.points[pb][1] };
+      }
       let rBest = -1, rd = Infinity;
       for (let k = 0; k < K.rows.n; k++) {
         const o = K.rows.lines.off[k], e = K.rows.lines.off[k + 1], xy = K.rows.lines.xy;

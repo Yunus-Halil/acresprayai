@@ -8,6 +8,7 @@ import type { BuildReport } from "@/lib/fieldTwin/build/pipeline";
 import { type BuildCrop, type BuildProgress, type BuildStage, stagesFor } from "@/lib/fieldTwin/build/types";
 import type { TwinBundle, TwinCorn } from "@/lib/fieldTwin/types";
 import { cornFieldRows } from "@/lib/fieldTwin/cornView";
+import { photoGroundEnabled } from "@/lib/fieldTwin/photoGroundFlag";
 import { fetchHealth } from "@/lib/weedVision/client";
 import { weedModelAvailable } from "@/lib/weedVision/flag";
 
@@ -72,7 +73,7 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
       // The benchmark script only (a development build, ?analysis=1): ask a corn build for its analysis record, to
       // measure it. Nothing is saved from this panel either way.
       const analysis = expose && crop === "corn" && params.get("analysis") === "1";
-      r = startTwinBuild(files, { name: fieldName, weeds: crop === "corn" ? "none" : weeds, helpers, crop, ...(analysis ? { analysis: true } : {}) }, {
+      r = startTwinBuild(files, { name: fieldName, weeds: crop === "corn" ? "none" : weeds, helpers, crop, ...(analysis ? { analysis: true } : {}), ...(photoGroundEnabled() ? { photoGround: true } : {}) }, {
         onProgress: p => { setProgress(prev => { if (prev && prev.stage !== p.stage) setDoneStages(d => (d.includes(prev.stage) ? d : [...d, prev.stage])); return p; }); },
         onLog: line => setLines(l => [...l.slice(-11), line]),
       });
@@ -83,6 +84,8 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
       setResult(out); setDoneStages(stages.filter(s => s.id !== "bundle").map(s => s.id)); setRun(null);
       if (expose) window.__twinBuild = summary(out, false);
       if (expose) (window as unknown as { __twinAnalysis?: Blob | null }).__twinAnalysis = out.analysis;
+      // Photo ground (behind its flag): for the benchmark, when the overview is in, how long it took and how big it is.
+      if (expose) void out.ground.then(g => { (window as unknown as { __twinGround?: unknown }).__twinGround = g ? { ms: g.ms, files: g.files.size, bytes: [...g.files.values()].reduce((s, b) => s + b.size, 0), at: Date.now() } : null; });
       out.atlases.then(() => { setDoneStages(stages.map(s => s.id)); if (expose) window.__twinBuild = summary(out, true); }).catch(() => undefined);
     }).catch(e => { const msg = e instanceof BuildAborted ? "Build cancelled." : (e as Error).message; setError(msg); setRun(null); if (expose) window.__twinBuild = { report: null as unknown as BuildReport, twin: { trees: 0, rows: 0, weeds: 0, verified: 0, atlases: 0, blockHa: null, rowList: [], field: { rowDirectionDeg: 0, rowSpacingM: 0, plantSpacingM: 0 } }, atlasesDone: false, error: msg }; });
   };

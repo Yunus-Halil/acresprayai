@@ -2,6 +2,7 @@
 // operator, and the report the page shows. Runs wherever the two abstractions (PhotoSource, Codec) are provided:
 // a browser worker (worker.ts) or Node (scripts/directGeoref/buildTwinApp.ts).
 import { analysisBytes, buildTwinAnalysis } from "../analysis";
+import { type GroundFile, overviewGround } from "../photoGround";
 import { parseTwin, type TwinBundle } from "../types";
 import { type AtlasFile, assembleBundle, evidenceAndBoundary } from "./bundle";
 import { alignCameras, baseFrames } from "./cameras";
@@ -32,6 +33,8 @@ export type BuildOutput = {
   report: BuildReport;
   /** With `atlases: "later"`: cuts the atlases after the twin has opened, one file at a time. */
   cutAtlases: (() => AsyncGenerator<AtlasFile>) | null;
+  /** With `photoGround`: the overview tiles and their manifest (ground/...), made when called; never part of `files`. */
+  cutGround: (() => AsyncGenerator<GroundFile>) | null;
   /** The analysis record as JSON bytes (../analysis.ts): a corn build asked for one with `analysis`, else null. Never part of `files`. */
   analysis: Uint8Array | null;
 };
@@ -125,5 +128,11 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
       hooks.log?.(`analysis record: not made (${(e as Error)?.message ?? String(e)})`);
     }
   }
-  return { twin: built.twin, files, report, cutAtlases: later ? built.cutAtlases : null, analysis };
+  // Photo ground: from the same previews the photographs stage read, through the aligned cameras; made only when the
+  // caller asks, after everything above, so the twin, its timings and its files never wait for it.
+  const groundFrames = new Map([...cams.frames].filter(([n]) => sources.has(n)));
+  const cutGround = options.photoGround
+    ? () => overviewGround(built.twin.id, groundFrames, name => pixels(name), (rgba, w, h) => codec.encodeJpeg(rgba, w, h, 82), { signal: hooks.signal, source: previews === reads.length ? "the camera's own previews" : previews ? `the camera's own previews (${previews} of ${reads.length}), quarter decodes for the rest` : "quarter decodes of the photographs" })
+    : null;
+  return { twin: built.twin, files, report, cutAtlases: later ? built.cutAtlases : null, analysis, cutGround };
 }
