@@ -47,11 +47,20 @@ export default function FieldTwinDevPreview() {
         performance.mark("twin:parse:end"); performance.measure("twin:parse", "twin:json:end", "twin:parse:end");
         if ("reason" in parsed) throw new Error(parsed.reason);
         setTwin(parsed.twin);
+        // EXPERIMENT (experiment/photo-ground): the photographs on the ground in two tiers (scripts/directGeoref/photoGround.ts),
+        // offered first when this computer holds them: the whole-field overview underneath, the detail tiles from their zoom.
+        const options: ReferenceOption[] = [];
+        try {
+          const r = await fetch(`/__field-twin/${pick}/pg/ground.json`);
+          const g = r.ok ? ((await r.json()) as { overview?: { zoom: number }; detail?: { zoom: number; minZoom: number } }) : null;
+          if (g?.overview) options.push({ id: `pg-${pick}`, label: "Photographs on the ground (experiment)", url: g.detail ? `/__field-twin/${pick}/pg/detail/{z}/{x}/{y}.jpg` : `/__field-twin/${pick}/pg/overview/{z}/{x}/{y}.jpg`, maxNativeZoom: g.detail?.zoom ?? g.overview.zoom, minZoom: g.detail?.minZoom, underlay: g.detail ? { url: `/__field-twin/${pick}/pg/overview/{z}/{x}/{y}.jpg`, maxNativeZoom: g.overview.zoom } : null, note: "Experiment: the flight's photographs projected onto the twin's flat ground through its cameras, nearest photograph per point, seams feathered, colour balanced. An orthophoto on a flat plane: standing plants lean. Display only; local files." });
+        } catch { /* no photo ground for this twin */ }
+        setReference(options);
         // The flight's photographs as tiles, when this computer holds them for this twin.
         try {
           const r = await fetch(`/__field-twin/${pick}/reference.json`);
           const j = r.ok ? ((await r.json()) as { set?: string; label?: string; note?: string; maxNativeZoom?: number }) : null;
-          if (j && typeof j.set === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(j.set)) setReference([{ id: j.set, label: j.label ?? "The flight's photographs", url: `/__field-twin/${j.set}/tiles/{z}/{x}/{y}.jpg`, maxNativeZoom: j.maxNativeZoom ?? 22, note: j.note ?? "The flight's photographs, placed by the twin's cameras. Display only." }]);
+          if (j && typeof j.set === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(j.set)) setReference([...options, { id: j.set, label: j.label ?? "The flight's photographs", url: `/__field-twin/${j.set}/tiles/{z}/{x}/{y}.jpg`, maxNativeZoom: j.maxNativeZoom ?? 22, note: j.note ?? "The flight's photographs, placed by the twin's cameras. Display only." }]);
         } catch { /* no reference imagery for this twin */ }
         // Plants located along the rows (scripts/rowCrop/exportPlantMarks.ts), when this computer holds them for this twin.
         try {

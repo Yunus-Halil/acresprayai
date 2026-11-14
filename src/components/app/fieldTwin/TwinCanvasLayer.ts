@@ -691,6 +691,9 @@ export class TwinCanvasLayer extends L.Canvas {
 
   private drawCorn(ctx: Ctx, scene: Scene, X: (u: number) => number, Y: (u: number) => number, pxPerM: number, vx0: number, vy0: number, vx1: number, vy1: number, drawn: Record<string, number>) {
     const K = scene.corn!, S = CORN_STATUS, unc = this.layers.cornUncertain, sel = this.selection, RE = this.rowEdit, V = RE.verdicts;
+    // EXPERIMENT (photo ground): over the photographs, up close, the marks step back so the plants under them show:
+    // rows thin and translucent, every plant a ring (nothing filled over a seedling).
+    const overPhotos = !this.layers.ground && pxPerM >= 25;
     // Plants the photographs located: small neutral dots, never coloured as corn (nothing tells corn by its look).
     if (this.plants && this.showPlants && pxPerM >= 12) {
       // Certain: filled; probable (the certain rows support it): a ring; uncertain: a small grey dot.
@@ -711,7 +714,8 @@ export class TwinCanvasLayer extends L.Canvas {
         }
         if (!any) continue;
         if (kind === 3) { ctx.lineWidth = 1; ctx.strokeStyle = "#8c929a"; ctx.globalAlpha = 0.6; ctx.stroke(); ctx.globalAlpha = 1; continue; }
-        if (kind === 0) { ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); }
+        if (kind === 0 && overPhotos) { ctx.lineWidth = 1.6; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.stroke(); }
+        else if (kind === 0) { ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); }
         else if (kind === 1) { ctx.lineWidth = 1.6; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.95; ctx.stroke(); }
         else { ctx.fillStyle = "#8c929a"; ctx.globalAlpha = 0.8; ctx.fill(); }
         ctx.globalAlpha = 1;
@@ -737,7 +741,7 @@ export class TwinCanvasLayer extends L.Canvas {
       ctx.setLineDash([]);
       for (const [st, colour] of [[S.row.unconfirmed, C.cornRowCourse], [S.row.corn, C.cornRow]] as const) {
         for (const kept of [false, true]) {
-          ctx.strokeStyle = colour; ctx.lineWidth = st === S.row.corn || kept ? rowW : courseW; ctx.globalAlpha = st === S.row.corn ? 0.9 : 0.7;
+          ctx.strokeStyle = colour; ctx.lineWidth = overPhotos ? Math.max(1.2, (st === S.row.corn || kept ? rowW : courseW) * 0.45) : st === S.row.corn || kept ? rowW : courseW; ctx.globalAlpha = overPhotos ? 0.55 : st === S.row.corn ? 0.9 : 0.7;
           ctx.beginPath();
           for (let k = 0; k < K.rows.n; k++) { if (K.rows.status[k] !== st || !inView(k)) continue; const v = V[String(K.rows.id[k])]; if (v === "remove" || (v === "keep") !== kept) continue; rowPath(k); nr++; }
           ctx.stroke();

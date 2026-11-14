@@ -49,7 +49,7 @@ export function placementText(twin: TwinBundle): string {
 
 const BOUNDARY_REVIEW = { kind: "boundary" as const, id: "cultivated" };
 
-export type ReferenceOption = { id: string; label: string; url: string; maxNativeZoom: number; note: string };
+export type ReferenceOption = { id: string; label: string; url: string; maxNativeZoom: number; note: string; minZoom?: number; underlay?: { url: string; maxNativeZoom: number } | null };
 
 export type DevApi = {
   map: L.Map; setView: (lat: number, lng: number, zoom: number) => void; setLayers: (patch: Partial<TwinLayers>) => void; setDetail: (stop: TwinDetailStop) => void; select: (p: TwinPick) => void;
@@ -241,7 +241,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const resultsOpen = query.mode !== "overview";
 
   const refOption = referenceOptions.find(o => o.id === refId) ?? null;
-  const reference = useMemo<ReferenceImagery | null>(() => (refOption ? { url: refOption.url, maxNativeZoom: refOption.maxNativeZoom, opacity: refOpacity, swipe: refSwipe } : null), [refOption, refOpacity, refSwipe]);
+  const reference = useMemo<ReferenceImagery | null>(() => (refOption ? { url: refOption.url, maxNativeZoom: refOption.maxNativeZoom, opacity: refOpacity, swipe: refSwipe, minZoom: refOption.minZoom, underlay: refOption.underlay ?? null } : null), [refOption, refOpacity, refSwipe]);
   const local = isLocalTwin(twin);
   const corn = !!twin.corn;
   // A corn twin has no orchard weed pass: no pressure heatmap or findings regions (they would read 0 % everywhere).

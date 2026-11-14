@@ -23,6 +23,9 @@ export type ReferenceImagery = {
   opacity: number;
   /** Swipe divider position, 0 to 1 of the map width, or null for a plain overlay. */
   swipe: number | null;
+  /** EXPERIMENT (photo ground): the main tiles only from this zoom on, over a lighter whole-field layer underneath. */
+  minZoom?: number;
+  underlay?: { url: string; maxNativeZoom: number } | null;
 };
 
 export type TwinMapHandle = { map: L.Map; layer: TwinCanvasLayer; locate: () => void };
@@ -96,6 +99,7 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
   const layerRef = useRef<TwinCanvasLayer | null>(null);
   const scaleRef = useRef<L.Control.Scale | null>(null);
   const refLayerRef = useRef<L.TileLayer | null>(null);
+  const underRef = useRef<L.TileLayer | null>(null);
   const contextRef = useRef<L.TileLayer | null>(null);
   const dividerRef = useRef<HTMLDivElement>(null);
   const onPickRef = useRef(onPick); onPickRef.current = onPick;
@@ -213,14 +217,20 @@ export default function TwinMap({ scene, layers, selection, units, onPick, onDet
     const map = mapRef.current;
     if (!map) return;
     const pane = map.getPane("twinReference");
-    if (!reference) { refLayerRef.current?.remove(); refLayerRef.current = null; if (pane) pane.style.clipPath = ""; return; }
+    if (!reference) { refLayerRef.current?.remove(); refLayerRef.current = null; underRef.current?.remove(); underRef.current = null; if (pane) pane.style.clipPath = ""; return; }
     let tl = refLayerRef.current;
     if (!tl || (tl as unknown as { _url: string })._url !== reference.url) {
       tl?.remove();
-      tl = new CachedTileLayer(reference.url, { pane: "twinReference", maxNativeZoom: reference.maxNativeZoom, maxZoom: 26, minZoom: 13, tileSize: 256, opacity: reference.opacity, crossOrigin: false });
+      tl = new CachedTileLayer(reference.url, { pane: "twinReference", maxNativeZoom: reference.maxNativeZoom, maxZoom: 26, minZoom: reference.minZoom ?? 13, tileSize: 256, opacity: reference.opacity, crossOrigin: false, zIndex: 2 });
       tl.addTo(map);
       refLayerRef.current = tl;
     }
+    const U = reference.underlay ?? null;
+    if ((underRef.current as unknown as { _url?: string } | null)?._url !== U?.url) {
+      underRef.current?.remove(); underRef.current = null;
+      if (U) { underRef.current = new CachedTileLayer(U.url, { pane: "twinReference", maxNativeZoom: U.maxNativeZoom, maxZoom: 26, minZoom: 13, tileSize: 256, opacity: reference.opacity, crossOrigin: false, zIndex: 1 }); underRef.current.addTo(map); }
+    }
+    underRef.current?.setOpacity(reference.opacity);
     tl.setOpacity(reference.opacity);
     if (pane) pane.style.clipPath = reference.swipe == null ? "" : `inset(0 ${Math.round((1 - reference.swipe) * 1000) / 10}% 0 0)`;
   }, [reference, scene]);
