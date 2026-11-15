@@ -152,7 +152,7 @@ export default function TwinOpen() {
         {!saving && <span className="ml-auto"><FeedbackButton kind="other" twinId={record?.id ?? null} label="Feedback" variant="ghost" /></span>}
       </header>
       <main className="relative min-h-0 flex-1">
-        <FieldTwinView twin={twin} atlasUrl={atlasUrl} audience={founder ? "founder" : "participant"} expose={import.meta.env.DEV} ground={ground} photoFiles={photoFiles}
+        <FieldTwinView twin={twin} atlasUrl={atlasUrl} audience={founder ? "founder" : "participant"} expose={import.meta.env.DEV} ground={ground} photoFiles={photoFiles} groundAbsent={state.source.kind === "account"}
           review={{ twinId: record?.id ?? null }} />
       </main>
     </div>

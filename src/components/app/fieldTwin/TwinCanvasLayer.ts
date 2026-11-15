@@ -964,6 +964,8 @@ export class TwinCanvasLayer extends L.Canvas {
     if (p.kind === "weed") { const k = indexOfId(s.weeds.id, p.id); return k < 0 ? null : [s.weeds.x[k], s.weeds.y[k], s.weeds.rM[k], reach(s.weeds.rings, k, s.weeds.x[k], s.weeds.y[k])]; }
     if (p.kind === "vegetation") { const k = indexOfId(s.vegetation.id, p.id); return k < 0 ? null : [s.vegetation.x[k], s.vegetation.y[k], s.vegetation.rM[k], reach(s.vegetation.rings, k, s.vegetation.x[k], s.vegetation.y[k])]; }
     if (p.kind === "cluster") return [s.clusters.x[p.index], s.clusters.y[p.index], s.clusters.rM[p.index], 0];
+    // A plant: its own dot, ringed a little wider than a seedling.
+    if (p.kind === "plant") { const P = this.plants; return P && p.index >= 0 && p.index < P.n ? [P.x[p.index], P.y[p.index], 0.08, 0] : null; }
     if (p.kind === "cornWeed" && s.corn) { const k = indexOfId(s.corn.weeds.id, p.id); return k < 0 ? null : [s.corn.weeds.x[k], s.corn.weeds.y[k], s.corn.weeds.rM[k], 0]; }
     return null;
   }

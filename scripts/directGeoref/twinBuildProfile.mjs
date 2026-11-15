@@ -3,6 +3,8 @@
 //   - a memory timeline: every second, the working set of each of the benchmark's Chrome processes by kind (the page's
 //     renderer, which holds the build worker and its helpers; the GPU process; the browser; utilities), with the stage
 //     the build had reached (window.__twinStages, set by the builder in a development build);
+//   - with --heaps: every 2 s, each worker's V8 heap and ArrayBuffer memory (Runtime.getHeapUsage over the DevTools
+//     protocol), to tell the build worker from its helpers;
 //   - with --trace <file>: a Chrome trace of the V8 sampling profiler on every thread (the page, the build worker, each
 //     helper), for profileSummary.mjs.
 // Nothing in the build changes; the trace slows it, so a traced run's times are not the benchmark's.
@@ -18,7 +20,7 @@ import { chromium } from "playwright-core";
 const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
 const DIR = resolve(arg("dir", "directtestimagery")), BASE = arg("base", "http://localhost:8081"), HELPERS = arg("helpers", "");
-const CROP = arg("crop", "corn"), TRACE = arg("trace", ""), OUTFILE = resolve(arg("out", "profile.json"));
+const HEAPS = argv.includes("--heaps"), CROP = arg("crop", "corn"), TRACE = arg("trace", ""), OUTFILE = resolve(arg("out", "profile.json"));
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const files = readdirSync(DIR).filter(f => /\.jpe?g$/i.test(f)).sort().map(f => join(DIR, f));
 
@@ -44,13 +46,32 @@ const sample = () => new Promise(res => {
     res();
   });
 });
+// Worker heaps: attach to every worker target (non-flat sessions, messages through Target.sendMessageToTarget).
+const heaps = [];
+let cdp = null, msgId = 0;
+const pending = new Map(), workers = new Map();
+if (HEAPS) {
+  cdp = await browser.newBrowserCDPSession();
+  cdp.on("Target.receivedMessageFromTarget", ev => { const m = JSON.parse(ev.message); if (m.id && pending.has(m.id)) { pending.get(m.id)(m.result ?? null); pending.delete(m.id); } });
+  cdp.on("Target.detachedFromTarget", ev => { for (const [k, w] of workers) if (w.sessionId === ev.sessionId) workers.delete(k); });
+}
+const toTarget = (sessionId, method, params = {}) => new Promise(res => { const id = ++msgId; pending.set(id, res); cdp.send("Target.sendMessageToTarget", { sessionId, message: JSON.stringify({ id, method, params }) }).catch(() => { pending.delete(id); res(null); }); setTimeout(() => { if (pending.has(id)) { pending.delete(id); res(null); } }, 1500); });
+const sampleHeaps = async () => {
+  const { targetInfos } = await cdp.send("Target.getTargets");
+  for (const t of targetInfos) if (t.type === "worker" && !workers.has(t.targetId)) { try { const { sessionId } = await cdp.send("Target.attachToTarget", { targetId: t.targetId, flatten: false }); workers.set(t.targetId, { sessionId, url: t.url }); } catch { /* gone */ } }
+  const row = { t: t0 ? Date.now() - t0 : null, workers: [] };
+  for (const [id, w] of workers) { const u = await toTarget(w.sessionId, "Runtime.getHeapUsage"); if (u) row.workers.push({ id: id.slice(0, 8), kind: /helper/.test(w.url) ? "helper" : /worker\.ts/.test(w.url) ? "build" : w.url.replace(/^.*\//, "").replace(/\?.*$/, ""), usedMB: Math.round(u.usedSize / 1e6), backingMB: Math.round((u.backingStorageSize ?? 0) / 1e6) }); }
+  heaps.push(row);
+};
+let heapSampling = HEAPS;
+const heapSampler = (async () => { while (heapSampling) { if (t0) await sampleHeaps().catch(() => undefined); await new Promise(r => setTimeout(r, 2000)); } })();
 let sampling = true;
 const sampler = (async () => { while (sampling) { await sample(); await new Promise(r => setTimeout(r, 1000)); } })();
 const errors = [];
 page.on("pageerror", e => errors.push(String(e)));
 page.on("console", m => { if (m.type() === "error" && !/status of 500/.test(m.text())) errors.push(m.text()); });
 await page.goto(`${BASE}/dev/field-twin?build=1${HELPERS ? `&helpers=${HELPERS}` : ""}`, { waitUntil: "domcontentloaded" });
-await page.waitForSelector("text=Build a twin from photographs");
+await page.waitForSelector("text=Build a twin from photographs", { timeout: 180_000 });
 await page.setInputFiles('input[type="file"][multiple]', files);
 await page.check(`input[name="twin-crop"][value="${CROP}"]`);
 if (TRACE) await browser.startTracing(page, { path: resolve(TRACE), categories: ["disabled-by-default-v8.cpu_profiler", "v8.execute"] });
@@ -66,14 +87,14 @@ if (TRACE) await browser.stopTracing();
 const stages = await page.evaluate(t => Object.fromEntries(Object.entries(window.__twinStages ?? {}).map(([k, v]) => [k, v - t])), t0);
 const result = await page.evaluate(() => window.__twinBuild);
 const hc = await page.evaluate(() => navigator.hardwareConcurrency);
-sampling = false; await sampler;
+sampling = false; await sampler; heapSampling = false; await heapSampler;
 const peak = k => Math.max(0, ...timeline.map(s => s.ws[k] ?? 0));
 const out = {
   environment: `Chrome ${browser.version()} headless, ${process.platform}-${process.arch}, ${hc} logical cores`, photographs: files.length, crop: CROP, helpers: HELPERS || "default", traced: !!TRACE,
   twinReadyMs: twinMs, atlasesDoneMs: atlasesMs, groundReadyMs: groundAt ? groundAt - t0 : null, stagesStartMs: stages, timings: result.report?.timings ?? null,
   corn: result.report?.corn ? { msPerPhoto: result.report.corn.msPerPhoto, ms: result.report.corn.ms } : null,
   peakGB: { total: +(Math.max(...timeline.map(s => Object.values(s.ws).reduce((a, b) => a + b, 0))) / 1e9).toFixed(2), renderer: +(peak("renderer") / 1e9).toFixed(2), gpu: +(peak("gpu") / 1e9).toFixed(2), browser: +(peak("browser") / 1e9).toFixed(2), utility: +(peak("utility") / 1e9).toFixed(2) },
-  timeline, error: result.error ?? null, consoleErrors: errors,
+  timeline, heaps, error: result.error ?? null, consoleErrors: errors,
 };
 writeFileSync(OUTFILE, JSON.stringify(out));
 console.log(JSON.stringify({ ...out, timeline: `${timeline.length} samples` }, null, 1));

@@ -56,6 +56,16 @@ export function PhotoGroundPanel({ manifest, shown, setShown, access, setAccess,
   );
 }
 
+/** A twin opened again: its photographs are not kept, so there are none under it. */
+export function PhotoGroundAbsent() {
+  return (
+    <div className={`w-[272px] px-3 py-2 text-xs ${panel}`} role="group" aria-label="Photographs">
+      <p className="text-[11px] font-semibold text-neutral-100">The flight's photographs</p>
+      <p className="mt-1 text-[10px] leading-snug text-neutral-400">Shown only in the tab that built this twin: nothing of them is kept. Build it again on this device to see them under the twin.</p>
+    </div>
+  );
+}
+
 /** The photographs behind a selected place: each photograph that saw it, nearest nadir first, the place marked. */
 export function PhotoEvidence({ manifest, access, setAccess, lat, lng, what, windowM = 1.2, markM = 0.12 }: { manifest: GroundManifest; access: PhotoAccess | null; setAccess: (a: PhotoAccess) => void; lat: number; lng: number; what: string; /** Crop size and ring size, metres (the object's own size). */ windowM?: number; markM?: number }) {
   // The answer for one place at a time: until the views of THIS place are in, it says it is reading (never "none").

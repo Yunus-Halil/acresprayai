@@ -19,7 +19,7 @@ import TwinInspector from "./TwinInspector";
 import { CornFieldPanel, CornLegend } from "./CornPanels";
 import { isLocalTwin } from "@/lib/fieldTwin/cornView";
 import TwinMap, { type PhotoGroundLayer, type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
-import { type DetailState, PhotoEvidence, PhotoGroundPanel } from "./PhotoGround";
+import { type DetailState, PhotoEvidence, PhotoGroundAbsent, PhotoGroundPanel } from "./PhotoGround";
 import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
 import type { GroundManifest } from "@/lib/fieldTwin/photoGround";
 import { type PhotoAccess, cutDetail, detailPlanFor, photoAccessFrom } from "@/lib/fieldTwin/photoAccess";
@@ -106,6 +106,8 @@ type Props = {
   ground?: { manifest: GroundManifest; overview: (z: number, x: number, y: number) => Promise<string | null> } | null;
   /** The flight's own photographs, when this tab holds them (it just built the twin): detail and evidence from them. */
   photoFiles?: File[] | null;
+  /** Photo ground could be shown, but this twin has no overview in this tab (a reopened twin): say why, once. */
+  groundAbsent?: boolean;
 };
 
 const DETAIL_KEY = "swathwise:twin-detail";
@@ -157,7 +159,7 @@ function measured<T>(name: string, fn: () => T): T {
   return v;
 }
 
-export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants: plantsOverride = null, ground: groundProp = null, photoFiles = null }: Props) {
+export default function FieldTwinView({ twin, atlasUrl, referenceOptions: referenceProp = [], initialReference = null, expose = false, detail: detailProp, audience = "founder", review, focus = null, onFocus, plants: plantsOverride = null, ground: groundProp = null, photoFiles = null, groundAbsent = false }: Props) {
   const units = useUnitSystem();
   // A corn twin built with the plants first carries its plants; the dev preview can lay its own plants.json over them.
   const plants = useMemo(() => plantsOverride ?? (twin.corn?.plants ? { points: twin.corn.plants.points, note: twin.corn.plants.note, certainty: twin.corn.plants.certainty, photos: twin.corn.plants.photos } : null), [plantsOverride, twin.corn?.plants]);
@@ -452,6 +454,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
           </div>
           <p className="mt-1 text-[10px] leading-snug text-neutral-500">{DETAIL_HINT[detailStop]}</p>
         </div>
+        {groundAllowed && !groundProp && groundAbsent && <PhotoGroundAbsent />}
         {groundOn && groundProp && <PhotoGroundPanel manifest={groundProp.manifest} shown={groundShown} setShown={setGroundShown} access={photoAccess} setAccess={setPhotoAccess} detail={detailState} onDetail={() => { void requestDetail(); }} />}
         {twin.corn && <CornFieldPanel twin={twin} corn={twin.corn} layers={layers} setLayers={setLayers} units={units} showPlants={showPlants} setShowPlants={setShowPlants} plantCount={plants?.points.length ?? null} onSelect={(p, lat, lng, across) => { setSelection(p); zoomTo(lat, lng, across); }} />}
         {twin.corn && founderView && <RowEditPanel edits={rowEdits} editing={rowEditing} onStart={startRowEditing} onDone={finishRowEditing}

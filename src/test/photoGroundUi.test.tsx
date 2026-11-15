@@ -93,6 +93,20 @@ describe("who sees photo ground", () => {
   });
 });
 
+describe("a twin opened again", () => {
+  it("the founder is told why there are no photographs under it; a participant is told nothing", async () => {
+    role = "founder";
+    const reopened = () => <div style={{ width: 1200, height: 800 }}><FieldTwinView twin={CORN_TWIN} atlasUrl={async () => ""} groundAbsent /></div>;
+    let r = render(reopened());
+    expect(within(screen.getByRole("group", { name: "Photographs" })).getByText(/Shown only in the tab that built this twin: nothing of them is kept/)).toBeInTheDocument();
+    await close(r);
+    role = "participant";
+    r = render(reopened());
+    expect(screen.queryByRole("group", { name: "Photographs" })).toBeNull();
+    await close(r);
+  });
+});
+
 describe("a plant, selected", () => {
   it("says what it is drawn as and how many photographs located it, never a stand count", () => {
     const plants = { points: [[40.00005, -90] as [number, number]], certainty: [1], photos: [4] };
