@@ -572,6 +572,7 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
                   {toggle("droppedRows", "Row candidates not kept", TWIN_COLOURS.rowDropped, `${twin.rows.length - counts.rows}`)}
                   </>}
                   {toggle("footprints", "Photo footprints", TWIN_COLOURS.footprint, `${twin.footprints.length}`)}
+                  {(photosUnder || reference) && intel.blockSource === "rows" && toggle("rowsEdgeOverPhotos", "Field edge from the rows, over the photographs", TWIN_COLOURS.blockEdge, "dashed; hidden over the photographs: it is estimated from the rows, not seen in them")}
                   {scene.evidence && toggle("evidence", "Boundary evidence", TWIN_COLOURS.evidence.cover, `what the photographs showed per ${scene.evidence.cellM} m: soil brown, canopy green, cover yellow, road grey, trees off the rows purple`)}
                   {referenceOptions.length > 0 && (
                     <div className="mt-2 text-xs text-neutral-200">

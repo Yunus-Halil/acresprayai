@@ -3,9 +3,10 @@
 // (Node, tests, a browser with one core) every task runs inline through the same handler, so the result is the
 // same either way.
 //
-// Memory rule: a helper holds the grey rasters it was sent and nothing else. The ties are partitioned by their
-// first photograph, so each helper receives only the rasters of its own first photographs and their partners
-// (about a tenth to a quarter of the flight each), never the whole flight.
+// Memory rule: a helper holds the grey rasters it was sent and nothing else, and only until the cameras are aligned
+// (a "release" task drops them: nothing after the cameras reads them). The ties are partitioned by their first
+// photograph in contiguous runs of equal work, so each helper receives only the rasters of its own first photographs
+// and their partners, never more than it needs.
 import { type GeorefFrame, type GreenOptions, type GreyRaster, type Observation, type SoilTieOptions, type SoilTie, findSoilTies, windowCacheFor } from "../../directGeoref";
 import type { CrownRef } from "./weeds";
 import { cornPhotoRead } from "./corn";
@@ -21,14 +22,17 @@ export type PoolTask =
   /** Crops of one photograph for the atlases. */
   | { kind: "crops"; name: string; file: Blob; reqs: { x0: number; y0: number; size: number; out: number }[] }
   /** Corn V1 on one photograph at its full size (`gsdM`: metres per original pixel at the frame's centre). */
-  | { kind: "corn"; name: string; file: Blob; gsdM: number | null; /** The shipped corn-v1.0 seedling mask (a comparison build). */ baseline?: boolean };
+  | { kind: "corn"; name: string; file: Blob; gsdM: number | null; /** The shipped corn-v1.0 seedling mask (a comparison build). */ baseline?: boolean }
+  /** Drop every raster this helper holds (the cameras are aligned; nothing reads them after). */
+  | { kind: "release" };
 
 export type PoolResult =
   | { kind: "raster" }
-  | { kind: "ties"; ties: SoilTie[]; rejected: Record<string, number>; pairsWithTies: number }
+  | { kind: "ties"; ties: SoilTie[]; rejected: Record<string, number>; pairsWithTies: number; /** The task's own time (the camera report's per-helper work). */ ms: number }
   | { kind: "colour"; name: string; observations: Observation[] }
   | { kind: "crops"; name: string; cells: Uint8ClampedArray[] }
-  | { kind: "corn"; name: string; read: CornPhotoRead; ms: number };
+  | { kind: "corn"; name: string; read: CornPhotoRead; ms: number }
+  | { kind: "release"; rasters: number };
 
 export type Pool = {
   /** Helpers in the pool (1 for the inline pool). */
@@ -53,7 +57,13 @@ export async function handleTask(task: PoolTask, ctx: TaskContext): Promise<{ re
     case "raster":
       ctx.rasters.set(task.name, { width: task.width, height: task.height, grey: task.grey, green: task.green, toOriginal: task.toOriginal });
       return { result: { kind: "raster" }, transfer: [] };
+    case "release": {
+      const n = ctx.rasters.size;
+      ctx.rasters.clear();
+      return { result: { kind: "release", rasters: n }, transfer: [] };
+    }
     case "ties": {
+      const t0 = Date.now();
       const frames = new Map(task.frames);
       const fa = frames.get(task.a), ra = ctx.rasters.get(task.a);
       const ties: SoilTie[] = [], rejected: Record<string, number> = {};
@@ -69,7 +79,7 @@ export async function handleTask(task: PoolTask, ctx: TaskContext): Promise<{ re
           for (const [k, v] of Object.entries(r.rejected)) rejected[k] = (rejected[k] ?? 0) + v;
         }
       }
-      return { result: { kind: "ties", ties, rejected, pairsWithTies }, transfer: [] };
+      return { result: { kind: "ties", ties, rejected, pairsWithTies, ms: Date.now() - t0 }, transfer: [] };
     }
     case "colour": {
       const px = await ctx.photo(task.file, task.name).decode(task.down);

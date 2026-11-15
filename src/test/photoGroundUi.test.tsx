@@ -10,6 +10,7 @@ import L from "leaflet";
 import FieldTwinView from "@/components/app/fieldTwin/FieldTwinView";
 import TwinInspector from "@/components/app/fieldTwin/TwinInspector";
 import { buildScene } from "@/lib/fieldTwin/scene";
+import { DETAIL_PRESETS } from "@/lib/fieldTwin/style";
 import { GROUND_FORMAT, type GroundManifest } from "@/lib/fieldTwin/photoGround";
 import { photoGroundAllowed, photoGroundDevFlag } from "@/lib/fieldTwin/photoGroundFlag";
 import type { PilotRole } from "@/lib/pilot/access";
@@ -94,6 +95,22 @@ describe("who sees photo ground", () => {
 });
 
 describe("a twin opened again", () => {
+  it("over the photographs, the field edge estimated from the rows is hidden by default and can be shown from Diagnostics", async () => {
+    role = "founder";
+    for (const stop of ["simple", "standard", "full"] as const) expect(DETAIL_PRESETS[stop].rowsEdgeOverPhotos).toBe(false);
+    const r = render(view());
+    fireEvent.click(screen.getByRole("button", { name: "Full" }));
+    fireEvent.click(screen.getByRole("button", { name: /Diagnostics/ }));
+    const edge = screen.getByRole("checkbox", { name: /Field edge from the rows, over the photographs/ });
+    expect(edge).not.toBeChecked();
+    fireEvent.click(edge);
+    expect(screen.getByRole("checkbox", { name: /Field edge from the rows, over the photographs/ })).toBeChecked();
+    // Without the photographs under the twin the edge is drawn as always, and the switch is not offered.
+    fireEvent.click(within(screen.getByRole("group", { name: "Photographs" })).getByRole("checkbox", { name: /The flight's photographs/ }));
+    expect(screen.queryByRole("checkbox", { name: /Field edge from the rows, over the photographs/ })).toBeNull();
+    await close(r);
+  });
+
   it("the founder is told why there are no photographs under it; a participant is told nothing", async () => {
     role = "founder";
     const reopened = () => <div style={{ width: 1200, height: 800 }}><FieldTwinView twin={CORN_TWIN} atlasUrl={async () => ""} groundAbsent /></div>;

@@ -74,7 +74,12 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
       // The benchmark script only (a development build, ?analysis=1): ask a corn build for its analysis record, to
       // measure it. Nothing is saved from this panel either way.
       const analysis = expose && crop === "corn" && params.get("analysis") === "1";
-      r = startTwinBuild(files, { name: fieldName, weeds: crop === "corn" ? "none" : weeds, helpers, crop, ...(analysis ? { analysis: true } : {}), ...(photoGround ? { photoGround: true } : {}) }, {
+      // The benchmark script only (a development build, ?device=mobile|memory4|memory2): build as concurrency.ts would on
+      // a tablet or a device with little memory, to measure that plan on this computer.
+      const sim = expose ? params.get("device") : null;
+      const cores = navigator.hardwareConcurrency ?? null;
+      const device = sim === "mobile" ? { cores, memoryGB: null, mobile: true } : sim === "memory4" ? { cores, memoryGB: 4, mobile: false } : sim === "memory2" ? { cores, memoryGB: 2, mobile: false } : undefined;
+      r = startTwinBuild(files, { name: fieldName, weeds: crop === "corn" ? "none" : weeds, helpers, crop, ...(device ? { device } : {}), ...(analysis ? { analysis: true } : {}), ...(photoGround ? { photoGround: true } : {}) }, {
         // The benchmark's timeline (a development build only): when each stage was first heard of.
         onProgress: p => { if (expose) { const w = window as unknown as { __twinStages?: Record<string, number> }; w.__twinStages ??= {}; w.__twinStages[p.stage] ??= Date.now(); } setProgress(prev => { if (prev && prev.stage !== p.stage) setDoneStages(d => (d.includes(prev.stage) ? d : [...d, prev.stage])); return p; }); },
         onLog: line => setLines(l => [...l.slice(-11), line]),

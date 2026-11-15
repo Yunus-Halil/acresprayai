@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { CANVAS_SIZES, type CanvasProbe, type DeviceFacts, type PhotoProbe, askWorker, deviceFacts, probeCanvas } from "@/lib/fieldTwin/deviceCheck";
 import { type BuildTrace, forgetTrace, stoppedBuildText, unfinishedTrace } from "@/lib/fieldTwin/buildTrace";
 import { sessionBusy, useBuildSession } from "@/lib/fieldTwin/buildSession";
+import { buildConcurrency, deviceHints } from "@/lib/fieldTwin/build/concurrency";
 
 const s = (ms: number) => `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
 
@@ -45,7 +46,9 @@ export default function DeviceCheck() {
     setBusy(false);
   };
 
-  const report = () => JSON.stringify({ at: new Date().toISOString(), facts, canvas: { page, worker: inWorker }, photo, stoppedBuild: trace }, null, 1);
+  // How a build would run here (concurrency.ts): the same reading of the device the build makes.
+  const plan = buildConcurrency(deviceHints());
+  const report = () => JSON.stringify({ at: new Date().toISOString(), facts, plan, canvas: { page, worker: inWorker }, photo, stoppedBuild: trace }, null, 1);
   const copy = async () => { try { await navigator.clipboard.writeText(report()); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { setCopied(false); } };
 
   const probes = (list: CanvasProbe[]) => list.map(p => <Row key={`${p.w}x${p.h}`} k={`${p.w} x ${p.h} (${p.mp} MP)`} v={p.ok ? `draws (${p.ms} ms)` : `refused: ${p.why ?? "no reason given"}`} bad={!p.ok} />);
@@ -75,6 +78,7 @@ export default function DeviceCheck() {
           <Row k="Processor cores the browser offers" v={facts.cores != null ? String(facts.cores) : "not said"} />
           <Row k="Memory the browser states" v={facts.memoryGB != null ? `${facts.memoryGB} GB or more` : "not said (Safari never says)"} />
           <Row k="Screen" v={facts.screen} />
+          <Row k="A build here runs" v={`${plan.helpers > 1 ? `${plan.helpers} helper workers` : "no helper workers"}, ${plan.cornParallel} corn read${plan.cornParallel > 1 ? "s" : ""} at once (${plan.reason})`} />
           <Row k="Storage this site may use" v={facts.storage.quotaMB != null ? `${facts.storage.quotaMB.toLocaleString()} MB (${facts.storage.usageMB ?? 0} MB used)` : "not said"} />
           {Object.entries(facts.features).map(([k, v]) => <Row key={k} k={k} v={v ? "yes" : "no"} bad={!v} />)}
           <p className="mt-2 break-all text-[11px] text-muted-foreground">{facts.userAgent}</p>

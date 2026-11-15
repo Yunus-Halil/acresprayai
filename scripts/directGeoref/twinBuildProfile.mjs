@@ -11,7 +11,7 @@
 //
 //   npx vite --port 8081   (in another terminal)
 //   node scripts/directGeoref/twinBuildProfile.mjs --dir <photos> --crop corn [--base http://localhost:8081]
-//       [--helpers N] [--trace <file.json>] [--outputs <dir>] --out <profile.json>
+//       [--helpers N] [--device mobile|memory4|memory2] [--trace <file.json>] [--outputs <dir>] --out <profile.json>
 //
 // --outputs <dir>: the build's results, for an equivalence check between two builds (outputsDiff.mjs): twin.json,
 // the analysis record (the aligned cameras; the build is asked for one), every file's SHA-256 (plants, atlases, the
@@ -24,7 +24,7 @@ import { chromium } from "playwright-core";
 const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
 const DIR = resolve(arg("dir", "directtestimagery")), BASE = arg("base", "http://localhost:8081"), HELPERS = arg("helpers", "");
-const HEAPS = argv.includes("--heaps"), CROP = arg("crop", "corn"), TRACE = arg("trace", ""), OUTFILE = resolve(arg("out", "profile.json")), OUTPUTS = arg("outputs", "");
+const HEAPS = argv.includes("--heaps"), CROP = arg("crop", "corn"), TRACE = arg("trace", ""), OUTFILE = resolve(arg("out", "profile.json")), OUTPUTS = arg("outputs", ""), DEVICE = arg("device", "");
 const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const files = readdirSync(DIR).filter(f => /\.jpe?g$/i.test(f)).sort().map(f => join(DIR, f));
 
@@ -74,7 +74,7 @@ const sampler = (async () => { while (sampling) { await sample(); await new Prom
 const errors = [];
 page.on("pageerror", e => errors.push(String(e)));
 page.on("console", m => { if (m.type() === "error" && !/status of 500/.test(m.text())) errors.push(m.text()); });
-await page.goto(`${BASE}/dev/field-twin?build=1${HELPERS ? `&helpers=${HELPERS}` : ""}${OUTPUTS && CROP === "corn" ? "&analysis=1" : ""}`, { waitUntil: "domcontentloaded" });
+await page.goto(`${BASE}/dev/field-twin?build=1${HELPERS ? `&helpers=${HELPERS}` : ""}${OUTPUTS && CROP === "corn" ? "&analysis=1" : ""}${DEVICE ? `&device=${DEVICE}` : ""}`, { waitUntil: "domcontentloaded" });
 await page.waitForSelector("text=Build a twin from photographs", { timeout: 180_000 });
 await page.setInputFiles('input[type="file"][multiple]', files);
 await page.check(`input[name="twin-crop"][value="${CROP}"]`);
@@ -102,7 +102,8 @@ if (OUTPUTS) {
     const g = await out.ground;
     const ground = {};
     if (g) for (const [k, v] of g.files) ground[k] = await hex(v);
-    return { twin: JSON.stringify(out.twin), analysis: out.analysis ? await out.analysis.text() : null, files, ground, report: JSON.stringify(out.report) };
+    const manifest = g?.files.get("ground/ground.json");
+    return { twin: JSON.stringify(out.twin), analysis: out.analysis ? await out.analysis.text() : null, files, ground, groundManifest: manifest ? await manifest.text() : null, report: JSON.stringify(out.report) };
   });
   if (got) {
     const dir = resolve(OUTPUTS);
@@ -110,6 +111,7 @@ if (OUTPUTS) {
     writeFileSync(join(dir, "twin.json"), got.twin);
     if (got.analysis) writeFileSync(join(dir, "analysis.json"), got.analysis);
     writeFileSync(join(dir, "report.json"), got.report);
+    if (got.groundManifest) writeFileSync(join(dir, "ground.json"), got.groundManifest);
     writeFileSync(join(dir, "files.json"), JSON.stringify({ files: got.files, ground: got.ground }, null, 1));
     outputs = { dir, files: Object.keys(got.files).length, ground: Object.keys(got.ground).length };
   }
@@ -117,7 +119,7 @@ if (OUTPUTS) {
 sampling = false; await sampler; heapSampling = false; await heapSampler;
 const peak = k => Math.max(0, ...timeline.map(s => s.ws[k] ?? 0));
 const out = {
-  environment: `Chrome ${browser.version()} headless, ${process.platform}-${process.arch}, ${hc} logical cores`, photographs: files.length, crop: CROP, helpers: HELPERS || "default", traced: !!TRACE,
+  environment: `Chrome ${browser.version()} headless, ${process.platform}-${process.arch}, ${hc} logical cores`, photographs: files.length, crop: CROP, helpers: HELPERS || "default", device: DEVICE || "this computer", traced: !!TRACE,
   twinReadyMs: twinMs, atlasesDoneMs: atlasesMs, groundReadyMs: groundAt ? groundAt - t0 : null, stagesStartMs: stages, timings: result.report?.timings ?? null,
   corn: result.report?.corn ? { msPerPhoto: result.report.corn.msPerPhoto, ms: result.report.corn.ms } : null,
   peakGB: { total: +(Math.max(...timeline.map(s => Object.values(s.ws).reduce((a, b) => a + b, 0))) / 1e9).toFixed(2), renderer: +(peak("renderer") / 1e9).toFixed(2), gpu: +(peak("gpu") / 1e9).toFixed(2), browser: +(peak("browser") / 1e9).toFixed(2), utility: +(peak("utility") / 1e9).toFixed(2) },

@@ -24,6 +24,8 @@ export type BuildReport = {
   timings: StageTimings;
   totalMs: number;
   notes: string[];
+  /** In a browser: the helpers and the corn reads at once the device was given (concurrency.ts). */
+  concurrency?: { helpers: number; cornParallel: number; reason: string };
 };
 
 export type BuildOutput = {
@@ -77,7 +79,7 @@ export async function buildFieldTwin(photos: PhotoSource[], options: BuildOption
   // weed passes (the colour rules would call the corn itself weeds).
   let corn: CornStageResult | null = null, rows: Awaited<ReturnType<typeof rowsAndTrees>> = null;
   if (crop === "corn") {
-    corn = await timed("corn", () => cornStage(kept, cams.frames, hooks, pool, photoFiles, options.cornVariant));
+    corn = await timed("corn", () => cornStage(kept, cams.frames, hooks, pool, photoFiles, options.cornVariant, options.cornParallel));
     if (corn.failed.length) for (const f of corn.failed) notes.push(`${f.name}: Corn V1 could not read it (${f.reason})`);
     if (!corn.field.rows.length) notes.push("no corn rows were read in any photograph: the twin has no corn rows, findings or cultivated block");
     else if (!corn.field.summary.cornRows) notes.push("no row is confirmed corn across the photographs: every row is a planted row, crop not confirmed, and no weed candidate or gap is confirmed");

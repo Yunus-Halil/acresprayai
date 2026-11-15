@@ -44,6 +44,7 @@ export async function evidenceViews(access: PhotoAccess, frames: GeorefFrame[], 
       const c = new OffscreenCanvas(px, px), g = c.getContext("2d")!;
       g.fillStyle = "#1a1c1a"; g.fillRect(0, 0, px, px);
       g.drawImage(bmp, sx, sy, sz, sz, 0, 0, px, px);
+      bmp.close();
       const markerPx = Math.max(6, (markM / 2 / windowM) * px);
       g.strokeStyle = "rgba(255,255,255,0.95)"; g.lineWidth = 2; g.beginPath(); g.arc(px / 2, px / 2, markerPx, 0, 2 * Math.PI); g.stroke();
       g.strokeStyle = "rgba(0,0,0,0.6)"; g.lineWidth = 1; g.beginPath(); g.arc(px / 2, px / 2, markerPx + 2, 0, 2 * Math.PI); g.stroke();

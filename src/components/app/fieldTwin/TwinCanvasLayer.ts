@@ -506,10 +506,14 @@ export class TwinCanvasLayer extends L.Canvas {
           ctx.strokeStyle = colour[s]; ctx.setLineDash(dash[s]); ctx.lineWidth = s === 0 ? 1.4 : 1.6; ctx.globalAlpha = 0.9; ctx.stroke();
         }
         ctx.setLineDash([]); ctx.globalAlpha = 1;
-      } else {
+        drawn.boundary = 1;
+      } else if (scene.intel.blockSource !== "rows" || L_.ground || L_.rowsEdgeOverPhotos) {
+        // The edge estimated from the rows (dashed) is left out over the photographs unless asked for in Diagnostics:
+        // there it crosses the soil and the plants and reads as something in the field. The operator's corrected edge
+        // is drawn always.
         ctx.beginPath(); ring(ctx, scene.block, X, Y); ctx.strokeStyle = C.blockEdge; ctx.lineWidth = 1.2; ctx.globalAlpha = 0.85; ctx.setLineDash(scene.intel.blockSource === "rows" ? [5, 3] : []); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+        drawn.boundary = 1;
       }
-      drawn.boundary = 1;
     }
     // The operator's boundary: white over a dark halo, so it reads against any ground.
     if (this.operational && !this.editing) {

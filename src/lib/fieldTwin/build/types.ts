@@ -99,6 +99,8 @@ export type BuildOptions = {
   atlases?: "now" | "later";
   /** Helper workers for the parallel stages (ties, the colour pass, the crops); without one everything runs inline. */
   pool?: Pool;
+  /** Corn reads at once on the helpers (concurrency.ts sizes it by the device's memory; default CORN_STAGE.maxParallel). The twin is the same either way. */
+  cornParallel?: number;
   /** A corn build: also hand back the analysis record (../analysis.ts). Default false; the twin is the same either way. */
   analysis?: boolean;
   /**

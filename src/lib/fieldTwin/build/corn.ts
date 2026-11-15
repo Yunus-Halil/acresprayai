@@ -17,7 +17,8 @@ import type { Pool } from "./pool";
 import { type BuildHooks, type CornVariant, type PhotoSource, checkCancelled } from "./types";
 
 export const CORN_STAGE = {
-  /** Photographs read at once with helper workers (each holds a full-size photograph). */
+  /** Photographs read at once with helper workers (each holds a full-size photograph), unless the build is given its
+   * own number (concurrency.ts: fewer on a tablet or a device with little memory). */
   maxParallel: 3,
 };
 
@@ -43,7 +44,7 @@ export type CornStageResult = {
 };
 
 /** Read every photograph with a camera, then combine them over the field. */
-export async function cornStage(photos: PhotoSource[], frames: Map<string, GeorefFrame>, hooks: BuildHooks = {}, pool: Pool | null = null, files?: Map<string, Blob>, variant?: CornVariant): Promise<CornStageResult> {
+export async function cornStage(photos: PhotoSource[], frames: Map<string, GeorefFrame>, hooks: BuildHooks = {}, pool: Pool | null = null, files?: Map<string, Blob>, variant?: CornVariant, maxParallel: number = CORN_STAGE.maxParallel): Promise<CornStageResult> {
   const t0 = Date.now(), baseline = variant === "corn-v1.0";
   const list = photos.filter(p => frames.has(p.name));
   const reads: CornPhotoRead[] = [], failed: { name: string; reason: string }[] = [];
@@ -72,13 +73,14 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
     done++; report(p.name);
   };
   report("starting");
-  const parallel = pool && pool.size > 1 && files ? Math.max(1, Math.min(CORN_STAGE.maxParallel, pool.size)) : 1;
+  const parallel = pool && pool.size > 1 && files ? Math.max(1, Math.min(maxParallel, pool.size)) : 1;
   let next = 0;
   await Promise.all(Array.from({ length: parallel }, async () => { while (next < list.length) { const p = list[next++]; await one(p); } }));
   checkCancelled(hooks.signal);
   hooks.onProgress?.({ stage: "corn", done: list.length, total: list.length, message: "combining the photographs over the field", elapsedMs: Date.now() - t0 });
   // Reads arrive in completion order; the field does not depend on it, the report and the twin should not either.
   reads.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  failed.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const field = cornField(reads, frames, variant ? FIELD_V2 : FIELD);
   hooks.log?.(`corn over the field: ${field.summary.cornRows} corn rows, ${field.summary.probableRows} unconfirmed, ${field.summary.weeds} confirmed weed candidates, ${field.summary.gaps} stand gaps; rows agree within ${field.rowAgreementM != null ? (field.rowAgreementM * 100).toFixed(1) : "?"} cm`);
   for (const n of field.notes.slice(0, -1)) hooks.log?.(`  ${n}`);

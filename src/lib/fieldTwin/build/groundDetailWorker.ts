@@ -3,6 +3,7 @@
 // the tiles for as long as it is open.
 import { type GroundImage, groundCams, renderPhotoMajor } from "../photoGround";
 import type { DetailMessage, DetailRequest } from "../photoAccess";
+import { freeCanvas } from "./freeCanvas";
 
 const post = (m: DetailMessage) => (self as unknown as { postMessage: (m: DetailMessage) => void }).postMessage(m);
 
@@ -22,6 +23,7 @@ self.onmessage = async (e: MessageEvent<DetailRequest>) => {
       const c = new OffscreenCanvas(bmp.width, bmp.height), g = c.getContext("2d", { willReadFrequently: true })!;
       g.drawImage(bmp, 0, 0); bmp.close();
       const d = g.getImageData(0, 0, c.width, c.height);
+      freeCanvas(c);
       return { width: d.width, height: d.height, rgba: d.data, scale: d.width / cams[k].f.intrinsics.width };
     };
     const enc = new OffscreenCanvas(256, 256), eg = enc.getContext("2d")!;
