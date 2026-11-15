@@ -20,7 +20,7 @@ import { CornFieldPanel, CornLegend } from "./CornPanels";
 import { isLocalTwin } from "@/lib/fieldTwin/cornView";
 import TwinMap, { type PhotoGroundLayer, type ReferenceImagery, type TwinMapHandle } from "./TwinMap";
 import { type DetailState, PhotoEvidence, PhotoGroundPanel } from "./PhotoGround";
-import { photoGroundEnabled } from "@/lib/fieldTwin/photoGroundFlag";
+import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
 import type { GroundManifest } from "@/lib/fieldTwin/photoGround";
 import { type PhotoAccess, cutDetail, detailPlanFor, photoAccessFrom } from "@/lib/fieldTwin/photoAccess";
 import ReviewBar, { reviewTargetOf } from "./ReviewBar";
@@ -257,7 +257,8 @@ export default function FieldTwinView({ twin, atlasUrl, referenceOptions: refere
   const corn = !!twin.corn;
   // A corn twin has no orchard weed pass: no pressure heatmap or findings regions (they would read 0 % everywhere).
   // Photo ground: only with the flag on and an overview for this twin; off, nothing below changes the viewer.
-  const groundOn = photoGroundEnabled() && !!groundProp;
+  const groundAllowed = usePhotoGround();
+  const groundOn = groundAllowed && !!groundProp;
   const [groundShown, setGroundShown] = useState(true);
   const [photoAccess, setPhotoAccess] = useState<PhotoAccess | null>(() => (photoFiles?.length ? photoAccessFrom(photoFiles, "this build") : null));
   const [detailTiles, setDetailTiles] = useState<Map<string, string>>(() => new Map());

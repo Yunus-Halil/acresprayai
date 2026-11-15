@@ -8,7 +8,7 @@ import type { BuildReport } from "@/lib/fieldTwin/build/pipeline";
 import { type BuildCrop, type BuildProgress, type BuildStage, stagesFor } from "@/lib/fieldTwin/build/types";
 import type { TwinBundle, TwinCorn } from "@/lib/fieldTwin/types";
 import { cornFieldRows } from "@/lib/fieldTwin/cornView";
-import { photoGroundEnabled } from "@/lib/fieldTwin/photoGroundFlag";
+import { usePhotoGround } from "@/lib/fieldTwin/photoGroundFlag";
 import { fetchHealth } from "@/lib/weedVision/client";
 import { weedModelAvailable } from "@/lib/weedVision/flag";
 
@@ -45,6 +45,7 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BuiltTwin | null>(null);
   const started = useRef<number>(0);
+  const photoGround = usePhotoGround();
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
 
@@ -73,8 +74,9 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
       // The benchmark script only (a development build, ?analysis=1): ask a corn build for its analysis record, to
       // measure it. Nothing is saved from this panel either way.
       const analysis = expose && crop === "corn" && params.get("analysis") === "1";
-      r = startTwinBuild(files, { name: fieldName, weeds: crop === "corn" ? "none" : weeds, helpers, crop, ...(analysis ? { analysis: true } : {}), ...(photoGroundEnabled() ? { photoGround: true } : {}) }, {
-        onProgress: p => { setProgress(prev => { if (prev && prev.stage !== p.stage) setDoneStages(d => (d.includes(prev.stage) ? d : [...d, prev.stage])); return p; }); },
+      r = startTwinBuild(files, { name: fieldName, weeds: crop === "corn" ? "none" : weeds, helpers, crop, ...(analysis ? { analysis: true } : {}), ...(photoGround ? { photoGround: true } : {}) }, {
+        // The benchmark's timeline (a development build only): when each stage was first heard of.
+        onProgress: p => { if (expose) { const w = window as unknown as { __twinStages?: Record<string, number> }; w.__twinStages ??= {}; w.__twinStages[p.stage] ??= Date.now(); } setProgress(prev => { if (prev && prev.stage !== p.stage) setDoneStages(d => (d.includes(prev.stage) ? d : [...d, prev.stage])); return p; }); },
         onLog: line => setLines(l => [...l.slice(-11), line]),
       });
     } catch (e) { setError((e as Error).message); return; }

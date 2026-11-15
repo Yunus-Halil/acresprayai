@@ -81,6 +81,8 @@ describe("New Field Twin", () => {
     expect(opts).toMatchObject({ name: "North block", crop: "corn", weeds: "colour", userId: "u1" });
     // This participant agreed only to the earlier terms, which do not describe the analysis record: none is kept.
     expect(opts.analysis).toBe(false);
+    // Photo ground is the founder's only: a participant's build makes no overview and keeps no photographs in the tab.
+    expect(opts.photoGround).toBeUndefined();
   });
 
   it("a participant who agreed to the terms in force has their corn build started with its analysis record", async () => {
@@ -93,7 +95,7 @@ describe("New Field Twin", () => {
     expect((startBuildSession.mock.calls[0] as [File[], Record<string, unknown>])[1]).toMatchObject({ crop: "corn", analysis: true });
   });
 
-  it("the founder's own build is started with its analysis record", async () => {
+  it("the founder's own build is started with its analysis record and photo ground", async () => {
     who = "founder";
     render(<MemoryRouter><TwinNew /></MemoryRouter>);
     fireEvent.click(screen.getByRole("radio", { name: /Corn/ }));
@@ -101,7 +103,7 @@ describe("New Field Twin", () => {
     await screen.findByLabelText("Photograph check");
     fireEvent.click(screen.getByRole("button", { name: "Build the Field Twin" }));
     expect(startBuildSession).toHaveBeenCalledOnce();
-    expect((startBuildSession.mock.calls[0] as [File[], Record<string, unknown>])[1]).toMatchObject({ crop: "corn", userId: "u1", analysis: true });
+    expect((startBuildSession.mock.calls[0] as [File[], Record<string, unknown>])[1]).toMatchObject({ crop: "corn", userId: "u1", analysis: true, photoGround: true });
   });
 
   it("a set that cannot make a twin is stopped, with the reason", async () => {

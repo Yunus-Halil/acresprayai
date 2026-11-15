@@ -11,7 +11,6 @@ import { type BuildResult, type BuildRun, BuildAborted, startTwinBuild } from ".
 import type { BuildCrop, BuildProgress, BuildStage } from "./build/types";
 import { TWIN_ANALYSIS_ENABLED } from "./analysisConfig";
 import { saveAnalysisRecord } from "./analysisOutbox";
-import { photoGroundEnabled } from "./photoGroundFlag";
 import { type TwinRecord, beginSave, saveBuiltTwin } from "./registry";
 import type { TwinBundle } from "./types";
 import { track } from "@/lib/pilot/telemetry";
@@ -64,7 +63,7 @@ function syncUnloadGuard() {
 
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`);
 
-export type StartOptions = { name: string; crop: BuildCrop; weeds: "model" | "colour" | "none"; helpers?: number; userId: string; /** This account's corn builds make and save their analysis record (analysisAccess.ts). Default: none. */ analysis?: boolean };
+export type StartOptions = { name: string; crop: BuildCrop; weeds: "model" | "colour" | "none"; helpers?: number; userId: string; /** This account's corn builds make and save their analysis record (analysisAccess.ts). Default: none. */ analysis?: boolean; /** Photo ground for this account (photoGroundFlag.ts): the overview after the twin, and the photographs kept in this tab. Default: none. */ photoGround?: boolean };
 
 /** Start a build of `files`. Only one at a time: a running build must finish, fail or be cancelled first. */
 export function startBuildSession(files: File[], o: StartOptions): void {
@@ -72,12 +71,12 @@ export function startBuildSession(files: File[], o: StartOptions): void {
   const id = newId();
   userId = o.userId;
   analysisAsked = o.analysis === true;
-  sessionFiles = photoGroundEnabled() ? files : null;
+  sessionFiles = o.photoGround ? files : null;
   const startedAt = Date.now();
   set({ status: "building", id, name: o.name, crop: o.crop, photographs: files.length, startedAt, progress: null, stagesDone: [], result: null, record: null, save: null, error: null, buildMs: null });
   track("twin_build_started", { twinId: id, counts: { photographs: files.length }, detail: { crop: o.crop } });
   try {
-    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop, ...(analysisWanted(o.crop) ? { analysis: true } : {}), ...(photoGroundEnabled() ? { photoGround: true } : {}) }, {
+    run = startTwinBuild(files, { name: o.name, id, weeds: o.crop === "corn" ? "none" : o.weeds, helpers: o.helpers, crop: o.crop, ...(analysisWanted(o.crop) ? { analysis: true } : {}), ...(o.photoGround ? { photoGround: true } : {}) }, {
       onProgress: p => {
         if (state.status !== "building") return;
         const prev = state.progress;

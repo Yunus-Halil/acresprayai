@@ -10,7 +10,7 @@ import TwinBuilder, { type BuiltTwin } from "@/components/app/fieldTwin/TwinBuil
 import { syntheticTwin } from "@/lib/fieldTwin/synthetic";
 import { type LatLngPair, type TwinBundle, parseTwin } from "@/lib/fieldTwin/types";
 import { type GroundManifest, parseGroundManifest } from "@/lib/fieldTwin/photoGround";
-import { photoGroundEnabled } from "@/lib/fieldTwin/photoGroundFlag";
+import { photoGroundDevFlag } from "@/lib/fieldTwin/photoGroundFlag";
 
 export default function FieldTwinDevPreview() {
   const [twin, setTwin] = useState<TwinBundle | null>(null);
@@ -51,7 +51,7 @@ export default function FieldTwinDevPreview() {
         performance.mark("twin:parse:end"); performance.measure("twin:parse", "twin:json:end", "twin:parse:end");
         if ("reason" in parsed) throw new Error(parsed.reason);
         setTwin(parsed.twin);
-        if (photoGroundEnabled()) try {
+        if (photoGroundDevFlag()) try {
           const r = await fetch(`/__field-twin/${pick}/ground/ground.json`);
           const m = r.ok ? parseGroundManifest(await r.json()) : null;
           if (m) setGround({ manifest: m, overview: async (z, x, y) => `/__field-twin/${pick}/ground/${z}/${x}/${y}.jpg` });
