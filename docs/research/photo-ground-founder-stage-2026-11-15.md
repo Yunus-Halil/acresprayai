@@ -238,7 +238,7 @@ What I checked, and what needs your eye:
 | Row geometry | cyan rows on the plant rows; on the header-only test flights, a few centimetres off at the closest zoom (the measured seams, 10 cm) |
 | Original-photo evidence | every crop shows the plant inside its ring, in up to 4 photographs, nearest nadir first; 0.5–0.6 s |
 | Close-up | detail in 1.1–2.9 s from 4–8 photographs |
-| Coverage | the flight's edge reads clearly. **For your eye:** the white dashed footprint outlines now cross the photographs, e.g. a dashed line through the soil between two rows in the Day023 close-up. Over photographs they look like features; I would hide them under the photographs and keep the dark "not photographed" area |
+| Coverage | the flight's edge reads clearly. **For your eye:** a white dashed line crosses the photographs, e.g. through the soil between two rows in the Day023 close-up. Over photographs it looks like a feature. (Corrected later the same day: it is the field edge estimated from the rows, not the photo footprints; it is now hidden over the photographs, see [photo-ground-performance-2026-11-15.md](photo-ground-performance-2026-11-15.md).) |
 | Uncertainty | Full shows probable plants as dashed rings and unconfirmed courses as thin grey lines; their inspectors say "probable" and "not confirmed"; Standard hides them |
 | Participant | the same twin, no photographs, no panel |
 
