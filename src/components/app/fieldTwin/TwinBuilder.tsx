@@ -86,6 +86,8 @@ export default function TwinBuilder({ onBuilt, onClose, expose = false, audience
       setResult(out); setDoneStages(stages.filter(s => s.id !== "bundle").map(s => s.id)); setRun(null);
       if (expose) window.__twinBuild = summary(out, false);
       if (expose) (window as unknown as { __twinAnalysis?: Blob | null }).__twinAnalysis = out.analysis;
+      // The whole result, for the benchmark's equivalence check (twinBuildProfile.mjs --outputs): a development build only.
+      if (expose) (window as unknown as { __twinOut?: BuildResult }).__twinOut = out;
       // Photo ground (behind its flag): for the benchmark, when the overview is in, how long it took and how big it is.
       if (expose) void out.ground.then(g => { (window as unknown as { __twinGround?: unknown }).__twinGround = g ? { ms: g.ms, files: g.files.size, bytes: [...g.files.values()].reduce((s, b) => s + b.size, 0), at: Date.now() } : null; });
       out.atlases.then(() => { setDoneStages(stages.map(s => s.id)); if (expose) window.__twinBuild = summary(out, true); }).catch(() => undefined);
