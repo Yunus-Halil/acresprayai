@@ -41,6 +41,7 @@ const ConsentPage = lazy(() => import("./components/pilot/ConsentScreen.tsx"));
 // The Field Twin page as it was before the pilot: the founder's workbench (twins built on this computer, twins from
 // files, the reference orthomosaic). Participants use the Field Twins pages instead.
 const FieldTwin = lazy(() => import("./pages/app/FieldTwin.tsx"));
+const DeviceCheck = lazy(() => import("./pages/app/DeviceCheck.tsx"));
 // WEED-VISION-PREVIEW (temporary research integration; remove with the branch). Development builds with the flag
 // only; the import is inside the condition so a production build emits no chunk for it.
 const WeedVisionPreview = isWeedVisionPreviewEnabled() ? lazy(() => import("./pages/app/WeedVisionPreview.tsx")) : null;
@@ -103,6 +104,7 @@ const App = () => (
               <Route path="weeds" element={founder(<WeedLibrary />)} />
               <Route path="photo" element={founder(<PhotoScout />)} />
               <Route path="field-twin" element={founder(<FieldTwin />)} />
+              <Route path="device-check" element={founder(<DeviceCheck />)} />
               {WeedVisionPreview && <Route path="weed-vision" element={founder(<WeedVisionPreview />)} />}
             </Route>
             <Route path="/app/orthomosaic/:taskId" element={<PilotRoute>{founder(<OrthomosaicViewer />)}</PilotRoute>} />

@@ -5,7 +5,7 @@ import { setUnitSystem, useUnitSystem } from "@/hooks/useUnitSystem";
 import { loadUnitPreference, saveUnitPreference } from "@/lib/unitPreference";
 import { UnitsPrompt } from "@/components/app/UnitsPrompt";
 import type { UnitSystem } from "@/lib/units";
-import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays, Sprout, Camera, FlaskConical, Shapes, CircleHelp, Plus, MessageSquare, Menu, X, Users, Eye, Wrench, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Map, LogOut, Plane, CloudRain, CalendarDays, Sprout, Camera, FlaskConical, Shapes, CircleHelp, Plus, MessageSquare, Menu, X, Users, Eye, Wrench, Gauge, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import PilotRoute from "@/components/pilot/PilotRoute";
@@ -40,6 +40,7 @@ const founderNav: NavItem[] = [
   { to: "/app/weeds", label: "Weed Library", icon: Sprout },
   { to: "/app/photo", label: "Photo Scout", icon: Camera },
   { to: "/app/field-twin", label: "Field Twin workbench", icon: Wrench },
+  { to: "/app/device-check", label: "Device check", icon: Gauge },
   { to: "/admin/pilot", label: "Pilot admin", icon: Users },
   ...(isWeedVisionPreviewEnabled() ? [{ to: "/app/weed-vision", label: "Weed Vision Preview", icon: FlaskConical }] : []),
 ];
