@@ -88,7 +88,7 @@ accepted because of a row act on that row:
 
 The rows found in a free slot (`plantsFirst.ts:736-751`) are made from dots that were located without a row but
 are not certain. Under rule 1 as written ("plants you are sure of") they would go. That is a decision for you: on
-the flights measured they hold 0 to 23 plants.
+the flights measured they hold 0 to 30 plants.
 
 **Steps 5 and 6, expectations and the guided look.** New, replacing the two placement loops
 (`plantsFirst.ts:707-735`) and the "not confirmed" segments. An expectation is a plant position on a row between
