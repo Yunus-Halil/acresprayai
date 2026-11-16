@@ -507,7 +507,7 @@ export type Reconstruction = {
 
 /** `notCertain`: dots that may be probable at most (the second look's plants: they confirm a stretch, never start a row).
  * `tier` (rowCandidates): per dot 0 a dot of the stricter marks, 1 / 2 a candidate for the rows; every dot of a lower tier
- * is placed on the rows before any of a higher one, and a tier 2 dot (one photograph) joins a row but never makes one. */
+ * is placed on the rows before any of a higher one; a candidate joins a row the plants found first made, never makes one. */
 export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: number, spacingGuessM: number, o: PlantsFirstOptions = PLANTS_FIRST, q = SEQUENCE, notCertain: Uint8Array | null = null, tier: Uint8Array | null = null): Reconstruction {
   const n = dots.length, certainty = new Uint8Array(n).fill(2);
   for (let i = 0; i < n; i++) if (!notCertain?.[i] && dots[i].photos >= q.certainViews && covered[i] > 0 && dots[i].photos / covered[i] >= q.certainShare) certainty[i] = 0;
@@ -593,7 +593,8 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   // New rows from what is left, only in a row slot of the planter's pattern that no certain row holds there, as dense
   // as the certain rows are, straight.
   const restByJ = new Map<number, number[]>();
-  for (let i = 0; i < n; i++) if (!onCertain[i] && tier?.[i] !== 2 && Math.abs(RN.resid[i]) <= onRow) (restByJ.get(RN.j[i]) ?? restByJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
+  // A candidate of the second look (any tier) never makes a row: rows come from the plants found first (2026-11-16).
+  for (let i = 0; i < n; i++) if (!onCertain[i] && !tier?.[i] && Math.abs(RN.resid[i]) <= onRow) (restByJ.get(RN.j[i]) ?? restByJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
   const geomLines: Line[] = [];
   for (const g of restByJ.values()) {
     if (g.length < 5) continue;

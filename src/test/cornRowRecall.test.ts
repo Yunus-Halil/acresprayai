@@ -3,7 +3,7 @@
 // tiers). The rules these tests hold:
 //  - the whole-frame mask and its marks are untouched; without candidates everything reads exactly as before;
 //  - a candidate is kept only on a row, never within the exclusion distance of a dot the stricter marks made;
-//  - one photograph alone counts only where it sees sharply, joins a row, and never makes one;
+//  - one photograph alone counts only where it sees sharply; a candidate joins a row and never makes one;
 //  - a piece is split only along the row, never because it is wide across it.
 import { describe, expect, it } from "vitest";
 import type { PhotoPixels } from "@/lib/photoScout/pattern";
@@ -159,14 +159,14 @@ describe("the rows take candidates, and nothing else changes", () => {
     expect(R.geometry.spacingM).toBe(base.geometry.spacingM);
   });
 
-  it("one photograph's marks never make a row; two photographs' marks can, in a slot of the planter's pattern", () => {
+  it("candidates never make a row, one photograph or several: rows come from the plants found first", () => {
     // A seventh slot, one spacing beyond the last row, a plant every 0.15 m over 6 m.
     const line = (photos: number) => Array.from({ length: 41 }, (_, k) => dot(3 + k * SEED, 6 * S, photos));
     const one = run(line(1), line(1).map(() => 2));
     expect(Array.from(one.rowOf.slice(n0)).every(v => v === -1)).toBe(true);
     const two = run(line(2), line(2).map(() => 1));
-    expect(Array.from(two.rowOf.slice(n0)).filter(v => v >= 0).length).toBeGreaterThan(30);
-    expect(two.rows.some(r => r.kind === "geometry")).toBe(true);
+    expect(Array.from(two.rowOf.slice(n0)).every(v => v === -1)).toBe(true);
+    expect(two.rows.some(r => r.kind === "geometry")).toBe(false);
     // Never a certain plant, whatever the photographs.
     expect(Array.from(two.certainty.slice(n0)).every(v => v !== 0)).toBe(true);
   });
