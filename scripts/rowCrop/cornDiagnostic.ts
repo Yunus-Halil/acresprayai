@@ -213,17 +213,13 @@ csv("step3-lines.csv", "flight,flight_line,photographs,first,last,heading_deg_fr
 // point by p (1 + x^2) + q x y along u and p x y + q (1 + y^2) along v, p and q being the height times the two tilt
 // angles: the x^2, x y, y^2 part is what no plane holds), and a free second-order surface (for comparison).
 const CU = 6, CV = 4, RR = PLANTS_FIRST.reachM, NBIN = Math.round((2 * RR) / 0.01) + 1, HALF = Math.max(2, Math.round(PLANTS_FIRST.backgroundM / 0.01));
-const cellHist = new Map<number, Float32Array>(), cellXY = new Map<number, [number, number, number]>();
 const camOf = photos.map((name, p) => { const f = frames.get(name)!, c = toEnu({ lat: f.pose.lat, lng: f.pose.lng, altM: 0 }, F.origin); return { e: c[0], n: c[1], h: axes[p].gsd * f.intrinsics.fx }; });
+const frameCellOf = (i: number) => { const s = sights[i], ax = axes[s.p]; return Math.min(CV - 1, Math.floor((s.v / ax.f.intrinsics.height) * CV)) * CU + Math.min(CU - 1, Math.floor((s.u / ax.f.intrinsics.width) * CU)); };
+// Each frame cell's place in the frame, in focal lengths from the point under the camera (from the ground positions).
+const cellXY = new Map<number, [number, number, number]>();
 for (let i = 0; i < sights.length; i++) {
-  const s = sights[i], ax = axes[s.p], cam = camOf[s.p], W = ax.f.intrinsics.width, H = ax.f.intrinsics.height;
-  const key = s.p * CU * CV + Math.min(CV - 1, Math.floor((s.v / H) * CV)) * CU + Math.min(CU - 1, Math.floor((s.u / W) * CU));
-  const xy = cellXY.get(key) ?? cellXY.set(key, [0, 0, 0]).get(key)!;
+  const s = sights[i], ax = axes[s.p], cam = camOf[s.p], key = s.p * CU * CV + frameCellOf(i), xy = cellXY.get(key) ?? cellXY.set(key, [0, 0, 0]).get(key)!;
   xy[0] += ((s.e - cam.e) * ax.eu[0] + (s.n - cam.n) * ax.eu[1]) / cam.h; xy[1] += ((s.e - cam.e) * ax.ev[0] + (s.n - cam.n) * ax.ev[1]) / cam.h; xy[2]++;
-  nearS(xs[i], ys[i], RR, j => {
-    if (sights[j].p === s.p) return; const dx = xs[j] - xs[i], dy = ys[j] - ys[i]; if (Math.abs(dx) > RR || Math.abs(dy) > RR) return;
-    const h = cellHist.get(key) ?? cellHist.set(key, new Float32Array(NBIN * NBIN)).get(key)!; h[Math.round((dy + RR) / 0.01) * NBIN + Math.round((dx + RR) / 0.01)]++;
-  });
 }
 const peakOf = (h: Float32Array): { x: number; y: number } | null => {
   let tot = 0; for (let k = 0; k < h.length; k++) tot += h[k]; if (tot < PLANTS_FIRST.minVotes) return null;
@@ -236,6 +232,23 @@ const peakOf = (h: Float32Array): { x: number; y: number } | null => {
   let sx = 0, sy = 0, sw = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const w = h[(by + dy) * NBIN + bx + dx]; sx += w * (bx + dx); sy += w * (by + dy); sw += w; }
   return { x: (sx / sw) * 0.01 - RR, y: (sy / sw) * 0.01 - RR };
 };
+/** The repeats of a set of mark positions, per key of each mark (a frame cell, or a square of ground): for every
+ * key, the votes of its marks against every other photograph's mark within reach, and the sharpest peak of them.
+ * `also(key, j)` is told of every vote (to keep what the others were). */
+function repeatsOf(X: Float64Array, Y: Float64Array, keyOf: (i: number) => number, also?: (key: number, j: number) => void): Map<number, { x: number; y: number }> {
+  const near = gridOf(X, Y, 0.3), hist = new Map<number, Float32Array>();
+  for (let i = 0; i < sights.length; i++) {
+    const p = sights[i].p, key = keyOf(i);
+    near(X[i], Y[i], RR, j => {
+      if (sights[j].p === p) return; const dx = X[j] - X[i], dy = Y[j] - Y[i]; if (Math.abs(dx) > RR || Math.abs(dy) > RR) return;
+      const h = hist.get(key) ?? hist.set(key, new Float32Array(NBIN * NBIN)).get(key)!; h[Math.round((dy + RR) / 0.01) * NBIN + Math.round((dx + RR) / 0.01)]++;
+      also?.(key, j);
+    });
+  }
+  const out = new Map<number, { x: number; y: number }>();
+  for (const [key, h] of hist) { const pk = peakOf(h); if (pk) out.set(key, pk); }
+  return out;
+}
 /** Least squares: the unknowns minimising the sum of (row . unknowns - value)^2. */
 function solve(rows: number[][], vals: number[]): number[] | null {
   const m = rows[0].length, M = Array.from({ length: m }, () => new Array<number>(m + 1).fill(0));
@@ -244,32 +257,116 @@ function solve(rows: number[][], vals: number[]): number[] | null {
   return M.map((r, i) => r[m] / r[i]);
 }
 type CellPeak = { p: number; col: number; row: number; x: number; y: number; du: number; dv: number };
-const cellPeaks: CellPeak[] = [];
-for (const [key, h] of cellHist) { const pk = peakOf(h); if (!pk) continue; const p = Math.floor(key / (CU * CV)), c = key % (CU * CV), ax = axes[p], xy = cellXY.get(key)!; cellPeaks.push({ p, col: (c % CU) + 1, row: Math.floor(c / CU) + 1, x: xy[0] / xy[2], y: xy[1] / xy[2], du: pk.x * ax.eu[0] + pk.y * ax.eu[1], dv: pk.x * ax.ev[0] + pk.y * ax.ev[1] }); }
+/** The left-over per photograph and frame cell, in the photograph's own axes, for a set of mark positions. */
+function leftOverOf(X: Float64Array, Y: Float64Array): CellPeak[] {
+  const out: CellPeak[] = [];
+  for (const [key, pk] of repeatsOf(X, Y, i => sights[i].p * CU * CV + frameCellOf(i))) { const p = Math.floor(key / (CU * CV)), c = key % (CU * CV), ax = axes[p], xy = cellXY.get(key)!; out.push({ p, col: (c % CU) + 1, row: Math.floor(c / CU) + 1, x: xy[0] / xy[2], y: xy[1] / xy[2], du: pk.x * ax.eu[0] + pk.y * ax.eu[1], dv: pk.x * ax.ev[0] + pk.y * ax.ev[1] }); }
+  return out;
+}
 const rms = (v: number[]) => (v.length ? Math.sqrt(v.reduce((t, x) => t + x * x, 0) / v.length) : NaN);
+const BASES = {
+  plane: (c: CellPeak): [number[], number[]] => [[1, c.x, c.y, 0, 0, 0], [0, 0, 0, 1, c.x, c.y]],
+  tilt: (c: CellPeak): [number[], number[]] => [[1, c.x, c.y, 0, 0, 0, c.x * c.x, c.x * c.y], [0, 0, 0, 1, c.x, c.y, c.x * c.y, c.y * c.y]],
+  second: (c: CellPeak): [number[], number[]] => [[1, c.x, c.y, c.x * c.x, c.x * c.y, c.y * c.y, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 1, c.x, c.y, c.x * c.x, c.x * c.y, c.y * c.y]],
+};
+/** One photograph's cells fitted by a model: the unknowns and what each cell keeps. */
+function fitCells(cs: CellPeak[], basis: (c: CellPeak) => [number[], number[]]) {
+  const rows: number[][] = [], vals: number[] = []; for (const c of cs) { const [ru, rv] = basis(c); rows.push(ru, rv); vals.push(c.du, c.dv); }
+  const sol = solve(rows, vals); if (!sol) return null;
+  const vec = cs.map(c => { const [ru, rv] = basis(c); return [c.du - ru.reduce((t, x, k) => t + x * sol[k], 0), c.dv - rv.reduce((t, x, k) => t + x * sol[k], 0)] as [number, number]; });
+  return { sol, vec, res: vec.map(v => Math.hypot(v[0], v[1])) };
+}
+const MIN_CELLS = 16;
+const cellPeaks = leftOverOf(xs, ys);
 const tiltRows = order.map(({ name, p }) => {
   const cs = cellPeaks.filter(c => c.p === p), raw = cs.map(c => Math.hypot(c.du, c.dv));
   const out = { name, cellsWithARepeat: cs.length, cellsPossible: CU * CV, leftOver_cm: r1(100 * rms(raw)), worstCell_cm: raw.length ? r1(100 * Math.max(...raw)) : null as number | null, cellsOverTheMergeGate: raw.filter(d => d > gateM).length,
-    afterAPlane_cm: null as number | null, afterTilt_cm: null as number | null, afterSecondOrder_cm: null as number | null, cellsOverTheGateAfterTilt: null as number | null, tiltU_deg: null as number | null, tiltV_deg: null as number | null };
-  if (cs.length < 16) return out;
-  const fit = (basis: (c: CellPeak) => [number[], number[]]) => { const rows: number[][] = [], vals: number[] = []; for (const c of cs) { const [ru, rv] = basis(c); rows.push(ru, rv); vals.push(c.du, c.dv); } const sol = solve(rows, vals); if (!sol) return null; const res = cs.map(c => { const [ru, rv] = basis(c); return Math.hypot(c.du - ru.reduce((t, x, k) => t + x * sol[k], 0), c.dv - rv.reduce((t, x, k) => t + x * sol[k], 0)); }); return { sol, res }; };
-  const plane = fit(c => [[1, c.x, c.y, 0, 0, 0], [0, 0, 0, 1, c.x, c.y]]);
-  const tilt = fit(c => [[1, c.x, c.y, 0, 0, 0, c.x * c.x, c.x * c.y], [0, 0, 0, 1, c.x, c.y, c.x * c.y, c.y * c.y]]);
-  const second = fit(c => [[1, c.x, c.y, c.x * c.x, c.x * c.y, c.y * c.y, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 1, c.x, c.y, c.x * c.x, c.x * c.y, c.y * c.y]]);
-  if (plane) out.afterAPlane_cm = r1(100 * rms(plane.res));
+    afterAPlane_cm: null as number | null, afterTilt_cm: null as number | null, afterSecondOrder_cm: null as number | null, cellsOverTheGateAfterAPlane: null as number | null, cellsOverTheGateAfterTilt: null as number | null, tiltU_deg: null as number | null, tiltV_deg: null as number | null };
+  if (cs.length < MIN_CELLS) return out;
+  const plane = fitCells(cs, BASES.plane), tilt = fitCells(cs, BASES.tilt), second = fitCells(cs, BASES.second);
+  if (plane) { out.afterAPlane_cm = r1(100 * rms(plane.res)); out.cellsOverTheGateAfterAPlane = plane.res.filter(d => d > gateM).length; }
   if (tilt) { out.afterTilt_cm = r1(100 * rms(tilt.res)); out.cellsOverTheGateAfterTilt = tilt.res.filter(d => d > gateM).length; out.tiltU_deg = r2((Math.atan(tilt.sol[6] / camOf[p].h) * 180) / Math.PI); out.tiltV_deg = r2((Math.atan(tilt.sol[7] / camOf[p].h) * 180) / Math.PI); }
   if (second) out.afterSecondOrder_cm = r1(100 * rms(second.res));
   return out;
 });
 csv("step3-cells.csv", "flight,photograph,cell_col_of_6,cell_row_of_4,x_focal_lengths,y_focal_lengths,left_over_along_u_cm,left_over_along_v_cm", cellPeaks.map(c => [FLIGHT, photos[c.p], c.col, c.row, r3(c.x), r3(c.y), r1(100 * c.du), r1(100 * c.dv)]));
-csv("step3-tilt.csv", "flight,photograph,cells_with_a_repeat,cells_possible,left_over_rms_cm,worst_cell_cm,cells_over_merge_gate,after_a_plane_rms_cm,after_tilt_terms_rms_cm,after_second_order_rms_cm,cells_over_gate_after_tilt,tilt_about_v_deg,tilt_about_u_deg",
-  tiltRows.map(r => [FLIGHT, r.name, r.cellsWithARepeat, r.cellsPossible, r.leftOver_cm, r.worstCell_cm ?? "", r.cellsOverTheMergeGate, r.afterAPlane_cm ?? "", r.afterTilt_cm ?? "", r.afterSecondOrder_cm ?? "", r.cellsOverTheGateAfterTilt ?? "", r.tiltU_deg ?? "", r.tiltV_deg ?? ""]));
+csv("step3-tilt.csv", "flight,photograph,cells_with_a_repeat,cells_possible,left_over_rms_cm,worst_cell_cm,cells_over_merge_gate,after_a_plane_rms_cm,after_tilt_terms_rms_cm,after_second_order_rms_cm,cells_over_gate_after_a_plane,cells_over_gate_after_tilt,tilt_about_v_deg,tilt_about_u_deg",
+  tiltRows.map(r => [FLIGHT, r.name, r.cellsWithARepeat, r.cellsPossible, r.leftOver_cm, r.worstCell_cm ?? "", r.cellsOverTheMergeGate, r.afterAPlane_cm ?? "", r.afterTilt_cm ?? "", r.afterSecondOrder_cm ?? "", r.cellsOverTheGateAfterAPlane ?? "", r.cellsOverTheGateAfterTilt ?? "", r.tiltU_deg ?? "", r.tiltV_deg ?? ""]));
 const fitted = tiltRows.filter(r => r.afterTilt_cm != null);
 const quart = (v: (number | null)[]) => { const t = v.filter((x): x is number => x != null).sort((a, b) => a - b); return t.length ? [0, 0.25, 0.5, 0.75, 1].map(q => t[Math.floor(q * (t.length - 1))]) : null; };
 const cellMap = Array.from({ length: CU * CV }, (_, k) => { const cs = cellPeaks.filter(c => c.col === (k % CU) + 1 && c.row === Math.floor(k / CU) + 1).map(c => 100 * Math.hypot(c.du, c.dv)); return { col: (k % CU) + 1, row: Math.floor(k / CU) + 1, photographs: cs.length, medianLeftOver_cm: cs.length ? r1(median(cs)) : null, overTheGate: cs.filter(d => d > gateM * 100).length }; });
+
+// Part 1b: is any of it fixed to the camera? The mean left-over per frame cell over ALL the flight's photographs, in
+// the photograph's own axes (so photographs flown in opposite directions do not cancel): along u, along v, and the same
+// vector split into away from the frame's centre and sideways (a quarter turn from that, towards +v from +u). A share
+// that repeats from photograph to photograph is fixed to the camera; taking it off each cell says how much.
+const meanCell = Array.from({ length: CU * CV }, (_, k) => {
+  const cs = cellPeaks.filter(c => c.col === (k % CU) + 1 && c.row === Math.floor(k / CU) + 1), m = cs.length || 1;
+  const mu = cs.reduce((t, c) => t + c.du, 0) / m, mv = cs.reduce((t, c) => t + c.dv, 0) / m;
+  const out = cs.reduce((t, c) => t + (c.du * c.x + c.dv * c.y) / (Math.hypot(c.x, c.y) || 1), 0) / m, side = cs.reduce((t, c) => t + (-c.du * c.y + c.dv * c.x) / (Math.hypot(c.x, c.y) || 1), 0) / m;
+  return { col: (k % CU) + 1, row: Math.floor(k / CU) + 1, photographs: cs.length, meanAlongU_cm: r1(100 * mu), meanAlongV_cm: r1(100 * mv), meanAway_cm: r1(100 * out), meanSideways_cm: r1(100 * side), medianSize_cm: cs.length ? r1(100 * median(cs.map(c => Math.hypot(c.du, c.dv)))) : null, mu, mv };
+});
+const sumSq = cellPeaks.reduce((t, c) => t + c.du * c.du + c.dv * c.dv, 0), fixedSq = meanCell.reduce((t, m) => t + m.photographs * (m.mu * m.mu + m.mv * m.mv), 0);
+const withoutFixed = cellPeaks.map(c => { const m = meanCell[(c.row - 1) * CU + c.col - 1]; return { ...c, du: c.du - m.mu, dv: c.dv - m.mv }; });
+csv("part1b-frame-mean.csv", "flight,cell_col_of_6,cell_row_of_4,photographs,mean_left_over_along_u_cm,mean_left_over_along_v_cm,mean_away_from_centre_cm,mean_sideways_cm,median_size_cm", meanCell.map(m => [FLIGHT, m.col, m.row, m.photographs, m.meanAlongU_cm, m.meanAlongV_cm, m.meanAway_cm, m.meanSideways_cm, m.medianSize_cm ?? ""]));
+
+// Part 1c: ground height. Where the ground is higher or lower than the flat model, a mark is pushed away from or
+// towards the point under its camera in proportion to its distance from that point: placed = true + k (true - camera),
+// with k the height error over the flying height, the same for every photograph that sees that ground. Two photographs'
+// marks of one plant then differ by k times the line between their cameras. Per 10 m square of ground: each
+// photograph's repeat there against all the others (as above, but the marks grouped by square), against the line from
+// the mean of those others' cameras to its own; k is the least-squares slope over the photographs that see the square.
+const SQG = 10, sqIndex = new Map<string, number>(), sqOfSight = new Int32Array(sights.length);
+for (let i = 0; i < sights.length; i++) { const k = `${Math.floor(xs[i] / SQG)}:${Math.floor(ys[i] / SQG)}`; sqOfSight[i] = sqIndex.get(k) ?? sqIndex.set(k, sqIndex.size).get(k)!; }
+const NSQ = sqIndex.size, otherCam = new Map<number, [number, number, number]>();
+const sqRepeats = repeatsOf(xs, ys, i => sights[i].p * NSQ + sqOfSight[i], (key, j) => { const o = otherCam.get(key) ?? otherCam.set(key, [0, 0, 0]).get(key)!, c = camOf[sights[j].p]; o[0] += c.e; o[1] += c.n; o[2]++; });
+const kNum = new Float64Array(NSQ), kDen = new Float64Array(NSQ), kPhotos = new Int32Array(NSQ);
+for (const [key, pk] of sqRepeats) { const p = Math.floor(key / NSQ), s = key % NSQ, o = otherCam.get(key)!, be = camOf[p].e - o[0] / o[2], bn = camOf[p].n - o[1] / o[2]; kNum[s] += pk.x * be + pk.y * bn; kDen[s] += be * be + bn * bn; kPhotos[s]++; }
+// A square needs three photographs with a repeat to say anything; the others are left as they are.
+const kOf = Float64Array.from({ length: NSQ }, (_, s) => (kPhotos[s] >= 3 && kDen[s] > 0 ? kNum[s] / kDen[s] : 0));
+const meanH = camOf.reduce((t, c) => t + c.h, 0) / camOf.length;
+const xh = new Float64Array(sights.length), yh = new Float64Array(sights.length);
+for (let i = 0; i < sights.length; i++) { const k = kOf[sqOfSight[i]], c = camOf[sights[i].p]; xh[i] = xs[i] - k * (xs[i] - c.e); yh[i] = ys[i] - k * (ys[i] - c.n); }
+const heightPeaks = leftOverOf(xh, yh);
+csv("part1c-height.csv", "flight,square_east_10m,square_north_10m,photographs_with_a_repeat,height_error_over_flying_height,height_error_m", [...sqIndex].map(([k, s]) => [FLIGHT, ...k.split(":"), kPhotos[s], kPhotos[s] >= 3 ? r3(kOf[s]) : "", kPhotos[s] >= 3 ? r2(kOf[s] * meanH) : ""]));
+/** Cells over the merge gate over a set of photographs: as they are, and after each photograph's own fit. */
+const overGate = (peaks: CellPeak[], ps: Set<number>, basis?: (c: CellPeak) => [number[], number[]]) => { let n = 0; for (const p of ps) { const cs = peaks.filter(c => c.p === p); const res = basis ? fitCells(cs, basis)?.res ?? cs.map(c => Math.hypot(c.du, c.dv)) : cs.map(c => Math.hypot(c.du, c.dv)); n += res.filter(d => d > gateM).length; } return n; };
+// The same photographs in every column: those with enough cells both before and after the height term.
+const both = new Set(photos.map((_, p) => p).filter(p => cellPeaks.filter(c => c.p === p).length >= MIN_CELLS && heightPeaks.filter(c => c.p === p).length >= MIN_CELLS));
+const cellsIn = (peaks: CellPeak[]) => peaks.filter(c => both.has(c.p)).length;
+const part1 = {
+  b: {
+    cells: cellPeaks.length, shareOfTheLeftOverThatRepeats: sumSq ? r3(fixedSq / sumSq) : null,
+    cellsOverTheGate: cellPeaks.filter(c => Math.hypot(c.du, c.dv) > gateM).length, cellsOverTheGateWithoutTheRepeatingPart: withoutFixed.filter(c => Math.hypot(c.du, c.dv) > gateM).length,
+    meanCell: meanCell.map(({ mu: _a, mv: _b, ...m }) => m),
+  },
+  c: {
+    squares: NSQ, squaresFitted: Array.from(kPhotos).filter(k => k >= 3).length, heightErrorM: quart(Array.from(kOf).filter((_, s) => kPhotos[s] >= 3).map(k => r2(k * meanH))), flyingHeightM: r1(meanH),
+    photographs: both.size, cellsBefore: cellsIn(cellPeaks), cellsAfterHeight: cellsIn(heightPeaks),
+    cellsOverTheGate: {
+      asRegistered: overGate(cellPeaks, both), aPlaneAgain: overGate(cellPeaks, both, BASES.plane), planeAndTilt: overGate(cellPeaks, both, BASES.tilt),
+      heightAlone: overGate(heightPeaks, both), heightAndAPlaneAgain: overGate(heightPeaks, both, BASES.plane), heightAndPlaneAndTilt: overGate(heightPeaks, both, BASES.tilt),
+    },
+  },
+};
+// What is still over the gate after the plane and the tilt terms: which way it points against the rows. A miss along
+// the row by about one plant spacing with nothing across is a repeat locked onto the neighbouring plant (the plants
+// stand a regular spacing apart along a row, so the neighbour's repeat is nearly as sharp as the plant's own).
+const rest = { cells: 0, acrossTheRowsWithinTheGate: 0, ofThoseAboutOnePlantAlong: 0, acrossTheRowsOverTheGate: 0 }, restRows: (string | number)[][] = [];
+for (const { p } of order) {
+  const cs = cellPeaks.filter(c => c.p === p); if (cs.length < MIN_CELLS) continue;
+  const fit = fitCells(cs, BASES.tilt); if (!fit) continue;
+  fit.vec.forEach((v, k) => {
+    if (fit.res[k] <= gateM) return;
+    const ax = axes[p], e = v[0] * ax.eu[0] + v[1] * ax.ev[0], nn = v[0] * ax.eu[1] + v[1] * ax.ev[1], al = e * ct + nn * st, ac = -e * st + nn * ct;
+    rest.cells++; restRows.push([FLIGHT, photos[p], cs[k].col, cs[k].row, r1(100 * al), r1(100 * ac)]);
+    if (Math.abs(ac) <= gateM) { rest.acrossTheRowsWithinTheGate++; if (Math.abs(Math.abs(al) - seed) <= gateM) rest.ofThoseAboutOnePlantAlong++; } else rest.acrossTheRowsOverTheGate++;
+  });
+}
+csv("part1-rest.csv", "flight,photograph,cell_col_of_6,cell_row_of_4,still_left_along_the_rows_cm,still_left_across_the_rows_cm", restRows);
 const step3tilt = {
   photographs: photos.length, fitted: fitted.length, cells: cellPeaks.length, cellsOverTheMergeGate: cellPeaks.filter(c => Math.hypot(c.du, c.dv) > gateM).length,
-  cellsOverTheGateAmongFitted: fitted.reduce((t, r) => t + r.cellsOverTheMergeGate, 0), cellsOverTheGateAfterTilt: fitted.reduce((t, r) => t + (r.cellsOverTheGateAfterTilt ?? 0), 0),
+  cellsOverTheGateAmongFitted: fitted.reduce((t, r) => t + r.cellsOverTheMergeGate, 0), cellsOverTheGateAfterAPlane: fitted.reduce((t, r) => t + (r.cellsOverTheGateAfterAPlane ?? 0), 0), cellsOverTheGateAfterTilt: fitted.reduce((t, r) => t + (r.cellsOverTheGateAfterTilt ?? 0), 0),
   leftOver_cm: quart(fitted.map(r => r.leftOver_cm)), afterAPlane_cm: quart(fitted.map(r => r.afterAPlane_cm)), afterTilt_cm: quart(fitted.map(r => r.afterTilt_cm)), afterSecondOrder_cm: quart(fitted.map(r => r.afterSecondOrder_cm)),
   tiltSize_deg: quart(fitted.map(r => (r.tiltU_deg == null || r.tiltV_deg == null ? null : r2(Math.hypot(r.tiltU_deg, r.tiltV_deg))))), worstCell_cm: quart(tiltRows.map(r => r.worstCell_cm)), cellMap,
 };
@@ -303,7 +400,7 @@ const summary = {
   flight: FLIGHT, photographs: photos.length, sightings: sights.length, dots: { all: n, stricterMarks: strict, candidates: n - strict },
   geometry: { rowSpacingM: r3(S), plantSpacingM: rec.geometry.seedM, directionDegFromEast: r2(rec.geometry.directionDeg), acrossPositiveIsTowards: `east ${r2(-st)}, north ${r2(ct)} (unit vector)`, bandHalfWidthCm: r1(band * 100), rows: rec.rows.length },
   registration: { repeatM: r3(P.repeatM), mergeGateM: r3(gateM), photographsWithASingleShiftOnly: photoRows.filter(r => r.singleShiftOnly).map(r => r.name), cellsWithAPeak: { median: median(photoRows.map(r => r.cellsWithAPeak)), min: Math.min(...photoRows.map(r => r.cellsWithAPeak)), under4: photoRows.filter(r => r.cellsWithAPeak < 4).length, possible: PLANTS_FIRST.gridU * PLANTS_FIRST.gridV } },
-  step1, squares, step2, step3: { frame: frameRows, lines: lineRows, photos: photoRows, leftOver: step3tilt, leftOverByPhotograph: tiltRows }, step5,
+  step1, squares, step2, step3: { frame: frameRows, lines: lineRows, photos: photoRows, leftOver: step3tilt, leftOverByPhotograph: tiltRows }, part1: { ...part1, rest: { ...rest, plantSpacingUsedM: seed } }, step5,
 };
 writeFileSync(join(OUT, `${FLIGHT}.json`), JSON.stringify(summary, null, 1));
 console.log(`${FLIGHT}: ${photos.length} photographs, ${sights.length} sightings, ${n} dots; dots on no row ${offIdx.length}, ${withOne} with a dot on a row within 30 cm (nearest: ${nearest.join(" / ")} no photograph in common / in common / candidate); plant spacing ${rec.geometry.seedM}`);
