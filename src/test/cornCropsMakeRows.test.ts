@@ -146,17 +146,32 @@ describe("rows guide the search, they never make a plant", () => {
   const tiers = [...bare.map(() => 0), ...specks.map(() => 2)];
   const kept = (R: ReturnType<typeof read>) => onLine.filter(k => R.rowOf[n0 + k] >= 0).length;
 
-  it("specks on a row's line across bare ground are plants by the spacing alone, and are refused where the alley holds as many", () => {
+  it("specks on a row's line across bare ground are plants by the spacing alone, and are refused where the stretch's alley holds as many", () => {
+    // Bare from 4 m on, so the stretch from 5 to 10 m holds no plant: specks on the lines from the last plant on, and
+    // as many between the rows.
+    const cut = planting(a => a > 4.05 && a < 14.95), m0 = cut.length, sp: Dot[] = [];
+    for (let r = 0; r < 6; r++) for (let k = 1; k <= 12; k++) { sp.push(dot(4.05 + k * SEED, r * S, 1)); sp.push(dot(4.05 + k * SEED, r * S + 0.45, 1)); }
+    const dots = [...cut, ...sp], t = [...cut.map(() => 0), ...sp.map(() => 2)];
+    const keptIn = (R: ReturnType<typeof read>, from: number) => sp.filter((d, k) => k % 2 === 0 && d.e >= from && R.rowOf[m0 + k] >= 0).length;
+    // By the spacing alone they march on from plant to speck to speck.
+    expect(keptIn(read(dots, SEQUENCE_V1, null, t), 5)).toBe(36);
+    const row = read(dots, { ...SEQUENCE_V1, alleyTest: "row" }, null, t), own = read(dots, { ...SEQUENCE_V1, alleyTest: "own" }, null, t);
+    expect(keptIn(row, 5)).toBe(0); expect(keptIn(own, 5)).toBe(0);
+    expect(row.alleyRefused).toBeGreaterThanOrEqual(36);
+    // The stricter marks' plants read the same.
+    const base = read(cut, SEQUENCE_V1);
+    for (let i = 0; i < m0; i++) expect(row.rowOf[i] >= 0).toBe(base.rowOf[i] >= 0);
+  });
+
+  it("a bare strip shorter than a stretch shares it with planted row: the row's band passes, the candidates' own count does not", () => {
     const dots = [...bare, ...specks];
     expect(kept(read(dots, SEQUENCE_V1, null, tiers))).toBe(24);
-    const own = read(dots, { ...SEQUENCE_V1, alleyTest: "own" }, null, tiers), row = read(dots, { ...SEQUENCE_V1, alleyTest: "row" }, null, tiers);
-    expect(kept(own)).toBe(0); expect(kept(row)).toBe(0);
-    expect(row.alleyRefused).toBe(24);
-    // The stricter marks' plants read the same.
-    const base = read(bare, SEQUENCE_V1);
-    for (let i = 0; i < n0; i++) expect(row.rowOf[i] >= 0).toBe(base.rowOf[i] >= 0);
-    // Every dot together would let them through: the stretch's own plants outvote the alley (why "all" is not the rule).
+    // The stretch from 5 to 10 m holds the row's plants up to 9 m: with them the band beats the alley (the known limit).
+    expect(kept(read(dots, { ...SEQUENCE_V1, alleyTest: "row" }, null, tiers))).toBe(24);
     expect(kept(read(dots, { ...SEQUENCE_V1, alleyTest: "all" }, null, tiers))).toBe(24);
+    // Candidates against candidates: four on the line, eight between the rows.
+    const own = read(dots, { ...SEQUENCE_V1, alleyTest: "own" }, null, tiers);
+    expect(kept(own)).toBe(0); expect(own.alleyRefused).toBe(24);
   });
 
   it("marks one photograph made between the rows do not speak against marks several photographs made on the row", () => {
@@ -165,14 +180,14 @@ describe("rows guide the search, they never make a plant", () => {
     const strong: Dot[] = [], weak: Dot[] = [];
     for (let r = 0; r < 6; r++) for (let k = 0; k < 6; k++) { strong.push(dot(9.15 + k * SEED, r * S, 2)); weak.push(dot(9.1 + k * 0.13, r * S + 0.45, 1)); weak.push(dot(9.17 + k * 0.13, r * S - 0.45, 1)); }
     const dots = [...bare, ...strong, ...weak], t = [...bare.map(() => 0), ...strong.map(() => 1), ...weak.map(() => 3)];
-    const R = read(dots, { ...SEQUENCE_V1, alleyTest: "row" }, null, t);
+    const R = read(dots, { ...SEQUENCE_V1, alleyTest: "own" }, null, t);
     expect(strong.filter((d, k) => R.rowOf[n0 + k] >= 0).length).toBe(36);
     // The same specks as candidates of the same tier as the marks on the row: now the alley holds as many, and they go.
-    const same = read(dots, { ...SEQUENCE_V1, alleyTest: "row" }, null, [...bare.map(() => 0), ...strong.map(() => 1), ...weak.map(() => 1)]);
+    const same = read(dots, { ...SEQUENCE_V1, alleyTest: "own" }, null, [...bare.map(() => 0), ...strong.map(() => 1), ...weak.map(() => 1)]);
     expect(strong.filter((d, k) => same.rowOf[n0 + k] >= 0).length).toBe(0);
   });
 
-  it("three candidates in a gap of a full row cannot outvote anything; the row's own plants, found without a row, decide", () => {
+  it("three candidates in a gap of a full row cannot outvote anything on their own; with the row's plants, found without a row, the band passes", () => {
     const gap = planting(a => a > 9.05 && a < 9.55), extra = [dot(9.15, 2 * S, 2), dot(9.3, 2 * S, 2), dot(9.45, 2 * S, 1)];
     const dots = [...gap, ...extra], t = [...gap.map(() => 0), 1, 1, 2], k = gap.length;
     const own = read(dots, { ...SEQUENCE_V1, alleyTest: "own" }, null, t), row = read(dots, { ...SEQUENCE_V1, alleyTest: "row" }, null, t);
@@ -274,7 +289,7 @@ describe("between two rows", () => {
     // Specks on the lines across bare ground, as many between the rows: refused, and said so.
     const bare = planting(a => a > 9.05 && a < 14.95), specks: Dot[] = [];
     for (let r = 0; r < 6; r++) for (const a of [9.15, 9.3, 9.45, 9.6]) { specks.push(dot(a, r * S, 1)); specks.push(dot(a, r * S + 0.45, 1)); }
-    const R = read([...bare, ...specks], SEQUENCE, null, [...bare.map(() => 0), ...specks.map(() => 2)]);
+    const R = read([...bare, ...specks], { ...SEQUENCE, alleyTest: "own" }, null, [...bare.map(() => 0), ...specks.map(() => 2)]);
     // (Past the last row a speck has a row on one side only: no row reaches it.)
     specks.forEach((sp, k) => { expect(R.rowOf[bare.length + k]).toBe(-1); expect(R.why[bare.length + k]).toBe(k % 2 === 0 ? 6 : k < 40 ? 4 : 1); });
   });

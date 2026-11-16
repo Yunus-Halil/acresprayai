@@ -511,17 +511,16 @@ export const SEQUENCE = {
    * loosened placement would take, is kept on a row only along a stretch of it where dots stand on the row's line
    * clearly more than on the ground between the rows: rowGuided.ts's stretch test (bandBeatsControls: the band against
    * its two mid-alley strips, over `stretchM` of row), on the dots, which every photograph located without a row.
-   * Which dots are counted:
-   *   "own"  the dot's own kind must beat the alley on that stretch: for a dot of the stricter marks, those dots;
-   *          for a candidate, the candidates as strong as it or stronger (its tier and the tiers placed before it), so
-   *          the marks one photograph made anywhere in its frame do not speak against a mark three photographs made
-   *          (measured 2026-11-16: beside a wheel track along a row, single-photograph specks filled the alley and 48
-   *          candidates of 2 to 6 photographs on the row were refused with them);
-   *   "row"  the same where the stretch holds enough of that kind for the test to speak. Where it holds too few of
-   *          them to pass even if every one stood on the line (a full row with three plants missing has three
-   *          candidates), the candidates cannot say; the row must then be shown there by the stricter marks' dots,
-   *          which no row helped find;
-   *   "all"  every dot together;
+   * Which dots are counted, for a dot of the stricter marks always those dots, and for a candidate:
+   *   "row"  the row's band as it stands: the stricter marks' dots and the candidates as strong as it or stronger
+   *          (its tier and the tiers placed before it), on the line against between the rows. A full row with three
+   *          plants missing passes on its own plants; a line through scattered plants or across bare ground does not.
+   *          Known limit: a bare strip shorter than a stretch shares its stretch with planted row and passes with it;
+   *   "own"  only the candidates as strong as it or stronger, against the same between the rows. Stricter, and
+   *          biased against a well-read row: its band holds only the plants the stricter marks missed, the alley
+   *          everything the second look finds there (measured 2026-11-16 on one photograph: 48 candidates of 2 to 6
+   *          photographs standing on seedlings of one row refused, the alleys beside it cracked soil);
+   *   "all"  every dot, whatever its tier;
    *   "none" the test is not asked (as before). */
   alleyTest: "row" as "none" | "own" | "row" | "all",
   /** Where the test's two control strips are centred, as a share of the row spacing either side of the row: mid-alley
@@ -689,20 +688,16 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   const nearestRow = (i: number, list: Line[]) => { let best = -1, bd = onRow; list.forEach((r, ri) => { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) return; const d = Math.abs(C[i] - at(r, A[i])); if (d <= bd) { bd = d; best = ri; } }); return best; };
   // Where a row's band beats the ground between the rows (q.alleyTest), per stretch and per group of dots. Counted
   // before anything is placed: what stands where, not what was made of it.
-  // Groups: 0 the stricter marks' dots (every dot, for "all"), 1 to 3 the candidates by tier.
-  const groupOf = (i: number) => (q.alleyTest !== "all" && tier?.[i] ? Math.min(3, tier[i]) : 0);
+  // Groups: 0 the stricter marks' dots, 1 to 3 the candidates by tier.
+  const groupOf = (i: number) => (tier?.[i] ? Math.min(3, tier[i]) : 0);
   const strips = q.alleyTest === "none" ? null : bandAndAlley(lines, A, C, Int8Array.from({ length: n }, (_, i) => groupOf(i)), 4, S, onRow, reach, { ...ROW_GUIDED, controlShare: q.alleyControlShare });
   const beatsAlley = (ri: number, i: number) => {
     if (!strips) return true;
     const s = strips.stretches[strips.stretchOf(ri, A[i])], g = groupOf(i), len = Math.max(s.a1 - s.a0, 1e-6);
-    // Its kind: the stricter marks' dots, or the candidates of its tier and of the tiers placed before it.
-    let band = s.band[0], alley = s.alley[0];
-    if (g > 0) { band = 0; alley = 0; for (let k = 1; k <= g; k++) { band += s.band[k]; alley += s.alley[k]; } }
-    const control = Math.round(alley * strips.controlScale);
-    if (bandBeatsControls(band, control, len)) return true;
-    // "row": too few of its kind here for the test to pass whatever their places: the stricter marks' dots decide.
-    if (q.alleyTest !== "row" || g === 0 || bandBeatsControls(band + control, 0, len)) return false;
-    return bandBeatsControls(s.band[0], Math.round(s.alley[0] * strips.controlScale), len);
+    // Counted: the groups from `lo` to `hi` (see SEQUENCE.alleyTest).
+    const lo = q.alleyTest === "own" && g > 0 ? 1 : 0, hi = q.alleyTest === "all" ? 3 : g;
+    let band = 0, alley = 0; for (let k = lo; k <= hi; k++) { band += s.band[k]; alley += s.alley[k]; }
+    return bandBeatsControls(band, Math.round(alley * strips.controlScale), len);
   };
   let alleyRefused = 0;
   const along = lines.map(r => r.dots.map(i => A[i]));
