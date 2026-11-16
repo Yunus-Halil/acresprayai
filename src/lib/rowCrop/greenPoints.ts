@@ -176,24 +176,29 @@ export const ROW_POINTS = {
  * (`rowAngle`, radians in the photo, null when the photograph made no row) is plants touching and gets a point per
  * plant spacing along the row. These are candidates for the field's rows only (plantsFirst.ts): never weeds, never rows
  * of their own in a photograph.
+ * `defer` (off by default): with a row direction no piece is split here. Every piece is one point at its centre, and
+ * `defer.span` receives, per point, how far the piece reaches along the row either way of that centre (pixels, back
+ * and forward): the field splits the long ones at the plant spacing it measured (cornPlants.ts), not at `seedM`.
  */
-export function rowPlantPoints(mask: Uint8Array, W: number, H: number, rowAngle: number | null, gsdM: number | null, o = ROW_POINTS): PlantPoint[] {
+export function rowPlantPoints(mask: Uint8Array, W: number, H: number, rowAngle: number | null, gsdM: number | null, o = ROW_POINTS, defer: { span: [number, number][] } | null = null): PlantPoint[] {
   const N = W * H, seen = new Uint8Array(N);
-  type Piece = { a: number; cx: number; cy: number; x0: number; y0: number; x1: number; y1: number; start: number };
+  type Piece = { a: number; cx: number; cy: number; x0: number; y0: number; x1: number; y1: number; start: number; tLo: number; tHi: number };
+  const ux = rowAngle != null ? Math.cos(rowAngle) : 0, uy = rowAngle != null ? Math.sin(rowAngle) : 0, spans = !!defer && rowAngle != null;
   const pieces: Piece[] = [], stack: number[] = [];
   for (let i = 0; i < N; i++) {
     if (!mask[i] || seen[i]) continue;
-    let a = 0, sx = 0, sy = 0, x0 = W, y0 = H, x1 = 0, y1 = 0;
+    let a = 0, sx = 0, sy = 0, x0 = W, y0 = H, x1 = 0, y1 = 0, tLo = Infinity, tHi = -Infinity;
     seen[i] = 1; stack.push(i);
     while (stack.length) {
       const j = stack.pop()!, x = j % W, y = (j - x) / W;
       a++; sx += x; sy += y; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      if (spans) { const t = x * ux + y * uy; if (t < tLo) tLo = t; if (t > tHi) tHi = t; }
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
         const k = yy * W + xx; if (mask[k] && !seen[k]) { seen[k] = 1; stack.push(k); }
       }
     }
-    if (a >= o.minPiecePx) pieces.push({ a, cx: sx / a, cy: sy / a, x0, y0, x1, y1, start: i });
+    if (a >= o.minPiecePx) pieces.push({ a, cx: sx / a, cy: sy / a, x0, y0, x1, y1, start: i, tLo, tHi });
   }
   // The typical plant: the area-weighted median piece (as plantPointsFromGreen; these frames are seedlings on soil).
   const sizing = pieces.filter(p => p.a <= o.maxPlantShare * N).sort((p, q) => p.a - q.a), total = sizing.reduce((t, p) => t + p.a, 0);
@@ -201,7 +206,6 @@ export function rowPlantPoints(mask: Uint8Array, W: number, H: number, rowAngle:
   for (let acc = 0, i = 0; i < sizing.length; i++) { acc += sizing[i].a; if (acc >= total / 2) { typical = sizing[i].a; break; } }
   const d = Math.sqrt(typical), minPiece = Math.max(o.minPiecePx, typical * o.speckShare);
   const seedPx = gsdM && gsdM > 0 ? o.seedM / gsdM : 2 * d;
-  const ux = rowAngle != null ? Math.cos(rowAngle) : 0, uy = rowAngle != null ? Math.sin(rowAngle) : 0;
   const points: PlantPoint[] = [];
   /** A piece's own pixels again (its bounding box holds other pieces too: only those connected to its first pixel). */
   const pixelsOf = (p: Piece, fn: (x: number, y: number) => void) => {
@@ -220,6 +224,7 @@ export function rowPlantPoints(mask: Uint8Array, W: number, H: number, rowAngle:
     const bw = p.x1 - p.x0 + 1, bh = p.y1 - p.y0 + 1;
     // Cover (a lawn, a canopy): no points, as in plantPointsFromGreen.
     if (p.a > o.wholeUpTo * typical && p.a / (bw * bh) > o.coverFill && Math.min(bw, bh) > o.coverPlants * d) continue;
+    if (spans) { const tc = p.cx * ux + p.cy * uy; points.push({ x: p.cx + 0.5, y: p.cy + 0.5 }); defer!.span.push([p.tLo - tc - 0.5, p.tHi - tc + 0.5]); continue; }
     const px: number[] = [], py: number[] = [];
     let ax = ux, ay = uy;
     if (rowAngle == null) {

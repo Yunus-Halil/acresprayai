@@ -35,7 +35,7 @@
 // Decision support only: nothing here decides a treatment.
 import type { PhotoPixels } from "../photoScout/pattern";
 import { adaptiveAsRead, readCornAdaptive, type AdaptiveRead, type AdaptiveRow } from "./adaptive";
-import { GREEN_POINTS, plantPointsFromGreen, rowPlantPoints } from "./greenPoints";
+import { GREEN_POINTS, ROW_POINTS, plantPointsFromGreen, rowPlantPoints } from "./greenPoints";
 import { SEEDLING_GREEN, SEEDLING_ROW, SEEDLING_V1, type SeedlingCache, seedlingCache, seedlingMask, sharedSoilLevels } from "./seedlingGreen";
 import { distToLine, rowsFromPoints, type PlantPoint, type PlantRowsResult } from "./plantRows";
 import type { RowCropGap, RowCropOptions, RowCropParams, RowCropRead, RowCropRow, RowCropStage, RowCropWeed } from "./readRowCrop";
@@ -120,7 +120,10 @@ export type CornV1Read = {
   plants: { source: "green" | "detector"; points: PlantPoint[]; rows: PlantRowsResult; ms: number;
     /** Candidates for the field's rows at the lower bar (greenPoints.ts rowPlantPoints): only on a photograph of
      * seedlings on soil, where the dark-leaf rule applies; never weeds, never used alone. */
-    low?: PlantPoint[]; lowMs?: number };
+    low?: PlantPoint[]; lowMs?: number;
+    /** With `rowSpans`: per candidate, how far its green reaches along the photograph's rows either way of it (pixels,
+     * back and forward), and the rows' direction in the photograph (unit vector). Absent when the photograph made no row. */
+    lowSpan?: [number, number][]; lowAxis?: [number, number] };
   rows: CornV1Row[];
   /** Every green-read weed candidate with what V1 makes of it (index matches green.weeds). */
   weedVerdicts: { index: number; verdict: CornV1WeedVerdict; why: string }[];
@@ -145,6 +148,9 @@ export type CornV1Options = RowCropOptions & {
   baselineSeedlings?: boolean;
   /** false: no candidates for the field's rows at the lower bar (`plants.low`); the read is then exactly as before 2026-11-16. */
   rowCandidates?: boolean;
+  /** true: a candidate is never split at the plant spacing assumed in one photograph (greenPoints.ts ROW_POINTS.seedM);
+   * it carries its extent along the rows (`plants.lowSpan`) and the field splits it at the spacing it measured. */
+  rowSpans?: boolean;
 };
 
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : null; };
@@ -388,7 +394,9 @@ export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1O
   const v = fuseCornV1(ad, points, params, { enteredCrop: opts.enteredCrop ?? params.crop?.id ?? null, source: opts.detectorPoints ? "detector" : "green", greenMs: t1 - t0, plantsMs: t2 - t1 });
   if (!opts.detectorPoints && !opts.baselineSeedlings && opts.rowCandidates !== false && darkRuleApplies(ad, seedlings)) {
     const t3 = Date.now();
-    v.plants.low = cornV1RowCandidates(px, seedlings, v.rows, params.gsdM ?? null);
+    const defer = opts.rowSpans ? { span: [] as [number, number][], axis: null as [number, number] | null } : null;
+    v.plants.low = cornV1RowCandidates(px, seedlings, v.rows, params.gsdM ?? null, defer);
+    if (defer?.axis) { v.plants.lowSpan = defer.span; v.plants.lowAxis = defer.axis; }
     v.plants.lowMs = Date.now() - t3;
   }
   return v;
@@ -419,9 +427,11 @@ export function rowAngleOf(rows: { points: [number, number][] }[]): number | nul
  * Candidates for the field's rows (2026-11-16): the plants the lower bar shows (SEEDLING_ROW), at the photo's own
  * pixel, split along the photograph's rows. The soil levels are the photograph's shared ones; nothing else is read again.
  */
-export function cornV1RowCandidates(px: PhotoPixels, seedlings: SeedlingCache, rows: { points: [number, number][] }[], gsdM: number | null): PlantPoint[] {
-  const mask = seedlingMask(px, SEEDLING_ROW, sharedSoilLevels(seedlings, px));
-  return rowPlantPoints(mask, px.width, px.height, rowAngleOf(rows), gsdM);
+export function cornV1RowCandidates(px: PhotoPixels, seedlings: SeedlingCache, rows: { points: [number, number][] }[], gsdM: number | null, defer: { span: [number, number][]; axis: [number, number] | null } | null = null): PlantPoint[] {
+  const mask = seedlingMask(px, SEEDLING_ROW, sharedSoilLevels(seedlings, px)), angle = rowAngleOf(rows);
+  // `defer`: the candidates' extents along the rows instead of a split at the assumed spacing (only with a row direction).
+  if (defer && angle != null) defer.axis = [Math.cos(angle), Math.sin(angle)];
+  return rowPlantPoints(mask, px.width, px.height, angle, gsdM, ROW_POINTS, defer && angle != null ? defer : null);
 }
 
 /**

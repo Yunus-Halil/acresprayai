@@ -10,7 +10,7 @@
 import type { GeorefFrame } from "@/lib/directGeoref/projection";
 import { fromEnu } from "@/lib/sourceFrames/odm";
 import type { CornFieldResult, CornPhotoRead } from "./cornField";
-import { PLANTS_FIRST, ROW_RECALL, SEQUENCE, coverage, mergeDots, projectSightings, reconstruct, registerPhotos, rowCandidates } from "./plantsFirst";
+import { type Dot, PLANTS_FIRST, type PhotoShift, ROW_RECALL, type Reconstruction, type RowsFromDots, SEQUENCE, certainEvidence, coverage, mergeDots, projectSightings, reconstruct, registerPhotos, rowCandidates, rowsFromDots } from "./plantsFirst";
 
 export type CornStretch = {
   /** The field row it belongs to, and whether plants were seen along it. */
@@ -49,25 +49,60 @@ export type CornPlants = {
 /** Shortest stretch kept, metres (a sliver at a row's end says nothing). */
 const MIN_STRETCH_M = 0.3;
 
-/** The plants and the rows through them; null when the plants make no certain row (the caller keeps cornField's rows). */
-export function cornPlantsFirst(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, F: CornFieldResult, opts: { /** Development: the loosened placement on a row (plantsFirst.ts SEQUENCE.free, ROW_RECALL.anyView). */ free?: boolean } = {}): CornPlants | null {
+export type CornPlantsOptions = {
+  /** Development: the loosened placement on a row (plantsFirst.ts SEQUENCE.free, ROW_RECALL.anyView). */
+  free?: boolean;
+  /** The rules the rows are read by (default: SEQUENCE). */
+  sequence?: typeof SEQUENCE;
+};
+
+/** A flight's dots before any row is read: the stricter marks' dots first (`strict` of them), then the candidates for
+ * the rows with their tier (plantsFirst.ts rowCandidates); how many photographs looked at each; and the first reading
+ * of rows through the certain dots (direction, row spacing, plant spacing). */
+export type PlacedDots = { photos: string[]; shifts: PhotoShift[]; repeatM: number; all: Dot[]; strict: number; tier: Uint8Array | null; covered: Int32Array; pre: RowsFromDots };
+
+/** Steps 1 to 3 of plantsFirst.ts and the candidates for the rows; null when the photographs make no dot. */
+export function placeDots(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, F: CornFieldResult, opts: CornPlantsOptions = {}): PlacedDots | null {
   const { sights, photos } = projectSightings(reads, frames, F.origin);
   if (photos.length < 2 || sights.length < 50) return null;
   const reg = registerPhotos(sights, photos.length);
   const gateM = Math.min(PLANTS_FIRST.gateMax, Math.max(PLANTS_FIRST.gateMin, PLANTS_FIRST.gateTimes * reg.repeatM));
   const dots = mergeDots(sights, reg.shifts, gateM);
   if (!dots.length) return null;
+  const q = opts.sequence ?? SEQUENCE;
+  // The first reading of rows, through the certain dots alone (reconstruct takes it as given).
+  const coveredStrict = coverage(dots, frames, photos, reg.shifts, F.origin);
+  const pre = rowsFromDots(dots.filter((d, i) => certainEvidence(d, coveredStrict[i], q)), F.directionDeg ?? 0, F.pitchM ?? 0.76, PLANTS_FIRST);
   // Plants along the rows the stricter marks left out (plantsFirst.ts rowCandidates): only where a photograph carried
   // candidates (seedlings on soil). The dots above stay as they are, first; a candidate is kept only on a row.
   const strict = dots.length;
   const lowReads = reads.filter(r => r.low?.length).map(r => ({ name: r.name, scale: r.scale, plants: r.low! }));
-  let all = dots, tier: Uint8Array | null = null;
+  let all = dots, tier: Uint8Array | null = null, covered = coveredStrict;
   if (lowReads.length) {
     const C = rowCandidates(lowReads, frames, F.origin, photos, reg.shifts, sights, dots, F.directionDeg ?? 0, opts.free ? { ...ROW_RECALL, anyView: true } : ROW_RECALL);
-    if (C.dots.length) { all = [...dots, ...C.dots]; tier = new Uint8Array(all.length); tier.set(C.tier, strict); }
+    if (C.dots.length) {
+      all = [...dots, ...C.dots]; tier = new Uint8Array(all.length); tier.set(C.tier, strict);
+      covered = new Int32Array(all.length); covered.set(coveredStrict); covered.set(coverage(C.dots, frames, photos, reg.shifts, F.origin), strict);
+    }
   }
-  const covered = coverage(all, frames, photos, reg.shifts, F.origin);
-  const rec = reconstruct(all, covered, F.directionDeg ?? 0, F.pitchM ?? 0.76, PLANTS_FIRST, opts.free ? { ...SEQUENCE, free: true } : SEQUENCE, tier ? Uint8Array.from(tier, t => (t ? 1 : 0)) : null, tier);
+  return { photos, shifts: reg.shifts, repeatM: reg.repeatM, all, strict, tier, covered, pre };
+}
+
+/** Steps 4 on: the rows through the certain dots, and every other dot against them (plantsFirst.ts reconstruct). */
+export function readRows(P: PlacedDots, F: CornFieldResult, opts: CornPlantsOptions = {}): Reconstruction {
+  const q = opts.sequence ?? SEQUENCE;
+  return reconstruct(P.all, P.covered, F.directionDeg ?? 0, F.pitchM ?? 0.76, PLANTS_FIRST, opts.free ? { ...q, free: true } : q, P.tier ? Uint8Array.from(P.tier, t => (t ? 1 : 0)) : null, P.tier, P.pre);
+}
+
+/** The plants and the rows through them; null when the plants make no certain row (the caller keeps cornField's rows). */
+export function cornPlantsFirst(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, F: CornFieldResult, opts: CornPlantsOptions = {}): CornPlants | null {
+  const P = placeDots(reads, frames, F, opts);
+  return P ? cornPlantsOf(P, readRows(P, F, opts), F, opts) : null;
+}
+
+/** What a build keeps of a reading of the rows (see the header). */
+export function cornPlantsOf(P: PlacedDots, rec: Reconstruction, F: CornFieldResult, opts: CornPlantsOptions = {}): CornPlants | null {
+  const { all, strict, tier } = P;
   const G = rec.geometry;
   if (!G.certainRows || !rec.rows.length) return null;
 

@@ -151,6 +151,10 @@ export type CornPhotoRead = {
   /** Candidates for the field's rows at the lower bar (read pixels; a photograph of seedlings on soil only). Only ever
    * used along a row the plants above made (cornPlants.ts): absent in reads made before 2026-11-16. */
   low?: [number, number][];
+  /** With Corn V1's `rowSpans`: per `low` candidate, how far its green reaches along the photograph's rows either way of
+   * it (read pixels, back and forward), and the rows' direction in the photograph (unit vector). The field splits the
+   * long ones at the plant spacing it measured (cornPlants.ts). */
+  lowSpan?: [number, number][]; lowAxis?: [number, number];
 };
 
 /** The compact form of a Corn V1 read for the field. */
@@ -163,6 +167,7 @@ export function compactCornRead(name: string, v: CornV1Read, scale = 1): CornPho
     gaps: v.gaps.map(g => ({ x1: g.x1, y1: g.y1, x2: g.x2, y2: g.y2, verdict: g.verdict })),
     plants: v.plants.points.map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]),
     ...(v.plants.low ? { low: v.plants.low.map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]) } : {}),
+    ...(v.plants.low && v.plants.lowSpan && v.plants.lowAxis ? { lowSpan: v.plants.lowSpan.map(([a, b]) => [Math.round(a * 10) / 10, Math.round(b * 10) / 10] as [number, number]), lowAxis: v.plants.lowAxis } : {}),
   };
 }
 
@@ -326,9 +331,20 @@ export function plantedGround(plants: [number, number][], pitch0: number, o: Pla
   return { valid: judged > 0 && planted >= o.minPlantedShare * judged, spacingM, a0: aMin, c0: cMin, cellA, cellC, w, h, state, concentration, rowOffset, judged, planted, scattered, at };
 }
 
+/** The ground as the located plants judge it (FIELD.planted), for the steps after the field's rows: at a place (metres
+ * east and north of the field's origin) 0 unknown, 1 planted, 2 scattered. Only made when the judgement held for the
+ * flight (`planting.judged`): it is the same judgement the field's rows were cut by. */
+export type FieldGround = { spacingM: number; state: (e: number, n: number) => 0 | 1 | 2 };
+
 /** Corn V1's per-photograph reads combined over a field, in Swardus Direct's ground coordinates. */
 export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, o = FIELD): CornFieldResult {
+  return cornFieldAndGround(reads, frames, o).field;
+}
+
+/** cornField, with the planted / scattered judgement of the ground it made on the way (null when it judged none). */
+export function cornFieldAndGround(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, o = FIELD): { field: CornFieldResult; ground: FieldGround | null } {
   const t0 = Date.now(), notes: string[] = [];
+  let fieldGround: FieldGround | null = null;
   const used = reads.filter(r => frames.has(r.name));
   const fs = used.map(r => frames.get(r.name)!);
   const origin: LatLngAlt = fs.length ? { lat: fs.reduce((s, f) => s + f.pose.lat, 0) / fs.length, lng: fs.reduce((s, f) => s + f.pose.lng, 0) / fs.length, altM: 0 } : { lat: 0, lng: 0, altM: 0 };
@@ -388,6 +404,7 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
         else {
           planting.judged = true;
           const first = frame, cut: Projected[] = [];
+          fieldGround = { spacingM: pg.spacingM, state: (e, n) => { const [a, c] = first.toAC(e, n); return pg.at(a, c); } };
           let anyCut = false;
           for (const p of kept) {
             // A piece that touches no scattered ground stays as it is, whatever its length.
@@ -601,7 +618,7 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
   const cornRows = rows.filter(r => r.identity === "corn"), keptGaps = gaps.filter(g => g.verdict === "stand gap");
   if (incomplete) notes.push(`Stand gaps are not reported on this flight: over the planted ground the photographs hold ${Math.round(100 * planting.readShare!)} % of the row length it carries, so they miss rows and plants that are there, and a stretch with no plant seen is not evidence of a gap${planting.gapsNotReported ? ` (${planting.gapsNotReported} such stretches left out)` : ""}.`);
   notes.push("Review-only: rows, identities and candidate findings with the photographs behind each; nothing here decides a treatment.");
-  return {
+  const field: CornFieldResult = {
     version: CORN_FIELD_VERSION, origin, directionDeg, pitchM: reportedPitchM ? Math.round(reportedPitchM * 1000) / 1000 : null, rows, weeds, gaps,
     rowAgreementM: agreement.length ? Math.round(median(agreement) * 1000) / 1000 : null,
     planting,
@@ -614,4 +631,5 @@ export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFram
     },
     notes,
   };
+  return { field, ground: fieldGround };
 }

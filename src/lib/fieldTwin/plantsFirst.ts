@@ -24,7 +24,7 @@
 // from the dots (bounded by what corn is sown at).
 import { type GeorefFrame, pixelToGround } from "@/lib/directGeoref/projection";
 import { type LatLngAlt, toEnu } from "@/lib/sourceFrames/odm";
-import { seedSpacing } from "./rowGuided";
+import { ROW_GUIDED, seedSpacing } from "./rowGuided";
 
 export type Read = { name: string; scale: number; plants: [number, number][] };
 export type Sight = { p: number; u: number; v: number; e: number; n: number };
@@ -498,6 +498,12 @@ export const SEQUENCE = {
   freeMinSeeds: 0.7,
 };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
+/** A row's course in the rows' frame: its across position at knots along it, from its first plant to its last, and the dots it was fitted through. */
+export type RowCourse = { ka: Float64Array; kc: Float64Array; a0: number; a1: number; dots: number[] };
+/** A course's across position at `a` along (held level past its ends). */
+export const courseAt = (L: RowCourse, a: number) => { const X = L.ka, Y = L.kc; if (a <= X[0]) return Y[0]; if (a >= X[X.length - 1]) return Y[Y.length - 1]; let lo = 0, hi = X.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (X[m] <= a) lo = m; else hi = m; } const t = (a - X[lo]) / (X[hi] - X[lo] || 1); return Y[lo] + t * (Y[hi] - Y[lo]); };
+/** Whether a dot is a certain plant on its own evidence: enough photographs made it, and enough of those that looked at its ground. */
+export const certainEvidence = (d: Dot, covered: number, q: { certainViews: number; certainShare: number } = SEQUENCE) => d.photos >= q.certainViews && covered > 0 && d.photos / covered >= q.certainShare;
 export type SeqRow = { id: number; kind: "certain" | "geometry"; line: [number, number][]; dots: number[]; a0: number; a1: number; lengthM: number; perM: number; segments: RowSegment[] };
 export type Reconstruction = {
   /** Per dot: 0 certain, 1 probable (the certain geometry supports it), 2 uncertain. */
@@ -516,17 +522,49 @@ export type Reconstruction = {
   a: Float64Array; c: Float64Array;
   /** Per dot: 1 when it is on a row only by the loosened placement (`free`), not at the plant spacing. */
   loose: Uint8Array;
+  /** The courses of the rows the certain plants made (before anything was placed along them), and of the rows found in
+   * a slot those leave. */
+  courses: RowCourse[]; geomCourses: RowCourse[];
 };
+
+export type StretchCount = { /** Index into the courses given. */ row: number; a0: number; a1: number; /** Per class: dots within the band on the row's line, and in its two mid-alley strips together. */ band: Int32Array; alley: Int32Array };
+
+/**
+ * What stands on each row's line and what stands between the rows there (2026-11-16), per stretch of `stretchM` along
+ * each course and per class of dot (`cls`, negative: not counted). The band is the ground within `halfM` of the course;
+ * the two control strips are centred `controlShare` of the row spacing either side of it (mid-alley, the ground
+ * farthest from both neighbouring rows) and are as wide as the band, never wider than `controlHalfShare` allows:
+ * rowGuided.ts's strips, on the dots. A dot past a course's end by up to `reachM` counts in its last stretch.
+ * `controlScale` times an alley count is a count over the band's area (1 when the strips are as wide as the band).
+ */
+export function bandAndAlley(courses: RowCourse[], A: ArrayLike<number>, C: ArrayLike<number>, cls: ArrayLike<number>, nCls: number, S: number, halfM: number, reachM: number, o: Pick<typeof ROW_GUIDED, "stretchM" | "controlShare" | "controlHalfShare"> = ROW_GUIDED): { stretches: StretchCount[]; first: number[]; controlScale: number } {
+  const halfC = Math.min(halfM, o.controlHalfShare * S), off = o.controlShare * S;
+  const first: number[] = [], out: StretchCount[] = [];
+  courses.forEach((r, ri) => { first.push(out.length); const n = Math.max(1, Math.ceil((r.a1 - r.a0) / o.stretchM - 1e-9)); for (let k = 0; k < n; k++) out.push({ row: ri, a0: r.a0 + k * o.stretchM, a1: Math.min(r.a1, r.a0 + (k + 1) * o.stretchM), band: new Int32Array(nCls), alley: new Int32Array(nCls) }); });
+  first.push(out.length);
+  for (let i = 0; i < A.length; i++) {
+    const c = cls[i]; if (c < 0) continue;
+    for (let ri = 0; ri < courses.length; ri++) {
+      const r = courses[ri]; if (A[i] < r.a0 - reachM || A[i] > r.a1 + reachM) continue;
+      const d = Math.abs(C[i] - courseAt(r, A[i])), inBand = d <= halfM;
+      if (!inBand && Math.abs(d - off) > halfC) continue;
+      const k = first[ri] + Math.min(first[ri + 1] - first[ri] - 1, Math.max(0, Math.floor((A[i] - r.a0) / o.stretchM)));
+      if (inBand) out[k].band[c]++; else out[k].alley[c]++;
+    }
+  }
+  return { stretches: out, first, controlScale: halfM / halfC };
+}
 
 /** `notCertain`: dots that may be probable at most (the second look's plants: they confirm a stretch, never start a row).
  * `tier` (rowCandidates): per dot 0 a dot of the stricter marks, 1 / 2 a candidate for the rows; every dot of a lower tier
- * is placed on the rows before any of a higher one; a candidate joins a row the plants found first made, never makes one. */
-export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: number, spacingGuessM: number, o: PlantsFirstOptions = PLANTS_FIRST, q = SEQUENCE, notCertain: Uint8Array | null = null, tier: Uint8Array | null = null): Reconstruction {
+ * is placed on the rows before any of a higher one; a candidate joins a row the plants found first made, never makes one.
+ * `pre`: rowsFromDots over the certain dots, when the caller already made it (the same dots in the same order). */
+export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: number, spacingGuessM: number, o: PlantsFirstOptions = PLANTS_FIRST, q = SEQUENCE, notCertain: Uint8Array | null = null, tier: Uint8Array | null = null, pre: RowsFromDots | null = null): Reconstruction {
   const n = dots.length, certainty = new Uint8Array(n).fill(2);
-  for (let i = 0; i < n; i++) if (!notCertain?.[i] && dots[i].photos >= q.certainViews && covered[i] > 0 && dots[i].photos / covered[i] >= q.certainShare) certainty[i] = 0;
+  for (let i = 0; i < n; i++) if (!notCertain?.[i] && certainEvidence(dots[i], covered[i], q)) certainty[i] = 0;
   // 1-2. The certain plants, and the rows they make.
   const cIdx: number[] = []; for (let i = 0; i < n; i++) if (certainty[i] === 0) cIdx.push(i);
-  const R1 = rowsFromDots(cIdx.map(i => dots[i]), directionDeg, spacingGuessM, o);
+  const R1 = pre ?? rowsFromDots(cIdx.map(i => dots[i]), directionDeg, spacingGuessM, o);
   const th = (R1.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th), S = R1.spacingM;
   const A = new Float64Array(n), C = new Float64Array(n);
   for (let i = 0; i < n; i++) { A[i] = dots[i].e * ct + dots[i].n * st; C[i] = -dots[i].e * st + dots[i].n * ct; }
@@ -534,8 +572,8 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   // without RTK drift by tens of centimetres over a hundred metres): a row is straight over a stretch and follows that
   // slow drift. Its course is a line fitted locally (tricube weights within `localM` either way), every 2 m along it,
   // robustly: plants further than `fitTol` of a spacing from the course are dropped and it is fitted again.
-  type Line = { ka: Float64Array; kc: Float64Array; a0: number; a1: number; dots: number[] };
-  const at = (L: Line, a: number) => { const X = L.ka, Y = L.kc; if (a <= X[0]) return Y[0]; if (a >= X[X.length - 1]) return Y[Y.length - 1]; let lo = 0, hi = X.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (X[m] <= a) lo = m; else hi = m; } const t = (a - X[lo]) / (X[hi] - X[lo] || 1); return Y[lo] + t * (Y[hi] - Y[lo]); };
+  type Line = RowCourse;
+  const at = courseAt;
   const course = (use: number[], a0: number, a1: number): { ka: Float64Array; kc: Float64Array } => {
     const sorted = [...use].sort((x, y) => A[x] - A[y]), ka: number[] = [], kc: number[] = [], h = q.localM;
     for (let a = a0; ; a = Math.min(a1, a + 2)) {
@@ -673,5 +711,5 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     if (below && above) { between[i] = 1; why[i] = 4; }
   }
   for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
-  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, geometry, a: A, c: C, loose };
+  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines };
 }

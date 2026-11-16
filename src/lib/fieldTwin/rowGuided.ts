@@ -464,6 +464,16 @@ export type MergeResult = {
   p: number; q: number;
 };
 
+/** The chance that `k` or more of `n` marks fall in a row's band when a mark is as likely there as in each of its two
+ * control strips (a binomial tail at one third). */
+export function bandTail(k: number, n: number): number { let s = 0, term = Math.pow(2 / 3, n); for (let i = 0; i <= n; i++) { if (i >= k) s += term; term = (term * (n - i)) / (i + 1) / 2; } return s; }
+
+/** A stretch of row `lengthM` long is verified when its band holds at least `minBand` marks (per `stretchM`) and clearly
+ * more than its two control strips together would by chance (`control`: their count, scaled to the band's width). */
+export function bandBeatsControls(band: number, control: number, lengthM: number, o: Pick<RowGuidedOptions, "minBand" | "stretchM" | "alpha"> = ROW_GUIDED): boolean {
+  return band >= o.minBand * (lengthM / o.stretchM) && bandTail(band, band + control) < o.alpha;
+}
+
 /**
  * The photographs' candidates joined along each row (see the header). `gateM`: candidates of different photographs
  * within this distance along the row are one plant; two of the same photograph never are. `use` picks photographs
@@ -502,14 +512,13 @@ export function mergeAlongRows(searches: PhotoSearch[], rows: RowLine[], gateM: 
   const accepted = sized.map(toMark).filter(m => m.views >= Math.min(o.minViews, m.covered) && m.logOdds > 0);
   const marks = accepted.filter(m => m.strip === 0), controlMarks = accepted.filter(m => m.strip !== 0);
   // Stretches of row: verified where the band holds clearly more than its two control strips together would by chance.
-  const tail = (k: number, n: number) => { let s = 0, term = Math.pow(2 / 3, n); for (let i = 0; i <= n; i++) { if (i >= k) s += term; term = (term * (n - i)) / (i + 1) / 2; } return s; };
   const stretches: RowStretch[] = [], cScale = list.length ? list.reduce((t, s) => t + (s.controlScale ?? 1), 0) / list.length : 1;
   for (const row of rows) {
     const a0 = row.a0, a1 = row.a0 + (row.en.length - 1) * row.stepM, mine = marks.filter(m => m.row === row.id), ctl = controlMarks.filter(m => m.row === row.id);
     for (let s = a0; s < a1 - 1e-6; s += o.stretchM) {
       const e = Math.min(a1, s + o.stretchM), band = mine.filter(m => m.a >= s && m.a < e).length, control = Math.round(ctl.filter(m => m.a >= s && m.a < e).length * cScale);
       const seen = coveredAt(row.id, (s + e) / 2);
-      stretches.push({ row: row.id, a0: s, a1: e, band, control, state: seen < Math.min(o.minViews, list.length) ? "not covered" : band >= o.minBand * ((e - s) / o.stretchM) && tail(band, band + control) < o.alpha ? "verified" : "not verified" });
+      stretches.push({ row: row.id, a0: s, a1: e, band, control, state: seen < Math.min(o.minViews, list.length) ? "not covered" : bandBeatsControls(band, control, e - s, o) ? "verified" : "not verified" });
     }
   }
   return { marks, controlMarks, stretches, p: Math.round(p * 1000) / 1000, q: Math.round(q * 10000) / 10000 };
