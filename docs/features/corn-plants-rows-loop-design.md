@@ -2,7 +2,7 @@
 
 Design only. Nothing in this document is built. It follows phases 1 to 4 on `feature/corn-crops-make-rows`
 (scoreboard, no rows on unplanted ground, the band-against-alley test, the between-rows label). Line numbers are
-as of commit `34618fc` (phase 4).
+as of the commit that last touched `plantsFirst.ts` on this branch ("phase 3: the default test reads the row's whole band").
 
 ## The three rules
 
@@ -31,12 +31,12 @@ settles in two rounds: the first measures the field, the second reads it with th
 ## State
 
 Every dot carries where it came from, as two facts. Today these exist only implicitly (the `tier` and
-`notCertain` arrays of `reconstruct`, `src/lib/fieldTwin/plantsFirst.ts:610`).
+`notCertain` arrays of `reconstruct`, `src/lib/fieldTwin/plantsFirst.ts:612`).
 
 | Fact | Values | Set by |
 |---|---|---|
 | `locatedBy` | `frame` (a photograph's whole-frame read) or `row` (a search along a known row) | the read that made the mark |
-| `believedBy` | `own` (enough photographs made it, of those that looked) or `row` (accepted for where it stands on a row) | `certainEvidence`, `plantsFirst.ts:544`, or the placement on a row |
+| `believedBy` | `own` (enough photographs made it, of those that looked) or `row` (accepted for where it stands on a row) | `certainEvidence`, `plantsFirst.ts:546`, or the placement on a row |
 
 "Found without help from rows" is `locatedBy = frame` and `believedBy = own`. Only those dots may reach row
 fitting or the planted-ground judgement. The type should make the other dots impossible to pass in, rather than
@@ -72,7 +72,7 @@ the certain plants give (`rowsFromDots`, `plantsFirst.ts:327`), on the free plan
 sightings (one per photograph per plant), so the input stays sightings, not merged dots. The second-look
 candidates must never be passed to it; today they are not.
 
-**Step 3, rows.** The first half of `reconstruct`, `plantsFirst.ts:613-674`: certain dots, `rowNumbers`
+**Step 3, rows.** The first half of `reconstruct`, `plantsFirst.ts:615-676`: certain dots, `rowNumbers`
 (`plantsFirst.ts:430`), one line per row number, pieces joined. It becomes its own function, `fitRows`, taking
 only `own` dots and the ground.
 
@@ -81,26 +81,26 @@ accepted because of a row act on that row:
 
 | Where | What happens today | Change |
 |---|---|---|
-| `plantsFirst.ts:713` and `:730` (`along[ri].push`) | A dot placed on a row becomes a reference for the next one's distance test, so marks can step along a row across ground with no certain plant. | Two reference sets: every plant on the row for the "not a double" clearance, only `own` plants for "within reach of a plant". |
-| `plantsFirst.ts:755-761` (`build`) | A row runs from its first plant to its last, whichever kind they are, so a guided plant past the last certain one lengthens the row. | A row's ends are its first and last `own` plant. Guided plants beyond them are attached to the row and drawn, and do not move its ends. |
-| `plantsFirst.ts:766` (`piece`, the segments) | A stretch is "plants confirmed" when plants of any kind stand along it closer than the gap rule. | "Confirmed" needs `own` plants. A stretch holding only guided plants gets its own state: plants found along the row, the row not confirmed by them. |
-| `plantsFirst.ts:768-770` (`piece`, the drawn course) | The drawn line is refitted through all the row's plants. | Refit through `own` plants only. |
+| `plantsFirst.ts:716` and `:733` (`along[ri].push`) | A dot placed on a row becomes a reference for the next one's distance test, so marks can step along a row across ground with no certain plant (seen 2026-11-16: a handful of marks left inside a wheel-track strip a few metres wide, which the stretch test cannot isolate). | Two reference sets: every plant on the row for the "not a double" clearance, only `own` plants for "within reach of a plant". |
+| `plantsFirst.ts:758-764` (`build`) | A row runs from its first plant to its last, whichever kind they are, so a guided plant past the last certain one lengthens the row. | A row's ends are its first and last `own` plant. Guided plants beyond them are attached to the row and drawn, and do not move its ends. |
+| `plantsFirst.ts:769` (`piece`, the segments) | A stretch is "plants confirmed" when plants of any kind stand along it closer than the gap rule. | "Confirmed" needs `own` plants. A stretch holding only guided plants gets its own state: plants found along the row, the row not confirmed by them. |
+| `plantsFirst.ts:771-773` (`piece`, the drawn course) | The drawn line is refitted through all the row's plants. | Refit through `own` plants only. |
 
-The rows found in a free slot (`plantsFirst.ts:733-748`) are made from dots that were located without a row but
+The rows found in a free slot (`plantsFirst.ts:736-751`) are made from dots that were located without a row but
 are not certain. Under rule 1 as written ("plants you are sure of") they would go. That is a decision for you: on
 the flights measured they hold 0 to 23 plants.
 
 **Steps 5 and 6, expectations and the guided look.** New, replacing the two placement loops
-(`plantsFirst.ts:704-732`) and the "not confirmed" segments. An expectation is a plant position on a row between
+(`plantsFirst.ts:707-735`) and the "not confirmed" segments. An expectation is a plant position on a row between
 two of its `own` plants that stand further apart than one and a half plant spacings. Each gets one of three
 outcomes:
 
-- **plant**: a candidate stands there and passes the tests phase 3 put in (`beatsAlley`, `plantsFirst.ts:691`).
+- **plant**: a candidate stands there and passes the tests phase 3 put in (`beatsAlley`, `plantsFirst.ts:694`).
 - **gap**: nothing stands there, the photographs that looked at the spot saw it sharply, and enough of them looked
   that silence is evidence. `mergeAlongRows` already computes this as log-odds from a photograph's chance of
   finding a plant that is there and of marking one that is not (`src/lib/fieldTwin/rowGuided.ts:504-512`); the
   same two rates can be estimated here from the certain plants' repeats and from the alley counts of
-  `bandAndAlley` (`plantsFirst.ts:585`).
+  `bandAndAlley` (`plantsFirst.ts:587`).
 - **cannot tell**: everything else. Too few photographs looked, the stretch's band does not beat its alley, or the
   photographs disagree.
 
