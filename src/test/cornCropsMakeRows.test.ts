@@ -159,6 +159,19 @@ describe("rows guide the search, they never make a plant", () => {
     expect(kept(read(dots, { ...SEQUENCE_V1, alleyTest: "all" }, null, tiers))).toBe(24);
   });
 
+  it("marks one photograph made between the rows do not speak against marks several photographs made on the row", () => {
+    // The bare strip again. On every row's line six candidates two photographs made; between the rows twelve specks
+    // one photograph made anywhere in its frame (tier 3: only the loosened placement carries them).
+    const strong: Dot[] = [], weak: Dot[] = [];
+    for (let r = 0; r < 6; r++) for (let k = 0; k < 6; k++) { strong.push(dot(9.15 + k * SEED, r * S, 2)); weak.push(dot(9.1 + k * 0.13, r * S + 0.45, 1)); weak.push(dot(9.17 + k * 0.13, r * S - 0.45, 1)); }
+    const dots = [...bare, ...strong, ...weak], t = [...bare.map(() => 0), ...strong.map(() => 1), ...weak.map(() => 3)];
+    const R = read(dots, { ...SEQUENCE_V1, alleyTest: "row" }, null, t);
+    expect(strong.filter((d, k) => R.rowOf[n0 + k] >= 0).length).toBe(36);
+    // The same specks as candidates of the same tier as the marks on the row: now the alley holds as many, and they go.
+    const same = read(dots, { ...SEQUENCE_V1, alleyTest: "row" }, null, [...bare.map(() => 0), ...strong.map(() => 1), ...weak.map(() => 1)]);
+    expect(strong.filter((d, k) => same.rowOf[n0 + k] >= 0).length).toBe(0);
+  });
+
   it("three candidates in a gap of a full row cannot outvote anything; the row's own plants, found without a row, decide", () => {
     const gap = planting(a => a > 9.05 && a < 9.55), extra = [dot(9.15, 2 * S, 2), dot(9.3, 2 * S, 2), dot(9.45, 2 * S, 1)];
     const dots = [...gap, ...extra], t = [...gap.map(() => 0), 1, 1, 2], k = gap.length;
