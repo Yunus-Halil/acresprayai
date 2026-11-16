@@ -15,7 +15,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { join } from "node:path";
 import { decodeImage } from "../bench/images";
 import { groundSampleAt } from "../../src/lib/directGeoref/projection";
-import { cornField, type CornPhotoRead } from "../../src/lib/fieldTwin/cornField";
+import { cornFieldAndGround, type CornPhotoRead } from "../../src/lib/fieldTwin/cornField";
 import { cornPlantsFirst } from "../../src/lib/fieldTwin/cornPlants";
 import { framesFromAnalysis, type TwinAnalysis } from "../../src/lib/fieldTwin/analysis";
 import { cornV1RowCandidates } from "../../src/lib/rowCrop/cornV1";
@@ -61,8 +61,8 @@ if (has("candidates")) {
     return { ...rest, low: [...j.low, ...j2].map(([x, y]) => [x / r.scale, y / r.scale] as [number, number]) };
   });
   if (missing) console.log(`${missing} photographs have no candidates in the cache: they keep their marks only`);
-  const F = cornField(reads, frames, A.fieldOptions);
-  const t0 = Date.now(), P = cornPlantsFirst(reads, frames, F, { free });
+  const { field: F, ground } = cornFieldAndGround(reads, frames, A.fieldOptions);
+  const t0 = Date.now(), P = cornPlantsFirst(reads, frames, F, { free, ground });
   if (!P) throw new Error("the plants made no certain row");
   console.log(`plants first in ${Date.now() - t0} ms${baseline ? " (baseline: no candidates)" : `; candidates ${Math.round(ms / Math.max(1, reads.length))} ms a photograph`}`);
   console.log(JSON.stringify({ ...P.summary, seedCm: P.geometry.seedM ? +(P.geometry.seedM * 100).toFixed(1) : null, spacingM: +P.geometry.spacingM.toFixed(3), certainRows: P.geometry.certainRows }));

@@ -26,7 +26,7 @@ import type { GeorefFrame } from "../../src/lib/directGeoref/projection";
 import { type CornPhotoRead, FIELD, type FieldGround, cornFieldAndGround } from "../../src/lib/fieldTwin/cornField";
 import { type CornPlantsOptions, cornPlantsOf, placeDots, readRows } from "../../src/lib/fieldTwin/cornPlants";
 import { framesFromAnalysis, type TwinAnalysis } from "../../src/lib/fieldTwin/analysis";
-import { PLANTS_FIRST, ROW_RECALL, SEQUENCE, type Dot, bandAndAlley, coverage } from "../../src/lib/fieldTwin/plantsFirst";
+import { PLANTS_FIRST, ROW_RECALL, SEQUENCE, SEQUENCE_V1, type Dot, bandAndAlley, coverage } from "../../src/lib/fieldTwin/plantsFirst";
 import { ROW_GUIDED, bandBeatsControls } from "../../src/lib/fieldTwin/rowGuided";
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
 
@@ -42,8 +42,12 @@ const revision = (() => { try { return execSync("git rev-parse --short HEAD").to
 /** A variant: how the candidates are joined to the reads, and the options the plants and rows are read with. */
 type Variant = { what: string; spans?: boolean; opts: (ground: FieldGround | null) => CornPlantsOptions };
 const VARIANTS: Record<string, Variant> = {
-  base: { what: "the rules as they stood at f23efc0 (second look where a build makes candidates; loosened placement off)", opts: () => ({}) },
-  loose: { what: "f23efc0 with the loosened placement on (SEQUENCE.free, ROW_RECALL.anyView)", opts: () => ({ free: true }) },
+  base: { what: "the rules as they stood at f23efc0 (second look where a build makes candidates; loosened placement off)", opts: () => ({ sequence: SEQUENCE_V1 }) },
+  loose: { what: "f23efc0 with the loosened placement on (SEQUENCE.free, ROW_RECALL.anyView)", opts: () => ({ sequence: SEQUENCE_V1, free: true }) },
+  p2: { what: "phase 2: no rows on unplanted ground (patternCellsOnly, refuseScattered)", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true, refuseScattered: true }, ground }) },
+  p2loose: { what: "phase 2 with the loosened placement on", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true, refuseScattered: true }, ground, free: true }) },
+  p2cells: { what: "phase 2, only patternCellsOnly", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true }, ground }) },
+  p2ground: { what: "phase 2, only refuseScattered", opts: ground => ({ sequence: { ...SEQUENCE_V1, refuseScattered: true }, ground }) },
 };
 
 type Cached = { applies: boolean; plantsMatch: boolean; low: [number, number][]; lowWhole: [number, number][]; span: [number, number][]; axis: [number, number] | null };
@@ -99,7 +103,7 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
   const th = (rec.geometry.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th);
   const fromAlley = [-1, 1].map(sign => {
     const d = sign * ROW_GUIDED.controlShare * S, all = P.all.map((dot, i): Dot => (cls[i] === 0 ? dot : { ...dot, e: dot.e - st * d, n: dot.n + ct * d }));
-    const r2 = readRows({ ...P, all }, F, { ...opts, ground: shiftGround(opts, -st * d, ct * d) } as CornPlantsOptions), c = [0, 0, 0, 0, 0];
+    const r2 = readRows({ ...P, all, ...(opts.ground ? { groundState: Uint8Array.from(P.all, dot => opts.ground!.state(dot.e, dot.n)) } : {}) }, F, opts), c = [0, 0, 0, 0, 0];
     for (let i = 0; i < n; i++) { const t = tierOf(r2, i); if (t > 0 && cls[i] !== 0) c[t]++; }
     return [...c, inSlotRows(r2)];
   });
@@ -111,7 +115,7 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
   const r1 = (x: number) => Math.round(x * 10) / 10;
   const out = {
     flight: FLIGHT, variant: v.what, revision, photographs: reads.length, photographsWithCandidates: reads.filter(r => r.low?.length).length,
-    cache: { missing, plantsDifferFromRecord: mismatched }, ms: 0,
+    cache: { missing, plantsDifferFromRecord: mismatched }, ms: 0, unplanted: rec.unplanted, cutOverScattered: rec.gaps.cutOverScattered,
     geometry: { rowSpacingM: Math.round(S * 1000) / 1000, plantSpacingM: rec.geometry.seedM, directionDeg: Math.round(rec.geometry.directionDeg * 100) / 100, certainRows: rec.geometry.certainRows },
     planting: { judged: F.planting.judged, why: F.planting.why, plantedM2: F.planting.plantedM2, scatteredM2: F.planting.scatteredM2 },
     dots: { all: n, stricterMarks: P.strict, candidates: n - P.strict },
@@ -128,12 +132,6 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
   };
   out.ms = Date.now() - t0;
   return out;
-}
-
-/** The ground judgement for dots moved by (de, dn): each is judged where it really stands. */
-function shiftGround(opts: CornPlantsOptions, de: number, dn: number): unknown {
-  const g = (opts as { ground?: FieldGround | null }).ground;
-  return g ? { spacingM: g.spacingM, state: (e: number, n: number) => g.state(e - de, n - dn) } : g;
 }
 
 /** The flight read twice from alternate photographs. */

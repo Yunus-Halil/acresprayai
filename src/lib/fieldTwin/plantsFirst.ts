@@ -422,8 +422,12 @@ export function rowsFromDots(dots: Dot[], directionDeg: number, spacingGuessM: n
  * stay the same row from cell to cell); cells with too few certain plants take the offset of the nearest held cell.
  * A dot's row number is its across position less its cell's offset, in spacings, rounded; its residual is how far
  * from that row's line it lies.
+ * `patternOnly`: a cell that holds enough certain plants and no row pattern in them (strength under 0.3) is not given
+ * its neighbour's: its dots get no row number (residual Infinity), so no row is made of them. Without it such a cell
+ * was filled like a cell with too few plants, and the scattered plants of a headland within a fifth of a spacing of
+ * the carried lines became row plants.
  */
-export function rowNumbers(A: Float64Array, C: Float64Array, certain: Uint8Array, S: number, cellAlongM = 10, cellAcrossM = 6, minPlants = 12): { j: Int32Array; resid: Float64Array; cells: number } {
+export function rowNumbers(A: Float64Array, C: Float64Array, certain: Uint8Array, S: number, cellAlongM = 10, cellAcrossM = 6, minPlants = 12, patternOnly = false): { j: Int32Array; resid: Float64Array; cells: number; /** Cells with plants and no pattern, left without rows. */ flat: number } {
   const n = A.length;
   let aMin = Infinity, cMin = Infinity, aMax = -Infinity, cMax = -Infinity;
   for (let i = 0; i < n; i++) { aMin = Math.min(aMin, A[i]); aMax = Math.max(aMax, A[i]); cMin = Math.min(cMin, C[i]); cMax = Math.max(cMax, C[i]); }
@@ -431,8 +435,8 @@ export function rowNumbers(A: Float64Array, C: Float64Array, certain: Uint8Array
   const cellOf = (i: number) => Math.min(W - 1, Math.floor((A[i] - aMin) / cellAlongM)) * H + Math.min(H - 1, Math.floor((C[i] - cMin) / cellAcrossM));
   const sx = new Float64Array(W * H), sy = new Float64Array(W * H), cnt = new Int32Array(W * H);
   for (let i = 0; i < n; i++) if (certain[i]) { const k = cellOf(i), t = (2 * Math.PI * C[i]) / S; sx[k] += Math.cos(t); sy[k] += Math.sin(t); cnt[k]++; }
-  const phase = new Float64Array(W * H).fill(NaN), strength = new Float64Array(W * H);
-  for (let k = 0; k < W * H; k++) if (cnt[k] >= minPlants) { strength[k] = Math.hypot(sx[k], sy[k]) / cnt[k]; if (strength[k] >= 0.3) phase[k] = ((Math.atan2(sy[k], sx[k]) / (2 * Math.PI)) * S); }
+  const phase = new Float64Array(W * H).fill(NaN), strength = new Float64Array(W * H), flat = new Uint8Array(W * H);
+  for (let k = 0; k < W * H; k++) if (cnt[k] >= minPlants) { strength[k] = Math.hypot(sx[k], sy[k]) / cnt[k]; if (strength[k] >= 0.3) phase[k] = ((Math.atan2(sy[k], sx[k]) / (2 * Math.PI)) * S); else if (patternOnly) flat[k] = 1; }
   // Joined outward from the best-held cell: each offset unwrapped to within half a spacing of the neighbour it was reached from.
   const done = new Uint8Array(W * H), order: number[] = [];
   const held = Array.from({ length: W * H }, (_, k) => k).filter(k => Number.isFinite(phase[k])).sort((x, y) => cnt[y] * strength[y] - cnt[x] * strength[x]);
@@ -453,14 +457,14 @@ export function rowNumbers(A: Float64Array, C: Float64Array, certain: Uint8Array
   // Cells with too few certain plants: the nearest held cell's offset.
   const heldCells = order;
   for (let k = 0; k < W * H; k++) {
-    if (Number.isFinite(phase[k]) || !heldCells.length) continue;
+    if (Number.isFinite(phase[k]) || flat[k] || !heldCells.length) continue;
     const ai = Math.floor(k / H), ci = k % H; let best = heldCells[0], bd = Infinity;
     for (const h of heldCells) { const d = Math.hypot((Math.floor(h / H) - ai) * cellAlongM, ((h % H) - ci) * cellAcrossM); if (d < bd) { bd = d; best = h; } }
     phase[k] = phase[best];
   }
   const j = new Int32Array(n), resid = new Float64Array(n);
-  for (let i = 0; i < n; i++) { const ph = phase[cellOf(i)]; const x = (C[i] - (Number.isFinite(ph) ? ph : 0)) / S; j[i] = Math.round(x); resid[i] = (x - j[i]) * S; }
-  return { j, resid, cells: heldCells.length };
+  for (let i = 0; i < n; i++) { const k = cellOf(i); if (flat[k]) { resid[i] = Infinity; continue; } const ph = phase[k]; const x = (C[i] - (Number.isFinite(ph) ? ph : 0)) / S; j[i] = Math.round(x); resid[i] = (x - j[i]) * S; }
+  return { j, resid, cells: heldCells.length, flat: flat.reduce((t, x) => t + x, 0) };
 }
 
 /**
@@ -496,7 +500,19 @@ export const SEQUENCE = {
    * 2026-11-16, at half a spacing it added 8,500 marks 7-10 cm from a plant already there (a seedling's other leaf),
    * a distance under 4 % of neighbouring plants stand at. */
   freeMinSeeds: 0.7,
+  /** No rows on unplanted ground (2026-11-16); both only on a flight whose ground the field judged (`ground` handed
+   * in). `patternCellsOnly`: a cell with plenty of certain plants and no row pattern in them holds no row (rowNumbers
+   * `patternOnly`; the plants on ground judged scattered are not counted in the pattern). `refuseScattered`: on ground the field's plants show as
+   * scattered (cornField.ts FIELD.planted, handed in as `ground`) no certain plant makes a row, no dot is a probable
+   * plant, no candidate is taken, and a row is cut where its course would cross that ground. Ground the field did not
+   * judge, and a flight it judged none of, read as before. */
+  patternCellsOnly: true, refuseScattered: true,
 };
+/** The rules as they stood on 2026-11-16 at f23efc0, before the changes above them here: kept so that result can be run beside the present one. */
+export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false };
+/** The field's judgement of the ground as reconstruct takes it (cornField.ts FieldGround): at a place, metres east and
+ * north, 0 unknown, 1 planted, 2 scattered; `dotState` where the caller judged the dots itself. */
+export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
 /** A row's course in the rows' frame: its across position at knots along it, from its first plant to its last, and the dots it was fitted through. */
 export type RowCourse = { ka: Float64Array; kc: Float64Array; a0: number; a1: number; dots: number[] };
@@ -513,10 +529,14 @@ export type Reconstruction = {
   rowOf: Int32Array;
   /** Per dot: 1 when it is on no row and has a row on either side of it within a spacing: between the rows, not the crop. */
   between: Uint8Array;
-  /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows. */
+  /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows, 5 on ground the field's plants show as scattered. */
   why: Uint8Array;
-  /** The gap rule as measured, and what it did: gaps bridged as confirmed, stretches not confirmed, rows cut. */
-  gaps: { filled: number; gapM: number; bridged: number; notConfirmedStretches: number; cutOverMaxBridge: number; cutLengthM: number };
+  /** The gap rule as measured, and what it did: gaps bridged as confirmed, stretches not confirmed, rows cut (over a
+   * stretch with no plant, and where the course would cross ground judged scattered). */
+  gaps: { filled: number; gapM: number; bridged: number; notConfirmedStretches: number; cutOverMaxBridge: number; cutLengthM: number; cutOverScattered: number };
+  /** Unplanted ground: dots on ground judged scattered (all, and the certain ones among them), and cells with plants
+   * and no row pattern that were left without rows. */
+  unplanted: { dotsOnScattered: number; certainOnScattered: number; flatCells: number };
   geometry: { spacingM: number; directionDeg: number; seedM: number | null; rowLengthMedianM: number; perMMedian: number; certainDots: number; certainRows: number };
   /** Along / across of every dot in the rows' frame, metres. */
   a: Float64Array; c: Float64Array;
@@ -558,8 +578,9 @@ export function bandAndAlley(courses: RowCourse[], A: ArrayLike<number>, C: Arra
 /** `notCertain`: dots that may be probable at most (the second look's plants: they confirm a stretch, never start a row).
  * `tier` (rowCandidates): per dot 0 a dot of the stricter marks, 1 / 2 a candidate for the rows; every dot of a lower tier
  * is placed on the rows before any of a higher one; a candidate joins a row the plants found first made, never makes one.
- * `pre`: rowsFromDots over the certain dots, when the caller already made it (the same dots in the same order). */
-export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: number, spacingGuessM: number, o: PlantsFirstOptions = PLANTS_FIRST, q = SEQUENCE, notCertain: Uint8Array | null = null, tier: Uint8Array | null = null, pre: RowsFromDots | null = null): Reconstruction {
+ * `pre`: rowsFromDots over the certain dots, when the caller already made it (the same dots in the same order).
+ * `ground`: the field's planted / scattered judgement (used with `q.refuseScattered`). */
+export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: number, spacingGuessM: number, o: PlantsFirstOptions = PLANTS_FIRST, q = SEQUENCE, notCertain: Uint8Array | null = null, tier: Uint8Array | null = null, pre: RowsFromDots | null = null, ground: GroundJudge | null = null): Reconstruction {
   const n = dots.length, certainty = new Uint8Array(n).fill(2);
   for (let i = 0; i < n; i++) if (!notCertain?.[i] && certainEvidence(dots[i], covered[i], q)) certainty[i] = 0;
   // 1-2. The certain plants, and the rows they make.
@@ -568,6 +589,10 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   const th = (R1.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th), S = R1.spacingM;
   const A = new Float64Array(n), C = new Float64Array(n);
   for (let i = 0; i < n; i++) { A[i] = dots[i].e * ct + dots[i].n * st; C[i] = -dots[i].e * st + dots[i].n * ct; }
+  // Ground the field's plants show as scattered: nothing there is the planting (q.refuseScattered).
+  const judge = q.refuseScattered ? ground : null, scattered = new Uint8Array(n);
+  if (judge) for (let i = 0; i < n; i++) if ((judge.dotState ? judge.dotState[i] : judge.state(dots[i].e, dots[i].n)) === 2) scattered[i] = 1;
+  const overScattered = (L: RowCourse, a0: number, a1: number) => { if (!judge) return false; for (let a = a0 + 0.25; a < a1; a += 0.5) { const c = courseAt(L, a); if (judge.state(a * ct - c * st, a * st + c * ct) === 2) return true; } return false; };
   // A planter drives straight, but the ground the photographs are placed on is not rigid over a whole flight (cameras
   // without RTK drift by tens of centimetres over a hundred metres): a row is straight over a stretch and follows that
   // slow drift. Its course is a line fitted locally (tricube weights within `localM` either way), every 2 m along it,
@@ -598,10 +623,13 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     return L;
   };
   // Each certain plant's row number from the planter's pattern (rowNumbers), and one straight line per row number.
-  const isCertain = new Uint8Array(n); for (const i of cIdx) isCertain[i] = 1;
-  const RN = rowNumbers(A, C, isCertain, S);
+  const isCertain = new Uint8Array(n); for (const i of cIdx) if (!scattered[i]) isCertain[i] = 1;
+  // Only on a flight whose ground the field's plants judged: where they show the planting nowhere (a canopy, where one
+  // dot is not one plant), a cell without the pattern says nothing about the ground (measured 2026-11-16 on a flight
+  // 45 days after planting, not judged: one cell of a planted field lost its rows, 35 m of them).
+  const RN = rowNumbers(A, C, isCertain, S, undefined, undefined, undefined, q.patternCellsOnly && !!ground);
   const byJ = new Map<number, number[]>();
-  for (const i of cIdx) if (Math.abs(RN.resid[i]) <= 0.2 * S) (byJ.get(RN.j[i]) ?? byJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
+  for (const i of cIdx) if (!scattered[i] && Math.abs(RN.resid[i]) <= 0.2 * S) (byJ.get(RN.j[i]) ?? byJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
   let lines = [...byJ.values()].filter(g => g.length >= 5).map(fit).filter((L): L is Line => !!L && L.a1 - L.a0 >= q.minCertainRowM);
   // Pieces of one row joined: two lines that agree (within `joinTol` of a spacing) where one ends and the other begins.
   for (let changed = true; changed;) {
@@ -625,7 +653,8 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   // number of plant spacings from the nearest plant on it, it is probable; between the rows it is not the crop.
   const onRow = o.onRowShare * S, reach = q.maxGapSeeds * seed;
   // Why a dot is on no row (diagnostics): 0 on a row, 1 no row reaches it, 2 as close to a plant on the row as a
-  // double, 3 not a whole number of plant spacings from the row's plants, 4 between two rows (set at the end).
+  // double, 3 not a whole number of plant spacings from the row's plants, 4 between two rows (set at the end), 5 on
+  // ground the field's plants show as scattered.
   const why = new Uint8Array(n);
   const nearestRow = (i: number, list: Line[]) => { let best = -1, bd = onRow; list.forEach((r, ri) => { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) return; const d = Math.abs(C[i] - at(r, A[i])); if (d <= bd) { bd = d; best = ri; } }); return best; };
   const along = lines.map(r => r.dots.map(i => A[i]));
@@ -633,6 +662,7 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   const onCertain = new Uint8Array(n); for (const r of lines) for (const i of r.dots) onCertain[i] = 1;
   const order = Array.from({ length: n }, (_, i) => i).filter(i => !onCertain[i]).sort((x, y) => (tier ? tier[x] - tier[y] : 0) || dots[y].photos - dots[x].photos);
   for (const i of order) {
+    if (scattered[i]) { why[i] = 5; continue; }
     const ri = nearestRow(i, lines); if (ri < 0) { why[i] = 1; continue; }
     let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
     if (nearest < 0.5 * seed) { why[i] = 2; continue; } // as close as a double, or the same plant twice: not taken on geometry
@@ -662,7 +692,7 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   // as the certain rows are, straight.
   const restByJ = new Map<number, number[]>();
   // A candidate of the second look (any tier) never makes a row: rows come from the plants found first (2026-11-16).
-  for (let i = 0; i < n; i++) if (!onCertain[i] && !tier?.[i] && Math.abs(RN.resid[i]) <= onRow) (restByJ.get(RN.j[i]) ?? restByJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
+  for (let i = 0; i < n; i++) if (!onCertain[i] && !tier?.[i] && !scattered[i] && Math.abs(RN.resid[i]) <= onRow) (restByJ.get(RN.j[i]) ?? restByJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
   const geomLines: Line[] = [];
   for (const g of restByJ.values()) {
     if (g.length < 5) continue;
@@ -676,14 +706,16 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   // How full the certain rows are, and so how long a run of missed plants is still ordinary there.
   const filled = Math.min(0.95, Math.max(0.15, geometry.perMMedian * seed));
   const gapK = Math.max(q.gapSeeds, Math.ceil(Math.log(q.gapRisk) / Math.log(1 - filled))), gapM = gapK * seed;
-  const breaks = { bridged: 0, notConfirmedStretches: 0, cutOverMaxBridge: 0, cutLengthM: 0 };
+  const breaks = { bridged: 0, notConfirmedStretches: 0, cutOverMaxBridge: 0, cutLengthM: 0, cutOverScattered: 0 };
   // Rows with their stretches: plants confirmed, or a gap of over `gapM` ("the row probably
   // continues here; plants not confirmed").
   const rows: SeqRow[] = [], rowOf = new Int32Array(n).fill(-1);
   const build = (kind: SeqRow["kind"], ds: number[], L: Line) => {
     const all = [...new Set(ds)].sort((x, y) => A[x] - A[y]);
-    // Cut where no plant stands for over maxBridgeM; each piece with 3 or more plants is a row of its own.
-    for (let s0 = 0; s0 < all.length;) { let e0 = s0; while (e0 + 1 < all.length && A[all[e0 + 1]] - A[all[e0]] <= q.maxBridgeM) e0++; if (e0 - s0 + 1 >= 3) piece(kind, all.slice(s0, e0 + 1), L); if (e0 + 1 < all.length) { breaks.cutOverMaxBridge++; breaks.cutLengthM += A[all[e0 + 1]] - A[all[e0]]; } s0 = e0 + 1; }
+    // Cut where no plant stands for over maxBridgeM, and where a stretch with no plant confirmed would cross ground
+    // judged scattered; each piece with 3 or more plants is a row of its own.
+    const tooFar = (i0: number, i1: number) => A[i1] - A[i0] > q.maxBridgeM, unplanted = (i0: number, i1: number) => A[i1] - A[i0] > gapM && overScattered(L, A[i0], A[i1]);
+    for (let s0 = 0; s0 < all.length;) { let e0 = s0; while (e0 + 1 < all.length && !tooFar(all[e0], all[e0 + 1]) && !unplanted(all[e0], all[e0 + 1])) e0++; if (e0 - s0 + 1 >= 3) piece(kind, all.slice(s0, e0 + 1), L); if (e0 + 1 < all.length) { if (tooFar(all[e0], all[e0 + 1])) { breaks.cutOverMaxBridge++; breaks.cutLengthM += A[all[e0 + 1]] - A[all[e0]]; } else breaks.cutOverScattered++; } s0 = e0 + 1; }
   };
   const piece = (kind: SeqRow["kind"], sorted: number[], L: Line) => {
     if (sorted.length < 2) return;
@@ -711,5 +743,6 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     if (below && above) { between[i] = 1; why[i] = 4; }
   }
   for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
-  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines };
+  const unplantedGround = { dotsOnScattered: scattered.reduce((t, x) => t + x, 0), certainOnScattered: cIdx.reduce((t, i) => t + scattered[i], 0), flatCells: RN.flat };
+  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines };
 }

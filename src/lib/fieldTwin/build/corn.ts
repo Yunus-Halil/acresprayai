@@ -11,7 +11,7 @@ import { rowCropParamsFor } from "../../rowCrop/params";
 import { cropProfileFor } from "../../cropProfiles/registry";
 import { groundSampleAt, type GeorefFrame } from "../../directGeoref/projection";
 import type { PhotoPixels } from "../../photoScout/pattern";
-import { FIELD, FIELD_V2, compactCornRead, cornField, type CornFieldResult, type CornPhotoRead } from "../cornField";
+import { FIELD, FIELD_V2, compactCornRead, cornFieldAndGround, type CornFieldResult, type CornPhotoRead } from "../cornField";
 import { type CornPlants, cornPlantsFirst } from "../cornPlants";
 import type { Pool } from "./pool";
 import { type BuildHooks, type CornVariant, type PhotoSource, checkCancelled } from "./types";
@@ -81,14 +81,14 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
   // Reads arrive in completion order; the field does not depend on it, the report and the twin should not either.
   reads.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   failed.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const field = cornField(reads, frames, variant ? FIELD_V2 : FIELD);
+  const { field, ground } = cornFieldAndGround(reads, frames, variant ? FIELD_V2 : FIELD);
   hooks.log?.(`corn over the field: ${field.summary.cornRows} corn rows, ${field.summary.probableRows} unconfirmed, ${field.summary.weeds} confirmed weed candidates, ${field.summary.gaps} stand gaps; rows agree within ${field.rowAgreementM != null ? (field.rowAgreementM * 100).toFixed(1) : "?"} cm`);
   for (const n of field.notes.slice(0, -1)) hooks.log?.(`  ${n}`);
   let plants: CornPlants | null = null;
   if (!variant) {
     hooks.onProgress?.({ stage: "corn", done: list.length, total: list.length, message: "placing the plants, then the rows through them", elapsedMs: Date.now() - t0 });
     const tp = Date.now();
-    try { plants = cornPlantsFirst(reads, frames, field); }
+    try { plants = cornPlantsFirst(reads, frames, field, { ground }); }
     catch (e) { hooks.log?.(`plants first failed (${(e as Error)?.message ?? e}): the field's rows are kept`); }
     if (plants) hooks.log?.(`plants first: ${plants.summary.plants} plants (${plants.summary.certain} certain, ${plants.summary.probable} probable on a row), ${plants.summary.rows} rows, ${Math.round(plants.summary.confirmedM)} m with plants seen, ${Math.round(plants.summary.notConfirmedM)} m not confirmed (${((Date.now() - tp) / 1000).toFixed(1)} s)`);
     else hooks.log?.("plants first: no certain row from the plants, the field's rows are kept");

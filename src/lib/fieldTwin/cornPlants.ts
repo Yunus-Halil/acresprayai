@@ -9,7 +9,7 @@
 // The corn stage's own rows (cornField) stay the fallback: a flight whose plants make no certain row keeps them.
 import type { GeorefFrame } from "@/lib/directGeoref/projection";
 import { fromEnu } from "@/lib/sourceFrames/odm";
-import type { CornFieldResult, CornPhotoRead } from "./cornField";
+import type { CornFieldResult, CornPhotoRead, FieldGround } from "./cornField";
 import { type Dot, PLANTS_FIRST, type PhotoShift, ROW_RECALL, type Reconstruction, type RowsFromDots, SEQUENCE, certainEvidence, coverage, mergeDots, projectSightings, reconstruct, registerPhotos, rowCandidates, rowsFromDots } from "./plantsFirst";
 
 export type CornStretch = {
@@ -54,12 +54,17 @@ export type CornPlantsOptions = {
   free?: boolean;
   /** The rules the rows are read by (default: SEQUENCE). */
   sequence?: typeof SEQUENCE;
+  /** The field's planted / scattered judgement of the ground (cornField.ts cornFieldAndGround): with it, nothing on
+   * ground judged scattered is read as the planting (SEQUENCE.refuseScattered). Without it the ground is not asked. */
+  ground?: FieldGround | null;
 };
 
 /** A flight's dots before any row is read: the stricter marks' dots first (`strict` of them), then the candidates for
  * the rows with their tier (plantsFirst.ts rowCandidates); how many photographs looked at each; and the first reading
  * of rows through the certain dots (direction, row spacing, plant spacing). */
-export type PlacedDots = { photos: string[]; shifts: PhotoShift[]; repeatM: number; all: Dot[]; strict: number; tier: Uint8Array | null; covered: Int32Array; pre: RowsFromDots };
+export type PlacedDots = { photos: string[]; shifts: PhotoShift[]; repeatM: number; all: Dot[]; strict: number; tier: Uint8Array | null; covered: Int32Array; pre: RowsFromDots;
+  /** Per dot, the ground's judgement where a caller made it itself (a script that moves the dots); else asked of `ground`. */
+  groundState?: Uint8Array };
 
 /** Steps 1 to 3 of plantsFirst.ts and the candidates for the rows; null when the photographs make no dot. */
 export function placeDots(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, F: CornFieldResult, opts: CornPlantsOptions = {}): PlacedDots | null {
@@ -91,7 +96,7 @@ export function placeDots(reads: CornPhotoRead[], frames: Map<string, GeorefFram
 /** Steps 4 on: the rows through the certain dots, and every other dot against them (plantsFirst.ts reconstruct). */
 export function readRows(P: PlacedDots, F: CornFieldResult, opts: CornPlantsOptions = {}): Reconstruction {
   const q = opts.sequence ?? SEQUENCE;
-  return reconstruct(P.all, P.covered, F.directionDeg ?? 0, F.pitchM ?? 0.76, PLANTS_FIRST, opts.free ? { ...q, free: true } : q, P.tier ? Uint8Array.from(P.tier, t => (t ? 1 : 0)) : null, P.tier, P.pre);
+  return reconstruct(P.all, P.covered, F.directionDeg ?? 0, F.pitchM ?? 0.76, PLANTS_FIRST, opts.free ? { ...q, free: true } : q, P.tier ? Uint8Array.from(P.tier, t => (t ? 1 : 0)) : null, P.tier, P.pre, opts.ground ? { state: opts.ground.state, dotState: P.groundState ?? null } : null);
 }
 
 /** The plants and the rows through them; null when the plants make no certain row (the caller keeps cornField's rows). */
