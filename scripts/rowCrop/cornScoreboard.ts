@@ -15,6 +15,10 @@
 //               rowGuided.ts's own test (bandBeatsControls), per class and for all dots together
 //   fromAlley   the rules run again with every dot that is not a certain plant moved half a row spacing across the
 //               rows (once each way, the mean): what they then put on the rows came from mid-alley ground. Per tier.
+//               Where the band-against-alley test is on, its control strips are then read a quarter spacing either
+//               side of the row lines: the ground that was a quarter and three quarters of the way across the alley,
+//               so band and strips are all ground between the rows (the real rows' own dots, moved to mid-alley, are
+//               in neither).
 //   ground      plants on rows, row length, by what cornField's planted / scattered judgement says of the ground
 //   halves      the flight read twice from alternate photographs (by name order): per tier, the plants on rows one
 //               half has where the other half looked (2+ of its photographs) and has none within ROW_RECALL.exclM
@@ -41,11 +45,21 @@ const revision = (() => { try { return execSync("git rev-parse --short HEAD").to
 
 /** A variant: how the candidates are joined to the reads, and the options the plants and rows are read with. */
 type Variant = { what: string; spans?: boolean; opts: (ground: FieldGround | null) => CornPlantsOptions };
+const P2 = { ...SEQUENCE_V1, patternCellsOnly: true, refuseScattered: true };
 const VARIANTS: Record<string, Variant> = {
   base: { what: "the rules as they stood at f23efc0 (second look where a build makes candidates; loosened placement off)", opts: () => ({ sequence: SEQUENCE_V1 }) },
   loose: { what: "f23efc0 with the loosened placement on (SEQUENCE.free, ROW_RECALL.anyView)", opts: () => ({ sequence: SEQUENCE_V1, free: true }) },
   p2: { what: "phase 2: no rows on unplanted ground (patternCellsOnly, refuseScattered)", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true, refuseScattered: true }, ground }) },
   p2loose: { what: "phase 2 with the loosened placement on", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true, refuseScattered: true }, ground, free: true }) },
+  p3: { what: "phase 3: a candidate or loosened dot only where the band beats the alley (alleyTest row)", opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground }) },
+  p3loose: { what: "phase 3 with the loosened placement on", opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground, free: true }) },
+  p3own: { what: "phase 3, the dot's own kind must beat the alley (alleyTest own)", opts: ground => ({ sequence: { ...P2, alleyTest: "own" }, ground }) },
+  p3ownloose: { what: "phase 3 own kind, loosened on", opts: ground => ({ sequence: { ...P2, alleyTest: "own" }, ground, free: true }) },
+  p3all: { what: "phase 3, the test on every dot together (alleyTest all)", opts: ground => ({ sequence: { ...P2, alleyTest: "all" }, ground }) },
+  p3allloose: { what: "phase 3 on every dot together, loosened on", opts: ground => ({ sequence: { ...P2, alleyTest: "all" }, ground, free: true }) },
+  p3span15: { what: "phase 3, candidates carried with their extents and split in the field at the assumed 0.15 m", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground, fieldSeed: false }) },
+  p3spanfield: { what: "phase 3, candidates split in the field at its measured plant spacing", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground }) },
+  p3spanfieldloose: { what: "phase 3, field spacing, loosened on", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground, free: true }) },
   p2cells: { what: "phase 2, only patternCellsOnly", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true }, ground }) },
   p2ground: { what: "phase 2, only refuseScattered", opts: ground => ({ sequence: { ...SEQUENCE_V1, refuseScattered: true }, ground }) },
 };
@@ -69,12 +83,17 @@ function readsFor(v: Variant): CornPhotoRead[] {
 const TIERS = ["certain", "probable", "second look, 2+ photographs", "second look, 1 photograph", "loosened"] as const;
 const CLASSES = ["certain on its own evidence", "2+ photographs, not certain", "second look, 2+ photographs", "second look, 1 photograph near its frame's middle", "second look, 1 photograph anywhere"] as const;
 
-type Run = ReturnType<typeof run>;
-function run(reads: CornPhotoRead[], v: Variant) {
-  const { field: F, ground } = cornFieldAndGround(reads, frames, A.fieldOptions ?? FIELD);
-  const opts = v.opts(ground), P = placeDots(reads, frames, F, opts);
+const memo = new Map<string, unknown>();
+const once = <T>(key: string, make: () => T): T => { if (!memo.has(key)) { const t = Date.now(); memo.set(key, make()); if (TIMES) console.log(`    [${key}: ${((Date.now() - t) / 1000).toFixed(1)} s]`); } return memo.get(key) as T; };
+const TIMES = argv.includes("--times");
+function run(reads: CornPhotoRead[], v: Variant, part = "all") {
+  // The field does not read the candidates, and the dots depend on them only through how they are joined to the reads.
+  const { field: F, ground } = once(`field ${part}`, () => cornFieldAndGround(reads, frames, A.fieldOptions ?? FIELD));
+  const opts = v.opts(ground), q = opts.sequence ?? SEQUENCE;
+  const P = once(`dots ${part} spans=${!!v.spans} free=${!!opts.free} fieldSeed=${opts.fieldSeed !== false} certain=${q.certainViews}/${q.certainShare}`, () => placeDots(reads, frames, F, opts));
   if (!P) return null;
-  const rec = readRows(P, F, opts), CP = cornPlantsOf(P, rec, F, opts);
+  const t = Date.now(), rec = readRows(P, F, opts), CP = cornPlantsOf(P, rec, F, opts);
+  if (TIMES) console.log(`    [rows ${part}: ${((Date.now() - t) / 1000).toFixed(1)} s]`);
   const n = P.all.length;
   const tierOf = (r: typeof rec, i: number) => (r.rowOf[i] < 0 ? -1 : r.loose[i] || P.tier?.[i] === 3 ? 4 : P.tier?.[i] === 1 ? 2 : P.tier?.[i] === 2 ? 3 : r.certainty[i] === 0 ? 0 : 1);
   const cls = Int8Array.from({ length: n }, (_, i) => (i < P.strict ? (rec.certainty[i] === 0 ? 0 : 1) : 1 + P.tier![i]));
@@ -103,7 +122,8 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
   const th = (rec.geometry.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th);
   const fromAlley = [-1, 1].map(sign => {
     const d = sign * ROW_GUIDED.controlShare * S, all = P.all.map((dot, i): Dot => (cls[i] === 0 ? dot : { ...dot, e: dot.e - st * d, n: dot.n + ct * d }));
-    const r2 = readRows({ ...P, all, ...(opts.ground ? { groundState: Uint8Array.from(P.all, dot => opts.ground!.state(dot.e, dot.n)) } : {}) }, F, opts), c = [0, 0, 0, 0, 0];
+    const moved = { ...opts, sequence: { ...(opts.sequence ?? SEQUENCE), alleyControlShare: ROW_GUIDED.controlShare / 2 } };
+    const r2 = readRows({ ...P, all, ...(opts.ground ? { groundState: Uint8Array.from(P.all, dot => opts.ground!.state(dot.e, dot.n)) } : {}) }, F, moved), c = [0, 0, 0, 0, 0];
     for (let i = 0; i < n; i++) { const t = tierOf(r2, i); if (t > 0 && cls[i] !== 0) c[t]++; }
     return [...c, inSlotRows(r2)];
   });
@@ -115,7 +135,7 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
   const r1 = (x: number) => Math.round(x * 10) / 10;
   const out = {
     flight: FLIGHT, variant: v.what, revision, photographs: reads.length, photographsWithCandidates: reads.filter(r => r.low?.length).length,
-    cache: { missing, plantsDifferFromRecord: mismatched }, ms: 0, unplanted: rec.unplanted, cutOverScattered: rec.gaps.cutOverScattered,
+    cache: { missing, plantsDifferFromRecord: mismatched }, ms: 0, unplanted: rec.unplanted, cutOverScattered: rec.gaps.cutOverScattered, alleyRefused: rec.alleyRefused,
     geometry: { rowSpacingM: Math.round(S * 1000) / 1000, plantSpacingM: rec.geometry.seedM, directionDeg: Math.round(rec.geometry.directionDeg * 100) / 100, certainRows: rec.geometry.certainRows },
     planting: { judged: F.planting.judged, why: F.planting.why, plantedM2: F.planting.plantedM2, scatteredM2: F.planting.scatteredM2 },
     dots: { all: n, stricterMarks: P.strict, candidates: n - P.strict },
@@ -137,7 +157,7 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
 /** The flight read twice from alternate photographs. */
 function halves(reads: CornPhotoRead[], v: Variant) {
   const sorted = [...reads].sort((a, b) => (a.name < b.name ? -1 : 1));
-  const H = [0, 1].map(par => run(sorted.filter((_, i) => i % 2 === par), v));
+  const H = [0, 1].map(par => run(sorted.filter((_, i) => i % 2 === par), v, par ? "odd half" : "even half"));
   if (!H[0] || !H[1]) return { failed: "a half made no dot" };
   const origin = H[0].F.origin;
   // Each half's plants on rows in one frame (the first half's origin).

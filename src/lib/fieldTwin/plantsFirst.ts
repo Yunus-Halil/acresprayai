@@ -24,7 +24,7 @@
 // from the dots (bounded by what corn is sown at).
 import { type GeorefFrame, pixelToGround } from "@/lib/directGeoref/projection";
 import { type LatLngAlt, toEnu } from "@/lib/sourceFrames/odm";
-import { ROW_GUIDED, seedSpacing } from "./rowGuided";
+import { ROW_GUIDED, bandBeatsControls, seedSpacing } from "./rowGuided";
 
 export type Read = { name: string; scale: number; plants: [number, number][] };
 export type Sight = { p: number; u: number; v: number; e: number; n: number };
@@ -507,9 +507,27 @@ export const SEQUENCE = {
    * plant, no candidate is taken, and a row is cut where its course would cross that ground. Ground the field did not
    * judge, and a flight it judged none of, read as before. */
   patternCellsOnly: true, refuseScattered: true,
+  /** Rows guide the search, they never make a plant (2026-11-16). A candidate of the second look, and any dot the
+   * loosened placement would take, is kept on a row only along a stretch of it where dots stand on the row's line
+   * clearly more than on the ground between the rows: rowGuided.ts's stretch test (bandBeatsControls: the band against
+   * its two mid-alley strips, over `stretchM` of row), on the dots, which every photograph located without a row.
+   * Which dots are counted:
+   *   "own"  the dot's own kind (the second look's candidates together, or the stricter marks' dots together) must
+   *          beat the alley on that stretch;
+   *   "row"  the same where the stretch holds enough of that kind for the test to speak. Where it holds too few of
+   *          them to pass even if every one stood on the line (a full row with three plants missing has three
+   *          candidates), the candidates cannot say; the row must then be shown there by the stricter marks' dots,
+   *          which no row helped find;
+   *   "all"  every dot together;
+   *   "none" the test is not asked (as before). */
+  alleyTest: "row" as "none" | "own" | "row" | "all",
+  /** Where the test's two control strips are centred, as a share of the row spacing either side of the row: mid-alley
+   * (rowGuided.ts controlShare). Only the scoreboard changes it, to read phantom rows laid half way between the real
+   * ones against strips a quarter spacing either side of them. */
+  alleyControlShare: ROW_GUIDED.controlShare,
 };
 /** The rules as they stood on 2026-11-16 at f23efc0, before the changes above them here: kept so that result can be run beside the present one. */
-export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false };
+export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none" };
 /** The field's judgement of the ground as reconstruct takes it (cornField.ts FieldGround): at a place, metres east and
  * north, 0 unknown, 1 planted, 2 scattered; `dotState` where the caller judged the dots itself. */
 export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
@@ -529,7 +547,7 @@ export type Reconstruction = {
   rowOf: Int32Array;
   /** Per dot: 1 when it is on no row and has a row on either side of it within a spacing: between the rows, not the crop. */
   between: Uint8Array;
-  /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows, 5 on ground the field's plants show as scattered. */
+  /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows, 5 on ground the field's plants show as scattered, 6 a candidate (or a dot for the loosened placement) on a stretch of row whose band does not beat the ground between the rows. */
   why: Uint8Array;
   /** The gap rule as measured, and what it did: gaps bridged as confirmed, stretches not confirmed, rows cut (over a
    * stretch with no plant, and where the course would cross ground judged scattered). */
@@ -537,6 +555,8 @@ export type Reconstruction = {
   /** Unplanted ground: dots on ground judged scattered (all, and the certain ones among them), and cells with plants
    * and no row pattern that were left without rows. */
   unplanted: { dotsOnScattered: number; certainOnScattered: number; flatCells: number };
+  /** The band-against-alley test (`alleyTest`): dots it kept off a row. */
+  alleyRefused: number;
   geometry: { spacingM: number; directionDeg: number; seedM: number | null; rowLengthMedianM: number; perMMedian: number; certainDots: number; certainRows: number };
   /** Along / across of every dot in the rows' frame, metres. */
   a: Float64Array; c: Float64Array;
@@ -556,23 +576,26 @@ export type StretchCount = { /** Index into the courses given. */ row: number; a
  * farthest from both neighbouring rows) and are as wide as the band, never wider than `controlHalfShare` allows:
  * rowGuided.ts's strips, on the dots. A dot past a course's end by up to `reachM` counts in its last stretch.
  * `controlScale` times an alley count is a count over the band's area (1 when the strips are as wide as the band).
+ * `stretchOf(row, a)` is the index of the stretch of course `row` that holds `a` along.
  */
-export function bandAndAlley(courses: RowCourse[], A: ArrayLike<number>, C: ArrayLike<number>, cls: ArrayLike<number>, nCls: number, S: number, halfM: number, reachM: number, o: Pick<typeof ROW_GUIDED, "stretchM" | "controlShare" | "controlHalfShare"> = ROW_GUIDED): { stretches: StretchCount[]; first: number[]; controlScale: number } {
+export function bandAndAlley(courses: RowCourse[], A: ArrayLike<number>, C: ArrayLike<number>, cls: ArrayLike<number>, nCls: number, S: number, halfM: number, reachM: number, o: Pick<typeof ROW_GUIDED, "stretchM" | "controlShare" | "controlHalfShare"> = ROW_GUIDED): { stretches: StretchCount[]; first: number[]; controlScale: number; stretchOf: (row: number, a: number) => number } {
   const halfC = Math.min(halfM, o.controlHalfShare * S), off = o.controlShare * S;
   const first: number[] = [], out: StretchCount[] = [];
-  courses.forEach((r, ri) => { first.push(out.length); const n = Math.max(1, Math.ceil((r.a1 - r.a0) / o.stretchM - 1e-9)); for (let k = 0; k < n; k++) out.push({ row: ri, a0: r.a0 + k * o.stretchM, a1: Math.min(r.a1, r.a0 + (k + 1) * o.stretchM), band: new Int32Array(nCls), alley: new Int32Array(nCls) }); });
+  // Whole stretches; the last takes what is left over (a sliver at a row's end could never pass the test on its own).
+  courses.forEach((r, ri) => { first.push(out.length); const n = Math.max(1, Math.floor((r.a1 - r.a0) / o.stretchM + 1e-9)); for (let k = 0; k < n; k++) out.push({ row: ri, a0: r.a0 + k * o.stretchM, a1: k === n - 1 ? r.a1 : r.a0 + (k + 1) * o.stretchM, band: new Int32Array(nCls), alley: new Int32Array(nCls) }); });
   first.push(out.length);
+  const stretchOf = (ri: number, a: number) => first[ri] + Math.min(first[ri + 1] - first[ri] - 1, Math.max(0, Math.floor((a - courses[ri].a0) / o.stretchM)));
   for (let i = 0; i < A.length; i++) {
     const c = cls[i]; if (c < 0) continue;
     for (let ri = 0; ri < courses.length; ri++) {
       const r = courses[ri]; if (A[i] < r.a0 - reachM || A[i] > r.a1 + reachM) continue;
       const d = Math.abs(C[i] - courseAt(r, A[i])), inBand = d <= halfM;
       if (!inBand && Math.abs(d - off) > halfC) continue;
-      const k = first[ri] + Math.min(first[ri + 1] - first[ri] - 1, Math.max(0, Math.floor((A[i] - r.a0) / o.stretchM)));
+      const k = stretchOf(ri, A[i]);
       if (inBand) out[k].band[c]++; else out[k].alley[c]++;
     }
   }
-  return { stretches: out, first, controlScale: halfM / halfC };
+  return { stretches: out, first, controlScale: halfM / halfC, stretchOf };
 }
 
 /** `notCertain`: dots that may be probable at most (the second look's plants: they confirm a stretch, never start a row).
@@ -657,6 +680,19 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   // ground the field's plants show as scattered.
   const why = new Uint8Array(n);
   const nearestRow = (i: number, list: Line[]) => { let best = -1, bd = onRow; list.forEach((r, ri) => { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) return; const d = Math.abs(C[i] - at(r, A[i])); if (d <= bd) { bd = d; best = ri; } }); return best; };
+  // Where a row's band beats the ground between the rows (q.alleyTest), per stretch and per group of dots. Counted
+  // before anything is placed: what stands where, not what was made of it.
+  const groupOf = (i: number) => (q.alleyTest !== "all" && tier?.[i] ? 1 : 0);
+  const strips = q.alleyTest === "none" ? null : bandAndAlley(lines, A, C, Int8Array.from({ length: n }, (_, i) => groupOf(i)), 2, S, onRow, reach, { ...ROW_GUIDED, controlShare: q.alleyControlShare });
+  const beatsAlley = (ri: number, i: number) => {
+    if (!strips) return true;
+    const s = strips.stretches[strips.stretchOf(ri, A[i])], g = groupOf(i), len = Math.max(s.a1 - s.a0, 1e-6), control = (k: number) => Math.round(s.alley[k] * strips.controlScale);
+    if (bandBeatsControls(s.band[g], control(g), len)) return true;
+    // "row": too few of its kind here for the test to pass whatever their places: the stricter marks' dots decide.
+    if (q.alleyTest !== "row" || g === 0 || bandBeatsControls(s.band[g] + control(g), 0, len)) return false;
+    return bandBeatsControls(s.band[0], control(0), len);
+  };
+  let alleyRefused = 0;
   const along = lines.map(r => r.dots.map(i => A[i]));
   const extra = lines.map(() => [] as number[]);
   const onCertain = new Uint8Array(n); for (const r of lines) for (const i of r.dots) onCertain[i] = 1;
@@ -664,6 +700,7 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   for (const i of order) {
     if (scattered[i]) { why[i] = 5; continue; }
     const ri = nearestRow(i, lines); if (ri < 0) { why[i] = 1; continue; }
+    if (tier?.[i] && !beatsAlley(ri, i)) { why[i] = 6; alleyRefused++; continue; }
     let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
     if (nearest < 0.5 * seed) { why[i] = 2; continue; } // as close as a double, or the same plant twice: not taken on geometry
     const k = Math.round(nearest / seed);
@@ -681,6 +718,7 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
       let ri = -1, bd = q.freeAcrossShare * S;
       lines.forEach((r, k) => { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) return; const d = Math.abs(C[i] - at(r, A[i])); if (d <= bd) { bd = d; ri = k; } });
       if (ri < 0) continue;
+      if (!beatsAlley(ri, i)) { why[i] = 6; alleyRefused++; continue; }
       let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
       if (nearest < q.freeMinSeeds * seed) { why[i] = 2; continue; }
       if (nearest > q.maxGapSeeds * seed) continue;
@@ -744,5 +782,5 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   }
   for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
   const unplantedGround = { dotsOnScattered: scattered.reduce((t, x) => t + x, 0), certainOnScattered: cIdx.reduce((t, i) => t + scattered[i], 0), flatCells: RN.flat };
-  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines };
+  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, alleyRefused, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines };
 }

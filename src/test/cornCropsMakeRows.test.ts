@@ -3,9 +3,17 @@
 //    a cell with too few plants still takes its neighbour's pattern, as before;
 //  - on ground the field's plants show as scattered (cornField.ts FieldGround) no plant makes a row, no dot is a
 //    probable plant, no candidate is taken, and a row is cut where its course would cross that ground;
+//  - rows guide the search and never make a plant: a candidate of the second look, or a dot the loosened placement would
+//    take, is kept only along a stretch of row whose band beats the ground between the rows (SEQUENCE.alleyTest);
+//  - a candidate long along the rows is split at the plant spacing the field measured, not the one a photograph assumes;
 //  - with the rules as they stood (SEQUENCE_V1) everything reads as before.
 import { describe, expect, it } from "vitest";
-import { type Dot, type GroundJudge, PLANTS_FIRST, SEQUENCE, SEQUENCE_V1, reconstruct, rowNumbers } from "@/lib/fieldTwin/plantsFirst";
+import { type GeorefFrame, UNCALIBRATED_BORESIGHT } from "@/lib/directGeoref/projection";
+import type { CornPhotoRead } from "@/lib/fieldTwin/cornField";
+import { candidatePoints } from "@/lib/fieldTwin/cornPlants";
+import { type Dot, type GroundJudge, PLANTS_FIRST, SEQUENCE, SEQUENCE_V1, bandAndAlley, courseAt, reconstruct, rowNumbers } from "@/lib/fieldTwin/plantsFirst";
+import { ROW_GUIDED, bandBeatsControls, bandTail } from "@/lib/fieldTwin/rowGuided";
+import { ROW_POINTS, rowPlantPoints } from "@/lib/rowCrop/greenPoints";
 
 // Six rows 0.9 m apart running east, a plant every 0.15 m from 0 to 24 m, each made by 5 of the 8 photographs that
 // looked (certain). East of them a headland from 26 to 46 m: 400 plants as certain, standing anywhere.
@@ -100,5 +108,121 @@ describe("ground the field's plants show as scattered", () => {
   it("is the default, with the rules as they stood kept beside it", () => {
     expect(SEQUENCE.patternCellsOnly).toBe(true); expect(SEQUENCE.refuseScattered).toBe(true);
     expect(SEQUENCE_V1.patternCellsOnly).toBe(false); expect(SEQUENCE_V1.refuseScattered).toBe(false);
+  });
+});
+
+describe("the band against the ground between the rows", () => {
+  it("is rowGuided.ts's test: a band passes on five marks with none between the rows, never on four", () => {
+    expect(bandTail(5, 5)).toBeLessThan(ROW_GUIDED.alpha); expect(bandTail(4, 4)).toBeGreaterThan(ROW_GUIDED.alpha);
+    expect(bandBeatsControls(5, 0, ROW_GUIDED.stretchM)).toBe(true);
+    expect(bandBeatsControls(4, 0, ROW_GUIDED.stretchM)).toBe(false);
+    expect(bandBeatsControls(8, 8, ROW_GUIDED.stretchM)).toBe(false);
+    expect(bandBeatsControls(30, 8, ROW_GUIDED.stretchM)).toBe(true);
+  });
+
+  it("counts the dots on each row's line and in its two mid-alley strips, per stretch", () => {
+    const dots = [...planting(), dot(7, 0.45), dot(7.5, 0.45), dot(12, 2 * S + 0.5)], R = read(dots, SEQUENCE_V1);
+    const BA = bandAndAlley(R.courses, R.a, R.c, new Int8Array(dots.length), 1, R.geometry.spacingM, PLANTS_FIRST.onRowShare * R.geometry.spacingM, 0.6);
+    expect(BA.controlScale).toBe(1);
+    // 24 m of row in stretches of 5 m: four, the last taking the 4 m left over.
+    expect(BA.first[1] - BA.first[0]).toBe(4);
+    const row = R.courses.findIndex(c => Math.abs(courseAt(c, 7)) < 0.05), st = BA.stretches[BA.stretchOf(row, 7)];
+    expect([st.a0, st.a1]).toEqual([5, 10]);
+    expect(st.band[0]).toBe(33);   // plants at 5.1 ... 9.9
+    expect(st.alley[0]).toBe(2);   // the two dots half a spacing above the row
+    expect(BA.stretches[BA.stretchOf(row, 23)].a1).toBeCloseTo(24, 6);
+  });
+});
+
+describe("rows guide the search, they never make a plant", () => {
+  // The planting with a bare strip across every row from 9 to 15 m (wheel tracks): no plant there.
+  const bare = planting(a => a > 9.05 && a < 14.95), n0 = bare.length;
+  // Specks in the strip, one photograph each: four on every row's line at the plant spacing from its last plant, and
+  // as many half way between the rows.
+  const specks: Dot[] = [];
+  for (let r = 0; r < 6; r++) for (const a of [9.15, 9.3, 9.45, 9.6]) { specks.push(dot(a, r * S, 1)); specks.push(dot(a, r * S + 0.45, 1)); }
+  const onLine = specks.map((d, k) => k).filter(k => k % 2 === 0);
+  const tiers = [...bare.map(() => 0), ...specks.map(() => 2)];
+  const kept = (R: ReturnType<typeof read>) => onLine.filter(k => R.rowOf[n0 + k] >= 0).length;
+
+  it("specks on a row's line across bare ground are plants by the spacing alone, and are refused where the alley holds as many", () => {
+    const dots = [...bare, ...specks];
+    expect(kept(read(dots, SEQUENCE_V1, null, tiers))).toBe(24);
+    const own = read(dots, { ...SEQUENCE_V1, alleyTest: "own" }, null, tiers), row = read(dots, { ...SEQUENCE_V1, alleyTest: "row" }, null, tiers);
+    expect(kept(own)).toBe(0); expect(kept(row)).toBe(0);
+    expect(row.alleyRefused).toBe(24);
+    // The stricter marks' plants read the same.
+    const base = read(bare, SEQUENCE_V1);
+    for (let i = 0; i < n0; i++) expect(row.rowOf[i] >= 0).toBe(base.rowOf[i] >= 0);
+    // Every dot together would let them through: the stretch's own plants outvote the alley (why "all" is not the rule).
+    expect(kept(read(dots, { ...SEQUENCE_V1, alleyTest: "all" }, null, tiers))).toBe(24);
+  });
+
+  it("three candidates in a gap of a full row cannot outvote anything; the row's own plants, found without a row, decide", () => {
+    const gap = planting(a => a > 9.05 && a < 9.55), extra = [dot(9.15, 2 * S, 2), dot(9.3, 2 * S, 2), dot(9.45, 2 * S, 1)];
+    const dots = [...gap, ...extra], t = [...gap.map(() => 0), 1, 1, 2], k = gap.length;
+    const own = read(dots, { ...SEQUENCE_V1, alleyTest: "own" }, null, t), row = read(dots, { ...SEQUENCE_V1, alleyTest: "row" }, null, t);
+    expect([0, 1, 2].map(j => own.rowOf[k + j] >= 0)).toEqual([false, false, false]);
+    expect([0, 1, 2].map(j => row.rowOf[k + j] >= 0)).toEqual([true, true, true]);
+    expect(row.alleyRefused).toBe(0);
+  });
+
+  it("the loosened placement takes a dot off the spacing in the planting, and not where a line runs on through scattered plants", () => {
+    // As the rules stood the rows run on through the headland (no ground judged): the lines exist there.
+    const hl = headland(), gapped = planting(a => a > 9.05 && a < 10.85);
+    // In the planting: a dot two photographs made, in a gap, 22 cm from the last plant (not at the spacing).
+    const inPlanting = dot(9.22, 2 * S, 2);
+    // Dots two photographs made (not certain), standing anywhere in the headland.
+    let seed = 5; const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff);
+    const weak = Array.from({ length: 300 }, () => dot(27 + 18 * rnd(), -0.4 + 5.3 * rnd(), 2));
+    const dots = [...gapped, ...hl, inPlanting, ...weak], k = gapped.length + hl.length;
+    const free = read(dots, { ...SEQUENCE_V1, free: true }), guided = read(dots, { ...SEQUENCE_V1, free: true, alleyTest: "row" });
+    expect(free.rowOf[k]).toBeGreaterThanOrEqual(0); expect(guided.rowOf[k]).toBeGreaterThanOrEqual(0);
+    expect(guided.loose[k]).toBe(1);
+    const looseInHeadland = (R: typeof free) => dots.filter((d, i) => d.e > 26 && R.loose[i]).length;
+    expect(looseInHeadland(free)).toBeGreaterThan(0);
+    expect(looseInHeadland(guided)).toBe(0);
+  });
+
+  it("is the default (row), and not asked by the rules as they stood", () => {
+    expect(SEQUENCE.alleyTest).toBe("row"); expect(SEQUENCE_V1.alleyTest).toBe("none");
+  });
+});
+
+describe("a candidate long along the rows", () => {
+  it("is not split in the photograph when asked for its extent: one point, with how far its green reaches along the row", () => {
+    const W = 600, H = 400, m = new Uint8Array(W * H), rect = (x0: number, y0: number, w: number, h: number) => { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) m[y * W + x] = 1; };
+    rect(100, 50, 6, 46);                                                        // 46 px along a vertical row
+    for (let k = 0; k < 12; k++) rect(420 + (k % 4) * 20, 200 + Math.floor(k / 4) * 20, 7, 7);
+    expect(rowPlantPoints(m, W, H, Math.PI / 2, 0.01).filter(p => Math.abs(p.x - 103) < 8).length).toBe(3);
+    const defer = { span: [] as [number, number][] }, pts = rowPlantPoints(m, W, H, Math.PI / 2, 0.01, ROW_POINTS, defer);
+    expect(pts.length).toBe(13); expect(defer.span.length).toBe(13);
+    const k = pts.findIndex(p => Math.abs(p.x - 103) < 8);
+    expect(pts.filter(p => Math.abs(p.x - 103) < 8).length).toBe(1);
+    expect(defer.span[k][1] - defer.span[k][0]).toBeCloseTo(46, 6);
+    expect(pts[k].y + defer.span[k][0]).toBeCloseTo(50, 6); expect(pts[k].y + defer.span[k][1]).toBeCloseTo(96, 6);
+    // Without a row direction nothing is deferred: the points are as before.
+    const none = { span: [] as [number, number][] };
+    expect(rowPlantPoints(m, W, H, null, 0.01, ROW_POINTS, none)).toEqual(rowPlantPoints(m, W, H, null, 0.01));
+  });
+
+  it("is split at the plant spacing the field measured", () => {
+    // A camera 20 m up, 4000 px focal length: 5 mm a pixel. A candidate whose green runs 120 px (0.6 m) along the rows.
+    const frame = {
+      name: "a", intrinsics: { width: 4000, height: 3000, fx: 4000, fy: 4000, cx: 2000, cy: 1500, distortion: null, basis: "test" },
+      pose: { lat: 40, lng: -90, altM: 20, datum: "test", attitude: { yawDeg: 0, pitchDeg: -90, rollDeg: 0, basis: "test" }, boresight: UNCALIBRATED_BORESIGHT, basis: "test" },
+      ground: { kind: "flat", altM: 0, datum: "test", basis: "test" },
+    } as unknown as GeorefFrame;
+    const origin = { lat: 40, lng: -90, altM: 0 };
+    const r: CornPhotoRead = { name: "a", scale: 1, rows: [], patches: [], gaps: [], plants: [], low: [[2000, 1500], [1000, 1000]], lowSpan: [[-60, 60], [-15, 15]], lowAxis: [1, 0] };
+    const at15 = candidatePoints(r, frame, origin, 0.15), at20 = candidatePoints(r, frame, origin, 0.2), at30 = candidatePoints(r, frame, origin, 0.3);
+    expect(at15.length).toBe(5);   // four along the long one, the short one whole
+    expect(at20.length).toBe(4);
+    expect(at30.length).toBe(3);   // 0.6 m is two plants at 0.3 m
+    expect(at15.slice(0, 4).map(p => p[0])).toEqual([1955, 1985, 2015, 2045]);
+    expect(at15[4]).toEqual([1000, 1000]);
+    // A read without extents is returned as it is.
+    const plain: CornPhotoRead = { ...r, lowSpan: undefined, lowAxis: undefined };
+    expect(candidatePoints(plain, frame, origin, 0.15)).toEqual(plain.low);
   });
 });

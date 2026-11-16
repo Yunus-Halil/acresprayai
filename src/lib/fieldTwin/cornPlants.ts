@@ -7,8 +7,9 @@
 //   rows     each row cut into stretches running exactly from a plant to a plant: "corn" where plants were seen along
 //            it, "unconfirmed" where the row probably continues but no plant was confirmed (never across a headland)
 // The corn stage's own rows (cornField) stay the fallback: a flight whose plants make no certain row keeps them.
-import type { GeorefFrame } from "@/lib/directGeoref/projection";
-import { fromEnu } from "@/lib/sourceFrames/odm";
+import { type GeorefFrame, pixelToGround } from "@/lib/directGeoref/projection";
+import { ROW_POINTS } from "@/lib/rowCrop/greenPoints";
+import { type LatLngAlt, fromEnu, toEnu } from "@/lib/sourceFrames/odm";
 import type { CornFieldResult, CornPhotoRead, FieldGround } from "./cornField";
 import { type Dot, PLANTS_FIRST, type PhotoShift, ROW_RECALL, type Reconstruction, type RowsFromDots, SEQUENCE, certainEvidence, coverage, mergeDots, projectSightings, reconstruct, registerPhotos, rowCandidates, rowsFromDots } from "./plantsFirst";
 
@@ -57,7 +58,33 @@ export type CornPlantsOptions = {
   /** The field's planted / scattered judgement of the ground (cornField.ts cornFieldAndGround): with it, nothing on
    * ground judged scattered is read as the planting (SEQUENCE.refuseScattered). Without it the ground is not asked. */
   ground?: FieldGround | null;
+  /** false: a candidate that carries its extent along the rows (Corn V1 `rowSpans`) is split at the plant spacing one
+   * photograph assumes (greenPoints.ts ROW_POINTS.seedM). Default: at the spacing the field's certain plants show,
+   * and at the assumed one only where they show none. */
+  fieldSeed?: boolean;
 };
+
+/**
+ * A read's candidates for the rows as points: one per candidate, or, where a candidate's green runs along the
+ * photograph's rows for more than `splitFrom` plant spacings (plants touching), one per plant spacing along it.
+ * `seedM` is the plant spacing on the ground. Reads without extents (`lowSpan`) are returned as they are.
+ */
+export function candidatePoints(r: CornPhotoRead, f: GeorefFrame | undefined, origin: LatLngAlt, seedM: number, o: Pick<typeof ROW_POINTS, "splitFrom" | "maxSplit"> = ROW_POINTS): [number, number][] {
+  const low = r.low ?? [], span = r.lowSpan, ax = r.lowAxis;
+  if (!f || !span || !ax) return low;
+  const out: [number, number][] = [];
+  low.forEach(([x, y], i) => {
+    const [lo, hi] = span[i] ?? [0, 0];
+    const x0 = x + lo * ax[0], y0 = y + lo * ax[1], x1 = x + hi * ax[0], y1 = y + hi * ax[1];
+    const g0 = hi > lo ? pixelToGround(f, x0 * r.scale, y0 * r.scale) : null, g1 = g0 ? pixelToGround(f, x1 * r.scale, y1 * r.scale) : null;
+    if (!g0 || !g1) { out.push([x, y]); return; }
+    const p0 = toEnu({ lat: g0.lat, lng: g0.lng, altM: 0 }, origin), p1 = toEnu({ lat: g1.lat, lng: g1.lng, altM: 0 }, origin), L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+    if (L <= o.splitFrom * seedM) { out.push([x, y]); return; }
+    const k = Math.min(o.maxSplit, Math.max(2, Math.round(L / seedM)));
+    for (let b = 0; b < k; b++) { const t = (b + 0.5) / k; out.push([x0 + t * (x1 - x0), y0 + t * (y1 - y0)]); }
+  });
+  return out;
+}
 
 /** A flight's dots before any row is read: the stricter marks' dots first (`strict` of them), then the candidates for
  * the rows with their tier (plantsFirst.ts rowCandidates); how many photographs looked at each; and the first reading
@@ -81,7 +108,10 @@ export function placeDots(reads: CornPhotoRead[], frames: Map<string, GeorefFram
   // Plants along the rows the stricter marks left out (plantsFirst.ts rowCandidates): only where a photograph carried
   // candidates (seedlings on soil). The dots above stay as they are, first; a candidate is kept only on a row.
   const strict = dots.length;
-  const lowReads = reads.filter(r => r.low?.length).map(r => ({ name: r.name, scale: r.scale, plants: r.low! }));
+  // A candidate long along the rows is plants touching: split at the plant spacing the certain plants show (the first
+  // reading above), not at the one a single photograph assumes, where the read carries the candidates' extents.
+  const seedM = opts.fieldSeed === false ? ROW_POINTS.seedM : pre.seedM ?? ROW_POINTS.seedM;
+  const lowReads = reads.filter(r => r.low?.length).map(r => ({ name: r.name, scale: r.scale, plants: candidatePoints(r, frames.get(r.name), F.origin, seedM) }));
   let all = dots, tier: Uint8Array | null = null, covered = coveredStrict;
   if (lowReads.length) {
     const C = rowCandidates(lowReads, frames, F.origin, photos, reg.shifts, sights, dots, F.directionDeg ?? 0, opts.free ? { ...ROW_RECALL, anyView: true } : ROW_RECALL);

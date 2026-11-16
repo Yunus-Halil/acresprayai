@@ -24,7 +24,9 @@ export const CORN_STAGE = {
 
 /** Corn V1 on one photograph, compacted for the field (also the pool task's body). */
 export function cornPhotoRead(name: string, px: PhotoPixels, gsdM: number | null, baselineSeedlings = false): CornPhotoRead {
-  const v = readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, gsdM), { enteredCrop: "corn", baselineSeedlings });
+  // rowSpans: a candidate for the rows carries its extent along them, and the field splits the long ones at the plant
+  // spacing it measured (cornPlants.ts candidatePoints) instead of the one a single photograph assumes.
+  const v = readCornV1(px, rowCropParamsFor(cropProfileFor("corn")!, gsdM), { enteredCrop: "corn", baselineSeedlings, rowSpans: !baselineSeedlings });
   return compactCornRead(name, v, 1);
 }
 
