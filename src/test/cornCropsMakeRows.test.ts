@@ -6,6 +6,7 @@
 //  - rows guide the search and never make a plant: a candidate of the second look, or a dot the loosened placement would
 //    take, is kept only along a stretch of row whose band beats the ground between the rows (SEQUENCE.alleyTest);
 //  - a candidate long along the rows is split at the plant spacing the field measured, not the one a photograph assumes;
+//  - "between two rows" is said only of a dot off every row's line;
 //  - with the rules as they stood (SEQUENCE_V1) everything reads as before.
 import { describe, expect, it } from "vitest";
 import { type GeorefFrame, UNCALIBRATED_BORESIGHT } from "@/lib/directGeoref/projection";
@@ -224,5 +225,48 @@ describe("a candidate long along the rows", () => {
     // A read without extents is returned as it is.
     const plain: CornPhotoRead = { ...r, lowSpan: undefined, lowAxis: undefined };
     expect(candidatePoints(plain, frame, origin, 0.15)).toEqual(plain.low);
+  });
+});
+
+describe("between two rows", () => {
+  // In the planting: a second leaf of a plant on row 2 (9 cm along from it), a dot on row 2's line off the plant
+  // spacing in a gap, and a dot half way between rows 2 and 3.
+  const gapped = planting(a => a > 9.05 && a < 10.85), n0 = gapped.length;
+  const dots = [...gapped, dot(12.09, 2 * S, 2), dot(9.22, 2 * S, 2), dot(15.0, 2.5 * S, 2)];
+
+  it("was said of a dot standing on a row's line, counting that row as one of the two", () => {
+    const R = read(dots, SEQUENCE_V1);
+    expect(Array.from(R.rowOf.slice(n0))).toEqual([-1, -1, -1]);
+    expect(Array.from(R.between.slice(n0))).toEqual([1, 1, 1]);
+    expect(Array.from(R.why.slice(n0))).toEqual([4, 4, 4]);
+  });
+
+  it("is said only of a dot off every row's line; a dot on a line keeps the reason it was left off the row", () => {
+    const R = read(dots, { ...SEQUENCE_V1, betweenOffLines: true });
+    expect(Array.from(R.rowOf.slice(n0))).toEqual([-1, -1, -1]);
+    expect(Array.from(R.between.slice(n0))).toEqual([0, 0, 1]);
+    expect(Array.from(R.why.slice(n0))).toEqual([2, 3, 4]);   // a double; not at the plant spacing; between two rows
+    // Nothing else moves: the same dots on the same rows.
+    const before = read(dots, SEQUENCE_V1);
+    expect(Array.from(R.rowOf)).toEqual(Array.from(before.rowOf));
+    expect(R.rows.length).toBe(before.rows.length);
+  });
+
+  it("leaves the other reasons standing: scattered ground, and a stretch whose band does not beat the alley", () => {
+    // A candidate on row 2's line just past its end, on ground judged scattered.
+    const base = planting(), d1 = [...base, dot(24.15, 2 * S, 2)], t1 = [...base.map(() => 0), 1];
+    const scatteredEast: GroundJudge = { state: e => (e > 24.07 ? 2 : 1) };
+    expect(read(d1, SEQUENCE, scatteredEast, t1).why[base.length]).toBe(5);
+    expect(read(d1, { ...SEQUENCE, betweenOffLines: false }, scatteredEast, t1).why[base.length]).toBe(4);
+    // Specks on the lines across bare ground, as many between the rows: refused, and said so.
+    const bare = planting(a => a > 9.05 && a < 14.95), specks: Dot[] = [];
+    for (let r = 0; r < 6; r++) for (const a of [9.15, 9.3, 9.45, 9.6]) { specks.push(dot(a, r * S, 1)); specks.push(dot(a, r * S + 0.45, 1)); }
+    const R = read([...bare, ...specks], SEQUENCE, null, [...bare.map(() => 0), ...specks.map(() => 2)]);
+    // (Past the last row a speck has a row on one side only: no row reaches it.)
+    specks.forEach((sp, k) => { expect(R.rowOf[bare.length + k]).toBe(-1); expect(R.why[bare.length + k]).toBe(k % 2 === 0 ? 6 : k < 40 ? 4 : 1); });
+  });
+
+  it("is the default, and not in the rules as they stood", () => {
+    expect(SEQUENCE.betweenOffLines).toBe(true); expect(SEQUENCE_V1.betweenOffLines).toBe(false);
   });
 });

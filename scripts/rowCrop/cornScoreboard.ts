@@ -60,6 +60,8 @@ const VARIANTS: Record<string, Variant> = {
   p3span15: { what: "phase 3, candidates carried with their extents and split in the field at the assumed 0.15 m", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground, fieldSeed: false }) },
   p3spanfield: { what: "phase 3, candidates split in the field at its measured plant spacing", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground }) },
   p3spanfieldloose: { what: "phase 3, field spacing, loosened on", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground, free: true }) },
+  p4: { what: "phase 4: phase 3 (field spacing) with the between-rows label fixed: the rules as they stand now", spans: true, opts: ground => ({ sequence: SEQUENCE, ground }) },
+  p4loose: { what: "the rules as they stand now, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, free: true }) },
   p2cells: { what: "phase 2, only patternCellsOnly", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true }, ground }) },
   p2ground: { what: "phase 2, only refuseScattered", opts: ground => ({ sequence: { ...SEQUENCE_V1, refuseScattered: true }, ground }) },
 };

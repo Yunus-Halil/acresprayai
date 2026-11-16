@@ -525,9 +525,13 @@ export const SEQUENCE = {
    * (rowGuided.ts controlShare). Only the scoreboard changes it, to read phantom rows laid half way between the real
    * ones against strips a quarter spacing either side of them. */
   alleyControlShare: ROW_GUIDED.controlShare,
+  /** "Between two rows" is said only of a dot that stands off every row's line (2026-11-16). Before, a dot left off
+   * the row it stands on (a double, off the plant spacing, refused) was counted as lying beside that very row, and with
+   * the next row on its other side it read "between two rows, not the crop": on the first flight judged, 13,600 dots. */
+  betweenOffLines: true,
 };
 /** The rules as they stood on 2026-11-16 at f23efc0, before the changes above them here: kept so that result can be run beside the present one. */
-export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none" };
+export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none", betweenOffLines: false };
 /** The field's judgement of the ground as reconstruct takes it (cornField.ts FieldGround): at a place, metres east and
  * north, 0 unknown, 1 planted, 2 scattered; `dotState` where the caller judged the dots itself. */
 export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
@@ -545,7 +549,7 @@ export type Reconstruction = {
   rows: SeqRow[];
   /** Per dot: the index of the row it is on, or -1. */
   rowOf: Int32Array;
-  /** Per dot: 1 when it is on no row and has a row on either side of it within a spacing: between the rows, not the crop. */
+  /** Per dot: 1 when it is on no row, off every row's line, and has a row on either side of it within a spacing: between the rows, not the crop. */
   between: Uint8Array;
   /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows, 5 on ground the field's plants show as scattered, 6 a candidate (or a dot for the loosened placement) on a stretch of row whose band does not beat the ground between the rows. */
   why: Uint8Array;
@@ -771,14 +775,16 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   for (const L of geomLines) { for (const i of L.dots) if (certainty[i] === 2) certainty[i] = 1; build("geometry", L.dots, L); }
   // A probable dot that ended on no row is uncertain again.
   for (let i = 0; i < n; i++) if (certainty[i] === 1 && rowOf[i] < 0) certainty[i] = 2;
-  // Between the rows: a dot on no row, with a row on either side of it within a spacing, is not the crop.
+  // Between the rows: a dot on no row, with a row on either side of it within a spacing, is not the crop. A dot that
+  // stands on a row's line (within the band a row's plants are taken in) is not between two rows: that row is the one
+  // it stands on, and why it was left off it is already said (q.betweenOffLines).
   const between = new Uint8Array(n);
   const all = [...lines, ...geomLines];
   for (let i = 0; i < n; i++) {
     if (rowOf[i] >= 0) continue;
-    let below = false, above = false;
-    for (const r of all) { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) continue; const d = C[i] - at(r, A[i]); if (d > 0 && d < 1.2 * S) below = true; if (d < 0 && d > -1.2 * S) above = true; }
-    if (below && above) { between[i] = 1; why[i] = 4; }
+    let below = false, above = false, onLine = false;
+    for (const r of all) { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) continue; const d = C[i] - at(r, A[i]); if (q.betweenOffLines && Math.abs(d) <= onRow) { onLine = true; break; } if (d > 0 && d < 1.2 * S) below = true; if (d < 0 && d > -1.2 * S) above = true; }
+    if (!onLine && below && above) { between[i] = 1; why[i] = 4; }
   }
   for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
   const unplantedGround = { dotsOnScattered: scattered.reduce((t, x) => t + x, 0), certainOnScattered: cIdx.reduce((t, i) => t + scattered[i], 0), flatCells: RN.flat };
