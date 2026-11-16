@@ -231,6 +231,8 @@ export const ROW_RECALL = {
   /** One photograph alone is enough on a row only where it sees sharply: within this angle of straight down
    * (measured: a frame's edges are soft and lose the leaves' colour). */
   sharpDeg: 20,
+  /** Loosened (off by default): one photograph anywhere in its frame is a candidate too (tier 3, placed last). */
+  anyView: false,
 };
 export type RowRecallOptions = typeof ROW_RECALL;
 
@@ -239,7 +241,8 @@ export type RowRecallOptions = typeof ROW_RECALL;
  * marks at the lower bar (`low`, greenPoints.ts rowPlantPoints) and the stricter marks only one photograph made.
  * Placed with the photographs' corrections as they stand (the registration is never redone with them), left out
  * within `exclM` of an existing dot, joined across photographs with a gate longer along the rows than across them.
- * Tier 1: two or more photographs. Tier 2: one photograph, where it sees sharply. They are only ever kept on a row
+ * Tier 1: two or more photographs. Tier 2: one photograph, where it sees sharply. Tier 3 (only with `anyView`): one
+ * photograph, anywhere in its frame. They are only ever kept on a row
  * (reconstruct: probable at most, never a certain plant, tier 2 never a row of its own): off the rows nothing changes,
  * so no weed and no dot between the rows comes from them.
  */
@@ -280,10 +283,10 @@ export function rowCandidates(low: Read[], frames: Map<string, GeorefFrame>, ori
   const out: Dot[] = [], tier: number[] = [];
   for (const g of groups) {
     const m = g.members.map(j => keep[j]);
-    if (m.length === 1 && !sharp[m[0]]) continue;
+    if (m.length === 1 && !sharp[m[0]] && !o.anyView) continue;
     const e = m.reduce((t, i) => t + ce[i], 0) / m.length, n = m.reduce((t, i) => t + cn[i], 0) / m.length;
     out.push({ e, n, members: [], photos: m.length, spreadM: Math.sqrt(m.reduce((t, i) => t + (ce[i] - e) ** 2 + (cn[i] - n) ** 2, 0) / m.length) });
-    tier.push(m.length >= 2 ? 1 : 2);
+    tier.push(m.length >= 2 ? 1 : sharp[m[0]] ? 2 : 3);
   }
   return { dots: out, tier: Uint8Array.from(tier) };
 }
@@ -485,6 +488,14 @@ export const SEQUENCE = {
   /** A stretch with no plant longer than this (metres) is not bridged: the row stops and, past it, starts again.
    * "The row probably continues" is said over a missed plant or a short failed stretch, never across a headland. */
   maxBridgeM: 8,
+  /** Loosened placement on a row (off by default, 2026-11-16): a dot within `freeAcrossShare` of a row spacing of a
+   * certain row's course, no closer than half a plant spacing to a plant already on it and within `maxGapSeeds` of
+   * one, is on the row whatever its distance to its neighbours (a planter does not space plants exactly). */
+  free: false, freeAcrossShare: 0.07,
+  /** The loosened placement keeps this share of a plant spacing clear of the plants already on the row: measured
+   * 2026-11-16, at half a spacing it added 8,500 marks 7-10 cm from a plant already there (a seedling's other leaf),
+   * a distance under 4 % of neighbouring plants stand at. */
+  freeMinSeeds: 0.7,
 };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
 export type SeqRow = { id: number; kind: "certain" | "geometry"; line: [number, number][]; dots: number[]; a0: number; a1: number; lengthM: number; perM: number; segments: RowSegment[] };
@@ -503,6 +514,8 @@ export type Reconstruction = {
   geometry: { spacingM: number; directionDeg: number; seedM: number | null; rowLengthMedianM: number; perMMedian: number; certainDots: number; certainRows: number };
   /** Along / across of every dot in the rows' frame, metres. */
   a: Float64Array; c: Float64Array;
+  /** Per dot: 1 when it is on a row only by the loosened placement (`free`), not at the plant spacing. */
+  loose: Uint8Array;
 };
 
 /** `notCertain`: dots that may be probable at most (the second look's plants: they confirm a stretch, never start a row).
@@ -590,6 +603,23 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     if (certainty[i] === 2) certainty[i] = 1;
     along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1;
   }
+  // Loosened (q.free): what the spacing left out, again, strongest first and until nothing more joins: on a row's
+  // course (tighter across than above), not a double, within reach of a plant on it. No distance to its neighbours is asked.
+  const loose = new Uint8Array(n);
+  if (q.free) for (let changed = true; changed;) {
+    changed = false;
+    for (const i of order) {
+      if (onCertain[i] || why[i] !== 3) continue;
+      let ri = -1, bd = q.freeAcrossShare * S;
+      lines.forEach((r, k) => { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) return; const d = Math.abs(C[i] - at(r, A[i])); if (d <= bd) { bd = d; ri = k; } });
+      if (ri < 0) continue;
+      let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
+      if (nearest < q.freeMinSeeds * seed) { why[i] = 2; continue; }
+      if (nearest > q.maxGapSeeds * seed) continue;
+      if (certainty[i] === 2) certainty[i] = 1;
+      along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1; loose[i] = 1; why[i] = 0; changed = true;
+    }
+  }
   // New rows from what is left, only in a row slot of the planter's pattern that no certain row holds there, as dense
   // as the certain rows are, straight.
   const restByJ = new Map<number, number[]>();
@@ -643,5 +673,5 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     if (below && above) { between[i] = 1; why[i] = 4; }
   }
   for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
-  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, geometry, a: A, c: C };
+  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, geometry, a: A, c: C, loose };
 }

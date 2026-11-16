@@ -129,10 +129,10 @@ describe("the rows take candidates, and nothing else changes", () => {
   const strict: Dot[] = [];
   for (let r = 0; r < 6; r++) for (let k = 0; k * SEED <= 24; k++) { const a = k * SEED; if (r === 2 && a > 9.05 && a < 10.85) continue; strict.push({ e: a, n: r * S, members: [], photos: 5, spreadM: 0.01 }); }
   const dot = (e: number, n: number, photos: number): Dot => ({ e, n, members: [], photos, spreadM: 0.01 });
-  const run = (extra: Dot[], tiers: number[]) => {
+  const run = (extra: Dot[], tiers: number[], q = SEQUENCE) => {
     const all = [...strict, ...extra], covered = new Int32Array(all.length).fill(8);
     const tier = extra.length ? Uint8Array.from([...strict.map(() => 0), ...tiers]) : null;
-    return reconstruct(all, covered, 0, S, PLANTS_FIRST, SEQUENCE, tier ? Uint8Array.from(tier, t => (t ? 1 : 0)) : null, tier);
+    return reconstruct(all, covered, 0, S, PLANTS_FIRST, q, tier ? Uint8Array.from(tier, t => (t ? 1 : 0)) : null, tier);
   };
   const n0 = strict.length;
 
@@ -157,6 +157,26 @@ describe("the rows take candidates, and nothing else changes", () => {
     expect(Array.from(R.rowOf.slice(0, n0)).map(v => v >= 0)).toEqual(Array.from(base.rowOf).map(v => v >= 0));
     expect(R.geometry.certainRows).toBe(base.geometry.certainRows);
     expect(R.geometry.spacingM).toBe(base.geometry.spacingM);
+  });
+
+  it("loosened: on a row a dot off the plant spacing is a plant, unless beside a plant already there or off the row's line", () => {
+    const extra = [
+      dot(9.22, 2 * S, 2),          // in the gap of row 2, 22 cm from the plant at 9.0: not at the spacing
+      dot(9.09, 2 * S, 2),          // 9 cm from that plant: another leaf of it
+      dot(9.72, 2 * S + 0.09, 2),   // off the spacing and 9 cm off the row's line
+    ];
+    const asBefore = run(extra, [1, 1, 1]);
+    expect(Array.from(asBefore.rowOf.slice(n0))).toEqual([-1, -1, -1]);
+    expect(Array.from(asBefore.loose).every(v => v === 0)).toBe(true);
+    const free = run(extra, [1, 1, 1], { ...SEQUENCE, free: true });
+    expect(free.rowOf[n0]).toBeGreaterThanOrEqual(0);
+    expect(free.loose[n0]).toBe(1);
+    expect(free.certainty[n0]).toBe(1);
+    expect(free.rowOf[n0 + 1]).toBe(-1);
+    expect(free.rowOf[n0 + 2]).toBe(-1);
+    // Every dot of the stricter marks as before.
+    expect(Array.from(free.rowOf.slice(0, n0)).map(v => v >= 0)).toEqual(Array.from(asBefore.rowOf.slice(0, n0)).map(v => v >= 0));
+    expect(Array.from(free.certainty.slice(0, n0))).toEqual(Array.from(asBefore.certainty.slice(0, n0)));
   });
 
   it("candidates never make a row, one photograph or several: rows come from the plants found first", () => {

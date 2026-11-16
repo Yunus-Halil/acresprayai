@@ -5,7 +5,8 @@
 //   1. the candidates of each photograph (the only step that opens the photographs; run in several processes by range):
 //      npx vite-node scripts/rowCrop/rowRecallTwin.ts -- --candidates --from <twin dir> --photos <dir> --cache <dir> [--range 0:41]
 //   2. the twin:
-//      npx vite-node scripts/rowCrop/rowRecallTwin.ts -- --assemble --from <twin dir> --cache <dir> --to <new twin dir> --id <new id> [--baseline]
+//      npx vite-node scripts/rowCrop/rowRecallTwin.ts -- --assemble --from <twin dir> --cache <dir> [--cache2 <dir>] --to <new twin dir> --id <new id> [--baseline] [--free]
+//      (--cache2: a second set of candidates joined to the first; --free: the loosened placement on a row)
 //
 // The candidates step applies the lower bar to every photograph of the record (the build applies it only where the
 // plant read used the dark-leaf rule: seedlings on soil). --baseline assembles without the candidates: today's result
@@ -48,7 +49,7 @@ if (has("candidates")) {
     console.log(`${r.name}: ${r.plants.length} marks, ${low.length} candidates at the lower bar, ${Date.now() - t1} ms (decode ${t1 - t0} ms)`);
   }
 } else if (has("assemble")) {
-  const TO = arg("to"), ID = arg("id"), baseline = has("baseline");
+  const TO = arg("to"), ID = arg("id"), baseline = has("baseline"), free = has("free"), CACHE2 = opt("cache2");
   let missing = 0, ms = 0;
   const reads: CornPhotoRead[] = A.reads.map(r => {
     const { low: _old, ...rest } = r;
@@ -56,15 +57,17 @@ if (has("candidates")) {
     const c = join(CACHE, `${r.name}.json`);
     if (!existsSync(c)) { missing++; return rest; }
     const j = JSON.parse(readFileSync(c, "utf8")) as { low: [number, number][]; ms: number }; ms += j.ms;
-    return { ...rest, low: j.low.map(([x, y]) => [x / r.scale, y / r.scale] as [number, number]) };
+    const c2 = CACHE2 ? join(CACHE2, `${r.name}.json`) : null, j2 = c2 && existsSync(c2) ? (JSON.parse(readFileSync(c2, "utf8")) as { low: [number, number][] }).low : [];
+    return { ...rest, low: [...j.low, ...j2].map(([x, y]) => [x / r.scale, y / r.scale] as [number, number]) };
   });
   if (missing) console.log(`${missing} photographs have no candidates in the cache: they keep their marks only`);
   const F = cornField(reads, frames, A.fieldOptions);
-  const t0 = Date.now(), P = cornPlantsFirst(reads, frames, F);
+  const t0 = Date.now(), P = cornPlantsFirst(reads, frames, F, { free });
   if (!P) throw new Error("the plants made no certain row");
   console.log(`plants first in ${Date.now() - t0} ms${baseline ? " (baseline: no candidates)" : `; candidates ${Math.round(ms / Math.max(1, reads.length))} ms a photograph`}`);
   console.log(JSON.stringify({ ...P.summary, seedCm: P.geometry.seedM ? +(P.geometry.seedM * 100).toFixed(1) : null, spacingM: +P.geometry.spacingM.toFixed(3), certainRows: P.geometry.certainRows }));
   const confirmed = P.stretches.filter(s => s.confirmed), onRow = P.shown.filter(v => v === 0 || v === 1 || v >= 4).length;
+  if (free) console.log(`loosened placement: ${P.summary.loosened} of the plants on rows are there only by it`);
   console.log(`on the rows: ${onRow} plants over ${Math.round(P.summary.confirmedM)} m with plants seen (${(onRow / Math.max(1, P.summary.confirmedM)).toFixed(2)} a metre); ${confirmed.length} stretches with plants, ${P.stretches.length - confirmed.length} not confirmed (${Math.round(P.summary.notConfirmedM)} m)`);
   mkdirSync(TO, { recursive: true });
   const twin = JSON.parse(readFileSync(join(FROM, "twin.json"), "utf8"));
