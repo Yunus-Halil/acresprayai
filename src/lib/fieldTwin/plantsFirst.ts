@@ -188,14 +188,20 @@ export type Dot = { e: number; n: number; members: number[]; photos: number; /**
 export function mergeDots(sights: Sight[], shifts: PhotoShift[], gateM: number, minPhotos = 2): Dot[] {
   const xs = new Float64Array(sights.length), ys = new Float64Array(sights.length);
   sights.forEach((s, i) => { const [de, dn] = shiftOf(shifts[s.p], s.u, s.v); xs[i] = s.e + de; ys[i] = s.n + dn; });
+  return mergeXY(xs, ys, i => sights[i].p, gateM, minPhotos);
+}
+
+/** The grouping of mergeDots over any positions: `photoOf(i)` is the photograph of sighting i. */
+function mergeXY(xs: Float64Array, ys: Float64Array, photoOf: (i: number) => number, gateM: number, minPhotos: number): Dot[] {
+  const sights = { length: xs.length };
   const grid = new Grid(xs, ys, Math.max(0.05, gateM));
   const density = new Int32Array(sights.length);
-  for (let i = 0; i < sights.length; i++) grid.near(xs[i], ys[i], gateM, j => { if (sights[j].p !== sights[i].p && Math.hypot(xs[j] - xs[i], ys[j] - ys[i]) <= gateM) density[i]++; });
+  for (let i = 0; i < sights.length; i++) grid.near(xs[i], ys[i], gateM, j => { if (photoOf(j) !== photoOf(i) && Math.hypot(xs[j] - xs[i], ys[j] - ys[i]) <= gateM) density[i]++; });
   const order = Int32Array.from({ length: sights.length }, (_, i) => i).sort((a, b) => density[b] - density[a]);
   const claimed = new Uint8Array(sights.length), dots: Dot[] = [];
   const gather = (cx: number, cy: number): number[] => {
     const best = new Map<number, [number, number]>();
-    grid.near(cx, cy, gateM, j => { if (claimed[j]) return; const d = Math.hypot(xs[j] - cx, ys[j] - cy); if (d > gateM) return; const b = best.get(sights[j].p); if (!b || d < b[1]) best.set(sights[j].p, [j, d]); });
+    grid.near(cx, cy, gateM, j => { if (claimed[j]) return; const d = Math.hypot(xs[j] - cx, ys[j] - cy); if (d > gateM) return; const b = best.get(photoOf(j)); if (!b || d < b[1]) best.set(photoOf(j), [j, d]); });
     return [...best.values()].map(b => b[0]);
   };
   for (const i of order) {
@@ -211,6 +217,75 @@ export function mergeDots(sights: Sight[], shifts: PhotoShift[], gateM: number, 
     dots.push({ e: ex, n: ny, members: m, photos: m.length, spreadM: Math.sqrt(m.reduce((t, k) => t + (xs[k] - ex) ** 2 + (ys[k] - ny) ** 2, 0) / m.length) });
   }
   return dots;
+}
+
+export const ROW_RECALL = {
+  /** A candidate this close to a dot the stricter marks made is that plant again (another leaf of it): left out. */
+  exclM: 0.06,
+  /** A candidate this close to a stricter mark of its own photograph is that mark again. */
+  sameMarkM: 0.03,
+  /** Candidates of different photographs are one plant within this far along the rows and this far across them: a
+   * mark sits at the middle of the green its photograph saw, and which leaf that is changes from photograph to
+   * photograph, mostly along the row (measured: lone marks of one plant a median 6 cm apart). */
+  gateAlongM: 0.09, gateAcrossM: 0.045,
+  /** One photograph alone is enough on a row only where it sees sharply: within this angle of straight down
+   * (measured: a frame's edges are soft and lose the leaves' colour). */
+  sharpDeg: 20,
+};
+export type RowRecallOptions = typeof ROW_RECALL;
+
+/**
+ * Candidates for plants ALONG THE ROWS that the stricter marks did not make into a dot (2026-11-16): each photograph's
+ * marks at the lower bar (`low`, greenPoints.ts rowPlantPoints) and the stricter marks only one photograph made.
+ * Placed with the photographs' corrections as they stand (the registration is never redone with them), left out
+ * within `exclM` of an existing dot, joined across photographs with a gate longer along the rows than across them.
+ * Tier 1: two or more photographs. Tier 2: one photograph, where it sees sharply. They are only ever kept on a row
+ * (reconstruct: probable at most, never a certain plant, tier 2 never a row of its own): off the rows nothing changes,
+ * so no weed and no dot between the rows comes from them.
+ */
+export function rowCandidates(low: Read[], frames: Map<string, GeorefFrame>, origin: LatLngAlt, photos: string[], shifts: PhotoShift[], sights: Sight[], dots: Dot[], directionDeg: number, o: RowRecallOptions = ROW_RECALL): { dots: Dot[]; tier: Uint8Array } {
+  const pOf = new Map(photos.map((n, i) => [n, i]));
+  const ce: number[] = [], cn: number[] = [], cp: number[] = [], sharp: number[] = [];
+  const offNadir = (f: GeorefFrame, u: number, v: number) => (Math.atan(Math.hypot((u - f.intrinsics.cx) / f.intrinsics.fx, (v - f.intrinsics.cy) / f.intrinsics.fy)) * 180) / Math.PI;
+  // The stricter marks only one photograph made.
+  const inDot = new Uint8Array(sights.length); for (const d of dots) for (const m of d.members) inDot[m] = 1;
+  const loneX: number[] = [], loneY: number[] = [], loneP: number[] = [];
+  sights.forEach((s, i) => {
+    if (inDot[i]) return;
+    const f = frames.get(photos[s.p]); if (!f) return;
+    const [de, dn] = shiftOf(shifts[s.p], s.u, s.v);
+    loneX.push(s.e + de); loneY.push(s.n + dn); loneP.push(s.p);
+    ce.push(s.e + de); cn.push(s.n + dn); cp.push(s.p); sharp.push(offNadir(f, s.u, s.v) <= o.sharpDeg ? 1 : 0);
+  });
+  const loneGrid = new Grid(loneX, loneY, 0.1);
+  for (const r of low) {
+    const p = pOf.get(r.name), f = frames.get(r.name); if (p == null || !f) continue;
+    for (const [x, y] of r.plants) {
+      const u = x * r.scale, v = y * r.scale, g = pixelToGround(f, u, v); if (!g) continue;
+      const [e0, n0] = toEnu({ lat: g.lat, lng: g.lng, altM: 0 }, origin), [de, dn] = shiftOf(shifts[p], u, v), e = e0 + de, n = n0 + dn;
+      let same = false; loneGrid.near(e, n, o.sameMarkM, k => { if (loneP[k] === p && Math.hypot(loneX[k] - e, loneY[k] - n) <= o.sameMarkM) same = true; });
+      if (same) continue;
+      ce.push(e); cn.push(n); cp.push(p); sharp.push(offNadir(f, u, v) <= o.sharpDeg ? 1 : 0);
+    }
+  }
+  // Not a plant the stricter marks already made.
+  const dotGrid = new Grid(dots.map(d => d.e), dots.map(d => d.n), 0.1);
+  const keep: number[] = [];
+  for (let i = 0; i < ce.length; i++) { let near = false; dotGrid.near(ce[i], cn[i], o.exclM, k => { if (Math.hypot(dots[k].e - ce[i], dots[k].n - cn[i]) <= o.exclM) near = true; }); if (!near) keep.push(i); }
+  // Joined across photographs: along / across the rows, the across axis stretched so one gate serves both.
+  const th = (directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th), k = o.gateAlongM / o.gateAcrossM;
+  const xs = new Float64Array(keep.length), ys = new Float64Array(keep.length);
+  keep.forEach((i, j) => { xs[j] = ce[i] * ct + cn[i] * st; ys[j] = (-ce[i] * st + cn[i] * ct) * k; });
+  const groups = mergeXY(xs, ys, j => cp[keep[j]], o.gateAlongM, 1);
+  const out: Dot[] = [], tier: number[] = [];
+  for (const g of groups) {
+    const m = g.members.map(j => keep[j]);
+    if (m.length === 1 && !sharp[m[0]]) continue;
+    const e = m.reduce((t, i) => t + ce[i], 0) / m.length, n = m.reduce((t, i) => t + cn[i], 0) / m.length;
+    out.push({ e, n, members: [], photos: m.length, spreadM: Math.sqrt(m.reduce((t, i) => t + (ce[i] - e) ** 2 + (cn[i] - n) ** 2, 0) / m.length) });
+    tier.push(m.length >= 2 ? 1 : 2);
+  }
+  return { dots: out, tier: Uint8Array.from(tier) };
 }
 
 /**
@@ -430,8 +505,10 @@ export type Reconstruction = {
   a: Float64Array; c: Float64Array;
 };
 
-/** `notCertain`: dots that may be probable at most (the second look's plants: they confirm a stretch, never start a row). */
-export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: number, spacingGuessM: number, o: PlantsFirstOptions = PLANTS_FIRST, q = SEQUENCE, notCertain: Uint8Array | null = null): Reconstruction {
+/** `notCertain`: dots that may be probable at most (the second look's plants: they confirm a stretch, never start a row).
+ * `tier` (rowCandidates): per dot 0 a dot of the stricter marks, 1 / 2 a candidate for the rows; every dot of a lower tier
+ * is placed on the rows before any of a higher one, and a tier 2 dot (one photograph) joins a row but never makes one. */
+export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: number, spacingGuessM: number, o: PlantsFirstOptions = PLANTS_FIRST, q = SEQUENCE, notCertain: Uint8Array | null = null, tier: Uint8Array | null = null): Reconstruction {
   const n = dots.length, certainty = new Uint8Array(n).fill(2);
   for (let i = 0; i < n; i++) if (!notCertain?.[i] && dots[i].photos >= q.certainViews && covered[i] > 0 && dots[i].photos / covered[i] >= q.certainShare) certainty[i] = 0;
   // 1-2. The certain plants, and the rows they make.
@@ -503,7 +580,7 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   const along = lines.map(r => r.dots.map(i => A[i]));
   const extra = lines.map(() => [] as number[]);
   const onCertain = new Uint8Array(n); for (const r of lines) for (const i of r.dots) onCertain[i] = 1;
-  const order = Array.from({ length: n }, (_, i) => i).filter(i => !onCertain[i]).sort((x, y) => dots[y].photos - dots[x].photos);
+  const order = Array.from({ length: n }, (_, i) => i).filter(i => !onCertain[i]).sort((x, y) => (tier ? tier[x] - tier[y] : 0) || dots[y].photos - dots[x].photos);
   for (const i of order) {
     const ri = nearestRow(i, lines); if (ri < 0) { why[i] = 1; continue; }
     let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
@@ -516,7 +593,7 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   // New rows from what is left, only in a row slot of the planter's pattern that no certain row holds there, as dense
   // as the certain rows are, straight.
   const restByJ = new Map<number, number[]>();
-  for (let i = 0; i < n; i++) if (!onCertain[i] && Math.abs(RN.resid[i]) <= onRow) (restByJ.get(RN.j[i]) ?? restByJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
+  for (let i = 0; i < n; i++) if (!onCertain[i] && tier?.[i] !== 2 && Math.abs(RN.resid[i]) <= onRow) (restByJ.get(RN.j[i]) ?? restByJ.set(RN.j[i], []).get(RN.j[i])!).push(i);
   const geomLines: Line[] = [];
   for (const g of restByJ.values()) {
     if (g.length < 5) continue;

@@ -168,6 +168,9 @@ export const TWIN_COLOURS = {
    * the operator's colour); plants the photographs located, pale dots that are not any finding's colour. */
   rowRemoved: "#8c929a",
   plantLocated: "#efe6ff",
+  /** Plants found along a row at the lower bar: by two or more photographs, and by one sharp view (review colours). */
+  plantAlongRowTwo: "#ffd23f",
+  plantAlongRowOne: "#ff7ad9",
 };
 
 export const WEED_COLOUR = { betweenRows: TWIN_COLOURS.weed, onRow: TWIN_COLOURS.weedOnRow, single: TWIN_COLOURS.weedSingle, onTree: TWIN_COLOURS.weedOnTree };

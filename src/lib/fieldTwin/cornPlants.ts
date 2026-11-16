@@ -10,7 +10,7 @@
 import type { GeorefFrame } from "@/lib/directGeoref/projection";
 import { fromEnu } from "@/lib/sourceFrames/odm";
 import type { CornFieldResult, CornPhotoRead } from "./cornField";
-import { PLANTS_FIRST, coverage, mergeDots, projectSightings, reconstruct, registerPhotos } from "./plantsFirst";
+import { PLANTS_FIRST, SEQUENCE, coverage, mergeDots, projectSightings, reconstruct, registerPhotos, rowCandidates } from "./plantsFirst";
 
 export type CornStretch = {
   /** The field row it belongs to, and whether plants were seen along it. */
@@ -28,7 +28,8 @@ export type CornFieldRow = { id: number; plants: number; certain: number; perM: 
 export type CornPlants = {
   /** Per plant: latitude, longitude. */
   points: [number, number][];
-  /** Per plant: 0 a certain plant on a row, 1 a probable one, 2 seen on no row, 3 between two rows (not the crop). */
+  /** Per plant: 0 a certain plant on a row, 1 a probable one, 2 seen on no row, 3 between two rows (not the crop);
+   * found along a row at the lower bar (2026-11-16, probable): 4 by two or more photographs, 5 by one photograph's sharp view. */
   shown: number[];
   /** Per plant: photographs that located it. */
   photos: number[];
@@ -36,7 +37,9 @@ export type CornPlants = {
   /** The field rows the stretches belong to (`CornStretch.row`). */
   rows: CornFieldRow[];
   geometry: { spacingM: number; directionDeg: number; seedM: number | null; certainRows: number; certainDots: number };
-  summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; rows: number; confirmedM: number; notConfirmedM: number };
+  summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; rows: number; confirmedM: number; notConfirmedM: number;
+    /** Plants found along the rows at the lower bar (shown 4 and 5), when a photograph carried candidates. */
+    alongRowsTwo?: number; alongRowsOne?: number };
 };
 
 /** Shortest stretch kept, metres (a sliver at a row's end says nothing). */
@@ -50,8 +53,17 @@ export function cornPlantsFirst(reads: CornPhotoRead[], frames: Map<string, Geor
   const gateM = Math.min(PLANTS_FIRST.gateMax, Math.max(PLANTS_FIRST.gateMin, PLANTS_FIRST.gateTimes * reg.repeatM));
   const dots = mergeDots(sights, reg.shifts, gateM);
   if (!dots.length) return null;
-  const covered = coverage(dots, frames, photos, reg.shifts, F.origin);
-  const rec = reconstruct(dots, covered, F.directionDeg ?? 0, F.pitchM ?? 0.76);
+  // Plants along the rows the stricter marks left out (plantsFirst.ts rowCandidates): only where a photograph carried
+  // candidates (seedlings on soil). The dots above stay as they are, first; a candidate is kept only on a row.
+  const strict = dots.length;
+  const lowReads = reads.filter(r => r.low?.length).map(r => ({ name: r.name, scale: r.scale, plants: r.low! }));
+  let all = dots, tier: Uint8Array | null = null;
+  if (lowReads.length) {
+    const C = rowCandidates(lowReads, frames, F.origin, photos, reg.shifts, sights, dots, F.directionDeg ?? 0);
+    if (C.dots.length) { all = [...dots, ...C.dots]; tier = new Uint8Array(all.length); tier.set(C.tier, strict); }
+  }
+  const covered = coverage(all, frames, photos, reg.shifts, F.origin);
+  const rec = reconstruct(all, covered, F.directionDeg ?? 0, F.pitchM ?? 0.76, PLANTS_FIRST, SEQUENCE, tier ? Uint8Array.from(tier, t => (t ? 1 : 0)) : null, tier);
   const G = rec.geometry;
   if (!G.certainRows || !rec.rows.length) return null;
 
@@ -77,13 +89,15 @@ export function cornPlantsFirst(reads: CornPhotoRead[], frames: Map<string, Geor
     if (stretches.some(s => s.row === r.id)) fieldRows.push({ id: r.id, plants: r.dots.length, certain, perM: Math.round(r.perM * 100) / 100, kind: r.kind });
   }
   if (!stretches.some(s => s.confirmed)) return null;
-  const shown = dots.map((_, i) => (rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : rec.between[i] ? 3 : 2));
-  const cnt = [0, 0, 0, 0]; for (const v of shown) cnt[v]++;
+  // Every dot of the stricter marks, as before; a candidate only when it stands on a row.
+  const kept: number[] = []; for (let i = 0; i < all.length; i++) if (i < strict || rec.rowOf[i] >= 0) kept.push(i);
+  const shown = kept.map(i => (i >= strict ? (tier![i] === 1 ? 4 : 5) : rec.rowOf[i] >= 0 ? (rec.certainty[i] === 0 ? 0 : 1) : rec.between[i] ? 3 : 2));
+  const cnt = [0, 0, 0, 0, 0, 0]; for (const v of shown) cnt[v]++;
   const sumM = (ok: boolean) => Math.round(stretches.filter(s => s.confirmed === ok).reduce((t, s) => t + s.lengthM, 0) * 10) / 10;
   return {
-    points: dots.map(d => ll(d.e, d.n)), shown, photos: dots.map(d => d.photos), stretches, rows: fieldRows,
+    points: kept.map(i => ll(all[i].e, all[i].n)), shown, photos: kept.map(i => all[i].photos), stretches, rows: fieldRows,
     geometry: { spacingM: G.spacingM, directionDeg: G.directionDeg, seedM: G.seedM, certainRows: G.certainRows, certainDots: G.certainDots },
-    summary: { plants: dots.length, certain: cnt[0], probable: cnt[1], onNoRow: cnt[2], betweenRows: cnt[3], rows: rec.rows.length, confirmedM: sumM(true), notConfirmedM: sumM(false) },
+    summary: { plants: kept.length, certain: cnt[0], probable: cnt[1], onNoRow: cnt[2], betweenRows: cnt[3], rows: rec.rows.length, confirmedM: sumM(true), notConfirmedM: sumM(false), ...(tier ? { alongRowsTwo: cnt[4], alongRowsOne: cnt[5] } : {}) },
   };
 }
 

@@ -147,3 +147,101 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
   }
   return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f };
 }
+
+export const ROW_POINTS = {
+  /** Pieces smaller than this (photo pixels) are specks ... */
+  minPiecePx: 30,
+  /** ... and so are pieces under this share of the typical plant. */
+  speckShare: 0.15,
+  /** A piece over this share of the frame does not size the typical plant. */
+  maxPlantShare: 0.002,
+  /** Without a row direction, a piece up to this many typical plants is one point (as plantPointsFromGreen). */
+  wholeUpTo: 4,
+  coverFill: 0.35, coverPlants: 6,
+  /** With a row direction: a piece longer ALONG THE ROW than this many plant spacings holds more than one plant, and
+   * gets one point per spacing along the row. Its width across the row never splits it (a seedling's leaves spread
+   * across the furrow). */
+  splitFrom: 1.5,
+  /** The plant spacing assumed in one photograph, metres (the field's own is only known once the photographs are
+   * combined; corn is sown at 0.12 to 0.2). */
+  seedM: 0.15,
+  maxSplit: 8,
+  maxPoints: 20000,
+};
+
+/**
+ * Plant positions for the rows (2026-11-16), from a mask at the photo's own pixel (the lower bar, SEEDLING_ROW): the
+ * pieces are found at full size, not on the mask shrunk three times, so two seedlings a couple of pixels apart stay two
+ * (measured: 7 % more plants on the rows). One point per piece at its centre; a piece long along the row direction
+ * (`rowAngle`, radians in the photo, null when the photograph made no row) is plants touching and gets a point per
+ * plant spacing along the row. These are candidates for the field's rows only (plantsFirst.ts): never weeds, never rows
+ * of their own in a photograph.
+ */
+export function rowPlantPoints(mask: Uint8Array, W: number, H: number, rowAngle: number | null, gsdM: number | null, o = ROW_POINTS): PlantPoint[] {
+  const N = W * H, seen = new Uint8Array(N);
+  type Piece = { a: number; cx: number; cy: number; x0: number; y0: number; x1: number; y1: number; start: number };
+  const pieces: Piece[] = [], stack: number[] = [];
+  for (let i = 0; i < N; i++) {
+    if (!mask[i] || seen[i]) continue;
+    let a = 0, sx = 0, sy = 0, x0 = W, y0 = H, x1 = 0, y1 = 0;
+    seen[i] = 1; stack.push(i);
+    while (stack.length) {
+      const j = stack.pop()!, x = j % W, y = (j - x) / W;
+      a++; sx += x; sy += y; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const k = yy * W + xx; if (mask[k] && !seen[k]) { seen[k] = 1; stack.push(k); }
+      }
+    }
+    if (a >= o.minPiecePx) pieces.push({ a, cx: sx / a, cy: sy / a, x0, y0, x1, y1, start: i });
+  }
+  // The typical plant: the area-weighted median piece (as plantPointsFromGreen; these frames are seedlings on soil).
+  const sizing = pieces.filter(p => p.a <= o.maxPlantShare * N).sort((p, q) => p.a - q.a), total = sizing.reduce((t, p) => t + p.a, 0);
+  let typical = o.minPiecePx;
+  for (let acc = 0, i = 0; i < sizing.length; i++) { acc += sizing[i].a; if (acc >= total / 2) { typical = sizing[i].a; break; } }
+  const d = Math.sqrt(typical), minPiece = Math.max(o.minPiecePx, typical * o.speckShare);
+  const seedPx = gsdM && gsdM > 0 ? o.seedM / gsdM : 2 * d;
+  const ux = rowAngle != null ? Math.cos(rowAngle) : 0, uy = rowAngle != null ? Math.sin(rowAngle) : 0;
+  const points: PlantPoint[] = [];
+  /** A piece's own pixels again (its bounding box holds other pieces too: only those connected to its first pixel). */
+  const pixelsOf = (p: Piece, fn: (x: number, y: number) => void) => {
+    const bw = p.x1 - p.x0 + 1, bh = p.y1 - p.y0 + 1, vis = new Uint8Array(bw * bh), st: number[] = [p.start];
+    vis[((p.start - (p.start % W)) / W - p.y0) * bw + ((p.start % W) - p.x0)] = 1;
+    while (st.length) {
+      const j = st.pop()!, x = j % W, y = (j - x) / W; fn(x, y);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy; if (xx < p.x0 || yy < p.y0 || xx > p.x1 || yy > p.y1) continue;
+        const k = yy * W + xx, v = (yy - p.y0) * bw + (xx - p.x0); if (mask[k] && !vis[v]) { vis[v] = 1; st.push(k); }
+      }
+    }
+  };
+  for (const p of pieces) {
+    if (p.a < minPiece) continue;
+    const bw = p.x1 - p.x0 + 1, bh = p.y1 - p.y0 + 1;
+    // Cover (a lawn, a canopy): no points, as in plantPointsFromGreen.
+    if (p.a > o.wholeUpTo * typical && p.a / (bw * bh) > o.coverFill && Math.min(bw, bh) > o.coverPlants * d) continue;
+    const px: number[] = [], py: number[] = [];
+    let ax = ux, ay = uy;
+    if (rowAngle == null) {
+      // No row in this photograph: a piece up to a few plants is one point; a larger one is cut along its own length
+      // (as plantPointsFromGreen does).
+      if (p.a <= o.wholeUpTo * typical) { points.push({ x: p.cx + 0.5, y: p.cy + 0.5 }); continue; }
+      let cxx = 0, cyy = 0, cxy = 0;
+      pixelsOf(p, (x, y) => { cxx += (x - p.cx) ** 2; cyy += (y - p.cy) ** 2; cxy += (x - p.cx) * (y - p.cy); px.push(x); py.push(y); });
+      const th = 0.5 * Math.atan2(2 * cxy, cxx - cyy); ax = Math.cos(th); ay = Math.sin(th);
+    } else {
+      // Its length along the row: bounded by the box first (cheap), measured only when that could reach the split.
+      if (Math.abs(bw * ux) + Math.abs(bh * uy) <= o.splitFrom * seedPx) { points.push({ x: p.cx + 0.5, y: p.cy + 0.5 }); continue; }
+      pixelsOf(p, (x, y) => { px.push(x); py.push(y); });
+    }
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < px.length; i++) { const t = px[i] * ax + py[i] * ay; if (t < lo) lo = t; if (t > hi) hi = t; }
+    const along = hi - lo + 1;
+    if (along <= o.splitFrom * seedPx) { points.push({ x: p.cx + 0.5, y: p.cy + 0.5 }); continue; }
+    const k = Math.min(o.maxSplit, Math.max(2, Math.round(along / seedPx))), n = new Float64Array(k), bx = new Float64Array(k), by = new Float64Array(k);
+    for (let i = 0; i < px.length; i++) { const b = Math.min(k - 1, Math.floor(((px[i] * ax + py[i] * ay - lo) / along) * k)); n[b]++; bx[b] += px[i]; by[b] += py[i]; }
+    for (let b = 0; b < k; b++) if (n[b] >= minPiece / 2) points.push({ x: bx[b] / n[b] + 0.5, y: by[b] / n[b] + 0.5 });
+    if (points.length > o.maxPoints) break;
+  }
+  return points;
+}

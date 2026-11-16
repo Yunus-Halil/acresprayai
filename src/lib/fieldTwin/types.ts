@@ -171,12 +171,13 @@ export type TwinCorn = {
 export type TwinCornPlants = {
   /** Per plant: latitude, longitude. */
   points: LatLngPair[];
-  /** Per plant: 0 a certain plant on a row, 1 a probable one, 2 seen on no row, 3 between two rows (not the crop). */
+  /** Per plant: 0 a certain plant on a row, 1 a probable one, 2 seen on no row, 3 between two rows (not the crop);
+   * found along a row at the lower bar (2026-11-16 on, probable): 4 by two or more photographs, 5 by one sharp view. */
   certainty: number[];
   /** Per plant: photographs that located it. */
   photos: number[];
   note: string;
-  summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; confirmedM: number; notConfirmedM: number };
+  summary: { plants: number; certain: number; probable: number; onNoRow: number; betweenRows: number; confirmedM: number; notConfirmedM: number; alongRowsTwo?: number; alongRowsOne?: number };
 };
 
 export type TwinVegetation = { id: number; lat: number; lng: number; areaM2: number; seenBy: number; ring: LatLngPair[] };

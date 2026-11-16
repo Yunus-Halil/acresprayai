@@ -41,7 +41,12 @@ describe("the shared seedling mask", { timeout: 60_000 }, () => {
     expect(ad.plans.some(p => p.read && p.stage === "emergence")).toBe(true);
     const frozen = fuseCornV1(ad, plantPointsFromGreen(px).points, P, { enteredCrop: "corn", source: "green" });
     const shared = readCornV1(px, P, { enteredCrop: "corn" });
-    expect(JSON.stringify(compactCornRead("t", shared))).toBe(JSON.stringify(compactCornRead("t", frozen)));
+    // The candidates for the field's rows (2026-11-16) are one more list on a photograph of seedlings; everything the read
+    // held before is exactly as it was, and without them the read is corn-v1.0's to the byte.
+    const { low, ...rest } = compactCornRead("t", shared);
+    expect(JSON.stringify(rest)).toBe(JSON.stringify(compactCornRead("t", frozen)));
+    expect(Array.isArray(low)).toBe(true);
+    expect(JSON.stringify(compactCornRead("t", readCornV1(px, P, { enteredCrop: "corn", rowCandidates: false })))).toBe(JSON.stringify(compactCornRead("t", frozen)));
     expect({ ...shared.summary, ms: null }).toEqual({ ...frozen.summary, ms: null });
   });
 });

@@ -35,8 +35,8 @@
 // Decision support only: nothing here decides a treatment.
 import type { PhotoPixels } from "../photoScout/pattern";
 import { adaptiveAsRead, readCornAdaptive, type AdaptiveRead, type AdaptiveRow } from "./adaptive";
-import { GREEN_POINTS, plantPointsFromGreen } from "./greenPoints";
-import { SEEDLING_GREEN, SEEDLING_V1, type SeedlingCache, seedlingCache } from "./seedlingGreen";
+import { GREEN_POINTS, plantPointsFromGreen, rowPlantPoints } from "./greenPoints";
+import { SEEDLING_GREEN, SEEDLING_ROW, SEEDLING_V1, type SeedlingCache, seedlingCache, seedlingMask, sharedSoilLevels } from "./seedlingGreen";
 import { distToLine, rowsFromPoints, type PlantPoint, type PlantRowsResult } from "./plantRows";
 import type { RowCropGap, RowCropOptions, RowCropParams, RowCropRead, RowCropRow, RowCropStage, RowCropWeed } from "./readRowCrop";
 
@@ -117,7 +117,10 @@ export type CornV1Gap = RowCropGap & { greenRow: number; verdict: "stand gap" | 
 export type CornV1Read = {
   version: number;
   green: AdaptiveRead;
-  plants: { source: "green" | "detector"; points: PlantPoint[]; rows: PlantRowsResult; ms: number };
+  plants: { source: "green" | "detector"; points: PlantPoint[]; rows: PlantRowsResult; ms: number;
+    /** Candidates for the field's rows at the lower bar (greenPoints.ts rowPlantPoints): only on a photograph of
+     * seedlings on soil, where the dark-leaf rule applies; never weeds, never used alone. */
+    low?: PlantPoint[]; lowMs?: number };
   rows: CornV1Row[];
   /** Every green-read weed candidate with what V1 makes of it (index matches green.weeds). */
   weedVerdicts: { index: number; verdict: CornV1WeedVerdict; why: string }[];
@@ -140,6 +143,8 @@ export type CornV1Options = RowCropOptions & {
   detectorPoints?: PlantPoint[] | null;
   /** The shipped corn-v1.0 seedling mask (no rule for leaves darker than their soil): only to compare against it. */
   baselineSeedlings?: boolean;
+  /** false: no candidates for the field's rows at the lower bar (`plants.low`); the read is then exactly as before 2026-11-16. */
+  rowCandidates?: boolean;
 };
 
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : null; };
@@ -380,7 +385,43 @@ export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1O
   const t1 = Date.now();
   const points = opts.detectorPoints ?? cornV1PlantPoints(px, ad, seedlings);
   const t2 = Date.now();
-  return fuseCornV1(ad, points, params, { enteredCrop: opts.enteredCrop ?? params.crop?.id ?? null, source: opts.detectorPoints ? "detector" : "green", greenMs: t1 - t0, plantsMs: t2 - t1 });
+  const v = fuseCornV1(ad, points, params, { enteredCrop: opts.enteredCrop ?? params.crop?.id ?? null, source: opts.detectorPoints ? "detector" : "green", greenMs: t1 - t0, plantsMs: t2 - t1 });
+  if (!opts.detectorPoints && !opts.baselineSeedlings && opts.rowCandidates !== false && darkRuleApplies(ad, seedlings)) {
+    const t3 = Date.now();
+    v.plants.low = cornV1RowCandidates(px, seedlings, v.rows, params.gsdM ?? null);
+    v.plants.lowMs = Date.now() - t3;
+  }
+  return v;
+}
+
+/** Whether the plant read used the dark-leaf rule on this photograph (see cornV1PlantPoints): seedlings on soil. */
+export function darkRuleApplies(ad: AdaptiveRead, seedlings: SeedlingCache): boolean {
+  const seedlingStand = ad.plans.some(p => p.stage === "emergence");
+  const banded = ad.plans.reduce((s, p) => s + (p.stage === "establishment" || p.stage === "mid" || p.stage === "late" ? p.ownedShare : 0), 0) >= CORN_V1.bandedShare;
+  return (seedlings.options ?? SEEDLING_GREEN).dark != null && !(banded && !seedlingStand);
+}
+
+/** The direction the photograph's rows run in (radians in the photo; null with no row): the median over its rows. */
+export function rowAngleOf(rows: { points: [number, number][] }[]): number | null {
+  const a: number[] = [];
+  for (const r of rows) {
+    const p = r.points; if (p.length < 2) continue;
+    const dx = p[p.length - 1][0] - p[0][0], dy = p[p.length - 1][1] - p[0][1]; if (Math.hypot(dx, dy) < 50) continue;
+    let t = Math.atan2(dy, dx); if (t < 0) t += Math.PI; if (t >= Math.PI) t -= Math.PI; a.push(t);
+  }
+  if (!a.length) return null;
+  // Directions are modulo a half turn: the median about the first one.
+  const ref = a[0], rel = a.map(t => { let d = t - ref; while (d > Math.PI / 2) d -= Math.PI; while (d < -Math.PI / 2) d += Math.PI; return d; }).sort((x, y) => x - y);
+  return ref + rel[rel.length >> 1];
+}
+
+/**
+ * Candidates for the field's rows (2026-11-16): the plants the lower bar shows (SEEDLING_ROW), at the photo's own
+ * pixel, split along the photograph's rows. The soil levels are the photograph's shared ones; nothing else is read again.
+ */
+export function cornV1RowCandidates(px: PhotoPixels, seedlings: SeedlingCache, rows: { points: [number, number][] }[], gsdM: number | null): PlantPoint[] {
+  const mask = seedlingMask(px, SEEDLING_ROW, sharedSoilLevels(seedlings, px));
+  return rowPlantPoints(mask, px.width, px.height, rowAngleOf(rows), gsdM);
 }
 
 /**

@@ -707,9 +707,9 @@ export class TwinCanvasLayer extends L.Canvas {
       let np = 0;
       // Seen on no row and between the rows (not the crop) are review material: drawn only with the observations
       // the photographs do not confirm.
-      for (const kind of unc ? [3, 2, 1, 0] : [1, 0]) {
+      for (const kind of unc ? [3, 2, 5, 4, 1, 0] : [5, 4, 1, 0]) {
         ctx.beginPath(); let any = false;
-        const rr = kind >= 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
+        const rr = kind >= 4 ? r + 1 : kind >= 2 ? Math.max(1, r * 0.55) : kind === 1 ? r + 1 : r;
         for (const k of idx) {
           if ((P.certainty ? P.certainty[k] : 0) !== kind) continue;
           const x = X(P.x[k]), y = Y(P.y[k]);
@@ -720,6 +720,8 @@ export class TwinCanvasLayer extends L.Canvas {
         }
         if (!any) continue;
         if (kind === 3) { ctx.lineWidth = 1; ctx.strokeStyle = "#8c929a"; ctx.globalAlpha = 0.6; ctx.stroke(); ctx.globalAlpha = 1; continue; }
+        // Found along a row at the lower bar: a ring in its own colour (two photographs, or one sharp view).
+        if (kind >= 4) { ctx.lineWidth = 1.8; ctx.strokeStyle = kind === 4 ? C.plantAlongRowTwo : C.plantAlongRowOne; ctx.globalAlpha = 0.95; ctx.stroke(); ctx.globalAlpha = 1; continue; }
         if (kind === 0 && overPhotos) { ctx.lineWidth = 2; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 1; ctx.stroke(); }
         else if (kind === 1 && overPhotos) { ctx.lineWidth = 1; ctx.strokeStyle = C.plantLocated; ctx.globalAlpha = 0.6; ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]); }
         else if (kind === 0) { ctx.fillStyle = C.plantLocated; ctx.globalAlpha = 0.9; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = "rgba(20,22,20,0.8)"; ctx.stroke(); }
