@@ -2,7 +2,8 @@
 // is changed; the photographs are only read.
 //
 //   npx vite-node scripts/rowCrop/cornPictures.ts -- --analysis <analysis.json> --cache <candidate cache> --photos <dir>
-//       --names 0033,0101 --out <dir> [--rules before|after] [--free] [--cache2 <dir>] [--positions field|marks]
+//       --names 0033,0101 --out <dir> [--rules before|round1|now] [--free] [--cache2 <dir>] [--positions field|marks]
+//       [--closeups "0101:560,2300,1000,750:left-edge;0101:2700,2350,500,375:centre"] [--count-only]
 //
 // --positions field (the default, and the mode for every picture from 2026-11-16 on): every dot is drawn where the
 // FIELD puts it, through the photograph's camera and moved back by that photograph's registration shift, and by
@@ -10,23 +11,30 @@
 // --positions marks is the earlier way, kept to compare: a dot this photograph helped make is drawn on the photograph's
 // own mark (so it always sits on what the photograph marked), and the others are moved by the local median difference
 // between this photograph's marks and the dots it helped make. That way hid a disagreement between photographs.
+// A dot is drawn only if the pixel it lands on looks back at the dot's own ground position (within 5 cm, the check
+// rowGuided.ts searchPhoto makes). Far outside a photograph's field of view the lens model's polynomial folds ground
+// points back into the frame: without the check, dots tens of metres away were drawn across the picture and counted in
+// its legend (2026-11-16). --count-only draws nothing and says how many dots that check leaves out.
+// --closeups: parts of a drawn photograph cut out and enlarged (name part:x,y,width,height:label).
 // --rules: how the photographs are registered and the plant spacing taken (before: PLANTS_FIRST_V1; after: the rules
 // now). --free: the loosened placement on. --cache2: a second set of candidates joined to the first.
 import "../bench/nodeStorageShim";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { decodeImage, encodeJpeg } from "../bench/images";
-import { groundToPixel } from "../../src/lib/directGeoref/projection";
+import { groundToPixel, pixelToGround } from "../../src/lib/directGeoref/projection";
 import { type CornPhotoRead, FIELD, cornFieldAndGround } from "../../src/lib/fieldTwin/cornField";
 import { placeDots, readRows } from "../../src/lib/fieldTwin/cornPlants";
 import { framesFromAnalysis, type TwinAnalysis } from "../../src/lib/fieldTwin/analysis";
 import { PLANTS_FIRST, PLANTS_FIRST_V1, SEQUENCE, projectSightings, shiftOf } from "../../src/lib/fieldTwin/plantsFirst";
-import { fromEnu } from "../../src/lib/sourceFrames/odm";
+import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? null : argv[i + 1]; };
 const arg = (k: string) => { const v = opt(k); if (v == null) throw new Error(`--${k} is required`); return v; };
-const CACHE = arg("cache"), CACHE2 = opt("cache2"), DIR = arg("photos"), OUT = arg("out"), NAMES = arg("names").split(","), RULES = opt("rules") ?? "after", FREE = argv.includes("--free"), AT = opt("positions") ?? "field";
+const CACHE = arg("cache"), CACHE2 = opt("cache2"), DIR = arg("photos"), OUT = arg("out"), NAMES = arg("names").split(","), RULES = opt("rules") ?? "now", FREE = argv.includes("--free"), AT = opt("positions") ?? "field";
+const COUNT_ONLY = argv.includes("--count-only"), LOOKS_BACK_M = 0.05;
+const CLOSEUPS = (opt("closeups") ?? "").split(";").filter(Boolean).map(c => { const [name, box, label] = c.split(":"), [x, y, w, h] = box.split(",").map(Number); return { name, x, y, w, h, label }; });
 const A = JSON.parse(readFileSync(arg("analysis"), "utf8")) as TwinAnalysis, frames = framesFromAnalysis(A);
 mkdirSync(OUT, { recursive: true });
 type Cached = { applies?: boolean; low: [number, number][]; lowWhole?: [number, number][]; span?: [number, number][]; axis?: [number, number] | null };
@@ -75,29 +83,47 @@ const onRows = Array.from(kind).filter(k => k === 0 || k === 1 || k >= 4).length
 for (const want of NAMES) {
   const pi = photos.findIndex(p => p.includes(want)); if (pi < 0) { console.log(`no photograph named like ${want}`); continue; }
   const name = photos[pi], f = frames.get(name)!, path = [".JPG", ".jpg", ".jpeg"].map(e => join(DIR, name + e)).find(existsSync); if (!path) { console.log(`${name}: no file`); continue; }
-  const img = decodeImage(new Uint8Array(readFileSync(path))), W = img.width, H = img.height, buf = img.data;
+  const img = COUNT_ONLY ? { width: f.intrinsics.width, height: f.intrinsics.height, data: new Uint8Array(0) } : decodeImage(new Uint8Array(readFileSync(path))), W = img.width, H = img.height, buf = img.data;
   const ring = (x: number, y: number, r: number, t: number, col: [number, number, number]) => { for (let dy = -r - t; dy <= r + t; dy++) for (let dx = -r - t; dx <= r + t; dx++) { const d = Math.hypot(dx, dy); if (d < r || d > r + t) continue; const xx = Math.round(x + dx), yy = Math.round(y + dy); if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const o = (yy * W + xx) * 4; buf[o] = col[0]; buf[o + 1] = col[1]; buf[o + 2] = col[2]; } };
   // A field dot in this photograph: through its camera, moved back by its own registration shift (the shift depends on
   // where in the frame the dot lands, so it is found in a few rounds).
-  const pixelOf = (e: number, n: number): [number, number] | null => { let de = 0, dn = 0, u = 0, v = 0; for (let it = 0; it < 4; it++) { const p = fromEnu([e - de, n - dn, 0], F.origin), h = groundToPixel(f, p.lat, p.lng, (f.ground as { altM: number }).altM ?? 0); if (!h) return null; u = h.u; v = h.v; [de, dn] = shiftOf(P.shifts[pi], u, v); } return u < 0 || v < 0 || u >= W || v >= H ? null : [u, v]; };
+  // `back`: whether that pixel looks back at the dot (its own ground point, with the same shift, within LOOKS_BACK_M).
+  const pixelOf = (e: number, n: number): [number, number, boolean] | null => {
+    let de = 0, dn = 0, u = 0, v = 0;
+    for (let it = 0; it < 4; it++) { const p = fromEnu([e - de, n - dn, 0], F.origin), h = groundToPixel(f, p.lat, p.lng, (f.ground as { altM: number }).altM ?? 0); if (!h) return null; u = h.u; v = h.v; [de, dn] = shiftOf(P.shifts[pi], u, v); }
+    if (u < 0 || v < 0 || u >= W || v >= H) return null;
+    const g = pixelToGround(f, u, v); if (!g) return [u, v, false];
+    const b = toEnu({ lat: g.lat, lng: g.lng, altM: 0 }, F.origin), [se, sn] = shiftOf(P.shifts[pi], u, v);
+    return [u, v, Math.hypot(b[0] + se - e, b[1] + sn - n) <= LOOKS_BACK_M];
+  };
   const own = new Map<number, [number, number]>();
   if (AT === "marks") for (let i = 0; i < strict; i++) for (const m of all[i].members) if (sights[m].p === pi) own.set(i, [sights[m].u, sights[m].v]);
-  const proj: ([number, number] | null)[] = all.map((d, i) => (kind[i] < 0 ? null : pixelOf(d.e, d.n)));
+  const proj: ([number, number, boolean] | null)[] = all.map((d, i) => (kind[i] < 0 ? null : pixelOf(d.e, d.n)));
+  // Dots that land in the frame, and those among them whose pixel does not look back at them (never drawn).
+  const landed = proj.filter(Boolean).length, folded = proj.filter(p => p && !p[2]).length;
+  const inBox = (c: { x: number; y: number; w: number; h: number }, p: [number, number, boolean]) => p[0] >= c.x && p[0] < c.x + c.w && p[1] >= c.y && p[1] < c.y + c.h;
   // --positions marks only: the local median difference between this photograph's marks and the dots it helped make.
   const CELL = 300, gw = Math.ceil(W / CELL), gh = Math.ceil(H / CELL), rx: number[][] = Array.from({ length: gw * gh }, () => []), ry: number[][] = Array.from({ length: gw * gh }, () => []);
-  for (const [i, o] of own) { const p = proj[i]; if (p) { const c = Math.floor(p[1] / CELL) * gw + Math.floor(p[0] / CELL); rx[c].push(o[0] - p[0]); ry[c].push(o[1] - p[1]); } }
+  for (const [i, o] of own) { const p = proj[i]; if (p && p[2]) { const c = Math.floor(p[1] / CELL) * gw + Math.floor(p[0] / CELL); rx[c].push(o[0] - p[0]); ry[c].push(o[1] - p[1]); } }
   const med = (v: number[]) => { const t = [...v].sort((a, b) => a - b); return t[t.length >> 1]; };
   const cell = rx.map((v, c) => (v.length >= 4 ? ([med(v), med(ry[c])] as [number, number]) : null));
   const corr = (u: number, v: number): [number, number] => { const cx = Math.floor(u / CELL), cy = Math.floor(v / CELL); for (let r = 0; r <= 3; r++) { let sx = 0, sy = 0, k = 0; for (let j = cy - r; j <= cy + r; j++) for (let i = cx - r; i <= cx + r; i++) { if (i < 0 || j < 0 || i >= gw || j >= gh || Math.max(Math.abs(i - cx), Math.abs(j - cy)) !== r) continue; const c = cell[j * gw + i]; if (c) { sx += c[0]; sy += c[1]; k++; } } if (k) return [sx / k, sy / k]; } return [0, 0]; };
   const cnt = [0, 0, 0, 0, 0, 0, 0];
   for (let i = 0; i < all.length; i++) {
-    const k = kind[i], p = proj[i]; if (k < 0) continue;
+    const k = kind[i], q = proj[i]; if (k < 0) continue;
+    const p: [number, number] | null = q && q[2] ? [q[0], q[1]] : null;
     let at: [number, number] | null = p;
     if (AT === "marks") { const o = own.get(i); at = o ?? (p ? (() => { const [dx, dy] = corr(p[0], p[1]); return [p[0] + dx, p[1] + dy] as [number, number]; })() : null); }
     if (!at || at[0] < 0 || at[1] < 0 || at[0] >= W || at[1] >= H) continue;
-    ring(at[0], at[1], RAD(k), THICK(k), COL[k]); cnt[k]++;
+    if (!COUNT_ONLY) ring(at[0], at[1], RAD(k), THICK(k), COL[k]);
+    cnt[k]++;
   }
-  const SC = 4, LH = 44, rowsOn = cnt[0] + cnt[1] + cnt[4] + cnt[5] + cnt[6], tag = name.slice(-6, -2);
+  const tag = name.slice(-6, -2), rowsOn = cnt[0] + cnt[1] + cnt[4] + cnt[5] + cnt[6];
+  const said = `${tag}: ${landed} dots land in the frame; ${folded} of them are far ground the lens model folds back in (their pixel does not look back at them) and are not drawn; drawn: on rows ${rowsOn} (white ${cnt[0]}, blue ${cnt[1]}, yellow ${cnt[4]}, pink ${cnt[5]}, orange ${cnt[6]}), on no row (grey) ${cnt[2]}`;
+  lines.push(said); console.log(said);
+  for (const c of CLOSEUPS.filter(c => name.includes(c.name))) { const here = proj.filter((p): p is [number, number, boolean] => !!p && inBox(c, p)); const line = `  ${tag} ${c.label} (x ${c.x}-${c.x + c.w}, y ${c.y}-${c.y + c.h}): ${here.length} dots land there, ${here.filter(p => !p[2]).length} of them folded back in and not drawn`; lines.push(line); console.log(line); }
+  if (COUNT_ONLY) continue;
+  const SC = 4, LH = 44;
   const leg: [number | null, string][] = [
     [null, `PHOTO ${tag}: ${rowsOn} PLANTS ON ROWS (ALL PHOTOS TOGETHER), RULES ${RULES}`],
     [null, AT === "field" ? "EVERY RING IS DRAWN WHERE THE FIELD PUTS THE DOT" : "RINGS ON THIS PHOTO'S OWN MARKS WHERE IT HAS ONE"],
@@ -112,7 +138,11 @@ for (const want of NAMES) {
   for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const o = (y * W + x) * 4; buf[o] = 20; buf[o + 1] = 20; buf[o + 2] = 20; }
   leg.forEach(([k, s], li) => { const y = 18 + li * LH; if (k != null) ring(40, y + 14, RAD(k), THICK(k) + 1, COL[k]); text(buf, W, H, k == null ? 20 : 80, y, s, SC, k == null ? [255, 255, 255] : COL[k]); });
   writeFileSync(join(OUT, `${tag}-${RULES}.jpg`), encodeJpeg(img, 88));
-  const line = `${tag}: on rows ${rowsOn} (white ${cnt[0]}, blue ${cnt[1]}, yellow ${cnt[4]}, pink ${cnt[5]}, orange ${cnt[6]}); on no row (grey) ${cnt[2]}`;
-  lines.push(line); console.log(line);
+  // Close-ups: cut from the drawn photograph, enlarged (3 times where the part is 600 pixels wide or less, else 2).
+  for (const c of CLOSEUPS.filter(c => name.includes(c.name))) {
+    const z = c.w <= 600 ? 3 : 2, o = new Uint8Array(c.w * z * c.h * z * 4);
+    for (let y = 0; y < c.h * z; y++) for (let x = 0; x < c.w * z; x++) { const q = ((c.y + Math.floor(y / z)) * W + c.x + Math.floor(x / z)) * 4, p = (y * c.w * z + x) * 4; o[p] = buf[q]; o[p + 1] = buf[q + 1]; o[p + 2] = buf[q + 2]; o[p + 3] = 255; }
+    writeFileSync(join(OUT, `${tag}-${RULES}-${c.label}.jpg`), encodeJpeg({ width: c.w * z, height: c.h * z, data: o }, 92));
+  }
 }
-writeFileSync(join(OUT, `counts-${RULES}.txt`), lines.join("\r\n"));
+writeFileSync(join(OUT, `counts-${RULES}${COUNT_ONLY ? "-check" : ""}.txt`), lines.join("\r\n"));
