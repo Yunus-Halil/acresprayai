@@ -40,7 +40,7 @@ const FLIGHT = arg("flight"), CACHE = arg("cache"), OUT = arg("out");
 // "now" (the default): the rules as they stand.
 const RULES = opt("rules") ?? "now";
 const PLANTS_FIRST = RULES === "before" ? PLANTS_FIRST_V1 : RULES === "round1" ? { ...PLANTS_FIRST_NOW, tiltMustHelp: false } : PLANTS_FIRST_NOW;
-const SEQ = RULES === "round1" ? { ...SEQUENCE, spacingRulesNeedASpacing: false } : SEQUENCE;
+const SEQ = RULES === "round1" ? { ...SEQUENCE, spacingRulesNeedASpacing: false, sweepLoneMarks: false } : RULES === "sweep" ? SEQUENCE : { ...SEQUENCE, sweepLoneMarks: false };
 const A = JSON.parse(readFileSync(arg("analysis"), "utf8")) as TwinAnalysis;
 const frames = framesFromAnalysis(A);
 mkdirSync(OUT, { recursive: true });

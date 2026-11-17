@@ -13,6 +13,7 @@
 //  - a photograph keeps the tilt fit only where it leaves its own cells closer together, and only on a flight where that
 //    is more than chance; otherwise the flight is registered exactly as before;
 //  - a rule that needs the plant spacing does not run where the spacing is not measured;
+//  - a second-look mark alone on its row (no plant found without a row within reach along it) is taken off the row;
 //  - with the rules as they stood (SEQUENCE_V1, PLANTS_FIRST_V1) everything reads as before.
 import { describe, expect, it } from "vitest";
 import { type GeorefFrame, UNCALIBRATED_BORESIGHT } from "@/lib/directGeoref/projection";
@@ -462,5 +463,66 @@ describe("a rule that needs the plant spacing, where the spacing is not measured
   it("is the default, and not in the rules as they stood", () => {
     expect(SEQUENCE.spacingRulesNeedASpacing).toBe(true); expect(SEQUENCE_V1.spacingRulesNeedASpacing).toBe(false);
     expect(PLANTS_FIRST.tiltMustHelp).toBe(true); expect(PLANTS_FIRST_V1.tiltMustHelp).toBe(false);
+  });
+});
+
+describe("a second-look mark alone on its row", () => {
+  // The planting with a bare strip across every row from 9 to 15 m (wheel tracks). On row 2's line a mark two
+  // photographs made at every plant spacing across the strip: by the spacing they march from the last plant to the
+  // first one beyond, and the stretch test passes them (nothing stands between the rows).
+  const bare = planting(a => a > 9.05 && a < 14.95), n0 = bare.length;
+  const marks: Dot[] = []; for (let k = 1; 9 + k * SEED < 14.95; k++) marks.push(dot(9 + k * SEED, 2 * S, 2));
+  // On row 4's line: three dots the stricter marks of two photographs made, marching in from the last plant (probable
+  // plants), and one second-look mark three spacings past the last of them.
+  const probable = [1, 2, 3].map(k => dot(9 + k * SEED, 4 * S, 2)), beyond = dot(9 + 6 * SEED, 4 * S, 2);
+  // And a second-look mark half way between rows 0 and 1: on no row before or after.
+  const between = dot(12, 0.5 * S, 2);
+  const dots = [...bare, ...marks, ...probable, beyond, between], tiers = [...bare.map(() => 0), ...marks.map(() => 1), ...probable.map(() => 0), 1, 1];
+  const iP = n0 + marks.length, iBeyond = iP + probable.length, iBetween = iBeyond + 1;
+  const kept = { ...SEQUENCE, sweepLoneMarks: false }, certain = { ...SEQUENCE, loneMarkCompany: "certain" as const }, located = { ...SEQUENCE, loneMarkCompany: "located" as const };
+  const reach = SEQUENCE.maxGapSeeds * SEED, nearPlant = (d: Dot) => Math.min(d.e - 9, 15 - d.e) <= reach + 1e-6;
+
+  it("was kept: the marks step from one to the next across ground with no plant", () => {
+    const R = read(dots, kept, null, tiers);
+    expect(marks.filter((_, k) => R.rowOf[n0 + k] >= 0).length).toBe(marks.length);
+    expect(R.alone.dot.length).toBe(0);
+    expect(Array.from(R.why).includes(8)).toBe(false);
+  });
+
+  it("is taken off the row, with its own reason; a mark within reach of a plant found without a row stays", () => {
+    const R = read(dots, certain, null, tiers);
+    marks.forEach((d, k) => { expect(R.rowOf[n0 + k] >= 0).toBe(nearPlant(d)); expect(R.why[n0 + k]).toBe(nearPlant(d) ? 0 : 8); });
+    const gone = marks.filter(d => !nearPlant(d)).length;
+    expect(gone).toBeGreaterThan(25); expect(marks.length - gone).toBe(8);
+    // Listed with the course they stood on: one course for all of row 2's.
+    const onRow2 = R.alone.dot.map((i, k) => [i, R.alone.course[k]]).filter(([i]) => i < iP);
+    expect(onRow2.length).toBe(gone); expect(new Set(onRow2.map(x => x[1])).size).toBe(1);
+    // The row is still one row: the strip is now a stretch with no plant confirmed, not a row of marks.
+    const was = read(dots, kept, null, tiers);
+    expect(R.rows.length).toBe(was.rows.length);
+    const row = R.rows[R.rowOf[n0]]; expect(row.segments.some(g => !g.confirmed && g.a0 < 10 && g.a1 > 14)).toBe(true);
+    expect(was.rows[was.rowOf[n0]].segments.every(g => g.confirmed)).toBe(true);
+  });
+
+  it("never removes a certain or a probable plant, and does not touch a dot on no row", () => {
+    const R = read(dots, certain, null, tiers), was = read(dots, kept, null, tiers);
+    for (let i = 0; i < dots.length; i++) if (!tiers[i]) { expect(R.rowOf[i] >= 0).toBe(was.rowOf[i] >= 0); expect(R.certainty[i]).toBe(was.certainty[i]); }
+    probable.forEach((_, k) => { expect(R.rowOf[iP + k]).toBeGreaterThanOrEqual(0); expect(R.certainty[iP + k]).toBe(1); });
+    expect(R.rowOf[iBetween]).toBe(-1); expect(R.why[iBetween]).toBe(was.why[iBetween]); expect(R.why[iBetween]).not.toBe(8);
+  });
+
+  it("company is a certain plant, or with the other choice a probable one too; another second-look mark never is", () => {
+    // The mark past the probable plants: 0.9 m from the row's last certain plant, 0.45 m from its last probable one.
+    expect(read(dots, kept, null, tiers).rowOf[iBeyond]).toBeGreaterThanOrEqual(0);
+    const c = read(dots, certain, null, tiers), l = read(dots, located, null, tiers);
+    expect(c.rowOf[iBeyond]).toBe(-1); expect(c.why[iBeyond]).toBe(8);
+    expect(l.rowOf[iBeyond]).toBeGreaterThanOrEqual(0);
+    // Row 2's marks have only each other in the strip: they go either way.
+    marks.forEach((d, k) => expect(l.rowOf[n0 + k] >= 0).toBe(nearPlant(d)));
+  });
+
+  it("is the default, and not in the rules as they stood", () => {
+    expect(SEQUENCE.sweepLoneMarks).toBe(true); expect(SEQUENCE_V1.sweepLoneMarks).toBe(false); expect(SEQUENCE.loneMarkCompany).toBe("located");
+    expect(read(dots, SEQUENCE_V1, null, tiers).alone.dot.length).toBe(0);
   });
 });

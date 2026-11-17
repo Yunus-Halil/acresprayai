@@ -2,8 +2,8 @@
 // is changed; the photographs are only read.
 //
 //   npx vite-node scripts/rowCrop/cornPictures.ts -- --analysis <analysis.json> --cache <candidate cache> --photos <dir>
-//       --names 0033,0101 --out <dir> [--rules before|round1|now] [--free] [--cache2 <dir>] [--positions field|marks]
-//       [--closeups "0101:560,2300,1000,750:left-edge;0101:2700,2350,500,375:centre"] [--count-only]
+//       --names 0033,0101 --out <dir> [--rules before|round1|now|sweep] [--free] [--cache2 <dir>] [--positions field|marks]
+//       [--closeups "0101:560,2300,1000,750:left-edge;0101:2700,2350,500,375:centre"] [--count-only] [--company certain|located]
 //
 // --positions field (the default, and the mode for every picture from 2026-11-16 on): every dot is drawn where the
 // FIELD puts it, through the photograph's camera and moved back by that photograph's registration shift, and by
@@ -16,8 +16,9 @@
 // points back into the frame: without the check, dots tens of metres away were drawn across the picture and counted in
 // its legend (2026-11-16). --count-only draws nothing and says how many dots that check leaves out.
 // --closeups: parts of a drawn photograph cut out and enlarged (name part:x,y,width,height:label).
-// --rules: how the photographs are registered and the plant spacing taken (before: PLANTS_FIRST_V1; after: the rules
-// now). --free: the loosened placement on. --cache2: a second set of candidates joined to the first.
+// --rules: how the photographs are registered and the plant spacing taken (before: PLANTS_FIRST_V1; round1: that round
+// as first built; now: the rules before the final sweep; sweep: with the final sweep, and every mark it took off a row
+// drawn in red; --company: who counts as company for the sweep, SEQUENCE.loneMarkCompany, the default when not given). --free: the loosened placement on. --cache2: a second set of candidates joined to the first.
 import "../bench/nodeStorageShim";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -33,7 +34,7 @@ const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? null : argv[i + 1]; };
 const arg = (k: string) => { const v = opt(k); if (v == null) throw new Error(`--${k} is required`); return v; };
 const CACHE = arg("cache"), CACHE2 = opt("cache2"), DIR = arg("photos"), OUT = arg("out"), NAMES = arg("names").split(","), RULES = opt("rules") ?? "now", FREE = argv.includes("--free"), AT = opt("positions") ?? "field";
-const COUNT_ONLY = argv.includes("--count-only"), LOOKS_BACK_M = 0.05;
+const COUNT_ONLY = argv.includes("--count-only"), LOOKS_BACK_M = 0.05, COMPANY = (opt("company") ?? SEQUENCE.loneMarkCompany) as typeof SEQUENCE.loneMarkCompany;
 const CLOSEUPS = (opt("closeups") ?? "").split(";").filter(Boolean).map(c => { const [name, box, label] = c.split(":"), [x, y, w, h] = box.split(",").map(Number); return { name, x, y, w, h, label }; });
 const A = JSON.parse(readFileSync(arg("analysis"), "utf8")) as TwinAnalysis, frames = framesFromAnalysis(A);
 mkdirSync(OUT, { recursive: true });
@@ -48,15 +49,16 @@ const reads: CornPhotoRead[] = A.reads.map(r => {
 });
 const { field: F, ground } = cornFieldAndGround(reads, frames, A.fieldOptions ?? FIELD);
 // "before": PLANTS_FIRST_V1. "round1": the registration / plant-spacing round as first built. Anything else: the rules now.
-const opts = { ground, free: FREE, placing: RULES === "before" ? PLANTS_FIRST_V1 : RULES === "round1" ? { ...PLANTS_FIRST, tiltMustHelp: false } : PLANTS_FIRST, sequence: RULES === "round1" ? { ...SEQUENCE, spacingRulesNeedASpacing: false } : SEQUENCE };
+const opts = { ground, free: FREE, placing: RULES === "before" ? PLANTS_FIRST_V1 : RULES === "round1" ? { ...PLANTS_FIRST, tiltMustHelp: false } : PLANTS_FIRST, sequence: RULES === "round1" ? { ...SEQUENCE, spacingRulesNeedASpacing: false, sweepLoneMarks: false } : RULES === "sweep" ? { ...SEQUENCE, loneMarkCompany: COMPANY } : { ...SEQUENCE, sweepLoneMarks: false } };
 const P = placeDots(reads, frames, F, opts); if (!P) throw new Error("the photographs made no dot");
 const rec = readRows(P, F, opts), all = P.all, strict = P.strict, tier = P.tier ?? new Uint8Array(all.length), photos = P.photos;
 const { sights } = projectSightings(reads, frames, F.origin);
-// 0 certain, 1 probable, 2 on no row, 4 second look (two or more photographs), 5 second look (one photograph), 6 only by the loosened placement.
+// 0 certain, 1 probable, 2 on no row, 4 second look (two or more photographs), 5 second look (one photograph), 6 only by the loosened placement,
+// 7 a second-look mark the final sweep took off its row (alone on it).
 const kind = new Int8Array(all.length).fill(-1);
-for (let i = 0; i < all.length; i++) { if (rec.rowOf[i] >= 0) kind[i] = rec.loose[i] || tier[i] === 3 ? 6 : i >= strict ? (tier[i] === 1 ? 4 : 5) : rec.certainty[i] === 0 ? 0 : 1; else if (i < strict) kind[i] = 2; }
-const COL: Record<number, [number, number, number]> = { 0: [255, 255, 255], 1: [120, 220, 255], 2: [150, 150, 150], 4: [255, 214, 40], 5: [255, 70, 200], 6: [255, 120, 0] };
-const RAD = (k: number) => (k === 2 ? 7 : k >= 4 ? 13 : 11), THICK = (k: number) => (k === 1 || k === 2 ? 1 : 2);
+for (let i = 0; i < all.length; i++) { if (rec.rowOf[i] >= 0) kind[i] = rec.loose[i] || tier[i] === 3 ? 6 : i >= strict ? (tier[i] === 1 ? 4 : 5) : rec.certainty[i] === 0 ? 0 : 1; else if (i < strict) kind[i] = 2; else if (rec.why[i] === 8) kind[i] = 7; }
+const COL: Record<number, [number, number, number]> = { 0: [255, 255, 255], 1: [120, 220, 255], 2: [150, 150, 150], 4: [255, 214, 40], 5: [255, 70, 200], 6: [255, 120, 0], 7: [255, 30, 30] };
+const RAD = (k: number) => (k === 2 ? 7 : k === 7 ? 16 : k >= 4 ? 13 : 11), THICK = (k: number) => (k === 1 || k === 2 ? 1 : k === 7 ? 3 : 2);
 const G: Record<string, string> = {
   A: "01110100011000111111100011000110001", B: "11110100011000111110100011000111110", C: "01110100011000010000100001000101110", D: "11110100011000110001100011000111110",
   E: "11111100001000011110100001000011111", F: "11111100001000011110100001000010000", G: "01110100011000010111100011000101111", H: "10001100011000111111100011000110001",
@@ -79,7 +81,7 @@ const text = (buf: Uint8Array, bw: number, bh: number, x: number, y: number, s: 
     cx += 6 * sc;
   }
 };
-const onRows = Array.from(kind).filter(k => k === 0 || k === 1 || k >= 4).length, lines: string[] = [`Rules ${RULES}; loosened placement ${FREE ? "on" : "off"}; ${CACHE2 ? "both second looks" : "second look as a build makes it"}; dots drawn ${AT === "field" ? "where the field puts them" : "on the photograph's own marks where it has one"}. Whole flight: ${onRows} plants on rows, ${Array.from(kind).filter(k => k === 2).length} dots on no row.`];
+const onRows = Array.from(kind).filter(k => k === 0 || k === 1 || (k >= 4 && k !== 7)).length, lines: string[] = [`Rules ${RULES}; loosened placement ${FREE ? "on" : "off"}; ${CACHE2 ? "both second looks" : "second look as a build makes it"}; dots drawn ${AT === "field" ? "where the field puts them" : "on the photograph's own marks where it has one"}. Whole flight: ${onRows} plants on rows, ${Array.from(kind).filter(k => k === 2).length} dots on no row${RULES === "sweep" ? `, ${rec.alone.dot.length} second-look marks taken off their rows by the final sweep (company: ${COMPANY === "located" ? "a certain or a probable plant" : "a certain plant only"})` : ""}.`];
 for (const want of NAMES) {
   const pi = photos.findIndex(p => p.includes(want)); if (pi < 0) { console.log(`no photograph named like ${want}`); continue; }
   const name = photos[pi], f = frames.get(name)!, path = [".JPG", ".jpg", ".jpeg"].map(e => join(DIR, name + e)).find(existsSync); if (!path) { console.log(`${name}: no file`); continue; }
@@ -108,7 +110,7 @@ for (const want of NAMES) {
   const med = (v: number[]) => { const t = [...v].sort((a, b) => a - b); return t[t.length >> 1]; };
   const cell = rx.map((v, c) => (v.length >= 4 ? ([med(v), med(ry[c])] as [number, number]) : null));
   const corr = (u: number, v: number): [number, number] => { const cx = Math.floor(u / CELL), cy = Math.floor(v / CELL); for (let r = 0; r <= 3; r++) { let sx = 0, sy = 0, k = 0; for (let j = cy - r; j <= cy + r; j++) for (let i = cx - r; i <= cx + r; i++) { if (i < 0 || j < 0 || i >= gw || j >= gh || Math.max(Math.abs(i - cx), Math.abs(j - cy)) !== r) continue; const c = cell[j * gw + i]; if (c) { sx += c[0]; sy += c[1]; k++; } } if (k) return [sx / k, sy / k]; } return [0, 0]; };
-  const cnt = [0, 0, 0, 0, 0, 0, 0];
+  const cnt = [0, 0, 0, 0, 0, 0, 0, 0];
   for (let i = 0; i < all.length; i++) {
     const k = kind[i], q = proj[i]; if (k < 0) continue;
     const p: [number, number] | null = q && q[2] ? [q[0], q[1]] : null;
@@ -119,9 +121,9 @@ for (const want of NAMES) {
     cnt[k]++;
   }
   const tag = name.slice(-6, -2), rowsOn = cnt[0] + cnt[1] + cnt[4] + cnt[5] + cnt[6];
-  const said = `${tag}: ${landed} dots land in the frame; ${folded} of them are far ground the lens model folds back in (their pixel does not look back at them) and are not drawn; drawn: on rows ${rowsOn} (white ${cnt[0]}, blue ${cnt[1]}, yellow ${cnt[4]}, pink ${cnt[5]}, orange ${cnt[6]}), on no row (grey) ${cnt[2]}`;
+  const said = `${tag}: ${landed} dots land in the frame; ${folded} of them are far ground the lens model folds back in (their pixel does not look back at them) and are not drawn; drawn: on rows ${rowsOn} (white ${cnt[0]}, blue ${cnt[1]}, yellow ${cnt[4]}, pink ${cnt[5]}, orange ${cnt[6]}), on no row (grey) ${cnt[2]}${RULES === "sweep" ? `, taken off a row by the sweep (red) ${cnt[7]}` : ""}`;
   lines.push(said); console.log(said);
-  for (const c of CLOSEUPS.filter(c => name.includes(c.name))) { const here = proj.filter((p): p is [number, number, boolean] => !!p && inBox(c, p)); const line = `  ${tag} ${c.label} (x ${c.x}-${c.x + c.w}, y ${c.y}-${c.y + c.h}): ${here.length} dots land there, ${here.filter(p => !p[2]).length} of them folded back in and not drawn`; lines.push(line); console.log(line); }
+  for (const c of CLOSEUPS.filter(c => name.includes(c.name))) { const here = proj.filter((p): p is [number, number, boolean] => !!p && inBox(c, p)); const drawnHere = (k: number) => proj.filter((p, i) => !!p && p[2] && kind[i] === k && inBox(c, p)).length; const line = `  ${tag} ${c.label} (x ${c.x}-${c.x + c.w}, y ${c.y}-${c.y + c.h}): ${here.length} dots land there, ${here.filter(p => !p[2]).length} of them folded back in and not drawn; drawn there: white ${drawnHere(0)}, blue ${drawnHere(1)}, yellow ${drawnHere(4)}, pink ${drawnHere(5)}, grey ${drawnHere(2)}${RULES === "sweep" ? `, red ${drawnHere(7)}` : ""}`; lines.push(line); console.log(line); }
   if (COUNT_ONLY) continue;
   const SC = 4, LH = 44;
   const leg: [number | null, string][] = [
@@ -133,6 +135,7 @@ for (const want of NAMES) {
     [5, `PINK = SECOND LOOK, 1 PHOTO NEAR FRAME MIDDLE: ${cnt[5]}`],
     ...(FREE ? [[6, `ORANGE = ADDED BY THE LOOSENED ROW RULE: ${cnt[6]}`] as [number, string]] : []),
     [2, `GREY SMALL = A DOT ON NO ROW: ${cnt[2]}`],
+    ...(RULES === "sweep" ? [[7, `RED = SECOND LOOK MARK ALONE ON ITS ROW, TAKEN OFF IT: ${cnt[7]}`] as [number, string]] : []),
   ];
   const bw = Math.max(...leg.map(l => l[1].length)) * 6 * SC + 110, bh = leg.length * LH + 30;
   for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const o = (y * W + x) * 4; buf[o] = 20; buf[o + 1] = 20; buf[o + 2] = 20; }

@@ -30,7 +30,7 @@ import type { GeorefFrame } from "../../src/lib/directGeoref/projection";
 import { type CornPhotoRead, FIELD, type FieldGround, cornFieldAndGround } from "../../src/lib/fieldTwin/cornField";
 import { type CornPlantsOptions, cornPlantsOf, placeDots, readRows } from "../../src/lib/fieldTwin/cornPlants";
 import { framesFromAnalysis, type TwinAnalysis } from "../../src/lib/fieldTwin/analysis";
-import { PLANTS_FIRST, PLANTS_FIRST_V1, ROW_RECALL, SEQUENCE, SEQUENCE_V1, type Dot, bandAndAlley, coverage } from "../../src/lib/fieldTwin/plantsFirst";
+import { PLANTS_FIRST, PLANTS_FIRST_V1, ROW_RECALL, SEQUENCE, SEQUENCE_V1, type Dot, bandAndAlley, courseAt, coverage } from "../../src/lib/fieldTwin/plantsFirst";
 import { ROW_GUIDED, bandBeatsControls } from "../../src/lib/fieldTwin/rowGuided";
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
 
@@ -46,7 +46,9 @@ const revision = (() => { try { return execSync("git rev-parse --short HEAD").to
 /** A variant: how the candidates are joined to the reads, and the options the plants and rows are read with. */
 type Variant = { what: string; spans?: boolean; opts: (ground: FieldGround | null) => CornPlantsOptions };
 const P2 = { ...SEQUENCE_V1, patternCellsOnly: true, refuseScattered: true };
-const ROUND1 = { ...SEQUENCE, spacingRulesNeedASpacing: false };
+// The rules before the final sweep (2026-11-16): every variant up to p6 is the rules of its day, the sweep off.
+const NOSWEEP = { ...SEQUENCE, sweepLoneMarks: false };
+const ROUND1 = { ...NOSWEEP, spacingRulesNeedASpacing: false };
 const VARIANTS: Record<string, Variant> = {
   base: { what: "the rules as they stood at f23efc0 (second look where a build makes candidates; loosened placement off)", opts: () => ({ sequence: SEQUENCE_V1 }) },
   loose: { what: "f23efc0 with the loosened placement on (SEQUENCE.free, ROW_RECALL.anyView)", opts: () => ({ sequence: SEQUENCE_V1, free: true }) },
@@ -61,19 +63,23 @@ const VARIANTS: Record<string, Variant> = {
   p3span15: { what: "phase 3, candidates carried with their extents and split in the field at the assumed 0.15 m", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground, fieldSeed: false }) },
   p3spanfield: { what: "phase 3, candidates split in the field at its measured plant spacing", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground }) },
   p3spanfieldloose: { what: "phase 3, field spacing, loosened on", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground, free: true }) },
-  p4: { what: "phase 4: phase 3 (field spacing) with the between-rows label fixed (a plane a photograph, the plant spacing taken whatever its score)", spans: true, opts: ground => ({ sequence: SEQUENCE, ground }) },
-  p4loose: { what: "phase 4, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, free: true }) },
+  p4: { what: "phase 4: phase 3 (field spacing) with the between-rows label fixed (a plane a photograph, the plant spacing taken whatever its score)", spans: true, opts: ground => ({ sequence: NOSWEEP, ground }) },
+  p4loose: { what: "phase 4, loosened placement on", spans: true, opts: ground => ({ sequence: NOSWEEP, ground, free: true }) },
   // The registration / plant-spacing round as it was first built (2026-11-16): the tilt terms for every photograph with
   // cells enough, and 0.18 m standing in for a plant spacing that is not measured.
   p5seed: { what: "phase 4 + the plant spacing not measured where its score has no single peak", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: { ...PLANTS_FIRST_V1, seedNeedsAPeak: true } }) },
   p5tilt: { what: "phase 4 + photographs registered by a plane and the two tilt terms on a 6 x 4 grid", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: { ...PLANTS_FIRST, tiltMustHelp: false, seedNeedsAPeak: false } }) },
   p5: { what: "both, as first built", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: { ...PLANTS_FIRST, tiltMustHelp: false } }) },
   p5loose: { what: "both, as first built, loosened placement on", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: { ...PLANTS_FIRST, tiltMustHelp: false }, free: true }) },
-  p6spacing: { what: "as first built + no spacing rule where the spacing is not measured", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: { ...PLANTS_FIRST, tiltMustHelp: false } }) },
+  p6spacing: { what: "as first built + no spacing rule where the spacing is not measured", spans: true, opts: ground => ({ sequence: NOSWEEP, ground, placing: { ...PLANTS_FIRST, tiltMustHelp: false } }) },
   p6tilt: { what: "as first built + the tilt terms only where they help", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: PLANTS_FIRST }) },
-  p6oldreg: { what: "the registration exactly as before (a plane on 4 x 3) with the plant-spacing rules as they stand now", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: { ...PLANTS_FIRST_V1, seedNeedsAPeak: true } }) },
-  p6: { what: "the rules as they stand now", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST }) },
-  p6loose: { what: "the rules as they stand now, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST, free: true }) },
+  p6oldreg: { what: "the registration exactly as before (a plane on 4 x 3) with the plant-spacing rules as they stand now", spans: true, opts: ground => ({ sequence: NOSWEEP, ground, placing: { ...PLANTS_FIRST_V1, seedNeedsAPeak: true } }) },
+  p6: { what: "the rules before the final sweep", spans: true, opts: ground => ({ sequence: NOSWEEP, ground, placing: PLANTS_FIRST }) },
+  p6loose: { what: "the rules before the final sweep, loosened placement on", spans: true, opts: ground => ({ sequence: NOSWEEP, ground, placing: PLANTS_FIRST, free: true }) },
+  // The final sweep: a second-look mark alone on its row is taken off it.
+  p7: { what: "the rules as they stand now (the final sweep on: company is a certain or a probable plant)", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST }) },
+  p7loose: { what: "the rules as they stand now, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST, free: true }) },
+  p7other: { what: "the final sweep with the other company: " + (SEQUENCE.loneMarkCompany === "certain" ? "a certain or a probable plant" : "a certain plant only"), spans: true, opts: ground => ({ sequence: { ...SEQUENCE, loneMarkCompany: SEQUENCE.loneMarkCompany === "certain" ? "located" as const : "certain" as const }, ground, placing: PLANTS_FIRST }) },
   p2cells: { what: "phase 2, only patternCellsOnly", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true }, ground }) },
   p2ground: { what: "phase 2, only refuseScattered", opts: ground => ({ sequence: { ...SEQUENCE_V1, refuseScattered: true }, ground }) },
 };
@@ -151,9 +157,49 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
   // left one plant as two dots on its row, shows at the short end).
   const neighbours = new Array<number>(41).fill(0);
   for (const row of rec.rows) for (let k = 1; k < row.dots.length; k++) { const d = Math.round((rec.a[row.dots[k]] - rec.a[row.dots[k - 1]]) * 100); if (d <= 40) neighbours[Math.max(0, d)]++; }
+  // The final sweep (SEQUENCE.sweepLoneMarks). What it took off the rows, by tier, and where each stood. There is no
+  // map of wheel tracks: "where the rows either side are interrupted too" is measured from the plants. A plant here is
+  // one the stricter marks made, on a row (certain or probable). A neighbouring row (a course within a row and a half
+  // across, on that side, running past the mark) is interrupted near the mark when it has no plant over at least twice
+  // the reach (the shortest bare run the mark's own row must have for the mark to be alone), somewhere within the reach
+  // of the mark along the rows. The mark stands in a strip crossing the rows when every neighbouring row it has is
+  // interrupted so. The narrower count, "bare across three rows": no plant at all within the reach of the mark along the
+  // rows on its own row or the row either side. And, measured only: the candidates still on a row that would go too if
+  // company were asked on BOTH sides (company as the sweep counts it, on the mark's own built row).
+  const q = opts.sequence ?? SEQUENCE, T3 = ["second look, 2+ photographs", "second look, 1 photograph near its frame's middle", "second look, 1 photograph anywhere"];
+  const byTier = (c: number[]) => Object.fromEntries(T3.map((t, k) => [t, c[k]]));
+  const found: number[] = []; for (let i = 0; i < P.strict; i++) if (rec.rowOf[i] >= 0) found.push(i);
+  const bins = new Map<number, number[]>(), binOf = (a: number) => Math.floor(a / Math.max(reach, 1e-6));
+  for (const i of found) { const b = binOf(rec.a[i]); (bins.get(b) ?? bins.set(b, []).get(b)!).push(i); }
+  const bare = (i: number) => { for (let b = binOf(rec.a[i]) - 1; b <= binOf(rec.a[i]) + 1; b++) for (const j of bins.get(b) ?? []) if (Math.abs(rec.a[j] - rec.a[i]) <= reach && Math.abs(rec.c[j] - rec.c[i]) <= 1.5 * S) return false; return true; };
+  const side = (i: number, sign: number, c: number) => { const d = (c - rec.c[i]) * sign; return d > 0.5 * S && d <= 1.5 * S; };
+  const hasRow = (i: number, sign: number) => courses.some(L => rec.a[i] >= L.a0 && rec.a[i] <= L.a1 && side(i, sign, courseAt(L, rec.a[i])));
+  const interrupted = (i: number, sign: number) => {
+    const a = rec.a[i], ps = [a - 3 * reach, a + 3 * reach];
+    for (let b = binOf(a) - 3; b <= binOf(a) + 3; b++) for (const j of bins.get(b) ?? []) if (side(i, sign, rec.c[j]) && Math.abs(rec.a[j] - a) < 3 * reach) ps.push(rec.a[j]);
+    ps.sort((x, y) => x - y);
+    for (let k = 1; k < ps.length; k++) if (ps[k] - ps[k - 1] >= 2 * reach) return true;
+    return false;
+  };
+  const acrossStrip = (i: number) => { const sides = [-1, 1].filter(sg => hasRow(i, sg)); return sides.length > 0 && sides.every(sg => interrupted(i, sg)); };
+  const removed = [0, 0, 0], inStrip = [0, 0, 0], inBare = [0, 0, 0], kept = [0, 0, 0], bothSides = [0, 0, 0];
+  for (const i of rec.alone.dot) { const k = Math.min(3, P.tier![i]) - 1; removed[k]++; if (acrossStrip(i)) inStrip[k]++; if (bare(i)) inBare[k]++; }
+  const isCompany = (j: number) => (q.loneMarkCompany === "located" ? j < P.strict : rec.certainty[j] === 0);
+  for (let i = P.strict; i < n; i++) {
+    if (rec.rowOf[i] < 0) continue;
+    const k = Math.min(3, P.tier![i]) - 1; kept[k]++;
+    let below = false, above = false; for (const j of rec.rows[rec.rowOf[i]].dots) { if (!isCompany(j)) continue; const d = rec.a[j] - rec.a[i]; if (d < 0 && d >= -reach) below = true; else if (d > 0 && d <= reach) above = true; }
+    if (!(below && above)) bothSides[k]++;
+  }
+  // Of the marks removed: those with another second-look mark that stood on the same line within the reach (a run of
+  // second-look marks with no plant of the stricter marks among them), and those with none (one mark by itself).
+  const wasOn: number[] = [...rec.alone.dot]; for (let i = P.strict; i < n; i++) if (rec.rowOf[i] >= 0) wasOn.push(i);
+  const inARun = [0, 0, 0];
+  for (const i of rec.alone.dot) if (wasOn.some(j => j !== i && Math.abs(rec.a[j] - rec.a[i]) <= reach && Math.abs(rec.c[j] - rec.c[i]) <= half)) inARun[Math.min(3, P.tier![i]) - 1]++;
+  const alone = { sweep: q.sweepLoneMarks, company: q.loneMarkCompany, reachM: Math.round(reach * 1000) / 1000, removed: byTier(removed), removedTotal: removed.reduce((t, x) => t + x, 0), removedWhereTheRowsEitherSideAreInterrupted: byTier(inStrip), removedElsewhere: byTier(removed.map((x, k) => x - inStrip[k])), removedBareAcrossThreeRows: byTier(inBare), removedWithAnotherSecondLookMarkWithinReach: byTier(inARun), removedWithNoMarkOfAnyKindWithinReach: byTier(removed.map((x, k) => x - inARun[k])), removedDots: rec.alone.dot.map(i => ({ e: Math.round(P.all[i].e * 100) / 100, n: Math.round(P.all[i].n * 100) / 100, tier: P.tier![i], strip: acrossStrip(i) })), candidatesOnRows: byTier(kept), ofThoseWithCompanyOnOneSideOnly: byTier(bothSides) };
   const out = {
     flight: FLIGHT, variant: v.what, revision, photographs: reads.length, photographsWithCandidates: reads.filter(r => r.low?.length).length,
-    cache: { missing, plantsDifferFromRecord: mismatched }, ms: 0, spacingRules: rec.spacingRules, photographsWithTilt: P.shifts.filter(s => s.tilt && (s.tilt.t[0] !== 0 || s.tilt.t[1] !== 0)).length, unplanted: rec.unplanted, cutOverScattered: rec.gaps.cutOverScattered, alleyRefused: rec.alleyRefused,
+    cache: { missing, plantsDifferFromRecord: mismatched }, ms: 0, spacingRules: rec.spacingRules, photographsWithTilt: P.shifts.filter(s => s.tilt && (s.tilt.t[0] !== 0 || s.tilt.t[1] !== 0)).length, unplanted: rec.unplanted, cutOverScattered: rec.gaps.cutOverScattered, alleyRefused: rec.alleyRefused, alone,
     geometry: { rowSpacingM: Math.round(S * 1000) / 1000, plantSpacingM: rec.geometry.seedM, directionDeg: Math.round(rec.geometry.directionDeg * 100) / 100, certainRows: rec.geometry.certainRows },
     planting: { judged: F.planting.judged, why: F.planting.why, plantedM2: F.planting.plantedM2, scatteredM2: F.planting.scatteredM2 },
     dots: { all: n, stricterMarks: P.strict, candidates: n - P.strict },

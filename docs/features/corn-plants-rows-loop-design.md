@@ -90,6 +90,20 @@ The rows found in a free slot (`plantsFirst.ts:736-751`) are made from dots that
 are not certain. Under rule 1 as written ("plants you are sure of") they would go. That is a decision for you: on
 the flights measured they hold 0 to 30 plants.
 
+**Built since (2026-11-16): a final sweep, not the first row of that table.** `SEQUENCE.sweepLoneMarks` in
+`reconstruct` takes a second-look mark off its row when no plant found without a row stands within the reach
+along that row on either side (reason 8, "alone on its row"). It is the same idea as the first row of the table
+and differs from it in four ways:
+
+- It runs after every dot is placed, not at placement. A mark that stays may have had its "whole number of plant
+  spacings" measured from a mark the sweep then removes; under the table's change a refused mark never serves as
+  anybody's reference.
+- It tests second-look marks only. The table's change tests every dot a row accepts, the probable plants included.
+- Its company is, by default, any plant the stricter marks made (certain or probable); the table's is `own`
+  plants only. `loneMarkCompany: "certain"` is the table's reading.
+- The other three rows of the table (a row's ends, "confirmed" stretches, the refit) are not built. They change
+  only as far as the removed marks no longer count in them.
+
 **Steps 5 and 6, expectations and the guided look.** New, replacing the two placement loops
 (`plantsFirst.ts:707-735`) and the "not confirmed" segments. An expectation is a plant position on a row between
 two of its `own` plants that stand further apart than one and a half plant spacings. Each gets one of three

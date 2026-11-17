@@ -642,9 +642,23 @@ export const SEQUENCE = {
    * plant stands for `maxBridgeM` or where its course crosses ground judged scattered. The certain plants, the rows
    * they make and the rows found in a free slot do not use the spacing and read as before. */
   spacingRulesNeedASpacing: true,
+  /** The final sweep (2026-11-16): a mark of the second look that stands alone on its row is taken off it. After every
+   * dot is placed and before the rows are built, each candidate on a row (every tier) is asked for company along that
+   * row: a plant found without help from a row, within the reach a row already takes dots in (`maxGapSeeds` plant
+   * spacings), on either side of it. With none it is off the row: why 8, "alone on its row". Who is company
+   * (`loneMarkCompany`):
+   *   "located"  the row's certain plants and its probable ones: every dot the stricter marks made, which no row
+   *              helped to find (a probable plant's place on the row is the spacing rule's, its finding is not);
+   *   "certain"  the row's certain plants only: the plants the row itself was made from (the design note's `own`).
+   *              Measured 2026-11-16 on the one flight with marks to sweep: 310 marks go instead of 137, most of the
+   *              difference at row ends beside a wheel track, next to probable plants.
+   * Another candidate is never company. A certain or a probable plant is never removed, and a dot on no row is not
+   * touched. One pass is the whole of it: what is removed was nobody's company. (A planter drops seed in a line at a
+   * steady spacing, so one faint mark alone in a bare strip is not read as its plant.) */
+  sweepLoneMarks: true, loneMarkCompany: "located" as "certain" | "located",
 };
 /** The rules as they stood on 2026-11-16 at f23efc0, before the changes above them here: kept so that result can be run beside the present one. */
-export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none", betweenOffLines: false, spacingRulesNeedASpacing: false };
+export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none", betweenOffLines: false, spacingRulesNeedASpacing: false, sweepLoneMarks: false };
 /** The field's judgement of the ground as reconstruct takes it (cornField.ts FieldGround): at a place, metres east and
  * north, 0 unknown, 1 planted, 2 scattered; `dotState` where the caller judged the dots itself. */
 export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
@@ -664,7 +678,7 @@ export type Reconstruction = {
   rowOf: Int32Array;
   /** Per dot: 1 when it is on no row, off every row's line, and has a row on either side of it within a spacing: between the rows, not the crop. */
   between: Uint8Array;
-  /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows, 5 on ground the field's plants show as scattered, 6 a candidate (or a dot for the loosened placement) on a stretch of row whose band does not beat the ground between the rows, 7 the plant spacing is not measured on this flight, so the rule that would place it does not run. */
+  /** Per dot, why it is on no row: 0 on a row, 1 no row reaches it, 2 as close as a double to a plant on the row, 3 not at the plant spacing, 4 between two rows, 5 on ground the field's plants show as scattered, 6 a candidate (or a dot for the loosened placement) on a stretch of row whose band does not beat the ground between the rows, 7 the plant spacing is not measured on this flight, so the rule that would place it does not run, 8 a candidate that was on a row and alone on it (the final sweep, `sweepLoneMarks`). */
   why: Uint8Array;
   /** The gap rule as measured, and what it did: gaps bridged as confirmed, stretches not confirmed, rows cut (over a
    * stretch with no plant, and where the course would cross ground judged scattered). */
@@ -676,6 +690,8 @@ export type Reconstruction = {
   alleyRefused: number;
   /** Whether the rules that need the plant spacing ran: false where it is not measured and `spacingRulesNeedASpacing`. */
   spacingRules: boolean;
+  /** The final sweep (`sweepLoneMarks`): the candidates it took off a row, and for each the course (index into `courses`) it stood on. */
+  alone: { dot: number[]; course: number[] };
   geometry: { spacingM: number; directionDeg: number; seedM: number | null; rowLengthMedianM: number; perMMedian: number; certainDots: number; certainRows: number };
   /** Along / across of every dot in the rows' frame, metres. */
   a: Float64Array; c: Float64Array;
@@ -849,6 +865,18 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
       along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1; loose[i] = 1; why[i] = 0; changed = true;
     }
   }
+  // The final sweep (q.sweepLoneMarks): a candidate on a row with no plant found without a row within `reach` of it
+  // along that row, on either side, is alone there: off the row, why 8. Other candidates are not company.
+  const alone = { dot: [] as number[], course: [] as number[] };
+  if (q.sweepLoneMarks && tier) lines.forEach((L, ri) => {
+    const company = [...L.dots, ...(q.loneMarkCompany === "located" ? extra[ri].filter(i => !tier[i]) : [])].map(i => A[i]);
+    extra[ri] = extra[ri].filter(i => {
+      if (!tier[i] || company.some(a => Math.abs(a - A[i]) <= reach)) return true;
+      why[i] = 8; onCertain[i] = 0; loose[i] = 0; if (certainty[i] === 1) certainty[i] = 2;
+      alone.dot.push(i); alone.course.push(ri);
+      return false;
+    });
+  });
   // New rows from what is left, only in a row slot of the planter's pattern that no certain row holds there, as dense
   // as the certain rows are, straight.
   const restByJ = new Map<number, number[]>();
@@ -904,9 +932,9 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     if (rowOf[i] >= 0) continue;
     let below = false, above = false, onLine = false;
     for (const r of all) { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) continue; const d = C[i] - at(r, A[i]); if (q.betweenOffLines && Math.abs(d) <= onRow) { onLine = true; break; } if (d > 0 && d < 1.2 * S) below = true; if (d < 0 && d > -1.2 * S) above = true; }
-    if (!onLine && below && above) { between[i] = 1; why[i] = 4; }
+    if (!onLine && below && above) { between[i] = 1; if (why[i] !== 8) why[i] = 4; }
   }
   for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
   const unplantedGround = { dotsOnScattered: scattered.reduce((t, x) => t + x, 0), certainOnScattered: cIdx.reduce((t, i) => t + scattered[i], 0), flatCells: RN.flat };
-  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, alleyRefused, spacingRules, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines };
+  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, alleyRefused, spacingRules, alone, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines };
 }
