@@ -558,7 +558,14 @@ export type SeedSpacing = {
  * of it (a half, a third: they score as well by construction) is the same peak. Any other run is a second spacing the
  * score cannot tell from the pick, and then there is no peak: on four of the five flights measured the curve was flat
  * (best 0.017 to 0.055, with three or four separate runs within the hair) and the pick was only the longest of them;
- * on the fifth (best 0.129) one run, 0.132 to 0.140 m. With `needsAPeak` the spacing is then null (not measured).
+ * on the fifth (best 0.129) one run, 0.132 to 0.140 m.
+ * One run is not enough on its own: a flat curve wobbles, and a wobble can leave a single run within the hair (seen on
+ * one of the four once its photographs were registered a little differently: best 0.047, one run at 0.109 to 0.113 m).
+ * So the best must also stand above the curve's own level (the median of the scores tried) by 3 of the curve's own
+ * spreads (1.4826 times the median distance from that level: a standard deviation, read so that the peak itself does
+ * not widen it), as registerPhotos asks of a repeat (3 times the square root of its background). Measured: 5.3 median
+ * distances on the flight with a spacing, 1.5 to 2.8 on the others; the bar is 4.4.
+ * With `needsAPeak` the spacing is null (not measured) where there is no such peak.
  */
 export function seedSpacing(marks: { row: number; a: number }[], rowSpacingM: number, reachM = 0.8, needsAPeak = false): SeedSpacing {
   const allowedM: [number, number] = [1 / (CORN_POPULATION_PER_HA[1] / 10_000) / rowSpacingM, 1 / (CORN_POPULATION_PER_HA[0] / 10_000) / rowSpacingM];
@@ -577,8 +584,10 @@ export function seedSpacing(marks: { row: number; a: number }[], rowSpacingM: nu
   for (const [s, v] of scan) { if (v < best - 0.02) continue; const last = runs[runs.length - 1]; if (last && s - last[1] <= 1.5 * step) last[1] = s; else runs.push([s, s]); }
   const top = runs[runs.length - 1];
   const peak = runs.every(r => { if (r === top) return true; for (let k = 2; top[1] / k >= allowedM[0] - step; k++) if (r[0] >= top[0] / k - step && r[1] <= top[1] / k + step) return true; return false; });
-  const measured = peak || !needsAPeak;
-  return { spacingM: measured ? Math.round(pick[0] * 1000) / 1000 : null, allowedM: [Math.round(allowedM[0] * 1000) / 1000, Math.round(allowedM[1] * 1000) / 1000], regularity: Math.round(Math.max(0, pick[1]) * 1000) / 1000, impliedPerHa: measured ? Math.round(10_000 / (pick[0] * rowSpacingM)) : null, pairs: d.length, peak };
+  const level = [...scan].map(x => x[1]).sort((x, y) => x - y)[scan.length >> 1], spread = 1.4826 * [...scan].map(x => Math.abs(x[1] - level)).sort((x, y) => x - y)[scan.length >> 1];
+  const stands = best - level >= 3 * spread;
+  const measured = (peak && stands) || !needsAPeak;
+  return { spacingM: measured ? Math.round(pick[0] * 1000) / 1000 : null, allowedM: [Math.round(allowedM[0] * 1000) / 1000, Math.round(allowedM[1] * 1000) / 1000], regularity: Math.round(Math.max(0, pick[1]) * 1000) / 1000, impliedPerHa: measured ? Math.round(10_000 / (pick[0] * rowSpacingM)) : null, pairs: d.length, peak: peak && stands };
 }
 
 /**

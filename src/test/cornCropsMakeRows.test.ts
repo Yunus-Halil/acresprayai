@@ -10,12 +10,15 @@
 //  - the plant spacing is "not measured" when its score has no single peak;
 //  - a photograph is registered by a plane and the two terms a small camera tilt adds, so its edges agree with the
 //    other photographs' middles;
+//  - a photograph keeps the tilt fit only where it leaves its own cells closer together, and only on a flight where that
+//    is more than chance; otherwise the flight is registered exactly as before;
+//  - a rule that needs the plant spacing does not run where the spacing is not measured;
 //  - with the rules as they stood (SEQUENCE_V1, PLANTS_FIRST_V1) everything reads as before.
 import { describe, expect, it } from "vitest";
 import { type GeorefFrame, UNCALIBRATED_BORESIGHT } from "@/lib/directGeoref/projection";
 import type { CornPhotoRead } from "@/lib/fieldTwin/cornField";
 import { candidatePoints } from "@/lib/fieldTwin/cornPlants";
-import { type Dot, type GroundJudge, PLANTS_FIRST, PLANTS_FIRST_V1, type PhotoShift, SEQUENCE, SEQUENCE_V1, type Sight, bandAndAlley, courseAt, reconstruct, registerPhotos, rowNumbers, shiftOf } from "@/lib/fieldTwin/plantsFirst";
+import { type Dot, type GroundJudge, PLANTS_FIRST, PLANTS_FIRST_V1, type PhotoShift, type RowsFromDots, SEQUENCE, SEQUENCE_V1, type Sight, bandAndAlley, courseAt, reconstruct, registerPhotos, rowNumbers, shiftOf } from "@/lib/fieldTwin/plantsFirst";
 import { ROW_GUIDED, bandBeatsControls, bandTail, seedSpacing } from "@/lib/fieldTwin/rowGuided";
 import { ROW_POINTS, rowPlantPoints } from "@/lib/rowCrop/greenPoints";
 
@@ -365,6 +368,9 @@ describe("registering photographs whose cameras are tilted a little", () => {
     // With the tilt terms every mark is within the narrowest merge gate of its plant's mean.
     expect(b.rms).toBeLessThan(a.rms / 3); expect(b.worst).toBeLessThan(PLANTS_FIRST.gateMin);
     expect(tilted.shifts.every(sh => sh.tilt && sh.cells >= PLANTS_FIRST.tiltMinCells)).toBe(true);
+    // Every photograph's own cells are closer together with the tilt fit: all nine keep it.
+    expect(tilted.tilted).toBe(cams.length);
+    expect(tilted.leftOver!.every(l => l.tilt < l.plane)).toBe(true);
     // The tilts found are the tilts put in (the registration only knows them against each other: their mean is free).
     const mean = [0, 1].map(k => cams.reduce((t, c) => t + c.t[k], 0) / cams.length), found = [0, 1].map(k => tilted.shifts.reduce((t, sh) => t + sh.tilt!.t[k], 0) / cams.length);
     cams.forEach((c, p) => { for (const k of [0, 1]) expect(-(tilted.shifts[p].tilt!.t[k] - found[k])).toBeCloseTo(c.t[k] - mean[k], 3); });
@@ -384,5 +390,77 @@ describe("registering photographs whose cameras are tilted a little", () => {
     const [de, dn] = shiftOf(sh, 3000, 1500), G = [10, 5], k = 0.002 * G[0] - 0.001 * G[1];
     expect(de).toBeCloseTo(0.01 + k * G[0], 9); expect(dn).toBeCloseTo(-0.02 + k * G[1], 9);
     expect(shiftOf(sh, 1000, 500)).toEqual([0.01, -0.02]);
+  });
+});
+
+describe("the tilt fit only where it helps", () => {
+  // The same planting and photographs, the cameras off by a few centimetres and NOT tilted, and every mark a centimetre
+  // or two off its plant (each photograph sees a seedling a little differently). There is nothing for the tilt terms to
+  // find: whether a photograph's cells end closer together with them is chance.
+  let x = 29; const rnd = () => ((x = (Math.imul(x, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff);
+  const plants: [number, number][] = [];
+  for (let row = 0; row * 0.9 <= 20; row++) for (let a = rnd() * 0.15; a <= 30; a += 0.11 + rnd() * 0.08) plants.push([a, row * 0.9]);
+  const PX = 0.005, sights: Sight[] = [];
+  for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) {
+    const ce = 8 + i * 7, cn = 6 + j * 4, off = [(rnd() - 0.5) * 0.06, (rnd() - 0.5) * 0.06], p = j * 3 + i;
+    for (const [pe, pn] of plants) { const ge = pe - ce, gn = pn - cn; if (Math.abs(ge) > 8 || Math.abs(gn) > 6) continue; sights.push({ p, u: ge / PX + 1600, v: gn / PX + 1200, e: pe + off[0] + (rnd() - 0.5) * 0.04, n: pn + off[1] + (rnd() - 0.5) * 0.04 }); }
+  }
+
+  it("a flight where the tilt fit helps no more photographs than chance is registered exactly as before", () => {
+    const before = registerPhotos(sights, 9, PLANTS_FIRST_V1), now = registerPhotos(sights, 9, PLANTS_FIRST);
+    expect(now.tilted).toBe(0);
+    expect(now.shifts).toEqual(before.shifts);
+    expect(now.repeatM).toBe(before.repeatM);
+    // What it was asked: each photograph's left-over both ways. Some are smaller with the tilt fit, not enough of them.
+    expect(now.leftOver!.length).toBe(9);
+    // Without the rule every photograph would carry the tilt terms it was fitted.
+    const always = registerPhotos(sights, 9, { ...PLANTS_FIRST, tiltMustHelp: false });
+    expect(always.shifts.every(sh => sh.tilt !== undefined)).toBe(true);
+    expect(always.shifts).not.toEqual(before.shifts);
+  });
+});
+
+describe("a rule that needs the plant spacing, where the spacing is not measured", () => {
+  // The planting with a gap in row 2, a dot two photographs made in the gap at the plant spacing, a candidate beside
+  // it, and a first reading of rows that could not measure the plant spacing.
+  const gapped = planting(a => a > 9.05 && a < 10.85), n0 = gapped.length;
+  const dots = [...gapped, dot(9.15, 2 * S, 2), dot(9.3, 2 * S, 2)], tiers = [...gapped.map(() => 0), 0, 1];
+  const notMeasured: RowsFromDots = { rows: [], spacingM: S, directionDeg: 0, seedM: null, offRow: [] };
+  const readWith = (q: typeof SEQUENCE, pre: RowsFromDots | null) => { const tier = Uint8Array.from(tiers); return reconstruct(dots, new Int32Array(dots.length).fill(8), 0, S, PLANTS_FIRST, q, Uint8Array.from(tier, t => (t ? 1 : 0)), tier, pre); };
+
+  it("ran on 0.18 m before: the dot became a probable plant, the candidate a plant, and a stretch was called not confirmed", () => {
+    const R = readWith({ ...SEQUENCE, spacingRulesNeedASpacing: false }, notMeasured);
+    expect(R.spacingRules).toBe(true);
+    expect(R.geometry.seedM).toBeNull();
+    expect(R.rowOf[n0]).toBeGreaterThanOrEqual(0); expect(R.certainty[n0]).toBe(1);
+    expect(R.rows.some(r => r.segments.some(g => !g.confirmed))).toBe(true);
+  });
+
+  it("does not run: no probable plant, no candidate placed, no stretch called not confirmed; the certain plants and their rows as they were", () => {
+    const R = readWith(SEQUENCE, notMeasured), was = readWith({ ...SEQUENCE, spacingRulesNeedASpacing: false }, notMeasured);
+    expect(R.spacingRules).toBe(false);
+    expect([R.rowOf[n0], R.rowOf[n0 + 1]]).toEqual([-1, -1]);
+    expect([R.why[n0], R.why[n0 + 1]]).toEqual([7, 7]);
+    expect(Array.from(R.certainty).filter(c => c === 1).length).toBe(0);
+    expect(R.rows.every(r => r.segments.every(g => g.confirmed))).toBe(true);
+    expect(R.gaps.gapM).toBe(Infinity);
+    expect(R.rows.length).toBe(was.rows.length);
+    for (let i = 0; i < n0; i++) expect(R.rowOf[i] >= 0).toBe(was.rowOf[i] >= 0);
+    // A row still stops where no plant stands for maxBridgeM.
+    const far = planting(a => a > 6 && a < 6 + SEQUENCE.maxBridgeM + 0.5);
+    const cut = reconstruct(far, new Int32Array(far.length).fill(8), 0, S, PLANTS_FIRST, SEQUENCE, null, null, notMeasured);
+    expect(cut.rows.length).toBe(12); expect(cut.gaps.cutOverMaxBridge).toBe(6);
+  });
+
+  it("runs as ever where the spacing is measured", () => {
+    const R = readWith(SEQUENCE, null);
+    expect(R.spacingRules).toBe(true);
+    expect(R.geometry.seedM).not.toBeNull();
+    expect(R.rowOf[n0]).toBeGreaterThanOrEqual(0); expect(R.rowOf[n0 + 1]).toBeGreaterThanOrEqual(0);
+  });
+
+  it("is the default, and not in the rules as they stood", () => {
+    expect(SEQUENCE.spacingRulesNeedASpacing).toBe(true); expect(SEQUENCE_V1.spacingRulesNeedASpacing).toBe(false);
+    expect(PLANTS_FIRST.tiltMustHelp).toBe(true); expect(PLANTS_FIRST_V1.tiltMustHelp).toBe(false);
   });
 });
