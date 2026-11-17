@@ -71,6 +71,7 @@ const VARIANTS: Record<string, Variant> = {
   p5loose: { what: "both, as first built, loosened placement on", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: { ...PLANTS_FIRST, tiltMustHelp: false }, free: true }) },
   p6spacing: { what: "as first built + no spacing rule where the spacing is not measured", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: { ...PLANTS_FIRST, tiltMustHelp: false } }) },
   p6tilt: { what: "as first built + the tilt terms only where they help", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: PLANTS_FIRST }) },
+  p6oldreg: { what: "the registration exactly as before (a plane on 4 x 3) with the plant-spacing rules as they stand now", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: { ...PLANTS_FIRST_V1, seedNeedsAPeak: true } }) },
   p6: { what: "the rules as they stand now", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST }) },
   p6loose: { what: "the rules as they stand now, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST, free: true }) },
   p2cells: { what: "phase 2, only patternCellsOnly", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true }, ground }) },
