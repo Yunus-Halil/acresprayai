@@ -46,9 +46,17 @@ export function projectSightings(reads: Read[], frames: Map<string, GeorefFrame>
   return { sights, photos };
 }
 
-/** A photograph's correction, metres: east a + b (u - u0) + c (v - v0), north the same with its own a, b, c. */
-export type PhotoShift = { e: [number, number, number]; n: [number, number, number]; u0: number; v0: number; cells: number };
-export const shiftOf = (s: PhotoShift, u: number, v: number): [number, number] => [s.e[0] + s.e[1] * (u - s.u0) + s.e[2] * (v - s.v0), s.n[0] + s.n[1] * (u - s.u0) + s.n[2] * (v - s.v0)];
+/** A photograph's correction, metres: east a + b (u - u0) + c (v - v0), north the same with its own a, b, c.
+ * `tilt` (PLANTS_FIRST.tilt): on top of that, what a camera tilted by a small angle does on flat ground and no plane
+ * holds. With G the mark's place on the ground from the photograph's middle (`g`: metres east and north per pixel
+ * along u and along v), the mark moves by (t . G) G, t being the two tilt angles over the flying height. */
+export type PhotoShift = { e: [number, number, number]; n: [number, number, number]; u0: number; v0: number; cells: number; tilt?: { g: [number, number, number, number]; t: [number, number] } };
+export const shiftOf = (s: PhotoShift, u: number, v: number): [number, number] => {
+  const du = u - s.u0, dv = v - s.v0;
+  let e = s.e[0] + s.e[1] * du + s.e[2] * dv, n = s.n[0] + s.n[1] * du + s.n[2] * dv;
+  if (s.tilt) { const ge = s.tilt.g[0] * du + s.tilt.g[1] * dv, gn = s.tilt.g[2] * du + s.tilt.g[3] * dv, k = s.tilt.t[0] * ge + s.tilt.t[1] * gn; e += k * ge; n += k * gn; }
+  return [e, n];
+};
 
 /** A grid over the ground for neighbour queries. */
 class Grid {
@@ -66,8 +74,16 @@ class Grid {
 export const PLANTS_FIRST = {
   /** How far apart two photographs' sightings may be and still vote on their offset, metres. */
   reachM: 0.3,
-  /** A photograph's cells (across x down) for the plane fit. */
-  gridU: 4, gridV: 3,
+  /** A photograph's cells (across x down) for the fit. */
+  gridU: 6, gridV: 4,
+  /** The fit holds the two tilt terms beside the plane (see PhotoShift), for a photograph with at least
+   * `tiltMinCells` cells that gave a peak (2026-11-16). Measured on what the plane alone left over, on a 6 x 4 grid:
+   * the worst cell of the median photograph was 17 cm off the other photographs on one flight and 22 cm on another,
+   * and the two terms, fitted afterwards, halved the cells left over by more than the merge gate (588 to 305, 1,209
+   * to 737). One plant was becoming two dots at the frames' edges. */
+  tilt: true, tiltMinCells: 16,
+  /** The plant spacing is "not measured" when its score has no single peak (rowGuided.ts seedSpacing `needsAPeak`). */
+  seedNeedsAPeak: true,
   /** A cell's votes needed for a peak. */
   minVotes: 40,
   rounds: 5,
@@ -81,6 +97,9 @@ export const PLANTS_FIRST = {
   onRowShare: 0.12,
 };
 export type PlantsFirstOptions = typeof PLANTS_FIRST;
+/** The rules as they stood before 2026-11-16's registration and plant-spacing changes: a plane a photograph on a 4 x 3
+ * grid, and the plant spacing taken whatever its score. Kept so that result can be run beside the present one. */
+export const PLANTS_FIRST_V1: PlantsFirstOptions = { ...PLANTS_FIRST, gridU: 4, gridV: 3, tilt: false, seedNeedsAPeak: false };
 
 /**
  * The photographs' corrections against each other (see the header). Returns one PhotoShift a photograph, and the
@@ -94,6 +113,14 @@ export function registerPhotos(sights: Sight[], nPhotos: number, o: PlantsFirstO
   const uMin = new Float64Array(nPhotos).fill(Infinity), uMax = new Float64Array(nPhotos).fill(-Infinity), vMin = new Float64Array(nPhotos).fill(Infinity), vMax = new Float64Array(nPhotos).fill(-Infinity), cnt = new Float64Array(nPhotos);
   for (const s of sights) { uMin[s.p] = Math.min(uMin[s.p], s.u); uMax[s.p] = Math.max(uMax[s.p], s.u); vMin[s.p] = Math.min(vMin[s.p], s.v); vMax[s.p] = Math.max(vMax[s.p], s.v); shifts[s.p].u0 += s.u; shifts[s.p].v0 += s.v; cnt[s.p]++; }
   for (let p = 0; p < nPhotos; p++) if (cnt[p]) { shifts[p].u0 /= cnt[p]; shifts[p].v0 /= cnt[p]; }
+  // For the tilt terms: each photograph's own slopes from pixels to ground (east and north per pixel along u and v),
+  // by least squares over its sightings.
+  if (o.tilt) {
+    const me = new Float64Array(nPhotos), mn = new Float64Array(nPhotos), q = Array.from({ length: nPhotos }, () => new Float64Array(7));
+    for (const s of sights) { me[s.p] += s.e; mn[s.p] += s.n; }
+    for (const s of sights) { const du = s.u - shifts[s.p].u0, dv = s.v - shifts[s.p].v0, de = s.e - me[s.p] / cnt[s.p], dn = s.n - mn[s.p] / cnt[s.p], a = q[s.p]; a[0] += du * du; a[1] += du * dv; a[2] += dv * dv; a[3] += du * de; a[4] += dv * de; a[5] += du * dn; a[6] += dv * dn; }
+    for (let p = 0; p < nPhotos; p++) { const a = q[p], det = a[0] * a[2] - a[1] * a[1]; if (cnt[p] >= 3 && Math.abs(det) > 1e-9) shifts[p].tilt = { g: [(a[3] * a[2] - a[4] * a[1]) / det, (a[4] * a[0] - a[3] * a[1]) / det, (a[5] * a[2] - a[6] * a[1]) / det, (a[6] * a[0] - a[5] * a[1]) / det], t: [0, 0] }; }
+  }
   const nc = o.gridU * o.gridV;
   const cellOf = sights.map(s => Math.min(o.gridU - 1, Math.floor(((s.u - uMin[s.p]) / Math.max(1, uMax[s.p] - uMin[s.p])) * o.gridU)) * o.gridV + Math.min(o.gridV - 1, Math.floor(((s.v - vMin[s.p]) / Math.max(1, vMax[s.p] - vMin[s.p])) * o.gridV)));
   let repeatM = NaN;
@@ -162,14 +189,48 @@ export function registerPhotos(sights: Sight[], nPhotos: number, o: PlantsFirstO
         if (Math.max(...meas.map(m => Math.abs(sol![1] * m.u + sol![2] * m.v))) > R) return [mean, 0, 0];
         return sol;
       };
+      // The plane and the two tilt terms together, east and north in one fit (o.tilt), where the photograph has cells
+      // enough: eight unknowns, the cells further than 4 cm from the fit dropped and it fitted again, as the plane below.
+      // Pixels are taken in thousands and ground metres in tens so the unknowns are of one size.
+      if (s0.tilt && meas.length >= o.tiltMinCells) {
+        const g = s0.tilt.g, at = (m: (typeof meas)[number]) => { const ge = (g[0] * m.u + g[1] * m.v) / 10, gn = (g[2] * m.u + g[3] * m.v) / 10; return { U: m.u / 1000, V: m.v / 1000, ge, gn }; };
+        const model = (s: number[], m: (typeof meas)[number]): [number, number] => { const { U, V, ge, gn } = at(m), k = s[6] * ge + s[7] * gn; return [s[1] * U + s[2] * V + k * ge, s[4] * U + s[5] * V + k * gn]; };
+        let used = meas, sol: number[] | null = null;
+        for (let it = 0; it < 3; it++) {
+          const rows: number[][] = [], vals: number[] = [], ws: number[] = [];
+          for (const m of used) { const { U, V, ge, gn } = at(m); rows.push([1, U, V, 0, 0, 0, ge * ge, ge * gn], [0, 0, 0, 1, U, V, ge * gn, gn * gn]); vals.push(m.x, m.y); ws.push(m.w, m.w); }
+          const s = solveLeastSquares(rows, vals, ws); if (!s) break; sol = s;
+          const keep = used.filter(m => { const [dx, dy] = model(s, m); return Math.abs(m.x - s[0] - dx) <= 0.04 && Math.abs(m.y - s[3] - dy) <= 0.04; });
+          if (keep.length === used.length || keep.length < o.tiltMinCells) break;
+          used = keep;
+        }
+        // Not believed if it would move any measured cell more than the reach from the middle (as the plane below).
+        if (sol && Math.max(...meas.map(m => Math.max(...model(sol!, m).map(Math.abs)))) <= R) {
+          const h = 0.5;
+          return { e: [s0.e[0] + h * sol[0], s0.e[1] + (h * sol[1]) / 1000, s0.e[2] + (h * sol[2]) / 1000], n: [s0.n[0] + h * sol[3], s0.n[1] + (h * sol[4]) / 1000, s0.n[2] + (h * sol[5]) / 1000], u0: s0.u0, v0: s0.v0, cells: meas.length, tilt: { g, t: [s0.tilt.t[0] + (h * sol[6]) / 100, s0.tilt.t[1] + (h * sol[7]) / 100] } };
+        }
+      }
       const fe = fit("x"), fn = fit("y");
-      return { e: [s0.e[0] + 0.5 * fe[0], s0.e[1] + 0.5 * fe[1], s0.e[2] + 0.5 * fe[2]], n: [s0.n[0] + 0.5 * fn[0], s0.n[1] + 0.5 * fn[1], s0.n[2] + 0.5 * fn[2]], u0: s0.u0, v0: s0.v0, cells: meas.length };
+      return { e: [s0.e[0] + 0.5 * fe[0], s0.e[1] + 0.5 * fe[1], s0.e[2] + 0.5 * fe[2]], n: [s0.n[0] + 0.5 * fn[0], s0.n[1] + 0.5 * fn[1], s0.n[2] + 0.5 * fn[2]], u0: s0.u0, v0: s0.v0, cells: meas.length, ...(s0.tilt ? { tilt: s0.tilt } : {}) };
     });
     for (let p = 0; p < nPhotos; p++) shifts[p] = next[p];
     const me = shifts.reduce((t, s) => t + s.e[0], 0) / Math.max(1, nPhotos), mn = shifts.reduce((t, s) => t + s.n[0], 0) / Math.max(1, nPhotos);
     for (const s of shifts) { s.e[0] -= me; s.n[0] -= mn; }
   }
   return { shifts, repeatM };
+}
+
+/** Weighted least squares: the unknowns minimising the sum of w (row . unknowns - value)^2; null when they are not determined. */
+function solveLeastSquares(rows: number[][], vals: number[], ws: number[]): number[] | null {
+  const m = rows[0].length, M = Array.from({ length: m }, () => new Array<number>(m + 1).fill(0));
+  rows.forEach((r, k) => { for (let i = 0; i < m; i++) { M[i][m] += ws[k] * r[i] * vals[k]; for (let j = 0; j < m; j++) M[i][j] += ws[k] * r[i] * r[j]; } });
+  for (let c = 0; c < m; c++) {
+    let pv = c; for (let r = c + 1; r < m; r++) if (Math.abs(M[r][c]) > Math.abs(M[pv][c])) pv = r;
+    if (!Number.isFinite(M[pv][c]) || Math.abs(M[pv][c]) < 1e-12) return null;
+    [M[c], M[pv]] = [M[pv], M[c]];
+    for (let r = 0; r < m; r++) { if (r === c) continue; const k = M[r][c] / M[c][c]; for (let j = c; j <= m; j++) M[r][j] -= k * M[c][j]; }
+  }
+  return M.map((r, i) => r[m] / r[i]);
 }
 
 function solve3(A: number[][], y: number[]): [number, number, number] | null {
@@ -387,7 +448,7 @@ export function rowsFromDots(dots: Dot[], directionDeg: number, spacingGuessM: n
   for (let i = 0; i < dots.length; i++) if (claimed[i] >= 0) prelim[claimed[i]].dots.push(i);
   // The seed spacing the dots show, for the gap rule at the row ends.
   const marks = prelim.flatMap((r, ri) => r.dots.map(i => ({ row: ri + 1, a: A[i] })));
-  const seed = seedSpacing(marks, S);
+  const seed = seedSpacing(marks, S, undefined, o.seedNeedsAPeak);
   const seedM = seed.spacingM;
   const maxGap = 4 * (seedM ?? 0.18);
   const rows: DotRow[] = [];

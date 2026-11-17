@@ -542,6 +542,8 @@ export type SeedSpacing = {
   /** Plants a hectare that spacing and the row spacing imply. */
   impliedPerHa: number | null;
   pairs: number;
+  /** Whether the score has one peak (see seedSpacing): false where several separate spacings score as well as the best. */
+  peak: boolean;
 };
 
 /**
@@ -550,20 +552,33 @@ export type SeedSpacing = {
  * in turns of the spacing). Misses do not matter (a pair two seeds apart still votes for the spacing); half the
  * spacing scores as well, so the search is bounded below by what corn is sown at, and the longest spacing within a
  * hair of the best is taken.
+ *
+ * One peak or none (2026-11-16). The hair (0.02) is this function's own word for "as good as the best". The spacings
+ * within it are gathered into runs of neighbouring scan steps. The pick's run is the peak; a run at a whole fraction
+ * of it (a half, a third: they score as well by construction) is the same peak. Any other run is a second spacing the
+ * score cannot tell from the pick, and then there is no peak: on four of the five flights measured the curve was flat
+ * (best 0.017 to 0.055, with three or four separate runs within the hair) and the pick was only the longest of them;
+ * on the fifth (best 0.129) one run, 0.132 to 0.140 m. With `needsAPeak` the spacing is then null (not measured).
  */
-export function seedSpacing(marks: { row: number; a: number }[], rowSpacingM: number, reachM = 0.8): SeedSpacing {
+export function seedSpacing(marks: { row: number; a: number }[], rowSpacingM: number, reachM = 0.8, needsAPeak = false): SeedSpacing {
   const allowedM: [number, number] = [1 / (CORN_POPULATION_PER_HA[1] / 10_000) / rowSpacingM, 1 / (CORN_POPULATION_PER_HA[0] / 10_000) / rowSpacingM];
   const byRow = new Map<number, number[]>();
   for (const m of marks) (byRow.get(m.row) ?? byRow.set(m.row, []).get(m.row)!).push(m.a);
   const d: number[] = [];
   for (const as of byRow.values()) { as.sort((x, y) => x - y); for (let i = 0; i < as.length; i++) for (let j = i + 1; j < as.length && as[j] - as[i] <= reachM; j++) d.push(as[j] - as[i]); }
-  if (d.length < 50) return { spacingM: null, allowedM, regularity: 0, impliedPerHa: null, pairs: d.length };
+  if (d.length < 50) return { spacingM: null, allowedM, regularity: 0, impliedPerHa: null, pairs: d.length, peak: false };
   const score = (s: number) => { let c = 0; for (const x of d) c += Math.cos((2 * Math.PI * x) / s); return c / d.length; };
   const scan: [number, number][] = [];
   for (let s = allowedM[0]; s <= allowedM[1] + 1e-9; s += 0.002) scan.push([s, score(s)]);
   const best = Math.max(...scan.map(x => x[1]));
   const pick = [...scan].reverse().find(x => x[1] >= best - 0.02)!;
-  return { spacingM: Math.round(pick[0] * 1000) / 1000, allowedM: [Math.round(allowedM[0] * 1000) / 1000, Math.round(allowedM[1] * 1000) / 1000], regularity: Math.round(Math.max(0, pick[1]) * 1000) / 1000, impliedPerHa: Math.round(10_000 / (pick[0] * rowSpacingM)), pairs: d.length };
+  // The runs of spacings within the hair, and whether all of them are the pick's run or a whole fraction of it.
+  const step = 0.002, runs: [number, number][] = [];
+  for (const [s, v] of scan) { if (v < best - 0.02) continue; const last = runs[runs.length - 1]; if (last && s - last[1] <= 1.5 * step) last[1] = s; else runs.push([s, s]); }
+  const top = runs[runs.length - 1];
+  const peak = runs.every(r => { if (r === top) return true; for (let k = 2; top[1] / k >= allowedM[0] - step; k++) if (r[0] >= top[0] / k - step && r[1] <= top[1] / k + step) return true; return false; });
+  const measured = peak || !needsAPeak;
+  return { spacingM: measured ? Math.round(pick[0] * 1000) / 1000 : null, allowedM: [Math.round(allowedM[0] * 1000) / 1000, Math.round(allowedM[1] * 1000) / 1000], regularity: Math.round(Math.max(0, pick[1]) * 1000) / 1000, impliedPerHa: measured ? Math.round(10_000 / (pick[0] * rowSpacingM)) : null, pairs: d.length, peak };
 }
 
 /**

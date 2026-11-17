@@ -11,7 +11,7 @@ import { type GeorefFrame, pixelToGround } from "@/lib/directGeoref/projection";
 import { ROW_POINTS } from "@/lib/rowCrop/greenPoints";
 import { type LatLngAlt, fromEnu, toEnu } from "@/lib/sourceFrames/odm";
 import type { CornFieldResult, CornPhotoRead, FieldGround } from "./cornField";
-import { type Dot, PLANTS_FIRST, type PhotoShift, ROW_RECALL, type Reconstruction, type RowsFromDots, SEQUENCE, certainEvidence, coverage, mergeDots, projectSightings, reconstruct, registerPhotos, rowCandidates, rowsFromDots } from "./plantsFirst";
+import { type Dot, PLANTS_FIRST, type PhotoShift, type PlantsFirstOptions, ROW_RECALL, type Reconstruction, type RowsFromDots, SEQUENCE, certainEvidence, coverage, mergeDots, projectSightings, reconstruct, registerPhotos, rowCandidates, rowsFromDots } from "./plantsFirst";
 
 export type CornStretch = {
   /** The field row it belongs to, and whether plants were seen along it. */
@@ -55,6 +55,8 @@ export type CornPlantsOptions = {
   free?: boolean;
   /** The rules the rows are read by (default: SEQUENCE). */
   sequence?: typeof SEQUENCE;
+  /** How the photographs are registered, the dots made and the first rows read (default: PLANTS_FIRST). */
+  placing?: PlantsFirstOptions;
   /** The field's planted / scattered judgement of the ground (cornField.ts cornFieldAndGround): with it, nothing on
    * ground judged scattered is read as the planting (SEQUENCE.refuseScattered). Without it the ground is not asked. */
   ground?: FieldGround | null;
@@ -97,14 +99,15 @@ export type PlacedDots = { photos: string[]; shifts: PhotoShift[]; repeatM: numb
 export function placeDots(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, F: CornFieldResult, opts: CornPlantsOptions = {}): PlacedDots | null {
   const { sights, photos } = projectSightings(reads, frames, F.origin);
   if (photos.length < 2 || sights.length < 50) return null;
-  const reg = registerPhotos(sights, photos.length);
-  const gateM = Math.min(PLANTS_FIRST.gateMax, Math.max(PLANTS_FIRST.gateMin, PLANTS_FIRST.gateTimes * reg.repeatM));
+  const o = opts.placing ?? PLANTS_FIRST;
+  const reg = registerPhotos(sights, photos.length, o);
+  const gateM = Math.min(o.gateMax, Math.max(o.gateMin, o.gateTimes * reg.repeatM));
   const dots = mergeDots(sights, reg.shifts, gateM);
   if (!dots.length) return null;
   const q = opts.sequence ?? SEQUENCE;
   // The first reading of rows, through the certain dots alone (reconstruct takes it as given).
   const coveredStrict = coverage(dots, frames, photos, reg.shifts, F.origin);
-  const pre = rowsFromDots(dots.filter((d, i) => certainEvidence(d, coveredStrict[i], q)), F.directionDeg ?? 0, F.pitchM ?? 0.76, PLANTS_FIRST);
+  const pre = rowsFromDots(dots.filter((d, i) => certainEvidence(d, coveredStrict[i], q)), F.directionDeg ?? 0, F.pitchM ?? 0.76, o);
   // Plants along the rows the stricter marks left out (plantsFirst.ts rowCandidates): only where a photograph carried
   // candidates (seedlings on soil). The dots above stay as they are, first; a candidate is kept only on a row.
   const strict = dots.length;
@@ -126,7 +129,7 @@ export function placeDots(reads: CornPhotoRead[], frames: Map<string, GeorefFram
 /** Steps 4 on: the rows through the certain dots, and every other dot against them (plantsFirst.ts reconstruct). */
 export function readRows(P: PlacedDots, F: CornFieldResult, opts: CornPlantsOptions = {}): Reconstruction {
   const q = opts.sequence ?? SEQUENCE;
-  return reconstruct(P.all, P.covered, F.directionDeg ?? 0, F.pitchM ?? 0.76, PLANTS_FIRST, opts.free ? { ...q, free: true } : q, P.tier ? Uint8Array.from(P.tier, t => (t ? 1 : 0)) : null, P.tier, P.pre, opts.ground ? { state: opts.ground.state, dotState: P.groundState ?? null } : null);
+  return reconstruct(P.all, P.covered, F.directionDeg ?? 0, F.pitchM ?? 0.76, opts.placing ?? PLANTS_FIRST, opts.free ? { ...q, free: true } : q, P.tier ? Uint8Array.from(P.tier, t => (t ? 1 : 0)) : null, P.tier, P.pre, opts.ground ? { state: opts.ground.state, dotState: P.groundState ?? null } : null);
 }
 
 /** The plants and the rows through them; null when the plants make no certain row (the caller keeps cornField's rows). */

@@ -7,13 +7,16 @@
 //    take, is kept only along a stretch of row whose band beats the ground between the rows (SEQUENCE.alleyTest);
 //  - a candidate long along the rows is split at the plant spacing the field measured, not the one a photograph assumes;
 //  - "between two rows" is said only of a dot off every row's line;
-//  - with the rules as they stood (SEQUENCE_V1) everything reads as before.
+//  - the plant spacing is "not measured" when its score has no single peak;
+//  - a photograph is registered by a plane and the two terms a small camera tilt adds, so its edges agree with the
+//    other photographs' middles;
+//  - with the rules as they stood (SEQUENCE_V1, PLANTS_FIRST_V1) everything reads as before.
 import { describe, expect, it } from "vitest";
 import { type GeorefFrame, UNCALIBRATED_BORESIGHT } from "@/lib/directGeoref/projection";
 import type { CornPhotoRead } from "@/lib/fieldTwin/cornField";
 import { candidatePoints } from "@/lib/fieldTwin/cornPlants";
-import { type Dot, type GroundJudge, PLANTS_FIRST, SEQUENCE, SEQUENCE_V1, bandAndAlley, courseAt, reconstruct, rowNumbers } from "@/lib/fieldTwin/plantsFirst";
-import { ROW_GUIDED, bandBeatsControls, bandTail } from "@/lib/fieldTwin/rowGuided";
+import { type Dot, type GroundJudge, PLANTS_FIRST, PLANTS_FIRST_V1, type PhotoShift, SEQUENCE, SEQUENCE_V1, type Sight, bandAndAlley, courseAt, reconstruct, registerPhotos, rowNumbers, shiftOf } from "@/lib/fieldTwin/plantsFirst";
+import { ROW_GUIDED, bandBeatsControls, bandTail, seedSpacing } from "@/lib/fieldTwin/rowGuided";
 import { ROW_POINTS, rowPlantPoints } from "@/lib/rowCrop/greenPoints";
 
 // Six rows 0.9 m apart running east, a plant every 0.15 m from 0 to 24 m, each made by 5 of the 8 photographs that
@@ -296,5 +299,90 @@ describe("between two rows", () => {
 
   it("is the default, and not in the rules as they stood", () => {
     expect(SEQUENCE.betweenOffLines).toBe(true); expect(SEQUENCE_V1.betweenOffLines).toBe(false);
+  });
+});
+
+describe("the plant spacing, measured or not", () => {
+  const rnd = (seed: number) => { let x = seed; return () => ((x = (Math.imul(x, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff); };
+
+  it("has one peak where the plants stand a regular distance apart, misses and all", () => {
+    const r = rnd(3), marks: { row: number; a: number }[] = [];
+    for (let row = 0; row < 12; row++) for (let k = 0; k < 160; k++) if (r() > 0.3) marks.push({ row, a: k * 0.16 + (r() - 0.5) * 0.02 });
+    const sp = seedSpacing(marks, 0.76, undefined, true);
+    expect(sp.peak).toBe(true);
+    expect(sp.spacingM).toBeGreaterThan(0.15); expect(sp.spacingM).toBeLessThan(0.17);
+    expect(seedSpacing(marks, 0.76).spacingM).toBe(sp.spacingM);
+  });
+
+  it("is not measured where the marks stand anywhere along the rows: the score is flat and its longest tie was being taken", () => {
+    const r = rnd(9), marks: { row: number; a: number }[] = [];
+    for (let row = 0; row < 12; row++) for (let k = 0; k < 110; k++) marks.push({ row, a: r() * 25 });
+    const asItWas = seedSpacing(marks, 0.76), now = seedSpacing(marks, 0.76, undefined, true);
+    expect(asItWas.peak).toBe(false);
+    expect(asItWas.spacingM).not.toBeNull();          // a number all the same, as before
+    expect(asItWas.regularity).toBeLessThan(0.05);
+    expect(now.spacingM).toBeNull(); expect(now.impliedPerHa).toBeNull();
+    expect(now.pairs).toBe(asItWas.pairs);
+  });
+
+  it("is asked for by default, and not by the rules as they stood", () => {
+    expect(PLANTS_FIRST.seedNeedsAPeak).toBe(true); expect(PLANTS_FIRST_V1.seedNeedsAPeak).toBe(false);
+  });
+});
+
+describe("registering photographs whose cameras are tilted a little", () => {
+  // A planting of 30 m by 20 m: rows 0.9 m apart, a plant about every 15 cm (never exactly: a repeat must not be able
+  // to lock onto the neighbour). Nine photographs, three by three, each 16 m by 12 m of ground at 5 mm a pixel, half
+  // overlapping. Each camera is off by a few centimetres and tilted by a fraction of a degree: on flat ground a tilt
+  // moves a mark at G from the photograph's middle by (t . G) G.
+  let x = 17; const rnd = () => ((x = (Math.imul(x, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff);
+  const plants: [number, number][] = [];
+  for (let row = 0; row * 0.9 <= 20; row++) for (let a = rnd() * 0.15; a <= 30; a += 0.11 + rnd() * 0.08) plants.push([a, row * 0.9]);
+  const PX = 0.005, cams: { ce: number; cn: number; off: [number, number]; t: [number, number] }[] = [];
+  for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) cams.push({ ce: 8 + i * 7, cn: 6 + j * 4, off: [(rnd() - 0.5) * 0.06, (rnd() - 0.5) * 0.06], t: [(rnd() - 0.5) * 0.004, (rnd() - 0.5) * 0.004] });
+  const sights: Sight[] = [], plantOf: number[] = [];
+  cams.forEach((c, p) => plants.forEach(([pe, pn], k) => {
+    const ge = pe - c.ce, gn = pn - c.cn; if (Math.abs(ge) > 8 || Math.abs(gn) > 6) return;
+    const tg = c.t[0] * ge + c.t[1] * gn;
+    sights.push({ p, u: ge / PX + 1600, v: gn / PX + 1200, e: pe + c.off[0] + tg * ge, n: pn + c.off[1] + tg * gn }); plantOf.push(k);
+  }));
+  /** How far a plant's marks lie from their own mean once registered (RMS over all marks, metres), and the worst. */
+  const disagreement = (shifts: PhotoShift[]) => {
+    const sum = plants.map(() => [0, 0, 0]), pos = sights.map(sg => { const [de, dn] = shiftOf(shifts[sg.p], sg.u, sg.v); return [sg.e + de, sg.n + dn]; });
+    pos.forEach((q, i) => { const t = sum[plantOf[i]]; t[0] += q[0]; t[1] += q[1]; t[2]++; });
+    let sq = 0, n = 0, worst = 0; pos.forEach((q, i) => { const t = sum[plantOf[i]]; if (t[2] < 2) return; const d = Math.hypot(q[0] - t[0] / t[2], q[1] - t[1] / t[2]); sq += d * d; n++; worst = Math.max(worst, d); });
+    return { rms: Math.sqrt(sq / n), worst };
+  };
+  const none: PhotoShift[] = cams.map(() => ({ e: [0, 0, 0], n: [0, 0, 0], u0: 0, v0: 0, cells: 0 }));
+
+  it("a plane a photograph leaves the frames' edges apart; the plane and the two tilt terms bring them together", () => {
+    const before = disagreement(none);
+    const plane = registerPhotos(sights, cams.length, PLANTS_FIRST_V1), tilted = registerPhotos(sights, cams.length, PLANTS_FIRST);
+    const a = disagreement(plane.shifts), b = disagreement(tilted.shifts);
+    expect(before.worst).toBeGreaterThan(0.08);
+    // The plane helps, and leaves marks further apart than the widest merge gate.
+    expect(a.rms).toBeLessThan(before.rms); expect(a.worst).toBeGreaterThan(PLANTS_FIRST.gateMax);
+    // With the tilt terms every mark is within the narrowest merge gate of its plant's mean.
+    expect(b.rms).toBeLessThan(a.rms / 3); expect(b.worst).toBeLessThan(PLANTS_FIRST.gateMin);
+    expect(tilted.shifts.every(sh => sh.tilt && sh.cells >= PLANTS_FIRST.tiltMinCells)).toBe(true);
+    // The tilts found are the tilts put in (the registration only knows them against each other: their mean is free).
+    const mean = [0, 1].map(k => cams.reduce((t, c) => t + c.t[k], 0) / cams.length), found = [0, 1].map(k => tilted.shifts.reduce((t, sh) => t + sh.tilt!.t[k], 0) / cams.length);
+    cams.forEach((c, p) => { for (const k of [0, 1]) expect(-(tilted.shifts[p].tilt!.t[k] - found[k])).toBeCloseTo(c.t[k] - mean[k], 3); });
+  });
+
+  it("the rules as they stood carry no tilt and read a shift as before", () => {
+    const plane = registerPhotos(sights, cams.length, PLANTS_FIRST_V1);
+    expect(plane.shifts.every(sh => sh.tilt === undefined)).toBe(true);
+    const sh = plane.shifts[4];
+    expect(shiftOf(sh, 100, 200)).toEqual([sh.e[0] + sh.e[1] * (100 - sh.u0) + sh.e[2] * (200 - sh.v0), sh.n[0] + sh.n[1] * (100 - sh.u0) + sh.n[2] * (200 - sh.v0)]);
+    expect([PLANTS_FIRST_V1.gridU, PLANTS_FIRST_V1.gridV, PLANTS_FIRST_V1.tilt]).toEqual([4, 3, false]);
+    expect([PLANTS_FIRST.gridU, PLANTS_FIRST.gridV, PLANTS_FIRST.tilt]).toEqual([6, 4, true]);
+  });
+
+  it("a shift with tilt terms moves a mark by (t . G) G on top of the plane", () => {
+    const sh: PhotoShift = { e: [0.01, 0, 0], n: [-0.02, 0, 0], u0: 1000, v0: 500, cells: 24, tilt: { g: [0.005, 0, 0, 0.005], t: [0.002, -0.001] } };
+    const [de, dn] = shiftOf(sh, 3000, 1500), G = [10, 5], k = 0.002 * G[0] - 0.001 * G[1];
+    expect(de).toBeCloseTo(0.01 + k * G[0], 9); expect(dn).toBeCloseTo(-0.02 + k * G[1], 9);
+    expect(shiftOf(sh, 1000, 500)).toEqual([0.01, -0.02]);
   });
 });
