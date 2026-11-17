@@ -46,6 +46,7 @@ const revision = (() => { try { return execSync("git rev-parse --short HEAD").to
 /** A variant: how the candidates are joined to the reads, and the options the plants and rows are read with. */
 type Variant = { what: string; spans?: boolean; opts: (ground: FieldGround | null) => CornPlantsOptions };
 const P2 = { ...SEQUENCE_V1, patternCellsOnly: true, refuseScattered: true };
+const ROUND1 = { ...SEQUENCE, spacingRulesNeedASpacing: false };
 const VARIANTS: Record<string, Variant> = {
   base: { what: "the rules as they stood at f23efc0 (second look where a build makes candidates; loosened placement off)", opts: () => ({ sequence: SEQUENCE_V1 }) },
   loose: { what: "f23efc0 with the loosened placement on (SEQUENCE.free, ROW_RECALL.anyView)", opts: () => ({ sequence: SEQUENCE_V1, free: true }) },
@@ -62,10 +63,16 @@ const VARIANTS: Record<string, Variant> = {
   p3spanfieldloose: { what: "phase 3, field spacing, loosened on", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground, free: true }) },
   p4: { what: "phase 4: phase 3 (field spacing) with the between-rows label fixed (a plane a photograph, the plant spacing taken whatever its score)", spans: true, opts: ground => ({ sequence: SEQUENCE, ground }) },
   p4loose: { what: "phase 4, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, free: true }) },
-  p5seed: { what: "phase 4 + the plant spacing not measured where its score has no single peak", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: { ...PLANTS_FIRST_V1, seedNeedsAPeak: true } }) },
-  p5tilt: { what: "phase 4 + photographs registered by a plane and the two tilt terms on a 6 x 4 grid", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: { ...PLANTS_FIRST, seedNeedsAPeak: false } }) },
-  p5: { what: "both: the rules as they stand now", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST }) },
-  p5loose: { what: "the rules as they stand now, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST, free: true }) },
+  // The registration / plant-spacing round as it was first built (2026-11-16): the tilt terms for every photograph with
+  // cells enough, and 0.18 m standing in for a plant spacing that is not measured.
+  p5seed: { what: "phase 4 + the plant spacing not measured where its score has no single peak", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: { ...PLANTS_FIRST_V1, seedNeedsAPeak: true } }) },
+  p5tilt: { what: "phase 4 + photographs registered by a plane and the two tilt terms on a 6 x 4 grid", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: { ...PLANTS_FIRST, tiltMustHelp: false, seedNeedsAPeak: false } }) },
+  p5: { what: "both, as first built", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: { ...PLANTS_FIRST, tiltMustHelp: false } }) },
+  p5loose: { what: "both, as first built, loosened placement on", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: { ...PLANTS_FIRST, tiltMustHelp: false }, free: true }) },
+  p6spacing: { what: "as first built + no spacing rule where the spacing is not measured", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: { ...PLANTS_FIRST, tiltMustHelp: false } }) },
+  p6tilt: { what: "as first built + the tilt terms only where they help", spans: true, opts: ground => ({ sequence: ROUND1, ground, placing: PLANTS_FIRST }) },
+  p6: { what: "the rules as they stand now", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST }) },
+  p6loose: { what: "the rules as they stand now, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST, free: true }) },
   p2cells: { what: "phase 2, only patternCellsOnly", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true }, ground }) },
   p2ground: { what: "phase 2, only refuseScattered", opts: ground => ({ sequence: { ...SEQUENCE_V1, refuseScattered: true }, ground }) },
 };
@@ -96,7 +103,7 @@ function run(reads: CornPhotoRead[], v: Variant, part = "all") {
   // The field does not read the candidates, and the dots depend on them only through how they are joined to the reads.
   const { field: F, ground } = once(`field ${part}`, () => cornFieldAndGround(reads, frames, A.fieldOptions ?? FIELD));
   const opts: CornPlantsOptions = { placing: PLANTS_FIRST_V1, ...v.opts(ground) }, q = opts.sequence ?? SEQUENCE, pl = opts.placing!;
-  const P = once(`dots ${part} spans=${!!v.spans} free=${!!opts.free} fieldSeed=${opts.fieldSeed !== false} certain=${q.certainViews}/${q.certainShare} grid=${pl.gridU}x${pl.gridV} tilt=${pl.tilt} peak=${pl.seedNeedsAPeak}`, () => placeDots(reads, frames, F, opts));
+  const P = once(`dots ${part} spans=${!!v.spans} free=${!!opts.free} fieldSeed=${opts.fieldSeed !== false} certain=${q.certainViews}/${q.certainShare} grid=${pl.gridU}x${pl.gridV} tilt=${pl.tilt}/${pl.tiltMustHelp} peak=${pl.seedNeedsAPeak}`, () => placeDots(reads, frames, F, opts));
   if (!P) return null;
   const t = Date.now(), rec = readRows(P, F, opts), CP = cornPlantsOf(P, rec, F, opts);
   if (TIMES) console.log(`    [rows ${part}: ${((Date.now() - t) / 1000).toFixed(1)} s]`);
@@ -145,7 +152,7 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
   for (const row of rec.rows) for (let k = 1; k < row.dots.length; k++) { const d = Math.round((rec.a[row.dots[k]] - rec.a[row.dots[k - 1]]) * 100); if (d <= 40) neighbours[Math.max(0, d)]++; }
   const out = {
     flight: FLIGHT, variant: v.what, revision, photographs: reads.length, photographsWithCandidates: reads.filter(r => r.low?.length).length,
-    cache: { missing, plantsDifferFromRecord: mismatched }, ms: 0, unplanted: rec.unplanted, cutOverScattered: rec.gaps.cutOverScattered, alleyRefused: rec.alleyRefused,
+    cache: { missing, plantsDifferFromRecord: mismatched }, ms: 0, spacingRules: rec.spacingRules, photographsWithTilt: P.shifts.filter(s => s.tilt && (s.tilt.t[0] !== 0 || s.tilt.t[1] !== 0)).length, unplanted: rec.unplanted, cutOverScattered: rec.gaps.cutOverScattered, alleyRefused: rec.alleyRefused,
     geometry: { rowSpacingM: Math.round(S * 1000) / 1000, plantSpacingM: rec.geometry.seedM, directionDeg: Math.round(rec.geometry.directionDeg * 100) / 100, certainRows: rec.geometry.certainRows },
     planting: { judged: F.planting.judged, why: F.planting.why, plantedM2: F.planting.plantedM2, scatteredM2: F.planting.scatteredM2 },
     dots: { all: n, stricterMarks: P.strict, candidates: n - P.strict },

@@ -35,9 +35,12 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? nu
 const arg = (k: string) => { const v = opt(k); if (v == null) throw new Error(`--${k} is required`); return v; };
 const FLIGHT = arg("flight"), CACHE = arg("cache"), OUT = arg("out");
 // --rules: how the photographs are registered and the plant spacing taken. "before": a plane a photograph on a 4 x 3
-// grid, the spacing whatever its score (PLANTS_FIRST_V1). "seed" / "tilt": one change each. "after": the rules now.
-const RULES = opt("rules") ?? "after";
-const PLANTS_FIRST = RULES === "before" ? PLANTS_FIRST_V1 : RULES === "seed" ? { ...PLANTS_FIRST_V1, seedNeedsAPeak: true } : RULES === "tilt" ? { ...PLANTS_FIRST_NOW, seedNeedsAPeak: false } : PLANTS_FIRST_NOW;
+// grid, the spacing whatever its score (PLANTS_FIRST_V1). "round1": the registration / plant-spacing round as first
+// built (the tilt terms for every photograph with cells enough; 0.18 m standing in for a spacing not measured).
+// "now" (the default): the rules as they stand.
+const RULES = opt("rules") ?? "now";
+const PLANTS_FIRST = RULES === "before" ? PLANTS_FIRST_V1 : RULES === "round1" ? { ...PLANTS_FIRST_NOW, tiltMustHelp: false } : PLANTS_FIRST_NOW;
+const SEQ = RULES === "round1" ? { ...SEQUENCE, spacingRulesNeedASpacing: false } : SEQUENCE;
 const A = JSON.parse(readFileSync(arg("analysis"), "utf8")) as TwinAnalysis;
 const frames = framesFromAnalysis(A);
 mkdirSync(OUT, { recursive: true });
@@ -51,9 +54,9 @@ const reads: CornPhotoRead[] = A.reads.map(r => {
   return c.axis ? { ...rest, low: c.lowWhole, lowSpan: c.span, lowAxis: c.axis } : { ...rest, low: c.low };
 });
 const { field: F, ground } = cornFieldAndGround(reads, frames, A.fieldOptions ?? FIELD);
-const P = placeDots(reads, frames, F, { ground, placing: PLANTS_FIRST });
+const P = placeDots(reads, frames, F, { ground, placing: PLANTS_FIRST, sequence: SEQ });
 if (!P) throw new Error("the photographs made no dot");
-const rec = readRows(P, F, { ground, placing: PLANTS_FIRST });
+const rec = readRows(P, F, { ground, placing: PLANTS_FIRST, sequence: SEQ });
 const { sights, photos } = projectSightings(reads, frames, F.origin);
 const n = P.all.length, strict = P.strict, tier = P.tier ?? new Uint8Array(n);
 const S = rec.geometry.spacingM, seed = rec.geometry.seedM ?? 0.18, reach = SEQUENCE.maxGapSeeds * seed, band = PLANTS_FIRST.onRowShare * S;
@@ -403,7 +406,8 @@ const step5 = {
 const summary = {
   flight: FLIGHT, rules: RULES, photographs: photos.length, sightings: sights.length, dots: { all: n, stricterMarks: strict, candidates: n - strict },
   geometry: { rowSpacingM: r3(S), plantSpacingM: rec.geometry.seedM, directionDegFromEast: r2(rec.geometry.directionDeg), acrossPositiveIsTowards: `east ${r2(-st)}, north ${r2(ct)} (unit vector)`, bandHalfWidthCm: r1(band * 100), rows: rec.rows.length },
-  registration: { repeatM: r3(P.repeatM), mergeGateM: r3(gateM), photographsWithASingleShiftOnly: photoRows.filter(r => r.singleShiftOnly).map(r => r.name), cellsWithAPeak: { median: median(photoRows.map(r => r.cellsWithAPeak)), min: Math.min(...photoRows.map(r => r.cellsWithAPeak)), under4: photoRows.filter(r => r.cellsWithAPeak < 4).length, possible: PLANTS_FIRST.gridU * PLANTS_FIRST.gridV } },
+  spacingRules: rec.spacingRules,
+  registration: { photographsWithTilt: P.shifts.filter(s => s.tilt && (s.tilt.t[0] !== 0 || s.tilt.t[1] !== 0)).length, repeatM: r3(P.repeatM), mergeGateM: r3(gateM), photographsWithASingleShiftOnly: photoRows.filter(r => r.singleShiftOnly).map(r => r.name), cellsWithAPeak: { median: median(photoRows.map(r => r.cellsWithAPeak)), min: Math.min(...photoRows.map(r => r.cellsWithAPeak)), under4: photoRows.filter(r => r.cellsWithAPeak < 4).length, possible: PLANTS_FIRST.gridU * PLANTS_FIRST.gridV } },
   step1, squares, step2, step3: { frame: frameRows, lines: lineRows, photos: photoRows, leftOver: step3tilt, leftOverByPhotograph: tiltRows }, part1: { ...part1, rest: { ...rest, plantSpacingUsedM: seed } }, step5,
 };
 writeFileSync(join(OUT, `${FLIGHT}.json`), JSON.stringify(summary, null, 1));

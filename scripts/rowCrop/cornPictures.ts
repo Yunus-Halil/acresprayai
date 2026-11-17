@@ -20,7 +20,7 @@ import { groundToPixel } from "../../src/lib/directGeoref/projection";
 import { type CornPhotoRead, FIELD, cornFieldAndGround } from "../../src/lib/fieldTwin/cornField";
 import { placeDots, readRows } from "../../src/lib/fieldTwin/cornPlants";
 import { framesFromAnalysis, type TwinAnalysis } from "../../src/lib/fieldTwin/analysis";
-import { PLANTS_FIRST, PLANTS_FIRST_V1, projectSightings, shiftOf } from "../../src/lib/fieldTwin/plantsFirst";
+import { PLANTS_FIRST, PLANTS_FIRST_V1, SEQUENCE, projectSightings, shiftOf } from "../../src/lib/fieldTwin/plantsFirst";
 import { fromEnu } from "../../src/lib/sourceFrames/odm";
 
 const argv = process.argv.slice(2);
@@ -39,7 +39,8 @@ const reads: CornPhotoRead[] = A.reads.map(r => {
   return { ...rest, low: [...(on ? c!.low : []), ...more] };
 });
 const { field: F, ground } = cornFieldAndGround(reads, frames, A.fieldOptions ?? FIELD);
-const opts = { ground, free: FREE, placing: RULES === "before" ? PLANTS_FIRST_V1 : PLANTS_FIRST };
+// "before": PLANTS_FIRST_V1. "round1": the registration / plant-spacing round as first built. Anything else: the rules now.
+const opts = { ground, free: FREE, placing: RULES === "before" ? PLANTS_FIRST_V1 : RULES === "round1" ? { ...PLANTS_FIRST, tiltMustHelp: false } : PLANTS_FIRST, sequence: RULES === "round1" ? { ...SEQUENCE, spacingRulesNeedASpacing: false } : SEQUENCE };
 const P = placeDots(reads, frames, F, opts); if (!P) throw new Error("the photographs made no dot");
 const rec = readRows(P, F, opts), all = P.all, strict = P.strict, tier = P.tier ?? new Uint8Array(all.length), photos = P.photos;
 const { sights } = projectSightings(reads, frames, F.origin);
