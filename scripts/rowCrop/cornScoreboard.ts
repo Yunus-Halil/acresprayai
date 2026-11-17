@@ -30,7 +30,7 @@ import type { GeorefFrame } from "../../src/lib/directGeoref/projection";
 import { type CornPhotoRead, FIELD, type FieldGround, cornFieldAndGround } from "../../src/lib/fieldTwin/cornField";
 import { type CornPlantsOptions, cornPlantsOf, placeDots, readRows } from "../../src/lib/fieldTwin/cornPlants";
 import { framesFromAnalysis, type TwinAnalysis } from "../../src/lib/fieldTwin/analysis";
-import { PLANTS_FIRST, ROW_RECALL, SEQUENCE, SEQUENCE_V1, type Dot, bandAndAlley, coverage } from "../../src/lib/fieldTwin/plantsFirst";
+import { PLANTS_FIRST, PLANTS_FIRST_V1, ROW_RECALL, SEQUENCE, SEQUENCE_V1, type Dot, bandAndAlley, coverage } from "../../src/lib/fieldTwin/plantsFirst";
 import { ROW_GUIDED, bandBeatsControls } from "../../src/lib/fieldTwin/rowGuided";
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
 
@@ -60,8 +60,12 @@ const VARIANTS: Record<string, Variant> = {
   p3span15: { what: "phase 3, candidates carried with their extents and split in the field at the assumed 0.15 m", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground, fieldSeed: false }) },
   p3spanfield: { what: "phase 3, candidates split in the field at its measured plant spacing", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground }) },
   p3spanfieldloose: { what: "phase 3, field spacing, loosened on", spans: true, opts: ground => ({ sequence: { ...P2, alleyTest: "row" }, ground, free: true }) },
-  p4: { what: "phase 4: phase 3 (field spacing) with the between-rows label fixed: the rules as they stand now", spans: true, opts: ground => ({ sequence: SEQUENCE, ground }) },
-  p4loose: { what: "the rules as they stand now, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, free: true }) },
+  p4: { what: "phase 4: phase 3 (field spacing) with the between-rows label fixed (a plane a photograph, the plant spacing taken whatever its score)", spans: true, opts: ground => ({ sequence: SEQUENCE, ground }) },
+  p4loose: { what: "phase 4, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, free: true }) },
+  p5seed: { what: "phase 4 + the plant spacing not measured where its score has no single peak", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: { ...PLANTS_FIRST_V1, seedNeedsAPeak: true } }) },
+  p5tilt: { what: "phase 4 + photographs registered by a plane and the two tilt terms on a 6 x 4 grid", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: { ...PLANTS_FIRST, seedNeedsAPeak: false } }) },
+  p5: { what: "both: the rules as they stand now", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST }) },
+  p5loose: { what: "the rules as they stand now, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST, free: true }) },
   p2cells: { what: "phase 2, only patternCellsOnly", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true }, ground }) },
   p2ground: { what: "phase 2, only refuseScattered", opts: ground => ({ sequence: { ...SEQUENCE_V1, refuseScattered: true }, ground }) },
 };
@@ -91,8 +95,8 @@ const TIMES = argv.includes("--times");
 function run(reads: CornPhotoRead[], v: Variant, part = "all") {
   // The field does not read the candidates, and the dots depend on them only through how they are joined to the reads.
   const { field: F, ground } = once(`field ${part}`, () => cornFieldAndGround(reads, frames, A.fieldOptions ?? FIELD));
-  const opts = v.opts(ground), q = opts.sequence ?? SEQUENCE;
-  const P = once(`dots ${part} spans=${!!v.spans} free=${!!opts.free} fieldSeed=${opts.fieldSeed !== false} certain=${q.certainViews}/${q.certainShare}`, () => placeDots(reads, frames, F, opts));
+  const opts: CornPlantsOptions = { placing: PLANTS_FIRST_V1, ...v.opts(ground) }, q = opts.sequence ?? SEQUENCE, pl = opts.placing!;
+  const P = once(`dots ${part} spans=${!!v.spans} free=${!!opts.free} fieldSeed=${opts.fieldSeed !== false} certain=${q.certainViews}/${q.certainShare} grid=${pl.gridU}x${pl.gridV} tilt=${pl.tilt} peak=${pl.seedNeedsAPeak}`, () => placeDots(reads, frames, F, opts));
   if (!P) return null;
   const t = Date.now(), rec = readRows(P, F, opts), CP = cornPlantsOf(P, rec, F, opts);
   if (TIMES) console.log(`    [rows ${part}: ${((Date.now() - t) / 1000).toFixed(1)} s]`);
@@ -135,6 +139,10 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
   const rowM = [0, 0, 0], unconfirmedM = [0, 0, 0];
   for (const s of CP?.stretches ?? []) for (let k = 1; k < s.lineEN.length; k++) { const a = s.lineEN[k - 1], b = s.lineEN[k], g = groundAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), L = Math.hypot(b[0] - a[0], b[1] - a[1]); (s.confirmed ? rowM : unconfirmedM)[g] += L; }
   const r1 = (x: number) => Math.round(x * 10) / 10;
+  // Neighbouring dots on one row: how far apart along it, 1 cm bins to 40 cm (a registration that merged neighbours, or
+  // left one plant as two dots on its row, shows at the short end).
+  const neighbours = new Array<number>(41).fill(0);
+  for (const row of rec.rows) for (let k = 1; k < row.dots.length; k++) { const d = Math.round((rec.a[row.dots[k]] - rec.a[row.dots[k - 1]]) * 100); if (d <= 40) neighbours[Math.max(0, d)]++; }
   const out = {
     flight: FLIGHT, variant: v.what, revision, photographs: reads.length, photographsWithCandidates: reads.filter(r => r.low?.length).length,
     cache: { missing, plantsDifferFromRecord: mismatched }, ms: 0, unplanted: rec.unplanted, cutOverScattered: rec.gaps.cutOverScattered, alleyRefused: rec.alleyRefused,
@@ -142,7 +150,7 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
     planting: { judged: F.planting.judged, why: F.planting.why, plantedM2: F.planting.plantedM2, scatteredM2: F.planting.scatteredM2 },
     dots: { all: n, stricterMarks: P.strict, candidates: n - P.strict },
     onRows: Object.fromEntries(TIERS.map((t, k) => [t, onRows[k]])), onRowsTotal: onRows.reduce((t, x) => t + x, 0), probableOnSlotRows: inSlotRows(rec),
-    rows: rec.rows.length, rowM: { plantsSeen: CP?.summary.confirmedM ?? 0, notConfirmed: CP?.summary.notConfirmedM ?? 0 },
+    rows: rec.rows.length, rowM: { plantsSeen: CP?.summary.confirmedM ?? 0, notConfirmed: CP?.summary.notConfirmedM ?? 0 }, neighboursOnARowCm: neighbours,
     onNoRow: CP?.summary.onNoRow ?? null, betweenRows: CP?.summary.betweenRows ?? null,
     classes, stretches: { all: BA.stretches.length, bandBeatsAlleyAllDots: pooledOk.length },
     fromAlley: { ...Object.fromEntries(TIERS.slice(1).map((t, k) => [t, { mean: (fromAlley[0][k + 1] + fromAlley[1][k + 1]) / 2, eachWay: [fromAlley[0][k + 1], fromAlley[1][k + 1]] }])), probableOnSlotRows: { mean: (fromAlley[0][5] + fromAlley[1][5]) / 2, eachWay: [fromAlley[0][5], fromAlley[1][5]] } },

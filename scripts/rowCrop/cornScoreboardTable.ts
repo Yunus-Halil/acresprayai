@@ -14,12 +14,18 @@ const sumObj = (o: Record<string, number>) => Object.values(o).reduce((t, x) => 
 
 for (const flight of flights) {
   const R: any[] = variants.map(v => { const f = join(DIR, `${flight}.${v}.json`); return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null; });
+  // Half the plant spacing the first column's run used (0.18 m where it measured none), in whole centimetres.
+  const halfCm = Math.floor(50 * (R.find(r => r && !r.failed)?.geometry.plantSpacingM ?? 0.18));
   const lines: [string, (r: any) => string][] = [
     ["Photographs (with second-look candidates)", r => `${r.photographs} (${r.photographsWithCandidates})`],
     ["Row spacing / plant spacing, m", r => `${r.geometry.rowSpacingM} / ${r.geometry.plantSpacingM ?? "not measured"}`],
     ["**Plants on rows**", r => `**${n(r.onRowsTotal)}**`],
     ...TIERS.map((t): [string, (r: any) => string] => [`- ${t}`, r => n(r.onRows[t])]),
     ["- of the probable: on a row found in a free slot", r => n(r.probableOnSlotRows)],
+    ["Plants on rows on ground judged planted", r => (r.planting.judged ? n(sumObj(r.ground.onRowsOnPlanted)) : "ground not judged")],
+    ["Plants a metre of row with plants seen (all ground)", r => (r.rowM.plantsSeen ? (r.onRowsTotal / r.rowM.plantsSeen).toFixed(2) : "-")],
+    ["- on ground judged planted", r => (r.planting.judged && r.ground.rowMPlantsSeen.planted ? (sumObj(r.ground.onRowsOnPlanted) / r.ground.rowMPlantsSeen.planted).toFixed(2) : "-")],
+    [`Neighbouring row dots closer than half the first column's plant spacing (${halfCm} cm)`, r => (r.neighboursOnARowCm ? n(r.neighboursOnARowCm.slice(0, halfCm).reduce((t: number, x: number) => t + x, 0)) : "-")],
     ["Rows", r => n(r.rows)],
     ["Row length with plants seen, m", r => n(r.rowM.plantsSeen)],
     ["Row length not confirmed, m", r => n(r.rowM.notConfirmed)],

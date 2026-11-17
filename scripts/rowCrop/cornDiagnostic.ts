@@ -26,7 +26,7 @@ import { type GeorefFrame, groundSampleAt, groundToPixel, pixelToGround } from "
 import { type CornPhotoRead, FIELD, cornFieldAndGround } from "../../src/lib/fieldTwin/cornField";
 import { placeDots, readRows } from "../../src/lib/fieldTwin/cornPlants";
 import { framesFromAnalysis, type TwinAnalysis } from "../../src/lib/fieldTwin/analysis";
-import { PLANTS_FIRST, SEQUENCE, certainEvidence, courseAt, projectSightings, shiftOf } from "../../src/lib/fieldTwin/plantsFirst";
+import { PLANTS_FIRST as PLANTS_FIRST_NOW, PLANTS_FIRST_V1, SEQUENCE, certainEvidence, courseAt, projectSightings, shiftOf } from "../../src/lib/fieldTwin/plantsFirst";
 import { CORN_POPULATION_PER_HA, seedSpacing } from "../../src/lib/fieldTwin/rowGuided";
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
 
@@ -34,6 +34,10 @@ const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? null : argv[i + 1]; };
 const arg = (k: string) => { const v = opt(k); if (v == null) throw new Error(`--${k} is required`); return v; };
 const FLIGHT = arg("flight"), CACHE = arg("cache"), OUT = arg("out");
+// --rules: how the photographs are registered and the plant spacing taken. "before": a plane a photograph on a 4 x 3
+// grid, the spacing whatever its score (PLANTS_FIRST_V1). "seed" / "tilt": one change each. "after": the rules now.
+const RULES = opt("rules") ?? "after";
+const PLANTS_FIRST = RULES === "before" ? PLANTS_FIRST_V1 : RULES === "seed" ? { ...PLANTS_FIRST_V1, seedNeedsAPeak: true } : RULES === "tilt" ? { ...PLANTS_FIRST_NOW, seedNeedsAPeak: false } : PLANTS_FIRST_NOW;
 const A = JSON.parse(readFileSync(arg("analysis"), "utf8")) as TwinAnalysis;
 const frames = framesFromAnalysis(A);
 mkdirSync(OUT, { recursive: true });
@@ -47,9 +51,9 @@ const reads: CornPhotoRead[] = A.reads.map(r => {
   return c.axis ? { ...rest, low: c.lowWhole, lowSpan: c.span, lowAxis: c.axis } : { ...rest, low: c.low };
 });
 const { field: F, ground } = cornFieldAndGround(reads, frames, A.fieldOptions ?? FIELD);
-const P = placeDots(reads, frames, F, { ground });
+const P = placeDots(reads, frames, F, { ground, placing: PLANTS_FIRST });
 if (!P) throw new Error("the photographs made no dot");
-const rec = readRows(P, F, { ground });
+const rec = readRows(P, F, { ground, placing: PLANTS_FIRST });
 const { sights, photos } = projectSightings(reads, frames, F.origin);
 const n = P.all.length, strict = P.strict, tier = P.tier ?? new Uint8Array(n);
 const S = rec.geometry.spacingM, seed = rec.geometry.seedM ?? 0.18, reach = SEQUENCE.maxGapSeeds * seed, band = PLANTS_FIRST.onRowShare * S;
@@ -397,7 +401,7 @@ const step5 = {
 };
 
 const summary = {
-  flight: FLIGHT, photographs: photos.length, sightings: sights.length, dots: { all: n, stricterMarks: strict, candidates: n - strict },
+  flight: FLIGHT, rules: RULES, photographs: photos.length, sightings: sights.length, dots: { all: n, stricterMarks: strict, candidates: n - strict },
   geometry: { rowSpacingM: r3(S), plantSpacingM: rec.geometry.seedM, directionDegFromEast: r2(rec.geometry.directionDeg), acrossPositiveIsTowards: `east ${r2(-st)}, north ${r2(ct)} (unit vector)`, bandHalfWidthCm: r1(band * 100), rows: rec.rows.length },
   registration: { repeatM: r3(P.repeatM), mergeGateM: r3(gateM), photographsWithASingleShiftOnly: photoRows.filter(r => r.singleShiftOnly).map(r => r.name), cellsWithAPeak: { median: median(photoRows.map(r => r.cellsWithAPeak)), min: Math.min(...photoRows.map(r => r.cellsWithAPeak)), under4: photoRows.filter(r => r.cellsWithAPeak < 4).length, possible: PLANTS_FIRST.gridU * PLANTS_FIRST.gridV } },
   step1, squares, step2, step3: { frame: frameRows, lines: lineRows, photos: photoRows, leftOver: step3tilt, leftOverByPhotograph: tiltRows }, part1: { ...part1, rest: { ...rest, plantSpacingUsedM: seed } }, step5,
