@@ -656,6 +656,16 @@ export const SEQUENCE = {
    * touched. One pass is the whole of it: what is removed was nobody's company. (A planter drops seed in a line at a
    * steady spacing, so one faint mark alone in a bare strip is not read as its plant.) */
   sweepLoneMarks: true, loneMarkCompany: "located" as "certain" | "located",
+  /** Off by default (2026-11-17): the plant spacing is not asked of a dot on a row's line. A dot that every other test
+   * lets through and that is refused only because it does not stand a whole number of plant spacings from the nearest
+   * plant on its row (off by more than `probableTol` of a spacing) goes on the row all the same. Every other test
+   * stays: ground judged scattered, the row's line and its reach, the band against the alley for a candidate, the
+   * double rule (closer than half a spacing to a plant on the row) and the reach of `maxGapSeeds` spacings from one.
+   * A candidate of the second look follows the same change. A row's course is not fitted through these dots: they are
+   * told apart (`Reconstruction.offSpacing`) and left out where a row's drawn course is fitted through its plants.
+   * (Beside it: SEQUENCE.free takes such a dot too, but only within `freeAcrossShare` of the line and no closer than
+   * `freeMinSeeds` to a plant; this option keeps the row's own band and the double rule's half a spacing.) */
+  placeOffSpacing: false,
 };
 /** The rules as they stood on 2026-11-16 at f23efc0, before the changes above them here: kept so that result can be run beside the present one. */
 export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none", betweenOffLines: false, spacingRulesNeedASpacing: false, sweepLoneMarks: false };
@@ -700,6 +710,8 @@ export type Reconstruction = {
   /** The courses of the rows the certain plants made (before anything was placed along them), and of the rows found in
    * a slot those leave. */
   courses: RowCourse[]; geomCourses: RowCourse[];
+  /** Per dot: 1 when it is on its row only because the plant spacing was not asked of it (`placeOffSpacing`). */
+  offSpacing: Uint8Array;
 };
 
 export type StretchCount = { /** Index into the courses given. */ row: number; a0: number; a1: number; /** Per class: dots within the band on the row's line, and in its two mid-alley strips together. */ band: Int32Array; alley: Int32Array };
@@ -831,6 +843,7 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     return bandBeatsControls(band, Math.round(alley * strips.controlScale), len);
   };
   let alleyRefused = 0;
+  const offSpacing = new Uint8Array(n);
   const along = lines.map(r => r.dots.map(i => A[i]));
   const extra = lines.map(() => [] as number[]);
   const onCertain = new Uint8Array(n); for (const r of lines) for (const i of r.dots) onCertain[i] = 1;
@@ -843,7 +856,9 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
     if (nearest < 0.5 * seed) { why[i] = 2; continue; } // as close as a double, or the same plant twice: not taken on geometry
     const k = Math.round(nearest / seed);
-    if (k < 1 || k > q.maxGapSeeds || Math.abs(nearest - k * seed) > q.probableTol * seed) { why[i] = 3; continue; }
+    if (k < 1 || k > q.maxGapSeeds) { why[i] = 3; continue; }
+    // Not a whole number of plant spacings from that plant: refused, unless the spacing is not asked (q.placeOffSpacing).
+    if (Math.abs(nearest - k * seed) > q.probableTol * seed) { if (!q.placeOffSpacing) { why[i] = 3; continue; } offSpacing[i] = 1; }
     if (certainty[i] === 2) certainty[i] = 1;
     along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1;
   }
@@ -872,7 +887,7 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     const company = [...L.dots, ...(q.loneMarkCompany === "located" ? extra[ri].filter(i => !tier[i]) : [])].map(i => A[i]);
     extra[ri] = extra[ri].filter(i => {
       if (!tier[i] || company.some(a => Math.abs(a - A[i]) <= reach)) return true;
-      why[i] = 8; onCertain[i] = 0; loose[i] = 0; if (certainty[i] === 1) certainty[i] = 2;
+      why[i] = 8; onCertain[i] = 0; loose[i] = 0; offSpacing[i] = 0; if (certainty[i] === 1) certainty[i] = 2;
       alone.dot.push(i); alone.course.push(ri);
       return false;
     });
@@ -913,8 +928,9 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     let s0 = a0;
     for (let k = 1; k < sorted.length; k++) { const g0 = A[sorted[k - 1]], g1 = A[sorted[k]]; if (g1 - g0 > gapM) { if (g0 > s0) segs.push({ a0: s0, a1: g0, confirmed: true }); segs.push({ a0: g0, a1: g1, confirmed: false }); s0 = g1; breaks.notConfirmedStretches++; } else if (spacingRules && g1 - g0 > 1.5 * seed) breaks.bridged++; }
     if (a1 > s0) segs.push({ a0: s0, a1, confirmed: true });
-    // The drawn course: refitted through all its plants (the certain ones and those the second look added).
-    const k = course(sorted, a0, a1), LL: Line = { ...k, a0, a1, dots: sorted };
+    // The drawn course: refitted through all its plants (the certain ones and those the second look added), less the
+    // dots that are on the row only because the spacing was not asked of them (q.placeOffSpacing).
+    const k = course(q.placeOffSpacing ? sorted.filter(i => !offSpacing[i]) : sorted, a0, a1), LL: Line = { ...k, a0, a1, dots: sorted };
     const line: [number, number][] = []; for (let a = a0; ; a = Math.min(a1, a + 1)) { const c = at(k.ka.length ? LL : L, a); line.push([a * ct - c * st, a * st + c * ct]); if (a >= a1) break; }
     for (const i of sorted) rowOf[i] = rows.length;
     rows.push({ id: rows.length + 1, kind, line, dots: sorted, a0, a1, lengthM: a1 - a0, perM: sorted.length / Math.max(1e-6, a1 - a0), segments: segs });
@@ -936,5 +952,5 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   }
   for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
   const unplantedGround = { dotsOnScattered: scattered.reduce((t, x) => t + x, 0), certainOnScattered: cIdx.reduce((t, i) => t + scattered[i], 0), flatCells: RN.flat };
-  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, alleyRefused, spacingRules, alone, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines };
+  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, alleyRefused, spacingRules, alone, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines, offSpacing };
 }

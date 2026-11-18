@@ -14,6 +14,7 @@
 //    is more than chance; otherwise the flight is registered exactly as before;
 //  - a rule that needs the plant spacing does not run where the spacing is not measured;
 //  - a second-look mark alone on its row (no plant found without a row within reach along it) is taken off the row;
+//  - off by default: the plant spacing not asked of a dot on a row line (SEQUENCE.placeOffSpacing), every other test kept;
 //  - with the rules as they stood (SEQUENCE_V1, PLANTS_FIRST_V1) everything reads as before.
 import { describe, expect, it } from "vitest";
 import { type GeorefFrame, UNCALIBRATED_BORESIGHT } from "@/lib/directGeoref/projection";
@@ -524,5 +525,63 @@ describe("a second-look mark alone on its row", () => {
   it("is the default, and not in the rules as they stood", () => {
     expect(SEQUENCE.sweepLoneMarks).toBe(true); expect(SEQUENCE_V1.sweepLoneMarks).toBe(false); expect(SEQUENCE.loneMarkCompany).toBe("located");
     expect(read(dots, SEQUENCE_V1, null, tiers).alone.dot.length).toBe(0);
+  });
+});
+
+describe("the plant spacing not asked of a dot on a row's line (off by default)", () => {
+  // The planting with plants missing on three rows. Row 1 lacks 10.05 to 10.5 m (its plants at 9.9 and 10.65 stay);
+  // row 3 the same; row 5 lacks 10.05 to 12.0 m (its plants at 9.9 and 12.15 stay).
+  const gap = (a: number, lo: number, hi: number) => a > lo && a < hi;
+  const base: Dot[] = []; for (let r = 0; r < 6; r++) for (let k = 0; k * SEED <= 24 + 1e-9; k++) { const a = k * SEED; if ((r === 1 || r === 3) && gap(a, 9.95, 10.6)) continue; if (r === 5 && gap(a, 9.95, 12.1)) continue; base.push(dot(a, r * S)); }
+  const n0 = base.length;
+  // Dots two photographs of eight made (never certain plants):
+  //   off     on row 1's line, 8 cm across it, 0.6 of a spacing past the plant at 9.9 m: not a whole number of spacings
+  //   double  on row 1's line, a third of a spacing short of the plant at 10.65 m: as close as a double
+  //   look2   a candidate of the second look on row 3's line, 0.67 of a spacing past its plant at 9.9 m
+  //   far     on row 5's line, over seven spacings from the nearest plant either way
+  const off = dot(9.9 + 0.6 * SEED, 1 * S + 0.08, 2), double = dot(10.65 - SEED / 3, 1 * S, 2), look2 = dot(9.9 + 0.1, 3 * S, 2), far = dot(11.0, 5 * S, 2);
+  const dots = [...base, off, double, look2, far], tiers = [...base.map(() => 0), 0, 0, 1, 0];
+  const iOff = n0, iDouble = n0 + 1, iLook2 = n0 + 2, iFar = n0 + 3;
+  const on = { ...SEQUENCE, placeOffSpacing: true };
+
+  it("is refused as it stands: off the spacing, with the other reasons beside it", () => {
+    const R = read(dots, SEQUENCE, null, tiers);
+    expect(R.geometry.seedM).toBeCloseTo(SEED, 2);
+    expect(R.rowOf[iOff]).toBe(-1); expect(R.why[iOff]).toBe(3);
+    expect(R.rowOf[iDouble]).toBe(-1); expect(R.why[iDouble]).toBe(2);
+    expect(R.rowOf[iLook2]).toBe(-1); expect(R.why[iLook2]).toBe(3);
+    expect(R.rowOf[iFar]).toBe(-1); expect(R.why[iFar]).toBe(3);
+    expect(Array.from(R.offSpacing).some(x => x === 1)).toBe(false);
+  });
+
+  it("goes on its row with the option on, a candidate of the second look too, and is told apart", () => {
+    const R = read(dots, on, null, tiers), was = read(dots, SEQUENCE, null, tiers);
+    expect(R.rowOf[iOff]).toBeGreaterThanOrEqual(0); expect(R.rowOf[iOff]).toBe(R.rowOf[base.findIndex(d => d.n === 1 * S)]);
+    expect(R.why[iOff]).toBe(0); expect(R.certainty[iOff]).toBe(1); expect(R.offSpacing[iOff]).toBe(1);
+    expect(R.rowOf[iLook2]).toBeGreaterThanOrEqual(0); expect(R.offSpacing[iLook2]).toBe(1);
+    // Nothing else moves: every plant of the planting is where it was, and none of them is flagged.
+    for (let i = 0; i < n0; i++) { expect(R.rowOf[i] >= 0).toBe(was.rowOf[i] >= 0); expect(R.certainty[i]).toBe(was.certainty[i]); expect(R.offSpacing[i]).toBe(0); }
+    expect(R.rows.length).toBe(was.rows.length);
+  });
+
+  it("leaves every other test standing: the double rule, and the reach from a plant on the row", () => {
+    const R = read(dots, on, null, tiers);
+    expect(R.rowOf[iDouble]).toBe(-1); expect(R.why[iDouble]).toBe(2);
+    expect(R.rowOf[iFar]).toBe(-1); expect(R.why[iFar]).toBe(3);
+    // Ground judged scattered still refuses it.
+    const scattered: GroundJudge = { state: (e, n) => (Math.abs(e - off.e) < 0.02 && Math.abs(n - off.n) < 0.02 ? 2 : 1) };
+    const G = read(dots, on, scattered, tiers);
+    expect(G.rowOf[iOff]).toBe(-1); expect(G.why[iOff]).toBe(5);
+  });
+
+  it("does not move the row: its course is fitted without these dots", () => {
+    const R = read(dots, on, null, tiers), was = read(dots, SEQUENCE, null, tiers);
+    const row = R.rows[R.rowOf[iOff]], rowWas = was.rows[was.rowOf[base.findIndex(d => d.n === 1 * S)]];
+    expect(row.dots.includes(iOff)).toBe(true);
+    expect(row.line).toEqual(rowWas.line);
+  });
+
+  it("is off by default, and off in the rules as they stood", () => {
+    expect(SEQUENCE.placeOffSpacing).toBe(false); expect(SEQUENCE_V1.placeOffSpacing).toBe(false);
   });
 });
