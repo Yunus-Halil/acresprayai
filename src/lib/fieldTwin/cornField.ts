@@ -148,6 +148,8 @@ export type CornPhotoRead = {
   gaps: { x1: number; y1: number; x2: number; y2: number; verdict: "stand gap" | "withheld" }[];
   /** Plants the plant read located (read pixels). */
   plants: [number, number][];
+  /** The read withheld its plant count (cornV1.ts CORN_COUNT_GUARD: too late for a per-plant count): `plants` is empty. */
+  countWithheld?: boolean;
   /** Candidates for the field's rows at the lower bar (read pixels; a photograph of seedlings on soil only). Only ever
    * used along a row the plants above made (cornPlants.ts): absent in reads made before 2026-11-16. */
   low?: [number, number][];
@@ -166,6 +168,7 @@ export function compactCornRead(name: string, v: CornV1Read, scale = 1): CornPho
     patches: v.green.weeds.flatMap((w, i) => { const vd = verdictOf.get(i); return vd ? [{ x: w.x, y: w.y, hull: w.hull, touchesEdge: w.touchesEdge, verdict: vd }] : []; }),
     gaps: v.gaps.map(g => ({ x1: g.x1, y1: g.y1, x2: g.x2, y2: g.y2, verdict: g.verdict })),
     plants: v.plants.points.map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]),
+    ...(v.count?.withheld ? { countWithheld: true } : {}),
     ...(v.plants.low ? { low: v.plants.low.map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]) } : {}),
     ...(v.plants.low && v.plants.lowSpan && v.plants.lowAxis ? { lowSpan: v.plants.lowSpan.map(([a, b]) => [Math.round(a * 10) / 10, Math.round(b * 10) / 10] as [number, number]), lowAxis: v.plants.lowAxis } : {}),
   };

@@ -67,7 +67,7 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
         reads.push(cornPhotoRead(p.name, px, gsdOf(p.name), baseline)); readMs += Date.now() - t;
       }
       const last = reads[reads.length - 1];
-      hooks.log?.(`${p.name}: ${last.rows.filter(r => r.identity === "corn").length} corn rows, ${last.rows.length} rows, ${last.patches.filter(q => q.verdict === "weed candidate").length} weed candidates, ${last.gaps.filter(g => g.verdict === "stand gap").length} gaps`);
+      hooks.log?.(`${p.name}: ${last.rows.filter(r => r.identity === "corn").length} corn rows, ${last.rows.length} rows, ${last.patches.filter(q => q.verdict === "weed candidate").length} weed candidates, ${last.gaps.filter(g => g.verdict === "stand gap").length} gaps${last.countWithheld ? "; plant count withheld (too late for a per-plant count)" : ""}`);
     } catch (e) {
       if ((e as Error)?.name === "BuildCancelled" || hooks.signal?.aborted) throw e;
       failed.push({ name: p.name, reason: (e as Error)?.message ?? String(e) });

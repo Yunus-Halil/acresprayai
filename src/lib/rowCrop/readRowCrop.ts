@@ -394,7 +394,8 @@ export type RowCropRead = {
 export type CornV1Summary = {
   version: number;
   plantSource: "green" | "detector";
-  plants: number;
+  /** Plants located; null where the count is withheld, with why in `countWithheld` (cornV1.ts CORN_COUNT_GUARD). */
+  plants: number | null; countWithheld?: string;
   cornRows: number; probableRows: number; agreedRows: number; plantOnlyRows: number; greenOnlyRows: number; greenRowsDropped: number;
   cropOnRow: number; unknownVegetation: number; gapsWithheld: number;
   withheldGaps: RowCropGap[];

@@ -36,7 +36,7 @@
 import type { PhotoPixels } from "../photoScout/pattern";
 import { adaptiveAsRead, readCornAdaptive, type AdaptiveRead, type AdaptiveRow } from "./adaptive";
 import { GREEN_POINTS, ROW_POINTS, plantPointsFromGreen, rowPlantPoints } from "./greenPoints";
-import { SEEDLING_GREEN, SEEDLING_ROW, SEEDLING_V1, type SeedlingCache, seedlingCache, seedlingMask, sharedSoilLevels } from "./seedlingGreen";
+import { SEEDLING_GREEN, SEEDLING_ROW, SEEDLING_V1, type SeedlingCache, seedlingCache, seedlingMask, sharedSeedlingMask, sharedSoilLevels } from "./seedlingGreen";
 import { distToLine, rowsFromPoints, type PlantPoint, type PlantRowsResult } from "./plantRows";
 import type { RowCropGap, RowCropOptions, RowCropParams, RowCropRead, RowCropRow, RowCropStage, RowCropWeed } from "./readRowCrop";
 
@@ -100,11 +100,55 @@ export const CORN_V1 = {
 export const CORN_CORES = {
   on: false,
   /** The two blurs' standard deviations, as shares of the photograph's row spacing in pixels (greenPitchPx: the green
-   * read's). With no row spacing the photograph gets no cores. */
-  fineShare: 0.0377, wideShare: 0.1603,
+   * read's). With no row spacing the photograph gets no cores. The gentler pair (2026-11-18): the first, 0.0377 and
+   * 0.1603, found two more plants of 403 on the labelled photograph and made 16 wrong marks where this makes 4. */
+  fineShare: 0.0566, wideShare: 0.2405,
   /** A core is a peak at or over this share of the photograph's strongest. */
   share: 0.15,
 };
+
+/**
+ * The emergence guard (2026-11-18): OFF. A per-plant count is for emergence, where a plant is a piece of green of its
+ * own. How far along a photograph is, is read from its rows: the share of their length that has green on it
+ * (`rowGreenCover`: green within `bandShare` of the row spacing either side of the row's line, the seedling mask).
+ * Past `cut` the read withholds the plant count and says so (`message`); its rows, gaps and weed candidates are
+ * reported as before. With no row, or no row spacing, nothing is withheld.
+ * The cut is halfway between the highest share measured on emergence photographs and the lowest on later ones
+ * (corn-benchmark FINAL-1.md).
+ */
+export const CORN_COUNT_GUARD = {
+  on: false,
+  bandShare: 0.1,
+  cut: 0.642,
+  message: "too late for a per-plant count",
+};
+
+/** The share of each row's length that has green on it: along every row's line, pixel by pixel, whether the mask is
+ * green anywhere within `halfBandPx` across it. `share` is over all rows together (by length); null with no row. */
+export function rowGreenCover(mask: Uint8Array, W: number, H: number, rows: { points: [number, number][] }[], halfBandPx: number): { share: number | null; perRow: number[]; lengthPx: number } {
+  const hb = Math.max(0, Math.round(halfBandPx)), perRow: number[] = []; let all = 0, on = 0;
+  for (const r of rows) {
+    let n = 0, c = 0;
+    for (let k = 1; k < r.points.length; k++) {
+      const [ax, ay] = r.points[k - 1], [bx, by] = r.points[k], L = Math.hypot(bx - ax, by - ay); if (L < 1e-6) continue;
+      const ux = (bx - ax) / L, uy = (by - ay) / L;
+      for (let t = 0; t < L; t++) {
+        const x = ax + ux * t, y = ay + uy * t; if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        let green = false;
+        for (let s = -hb; s <= hb && !green; s++) { const xx = Math.round(x - uy * s), yy = Math.round(y + ux * s); if (xx >= 0 && yy >= 0 && xx < W && yy < H && mask[yy * W + xx]) green = true; }
+        n++; if (green) c++;
+      }
+    }
+    if (n) { perRow.push(c / n); all += n; on += c; }
+  }
+  return { share: all ? on / all : null, perRow, lengthPx: all };
+}
+/** `rowGreenCover` for a read: the photograph's shared seedling mask, the band from the read's row spacing. */
+export function cornV1RowCover(px: PhotoPixels, v: CornV1Read, seedlings?: SeedlingCache | null): { share: number | null; perRow: number[]; lengthPx: number; pitchPx: number | null } {
+  const pitch = v.identity.mainPitchPx ?? greenPitchPx(v.green) ?? v.plants.rows.pitchPx ?? null;
+  if (!pitch || !v.rows.length) return { share: null, perRow: [], lengthPx: 0, pitchPx: pitch };
+  return { ...rowGreenCover(sharedSeedlingMask(seedlings, px), px.width, px.height, v.rows, CORN_COUNT_GUARD.bandShare * pitch), pitchPx: pitch };
+}
 
 export type CornIdentity = "corn" | "probable crop";
 export type CornRowEvidence = "both reads agree" | "plant read only" | "green read only";
@@ -117,8 +161,8 @@ export type CornV1Row = {
   why: string;
   /** The green read's row behind it (an index into green.rows), when there is one. */
   greenRow: number | null;
-  /** Plants the plant read placed on it. */
-  plants: number;
+  /** Plants the plant read placed on it; null where the plant count is withheld (CORN_COUNT_GUARD). */
+  plants: number | null;
   stage: RowCropStage | null;
   /** In the photo's main planting (not a second planting beside it). */
   mainPlanting: boolean;
@@ -144,6 +188,9 @@ export type CornV1Read = {
   /** Every green-read weed candidate with what V1 makes of it (index matches green.weeds). */
   weedVerdicts: { index: number; verdict: CornV1WeedVerdict; why: string }[];
   gaps: CornV1Gap[];
+  /** The emergence guard, when it ran (CORN_COUNT_GUARD): the share of the rows' length with green on it, the cut,
+   * and whether the plant count is withheld (then `plants.points` is empty, no candidates are made, and a note says so). */
+  count?: { rowGreenShare: number | null; cut: number; withheld: boolean };
   /** Whether "corn" could be said at all, and why not. */
   identity: { entered: string | null; spacingChecked: boolean; spacingFits: boolean | null; spacingImpossible: boolean; spacingM: number | null; mainPitchPx: number | null };
   summary: {
@@ -169,6 +216,8 @@ export type CornV1Options = RowCropOptions & {
   rowSpans?: boolean;
   /** The vivid cores (CORN_CORES): true or false for this read, whatever CORN_CORES.on says. */
   cores?: boolean;
+  /** The emergence guard (CORN_COUNT_GUARD): true or false for this read, whatever CORN_COUNT_GUARD.on says. */
+  countGuard?: boolean;
 };
 
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : null; };
@@ -412,6 +461,16 @@ export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1O
   const points = opts.detectorPoints ?? cornV1PlantPoints(px, ad, seedlings, opts.baselineSeedlings ? false : opts.cores ?? CORN_CORES.on);
   const t2 = Date.now();
   const v = fuseCornV1(ad, points, params, { enteredCrop: opts.enteredCrop ?? params.crop?.id ?? null, source: opts.detectorPoints ? "detector" : "green", greenMs: t1 - t0, plantsMs: t2 - t1 });
+  // The emergence guard: past the cut the plant count is withheld; the rows, gaps and weed candidates above stand.
+  if (opts.baselineSeedlings ? false : opts.countGuard ?? CORN_COUNT_GUARD.on) {
+    const c = cornV1RowCover(px, v, seedlings), withheld = c.share != null && c.share > CORN_COUNT_GUARD.cut;
+    v.count = { rowGreenShare: c.share, cut: CORN_COUNT_GUARD.cut, withheld };
+    if (withheld) {
+      v.plants.points = []; for (const r of v.rows) r.plants = null;
+      v.notes.unshift(`Plant count withheld: ${CORN_COUNT_GUARD.message}. Green stands on ${Math.round(c.share! * 100)} % of the rows' length; plants are counted one by one up to ${Math.round(CORN_COUNT_GUARD.cut * 100)} %. Rows, gaps and weed candidates are reported as before.`);
+      return v;
+    }
+  }
   if (!opts.detectorPoints && !opts.baselineSeedlings && opts.rowCandidates !== false && darkRuleApplies(ad, seedlings)) {
     const t3 = Date.now();
     const defer = opts.rowSpans ? { span: [] as [number, number][], axis: null as [number, number] | null } : null;
@@ -475,14 +534,16 @@ export function cornV1AsRead(v: CornV1Read): RowCropRead {
   const gapsByRow = new Map<number, RowCropGap[]>();
   for (const g of v.gaps) if (g.verdict === "stand gap") { const { greenRow, verdict: _v, why: _w, ...gap } = g; gapsByRow.set(greenRow, [...(gapsByRow.get(greenRow) ?? []), gap]); }
   const withheldGaps = v.gaps.filter(g => g.verdict === "withheld");
+  // The plant count withheld (CORN_COUNT_GUARD): no count and no plant position is carried, on any row.
+  const hold = !!v.count?.withheld;
   const toRow = (r: CornV1Row, id: number): RowCropRow => {
     const g = r.greenRow != null ? v.green.rows[r.greenRow] : null;
     const lengthM = gsd ? Math.round(lengthOf(r.points) * gsd * 1000) / 1000 : 0;
     return {
       id, k: g?.k ?? id, points: r.points, lengthM, supportShare: g?.supportShare ?? 1, bandHalfWidthM: g?.bandHalfWidthM ?? 0, greenShare: g?.greenShare ?? 0,
       gaps: r.greenRow != null && r.identity === "corn" ? gapsByRow.get(r.greenRow) ?? [] : [],
-      plants: g?.plants ?? null, plantPoints: g?.plantPoints ?? null,
-      ...(g?.possiblePoints ? { possiblePoints: g.possiblePoints } : {}), ...(g?.uncertainPoints ? { uncertainPoints: g.uncertainPoints } : {}), ...(g?.missingPoints && r.identity === "corn" ? { missingPoints: g.missingPoints } : {}),
+      plants: hold ? null : g?.plants ?? null, plantPoints: hold ? null : g?.plantPoints ?? null,
+      ...(g?.possiblePoints && !hold ? { possiblePoints: g.possiblePoints } : {}), ...(g?.uncertainPoints && !hold ? { uncertainPoints: g.uncertainPoints } : {}), ...(g?.missingPoints && r.identity === "corn" && !hold ? { missingPoints: g.missingPoints } : {}),
       identity: r.identity, evidence: r.evidence,
     };
   };
@@ -496,7 +557,7 @@ export function cornV1AsRead(v: CornV1Read): RowCropRead {
     weeds,
     excluded: [...base.excluded, ...withheld],
     cornV1: {
-      version: v.version, plantSource: v.plants.source, plants: v.plants.points.length,
+      version: v.version, plantSource: v.plants.source, plants: hold ? null : v.plants.points.length, ...(hold ? { countWithheld: CORN_COUNT_GUARD.message } : {}),
       cornRows: v.summary.cornRows, probableRows: v.summary.probableRows, agreedRows: v.summary.agreedRows, plantOnlyRows: v.summary.plantOnlyRows, greenOnlyRows: v.summary.greenOnlyRows, greenRowsDropped: v.summary.greenRowsDropped,
       cropOnRow: v.summary.cropOnRow, unknownVegetation: v.summary.unknownVegetation, gapsWithheld: withheldGaps.length,
       withheldGaps: withheldGaps.map(({ greenRow: _g, verdict: _v, ...g }) => g),
@@ -508,6 +569,7 @@ export function cornV1AsRead(v: CornV1Read): RowCropRead {
       weeds: reported.length, weedAreaM2: Math.round(reported.reduce((s, w) => s + w.areaM2, 0) * 1000) / 1000,
       ...(base.summary.escapes != null ? { escapes: reported.filter(w => w.sizeClass === "escape").length } : {}),
       gaps: v.summary.gaps, gapLengthM: v.summary.gapLengthM,
+      ...(hold ? { plants: null } : {}),
       ms: base.summary.ms + v.summary.ms.plants + v.summary.ms.fusion,
     },
     notes: [...v.notes, ...base.notes],

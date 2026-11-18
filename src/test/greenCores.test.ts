@@ -91,12 +91,13 @@ describe("the vivid cores added to the plant read's marks (off by default)", { t
     const px = field(singles, [PAIR]), cache = () => seedlingCache(px);
     const plan = (pitchPx: number) => ({ plans: [{ id: 0, stage: "emergence", ownedShare: 1, pitchPx, read: { pitchM: null, gsdM: NaN } }] }) as unknown as AdaptiveRead;
     const none = { plans: [] } as unknown as AdaptiveRead;
-    const off = cornV1PlantPoints(px, plan(80), cache());
-    expect(cornV1PlantPoints(px, plan(80), cache(), false)).toEqual(off);
+    const off = cornV1PlantPoints(px, plan(53), cache());
+    expect(cornV1PlantPoints(px, plan(53), cache(), false)).toEqual(off);
     expect(cornV1PlantPoints(px, none, cache(), true)).toEqual(off);
-    // 80 px between rows: blurs of 3.0 and 12.8 px.
-    expect(CORN_CORES.fineShare * 80).toBeCloseTo(3.0, 1);
-    const on = cornV1PlantPoints(px, plan(80), cache(), true);
+    // 53 px between rows: blurs of 3.0 and 12.7 px.
+    expect(CORN_CORES.fineShare * 53).toBeCloseTo(3.0, 1);
+    expect(CORN_CORES.wideShare * 53).toBeCloseTo(12.7, 1);
+    const on = cornV1PlantPoints(px, plan(53), cache(), true);
     expect(on.length).toBe(off.length + 1);
     expect(on.slice(0, off.length)).toEqual(off);
   });

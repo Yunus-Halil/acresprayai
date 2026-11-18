@@ -581,7 +581,47 @@ describe("the plant spacing not asked of a dot on a row's line (off by default)"
     expect(row.line).toEqual(rowWas.line);
   });
 
+  it("stricter marks only (offSpacingStricterOnly): a candidate of the second look keeps the spacing rule", () => {
+    const R = read(dots, { ...on, offSpacingStricterOnly: true }, null, tiers);
+    expect(R.rowOf[iOff]).toBeGreaterThanOrEqual(0); expect(R.offSpacing[iOff]).toBe(1);
+    expect(R.rowOf[iLook2]).toBe(-1); expect(R.why[iLook2]).toBe(3);
+    // Alone it changes nothing: it only narrows placeOffSpacing.
+    const alone = read(dots, { ...SEQUENCE, offSpacingStricterOnly: true }, null, tiers), was = read(dots, SEQUENCE, null, tiers);
+    expect(Array.from(alone.rowOf)).toEqual(Array.from(was.rowOf));
+  });
+
+  it("the too-close limit learned from the field (tooCloseFromField): the lowest twentieth of the gaps between certain plants", () => {
+    // As it stands: half a plant spacing.
+    { const R0 = read(dots, on, null, tiers); expect(R0.tooCloseM).toBeCloseTo(0.5 * R0.geometry.seedM!, 9); }
+    // This planting's certain plants never stand closer than a whole spacing, so that is the limit it learns: the dot
+    // 0.6 of a spacing from a plant is as close as a double, with the spacing option on or off.
+    const R = read(dots, { ...on, tooCloseFromField: true }, null, tiers);
+    expect(R.certainGaps).toBeGreaterThan(900);
+    expect(R.tooCloseM).toBeCloseTo(SEED, 6);
+    expect(R.rowOf[iOff]).toBe(-1); expect(R.why[iOff]).toBe(2);
+    expect(R.rowOf[iLook2]).toBe(-1); expect(R.why[iLook2]).toBe(2);
+    // The planting itself does not move.
+    const was = read(dots, on, null, tiers);
+    for (let i = 0; i < n0; i++) expect(R.rowOf[i] >= 0).toBe(was.rowOf[i] >= 0);
+  });
+
+  it("a field whose certain plants often stand close learns a limit under half a spacing, and a dot past it is placed only with the spacing not asked", () => {
+    // 70 more certain plants on rows 0 and 2, each 0.3 of a spacing past a plant: over a twentieth of the gaps.
+    const close: Dot[] = []; for (const r of [0, 2]) for (let k = 0; k < 35; k++) close.push(dot((10 + 4 * k) * SEED + 0.3 * SEED, r * S));
+    // A dot two photographs made, on row 4's line, 0.4 of a spacing past a plant.
+    const near = dot(60 * SEED + 0.4 * SEED, 4 * S, 2), all = [...base, ...close, near], iNear = all.length - 1;
+    const asIs = read(all, SEQUENCE);
+    expect(asIs.geometry.seedM).toBeCloseTo(SEED, 2);
+    expect(asIs.rowOf[iNear]).toBe(-1); expect(asIs.why[iNear]).toBe(2);
+    const learned = read(all, { ...SEQUENCE, tooCloseFromField: true });
+    expect(learned.tooCloseM).toBeCloseTo(0.3 * SEED, 6);
+    expect(learned.rowOf[iNear]).toBe(-1); expect(learned.why[iNear]).toBe(3);
+    const both = read(all, { ...SEQUENCE, tooCloseFromField: true, placeOffSpacing: true });
+    expect(both.rowOf[iNear]).toBeGreaterThanOrEqual(0); expect(both.offSpacing[iNear]).toBe(1);
+  });
+
   it("is off by default, and off in the rules as they stood", () => {
     expect(SEQUENCE.placeOffSpacing).toBe(false); expect(SEQUENCE_V1.placeOffSpacing).toBe(false);
+    expect(SEQUENCE.offSpacingStricterOnly).toBe(false); expect(SEQUENCE.tooCloseFromField).toBe(false); expect(SEQUENCE_V1.tooCloseFromField).toBe(false);
   });
 });

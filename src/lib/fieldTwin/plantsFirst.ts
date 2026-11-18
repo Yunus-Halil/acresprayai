@@ -666,6 +666,14 @@ export const SEQUENCE = {
    * (Beside it: SEQUENCE.free takes such a dot too, but only within `freeAcrossShare` of the line and no closer than
    * `freeMinSeeds` to a plant; this option keeps the row's own band and the double rule's half a spacing.) */
   placeOffSpacing: false,
+  /** Off by default (2026-11-18), a narrower `placeOffSpacing`: only a dot of the stricter marks goes on its row
+   * without the spacing asked of it. A candidate of the second look keeps the spacing rule as it stood. */
+  offSpacingStricterOnly: false,
+  /** Off by default (2026-11-18): how close to a plant on its row a dot may stand is learned from the field, in place of
+   * half a plant spacing. The limit is the distance under which the lowest `tooCloseQuantile` of the gaps between
+   * neighbouring certain plants on the flight's row lines fall (`Reconstruction.tooCloseM`): closer than the field's own
+   * certain plants stand to each other, a dot is a second mark on a plant. With no such gap the half spacing stands. */
+  tooCloseFromField: false, tooCloseQuantile: 0.05,
 };
 /** The rules as they stood on 2026-11-16 at f23efc0, before the changes above them here: kept so that result can be run beside the present one. */
 export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none", betweenOffLines: false, spacingRulesNeedASpacing: false, sweepLoneMarks: false };
@@ -712,6 +720,9 @@ export type Reconstruction = {
   courses: RowCourse[]; geomCourses: RowCourse[];
   /** Per dot: 1 when it is on its row only because the plant spacing was not asked of it (`placeOffSpacing`). */
   offSpacing: Uint8Array;
+  /** The distance from a plant on its row under which a dot is as close as a double, metres: half a plant spacing, or
+   * the limit learned from the field (`tooCloseFromField`); and the gaps between neighbouring certain plants it was read from. */
+  tooCloseM: number; certainGaps: number;
 };
 
 export type StretchCount = { /** Index into the courses given. */ row: number; a0: number; a1: number; /** Per class: dots within the band on the row's line, and in its two mid-alley strips together. */ band: Int32Array; alley: Int32Array };
@@ -848,17 +859,25 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   const extra = lines.map(() => [] as number[]);
   const onCertain = new Uint8Array(n); for (const r of lines) for (const i of r.dots) onCertain[i] = 1;
   const order = Array.from({ length: n }, (_, i) => i).filter(i => !onCertain[i]).sort((x, y) => (tier ? tier[x] - tier[y] : 0) || dots[y].photos - dots[x].photos);
+  // How close to a plant on its row is a double: half a plant spacing, or (q.tooCloseFromField) the distance under
+  // which the lowest `tooCloseQuantile` of the gaps between neighbouring certain plants on the row lines fall.
+  const certainGapsM: number[] = [];
+  for (const r of lines) { const as = r.dots.map(i => A[i]).sort((x, y) => x - y); for (let k = 1; k < as.length; k++) certainGapsM.push(as[k] - as[k - 1]); }
+  certainGapsM.sort((x, y) => x - y);
+  const tooClose = q.tooCloseFromField && certainGapsM.length ? certainGapsM[Math.min(certainGapsM.length - 1, Math.floor(q.tooCloseQuantile * certainGapsM.length))] : 0.5 * seed;
   for (const i of order) {
     if (scattered[i]) { why[i] = 5; continue; }
     const ri = nearestRow(i, lines); if (ri < 0) { why[i] = 1; continue; }
     if (!spacingRules) { why[i] = 7; continue; }
     if (tier?.[i] && !beatsAlley(ri, i)) { why[i] = 6; alleyRefused++; continue; }
     let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
-    if (nearest < 0.5 * seed) { why[i] = 2; continue; } // as close as a double, or the same plant twice: not taken on geometry
+    if (nearest < tooClose) { why[i] = 2; continue; } // as close as a double, or the same plant twice: not taken on geometry
     const k = Math.round(nearest / seed);
-    if (k < 1 || k > q.maxGapSeeds) { why[i] = 3; continue; }
-    // Not a whole number of plant spacings from that plant: refused, unless the spacing is not asked (q.placeOffSpacing).
-    if (Math.abs(nearest - k * seed) > q.probableTol * seed) { if (!q.placeOffSpacing) { why[i] = 3; continue; } offSpacing[i] = 1; }
+    if (k > q.maxGapSeeds) { why[i] = 3; continue; }
+    // Not a whole number of plant spacings from that plant (under one spacing only where a learned limit lets a dot
+    // closer than half of one): refused, unless the spacing is not asked (q.placeOffSpacing; with
+    // q.offSpacingStricterOnly, not asked of the stricter marks' dots only).
+    if (k < 1 || Math.abs(nearest - k * seed) > q.probableTol * seed) { if (!q.placeOffSpacing || (q.offSpacingStricterOnly && tier?.[i])) { why[i] = 3; continue; } offSpacing[i] = 1; }
     if (certainty[i] === 2) certainty[i] = 1;
     along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1;
   }
@@ -952,5 +971,5 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   }
   for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
   const unplantedGround = { dotsOnScattered: scattered.reduce((t, x) => t + x, 0), certainOnScattered: cIdx.reduce((t, i) => t + scattered[i], 0), flatCells: RN.flat };
-  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, alleyRefused, spacingRules, alone, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines, offSpacing };
+  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, alleyRefused, spacingRules, alone, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines, offSpacing, tooCloseM: tooClose, certainGaps: certainGapsM.length };
 }
