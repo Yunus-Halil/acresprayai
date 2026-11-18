@@ -370,7 +370,7 @@ const readsFor = (spans: boolean): CornPhotoRead[] => A.reads.map(r => {
 const B: { run: string; what: string; tooCloseM: number; certainGaps: number; plantSpacingM: number; wholeFlightOnRows: number[]; wholeFlightOnNoRow: number; landed: number; foldedBack: number; marksInPhoto: number[]; noRowInPhoto: number; half: (Score & { missedWithADotOnNoRow: number; noRowDots: number })[]; full: Score[] }[] = [];
 let origin: { lat: number; lng: number; altM: number } | null = null;
 // --runs a,c,d: only those runs (by their first letter), written to <out>/score-runs.json; part A is not run. Without it: a, b, c as SCORE.md.
-const ONLY = opt("runs")?.split(",") ?? null, LOOK = opt("look"), LINES = opt("lines"), HEADLAND_X = Number(opt("headland-x") ?? 3330);
+const ONLY = opt("runs")?.split(",") ?? null, LOOK = opt("look"), LINES = opt("lines"), NOTHING = opt("nothing"), HEADLAND_X = Number(opt("headland-x") ?? 3330);
 if (LOOK) mkdirSync(LOOK, { recursive: true });
 for (const run of MISSES ? RUNS.filter(r => r.key === (opt("misses-run") ?? "b-branch-sweep-off")) : RUNS.filter(r => (LINES ? r.key[0] === (ONLY?.[0] ?? "c") : LOOK ? r.key[0] === "d" : ONLY ? ONLY.includes(r.key[0]) : "abc".includes(r.key[0])))) {
   const t0 = Date.now(), reads = readsFor(run.spans);
@@ -427,6 +427,25 @@ for (const run of MISSES ? RUNS.filter(r => r.key === (opt("misses-run") ?? "b-b
   if (LOOK) {
     const img = (IMG ??= decodeImage(new Uint8Array(readFileSync(photoPath(IMAGE)!)))), dir = (rec.geometry.directionDeg * Math.PI) / 180;
     lookReport({ out: LOOK, px: { width: img.width, height: img.height, rgba: new Uint8ClampedArray(img.data.buffer, img.data.byteOffset, img.data.byteLength) }, tiles: DEV, labels: LAB, judge, R: seedM / 2, marks, noRow, place, pixelOf, within, photos: i => P.all[i].photos, looked: i => P.covered[i], alongEN: [Math.cos(dir), Math.sin(dir)] });
+    process.exit(0);
+  }
+  if (NOTHING) {
+    // --nothing <file>: every wrong mark of this run in the tiles scored (matched at half the plant spacing), with the
+    // labelled plants of its tile within one whole plant spacing of it, whether each of those has a mark, and how far
+    // the mark stands from its tile's edge. Read only; nothing is scored anew.
+    const R = seedM / 2, all: [number, number][] = [];
+    const rows = DEV.flatMap(t => {
+      const J = judge(t, marks, place, R), labs = LAB.get(t.id)!.filter(l => l.type === "plant"), plants = labs.map(l => place(l.x, l.y)!), pxPerM = J.pad / R;
+      return J.ms.flatMap((k, j) => {
+        if (!within(t, k.u, k.v)) return [];
+        all.push([Math.round(k.u), Math.round(k.v)]);
+        if (J.state[j] !== 0) return [];
+        const near = plants.map((g, i) => ({ plant: `${t.id}:${i}`, m: Math.hypot(g[0] - k.e, g[1] - k.n), found: J.plantFound[i] })).filter(x => x.m <= seedM).sort((a, b) => a.m - b.m);
+        return [{ tile: t.id, planted: labs.length > 0, tier: k.tier, u: Math.round(k.u), v: Math.round(k.v), second: near.some(x => x.m <= R), near, edgeM: Math.min(k.u - t.x, t.x + t.w - k.u, k.v - t.y, t.y + t.h - k.v) / pxPerM }];
+      });
+    });
+    writeFileSync(NOTHING, JSON.stringify({ run: run.key, hiddenHalf: HIDDEN, plantSpacingM: seedM, width: W, height: H, tiers: TIERS, wrongMarks: rows, allMarksInTheTiles: all }));
+    console.log(`${run.key}: ${rows.length} wrong marks written to ${NOTHING}`);
     process.exit(0);
   }
   const half = DEV.map(t => {
