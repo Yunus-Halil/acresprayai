@@ -5,6 +5,7 @@ import path from "path";
 import { execSync } from "child_process";
 import fs from "fs";
 import type { Plugin } from "vite";
+import { cornInspectorDev } from "./scripts/rowCrop/cornInspectorPlugin";
 
 // The commit the build came from, stamped into the bundle so the scan page's
 // footer can say which version is on screen. Vercel sets the SHA at build
@@ -76,6 +77,8 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     fieldTwinDevFiles(),
+    // The corn inspector's dev-server side (/dev/corn-inspector): `apply: "serve"`, never in a build.
+    cornInspectorDev(__dirname),
     // The offline shell. Operators plan at home and stand in fields with no
     // signal: the app shell precaches so a cold open renders, and everything
     // browsed with connectivity (field/grid/plan/log rows, ortho tiles,

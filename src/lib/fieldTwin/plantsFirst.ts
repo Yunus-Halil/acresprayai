@@ -347,9 +347,12 @@ export type RowRecallOptions = typeof ROW_RECALL;
  * (reconstruct: probable at most, never a certain plant, tier 2 never a row of its own): off the rows nothing changes,
  * so no weed and no dot between the rows comes from them.
  */
-export function rowCandidates(low: Read[], frames: Map<string, GeorefFrame>, origin: LatLngAlt, photos: string[], shifts: PhotoShift[], sights: Sight[], dots: Dot[], directionDeg: number, o: RowRecallOptions = ROW_RECALL): { dots: Dot[]; tier: Uint8Array } {
+export function rowCandidates(low: Read[], frames: Map<string, GeorefFrame>, origin: LatLngAlt, photos: string[], shifts: PhotoShift[], sights: Sight[], dots: Dot[], directionDeg: number, o: RowRecallOptions = ROW_RECALL): { dots: Dot[]; tier: Uint8Array;
+  /** Read only, for the corn inspector: every sighting the candidates were gathered from (a lone stricter mark: its
+   * index in `sights`; a lower-bar mark: -1), and per candidate dot the sightings it gathered (indices into `from`). */
+  from: { p: number; u: number; v: number; sight: number }[]; members: number[][] } {
   const pOf = new Map(photos.map((n, i) => [n, i]));
-  const ce: number[] = [], cn: number[] = [], cp: number[] = [], sharp: number[] = [];
+  const ce: number[] = [], cn: number[] = [], cp: number[] = [], sharp: number[] = [], from: { p: number; u: number; v: number; sight: number }[] = [];
   const offNadir = (f: GeorefFrame, u: number, v: number) => (Math.atan(Math.hypot((u - f.intrinsics.cx) / f.intrinsics.fx, (v - f.intrinsics.cy) / f.intrinsics.fy)) * 180) / Math.PI;
   // The stricter marks only one photograph made.
   const inDot = new Uint8Array(sights.length); for (const d of dots) for (const m of d.members) inDot[m] = 1;
@@ -359,7 +362,7 @@ export function rowCandidates(low: Read[], frames: Map<string, GeorefFrame>, ori
     const f = frames.get(photos[s.p]); if (!f) return;
     const [de, dn] = shiftOf(shifts[s.p], s.u, s.v);
     loneX.push(s.e + de); loneY.push(s.n + dn); loneP.push(s.p);
-    ce.push(s.e + de); cn.push(s.n + dn); cp.push(s.p); sharp.push(offNadir(f, s.u, s.v) <= o.sharpDeg ? 1 : 0);
+    ce.push(s.e + de); cn.push(s.n + dn); cp.push(s.p); sharp.push(offNadir(f, s.u, s.v) <= o.sharpDeg ? 1 : 0); from.push({ p: s.p, u: s.u, v: s.v, sight: i });
   });
   const loneGrid = new Grid(loneX, loneY, 0.1);
   for (const r of low) {
@@ -369,7 +372,7 @@ export function rowCandidates(low: Read[], frames: Map<string, GeorefFrame>, ori
       const [e0, n0] = toEnu({ lat: g.lat, lng: g.lng, altM: 0 }, origin), [de, dn] = shiftOf(shifts[p], u, v), e = e0 + de, n = n0 + dn;
       let same = false; loneGrid.near(e, n, o.sameMarkM, k => { if (loneP[k] === p && Math.hypot(loneX[k] - e, loneY[k] - n) <= o.sameMarkM) same = true; });
       if (same) continue;
-      ce.push(e); cn.push(n); cp.push(p); sharp.push(offNadir(f, u, v) <= o.sharpDeg ? 1 : 0);
+      ce.push(e); cn.push(n); cp.push(p); sharp.push(offNadir(f, u, v) <= o.sharpDeg ? 1 : 0); from.push({ p, u, v, sight: -1 });
     }
   }
   // Not a plant the stricter marks already made.
@@ -381,15 +384,15 @@ export function rowCandidates(low: Read[], frames: Map<string, GeorefFrame>, ori
   const xs = new Float64Array(keep.length), ys = new Float64Array(keep.length);
   keep.forEach((i, j) => { xs[j] = ce[i] * ct + cn[i] * st; ys[j] = (-ce[i] * st + cn[i] * ct) * k; });
   const groups = mergeXY(xs, ys, j => cp[keep[j]], o.gateAlongM, 1);
-  const out: Dot[] = [], tier: number[] = [];
+  const out: Dot[] = [], tier: number[] = [], members: number[][] = [];
   for (const g of groups) {
     const m = g.members.map(j => keep[j]);
     if (m.length === 1 && !sharp[m[0]] && !o.anyView) continue;
     const e = m.reduce((t, i) => t + ce[i], 0) / m.length, n = m.reduce((t, i) => t + cn[i], 0) / m.length;
     out.push({ e, n, members: [], photos: m.length, spreadM: Math.sqrt(m.reduce((t, i) => t + (ce[i] - e) ** 2 + (cn[i] - n) ** 2, 0) / m.length) });
-    tier.push(m.length >= 2 ? 1 : sharp[m[0]] ? 2 : 3);
+    tier.push(m.length >= 2 ? 1 : sharp[m[0]] ? 2 : 3); members.push(m);
   }
-  return { dots: out, tier: Uint8Array.from(tier) };
+  return { dots: out, tier: Uint8Array.from(tier), from, members };
 }
 
 /**
@@ -679,6 +682,13 @@ export const SEQUENCE = {
 export const SEQUENCE_V1: typeof SEQUENCE = { ...SEQUENCE, patternCellsOnly: false, refuseScattered: false, alleyTest: "none", betweenOffLines: false, spacingRulesNeedASpacing: false, sweepLoneMarks: false };
 /** The field's judgement of the ground as reconstruct takes it (cornField.ts FieldGround): at a place, metres east and
  * north, 0 unknown, 1 planted, 2 scattered; `dotState` where the caller judged the dots itself. */
+/**
+ * Read only, for the corn inspector (2026-11-18): which test settled each dot in `reconstruct`. No rule reads it.
+ * Each value is written on the same line as the test it names, so a dot's rule can be found in this file by its name.
+ * `cutFromRow`: placed on a row, then left on no row when the row was built (a piece of under three plants, a stretch
+ * longer than `maxBridgeM` with no plant, or a stretch over ground judged scattered: `build` in reconstruct).
+ */
+export const SETTLED = { none: 0, certainRow: 1, scattered: 2, noRow: 3, noSpacing: 4, alley: 5, tooClose: 6, tooFar: 7, offSpacing: 8, placedAtSpacing: 9, placedOffSpacing: 10, freeAlley: 11, freeTooClose: 12, freePlaced: 13, alone: 14, geometryRow: 15, cutFromRow: 16 } as const;
 export type GroundJudge = { state: (e: number, n: number) => 0 | 1 | 2; dotState?: Uint8Array | null };
 export type RowSegment = { a0: number; a1: number; confirmed: boolean };
 /** A row's course in the rows' frame: its across position at knots along it, from its first plant to its last, and the dots it was fitted through. */
@@ -723,6 +733,8 @@ export type Reconstruction = {
   /** The distance from a plant on its row under which a dot is as close as a double, metres: half a plant spacing, or
    * the limit learned from the field (`tooCloseFromField`); and the gaps between neighbouring certain plants it was read from. */
   tooCloseM: number; certainGaps: number;
+  /** Read only (SETTLED): per dot, the test that settled it. */
+  settled: Uint8Array;
 };
 
 export type StretchCount = { /** Index into the courses given. */ row: number; a0: number; a1: number; /** Per class: dots within the band on the row's line, and in its two mid-alley strips together. */ band: Int32Array; alley: Int32Array };
@@ -838,7 +850,7 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   // Why a dot is on no row (diagnostics): 0 on a row, 1 no row reaches it, 2 as close to a plant on the row as a
   // double, 3 not a whole number of plant spacings from the row's plants, 4 between two rows (set at the end), 5 on
   // ground the field's plants show as scattered.
-  const why = new Uint8Array(n);
+  const why = new Uint8Array(n), settled = new Uint8Array(n);
   const nearestRow = (i: number, list: Line[]) => { let best = -1, bd = onRow; list.forEach((r, ri) => { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) return; const d = Math.abs(C[i] - at(r, A[i])); if (d <= bd) { bd = d; best = ri; } }); return best; };
   // Where a row's band beats the ground between the rows (q.alleyTest), per stretch and per group of dots. Counted
   // before anything is placed: what stands where, not what was made of it.
@@ -857,7 +869,7 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   const offSpacing = new Uint8Array(n);
   const along = lines.map(r => r.dots.map(i => A[i]));
   const extra = lines.map(() => [] as number[]);
-  const onCertain = new Uint8Array(n); for (const r of lines) for (const i of r.dots) onCertain[i] = 1;
+  const onCertain = new Uint8Array(n); for (const r of lines) for (const i of r.dots) { onCertain[i] = 1; settled[i] = SETTLED.certainRow; }
   const order = Array.from({ length: n }, (_, i) => i).filter(i => !onCertain[i]).sort((x, y) => (tier ? tier[x] - tier[y] : 0) || dots[y].photos - dots[x].photos);
   // How close to a plant on its row is a double: half a plant spacing, or (q.tooCloseFromField) the distance under
   // which the lowest `tooCloseQuantile` of the gaps between neighbouring certain plants on the row lines fall.
@@ -866,20 +878,20 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   certainGapsM.sort((x, y) => x - y);
   const tooClose = q.tooCloseFromField && certainGapsM.length ? certainGapsM[Math.min(certainGapsM.length - 1, Math.floor(q.tooCloseQuantile * certainGapsM.length))] : 0.5 * seed;
   for (const i of order) {
-    if (scattered[i]) { why[i] = 5; continue; }
-    const ri = nearestRow(i, lines); if (ri < 0) { why[i] = 1; continue; }
-    if (!spacingRules) { why[i] = 7; continue; }
-    if (tier?.[i] && !beatsAlley(ri, i)) { why[i] = 6; alleyRefused++; continue; }
+    if (scattered[i]) { why[i] = 5; settled[i] = SETTLED.scattered; continue; }
+    const ri = nearestRow(i, lines); if (ri < 0) { why[i] = 1; settled[i] = SETTLED.noRow; continue; }
+    if (!spacingRules) { why[i] = 7; settled[i] = SETTLED.noSpacing; continue; }
+    if (tier?.[i] && !beatsAlley(ri, i)) { why[i] = 6; alleyRefused++; settled[i] = SETTLED.alley; continue; }
     let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
-    if (nearest < tooClose) { why[i] = 2; continue; } // as close as a double, or the same plant twice: not taken on geometry
+    if (nearest < tooClose) { why[i] = 2; settled[i] = SETTLED.tooClose; continue; } // as close as a double, or the same plant twice: not taken on geometry
     const k = Math.round(nearest / seed);
-    if (k > q.maxGapSeeds) { why[i] = 3; continue; }
+    if (k > q.maxGapSeeds) { why[i] = 3; settled[i] = SETTLED.tooFar; continue; }
     // Not a whole number of plant spacings from that plant (under one spacing only where a learned limit lets a dot
     // closer than half of one): refused, unless the spacing is not asked (q.placeOffSpacing; with
     // q.offSpacingStricterOnly, not asked of the stricter marks' dots only).
-    if (k < 1 || Math.abs(nearest - k * seed) > q.probableTol * seed) { if (!q.placeOffSpacing || (q.offSpacingStricterOnly && tier?.[i])) { why[i] = 3; continue; } offSpacing[i] = 1; }
+    if (k < 1 || Math.abs(nearest - k * seed) > q.probableTol * seed) { if (!q.placeOffSpacing || (q.offSpacingStricterOnly && tier?.[i])) { why[i] = 3; settled[i] = SETTLED.offSpacing; continue; } offSpacing[i] = 1; }
     if (certainty[i] === 2) certainty[i] = 1;
-    along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1;
+    along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1; settled[i] = offSpacing[i] ? SETTLED.placedOffSpacing : SETTLED.placedAtSpacing;
   }
   // Loosened (q.free): what the spacing left out, again, strongest first and until nothing more joins: on a row's
   // course (tighter across than above), not a double, within reach of a plant on it. No distance to its neighbours is asked.
@@ -891,12 +903,12 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
       let ri = -1, bd = q.freeAcrossShare * S;
       lines.forEach((r, k) => { if (A[i] < r.a0 - reach || A[i] > r.a1 + reach) return; const d = Math.abs(C[i] - at(r, A[i])); if (d <= bd) { bd = d; ri = k; } });
       if (ri < 0) continue;
-      if (!beatsAlley(ri, i)) { why[i] = 6; alleyRefused++; continue; }
+      if (!beatsAlley(ri, i)) { why[i] = 6; alleyRefused++; settled[i] = SETTLED.freeAlley; continue; }
       let nearest = Infinity; for (const a of along[ri]) nearest = Math.min(nearest, Math.abs(a - A[i]));
-      if (nearest < q.freeMinSeeds * seed) { why[i] = 2; continue; }
+      if (nearest < q.freeMinSeeds * seed) { why[i] = 2; settled[i] = SETTLED.freeTooClose; continue; }
       if (nearest > q.maxGapSeeds * seed) continue;
       if (certainty[i] === 2) certainty[i] = 1;
-      along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1; loose[i] = 1; why[i] = 0; changed = true;
+      along[ri].push(A[i]); extra[ri].push(i); onCertain[i] = 1; loose[i] = 1; why[i] = 0; settled[i] = SETTLED.freePlaced; changed = true;
     }
   }
   // The final sweep (q.sweepLoneMarks): a candidate on a row with no plant found without a row within `reach` of it
@@ -906,7 +918,7 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     const company = [...L.dots, ...(q.loneMarkCompany === "located" ? extra[ri].filter(i => !tier[i]) : [])].map(i => A[i]);
     extra[ri] = extra[ri].filter(i => {
       if (!tier[i] || company.some(a => Math.abs(a - A[i]) <= reach)) return true;
-      why[i] = 8; onCertain[i] = 0; loose[i] = 0; offSpacing[i] = 0; if (certainty[i] === 1) certainty[i] = 2;
+      why[i] = 8; onCertain[i] = 0; loose[i] = 0; offSpacing[i] = 0; if (certainty[i] === 1) certainty[i] = 2; settled[i] = SETTLED.alone;
       alone.dot.push(i); alone.course.push(ri);
       return false;
     });
@@ -955,9 +967,11 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
     rows.push({ id: rows.length + 1, kind, line, dots: sorted, a0, a1, lengthM: a1 - a0, perM: sorted.length / Math.max(1e-6, a1 - a0), segments: segs });
   };
   lines.forEach((L, ri) => build("certain", [...L.dots, ...extra[ri]], L));
-  for (const L of geomLines) { for (const i of L.dots) if (certainty[i] === 2) certainty[i] = 1; build("geometry", L.dots, L); }
+  for (const L of geomLines) { for (const i of L.dots) { if (certainty[i] === 2) certainty[i] = 1; settled[i] = SETTLED.geometryRow; } build("geometry", L.dots, L); }
   // A probable dot that ended on no row is uncertain again.
   for (let i = 0; i < n; i++) if (certainty[i] === 1 && rowOf[i] < 0) certainty[i] = 2;
+  // (Read only.) A dot placed on a row that `build` above left on no row.
+  for (let i = 0; i < n; i++) if (rowOf[i] < 0 && (settled[i] === SETTLED.certainRow || settled[i] === SETTLED.placedAtSpacing || settled[i] === SETTLED.placedOffSpacing || settled[i] === SETTLED.freePlaced || settled[i] === SETTLED.geometryRow)) settled[i] = SETTLED.cutFromRow;
   // Between the rows: a dot on no row, with a row on either side of it within a spacing, is not the crop. A dot that
   // stands on a row's line (within the band a row's plants are taken in) is not between two rows: that row is the one
   // it stands on, and why it was left off it is already said (q.betweenOffLines).
@@ -971,5 +985,5 @@ export function reconstruct(dots: Dot[], covered: Int32Array, directionDeg: numb
   }
   for (let i = 0; i < n; i++) if (rowOf[i] >= 0) why[i] = 0; else if (!why[i]) why[i] = 1;
   const unplantedGround = { dotsOnScattered: scattered.reduce((t, x) => t + x, 0), certainOnScattered: cIdx.reduce((t, i) => t + scattered[i], 0), flatCells: RN.flat };
-  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, alleyRefused, spacingRules, alone, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines, offSpacing, tooCloseM: tooClose, certainGaps: certainGapsM.length };
+  return { certainty, rows, rowOf, between, why, gaps: { filled, gapM, ...breaks }, unplanted: unplantedGround, alleyRefused, spacingRules, alone, geometry, a: A, c: C, loose, courses: lines, geomCourses: geomLines, offSpacing, tooCloseM: tooClose, certainGaps: certainGapsM.length, settled };
 }

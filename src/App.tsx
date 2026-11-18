@@ -49,6 +49,8 @@ const WeedVisionPreview = isWeedVisionPreviewEnabled() ? lazy(() => import("./pa
 const FieldTwinDevPreview = import.meta.env.DEV ? lazy(() => import("./pages/app/FieldTwinDevPreview.tsx")) : null;
 // Development only: the pilot agreement screen as a new or a returning participant sees it; nothing is recorded.
 const AgreementDevPreview = import.meta.env.DEV ? lazy(() => import("./pages/app/AgreementDevPreview.tsx")) : null;
+// Development only: the corn inspector (each step of the corn algorithm drawn on a photograph; the dev server runs the code).
+const CornInspector = import.meta.env.DEV ? lazy(() => import("./pages/app/CornInspector.tsx")) : null;
 
 const queryClient = new QueryClient();
 
@@ -81,6 +83,7 @@ const App = () => (
             <Route path="/pilot-terms" element={<PilotTerms />} />
             {FieldTwinDevPreview && <Route path="/dev/field-twin" element={<Suspense fallback={null}><FieldTwinDevPreview /></Suspense>} />}
             {AgreementDevPreview && <Route path="/dev/agreement" element={<Suspense fallback={null}><AgreementDevPreview /></Suspense>} />}
+            {CornInspector && <Route path="/dev/corn-inspector" element={<Suspense fallback={null}><CornInspector /></Suspense>} />}
             {/* The founder's pilot admin panel. Founder-only here and in pilot-admin. */}
             <Route path="/admin/pilot" element={<PilotRoute>{founder(<PilotAdmin />)}</PilotRoute>} />
             <Route path="/admin/pilot/people/:id" element={<PilotRoute>{founder(<PilotAdmin />)}</PilotRoute>} />

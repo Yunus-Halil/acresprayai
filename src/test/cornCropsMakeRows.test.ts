@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 import { type GeorefFrame, UNCALIBRATED_BORESIGHT } from "@/lib/directGeoref/projection";
 import type { CornPhotoRead } from "@/lib/fieldTwin/cornField";
 import { candidatePoints } from "@/lib/fieldTwin/cornPlants";
-import { type Dot, type GroundJudge, PLANTS_FIRST, PLANTS_FIRST_V1, type PhotoShift, type RowsFromDots, SEQUENCE, SEQUENCE_V1, type Sight, bandAndAlley, courseAt, reconstruct, registerPhotos, rowNumbers, shiftOf } from "@/lib/fieldTwin/plantsFirst";
+import { type Dot, type GroundJudge, PLANTS_FIRST, PLANTS_FIRST_V1, type PhotoShift, type RowsFromDots, SEQUENCE, SEQUENCE_V1, type Sight, bandAndAlley, courseAt, reconstruct, registerPhotos, rowNumbers, shiftOf, SETTLED } from "@/lib/fieldTwin/plantsFirst";
 import { ROW_GUIDED, bandBeatsControls, bandTail, seedSpacing } from "@/lib/fieldTwin/rowGuided";
 import { ROW_POINTS, rowPlantPoints } from "@/lib/rowCrop/greenPoints";
 
@@ -618,6 +618,18 @@ describe("the plant spacing not asked of a dot on a row's line (off by default)"
     expect(learned.rowOf[iNear]).toBe(-1); expect(learned.why[iNear]).toBe(3);
     const both = read(all, { ...SEQUENCE, tooCloseFromField: true, placeOffSpacing: true });
     expect(both.rowOf[iNear]).toBeGreaterThanOrEqual(0); expect(both.offSpacing[iNear]).toBe(1);
+  });
+
+  it("the read-only tap names the test that settled every dot, and agrees with where the dot ended", () => {
+    for (const q of [SEQUENCE, on, { ...on, tooCloseFromField: true }]) {
+      const R = read(dots, q, null, tiers), placed = new Set<number>([SETTLED.certainRow, SETTLED.placedAtSpacing, SETTLED.placedOffSpacing, SETTLED.freePlaced, SETTLED.geometryRow]);
+      for (let i = 0; i < dots.length; i++) { expect(R.settled[i]).not.toBe(SETTLED.none); expect(placed.has(R.settled[i])).toBe(R.rowOf[i] >= 0); }
+      expect(R.settled[iDouble]).toBe(SETTLED.tooClose);
+      // Over seven spacings from the nearest plant on its row: too far, whatever the spacing options say.
+      expect(R.settled[iFar]).toBe(SETTLED.tooFar);
+    }
+    expect(read(dots, on, null, tiers).settled[iOff]).toBe(SETTLED.placedOffSpacing);
+    expect(read(dots, SEQUENCE, null, tiers).settled[iOff]).toBe(SETTLED.offSpacing);
   });
 
   it("is off by default, and off in the rules as they stood", () => {
