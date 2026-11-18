@@ -18,6 +18,8 @@
 //   between neighbouring "plant" labels on a row, measured on the dev tiles' labels alone. Photo Scout's read of the same
 //   photograph (pages/app/PhotoScout.tsx: the same reader on the photograph drawn down to 4096 pixels) is run beside it.
 // --single --touch: beside it, the touching plants (cornLabelLook.ts touchReport), written to <out>/touch.json.
+// --single --cores-on: the same read with the vivid cores on (cornV1.ts CORN_CORES), in the build's read and in Photo
+//                   Scout's; written to <out>/score-single-cores-on.json, pictures P-cores-on-<set>-<tile>.jpg.
 // --single --cores: beside it, the plants of a green piece counted by its vivid cores (cornLabelCores.ts), written to
 //                   <out>/cores.json, with the two close-together tiles drawn in the cores view beside the photograph.
 // --look <dir>: only run d (this branch with the plant spacing not asked) at half the plant spacing, and what the
@@ -56,7 +58,7 @@ import type { GeorefFrame } from "../../src/lib/directGeoref/projection";
 import { compactCornRead } from "../../src/lib/fieldTwin/cornField";
 import { HEADER_BYTES, estimateGsd, parsePhotoHeader } from "../../src/lib/photoScout/exif";
 import { MAX_EDGE_PX } from "../../src/lib/photoScout/decode";
-import { cornV1RowCandidates, readCornV1 } from "../../src/lib/rowCrop/cornV1";
+import { CORN_CORES, cornV1RowCandidates, greenPitchPx, readCornV1 } from "../../src/lib/rowCrop/cornV1";
 import { rowCropParamsFor } from "../../src/lib/rowCrop/params";
 import { cropProfileFor } from "../../src/lib/cropProfiles/registry";
 import { groundToPixel, pixelToGround } from "../../src/lib/directGeoref/projection";
@@ -136,7 +138,7 @@ if (OVERVIEW) {
 }
 
 
-const SINGLE = argv.includes("--single");
+const SINGLE = argv.includes("--single"), CORES_ON = argv.includes("--cores-on"), SUF = CORES_ON ? "-cores-on" : "";
 const CACHE = SINGLE ? "" : arg("cache"), IMAGE = arg("image"), GRID = Number(opt("grid") ?? 4), MISSES = opt("misses");
 if (MISSES) mkdirSync(MISSES, { recursive: true });
 const A = (SINGLE ? { reads: [], twinId: "" } : JSON.parse(readFileSync(arg("analysis"), "utf8"))) as TwinAnalysis, frames = SINGLE ? new Map<string, GeorefFrame>() : framesFromAnalysis(A);
@@ -250,7 +252,8 @@ if (SINGLE) {
   const ex = parsePhotoHeader(bytes.subarray(0, HEADER_BYTES)), est = estimateGsd(ex, { imageWidth: IMG.width });
   const params = rowCropParamsFor(cropProfileFor("corn")!, est.gsdM);
   const full = { width: IMG.width, height: IMG.height, rgba: new Uint8ClampedArray(IMG.data.buffer, IMG.data.byteOffset, IMG.data.byteLength) };
-  const t0 = Date.now(), v = readCornV1(full, params, { enteredCrop: "corn" }), c = compactCornRead(STEM, v, 1), ms = Date.now() - t0;
+  const t0 = Date.now(), v = readCornV1(full, params, { enteredCrop: "corn", cores: CORES_ON }), c = compactCornRead(STEM, v, 1), ms = Date.now() - t0;
+  { const pitch = greenPitchPx(v.green); console.log(`Vivid cores ${CORES_ON ? "ON" : "off"}. Row spacing the green read holds: ${pitch == null ? "none" : `${pitch.toFixed(2)} px`}${CORES_ON && pitch ? `; blurs ${(CORN_CORES.fineShare * pitch).toFixed(2)} and ${(CORN_CORES.wideShare * pitch).toFixed(2)} px, share ${CORN_CORES.share}` : ""}.`); }
   // Whether the read used the dark-leaf rule here (cornV1.ts darkRuleApplies): only then does a build make the lower bar's candidates.
   const darkApplied = v.plants.low != null, plans = v.green.plans.map(p0 => ({ stage: p0.stage, share: Math.round(p0.ownedShare * 1000) / 1000 }));
   console.log(`The green read's plans: ${plans.map(p0 => `${p0.stage} ${(p0.share * 100).toFixed(1)} %`).join(", ") || "none"}. Dark-leaf rule used: ${darkApplied ? "yes" : "no"}.`);
@@ -270,11 +273,11 @@ if (SINGLE) {
     let r = 0, g = 0, b = 0, n = 0; for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) { const q = (yy * IMG.width + xx) * 4; r += IMG.data[q]; g += IMG.data[q + 1]; b += IMG.data[q + 2]; n++; }
     const o = (y * sw + x) * 4; small[o] = r / n; small[o + 1] = g / n; small[o + 2] = b / n; small[o + 3] = 255;
   }
-  const estS = estimateGsd(ex, { imageWidth: sw }), t1 = Date.now(), ps = readCornV1({ width: sw, height: sh, rgba: small }, rowCropParamsFor(cropProfileFor("corn")!, estS.gsdM), { enteredCrop: "corn" }), msS = Date.now() - t1;
+  const estS = estimateGsd(ex, { imageWidth: sw }), t1 = Date.now(), ps = readCornV1({ width: sw, height: sh, rgba: small }, rowCropParamsFor(cropProfileFor("corn")!, estS.gsdM), { enteredCrop: "corn", cores: CORES_ON }), msS = Date.now() - t1;
   console.log(`Photo Scout (drawn down to ${sw} x ${sh}, ${(k * 100).toFixed(1)} %): read in ${msS} ms; scale ${ps.green.gsdM} m a pixel, ${ps.green.scaleBasis}; plant marks ${ps.plants.points.length}; lower-bar marks ${ps.plants.low ? ps.plants.low.length : "not made"}; rows ${ps.rows.length} (${ps.summary.cornRows} corn, ${ps.summary.probableRows} planted, crop not confirmed); weed candidates ${ps.summary.weeds}; stand gaps ${ps.summary.gaps} (${ps.summary.gapsWithheld} withheld).`);
   sets.push({ key: "photoscout", what: `Photo Scout's read: the same reader on the photograph drawn down to ${sw} x ${sh} pixels; its plant marks, brought back to the photograph's own pixels`, title: "PHOTO SCOUT READ: ITS PLANT MARKS", marks: asM(ps.plants.points.map(p0 => [p0.x, p0.y] as [number, number]), 1 / k) });
   const outSets = sets.map(S => {
-    const tiles = DEV.map(t => { const J = judge(t, S.marks, ident, R); draw(t, J, `P-${S.key}-${t.id}.jpg`, S.title, "WHITE RING = THE MARK ON A FOUND PLANT"); return J.score; });
+    const tiles = DEV.map(t => { const J = judge(t, S.marks, ident, R); draw(t, J, `P${SUF}-${S.key}-${t.id}.jpg`, `${S.title}${CORES_ON ? " (VIVID CORES ON)" : ""}`, "WHITE RING = THE MARK ON A FOUND PLANT"); return J.score; });
     console.log(`${S.key}: ${S.marks.length} marks in the photograph`);
     for (const x of tiles) console.log(`  ${x.tile}: labelled ${x.labelled}, found ${x.found[0]}, wrong ${x.wrong[0]}, marks ${x.marks[0]}, on unsure ${x.onUnsure[0]}, at edge ${x.atEdge[0]}, missed ${x.missed}`);
     return { set: S.key, what: S.what, marksInPhoto: S.marks.length, tiles };
@@ -301,7 +304,10 @@ if (SINGLE) {
     // The close-together tiles drawn per size of the blur pair: the photograph on the left, the cores view on the right
     // (brightness = the core strength as a share of the photograph's strongest), the labels and the cores on both.
     const CLOSE = ["r4c2", "r4c4"], Z = 2, HEAD = 190, GAP = 24, YELLOW: Rgb = [255, 230, 40], CYAN: Rgb = [0, 230, 255];
-    coresReport({ out: OUT, px: full, darkApplied, marks: c.plants, tiles: DEV, labels: LAB, judge, R, within, closeTiles: CLOSE, picture: (size, strength, top, cores) => {
+    // --cores-sweep "doubled:8:34,tripled:12:51" --cores-shares 0.15,0.2 --cores-file cores-3.json: another sweep, no pictures.
+    const sweep = opt("cores-sweep"), sizes = sweep ? sweep.split(",").map(x => { const [key, fine, wide] = x.split(":"); return { key, fine: Number(fine), wide: Number(wide) }; }) : undefined, shares = opt("cores-shares")?.split(",").map(Number);
+    coresReport({ out: OUT, px: full, darkApplied, marks: c.plants, tiles: DEV, labels: LAB, judge, R, within, closeTiles: CLOSE, sizes, shares, file: opt("cores-file") ?? undefined, picture: (size, strength, top, cores) => {
+      if (sweep) return;
       for (const t of DEV.filter(x => CLOSE.includes(x.id))) {
         const left = cut(IMG!, t.x, t.y, t.w, t.h, Z, HEAD), cv: Canvas = { w: 2 * left.w + GAP, h: left.h, data: new Uint8Array((2 * left.w + GAP) * left.h * 4) };
         for (let i = 0; i < cv.w * cv.h; i++) { cv.data[i * 4] = 20; cv.data[i * 4 + 1] = 20; cv.data[i * 4 + 2] = 20; cv.data[i * 4 + 3] = 255; }
@@ -326,7 +332,7 @@ if (SINGLE) {
       }
     } });
   }
-  writeFileSync(join(OUT, "score-single.json"), JSON.stringify({ image: IMAGE, width: W, height: H, area: AREA, grid: GRID, devTiles: DEV, labelsRead: { plant: sum(devPlants.map(x => x.length)), unsure: sum([...LAB.values()].map(l => l.filter(p0 => p0.type === "unsure").length)) },
+  writeFileSync(join(OUT, `score-single${SUF}.json`), JSON.stringify({ image: IMAGE, vividCores: CORES_ON, width: W, height: H, area: AREA, grid: GRID, devTiles: DEV, labelsRead: { plant: sum(devPlants.map(x => x.length)), unsure: sum([...LAB.values()].map(l => l.filter(p0 => p0.type === "unsure").length)) },
     labels: { rowDirectionDeg: (th * 180) / Math.PI, pairs: gapsPx.length, pairsWithUnsureLeftOut: withUnsure, lowQuarterPx: sorted[sorted.length >> 2], medianPx: med(gapsPx), highQuarterPx: sorted[(3 * sorted.length) >> 2], rowsPerTile, medianPerTile, newRowBeyondPx: cutPx }, matchPx: R,
     read: { ms, darkRuleApplied: darkApplied, plans, lowerBarForced: forced ? forced.length : null, scaleFromFile: est.gsdM, scaleBasisFromFile: est.basis, gsdM: v.green.gsdM, scaleBasis: v.green.scaleBasis, strict: c.plants.length, low: c.low ? c.low.length : null, rows: v.rows.length, cornRows: v.summary.cornRows, probableRows: v.summary.probableRows, notes: v.notes },
     photoScout: { width: sw, height: sh, share: k, ms: msS, gsdM: ps.green.gsdM, scaleBasis: ps.green.scaleBasis, plantMarks: ps.plants.points.length, low: ps.plants.low ? ps.plants.low.length : null, rows: ps.rows.length, summary: ps.summary, identity: ps.identity, notes: ps.notes, dev: { weedCandidates: weedsDev, weedCandidatesOnALabelledPlant: weedsOnPlant, standGaps: gapsDev, standGapsWithALabelledPlantInside: gapsWithPlants, labelledPlantsInsideGaps: plantsInGaps } },
