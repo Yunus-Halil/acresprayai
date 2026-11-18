@@ -11,7 +11,7 @@ import { rowCropParamsFor } from "../../rowCrop/params";
 import { cropProfileFor } from "../../cropProfiles/registry";
 import { groundSampleAt, type GeorefFrame } from "../../directGeoref/projection";
 import type { PhotoPixels } from "../../photoScout/pattern";
-import { FIELD, FIELD_V2, compactCornRead, cornFieldAndGround, type CornFieldResult, type CornPhotoRead } from "../cornField";
+import { FIELD, FIELD_V2, compactCornRead, cornFieldAndGround, cornFlightGuard, type CornFieldResult, type CornPhotoRead } from "../cornField";
 import { type CornPlants, cornPlantsFirst } from "../cornPlants";
 import type { Pool } from "./pool";
 import { type BuildHooks, type CornVariant, type PhotoSource, checkCancelled } from "./types";
@@ -83,6 +83,10 @@ export async function cornStage(photos: PhotoSource[], frames: Map<string, Geore
   // Reads arrive in completion order; the field does not depend on it, the report and the twin should not either.
   reads.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   failed.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  // The emergence guard over the flight (cornField.ts cornFlightGuard): a photograph that misread its row spacing gives no plants.
+  const guarded = cornFlightGuard(reads);
+  for (const w of guarded.withheld) hooks.log?.(`${w.name}: plant count withheld (${w.reason})`);
+  if (guarded.reads !== reads) { reads.length = 0; reads.push(...guarded.reads); }
   const { field, ground } = cornFieldAndGround(reads, frames, variant ? FIELD_V2 : FIELD);
   hooks.log?.(`corn over the field: ${field.summary.cornRows} corn rows, ${field.summary.probableRows} unconfirmed, ${field.summary.weeds} confirmed weed candidates, ${field.summary.gaps} stand gaps; rows agree within ${field.rowAgreementM != null ? (field.rowAgreementM * 100).toFixed(1) : "?"} cm`);
   for (const n of field.notes.slice(0, -1)) hooks.log?.(`  ${n}`);

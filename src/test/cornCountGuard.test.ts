@@ -2,7 +2,7 @@
 // rows are green over more of their length than the cut gets no plant count, and keeps its rows, gaps and weed verdicts.
 import { describe, expect, it } from "vitest";
 import { renderScene, type Scene } from "../../scripts/cropProfiles/scenes";
-import { compactCornRead } from "@/lib/fieldTwin/cornField";
+import { type CornPhotoRead, compactCornRead, cornFlightGuard } from "@/lib/fieldTwin/cornField";
 import { CORN_COUNT_GUARD, cornV1AsRead, cornV1RowCover, readCornV1, rowGreenCover } from "@/lib/rowCrop/cornV1";
 import { rowCropParamsFor } from "@/lib/rowCrop/params";
 import { cropProfileFor } from "@/lib/cropProfiles/registry";
@@ -79,5 +79,35 @@ describe("the emergence guard (off by default)", { timeout: 120000 }, () => {
 
   it("is never run by the corn-v1.0 comparison read", () => {
     expect(readCornV1(grown, params, { enteredCrop: "corn", baselineSeedlings: true, countGuard: true }).count).toBeUndefined();
+  });
+});
+
+describe("the guard over a flight: a photograph that misread its row spacing", () => {
+  const read = (name: string, spacingPx: number | null, opts: Partial<CornPhotoRead> = {}): CornPhotoRead => ({ name, scale: 1, rows: [], patches: [], gaps: [], plants: [[1, 1], [2, 2]], low: [[3, 3]], guard: { rowGreenShare: 0.3, rowSpacingPx: spacingPx, gsdM: 0.005 }, ...opts });
+  const flight = [read("a", 150), read("b", 152), read("c", 155), read("d", 949), read("e", 60), read("f", 148, { plants: [], countWithheld: true, countReason: "too late for a per-plant count", guard: { rowGreenShare: 0.9, rowSpacingPx: 148, gsdM: 0.005 } })];
+
+  it("drops the marks of a photograph over 1.5 times or under 1/1.5 of the flight's median, and says it misread", () => {
+    expect(CORN_COUNT_GUARD.misreadRatio).toBe(1.5); expect(CORN_COUNT_GUARD.misreadMessage).toBe("row spacing misread");
+    const G = cornFlightGuard(flight);
+    expect(G.medianSpacingM).toBeCloseTo(152 * 0.005, 9);
+    const by = new Map(G.reads.map(r => [r.name, r]));
+    for (const n of ["d", "e"]) { expect(by.get(n)!.plants).toEqual([]); expect(by.get(n)!.low).toBeUndefined(); expect(by.get(n)!.countReason).toBe("row spacing misread"); }
+    for (const n of ["a", "b", "c"]) expect(by.get(n)).toBe(flight.find(r => r.name === n));
+    // A late photograph at the flight's spacing stays withheld as too late.
+    expect(by.get("f")!.countReason).toBe("too late for a per-plant count");
+    expect(G.withheld.map(w => [w.name, w.reason])).toEqual([["d", "row spacing misread"], ["e", "row spacing misread"], ["f", "too late for a per-plant count"]]);
+  });
+
+  it("a photograph the cut withheld as too late is called a misread when its spacing is off", () => {
+    const G = cornFlightGuard([read("a", 150), read("b", 152), read("c", 155), read("d", 949, { plants: [], countWithheld: true, countReason: "too late for a per-plant count" })]);
+    expect(G.withheld).toEqual([expect.objectContaining({ name: "d", reason: "row spacing misread" })]);
+  });
+
+  it("leaves the reads alone where the guard did not run, or with the misread check off (the guard as it stood)", () => {
+    const off = flight.map(({ guard: _g, ...r }) => r as CornPhotoRead);
+    expect(cornFlightGuard(off).reads).toEqual(off);
+    const asItStood = cornFlightGuard(flight, { ...CORN_COUNT_GUARD, misreadRatio: null });
+    expect(asItStood.reads).toEqual(flight);
+    expect(asItStood.withheld.map(w => w.name)).toEqual(["f"]);
   });
 });

@@ -126,6 +126,13 @@ export const CORN_COUNT_GUARD = {
   bandShare: 0.1,
   cut: 0.642,
   message: "too late for a per-plant count",
+  /** Over a flight (fieldTwin/cornField.ts cornFlightGuard, 2026-11-18): a photograph whose row spacing is more than
+   * this many times the flight's median, or less than its inverse, is a misread, not a late photograph. Its marks are
+   * dropped as above and it says `misreadMessage`. null: the guard as it stood (the cut alone). Measured on the private
+   * flight: one photograph read its rows at 949 px apart where the flight's others read about 152 px, and the cut took
+   * it for a late photograph. A photograph alone (Photo Scout) has no flight: the cut alone. */
+  misreadRatio: 1.5 as number | null,
+  misreadMessage: "row spacing misread",
 };
 
 /** The share of each row's length that has green on it: along every row's line, pixel by pixel, whether the mask is
@@ -195,7 +202,7 @@ export type CornV1Read = {
   gaps: CornV1Gap[];
   /** The emergence guard, when it ran (CORN_COUNT_GUARD): the share of the rows' length with green on it, the cut,
    * and whether the plant count is withheld (then `plants.points` is empty, no candidates are made, and a note says so). */
-  count?: { rowGreenShare: number | null; cut: number; withheld: boolean };
+  count?: { rowGreenShare: number | null; cut: number; withheld: boolean; /** The row spacing the measure was read with, photo pixels (cornV1RowCover). */ rowSpacingPx?: number | null };
   /** Whether "corn" could be said at all, and why not. */
   identity: { entered: string | null; spacingChecked: boolean; spacingFits: boolean | null; spacingImpossible: boolean; spacingM: number | null; mainPitchPx: number | null };
   summary: {
@@ -477,7 +484,7 @@ export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1O
   // The emergence guard: past the cut the plant count is withheld; the rows, gaps and weed candidates above stand.
   if (opts.baselineSeedlings ? false : opts.countGuard ?? CORN_COUNT_GUARD.on) {
     const c = cornV1RowCover(px, v, seedlings), withheld = c.share != null && c.share > CORN_COUNT_GUARD.cut;
-    v.count = { rowGreenShare: c.share, cut: CORN_COUNT_GUARD.cut, withheld };
+    v.count = { rowGreenShare: c.share, cut: CORN_COUNT_GUARD.cut, withheld, rowSpacingPx: c.pitchPx };
     if (withheld) {
       v.plants.points = []; for (const r of v.rows) r.plants = null;
       v.notes.unshift(`Plant count withheld: ${CORN_COUNT_GUARD.message}. Green stands on ${Math.round(c.share! * 100)} % of the rows' length; plants are counted one by one up to ${Math.round(CORN_COUNT_GUARD.cut * 100)} %. Rows, gaps and weed candidates are reported as before.`);

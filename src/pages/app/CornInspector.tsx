@@ -9,6 +9,7 @@ import { type GeorefFrame, groundToPixel, pixelToGround } from "@/lib/directGeor
 import { framesFromAnalysis, type TwinAnalysis } from "@/lib/fieldTwin/analysis";
 import { PLANTS_FIRST, PLANTS_FIRST_V1, type PhotoShift, SEQUENCE, SEQUENCE_V1, shiftOf } from "@/lib/fieldTwin/plantsFirst";
 import { CORN_CORES, CORN_COUNT_GUARD } from "@/lib/rowCrop/cornV1";
+import { CORN_CANDIDATE_FINAL3 } from "@/lib/fieldTwin/cornSetups";
 import { fromEnu, toEnu, type LatLngAlt } from "@/lib/sourceFrames/odm";
 
 const API = "/__corn-inspector";
@@ -73,6 +74,8 @@ const PRESETS: { name: string; set: { read: Opts; field: Opts } }[] = [
   // The old rules as cornLabelScore.ts run a and cornScoreboard.ts `base` set them: SEQUENCE_V1, PLANTS_FIRST_V1, no ground, no extents.
   { name: "Old rules", set: { read: { rowSpans: false }, field: { sequence: diffOf(SEQUENCE_V1 as Opts, SEQUENCE as Opts), placing: diffOf(PLANTS_FIRST_V1 as Opts, PLANTS_FIRST as Opts), groundAsked: false } } },
   { name: "Candidate: variant A with the cores", set: { read: { cores: true }, field: { sequence: { placeOffSpacing: true, offSpacingStricterOnly: true } } } },
+  // The setup frozen for FINAL-3.md (fieldTwin/cornSetups.ts).
+  { name: CORN_CANDIDATE_FINAL3.name, set: { read: CORN_CANDIDATE_FINAL3.read, field: CORN_CANDIDATE_FINAL3.field as Opts } },
 ];
 const sortDeep = (v: unknown): unknown => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v as Opts).sort().map(k => [k, sortDeep((v as Opts)[k])])) : v);
 const same = (a: unknown, b: unknown) => JSON.stringify(sortDeep(a)) === JSON.stringify(sortDeep(b));

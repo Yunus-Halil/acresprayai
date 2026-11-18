@@ -1,0 +1,87 @@
+{
+ "read": {
+  "cores": true,
+  "coresReference": "marks",
+  "countGuard": true,
+  "rowSpans": true
+ },
+ "field": {
+  "free": false,
+  "fieldSeed": true,
+  "groundAsked": true
+ },
+ "CORN_CORES": {
+  "on": true,
+  "fineShare": 0.0566,
+  "wideShare": 0.2405,
+  "reference": "marks",
+  "factor": 0.4,
+  "share": 0.15
+ },
+ "CORN_COUNT_GUARD": {
+  "on": true,
+  "bandShare": 0.1,
+  "cut": 0.642,
+  "message": "too late for a per-plant count",
+  "misreadRatio": 1.5,
+  "misreadMessage": "row spacing misread"
+ },
+ "SEQUENCE": {
+  "certainViews": 3,
+  "certainShare": 0.3,
+  "minCertainRowM": 3,
+  "probableTol": 0.3,
+  "slotTol": 0.15,
+  "minRowDensityShare": 0.4,
+  "gapSeeds": 2.5,
+  "maxGapSeeds": 4,
+  "gapRisk": 0.05,
+  "fitTol": 0.1,
+  "joinTol": 0.12,
+  "localM": 8,
+  "maxBridgeM": 8,
+  "free": false,
+  "freeAcrossShare": 0.07,
+  "freeMinSeeds": 0.7,
+  "patternCellsOnly": true,
+  "refuseScattered": true,
+  "alleyTest": "row",
+  "alleyControlShare": 0.5,
+  "betweenOffLines": true,
+  "spacingRulesNeedASpacing": true,
+  "sweepLoneMarks": false,
+  "loneMarkCompany": "located",
+  "placeOffSpacing": true,
+  "offSpacingStricterOnly": true,
+  "tooCloseFromField": false,
+  "tooCloseQuantile": 0.05
+ },
+ "PLANTS_FIRST": {
+  "reachM": 0.3,
+  "gridU": 6,
+  "gridV": 4,
+  "tilt": true,
+  "tiltMinCells": 16,
+  "tiltMustHelp": true,
+  "planeGridU": 4,
+  "planeGridV": 3,
+  "seedNeedsAPeak": true,
+  "minVotes": 40,
+  "rounds": 5,
+  "backgroundM": 0.12,
+  "gateTimes": 2.5,
+  "gateMin": 0.025,
+  "gateMax": 0.06,
+  "windowM": 6,
+  "minDotsPerM": 1,
+  "onRowShare": 0.12
+ },
+ "ROW_RECALL": {
+  "exclM": 0.06,
+  "sameMarkM": 0.03,
+  "gateAlongM": 0.09,
+  "gateAcrossM": 0.045,
+  "sharpDeg": 20,
+  "anyView": false
+ }
+}

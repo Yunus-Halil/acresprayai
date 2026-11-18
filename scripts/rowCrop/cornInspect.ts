@@ -25,7 +25,7 @@ import { decodeImage, encodeJpeg, encodePng } from "../bench/images";
 import { groundSampleAt, type GeorefFrame } from "../../src/lib/directGeoref/projection";
 import { framesFromAnalysis, type TwinAnalysis } from "../../src/lib/fieldTwin/analysis";
 import { cornPhotoRead } from "../../src/lib/fieldTwin/build/corn";
-import { FIELD, type CornPhotoRead, compactCornRead, cornFieldAndGround } from "../../src/lib/fieldTwin/cornField";
+import { FIELD, type CornPhotoRead, compactCornRead, cornFieldAndGround, cornFlightGuard } from "../../src/lib/fieldTwin/cornField";
 import { type CornPlantsOptions, cornPlantsOf, placeDots, readRows } from "../../src/lib/fieldTwin/cornPlants";
 import { PLANTS_FIRST, SEQUENCE, SETTLED, certainEvidence } from "../../src/lib/fieldTwin/plantsFirst";
 import { CORN_CORES, CORN_COUNT_GUARD, cornV1AsRead, cornV1CoresAsked, cornV1PlantCache, cornV1RowCover, greenPitchPx, readCornV1 } from "../../src/lib/rowCrop/cornV1";
@@ -58,11 +58,12 @@ const flightRead = (name: string, px: ReturnType<typeof pixelsOf>, gsd: number |
 /** The field and the plants, as build/corn.ts cornStage makes them, with the field options asked. */
 function field(A: TwinAnalysis, readsDir: string) {
   const frames = framesFromAnalysis(A), dir = join(readsDir, "reads");
-  const reads: CornPhotoRead[] = A.reads.map(r => join(dir, `${r.name}.json`)).filter(existsSync).map(p => JSON.parse(readFileSync(p, "utf8")));
+  // As the build: the guard over the flight (cornField.ts cornFlightGuard), then the field.
+  const G = cornFlightGuard(A.reads.map(r => join(dir, `${r.name}.json`)).filter(existsSync).map(p => JSON.parse(readFileSync(p, "utf8")) as CornPhotoRead)), reads = G.reads;
   const { field: F, ground } = cornFieldAndGround(reads, frames, FIELD);
   const opts: CornPlantsOptions = { ground: FOPT.groundAsked === false ? null : ground, ...(FOPT.sequence ? { sequence: { ...SEQUENCE, ...FOPT.sequence } } : {}), ...(FOPT.placing ? { placing: { ...PLANTS_FIRST, ...FOPT.placing } } : {}), ...(FOPT.free != null ? { free: FOPT.free } : {}), ...(FOPT.fieldSeed != null ? { fieldSeed: FOPT.fieldSeed } : {}) };
   const P = placeDots(reads, frames, F, opts), rec = P ? readRows(P, F, opts) : null, plants = P && rec ? cornPlantsOf(P, rec, F, opts) : null;
-  return { A, frames, reads, F, ground, opts, P, rec, plants };
+  return { A, frames, reads, F, ground, opts, P, rec, plants, guard: G };
 }
 
 // ------------------------------------------------------------------------------------------------------------ reads
@@ -85,13 +86,13 @@ if (job === "reads") {
 if (job === "field") {
   const A = JSON.parse(readFileSync(arg("analysis"), "utf8")) as TwinAnalysis, OUT = arg("out"), t0 = Date.now();
   mkdirSync(OUT, { recursive: true });
-  const { reads, F, ground, opts, P, rec, plants } = field(A, arg("reads"));
+  const { reads, F, ground, opts, P, rec, plants, guard } = field(A, arg("reads"));
   console.log(`${reads.length} of ${A.reads.length} photographs read; field and plants ${Date.now() - t0} ms; ${P ? P.all.length : 0} dots`);
   const q = opts.sequence ?? SEQUENCE;
   // Big arrays go in a binary file beside a small JSON that says where each is.
   const bins: { name: string; type: "f32" | "f64" | "i32" | "u8"; data: ArrayBufferView }[] = [];
   const put = (name: string, type: "f32" | "f64" | "i32" | "u8", data: ArrayLike<number>) => bins.push({ name, type, data: type === "f32" ? Float32Array.from(data) : type === "f64" ? Float64Array.from(data) : type === "i32" ? Int32Array.from(data) : Uint8Array.from(data) });
-  let meta: Record<string, unknown> = { analysis: arg("analysis"), readOptions: READ, fieldOptions: FOPT, photographsRead: reads.length, photographs: A.reads.length, fieldOptionsOfTheRecordEqualFIELD: JSON.stringify(A.fieldOptions ?? null) === JSON.stringify(FIELD) };
+  let meta: Record<string, unknown> = { analysis: arg("analysis"), readOptions: READ, fieldOptions: FOPT, guard: { medianSpacingM: guard.medianSpacingM, withheld: guard.withheld }, photographsRead: reads.length, photographs: A.reads.length, fieldOptionsOfTheRecordEqualFIELD: JSON.stringify(A.fieldOptions ?? null) === JSON.stringify(FIELD) };
   if (P && rec) {
     const n = P.all.length, S = P.sights!;
     // The ground the field judged, sampled on a grid (state), and its detail on a coarser one.

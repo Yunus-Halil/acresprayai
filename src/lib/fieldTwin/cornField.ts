@@ -37,6 +37,7 @@
 //
 // Everything is review-only decision support: the outputs are rows, identities and candidate findings with the
 // photographs behind each; nothing decides a treatment.
+import { CORN_COUNT_GUARD } from "../rowCrop/cornV1";
 import { fromEnu, toEnu, type LatLngAlt } from "../sourceFrames/odm";
 import { frameFootprint, groundSampleAt, groundToPixel, pixelToGround, type GeorefFrame } from "../directGeoref/projection";
 import { reconcile, type Observation } from "../directGeoref/reconcile";
@@ -148,8 +149,13 @@ export type CornPhotoRead = {
   gaps: { x1: number; y1: number; x2: number; y2: number; verdict: "stand gap" | "withheld" }[];
   /** Plants the plant read located (read pixels). */
   plants: [number, number][];
-  /** The read withheld its plant count (cornV1.ts CORN_COUNT_GUARD: too late for a per-plant count): `plants` is empty. */
+  /** The read withheld its plant count (cornV1.ts CORN_COUNT_GUARD): `plants` is empty. Why: `countReason`. */
   countWithheld?: boolean;
+  /** Why the count is withheld: CORN_COUNT_GUARD.message (too late), or misreadMessage (set over a flight, cornFlightGuard). */
+  countReason?: string;
+  /** What the guard read (only when it ran): the share of the rows' length under green, the row spacing in the
+   * photograph's pixels, and the pixel size the read used (metres). */
+  guard?: { rowGreenShare: number | null; rowSpacingPx: number | null; gsdM: number | null };
   /** Candidates for the field's rows at the lower bar (read pixels; a photograph of seedlings on soil only). Only ever
    * used along a row the plants above made (cornPlants.ts): absent in reads made before 2026-11-16. */
   low?: [number, number][];
@@ -158,6 +164,21 @@ export type CornPhotoRead = {
    * long ones at the plant spacing it measured (cornPlants.ts). */
   lowSpan?: [number, number][]; lowAxis?: [number, number];
 };
+
+/**
+ * The emergence guard over a flight (cornV1.ts CORN_COUNT_GUARD.misreadRatio): a photograph whose row spacing, in
+ * metres, is more than `misreadRatio` times the median of the flight's photographs, or less than its inverse, read its
+ * rows wrongly. Its marks are dropped (as a withheld count) and its reason is `misreadMessage`, also where the cut had
+ * already withheld it as too late. Its rows, gaps and weed candidates stay. Reads the guard did not run on (no
+ * `guard`: it was off for them), and every read while `misreadRatio` is null, pass unchanged.
+ */
+export function cornFlightGuard(reads: CornPhotoRead[], o = CORN_COUNT_GUARD): { reads: CornPhotoRead[]; medianSpacingM: number | null; withheld: { name: string; reason: string; rowSpacingM: number | null; ratio: number | null; rowGreenShare: number | null }[] } {
+  const spacingM = (r: CornPhotoRead) => (r.guard?.rowSpacingPx && r.guard.gsdM ? r.guard.rowSpacingPx * r.scale * r.guard.gsdM : null);
+  const sp = reads.map(spacingM).filter((x): x is number => x != null).sort((a, b) => a - b), med = sp.length ? sp[sp.length >> 1] : null;
+  const misread = (r: CornPhotoRead) => { const s = spacingM(r); return o.misreadRatio != null && med != null && s != null && (s > o.misreadRatio * med || s < med / o.misreadRatio); };
+  const out = reads.map(r => (misread(r) ? { ...r, plants: [], low: undefined, lowSpan: undefined, lowAxis: undefined, countWithheld: true, countReason: o.misreadMessage } : r));
+  return { reads: out, medianSpacingM: med, withheld: out.filter(r => r.countWithheld).map(r => { const s = spacingM(r); return { name: r.name, reason: r.countReason ?? o.message, rowSpacingM: s, ratio: s != null && med ? s / med : null, rowGreenShare: r.guard?.rowGreenShare ?? null }; }) };
+}
 
 /** The compact form of a Corn V1 read for the field. */
 export function compactCornRead(name: string, v: CornV1Read, scale = 1): CornPhotoRead {
@@ -168,7 +189,8 @@ export function compactCornRead(name: string, v: CornV1Read, scale = 1): CornPho
     patches: v.green.weeds.flatMap((w, i) => { const vd = verdictOf.get(i); return vd ? [{ x: w.x, y: w.y, hull: w.hull, touchesEdge: w.touchesEdge, verdict: vd }] : []; }),
     gaps: v.gaps.map(g => ({ x1: g.x1, y1: g.y1, x2: g.x2, y2: g.y2, verdict: g.verdict })),
     plants: v.plants.points.map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]),
-    ...(v.count?.withheld ? { countWithheld: true } : {}),
+    ...(v.count?.withheld ? { countWithheld: true, countReason: CORN_COUNT_GUARD.message } : {}),
+    ...(v.count ? { guard: { rowGreenShare: v.count.rowGreenShare, rowSpacingPx: v.count.rowSpacingPx ?? null, gsdM: Number.isFinite(v.green.gsdM) ? v.green.gsdM : null } } : {}),
     ...(v.plants.low ? { low: v.plants.low.map(p => [Math.round(p.x), Math.round(p.y)] as [number, number]) } : {}),
     ...(v.plants.low && v.plants.lowSpan && v.plants.lowAxis ? { lowSpan: v.plants.lowSpan.map(([a, b]) => [Math.round(a * 10) / 10, Math.round(b * 10) / 10] as [number, number]), lowAxis: v.plants.lowAxis } : {}),
   };
