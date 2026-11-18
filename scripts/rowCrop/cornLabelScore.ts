@@ -18,6 +18,8 @@
 //   between neighbouring "plant" labels on a row, measured on the dev tiles' labels alone. Photo Scout's read of the same
 //   photograph (pages/app/PhotoScout.tsx: the same reader on the photograph drawn down to 4096 pixels) is run beside it.
 // --single --touch: beside it, the touching plants (cornLabelLook.ts touchReport), written to <out>/touch.json.
+// --single --cores: beside it, the plants of a green piece counted by its vivid cores (cornLabelCores.ts), written to
+//                   <out>/cores.json, with the two close-together tiles drawn in the cores view beside the photograph.
 // --look <dir>: only run d (this branch with the plant spacing not asked) at half the plant spacing, and what the
 //   photograph's own read measures of the green under every dot of the dev tiles (cornLabelLook.ts lookReport).
 // --misses <dir>: only run b (this branch, the sweep off) at half the plant spacing, judged as below, and then why its
@@ -66,6 +68,7 @@ import { SEEDLING_GREEN, SEEDLING_ROW, seedlingCache } from "../../src/lib/rowCr
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
 import { diagnose } from "./cornLabelMisses";
 import { lookReport, touchReport } from "./cornLabelLook";
+import { coresReport } from "./cornLabelCores";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? null : argv[i + 1]; };
@@ -293,6 +296,35 @@ if (SINGLE) {
   if (argv.includes("--touch")) {
     const T = touchReport({ out: OUT, px: full, darkApplied, marks: c.plants, tiles: DEV, labels: LAB, judge, R, within });
     for (const t of DEV) draw(t, judge(t, T.cutMarks, ident, R), `P-cut-${t.id}.jpg`, "STRICTER BAR, EVERY LONG PIECE CUT INTO EQUAL PARTS (MEASURED ONLY)", "WHITE RING = THE MARK ON A FOUND PLANT");
+  }
+  if (argv.includes("--cores")) {
+    // The close-together tiles drawn per size of the blur pair: the photograph on the left, the cores view on the right
+    // (brightness = the core strength as a share of the photograph's strongest), the labels and the cores on both.
+    const CLOSE = ["r4c2", "r4c4"], Z = 2, HEAD = 190, GAP = 24, YELLOW: Rgb = [255, 230, 40], CYAN: Rgb = [0, 230, 255];
+    coresReport({ out: OUT, px: full, darkApplied, marks: c.plants, tiles: DEV, labels: LAB, judge, R, within, closeTiles: CLOSE, picture: (size, strength, top, cores) => {
+      for (const t of DEV.filter(x => CLOSE.includes(x.id))) {
+        const left = cut(IMG!, t.x, t.y, t.w, t.h, Z, HEAD), cv: Canvas = { w: 2 * left.w + GAP, h: left.h, data: new Uint8Array((2 * left.w + GAP) * left.h * 4) };
+        for (let i = 0; i < cv.w * cv.h; i++) { cv.data[i * 4] = 20; cv.data[i * 4 + 1] = 20; cv.data[i * 4 + 2] = 20; cv.data[i * 4 + 3] = 255; }
+        for (let y = 0; y < left.h; y++) cv.data.set(left.data.subarray(y * left.w * 4, (y + 1) * left.w * 4), y * cv.w * 4);
+        const X0 = left.w + GAP;
+        for (let y = 0; y < t.h * Z; y++) for (let x = 0; x < t.w * Z; x++) { const g = Math.min(255, Math.round((255 * strength[(t.y + Math.floor(y / Z)) * W + t.x + Math.floor(x / Z)]) / top)), q = ((y + HEAD) * cv.w + X0 + x) * 4; cv.data[q] = g; cv.data[q + 1] = g; cv.data[q + 2] = g; }
+        const labs = LAB.get(t.id)!, inT = cores.filter(k => within(t, k.x, k.y)), n = (sh: number) => inT.filter(k => k.s >= sh).length;
+        for (const side of [0, X0]) {
+          for (const l of labs) { const x = (l.x - t.x) * Z + side, y = (l.y - t.y) * Z + HEAD; if (l.type === "plant") ring(cv, x, y, 11, 2, CYAN); else cross(cv, x, y, 7, 2, VIOLET); }
+          for (const k of inT) disc(cv, (k.x - t.x) * Z + side, (k.y - t.y) * Z + HEAD, 4, k.s >= 0.45 ? RED : k.s >= 0.35 ? ORANGE : YELLOW);
+        }
+        for (let i = 0; i < cv.w * HEAD; i++) { cv.data[i * 4] = 20; cv.data[i * 4 + 1] = 20; cv.data[i * 4 + 2] = 20; }
+        const leg: [Rgb, string][] = [
+          [WHITE, `TILE ${t.id} OF PHOTO ${TAG} (X ${t.x}-${t.x + t.w}, Y ${t.y}-${t.y + t.h}). LEFT: THE PHOTO. RIGHT: THE CORES VIEW, BLUR ${size.fine} PX LESS ${size.wide} PX (${size.key})`],
+          [CYAN, `BLUE RING = A PLANT YOU LABELLED: ${labs.filter(l => l.type === "plant").length}. VIOLET CROSS = YOUR UNSURE LABEL: ${labs.filter(l => l.type === "unsure").length}`],
+          [RED, `RED SPOT = A CORE AT 0.45 OF THE PHOTO STRONGEST CORE OR OVER: ${n(0.45)}`],
+          [ORANGE, `ORANGE SPOT = A CORE FROM 0.35 TO 0.45: ${n(0.35) - n(0.45)} (AT SHARE 0.35 THE CORES ARE RED + ORANGE: ${n(0.35)})`],
+          [YELLOW, `YELLOW SPOT = A CORE FROM 0.25 TO 0.35: ${n(0.25) - n(0.35)} (AT SHARE 0.25 THE CORES ARE ALL THREE: ${n(0.25)})`],
+        ];
+        leg.forEach(([col, str], li) => text(cv, 12, 12 + li * 34, str, 3, col));
+        writeFileSync(join(OUT, `C-${size.key}-${t.id}.jpg`), encodeJpeg({ width: cv.w, height: cv.h, data: cv.data }, 88));
+      }
+    } });
   }
   writeFileSync(join(OUT, "score-single.json"), JSON.stringify({ image: IMAGE, width: W, height: H, area: AREA, grid: GRID, devTiles: DEV, labelsRead: { plant: sum(devPlants.map(x => x.length)), unsure: sum([...LAB.values()].map(l => l.filter(p0 => p0.type === "unsure").length)) },
     labels: { rowDirectionDeg: (th * 180) / Math.PI, pairs: gapsPx.length, pairsWithUnsureLeftOut: withUnsure, lowQuarterPx: sorted[sorted.length >> 2], medianPx: med(gapsPx), highQuarterPx: sorted[(3 * sorted.length) >> 2], rowsPerTile, medianPerTile, newRowBeyondPx: cutPx }, matchPx: R,
