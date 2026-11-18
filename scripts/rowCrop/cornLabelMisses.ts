@@ -188,17 +188,24 @@ export function diagnose(X: MissCtx) {
   });
   const loneHash = new Hash(loneX, loneY, 0.1);
   // Every lower-bar point of every photograph (also those that are a stricter mark of their own photograph again), for part 2.
-  const lowE: number[] = [], lowN: number[] = [], lowP: number[] = [], lowCand: number[] = [];
+  const lowE: number[] = [], lowN: number[] = [], lowP: number[] = [], lowCand: number[] = [], lowPiece: number[] = [];
+  let pieceBase = 0;
   const splitSeed = opts.fieldSeed === false ? ROW_POINTS.seedM : P.pre.seedM ?? ROW_POINTS.seedM;
   let lowPhotos = 0;
   for (const r of reads.filter(x => x.low?.length)) {
     const p = pOf.get(r.name), fr = frames.get(r.name); if (p == null || !fr) continue;
     lowPhotos++;
-    for (const [x, y] of candidatePoints(r, fr, F.origin, splitSeed)) {
+    // The piece of green each point comes from (a piece long along the rows is split into several points): the same call, one piece at a time.
+    const pts = candidatePoints(r, fr, F.origin, splitSeed), pieceOfPt: number[] = [];
+    (r.low ?? []).forEach((_, li) => { const one = candidatePoints({ ...r, low: [r.low![li]], ...(r.lowSpan ? { lowSpan: [r.lowSpan[li]] } : {}) }, fr, F.origin, splitSeed); for (let k = 0; k < one.length; k++) pieceOfPt.push(pieceBase + li); });
+    if (pieceOfPt.length !== pts.length) throw new Error(`${r.name}: the pieces counted one at a time (${pieceOfPt.length}) are not the points made together (${pts.length})`);
+    pieceBase += (r.low ?? []).length;
+    for (let pt = 0; pt < pts.length; pt++) {
+      const [x, y] = pts[pt];
       const u = x * r.scale, v = y * r.scale, g = pixelToGround(fr, u, v); if (!g) continue;
       const [e0, n0] = toEnu({ lat: g.lat, lng: g.lng, altM: 0 }, F.origin), [de, dn] = shiftOf(P.shifts[p], u, v), e = e0 + de, nn = n0 + dn;
       let same = -1; loneHash.near(e, nn, RC.sameMarkM, k => { if (loneP[k] === p) same = k; });
-      lowE.push(e); lowN.push(nn); lowP.push(p);
+      lowE.push(e); lowN.push(nn); lowP.push(p); lowPiece.push(pieceOfPt[pt]);
       if (same >= 0) { lowCand.push(-1); continue; }
       lowCand.push(ce.length);
       ce.push(e); cn.push(nn); cp.push(p); sharp.push(offNadir(fr, u, v) <= RC.sharpDeg ? 1 : 0); bar.push(1);
@@ -224,6 +231,31 @@ export function diagnose(X: MissCtx) {
     say(`CHECK 2: the candidates followed again are the rules' own: ${k} candidate dots against ${n - strict}, ${bad} that differ in place or photographs (must be 0). ${lowPhotos} of ${photos.length} photographs carry marks at the lower bar; ${ce.length} candidate points (${bar.filter(b => !b).length} stricter marks only one photograph made, ${bar.filter(b => b).length} marks at the lower bar), ${fate.filter(x => x === 1).length} left out as a plant the stricter marks already made, ${fate.filter(x => x === 2).length} dropped as one photograph outside its sharp view.`);
     if (bad || k !== n - strict) throw new Error("the candidates followed here are not the rules' candidates");
   }
+  // ---- PART 2 of the second brief, measured only: "one photograph marked both, as two separate marks".
+  // A photograph's marks on a dot: its stricter mark that is in the dot (plantsFirst.ts:305-317), its stricter mark left
+  // out as that dot's plant again (plantsFirst.ts:378), and the same two for its marks at the lower bar (a candidate
+  // dot: the marks joined into it, plantsFirst.ts:383-388). A lower-bar mark within sameMarkM of a stricter mark of its
+  // own photograph is that mark again and is not counted twice.
+  type PhotoMark = { p: number; strict: boolean; piece: number; /** Joined into the dot itself (not a mark left out as that dot's plant again). */ member: boolean };
+  const marksOf = new Map<number, PhotoMark[]>(), addMark = (d: number, m: PhotoMark) => { (marksOf.get(d) ?? marksOf.set(d, []).get(d)!).push(m); };
+  sights.forEach((sg, i) => { if (sightDot[i] >= 0) addMark(sightDot[i], { p: sg.p, strict: true, piece: -1, member: true }); });
+  {
+    const sH = new Hash(sx, sy, 0.1), candLow = new Int32Array(ce.length).fill(-1); lowCand.forEach((c, k) => { if (c >= 0) candLow[c] = k; });
+    for (let c = 0; c < ce.length; c++) {
+      if (fate[c] !== 1 && fate[c] !== 3) continue;
+      if (!bar[c]) { addMark(to[c], { p: cp[c], strict: true, piece: -1, member: fate[c] === 3 }); continue; }
+      let again = false; sH.near(ce[c], cn[c], RC.sameMarkM, k => { if (sights[k].p === cp[c]) again = true; });
+      if (!again) addMark(to[c], { p: cp[c], strict: false, piece: lowPiece[candLow[c]], member: fate[c] === 3 });
+    }
+  }
+  /** Whether a photograph marked both dots as two separate marks. `separate`: by either bar, two points split from one
+   * piece of green not counted as two marks; `strictOnly`: two stricter marks; `splitCounts`: either bar, split points counted. */
+  const sameView = (d: number, b: number) => {
+    const A1 = marksOf.get(d) ?? [], B1 = marksOf.get(b) ?? [], photosB = new Map<number, PhotoMark[]>(); for (const m of B1) (photosB.get(m.p) ?? photosB.set(m.p, []).get(m.p)!).push(m);
+    const sep = new Set<number>(), str = new Set<number>(), spl = new Set<number>(), mem = new Set<number>();
+    for (const a of A1) for (const m of photosB.get(a.p) ?? []) { spl.add(a.p); if (a.member && m.member) mem.add(a.p); if (a.strict && m.strict) str.add(a.p); if (a.strict || m.strict || a.piece !== m.piece) sep.add(a.p); }
+    return { separate: sep.size > 0, membersOnly: mem.size > 0, photosMembers: mem.size, strictOnly: str.size > 0, splitCounts: spl.size > 0, photosSeparate: sep.size, photosOfDot: new Set(A1.map(m => m.p)).size, photosOfPlant: new Set(B1.map(m => m.p)).size };
+  };
   const sightHash = new Hash(sx, sy, 0.1), lowHash = new Hash(lowE, lowN, 0.1), allDotHash = new Hash(dots.map(d => d.e), dots.map(d => d.n), 0.1);
 
   // ---- The dev tiles, judged as the score judges them.
@@ -288,7 +320,7 @@ export function diagnose(X: MissCtx) {
       if (candNoRowNear.length) {
         // Its own dot of the second look, within the matching distance, on no row: the rule that refused that dot.
         const d = candNoRowNear[0][1], bl = blocker[d], bm = bl >= 0 ? J.ms.findIndex(k => k.i === bl) : -1; r2 = reasonOf(d);
-        detail = { candidateDot: true, dotFromLabelCm: cm(candNoRowNear[0][0]), ...dotFacts(d), ruleBlockerIs: bl < 0 ? null : bm < 0 ? "not in this tile's marks" : J.state[bm] === 1 ? "a mark on another labelled plant" : J.state[bm] === 2 ? "a mark on an unsure label" : J.state[bm] === 0 ? "a wrong mark" : "a mark at the tile's edge, not judged", labelOfTheRuleBlockerCm: bm >= 0 && labelOfMark[bm] >= 0 ? cm(Math.hypot(plants[labelOfMark[bm]].e - pl.e, plants[labelOfMark[bm]].n - pl.n)) : null, ...takenToo };
+        detail = { candidateDot: true, dotFromLabelCm: cm(candNoRowNear[0][0]), ...dotFacts(d), test: bl >= 0 ? sameView(d, bl) : null, ruleBlockerIs: bl < 0 ? null : bm < 0 ? "not in this tile's marks" : J.state[bm] === 1 ? "a mark on another labelled plant" : J.state[bm] === 2 ? "a mark on an unsure label" : J.state[bm] === 0 ? "a wrong mark" : "a mark at the tile's edge, not judged", labelOfTheRuleBlockerCm: bm >= 0 && labelOfMark[bm] >= 0 ? cm(Math.hypot(plants[labelOfMark[bm]].e - pl.e, plants[labelOfMark[bm]].n - pl.n)) : null, ...takenToo };
       } else if (taken.length || onRowNear.length) {
         r2 = P2.TWO; const j = taken.length ? taken[0][1] : -1;
         detail = { ...takenToo, markTier: j >= 0 ? TIER[J.ms[j].tier] : null };
@@ -313,7 +345,7 @@ export function diagnose(X: MissCtx) {
       if (!nrIn[j]) return;
       const d = k.i!, L = lineNear(A[d], C[d]);
       const cls = takenP[j] >= 0 ? "plant with no mark" : takenU[j] >= 0 ? "unsure" : plants.some(p => Math.hypot(p.e - k.e, p.n - k.n) <= R) ? "plant, a second dot" : edgeOf(t, k, J.pad) ? "neither, at the edge" : "neither";
-      part3.push({ tile: t.id, planted: plants.length > 0, dot: d, cls, code: reasonOf(d).code, acrossCm: L && L.reaches ? cm(L.acrossM) : null, photosSaw: dots[d].photos, photosLooked: P.covered[d], ground: GROUND[state(d)] });
+      part3.push({ tile: t.id, planted: plants.length > 0, dot: d, cls, code: reasonOf(d).code, test: blocker[d] >= 0 && (why[d] === 2 || why[d] === 3) ? sameView(d, blocker[d]) : null, measuredFromTier: blocker[d] < 0 ? null : blocker[d] >= strict ? "second look" : rec.certainty[blocker[d]] === 0 ? "certain" : "probable", acrossCm: L && L.reaches ? cm(L.acrossM) : null, photosSaw: dots[d].photos, photosLooked: P.covered[d], ground: GROUND[state(d)] });
     });
     // 4. The wrong marks on a tile with no labelled plant.
     if (!plants.length) J.ms.forEach((k, j) => {
