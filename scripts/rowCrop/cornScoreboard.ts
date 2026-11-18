@@ -32,6 +32,7 @@ import { type CornPlantsOptions, cornPlantsOf, placeDots, readRows } from "../..
 import { framesFromAnalysis, type TwinAnalysis } from "../../src/lib/fieldTwin/analysis";
 import { PLANTS_FIRST, PLANTS_FIRST_V1, ROW_RECALL, SEQUENCE, SEQUENCE_V1, type Dot, bandAndAlley, courseAt, coverage } from "../../src/lib/fieldTwin/plantsFirst";
 import { ROW_GUIDED, bandBeatsControls } from "../../src/lib/fieldTwin/rowGuided";
+import { CORN_CANDIDATE_FINAL3 } from "../../src/lib/fieldTwin/cornSetups";
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
 
 const argv = process.argv.slice(2);
@@ -82,6 +83,7 @@ const VARIANTS: Record<string, Variant> = {
   p7other: { what: "the final sweep with the other company: " + (SEQUENCE.loneMarkCompany === "certain" ? "a certain or a probable plant" : "a certain plant only"), spans: true, opts: ground => ({ sequence: { ...SEQUENCE, loneMarkCompany: SEQUENCE.loneMarkCompany === "certain" ? "located" as const : "certain" as const }, ground, placing: PLANTS_FIRST }) },
   // 2026-11-17: the plant spacing not asked of a dot on a row's line (SEQUENCE.placeOffSpacing), off by default.
   p8: { what: "the rules as they stand now + the plant spacing not asked of a dot on a row's line (placeOffSpacing)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true }, ground, placing: PLANTS_FIRST }) },
+  final3: { what: "the setup frozen for FINAL-3 (fieldTwin/cornSetups.ts CORN_CANDIDATE_FINAL3): its field options; the reads must be read with its read options (cornPresetFlight.ts)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, ...CORN_CANDIDATE_FINAL3.field.sequence }, ground, placing: PLANTS_FIRST }) },
   p9: { what: "p8, the stricter marks' dots only (offSpacingStricterOnly)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true, offSpacingStricterOnly: true }, ground, placing: PLANTS_FIRST }) },
   p10: { what: "p8 with the too-close limit learned from the field (tooCloseFromField)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true, tooCloseFromField: true }, ground, placing: PLANTS_FIRST }) },
   p11: { what: "p8 with both: the stricter marks' dots only, and the too-close limit learned from the field", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true, offSpacingStricterOnly: true, tooCloseFromField: true }, ground, placing: PLANTS_FIRST }) },

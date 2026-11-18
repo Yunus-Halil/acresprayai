@@ -83,6 +83,9 @@ export type GreenPoints = {
   workFactor: number;
   /** With the vivid cores asked for: the points added from them (they follow the read's own points in `points`). */
   coresAdded?: number; coresInfo?: CoresInfo;
+  /** Read only, per point: which views found it (bit 1 the green, bit 2 a vivid core). Cores are paired with points
+   * only in a piece that holds more cores than points; elsewhere a point says green alone. */
+  foundBy?: Uint8Array;
 };
 
 /**
@@ -91,7 +94,7 @@ export type GreenPoints = {
  * piece that holds more cores than points, each point takes its nearest core (one to one, nearest pairs first) and the
  * cores left over are added as points, so the piece carries as many points as it has cores. Cover gets none.
  */
-export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedlings?: SeedlingCache, cores: CoresAsked | null = null): GreenPoints {
+export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedlings?: SeedlingCache, cores: CoresAsked | null = null, view: { strength: Float32Array; top: number } | null = null): GreenPoints {
   const W = px.width, H = px.height, f = Math.max(1, Math.round(Math.max(W, H) / o.workLongSide));
   // The mask the emergence reader also reads: from the photograph's shared cache when there is one.
   const full = sharedSeedlingMask(seedlings, px);
@@ -176,10 +179,14 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
     for (const [n, bxs, bys] of bins.values()) if (n >= minPiece) { points.push(toPhoto(bxs / n, bys / n)); pieceOf.push(id); }
     if (points.length > o.maxPoints) break;
   }
-  if (!cores || points.length > o.maxPoints) return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f };
+  // Which views found each point (read only): 1 the green; 2 a vivid core (a point the cores add, or one that took a core).
+  const foundBy = new Uint8Array(points.length).fill(1);
+  if (!cores || points.length > o.maxPoints) return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, foundBy };
   // The vivid cores (greenCores.ts), each in the piece under it or the nearest within reach.
   const pointsIn = new Map<number, number[]>(); pieceOf.forEach((id, k) => (pointsIn.get(id) ?? pointsIn.set(id, []).get(id)!).push(k));
-  const byMarks = cores.reference === "marks", view = coresView(vividGreen(px), W, H, cores.finePx, cores.widePx), reach = o.coreReachPx;
+  // The cores view: as given (L1, computed once for the photograph), else made here.
+  const byMarks = cores.reference === "marks", reach = o.coreReachPx;
+  view ??= coresView(vividGreen(px), W, H, cores.finePx, cores.widePx);
   // By the strongest core: the peaks at or over the share. By the marks: every peak first, the bar from those on the marks.
   const peaks = corePeaks(view.strength, W, H, view.top, byMarks ? 0 : cores.share);
   const pieceAtCore = (c: { x: number; y: number }) => {
@@ -211,11 +218,12 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
     const ms = pointsIn.get(id) ?? []; if (cs.length <= ms.length) continue;
     const pairs: [number, number, number][] = []; for (const m of ms) for (const c of cs) pairs.push([Math.hypot(points[m].x - found[c].x, points[m].y - found[c].y), m, c]);
     pairs.sort((p, q) => p[0] - q[0]); const usedM = new Set<number>(), usedC = new Set<number>();
-    for (const [, m, c] of pairs) { if (usedM.has(m) || usedC.has(c)) continue; usedM.add(m); usedC.add(c); }
+    for (const [, m, c] of pairs) { if (usedM.has(m) || usedC.has(c)) continue; usedM.add(m); usedC.add(c); foundBy[m] |= 2; }
     for (const c of cs) if (!usedC.has(c)) { points.push({ x: found[c].x, y: found[c].y }); coresAdded++; }
     if (points.length > o.maxPoints) break;
   }
-  return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, coresAdded, coresInfo: info };
+  const tagged = new Uint8Array(points.length); tagged.set(foundBy); tagged.fill(2, foundBy.length);
+  return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, coresAdded, coresInfo: info, foundBy: tagged };
 }
 
 export const ROW_POINTS = {

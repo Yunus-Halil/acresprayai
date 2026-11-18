@@ -114,8 +114,9 @@ if (job === "field") {
     put("sight.p", "i32", S.map(s => s.p)); put("sight.u", "f32", S.map(s => s.u)); put("sight.v", "f32", S.map(s => s.v)); put("sight.e", "f64", S.map(s => s.e)); put("sight.n", "f64", S.map(s => s.n));
     const cf = P.candidates?.from ?? [];
     put("cand.p", "i32", cf.map(c => c.p)); put("cand.u", "f32", cf.map(c => c.u)); put("cand.v", "f32", cf.map(c => c.v)); put("cand.sight", "i32", cf.map(c => c.sight));
-    // Where each SETTLED name is written in plantsFirst.ts (its rule's line), read from the source as it is now.
-    const SRC = "src/lib/fieldTwin/plantsFirst.ts", lines = readFileSync(join(ROOT, SRC), "utf8").split(/\r?\n/), at: Record<string, number> = {};
+    // Where each SETTLED name is written (its rule's line), read from the source as it is now: since the layers
+    // (2026-11-18) the rules that settle a dot are L6's, fieldTwin/layers/l6Judge.ts.
+    const SRC = "src/lib/fieldTwin/layers/l6Judge.ts", lines = readFileSync(join(ROOT, SRC), "utf8").split(/\r?\n/), at: Record<string, number> = {};
     lines.forEach((L, k) => { for (const m of L.matchAll(/SETTLED\.(\w+)/g)) { if (L.slice(Math.max(0, m.index! - 4), m.index) === "=== ") continue; at[m[1]] ??= k + 1; } });
     const lineOf = (re: RegExp, file = SRC) => readFileSync(join(ROOT, file), "utf8").split(/\r?\n/).findIndex(L => re.test(L)) + 1;
     meta = { ...meta,
@@ -126,7 +127,7 @@ if (job === "field") {
       rows: rec.rows.map(r => ({ id: r.id, kind: r.kind, plants: r.dots.length, lengthM: r2(r.lengthM), perM: r2(r.perM), line: r.line.map(([e, nn]) => [r2(e), r2(nn)]), segments: r.segments })),
       sequence: q, placing: opts.placing ?? PLANTS_FIRST,
       settledNames: Object.fromEntries(Object.entries(SETTLED).map(([k, v]) => [v, k])), settledLine: at, source: SRC,
-      lines: { certainEvidence: lineOf(/^export const certainEvidence/), reconstruct: lineOf(/^export function reconstruct/), placeDots: lineOf(/^export function placeDots/, "src/lib/fieldTwin/cornPlants.ts") },
+      lines: { certainEvidence: lineOf(/^export const certainEvidence/, "src/lib/fieldTwin/plantsFirst.ts"), reconstruct: lineOf(/^export function reconstruct/, "src/lib/fieldTwin/plantsFirst.ts"), placeDots: lineOf(/^export function placeDots/, "src/lib/fieldTwin/layers/l3Place.ts"), obvious: lineOf(/^export function obviousPlants/, "src/lib/fieldTwin/layers/l4Obvious.ts"), profile: lineOf(/^export function rowProfile/, "src/lib/fieldTwin/layers/l5Profile.ts"), judge: lineOf(/^export function judgeDots/, "src/lib/fieldTwin/layers/l6Judge.ts") },
       report: {
         plants: plants ? plants.summary : null, plantsNote: plants ? null : "The plants made no certain row: the build keeps the field's rows.", plantPoints: plants ? plants.points : [], plantShown: plants ? plants.shown : [],
         field: F.summary, weeds: F.weeds.map(w => ({ e: w.e, n: w.n, verdict: w.verdict, areaM2: w.areaM2, seenBy: w.seenBy, coveredBy: w.coveredBy })),
@@ -180,6 +181,8 @@ if (job === "photo") {
     gsdM: gsd, gsdBasis: frame ? "the aligned camera (as a build)" : est.basis, readScale: { gsdM: ad.gsdM, basis: ad.scaleBasis },
     plans: ad.plans.map(p => ({ stage: p.stage, share: p.ownedShare, pitchPx: p.pitchPx })), rowSpacingPx: greenPitchPx(ad), greenShare: green / (W * H),
     firstPass: first.points.map(p1), typicalPx: first.typicalPx, coresAdded: withCores ? withCores.points.slice(first.points.length).map(p1) : [],
+    // L2: which views found each mark (the pass with the cores asked, else the first pass).
+    foundPoints: (withCores ?? first).points.map(p1), foundBy: Array.from((withCores ?? first).foundBy ?? []),
     cores: coresMeta, coresOn: CORN_CORES.on, readMarks: readMarks.length, readMarksAreTheExpectedPass: marksEqual, marks: readMarks.map(p1),
     candidates: v.plants.low ? v.plants.low.length : null, rows: v.rows.map(r => ({ points: r.points, identity: r.identity, evidence: r.evidence, plants: r.plants })),
     guard: { on: CORN_COUNT_GUARD.on, share: cover.share, cut: CORN_COUNT_GUARD.cut, withheld: v.count?.withheld ?? null },

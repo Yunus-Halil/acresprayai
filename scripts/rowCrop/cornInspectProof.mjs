@@ -24,7 +24,7 @@ await page.click("text=Open");
 await page.waitForSelector("select");
 await page.selectOption("select >> nth=0", PHOTO);
 await until(/Field: done/);
-await page.click('button:has-text("8. Labels and score")');
+await page.click('button:has-text("9. Labels and score")');
 await page.setInputFiles('input[type="file"]', LABELS);
 await until(/Loaded:/);
 await page.waitForTimeout(3000);
@@ -47,7 +47,7 @@ await page.screenshot({ path: join(OUT, "preset.png") });
 const t2 = await aside(); writeFileSync(join(OUT, "preset.txt"), t2);
 console.log(`${PRESET}:\n` + t2.split("\n").filter(l => /^(Dev tiles|Defaults|This setup)/.test(l)).join("\n"));
 // The other steps with the comparison on: one screenshot each.
-for (const [k, s] of [[2, "Marks in this photo"], [6, "Judged"], [7, "Report"]]) { await page.locator(`button:has-text("${k}. ${s}")`).dispatchEvent("click"); await page.waitForTimeout(2500); await page.screenshot({ path: join(OUT, `preset-step${k}.png`) }); }
+for (const [k, s] of [[2, "L2 Find"], [6, "L6 Judge"], [8, "L8 Report"]]) { await page.locator(`button:has-text("${k}. ${s}")`).dispatchEvent("click"); await page.waitForTimeout(2500); await page.screenshot({ path: join(OUT, `preset-step${k}.png`) }); }
 writeFileSync(join(OUT, "errors.json"), JSON.stringify(errors, null, 1));
 console.log(`console errors: ${errors.length}`); for (const e of errors.slice(0, 8)) console.log("  " + e.slice(0, 300));
 await browser.close();

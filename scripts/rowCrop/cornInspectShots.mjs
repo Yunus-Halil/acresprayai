@@ -25,7 +25,7 @@ await page.waitForFunction(() => /This photograph: done/.test(document.body.inne
 const flight = await page.evaluate(() => /Flight:/.test(document.body.innerText));
 if (flight) await page.waitForFunction(() => /Field: done/.test(document.body.innerText), null, { timeout: 900000 });
 await page.waitForTimeout(1500);
-const steps = ["Views", "Marks in this photo", "Placed on the ground", "Obvious plants", "What it learned", "Judged", "Report"];
+const steps = ["L1 Views", "L2 Find", "L3 Place", "L4 Obvious", "L5 Field profile", "L6 Judge", "L7 Second look", "L8 Report"];
 for (let k = 0; k < steps.length; k++) {
   await page.click(`button:has-text("${k + 1}. ${steps[k]}")`);
   await page.waitForTimeout(k === 2 ? 4000 : 1200);
