@@ -31,6 +31,8 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? nu
 const arg = (k: string) => { const v = opt(k); if (v == null) throw new Error(`--${k} is required`); return v; };
 const A = JSON.parse(readFileSync(arg("analysis"), "utf8")) as TwinAnalysis, OUT = arg("out"), VARIANTS = (opt("variants") ?? "off,on").split(",");
 const BUILT = { fineShare: CORN_CORES.fineShare, wideShare: CORN_CORES.wideShare }, GENTLE = opt("gentle")?.split(",").map(Number) ?? null;
+// --cores-reference strongest|marks: what a core is measured against, for this run only (CORN_CORES.reference otherwise).
+if (opt("cores-reference")) Object.assign(CORN_CORES, { reference: opt("cores-reference") });
 if (VARIANTS.includes("gentle") && !GENTLE) throw new Error("--gentle <fine share>,<wide share> is required for the gentle variant");
 for (const v of VARIANTS) mkdirSync(join(OUT, v), { recursive: true });
 

@@ -141,6 +141,8 @@ if (OVERVIEW) {
 const SINGLE = argv.includes("--single"), CORES_ON = argv.includes("--cores-on"), CORES_BLUR = argv.includes("--cores-blur") ? argv[argv.indexOf("--cores-blur") + 1].split(",").map(Number) : null, SUF = CORES_ON ? (CORES_BLUR ? `-cores-${argv.includes("--cores-tag") ? argv[argv.indexOf("--cores-tag") + 1] : "other"}` : "-cores-on") : "";
 // --cores-blur <fine share>,<wide share> --cores-tag <name>: with --cores-on, another blur pair for this run only (shares of the row spacing; CORN_CORES is not changed in the code).
 if (CORES_BLUR) Object.assign(CORN_CORES, { fineShare: CORES_BLUR[0], wideShare: CORES_BLUR[1] });
+// --cores-reference strongest|marks: what a core is measured against, for this run only (CORN_CORES.reference otherwise).
+if (argv.includes("--cores-reference")) Object.assign(CORN_CORES, { reference: argv[argv.indexOf("--cores-reference") + 1] });
 const CACHE = SINGLE ? "" : arg("cache"), IMAGE = arg("image"), GRID = Number(opt("grid") ?? 4), MISSES = opt("misses");
 if (MISSES) mkdirSync(MISSES, { recursive: true });
 const A = (SINGLE ? { reads: [], twinId: "" } : JSON.parse(readFileSync(arg("analysis"), "utf8"))) as TwinAnalysis, frames = SINGLE ? new Map<string, GeorefFrame>() : framesFromAnalysis(A);
@@ -370,7 +372,7 @@ const readsFor = (spans: boolean): CornPhotoRead[] => A.reads.map(r => {
 const B: { run: string; what: string; tooCloseM: number; certainGaps: number; plantSpacingM: number; wholeFlightOnRows: number[]; wholeFlightOnNoRow: number; landed: number; foldedBack: number; marksInPhoto: number[]; noRowInPhoto: number; half: (Score & { missedWithADotOnNoRow: number; noRowDots: number })[]; full: Score[] }[] = [];
 let origin: { lat: number; lng: number; altM: number } | null = null;
 // --runs a,c,d: only those runs (by their first letter), written to <out>/score-runs.json; part A is not run. Without it: a, b, c as SCORE.md.
-const ONLY = opt("runs")?.split(",") ?? null, LOOK = opt("look"), LINES = opt("lines"), NOTHING = opt("nothing"), HEADLAND_X = Number(opt("headland-x") ?? 3330);
+const ONLY = opt("runs")?.split(",") ?? null, LOOK = opt("look"), LINES = opt("lines"), PAIRS = opt("pairs"), NOTHING = opt("nothing") ?? (PAIRS ? "-" : null), HEADLAND_X = Number(opt("headland-x") ?? 3330);
 if (LOOK) mkdirSync(LOOK, { recursive: true });
 for (const run of MISSES ? RUNS.filter(r => r.key === (opt("misses-run") ?? "b-branch-sweep-off")) : RUNS.filter(r => (LINES ? r.key[0] === (ONLY?.[0] ?? "c") : LOOK ? r.key[0] === "d" : ONLY ? ONLY.includes(r.key[0]) : "abc".includes(r.key[0])))) {
   const t0 = Date.now(), reads = readsFor(run.spans);
@@ -433,17 +435,62 @@ for (const run of MISSES ? RUNS.filter(r => r.key === (opt("misses-run") ?? "b-b
     // --nothing <file>: every wrong mark of this run in the tiles scored (matched at half the plant spacing), with the
     // labelled plants of its tile within one whole plant spacing of it, whether each of those has a mark, and how far
     // the mark stands from its tile's edge. Read only; nothing is scored anew.
-    const R = seedM / 2, all: [number, number][] = [];
+    const R = seedM / 2, all: [number, number][] = [], ctx: { t: Tile; J: ReturnType<typeof judge> }[] = [];
     const rows = DEV.flatMap(t => {
       const J = judge(t, marks, place, R), labs = LAB.get(t.id)!.filter(l => l.type === "plant"), plants = labs.map(l => place(l.x, l.y)!), pxPerM = J.pad / R;
       return J.ms.flatMap((k, j) => {
         if (!within(t, k.u, k.v)) return [];
         all.push([Math.round(k.u), Math.round(k.v)]);
         if (J.state[j] !== 0) return [];
+        ctx.push({ t, J });
         const near = plants.map((g, i) => ({ plant: `${t.id}:${i}`, m: Math.hypot(g[0] - k.e, g[1] - k.n), found: J.plantFound[i] })).filter(x => x.m <= seedM).sort((a, b) => a.m - b.m);
         return [{ tile: t.id, planted: labs.length > 0, tier: k.tier, u: Math.round(k.u), v: Math.round(k.v), second: near.some(x => x.m <= R), near, edgeM: Math.min(k.u - t.x, t.x + t.w - k.u, k.v - t.y, t.y + t.h - k.v) / pxPerM }];
       });
     });
+    if (PAIRS) {
+      // --pairs <dir> --pairs-groups <groups.json>: a close-up of every wrong mark of the groups asked (--pairs-of
+      // x,second), about 40 cm across at the photograph's own pixels (enlarged, not resampled), on contact sheets.
+      // The labels of the mark's tile as rings, every mark in the tile as a cross, the mark itself in orange, numbered.
+      // Only the mark's own tile is shown: anything past its edge is left grey.
+      if (HIDDEN) throw new Error("the held-back tiles are not drawn");
+      const G = JSON.parse(readFileSync(arg("pairs-groups"), "utf8")) as { u: number; v: number; group: string }[];
+      if (G.length !== rows.length || G.some((g, i) => g.u !== rows[i].u || g.v !== rows[i].v)) throw new Error("the groups file is not of this run's wrong marks");
+      mkdirSync(PAIRS, { recursive: true });
+      const img = (IMG ??= decodeImage(new Uint8Array(readFileSync(photoPath(IMAGE)!)))), Z = 8, HEADC = 34, CYAN: Rgb = [0, 230, 255], COLS = 5, GAPC = 10, HEADS = 150;
+      const list: Record<string, unknown>[] = []; let num = 0;
+      for (const [group, file, title] of (opt("pairs-of") ?? "x,second").split(",").map(g => [g, g === "x" ? "beside" : g, g === "x" ? "MARKS 7 TO 14 CM FROM A LABELLED PLANT THAT ALREADY HAS ITS MARK" : g === "second" ? "SECOND MARKS: WITHIN 7 CM OF A LABELLED PLANT THAT ALREADY HAS ITS MARK" : `GROUP ${g}`] as const)) {
+        const cells: Canvas[] = [], first = num + 1;
+        rows.forEach((r, i) => {
+          if (G[i].group !== group) return; num++;
+          const { t, J } = ctx[i], pxPerM = J.pad / R, half = Math.round(0.2 * pxPerM), size = 2 * half + 1, x0 = r.u - half, y0 = r.v - half;
+          const c: Canvas = { w: size * Z, h: size * Z + HEADC, data: new Uint8Array(size * Z * (size * Z + HEADC) * 4) };
+          for (let y = 0; y < size * Z; y++) for (let x = 0; x < size * Z; x++) {
+            const sx = x0 + Math.floor(x / Z), sy = y0 + Math.floor(y / Z), q = ((y + HEADC) * c.w + x) * 4, inside = within(t, sx, sy) && sx >= 0 && sy >= 0 && sx < img.width && sy < img.height, o = (sy * img.width + sx) * 4;
+            c.data[q] = inside ? img.data[o] : 70; c.data[q + 1] = inside ? img.data[o + 1] : 70; c.data[q + 2] = inside ? img.data[o + 2] : 70; c.data[q + 3] = 255;
+          }
+          const at = (u: number, v: number): [number, number] => [(u - x0 + 0.5) * Z, (v - y0 + 0.5) * Z + HEADC], seen = (u: number, v: number) => u >= x0 && v >= y0 && u < x0 + size && v < y0 + size;
+          for (const l of LAB.get(t.id)!) if (seen(l.x, l.y)) { const [x, y] = at(l.x, l.y); ring(c, x, y, 22, 2, l.type === "plant" ? CYAN : VIOLET); }
+          J.ms.forEach(k => { if (!within(t, k.u, k.v) || !seen(k.u, k.v)) return; const [x, y] = at(k.u, k.v), own = Math.round(k.u) === r.u && Math.round(k.v) === r.v; cross(c, x, y, own ? 13 : 9, own ? 3 : 2, own ? ORANGE : WHITE); });
+          for (let k = 0; k < c.w * HEADC; k++) { c.data[k * 4] = 20; c.data[k * 4 + 1] = 20; c.data[k * 4 + 2] = 20; c.data[k * 4 + 3] = 255; }
+          text(c, 6, 6, String(num), 3, WHITE);
+          // One plant spacing, to scale.
+          const bar = Math.round(seedM * pxPerM * Z); for (let x = 0; x < bar; x++) for (let k = 0; k < 3; k++) px(c, c.w - 8 - x, 14 + k, WHITE);
+          text(c, c.w - 8 - bar - 70, 8, `${Math.round(seedM * 100)} CM`, 2, WHITE);
+          cells.push(c);
+          list.push({ number: num, sheet: `${file}.jpg`, tile: t.id, x: r.u, y: r.v, tier: TIERS[r.tier], nearestLabelledPlantCm: r.near[0] ? Math.round(r.near[0].m * 1000) / 10 : null, labelledPlantsWithin14Cm: r.near.length, acrossCm: Math.round((size / pxPerM) * 100) });
+        });
+        if (!cells.length) continue;
+        const cw = Math.max(...cells.map(c => c.w)), ch = Math.max(...cells.map(c => c.h)), nr = Math.ceil(cells.length / COLS);
+        const S: Canvas = { w: COLS * cw + (COLS + 1) * GAPC, h: HEADS + nr * ch + (nr + 1) * GAPC, data: new Uint8Array((COLS * cw + (COLS + 1) * GAPC) * (HEADS + nr * ch + (nr + 1) * GAPC) * 4) };
+        for (let k = 0; k < S.w * S.h; k++) { S.data[k * 4] = 20; S.data[k * 4 + 1] = 20; S.data[k * 4 + 2] = 20; S.data[k * 4 + 3] = 255; }
+        cells.forEach((c, k) => { const ox = GAPC + (k % COLS) * (cw + GAPC), oy = HEADS + GAPC + Math.floor(k / COLS) * (ch + GAPC); for (let y = 0; y < c.h; y++) S.data.set(c.data.subarray(y * c.w * 4, (y + 1) * c.w * 4), ((oy + y) * S.w + ox) * 4); });
+        ([[WHITE, `PHOTO ${TAG}, DEV TILES. ${title}: NUMBERS ${first} TO ${num}`], [ORANGE, "ORANGE CROSS = THE MARK THE PICTURE IS OF. WHITE CROSS = ANY OTHER MARK"], [CYAN, "BLUE RING = A PLANT YOU LABELLED. VIOLET RING = YOUR UNSURE LABEL. EACH PICTURE IS ABOUT 40 CM ACROSS, THE PHOTO AT ITS OWN PIXELS, ENLARGED 8 TIMES"], [GREY, "FLAT GREY = PAST THE EDGE OF THE TILE THE MARK IS IN, NOT SHOWN. THE WHITE BAR IS ONE PLANT SPACING"]] as [Rgb, string][]).forEach(([col, str], li) => text(S, 12, 12 + li * 34, str, 3, col));
+        writeFileSync(join(PAIRS, `${file}.jpg`), encodeJpeg({ width: S.w, height: S.h, data: S.data }, 92));
+        console.log(`${file}.jpg: ${cells.length} close-ups, numbers ${first} to ${num}`);
+      }
+      writeFileSync(join(PAIRS, "list.json"), JSON.stringify(list, null, 1));
+      process.exit(0);
+    }
     writeFileSync(NOTHING, JSON.stringify({ run: run.key, hiddenHalf: HIDDEN, plantSpacingM: seedM, width: W, height: H, tiers: TIERS, wrongMarks: rows, allMarksInTheTiles: all }));
     console.log(`${run.key}: ${rows.length} wrong marks written to ${NOTHING}`);
     process.exit(0);
