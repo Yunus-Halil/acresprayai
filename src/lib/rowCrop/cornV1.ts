@@ -132,6 +132,10 @@ export const CORN_COUNT_GUARD = {
    * flight: one photograph read its rows at 949 px apart where the flight's others read about 152 px, and the cut took
    * it for a late photograph. A photograph alone (Photo Scout) has no flight: the cut alone. */
   misreadRatio: 1.5 as number | null,
+  /** Also a misread under 1 / misreadRatio of the median (the rule as first written, FINAL-3.md): off, because on
+   * the private flight 14 of 123 emergence photographs read their rows at about half the spacing (0.40 to 0.65 of the
+   * median) with their marks on the plants; withholding them cost the dev tiles 4 plants and added 15 wrong marks. */
+  misreadBelow: false,
   misreadMessage: "row spacing misread",
 };
 

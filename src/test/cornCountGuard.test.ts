@@ -86,9 +86,12 @@ describe("the guard over a flight: a photograph that misread its row spacing", (
   const read = (name: string, spacingPx: number | null, opts: Partial<CornPhotoRead> = {}): CornPhotoRead => ({ name, scale: 1, rows: [], patches: [], gaps: [], plants: [[1, 1], [2, 2]], low: [[3, 3]], guard: { rowGreenShare: 0.3, rowSpacingPx: spacingPx, gsdM: 0.005 }, ...opts });
   const flight = [read("a", 150), read("b", 152), read("c", 155), read("d", 949), read("e", 60), read("f", 148, { plants: [], countWithheld: true, countReason: "too late for a per-plant count", guard: { rowGreenShare: 0.9, rowSpacingPx: 148, gsdM: 0.005 } })];
 
-  it("drops the marks of a photograph over 1.5 times or under 1/1.5 of the flight's median, and says it misread", () => {
-    expect(CORN_COUNT_GUARD.misreadRatio).toBe(1.5); expect(CORN_COUNT_GUARD.misreadMessage).toBe("row spacing misread");
-    const G = cornFlightGuard(flight);
+  it("drops the marks of a photograph over 1.5 times the flight's median, and says it misread; not one under it unless misreadBelow", () => {
+    expect(CORN_COUNT_GUARD.misreadRatio).toBe(1.5); expect(CORN_COUNT_GUARD.misreadMessage).toBe("row spacing misread"); expect(CORN_COUNT_GUARD.misreadBelow).toBe(false);
+    const one = cornFlightGuard(flight);
+    expect(one.withheld.map(w => w.name)).toEqual(["d", "f"]);
+    expect(one.reads.find(r => r.name === "e")).toBe(flight.find(r => r.name === "e"));
+    const G = cornFlightGuard(flight, { ...CORN_COUNT_GUARD, misreadBelow: true });
     expect(G.medianSpacingM).toBeCloseTo(152 * 0.005, 9);
     const by = new Map(G.reads.map(r => [r.name, r]));
     for (const n of ["d", "e"]) { expect(by.get(n)!.plants).toEqual([]); expect(by.get(n)!.low).toBeUndefined(); expect(by.get(n)!.countReason).toBe("row spacing misread"); }

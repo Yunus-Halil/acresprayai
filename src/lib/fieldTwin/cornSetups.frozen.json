@@ -24,6 +24,7 @@
   "cut": 0.642,
   "message": "too late for a per-plant count",
   "misreadRatio": 1.5,
+  "misreadBelow": false,
   "misreadMessage": "row spacing misread"
  },
  "SEQUENCE": {

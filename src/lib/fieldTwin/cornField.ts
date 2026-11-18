@@ -167,15 +167,15 @@ export type CornPhotoRead = {
 
 /**
  * The emergence guard over a flight (cornV1.ts CORN_COUNT_GUARD.misreadRatio): a photograph whose row spacing, in
- * metres, is more than `misreadRatio` times the median of the flight's photographs, or less than its inverse, read its
- * rows wrongly. Its marks are dropped (as a withheld count) and its reason is `misreadMessage`, also where the cut had
+ * metres, is more than `misreadRatio` times the median of the flight's photographs (or, with `misreadBelow`, less than
+ * its inverse) read its rows wrongly. Its marks are dropped (as a withheld count) and its reason is `misreadMessage`, also where the cut had
  * already withheld it as too late. Its rows, gaps and weed candidates stay. Reads the guard did not run on (no
  * `guard`: it was off for them), and every read while `misreadRatio` is null, pass unchanged.
  */
 export function cornFlightGuard(reads: CornPhotoRead[], o = CORN_COUNT_GUARD): { reads: CornPhotoRead[]; medianSpacingM: number | null; withheld: { name: string; reason: string; rowSpacingM: number | null; ratio: number | null; rowGreenShare: number | null }[] } {
   const spacingM = (r: CornPhotoRead) => (r.guard?.rowSpacingPx && r.guard.gsdM ? r.guard.rowSpacingPx * r.scale * r.guard.gsdM : null);
   const sp = reads.map(spacingM).filter((x): x is number => x != null).sort((a, b) => a - b), med = sp.length ? sp[sp.length >> 1] : null;
-  const misread = (r: CornPhotoRead) => { const s = spacingM(r); return o.misreadRatio != null && med != null && s != null && (s > o.misreadRatio * med || s < med / o.misreadRatio); };
+  const misread = (r: CornPhotoRead) => { const s = spacingM(r); return o.misreadRatio != null && med != null && s != null && (s > o.misreadRatio * med || (o.misreadBelow && s < med / o.misreadRatio)); };
   const out = reads.map(r => (misread(r) ? { ...r, plants: [], low: undefined, lowSpan: undefined, lowAxis: undefined, countWithheld: true, countReason: o.misreadMessage } : r));
   return { reads: out, medianSpacingM: med, withheld: out.filter(r => r.countWithheld).map(r => { const s = spacingM(r); return { name: r.name, reason: r.countReason ?? o.message, rowSpacingM: s, ratio: s != null && med ? s / med : null, rowGreenShare: r.guard?.rowGreenShare ?? null }; }) };
 }
