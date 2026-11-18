@@ -102,6 +102,36 @@ describe("the vivid cores added to the plant read's marks (off by default)", { t
     expect(on.slice(0, off.length)).toEqual(off);
   });
 
+  it("measured against the cores on the read's own marks, a grass spot in the frame does not shut the crop out", () => {
+    // The same field with its plants dull, and one spot of far more vivid green (a tuft of verge grass).
+    const px = field(singles, [PAIR]);
+    for (let i = 0; i < W * H; i++) { const q = i * 4; if (px.rgba[q + 1] > 130) { px.rgba[q] = 100 - (px.rgba[q + 1] - 140) / 6; px.rgba[q + 1] = 135 + (px.rgba[q + 1] - 140) / 4; px.rgba[q + 2] = 80; } }
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) if (Math.hypot(dx, dy) <= R) { const q = ((800 + dy) * W + 1100 + dx) * 4; px.rgba[q] = 20; px.rgba[q + 1] = 235; px.rgba[q + 2] = 20; }
+    const off = plantPointsFromGreen(px);
+    expect(off.points.length).toBe(singles.length + 2);
+    // By the strongest core: the tuft sets the bar over every plant's core, and the touching pair stays one mark.
+    const strongest = plantPointsFromGreen(px, GREEN_POINTS, undefined, { ...ASKED, reference: "strongest" });
+    expect(strongest.coresAdded).toBe(0);
+    expect(strongest.coresInfo!.kept.length).toBe(1);
+    // By the marks: the bar is a share of the plants' own cores, and the pair gets its second mark.
+    const marks = plantPointsFromGreen(px, GREEN_POINTS, undefined, { ...ASKED, reference: "marks", factor: CORN_CORES.factor });
+    expect(marks.coresInfo!.onMarks).toBe(singles.length + 2);
+    expect(marks.coresInfo!.strongest).toBeGreaterThan(marks.coresInfo!.medianOnMarks! / 0.15);
+    expect(marks.coresInfo!.threshold).toBeCloseTo(CORN_CORES.factor * marks.coresInfo!.medianOnMarks!, 9);
+    expect(marks.coresAdded).toBe(1);
+    expect(marks.points.slice(0, off.points.length)).toEqual(off.points);
+  });
+
+  it("with no reference given the first one stands, and a photograph with no core on a mark gets none by the marks", () => {
+    const px = field(singles, [PAIR]);
+    const asIs = plantPointsFromGreen(px, GREEN_POINTS, undefined, ASKED), first = plantPointsFromGreen(px, GREEN_POINTS, undefined, { ...ASKED, reference: "strongest" });
+    expect(asIs.points).toEqual(first.points); expect(asIs.coresInfo!.reference).toBe("strongest");
+    // Bare soil: no mark, so nothing to measure a core against.
+    const bare = field([], []), none = plantPointsFromGreen(bare, GREEN_POINTS, undefined, { ...ASKED, reference: "marks", factor: CORN_CORES.factor });
+    expect(none.points.length).toBe(0); expect(none.coresAdded).toBe(0); expect(none.coresInfo!.threshold).toBeNull();
+    expect(CORN_CORES.reference).toBe("marks"); expect(CORN_CORES.factor).toBe(0.4);
+  });
+
   it("is not asked by a read unless the read or CORN_CORES says so, and never by the corn-v1.0 comparison read", () => {
     const px = field(singles, [PAIR]), params = rowCropParamsFor(cropProfileFor("corn")!, 0.005);
     const asIs = readCornV1(px, params, { enteredCrop: "corn" }), off = readCornV1(px, params, { enteredCrop: "corn", cores: false });

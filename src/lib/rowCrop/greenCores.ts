@@ -17,7 +17,7 @@ export const GREEN_CORES = {
   cutSigmas: 3,
 };
 
-export type GreenCore = { x: number; y: number; /** Its strength as a share of the photograph's strongest core. */ s: number };
+export type GreenCore = { x: number; y: number; /** Its strength as a share of the photograph's strongest core. */ s: number; /** Its strength as measured. */ v: number };
 
 /** Saturation times greenness per pixel, 0 where the pixel is not green. */
 export function vividGreen(px: PhotoPixels, greenMin = GREEN_CORES.greenMin): Float32Array {
@@ -65,9 +65,9 @@ export function coresView(vivid: Float32Array, w: number, h: number, fine: numbe
 export function corePeaks(strength: Float32Array, w: number, h: number, top: number, share: number): GreenCore[] {
   const out: GreenCore[] = [], a = strength, lowest = share * top; if (!(top > 0)) return out;
   for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
-    const i = y * w + x, v = a[i]; if (v < lowest) continue;
+    const i = y * w + x, v = a[i]; if (v < lowest || !(v > 0)) continue;
     if (a[i - w - 1] >= v || a[i - w] >= v || a[i - w + 1] >= v || a[i - 1] >= v || a[i + 1] > v || a[i + w - 1] > v || a[i + w] > v || a[i + w + 1] > v) continue;
-    out.push({ x, y, s: v / top });
+    out.push({ x, y, s: v / top, v });
   }
   return out;
 }

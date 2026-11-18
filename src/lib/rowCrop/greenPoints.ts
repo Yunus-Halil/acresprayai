@@ -8,7 +8,7 @@
 // builder only keeps points that line up in parallel, evenly spaced rows, and scattered green makes no rows.
 import type { PhotoPixels } from "../photoScout/pattern";
 import type { PlantPoint } from "./plantRows";
-import { greenCores } from "./greenCores";
+import { corePeaks, coresView, vividGreen } from "./greenCores";
 import { convexHull } from "./readRowCrop";
 import { type SeedlingCache, sharedSeedlingMask } from "./seedlingGreen";
 
@@ -44,8 +44,24 @@ export const GREEN_POINTS = {
   coreReachPx: 2,
 };
 
-/** The vivid cores asked of a photograph (greenCores.ts): the two blurs in its own pixels, and the share of its strongest core a core must reach. */
-export type CoresAsked = { finePx: number; widePx: number; share: number };
+/**
+ * The vivid cores asked of a photograph (greenCores.ts): the two blurs in its own pixels, and the bar a core must reach.
+ * `reference`:
+ *   "strongest"  at or over `share` of the photograph's strongest core (the first way; one grass verge in the frame
+ *                sets that core so high that no crop core passes);
+ *   "marks"      at or over `factor` times the median strength of the cores that sit on the read's own marks in this
+ *                photograph: per piece of green that holds marks, as many of its strongest cores as it has marks.
+ *                With no core on any mark the photograph gets no cores.
+ */
+export type CoresAsked = { finePx: number; widePx: number; share: number; reference?: "strongest" | "marks"; factor?: number };
+/** What the cores pass found (for the record and for measuring): strengths are as measured, not shares. */
+export type CoresInfo = {
+  reference: "strongest" | "marks"; strongest: number;
+  /** "marks": the cores on the read's marks, their median strength, and every local peak's strength (ascending). */
+  onMarks?: number; medianOnMarks?: number | null; peakStrengths?: Float32Array;
+  /** The bar, and the cores at or over it with where each stands: in a piece read as cover (never a mark), in another piece, or on none. */
+  threshold: number | null; kept: { x: number; y: number; v: number; where: "cover" | "piece" | "none" }[];
+};
 
 /** A lone plant's outline at the photo's own pixel: how a grass (corn's narrow, spread leaves) differs from a broadleaf
  * seedling (beet, sunflower, soybean: round leaves, a compact rosette). */
@@ -66,7 +82,7 @@ export type GreenPoints = {
   greenShare: number;
   workFactor: number;
   /** With the vivid cores asked for: the points added from them (they follow the read's own points in `points`). */
-  coresAdded?: number;
+  coresAdded?: number; coresInfo?: CoresInfo;
 };
 
 /**
@@ -163,11 +179,32 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
   if (!cores || points.length > o.maxPoints) return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f };
   // The vivid cores (greenCores.ts), each in the piece under it or the nearest within reach.
   const pointsIn = new Map<number, number[]>(); pieceOf.forEach((id, k) => (pointsIn.get(id) ?? pointsIn.set(id, []).get(id)!).push(k));
-  const found = greenCores(px, cores.finePx, cores.widePx, cores.share), coresIn = new Map<number, number[]>(), reach = o.coreReachPx;
+  const byMarks = cores.reference === "marks", view = coresView(vividGreen(px), W, H, cores.finePx, cores.widePx), reach = o.coreReachPx;
+  // By the strongest core: the peaks at or over the share. By the marks: every peak first, the bar from those on the marks.
+  const peaks = corePeaks(view.strength, W, H, view.top, byMarks ? 0 : cores.share);
+  const pieceAtCore = (c: { x: number; y: number }) => {
+    const cx = Math.round(c.x / f - 0.5), cy = Math.round(c.y / f - 0.5); let best = -1, bd = Infinity;
+    for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) { const xx = cx + dx, yy = cy + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const id = label[yy * w + xx]; if (id < 0) continue; const q = dx * dx + dy * dy; if (q < bd) { bd = q; best = id; } }
+    return best >= 0 && bd <= reach * reach ? best : -1;
+  };
+  const info: CoresInfo = { reference: byMarks ? "marks" : "strongest", strongest: view.top, threshold: byMarks ? null : cores.share * view.top, kept: [] };
+  let found = peaks;
+  if (byMarks) {
+    const pieceOfPeak = peaks.map(pieceAtCore), inPiece = new Map<number, number[]>(), on: number[] = [];
+    peaks.forEach((c, k) => { const id = pieceOfPeak[k]; if (id >= 0 && pointsIn.has(id)) (inPiece.get(id) ?? inPiece.set(id, []).get(id)!).push(c.v); });
+    for (const [id, vs] of inPiece) { vs.sort((p, q) => q - p); for (const v of vs.slice(0, pointsIn.get(id)!.length)) on.push(v); }
+    on.sort((p, q) => p - q);
+    info.onMarks = on.length; info.medianOnMarks = on.length ? on[on.length >> 1] : null; info.peakStrengths = Float32Array.from(peaks.map(c => c.v)).sort();
+    info.threshold = info.medianOnMarks != null ? (cores.factor ?? 1) * info.medianOnMarks : null;
+    found = info.threshold == null ? [] : peaks.filter(c => c.v >= info.threshold!);
+  }
+  const coresIn = new Map<number, number[]>();
   found.forEach((c, k) => {
     const cx = Math.round(c.x / f - 0.5), cy = Math.round(c.y / f - 0.5); let best = -1, bd = Infinity;
     for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) { const xx = cx + dx, yy = cy + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const id = label[yy * w + xx]; if (id < 0) continue; const q = dx * dx + dy * dy; if (q < bd) { bd = q; best = id; } }
-    if (best >= 0 && bd <= reach * reach && !cover.has(best)) (coresIn.get(best) ?? coresIn.set(best, []).get(best)!).push(k);
+    const inPiece = best >= 0 && bd <= reach * reach;
+    info.kept.push({ x: c.x, y: c.y, v: c.v, where: !inPiece ? "none" : cover.has(best) ? "cover" : "piece" });
+    if (inPiece && !cover.has(best)) (coresIn.get(best) ?? coresIn.set(best, []).get(best)!).push(k);
   });
   let coresAdded = 0;
   for (const [id, cs] of coresIn) {
@@ -178,7 +215,7 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
     for (const c of cs) if (!usedC.has(c)) { points.push({ x: found[c].x, y: found[c].y }); coresAdded++; }
     if (points.length > o.maxPoints) break;
   }
-  return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, coresAdded };
+  return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, coresAdded, coresInfo: info };
 }
 
 export const ROW_POINTS = {
