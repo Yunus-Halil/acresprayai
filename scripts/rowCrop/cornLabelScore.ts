@@ -138,7 +138,9 @@ if (OVERVIEW) {
 }
 
 
-const SINGLE = argv.includes("--single"), CORES_ON = argv.includes("--cores-on"), SUF = CORES_ON ? "-cores-on" : "";
+const SINGLE = argv.includes("--single"), CORES_ON = argv.includes("--cores-on"), CORES_BLUR = argv.includes("--cores-blur") ? argv[argv.indexOf("--cores-blur") + 1].split(",").map(Number) : null, SUF = CORES_ON ? (CORES_BLUR ? `-cores-${argv.includes("--cores-tag") ? argv[argv.indexOf("--cores-tag") + 1] : "other"}` : "-cores-on") : "";
+// --cores-blur <fine share>,<wide share> --cores-tag <name>: with --cores-on, another blur pair for this run only (shares of the row spacing; CORN_CORES is not changed in the code).
+if (CORES_BLUR) Object.assign(CORN_CORES, { fineShare: CORES_BLUR[0], wideShare: CORES_BLUR[1] });
 const CACHE = SINGLE ? "" : arg("cache"), IMAGE = arg("image"), GRID = Number(opt("grid") ?? 4), MISSES = opt("misses");
 if (MISSES) mkdirSync(MISSES, { recursive: true });
 const A = (SINGLE ? { reads: [], twinId: "" } : JSON.parse(readFileSync(arg("analysis"), "utf8"))) as TwinAnalysis, frames = SINGLE ? new Map<string, GeorefFrame>() : framesFromAnalysis(A);
