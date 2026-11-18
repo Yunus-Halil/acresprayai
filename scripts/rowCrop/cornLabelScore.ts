@@ -70,7 +70,7 @@ import { SEEDLING_GREEN, SEEDLING_ROW, seedlingCache } from "../../src/lib/rowCr
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
 import { diagnose } from "./cornLabelMisses";
 import { lookReport, touchReport } from "./cornLabelLook";
-import { type Judged as JudgedT, type Mark, type Score, type Tile, TIERS, fieldMarks, judgeTile, labelTiles, within } from "./cornLabelJudge";
+import { type Judged as JudgedT, type Mark, type Score, type Tile, TIERS, fieldMarks, judgeTile, labelSpacingPx, labelTiles, within } from "./cornLabelJudge";
 import { coresReport } from "./cornLabelCores";
 
 const argv = process.argv.slice(2);
@@ -201,21 +201,8 @@ function draw(t: Tile, J: Judged, file: string, title: string, rings: string, ex
 // ---- One photograph alone (--single): its own marks against the labels, in pixels.
 if (SINGLE) {
   const med = (xs: number[]) => { const t = [...xs].sort((x, y) => x - y); return t.length ? t[t.length >> 1] : NaN; };
-  // The labels' own spacing, from the dev tiles' labels alone. The rows' direction: the direction from each "plant" label
-  // to its nearest other one in its tile (angles doubled, so up and down the row are one direction).
-  const devPlants = DEV.map(t => LAB.get(t.id)!.filter(l => l.type === "plant"));
-  let c2 = 0, s2 = 0; const nnPx: number[] = [];
-  for (const ps of devPlants) ps.forEach((p0, i) => { let bd = Infinity, bx = 0, by = 0; ps.forEach((q, j) => { if (j === i) return; const d = Math.hypot(q.x - p0.x, q.y - p0.y); if (d < bd) { bd = d; bx = q.x - p0.x; by = q.y - p0.y; } }); if (bd < Infinity) { nnPx.push(bd); const a2 = 2 * Math.atan2(by, bx); c2 += Math.cos(a2); s2 += Math.sin(a2); } });
-  const th = Math.atan2(s2, c2) / 2, ct = Math.cos(th), st = Math.sin(th), cutPx = Math.max(20, 0.3 * med(nnPx));
-  // Rows in a tile: the labels in order across the rows, a new row where the next label stands more than `cutPx` further across.
-  const gapsPx: number[] = [], rowsPerTile: Record<string, number> = {}, medianPerTile: Record<string, number> = {}; let withUnsure = 0;
-  for (const t of DEV) {
-    const ls = LAB.get(t.id)!.map(l => ({ a: l.x * ct + l.y * st, c: -l.x * st + l.y * ct, plant: l.type === "plant" })).sort((x, y) => x.c - y.c);
-    const rows: (typeof ls)[] = []; ls.forEach((l, k) => { if (!k || l.c - ls[k - 1].c > cutPx) rows.push([]); rows[rows.length - 1].push(l); });
-    rowsPerTile[t.id] = rows.length; const from = gapsPx.length;
-    for (const r of rows) { r.sort((x, y) => x.a - y.a); for (let k = 1; k < r.length; k++) { if (r[k].plant && r[k - 1].plant) gapsPx.push(Math.hypot(r[k].a - r[k - 1].a, r[k].c - r[k - 1].c)); else withUnsure++; } }
-    medianPerTile[t.id] = Math.round(med(gapsPx.slice(from)) * 10) / 10;
-  }
+  // The labels' own spacing, from the dev tiles' labels alone (cornLabelJudge.ts labelSpacingPx).
+  const { devPlants, th, cutPx, gapsPx, withUnsure, rowsPerTile, medianPerTile } = labelSpacingPx(DEV, t => LAB.get(t.id)!);
   // --match-px: the matching distance given (the dev tiles' own, when the held-back tiles are scored), not read from these tiles' labels.
   const sorted = [...gapsPx].sort((x, y) => x - y), R = opt("match-px") ? Number(opt("match-px")) : med(gapsPx) / 2;
   if (HIDDEN && !opt("match-px")) throw new Error("--hidden needs --match-px: the matching distance is the dev tiles' own");

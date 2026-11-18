@@ -18,7 +18,8 @@ export type Tile = { id: string; x: number; y: number; w: number; h: number };
 export type Label = { x: number; y: number; type: "plant" | "unsure" };
 export type Mark = { u: number; v: number; e: number; n: number; tier: number; /** The field dot it is. */ i?: number };
 export type Score = { tile: string; labelled: number; unsure: number; marks: number[]; found: number[]; wrong: number[]; /** The wrong marks, split: a second mark on a labelled plant of the tile (within the matching distance of one), and a mark on nothing. */ wrongSecond: number[]; wrongNothing: number[]; onUnsure: number[]; atEdge: number[]; missed: number };
-export type Judged = { score: Score; ms: Mark[]; state: Int8Array; plantFound: boolean[]; /** Per labelled plant: the mark it has (index into `ms`), or -1. */ plantOf: Int32Array; pad: number };
+export type Judged = { score: Score; ms: Mark[]; state: Int8Array; plantFound: boolean[]; /** Per labelled plant: the mark it has (index into `ms`), or -1. */ plantOf: Int32Array; pad: number;
+  /** Per mark of `ms` that is wrong (state 0): 1 when it stands within R of a labelled plant (a second mark on it), 0 on nothing. As counted in `score`. */ second: Uint8Array };
 // The last two: a dot on its row only because the plant spacing was not asked of it (SEQUENCE.placeOffSpacing), by where it came from.
 export const TIERS = ["certain", "probable", "second look, 2+ photographs", "second look, 1 photograph", "by the option: a dot of the stricter marks", "by the option: a second-look dot"] as const;
 export const LOOKS_BACK_M = 0.05;
@@ -52,16 +53,39 @@ export function judgeTile(t: Tile, marks: Mark[], place: (u: number, v: number) 
   const takenU = Int32Array.from(takenP, x => (x >= 0 ? -2 : -1)); match(near(unsure), takenU);
   const s: Score = { tile: t.id, labelled: plants.length, unsure: unsure.length, marks: [0, 0, 0, 0, 0, 0], found: [0, 0, 0, 0, 0, 0], wrong: [0, 0, 0, 0, 0, 0], wrongSecond: [0, 0, 0, 0, 0, 0], wrongNothing: [0, 0, 0, 0, 0, 0], onUnsure: [0, 0, 0, 0, 0, 0], atEdge: [0, 0, 0, 0, 0, 0], missed: 0 };
   // 1 on a labelled plant, 2 on an unsure label, 3 left over at the tile's edge (not judged), 0 left over (wrong), 4 outside the tile and left over (not this tile's).
-  const state = new Int8Array(ms.length);
+  const state = new Int8Array(ms.length), second = new Uint8Array(ms.length);
   ms.forEach((k, j) => {
     const nearEdge = k.u < t.x + pad || k.u >= t.x + t.w - pad || k.v < t.y + pad || k.v >= t.y + t.h - pad;
     state[j] = takenP[j] >= 0 ? 1 : takenU[j] >= 0 ? 2 : !msIn[j] ? 4 : nearEdge ? 3 : 0;
     if (!msIn[j]) return;
-    s.marks[k.tier]++; if (state[j] === 0) { s.wrong[k.tier]++; (plants.some(pl => Math.hypot(pl.e - k.e, pl.n - k.n) <= R) ? s.wrongSecond : s.wrongNothing)[k.tier]++; } else if (state[j] === 2) s.onUnsure[k.tier]++; else if (state[j] === 3) s.atEdge[k.tier]++;
+    s.marks[k.tier]++; if (state[j] === 0) { s.wrong[k.tier]++; second[j] = plants.some(pl => Math.hypot(pl.e - k.e, pl.n - k.n) <= R) ? 1 : 0; (second[j] ? s.wrongSecond : s.wrongNothing)[k.tier]++; } else if (state[j] === 2) s.onUnsure[k.tier]++; else if (state[j] === 3) s.atEdge[k.tier]++;
   });
   const plantFound = plants.map((_, i) => plantOf[i] >= 0);
   plants.forEach((_, i) => { if (plantOf[i] >= 0) s.found[ms[plantOf[i]].tier]++; else s.missed++; });
-  return { score: s, ms, state, plantFound, plantOf, pad };
+  return { score: s, ms, state, plantFound, plantOf, pad, second };
+}
+
+/**
+ * The labels' own spacing along their rows, in pixels, from the given tiles' labels (a photograph with no flight is
+ * scored in pixels: its matching distance is half the median distance between neighbouring "plant" labels on a row).
+ * The rows' direction is the direction from each "plant" label to its nearest other one in its tile (angles doubled, so
+ * up and down the row are one direction); a new row where the next label stands further across than `cutPx`.
+ */
+export function labelSpacingPx(tiles: Tile[], labelsOf: (t: Tile) => Label[]) {
+  const med = (xs: number[]) => { const t = [...xs].sort((x, y) => x - y); return t.length ? t[t.length >> 1] : NaN; };
+  const devPlants = tiles.map(t => labelsOf(t).filter(l => l.type === "plant"));
+  let c2 = 0, s2 = 0; const nnPx: number[] = [];
+  for (const ps of devPlants) ps.forEach((p0, i) => { let bd = Infinity, bx = 0, by = 0; ps.forEach((q, j) => { if (j === i) return; const d = Math.hypot(q.x - p0.x, q.y - p0.y); if (d < bd) { bd = d; bx = q.x - p0.x; by = q.y - p0.y; } }); if (bd < Infinity) { nnPx.push(bd); const a2 = 2 * Math.atan2(by, bx); c2 += Math.cos(a2); s2 += Math.sin(a2); } });
+  const th = Math.atan2(s2, c2) / 2, ct = Math.cos(th), st = Math.sin(th), cutPx = Math.max(20, 0.3 * med(nnPx));
+  const gapsPx: number[] = [], rowsPerTile: Record<string, number> = {}, medianPerTile: Record<string, number> = {}; let withUnsure = 0;
+  for (const t of tiles) {
+    const ls = labelsOf(t).map(l => ({ a: l.x * ct + l.y * st, c: -l.x * st + l.y * ct, plant: l.type === "plant" })).sort((x, y) => x.c - y.c);
+    const rows: (typeof ls)[] = []; ls.forEach((l, k) => { if (!k || l.c - ls[k - 1].c > cutPx) rows.push([]); rows[rows.length - 1].push(l); });
+    rowsPerTile[t.id] = rows.length; const from = gapsPx.length;
+    for (const r of rows) { r.sort((x, y) => x.a - y.a); for (let k = 1; k < r.length; k++) { if (r[k].plant && r[k - 1].plant) gapsPx.push(Math.hypot(r[k].a - r[k - 1].a, r[k].c - r[k - 1].c)); else withUnsure++; } }
+    medianPerTile[t.id] = Math.round(med(gapsPx.slice(from)) * 10) / 10;
+  }
+  return { devPlants, th, cutPx, gapsPx, withUnsure, rowsPerTile, medianPerTile, medianPx: med(gapsPx) };
 }
 
 /** The field's final dots in one photograph (photograph `pi` of P.photos, camera `f`), by tier; the dots on no row of the stricter marks beside them. */
