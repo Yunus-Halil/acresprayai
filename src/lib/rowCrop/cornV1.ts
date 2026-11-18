@@ -90,6 +90,22 @@ export const CORN_V1 = {
   bandedShare: 0.2,
 };
 
+/**
+ * The vivid cores (greenCores.ts, greenPoints.ts plantPointsFromGreen), 2026-11-17: OFF. Where plants touch and one
+ * piece of green holds several, the plant read marks one of them; with this on, a piece that shows more vivid cores
+ * than it has marks gets the cores left over as marks too. It changes the marks a photograph makes, so a build and
+ * Photo Scout both read with it when it is on (both go through readCornV1). The corn-v1.0 comparison read never uses it.
+ * Measured on one hand-labelled photograph only (corn-benchmark TOUCH-3.md).
+ */
+export const CORN_CORES = {
+  on: false,
+  /** The two blurs' standard deviations, as shares of the photograph's row spacing in pixels (greenPitchPx: the green
+   * read's). With no row spacing the photograph gets no cores. */
+  fineShare: 0.0377, wideShare: 0.1603,
+  /** A core is a peak at or over this share of the photograph's strongest. */
+  share: 0.15,
+};
+
 export type CornIdentity = "corn" | "probable crop";
 export type CornRowEvidence = "both reads agree" | "plant read only" | "green read only";
 export type CornV1Row = {
@@ -151,6 +167,8 @@ export type CornV1Options = RowCropOptions & {
   /** true: a candidate is never split at the plant spacing assumed in one photograph (greenPoints.ts ROW_POINTS.seedM);
    * it carries its extent along the rows (`plants.lowSpan`) and the field splits it at the spacing it measured. */
   rowSpans?: boolean;
+  /** The vivid cores (CORN_CORES): true or false for this read, whatever CORN_CORES.on says. */
+  cores?: boolean;
 };
 
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : null; };
@@ -374,12 +392,14 @@ export function fuseCornV1(ad: AdaptiveRead, points: PlantPoint[], params: Pick<
  * read took for bare soil, which is where dark seedlings go unseen (15 of the 123 photographs of the first flight
  * judged held no plan at all).
  */
-export function cornV1PlantPoints(px: PhotoPixels, ad: AdaptiveRead, seedlings: SeedlingCache): PlantPoint[] {
+export function cornV1PlantPoints(px: PhotoPixels, ad: AdaptiveRead, seedlings: SeedlingCache, cores: boolean = CORN_CORES.on): PlantPoint[] {
   const seedlingStand = ad.plans.some(p => p.stage === "emergence");
   const banded = ad.plans.reduce((s, p) => s + (p.stage === "establishment" || p.stage === "mid" || p.stage === "late" ? p.ownedShare : 0), 0) >= CORN_V1.bandedShare;
   const dark = (seedlings.options ?? SEEDLING_GREEN).dark != null;
   const cache = dark && banded && !seedlingStand ? { ...seedlingCache(px, SEEDLING_V1), levels: seedlings.levels } : seedlings;
-  return plantPointsFromGreen(px, GREEN_POINTS, cache).points;
+  // The vivid cores, when asked for: their blurs are shares of the row spacing the green read holds for this photograph.
+  const pitch = cores ? greenPitchPx(ad) : null;
+  return plantPointsFromGreen(px, GREEN_POINTS, cache, pitch && pitch > 0 ? { finePx: CORN_CORES.fineShare * pitch, widePx: CORN_CORES.wideShare * pitch, share: CORN_CORES.share } : null).points;
 }
 
 /** Corn V1 over one photograph. */
@@ -389,7 +409,7 @@ export function readCornV1(px: PhotoPixels, params: RowCropParams, opts: CornV1O
   const seedlings = seedlingCache(px, opts.baselineSeedlings ? SEEDLING_V1 : SEEDLING_GREEN);
   const ad = readCornAdaptive(px, params, { ...opts, seedlings });
   const t1 = Date.now();
-  const points = opts.detectorPoints ?? cornV1PlantPoints(px, ad, seedlings);
+  const points = opts.detectorPoints ?? cornV1PlantPoints(px, ad, seedlings, opts.baselineSeedlings ? false : opts.cores ?? CORN_CORES.on);
   const t2 = Date.now();
   const v = fuseCornV1(ad, points, params, { enteredCrop: opts.enteredCrop ?? params.crop?.id ?? null, source: opts.detectorPoints ? "detector" : "green", greenMs: t1 - t0, plantsMs: t2 - t1 });
   if (!opts.detectorPoints && !opts.baselineSeedlings && opts.rowCandidates !== false && darkRuleApplies(ad, seedlings)) {

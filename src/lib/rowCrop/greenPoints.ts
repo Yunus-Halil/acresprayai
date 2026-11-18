@@ -8,6 +8,7 @@
 // builder only keeps points that line up in parallel, evenly spaced rows, and scattered green makes no rows.
 import type { PhotoPixels } from "../photoScout/pattern";
 import type { PlantPoint } from "./plantRows";
+import { greenCores } from "./greenCores";
 import { convexHull } from "./readRowCrop";
 import { type SeedlingCache, sharedSeedlingMask } from "./seedlingGreen";
 
@@ -39,7 +40,12 @@ export const GREEN_POINTS = {
   shapeMinPx: 60,
   /** Points stop here (a frame of cover gives no plant positions anyway). */
   maxPoints: 15000,
+  /** With the vivid cores asked for: a core belongs to the piece under it, or to the nearest one within this many work pixels. */
+  coreReachPx: 2,
 };
+
+/** The vivid cores asked of a photograph (greenCores.ts): the two blurs in its own pixels, and the share of its strongest core a core must reach. */
+export type CoresAsked = { finePx: number; widePx: number; share: number };
 
 /** A lone plant's outline at the photo's own pixel: how a grass (corn's narrow, spread leaves) differs from a broadleaf
  * seedling (beet, sunflower, soybean: round leaves, a compact rosette). */
@@ -59,10 +65,17 @@ export type GreenPoints = {
   /** Share of the frame that is green. */
   greenShare: number;
   workFactor: number;
+  /** With the vivid cores asked for: the points added from them (they follow the read's own points in `points`). */
+  coresAdded?: number;
 };
 
-/** Plant positions over a whole photograph, photo pixels. */
-export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedlings?: SeedlingCache): GreenPoints {
+/**
+ * Plant positions over a whole photograph, photo pixels.
+ * `cores` (off unless given): the plants of a piece counted by its vivid cores as well. Every point above is kept; in a
+ * piece that holds more cores than points, each point takes its nearest core (one to one, nearest pairs first) and the
+ * cores left over are added as points, so the piece carries as many points as it has cores. Cover gets none.
+ */
+export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedlings?: SeedlingCache, cores: CoresAsked | null = null): GreenPoints {
   const W = px.width, H = px.height, f = Math.max(1, Math.round(Math.max(W, H) / o.workLongSide));
   // The mask the emergence reader also reads: from the photograph's shared cache when there is one.
   const full = sharedSeedlingMask(seedlings, px);
@@ -109,6 +122,8 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
   const d = Math.sqrt(typical), minPiece = Math.max(o.minPiecePx, typical * o.speckShare);
   const toPhoto = (x: number, y: number): PlantPoint => ({ x: (x + 0.5) * f, y: (y + 0.5) * f });
   const points: GreenPoint[] = [];
+  /** The piece each point came from, and the pieces read as cover (only kept for the vivid cores). */
+  const pieceOf: number[] = [], cover = new Set<number>();
   /** The piece's own pixels at the photo's pixel: its outline, hull and leaf width. */
   const shapeOf = (id: number): PlantShape | undefined => {
     const X0 = bx0[id] * f, Y0 = by0[id] * f, X1 = Math.min(W, (bx1[id] + 1) * f), Y1 = Math.min(H, (by1[id] + 1) * f);
@@ -128,12 +143,12 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
   };
   for (const id of kept) {
     const a = area[id]; if (a < minPiece) continue;
-    if (a <= o.wholeUpTo * typical) { points.push({ ...toPhoto(sx[id] / a, sy[id] / a), shape: shapeOf(id) }); continue; }
+    if (a <= o.wholeUpTo * typical) { points.push({ ...toPhoto(sx[id] / a, sy[id] / a), shape: shapeOf(id) }); pieceOf.push(id); continue; }
     // A large piece: cover (it fills its box, wide both ways) gives no points: squares cut from a lawn or a canopy line
     // up in a perfect lattice the row builder would take for rows. A long piece (plants touching along a row) gives
     // points along its long axis, one per typical plant.
     const bw = bx1[id] - bx0[id] + 1, bh = by1[id] - by0[id] + 1, fill = a / (bw * bh);
-    if (fill > o.coverFill && Math.min(bw, bh) > o.coverPlants * d) continue;
+    if (fill > o.coverFill && Math.min(bw, bh) > o.coverPlants * d) { cover.add(id); continue; }
     const mx = sx[id] / a, my = sy[id] / a;
     let cxx = 0, cyy = 0, cxy = 0;
     for (let y = by0[id]; y <= by1[id]; y++) for (let x = bx0[id]; x <= bx1[id]; x++) if (label[y * w + x] === id) { cxx += (x - mx) ** 2; cyy += (y - my) ** 2; cxy += (x - mx) * (y - my); }
@@ -142,10 +157,28 @@ export function plantPointsFromGreen(px: PhotoPixels, o = GREEN_POINTS, seedling
     for (let y = by0[id]; y <= by1[id]; y++) for (let x = bx0[id]; x <= bx1[id]; x++) if (label[y * w + x] === id) {
       const k = Math.floor(((x - mx) * ux + (y - my) * uy) / step), b = bins.get(k) ?? [0, 0, 0]; b[0]++; b[1] += x; b[2] += y; bins.set(k, b);
     }
-    for (const [n, bxs, bys] of bins.values()) if (n >= minPiece) points.push(toPhoto(bxs / n, bys / n));
+    for (const [n, bxs, bys] of bins.values()) if (n >= minPiece) { points.push(toPhoto(bxs / n, bys / n)); pieceOf.push(id); }
     if (points.length > o.maxPoints) break;
   }
-  return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f };
+  if (!cores || points.length > o.maxPoints) return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f };
+  // The vivid cores (greenCores.ts), each in the piece under it or the nearest within reach.
+  const pointsIn = new Map<number, number[]>(); pieceOf.forEach((id, k) => (pointsIn.get(id) ?? pointsIn.set(id, []).get(id)!).push(k));
+  const found = greenCores(px, cores.finePx, cores.widePx, cores.share), coresIn = new Map<number, number[]>(), reach = o.coreReachPx;
+  found.forEach((c, k) => {
+    const cx = Math.round(c.x / f - 0.5), cy = Math.round(c.y / f - 0.5); let best = -1, bd = Infinity;
+    for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) { const xx = cx + dx, yy = cy + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const id = label[yy * w + xx]; if (id < 0) continue; const q = dx * dx + dy * dy; if (q < bd) { bd = q; best = id; } }
+    if (best >= 0 && bd <= reach * reach && !cover.has(best)) (coresIn.get(best) ?? coresIn.set(best, []).get(best)!).push(k);
+  });
+  let coresAdded = 0;
+  for (const [id, cs] of coresIn) {
+    const ms = pointsIn.get(id) ?? []; if (cs.length <= ms.length) continue;
+    const pairs: [number, number, number][] = []; for (const m of ms) for (const c of cs) pairs.push([Math.hypot(points[m].x - found[c].x, points[m].y - found[c].y), m, c]);
+    pairs.sort((p, q) => p[0] - q[0]); const usedM = new Set<number>(), usedC = new Set<number>();
+    for (const [, m, c] of pairs) { if (usedM.has(m) || usedC.has(c)) continue; usedM.add(m); usedC.add(c); }
+    for (const c of cs) if (!usedC.has(c)) { points.push({ x: found[c].x, y: found[c].y }); coresAdded++; }
+    if (points.length > o.maxPoints) break;
+  }
+  return { points, typicalPx: d * f, greenShare: green / (w * h || 1), workFactor: f, coresAdded };
 }
 
 export const ROW_POINTS = {
