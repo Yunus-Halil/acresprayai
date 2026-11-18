@@ -65,7 +65,7 @@ import { groundToPixel, pixelToGround } from "../../src/lib/directGeoref/project
 import { type CornPhotoRead, FIELD, cornFieldAndGround, type FieldGround } from "../../src/lib/fieldTwin/cornField";
 import { type CornPlantsOptions, candidatePoints, placeDots, readRows } from "../../src/lib/fieldTwin/cornPlants";
 import { framesFromAnalysis, type TwinAnalysis } from "../../src/lib/fieldTwin/analysis";
-import { PLANTS_FIRST, PLANTS_FIRST_V1, SEQUENCE, SEQUENCE_V1, shiftOf } from "../../src/lib/fieldTwin/plantsFirst";
+import { PLANTS_FIRST, PLANTS_FIRST_V1, SEQUENCE, SEQUENCE_V1, courseAt, shiftOf } from "../../src/lib/fieldTwin/plantsFirst";
 import { SEEDLING_GREEN, SEEDLING_ROW, seedlingCache } from "../../src/lib/rowCrop/seedlingGreen";
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
 import { diagnose } from "./cornLabelMisses";
@@ -157,11 +157,13 @@ const AREA = (() => { const a = opt("area"); if (!a) return { x: 0, y: 0, w: W, 
 type Tile = { id: string; x: number; y: number; w: number; h: number };
 const edge = (o: number, len: number, k: number) => Math.round(o + (len * k) / GRID);
 const DEV: Tile[] = [];
-for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) if ((r + c) % 2 === 0) { const x = edge(AREA.x, AREA.w, c), y = edge(AREA.y, AREA.h, r); DEV.push({ id: `r${r + 1}c${c + 1}`, x, y, w: edge(AREA.x, AREA.w, c + 1) - x, h: edge(AREA.y, AREA.h, r + 1) - y }); }
+// --hidden: the held-back tiles in place of the dev tiles (FINAL-1.md Part 4: each check run once). Nothing is drawn.
+const HIDDEN = argv.includes("--hidden");
+for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) if ((r + c) % 2 === (HIDDEN ? 1 : 0)) { const x = edge(AREA.x, AREA.w, c), y = edge(AREA.y, AREA.h, r); DEV.push({ id: `r${r + 1}c${c + 1}`, x, y, w: edge(AREA.x, AREA.w, c + 1) - x, h: edge(AREA.y, AREA.h, r + 1) - y }); }
 const within = (t: Tile, u: number, v: number, pad = 0) => u >= t.x - pad && u < t.x + t.w + pad && v >= t.y - pad && v < t.y + t.h + pad;
 // Only the dev tiles' labels are kept; the rest of the file is let go here.
 const LAB = new Map(DEV.map(t => [t.id, IM.points.filter(p => within(t, p.x, p.y))]));
-console.log(`${IMAGE} ${SINGLE ? "alone, no stored flight" : `is photograph ${A.reads.indexOf(read) + 1} of ${A.reads.length} in ${A.twinId}`}. Area x ${AREA.x}-${AREA.x + AREA.w}, y ${AREA.y}-${AREA.y + AREA.h}; ${GRID} x ${GRID} tiles, ${DEV.length} dev: ${DEV.map(t => t.id).join(" ")}`);
+console.log(`${IMAGE} ${SINGLE ? "alone, no stored flight" : `is photograph ${A.reads.indexOf(read) + 1} of ${A.reads.length} in ${A.twinId}`}. Area x ${AREA.x}-${AREA.x + AREA.w}, y ${AREA.y}-${AREA.y + AREA.h}; ${GRID} x ${GRID} tiles, ${DEV.length} ${HIDDEN ? "HELD BACK" : "dev"}: ${DEV.map(t => t.id).join(" ")}`);
 
 type Mark = { u: number; v: number; e: number; n: number; tier: number; /** The field dot it is (B). */ i?: number };
 type Score = { tile: string; labelled: number; unsure: number; marks: number[]; found: number[]; wrong: number[]; /** The wrong marks, split: a second mark on a labelled plant of the tile (within the matching distance of one), and a mark on nothing. */ wrongSecond: number[]; wrongNothing: number[]; onUnsure: number[]; atEdge: number[]; missed: number };
@@ -206,6 +208,7 @@ const sum = (a: number[]) => a.reduce((t, x) => t + x, 0);
 let IMG: { width: number; height: number; data: Uint8Array } | null = null;
 /** The tile's picture: the tile alone (not a pixel of its neighbours), twice its size, under its legend. */
 function draw(t: Tile, J: Judged, file: string, title: string, rings: string, extra: Mark[] = []) {
+  if (HIDDEN) return;
   IMG ??= decodeImage(new Uint8Array(readFileSync(photoPath(IMAGE)!)));
   const Z = 2, HEAD = 220, c = cut(IMG, t.x, t.y, t.w, t.h, Z, HEAD), at = (u: number, v: number): [number, number] => [(u - t.x) * Z, (v - t.y) * Z + HEAD], s = J.score;
   for (const k of extra) if (within(t, k.u, k.v)) { const [x, y] = at(k.u, k.v); ring(c, x, y, 5, 1, GREY); }
@@ -246,7 +249,9 @@ if (SINGLE) {
     for (const r of rows) { r.sort((x, y) => x.a - y.a); for (let k = 1; k < r.length; k++) { if (r[k].plant && r[k - 1].plant) gapsPx.push(Math.hypot(r[k].a - r[k - 1].a, r[k].c - r[k - 1].c)); else withUnsure++; } }
     medianPerTile[t.id] = Math.round(med(gapsPx.slice(from)) * 10) / 10;
   }
-  const sorted = [...gapsPx].sort((x, y) => x - y), R = med(gapsPx) / 2;
+  // --match-px: the matching distance given (the dev tiles' own, when the held-back tiles are scored), not read from these tiles' labels.
+  const sorted = [...gapsPx].sort((x, y) => x - y), R = opt("match-px") ? Number(opt("match-px")) : med(gapsPx) / 2;
+  if (HIDDEN && !opt("match-px")) throw new Error("--hidden needs --match-px: the matching distance is the dev tiles' own");
   console.log(`Labels on the dev tiles: rows run at ${Math.round(((th * 180) / Math.PI) * 10) / 10} degrees in the photograph; ${gapsPx.length} pairs of neighbouring "plant" labels on a row (${withUnsure} pairs with an "unsure" label left out); distance between neighbours: lowest quarter ${sorted[sorted.length >> 2].toFixed(1)} px, median ${med(gapsPx).toFixed(1)} px, highest quarter ${sorted[(3 * sorted.length) >> 2].toFixed(1)} px. Matching distance: ${R.toFixed(1)} px. Rows found per tile: ${JSON.stringify(rowsPerTile)}`);
   // The photograph, read as a build reads one photograph. No camera data: the scale is what the photograph's header gives (Photo Scout's estimate), else none.
   const bytes = new Uint8Array(readFileSync(photoPath(IMAGE)!));
@@ -334,7 +339,7 @@ if (SINGLE) {
       }
     } });
   }
-  writeFileSync(join(OUT, `score-single${SUF}.json`), JSON.stringify({ image: IMAGE, vividCores: CORES_ON, width: W, height: H, area: AREA, grid: GRID, devTiles: DEV, labelsRead: { plant: sum(devPlants.map(x => x.length)), unsure: sum([...LAB.values()].map(l => l.filter(p0 => p0.type === "unsure").length)) },
+  writeFileSync(join(OUT, `score-single${SUF}.json`), JSON.stringify({ image: IMAGE, vividCores: CORES_ON, hiddenHalf: HIDDEN, width: W, height: H, area: AREA, grid: GRID, devTiles: DEV, labelsRead: { plant: sum(devPlants.map(x => x.length)), unsure: sum([...LAB.values()].map(l => l.filter(p0 => p0.type === "unsure").length)) },
     labels: { rowDirectionDeg: (th * 180) / Math.PI, pairs: gapsPx.length, pairsWithUnsureLeftOut: withUnsure, lowQuarterPx: sorted[sorted.length >> 2], medianPx: med(gapsPx), highQuarterPx: sorted[(3 * sorted.length) >> 2], rowsPerTile, medianPerTile, newRowBeyondPx: cutPx }, matchPx: R,
     read: { ms, darkRuleApplied: darkApplied, plans, lowerBarForced: forced ? forced.length : null, scaleFromFile: est.gsdM, scaleBasisFromFile: est.basis, gsdM: v.green.gsdM, scaleBasis: v.green.scaleBasis, strict: c.plants.length, low: c.low ? c.low.length : null, rows: v.rows.length, cornRows: v.summary.cornRows, probableRows: v.summary.probableRows, notes: v.notes },
     photoScout: { width: sw, height: sh, share: k, ms: msS, gsdM: ps.green.gsdM, scaleBasis: ps.green.scaleBasis, plantMarks: ps.plants.points.length, low: ps.plants.low ? ps.plants.low.length : null, rows: ps.rows.length, summary: ps.summary, identity: ps.identity, notes: ps.notes, dev: { weedCandidates: weedsDev, weedCandidatesOnALabelledPlant: weedsOnPlant, standGaps: gapsDev, standGapsWithALabelledPlantInside: gapsWithPlants, labelledPlantsInsideGaps: plantsInGaps } },
@@ -349,6 +354,9 @@ const RUNS: Variant[] = [
   { key: "b-branch-sweep-off", what: "this branch, the lone-mark sweep off (cornScoreboard.ts `p6`)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, sweepLoneMarks: false }, ground, placing: PLANTS_FIRST }) },
   { key: "c-branch-sweep-on", what: "this branch, the lone-mark sweep on (cornScoreboard.ts `p7`)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, sweepLoneMarks: true }, ground, placing: PLANTS_FIRST }) },
   { key: "d-branch-option-on", what: "this branch with the plant spacing not asked of a dot on a row's line (SEQUENCE.placeOffSpacing; cornScoreboard.ts `p8`)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true }, ground, placing: PLANTS_FIRST }) },
+  { key: "e-spacing-stricter-only", what: "d, the stricter marks' dots only (offSpacingStricterOnly; `p9`)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true, offSpacingStricterOnly: true }, ground, placing: PLANTS_FIRST }) },
+  { key: "f-spacing-learned-limit", what: "d with the too-close limit learned from the field (tooCloseFromField; `p10`)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true, tooCloseFromField: true }, ground, placing: PLANTS_FIRST }) },
+  { key: "g-spacing-both", what: "d with both (`p11`)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true, offSpacingStricterOnly: true, tooCloseFromField: true }, ground, placing: PLANTS_FIRST }) },
 ];
 type Cached = { applies?: boolean; plantsMatch?: boolean; low: [number, number][]; lowWhole?: [number, number][]; span?: [number, number][]; axis?: [number, number] | null };
 const cached = (name: string): Cached | null => { const p = join(CACHE, `${name}.json`); return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as Cached) : null; };
@@ -359,12 +367,12 @@ const readsFor = (spans: boolean): CornPhotoRead[] => A.reads.map(r => {
   if (spans && c.axis && c.lowWhole && c.span) return { ...rest, low: c.lowWhole, lowSpan: c.span, lowAxis: c.axis };
   return { ...rest, low: c.low };
 });
-const B: { run: string; what: string; plantSpacingM: number; wholeFlightOnRows: number[]; wholeFlightOnNoRow: number; landed: number; foldedBack: number; marksInPhoto: number[]; noRowInPhoto: number; half: (Score & { missedWithADotOnNoRow: number; noRowDots: number })[]; full: Score[] }[] = [];
+const B: { run: string; what: string; tooCloseM: number; certainGaps: number; plantSpacingM: number; wholeFlightOnRows: number[]; wholeFlightOnNoRow: number; landed: number; foldedBack: number; marksInPhoto: number[]; noRowInPhoto: number; half: (Score & { missedWithADotOnNoRow: number; noRowDots: number })[]; full: Score[] }[] = [];
 let origin: { lat: number; lng: number; altM: number } | null = null;
 // --runs a,c,d: only those runs (by their first letter), written to <out>/score-runs.json; part A is not run. Without it: a, b, c as SCORE.md.
-const ONLY = opt("runs")?.split(",") ?? null, LOOK = opt("look");
+const ONLY = opt("runs")?.split(",") ?? null, LOOK = opt("look"), LINES = opt("lines"), HEADLAND_X = Number(opt("headland-x") ?? 3330);
 if (LOOK) mkdirSync(LOOK, { recursive: true });
-for (const run of MISSES ? RUNS.filter(r => r.key === (opt("misses-run") ?? "b-branch-sweep-off")) : RUNS.filter(r => (LOOK ? r.key[0] === "d" : ONLY ? ONLY.includes(r.key[0]) : r.key[0] !== "d"))) {
+for (const run of MISSES ? RUNS.filter(r => r.key === (opt("misses-run") ?? "b-branch-sweep-off")) : RUNS.filter(r => (LINES ? r.key[0] === (ONLY?.[0] ?? "c") : LOOK ? r.key[0] === "d" : ONLY ? ONLY.includes(r.key[0]) : "abc".includes(r.key[0])))) {
   const t0 = Date.now(), reads = readsFor(run.spans);
   // The field does not read the candidates (cornScoreboard.ts), so it is the same field in all three runs; made again each run all the same.
   const { field: F, ground } = cornFieldAndGround(reads, frames, A.fieldOptions ?? FIELD);
@@ -394,6 +402,28 @@ for (const run of MISSES ? RUNS.filter(r => r.key === (opt("misses-run") ?? "b-b
     landed++; if (!q[2]) { fold++; continue; }
     (t >= 0 ? marks : noRow).push({ u: q[0], v: q[1], e: P.all[i].e, n: P.all[i].n, tier: Math.max(0, t), i }); if (t >= 0) inPhoto[t]++;
   }
+  if (LINES) {
+    // --lines <file>: the row lines the certain plants made in this run (rec.courses), each with its certain plants, its
+    // length, what the field judged of the ground under it, where it runs in this photograph, and the labelled plants of
+    // the dev tiles that stand on it. Read only; nothing is scored.
+    const th = (rec.geometry.directionDeg * Math.PI) / 180, ct = Math.cos(th), st = Math.sin(th), band = (opts.placing ?? PLANTS_FIRST).onRowShare * rec.geometry.spacingM;
+    const labs = DEV.flatMap(t => LAB.get(t.id)!.filter(l => l.type === "plant").map(l => { const g = place(l.x, l.y)!; return { tile: t.id, a: g[0] * ct + g[1] * st, c: -g[0] * st + g[1] * ct }; }));
+    const out = rec.courses.map((L, k) => {
+      const line: [number, number][] = [], state = [0, 0, 0]; let inPhoto = 0, left = 0, uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+      for (let a = L.a0; ; a = Math.min(L.a1, a + 0.25)) {
+        const c = courseAt(L, a), e = a * ct - c * st, nn = a * st + c * ct; line.push([Math.round(e * 100) / 100, Math.round(nn * 100) / 100]);
+        state[ground ? ground.state(e, nn) : 0]++;
+        const q = pixelOf(e, nn); if (q) { inPhoto++; if (q[0] < HEADLAND_X) left++; uMin = Math.min(uMin, q[0]); uMax = Math.max(uMax, q[0]); vMin = Math.min(vMin, q[1]); vMax = Math.max(vMax, q[1]); }
+        if (a >= L.a1) break;
+      }
+      const on = labs.filter(l => l.a >= L.a0 - 0.5 && l.a <= L.a1 + 0.5 && Math.abs(l.c - courseAt(L, l.a)) <= band);
+      const all = rec.rowOf.reduce((t, r, i) => t + (r >= 0 && Math.abs(rec.c[i] - courseAt(L, rec.a[i])) <= band && rec.a[i] >= L.a0 - 0.5 && rec.a[i] <= L.a1 + 0.5 ? 1 : 0), 0);
+      return { line: k, certainPlants: L.dots.length, lengthM: Math.round((L.a1 - L.a0) * 10) / 10, plantsOnRowsInItsBand: all, ground: { notJudged: state[0], planted: state[1], scattered: state[2] }, samples: line.length, inThisPhoto: inPhoto, ofThemLeftOfTheHeadlandLine: left, pixelsX: inPhoto ? [Math.round(uMin), Math.round(uMax)] : null, pixelsY: inPhoto ? [Math.round(vMin), Math.round(vMax)] : null, labelledPlantsOfTheDevTilesOnIt: on.length, devTilesOfThose: [...new Set(on.map(l => l.tile))], en: line };
+    });
+    writeFileSync(LINES, JSON.stringify({ run: run.key, rowSpacingM: rec.geometry.spacingM, plantSpacingM: rec.geometry.seedM, directionDeg: rec.geometry.directionDeg, bandM: band, headlandLeftOfX: HEADLAND_X, lines: out }));
+    console.log(`${run.key}: ${out.length} row lines written to ${LINES}`);
+    process.exit(0);
+  }
   if (LOOK) {
     const img = (IMG ??= decodeImage(new Uint8Array(readFileSync(photoPath(IMAGE)!)))), dir = (rec.geometry.directionDeg * Math.PI) / 180;
     lookReport({ out: LOOK, px: { width: img.width, height: img.height, rgba: new Uint8ClampedArray(img.data.buffer, img.data.byteOffset, img.data.byteLength) }, tiles: DEV, labels: LAB, judge, R: seedM / 2, marks, noRow, place, pixelOf, within, photos: i => P.all[i].photos, looked: i => P.covered[i], alongEN: [Math.cos(dir), Math.sin(dir)] });
@@ -408,7 +438,7 @@ for (const run of MISSES ? RUNS.filter(r => r.key === (opt("misses-run") ?? "b-b
     return { ...J.score, missedWithADotOnNoRow: withNoRow, noRowDots: noRow.filter(k => within(t, k.u, k.v)).length };
   });
   const full = DEV.map(t => judge(t, marks, place, seedM).score);
-  B.push({ run: run.key, what: run.what, plantSpacingM: seedM, wholeFlightOnRows: whole, wholeFlightOnNoRow: onNoRow, landed, foldedBack: fold, marksInPhoto: inPhoto, noRowInPhoto: noRow.length, half, full });
+  B.push({ run: run.key, what: run.what, tooCloseM: rec.tooCloseM, certainGaps: rec.certainGaps, plantSpacingM: seedM, wholeFlightOnRows: whole, wholeFlightOnNoRow: onNoRow, landed, foldedBack: fold, marksInPhoto: inPhoto, noRowInPhoto: noRow.length, half, full });
   console.log(`${run.key}: plant spacing ${seedM} m; whole flight on rows ${JSON.stringify(whole)}; in the photograph ${JSON.stringify(inPhoto)} (${landed} dots land, ${fold} folded back and left out); ${Math.round((Date.now() - t0) / 1000)} s`);
   for (const s of half) console.log(`  ${s.tile}: labelled ${s.labelled}, found ${JSON.stringify(s.found)}, wrong ${JSON.stringify(s.wrong)}, marks ${JSON.stringify(s.marks)}, on unsure ${JSON.stringify(s.onUnsure)}, at edge ${JSON.stringify(s.atEdge)}, missed ${s.missed}`);
   if (MISSES) {
@@ -418,7 +448,7 @@ for (const run of MISSES ? RUNS.filter(r => r.key === (opt("misses-run") ?? "b-b
   }
 }
 
-if (ONLY) { writeFileSync(join(OUT, "score-runs.json"), JSON.stringify({ image: IMAGE, twin: A.twinId, area: AREA, grid: GRID, devTiles: DEV, tiers: TIERS, B }, null, 1)); process.exit(0); }
+if (ONLY) { writeFileSync(join(OUT, "score-runs.json"), JSON.stringify({ image: IMAGE, hiddenHalf: HIDDEN, twin: A.twinId, area: AREA, grid: GRID, devTiles: DEV, tiers: TIERS, B }, null, 1)); process.exit(0); }
 
 // ---- A: the photograph's own marks, before anything is merged. Its own camera, no registration shift.
 const seeds = [...new Set(B.map(b => b.plantSpacingM))]; if (seeds.length !== 1) console.log(`the runs measured different plant spacings (${seeds.join(", ")}); A uses run c's`);

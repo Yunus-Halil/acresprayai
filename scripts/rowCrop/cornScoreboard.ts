@@ -82,6 +82,9 @@ const VARIANTS: Record<string, Variant> = {
   p7other: { what: "the final sweep with the other company: " + (SEQUENCE.loneMarkCompany === "certain" ? "a certain or a probable plant" : "a certain plant only"), spans: true, opts: ground => ({ sequence: { ...SEQUENCE, loneMarkCompany: SEQUENCE.loneMarkCompany === "certain" ? "located" as const : "certain" as const }, ground, placing: PLANTS_FIRST }) },
   // 2026-11-17: the plant spacing not asked of a dot on a row's line (SEQUENCE.placeOffSpacing), off by default.
   p8: { what: "the rules as they stand now + the plant spacing not asked of a dot on a row's line (placeOffSpacing)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true }, ground, placing: PLANTS_FIRST }) },
+  p9: { what: "p8, the stricter marks' dots only (offSpacingStricterOnly)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true, offSpacingStricterOnly: true }, ground, placing: PLANTS_FIRST }) },
+  p10: { what: "p8 with the too-close limit learned from the field (tooCloseFromField)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true, tooCloseFromField: true }, ground, placing: PLANTS_FIRST }) },
+  p11: { what: "p8 with both: the stricter marks' dots only, and the too-close limit learned from the field", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true, offSpacingStricterOnly: true, tooCloseFromField: true }, ground, placing: PLANTS_FIRST }) },
   // Measured only (2026-11-17): rows only on ground judged planted. Ground the field did not judge is read as scattered,
   // so nothing on it is the planting (no row fitted, no dot placed, a row cut where it would cross it). No such rule exists.
   p7planted: { what: "MEASURED ONLY: the rules as they stand now, ground the field did not judge read as scattered (rows only on ground judged planted)", spans: true, opts: ground => ({ sequence: SEQUENCE, ground: ground ? { ...ground, state: (e: number, n: number) => (ground.state(e, n) === 1 ? 1 : 2) } : null, placing: PLANTS_FIRST }) },
@@ -205,7 +208,7 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
   const out = {
     flight: FLIGHT, variant: v.what, revision, photographs: reads.length, photographsWithCandidates: reads.filter(r => r.low?.length).length,
     cache: { missing, plantsDifferFromRecord: mismatched }, ms: 0, spacingRules: rec.spacingRules, photographsWithTilt: P.shifts.filter(s => s.tilt && (s.tilt.t[0] !== 0 || s.tilt.t[1] !== 0)).length, unplanted: rec.unplanted, cutOverScattered: rec.gaps.cutOverScattered, alleyRefused: rec.alleyRefused, alone,
-    geometry: { rowSpacingM: Math.round(S * 1000) / 1000, plantSpacingM: rec.geometry.seedM, directionDeg: Math.round(rec.geometry.directionDeg * 100) / 100, certainRows: rec.geometry.certainRows },
+    geometry: { rowSpacingM: Math.round(S * 1000) / 1000, plantSpacingM: rec.geometry.seedM, directionDeg: Math.round(rec.geometry.directionDeg * 100) / 100, certainRows: rec.geometry.certainRows, tooCloseM: rec.tooCloseM, certainGaps: rec.certainGaps },
     planting: { judged: F.planting.judged, why: F.planting.why, plantedM2: F.planting.plantedM2, scatteredM2: F.planting.scatteredM2 },
     dots: { all: n, stricterMarks: P.strict, candidates: n - P.strict },
     // On a row only because the spacing was not asked (placeOffSpacing): counted inside the tiers above.
