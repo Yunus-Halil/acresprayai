@@ -17,6 +17,9 @@
 //   the stricter bar and the lower bar. Everything is in PIXELS: the matching distance is half the median distance
 //   between neighbouring "plant" labels on a row, measured on the dev tiles' labels alone. Photo Scout's read of the same
 //   photograph (pages/app/PhotoScout.tsx: the same reader on the photograph drawn down to 4096 pixels) is run beside it.
+// --single --touch: beside it, the touching plants (cornLabelLook.ts touchReport), written to <out>/touch.json.
+// --look <dir>: only run d (this branch with the plant spacing not asked) at half the plant spacing, and what the
+//   photograph's own read measures of the green under every dot of the dev tiles (cornLabelLook.ts lookReport).
 // --misses <dir>: only run b (this branch, the sweep off) at half the plant spacing, judged as below, and then why its
 //   plants not found were left off the rows (cornLabelMisses.ts), written to <dir>. No score is written and no tile of the score drawn.
 //
@@ -62,6 +65,7 @@ import { PLANTS_FIRST, PLANTS_FIRST_V1, SEQUENCE, SEQUENCE_V1, shiftOf } from ".
 import { SEEDLING_GREEN, SEEDLING_ROW, seedlingCache } from "../../src/lib/rowCrop/seedlingGreen";
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
 import { diagnose } from "./cornLabelMisses";
+import { lookReport, touchReport } from "./cornLabelLook";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? null : argv[i + 1]; };
@@ -153,10 +157,11 @@ const LAB = new Map(DEV.map(t => [t.id, IM.points.filter(p => within(t, p.x, p.y
 console.log(`${IMAGE} ${SINGLE ? "alone, no stored flight" : `is photograph ${A.reads.indexOf(read) + 1} of ${A.reads.length} in ${A.twinId}`}. Area x ${AREA.x}-${AREA.x + AREA.w}, y ${AREA.y}-${AREA.y + AREA.h}; ${GRID} x ${GRID} tiles, ${DEV.length} dev: ${DEV.map(t => t.id).join(" ")}`);
 
 type Mark = { u: number; v: number; e: number; n: number; tier: number; /** The field dot it is (B). */ i?: number };
-type Score = { tile: string; labelled: number; unsure: number; marks: number[]; found: number[]; wrong: number[]; onUnsure: number[]; atEdge: number[]; missed: number };
+type Score = { tile: string; labelled: number; unsure: number; marks: number[]; found: number[]; wrong: number[]; /** The wrong marks, split: a second mark on a labelled plant of the tile (within the matching distance of one), and a mark on nothing. */ wrongSecond: number[]; wrongNothing: number[]; onUnsure: number[]; atEdge: number[]; missed: number };
 type Judged = { score: Score; ms: Mark[]; state: Int8Array; plantFound: boolean[]; /** Per labelled plant: the mark it has (index into `ms`), or -1. */ plantOf: Int32Array };
-const TIERS = ["certain", "probable", "second look, 2+ photographs", "second look, 1 photograph", "loosened"] as const;
-const TIER_COL: Rgb[] = [[255, 255, 255], [120, 220, 255], [255, 214, 40], [255, 70, 200], [255, 120, 0]];
+// The last two: a dot on its row only because the plant spacing was not asked of it (SEQUENCE.placeOffSpacing), by where it came from.
+const TIERS = ["certain", "probable", "second look, 2+ photographs", "second look, 1 photograph", "by the option: a dot of the stricter marks", "by the option: a second-look dot"] as const;
+const TIER_COL: Rgb[] = [[255, 255, 255], [120, 220, 255], [255, 214, 40], [255, 70, 200], [80, 255, 200], [200, 255, 80]];
 
 /** One dev tile judged: `marks` in the photograph with their place on the ground, `place` a pixel's place on the same ground, `R` metres. */
 function judge(t: Tile, marks: Mark[], place: (u: number, v: number) => [number, number] | null, R: number): Judged & { pad: number } {
@@ -177,14 +182,14 @@ function judge(t: Tile, marks: Mark[], place: (u: number, v: number) => [number,
   };
   const takenP = new Int32Array(ms.length).fill(-1), plantOf = match(near(plants), takenP);
   const takenU = Int32Array.from(takenP, x => (x >= 0 ? -2 : -1)); match(near(unsure), takenU);
-  const s: Score = { tile: t.id, labelled: plants.length, unsure: unsure.length, marks: [0, 0, 0, 0, 0], found: [0, 0, 0, 0, 0], wrong: [0, 0, 0, 0, 0], onUnsure: [0, 0, 0, 0, 0], atEdge: [0, 0, 0, 0, 0], missed: 0 };
+  const s: Score = { tile: t.id, labelled: plants.length, unsure: unsure.length, marks: [0, 0, 0, 0, 0, 0], found: [0, 0, 0, 0, 0, 0], wrong: [0, 0, 0, 0, 0, 0], wrongSecond: [0, 0, 0, 0, 0, 0], wrongNothing: [0, 0, 0, 0, 0, 0], onUnsure: [0, 0, 0, 0, 0, 0], atEdge: [0, 0, 0, 0, 0, 0], missed: 0 };
   // 1 on a labelled plant, 2 on an unsure label, 3 left over at the tile's edge (not judged), 0 left over (wrong), 4 outside the tile and left over (not this tile's).
   const state = new Int8Array(ms.length);
   ms.forEach((k, j) => {
     const nearEdge = k.u < t.x + pad || k.u >= t.x + t.w - pad || k.v < t.y + pad || k.v >= t.y + t.h - pad;
     state[j] = takenP[j] >= 0 ? 1 : takenU[j] >= 0 ? 2 : !msIn[j] ? 4 : nearEdge ? 3 : 0;
     if (!msIn[j]) return;
-    s.marks[k.tier]++; if (state[j] === 0) s.wrong[k.tier]++; else if (state[j] === 2) s.onUnsure[k.tier]++; else if (state[j] === 3) s.atEdge[k.tier]++;
+    s.marks[k.tier]++; if (state[j] === 0) { s.wrong[k.tier]++; (plants.some(pl => Math.hypot(pl.e - k.e, pl.n - k.n) <= R) ? s.wrongSecond : s.wrongNothing)[k.tier]++; } else if (state[j] === 2) s.onUnsure[k.tier]++; else if (state[j] === 3) s.atEdge[k.tier]++;
   });
   const plantFound = plants.map((_, i) => plantOf[i] >= 0);
   plants.forEach((_, i) => { if (plantOf[i] >= 0) s.found[ms[plantOf[i]].tier]++; else s.missed++; });
@@ -285,6 +290,10 @@ if (SINGLE) {
     if (inside) { gapsWithPlants++; plantsInGaps += inside; }
   }
   console.log(`Photo Scout on the dev tiles: weed candidates ${weedsDev}, of them on a labelled plant ${weedsOnPlant}; stand gaps lying wholly in a dev tile ${gapsDev}, of them with a labelled plant standing inside ${gapsWithPlants} (${plantsInGaps} labelled plants).`);
+  if (argv.includes("--touch")) {
+    const T = touchReport({ out: OUT, px: full, darkApplied, marks: c.plants, tiles: DEV, labels: LAB, judge, R, within });
+    for (const t of DEV) draw(t, judge(t, T.cutMarks, ident, R), `P-cut-${t.id}.jpg`, "STRICTER BAR, EVERY LONG PIECE CUT INTO EQUAL PARTS (MEASURED ONLY)", "WHITE RING = THE MARK ON A FOUND PLANT");
+  }
   writeFileSync(join(OUT, "score-single.json"), JSON.stringify({ image: IMAGE, width: W, height: H, area: AREA, grid: GRID, devTiles: DEV, labelsRead: { plant: sum(devPlants.map(x => x.length)), unsure: sum([...LAB.values()].map(l => l.filter(p0 => p0.type === "unsure").length)) },
     labels: { rowDirectionDeg: (th * 180) / Math.PI, pairs: gapsPx.length, pairsWithUnsureLeftOut: withUnsure, lowQuarterPx: sorted[sorted.length >> 2], medianPx: med(gapsPx), highQuarterPx: sorted[(3 * sorted.length) >> 2], rowsPerTile, medianPerTile, newRowBeyondPx: cutPx }, matchPx: R,
     read: { ms, darkRuleApplied: darkApplied, plans, lowerBarForced: forced ? forced.length : null, scaleFromFile: est.gsdM, scaleBasisFromFile: est.basis, gsdM: v.green.gsdM, scaleBasis: v.green.scaleBasis, strict: c.plants.length, low: c.low ? c.low.length : null, rows: v.rows.length, cornRows: v.summary.cornRows, probableRows: v.summary.probableRows, notes: v.notes },
@@ -299,6 +308,7 @@ const RUNS: Variant[] = [
   { key: "a-old-rules", what: "the old rules: every switch from this branch off (SEQUENCE_V1, PLANTS_FIRST_V1, the ground not asked; cornScoreboard.ts `base`)", spans: false, opts: () => ({ sequence: SEQUENCE_V1, placing: PLANTS_FIRST_V1 }) },
   { key: "b-branch-sweep-off", what: "this branch, the lone-mark sweep off (cornScoreboard.ts `p6`)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, sweepLoneMarks: false }, ground, placing: PLANTS_FIRST }) },
   { key: "c-branch-sweep-on", what: "this branch, the lone-mark sweep on (cornScoreboard.ts `p7`)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, sweepLoneMarks: true }, ground, placing: PLANTS_FIRST }) },
+  { key: "d-branch-option-on", what: "this branch with the plant spacing not asked of a dot on a row's line (SEQUENCE.placeOffSpacing; cornScoreboard.ts `p8`)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true }, ground, placing: PLANTS_FIRST }) },
 ];
 type Cached = { applies?: boolean; plantsMatch?: boolean; low: [number, number][]; lowWhole?: [number, number][]; span?: [number, number][]; axis?: [number, number] | null };
 const cached = (name: string): Cached | null => { const p = join(CACHE, `${name}.json`); return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as Cached) : null; };
@@ -311,7 +321,10 @@ const readsFor = (spans: boolean): CornPhotoRead[] => A.reads.map(r => {
 });
 const B: { run: string; what: string; plantSpacingM: number; wholeFlightOnRows: number[]; wholeFlightOnNoRow: number; landed: number; foldedBack: number; marksInPhoto: number[]; noRowInPhoto: number; half: (Score & { missedWithADotOnNoRow: number; noRowDots: number })[]; full: Score[] }[] = [];
 let origin: { lat: number; lng: number; altM: number } | null = null;
-for (const run of MISSES ? RUNS.filter(r => r.key === "b-branch-sweep-off") : RUNS) {
+// --runs a,c,d: only those runs (by their first letter), written to <out>/score-runs.json; part A is not run. Without it: a, b, c as SCORE.md.
+const ONLY = opt("runs")?.split(",") ?? null, LOOK = opt("look");
+if (LOOK) mkdirSync(LOOK, { recursive: true });
+for (const run of MISSES ? RUNS.filter(r => r.key === (opt("misses-run") ?? "b-branch-sweep-off")) : RUNS.filter(r => (LOOK ? r.key[0] === "d" : ONLY ? ONLY.includes(r.key[0]) : r.key[0] !== "d"))) {
   const t0 = Date.now(), reads = readsFor(run.spans);
   // The field does not read the candidates (cornScoreboard.ts), so it is the same field in all three runs; made again each run all the same.
   const { field: F, ground } = cornFieldAndGround(reads, frames, A.fieldOptions ?? FIELD);
@@ -321,8 +334,9 @@ for (const run of MISSES ? RUNS.filter(r => r.key === "b-branch-sweep-off") : RU
   if (seedM == null) throw new Error(`${run.key}: the plant spacing is not measured on this flight, so there is no matching distance`);
   if (pi < 0) throw new Error(`${IMAGE} is not among the photographs the dots were made from`);
   // -1 on no row; else the tier, as cornScoreboard.ts counts it.
-  const tierOf = (i: number) => (rec.rowOf[i] < 0 ? -1 : rec.loose[i] || P.tier?.[i] === 3 ? 4 : P.tier?.[i] === 1 ? 2 : P.tier?.[i] === 2 ? 3 : rec.certainty[i] === 0 ? 0 : 1);
-  const whole = [0, 0, 0, 0, 0]; let onNoRow = 0; for (let i = 0; i < n; i++) { const t = tierOf(i); if (t >= 0) whole[t]++; else if (i < P.strict) onNoRow++; }
+  if (opts.free) throw new Error("the loosened placement is not scored here");
+  const tierOf = (i: number) => (rec.rowOf[i] < 0 ? -1 : rec.offSpacing[i] ? (i < P.strict ? 4 : 5) : P.tier?.[i] === 1 ? 2 : P.tier?.[i] === 2 ? 3 : rec.certainty[i] === 0 ? 0 : 1);
+  const whole = [0, 0, 0, 0, 0, 0]; let onNoRow = 0; for (let i = 0; i < n; i++) { const t = tierOf(i); if (t >= 0) whole[t]++; else if (i < P.strict) onNoRow++; }
   // A field dot in this photograph, and whether its pixel looks back at it (cornPictures.ts pixelOf).
   const pixelOf = (e: number, nn: number): [number, number, boolean] | null => {
     let de = 0, dn = 0, u = 0, v = 0;
@@ -333,19 +347,24 @@ for (const run of MISSES ? RUNS.filter(r => r.key === "b-branch-sweep-off") : RU
     return [u, v, Math.hypot(b[0] + se - e, b[1] + sn - nn) <= LOOKS_BACK_M];
   };
   const place = (u: number, v: number): [number, number] | null => { const g = pixelToGround(f, u, v); if (!g) return null; const b = toEnu({ lat: g.lat, lng: g.lng, altM: 0 }, F.origin), [se, sn] = shiftOf(P.shifts[pi], u, v); return [b[0] + se, b[1] + sn]; };
-  let landed = 0, fold = 0; const marks: Mark[] = [], noRow: Mark[] = [], inPhoto = [0, 0, 0, 0, 0];
+  let landed = 0, fold = 0; const marks: Mark[] = [], noRow: Mark[] = [], inPhoto = [0, 0, 0, 0, 0, 0];
   for (let i = 0; i < n; i++) {
     const t = tierOf(i); if (t < 0 && i >= P.strict) continue;
     const q = pixelOf(P.all[i].e, P.all[i].n); if (!q) continue;
     landed++; if (!q[2]) { fold++; continue; }
     (t >= 0 ? marks : noRow).push({ u: q[0], v: q[1], e: P.all[i].e, n: P.all[i].n, tier: Math.max(0, t), i }); if (t >= 0) inPhoto[t]++;
   }
+  if (LOOK) {
+    const img = (IMG ??= decodeImage(new Uint8Array(readFileSync(photoPath(IMAGE)!)))), dir = (rec.geometry.directionDeg * Math.PI) / 180;
+    lookReport({ out: LOOK, px: { width: img.width, height: img.height, rgba: new Uint8ClampedArray(img.data.buffer, img.data.byteOffset, img.data.byteLength) }, tiles: DEV, labels: LAB, judge, R: seedM / 2, marks, noRow, place, pixelOf, within, photos: i => P.all[i].photos, looked: i => P.covered[i], alongEN: [Math.cos(dir), Math.sin(dir)] });
+    process.exit(0);
+  }
   const half = DEV.map(t => {
     const J = judge(t, marks, place, seedM / 2), nr = noRow.filter(k => within(t, k.u, k.v, J.pad));
     // Not scored, told beside it: the dots the rules left on no row, and the labelled plants not found that have one on them.
     const plants = LAB.get(t.id)!.filter(l => l.type === "plant").map(l => place(l.x, l.y)!);
     const withNoRow = plants.filter((g, i) => !J.plantFound[i] && nr.some(k => Math.hypot(k.e - g[0], k.n - g[1]) <= seedM / 2)).length;
-    if (!MISSES) draw(t, J, `B-${run.key}-${t.id}.jpg`, `THE FIELD DOTS BROUGHT INTO THIS PHOTO, RUN ${run.key[0].toUpperCase()}: ${run.key.slice(2).toUpperCase().replace(/-/g, " ")}`, `RING ON A FOUND PLANT: WHITE CERTAIN ${J.score.found[0]}, BLUE PROBABLE ${J.score.found[1]}, YELLOW SECOND LOOK 2+ ${J.score.found[2]}, PINK SECOND LOOK 1 ${J.score.found[3]}`, noRow);
+    if (!MISSES && !LOOK) draw(t, J, `B-${run.key}-${t.id}.jpg`, `THE FIELD DOTS BROUGHT INTO THIS PHOTO, RUN ${run.key[0].toUpperCase()}: ${run.key.slice(2).toUpperCase().replace(/-/g, " ")}`, `RING ON A FOUND PLANT: WHITE CERTAIN ${J.score.found[0]}, BLUE PROBABLE ${J.score.found[1]}, YELLOW SECOND LOOK 2+ ${J.score.found[2]}, PINK SECOND LOOK 1 ${J.score.found[3]}${J.score.marks[4] + J.score.marks[5] ? `, PALE GREEN BY THE OPTION ${J.score.found[4] + J.score.found[5]}` : ""}`, noRow);
     return { ...J.score, missedWithADotOnNoRow: withNoRow, noRowDots: noRow.filter(k => within(t, k.u, k.v)).length };
   });
   const full = DEV.map(t => judge(t, marks, place, seedM).score);
@@ -358,6 +377,8 @@ for (const run of MISSES ? RUNS.filter(r => r.key === "b-branch-sweep-off") : RU
     process.exit(0);
   }
 }
+
+if (ONLY) { writeFileSync(join(OUT, "score-runs.json"), JSON.stringify({ image: IMAGE, twin: A.twinId, area: AREA, grid: GRID, devTiles: DEV, tiers: TIERS, B }, null, 1)); process.exit(0); }
 
 // ---- A: the photograph's own marks, before anything is merged. Its own camera, no registration shift.
 const seeds = [...new Set(B.map(b => b.plantSpacingM))]; if (seeds.length !== 1) console.log(`the runs measured different plant spacings (${seeds.join(", ")}); A uses run c's`);

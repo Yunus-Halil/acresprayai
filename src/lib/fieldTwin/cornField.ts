@@ -266,6 +266,8 @@ export type PlantedGround = {
   state: Uint8Array;
   /** Per square: the concentration (NaN where too few plants). */
   concentration: Float32Array;
+  /** Per square: the plant sightings in the window it was judged on (read only, for diagnosis: no rule reads it). */
+  sightings: Float32Array;
   /**
    * Per square: where across the spacing the rows sit, as the across position (modulo the spacing, in [0, spacing))
    * of the rows through it; NaN where too few plants. The angle of the same sum whose length is the concentration.
@@ -303,11 +305,12 @@ export function plantedGround(plants: [number, number][], pitch0: number, o: Pla
   const cellA = o.cellAlongM, cellC = spacingM, w = Math.floor((aMax - aMin) / cellA) + 1, h = Math.floor((cMax - cMin) / cellC) + 1, k2 = (2 * Math.PI) / spacingM;
   const fc = new Float64Array(w * h), fs = new Float64Array(w * h), fn = new Float64Array(w * h);
   for (const [a, c] of plants) { const k = Math.floor((a - aMin) / cellA) + w * Math.floor((c - cMin) / cellC), ph = c * k2; fc[k] += Math.cos(ph); fs[k] += Math.sin(ph); fn[k]++; }
-  const state = new Uint8Array(w * h), concentration = new Float32Array(w * h).fill(NaN), rowOffset = new Float32Array(w * h).fill(NaN), r = K >> 1;
+  const state = new Uint8Array(w * h), concentration = new Float32Array(w * h).fill(NaN), rowOffset = new Float32Array(w * h).fill(NaN), r = K >> 1, sightings = new Float32Array(w * h);
   let judged = 0, planted = 0;
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
     let sc = 0, ss = 0, n = 0;
     for (let jj = Math.max(0, j - r); jj <= Math.min(h - 1, j + r); jj++) for (let ii = Math.max(0, i - r); ii <= Math.min(w - 1, i + r); ii++) { const k = jj * w + ii; sc += fc[k]; ss += fs[k]; n += fn[k]; }
+    sightings[j * w + i] = n;
     if (n < o.minSightings) continue;
     const R = Math.hypot(sc, ss) / n, k = j * w + i;
     concentration[k] = R; judged++;
@@ -328,13 +331,16 @@ export function plantedGround(plants: [number, number][], pitch0: number, o: Pla
     if (comp.length * cellA * cellC < o.minRegionM2) for (const k of comp) state[k] = 0; else scattered += comp.length;
   }
   const at = (along: number, across: number): 0 | 1 | 2 => { const i = Math.floor((along - aMin) / cellA), j = Math.floor((across - cMin) / cellC); return i < 0 || j < 0 || i >= w || j >= h ? 0 : (state[j * w + i] as 0 | 1 | 2); };
-  return { valid: judged > 0 && planted >= o.minPlantedShare * judged, spacingM, a0: aMin, c0: cMin, cellA, cellC, w, h, state, concentration, rowOffset, judged, planted, scattered, at };
+  return { valid: judged > 0 && planted >= o.minPlantedShare * judged, spacingM, a0: aMin, c0: cMin, cellA, cellC, w, h, state, concentration, sightings, rowOffset, judged, planted, scattered, at };
 }
 
 /** The ground as the located plants judge it (FIELD.planted), for the steps after the field's rows: at a place (metres
  * east and north of the field's origin) 0 unknown, 1 planted, 2 scattered. Only made when the judgement held for the
  * flight (`planting.judged`): it is the same judgement the field's rows were cut by. */
-export type FieldGround = { spacingM: number; state: (e: number, n: number) => 0 | 1 | 2 };
+export type FieldGround = { spacingM: number; state: (e: number, n: number) => 0 | 1 | 2;
+  /** Read only, for diagnosis (no rule reads it): at a place, the plant sightings in the window its square was judged
+   * on, the concentration found there (null with too few sightings to judge), and the state it was given. */
+  detail?: (e: number, n: number) => { sightings: number; concentration: number | null; state: 0 | 1 | 2 } | null };
 
 /** Corn V1's per-photograph reads combined over a field, in Swardus Direct's ground coordinates. */
 export function cornField(reads: CornPhotoRead[], frames: Map<string, GeorefFrame>, o = FIELD): CornFieldResult {
@@ -404,7 +410,8 @@ export function cornFieldAndGround(reads: CornPhotoRead[], frames: Map<string, G
         else {
           planting.judged = true;
           const first = frame, cut: Projected[] = [];
-          fieldGround = { spacingM: pg.spacingM, state: (e, n) => { const [a, c] = first.toAC(e, n); return pg.at(a, c); } };
+          fieldGround = { spacingM: pg.spacingM, state: (e, n) => { const [a, c] = first.toAC(e, n); return pg.at(a, c); },
+            detail: (e, n) => { const [a, c] = first.toAC(e, n), i = Math.floor((a - pg.a0) / pg.cellA), j = Math.floor((c - pg.c0) / pg.cellC); if (i < 0 || j < 0 || i >= pg.w || j >= pg.h) return null; const k = j * pg.w + i, R = pg.concentration[k]; return { sightings: pg.sightings[k], concentration: Number.isFinite(R) ? R : null, state: pg.state[k] as 0 | 1 | 2 }; } };
           let anyCut = false;
           for (const p of kept) {
             // A piece that touches no scattered ground stays as it is, whatever its length.

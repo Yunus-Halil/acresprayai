@@ -362,6 +362,7 @@ export function diagnose(X: MissCtx) {
       const prev = pos > 0 ? A[d] - A[row.dots[pos - 1]] : null, next = pos + 1 < row.dots.length ? A[row.dots[pos + 1]] - A[d] : null;
       const tiers = [0, 0, 0, 0]; for (const i of row.dots) tiers[i >= strict ? (tier![i] === 1 ? 2 : 3) : rec.certainty[i] === 0 ? 0 : 1]++;
       part4.push({ tile: t.id, u: Math.round(k.u), v: Math.round(k.v), dot: d, tier: TIER[k.tier], photosSaw: dots[d].photos, photosLooked: P.covered[d], ground: GROUND[state(d)],
+        groundDetail: ground?.detail ? ground.detail(dots[d].e, dots[d].n) : null,
         row: row.id, rowKind: row.kind, rowLengthM: Math.round(row.lengthM * 100) / 100, rowPlants: row.dots.length, rowPlantsByTier: tiers, rowPlantsByGround: { notJudged: gs[0], planted: gs[1], scattered: gs[2] },
         placeOnTheRow: pos + 1, fromTheRowsStartM: Math.round((A[d] - row.a0) * 100) / 100, fromTheRowsEndM: Math.round((row.a1 - A[d]) * 100) / 100, toThePlantBeforeM: prev == null ? null : Math.round(prev * 1000) / 1000, toThePlantAfterM: next == null ? null : Math.round(next * 1000) / 1000,
         how: lineDot[d] ? "line" : ri >= lines.length ? "slot" : "placed", courseIndex: ri, placedAlongM: Number.isFinite(nearestM[d]) ? Math.round(nearestM[d] * 1000) / 1000 : null, placedInSpacings: Number.isFinite(nearestM[d]) ? Math.round((nearestM[d] / seed) * 100) / 100 : null, a: A[d], c: C[d] });

@@ -80,6 +80,11 @@ const VARIANTS: Record<string, Variant> = {
   p7: { what: "the rules as they stand now (the final sweep on: company is a certain or a probable plant)", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST }) },
   p7loose: { what: "the rules as they stand now, loosened placement on", spans: true, opts: ground => ({ sequence: SEQUENCE, ground, placing: PLANTS_FIRST, free: true }) },
   p7other: { what: "the final sweep with the other company: " + (SEQUENCE.loneMarkCompany === "certain" ? "a certain or a probable plant" : "a certain plant only"), spans: true, opts: ground => ({ sequence: { ...SEQUENCE, loneMarkCompany: SEQUENCE.loneMarkCompany === "certain" ? "located" as const : "certain" as const }, ground, placing: PLANTS_FIRST }) },
+  // 2026-11-17: the plant spacing not asked of a dot on a row's line (SEQUENCE.placeOffSpacing), off by default.
+  p8: { what: "the rules as they stand now + the plant spacing not asked of a dot on a row's line (placeOffSpacing)", spans: true, opts: ground => ({ sequence: { ...SEQUENCE, placeOffSpacing: true }, ground, placing: PLANTS_FIRST }) },
+  // Measured only (2026-11-17): rows only on ground judged planted. Ground the field did not judge is read as scattered,
+  // so nothing on it is the planting (no row fitted, no dot placed, a row cut where it would cross it). No such rule exists.
+  p7planted: { what: "MEASURED ONLY: the rules as they stand now, ground the field did not judge read as scattered (rows only on ground judged planted)", spans: true, opts: ground => ({ sequence: SEQUENCE, ground: ground ? { ...ground, state: (e: number, n: number) => (ground.state(e, n) === 1 ? 1 : 2) } : null, placing: PLANTS_FIRST }) },
   p2cells: { what: "phase 2, only patternCellsOnly", opts: ground => ({ sequence: { ...SEQUENCE_V1, patternCellsOnly: true }, ground }) },
   p2ground: { what: "phase 2, only refuseScattered", opts: ground => ({ sequence: { ...SEQUENCE_V1, refuseScattered: true }, ground }) },
 };
@@ -203,6 +208,9 @@ function measure(reads: CornPhotoRead[], v: Variant, withHalves: boolean) {
     geometry: { rowSpacingM: Math.round(S * 1000) / 1000, plantSpacingM: rec.geometry.seedM, directionDeg: Math.round(rec.geometry.directionDeg * 100) / 100, certainRows: rec.geometry.certainRows },
     planting: { judged: F.planting.judged, why: F.planting.why, plantedM2: F.planting.plantedM2, scatteredM2: F.planting.scatteredM2 },
     dots: { all: n, stricterMarks: P.strict, candidates: n - P.strict },
+    // On a row only because the spacing was not asked (placeOffSpacing): counted inside the tiers above.
+    byTheOption: (() => { const c = [0, 0, 0, 0, 0]; for (let i = 0; i < n; i++) if (rec.offSpacing[i] && rec.rowOf[i] >= 0) c[tierOf(rec, i)]++; return Object.fromEntries(TIERS.map((t, k) => [t, c[k]])); })(),
+    certainOnRowsByGround: (() => { const c = [0, 0, 0]; for (let i = 0; i < n; i++) if (rec.rowOf[i] >= 0 && rec.certainty[i] === 0) c[groundAt(P.all[i].e, P.all[i].n)]++; return { notJudged: c[0], planted: c[1], scattered: c[2] }; })(),
     onRows: Object.fromEntries(TIERS.map((t, k) => [t, onRows[k]])), onRowsTotal: onRows.reduce((t, x) => t + x, 0), probableOnSlotRows: inSlotRows(rec),
     rows: rec.rows.length, rowM: { plantsSeen: CP?.summary.confirmedM ?? 0, notConfirmed: CP?.summary.notConfirmedM ?? 0 }, neighboursOnARowCm: neighbours,
     onNoRow: CP?.summary.onNoRow ?? null, betweenRows: CP?.summary.betweenRows ?? null,
