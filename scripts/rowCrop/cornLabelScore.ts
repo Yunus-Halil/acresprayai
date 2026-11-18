@@ -2,7 +2,7 @@
 // photograph. Nothing is changed; the photographs, the stored flight and the labels are only read.
 //
 //   npx vite-node scripts/rowCrop/cornLabelScore.ts -- --analysis <analysis.json> --cache <candidate cache> --photos <dir>
-//       --labels <corn-labels-all.json> --image <labelled photograph> --out <dir> [--area x,y,w,h] [--grid 4] [--overview]
+//       --labels <corn-labels-all.json> --image <labelled photograph> --out <dir> [--area x,y,w,h] [--grid 4] [--overview] [--misses <dir>]
 //
 // The labels are the corn-labeler's file: { images: [{ image, width, height, points: [{ x, y, type: "plant" | "unsure" }] }] },
 // pixels of the original photograph. --area is the part of the photograph that was labelled (default: all of it).
@@ -12,6 +12,8 @@
 // is read: it is never matched, counted, printed or drawn, and no picture shows a held-back tile's ground.
 //
 // --overview: draws the labels alone over each labelled photograph (no marks, no score).
+// --misses <dir>: only run b (this branch, the sweep off) at half the plant spacing, judged as below, and then why its
+//   plants not found were left off the rows (cornLabelMisses.ts), written to <dir>. No score is written and no tile of the score drawn.
 //
 // A) The photograph's own marks, before anything is merged across photographs, at each bar a build reads it at:
 //      strict    the plant read's marks (CornPhotoRead.plants; seedlingGreen.ts SEEDLING_GREEN's dark-leaf bar)
@@ -47,6 +49,7 @@ import { framesFromAnalysis, type TwinAnalysis } from "../../src/lib/fieldTwin/a
 import { PLANTS_FIRST, PLANTS_FIRST_V1, SEQUENCE, SEQUENCE_V1, shiftOf } from "../../src/lib/fieldTwin/plantsFirst";
 import { SEEDLING_GREEN, SEEDLING_ROW } from "../../src/lib/rowCrop/seedlingGreen";
 import { fromEnu, toEnu } from "../../src/lib/sourceFrames/odm";
+import { diagnose } from "./cornLabelMisses";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? null : argv[i + 1]; };
@@ -114,7 +117,8 @@ if (OVERVIEW) {
 }
 
 
-const CACHE = arg("cache"), IMAGE = arg("image"), GRID = Number(opt("grid") ?? 4);
+const CACHE = arg("cache"), IMAGE = arg("image"), GRID = Number(opt("grid") ?? 4), MISSES = opt("misses");
+if (MISSES) mkdirSync(MISSES, { recursive: true });
 const A = JSON.parse(readFileSync(arg("analysis"), "utf8")) as TwinAnalysis, frames = framesFromAnalysis(A);
 const STEM = IMAGE.replace(/\.[^.]+$/, ""), TAG = STEM.slice(-6, -2), read = A.reads.find(r => r.name === STEM), f = frames.get(STEM);
 if (!read || !f) throw new Error(`${IMAGE} is not a photograph of this flight (${A.twinId}, ${A.reads.length} photographs)`);
@@ -133,9 +137,9 @@ const within = (t: Tile, u: number, v: number, pad = 0) => u >= t.x - pad && u <
 const LAB = new Map(DEV.map(t => [t.id, IM.points.filter(p => within(t, p.x, p.y))]));
 console.log(`${IMAGE} is photograph ${A.reads.indexOf(read) + 1} of ${A.reads.length} in ${A.twinId}. Area x ${AREA.x}-${AREA.x + AREA.w}, y ${AREA.y}-${AREA.y + AREA.h}; ${GRID} x ${GRID} tiles, ${DEV.length} dev: ${DEV.map(t => t.id).join(" ")}`);
 
-type Mark = { u: number; v: number; e: number; n: number; tier: number };
+type Mark = { u: number; v: number; e: number; n: number; tier: number; /** The field dot it is (B). */ i?: number };
 type Score = { tile: string; labelled: number; unsure: number; marks: number[]; found: number[]; wrong: number[]; onUnsure: number[]; atEdge: number[]; missed: number };
-type Judged = { score: Score; ms: Mark[]; state: Int8Array; plantFound: boolean[] };
+type Judged = { score: Score; ms: Mark[]; state: Int8Array; plantFound: boolean[]; /** Per labelled plant: the mark it has (index into `ms`), or -1. */ plantOf: Int32Array };
 const TIERS = ["certain", "probable", "second look, 2+ photographs", "second look, 1 photograph", "loosened"] as const;
 const TIER_COL: Rgb[] = [[255, 255, 255], [120, 220, 255], [255, 214, 40], [255, 70, 200], [255, 120, 0]];
 
@@ -169,7 +173,7 @@ function judge(t: Tile, marks: Mark[], place: (u: number, v: number) => [number,
   });
   const plantFound = plants.map((_, i) => plantOf[i] >= 0);
   plants.forEach((_, i) => { if (plantOf[i] >= 0) s.found[ms[plantOf[i]].tier]++; else s.missed++; });
-  return { score: s, ms, state, plantFound, pad };
+  return { score: s, ms, state, plantFound, plantOf, pad };
 }
 const sum = (a: number[]) => a.reduce((t, x) => t + x, 0);
 let IMG: { width: number; height: number; data: Uint8Array } | null = null;
@@ -215,7 +219,7 @@ const readsFor = (spans: boolean): CornPhotoRead[] => A.reads.map(r => {
 });
 const B: { run: string; what: string; plantSpacingM: number; wholeFlightOnRows: number[]; wholeFlightOnNoRow: number; landed: number; foldedBack: number; marksInPhoto: number[]; noRowInPhoto: number; half: (Score & { missedWithADotOnNoRow: number; noRowDots: number })[]; full: Score[] }[] = [];
 let origin: { lat: number; lng: number; altM: number } | null = null;
-for (const run of RUNS) {
+for (const run of MISSES ? RUNS.filter(r => r.key === "b-branch-sweep-off") : RUNS) {
   const t0 = Date.now(), reads = readsFor(run.spans);
   // The field does not read the candidates (cornScoreboard.ts), so it is the same field in all three runs; made again each run all the same.
   const { field: F, ground } = cornFieldAndGround(reads, frames, A.fieldOptions ?? FIELD);
@@ -242,20 +246,25 @@ for (const run of RUNS) {
     const t = tierOf(i); if (t < 0 && i >= P.strict) continue;
     const q = pixelOf(P.all[i].e, P.all[i].n); if (!q) continue;
     landed++; if (!q[2]) { fold++; continue; }
-    (t >= 0 ? marks : noRow).push({ u: q[0], v: q[1], e: P.all[i].e, n: P.all[i].n, tier: Math.max(0, t) }); if (t >= 0) inPhoto[t]++;
+    (t >= 0 ? marks : noRow).push({ u: q[0], v: q[1], e: P.all[i].e, n: P.all[i].n, tier: Math.max(0, t), i }); if (t >= 0) inPhoto[t]++;
   }
   const half = DEV.map(t => {
     const J = judge(t, marks, place, seedM / 2), nr = noRow.filter(k => within(t, k.u, k.v, J.pad));
     // Not scored, told beside it: the dots the rules left on no row, and the labelled plants not found that have one on them.
     const plants = LAB.get(t.id)!.filter(l => l.type === "plant").map(l => place(l.x, l.y)!);
     const withNoRow = plants.filter((g, i) => !J.plantFound[i] && nr.some(k => Math.hypot(k.e - g[0], k.n - g[1]) <= seedM / 2)).length;
-    draw(t, J, `B-${run.key}-${t.id}.jpg`, `THE FIELD DOTS BROUGHT INTO THIS PHOTO, RUN ${run.key[0].toUpperCase()}: ${run.key.slice(2).toUpperCase().replace(/-/g, " ")}`, `RING ON A FOUND PLANT: WHITE CERTAIN ${J.score.found[0]}, BLUE PROBABLE ${J.score.found[1]}, YELLOW SECOND LOOK 2+ ${J.score.found[2]}, PINK SECOND LOOK 1 ${J.score.found[3]}`, noRow);
+    if (!MISSES) draw(t, J, `B-${run.key}-${t.id}.jpg`, `THE FIELD DOTS BROUGHT INTO THIS PHOTO, RUN ${run.key[0].toUpperCase()}: ${run.key.slice(2).toUpperCase().replace(/-/g, " ")}`, `RING ON A FOUND PLANT: WHITE CERTAIN ${J.score.found[0]}, BLUE PROBABLE ${J.score.found[1]}, YELLOW SECOND LOOK 2+ ${J.score.found[2]}, PINK SECOND LOOK 1 ${J.score.found[3]}`, noRow);
     return { ...J.score, missedWithADotOnNoRow: withNoRow, noRowDots: noRow.filter(k => within(t, k.u, k.v)).length };
   });
   const full = DEV.map(t => judge(t, marks, place, seedM).score);
   B.push({ run: run.key, what: run.what, plantSpacingM: seedM, wholeFlightOnRows: whole, wholeFlightOnNoRow: onNoRow, landed, foldedBack: fold, marksInPhoto: inPhoto, noRowInPhoto: noRow.length, half, full });
   console.log(`${run.key}: plant spacing ${seedM} m; whole flight on rows ${JSON.stringify(whole)}; in the photograph ${JSON.stringify(inPhoto)} (${landed} dots land, ${fold} folded back and left out); ${Math.round((Date.now() - t0) / 1000)} s`);
   for (const s of half) console.log(`  ${s.tile}: labelled ${s.labelled}, found ${JSON.stringify(s.found)}, wrong ${JSON.stringify(s.wrong)}, marks ${JSON.stringify(s.marks)}, on unsure ${JSON.stringify(s.onUnsure)}, at edge ${JSON.stringify(s.atEdge)}, missed ${s.missed}`);
+  if (MISSES) {
+    diagnose({ out: MISSES, tag: TAG, reads, frames, F, ground, opts, P, rec, pi, tiles: DEV, labels: LAB, marks, noRow, place, pixelOf, judge, within,
+      image: () => (IMG ??= decodeImage(new Uint8Array(readFileSync(photoPath(IMAGE)!)))), cut, ring, disc, square, text, encode: c => encodeJpeg({ width: c.w, height: c.h, data: c.data }, 88) });
+    process.exit(0);
+  }
 }
 
 // ---- A: the photograph's own marks, before anything is merged. Its own camera, no registration shift.
