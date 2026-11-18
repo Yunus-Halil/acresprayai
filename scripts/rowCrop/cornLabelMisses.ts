@@ -273,6 +273,9 @@ export function diagnose(X: MissCtx) {
   const drawings: { t: MTile; items: { x: number; y: number; set: 1 | 2; code: string }[]; found: { x: number; y: number }[]; J: MJudged }[] = [];
   let noRowInTiles = 0;
   const foundMarkFromLabelCm: number[] = [];
+  // Neighbouring labels along a row: each label on its nearest row line, in order along it; the distance along the row
+  // between one "plant" label and the next. A pair with an "unsure" label in it is left out (and counted).
+  const labelGapsM: { tile: string; m: number }[] = []; let gapsWithUnsure = 0;
   // Every labelled plant of the dev tiles: how far its nearest other labelled plant of the same tile stands.
   const spacing: { tile: string; found: boolean; nearestLabelCm: number; atTheEdge: boolean }[] = [];
   for (const t of X.tiles) {
@@ -287,6 +290,11 @@ export function diagnose(X: MissCtx) {
     const otherLabelCm = (i: number) => { let b = Infinity; plants.forEach((p2, k) => { if (k !== i) b = Math.min(b, Math.hypot(p2.e - plants[i].e, p2.n - plants[i].n)); }); return Number.isFinite(b) ? cm(b) : null; };
     plants.forEach((pl, i) => { if (plants.length > 1) spacing.push({ tile: t.id, found: J.plantFound[i], nearestLabelCm: otherLabelCm(i)!, atTheEdge: pl.x < t.x + J.pad * 2 || pl.x >= t.x + t.w - J.pad * 2 || pl.y < t.y + J.pad * 2 || pl.y >= t.y + t.h - J.pad * 2 }); });
     plants.forEach((pl, i) => { if (J.plantFound[i]) { const k = J.ms[J.plantOf[i]]; foundMarkFromLabelCm.push(cm(Math.hypot(k.e - pl.e, k.n - pl.n))); } });
+    {
+      const byLine = new Map<number, { a: number; plant: boolean }[]>();
+      for (const l of [...plants, ...unsure]) { const [la, lc] = toAC(l.e, l.n), L = lineNear(la, lc); if (!L) continue; (byLine.get(L.line) ?? byLine.set(L.line, []).get(L.line)!).push({ a: la, plant: l.type === "plant" }); }
+      for (const g of byLine.values()) { g.sort((x, y) => x.a - y.a); for (let k = 1; k < g.length; k++) { if (g[k].plant && g[k - 1].plant) labelGapsM.push({ tile: t.id, m: g[k].a - g[k - 1].a }); else gapsWithUnsure++; } }
+    }
     const looked = coverage(plants.map(p => ({ e: p.e, n: p.n, members: [], photos: 0, spreadM: 0 })), frames, photos, P.shifts, F.origin);
     plants.forEach((pl, i) => {
       if (J.plantFound[i]) return;
@@ -412,6 +420,6 @@ export function diagnose(X: MissCtx) {
     used.forEach((u, li) => { const set = Number(u[0]) as 1 | 2, code = u.slice(1), cnt = D.items.filter(i => i.set === set && i.code === code).length; X.text(c, 12, 100 + li * 30, `${code} (${cnt}) = ${allReasons[code].reason.replace(/'/g, "").replace(/[:;]/g, ",")}`.slice(0, 145), 3, set === 1 ? CYAN : MAGENTA); });
     writeFileSync(join(X.out, `MISSES-${t.id}.jpg`), X.encode(c));
   }
-  writeFileSync(join(X.out, "misses.json"), JSON.stringify({ rowSpacingM: S, plantSpacingM: seed, matchM: R, onRowLineM: onRow, reachM: reach, exclM: RC.exclM, sharpDeg: RC.sharpDeg, lowPhotos, photographs: photos.length, dots: n, strictDots: strict, rowLines: lines.length, slotRows: geom.length, checks: log, reasons: allReasons, part1, part2, part3, part4, spacing, foundMarkFromLabelCm }, null, 1));
+  writeFileSync(join(X.out, "misses.json"), JSON.stringify({ rowSpacingM: S, plantSpacingM: seed, matchM: R, onRowLineM: onRow, reachM: reach, exclM: RC.exclM, sharpDeg: RC.sharpDeg, lowPhotos, photographs: photos.length, dots: n, strictDots: strict, rowLines: lines.length, slotRows: geom.length, checks: log, reasons: allReasons, part1, part2, part3, part4, spacing, foundMarkFromLabelCm, labelGapsM, gapsWithUnsure }, null, 1));
   writeFileSync(join(X.out, "misses.log"), log.join("\n") + "\n");
 }
